@@ -343,6 +343,8 @@ class ResponseBuilder:
             }
 
         if isinstance(result, AgentPausedReplyAny):
+            # 202 now carries two meanings — a deferred request and a paused one — so the body key
+            # is what separates them, and a client branches on it without parsing `result`.
             response_dict["status"] = "PAUSED"
             response_dict["run_id"] = result.run_id
             response_dict["interruptions"] = [i.model_dump(mode="json") for i in result.interruptions]

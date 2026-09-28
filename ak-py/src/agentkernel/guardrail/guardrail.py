@@ -3,7 +3,7 @@ from __future__ import annotations
 from ..core.base import Agent, Session
 from ..core.config import AKConfig
 from ..core.hooks import PostHook, PreHook
-from ..core.model import AgentReply, AgentReplyAny, AgentReplyImage, AgentReplyText, AgentRequest, AgentRequestText
+from ..core.model import AgentReply, AgentReplyAny, AgentReplyImage, AgentReplyText, AgentRequest, AgentRequestText, AgentResumeRequestAny
 from ..core.util.factory import AKConfigError, require_extra, resolve_dotted
 
 _BUILTIN_GUARDRAILS = ["openai", "bedrock", "walledai"]
@@ -100,7 +100,29 @@ class BaseGuardrailUtil:
         for req in requests:
             if isinstance(req, AgentRequestText):
                 text_parts.append(req.prompt)
+            elif isinstance(req, AgentResumeRequestAny):
+                text_parts.extend(BaseGuardrailUtil._extract_text_from_decisions(req))
         return "\n".join(text_parts)
+
+    @staticmethod
+    def _extract_text_from_decisions(resume: AgentResumeRequestAny) -> list[str]:
+        """
+        Extract the human's own words from a resume request, so a guardrail sees them.
+
+        A decision's free text reaches the model exactly as a prompt does, so skipping it would
+        leave a route no input guardrail inspects. Only string payload values are taken: a guardrail
+        scanning arbitrary nested JSON reports ids and enum values as findings.
+
+        :param resume: The resume request carrying the decisions.
+        :return: The text a human typed, one entry per value.
+        """
+        text_parts = []
+        for decision in resume.decisions:
+            if decision.message:
+                text_parts.append(decision.message)
+            if decision.payload:
+                text_parts.extend(value for value in decision.payload.values() if isinstance(value, str))
+        return text_parts
 
     @staticmethod
     def _extract_text_from_reply(agent_reply: AgentReply) -> str:

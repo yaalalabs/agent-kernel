@@ -13,9 +13,10 @@ from ..guardrail.guardrail import InputGuardrailFactory, OutputGuardrailFactory
 from ..sandbox.hooks import SandboxPreHookFactory
 from .base import Agent, Session
 from .builder import SessionStoreBuilder
-from .event import MessageEnd, ReasoningEnd, StepEnd, StreamEvent, TextDelta, ToolCallEnd
+from .event import MessageEnd, ReasoningEnd, RunPaused, StepEnd, StreamEvent, TextDelta, ToolCallEnd
 from .hooks import StreamHalt
 from .model import (
+    AgentPausedReplyAny,
     AgentReply,
     AgentReplyAny,
     AgentReplyImage,
@@ -26,9 +27,11 @@ from .model import (
     AgentRequestFile,
     AgentRequestImage,
     AgentRequestText,
+    AgentResumeRequestAny,
     StreamChunk,
 )
 from .multimodal import MultimodalPreHookFactory
+from .paused_run import PausedRun, PausedRunState
 from .session import SessionStore
 
 # Volatile-cache key under which the run's acting user is published, so hooks and tools can read
@@ -244,7 +247,10 @@ class Runtime:
             # Validation to ensure the correct type is returned from the hooks. This is important to avoid runtime errors.
             if isinstance(reply, list):
                 for item in reply:
-                    if not isinstance(item, (AgentRequestText, AgentRequestFile, AgentRequestImage, AgentRequestAny, AgentRequestAttachmentRef)):
+                    if not isinstance(
+                        item,
+                        (AgentRequestText, AgentRequestFile, AgentRequestImage, AgentRequestAny, AgentRequestAttachmentRef, AgentResumeRequestAny),
+                    ):
                         raise TypeError(
                             f"PreHook '{hook.name()}' returned an invalid type in the requests list. Expected AgentRequest, got {type(item)}"
                         )
@@ -253,6 +259,122 @@ class Runtime:
             requests = reply
 
         return requests
+
+    @staticmethod
+    def _extract_resume(requests: list[AgentRequest]) -> Optional[AgentResumeRequestAny]:
+        """
+        Returns the resume request in a request list, or None when it carries no decisions.
+        :param requests: The request list to inspect.
+        :return: The first AgentResumeRequestAny in the list, or None.
+        """
+        return next((req for req in requests if isinstance(req, AgentResumeRequestAny)), None)
+
+    def _validate_resume(self, agent: Agent, session: Session, resume: AgentResumeRequestAny) -> tuple[Agent, PausedRun]:
+        """
+        Resolves and validates the paused run a resume request answers, before anything acts on it.
+
+        Runs here rather than in the adapter because every adapter wraps its body in one `except
+        Exception` that returns a text reply, so a failure raised inside would surface as a generic
+        error instead of naming what went wrong. These four checks also need no framework knowledge,
+        so an adapter-side implementation would be written four times.
+
+        :param agent: The agent named on the request, used only to reject a conflicting one.
+        :param session: The session holding the paused-run records.
+        :param resume: The decisions to validate.
+        :return: The agent resolved from the record, and the record itself.
+        :raises ValueError: If no run matches, a decision names an unknown interruption, the named
+            agent disagrees with the record, or the record's agent is no longer registered.
+        """
+        decision_ids = [decision.id for decision in resume.decisions]
+        record = PausedRunState.get(session, resume.run_id) if resume.run_id else PausedRunState.find_by_interruption(session, decision_ids)
+        if record is None:
+            held = len(PausedRunState.list(session))
+            raise ValueError(
+                f"No paused run in session '{session.id}' matches this resume "
+                f"(run_id={resume.run_id!r}, decisions={decision_ids}); the session holds {held}. "
+                f"A run_id that disagrees with its decisions, and decisions spanning two runs, fail the same way."
+            )
+        known = {interruption.id for interruption in record.interruptions}
+        unknown = sorted(set(decision_ids) - known)
+        if unknown:
+            raise ValueError(f"Resume for run '{record.id}' names unknown interruption(s): {unknown}. The run is waiting on: {sorted(known)}")
+
+        if agent.name != record.agent:
+            raise ValueError(
+                f"Resume names agent '{agent.name}' but paused run '{record.id}' belongs to '{record.agent}'. "
+                f"The agent is resolved from the record; an explicit one that disagrees is an error, not an override."
+            )
+
+        resolved = self.agents().get(record.agent)
+        if resolved is None:
+            raise ValueError(f"Paused run '{record.id}' belongs to agent '{record.agent}', which is no longer registered.")
+        if not resolved.runner.supports_pause:
+            raise ValueError(f"Runner '{resolved.runner.name}' for agent '{resolved.name}' does not support resuming a paused run.")
+        return resolved, record
+
+    def _clear_leftover_record(self, session: Session, record: PausedRun, paused_again: bool) -> None:
+        """
+        Removes a record a resumed run left behind, rather than warning that the adapter forgot it.
+
+        Clearing is otherwise the adapter's, because a resume can pause again and the adapter writes
+        the new record. Narrowed to a run that did *not* pause again, no new record is in play, so
+        one still present can only be the resumed one — and removing it means the next turn cannot
+        inherit a phantom pause.
+
+        :param session: The session holding the record.
+        :param record: The record that was resumed.
+        :param paused_again: Whether the resumed run produced another pause.
+        """
+        if paused_again:
+            return
+        if PausedRunState.get(session, record.id) is None:
+            return
+        self._log.debug(f"Session '{session.id}': clearing paused run '{record.id}' left behind by a resumed run.")
+        PausedRunState.clear(session, record.id)
+
+    def _warn_resume_dropped(self, agent: Agent, session: Session) -> None:
+        """
+        Warns that a pre-hook removed the decisions, so this run proceeds as an ordinary turn.
+        :param agent: The agent the run was for.
+        :param session: The session whose pause is still open.
+        """
+        self._log.warning(
+            f"Session '{session.id}', agent '{agent.name}': a resume decision was dropped by the pre-hook chain; "
+            f"this run is proceeding as a new turn and the pause is still open."
+        )
+
+    def _warn_pause_dropped(self, agent: Agent, session: Session, hook_name: str) -> None:
+        """
+        Warns that a post-hook filtered a pause out of a stream, so the client was never told.
+
+        The hook wins, as it does for any other event: Agent Kernel does not decide which event
+        types a hook may filter. The paused run itself is untouched, so the decision is still
+        answerable — the caller simply does not know it is owed.
+
+        :param agent: The agent the run was for.
+        :param session: The session whose pause is still open.
+        :param hook_name: The post-hook that dropped the event.
+        """
+        self._log.warning(
+            f"Session '{session.id}', agent '{agent.name}': a pause was dropped by post-hook '{hook_name}', "
+            f"so the client will not learn a decision is owed. The paused run itself is untouched."
+        )
+
+    def _warn_resume_halted(self, agent: Agent, session: Session) -> None:
+        """
+        Warns that a pre-hook ended a resume before the decision reached the runner.
+
+        The only halt with a durable consequence: every other costs a turn and leaves nothing
+        behind, whereas this leaves a record in the store while the client receives a reply that
+        reads like completion.
+
+        :param agent: The agent the run was for.
+        :param session: The session whose pause is still open.
+        """
+        self._log.warning(
+            f"Session '{session.id}', agent '{agent.name}': a pre-hook halted a resume, so the decision was accepted "
+            f"but never delivered. The paused run is untouched and can be answered again."
+        )
 
     async def run(self, agent: Agent, session: Session, requests: list[AgentRequest], acting_user_id: Optional[str] = None) -> AgentReply:
         """
@@ -275,15 +397,27 @@ class Runtime:
                 if acting_user_id:
                     session.get_volatile_cache().set(ACTING_USER_CACHE_KEY, acting_user_id)
                 with agent._activate():
+                    arrived_with_resume = self._extract_resume(requests) is not None
                     requests_or_reply = await self._prepare_requests(agent, session, requests)
                     if isinstance(requests_or_reply, (AgentReplyText, AgentReplyImage, AgentReplyAny)):
                         self._log.debug(f"PreHook halted execution for agent '{agent.name}' by hook chain with reply: {requests_or_reply}")
+                        if arrived_with_resume:
+                            self._warn_resume_halted(agent, session)
                         return requests_or_reply
                     requests = requests_or_reply
 
+                    resume = self._extract_resume(requests)
+                    if arrived_with_resume and resume is None:
+                        self._warn_resume_dropped(agent, session)
+
                     self._log.debug(f"Running agent '{agent.name}' with requests: {requests}")
 
-                    reply = await agent.runner.run(agent, session, requests)
+                    if resume is not None:
+                        agent, record = self._validate_resume(agent, session, resume)
+                        reply = await agent.runner.resume(agent, session, requests, resume.decisions, record)
+                        self._clear_leftover_record(session, record, isinstance(reply, AgentPausedReplyAny))
+                    else:
+                        reply = await agent.runner.run(agent, session, requests)
 
                     post_hooks = self._get_system_post_hooks() + agent.post_hooks  # system post-hooks are always executed first
                     for hook in post_hooks:
@@ -325,20 +459,35 @@ class Runtime:
                 if acting_user_id:
                     session.get_volatile_cache().set(ACTING_USER_CACHE_KEY, acting_user_id)
                 with agent._activate():
+                    arrived_with_resume = self._extract_resume(requests) is not None
                     requests_or_reply = await self._prepare_requests(agent, session, requests)
                     if isinstance(requests_or_reply, (AgentReplyText, AgentReplyImage, AgentReplyAny)):
                         self._log.debug(f"PreHook halted streaming for agent '{agent.name}' by hook chain with reply: {requests_or_reply}")
+                        if arrived_with_resume:
+                            self._warn_resume_halted(agent, session)
                         yield StreamChunk(error=str(requests_or_reply), done=True)
                         return
                     requests = requests_or_reply
 
+                    resume = self._extract_resume(requests)
+                    if arrived_with_resume and resume is None:
+                        self._warn_resume_dropped(agent, session)
+
                     self._log.debug(f"Streaming agent '{agent.name}' with requests: {requests}")
+
+                    record = None
+                    if resume is not None:
+                        agent, record = self._validate_resume(agent, session, resume)
+                        events = agent.runner.resume_stream(agent, session, requests, resume.decisions, record)
+                    else:
+                        events = agent.runner.stream(agent, session, requests)
 
                     post_hooks = self._get_system_post_hooks() + agent.post_hooks
                     boundaries = StreamBoundaryTracker()
+                    paused = False
 
                     try:
-                        async for ev in agent.runner.stream(agent, session, requests):
+                        async for ev in events:
                             for hook in post_hooks:
                                 result = await hook.on_stream_event(session, requests, agent, ev)
                                 if result is None:
@@ -356,10 +505,26 @@ class Runtime:
                             else:
                                 emitted = [ev]
 
+                            if isinstance(ev, RunPaused) and not emitted:
+                                self._warn_pause_dropped(agent, session, hook.name())
+
                             for event in emitted:
+                                if isinstance(event, RunPaused):
+                                    paused = True
                                 chunk = StreamChunk(delta=event.content if isinstance(event, TextDelta) else None, event=event)
                                 boundaries.observe(event)
                                 yield chunk
+
+                            if paused:
+                                # A pause is a valid outcome, not an invalidated partial, so the
+                                # boundaries the stream left open are closed and the session is
+                                # stored — unlike the StreamHalt path below.
+                                for closing in boundaries.drain():
+                                    yield StreamChunk(event=closing)
+                                break
+
+                        if record is not None:
+                            self._clear_leftover_record(session, record, paused)
 
                         self.sessions().store(session)
                         yield StreamChunk(done=True)
