@@ -19,8 +19,15 @@ import tool
 
 
 @pytest.fixture(autouse=True)
-def reset_state():
-    """Every test gets a clean slate: no leftover requests/offers/intakes from other tests."""
+def reset_state(monkeypatch):
+    """Every test gets a clean slate: no leftover requests/offers/intakes from other tests.
+
+    Also forces WhatsApp dispatch into dummy mode for the duration of the test, regardless of
+    what WHATSAPP_ENABLED/AK_WHATSAPP__* are set to in the environment (e.g. via .env). These
+    are deterministic, LLM-free tests that should never make a real network call or send a
+    real WhatsApp message.
+    """
+    monkeypatch.setattr(tool, "WHATSAPP_ENABLED", False)
     tool._STATE.clear()
     tool._INTAKE_BUFFER.clear()
     tool._seed_demo_data()
@@ -86,8 +93,10 @@ class TestIntakeExtraction:
 
     def test_transport_flag_detected_for_offer_that_can_deliver(self):
         _, record = submit(
-            message_type="offer", raw_message="We have 50 food packs and can deliver in Colombo",
-            resource_type="food packs", location="Colombo",
+            message_type="offer",
+            raw_message="We have 50 food packs and can deliver in Colombo",
+            resource_type="food packs",
+            location="Colombo",
         )
         assert record["transport_flag"] is True
 
@@ -160,14 +169,30 @@ class TestResourceMatching:
         # what submit_intake would produce for "tents" too - see TestIntakeExtraction's
         # canonicalization tests for that mapping.
         tool._region_store("colombo")["offers"]["offer-near"] = {
-            "id": "offer-near", "region": "colombo", "resource_type": "shelter", "quantity": 10,
-            "unit": "units", "donor_name": "Near Donor", "donor_phone": "+9400", "status": "open",
-            "created_at": "now", "transport_flag": None, "history": [],
+            "id": "offer-near",
+            "region": "colombo",
+            "resource_type": "shelter",
+            "quantity": 10,
+            "unit": "units",
+            "donor_name": "Near Donor",
+            "donor_phone": "+9400",
+            "status": "open",
+            "created_at": "now",
+            "transport_flag": None,
+            "history": [],
         }
         tool._region_store("ratnapura")["offers"]["offer-far"] = {
-            "id": "offer-far", "region": "ratnapura", "resource_type": "shelter", "quantity": 10,
-            "unit": "units", "donor_name": "Far Donor", "donor_phone": "+9401", "status": "open",
-            "created_at": "now", "transport_flag": None, "history": [],
+            "id": "offer-far",
+            "region": "ratnapura",
+            "resource_type": "shelter",
+            "quantity": 10,
+            "unit": "units",
+            "donor_name": "Far Donor",
+            "donor_phone": "+9401",
+            "status": "open",
+            "created_at": "now",
+            "transport_flag": None,
+            "history": [],
         }
         intake_id, _ = submit(resource_type="tents", location="Colombo", quantity=10)
         result = json.loads(tool.match_resources(intake_id))
@@ -177,7 +202,9 @@ class TestResourceMatching:
     def test_cross_region_match_surfaces_when_no_local_offer(self):
         # No "medicine" offer in Matara at all - the only one is in Ratnapura (seeded, can deliver).
         intake_id, _ = submit(
-            resource_type="medicine", location="Matara", quantity=5,
+            resource_type="medicine",
+            location="Matara",
+            quantity=5,
             raw_message="Elderly couple needs medicine urgently in Matara, no transport",
         )
         result = json.loads(tool.match_resources(intake_id))
@@ -190,12 +217,22 @@ class TestResourceMatching:
 
     def test_no_transport_requester_with_no_compatible_donor_scores_lower(self):
         tool._region_store("kalutara")["offers"]["offer-pickup-only"] = {
-            "id": "offer-pickup-only", "region": "kalutara", "resource_type": "blankets",
-            "quantity": 20, "unit": "units", "donor_name": "Pickup Donor", "donor_phone": "+9402",
-            "status": "open", "created_at": "now", "transport_flag": False, "history": [],
+            "id": "offer-pickup-only",
+            "region": "kalutara",
+            "resource_type": "blankets",
+            "quantity": 20,
+            "unit": "units",
+            "donor_name": "Pickup Donor",
+            "donor_phone": "+9402",
+            "status": "open",
+            "created_at": "now",
+            "transport_flag": False,
+            "history": [],
         }
         intake_id, _ = submit(
-            resource_type="blankets", location="matara", quantity=5,
+            resource_type="blankets",
+            location="matara",
+            quantity=5,
             raw_message="Need blankets in Matara, no vehicle to travel",
         )
         result = json.loads(tool.match_resources(intake_id))
@@ -294,7 +331,9 @@ class TestMergeBehavior:
         low_score = first_result["record"]["urgency_score"]
 
         second_id, _ = submit(
-            resource_type="medicine", location="galle", quantity=2,
+            resource_type="medicine",
+            location="galle",
+            quantity=2,
             raw_message="Pregnant woman needs medicine urgently",
         )
         tool.score_urgency(second_id)
@@ -309,7 +348,9 @@ class TestMergeBehavior:
         assert first_result["record"]["transport_flag"] is False  # no keyword in default message
 
         second_id, _ = submit(
-            resource_type="medicine", location="galle", quantity=2,
+            resource_type="medicine",
+            location="galle",
+            quantity=2,
             raw_message="Need medicine in Galle, no vehicle available",
         )
         second_result = json.loads(tool.finalize_record(second_id, duplicate_id=first_record_id))
@@ -346,7 +387,9 @@ class TestDispatchNotification:
 
     def test_dispatch_flags_cross_region_matches(self):
         intake_id, _ = submit(
-            resource_type="medicine", location="matara", quantity=5,
+            resource_type="medicine",
+            location="matara",
+            quantity=5,
             raw_message="Elderly couple needs medicine urgently in Matara, no transport",
         )
         matches = json.loads(tool.match_resources(intake_id))
@@ -373,7 +416,9 @@ class TestDispatchNotification:
 class TestEndToEndToolWorkflow:
     def test_full_pipeline_need_to_dispatch(self):
         intake_id, _ = submit(
-            resource_type="drinking water", location="Galle", quantity=100,
+            resource_type="drinking water",
+            location="Galle",
+            quantity=100,
             raw_message="Need drinking water in Galle",
         )
         urgency = json.loads(tool.score_urgency(intake_id))
@@ -398,3 +443,129 @@ class TestEndToEndToolWorkflow:
         # Both records are now "matched", not "fulfilled", so they still show up as open.
         assert record_id in matched_ids
         assert best_match_id in matched_ids
+
+
+# ----------------------------------------------------------------------------------
+# Regression tests for PR review findings
+# ----------------------------------------------------------------------------------
+class TestReviewRegressions:
+    def test_offer_side_matching_penalizes_stranded_requester_with_non_delivering_donor(self):
+        """An offer matched against a no-transport need must not read as 'no constraint'."""
+        need_intake, _ = submit(
+            resource_type="medicine",
+            location="Matara",
+            quantity=5,
+            unit="kits",
+            raw_message="Need medicine in Matara, no transport",
+        )
+        need_id = json.loads(tool.finalize_record(need_intake))["record"]["id"]
+
+        offer_intake, offer = submit(
+            message_type="offer",
+            resource_type="medicine",
+            location="Ratnapura",
+            quantity=30,
+            unit="kits",
+            raw_message="We have 30 medicine kits in Ratnapura",
+        )
+        assert offer["transport_flag"] is False  # donor cannot deliver
+
+        matches = json.loads(tool.match_resources(offer_intake))["matches"]
+        match = next(m for m in matches if m["id"] == need_id)
+        assert "no transport constraint" not in match["transport_note"]
+        assert "confirm delivery" in match["transport_note"]
+
+    def test_offer_side_matching_rewards_delivering_donor(self):
+        need_intake, _ = submit(
+            resource_type="medicine",
+            location="Matara",
+            quantity=5,
+            unit="kits",
+            raw_message="Need medicine in Matara, no transport",
+        )
+        need_id = json.loads(tool.finalize_record(need_intake))["record"]["id"]
+
+        offer_intake, offer = submit(
+            message_type="offer",
+            resource_type="medicine",
+            location="Ratnapura",
+            quantity=30,
+            unit="kits",
+            raw_message="We have 30 medicine kits in Ratnapura and can deliver",
+        )
+        assert offer["transport_flag"] is True
+
+        matches = json.loads(tool.match_resources(offer_intake))["matches"]
+        match = next(m for m in matches if m["id"] == need_id)
+        assert "can deliver" in match["transport_note"]
+
+    def test_matched_records_are_not_rematched_or_treated_as_duplicates(self):
+        intake_id, _ = submit(quantity=100)
+        matches = json.loads(tool.match_resources(intake_id))["matches"]
+        need_id = json.loads(tool.finalize_record(intake_id))["record"]["id"]
+        offer_id = matches[0]["id"]
+        tool.dispatch_notification(record_id=need_id, matched_id=offer_id)
+
+        second_intake, _ = submit(quantity=100)
+        second_matches = json.loads(tool.match_resources(second_intake))["matches"]
+        assert offer_id not in {m["id"] for m in second_matches}
+        assert json.loads(tool.check_pending_duplicates(second_intake))["duplicate_count"] == 0
+
+    def test_unit_mismatch_lowers_score_and_is_noted(self):
+        intake_id, _ = submit(resource_type="medicine", location="Galle", quantity=10, unit="liters")
+        tool._region_store("galle")["offers"]["offer-kits"] = {
+            "id": "offer-kits",
+            "message_type": "offer",
+            "region": "galle",
+            "resource_type": "medicine",
+            "quantity": 10,
+            "unit": "kits",
+            "donor_name": "Kit Donor",
+            "donor_phone": "+9400",
+            "status": "open",
+            "created_at": "now",
+            "transport_flag": None,
+            "history": [],
+        }
+        tool._region_store("galle")["offers"]["offer-liters"] = {
+            **tool._region_store("galle")["offers"]["offer-kits"],
+            "id": "offer-liters",
+            "unit": "liters",
+        }
+        matches = {m["id"]: m for m in json.loads(tool.match_resources(intake_id))["matches"]}
+        assert matches["offer-kits"]["match_score"] < matches["offer-liters"]["match_score"]
+        assert "unit mismatch" in matches["offer-kits"]["transport_note"]
+
+    def test_get_region_status_does_not_create_region(self):
+        json.loads(tool.get_region_status("Jaffna"))
+        assert "jaffna" not in tool._STATE
+
+    def test_finalize_record_prunes_intake_buffer(self):
+        intake_id, _ = submit()
+        assert intake_id in tool._INTAKE_BUFFER
+        tool.finalize_record(intake_id)
+        assert intake_id not in tool._INTAKE_BUFFER
+
+    def test_dispatch_to_need_without_phone_does_not_fall_back_to_directory_volunteer(self):
+        offer_intake, _ = submit(
+            message_type="offer",
+            resource_type="drinking water",
+            location="Galle",
+            raw_message="We have water in Galle",
+            contact_phone="+9411",
+        )
+        offer_id = json.loads(tool.finalize_record(offer_intake))["record"]["id"]
+        need_intake, _ = submit(contact_phone="")
+        need_id = json.loads(tool.finalize_record(need_intake))["record"]["id"]
+
+        result = json.loads(tool.dispatch_notification(record_id=offer_id, matched_id=need_id))
+        assert result.get("notified_phone") in (None, "", "N/A")
+        assert not any(v["name"] == result.get("notified_name") for v in tool.VOLUNTEER_DIRECTORY)
+
+    def test_resource_synonyms_match_whole_words_only(self):
+        # word-boundary matching: a synonym only matches as a whole word
+        assert tool._canonical_resource_type("waterproof tarps") != "drinking water"
+        assert tool._canonical_resource_type("food supplies for the family") == "food packs"
+
+    def test_no_real_phone_numbers_committed(self):
+        assert "+94760048658" not in open(tool.__file__, encoding="utf-8").read()

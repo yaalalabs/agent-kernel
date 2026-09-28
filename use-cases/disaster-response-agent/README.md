@@ -119,16 +119,19 @@ consistent and independently testable (see `tests/test_tool_layer.py`).
   to one conversation.
 - Current implementation: an in-process Python dict, fine for a local demo but lost on restart
   and not shared across multiple running instances.
-- **Ready for persistence**: the architecture is designed to swap `_STATE` for Agent Kernel's
-  Redis/DynamoDB/CosmosDB-backed session storage (see `agent-kernel/examples/memory`), keyed by
-  region instead of by session id - so the same shared "disaster state" would survive restarts
-  and be visible to every process/instance handling traffic for that disaster. This hasn't been
-  wired up yet (see Limitations), but nothing in the agent/tool split needs to change to do it.
+- **Ready for persistence**: the architecture is designed to swap `_STATE` for a separate,
+  region-keyed disaster-state repository backed by a persistent store (Redis/DynamoDB/Cosmos
+  DB) - so the same shared "disaster state" would survive restarts and be visible to every
+  process/instance handling traffic for that disaster. This is a distinct store from Agent
+  Kernel's built-in session storage (see `agent-kernel/examples/memory`), which would stay
+  scoped per conversation for normal chat context - the two aren't a drop-in swap for each
+  other. This hasn't been wired up yet (see Limitations), but nothing in the agent/tool split
+  needs to change to do it.
 
 ## SDG Alignment
 
 - **SDG 11 - Sustainable Cities and Communities**: helps communities coordinate emergency
-  resources and respond to hazards faster, with less duplicated effort.
+  resources and respond to hazards faster, with less duplicated effort, which in turn helps
   reduce disaster-related economic loss and disruption to essential services.
 - **SDG 13 - Climate Action**: floods and other climate-related disasters are the direct
   scenario this project targets; faster, better-coordinated relief response is part of climate
@@ -234,7 +237,7 @@ no real values) is tracked in the repo. A real environment variable you've alrea
 
 All agents run on Google's **Gemini API** via LiteLLM's native Gemini integration (the OpenAI
 Agents SDK's officially supported way to use non-OpenAI models) - nothing else in `tool.py`,
-`demo.py`/`cli.py`, or `api.py` needs to change. `GEMINI_API_KEY` is required; `agent.py` raises
+`demo.py`, or `api.py` needs to change. `GEMINI_API_KEY` is required; `agent.py` raises
 a clear error at startup if it's missing.
 
 This deliberately does **not** use Gemini's OpenAI-compatible endpoint
@@ -289,16 +292,15 @@ messages or check your quota/tier at https://aistudio.google.com/apikey.
   ```bash
   uv run pytest tests/test_agent_e2e.py -v
   ```
-- Run everything: `uv run pytest -v`. Comparison mode for the test harness (`fuzzy` by default)
-  is configured in `test-config.yaml`.
+- Run everything: `uv run pytest -v`. The test harness's comparison mode (`fuzzy` by default,
+  used only if you add tests that call `test_client.expect([...])` directly) is configured in
+  `test-config.yaml`.
 
 ## Run locally via CLI
 
 ```bash
 python demo.py
 ```
-
-(`cli.py` is kept as an identical alias, for anyone who already has muscle memory for it.)
 
 Demo scenarios to try:
 ```
@@ -369,8 +371,7 @@ life of the process, by design.
 agent.py          - the three agents (intake, priority & matching, dedup & dispatch) + handoffs
 tool.py           - dummy data store, urgency/distance/transport scoring, matching, dedup, dispatch tools
 demo.py           - local CLI entrypoint (canonical name; same AGENTS as api.py)
-cli.py            - identical alias for demo.py
-api.py            - REST API entrypoint (same AGENTS as demo.py/cli.py)
+api.py            - REST API entrypoint (same AGENTS as demo.py)
 config.yaml       - Agent Kernel session/logging/API config
 test-config.yaml  - Agent Kernel test harness config (comparison mode)
 tests/            - test_tool_layer.py (deterministic) + test_agent_e2e.py (live, needs a key)
@@ -382,7 +383,11 @@ SPEC.md           - full agent/tool/memory/testing specification
 - Region distances (`REGION_DISTANCE_KM` in `tool.py`) are a small, hand-entered table for the
   regions used in this demo, not a live geocoding/routing API.
 - Disaster-response state (`_STATE`) is in-process memory - it resets on restart and isn't
-  shared across multiple running instances (see "Memory Design" above).
+  shared across multiple running instances (see "Memory Design" above). `finalize_record` locks
+  its own read-modify-write against concurrent agent-runner threads in this process, but
+  `check_pending_duplicates` and `finalize_record` are still two separate tool calls the agent
+  chooses to make, so a true cross-request atomic dedup guarantee needs a persistent store with
+  its own transactional semantics, not just a swap of the backing dict.
 - `VOLUNTEER_DIRECTORY` is dummy seed data, not a real donor/volunteer registry.
 - WhatsApp dispatch defaults to simulated/dummy mode; real sends require Meta Cloud API
   credentials and, for cold outbound, a pre-approved message template (see above).

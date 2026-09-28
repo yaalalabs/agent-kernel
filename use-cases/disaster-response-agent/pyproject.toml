@@ -5,7 +5,7 @@ description = "Multi-agent Disaster Response & Resource Coordination Agent built
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[cli,openai,api]>=0.6.1",
+    "agentkernel[cli,openai,api]>=0.8.1",
     "openai-agents[litellm]>=0.18.0",
     "python-dotenv>=1.0.0",
     "httpx>=0.27.0",
@@ -13,7 +13,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "agentkernel[test]>=0.6.1",
+    "agentkernel[test]>=0.8.1",
     "black==26.5.1",
     "isort>=5.0.0",
     "mypy>=1.0.0",
@@ -21,6 +21,13 @@ dev = [
 
 [tool.uv]
 package = false
+
+[tool.pytest.ini_options]
+# `tests/` has no __init__.py, so under pytest's default "prepend" import mode the directory
+# added to sys.path for a test file is tests/ itself, not the project root - `import tool`
+# then fails. Adding the project root to pythonpath fixes this for `uv run pytest` (the
+# console-script entry point, unlike `python -m pytest`, doesn't put the cwd on sys.path).
+pythonpath = ["."]
 
 [tool.isort]
 profile = "black"

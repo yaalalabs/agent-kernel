@@ -67,10 +67,14 @@ logic is plain Python so it's consistent and testable independent of the model.
 - Current implementation: in-process Python dict (`_STATE`), which is fine for a local demo but
   is lost when the process restarts and can't be shared across multiple running instances.
 - Production-ready path (not yet wired up, but the architecture is ready for it): swap `_STATE`
-  for Agent Kernel's Redis/DynamoDB/CosmosDB-backed session storage (see
-  `agent-kernel/examples/memory`), keyed by region instead of by session id, so the same shared
-  "disaster state" survives restarts and is visible to every process/instance handling traffic
-  for that disaster.
+  for a separate, region-keyed disaster-state repository backed by a persistent store (Redis,
+  DynamoDB, or Cosmos DB), so the same shared "disaster state" survives restarts and is visible
+  to every process/instance handling traffic for that disaster. This is a distinct store from
+  Agent Kernel's built-in session storage (see `agent-kernel/examples/memory`), which stays
+  keyed and scoped per conversation for normal chat context - the two aren't a drop-in swap for
+  each other, and the persistence layer would also need to define atomic cross-session
+  duplicate-check/merge semantics that `_STATE` currently only guarantees within a process
+  (see `finalize_record`'s locking note in `tool.py`).
 
 ## Agent Kernel Requirements
 
@@ -80,7 +84,7 @@ logic is plain Python so it's consistent and testable independent of the model.
   `GEMINI_API_KEY`) rather than Gemini's OpenAI-compatible endpoint - see `agent.py` and
   `README.md` for why.
 - Tools are bound with `OpenAIToolBuilder.bind(...)`.
-- Local CLI entry point (`demo.py` / `cli.py`) uses `agentkernel.cli.CLI`.
+- Local CLI entry point (`demo.py`) uses `agentkernel.cli.CLI`.
 - REST API entry point (`api.py`) uses `agentkernel.api.RESTAPI`.
 
 ## Local Execution
@@ -99,7 +103,8 @@ logic is plain Python so it's consistent and testable independent of the model.
 - `tests/test_agent_e2e.py` - an end-to-end conversational test that drives the real agents
   (via Agent Kernel's built-in test harness, `agentkernel.test.Test`) through the full pipeline.
   Requires a live `GEMINI_API_KEY` and is skipped automatically if one isn't set.
-- `test-config.yaml` configures the test harness comparison mode (`fuzzy`).
+- `test-config.yaml` configures the test harness comparison mode (`fuzzy` by default; only
+  used if a test calls `test_client.expect([...])` directly - see the comments in that file).
 
 ## Expected Workflow
 
@@ -118,8 +123,8 @@ logic is plain Python so it's consistent and testable independent of the model.
 ## Deployment
 
 - Not yet deployed; this is a local/demo-stage project for the mini-competition.
-- The architecture keeps agent/tool logic independent of the entry point (`demo.py`/`cli.py`
-  and `api.py` both just register the same `AGENTS`), so it's ready to be wired into an AWS
+- The architecture keeps agent/tool logic independent of the entry point (`demo.py` and
+  `api.py` both just register the same `AGENTS`), so it's ready to be wired into an AWS
   Lambda or Azure Function entry point later, following the pattern in
   `agent-kernel/use-cases/waste-sorting-assistant/deploy` and `agent-kernel/examples/api`.
 - WhatsApp integration already exists in `tool.py` (`dispatch_notification`) behind a

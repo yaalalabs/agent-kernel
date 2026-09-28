@@ -11,6 +11,5 @@ if [[ ${1-} != "local" ]]; then
   uv sync --all-extras
 else
   # For local development against a locally-built agentkernel wheel
-  uv sync --find-links ../agent-kernel/ak-py/dist --all-extras
-  uv pip install --force-reinstall --no-deps --no-index --find-links ../agent-kernel/ak-py/dist agentkernel[api,cli,openai,test] || true
+  uv sync --find-links ../../ak-py/dist --upgrade-package agentkernel --reinstall-package agentkernel --all-extras
 fi

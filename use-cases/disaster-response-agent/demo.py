@@ -2,7 +2,6 @@
 
 This is the canonical local entry point, matching the naming convention used by other
 Agent Kernel use-case examples (see agent-kernel/use-cases/waste-sorting-assistant/demo.py).
-cli.py is kept as an alias for anyone who already has muscle memory for it.
 
 Usage:
     python demo.py

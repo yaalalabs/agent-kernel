@@ -14,7 +14,7 @@ in one turn:
   3. dedup_dispatch_agent    checks memory for existing pending records, creates/merges, and
                               dispatches a (dummy) WhatsApp notification to the matched party
 
-`AGENTS` is imported by cli.py and api.py so the exact same agent definitions run both
+`AGENTS` is imported by demo.py and api.py so the exact same agent definitions run both
 locally on the CLI and behind the REST API.
 """
 
@@ -30,16 +30,6 @@ from dotenv import load_dotenv
 # .env.example and the "Keeping your environment variables in one place" section in README.md.
 # Real environment variables (already set with $env:/export) still take priority over .env.
 load_dotenv()
-
-from tool import (
-    check_pending_duplicates,
-    dispatch_notification,
-    finalize_record,
-    get_region_status,
-    match_resources,
-    score_urgency,
-    submit_intake,
-)
 
 # ----------------------------------------------------------------------------------
 # LLM provider: Gemini only.
@@ -60,10 +50,19 @@ from tool import (
 # spurious auth/model errors), while the native Gemini API - which is what LiteLLM calls -
 # works fine with either key format.
 # ----------------------------------------------------------------------------------
-from agents import ModelSettings, set_tracing_disabled
+from agents import ModelSettings, retry_policies, set_tracing_disabled
 from agents.extensions.models.litellm_model import LitellmModel
 from agents.retry import ModelRetryBackoffSettings, ModelRetrySettings
-from agents import retry_policies
+
+from tool import (
+    check_pending_duplicates,
+    dispatch_notification,
+    finalize_record,
+    get_region_status,
+    match_resources,
+    score_urgency,
+    submit_intake,
+)
 
 set_tracing_disabled(True)  # tracing uploads to OpenAI's dashboard, which Gemini can't receive
 

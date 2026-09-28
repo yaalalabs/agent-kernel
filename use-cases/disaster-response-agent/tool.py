@@ -19,11 +19,20 @@ from __future__ import annotations
 import json
 import os
 import re
+import threading
 import uuid
 from datetime import datetime, timezone
 from typing import Any
 
 import httpx
+
+# Guards the read-modify-write sections of finalize_record (merge quantity into an existing
+# record, or create+store a new one) against races between concurrent agent-runner threads
+# hitting the same process-global _STATE. This does not make check_pending_duplicates ->
+# finalize_record atomic as a pair (those remain two separate tool calls the agent chooses to
+# make), but it does stop the specific "existing['quantity'] += ..." race and duplicate-key
+# writes within finalize_record itself. See README.md Limitations for the remaining caveat.
+_STATE_LOCK = threading.RLock()
 
 # --------------------------------------------------------------------------------------
 # WhatsApp Cloud API config (real integration for dispatch_notification).
@@ -58,8 +67,11 @@ def _send_whatsapp_message(to_number: str, text: str) -> dict[str, Any]:
     if not WHATSAPP_ENABLED:
         return {"sent": False, "reason": "dummy mode (WHATSAPP_ENABLED not set) - message simulated only"}
     if not (WHATSAPP_ACCESS_TOKEN and WHATSAPP_PHONE_NUMBER_ID):
-        return {"sent": False, "reason": "WHATSAPP_ENABLED=true but AK_WHATSAPP__ACCESS_TOKEN / "
-                                          "AK_WHATSAPP__PHONE_NUMBER_ID are not set"}
+        return {
+            "sent": False,
+            "reason": "WHATSAPP_ENABLED=true but AK_WHATSAPP__ACCESS_TOKEN / "
+            "AK_WHATSAPP__PHONE_NUMBER_ID are not set",
+        }
     if not to_number:
         return {"sent": False, "reason": "No phone number on file for the recipient"}
 
@@ -85,58 +97,59 @@ def _send_whatsapp_message(to_number: str, text: str) -> dict[str, Any]:
     except Exception as e:  # noqa: BLE001 - surface any transport error back through the tool result
         return {"sent": False, "reason": f"Error sending WhatsApp message: {e}"}
 
+
 # --------------------------------------------------------------------------------------
 # Dummy "database" of volunteers / donors who can be dispatched to fulfil a need.
 # In production this would come from a CRM, spreadsheet, or registration system.
 #
-# All phone numbers below (and on the seeded offers further down) are set to the SAME real,
-# WhatsApp-Cloud-API-verified test number so that any match - same-region or cross-region -
-# actually dispatches successfully while WHATSAPP_ENABLED=true. Meta's test sandbox only
-# allows sending to numbers explicitly added as verified test recipients; distinct fake
-# numbers per donor look nicer but will silently fail to send. Swap these for real donor/
-# volunteer numbers (added as additional verified test recipients, or in production once
-# past sandbox mode) as you onboard them.
+# All phone numbers below (and on the seeded offers further down) are an obvious, non-routable
+# placeholder (+940000000000) - not a real number. With WHATSAPP_ENABLED=true, Meta's Cloud API
+# will simply reject sends to it (surfaced in whatsapp_send_result.reason), which is the correct
+# default for a public demo repo. To see a real dispatch, replace these with your own number
+# added as a verified test recipient in the Meta Business dashboard sandbox (see README.md),
+# or with real donor/volunteer numbers once past sandbox mode. Do not commit a real personal
+# number here - this file is public.
 # --------------------------------------------------------------------------------------
 VOLUNTEER_DIRECTORY: list[dict[str, Any]] = [
     {
         "id": "vol-001",
         "name": "Nimal Perera",
-        "phone": "+94760048658",
+        "phone": "+940000000000",
         "region": "galle",
         "resource_types": ["drinking water", "water", "food packs", "food"],
     },
     {
         "id": "vol-002",
         "name": "Kamala Silva",
-        "phone": "+94760048658",
+        "phone": "+940000000000",
         "region": "galle",
         "resource_types": ["medicine", "medical supplies", "first aid"],
     },
     {
         "id": "vol-003",
         "name": "Ruwan Fernando",
-        "phone": "+94760048658",
+        "phone": "+940000000000",
         "region": "colombo",
         "resource_types": ["drinking water", "water", "blankets", "clothing"],
     },
     {
         "id": "vol-004",
         "name": "Dilani Jayasuriya",
-        "phone": "+94760048658",
+        "phone": "+940000000000",
         "region": "matara",
         "resource_types": ["food packs", "food", "shelter", "tents"],
     },
     {
         "id": "vol-005",
         "name": "Sunil Rathnayake",
-        "phone": "+94760048658",
+        "phone": "+940000000000",
         "region": "ratnapura",
         "resource_types": ["boats", "rescue", "medicine", "medical supplies"],
     },
     {
         "id": "vol-006",
         "name": "Anusha Wickramasinghe",
-        "phone": "+94760048658",
+        "phone": "+940000000000",
         "region": "kalutara",
         "resource_types": ["drinking water", "water", "food packs", "food"],
     },
@@ -162,8 +175,16 @@ RESOURCE_CATEGORIES: dict[str, dict[str, Any]] = {
     },
     "medicine": {
         "criticality": 5,
-        "synonyms": {"medicine", "medicines", "medical supplies", "medication", "meds",
-                     "first aid", "first aid kit", "first aid kits"},
+        "synonyms": {
+            "medicine",
+            "medicines",
+            "medical supplies",
+            "medication",
+            "meds",
+            "first aid",
+            "first aid kit",
+            "first aid kits",
+        },
     },
     "shelter": {
         "criticality": 4,
@@ -192,20 +213,14 @@ RESOURCE_CATEGORIES: dict[str, dict[str, Any]] = {
 }
 
 # Derived flat lookup kept for score_urgency's simple dict.get(record["resource_type"], ...).
-RESOURCE_CRITICALITY: dict[str, int] = {
-    name: info["criticality"] for name, info in RESOURCE_CATEGORIES.items()
-}
+RESOURCE_CRITICALITY: dict[str, int] = {name: info["criticality"] for name, info in RESOURCE_CATEGORIES.items()}
 DEFAULT_CRITICALITY = 3
 
 # Synonym -> canonical name, sorted longest-phrase-first so a more specific synonym (e.g.
 # "first aid kit") is checked before a shorter one that might otherwise substring-match
 # something unintended.
 _SYNONYM_TO_CANONICAL: list[tuple[str, str]] = sorted(
-    (
-        (synonym, canonical)
-        for canonical, info in RESOURCE_CATEGORIES.items()
-        for synonym in info["synonyms"]
-    ),
+    ((synonym, canonical) for canonical, info in RESOURCE_CATEGORIES.items() for synonym in info["synonyms"]),
     key=lambda pair: len(pair[0]),
     reverse=True,
 )
@@ -215,10 +230,14 @@ def _canonical_resource_type(raw: str) -> str:
     """Map a free-form resource type to its canonical category, so "food" and "food packs"
     (or "water" and "drinking water") are treated as the same thing for matching/scoring.
 
-    Tries an exact synonym match first, then falls back to substring containment (e.g. "food
-    supplies for the family" contains "food"). If nothing matches, returns the normalized raw
-    string unchanged - it just won't benefit from synonym-aware matching, and will only match
-    another intake with the exact same unrecognized phrasing.
+    Tries an exact synonym match first, then falls back to a word-boundary-aware search (e.g.
+    "food supplies for the family" contains the whole word "food"). Deliberately one-directional:
+    a synonym must appear as a whole word inside the input, not the other way around, so a short
+    unrecognized phrase can't be absorbed into an unrelated longer synonym (e.g. "water pump"
+    must not become "drinking water" just because "pump" resembles part of some other synonym).
+    If nothing matches, returns the normalized raw string unchanged - it just won't benefit from
+    synonym-aware matching, and will only match another intake with the exact same unrecognized
+    phrasing.
     """
     text = _normalize(raw)
     if not text:
@@ -227,9 +246,10 @@ def _canonical_resource_type(raw: str) -> str:
         if text == synonym:
             return canonical
     for synonym, canonical in _SYNONYM_TO_CANONICAL:
-        if synonym in text or text in synonym:
+        if re.search(rf"\b{re.escape(synonym)}\b", text):
             return canonical
     return text
+
 
 # Keyword bank used to detect vulnerable-group indicators in free-form text.
 VULNERABLE_KEYWORDS: dict[str, list[str]] = {
@@ -245,13 +265,29 @@ VULNERABLE_KEYWORDS: dict[str, list[str]] = {
 # messages (can the donor deliver it themselves?).
 TRANSPORT_KEYWORDS: dict[str, list[str]] = {
     "no_transport": [
-        "no transport", "no vehicle", "cannot travel", "can't travel", "stranded",
-        "no way to get", "unable to travel", "roads blocked", "road is blocked",
-        "cut off", "no way to reach",
+        "no transport",
+        "no vehicle",
+        "cannot travel",
+        "can't travel",
+        "stranded",
+        "no way to get",
+        "unable to travel",
+        "roads blocked",
+        "road is blocked",
+        "cut off",
+        "no way to reach",
     ],
     "can_deliver": [
-        "can deliver", "will deliver", "have a vehicle", "have transport", "will transport",
-        "can transport", "have a truck", "have a van", "can drop off", "able to deliver",
+        "can deliver",
+        "will deliver",
+        "have a vehicle",
+        "have transport",
+        "will transport",
+        "can transport",
+        "have a truck",
+        "have a van",
+        "can drop off",
+        "able to deliver",
     ],
 }
 
@@ -298,6 +334,7 @@ def _detect_transport_flag(raw_message: str, message_type: str) -> bool | None:
     if message_type == "need":
         return any(kw in text for kw in TRANSPORT_KEYWORDS["no_transport"])
     return any(kw in text for kw in TRANSPORT_KEYWORDS["can_deliver"])
+
 
 # --------------------------------------------------------------------------------------
 # In-memory, process-global "live" state. Structure:
@@ -346,12 +383,13 @@ def _seed_demo_data() -> None:
     offer_id = f"offer-{uuid.uuid4().hex[:8]}"
     galle["offers"][offer_id] = {
         "id": offer_id,
+        "message_type": "offer",
         "region": "galle",
         "resource_type": "drinking water",
         "quantity": 200,
         "unit": "liters",
         "donor_name": "Galle Community Trust",
-        "donor_phone": "+94760048658",
+        "donor_phone": "+940000000000",
         "status": "open",
         "created_at": _now(),
         "transport_flag": None,
@@ -361,12 +399,13 @@ def _seed_demo_data() -> None:
     offer_id2 = f"offer-{uuid.uuid4().hex[:8]}"
     colombo["offers"][offer_id2] = {
         "id": offer_id2,
+        "message_type": "offer",
         "region": "colombo",
         "resource_type": "food packs",
         "quantity": 50,
         "unit": "packs",
         "donor_name": "Colombo Rotary Club",
-        "donor_phone": "+94760048658",
+        "donor_phone": "+940000000000",
         "status": "open",
         "created_at": _now(),
         "transport_flag": None,
@@ -379,12 +418,13 @@ def _seed_demo_data() -> None:
     offer_id3 = f"offer-{uuid.uuid4().hex[:8]}"
     ratnapura["offers"][offer_id3] = {
         "id": offer_id3,
+        "message_type": "offer",
         "region": "ratnapura",
         "resource_type": "medicine",
         "quantity": 30,
         "unit": "kits",
         "donor_name": "Ratnapura Medical Volunteers",
-        "donor_phone": "+94760048658",
+        "donor_phone": "+940000000000",
         "status": "open",
         "created_at": _now(),
         "transport_flag": True,  # explicitly able to deliver
@@ -452,7 +492,10 @@ def get_region_status(region: str) -> str:
     :param region: The region/town to look up, e.g. "Galle".
     :return: JSON string with open requests and offers for that region.
     """
-    store = _region_store(region)
+    # Read-only lookup: unlike _region_store, this must NOT create an entry in _STATE for a
+    # region nobody has ever submitted a request/offer for (a plain status question shouldn't
+    # permanently grow the region list).
+    store = _STATE.get(_normalize(region) or "unspecified", {"requests": {}, "offers": {}})
     return json.dumps(
         {
             "region": _normalize(region),
@@ -538,12 +581,17 @@ def match_resources(intake_id: str) -> str:
 
     The match score (0-100) combines:
       - quantity coverage (up to 45 pts): how much of the requested/offered quantity this
-        candidate can cover.
+        candidate can cover. Halved when the two records' units don't match, since raw
+        quantities aren't comparable across units (e.g. 10 liters vs 10 kits).
       - proximity (up to 30 pts): 30 for the same region, decaying with approximate road
         distance for cross-region candidates (see REGION_DISTANCE_KM).
       - status (up to 10 pts): candidate is still fully open (not partially matched already).
       - transport compatibility (up to 15 pts): rewards pairing a requester who has no transport
         with a donor who can deliver, especially important for cross-region matches.
+
+    Only candidates still fully "open" are considered - a record that has already been matched
+    (dispatch_notification set its status to "matched") or fulfilled is excluded, so the same
+    offer/need can't be matched and dispatched to repeatedly.
 
     :param intake_id: The intake_id returned by submit_intake.
     :return: JSON string with a ranked list of candidate matches, each including distance_km
@@ -553,53 +601,66 @@ def match_resources(intake_id: str) -> str:
     if record is None:
         return json.dumps({"error": f"No intake found for intake_id={intake_id}"})
 
-    pool_key = "offers" if record["message_type"] == "need" else "requests"
+    is_need = record["message_type"] == "need"
+    pool_key = "offers" if is_need else "requests"
     candidates = [
         c
         for region_store in _STATE.values()
         for c in region_store[pool_key].values()
-        if c["resource_type"] == record["resource_type"] and c["status"] != "fulfilled"
+        if c["resource_type"] == record["resource_type"] and c["status"] == "open"
     ]
-
-    requester_transport_flag = record.get("transport_flag")  # True = need has NO transport
 
     scored = []
     for c in candidates:
+        # transport_flag means opposite things on a "need" (True = requester has no transport)
+        # vs an "offer" (True = donor can deliver). Resolve both roles from message_type, rather
+        # than assuming the intake is always the "need" side - match_resources runs in both
+        # directions (a need matching offers, or an offer matching needs).
+        requester_no_transport = record.get("transport_flag") if is_need else c.get("transport_flag")
+        donor_can_deliver = c.get("transport_flag") if is_need else record.get("transport_flag")
+
+        unit_match = _normalize(c["unit"]) == _normalize(record["unit"])
         coverage = min(c["quantity"] / max(record["quantity"], 1), 1.0)
-        coverage_pts = coverage * 45
+        coverage_pts = coverage * 45 * (1.0 if unit_match else 0.5)
 
         distance_km = _distance_km(record["region"], c["region"])
         same_region = distance_km == 0
         proximity_pts = 30 if same_region else max(0, round(30 - distance_km / 7))
 
-        status_pts = 10 if c["status"] == "open" else 0
+        status_pts = 10  # candidates are pre-filtered to status == "open" above
 
         # Transport compatibility: matters most when the requester has no transport of their
-        # own, especially once the match crosses regions. If the counterpart (offer) is flagged
-        # as able to deliver, that fully bridges the gap; otherwise a same-region match still
-        # gets partial credit since delivery distance is short regardless.
-        candidate_transport_flag = c.get("transport_flag")
-        if requester_transport_flag is True and candidate_transport_flag is True:
+        # own, especially once the match crosses regions. If the donor is flagged as able to
+        # deliver, that fully bridges the gap; otherwise a same-region match still gets partial
+        # credit since delivery distance is short regardless.
+        if requester_no_transport is True and donor_can_deliver is True:
             transport_pts = 15
             transport_note = "requester has no transport; matched donor can deliver - good fit"
-        elif requester_transport_flag is True and same_region:
+        elif requester_no_transport is True and same_region:
             transport_pts = 8
             transport_note = "requester has no transport; same-region match keeps delivery short"
-        elif requester_transport_flag is True:
+        elif requester_no_transport is True:
             transport_pts = 0
-            transport_note = "requester has no transport and this match is in another region - " \
-                              "confirm delivery capability before dispatching"
+            transport_note = (
+                "requester has no transport and this match is in another region - "
+                "confirm delivery capability before dispatching"
+            )
         else:
             transport_pts = 10
             transport_note = "no transport constraint detected"
 
+        if not unit_match:
+            transport_note += f" (unit mismatch: {record['unit']} vs {c['unit']} - verify manually)"
+
         match_score = round(coverage_pts + proximity_pts + status_pts + transport_pts)
-        scored.append({
-            **c,
-            "match_score": match_score,
-            "distance_km": distance_km,
-            "transport_note": transport_note,
-        })
+        scored.append(
+            {
+                **c,
+                "match_score": match_score,
+                "distance_km": distance_km,
+                "transport_note": transport_note,
+            }
+        )
 
     scored.sort(key=lambda c: c["match_score"], reverse=True)
     record["matches"] = scored
@@ -633,9 +694,7 @@ def check_pending_duplicates(intake_id: str) -> str:
     store = _region_store(record["region"])
     pool_key = "requests" if record["message_type"] == "need" else "offers"
     duplicates = [
-        r
-        for r in store[pool_key].values()
-        if r["resource_type"] == record["resource_type"] and r["status"] != "fulfilled"
+        r for r in store[pool_key].values() if r["resource_type"] == record["resource_type"] and r["status"] == "open"
     ]
 
     return json.dumps(
@@ -669,57 +728,67 @@ def finalize_record(intake_id: str, duplicate_id: str = "") -> str:
     store = _region_store(record["region"])
     pool_key = "requests" if record["message_type"] == "need" else "offers"
 
-    if duplicate_id and duplicate_id in store[pool_key]:
-        existing = store[pool_key][duplicate_id]
-        existing["quantity"] += record["quantity"]
-        existing["history"].append(
-            f"{_now()}: merged additional {record['quantity']} {record['unit']} "
-            f"from message: '{record['raw_message']}'"
-        )
-        if record["message_type"] == "need":
-            existing["urgency_score"] = max(existing.get("urgency_score") or 0, record["urgency_score"] or 0)
-            existing["vulnerable_groups"] = sorted(
-                set(existing.get("vulnerable_groups", [])) | set(record["vulnerable_groups"])
+    # Guard the merge-or-create write against a second thread doing the same thing
+    # concurrently (e.g. two near-simultaneous finalize_record calls for the same region).
+    with _STATE_LOCK:
+        if duplicate_id and duplicate_id in store[pool_key]:
+            existing = store[pool_key][duplicate_id]
+            existing["quantity"] += record["quantity"]
+            existing["history"].append(
+                f"{_now()}: merged additional {record['quantity']} {record['unit']} "
+                f"from message: '{record['raw_message']}'"
             )
-        if existing.get("transport_flag") is not True and record.get("transport_flag") is True:
-            existing["transport_flag"] = True
-        final_record = existing
-        merged = True
-    else:
-        new_id = f"{'req' if record['message_type'] == 'need' else 'off'}-{uuid.uuid4().hex[:8]}"
-        final_record = {
-            "id": new_id,
-            "region": record["region"],
-            "location_display": record["location_display"],
-            "resource_type": record["resource_type"],
-            "quantity": record["quantity"],
-            "unit": record["unit"],
-            "message_type": record["message_type"],
-            "contact_name": record["contact_name"],
-            "contact_phone": record["contact_phone"],
-            "urgency_score": record["urgency_score"],
-            "urgency_band": record.get("urgency_band"),
-            "vulnerable_groups": record["vulnerable_groups"],
-            "transport_flag": record.get("transport_flag"),
-            "status": "open",
-            "created_at": _now(),
-            "history": [f"{_now()}: created from message: '{record['raw_message']}'"],
-        }
-        store[pool_key][new_id] = final_record
-        merged = False
+            if record["message_type"] == "need":
+                existing["urgency_score"] = max(existing.get("urgency_score") or 0, record["urgency_score"] or 0)
+                existing["vulnerable_groups"] = sorted(
+                    set(existing.get("vulnerable_groups", [])) | set(record["vulnerable_groups"])
+                )
+            if existing.get("transport_flag") is not True and record.get("transport_flag") is True:
+                existing["transport_flag"] = True
+            final_record = existing
+            merged = True
+        else:
+            new_id = f"{'req' if record['message_type'] == 'need' else 'off'}-{uuid.uuid4().hex[:8]}"
+            final_record = {
+                "id": new_id,
+                "region": record["region"],
+                "location_display": record["location_display"],
+                "resource_type": record["resource_type"],
+                "quantity": record["quantity"],
+                "unit": record["unit"],
+                "message_type": record["message_type"],
+                "contact_name": record["contact_name"],
+                "contact_phone": record["contact_phone"],
+                "urgency_score": record["urgency_score"],
+                "urgency_band": record.get("urgency_band"),
+                "vulnerable_groups": record["vulnerable_groups"],
+                "transport_flag": record.get("transport_flag"),
+                "status": "open",
+                "created_at": _now(),
+                "history": [f"{_now()}: created from message: '{record['raw_message']}'"],
+            }
+            store[pool_key][new_id] = final_record
+            merged = False
+
+    matches_found_earlier = record.get("matches", [])
+    # finalize_record is the last tool in the pipeline that reads the intake buffer entry
+    # (dispatch_notification looks records up by id via _find_record_by_id, not the buffer),
+    # so it's safe to drop it here rather than letting the buffer grow for the life of the
+    # process.
+    _INTAKE_BUFFER.pop(intake_id, None)
 
     return json.dumps(
         {
             "intake_id": intake_id,
             "merged": merged,
             "record": final_record,
-            "matches_found_earlier": record.get("matches", []),
+            "matches_found_earlier": matches_found_earlier,
         },
         indent=2,
     )
 
 
-def dispatch_notification(record_id: str, matched_id: str, region: str = "") -> str:
+def dispatch_notification(record_id: str, matched_id: str) -> str:
     """Simulate notifying the matched volunteer/donor via WhatsApp and update both records' status.
 
     This is a DUMMY dispatch: it looks up a phone number from the offer/request itself (or the
@@ -728,8 +797,6 @@ def dispatch_notification(record_id: str, matched_id: str, region: str = "") -> 
 
     :param record_id: The id of the just-created/updated request or offer (from finalize_record).
     :param matched_id: The id of the matched counterpart record to notify (from match_resources).
-    :param region: Unused - kept only for backward compatibility with older callers. Both
-        records are now looked up by id across all regions, since matches can be cross-region.
     :return: JSON string confirming the (simulated) dispatch, including who was notified.
     """
     source, source_region = _find_record_by_id(record_id)
@@ -746,7 +813,10 @@ def dispatch_notification(record_id: str, matched_id: str, region: str = "") -> 
 
     phone = target.get("contact_phone") or target.get("donor_phone")
     name = target.get("contact_name") or target.get("donor_name")
-    if not phone:
+    # The volunteer directory is a donor/volunteer registry, so it's only a valid fallback when
+    # the record being notified (target) is an offer - falling back to it for a need would
+    # notify an unrelated volunteer instead of the actual requester.
+    if not phone and target.get("message_type") == "offer":
         fallback = next(
             (
                 v
@@ -764,7 +834,8 @@ def dispatch_notification(record_id: str, matched_id: str, region: str = "") -> 
     logistics_note = (
         f" This is a cross-region match ({source_region.title()} <-> {target_region.title()}, "
         f"~{distance_km} km) - confirm transport/delivery before dispatching."
-        if cross_region else ""
+        if cross_region
+        else ""
     )
 
     message_id = f"wa-{uuid.uuid4().hex[:10]}"
@@ -780,8 +851,12 @@ def dispatch_notification(record_id: str, matched_id: str, region: str = "") -> 
 
     source["status"] = "matched"
     target["status"] = "matched"
-    source.setdefault("history", []).append(f"{_now()}: dispatched WhatsApp notification {message_id} to {name or 'unknown contact'}")
-    target.setdefault("history", []).append(f"{_now()}: notified via WhatsApp {message_id} about matching record {record_id}")
+    source.setdefault("history", []).append(
+        f"{_now()}: dispatched WhatsApp notification {message_id} to {name or 'unknown contact'}"
+    )
+    target.setdefault("history", []).append(
+        f"{_now()}: notified via WhatsApp {message_id} about matching record {record_id}"
+    )
 
     return json.dumps(
         {
