@@ -5,7 +5,7 @@ description = "Demo of Smolagents and OpenAI Agents SDK based agents running in 
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[api,smolagents,openai,mcp]>=0.9.3",
+    "agentkernel[api,smolagents,openai,mcp,redis]>=0.9.3",
     "smolagents",
 ]
 

@@ -269,6 +269,10 @@ call, writing the keys it owns last; `Agent.RESERVED_RUN_OPTIONS` names those ke
 the process-level agent and is never persisted with the session. See
 [Runner → Per-agent native run options](./runner.md#native-run-options).
 
+`agent.run_options_factory` is the per-run factory declared through the same call, or `None`, and
+`await agent.resolve_run_options(session, requests)` is what the runner calls once per run: a copy of
+`run_options` with the factory's result validated and merged over it. Neither is persisted.
+
 #### Currently Executing Agent {#currently-executing-agent}
 
 `Agent.current()` returns whichever `Agent` is currently executing in this async context, or
