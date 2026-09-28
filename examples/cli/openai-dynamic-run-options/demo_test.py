@@ -30,7 +30,7 @@ async def test_client():
 async def test_the_factory_runs_and_the_static_limit_applies_to_a_regular_session(test_client):
     response = await test_client.send("What's the weather in Tokyo? Use the get_weather tool.")
     stats = _stats(response)
-    assert stats["factory_runs"] >= 1  # the factory ran for this turn
+    assert stats["factory_runs"] == 1  # the options are resolved exactly once per run
     assert stats["max_turns"] == 25  # the CLI session is not a guest session, so the static limit applied
     assert stats["llm_calls"] >= 1  # the static hooks keyword still reached the SDK beside the factory
     assert stats["tool_calls"] >= 1
@@ -40,6 +40,15 @@ async def test_the_factory_runs_and_the_static_limit_applies_to_a_regular_sessio
 async def test_the_factory_runs_again_on_the_next_turn(test_client):
     response = await test_client.send("And what about Paris? Use the get_weather tool.")
     stats = _stats(response)
-    assert stats["factory_runs"] >= 1  # counters are per turn, so this is the second turn's own resolution
+    assert stats["factory_runs"] == 1  # counters are per turn, so this is the second turn's own single resolution
     assert stats["max_turns"] == 25
+    assert stats["tool_calls"] >= 1
+
+
+@pytest.mark.order(3)
+async def test_a_quick_request_gets_the_tighter_limit_from_the_factory(test_client):
+    response = await test_client.send("quick: what's the weather in Tokyo? Use the get_weather tool.")
+    stats = _stats(response)
+    assert stats["factory_runs"] == 1
+    assert stats["max_turns"] == 10  # the factory's value won over the static 25 for this turn
     assert stats["tool_calls"] >= 1

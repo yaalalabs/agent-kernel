@@ -3,7 +3,7 @@ from typing import Any
 
 from agentkernel.cli import CLI
 from agentkernel.core import Agent as AKAgent
-from agentkernel.core import AgentReplyText, AgentRequest, PostHook, Session
+from agentkernel.core import AgentReplyText, AgentRequest, AgentRequestText, PostHook, Session
 from agentkernel.openai import OpenAIModule, OpenAIToolBuilder
 from agents import Agent, RunConfig, RunHooks
 
@@ -11,7 +11,8 @@ logger = logging.getLogger("ak.example.openai_dynamic_run_options")
 
 STATS_PREFIX = "Run stats:"
 MAX_TURNS = 25  # the static limit: the SDK default is 10, long tool loops need more
-GUEST_MAX_TURNS = 10  # the per-run limit the factory applies to guest sessions
+TIGHT_MAX_TURNS = 10  # the per-run limit the factory applies to guest sessions and quick requests
+QUICK_PREFIX = "quick:"  # a request starting with this asks for the tighter budget
 
 
 def _bump(key: str) -> None:
@@ -47,14 +48,22 @@ class ProgressHooks(RunHooks):
 # request list the run will use, and merges the mapping it returns over the static keywords declared beside it
 # (a factory key wins). It is one object shared by every concurrent run of the agent, so it keeps no state on
 # itself: what it wants to show later goes into the session's volatile cache, like the hooks above.
+def _asks_for_a_quick_answer(requests: list[AgentRequest]) -> bool:
+    """Whether any text request starts with the quick marker, the demo's stand-in for a per-request signal."""
+    return any(
+        isinstance(req, AgentRequestText) and req.prompt.lstrip().lower().startswith(QUICK_PREFIX) for req in requests
+    )
+
+
 def options_for(agent: AKAgent, session: Session, requests: list[AgentRequest]) -> dict[str, Any]:
     _bump("factory_runs")
     logger.debug("computing run options for session %s with %d request(s)", session.id, len(requests))
     # Per-run knowledge the static declaration cannot have: the session id, stamped onto the SDK trace.
     options: dict[str, Any] = {"run_config": RunConfig(trace_metadata={"session_id": session.id})}
-    # A per-run override of a static keyword: guest sessions get a tighter turn budget.
-    if session.id.startswith("guest"):
-        options["max_turns"] = GUEST_MAX_TURNS
+    # A per-run override of a static keyword, from either argument the static declaration cannot see: a guest
+    # session, or a request that asks for a quick answer, gets a tighter turn budget.
+    if session.id.startswith("guest") or _asks_for_a_quick_answer(requests):
+        options["max_turns"] = TIGHT_MAX_TURNS
     # Record the limit this run will actually use, so the stats line can show which one applied.
     effective = options.get("max_turns", agent.run_options.get("max_turns"))
     session.get_volatile_cache().set("max_turns", effective)

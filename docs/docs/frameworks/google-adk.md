@@ -147,7 +147,7 @@ different `streaming_mode`, and
 your object is never mutated. In run mode it is passed as is.
 
 A [run-options factory](../core-concepts/runner.md#native-run-options) runs before the ADK tool
-context for the run exists, so `ToolContext.get()` returns `None` inside it on this adapter; use the
+context for the run exists, so `ToolContext.get()` raises `RuntimeError` inside it on this adapter; use the
 `session` and `requests` the factory receives instead.
 
 Reserved (raise `ValueError` at declaration): `agent`, `app`, `app_name`, `node`, `session_service`,

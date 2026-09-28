@@ -662,7 +662,7 @@ module.run_options(
 **Options computed per run:** pass a callable before the keywords, `module.run_options(agent,
 options_for, **static)`. It is called as `options_for(agent, session, requests)` on every run (sync or
 async), after the pre-hooks and inside the run, so `Session.current()` and `ToolContext.get()` resolve
-in it (except on Google ADK, where the tool context does not exist yet), and its mapping is merged over
+in it (except on Google ADK, where the tool context does not exist yet and `ToolContext.get()` raises), and its mapping is merged over
 the static keywords, a factory key winning. A reserved key in the result is rejected on the run, and a
 factory that raises fails that run like a framework error. One factory per agent, shared by concurrent
 runs: keep per-run state in the session.

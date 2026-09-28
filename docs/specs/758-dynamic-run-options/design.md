@@ -34,9 +34,10 @@ what is added is one resolution step per run.
   just as naturally.
 - **Every adapter already has a place for the resolution.** Each `run` / `stream` sets the
   `ToolContext` before its native call (`openai.py:202`, `:252`; `langgraph.py:450`, `:511`;
-  `pydanticai.py:178`, `:228`; `crewai.py:338`; `smolagents.py:139`; ADK inside
-  `_setup_session_context`, `adk.py:231`), so a factory evaluated after that point can use
-  `ToolContext.get()` as well as its own arguments.
+  `pydanticai.py:178`, `:228`; `crewai.py:338`; `smolagents.py:139`), so a factory evaluated after
+  that point can use `ToolContext.get()` as well as its own arguments. ADK is the exception: its
+  context is created inside `_setup_session_context` (`adk.py:231`), after the resolution point, so
+  `ToolContext.get()` raises `RuntimeError` in an ADK factory and its arguments carry the information.
 - **A factory result can be validated where a static dict cannot be bypassed.** #754 rule 2 accepts
   that a caller mutating `agent.run_options` directly skips the reservation check. A factory result
   passes through `validate_run_options` on every run, so the factory path is checked in full.
@@ -45,13 +46,15 @@ what is added is one resolution step per run.
 
 ### Declaration surface: `Module` (`core/module.py`)
 
-- `run_options(agent, factory=None, /, **options) -> Self`.
-  - `factory` is an optional positional-only callable. When given it is stored on the wrapped agent;
+- `run_options(agent, *factory, **options) -> Self`, with at most one positional `factory`.
+  - `factory` is an optional callable accepted only positionally, after the agent, which keeps its keyword
+    form as with `pre_hook` / `post_hook`. When given it is stored on the wrapped agent;
     keywords keep going to the static dict exactly as today. Both may be given in one call, or across
     calls.
   - A later factory **replaces** the earlier one, the way a repeated keyword wins per key. There is
     one factory per agent.
-  - A non-callable `factory` raises `TypeError` naming the agent, at declaration.
+  - A non-callable `factory`, or more than one positional argument after the agent, raises `TypeError`
+    naming the agent, at declaration.
   - A call with neither a factory nor keywords is a no-op that returns the module.
 - Resolution of the wrapped agent, the `_native_agent_name` rule and chaining with `pre_hook` /
   `post_hook` are the existing `Module._wrapped` path (`:117-128`); nothing there changes.
@@ -78,9 +81,10 @@ what is added is one resolution step per run.
 
 ### Resolution point: the adapters
 
-- Each of the twelve `run` / `stream` methods resolves **once**, with
-  `options = await agent.resolve_run_options(session, requests)`, after the `ToolContext` is set
-  and before anything reads the options, and uses that mapping everywhere it reads
+- Each of the ten `run` / `stream` methods that reach a native call (the CrewAI and smolagents
+  `stream()` stubs raise `NotImplementedError` first) resolves **once**, with
+  `options = await agent.resolve_run_options(session, requests)`, after the request-shape early
+  returns and before the framework-context load, and uses that mapping everywhere it reads
   `agent.run_options` today. Exactly one factory call per native call.
 - ADK: `run` and `stream` resolve before `_setup_session_context`, which gains an `options`
   parameter in place of its own `_split_run_options(agent)` call (`:239`);
@@ -105,10 +109,12 @@ what is added is one resolution step per run.
 ### Concurrency and cost
 
 - The factory is one object shared by every concurrent run of the agent; it must keep no per-run
-  state on itself. It may read `Session.current()`, `ToolContext.get()` and the acting-user cache,
-  all of which are set for the run by the time it is called.
+  state on itself. It may read `Session.current()` and the acting-user cache, which `Runtime` sets
+  before the runner is entered, and `ToolContext.get()` on every adapter but ADK, where the tool
+  context is created after the resolution point and the call raises `RuntimeError`.
 - One factory call per run, on the hot path before the model call. Agents without a factory pay
-  one dict copy, as today. Documented; no caching is added (a factory that wants to cache does so
+  two shallow copies of a small dict (the resolver's and `_native_kwargs`'s), one more than today;
+  `_native_kwargs` keeps its own copy so it stays safe for any caller passing a live mapping. Documented; no caching is added (a factory that wants to cache does so
   itself).
 
 ### Configuration

@@ -271,7 +271,7 @@ def _other_factory(agent, session, requests):
 
 
 class TestModuleRunOptionsFactory:
-    """The positional-only factory parameter of Module.run_options (spec #758, Module section)."""
+    """The positional factory argument of Module.run_options (spec #758, Module section)."""
 
     def test_a_positional_factory_is_stored_on_the_agent_and_returns_the_module(self):
         with Runtime(SessionStoreBuilder.build()):
@@ -358,8 +358,35 @@ class TestModuleRunOptionsFactory:
             assert wrapped.run_options_factory is None
             assert wrapped.run_options == {}
 
+    def test_the_agent_keeps_its_keyword_form_beside_a_positional_factory(self):
+        # `pre_hook` / `post_hook` accept `agent=`; accepting the factory positionally must not take that away.
+        with Runtime(SessionStoreBuilder.build()):
+            a1 = FrameworkAgent("agent1")
+            mod = SimpleModule([a1])
+
+            result = mod.run_options(agent=a1, max_turns=3)
+            mod.run_options(a1, _factory)
+
+            assert result is mod
+            wrapped = mod.get_agent("agent1")
+            assert wrapped.run_options == {"max_turns": 3}
+            assert wrapped.run_options_factory is _factory
+
+    def test_more_than_one_positional_factory_raises_type_error_naming_the_agent_and_stores_nothing(self):
+        with Runtime(SessionStoreBuilder.build()):
+            a1 = FrameworkAgent("agent1")
+            mod = SimpleModule([a1])
+
+            with pytest.raises(TypeError) as exc:
+                mod.run_options(a1, _factory, _other_factory, max_turns=3)
+
+            assert "agent1" in str(exc.value)
+            wrapped = mod.get_agent("agent1")
+            assert wrapped.run_options_factory is None
+            assert wrapped.run_options == {}
+
     def test_a_keyword_named_factory_is_a_run_option_not_the_factory(self):
-        # The parameter is positional-only, so `factory=` lands in **options and shadows no native option name.
+        # The factory is accepted only positionally, so `factory=` lands in **options and shadows no native option name.
         with Runtime(SessionStoreBuilder.build()):
             a1 = FrameworkAgent("agent1")
             mod = SimpleModule([a1])

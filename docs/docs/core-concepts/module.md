@@ -130,7 +130,7 @@ OpenAIModule(
 
 ### Native run options
 
-`run_options(agent, factory=None, /, **options)` declares the framework's own per-run options for one
+`run_options(agent, [factory], **options)` declares the framework's own per-run options for one
 agent, in the framework's own types, and is chained like `pre_hook` / `post_hook`:
 
 ```python
@@ -156,8 +156,9 @@ per-framework table.
 A callable given positionally before the keywords computes options per run. It is called as
 `factory(agent, session, requests)` on every run, sync or async, and its mapping is merged over the
 static keywords, a factory key winning. One factory per agent, a later call replacing it; a
-non-callable raises `TypeError` at declaration, and the parameter is positional-only, so a native option
-named `factory` is still declared as a keyword.
+non-callable raises `TypeError` at declaration. The factory is accepted only positionally (the agent
+keeps its keyword form, as with `pre_hook` / `post_hook`), so a native option named `factory` is still
+declared as a keyword.
 
 ```python
 def options_for(agent, session, requests):

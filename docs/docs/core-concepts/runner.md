@@ -259,7 +259,7 @@ OpenAIModule([agent]).run_options(
 )
 ```
 
-`Module.run_options(agent, factory=None, /, **options)` is chained like `pre_hook` / `post_hook`; repeated calls merge,
+`Module.run_options(agent, [factory], **options)` is chained like `pre_hook` / `post_hook`; repeated calls merge,
 the later call winning per key. The declared dict lives on `Agent.run_options`, is read on every run,
 and is never persisted.
 
@@ -292,11 +292,12 @@ Two adapters share an object with the caller rather than a key, and merge deeper
 | CrewAI | the per-run `Crew(...)` constructor (`verbose=False` is an overridable default; `max_rpm` is a forwarded rate limit) | `agents`, `tasks`, `memory` | `max_iter` on the native `Agent` (needs nothing from Agent Kernel) | `step_callback` / `task_callback` |
 | Smolagents | `agent.run` | `task`, `reset`, `additional_args`, `stream`, `return_full_result` | `max_steps` | `step_callbacks` on the agent constructor (needs nothing from Agent Kernel) |
 
-**Computed per run.** `Module.run_options(agent, factory, /, **options)` also takes a callable before
-the keywords, a `RunOptionsFactory`: `(agent, session, requests) -> mapping`, sync or async. The runner
+**Computed per run.** `Module.run_options(agent, [factory], **options)` also takes one optional positional
+argument after the agent, a `RunOptionsFactory`: `(agent, session, requests) -> mapping`, sync or async. The runner
 resolves the options once per run through `Agent.resolve_run_options(session, requests)`: a copy of the
 static dict, then the factory's result validated against `RESERVED_RUN_OPTIONS` and merged over it at
-the top level (a factory key wins; a dict-valued option it returns replaces the static one wholesale),
+the top level (a factory key wins; a dict-valued option it returns replaces the static one wholesale, so
+on LangGraph extend the static `config` from `agent.run_options` rather than returning a bare one),
 then the keys Agent Kernel owns written last as above. An agent without a factory resolves to exactly
 its static dict, so every existing declaration is unchanged.
 
@@ -312,8 +313,8 @@ OpenAIModule([agent]).run_options(agent, options_for, max_turns=25, hooks=Progre
 
 The factory runs after the pre-hooks, so it sees the request list the run will use, and inside the
 run, so `Session.current()`, `Agent.current()` and `ToolContext.get()` resolve in it; on Google ADK
-the tool context is created later in the run, so `ToolContext.get()` returns `None` there and the
-factory's own arguments carry the same information. One factory per agent (a later call replaces it;
+the tool context is created later in the run, so `ToolContext.get()` raises `RuntimeError` there and
+the factory's own arguments carry the same information. One factory per agent (a later call replaces it;
 keywords keep merging), one object shared by every concurrent run, so keep per-run state in the
 session. A factory that raises, returns a non-mapping or names a reserved key fails that run the way
 a framework error does: a user-facing error reply in `run`, a propagated exception in `stream`.

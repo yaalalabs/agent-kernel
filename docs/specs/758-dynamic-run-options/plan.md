@@ -9,7 +9,7 @@ committed before any code so reviewers read them first.
 ## Iteration 1: Core seam
 
 - **Goal:** `RunOptionsFactory`, `Agent.run_options_factory`, `Agent.resolve_run_options` and the
-  positional-only `factory` parameter on `Module.run_options` exist and are tested; no adapter calls
+  positional `factory` parameter on `Module.run_options` exist and are tested; no adapter calls
   the resolver yet.
 - **Files:** `ak-py/src/agentkernel/core/base.py`, `ak-py/src/agentkernel/core/module.py`,
   `ak-py/src/agentkernel/core/__init__.py`, `ak-py/tests/test_base.py`, `ak-py/tests/test_module.py`.
@@ -139,9 +139,11 @@ committed before any code so reviewers read them first.
     plus the `cap-run-options-factory` eval entry.
   - `docs/docs/examples/overview.md`, `docs/docs/frameworks/openai.md` and
     `.github/test-config.yaml` are updated in Iteration 7 with the new example; check them here.
+  - `docs/docs/intro.md` (the What's New tip), the root `README.md` feature bullet, and
+    `docs/docs/frameworks/langgraph.md` (how a factory extends the static `config`).
   - **No update needed** (verified by grep for `run_options` outside the files above): the other
-    five framework pages, `hooks.md`, the intro What's New tip, the root and package READMEs, the
-    deployment READMEs, and the docs-site React pages.
+    four framework pages, `hooks.md`, the package README, the deployment READMEs, and the docs-site
+    React pages.
 - **Steps:**
   1. Run `ak-dev-sync-docs-from-branch` and `ak-dev-sync-skills-from-branch` against the branch and
      hand-check the list above.

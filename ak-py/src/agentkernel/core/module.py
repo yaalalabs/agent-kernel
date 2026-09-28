@@ -98,31 +98,36 @@ class Module(ABC):
         self._wrapped(agent).post_hooks.extend(hooks)
         return self
 
-    def run_options(self, agent: Any, factory: RunOptionsFactory | None = None, /, **options: Any) -> Self:
+    def run_options(self, agent: Any, *factory: RunOptionsFactory, **options: Any) -> Self:
         """
         Declares framework-native run options for one loaded agent, merged into every native run call the
         adapter makes for it (keyword arguments of the framework's own run API, such as OpenAI's `hooks`,
         `run_config` and `max_turns`). Repeated calls merge, the later call winning per key. Chained like
         `pre_hook` / `post_hook`.
 
-        An optional factory, given positionally before the keywords, computes options per run: it is called as
-        `factory(agent, session, requests)` on every run (sync or async) and its result is merged over the static
-        keywords for that run. One factory per agent, a later call replacing the earlier one; keywords keep merging.
-        The parameter is positional-only, so a keyword named `factory` is an ordinary run option.
+        An optional factory, given as the one positional argument after the agent, computes options per run: it
+        is called as `factory(agent, session, requests)` on every run (sync or async) and its result is merged over
+        the static keywords for that run. One factory per agent, a later call replacing the earlier one; keywords
+        keep merging. The factory is accepted only positionally (the agent keeps its keyword form, as with
+        `pre_hook` / `post_hook`), so a keyword named `factory` is an ordinary run option.
         :param agent: The native framework agent the options are for.
-        :param factory: A callable computing run options per run, or None to declare static options only.
+        :param factory: At most one callable computing run options per run; omit it to declare static options only.
         :param options: The framework-native keyword arguments to declare.
         :return: This module, for chaining.
-        :raises TypeError: If the factory is not callable; nothing is stored.
+        :raises TypeError: If more than one positional argument follows the agent, or the factory is not callable;
+            nothing is stored.
         :raises ValueError: If the agent is not loaded in this module, or an option names a key the adapter reserves;
             nothing is stored.
         """
         wrapped = self._wrapped(agent)
-        if factory is not None and not callable(factory):
-            raise TypeError(f"Run options factory for agent '{wrapped.name}' must be callable, got {type(factory).__name__}")
+        if len(factory) > 1:
+            raise TypeError(f"Module.run_options() takes at most one factory for agent '{wrapped.name}', got {len(factory)}")
+        run_options_factory = factory[0] if factory else None
+        if run_options_factory is not None and not callable(run_options_factory):
+            raise TypeError(f"Run options factory for agent '{wrapped.name}' must be callable, got {type(run_options_factory).__name__}")
         wrapped.validate_run_options(options)
-        if factory is not None:
-            wrapped.run_options_factory = factory
+        if run_options_factory is not None:
+            wrapped.run_options_factory = run_options_factory
         wrapped.run_options.update(options)
         return self
 

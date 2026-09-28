@@ -78,22 +78,27 @@ Rules:
 from .base import Agent, RunOptionsFactory                                   # + RunOptionsFactory
 
 class Module(ABC):
-    def run_options(self, agent: Any, factory: RunOptionsFactory | None = None, /, **options: Any) -> Self:   # signature change
+    def run_options(self, agent: Any, *factory: RunOptionsFactory, **options: Any) -> Self:   # signature change
         wrapped = self._wrapped(agent)                                        # existing, :117-128
-        if factory is not None and not callable(factory):
-            raise TypeError(f"Run options factory for agent '{wrapped.name}' must be callable, got {type(factory).__name__}")
+        if len(factory) > 1:
+            raise TypeError(f"Module.run_options() takes at most one factory for agent '{wrapped.name}', got {len(factory)}")
+        run_options_factory = factory[0] if factory else None
+        if run_options_factory is not None and not callable(run_options_factory):
+            raise TypeError(f"Run options factory for agent '{wrapped.name}' must be callable, got {type(run_options_factory).__name__}")
         wrapped.validate_run_options(options)                                 # existing
-        if factory is not None:
-            wrapped.run_options_factory = factory
+        if run_options_factory is not None:
+            wrapped.run_options_factory = run_options_factory
         wrapped.run_options.update(options)                                   # existing, :114
         return self
 ```
 
-1. `factory` is positional-only. A keyword `factory=` therefore still lands in `**options` (Python
-   routes a keyword matching a positional-only name into `**kwargs`), so no existing keyword usage
-   changes meaning and no native option name is shadowed.
+1. `factory` is accepted only positionally, as the one argument after the agent (`*factory` with an
+   arity check), so the agent keeps its keyword form like `pre_hook` / `post_hook`. A keyword
+   `factory=` therefore still lands in `**options`, so no existing keyword usage changes meaning and no
+   native option name is shadowed.
 2. A later factory replaces the earlier one (one per agent); keywords keep merging per key.
-3. A non-callable factory raises `TypeError` at declaration, before anything is stored, and a reserved
+3. A non-callable factory, or more than one positional argument after the agent, raises `TypeError` at
+   declaration, before anything is stored, and a reserved
    keyword raises the existing `ValueError` before the factory is stored either. A call with neither a
    factory nor keywords stores nothing and returns the module.
 4. `pre_hook`, `post_hook`, `_wrapped` and `_native_agent_name` are unchanged.
@@ -103,9 +108,11 @@ class Module(ABC):
 Each `run` / `stream` gains exactly one line, `options = await agent.resolve_run_options(session,
 requests)`, placed **after the request-shape early returns** (so an empty request never invokes the
 factory) and **before the framework-context load**, then reads `options` wherever it reads
-`agent.run_options` today. The `ToolContext` is already set at that point in every adapter
-(`openai.py:202`, `:252`; `langgraph.py:450`, `:511`; `pydanticai.py:178`, `:228`; `crewai.py:338`;
-`smolagents.py:139`), so a factory may call `ToolContext.get()`.
+`agent.run_options` today. Ten methods reach a native call; the CrewAI and smolagents `stream()`
+stubs raise `NotImplementedError` before anything resolves. The `ToolContext` is already set at that
+point in the OpenAI, LangGraph, Pydantic AI, CrewAI and smolagents adapters (`openai.py:202`, `:252`;
+`langgraph.py:450`, `:511`; `pydanticai.py:178`, `:228`; `crewai.py:338`; `smolagents.py:139`), so a
+factory may call `ToolContext.get()` there; on ADK it is created later (below), so the call raises.
 
 - **OpenAI** (`openai.py:214`, `:261`): `kwargs = self._native_kwargs(options, session=..., context=produced)` in both.
 - **LangGraph** (`langgraph.py:474-476`, `:531-532`): `config=self._merge_run_config(config, options.get("config"))`
@@ -159,7 +166,7 @@ No config changes. The factory is code declared at module load, like hooks and t
   a two-line example; `docs/docs/core-concepts/agent.md` ("Run options", `:263`):
   `run_options_factory` and `resolve_run_options`.
 - `.agents/skills/ak-dev-architecture/SKILL.md`: the Agent entry (`:92`) gains
-  `run_options_factory` / `resolve_run_options`; the Module entry (`:115`) gains the positional-only
+  `run_options_factory` / `resolve_run_options`; the Module entry (`:115`) gains the positional
   factory. `.agents/skills/ak-dev-new-framework-integration/SKILL.md`: step 3's bullet (`:122`)
   becomes "resolve once with `await agent.resolve_run_options(session, requests)` after the
   early returns and pass the mapping to `_native_kwargs` and your helpers"; the checklist item
@@ -168,19 +175,23 @@ No config changes. The factory is code declared at module load, like hooks and t
   `ak-build/SKILL.md` (`:396` block): one paragraph each showing the factory form, plus a
   `cap-run-options-factory` eval entry in `ak-add-capabilities/evals/evals.json` keyed on
   `def options_for(` and `module.run_options(agent, options_for`.
+- `docs/docs/intro.md` (the What's New tip) and the root `README.md` feature bullet: the clause
+  "statically or computed per run by a factory". `docs/docs/frameworks/langgraph.md` ("Native run
+  options"): how a factory extends the static `config` instead of replacing it wholesale.
 - **Example**: a new `examples/cli/openai-dynamic-run-options/` (`README.md`, `build.sh`, `demo.py`,
   `demo_test.py`, `pyproject.toml` named `cli-openai-dynamic-run-options`, `uv.lock`), scaffolded from
   `examples/cli/openai-run-options`. `demo.py` keeps that demo's weather agent, `_bump` helper and
   `ProgressHooks`, and adds `options_for(agent, session, requests)`, which bumps a `factory_runs`
   counter, returns `{"max_turns": 10, "run_config": RunConfig(trace_metadata={"session_id": session.id})}`
-  for a session whose id starts with `guest` and `{"run_config": RunConfig(trace_metadata={"session_id": session.id})}`
+  for a session whose id starts with `guest` or a request whose text starts with `quick:`, and `{"run_config": RunConfig(trace_metadata={"session_id": session.id})}`
   otherwise, and records the effective `max_turns` (its own or the static one) in the volatile cache.
   The declaration is `run_options(weather_agent, options_for, max_turns=MAX_TURNS, hooks=ProgressHooks())`,
   showing a factory and static keywords in one call; the post-hook's `Run stats:` line reads
   `max_turns` from the cache and appends `factory_runs`. `demo_test.py` asserts
-  `stats["factory_runs"] >= 1`, `stats["max_turns"] == 25` (the harness session is not a guest
-  session) and `stats["tool_calls"] >= 1`. The README explains the factory contract, the merge
-  order, the shared-instance rule and the guest-session switch. Indexing follows the six siblings:
+  `stats["factory_runs"] == 1` on every turn (one resolution per run), `stats["max_turns"] == 25` (the
+  harness session is not a guest session), `stats["tool_calls"] >= 1`, and `stats["max_turns"] == 10` on
+  a `quick:` turn. The README explains the factory contract, the merge order, the shared-instance rule
+  and the guest and `quick:` switches. Indexing follows the six siblings:
   a `type: cli` entry in `.github/test-config.yaml`, a bullet in the run-options block of
   `docs/docs/examples/overview.md`, and a link in the "Example" section of
   `docs/docs/frameworks/openai.md`. The six existing examples are unchanged.
@@ -189,8 +200,8 @@ No config changes. The factory is code declared at module load, like hooks and t
 
 All intentional.
 
-1. **`Module.run_options` accepts an optional positional-only factory.** Keyword-only usage is
-   unchanged; a second positional argument, a `TypeError` today, is now the factory.
+1. **`Module.run_options` accepts an optional positional factory.** Keyword usage, `agent=` included,
+   is unchanged; a second positional argument, a `TypeError` today, is now the factory.
 2. **`Agent` gains `run_options_factory` and `resolve_run_options`.** Both default to the
    no-factory behaviour.
 3. **Every adapter resolves once per `run` / `stream`.** With no factory the resolved mapping is a
@@ -228,7 +239,7 @@ six existing examples; `AKConfig`; session persistence; public exports other tha
 - **Not invoked for an empty request**: the resolution line follows the request-shape early returns,
   so a request the adapter rejects before the native call never runs the factory.
 - **ADK and `ToolContext`**: the factory runs before `_setup_session_context` creates the ADK
-  `ToolContext`, so `ToolContext.get()` returns `None` inside an ADK factory. Documented on the
+  `ToolContext`, so `ToolContext.get()` raises `RuntimeError` inside an ADK factory. Documented on the
   runner page and the ADK page; the factory's own arguments carry the same information.
 
 Concurrency: the factory is one object shared by every concurrent run of the agent and is called
@@ -237,7 +248,9 @@ cache, so `Session.current()` and the cache resolve in it. It must hold no per-r
 the docs say so. Resolution is one awaited call per run; no lock is needed because nothing is
 written to the agent.
 
-Per-operation cost: for an agent without a factory, one dict copy per run, as today. For an agent
+Per-operation cost: for an agent without a factory, two shallow copies of a small dict per run (the
+resolver's and `_native_kwargs`'s), one more than today; `_native_kwargs` keeps its own copy so it stays
+safe for any caller passing a live mapping. For an agent
 with a factory, that factory's own cost on every run before the model call, which is the caller's
 choice and is documented; no caching is added.
 
@@ -271,8 +284,9 @@ overlay in a venv without that extra. Formatting: `make lint-check-all`.
 - `test_adk_runner.py`: `_setup_session_context` receives the resolved options and routes a
   factory-supplied `plugins` to the `Runner` constructor.
 - `test_trace_langfuse_langgraph.py`: a factory result reaches `ainvoke` through the traced runner.
-- Example: `examples/cli/openai-dynamic-run-options/demo_test.py` asserts `factory_runs >= 1`,
-  `max_turns == 25` and `tool_calls >= 1`; runs in the e2e job through its matrix entry.
+- Example: `examples/cli/openai-dynamic-run-options/demo_test.py` asserts `factory_runs == 1` on every
+  turn, `max_turns == 25` on a regular turn, `max_turns == 10` on a `quick:` turn and `tool_calls >= 1`;
+  runs in the e2e job through its matrix entry.
 
 ### Existing assertions that must keep passing unchanged
 

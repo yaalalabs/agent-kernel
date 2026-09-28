@@ -366,12 +366,12 @@ class Runner(ABC):
     @staticmethod
     def _native_kwargs(options: Mapping[str, Any], **ak_owned: Any) -> dict[str, Any]:
         """
-        Builds the keyword arguments for a native framework run call from an agent's declared run options.
-        The declared options are copied first and the keys Agent Kernel owns are written last, so a declared
+        Builds the keyword arguments for a native framework run call from the run options resolved for one run.
+        The options are copied first and the keys Agent Kernel owns are written last, so a declared or computed
         option can never displace a value the adapter populates itself (the same rule as `ak_tool_context` in
-        ADK and `messages` in LangGraph). The copy is shallow and per call: adjusting a value for one run never
-        touches the declared mapping.
-        :param options: The agent's declared run options (`Agent.run_options`, or an adapter's filtered view of it).
+        ADK and `messages` in LangGraph). The copy is shallow and per call, so the helper is safe for any caller
+        passing a live mapping: adjusting a value for one run never touches the input.
+        :param options: The run options resolved for this run (`Agent.resolve_run_options`, or an adapter's filtered view of it).
         :param ak_owned: The keyword arguments the adapter populates itself; these win over `options`.
         :return: A new dict holding the merged keyword arguments.
         """
@@ -530,7 +530,8 @@ class Agent(ABC):
         Returns the run options for one run: a copy of the static `run_options` with the factory's result, when a
         factory is declared, validated and merged over it (factory keys win per top-level key). The factory is called
         exactly once, with this agent, the session and the request list the runner received; a coroutine result is
-        awaited. The static dict is never mutated, so the caller may adjust the returned dict freely.
+        awaited. The static dict is never mutated, so the caller may adjust the returned dict's top-level keys freely;
+        nested values (a LangGraph `config` dict, a hooks object) are shared with the declaration.
         :param session: The session the run belongs to.
         :param requests: The requests the runner received for this run.
         :return: A new dict holding the options for this run.
