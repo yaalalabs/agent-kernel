@@ -238,3 +238,64 @@ class TestSystemToolNameCollisions:
             agent._attach_system_tools()
 
         assert caplog.text == ""
+
+
+class TestAgentRunOptions:
+    """Agent.run_options / RESERVED_RUN_OPTIONS / validate_run_options (spec #754, Agent section)."""
+
+    def test_fresh_agent_has_empty_live_run_options_and_reserves_nothing(self):
+        agent = MockAgent("test-agent", MockRunner("test-runner"))
+
+        assert agent.run_options == {}
+        assert agent.run_options is agent.run_options  # a live dict, not a copy per read
+        assert MockAgent.RESERVED_RUN_OPTIONS == {}
+
+    def test_validate_rejects_a_reserved_key_naming_runner_agent_key_and_reason(self):
+        class Reserving(MockAgent):
+            RESERVED_RUN_OPTIONS = {"context": "populated from framework_context"}
+
+        agent = Reserving("test-agent", MockRunner("test-runner"))
+
+        with pytest.raises(ValueError) as exc:
+            agent.validate_run_options({"context": {"k": 1}, "max_turns": 5})
+
+        message = str(exc.value)
+        assert "test-runner" in message
+        assert "test-agent" in message
+        assert "'context'" in message
+        assert "populated from framework_context" in message
+        assert "max_turns" not in message
+
+    def test_validate_passes_unreserved_keys(self):
+        class Reserving(MockAgent):
+            RESERVED_RUN_OPTIONS = {"context": "populated from framework_context"}
+
+        agent = Reserving("test-agent", MockRunner("test-runner"))
+
+        agent.validate_run_options({"max_turns": 5, "hooks": object()})  # no raise
+
+    def test_validate_names_every_reserved_key_in_sorted_order(self):
+        class Reserving(MockAgent):
+            RESERVED_RUN_OPTIONS = {"session": "the AK session", "context": "framework_context"}
+
+        agent = Reserving("test-agent", MockRunner("test-runner"))
+
+        with pytest.raises(ValueError) as exc:
+            agent.validate_run_options({"session": 1, "context": 2})
+
+        message = str(exc.value)
+        assert message.index("'context'") < message.index("'session'")
+        assert "the AK session" in message and "framework_context" in message
+
+
+class TestRunnerNativeKwargs:
+    """Runner._native_kwargs (spec #754, Runner section): copy, then AK-owned keys written last."""
+
+    def test_ak_owned_keys_are_written_last_over_a_copy_of_the_options(self):
+        options = {"a": 1, "session": "caller"}
+
+        kwargs = Runner._native_kwargs(options, session="ak", context=None)
+
+        assert kwargs == {"a": 1, "session": "ak", "context": None}
+        assert options == {"a": 1, "session": "caller"}  # the declared mapping is never mutated
+        assert kwargs is not options

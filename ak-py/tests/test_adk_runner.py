@@ -2,12 +2,13 @@ import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from google.adk.agents.run_config import RunConfig, StreamingMode
 from pydantic import BaseModel
 
 from agentkernel.core import Session
 from agentkernel.core.event import TextDelta
 from agentkernel.core.model import AgentReplyAny, AgentReplyText, AgentRequestImage, AgentRequestText
-from agentkernel.framework.adk.adk import GoogleADKRunner, GoogleADKSession
+from agentkernel.framework.adk.adk import GoogleADKAgent, GoogleADKRunner, GoogleADKSession
 
 FRAMEWORK_CONTEXT = Session.Keys.FRAMEWORK_CONTEXT.value
 
@@ -758,3 +759,137 @@ class TestGoogleADKRunnerStructuredOutput:
 
         assert isinstance(reply, AgentReplyText)
         assert reply.response == "Done."
+
+
+def _capturing_setup(captured: dict, events=()):
+    """Patch _setup_session_context with an ADK runner whose run_async records its keywords and yields `events`."""
+    adk_session = MagicMock()
+    adk_session.get_state = AsyncMock(return_value={})
+
+    async def run_async(**kwargs):
+        captured.clear()
+        captured.update(kwargs)
+        for event in events:
+            yield event
+
+    adk_runner = MagicMock()
+    adk_runner.run_async = run_async
+    setup = AsyncMock(return_value=("user", adk_runner, _ctx_mock(), adk_session))
+    return patch.object(GoogleADKRunner, "_setup_session_context", setup)
+
+
+class TestGoogleADKRunOptions:
+    """Declared run options split between the per-run Runner constructor and run_async (spec #754)."""
+
+    def test_reserved_keys(self):
+        assert set(GoogleADKAgent.RESERVED_RUN_OPTIONS) == {
+            "agent",
+            "app",
+            "app_name",
+            "node",
+            "session_service",
+            "auto_create_session",
+            "user_id",
+            "session_id",
+            "new_message",
+            "state_delta",
+            "invocation_id",
+            "yield_user_message",
+        }
+
+    def test_split_routes_constructor_keys_and_leaves_the_rest_for_run_async(self):
+        plugin, memory, run_config = object(), object(), RunConfig(max_llm_calls=3)
+        agent = _mock_agent()
+        agent.run_options = {"plugins": [plugin], "memory_service": memory, "run_config": run_config, "other": 1}
+
+        ctor, run = GoogleADKRunner._split_run_options(agent)
+
+        assert ctor == {"plugins": [plugin], "memory_service": memory}
+        assert run == {"run_config": run_config, "other": 1}
+
+    @pytest.mark.asyncio
+    async def test_constructor_options_reach_the_per_run_adk_runner(self):
+        runner = GoogleADKRunner()
+        plugin = object()
+        agent = _mock_agent()
+        agent.run_options = {"plugins": [plugin], "run_config": RunConfig()}
+        adk_session = MagicMock()
+        adk_session.create_session = AsyncMock()
+        adk_session.update_session_state = AsyncMock()
+
+        with (
+            patch.object(GoogleADKRunner, "_session", return_value=adk_session),
+            patch("agentkernel.framework.adk.adk.Runner") as MockRunner,
+        ):
+            await runner._setup_session_context(agent, Session("s"), [AgentRequestText(prompt="hi")], None)
+
+        kwargs = MockRunner.call_args.kwargs
+        assert kwargs["plugins"] == [plugin]
+        assert kwargs["agent"] is agent.agent
+        assert kwargs["app_name"] == "AgentKernel"
+        assert kwargs["session_service"] is adk_session.session_service
+        assert "run_config" not in kwargs
+
+    @pytest.mark.asyncio
+    async def test_run_mode_forwards_the_run_config_untouched(self):
+        runner = GoogleADKRunner()
+        captured: dict = {}
+        run_config = RunConfig(max_llm_calls=3)
+        agent = _mock_agent()
+        agent.run_options = {"plugins": [object()], "run_config": run_config}
+
+        with _capturing_setup(captured, [_final_event("answer")]):
+            reply = await runner.run(agent, Session("s"), [AgentRequestText(prompt="hi")])
+
+        assert reply.response == "answer"
+        assert captured["run_config"] is run_config
+        assert captured["run_config"].streaming_mode is StreamingMode.NONE
+        assert set(captured) == {"user_id", "session_id", "new_message", "run_config"}
+
+    @pytest.mark.asyncio
+    async def test_stream_mode_forces_sse_on_a_copy_and_warns_once_per_runner(self, caplog):
+        runner = GoogleADKRunner()
+        captured: dict = {}
+        run_config = RunConfig(max_llm_calls=3, streaming_mode=StreamingMode.NONE)  # explicitly chosen, so the override is worth a warning
+        agent = _mock_agent()
+        agent.run_options = {"run_config": run_config}
+
+        with _capturing_setup(captured), caplog.at_level(logging.WARNING, logger="ak.adk.runner"):
+            _ = [e async for e in runner.stream(agent, Session("s"), [AgentRequestText(prompt="hi")])]
+            first = captured["run_config"]
+            _ = [e async for e in runner.stream(agent, Session("t"), [AgentRequestText(prompt="hi")])]
+
+        assert first.streaming_mode is StreamingMode.SSE
+        assert first.max_llm_calls == 3
+        assert run_config.streaming_mode is StreamingMode.NONE  # the caller's object is untouched
+        assert agent.run_options["run_config"] is run_config
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING and "SSE" in r.getMessage()]
+        assert len(warnings) == 1
+
+    @pytest.mark.asyncio
+    async def test_stream_does_not_warn_for_a_run_config_that_never_set_streaming_mode(self, caplog):
+        runner = GoogleADKRunner()
+        captured: dict = {}
+        run_config = RunConfig(max_llm_calls=3)  # streaming_mode left at its default, not a caller choice
+        agent = _mock_agent()
+        agent.run_options = {"run_config": run_config}
+
+        with _capturing_setup(captured), caplog.at_level(logging.WARNING, logger="ak.adk.runner"):
+            _ = [e async for e in runner.stream(agent, Session("s"), [AgentRequestText(prompt="hi")])]
+
+        assert captured["run_config"].streaming_mode is StreamingMode.SSE
+        assert captured["run_config"].max_llm_calls == 3
+        assert not [r for r in caplog.records if r.levelno == logging.WARNING]
+
+    @pytest.mark.asyncio
+    async def test_stream_without_a_declared_run_config_uses_sse_and_does_not_warn(self, caplog):
+        runner = GoogleADKRunner()
+        captured: dict = {}
+        agent = _mock_agent()
+        agent.run_options = {}
+
+        with _capturing_setup(captured), caplog.at_level(logging.WARNING, logger="ak.adk.runner"):
+            _ = [e async for e in runner.stream(agent, Session("s"), [AgentRequestText(prompt="hi")])]
+
+        assert captured["run_config"].streaming_mode is StreamingMode.SSE
+        assert not [r for r in caplog.records if r.levelno == logging.WARNING]

@@ -260,6 +260,15 @@ runner = agent.runner
 result = await runner.run(agent, session, prompt)
 ```
 
+#### Run options
+
+`agent.run_options` is the dict of framework-native per-run options declared for this agent through
+[`Module.run_options`](./module.md#native-run-options). The runner merges it into every native run
+call, writing the keys it owns last; `Agent.RESERVED_RUN_OPTIONS` names those keys and
+`validate_run_options()` is what rejects them at declaration. Like `pre_hooks`, it is a live dict on
+the process-level agent and is never persisted with the session. See
+[Runner → Per-agent native run options](./runner.md#native-run-options).
+
 #### Currently Executing Agent {#currently-executing-agent}
 
 `Agent.current()` returns whichever `Agent` is currently executing in this async context, or

@@ -44,12 +44,12 @@ fixture.
 
 | Test File | Tests |
 |-----------|-------|
-| `test_base.py` | Session, Agent, Runner abstractions |
+| `test_base.py` | Session, Agent, Runner abstractions; `Agent.run_options` / `RESERVED_RUN_OPTIONS` / `validate_run_options` and `Runner._native_kwargs` (#754) |
 | `test_runtime.py` | Runtime registration, execution, hooks |
 | `test_stream_events.py` | `core/event.py`'s `StreamEvent` discriminated union: every member round-trips through JSON (`type` discriminator), rejects an unknown `type`, and stays JSON/pickle-safe (no framework-native fields) |
 | `test_runtime_stream_events.py` | `Runtime.stream()`'s streaming contract (specs `docs/specs/523-ag-ui-support/` and `docs/specs/670-streaming-post-hooks/`): a bare `str` from an unmigrated runner fails loudly as a pydantic `ValidationError`, **every** event reaches `PostHook.on_stream_event()`, a returned list emits N chunks and ends the chain, a single return of a different `type` raises `TypeError`, a hook returning `None` drops the whole chunk, `delta` is populated only for `TextDelta` and taken from the emitted event, `StreamHalt` closes open boundaries then yields one error chunk and stores no session, any other exception propagates, and the final chunk is a bare `StreamChunk(done=True)` |
 | `test_stream_boundaries.py` | `StreamBoundaryTracker` (`core/stream.py`) directly: open/close pairing per kind, innermost-first drain order, `drain()` clearing, and the two malformed-sequence cases it tolerates (closing an id never opened, opening one twice) |
-| `test_module.py` | Module load/unload, wrapping |
+| `test_module.py` | Module load/unload, wrapping; `Module.run_options` merge, chaining, reserved-key and unloaded-agent errors, `_native_agent_name` override, the base-class `pre_hook` / `post_hook` resolving through `_native_agent_name`, and the guard that a subclass implementing only `_wrap` and `load` constructs (#754) |
 | `test_session.py` | Session state, caches, context vars |
 | `test_session_cache.py` | LRU SessionCache |
 | `test_sessions_in_memory.py` | InMemorySessionStore |
@@ -70,10 +70,13 @@ fixture.
 | `test_tool_adk.py` | Google ADK ToolBuilder |
 | `test_tool_smolagents.py` | Smolagents ToolBuilder |
 | `test_tool_pydanticai.py` | Pydantic AI ToolBuilder |
-| `test_openai_runner.py` | OpenAIRunner execution, error handling |
-| `test_crewai_runner.py` | CrewAIRunner execution (mocked Crew kickoff) |
-| `test_smolagents_runner.py` | SmolagentsRunner execution, multimodal requests, error handling |
-| `test_pydanticai_runner.py` | PydanticAIRunner execution, structured output, BinarySerde session round-trip, multimodal wiring |
+| `test_openai_runner.py` | OpenAIRunner execution, error handling; run options forwarded to `Runner.run` / `run_streamed`, and a real `RunHooks` resolving `Session.current()` / `Agent.current()` through `Runtime.run` and `Runtime.stream` (#754) |
+| `test_adk_runner.py` | GoogleADKRunner execution; reserved keys, `RUNNER_CONSTRUCTOR_OPTIONS` splitting constructor-bound options from `run_async`-bound ones, constructor options reaching the per-run `Runner(...)`, `run` forwarding a caller `RunConfig` untouched, and `stream` copying a caller `RunConfig` to force `streaming_mode=SSE` with a once-per-runner warning (#754) |
+| `test_crewai_runner.py` | CrewAIRunner execution (mocked Crew kickoff); reserved keys, declared options reaching the per-run `Crew(...)` with `verbose` overridable, empty options reproducing today's kwargs, and the module resolving the agent by `role` and rejecting reserved keys (#754) |
+| `test_smolagents_runner.py` | SmolagentsRunner execution, multimodal requests, error handling; reserved keys, `max_steps` forwarded beside `reset`, a bypassed `reset`/`additional_args` overwritten by the AK-owned values, `additional_args` dropped when there is no framework context, and the module resolving the agent by its native name (#754) |
+| `test_pydanticai_runner.py` | PydanticAIRunner execution, structured output, BinarySerde session round-trip, multimodal wiring; reserved keys, declared options forwarded to `run` beside the AK-owned keys, `stream` dropping `event_stream_handler` with one warning while keeping the declared dict intact, and reserved keys rejected at declaration through the module (#754) |
+| `test_langgraph_runner.py` | LangGraphRunner execution; `_merge_run_config` deep-merge semantics (`thread_id` wins inside `configurable`, list-valued keys like `callbacks` concatenate AK-first, a scalar AK value wins over a `None` caller `config`, neither input is mutated), `run`/`stream` forwarding the merged config and other options to `ainvoke`/`astream_events`, the declared options surviving unmutated across runs, reserved keys, the nested `config.configurable.thread_id` and top-level `RunnableConfig` keys rejected at declaration, and `aget_state` receiving the merged config (#754) |
+| `test_trace_langfuse_langgraph.py` | LangFuse LangGraph trace runner; a caller-supplied `callbacks` list is appended after the Langfuse handler rather than replacing it (#754) |
 | `test_langgraph_reasoning_live.py` | LangGraph reasoning against a REAL reasoning model, env-gated (`AK_TEST_REASONING_MODEL`; skipped in normal runs). Guards the premise the chunk-feeding unit tests cannot: that the model streams a summary at all (it must be asked — `reasoning={"summary": "auto"}`) and that LangChain surfaces it under `content_blocks`. Builds a bare `StateGraph` rather than `create_react_agent`, since the test needs only one model call and a ReAct loop would add nothing |
 | `test_guardrail.py` | Guardrail factories, hooks |
 | `test_api_http.py` | REST API handler |

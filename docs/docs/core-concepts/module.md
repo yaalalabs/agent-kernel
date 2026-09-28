@@ -128,6 +128,31 @@ OpenAIModule(
 )
 ```
 
+### Native run options
+
+`run_options(agent, **options)` declares the framework's own per-run options for one agent, in the
+framework's own types, and is chained like `pre_hook` / `post_hook`:
+
+```python
+from agents import Agent, RunConfig
+
+agent = Agent(name="assistant", instructions="...")
+
+OpenAIModule([agent]).run_options(
+    agent,
+    max_turns=25,
+    hooks=ProgressHooks(),
+    run_config=RunConfig(call_model_input_filter=trim_history),
+).pre_hook(agent, [RAGHook()])
+```
+
+Every keyword is a keyword argument of that framework's native run call (LangGraph's `config`, ADK's
+`plugins` and `run_config`, Pydantic AI's `usage_limits`, CrewAI's `step_callback`, smolagents'
+`max_steps`). Repeated calls merge, the later call winning per key. A key the adapter populates
+itself (`session`, `context`, `input`, ...) raises `ValueError` at declaration. See
+[Runner → Per-agent native run options](./runner.md#native-run-options) for the merge rule and the
+per-framework table.
+
 ## Best Practices
 
 ### One Module Per Application

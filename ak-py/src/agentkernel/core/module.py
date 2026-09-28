@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Any, List
+from typing import Any, List, Self
 
 from ..core.hooks import PostHook, PreHook
 from .base import Agent
@@ -76,20 +76,63 @@ class Module(ABC):
         self._agents = registered
         return self
 
-    @abstractmethod
-    def pre_hook(self, agent: Any, hooks: list[PreHook]) -> "Module":
+    def pre_hook(self, agent: Any, hooks: list[PreHook]) -> Self:
         """
-        Attaches pre-execution hooks to the agent.
-        :param agent: The agent to attach hooks to.
+        Attaches pre-execution hooks to the agent. Chained like `post_hook` / `run_options`.
+        :param agent: The native framework agent to attach hooks to.
         :param hooks: List of pre-execution hooks to attach.
+        :return: This module, for chaining.
+        :raises ValueError: If the agent is not loaded in this module.
         """
-        raise NotImplementedError
+        self._wrapped(agent).pre_hooks.extend(hooks)
+        return self
 
-    @abstractmethod
-    def post_hook(self, agent: Any, hooks: list[PostHook]) -> "Module":
+    def post_hook(self, agent: Any, hooks: list[PostHook]) -> Self:
         """
-        Attaches post-execution hooks to the agent.
-        :param agent: The agent to attach hooks to.
+        Attaches post-execution hooks to the agent. Chained like `pre_hook` / `run_options`.
+        :param agent: The native framework agent to attach hooks to.
         :param hooks: List of post-execution hooks to attach.
+        :return: This module, for chaining.
+        :raises ValueError: If the agent is not loaded in this module.
         """
-        raise NotImplementedError
+        self._wrapped(agent).post_hooks.extend(hooks)
+        return self
+
+    def run_options(self, agent: Any, **options: Any) -> Self:
+        """
+        Declares framework-native run options for one loaded agent, merged into every native run call the
+        adapter makes for it (keyword arguments of the framework's own run API, such as OpenAI's `hooks`,
+        `run_config` and `max_turns`). Repeated calls merge, the later call winning per key. Chained like
+        `pre_hook` / `post_hook`.
+        :param agent: The native framework agent the options are for.
+        :param options: The framework-native keyword arguments to declare.
+        :return: This module, for chaining.
+        :raises ValueError: If the agent is not loaded in this module, or an option names a key the adapter reserves.
+        """
+        wrapped = self._wrapped(agent)
+        wrapped.validate_run_options(options)
+        wrapped.run_options.update(options)
+        return self
+
+    def _wrapped(self, agent: Any) -> Agent:
+        """
+        Returns the Agent Kernel agent wrapping a native framework agent loaded in this module.
+        :param agent: The native framework agent.
+        :return: The wrapped agent.
+        :raises ValueError: If the agent is not loaded in this module.
+        """
+        name = self._native_agent_name(agent)
+        wrapped = self.get_agent(name)
+        if wrapped is None:
+            raise ValueError(f"Agent '{name}' is not loaded in this module")
+        return wrapped
+
+    def _native_agent_name(self, agent: Any) -> str:
+        """
+        Returns the Agent Kernel agent name a native framework agent was registered under.
+        The default is the native agent's `name`; adapters whose rule differs override it (CrewAI names agents
+        by `role`, smolagents falls back to a fixed name).
+        :param agent: The native framework agent.
+        :return: The registered agent name.
+        """
+        return agent.name

@@ -2,13 +2,13 @@ import asyncio
 import functools
 import inspect
 from collections.abc import AsyncGenerator
-from typing import Any, Callable, List
+from typing import Any, Callable, ClassVar, List, Mapping
 
 from smolagents import CodeAgent, MultiStepAgent, ToolCallingAgent
 from smolagents import tool as smol_tool
 
 from ...core import Agent as BaseAgent
-from ...core import Module, PostHook, PreHook, Runner, Runtime, Session, ToolBuilder, ToolContext
+from ...core import Module, Runner, Runtime, Session, ToolBuilder, ToolContext
 from ...core.builder import A2ACardBuilder
 from ...core.config import AKConfig
 from ...core.event import StreamEvent
@@ -156,9 +156,12 @@ class SmolagentsRunner(Runner):
 
             # Injected as smolagents additional_args, only when a context is present.
             incoming = self._load_framework_context(session)
-            run_kwargs: dict[str, Any] = {"reset": False}
+            # Declared run options (max_steps, ...) first; reset and additional_args are AK-owned and written last.
+            run_kwargs: dict[str, Any] = self._native_kwargs(agent.run_options, reset=False)
             if incoming is not None:
                 run_kwargs["additional_args"] = incoming
+            else:
+                run_kwargs.pop("additional_args", None)  # AK owns the key in both branches; the no-context call shape is unchanged
 
             # Preserve conversational continuity across requests without blocking the async event loop.
             reply = await asyncio.to_thread(agent.agent.run, prompt, **run_kwargs)
@@ -204,6 +207,14 @@ class SmolagentsAgent(BaseAgent):
     """
     SmolagentsAgent class provides an agent wrapping for smolagents based agents.
     """
+
+    RESERVED_RUN_OPTIONS: ClassVar[Mapping[str, str]] = {
+        "task": "built from the AgentRequest list by the runner",
+        "reset": "fixed to False so memory persists across turns",
+        "additional_args": "populated from the session's framework_context; seed it with Session.set_framework_context()",
+        "stream": "the runner maps a single return value, not a step stream",
+        "return_full_result": "the runner maps the final answer, not a RunResult",
+    }
 
     def __init__(self, name: str, runner: SmolagentsRunner, agent: SmolagentsSupportedAgent):
         """
@@ -347,29 +358,13 @@ class SmolagentsModule(Module):
         super().load(agents)
         return self
 
-    def pre_hook(self, agent: SmolagentsSupportedAgent, hooks: list[PreHook]) -> "SmolagentsModule":
+    def _native_agent_name(self, agent: SmolagentsSupportedAgent) -> str:
         """
-        Attaches pre-execution hooks to the agent.
-
-        :param agent: The agent to attach hooks to.
-        :param hooks: List of pre-execution hooks to attach.
-        :return: SmolagentsModule instance.
+        smolagents agents are registered under their `name`, falling back to a fixed name when unset.
+        :param agent: The native smolagents agent.
+        :return: The registered agent name.
         """
-        name = getattr(agent, "name", "smolagent")
-        super().get_agent(name).pre_hooks.extend(hooks)
-        return self
-
-    def post_hook(self, agent: SmolagentsSupportedAgent, hooks: list[PostHook]) -> "SmolagentsModule":
-        """
-        Attaches post-execution hooks to the agent.
-
-        :param agent: The agent to attach hooks to.
-        :param hooks: List of post-execution hooks to attach.
-        :return: SmolagentsModule instance.
-        """
-        name = getattr(agent, "name", "smolagent")
-        super().get_agent(name).post_hooks.extend(hooks)
-        return self
+        return getattr(agent, "name", "smolagent")
 
 
 class SmolagentsToolBuilder(ToolBuilder):

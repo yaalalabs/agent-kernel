@@ -119,6 +119,7 @@ class <Name>Runner(Runner):
 - Always reset `ToolContext` in a `finally` block
 - Handle all `AgentRequest` subtypes (`AgentRequestText`, `AgentRequestImage`, `AgentRequestFile`)
 - Return an `AgentReply` (`AgentReplyText` or `AgentReplyImage`)
+- Build the native call's keyword arguments with `self._native_kwargs(agent.run_options, <ak_owned>=...)` (#754), never a fixed keyword set: the declared per-agent run options are copied first and the keys your adapter populates (the session, the framework context, the input) are written last. If the framework's options object and yours are one object (LangGraph's `config`) or must be adjusted per mode (ADK's `RunConfig` in stream mode), merge or copy it before passing it as an AK-owned key, and do the same in `stream()`
 
 ### 3b. Implement `stream()` with AK Stream Events
 
@@ -282,6 +283,7 @@ class <Name>Agent(Agent):
 - `get_description()` must return a meaningful description from the native framework agent
 - `get_a2a_card()` must return a valid A2A agent card built via `A2ACardBuilder`
 - Store the native agent in `self._native_agent` for access in the Runner
+- Declare `RESERVED_RUN_OPTIONS: ClassVar[Mapping[str, str]]` (#754): every keyword your runner passes itself, plus any that changes the result shape your reply mapping reads, each mapped to a one-line reason. `Module.run_options` rejects them at declaration with that reason. Override `validate_run_options` only for a nested key (LangGraph's `config.configurable.thread_id`)
 
 ### 5. Implement the ToolBuilder
 
@@ -308,7 +310,6 @@ Subclass `Module` from `agentkernel.core.module`:
 
 ```python
 from agentkernel.core.module import Module
-from agentkernel.core.hooks import PreHook, PostHook
 from agentkernel.trace.trace import Trace
 
 class <Name>Module(Module):
@@ -325,23 +326,16 @@ class <Name>Module(Module):
     def load(self, agents: list) -> "Module":
         return super().load(agents)
 
-    def pre_hook(self, agent, hooks: list[PreHook]) -> "Module":
-        wrapped = self.get_agent(agent.name)
-        if wrapped:
-            wrapped.pre_hooks.extend(hooks)
-        return self
-
-    def post_hook(self, agent, hooks: list[PostHook]) -> "Module":
-        wrapped = self.get_agent(agent.name)
-        if wrapped:
-            wrapped.post_hooks.extend(hooks)
-        return self
+    # pre_hook / post_hook / run_options are inherited from Module: they resolve the wrapped agent
+    # through _native_agent_name(agent), which defaults to agent.name. Override that hook only when
+    # your framework registers agents under something else (CrewAI: role).
 ```
 
 **Key requirements:**
 - Constructor takes native framework agents, creates a Runner, calls `self.load(agents)`
 - `_wrap()` creates the Agent wrapper — the agent `name` must come from the native agent
 - Support trace runners via `Trace.get().<name>()`
+- `pre_hook`, `post_hook` and `run_options` are inherited and concrete (they share `Module._wrapped`, which raises `ValueError` for an agent not loaded in the module); override `_native_agent_name(agent)` only when the native agent is not registered under `agent.name` (CrewAI uses `role`, smolagents a fallback name)
 
 ### 7. Create the `__init__.py`
 
@@ -429,7 +423,9 @@ Create at minimum:
 - [ ] Optional dependency group in `ak-py/pyproject.toml`
 - [ ] Trace runners in `ak-py/src/agentkernel/trace/langfuse/<name>.py` and `ak-py/src/agentkernel/trace/openllmetry/<name>.py` (optional)
 - [ ] Updates to `trace/base.py` and `trace/trace.py` (if adding tracing)
-- [ ] Unit tests in `ak-py/tests/`
+- [ ] `<Name>Agent.RESERVED_RUN_OPTIONS` declared, and every native call site built with `_native_kwargs` (#754)
+- [ ] `_native_agent_name` overridden if the registered name is not `agent.name`
+- [ ] Unit tests in `ak-py/tests/`, including: declared run options reach the native call, an AK-owned key wins over a bypassed declaration, the declared dict is not mutated across runs, and the reserved keys are rejected through the module
 - [ ] CLI example in `examples/cli/<name>/`
 - [ ] Documentation in `docs/docs/frameworks/<name>.md`
 - [ ] Framework inventories on the docs-site pages (`docs/src/pages/index.tsx` `FrameworksStrip`, `docs/src/pages/features.tsx` `integrations` and SDK count) and in `docs/docs/intro.md`

@@ -135,6 +135,33 @@ Structured output applies to non-streaming execution only. Streamed runs emit ty
 
 LangGraph round-trips the reserved [`framework_context`](../core-concepts/session.md#framework-context--per-run-state) session key **only for keys the graph's state schema declares as channels**. Its top-level keys are spread into the graph input alongside `messages` (never replacing `messages`); on write-back only keys present on the result come back. A prebuilt `create_react_agent` uses `AgentState` and silently drops unknown keys, so for prebuilt agents the value is the uniform cross-framework API rather than new persistence — custom graphs whose state schema includes your keys get a real round-trip.
 
+## Native run options
+
+LangGraph's own run arguments (`config`, `context`, `interrupt_before`, `interrupt_after`,
+`durability`, ...) are declared per agent with
+[`Module.run_options`](../core-concepts/runner.md#native-run-options) and merged into `ainvoke` /
+`astream_events`:
+
+```python
+LangGraphModule([graph]).run_options(
+    graph,
+    config={"callbacks": [ProgressCallbackHandler()], "recursion_limit": 50},
+)
+```
+
+`config` is deep-merged with the `RunnableConfig` the runner builds: dict-valued keys merge with the
+runner's entries winning (`configurable.thread_id` stays the session id), list-valued keys
+(`callbacks`, `tags`) concatenate with the runner's entries first (so a Langfuse callback handler is
+kept beside yours), and every other key is yours.
+
+A `RunnableConfig` key declared at the top level (`recursion_limit=50`, `callbacks=[...]`) is rejected
+with a message pointing to `config={...}`: LangGraph silently drops unknown keywords, so it would
+otherwise never apply.
+
+Reserved (raise `ValueError` at declaration): `input`, `version`, `stream_mode`, `output_keys`,
+`print_mode` (the runner reads `result["messages"]` and `structured_response`, so a changed result
+shape breaks the reply mapping) and the nested `config.configurable.thread_id`.
+
 ## Features
 
 - ✅ Graph-based workflows
@@ -149,3 +176,5 @@ LangGraph round-trips the reserved [`framework_context`](../core-concepts/sessio
 See [examples/cli/langgraph](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/langgraph) for complete examples.
 
 For per-run context/state carried across turns, see [examples/cli/langgraph_context](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/langgraph_context) (a custom graph declaring a `cart` state channel, showing the declared-channel round-trip that a prebuilt `create_react_agent` cannot do).
+
+For per-agent native run options, see [examples/cli/langgraph-run-options](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/langgraph-run-options) (a `RunnableConfig` with `callbacks` and `recursion_limit`, with a deterministic `Run stats:` line on every reply).

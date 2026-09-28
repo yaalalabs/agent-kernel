@@ -114,6 +114,33 @@ Structured output applies to non-streaming execution only. Streamed runs emit ty
 
 OpenAI has **full round-trip** fidelity for the reserved [`framework_context`](../core-concepts/session.md#framework-context--per-run-state) session key. It is injected as the OpenAI Agents SDK run **context** (`Runner.run(..., context=...)`), which tools read and mutate in place via `RunContextWrapper.context`; the mutated object is written back to the session after a successful run, so every key — including ones a tool adds mid-run — survives to the next turn.
 
+## Native run options
+
+The OpenAI Agents SDK's own run arguments (`max_turns`, `hooks`, `run_config`, `error_handlers`)
+are declared per agent with
+[`Module.run_options`](../core-concepts/runner.md#native-run-options) and merged into `Runner.run` /
+`Runner.run_streamed`, identical in both modes:
+
+```python
+from agents import RunConfig, RunHooks
+
+class ProgressHooks(RunHooks):
+    async def on_tool_start(self, context, agent, tool) -> None:
+        ...  # Session.current() resolves here
+
+OpenAIModule([agent]).run_options(
+    agent,
+    max_turns=25,                                            # the SDK default is 10
+    hooks=ProgressHooks(),
+    run_config=RunConfig(call_model_input_filter=trim_history),
+)
+```
+
+Reserved (raise `ValueError` at declaration): `starting_agent`, `input`, `session` (the
+`OpenAISession` on the Agent Kernel session), `context` (the framework context above), and
+`conversation_id`, `previous_response_id`, `auto_previous_response_id`, which the SDK rejects
+alongside the session the runner always passes.
+
 ## Features
 
 - ✅ Function calling
@@ -130,3 +157,5 @@ See [examples/cli/openai](https://github.com/yaalalabs/agent-kernel/tree/develop
 For structured output, see [examples/cli/openai_structured](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/openai_structured) and [examples/api/openai_structured](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/openai_structured) (REST API + post-execution hook).
 
 For per-run context/state carried across turns, see [examples/cli/openai_context](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/openai_context) (a cart kept in `framework_context`, seeded by a pre-hook and round-tripped by the runner).
+
+For per-agent native run options, see [examples/cli/openai-run-options](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/openai-run-options) (`max_turns`, a `RunHooks` progress hook and a `RunConfig` with `call_model_input_filter`, with a deterministic `Run stats:` line on every reply).

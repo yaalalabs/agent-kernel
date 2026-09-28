@@ -6,6 +6,7 @@ from langchain_core.messages import AIMessageChunk
 from pydantic import BaseModel
 
 from agentkernel.core import Session
+from agentkernel.core.builder import SessionStoreBuilder
 from agentkernel.core.event import (
     MessageEnd,
     MessageStart,
@@ -19,7 +20,8 @@ from agentkernel.core.event import (
     ToolCallStart,
 )
 from agentkernel.core.model import AgentReplyAny, AgentReplyText, AgentRequestText
-from agentkernel.framework.langgraph.langgraph import LangGraphRunner
+from agentkernel.core.runtime import Runtime
+from agentkernel.framework.langgraph.langgraph import LangGraphAgent, LangGraphModule, LangGraphRunner
 
 FRAMEWORK_CONTEXT = Session.Keys.FRAMEWORK_CONTEXT.value
 
@@ -523,3 +525,168 @@ class TestLangGraphRunnerStructuredOutput:
         assert isinstance(reply, AgentReplyText)
         assert reply.response == "Hi there!"
         assert reply.prompt == "hello"
+
+
+def _capturing_stream_agent(captured: dict):
+    """Agent mock whose astream_events records every keyword it is called with and yields nothing."""
+    agent = MagicMock()
+    agent._system_prompt = ""
+    agent.agent = MagicMock()
+
+    async def astream_events(**kwargs):
+        captured.update(kwargs)
+        for event in ():
+            yield event
+
+    agent.agent.astream_events = astream_events
+    agent.agent.aget_state = AsyncMock(return_value=MagicMock(values={}))
+    return agent
+
+
+class TestLangGraphMergeRunConfig:
+    """LangGraphRunner._merge_run_config: dict-valued keys merge with AK entries winning, lists concatenate AK-first."""
+
+    def test_ak_thread_id_wins_inside_configurable_while_other_entries_are_kept(self):
+        base = {"configurable": {"thread_id": "ak"}}
+        caller = {"configurable": {"thread_id": "mine", "x": 1}, "recursion_limit": 7}
+
+        merged = LangGraphRunner._merge_run_config(base, caller)
+
+        assert merged == {"configurable": {"thread_id": "ak", "x": 1}, "recursion_limit": 7}
+
+    def test_list_valued_keys_concatenate_with_ak_entries_first(self):
+        trace, mine = object(), object()
+
+        merged = LangGraphRunner._merge_run_config({"callbacks": [trace]}, {"callbacks": [mine, trace]})
+
+        assert merged["callbacks"] == [trace, mine]  # AK first, a caller duplicate of an AK entry is dropped
+
+    def test_a_scalar_ak_value_wins_and_a_none_caller_is_an_empty_config(self):
+        assert LangGraphRunner._merge_run_config({"version": "v2"}, {"version": "v1"}) == {"version": "v2"}
+        assert LangGraphRunner._merge_run_config({"configurable": {"thread_id": "ak"}}, None) == {"configurable": {"thread_id": "ak"}}
+
+    def test_neither_input_is_mutated(self):
+        base = {"configurable": {"thread_id": "ak"}, "callbacks": ["t"]}
+        caller = {"configurable": {"x": 1}, "callbacks": ["m"]}
+
+        LangGraphRunner._merge_run_config(base, caller)
+
+        assert base == {"configurable": {"thread_id": "ak"}, "callbacks": ["t"]}
+        assert caller == {"configurable": {"x": 1}, "callbacks": ["m"]}
+
+
+class TestLangGraphRunnerRunOptions:
+    """Declared run options reach ainvoke / astream_events with config merged and AK keys written last (spec #754)."""
+
+    @pytest.mark.asyncio
+    async def test_config_is_merged_and_other_options_are_forwarded_to_ainvoke(self):
+        runner = LangGraphRunner()
+        session = Session("s")
+        callback = object()
+        agent = _mock_agent({"messages": [_message("hello")]})
+        agent.run_options = {
+            "config": {"callbacks": [callback], "recursion_limit": 7, "configurable": {"x": 1}},
+            "interrupt_before": ["tools"],
+        }
+
+        await runner.run(agent, session, [AgentRequestText(prompt="hi")])
+
+        kwargs = agent.agent.ainvoke.call_args.kwargs
+        assert kwargs["config"] == {"callbacks": [callback], "recursion_limit": 7, "configurable": {"x": 1, "thread_id": "s"}}
+        assert kwargs["interrupt_before"] == ["tools"]
+        assert "messages" in kwargs["input"]
+        assert set(kwargs) == {"input", "config", "interrupt_before"}
+
+    @pytest.mark.asyncio
+    async def test_stream_keeps_version_v2_and_merges_config(self):
+        runner = LangGraphRunner()
+        captured: dict = {}
+        agent = _capturing_stream_agent(captured)
+        agent.run_options = {"config": {"recursion_limit": 9}, "version": "v1"}  # 'version' only reachable by bypassing Module.run_options
+
+        _ = [e async for e in runner.stream(agent, Session("s"), [AgentRequestText(prompt="hi")])]
+
+        assert captured["version"] == "v2"
+        assert captured["config"] == {"recursion_limit": 9, "configurable": {"thread_id": "s"}}
+
+    @pytest.mark.asyncio
+    async def test_the_declared_options_are_not_mutated_by_a_run(self):
+        runner = LangGraphRunner()
+        declared = {"config": {"callbacks": [], "configurable": {"x": 1}}}
+        agent = _mock_agent({"messages": [_message("hello")]})
+        agent.run_options = declared
+
+        await runner.run(agent, Session("s"), [AgentRequestText(prompt="hi")])
+
+        assert declared == {"config": {"callbacks": [], "configurable": {"x": 1}}}
+
+
+class TestLangGraphReservedRunOptions:
+    """LangGraphAgent reserves the result-shape arguments and the nested thread id."""
+
+    def test_reserved_keys(self):
+        assert set(LangGraphAgent.RESERVED_RUN_OPTIONS) == {"input", "version", "stream_mode", "output_keys", "print_mode"}
+
+    def test_nested_thread_id_is_rejected_at_declaration_through_the_module(self):
+        graph = MagicMock()
+        graph.name = "nested-thread-id"
+
+        with Runtime(SessionStoreBuilder.build()):
+            module = LangGraphModule([graph])
+
+            with pytest.raises(ValueError) as exc:
+                module.run_options(graph, config={"configurable": {"thread_id": "x"}})
+            assert "config.configurable.thread_id" in str(exc.value)
+            assert "'langgraph'" in str(exc.value)
+
+            with pytest.raises(ValueError):
+                module.run_options(graph, output_keys=["messages"])
+
+            module.run_options(graph, config={"configurable": {"other": 1}, "recursion_limit": 3})  # accepted
+            assert module.get_agent("nested-thread-id").run_options == {"config": {"configurable": {"other": 1}, "recursion_limit": 3}}
+
+
+class TestLangGraphTopLevelRunnableConfigKeys:
+    """A RunnableConfig key declared at the top level is silently dropped by LangGraph, so it is rejected instead."""
+
+    @pytest.mark.parametrize("key", ["callbacks", "tags", "metadata", "run_name", "max_concurrency", "recursion_limit", "configurable", "run_id"])
+    def test_a_runnable_config_key_at_the_top_level_is_rejected_pointing_to_config(self, key):
+        graph = MagicMock()
+        graph.name = f"top-level-{key}"
+
+        with Runtime(SessionStoreBuilder.build()):
+            module = LangGraphModule([graph])
+
+            with pytest.raises(ValueError) as exc:
+                module.run_options(graph, **{key: object()})
+            assert f"'{key}'" in str(exc.value)
+            assert "config=" in str(exc.value)
+            assert module.get_agent(f"top-level-{key}").run_options == {}
+
+    def test_a_real_ainvoke_keyword_is_still_accepted(self):
+        graph = MagicMock()
+        graph.name = "interrupts"
+
+        with Runtime(SessionStoreBuilder.build()):
+            module = LangGraphModule([graph])
+            module.run_options(graph, interrupt_before=["tools"], config={"recursion_limit": 7})
+            assert module.get_agent("interrupts").run_options == {"interrupt_before": ["tools"], "config": {"recursion_limit": 7}}
+
+
+class TestLangGraphStreamStateReadBack:
+    """The post-stream aget_state must use the same merged config the stream ran with."""
+
+    @pytest.mark.asyncio
+    async def test_aget_state_receives_the_merged_config(self):
+        runner = LangGraphRunner()
+        session = Session("s")
+        session.set(FRAMEWORK_CONTEXT, {"cart": []})
+        captured: dict = {}
+        agent = _capturing_stream_agent(captured)
+        agent.run_options = {"config": {"configurable": {"checkpoint_ns": "x"}}}
+
+        _ = [e async for e in runner.stream(agent, session, [AgentRequestText(prompt="hi")])]
+
+        expected = {"configurable": {"checkpoint_ns": "x", "thread_id": "s"}}
+        assert captured["config"] == expected
+        assert agent.agent.aget_state.call_args.args[0] == expected
