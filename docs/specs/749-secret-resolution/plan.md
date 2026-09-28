@@ -39,7 +39,7 @@ make lint-check-all
   2. `providers/env.py`.
   3. `factory.py` — `SecretProviderFactory` with the `env` branch and the dotted-path branch; leave
      the `aws_ssm` branch for Iteration 4. No manager factory.
-  4. `manager.py` — the concrete `SecretManager`: `from_config`, `current()`/`reset()` reading
+  4. `manager.py` — the concrete `SecretManager`: `current()`/`reset()` reading
      `AKConfig.get().secret`, key validation, the lock-free environment → cache → provider `_resolve`
      (provider called outside any lock; `SecretCache` owns the write lock),
      `invalidate`/`clear`. No `inject` — the manager never writes `os.environ`.

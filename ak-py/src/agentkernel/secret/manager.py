@@ -11,7 +11,7 @@ import re
 from threading import RLock
 from typing import Any, ClassVar, Optional
 
-from ..core.config import AKConfig, _SecretConfig
+from ..core.config import AKConfig
 from .base import SecretProvider
 from .cache import SecretCache
 from .errors import SecretNotFoundError
@@ -40,7 +40,7 @@ class SecretManager:
     _log = logging.getLogger("ak.secret.manager")
 
     def __init__(self, provider: SecretProvider, cache_ttl: int = 300) -> None:
-        """Constructor arguments are explicit; config reading stays in current()/from_config.
+        """Constructor arguments are explicit; config reading stays in current().
 
         :param provider: The backend consulted when the environment and the cache both miss.
         :param cache_ttl: Seconds a provider hit is served from the cache; 0 disables caching.
@@ -48,16 +48,6 @@ class SecretManager:
         """
         self._provider = provider
         self._cache = SecretCache(cache_ttl)
-
-    @classmethod
-    def from_config(cls, config: _SecretConfig) -> "SecretManager":
-        """Build a manager from the `secret` block.
-
-        :param config: The `secret` configuration block.
-        :return: The manager.
-        :raises AKConfigError: If the configured provider or its own settings are unusable.
-        """
-        return cls(provider=SecretProviderFactory.create(config), cache_ttl=config.cache_ttl)
 
     @classmethod
     def current(cls) -> "SecretManager":
@@ -72,7 +62,8 @@ class SecretManager:
         """
         with cls._instance_lock:
             if cls._instance is None:
-                cls._instance = cls.from_config(AKConfig.get().secret)
+                config = AKConfig.get().secret
+                cls._instance = cls(provider=SecretProviderFactory.create(config), cache_ttl=config.cache_ttl)
             return cls._instance
 
     @classmethod

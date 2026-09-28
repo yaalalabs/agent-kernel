@@ -150,17 +150,12 @@ class SecretManager:
     _log = logging.getLogger("ak.secret.manager")
 
     def __init__(self, provider: SecretProvider, cache_ttl: int = 300) -> None:
-        """Constructor arguments are explicit; config reading stays in current()/from_config.
+        """Constructor arguments are explicit; config reading stays in current().
 
         :raises AKConfigError: If cache_ttl is negative.
         """
         self._provider = provider
         self._cache = SecretCache(cache_ttl)
-
-    @classmethod
-    def from_config(cls, config: _SecretConfig) -> "SecretManager":
-        """:raises AKConfigError: If the configured provider or its own settings are unusable."""
-        return cls(provider=SecretProviderFactory.create(config), cache_ttl=config.cache_ttl)
 
     @classmethod
     def current(cls) -> "SecretManager":
@@ -174,7 +169,8 @@ class SecretManager:
         """
         with cls._instance_lock:
             if cls._instance is None:
-                cls._instance = cls.from_config(AKConfig.get().secret)
+                config = AKConfig.get().secret
+                cls._instance = cls(provider=SecretProviderFactory.create(config), cache_ttl=config.cache_ttl)
             return cls._instance
 
     @classmethod
@@ -362,7 +358,7 @@ class SecretProviderFactory:
 ```
 
 `SecretProviderFactory.create` takes the `secret` block **explicitly** rather than reading `AKConfig`
-itself — unlike `ScheduleProviderFactory.create()`, which reads config. `SecretManager.from_config`
+itself — unlike `ScheduleProviderFactory.create()`, which reads config. `SecretManager.current()`
 already holds the block when it builds its provider, so a second `AKConfig.get()` would re-read a
 value the caller has, and a test can build a provider from any `_SecretConfig` without patching
 `AKConfig`. This is the same explicit-config seam #503 added to
@@ -646,7 +642,7 @@ Every field justified, with its reader named:
 |---|---|---|
 | `secret.prefix` | `AWSSMSecretProvider.create_provider` → `__init__` → `_compose_path` | The Terraform `prefix` variable (`ak-deployment/ak-aws/serverless/variables.tf:6`) is not injected into the runtime today, so nothing in `AKConfig` carries the deployment identifier. |
 | `secret.provider.type` | `SecretProviderFactory.create` | The factory selector. Nested to match `schedule.provider.type` (`_ScheduleProviderConfig:356`) and to leave room for a provider's own settings sub-block. |
-| `secret.cache_ttl` | `SecretCache.__init__`, via `SecretManager.from_config` | The rotation-pickup window; differs per deployment, so it cannot be a constant. Flat rather than a `cache:` sub-block because there is exactly one cache setting. |
+| `secret.cache_ttl` | `SecretCache.__init__`, via `SecretManager.current()` | The rotation-pickup window; differs per deployment, so it cannot be a constant. Flat rather than a `cache:` sub-block because there is exactly one cache setting. |
 
 - **No `secret.type` manager selector.** `SecretManager` is one concrete class; a selector with a
   single possible value would be a knob with nothing to choose between.
