@@ -1,11 +1,18 @@
 # What a DataPart is, and how A2UI rides one
 
+> **Status: groundwork for the `a2a-sdk` 1.x port issue, not for #706.** #706 touches nothing about
+> A2A — not its pin, not its lockfile, not its code (design Decision 6). The reason is in §3 and §6
+> below: on the 0.3 line the label rides in `DataPart.metadata` under a key from A2UI's **v0.8**
+> binding — the only one published, and stale — whereas on 1.x it is a first-class field and the
+> ambiguity disappears. Every fact here was executed and is kept for the issue that will use it.
+
 Supporting note for [`../design.md`](../design.md) piece 4. It answers one question: when the design
 says *"A2A has a data part for structured content and Agent Kernel always sends a text part"*, what
 is actually different on the wire, and what does a client do with it.
 
 Everything below was **executed**, not read from documentation. The JSON blocks are real output from
-`a2a-sdk 0.3.6` — the version the capped pin resolves to — unless marked otherwise. Protocol claims
+`a2a-sdk 0.3.6` — the last release the current constraint resolved to — unless marked otherwise.
+Protocol claims
 about A2UI come from [a2ui.org](https://a2ui.org/) as of September 2026.
 
 ---
@@ -99,7 +106,8 @@ Three things changed and each one earns its place:
 3. **`metadata.mimeType` says what the object is.** Without it the client has a JSON blob of unknown
    shape.
 
-The code that produces it is three lines, verified working on 0.3.6:
+The code that produces it is three lines, verified working on 0.3.6 — recorded so the port issue can
+compare it against 1.x's `new_data_message`, which is what it will actually use:
 
 ```python
 from a2a.types import DataPart, Part
@@ -199,8 +207,50 @@ declaration; the rest is the client's.
 
 ## 6. This changes shape again at the 1.x port
 
-Recorded here because it is the same subject, and because the port is a separate issue that will
-need it.
+Recorded here because it is the same subject, and because it is **the whole reason #706 leaves A2A
+alone**: shipping the data part now means shipping it twice.
+
+### The label is in a different place, with a different name
+
+On 0.3.x `DataPart` has no media-type field, so the label goes in `metadata` — a free-form dict that
+anyone can put anything in, and where the key is a convention you hope both ends agree on:
+
+```json
+{
+  "data":     { "version": "v1.0", "createSurface": { "surfaceId": "s1" } },
+  "kind":     "data",
+  "metadata": { "mimeType": "application/a2ui+json" }
+}
+```
+
+On 1.x the part itself has a `media_type` field — the protocol declares it, so it is not a
+convention any more:
+
+```
+parts {
+  data { struct_value { ... } }
+  media_type: "application/a2ui+json"
+}
+```
+
+The same distinction in TypeScript, for anyone who reads types faster than protobuf:
+
+```ts
+// 0.3.x — the label is a key in a bag; the name is an agreement
+type DataPart = { data: object; metadata: Record<string, any> }
+
+// 1.x — the label is in the type
+type DataPart = { data: object; mediaType: string }
+```
+
+**So the label does not merely move — it is also renamed.** A client written against 0.3.x reads
+`part.metadata.mimeType`. After the port it must read `part.media_type`. The payload is byte for byte
+the same; the thing that says *what the payload is* has changed both its location and its spelling.
+
+Every A2A client that learned our label would have to relearn it within weeks. That is the "building
+it twice" that keeps A2A out of #706.
+
+### The rest of what moves
 
 **a2a-sdk 1.x replaced the pydantic types with protobuf.** Verified on 1.1.2:
 
@@ -221,17 +271,13 @@ parts {
 }
 ```
 
-Two consequences:
-
-- **The label moves.** `DataPart.metadata["mimeType"]` on 0.3.x becomes a `media_type` field on the
-  part in 1.x. A client reading the label has to change — a breaking change, though there are none
-  today because A2A has never sent a data part.
-- **The card's shape moves too.** `AgentCard.url` and `AgentCard.preferred_transport` do not exist
-  in 1.x; they are replaced by `supported_interfaces` (an `AgentInterface` of
-  `url` / `protocol_binding` / `tenant` / `protocol_version`). Building today's card verbatim against
-  1.x raises `ValueError: Protocol message AgentCard has no "url" field`.
+Beyond the label, **the card's shape moves too.** `AgentCard.url` and
+`AgentCard.preferred_transport` do not exist in 1.x; they are replaced by `supported_interfaces` (an
+`AgentInterface` of `url` / `protocol_binding` / `tenant` / `protocol_version`). Building today's
+card verbatim against 1.x raises `ValueError: Protocol message AgentCard has no "url" field`.
 
 So the port is an object-model migration across `core/builder.py`, `api/a2a/handler.py` and
-`api/a2a/a2a.py` — roughly 60–90 lines on a 185-line surface — rather than the three renamed imports
+`api/a2a/a2a.py` — roughly 60–90 lines on a 185-line surface — rather than the three renamed
+imports
 the design first assumed. The five framework adapters are unaffected: `AgentSkill(id, name,
 description, tags)` constructs unchanged on 1.x, verified.

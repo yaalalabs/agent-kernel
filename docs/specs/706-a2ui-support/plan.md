@@ -1,17 +1,17 @@
 # #706: structured replies carry their format, end to end — Implementation Plan
 
-Nine iterations. Detail lives in [`spec.md`](spec.md); this file is the order.
+Eight iterations, every one about A2UI. Detail lives in [`spec.md`](spec.md); this file is the
+order.
 
-**The property that makes the order safe:** nothing sets `media_type` until **iteration 6**. Until
+**The property that makes the order safe:** nothing sets `media_type` until **iteration 6**, the
+last one that changes behaviour. Until
 then no labelled reply can exist, so every gate added in iterations 2–5 is unreachable and the branch
 stays green whatever order they land in. Iteration 6 is the switch-on, and it is deliberately last
 among the behavioural changes.
 
-**Nothing is blocked.** Iteration 7 caps `a2a-sdk` to the 0.3 line, which restores a working import
-and lets A2A ship inside this issue. The 1.x port moves to its own issue and is a bigger job than it
-looks — 1.x replaced the pydantic types with **protobuf** (`new_data_message` returns
-`a2a_pb2.Message`, which has no `model_dump`), so it is an object-model migration, not an import
-rename.
+**Nothing is blocked, and A2A is not here at all.** It does not import against the pinned SDK today,
+and fixing that, porting to 1.x and carrying A2UI over it all belong to the `a2a-sdk` port issue
+(design Decision 6). No iteration touches `pyproject.toml`, `uv.lock` or `api/a2a/`.
 
 Per iteration: `cd ak-py && uv run pytest tests/<file>` for the named test, then
 `make lint-check-all` before the commit.
@@ -24,13 +24,13 @@ Per iteration: `cd ak-py && uv run pytest tests/<file>` for the named test, then
   value. No consumer behaviour changes yet.
 - **Files:** `core/util/payload.py` (new), `core/model.py`
 - **Steps:**
-  1. Write `core/util/payload.py`: `JSONPayload` plus `_to_json_safe` — the non-finite/shape walk
-     first, then `json.loads(TypeAdapter(Any).dump_json(v))`, re-raising as `ValueError`.
-     Spec § *`core/util/payload.py`*, rules 1–6.
+  1. Write `core/util/payload.py`: the **`PayloadCodec`** class — `normalise` (shape check, then the
+     non-finite walk, then the round trip) and `encode` (used by iteration 3's gates) — plus the
+     `JSONPayload` annotated type built from `normalise`. Spec § *`core/util/payload.py`*.
   2. `AgentReplyAny`: `content: JSONPayload`, add `media_type: str | None = None`. Widen
      `from_output`'s second branch to accept `list`. Do **not** touch `__str__`.
-  3. `tests/test_payload.py` (new) and the `tests/test_model.py` additions, including the
-     convergence assertion and the two pinned bypasses.
+  3. `tests/test_payload.py` (new) — both halves of `PayloadCodec` — and the `tests/test_model.py`
+     additions, including the convergence assertion and the two pinned bypasses.
 - **Verify:** `uv run pytest tests/test_payload.py tests/test_model.py` — and the whole suite, since
   this changes a type every reply path constructs.
 
@@ -55,12 +55,13 @@ Per iteration: `cd ak-py && uv run pytest tests/<file>` for the named test, then
   `deployment/aws/serverless/core/router/rest_lambda.py`, `deployment/azure/akfunction.py`,
   `pipeline/request_handler.py`, `core/util/driver/dynamodb.py`, `integration/thread/recorder.py`
 - **Steps:**
-  1. The four serialisation gates → pydantic's encoder (spec § *Serialisation gates*).
-  2. `pipeline/request_handler.py:116`'s `JSONResponse` → the same encoder.
-  3. `DynamoDBDriver._to_dynamo` / `_from_dynamo` — **both directions**; the read side is half the
-     fix, not an afterthought.
-  4. `ThreadRecorder.post_run` normalises **by type** — the three call sites pass three different
-     types, so "always `json.dumps`" would raise on the direct path. Spec § *thread recording*.
+  1. All four serialisation gates call **`PayloadCodec.encode`** — one component, four call sites,
+     not four independent fixes that can drift (spec § *Serialisation gates*).
+  2. `pipeline/request_handler.py:116`'s `JSONResponse` → the same `PayloadCodec.encode`.
+  3. New **`DynamoDecimalCodec`** beside `DynamoDBDriver`: `to_dynamo` on write, `from_dynamo` on
+     read — **both directions**; the read side is half the fix, not an afterthought.
+  4. New **`ThreadRecorder._as_thread_content`** — the three call sites pass three different types,
+     so "always `json.dumps`" would raise on the direct path. A named method, not inline branching.
 - **Verify:** `uv run pytest tests/test_pipeline_agent_runner.py tests/test_thread_runner.py
   tests/test_shared_drivers.py tests/test_sessions_dynamodb.py tests/test_pipeline_request_handler.py`
 
@@ -108,45 +109,7 @@ Per iteration: `cd ak-py && uv run pytest tests/<file>` for the named test, then
   construction when `execution.mode` is `stream` and `a2ui.enabled` is true, so the silence is
   explained rather than discovered.
 
-## Iteration 7: A2A — cap the pin, then send the data part
-
-- **Goal:** A2A imports again, gets its first tests, and sends a data part for a labelled reply.
-  **No longer blocked**: capping restores a working SDK, and the 1.x port becomes its own issue with
-  a tested A2A to port *from*.
-- **Files:** `ak-py/pyproject.toml`, `ak-py/uv.lock`, `api/a2a/a2a.py`,
-  `ak-py/tests/test_a2a.py` (new)
-- **Steps:**
-  1. **Cap the pin** to `a2a-sdk[http-server]>=0.3.6,<0.4` (`pyproject.toml:168`) and regenerate
-     `ak-py/uv.lock`. This moves the lock **backwards**, 1.1.2 → 0.3.x, which is safe precisely
-     because nothing uses 1.1.2: A2A does not import against it, so no code path exercises it today.
-     The example's lock (`examples/api/a2a/multi/uv.lock`) already pins 0.3.6 and does not move.
-  2. **Write `tests/test_a2a.py` first** — A2A's first test file, against the now-importable SDK: a
-     text reply produces a text message, the error path stays text, the card carries what it carries.
-     This is the "characterise before porting" step the design wanted and could not previously run.
-  3. `_execute_agent` → `run_multi`; tighten the return annotation from `Any`.
-  4. `execute` branches on the media type at `a2a.py:49`. **Verified working on 0.3.6:**
-
-     ```python
-     new_agent_parts_message(
-         [Part(root=DataPart(data=reply.content,
-                             metadata={"mimeType": reply.media_type}))],
-         context_id, task_id)
-     ```
-
-     Everything unlabelled keeps `new_agent_text_message`; the error path stays text.
-  5. Declare the extension on each covered agent's card in `A2A._build` (`api/a2a/a2a.py:76`) —
-     `A2UI_EXTENSION_URI` from the capability, `AgentExtension` built here so `core/` stays clean.
-     Decision 12.
-  6. Extend `tests/test_a2a.py` with both branches and the card declaration, and add the A2A leg to
-     the parity test.
-- **Verify:** `uv run pytest tests/test_a2a.py tests/test_cross_surface_parity.py`
-- **The cost, recorded so the port issue inherits it:** on 0.3.x the label rides in
-  `DataPart.metadata["mimeType"]`; on 1.x it is a first-class `media_type` field on the part. **The
-  wire shape therefore changes at the port** — a breaking change for an A2A client reading the label,
-  though there are none today because A2A has never sent a data part. The port issue owns the
-  migration note.
-
-## Iteration 8: tests
+## Iteration 7: tests
 
 Per-iteration tests land with their iteration. This iteration adds what spans them.
 
@@ -154,19 +117,21 @@ Per-iteration tests land with their iteration. This iteration adds what spans th
 - **Steps:**
   1. One labelled reply asserted to arrive with the same content and label on REST, WebSocket, MCP
      and AG-UI. **The fixture carries a `datetime` and a `Decimal`** — parity on a payload that was
-     never at risk proves nothing. A2A's leg is added with iteration 7.
-  2. Confirm the back-compat matrix from iteration 2 still passes unchanged.
-  3. Full suite green.
+     never at risk proves nothing. A2A joins when the port issue adds the data part.
+  2. Confirm `PayloadCodec.encode` is the only encoder at all six gate sites — the copy-drift the
+     single component exists to prevent.
+  3. Confirm the back-compat matrix from iteration 2 still passes unchanged.
+  4. Full suite green.
 - **Verify:** `cd ak-py && uv run pytest` and `make lint-check-all`
 
-## Iteration 9: example, docs and skills
+## Iteration 8: example, docs and skills
 
 - **Files:**
   - New example under `examples/` — an agent with its own catalog in its instructions, `a2ui`
     enabled, payload over plain REST. Its `app_test.py` asserts `media_type` is present and `result`
     is an object.
   - **Docs:** `docs/docs/api/rest-api.md` (the gated `result` contract and `media_type`),
-    `mcp-server.md`, `agui-server.md`, `a2a-server.md` (with iteration 7), and a new
+    `mcp-server.md`, `agui-server.md`, and a new
     `docs/docs/advanced/a2ui.md` beside `sandbox.md` plus its sidebar entry.
   - **Skills — named, with the line each invalidates:**
     - `.agents/skills/ak-dev-architecture/SKILL.md:275` — "`AgentReplyAny`: `content: dict` … `str(reply)`

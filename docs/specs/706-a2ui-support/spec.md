@@ -18,24 +18,78 @@ existing ABC with an existing registration path, and `A2UIPostHookFactory` follo
 `SandboxPreHookFactory` shape (`sandbox/hooks.py:134`) for enabled/disabled resolution only. There is
 no `type` field and no second implementation to select, by design: an application wanting a different
 payload format writes its own `PostHook` and attaches it, which is the BYO path and predates this
-change. `core/util/payload.py` is a pydantic annotated type, not a component.
+change. **Every component this change introduces is a class**, per the house rules: `PayloadCodec`
+(`core/util/payload.py`), `DynamoDecimalCodec` (beside the DynamoDB driver), `DataMessage`
+(`core/event.py`), `A2UIPostHook` / `NoOpA2UIPostHook` / `A2UIPostHookFactory` (`a2ui/hooks.py`) and
+`_A2UIConfig` (`core/config.py`). **One module-level name survives** — `JSONPayload`, a pydantic
+annotated type, which cannot be anything else and is a type alias rather than a component. Every
+other change edits a method on a class that already exists.
 
 ---
 
 ## Design
 
-### `core/util/payload.py` — the JSON-safe payload type
+### `core/util/payload.py` — `PayloadCodec`
 
-New module. Holds one annotated type, used by `AgentReplyAny.content` and `DataMessage.content`.
+New module. **One class**, not a pair of module-level functions, because both halves answer the same
+question — *what bytes does this value become* — and splitting them is how the four encoders diverged
+in the first place.
 
 ```python
-JSONPayload = Annotated[dict | list, BeforeValidator(_to_json_safe)]
+class PayloadCodec:
+    """Normalises a payload to plain JSON types, and encodes any response body to JSON."""
+
+    _adapter: TypeAdapter = TypeAdapter(Any)
+
+    @classmethod
+    def normalise(cls, value: Any) -> dict | list: ...      # the validator body
+    @classmethod
+    def encode(cls, body: Any) -> str: ...                  # the serialisation gates
+    @classmethod
+    def _require_finite(cls, value: Any, path: str = "content") -> None: ...  # private
+
+
+JSONPayload = Annotated[dict | list, BeforeValidator(PayloadCodec.normalise)]
 ```
+
+`JSONPayload` is a module-level name because a pydantic annotated type cannot be anything else; it is
+a type alias, not a component. `PayloadCodec` holds no instance state and is used as a namespace with
+behaviour, so every method is a `@classmethod` — the house rules' stated form for a class needing no
+instance.
+
+**`normalise` — used by `AgentReplyAny.content` and `DataMessage.content`:**
+
+1. **Rejects a non-object top level** before anything else: `json.loads("4")` succeeds and yields an
+   `int`, which is not a payload.
+2. **`_require_finite` walks for non-finite floats and raises**, naming the key path
+   (`content['stats']['avg'] is nan`). This needs its own code: pydantic renders `NaN` and the
+   infinities as `null` **silently** — verified — and `null` is indistinguishable from an omitted
+   field, so a client could not tell a divide-by-zero from a deliberate gap (Decision 8).
+3. **Round-trips**: `json.loads(TypeAdapter(Any).dump_json(value))`. The same operation `from_output`
+   already performs on its pydantic branch (`core/model.py:163`), applied to the plain-dict branch so
+   the two converge. Verified: `datetime` → ISO 8601, `Decimal` → quoted string, `UUID`/`bytes` →
+   string, `set` → list, `int` key → string key, top-level list passes.
+4. **Re-raises a serializer failure as `ValueError`**, which pydantic wraps into a `ValidationError`
+   naming the `content` field. (`PydanticSerializationError` is itself a `ValueError` subclass, so it
+   would be wrapped anyway; re-raising is for the message, which otherwise names no field.)
+
+Two surprises worth documenting rather than discovering, both verified: a `Decimal` becomes a
+**quoted string** while a `float` stays a number, and `bytes` coerce **only when UTF-8 decodable** —
+a non-UTF-8 byte string raises, so it falls under rule 4 rather than rule 3.
+
+**`encode` — used by every serialisation gate.** This is the half that stops the fix being copied
+four times. Each gate below calls `PayloadCodec.encode(body)` instead of `json.dumps(body)`, so a
+value that got in through one of normalisation's two bypasses produces the same bytes everywhere
+rather than a `TypeError` that loses the message to retry exhaustion.
+
+**Two bypasses no validator can close**, documented rather than defended against:
+`reply.model_copy(update={"content": ...})` and in-place mutation of an already-validated dict.
+`encode` is the defence in depth.
 
 **Why `core/util/`.** Both `core/model.py` and `core/event.py` need it, and `core/util/` is already
 the home for small, stateless, framework-agnostic helpers shared across core (`factory.py`,
-`error_util.py`, `pagination.py`, `key_value_cache.py`) — which is exactly this type's shape. It
-keeps `core/`'s top level for the concepts.
+`error_util.py`, `pagination.py`, `key_value_cache.py`). It keeps `core/`'s top level for the
+concepts.
 
 One candidate home is ruled out rather than merely passed over: `core/model.py:8` imports
 `core/event.py`, so defining the type in `model.py` and importing it from `event.py` would be an
@@ -45,47 +99,6 @@ not a stream event, and that is not where a reader would look.
 **It cannot live in `a2ui/`.** The JSON-safe rule applies to *every* structured reply, labelled or
 not; it is a property of `AgentReplyAny`, not of A2UI. Putting it in the capability package would
 make `core/model.py` import from a capability, which the coupling rule forbids.
-
-**Rules, numbered because the reasoning matters more than the code:**
-
-1. **The validator is a single pydantic JSON round trip** — `json.loads(TypeAdapter(Any).dump_json(v))`
-   — the same operation `from_output` already performs on its pydantic branch (`core/model.py:163`,
-   `model_dump(mode="json")`). Applying it to the plain-dict branch is what makes the two converge.
-   **Verified empirically** against the pinned pydantic: a `datetime` becomes ISO 8601, a `Decimal`
-   a quoted string, a `UUID` a string, a `set` a list, `bytes` a string, an `int` key a string key,
-   a top-level list passes through, and an arbitrary object raises `PydanticSerializationError`.
-2. **Field-level (`BeforeValidator`), never a model validator.** A parent
-   `model_validator(mode="after")` is bypassed by a subclass that fills `content` in its own
-   after-validator — exactly the shape `AgentReplyPaused` takes in #696. Field validation runs for
-   the subclass too. Decision 4 sends three constraints to #696 so that inheritance actually holds;
-   they are that issue's to satisfy, not this one's.
-3. **Values with a canonical JSON form coerce silently**: `datetime`, `date`, `Decimal`, `UUID`,
-   `Enum`, `set`, `bytes`, and non-string mapping keys. Two surprises worth documenting rather than
-   discovering, both verified:
-   - **A `Decimal` becomes a quoted string, not a JSON number** (`Decimal("250.00")` → `"250.00"`),
-     while a `float` stays a number. An application that puts a price in as a `Decimal` expecting a
-     number on the wire gets a string.
-   - **`bytes` coerce only when UTF-8 decodable.** A non-UTF-8 byte string raises
-     (`invalid utf-8 sequence`) and therefore falls under rule 4, not rule 3.
-4. **Values with no JSON form raise `ValidationError` at construction** — an arbitrary object, a
-   file handle, a framework-native type. The validator catches the serializer's error and re-raises
-   it as `ValueError`, which pydantic wraps into `ValidationError` naming the `content` field.
-   (`PydanticSerializationError` *is* a `ValueError` subclass, so it would be wrapped anyway;
-   re-raising is for the message, which otherwise names no field.)
-5. **`NaN`, `inf` and `-inf` raise** — and this needs its own code, because pydantic does **not**
-   raise: verified, `dump_json` renders all three as `null` silently. Decision 8: `null` is
-   indistinguishable from an omitted field, so a client cannot tell a divide-by-zero from a value the
-   agent chose not to send. Implemented by walking the payload for non-finite floats *before* the
-   round trip and raising `ValueError` with the offending key path.
-   - The walk is also where the **top-level shape** is checked: a scalar raises
-     `ValueError("payload must be an object or array")` rather than reaching the round trip.
-6. **Two bypasses no validator can close**, documented rather than defended against:
-   `reply.model_copy(update={"content": ...})` and in-place mutation of an already-validated dict.
-   The serialisation gates below use pydantic's encoder as defence in depth.
-
-`_to_json_safe` is a module-level function — one of the justified exceptions in the house rules: it
-is small, stateless, and belongs to no class (it is the validator body for an annotated type, which
-cannot be a method).
 
 ### `core/model.py` — `AgentReplyAny`
 
@@ -223,8 +236,11 @@ One change, in `ResponseBuilder.build_response` (`core/chat_service.py:303`). Th
 if isinstance(result, AgentReplyAny) and result.media_type:
     response_dict = {"result": result.content, "media_type": result.media_type}
 else:
-    response_dict = {"result": str(result) if isinstance(result, (AgentReplyText, AgentReplyImage, AgentReplyAny))
-                     else "Non textual result received"}
+    response_dict = {
+        "result": str(result)
+        if isinstance(result, (AgentReplyText, AgentReplyImage, AgentReplyAny))
+        else "Non textual result received"
+    }
 ```
 
 - The `else` branch is the existing line, unmodified, so text replies, image replies, structured
@@ -242,21 +258,25 @@ so this is byte-identical for them; without it a `DataMessage` reaches the bare 
 
 ### Serialisation gates
 
-Four sites serialise a response body with a bare `json.dumps` and must use pydantic's encoder so a
-value arriving through one of piece 1's bypasses produces the same bytes as everywhere else instead
-of killing the message:
+Four sites serialise a response body with a bare `json.dumps`. A value arriving through one of
+`normalise`'s two bypasses raises `TypeError` there, the message is lost to retry exhaustion, and the
+caller is told `"Failed to process message after N retries"` — naming neither cause nor fix.
 
-| Site | Current | Change |
-|---|---|---|
-| `pipeline/agent_runner.py:198` | `json.dumps(response_body)` | pydantic encoder |
-| `pipeline/transport/sqs.py:52-67` | ECS twin | same |
-| `deployment/aws/serverless/core/router/rest_lambda.py:288` | `json.dumps(res_body)` | same |
-| `deployment/azure/akfunction.py:53` | `json.dumps(res_body)` | same |
+**All four call `PayloadCodec.encode(body)`.** They do *not* each grow their own encoder call: the
+whole thesis is that every surface emits the same bytes, and four independent fixes are four chances
+to drift. One component, four call sites.
+
+| Site | Current |
+|---|---|
+| `pipeline/agent_runner.py:198` | `json.dumps(response_body)` |
+| `pipeline/transport/sqs.py:52-67` | ECS twin |
+| `deployment/aws/serverless/core/router/rest_lambda.py:288` | `json.dumps(res_body)` |
+| `deployment/azure/akfunction.py:53` | `json.dumps(res_body)` |
 
 `pipeline/request_handler.py:116` renders the 202 path through `JSONResponse`, which is
 `json.dumps(..., allow_nan=False)`. Direct REST survives the same payload because FastAPI's
 `jsonable_encoder` copes, so the two paths disagree — the per-surface divergence §2 argues against.
-It changes to the same encoder.
+It changes to the same `PayloadCodec.encode`.
 
 ### `core/util/driver/dynamodb.py` — float ↔ Decimal
 
@@ -265,12 +285,23 @@ inside the output consumer, burning the retry budget. Any payload carrying a pri
 coordinate trips it. Piece 1's JSON-safe rule does **not** fix this — JSON-safe means the float stays
 a float.
 
-Two private static methods on the driver, so the conversion lives in the class that owns the
-database semantics:
+**`DynamoDecimalCodec`**, a class beside `DynamoDBDriver` in the same module, mirroring
+`PayloadCodec`'s shape — both are codecs, and a reader who has met one should recognise the other:
 
-- `_to_dynamo(value)` — recursively rewrites `float` → `Decimal(str(value))` in `put`.
-- `_from_dynamo(value)` — the inverse in `get`, `query` and any scan path: `Decimal` → `int` when
-  integral, else `float`.
+```python
+class DynamoDecimalCodec:
+    """Converts between JSON numbers and DynamoDB's Decimal-only numeric type."""
+
+    @classmethod
+    def to_dynamo(cls, value: Any) -> Any: ...    # float -> Decimal(str(value)), recursively
+    @classmethod
+    def from_dynamo(cls, value: Any) -> Any: ...  # Decimal -> int when integral, else float
+```
+
+`DynamoDBDriver.put` calls `to_dynamo`; `get`, `query` and any scan path call `from_dynamo`. A
+separate class rather than two driver methods because the conversion is a self-contained rule with
+its own tests, and the driver should not grow a second responsibility — but it stays in the driver's
+module, because it is DynamoDB's semantics and nothing else needs it.
 
 **The read side is half the fix, not an afterthought.** Without it the failure moves one hop: the
 pipeline `RestHandler` hands `record["body"]` straight to FastAPI (`pipeline/request_handler.py:117`),
@@ -301,63 +332,29 @@ return str(reply)
 - `_meta` is MCP's own slot for implementation metadata. The rejected alternative was wrapping the
   payload (`{"media_type": …, "content": …}`), which changes the shape the client receives.
 
-### `api/a2a/a2a.py` — A2A
+### A2A — not touched
 
-**A2A does not import today**, so this piece starts by fixing that. `ak-py/uv.lock` pins
-`a2a-sdk 1.1.2`, and in that venv `import agentkernel.api.a2a.a2a` raises
+**A2A does not import today.** `ak-py/uv.lock` pins `a2a-sdk 1.1.2`, and in that venv
+`import agentkernel.api.a2a.a2a` raises
 `ImportError: cannot import name 'new_agent_text_message' from 'a2a.utils'`. Nothing is red because
 no test imports the module.
 
-**The fix here is a cap, not a port.** `ak-py/pyproject.toml:168` becomes
-`a2a-sdk[http-server]>=0.3.6,<0.4` and `ak-py/uv.lock` is regenerated — backwards, 1.1.2 → 0.3.x,
-which is safe because nothing uses 1.1.2: the module does not import against it, so no code path
-exercises it. The 1.x port is a separate issue (Decision 6), and it is a bigger job than the design
-first assumed: **1.x replaced the pydantic types with protobuf.** `new_data_message` returns an
-`a2a_pb2.Message` with no `model_dump`, so porting is an object-model migration rather than three
-renamed imports.
+**This issue changes nothing about it** — not `ak-py/pyproject.toml`, not `ak-py/uv.lock`, not
+`api/a2a/a2a.py`, and it adds no A2A test. Fixing the import, porting to 1.x and carrying A2UI over
+A2A are all the port issue's (design Decision 6).
 
-On the capped SDK:
+An earlier draft capped the pin here, justified as giving the port characterisation tests to migrate
+from. That does not hold: **1.x replaces the pydantic types with protobuf**, so every assertion such
+a test could make (`msg.parts[0].root.text` and the like) is rewritten at the port regardless. What
+was left was a backwards relock followed within days by a forwards one, and `pyproject.toml` churn in
+a payload-carriage change.
 
-- `_execute_agent` (`:60`) calls `run_multi([AgentRequestText(prompt=...)])` instead of `run(prompt)`,
-  so the executor receives an `AgentReply` rather than a string. Its return annotation tightens from
-  `Any` to `AgentReply`.
-- `execute` (`:42`) branches **on the media type, not the reply type** at `:49`. **Verified against
-  a real 0.3.6 install** — this exact call produces `kind: data` with the payload intact and the
-  label in `metadata`:
-
-  ```python
-  new_agent_parts_message(
-      [Part(root=DataPart(data=reply.content, metadata={"mimeType": reply.media_type}))],
-      context_id, task_id)
-  ```
-
-  Everything else — including a structured reply with no label — keeps `new_agent_text_message`, and
-  the error path (`:54`) stays text.
-- **The metadata key is `mimeType`.** A2UI's A2A binding (its v0.8 extension spec) names that key
-  inside `DataPart.metadata`, and A2A's `DataPart` has no `mimeType` field of its own — `data`,
-  `kind`, `metadata` only — so `metadata` is both correct and the only option. Agent Kernel's own
-  `media_type` naming stays on its own surfaces; on A2A it uses A2A's word.
-- **`A2A._build` (`api/a2a/a2a.py:76`) declares the extension** on each covered agent's card:
-
-  ```python
-  card.capabilities.extensions = [*(card.capabilities.extensions or []),
-                                  AgentExtension(uri=A2UI_EXTENSION_URI, required=False)]
-  ```
-
-  `AgentCapabilities.extensions` and `AgentExtension(uri, description, params, required)` both exist
-  on the capped SDK — verified. This is the **only** place a surface learns A2UI exists (Decision
-  12): `a2ui/` exposes the URI constant and an `is_enabled_for(agent_name)` predicate, and
-  `api/a2a/a2a.py` builds the `AgentExtension` itself, so `core/` stays free of A2UI and `a2ui/`
-  stays free of the a2a SDK.
-- **A2A gets its first test file**, `tests/test_a2a.py`. It has none today, which is the only reason
-  the broken import never went red.
-- The agent card already advertises `default_output_modes: ["json"]` (`core/builder.py:44`) while the
-  executor only ever sends text. This makes an existing claim true rather than adding a new one.
-- **The label's position changes at the port.** On 0.3.x it rides in
-  `DataPart.metadata["mimeType"]`, which is what A2UI's binding specifies; on 1.x it is a
-  first-class `media_type` field on the part. That
-  is a breaking change for an A2A client reading the label — of which there are none today, because
-  A2A has never sent a data part. The port issue owns the migration note.
+For the port issue: the migration is roughly 60–90 lines across `core/builder.py`,
+`api/a2a/handler.py` and `api/a2a/a2a.py` — `new_data_message` returns an `a2a_pb2.Message` with no
+`model_dump`, and `AgentCard` has no `url` or `preferred_transport` (they become
+`supported_interfaces`), so today's card raises `ValueError: Protocol message AgentCard has no "url"
+field`. The five framework adapters are unaffected, verified. Groundwork:
+[`research/a2a-datapart.md`](research/a2a-datapart.md).
 
 ### `integration/agui/mapping.py` — AG-UI
 
@@ -383,15 +380,18 @@ single-process mode and another through the queue, permanently.
 | `pipeline/agent_runner.py:151` (queue) | the response body's `result` **value** — a `dict` once labelled | a Python **repr** — the defect |
 
 So the fix cannot be "always `json.dumps`": that would raise `TypeError` on the direct path's model
-object. `post_run` normalises by type instead:
+object. The normalisation becomes a method on the recorder — `ThreadRecorder._as_thread_content` —
+rather than inline branching in `post_run`, so it has a name and a test:
 
 ```python
-if isinstance(result, str):
-    content = result
-elif isinstance(result, (dict, list)):
-    content = json.dumps(result)          # the queue path's labelled reply
-else:
-    content = str(result)                 # an AgentReply — its __str__ is already json.dumps
+@staticmethod
+def _as_thread_content(result: Any) -> str:
+    """Render any reply form as the thread store's `str` content, without a Python repr."""
+    if isinstance(result, str):
+        return result
+    if isinstance(result, (dict, list)):
+        return PayloadCodec.encode(result)     # the queue path's labelled reply
+    return str(result)                         # an AgentReply — its __str__ is already json.dumps
 ```
 
 `ThreadMessage.content` stays `str` (`integration/thread/model.py:33`) — **labelling stored history
@@ -402,7 +402,7 @@ is a Non-goal**; this fixes the encoding only.
 | Consumer | Change |
 |---|---|
 | Six framework adapters | **None.** They call `from_output` with no media type and are unaffected. Verified: no adapter sets or reads `media_type`. |
-| `core/service.py:144` `AgentService.run` | **None.** Still returns `str`. A2A and MCP move to `run_multi`; the CLI keeps `run`. |
+| `core/service.py:144` `AgentService.run` | **None.** Still returns `str`. MCP moves to `run_multi`; A2A and the CLI keep `run`. |
 | `pipeline/ws/base.py` | **None.** `send(..., message: dict)` passes the response dict through as a JSON frame, so WebSocket gets the object form free. |
 | Redis / Valkey response stores | **None, verified.** They re-serialise a body that is already JSON-native. |
 | `pipeline/response_handler.py:192` | **None — deliberately.** The messaging integrations receive a Python repr for a labelled reply; they are text surfaces with no A2UI renderer, and pointing a labelled agent at one is the application's choice. Non-goal, recorded with the consequence spelled out. |
@@ -482,13 +482,9 @@ Numbered, exhaustive. Every one is intentional.
    paths must not diverge permanently.
 9. **MCP returns a `ToolResult` with `structuredContent` and `_meta` for a labelled reply.** Gated.
    *Justification:* Piece 4.
-10. **A2A sends a data part for a labelled reply.** Gated. *Justification:* Piece 4.
-11. **`a2a-sdk` is capped to `>=0.3.6,<0.4`.** A2A becomes importable again; the lock moves backwards
-    from 1.1.2, which nothing was using. *Justification:* a working A2A inside this issue, and a
-    tested one for the port issue to migrate.
-12. **A streamed run can emit a `DataMessage` before `MessageEnd`.** Only when an application hook
+10. **A streamed run can emit a `DataMessage` before `MessageEnd`.** Only when an application hook
     produces one; nothing in the framework emits it. *Justification:* Piece 3.
-13. **`stream_chunk` serialises in JSON mode.** Byte-identical for every event type that exists
+11. **`stream_chunk` serialises in JSON mode.** Byte-identical for every event type that exists
     today. *Justification:* prevents a mid-stream raise.
 
 **Non-changes — fixed on purpose:**
@@ -511,7 +507,7 @@ Numbered, exhaustive. Every one is intentional.
 |---|---|
 | Unserialisable value in `content` | `ValidationError` at construction, naming the field. Raised in the application's own code, not down the pipeline. |
 | `NaN`/`inf` in `content` | `ValueError` from the validator with the offending key path, wrapped by pydantic into `ValidationError`. |
-| A value reaching a serialisation gate through a bypass | Encoded by pydantic's encoder rather than raising `TypeError` and losing the message to retry exhaustion. |
+| A value reaching a serialisation gate through a bypass | Encoded by `PayloadCodec.encode` rather than raising `TypeError` and losing the message to retry exhaustion. |
 | `a2ui` block absent or `enabled: false` | `A2UIPostHookFactory.get()` returns `NoOpA2UIPostHook`. No error, no log noise. |
 | `A2UIPostHookFactory.get()` raises | Logged via `logging.getLogger("ak.a2ui.hooks").exception(...)`; returns `NoOpA2UIPostHook`. The hook chain never breaks the runtime. |
 | Reply body is not JSON | Returned untouched and unlabelled — the normal prose case, not an error. Not logged: it is most turns. |
@@ -520,7 +516,7 @@ Numbered, exhaustive. Every one is intentional.
 | `DataMessage` with an unsafe value | Cannot occur — `JSONPayload` rejects at construction, before the stream. |
 | DynamoDB write of a float | Converted to `Decimal`; no longer raises. |
 | MCP host ignores `_meta` | The client receives the payload without knowing its format. Accepted (Decision 9) — a host integration problem, not a reason to invent a wrapper. |
-| A2A on an uncapped install | The cap makes this unreachable from `pyproject.toml`. An environment that forces 1.x still fails to import — the port issue's to fix. |
+| A2A used at all | Unchanged: the module does not import against the pinned SDK. The port issue's to fix. |
 
 ---
 
@@ -530,7 +526,7 @@ Run with `cd ak-py && uv run pytest`.
 
 ### New files
 
-**`tests/test_payload.py`** — the `JSONPayload` type directly.
+**`tests/test_payload.py`** — `PayloadCodec` directly, both halves.
 
 - **Convergence, the whole rule in one assertion:** a pydantic model with `datetime`/`Decimal`/`UUID`
   fields through `from_output`, and a plain dict of the same values through
@@ -542,6 +538,8 @@ Run with `cd ak-py && uv run pytest`.
 - **The bypasses, pinned as tested behaviour:** `model_copy(update={"content": ...})` does *not*
   normalise, and neither does in-place mutation. Pin them so nobody builds on a guarantee that is
   not there.
+- **`encode` separately from `normalise`:** a body holding a `datetime` that bypassed the validator
+  still encodes rather than raising — the property the four gates depend on.
 
 **`tests/test_a2ui_hook.py`** — the capability, with `AKConfig.get` monkeypatched per the
 `test_sessions_redis.py` fake-config pattern.
@@ -560,8 +558,8 @@ Run with `cd ak-py && uv run pytest`.
   object with `media_type` set — with **no application post-hook anywhere in the test**.
 
 **`tests/test_cross_surface_parity.py`** — one labelled structured reply asserted to arrive with the
-same content and the same label on REST, WebSocket, MCP and AG-UI (A2A's leg lands with the A2A
-branch, after the port). Nothing like it exists today; it is what makes §3's claim checkable and what
+same content and the same label on REST, WebSocket, MCP and AG-UI. A2A joins when the port issue
+adds the data part. Nothing like it exists today; it is what makes §3's claim checkable and what
 catches a future surface regressing to an early encode. **The fixture must carry a `datetime` and a
 `Decimal`** — parity on a payload that was never at risk proves nothing.
 
@@ -577,7 +575,7 @@ catches a future surface regressing to an early encode. **The fixture must carry
 | `tests/test_agui_mapping.py` | `data_message` → AG-UI custom event; an unknown type still returns `None`. |
 | `tests/test_pipeline_agent_runner.py` | A labelled reply reaches the output queue (the bare `json.dumps` no longer raises), and thread recording stores valid JSON, not a Python repr. |
 | `tests/test_thread_runner.py` | The queue path and the direct path record the **same bytes** for the same labelled reply. |
-| `tests/test_sessions_dynamodb.py` / `tests/test_shared_drivers.py` | A payload carrying a float is stored without raising **and reads back as a `float`, not a `Decimal`** — asserted by a `json.dumps` on the polled record, which is what `rest_lambda.py:288` does and what would fail if only the write side were fixed. |
+| `tests/test_shared_drivers.py` — plus `DynamoDecimalCodec` round-trip cases of its own | A payload carrying a float is stored without raising **and reads back as a `float`, not a `Decimal`** — asserted by a `json.dumps` on the polled record, which is what `rest_lambda.py:288` does and what would fail if only the write side were fixed. |
 | `tests/test_api_mcp.py` | A labelled reply produces `structuredContent` plus `_meta`; an unlabelled one produces today's string. |
 | `tests/test_config.py` | The `a2ui` block loads, defaults to disabled, and accepts `AK_A2UI__*`. |
 
