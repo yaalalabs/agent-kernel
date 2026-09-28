@@ -206,12 +206,14 @@ class OpenAIRunner(BaseRunner):
                 return AgentReplyText(response="Sorry. No valid content found in the requests")
 
             input_data = self._get_run_input(prompt, message_content)
+            # Resolved once per run: the static options with a declared factory's result merged over them.
+            options = await agent.resolve_run_options(session, requests)
             # Injected as the run context, so tools read and write it via RunContextWrapper.context.
             # A deep copy is passed in so tools mutating it in place don't also mutate `incoming`.
             incoming = self._load_framework_context(session)
             produced = copy.deepcopy(incoming)
-            # Declared run options (max_turns, hooks, run_config, ...) first; the keys AK owns are written last.
-            kwargs = self._native_kwargs(agent.run_options, session=self._session(session), context=produced)
+            # Resolved run options (max_turns, hooks, run_config, ...) first; the keys AK owns are written last.
+            kwargs = self._native_kwargs(options, session=self._session(session), context=produced)
             reply = (await Runner.run(agent.agent, input_data, **kwargs)).final_output
 
             self._store_framework_context(session, incoming, produced)
@@ -256,9 +258,11 @@ class OpenAIRunner(BaseRunner):
                 return
 
             input_data = self._get_run_input(prompt, message_content)
+            # Resolved once per run: the static options with a declared factory's result merged over them.
+            options = await agent.resolve_run_options(session, requests)
             incoming = self._load_framework_context(session)
             produced = copy.deepcopy(incoming)
-            kwargs = self._native_kwargs(agent.run_options, session=self._session(session), context=produced)
+            kwargs = self._native_kwargs(options, session=self._session(session), context=produced)
             result = Runner.run_streamed(agent.agent, input_data, **kwargs)
 
             async for event in result.stream_events():

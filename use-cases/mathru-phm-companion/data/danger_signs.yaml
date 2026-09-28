@@ -1,0 +1,74 @@
+# Maternal and newborn danger-sign reference table.
+#
+# TODO: POPULATE FROM MINISTRY OF HEALTH AND WHO DANGER-SIGN PATIENT EDUCATION MATERIAL.
+# THIS TABLE REQUIRES CLINICIAN REVIEW BEFORE ANY REAL-WORLD USE.
+#
+# Every entry below is a structural placeholder. None of it is clinical guidance, none of
+# the keywords are real danger signs, and none of the action strings may be shown to a
+# mother as advice.
+#
+# While `status` is `placeholder`, screen_danger_signs treats EVERY reported symptom as
+# `red` and escalates. That is deliberate: an unpopulated table must fail toward
+# escalation, never toward reassurance.
+#
+# Severity is decided in Python by keyword matching. The model passes the mother's raw
+# text through and receives a severity it cannot override.
+#
+# Severity values are restricted to `red` and `amber`.
+#   red   -> escalate to the assigned PHM in the same turn
+#   amber -> advise, do not escalate
+# `green` is a system-level state meaning no symptom was reported at all. It is never a
+# value in this table, so do not add it here.
+#
+# Keywords must include common Sinhala and Tamil transliterations alongside English.
+# Matching is case-insensitive and word-boundary based.
+
+# ---------------------------------------------------------------------------
+# PROVENANCE
+#
+# Sourcing rules, enforced by provenance_test.py:
+#   - Never cite Scribd or any re-upload. Get the .gov.lk original, or do not
+#     use the value. Copies of these documents are on Scribd and are convenient;
+#     they are unverifiable re-uploads of unknown vintage.
+#   - Two sources per value. If they disagree, the newer official one wins and
+#     the discrepancy is noted here.
+#   - Check the date printed ON THE FACE of the document, not its file
+#     metadata. An old-but-official document is more dangerous than an
+#     obviously unofficial one.
+#
+# `status` must be exactly `sourced` before any value here is used. Anything
+# else, including a typo, is treated as `placeholder` and fails toward
+# escalation. Setting `sourced` requires every provenance field below to be
+# filled in; the test suite will fail otherwise.
+# ---------------------------------------------------------------------------
+provenance:
+  source: TODO # exact document title
+  publisher: TODO # Family Health Bureau, Ministry of Health, Sri Lanka (supplement with WHO)
+  document_date: TODO # as printed on the document, not the file metadata
+  url: TODO # direct .gov.lk link
+  retrieved: TODO # YYYY-MM-DD
+  cross_checked_against: TODO # second source, or "CHDR, physical copy"
+  clinician_review: "NOT PERFORMED. See Known Limitations in README.md."
+
+status: placeholder
+
+signs:
+  # TODO: replace every entry below with real Ministry of Health / WHO danger signs.
+  - id: placeholder_sign_red_1
+    severity: red # TODO: placeholder, not clinical guidance
+    keywords: # TODO: real keywords plus Sinhala and Tamil transliterations
+      - "PLACEHOLDER_RED_KEYWORD_ONE"
+      - "PLACEHOLDER_RED_KEYWORD_TWO"
+    action: "PLACEHOLDER action string, not clinical guidance. Contact your PHM or your nearest hospital now."
+
+  - id: placeholder_sign_red_2
+    severity: red # TODO: placeholder, not clinical guidance
+    keywords: # TODO
+      - "PLACEHOLDER_RED_KEYWORD_THREE"
+    action: "PLACEHOLDER action string, not clinical guidance. Contact your PHM or your nearest hospital now."
+
+  - id: placeholder_sign_amber_1
+    severity: amber # TODO: placeholder, not clinical guidance
+    keywords: # TODO
+      - "PLACEHOLDER_AMBER_KEYWORD_ONE"
+    action: "PLACEHOLDER action string, not clinical guidance. Tell your PHM about this at your next visit."

@@ -179,6 +179,14 @@ The [`waste-sorting-assistant`](https://github.com/yaalalabs/agent-kernel/tree/d
 - Agent Kernel session memory for region-specific rules
 - AWS Lambda deployment with DynamoDB-backed session persistence
 
+**Example: Mathru — Maternal Health Companion**
+
+The [`mathru-phm-companion`](https://github.com/yaalalabs/agent-kernel/tree/develop/use-cases/mathru-phm-companion) is a WhatsApp agent that helps expectant mothers track clinic schedules and report symptoms, and helps their assigned Public Health Midwife triage escalations. It demonstrates:
+- Multi-agent handoffs via the OpenAI Agents module, with role-based routing
+- WhatsApp integration as the sole user interface, with session memory keyed on the sender's phone number
+- Input/output guardrails for content safety
+- A SQLite-backed store for registrations and escalations
+
 See [`use-cases/README.md`](https://github.com/yaalalabs/agent-kernel/tree/develop/use-cases/README.md) for the full workflow to build your own agent from a spec file.
 
 ## Compatibility

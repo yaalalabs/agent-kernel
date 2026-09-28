@@ -154,6 +154,16 @@ runner's entries winning (`configurable.thread_id` stays the session id), list-v
 (`callbacks`, `tags`) concatenate with the runner's entries first (so a Langfuse callback handler is
 kept beside yours), and every other key is yours.
 
+A [run-options factory](../core-concepts/runner.md#native-run-options) result is merged over the
+static declaration at the top level, so a factory returning `{"config": {"recursion_limit": 9}}`
+replaces the whole static `config`, callbacks included, with no warning. To extend it instead, start
+from the static value:
+
+```python
+def options_for(agent, session, requests):
+    return {"config": {**agent.run_options.get("config", {}), "recursion_limit": 9}}
+```
+
 A `RunnableConfig` key declared at the top level (`recursion_limit=50`, `callbacks=[...]`) is rejected
 with a message pointing to `config={...}`: LangGraph silently drops unknown keywords, so it would
 otherwise never apply.

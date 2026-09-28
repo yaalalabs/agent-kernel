@@ -1,11 +1,11 @@
 import logging
-from types import SimpleNamespace
+from types import MappingProxyType, SimpleNamespace
 from typing import Any
 
 import pytest
 
 from agentkernel.core.base import Agent, Runner, Session
-from agentkernel.core.model import AgentReply, AgentRequest, SystemTool
+from agentkernel.core.model import AgentReply, AgentRequest, AgentRequestText, SystemTool
 from agentkernel.core.tool import SystemToolFactory
 
 
@@ -286,6 +286,160 @@ class TestAgentRunOptions:
         message = str(exc.value)
         assert message.index("'context'") < message.index("'session'")
         assert "the AK session" in message and "framework_context" in message
+
+
+class TestAgentResolveRunOptions:
+    """Agent.run_options_factory / Agent.resolve_run_options (spec #758, Agent section)."""
+
+    STATIC = {"max_turns": 10, "keep": "static"}
+
+    def _agent(self) -> MockAgent:
+        agent = MockAgent("test-agent", MockRunner("test-runner"))
+        agent.run_options.update(self.STATIC)
+        return agent
+
+    def test_run_options_factory_alias_is_exported_from_core_and_the_package(self):
+        from agentkernel import RunOptionsFactory as top_level
+        from agentkernel.core import RunOptionsFactory as core_level
+        from agentkernel.core.base import RunOptionsFactory as base_level
+
+        assert top_level is core_level is base_level
+
+    def test_run_options_factory_defaults_to_none_and_is_settable(self):
+        agent = MockAgent("test-agent", MockRunner("test-runner"))
+        assert agent.run_options_factory is None
+
+        def factory(agent, session, requests):
+            return {}
+
+        agent.run_options_factory = factory
+        assert agent.run_options_factory is factory
+
+        agent.run_options_factory = None
+        assert agent.run_options_factory is None
+
+    @pytest.mark.asyncio
+    async def test_no_factory_resolves_to_an_equal_but_distinct_copy_of_the_static_dict(self):
+        agent = self._agent()
+
+        options = await agent.resolve_run_options(Session("test-session"), [AgentRequestText(prompt="hi")])
+
+        assert options == self.STATIC
+        assert options is not agent.run_options
+        options["max_turns"] = 1
+        assert agent.run_options == self.STATIC
+
+    @pytest.mark.asyncio
+    async def test_a_sync_factory_merges_over_the_static_dict_and_wins_per_key(self):
+        agent = self._agent()
+        agent.run_options_factory = lambda agent, session, requests: {"max_turns": 3, "extra": True}
+
+        options = await agent.resolve_run_options(Session("test-session"), [])
+
+        assert options == {"max_turns": 3, "keep": "static", "extra": True}
+        assert agent.run_options == self.STATIC
+
+    @pytest.mark.asyncio
+    async def test_an_async_factory_merges_the_same_way(self):
+        agent = self._agent()
+
+        async def factory(agent, session, requests):
+            return {"max_turns": 3, "extra": True}
+
+        agent.run_options_factory = factory
+
+        options = await agent.resolve_run_options(Session("test-session"), [])
+
+        assert options == {"max_turns": 3, "keep": "static", "extra": True}
+        assert agent.run_options == self.STATIC
+
+    @pytest.mark.asyncio
+    async def test_a_dict_valued_option_from_the_factory_replaces_the_static_one_wholesale(self):
+        agent = self._agent()
+        agent.run_options["config"] = {"recursion_limit": 5, "tags": ["static"]}
+        agent.run_options_factory = lambda agent, session, requests: {"config": {"recursion_limit": 9}}
+
+        options = await agent.resolve_run_options(Session("test-session"), [])
+
+        assert options["config"] == {"recursion_limit": 9}  # top-level merge only, no deep merge
+        assert agent.run_options["config"] == {"recursion_limit": 5, "tags": ["static"]}
+
+    @pytest.mark.asyncio
+    async def test_a_read_only_mapping_result_is_accepted(self):
+        agent = self._agent()
+        agent.run_options_factory = lambda agent, session, requests: MappingProxyType({"max_turns": 3})
+
+        options = await agent.resolve_run_options(Session("test-session"), [])
+
+        assert options == {"max_turns": 3, "keep": "static"}
+        assert isinstance(options, dict)
+
+    @pytest.mark.asyncio
+    async def test_the_factory_receives_the_agent_session_and_requests_by_identity_once(self):
+        agent = self._agent()
+        session = Session("test-session")
+        requests = [AgentRequestText(prompt="hi")]
+        calls: list[tuple] = []
+
+        def factory(*args):
+            calls.append(args)
+            return {}
+
+        agent.run_options_factory = factory
+
+        await agent.resolve_run_options(session, requests)
+
+        assert len(calls) == 1
+        seen_agent, seen_session, seen_requests = calls[0]
+        assert seen_agent is agent
+        assert seen_session is session
+        assert seen_requests is requests
+
+    @pytest.mark.asyncio
+    async def test_a_non_mapping_result_raises_type_error_naming_the_agent_and_the_type(self):
+        agent = self._agent()
+        agent.run_options_factory = lambda agent, session, requests: [("max_turns", 3)]
+
+        with pytest.raises(TypeError) as exc:
+            await agent.resolve_run_options(Session("test-session"), [])
+
+        assert "test-agent" in str(exc.value)
+        assert "list" in str(exc.value)
+        assert agent.run_options == self.STATIC
+
+    @pytest.mark.asyncio
+    async def test_a_reserved_key_from_the_factory_raises_the_same_value_error_as_declaration(self):
+        class Reserving(MockAgent):
+            RESERVED_RUN_OPTIONS = {"context": "populated from framework_context"}
+
+        agent = Reserving("test-agent", MockRunner("test-runner"))
+        agent.run_options.update(self.STATIC)
+        agent.run_options_factory = lambda agent, session, requests: {"context": {"k": 1}, "max_turns": 3}
+
+        with pytest.raises(ValueError) as exc:
+            await agent.resolve_run_options(Session("test-session"), [])
+
+        message = str(exc.value)
+        assert "test-runner" in message
+        assert "test-agent" in message
+        assert "'context'" in message
+        assert "populated from framework_context" in message
+        assert "max_turns" not in message
+        assert agent.run_options == self.STATIC
+
+    @pytest.mark.asyncio
+    async def test_a_raising_factory_propagates_its_exception_unchanged(self):
+        agent = self._agent()
+
+        def factory(agent, session, requests):
+            raise RuntimeError("factory boom")
+
+        agent.run_options_factory = factory
+
+        with pytest.raises(RuntimeError, match="factory boom"):
+            await agent.resolve_run_options(Session("test-session"), [])
+
+        assert agent.run_options == self.STATIC
 
 
 class TestRunnerNativeKwargs:

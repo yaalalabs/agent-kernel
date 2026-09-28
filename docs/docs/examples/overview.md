@@ -52,9 +52,10 @@ Per-run framework context/state demos — a grocery assistant that carries a car
 - **`adk_context/`** - Google ADK, via `ToolContext.state`
 - **`pydanticai_context/`** - Pydantic AI, via `RunContext.deps`
 
-Per-agent native run options demos, one per framework: each declares that framework's turn-limit option and progress-hook option through `Module.run_options` and appends a deterministic `Run stats:` line to every reply (see the [Runner](../core-concepts/runner.md#native-run-options) guide):
+Per-agent native run options demos, one per framework plus a per-run factory variant: each declares that framework's turn-limit option and progress-hook option through `Module.run_options` and appends a deterministic `Run stats:` line to every reply (see the [Runner](../core-concepts/runner.md#native-run-options) guide):
 
 - **`openai-run-options/`** - OpenAI Agents SDK, `max_turns`, `RunHooks` and a `RunConfig` with `call_model_input_filter`
+- **`openai-dynamic-run-options/`** - OpenAI Agents SDK, a `Module.run_options` factory computing a `RunConfig` and `max_turns` per run beside static keywords
 - **`langgraph-run-options/`** - LangGraph, a `RunnableConfig` with `callbacks` and `recursion_limit`
 - **`adk-run-options/`** - Google ADK, `plugins` and a `RunConfig` with `max_llm_calls`
 - **`pydanticai-run-options/`** - Pydantic AI, `UsageLimits` and an `event_stream_handler`
@@ -237,6 +238,7 @@ The [`use-cases/`](https://github.com/yaalalabs/agent-kernel/tree/develop/use-ca
 ### Available Use Cases
 
 - **`waste-sorting-assistant/`**: A waste sorting advisor agent that recommends disposal categories (recycle, compost, landfill, hazardous waste) based on item material and the user's local recycling rules. Includes OpenAI Agents SDK integration, session memory for region-specific rules, and AWS Lambda deployment with DynamoDB-backed session persistence.
+- **`mathru-phm-companion/`**: A WhatsApp maternal health companion that helps expectant mothers track clinic schedules and report symptoms, and helps their assigned Public Health Midwife triage escalations. Includes multi-agent handoffs via the OpenAI Agents module, WhatsApp integration, phone-number-keyed session memory, input/output guardrails, and a SQLite-backed store for registrations and escalations.
 
 ### How to Use the Use Cases
 
