@@ -901,6 +901,12 @@ Rules for the stack:
   (`integration/thread/recorder.py:59-65`) and a resume-only request records an **empty user
   turn**, since `pre_run` writes `req.prompt` (`recorder.py:56`). Doing better needs a
   distinguishable `ThreadMessage` shape — a thread-package change, and its own issue.
+  - **One line of the thread *handler* does change**, and it is not recording:
+    `AgentThreadRequestHandler._validate_chat_request` (`integration/thread/thread_chat.py:206`)
+    rejects a promptless request before any thread write. Left as it was it would reject every
+    resume with a 400, making the capability unavailable on a thread-enabled app rather than
+    merely unrecorded — a far larger limitation than this Non-goal claims. It takes the same
+    "prompt or resume" check as `ChatService._validate`.
 - **Resuming from any surface except REST and AG-UI.** *(Decision.)* Slack, Teams, WhatsApp,
   Telegram, Messenger, Instagram and Gmail have no way to send a decision back; the CLI, A2A and
   MCP consume the reply object directly with no resume path. There a paused reply renders as the

@@ -17,15 +17,28 @@ Two facts in the current code stop a resume request from existing at all. Both a
 consequences of a design requirement rather than design changes, but both alter a public model, so
 they are called out before anything else.
 
-1. **`BaseChatRequest.prompt` is required** — `prompt: str` with no default (`core/model.py:243-261`).
-   A resume-only request carries no prompt, so pydantic rejects it before any AK code runs. It
-   becomes `Optional[str] = None` (§ *Config and model changes*). Widening a required field is
+1. **`BaseChatRequest.prompt` is required** — `prompt: str` with no default. A resume-only request
+   carries no prompt, so pydantic rejects it before any AK code runs. It becomes **`str = ""`, not
+   `Optional[str] = None`** (§ *Config and model changes*). Widening a required field is
    backward-compatible for every existing sender.
-2. **`ChatService._validate` raises on a missing prompt** — `if requests is None: if not req.prompt:
-   raise ValueError("No prompt provided in the request")` (`chat_service.py:672-688`). The check
-   becomes "prompt **or** resume" on the built path.
+2. **Three places relied on `prompt` being required for validation they never wrote.** Widening it
+   makes each accept a request it used to reject, so each needs the same "prompt **or** resume"
+   check:
+   - `ChatService._validate` (`chat_service.py:749`) — the built path.
+   - `PipelineWebSocketHandler._handle_chat` (`pipeline/ws/handler.py:224`) — the `/ws` chat route
+     relied on **pydantic** rejecting a promptless frame. Without a check it would enqueue the
+     frame and fail asynchronously in the runner, replacing an immediate `SYSTEM_RESPONSE` failure
+     with a queued acknowledgement. Adding it also makes resume-over-WebSocket possible, which it
+     was not before.
+   - `AgentThreadRequestHandler._validate_chat_request` (`integration/thread/thread_chat.py:206`) —
+     runs before any thread write. Left alone it would **reject every resume with a 400 on a
+     thread-enabled app**, making the capability unavailable there rather than merely unrecorded.
+3. **`RequestBuilder` must stop building an empty text request.** It did
+   `[AgentRequestText(prompt=req.prompt)]` unconditionally; with an empty prompt that sends a blank
+   text request to the adapter. It becomes conditional on `req.prompt`.
 
-Neither is optional: without both, PR 1 ships a request shape that cannot be constructed.
+None of these is optional: without them PR 1 ships a request shape that cannot be constructed, or
+one that regresses three existing surfaces.
 
 ---
 
@@ -150,7 +163,7 @@ class PausedRunState:
     @staticmethod
     def find_by_interruption(session: Session, interruption_ids: Iterable[str]) -> PausedRun | None: ...
     @staticmethod
-    def add(session: Session, record: PausedRun) -> PausedRun: ...   # assigns id, returns stored
+    def add(session: Session, agent: str, interruptions: list[PausedInterruption], payload: Any = None) -> PausedRun: ...
     @staticmethod
     def clear(session: Session, run_id: str) -> None: ...
 ```
@@ -159,10 +172,12 @@ Rules:
 
 1. **The key name is spelled once.** No caller outside this module touches
    `session.get_non_volatile_cache()` for paused runs.
-2. **`add` owns three things**, so each has exactly one implementation: it assigns
-   `id = uuid4().hex`, runs the picklability check on `record.payload`, and emits the
-   `in_memory` warn-once (§ *Durability*). It returns the stored record so the adapter can read the
-   generated id back for the reply.
+2. **`add` builds the record rather than taking one**, so each of the three things it owns has
+   exactly one implementation: it assigns `id = uuid4().hex` and `created_at`, runs the
+   picklability check on the payload, and emits the `in_memory` warn-once (§ *Durability*). It
+   returns the stored record so the adapter reads the generated id back for the reply. Taking a
+   pre-built `PausedRun` would force every adapter to invent a placeholder id just to hand it over
+   — the same shape as the `content` problem on `AgentPausedReplyAny`.
 3. **Reads validate rather than trust.** The cache returns `Any`; `list` re-validates each entry
    through `PausedRun.model_validate` and drops (with a `WARNING`) anything that fails, so a cache
    corrupted by application code cannot crash a resume.
@@ -626,7 +641,7 @@ One **public model** change, in `core/model.py`:
 
 | Field | Before | After | Reason |
 |---|---|---|---|
-| `BaseChatRequest.prompt` | `str` (required) | `Optional[str] = None` | a resume-only request carries no prompt; pydantic would reject it first |
+| `BaseChatRequest.prompt` | `str` (required) | `str = ""` | a resume-only request carries no prompt; pydantic would reject it first. **Not `Optional[str]`**: `AgentRequestText.prompt` and `ThreadMessage.content` are both `str`, so `None` would crash `RequestBuilder` and `ThreadRecorder.pre_run` — and nothing anywhere distinguishes an absent prompt from an empty one (verified) |
 | `BaseChatRequest.resume` | — | `Optional[ResumeSpec] = None` | the public resume block, mirroring `schedule` |
 
 Existing YAML, `AK_*` env vars and request bodies are unaffected: widening a required field accepts
@@ -639,8 +654,14 @@ carries neither, so the *behaviour* a caller sees for a malformed request is unc
    Replaces four distinct silent losses (`design.md` Motivation).
 2. **`202` now has two meanings on the chat API**: `status: "SCHEDULED"` and `status: "PAUSED"`.
    Intentional; the body key is the discriminator and is required.
-3. **`BaseChatRequest.prompt` becomes optional.** Intentional and forced (§ *Blockers*). A request
-   with neither prompt nor resume still 400s with the same message.
+3. **`BaseChatRequest.prompt` becomes optional** (`str = ""`). Intentional and forced
+   (§ *Blockers*). A request with neither prompt nor resume still 400s with the same message, on
+   every surface — but three surfaces needed an explicit check to keep doing so:
+   - **The `/ws` chat route now rejects a promptless frame itself** rather than relying on pydantic.
+     Same immediate `SYSTEM_RESPONSE` failure as before; the message names the resume block.
+   - **The thread handler's envelope check accepts a resume block**, so a resume is not rejected
+     before any thread write. `ThreadRecorder` itself is unchanged.
+   - **`RequestBuilder` no longer emits an empty `AgentRequestText`** for a promptless request.
 4. **Six existing sites that branch on `isinstance(..., AgentReplyAny)` now also receive pauses** —
    the two guardrail factories, `AgentService.run`, and the three stringify sites. Intentional and
    partly desirable; each is reviewed above and none is changed.

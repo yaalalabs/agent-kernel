@@ -359,15 +359,20 @@ class BaseChatRequest(BaseModel):
     A schedule block defers the request: instead of running the agent, the request
     is registered as a scheduled task and acknowledged with HTTP 202. It requires
     the scheduling capability (a 'schedule' block in config.yaml) and a user_id.
+
+    A resume block answers a paused run instead of starting a new turn, so prompt
+    defaults to empty rather than being required. ChatService rejects a request
+    carrying neither, with the same error a missing prompt has always raised.
     """
 
-    prompt: str
+    prompt: str = ""
     agent: Optional[str] = None
     session_id: Optional[str] = None
     user_id: Optional[str] = None
     group_id: Optional[str] = None
     thread_name: Optional[str] = None
     schedule: Optional[ScheduleSpec] = None
+    resume: Optional[ResumeSpec] = None
 
 
 class BaseRunRequest(BaseChatRequest):

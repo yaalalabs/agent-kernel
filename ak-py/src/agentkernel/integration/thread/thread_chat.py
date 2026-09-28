@@ -198,11 +198,12 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
         """Validate the request envelope before any thread write.
 
         :param req: The chat request to validate
-        :raises ValueError: If session_id or prompt is missing
+        :raises ValueError: If session_id is missing, or the request carries neither a prompt nor
+            a resume block
         """
         if not req.session_id:
             raise ValueError("No session_id is provided in the request")
-        if not req.prompt:
+        if not req.prompt and req.resume is None:
             raise ValueError("No prompt provided in the request")
 
     @staticmethod
