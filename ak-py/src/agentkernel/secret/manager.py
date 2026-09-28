@@ -1,10 +1,3 @@
-"""SecretManager — resolves an environment-variable-style key to a secret value.
-
-Resolution order is fixed: the process environment, then the process cache, then the configured
-provider. A set, non-empty environment variable always wins; the provider only supplies keys the
-environment does not. Nothing here ever writes os.environ.
-"""
-
 import logging
 import os
 import re
@@ -17,8 +10,7 @@ from .cache import SecretCache
 from .errors import SecretNotFoundError
 from .factory import SecretProviderFactory
 
-# Environment-variable-style keys: the names the SDKs already read. Uppercase-only so one secret has
-# exactly one spelling across the cache, the provider and os.environ.
+# Uppercase-only so one secret has exactly one spelling across the cache, the provider and os.environ.
 _KEY_PATTERN = re.compile(r"^[A-Z][A-Z0-9_]*$")
 
 _UNSET: Any = object()  # "no default supplied"; typed Any so it can default an Optional[str] parameter
@@ -27,20 +19,16 @@ _UNSET: Any = object()  # "no default supplied"; typed Any so it can default an 
 class SecretManager:
     """Resolves an environment-variable-style key to a secret value: environment -> cache -> provider.
 
-    The process-wide instance is SecretManager.current(). Keys are the same names the SDKs already
-    read from the environment (OPENAI_API_KEY, NEO4J_PASSWORD), so nothing here renames, prefixes or
-    case-folds them. A set, non-empty environment variable always wins. Provider-resolved values are
-    returned to the caller and held in the cache only; nothing here ever writes os.environ.
+    A set, non-empty environment variable always wins. Provider-resolved values are cached, never
+    written to os.environ.
     """
 
-    # Guards construction in current()/reset() only. Resolution takes no manager lock: the cache
-    # owns its own write lock, and the provider is called outside any lock.
     _instance: ClassVar[Optional["SecretManager"]] = None
     _instance_lock: ClassVar[RLock] = RLock()
     _log = logging.getLogger("ak.secret.manager")
 
     def __init__(self, provider: SecretProvider, cache_ttl: int = 300) -> None:
-        """Constructor arguments are explicit; config reading stays in current().
+        """Create a manager over an explicit provider.
 
         :param provider: The backend consulted when the environment and the cache both miss.
         :param cache_ttl: Seconds a provider hit is served from the cache; 0 disables caching.
@@ -52,9 +40,6 @@ class SecretManager:
     @classmethod
     def current(cls) -> "SecretManager":
         """Return the configured process-wide manager, building it on first access.
-
-        Unlike ScheduleManager.get(), this never returns None: the capability is always available
-        and its default (env provider) costs nothing.
 
         :return: The shared manager.
         :raises AKConfigError: If `secret.provider.type`, `secret.prefix` or `secret.cache_ttl`
@@ -71,8 +56,6 @@ class SecretManager:
         """Drop the shared instance so the next current() rebuilds from config. For testing."""
         with cls._instance_lock:
             cls._instance = None
-
-    # -- public API ----------------------------------------------------------------------
 
     def get(self, key: str, default: Optional[str] = _UNSET) -> Optional[str]:
         """Resolve `key`: environment, then cache, then provider; first hit wins.
@@ -104,17 +87,14 @@ class SecretManager:
         """Drop every cached value."""
         self._cache.clear()
 
-    # -- internals -----------------------------------------------------------------------
-
     def _resolve(self, key: str) -> Optional[str]:
-        """Environment -> cache -> provider, first hit wins. Holds no lock across the sequence."""
         env_value = os.environ.get(key)
-        if env_value:  # set and non-empty wins; "" is a miss. Never cached, so re-read every call.
+        if env_value:  # "" is a miss
             return env_value
         cached = self._cache.get(key)
         if cached is not None:
             return cached
-        value = self._provider.get_secret(key)  # outside any lock; may raise SecretError
+        value = self._provider.get_secret(key)
         if value is not None:
             self._cache.set(key, value)
         return value

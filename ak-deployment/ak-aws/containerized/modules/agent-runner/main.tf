@@ -30,8 +30,7 @@ locals {
     var.dynamodb_schedule_table_arn != null ? {
       AK_SCHEDULE__STORE__DYNAMODB__TABLE_NAME = var.dynamodb_schedule_table_name
     } : {},
-    # Secret resolution: the deployment scope only. `secret.provider.type` is deliberately never
-    # injected — the application declares it in its committed config.yaml, exactly like `thread.type`.
+    # Secret resolution scope; `secret.provider.type` comes from the app's config.yaml
     var.ssm_enabled ? {
       AK_SECRET__PREFIX = var.prefix
     } : {},
@@ -288,10 +287,8 @@ resource "aws_iam_policy" "ssm_secret_policy" {
     Version = "2012-10-17"
     Statement = [
       {
-        Sid    = "ReadAKSecrets"
-        Effect = "Allow"
-        # The one call AWSSMSecretProvider makes. No GetParameters, no DescribeParameters,
-        # no write or delete action, and never account-wide ssm:*.
+        Sid      = "ReadAKSecrets"
+        Effect   = "Allow"
         Action   = ["ssm:GetParameter"]
         Resource = "arn:aws:ssm:${var.region}:${var.account_id}:parameter/ak/${var.prefix}/*"
       }

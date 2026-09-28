@@ -10,12 +10,8 @@ from ..core.util.factory import AKConfigError
 class SecretCache:
     """TTL'd key -> value store holding provider hits only.
 
-    Keyed by the same environment-variable-style key the caller passed, so a cache entry, a provider
-    lookup and an environment variable all name one thing. Nothing here transforms the key.
-
-    Owns the cache write lock: held only while writing, evicting or clearing entries. Reads take no
-    lock — each entry is one immutable (value, expires_at) tuple swapped in by a single dict
-    assignment, so a reader sees either the old entry or the new one, never a torn one.
+    Writes take a lock; reads are lock-free since each entry is an immutable tuple swapped in by a
+    single dict assignment.
     """
 
     def __init__(self, ttl: int) -> None:
@@ -31,8 +27,7 @@ class SecretCache:
         return self._ttl > 0
 
     def get(self, key: str) -> Optional[str]:
-        """Return the cached value, or None when absent or expired. Lock-free read; an expired entry
-        is evicted under the write lock."""
+        """Return the cached value, or None when absent or expired."""
         entry = self._entries.get(key)
         if entry is None:
             return None
@@ -46,7 +41,7 @@ class SecretCache:
         return None
 
     def set(self, key: str, value: str) -> None:
-        """Store a provider hit under the write lock. A no-op when caching is disabled (ttl == 0)."""
+        """Store a provider hit. A no-op when caching is disabled (ttl == 0)."""
         if not self.enabled:
             return
         entry = (value, time.monotonic() + self._ttl)
@@ -54,11 +49,11 @@ class SecretCache:
             self._entries[key] = entry
 
     def invalidate(self, key: str) -> None:
-        """Drop one entry under the write lock. Never raises for an unknown key."""
+        """Drop one entry. Never raises for an unknown key."""
         with self._lock:
             self._entries.pop(key, None)
 
     def clear(self) -> None:
-        """Drop every entry under the write lock."""
+        """Drop every entry."""
         with self._lock:
             self._entries.clear()

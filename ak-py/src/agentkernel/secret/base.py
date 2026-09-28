@@ -12,12 +12,7 @@ class SecretProvider(ABC):
 
     @classmethod
     def create_provider(cls, config: "_SecretConfig") -> "SecretProvider":
-        """Build the provider from the `secret` block.
-
-        The whole block, not just `secret.provider`: `secret.prefix` is a deployment-wide scope that
-        more than one backend can key off (SSM today, Secrets Manager or Key Vault later), so it
-        stays one field rather than being redeclared per provider. A provider needing no settings
-        inherits this default and ignores the block (the ScheduleProvider.from_config precedent).
+        """Build the provider from the `secret` block. Providers needing no settings inherit this default.
 
         :raises AKConfigError: If the settings this provider needs are missing or malformed.
         """
@@ -27,9 +22,7 @@ class SecretProvider(ABC):
     def get_secret(self, key: str) -> Optional[str]:
         """Return the value stored for `key`, or None when this backend does not have it.
 
-        The provider owns its own addressing — it translates `key` to whatever its backend uses —
-        and it never caches and never falls back to another layer. It MUST tolerate concurrent
-        calls.
+        Must not cache or fall back to another layer, and must tolerate concurrent calls.
 
         :raises SecretError: If the backend failed (as opposed to not holding the value).
         """

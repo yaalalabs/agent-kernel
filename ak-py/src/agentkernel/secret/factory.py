@@ -16,10 +16,7 @@ class SecretProviderFactory:
 
     @staticmethod
     def create(config: _SecretConfig) -> SecretProvider:
-        """Create the configured provider, delegating to its ``create_provider`` seam.
-
-        Takes the `secret` block explicitly rather than reading AKConfig, so a caller that already
-        holds the block does not re-read it and a test can build a provider from any _SecretConfig.
+        """Create the configured provider, delegating to its ``create_provider``.
 
         :param config: The `secret` configuration block.
         :return: The configured provider.

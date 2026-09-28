@@ -20,11 +20,9 @@ _NOT_FOUND_ERROR_CODE = "ParameterNotFound"
 
 
 class AWSSMSecretProvider(SecretProvider):
-    """AWS SSM Parameter Store, read-only, one call: GetParameter(WithDecryption=True).
+    """AWS SSM Parameter Store, read-only via GetParameter(WithDecryption=True).
 
-    Addressing: the env-style key OPENAI_API_KEY becomes the parameter /ak/{prefix}/openai_api_key.
-    The leading slash is required — SSM rejects a hierarchical name without one — and the IAM
-    resource ARN parameter/ak/{prefix}/* is the ARN of exactly this name.
+    The key OPENAI_API_KEY is read from the parameter /ak/{prefix}/openai_api_key.
     """
 
     _log = logging.getLogger("ak.secret.provider.aws_ssm")
@@ -37,7 +35,7 @@ class AWSSMSecretProvider(SecretProvider):
 
     @classmethod
     def create_provider(cls, config: _SecretConfig) -> "AWSSMSecretProvider":
-        """Build the provider from the `secret` block; reads `secret.prefix` only.
+        """Build the provider from `secret.prefix`.
 
         :raises AKConfigError: If `secret.prefix` is empty or nested.
         """
@@ -45,8 +43,7 @@ class AWSSMSecretProvider(SecretProvider):
 
     @property
     def client(self) -> Any:
-        """Lazily created boto3 SSM client. Region and credentials come from the boto3 environment
-        default, matching DynamoDBDriver (core/util/driver/dynamodb.py)."""
+        """Lazily created boto3 SSM client using the default region and credentials."""
         if self._client is None:
             with self._client_lock:
                 if self._client is None:
@@ -77,7 +74,7 @@ class AWSSMSecretProvider(SecretProvider):
 
     @staticmethod
     def _normalize_prefix(prefix: str) -> str:
-        """:raises AKConfigError: If prefix is empty, or contains '/' after stripping leading/trailing."""
+        """:raises AKConfigError: If prefix is empty, or still contains '/' after stripping."""
         normalized = prefix.strip("/")
         if not normalized:
             raise AKConfigError(

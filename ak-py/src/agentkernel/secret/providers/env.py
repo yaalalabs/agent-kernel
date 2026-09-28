@@ -7,9 +7,7 @@ from ..base import SecretProvider
 
 
 class EnvSecretProvider(SecretProvider):
-    """The default backend: os.environ as the store, the key IS the variable name, read verbatim.
-
-    An empty variable is treated as absent, matching the manager's layer-1 rule."""
+    """The default backend: reads the environment variable named by the key. An empty value is a miss."""
 
     def get_secret(self, key: str) -> Optional[str]:
         return os.environ.get(key) or None

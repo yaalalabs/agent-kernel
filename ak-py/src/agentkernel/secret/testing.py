@@ -1,13 +1,4 @@
-"""Public testing helpers for secret providers.
-
-``SecretProviderContract`` is a reusable pytest suite asserting the ABC semantics every
-``SecretProvider`` must honor. Subclass it in a test module and override the ``provider`` fixture
-and ``seed``; it is deliberately NOT named ``Test*`` so pytest does not collect it on its own.
-
-This module imports ``pytest`` and is therefore only meant to be imported from test code — it is
-intentionally left out of ``agentkernel.secret``'s exports so ``import agentkernel.secret`` stays
-free of a pytest dependency.
-"""
+"""Public testing helpers for secret providers. Imports pytest, so import it from test code only."""
 
 import pytest
 
@@ -24,10 +15,7 @@ _CONTRACT_KEYS = (_KEY_A, _KEY_B, _KEY_PADDED, _KEY_MULTILINE, _KEY_ENV_ONLY)
 class SecretProviderContract:
     """Conformance suite every SecretProvider subclasses. Override `provider` and `seed`.
 
-    One declared capability flag, *read by the suite*, never an ad-hoc skip, so a bring-your-own
-    provider gets the same treatment and no provider can quietly opt out of an assertion.
-
-    Not collected on its own — the class name is intentionally not prefixed ``Test``.
+    Not prefixed ``Test`` so pytest does not collect it on its own.
     """
 
     # True for a backend whose store IS the environment (EnvSecretProvider).
