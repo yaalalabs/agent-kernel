@@ -417,8 +417,7 @@ class AWSSMSecretProvider(SecretProvider):
     def create_provider(cls, config: _SecretConfig) -> "AWSSMSecretProvider":
         return cls(prefix=config.prefix)
 
-    @property
-    def client(self) -> Any:
+    def _get_client(self) -> Any:
         """Lazily created boto3 SSM client. Region and credentials come from the boto3 environment
         default, matching DynamoDBDriver (core/util/driver/dynamodb.py:38)."""
         if self._client is None:
@@ -430,7 +429,7 @@ class AWSSMSecretProvider(SecretProvider):
     def get_secret(self, key: str) -> Optional[str]:
         path = self._compose_path(key)
         try:
-            response = self.client.get_parameter(Name=path, WithDecryption=True)
+            response = self._get_client().get_parameter(Name=path, WithDecryption=True)
         except ClientError as exc:
             code = exc.response.get("Error", {}).get("Code", "")
             if code == "ParameterNotFound":

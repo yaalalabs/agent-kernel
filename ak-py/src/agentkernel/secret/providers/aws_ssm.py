@@ -41,8 +41,7 @@ class AWSSMSecretProvider(SecretProvider):
         """
         return cls(prefix=config.prefix)
 
-    @property
-    def client(self) -> Any:
+    def _get_client(self) -> Any:
         """Lazily created boto3 SSM client using the default region and credentials."""
         if self._client is None:
             with self._client_lock:
@@ -58,7 +57,7 @@ class AWSSMSecretProvider(SecretProvider):
         """
         path = self._compose_path(key)
         try:
-            response = self.client.get_parameter(Name=path, WithDecryption=True)
+            response = self._get_client().get_parameter(Name=path, WithDecryption=True)
         except ClientError as exc:
             code = exc.response.get("Error", {}).get("Code", "")
             if code == _NOT_FOUND_ERROR_CODE:
