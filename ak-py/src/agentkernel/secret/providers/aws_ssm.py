@@ -36,7 +36,7 @@ class AWSSMSecretProvider(SecretProvider):
         self._client_lock = Lock()
 
     @classmethod
-    def from_config(cls, config: _SecretConfig) -> "AWSSMSecretProvider":
+    def create_provider(cls, config: _SecretConfig) -> "AWSSMSecretProvider":
         """Build the provider from the `secret` block; reads `secret.prefix` only.
 
         :raises AKConfigError: If `secret.prefix` is empty or nested.

@@ -11,7 +11,7 @@ class SecretProvider(ABC):
     """A backend that holds secrets, addressed by an environment-variable-style key."""
 
     @classmethod
-    def from_config(cls, config: "_SecretConfig") -> "SecretProvider":
+    def create_provider(cls, config: "_SecretConfig") -> "SecretProvider":
         """Build the provider from the `secret` block.
 
         The whole block, not just `secret.provider`: `secret.prefix` is a deployment-wide scope that

@@ -155,7 +155,7 @@ make lint-check-all
      `_DictSecretProvider` (zero provider calls) — and a `""` variable reaches `aws_ssm`.
   2. `SecretProviderFactory.create(config)` never calls `AKConfig.get()`, asserted loudly (the
      `tests/test_pipeline_factory_seams.py` pattern).
-  3. A dotted-path provider is built through its own `from_config` and receives the whole `secret`
+  3. A dotted-path provider is built through its own `create_provider` and receives the whole `secret`
      block, including `prefix`.
 - **Verify:** `cd ak-py && uv run pytest` and `make lint-check-all`, both clean.
 

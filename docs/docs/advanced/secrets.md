@@ -128,7 +128,7 @@ from agentkernel.secret.errors import SecretError
 
 class VaultSecretProvider(SecretProvider):
     @classmethod
-    def from_config(cls, config) -> "VaultSecretProvider":
+    def create_provider(cls, config) -> "VaultSecretProvider":
         return cls(mount=config.prefix)  # receives the whole `secret` block
 
     def get_secret(self, key: str) -> Optional[str]:

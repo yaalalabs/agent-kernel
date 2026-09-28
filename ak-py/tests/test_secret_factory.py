@@ -10,13 +10,13 @@ from agentkernel.secret.providers.aws_ssm import AWSSMSecretProvider
 
 
 class _RecordingSecretProvider(SecretProvider):
-    """Records the config block its from_config received."""
+    """Records the config block its create_provider received."""
 
     def __init__(self, config=None) -> None:
         self.config = config
 
     @classmethod
-    def from_config(cls, config):
+    def create_provider(cls, config):
         return cls(config)
 
     def get_secret(self, key):

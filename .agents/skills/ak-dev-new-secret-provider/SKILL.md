@@ -32,7 +32,7 @@ Resolution* section covers the manager, cache and resolution order this guide bu
 ## Do You Need a Built-in?
 
 A dotted path already lets a user plug in any `SecretProvider` subclass with no core change:
-`resolve_dotted(..., base=SecretProvider)` imports it and calls its `from_config`. AWS Secrets
+`resolve_dotted(..., base=SecretProvider)` imports it and calls its `create_provider`. AWS Secrets
 Manager ships this way in v1 (see `docs/specs/749-secret-resolution/design.md`, Non-goals). Add a
 built-in only when the backend is broadly useful, has a stable SDK, and deserves a short name,
 tested IAM wiring and docs. Otherwise, document the dotted-path route in
@@ -56,7 +56,7 @@ tested IAM wiring and docs. Otherwise, document the dotted-path route in
   `client` property in `aws_ssm.py`).
 - **Return values verbatim.** Don't strip whitespace or parse JSON, because values are flat
   strings. Treat an empty value as absent (`EnvSecretProvider` returns `os.environ.get(key) or None`).
-- **`from_config(cls, config: _SecretConfig)`** receives the **whole** `secret` block, not just
+- **`create_provider(cls, config: _SecretConfig)`** receives the **whole** `secret` block, not just
   `secret.provider`, so the deployment-wide `secret.prefix` is shared by every backend. Validate
   settings here and raise `AKConfigError` (`core/util/factory.py`) on unusable values, the way
   `AWSSMSecretProvider._normalize_prefix` rejects an empty or nested prefix. It fires at the first
@@ -82,7 +82,7 @@ class VaultSecretProvider(SecretProvider):
         self._client_lock = Lock()
 
     @classmethod
-    def from_config(cls, config: _SecretConfig) -> "VaultSecretProvider":
+    def create_provider(cls, config: _SecretConfig) -> "VaultSecretProvider":
         return cls(prefix=config.prefix)
 
     def get_secret(self, key: str) -> Optional[str]:
@@ -105,7 +105,7 @@ if key == "vault":
     with require_extra("vault", "secret.provider.type: vault"):
         from .providers.vault import VaultSecretProvider
 
-    return VaultSecretProvider.from_config(config)
+    return VaultSecretProvider.create_provider(config)
 ```
 
 `create` takes the block explicitly and must never call `AKConfig.get()`
@@ -166,7 +166,7 @@ can't drift. Never create secret values in Terraform.
 ## Checklist
 
 - [ ] `secret/providers/<name>.py`: owns addressing, `None` on miss, `SecretError` on failure, no caching, thread-safe lazy client
-- [ ] `from_config` validates settings and raises `AKConfigError` at construction
+- [ ] `create_provider` validates settings and raises `AKConfigError` at construction
 - [ ] Factory branch behind `require_extra` + name in `_BUILTIN_SECRET_PROVIDERS` (`secret/factory.py`)
 - [ ] Config: `secret.prefix` reused; a `_Secret<Backend>Config` only if unavoidable (`core/config.py`)
 - [ ] Optional dependency extra in `ak-py/pyproject.toml`

@@ -16,7 +16,7 @@ class SecretProviderFactory:
 
     @staticmethod
     def create(config: _SecretConfig) -> SecretProvider:
-        """Create the configured provider, delegating to its ``from_config`` seam.
+        """Create the configured provider, delegating to its ``create_provider`` seam.
 
         Takes the `secret` block explicitly rather than reading AKConfig, so a caller that already
         holds the block does not re-read it and a test can build a provider from any _SecretConfig.
@@ -32,15 +32,15 @@ class SecretProviderFactory:
         if key == "env":
             from .providers.env import EnvSecretProvider
 
-            return EnvSecretProvider.from_config(config)
+            return EnvSecretProvider.create_provider(config)
         if key == "aws_ssm":
             with require_extra("aws", "secret.provider.type: aws_ssm"):
                 from .providers.aws_ssm import AWSSMSecretProvider
 
-            return AWSSMSecretProvider.from_config(config)
+            return AWSSMSecretProvider.create_provider(config)
         if "." not in provider_type:
             raise AKConfigError(
                 f"unknown secret provider type '{provider_type}'; expected one of {_BUILTIN_SECRET_PROVIDERS} "
                 "or a dotted path to a SecretProvider subclass"
             )
-        return resolve_dotted(provider_type, base=SecretProvider).from_config(config)
+        return resolve_dotted(provider_type, base=SecretProvider).create_provider(config)

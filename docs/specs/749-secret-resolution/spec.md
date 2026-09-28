@@ -95,7 +95,7 @@ class SecretProvider(ABC):
     """A backend that holds secrets, addressed by an environment-variable-style key."""
 
     @classmethod
-    def from_config(cls, config: "_SecretConfig") -> "SecretProvider":
+    def create_provider(cls, config: "_SecretConfig") -> "SecretProvider":
         """Build the provider from the `secret` block.
 
         The whole block, not just `secret.provider`: `secret.prefix` is a deployment-wide scope that
@@ -347,18 +347,18 @@ class SecretProviderFactory:
         if key == "env":
             from .providers.env import EnvSecretProvider
 
-            return EnvSecretProvider.from_config(config)
+            return EnvSecretProvider.create_provider(config)
         if key == "aws_ssm":
             with require_extra("aws", "secret.provider.type: aws_ssm"):
                 from .providers.aws_ssm import AWSSMSecretProvider
 
-            return AWSSMSecretProvider.from_config(config)
+            return AWSSMSecretProvider.create_provider(config)
         if "." not in provider_type:
             raise AKConfigError(
                 f"unknown secret provider type '{provider_type}'; expected one of {_BUILTIN_SECRET_PROVIDERS} "
                 "or a dotted path to a SecretProvider subclass"
             )
-        return resolve_dotted(provider_type, base=SecretProvider).from_config(config)
+        return resolve_dotted(provider_type, base=SecretProvider).create_provider(config)
 ```
 
 `SecretProviderFactory.create` takes the `secret` block **explicitly** rather than reading `AKConfig`
@@ -418,7 +418,7 @@ class AWSSMSecretProvider(SecretProvider):
         self._client_lock = Lock()
 
     @classmethod
-    def from_config(cls, config: _SecretConfig) -> "AWSSMSecretProvider":
+    def create_provider(cls, config: _SecretConfig) -> "AWSSMSecretProvider":
         return cls(prefix=config.prefix)
 
     @property
@@ -644,7 +644,7 @@ Every field justified, with its reader named:
 
 | Field | Reader | Why it cannot be derived |
 |---|---|---|
-| `secret.prefix` | `AWSSMSecretProvider.from_config` → `__init__` → `_compose_path` | The Terraform `prefix` variable (`ak-deployment/ak-aws/serverless/variables.tf:6`) is not injected into the runtime today, so nothing in `AKConfig` carries the deployment identifier. |
+| `secret.prefix` | `AWSSMSecretProvider.create_provider` → `__init__` → `_compose_path` | The Terraform `prefix` variable (`ak-deployment/ak-aws/serverless/variables.tf:6`) is not injected into the runtime today, so nothing in `AKConfig` carries the deployment identifier. |
 | `secret.provider.type` | `SecretProviderFactory.create` | The factory selector. Nested to match `schedule.provider.type` (`_ScheduleProviderConfig:356`) and to leave room for a provider's own settings sub-block. |
 | `secret.cache_ttl` | `SecretCache.__init__`, via `SecretManager.from_config` | The rotation-pickup window; differs per deployment, so it cannot be a constant. Flat rather than a `cache:` sub-block because there is exactly one cache setting. |
 
@@ -946,7 +946,7 @@ CI gains a `seed-secrets` step before each AWS deploy; matrix entries are unchan
 **Prefix validation belongs to the provider.** The empty-prefix fail-fast lives in
 `AWSSMSecretProvider`, the one component that cannot work without it — not in the manager, because
 `env` has no use for a prefix and a bring-your-own provider may have none either. A BYO provider
-needing a prefix reads `config.prefix` in its own `from_config` and validates it there.
+needing a prefix reads `config.prefix` in its own `create_provider` and validates it there.
 
 **Where the config failures fire.** The capability has no mount step of its own (unlike the schedule
 handler's `get_router()`), so every configuration failure surfaces at the first
@@ -1050,7 +1050,7 @@ factory path is under test:
   `secret.prefix`, pinning that the prefix requirement belongs to `aws_ssm` alone.
 - `SecretProviderFactory.create(config)` never calls `AKConfig.get()` — asserted loudly by
   monkeypatching `AKConfig.get` to raise, the `tests/test_pipeline_factory_seams.py` pattern.
-- A dotted-path provider is constructed through its own `from_config` and receives the whole
+- A dotted-path provider is constructed through its own `create_provider` and receives the whole
   `secret` block, including `prefix`.
 
 **Changed existing files:**
@@ -1113,7 +1113,7 @@ who read an earlier draft rather than an outstanding action.
      round 3, which removes `inject`.
 2. **The manager composes no path and does no case transformation.** `UPPERCASE(key)`,
    `/ak/{prefix}/{key}` composition and `secret.prefix` all move out of the manager.
-   `SecretProvider.get_secret` takes the **key**, not a composed path, and `SecretProvider.from_config`
+   `SecretProvider.get_secret` takes the **key**, not a composed path, and `SecretProvider.create_provider`
    takes the whole `_SecretConfig` (so a provider can read `prefix`) rather than just
    `_SecretProviderConfig`. The parameter naming convention itself is unchanged —
    `AWSSMSecretProvider` still produces `/ak/{prefix}/openai_api_key` — so Terraform, IAM and any
