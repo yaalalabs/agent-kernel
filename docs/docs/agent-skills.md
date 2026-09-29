@@ -114,7 +114,7 @@ Set up testing and debug common issues. Covers test modes (score, llm, fallback)
 
 ## Developer Skills: Accelerating Contributions with AI
 
-Agent Kernel doesn't just expose its capabilities as skills for users; it also exposes its internals as skills for contributors. The `.agents/skills/` folder at the repository root contains seventeen developer skills that teach coding assistants how to work on the Agent Kernel codebase itself.
+Agent Kernel doesn't just expose its capabilities as skills for users; it also exposes its internals as skills for contributors. The `.agents/skills/` folder at the repository root contains eighteen developer skills that teach coding assistants how to work on the Agent Kernel codebase itself.
 
 When a contributor opens the repository in a coding assistant (Copilot, Claude Code, Cursor, etc.), these skills are automatically discovered. The assistant immediately understands the architecture, adapter patterns, testing conventions, and code quality standards, eliminating the onboarding curve for new contributors.
 
