@@ -1,16 +1,34 @@
 import logging
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from google.adk.agents import BaseAgent
 from google.adk.agents.run_config import RunConfig, StreamingMode
 from pydantic import BaseModel
 
 from agentkernel.core import Session
 from agentkernel.core.event import TextDelta
-from agentkernel.core.model import AgentReplyAny, AgentReplyText, AgentRequestImage, AgentRequestText
+from agentkernel.core.model import (
+    AgentPausedReplyAny,
+    AgentReplyAny,
+    AgentReplyText,
+    AgentRequestImage,
+    AgentRequestText,
+    AgentResumeRequestAny,
+    ResumeDecision,
+)
+from agentkernel.core.paused_run import PausedRunState
 from agentkernel.framework.adk.adk import GoogleADKAgent, GoogleADKRunner, GoogleADKSession
 
 FRAMEWORK_CONTEXT = Session.Keys.FRAMEWORK_CONTEXT.value
+
+
+def _turn(text="", pending=None, invocation_id=None):
+    """A drained ADK turn with no pending calls: what get_response returns for a completed run."""
+    from agentkernel.framework.adk.adk import _AdkTurn
+
+    return _AdkTurn(text=text, pending=pending or [], invocation_id=invocation_id)
 
 
 class CapitalOutput(BaseModel):
@@ -18,11 +36,16 @@ class CapitalOutput(BaseModel):
     capital: str
 
 
+class _StubADKAgent(BaseAgent):
+    """A real ADK agent, because the runner now wraps it in an App and App validates its root_agent."""
+
+    output_schema: Any = None
+
+
 def _mock_agent(output_schema=None):
     agent = MagicMock()
     agent.name = "test-agent"
-    agent.agent = MagicMock(spec=["output_schema"])
-    agent.agent.output_schema = output_schema
+    agent.agent = _StubADKAgent(name="test_agent", output_schema=output_schema)
     agent.run_options = {}
     agent.resolve_run_options = AsyncMock(side_effect=lambda session, requests: dict(agent.run_options))
     return agent
@@ -153,7 +176,7 @@ def _run_with_response(runner, agent, session, requests, response_text, adk_sess
         adk_session = MagicMock()
         adk_session.get_state = AsyncMock(return_value={})
     setup = AsyncMock(return_value=("user", MagicMock(), _ctx_mock(), adk_session))
-    get_response = AsyncMock(return_value=response_text)
+    get_response = AsyncMock(return_value=_turn(response_text))
     return patch.object(runner, "_setup_session_context", setup), patch.object(GoogleADKRunner, "get_response", get_response)
 
 
@@ -166,7 +189,7 @@ class TestGoogleADKRunnerGetResponse:
         stopping early would make ADK cancel the still-running root agent task and skip its state writes."""
         adk_runner, drained = _draining_runner([_final_event("sub-agent answer"), _non_final_event(), _final_event("root answer")])
 
-        response = await GoogleADKRunner.get_response(runner=adk_runner, user_id="user", session_id="s", parts=[])
+        response = (await GoogleADKRunner.get_response(runner=adk_runner, user_id="user", session_id="s", parts=[])).text
 
         assert response == "root answer"
         assert drained == [True]
@@ -178,20 +201,20 @@ class TestGoogleADKRunnerGetResponse:
         event.content = MagicMock(parts=[MagicMock(text="hello"), MagicMock(text="world")])
         adk_runner, _ = _draining_runner([event])
 
-        assert await GoogleADKRunner.get_response(runner=adk_runner, user_id="user", session_id="s", parts=[]) == "hello world"
+        assert (await GoogleADKRunner.get_response(runner=adk_runner, user_id="user", session_id="s", parts=[])).text == "hello world"
 
     @pytest.mark.asyncio
     async def test_no_final_response_returns_empty_string(self):
         adk_runner, drained = _draining_runner([_non_final_event()])
 
-        assert await GoogleADKRunner.get_response(runner=adk_runner, user_id="user", session_id="s", parts=[]) == ""
+        assert (await GoogleADKRunner.get_response(runner=adk_runner, user_id="user", session_id="s", parts=[])).text == ""
         assert drained == [True]
 
     @pytest.mark.asyncio
     async def test_final_response_without_text_yields_empty_string(self):
         adk_runner, _ = _draining_runner([_final_event(None)])
 
-        assert await GoogleADKRunner.get_response(runner=adk_runner, user_id="user", session_id="s", parts=[]) == ""
+        assert (await GoogleADKRunner.get_response(runner=adk_runner, user_id="user", session_id="s", parts=[])).text == ""
 
 
 class TestGoogleADKSessionState:
@@ -269,7 +292,10 @@ class TestGoogleADKRunnerFrameworkContext:
         adk_session.get_state = AsyncMock(return_value={"seeded": 9, "added": "new"})
         setup = AsyncMock(return_value=("user", MagicMock(), _ctx_mock(), adk_session))
 
-        with patch.object(runner, "_setup_session_context", setup), patch.object(GoogleADKRunner, "get_response", AsyncMock(return_value="hello")):
+        with (
+            patch.object(runner, "_setup_session_context", setup),
+            patch.object(GoogleADKRunner, "get_response", AsyncMock(return_value=_turn("hello"))),
+        ):
             reply = await runner.run(agent, session, requests)
 
         assert setup.await_args.args[3] == {"seeded": 1}
@@ -829,7 +855,8 @@ class TestGoogleADKRunOptions:
 
         kwargs = MockRunner.call_args.kwargs
         assert kwargs["plugins"] == [plugin]
-        assert kwargs["agent"] is agent.agent
+        assert kwargs["app"].root_agent is agent.agent
+        assert kwargs["app"].resumability_config.is_resumable is True
         assert kwargs["app_name"] == "AgentKernel"
         assert kwargs["session_service"] is adk_session.session_service
         assert "run_config" not in kwargs
@@ -949,3 +976,263 @@ class TestGoogleADKRunOptions:
 
         assert "No valid content" in reply.response
         agent.resolve_run_options.assert_not_awaited()
+
+
+# --- Human in the loop (spec `docs/specs/606-human-in-the-loop/`, iteration 8) -------------------
+
+
+class _FakeLlm:
+    """Stands in for the model, so a pause is driven without a network call.
+
+    ADK's pause is the *model* deciding to call a long-running tool, so unlike LangGraph there is no
+    way to reach it without something answering as the model.
+    """
+
+
+def _gated_adk(confirmation=False):
+    """A real ADK agent whose tool pauses, wired through a fake model."""
+    from typing import AsyncGenerator
+
+    from google.adk.agents import LlmAgent
+    from google.adk.models.base_llm import BaseLlm
+    from google.adk.models.llm_response import LlmResponse
+    from google.adk.tools import FunctionTool, LongRunningFunctionTool
+    from google.genai import types
+
+    class FakeLlm(BaseLlm):
+        model: str = "fake"
+        rounds: int = 0
+        seen: list = []
+
+        async def generate_content_async(self, llm_request, stream: bool = False) -> AsyncGenerator[LlmResponse, None]:
+            self.rounds += 1
+            if self.rounds == 1:
+                yield LlmResponse(
+                    content=types.Content(
+                        role="model",
+                        parts=[types.Part(function_call=types.FunctionCall(id="call-1", name="ask_size", args={"q": "size?"}))],
+                    )
+                )
+            else:
+                FakeLlm.seen = [
+                    p.function_response.response for m in llm_request.contents for p in (m.parts or []) if getattr(p, "function_response", None)
+                ]
+                yield LlmResponse(content=types.Content(role="model", parts=[types.Part(text="all done")]))
+
+    def ask_size(q: str) -> dict:
+        """Ask the human for a size."""
+        return {"status": "pending"}
+
+    def refund(amount: int) -> str:
+        """Refund the customer."""
+        return f"refunded {amount}"
+
+    llm = FakeLlm()
+    FakeLlm.seen = []
+    tool = FunctionTool(func=refund, require_confirmation=True) if confirmation else LongRunningFunctionTool(func=ask_size)
+    native = LlmAgent(name="gated", model=llm, tools=[tool])
+    return GoogleADKAgent(name="gated", runner=GoogleADKRunner(), agent=native), FakeLlm
+
+
+def _resume_requests(*decisions, prompt=None):
+    requests = [AgentRequestText(prompt=prompt)] if prompt else []
+    return requests + [AgentResumeRequestAny(decisions=list(decisions))], list(decisions)
+
+
+class TestGoogleADKPause:
+    def test_the_runner_declares_the_capability(self):
+        assert GoogleADKRunner().supports_pause is True
+
+    @pytest.mark.asyncio
+    async def test_a_long_running_tool_returns_a_paused_reply(self):
+        runner, session = GoogleADKRunner(), Session("s")
+        agent, _ = _gated_adk()
+
+        reply = await runner.run(agent, session, [AgentRequestText(prompt="ask me")])
+
+        assert isinstance(reply, AgentPausedReplyAny)
+        assert [i.id for i in reply.interruptions] == ["call-1"]
+        assert reply.interruptions[0].kind == "tool_call"
+        assert reply.interruptions[0].tool_name == "ask_size"
+
+    @pytest.mark.asyncio
+    async def test_the_arguments_ride_along(self):
+        runner, session = GoogleADKRunner(), Session("s")
+        agent, _ = _gated_adk()
+
+        reply = await runner.run(agent, session, [AgentRequestText(prompt="ask me")])
+
+        assert reply.interruptions[0].arguments == '{"q": "size?"}'
+
+    @pytest.mark.asyncio
+    async def test_the_record_carries_the_invocation_to_resume(self):
+        runner, session = GoogleADKRunner(), Session("s")
+        agent, _ = _gated_adk()
+
+        reply = await runner.run(agent, session, [AgentRequestText(prompt="ask me")])
+
+        assert PausedRunState.get(session, reply.run_id).payload["invocation_id"]
+
+    @pytest.mark.asyncio
+    async def test_the_session_survives_a_pickle_round_trip(self):
+        """ADK's conversation lives in an InMemorySessionService inside GoogleADKSession."""
+        import pickle
+
+        runner, session = GoogleADKRunner(), Session("s")
+        agent, _ = _gated_adk()
+        reply = await runner.run(agent, session, [AgentRequestText(prompt="ask me")])
+
+        restored = pickle.loads(pickle.dumps(session))
+
+        assert PausedRunState.get(restored, reply.run_id) is not None
+
+    @pytest.mark.asyncio
+    async def test_the_app_is_resumable(self):
+        """ResumabilityConfig lives on an App, so the adapter must build one around the agent."""
+        runner = GoogleADKRunner()
+        agent, _ = _gated_adk()
+        adk_session = MagicMock()
+        adk_session.create_session = AsyncMock()
+        adk_session.update_session_state = AsyncMock()
+
+        with patch.object(GoogleADKRunner, "_session", return_value=adk_session), patch("agentkernel.framework.adk.adk.Runner") as MockRunner:
+            await runner._setup_session_context(agent, Session("s"), [AgentRequestText(prompt="hi")], None, {})
+
+        app = MockRunner.call_args.kwargs["app"]
+        assert app.resumability_config.is_resumable is True
+        assert app.name == "AgentKernel"
+
+
+class TestGoogleADKResume:
+    @pytest.mark.asyncio
+    async def test_the_chosen_value_reaches_the_model(self):
+        runner, session = GoogleADKRunner(), Session("s")
+        agent, FakeLlm = _gated_adk()
+        paused = await runner.run(agent, session, [AgentRequestText(prompt="ask me")])
+        record = PausedRunState.get(session, paused.run_id)
+        requests, decisions = _resume_requests(ResumeDecision(id="call-1", payload="large"))
+
+        reply = await runner.resume(agent, session, requests, decisions, record)
+
+        assert reply.response == "all done"
+        assert FakeLlm.seen == [{"result": "large"}]
+
+    @pytest.mark.asyncio
+    async def test_free_text_is_used_when_there_is_no_payload(self):
+        runner, session = GoogleADKRunner(), Session("s")
+        agent, FakeLlm = _gated_adk()
+        paused = await runner.run(agent, session, [AgentRequestText(prompt="ask me")])
+        record = PausedRunState.get(session, paused.run_id)
+        requests, decisions = _resume_requests(ResumeDecision(id="call-1", message="medium"))
+
+        await runner.resume(agent, session, requests, decisions, record)
+
+        assert FakeLlm.seen == [{"result": "medium"}]
+
+    @pytest.mark.asyncio
+    async def test_the_resume_clears_its_record(self):
+        runner, session = GoogleADKRunner(), Session("s")
+        agent, _ = _gated_adk()
+        paused = await runner.run(agent, session, [AgentRequestText(prompt="ask me")])
+        record = PausedRunState.get(session, paused.run_id)
+        requests, decisions = _resume_requests(ResumeDecision(id="call-1", payload="large"))
+
+        await runner.resume(agent, session, requests, decisions, record)
+
+        assert PausedRunState.list(session) == []
+
+
+class TestGoogleADKRejectsAPromptAlongside:
+    """
+    Established by test at google-adk 2.8.0, not assumed.
+
+    ADK itself refuses a message holding both a function response and text — *"Function responses
+    resume an existing invocation while text starts a new one"* — so the adapter pre-empts it above
+    the `try`, where the reason survives instead of being flattened into a generic reply.
+    """
+
+    @pytest.mark.asyncio
+    async def test_a_prompt_beside_a_decision_is_refused(self):
+        runner, session = GoogleADKRunner(), Session("s")
+        agent, _ = _gated_adk()
+        paused = await runner.run(agent, session, [AgentRequestText(prompt="ask me")])
+        record = PausedRunState.get(session, paused.run_id)
+        requests, decisions = _resume_requests(ResumeDecision(id="call-1", payload="large"), prompt="and the weather?")
+
+        with pytest.raises(ValueError, match="cannot carry a prompt alongside a decision"):
+            await runner.resume(agent, session, requests, decisions, record)
+
+    @pytest.mark.asyncio
+    async def test_the_record_is_left_intact(self):
+        runner, session = GoogleADKRunner(), Session("s")
+        agent, _ = _gated_adk()
+        paused = await runner.run(agent, session, [AgentRequestText(prompt="ask me")])
+        record = PausedRunState.get(session, paused.run_id)
+        requests, decisions = _resume_requests(ResumeDecision(id="call-1", payload="large"), prompt="hello")
+
+        with pytest.raises(ValueError):
+            await runner.resume(agent, session, requests, decisions, record)
+
+        assert PausedRunState.get(session, paused.run_id) is not None
+
+
+class TestGoogleADKStreamingPause:
+    """
+    The spec's one open question, answered by test at google-adk 2.8.0: streaming *can* pause.
+
+    Two things made it a risk — ADK's own "known limitation" comment on its two-event pause window,
+    and the partial/non-partial id split, where an id read off a streamed partial event may never
+    have been persisted. Neither bites: the event carrying the pending call is non-partial.
+    """
+
+    @pytest.mark.asyncio
+    async def test_a_streamed_gated_run_ends_with_run_paused(self):
+        from agentkernel.core.event import RunPaused
+
+        runner, session = GoogleADKRunner(), Session("s")
+        agent, _ = _gated_adk()
+
+        events = [e async for e in runner.stream(agent, session, [AgentRequestText(prompt="ask me")])]
+
+        assert isinstance(events[-1], RunPaused)
+        assert events[-1].agent == "gated"
+        assert [i.id for i in events[-1].interruptions] == ["call-1"]
+
+    @pytest.mark.asyncio
+    async def test_the_pending_call_arrives_on_a_non_partial_event(self):
+        """Why the id is safe to hand a client: a partial event's id may never be persisted."""
+        runner, session = GoogleADKRunner(), Session("s")
+        agent, _ = _gated_adk()
+
+        events = [e async for e in runner.stream(agent, session, [AgentRequestText(prompt="ask me")])]
+        record = PausedRunState.get(session, events[-1].run_id)
+
+        assert record.payload["invocation_id"]
+        assert [i.id for i in record.interruptions] == ["call-1"]
+
+    @pytest.mark.asyncio
+    async def test_resume_stream_delivers_the_value_and_clears_the_record(self):
+        from agentkernel.core.event import RunPaused
+
+        runner, session = GoogleADKRunner(), Session("s")
+        agent, FakeLlm = _gated_adk()
+        events = [e async for e in runner.stream(agent, session, [AgentRequestText(prompt="ask me")])]
+        record = PausedRunState.get(session, events[-1].run_id)
+        requests, decisions = _resume_requests(ResumeDecision(id="call-1", payload="large"))
+
+        resumed = [e async for e in runner.resume_stream(agent, session, requests, decisions, record)]
+
+        assert FakeLlm.seen == [{"result": "large"}]
+        assert not any(isinstance(e, RunPaused) for e in resumed)
+        assert PausedRunState.list(session) == []
+
+    @pytest.mark.asyncio
+    async def test_resume_stream_refuses_a_prompt_alongside(self):
+        runner, session = GoogleADKRunner(), Session("s")
+        agent, _ = _gated_adk()
+        events = [e async for e in runner.stream(agent, session, [AgentRequestText(prompt="ask me")])]
+        record = PausedRunState.get(session, events[-1].run_id)
+        requests, decisions = _resume_requests(ResumeDecision(id="call-1", payload="large"), prompt="and the weather?")
+
+        with pytest.raises(ValueError, match="cannot carry a prompt alongside a decision"):
+            _ = [e async for e in runner.resume_stream(agent, session, requests, decisions, record)]

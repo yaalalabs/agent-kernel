@@ -601,6 +601,7 @@ a paused multimodal run resumes on the same path and needs no special case.
 | Resume | `run_async(new_message=Content(parts=[Part(function_response=...)]))`, plus `invocation_id=` when resumable |
 | Interruption `id` | `FunctionCall.id` |
 | `kind` | long-running → `"tool_call"`; `adk_request_confirmation` → `"confirmation"` |
+| Replaces or appends | **replaces** — one conversation per session, and a resume addresses one `invocation_id` |
 
 - **Durability is confirmed**: the ADK conversation lives in `InMemorySessionService` inside
   `GoogleADKSession` (`adk.py:59-70`), which pickles cleanly both empty and holding a live session
@@ -616,16 +617,23 @@ a paused multimodal run resumes on the same path and needs no special case.
     change for an existing multi-agent ADK app. This is application logic the client owns.
   - **ADK sessions grow**, because `is_resumable` also gates agent-state event emission. Inherent to
     ADK.
-- **Streaming pause is unverified — decided by test in PR 2, not assumed.** The design does not
-  prevent it. Two things keep it a risk: ADK's own "known limitation" comment on its two-event pause
-  window (`google/adk/flows/llm_flows/base_llm_flow.py:966-978`), and the partial/non-partial id split, where an id a client
-  reads off a streamed partial event may never have been persisted (`google/adk/flows/llm_flows/functions.py:245-246`,
-  `google/adk/flows/llm_flows/base_llm_flow.py:1130-1133`). If the test shows it broken, the streamed run yields a clear error
-  and the limitation is documented as **AK's own finding against `google-adk` 2.8.0, with a
-  reproducible case** — never attributed to an upstream position that does not exist.
-- **A prompt alongside a decision is unverified**: a `Content` can carry a text part beside the
-  `function_response`, so it is structurally possible. Established by test in this PR; if it does
-  not work, rejected above the `try` like OpenAI.
+- **Streaming pause ~~is unverified~~ WORKS.** *(Answered by test in PR 2 at `google-adk` 2.8.0.)*
+  A streamed run pauses on a long-running tool and resumes from its `invocation_id`, and the value
+  reaches the model. Neither feared risk bites: the event carrying the pending call is
+  **non-partial**, so the id a client reads off the stream is one ADK persisted — the
+  partial/non-partial split (`google/adk/flows/llm_flows/functions.py:245-246`,
+  `google/adk/flows/llm_flows/base_llm_flow.py:1130-1133`) does not reach it, and the two-event
+  pause window (`google/adk/flows/llm_flows/base_llm_flow.py:966-978`) did not manifest. No error
+  path and no documented limitation are needed.
+- **A prompt alongside a decision ~~is unverified~~ is REJECTED.** *(Answered by test in PR 2.)*
+  It is structurally expressible but ADK refuses it outright:
+  *"Message cannot contain both function responses and text. Function responses resume an existing
+  invocation while text starts a new one."* So the adapter rejects it above the `try`, like OpenAI,
+  and the message says why. Of the four adapters, LangGraph and Pydantic AI carry a prompt;
+  OpenAI and ADK refuse it.
+- **`ResumabilityConfig` is marked experimental by ADK** and emits a `UserWarning` on construction.
+  *(Noted in PR 2.)* It is the only way to enable resumability, so there is no alternative; the docs
+  (PR 3) must say that ADK may change it without notice.
 - **Warning to pass through verbatim** (PR 3): ADK's own "tools in an agent are run at least once,
   and may run more than once when resuming".
 
@@ -932,9 +940,13 @@ the gap is recorded in the suite rather than discovered in production.
 
 ### Decided by test, not assumption
 
-One item remains: **whether ADK streaming can pause and resume at `google-adk` 2.8.0** (PR 2). If it
-fails, the streamed run yields a clear error and the limitation is documented as AK's own finding
-with a repro.
+**Both items are now answered** (PR 2, against `google-adk` 2.8.0):
+
+- **ADK streaming can pause and resume.** The pending call arrives on a **non-partial** event, so
+  the id handed to a client is one ADK persisted. No error path or documented limitation is needed.
+- **ADK refuses a prompt beside a decision**, so the adapter rejects it above the `try` like OpenAI.
+
+Both were established by driving a real ADK app with a stand-in model, not by reading source.
 
 ### Example
 
