@@ -585,10 +585,12 @@ class GoogleADKModule(Module):
         Initializes a Google ADK Module instance.
         :param agents: List of agents in the module.
         :param runner: Custom runner associated with the module.
-        :param realtime_runner_cls: Optional realtime runner class for WebSocket connections.
+        :param realtime_runner_cls: Realtime adapter class enabling ``execution.mode: realtime``
+            for this module's agents. Opt-in: without it an agent has no realtime adapter and
+            REALTIME mode fails loudly instead of silently picking one.
         """
         super().__init__()
-        self.realtime_runner_cls = realtime_runner_cls or GoogleADKRealtimeRunner
+        self.realtime_runner_cls = realtime_runner_cls
         if runner is not None:
             self.runner = runner
         elif AKConfig.get().trace.enabled:
@@ -604,8 +606,9 @@ class GoogleADKModule(Module):
         :param agents: List of agents in the module.
         :return: GoogleADKAgent instance.
         """
-        # The realtime adapter class is attached unconditionally: only the pipeline (in REALTIME
-        # mode) ever instantiates it, so the framework need not know the execution mode.
+        # The realtime adapter is opted into by the caller (passed to the module); only the
+        # pipeline (in REALTIME mode) ever instantiates it, so the framework need not know the
+        # execution mode.
         return GoogleADKAgent(agent.name, self.runner, agent, realtime_runner_cls=self.realtime_runner_cls)
 
     def load(self, agents: list[BaseAgent]) -> "GoogleADKModule":
@@ -726,11 +729,6 @@ class GoogleADKToolBuilder(ToolBuilder):
         return wrapper
 
 
-# Gemini Live takes 16 kHz PCM16 input (and returns 24 kHz, the edge's rate). The pool converts
-# edge-rate audio down to this rate before append_audio, so this adapter never resamples.
-GEMINI_INPUT_SAMPLE_RATE = 16000
-
-
 class GoogleADKRealtimeRunner(BaseRealtimeRunner):
     """Drives a persistent Gemini Live (BidiGenerateContent) socket behind the realtime pool.
 
@@ -738,9 +736,12 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
     pushes audio/text through :meth:`append_audio` / :meth:`send_text`. Model events are reported
     back through the callback the pool supplied, so the pool keeps owning queue emission and this
     class never imports pipeline types.
-    """
 
-    input_sample_rate = GEMINI_INPUT_SAMPLE_RATE
+    ``input_sample_rate`` is intentionally left at the edge rate (24 kHz), matching the OpenAI
+    adapter, so the pool does **no** resampling before :meth:`append_audio`. The stream is sent
+    with ``audio/pcm;rate=24000`` and Gemini resamples server-side. (The old 24k->16k pure-Python
+    linear resample added aliasing that degraded server-side VAD.)
+    """
 
     def __init__(self):
         super().__init__(FRAMEWORK)
@@ -789,7 +790,17 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
             response_modalities=[types.Modality.AUDIO],
             system_instruction=types.Content(parts=[types.Part(text=instructions)]) if instructions else None,
             tools=[types.Tool(function_declarations=declarations)] if declarations else None,
+            input_audio_transcription=types.AudioTranscriptionConfig(),
             output_audio_transcription=types.AudioTranscriptionConfig(),
+            # Explicit turn policy — the Gemini equivalent of OpenAI's
+            # ``server_vad`` + ``interrupt_response: True``. Without it, end-of-turn and barge-in
+            # rely entirely on server defaults and behave inconsistently.
+            realtime_input_config=types.RealtimeInputConfig(
+                automatic_activity_detection=types.AutomaticActivityDetection(
+                    silence_duration_ms=800,
+                )
+            ),
+            thinking_config=types.ThinkingConfig(thinking_budget=0),
         )
 
     async def connect(self, session: Session, agent: AKBaseAgent, callback: Callable) -> None:
@@ -798,12 +809,19 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
         self._callback = callback
         self._agent = agent
         self._session = session
-        client = genai.Client()
+        import os
+
+        api_version = os.environ.get("GOOGLE_GENAI_API_VERSION")
+        http_options = {"api_version": api_version} if api_version else None
+        client = genai.Client(http_options=http_options)
         model = self._realtime_model(agent)
         self._log.info(f"Connecting to Gemini Live (model={model})")
 
         self._cm = client.aio.live.connect(model=model, config=self._connect_config(agent))
         self._connection = await self._cm.__aenter__()
+        self._interrupted_this_turn = False
+        self._model_speaking = False
+        self._audio_buffer = None
         self._listen_task = asyncio.create_task(self._listen())
 
     async def _listen(self) -> None:
@@ -823,19 +841,45 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
     async def _handle_message(self, message: types.LiveServerMessage) -> None:
         server_content = getattr(message, "server_content", None)
         if server_content is not None:
-            if getattr(server_content, "interrupted", False):
+            # Barge-in. The server signals it on ``interrupted``; its low-latency
+            # ``interim_input_transcription`` (updated while the user speaks) gives the same
+            # signal a beat earlier, so the edge can stop playback as soon as the user starts
+            # talking over the model. Only fires while the model is actually speaking, and only
+            # once per turn.
+            if getattr(server_content, "interrupted", False) and not self._interrupted_this_turn:
+                self._interrupted_this_turn = True
+                self._model_speaking = False
+                self._log.info("Gemini barge-in (server interruption); stopping playback")
                 await self._callback("interrupt", {})
-            transcription = getattr(server_content, "output_transcription", None)
-            if transcription is not None and transcription.text:
-                await self._callback("transcript_delta", {"delta": transcription.text, "message_id": ""})
+            elif self._model_speaking and not self._interrupted_this_turn:
+                interim = getattr(server_content, "interim_input_transcription", None)
+                if interim is not None and interim.text:
+                    self._interrupted_this_turn = True
+                    self._model_speaking = False
+                    self._log.info("Gemini barge-in (user speaking); stopping playback")
+                    await self._callback("interrupt", {})
+
+            # Interim transcription updates word by word while the user talks;
+            # the final one lands when VAD commits end-of-turn.
+            interim = getattr(server_content, "interim_input_transcription", None)
+            input_transcription = getattr(server_content, "input_transcription", None)
+
+            output_transcription = getattr(server_content, "output_transcription", None)
+            if output_transcription is not None and output_transcription.text:
+                await self._callback("transcript_delta", {"delta": output_transcription.text, "message_id": ""})
+
             model_turn = getattr(server_content, "model_turn", None)
             if model_turn and model_turn.parts:
                 for part in model_turn.parts:
                     inline = getattr(part, "inline_data", None)
                     if inline is not None and inline.data:
+                        self._model_speaking = True
                         audio_b64 = base64.b64encode(inline.data).decode("utf-8")
                         await self._callback("audio_delta", {"delta": audio_b64, "message_id": ""})
+
             if getattr(server_content, "turn_complete", False):
+                self._interrupted_this_turn = False
+                self._model_speaking = False
                 await self._callback("done", {"status": "completed"})
 
         tool_call = getattr(message, "tool_call", None)
@@ -845,7 +889,6 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
                 await self._callback("tool_call", {"call_id": call.id, "name": call.name, "arguments": json.dumps(call.args or {})})
 
     async def append_audio(self, base64_audio: str) -> None:
-        """Send audio the pool already converted to :attr:`input_sample_rate`."""
         if self._connection:
             await self._connection.send_realtime_input(
                 audio=types.Blob(data=base64.b64decode(base64_audio), mime_type=f"audio/pcm;rate={self.input_sample_rate}")
