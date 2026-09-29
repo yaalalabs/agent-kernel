@@ -45,12 +45,16 @@ class AGUIRunInput:
         user message at all — the same "prompt **or** resume" rule the REST, WebSocket and thread
         surfaces apply.
 
-        On a resume the user message is taken only when it is the **last** message in the list. AG-UI
-        replays the whole conversation, so searching backwards for any user message would reach past
-        the assistant's reply and re-send the prompt that caused the pause — a turn the client never
-        asked for, and one that OpenAI and ADK reject outright when it rides beside a decision. A
-        prompt the client genuinely appended is still carried, and it is the adapter's business
-        whether its framework can take it.
+        **On a resume the messages are history, and no prompt is derived from them.** AG-UI replays
+        the whole conversation on every run and has no way to mark a message as new this turn, so any
+        rule for picking one out is a guess. The guess fails in exactly the case that matters: a run
+        that pauses emits no assistant reply — the pause *is* its outcome — so the conversation still
+        ends with the prompt that caused the pause, and re-sending it lands a prompt beside a decision
+        that OpenAI and ADK reject outright.
+
+        This is a limit of the protocol, not a rule Agent Kernel is imposing. A client that needs to
+        send a prompt together with a decision can do it on the REST surface, where `prompt` and
+        `resume` are separate fields and the adapter decides whether its framework can take both.
         """
         from ag_ui.core import RunAgentInput
         from pydantic import ValidationError
@@ -61,8 +65,7 @@ class AGUIRunInput:
 
         resuming = bool(body.get("resume"))
         if resuming:
-            last = messages[-1] if messages else None
-            user_message = last if isinstance(last, dict) and last.get("role") == "user" else None
+            user_message = None
         else:
             user_message = next((m for m in reversed(messages) if isinstance(m, dict) and m.get("role") == "user"), None)
             if user_message is None:
@@ -136,10 +139,16 @@ class AGUIRunInput:
     def _to_decision(entry: Any) -> ResumeDecision:
         """Map one `ResumeEntry` onto a decision, without flattening its status.
 
-        The protocol carries two statuses where Agent Kernel carries three: `cancelled` passes
-        through unchanged, and `resolved` becomes `approved` or `denied` according to the payload —
-        an explicit `False`, or an object saying `approved: false`, is a refusal. Anything else a
-        human resolved with is an approval, since they supplied an answer rather than withholding one.
+        The protocol carries two statuses where Agent Kernel carries three: `cancelled` passes through
+        unchanged, and `resolved` becomes `denied` on an explicit `False` and `approved` otherwise,
+        since a human who supplied an answer approved rather than withheld one.
+
+        **A refusal carries no wording over this surface.** AG-UI has no field for one, and Agent
+        Kernel does not reserve keys inside `payload` to smuggle it: the SDK states that `payload` is
+        "the answer the agent asked for and will act on", so squatting there would both contradict the
+        protocol and swallow an answer that happened to use the same key. `denied` still reaches the
+        model as a refusal distinct from `cancelled`, which is the distinction that matters. A client
+        that needs the human's words uses the REST surface, where `message` is a field of its own.
 
         :param entry: One ResumeEntry from the protocol.
         :return: The AK decision.
@@ -147,11 +156,12 @@ class AGUIRunInput:
         payload = entry.payload
         if entry.status == "cancelled":
             status = "cancelled"
-        elif payload is False or (isinstance(payload, dict) and payload.get("approved") is False):
+        elif payload is False:
             status = "denied"
         else:
             status = "approved"
-        return ResumeDecision(id=entry.interrupt_id, status=status, payload=payload)
+
+        return ResumeDecision(id=entry.interrupt_id, status=status, payload=None if isinstance(payload, bool) else payload)
 
     @staticmethod
     def _message_requests(run_input: "RunAgentInput") -> list[AgentRequest]:
