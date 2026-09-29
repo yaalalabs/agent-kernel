@@ -298,10 +298,19 @@ copying it.** Copying is how this bug happened (§4).
     string body), lifted out so both methods share it with identical semantics. A non-JSON body
     raises, the record is retried, and it ends in `on_permanent_failure`, the same as in the
     pipeline.
-- **R4.2: a failed delivery is retried.** `deliver` raises, `LambdaSQSConsumer.handle` reports
-  the record in `batchItemFailures` (`serverless/core/sqs_consumer.py:58-62`), and SQS redelivers
-  it up to `execution.queues.output.max_receive_count`. A briefly unreachable Slack API gets its
-  retries. This matches `pipeline/response_handler.py:170-176`.
+- **R4.2: a failed reply is retried.** When the adapter raises, `LambdaSQSConsumer.handle`
+  reports the record in `batchItemFailures` (`serverless/core/sqs_consumer.py:58-62`), and SQS
+  redelivers it up to `execution.queues.output.max_receive_count`. A briefly unreachable Slack
+  API gets its retries. This matches `pipeline/response_handler.py:170-176`.
+  - **Covered: the reply path** (`adapter.deliver`, status < 400). Every built-in adapter lets
+    this raise. Teams does it explicitly, with `raise_on_failure=True`
+    (`integration/teams/adapter.py:508`).
+  - **Not covered: the error-notice path** (`adapter.deliver_error`, status >= 400, R4.4). Every
+    built-in adapter treats the error notice as best effort: it logs the failure and returns (for
+    example `integration/slack/adapter.py:268-272`, `integration/teams/adapter.py:510-512`). The
+    record is then deleted and the user gets no notice. The pipeline behaves the same way today.
+  - `IntegrationDelivery` catches nothing itself. A bring-your-own adapter whose `deliver_error`
+    raises still gets the retries.
 - **R4.3: permanent failure tells the platform user.** `on_permanent_failure` checks
   `integration` first inside its `try`. If it is present, it calls
   `deliver_permanent_failure(...)` and returns. This branch sits **before** the line that crashes
@@ -326,7 +335,16 @@ copying it.** Copying is how this bug happened (§4).
   response-store branches deliver as their code already intends:
   - an error frame over WebSocket, or
   - a 500 record the REST poll returns.
-- **R5.3: no other change.** The error text, the message types, and the 500 status are
+- **R5.3: the error payload carries the session id.** When the record has a group id, it is
+  added to the error payload once, before the branches. The REST branch builds its record from
+  that payload (`_construct_message_for_store` reads `body["session_id"]`, `:57`), so R5.1 alone
+  would store `session_id: None`.
+  - The pipeline (`pipeline/response_handler.py:119-122`) and ECS
+    (`containerized/akoutputconsumer.py:100-106`) already do this.
+  - It replaces the ASYNC branch's own unconditional assignment (`:167`). STREAM keeps setting it
+    on its chunk.
+  - Not a regression risk: before R5.1 this path never ran.
+- **R5.4: no other change.** The error text, the message types, and the 500 status are
   unchanged.
 
 ### 7.6 Pipeline classes: refactor only, no behaviour change
@@ -373,6 +391,25 @@ copying it.** Copying is how this bug happened (§4).
       the outbound adapter now runs there
     - the platform credentials, passed through the existing
       `response_handler.environment_variables` (`ak-deployment/ak-aws/serverless/variables.tf:418`)
+- **Where the extra goes: the application's own manifest.** The Terraform module deploys a
+  package the application builds (`response_handler.package_path` or
+  `response_handler.lambda_package_s3`). AK does not ship a response-handler artifact.
+  - Per-Lambda layout, as used by the examples: add the extra to the `response_handler`
+    optional-dependency list in the app's `pyproject.toml`
+    (`examples/aws-serverless/scalable-openai/pyproject.toml:16-18`). `deploy.sh` installs that
+    list through `uv export --extra response_handler` (`deploy/deploy.sh:82`).
+  - Single-set layout (the "Response Handler Package" snippet in
+    `docs/docs/deployment/aws-serverless.md`): add it to the app's `dependencies`, which
+    `uv export` installs into every package.
+  - The `local` build branch of those scripts pins the extras inline
+    (`agentkernel[aws,redis]`, `deploy/deploy.sh:86`). A local build of an integration app must
+    add the platform extra there too.
+  - No example in the repo serves integration traffic on serverless, so no repo manifest
+    changes. The edge Lambda already needs the same extra for its inbound adapter, which is why
+    the acknowledgement posts today.
+- **A missing extra fails loudly.** The first reply raises `ImportError` naming the extra
+  (`require_extra`, `integration/adapter/factory.py:65`), the record lands in `batchItemFailures`,
+  and after the retries the permanent-failure branch logs it at ERROR. Test 13 pins this.
   - **Agent-runner Lambda:** for attachment-bearing messages, `multimodal.enabled: true` with a
     shared store (`redis` or `dynamodb`). This is already enforced at the edge
     (`integration/adapter/producer.py:34-59`), and the runner needs the same block to resolve
@@ -417,13 +454,13 @@ copying it.** Copying is how this bug happened (§4).
      is touched.
   7. Status handling: 4xx/5xx sends `deliver_error(ERROR_MESSAGE)`. An unparseable status takes
      the 200 path (serverless's tolerant parse).
-  8. A raising `deliver` makes `ResponseHandler.handle()` return the record in
+  8. A raising `deliver` on the reply path makes `ResponseHandler.handle()` return the record in
      `batchItemFailures`.
   9. Response-handler permanent failure with `integration` calls `deliver_error`. An exception
      from the adapter is swallowed.
   10. (R5) Permanent failure without `integration`, using a record whose group id is only in
       `attributes.MessageGroupId`:
-      - REST modes store a 500 record with that session id
+      - REST modes store a 500 record with that session id, on the record and in its body (R5.3)
       - ASYNC broadcasts `SYSTEM_RESPONSE`
       - STREAM broadcasts an error `STREAM_CHUNK`
   11. **Round trip, the test that would have caught this bug.** An `InboundRequest` carrying
@@ -441,6 +478,10 @@ copying it.** Copying is how this bug happened (§4).
       `sys.modules` isolation pattern of `test_aws_lazy_exports.py`, loads no
       `agentkernel.integration` module. This is true
       on `develop` today (checked), so the test guards against a regression.
+  13. A missing platform extra fails loudly. An `integration: slack` reply, with the Slack
+      adapter module made unimportable, makes `ResponseHandler.handle()` return the record in
+      `batchItemFailures`, and the log names `agentkernel[slack]`. The application builds the
+      package, so this is the guarantee AK can test (§7.8).
 - **New unit tests for `IntegrationDelivery`**, either in the same file or in
   `test_pipeline_integration_delivery.py`: the routing predicate, the reply-context stripping,
   non-dict bodies, and the lazy import.
@@ -538,6 +579,9 @@ copying it.** Copying is how this bug happened (§4).
   acknowledgement posts).
 - **Streaming replies to platforms, and structured (`AgentReplyAny`) formatting.** These keep
   pipeline behaviour: one text reply built from `str(result)`.
+- **Retrying a failed error notice.** The built-in adapters' `deliver_error` is best effort
+  (R4.2). Making it raise would change the #524 `OutboundAdapter` contract, all seven built-in
+  adapters, and the pipeline's behaviour. That needs its own issue.
 - **Exactly-once delivery.** If `deliver` fails after a partial post, the retry can post again.
   The pipeline has the same property.
 - **Making direct mode and queue mode agree on a client-supplied `requests` list** (Q4). Direct
