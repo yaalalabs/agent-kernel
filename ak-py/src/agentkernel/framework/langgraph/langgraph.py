@@ -89,27 +89,33 @@ class CheckPointer(BaseCheckpointSaver):
 
     def __getstate__(self) -> dict:
         """
-        Pickles the stored data only, leaving the inherited serializer behind.
+        Everything this checkpointer holds except the inherited serializer.
 
         `BaseCheckpointSaver.__init__` attaches a `JsonPlusSerializer` whose msgpack hook is a
-        closure, so the default `__dict__` pickle of this object fails — and because the session
-        store pickles the whole session, that made a LangGraph session silently unstorable on every
-        shared backend. Only `_storage` and `_writes` carry state worth keeping; the serializer is
-        rebuilt on load.
+        closure, and pickle stores a function by its import path — a nested one has none. Since
+        `SessionStore` pickles the whole session, that single attribute made a session holding a
+        LangGraph conversation unstorable on every shared backend.
 
-        :return: The picklable half of this checkpointer's state.
+        Excluded by name rather than listing what to keep, so an attribute added to this class later
+        is carried across instead of being silently dropped on every round trip.
+
+        :return: This checkpointer's state, minus the one entry that cannot be pickled.
         """
-        return {"_storage": self._storage, "_writes": self._writes}
+        state = self.__dict__.copy()
+        state.pop("serde", None)
+        return state
 
     def __setstate__(self, state: dict) -> None:
         """
-        Restores the stored data and rebuilds the serializer `__getstate__` dropped.
+        Restores the stored state and reattaches the serializer `__getstate__` left out.
+
+        The parent's constructor is what reattaches it, so any setup it gains in a future version is
+        applied on load too.
 
         :param state: What `__getstate__` returned.
         """
         BaseCheckpointSaver.__init__(self)
-        self._storage = state.get("_storage", {})
-        self._writes = state.get("_writes", {})
+        self.__dict__.update(state)
 
     def get_tuple(self, config: RunnableConfig) -> Optional[CheckpointTuple]:
         thread_id = config.get("configurable", {}).get("thread_id")
