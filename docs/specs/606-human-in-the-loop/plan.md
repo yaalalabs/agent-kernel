@@ -30,7 +30,7 @@ optional (Iteration 3 lands that change).
 - **Steps:**
   1. Add `PausedInterruption`, `ResumeDecision`, `ResumeSpec`, `AgentResumeRequestAny`,
      `AgentPausedReplyAny` per *spec.md § core/model.py*, including the `model_validator` that
-     derives `content` and the `AK_CANCELLED_DECISION_MESSAGE` constant.
+     derives `content`, and `Runner.CANCELLED_DECISION_MESSAGE` in `core/base.py`.
   2. Add `AgentResumeRequestAny` to the `AgentRequest` union (`model.py:125`). Leave the
      `AgentReply` union (`:126`) alone — that is the point of the subclass.
   3. Add `RunPaused` to the `StreamEvent` union and reword the `event.py:16-17` invariant.
@@ -82,8 +82,8 @@ optional (Iteration 3 lands that change).
   `tests/test_runtime_resume_warnings.py` (new), `tests/test_hitl_stream.py` (new),
   `tests/test_hitl_guardrail.py` (new).
 - **Steps:**
-  1. `Runtime._extract_resume` and `_validate_resume` (the four failure modes, agent resolved from
-     the record, `supports_pause` checked here).
+  1. `Runtime._extract_resume` and `_validate_resume` (the five failure modes, the agent named on
+     the request compared against the record, `supports_pause` checked here).
   2. Dispatch in `run` (`:278-286`) and `stream` (`:328-341`), acting on the **post-hook** list.
   3. The three `WARNING`s per *spec.md § diagnostics*, on the `ak.runtime` logger (`:139`).
   4. Leftover-record cleanup, scoped to a resumed run whose reply is not an `AgentPausedReplyAny`.
@@ -196,7 +196,7 @@ explicitly confirmed as needing nothing, then run through `ak-dev-sync-docs-from
 | `docs/docs/api/agui-server.md` | the interrupt terminal outcome and `RunAgentInput.resume` |
 | `docs/docs/architecture/execution-flow.md` | the pause/resume path |
 | `docs/docs/frameworks/*` | per adapter: **on OpenAI a stale resume is undetected** and "I need a value" must be a question, not a gated tool; ADK's sub-agent routing change and session growth; LangGraph's node re-runs from the top and AK overwrites a user checkpointer |
-| a new HITL page under `docs/docs/advanced/` | "answer it soon or lose it", that clearing the non-volatile cache discards a pending pause, and that a durable pause needs a shared session backend |
+| a new HITL page under `docs/docs/advanced/` | "answer it soon or lose it", that clearing the non-volatile cache discards a pending pause, that two replicas appending a pause at the same moment can lose one, and that a durable pause needs a shared session backend |
 
 **Release notes:** the ADK routing change is a behavioural change for existing multi-agent ADK apps
 and belongs there, not only in the adapter docs.

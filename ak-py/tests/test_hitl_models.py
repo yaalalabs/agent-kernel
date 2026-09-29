@@ -153,22 +153,72 @@ class TestRequestUnion:
 
         assert not issubclass(AgentResumeRequestAny, AgentRequestAny)
 
+    def test_the_serialised_union_carries_it_too(self):
+        """AgentRequest and AgentRequestUnion must not diverge: the second is what crosses the queue."""
+        from agentkernel.core.model import AgentRequestUnion
+
+        parsed = TypeAdapter(AgentRequestUnion).validate_python({"type": "resume", "decisions": [{"id": "i1", "status": "approved"}]})
+
+        assert isinstance(parsed, AgentResumeRequestAny)
+
+    def test_a_prebuilt_resume_survives_a_run_request_round_trip(self):
+        """The shape a surface that prebuilds its request list would send through the broker."""
+        from agentkernel.core.model import BaseRunRequest
+
+        req = BaseRunRequest(session_id="s1", requests=[AgentResumeRequestAny(decisions=[ResumeDecision(id="i1", status="approved")])])
+        back = BaseRunRequest.model_validate(json.loads(req.model_dump_json()))
+
+        assert isinstance(back.requests[0], AgentResumeRequestAny)
+
+
+class TestPayloadIsAnyJsonValue:
+    """
+    A payload is the framework's own shape, and not every framework poses its question as an object.
+
+    Measured in research/verification.md: Pydantic AI takes a bare list as a deferred call's result,
+    and LangGraph's Command(resume=...) takes whatever the node author expects, often a plain
+    string. Typed as `dict`, AK could only deliver `{"choices": [...]}` — a wrapper no framework
+    asked for, contradicting the design's own "passed through exactly as the framework produced it".
+    """
+
+    @pytest.mark.parametrize("payload", [["damaged", "wrong_item"], "just a string", 42, True, {"choice": "a"}, None])
+    def test_a_decision_round_trips_any_json_value(self, payload):
+        decision = ResumeDecision(id="i1", status="approved", payload=payload)
+
+        assert ResumeDecision.model_validate(json.loads(decision.model_dump_json())).payload == payload
+
+    @pytest.mark.parametrize("payload", [["a", "b"], "a question", {"options": ["a"]}])
+    def test_an_interruption_round_trips_any_json_value(self, payload):
+        interruption = PausedInterruption(id="i1", kind="input_required", payload=payload)
+
+        assert PausedInterruption.model_validate(json.loads(interruption.model_dump_json())).payload == payload
+
+    def test_a_framework_native_object_is_still_refused(self):
+        """Why JsonValue rather than Any: the event must stay JSON- and pickle-safe."""
+        with pytest.raises(ValidationError):
+            PausedInterruption(id="i1", kind="input_required", payload=object())
+
 
 class TestRunPausedEvent:
     """RunPaused is an ordinary StreamEvent, and stays JSON- and pickle-safe."""
 
     def test_round_trips_through_the_stream_event_union(self):
         adapter = TypeAdapter(StreamEvent)
-        event = RunPaused(run_id="run-1", interruptions=[_interruption()])
+        event = RunPaused(run_id="run-1", agent="refunds", interruptions=[_interruption()])
         parsed = adapter.validate_python(json.loads(event.model_dump_json()))
         assert isinstance(parsed, RunPaused)
         assert parsed.run_id == "run-1"
         assert parsed.interruptions[0].kind == "tool_call"
 
+    def test_it_names_the_agent_that_paused(self):
+        """The one thing a streaming client cannot derive, and a resume is rejected without it."""
+        with pytest.raises(ValidationError):
+            RunPaused(run_id="run-1", interruptions=[_interruption()])
+
     def test_carries_no_framework_native_object(self):
         import pickle
 
-        event = RunPaused(run_id="run-1", interruptions=[_interruption(payload={"options": ["a"]})])
+        event = RunPaused(run_id="run-1", agent="refunds", interruptions=[_interruption(payload={"options": ["a"]})])
         assert pickle.loads(pickle.dumps(event)) == event
 
 

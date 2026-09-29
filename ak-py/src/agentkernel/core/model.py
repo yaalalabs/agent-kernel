@@ -3,7 +3,7 @@ import uuid
 from enum import Enum
 from typing import Annotated, Any, Callable, List, Literal, Optional, Union
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 from .event import PausedInterruption, StreamEvent
 
@@ -130,13 +130,15 @@ class ResumeDecision(BaseModel):
     status: Literal["approved", "denied", "cancelled"] | None : the verb. Optional, because a pause
         asking for a value has nothing to approve; Runtime requires it only for the approval kinds
     message: str | None : the human's words — a free-text answer, or the reason for a refusal
-    payload: dict | None : the structured answer — option(s) chosen, overridden arguments
+    payload: JsonValue : the structured answer — option(s) chosen, overridden arguments. Any JSON
+        value, not just an object: a framework may take a bare list or string as the answer, and
+        wrapping it in a dict AK invented would not survive the round trip
     """
 
     id: str
     status: Optional[Literal["approved", "denied", "cancelled"]] = None
     message: Optional[str] = None
-    payload: Optional[dict] = None
+    payload: JsonValue = None
 
 
 class _ResumeDecisions(BaseModel):
@@ -187,7 +189,7 @@ type AgentRequest = Union[AgentRequestText, AgentRequestFile, AgentRequestImage,
 type AgentReply = Union[AgentReplyText, AgentReplyImage, AgentReplyAny]
 
 AgentRequestUnion = Annotated[
-    Union[AgentRequestText, AgentRequestFile, AgentRequestImage, AgentRequestAny, AgentRequestAttachmentRef],
+    Union[AgentRequestText, AgentRequestFile, AgentRequestImage, AgentRequestAny, AgentRequestAttachmentRef, AgentResumeRequestAny],
     Field(discriminator="type"),
 ]
 

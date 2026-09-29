@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pydantic import JsonValue
+
 from ..core.base import Agent, Session
 from ..core.config import AKConfig
 from ..core.hooks import PostHook, PreHook
@@ -110,8 +112,7 @@ class BaseGuardrailUtil:
         Extract the human's own words from a resume request, so a guardrail sees them.
 
         A decision's free text reaches the model exactly as a prompt does, so skipping it would
-        leave a route no input guardrail inspects. Only string payload values are taken: a guardrail
-        scanning arbitrary nested JSON reports ids and enum values as findings.
+        leave a route no input guardrail inspects.
 
         :param resume: The resume request carrying the decisions.
         :return: The text a human typed, one entry per value.
@@ -120,9 +121,28 @@ class BaseGuardrailUtil:
         for decision in resume.decisions:
             if decision.message:
                 text_parts.append(decision.message)
-            if decision.payload:
-                text_parts.extend(value for value in decision.payload.values() if isinstance(value, str))
+            text_parts.extend(BaseGuardrailUtil._payload_text(decision.payload))
         return text_parts
+
+    @staticmethod
+    def _payload_text(payload: JsonValue) -> list[str]:
+        """
+        The human-written strings in a decision payload: the value itself, a list's string items, or
+        a dict's string values.
+
+        One level only, and strings only. A payload is the framework's own shape, so descending
+        further has a guardrail reporting ids and enum values as findings.
+
+        :param payload: The decision payload, which may be any JSON value.
+        :return: The strings a guardrail should inspect, in payload order.
+        """
+        if isinstance(payload, str):
+            return [payload]
+        if isinstance(payload, list):
+            return [value for value in payload if isinstance(value, str)]
+        if isinstance(payload, dict):
+            return [value for value in payload.values() if isinstance(value, str)]
+        return []
 
     @staticmethod
     def _extract_text_from_reply(agent_reply: AgentReply) -> str:

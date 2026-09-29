@@ -275,15 +275,16 @@ class Runtime:
 
         Runs here rather than in the adapter because every adapter wraps its body in one `except
         Exception` that returns a text reply, so a failure raised inside would surface as a generic
-        error instead of naming what went wrong. These four checks also need no framework knowledge,
-        so an adapter-side implementation would be written four times.
+        error instead of naming what went wrong. These five checks also need no framework knowledge,
+        so an adapter-side implementation would be written five times.
 
         :param agent: The agent named on the request, used only to reject a conflicting one.
         :param session: The session holding the paused-run records.
         :param resume: The decisions to validate.
         :return: The agent resolved from the record, and the record itself.
-        :raises ValueError: If no run matches, a decision names an unknown interruption, the named
-            agent disagrees with the record, or the record's agent is no longer registered.
+        :raises ValueError: If no run matches, a decision names an unknown interruption, an approval
+            interruption is answered without a status, the named agent disagrees with the record, or
+            the record's agent is no longer registered.
         """
         decision_ids = [decision.id for decision in resume.decisions]
         record = PausedRunState.get(session, resume.run_id) if resume.run_id else PausedRunState.find_by_interruption(session, decision_ids)
@@ -294,15 +295,23 @@ class Runtime:
                 f"(run_id={resume.run_id!r}, decisions={decision_ids}); the session holds {held}. "
                 f"A run_id that disagrees with its decisions, and decisions spanning two runs, fail the same way."
             )
-        known = {interruption.id for interruption in record.interruptions}
-        unknown = sorted(set(decision_ids) - known)
+        pending = {interruption.id: interruption.kind for interruption in record.interruptions}
+        unknown = sorted(set(decision_ids) - set(pending))
         if unknown:
-            raise ValueError(f"Resume for run '{record.id}' names unknown interruption(s): {unknown}. The run is waiting on: {sorted(known)}")
+            raise ValueError(f"Resume for run '{record.id}' names unknown interruption(s): {unknown}. The run is waiting on: {sorted(pending)}")
+
+        undecided = sorted(d.id for d in resume.decisions if d.status is None and pending[d.id] in ("tool_call", "confirmation"))
+        if undecided:
+            raise ValueError(
+                f"Resume for run '{record.id}' gives no status for interruption(s) awaiting approval: {undecided}. "
+                f"Answer each with 'approved', 'denied' or 'cancelled'; only an 'input_required' pause may omit it."
+            )
 
         if agent.name != record.agent:
             raise ValueError(
-                f"Resume names agent '{agent.name}' but paused run '{record.id}' belongs to '{record.agent}'. "
-                f"The agent is resolved from the record; an explicit one that disagrees is an error, not an override."
+                f"Resume targeted agent '{agent.name}' but paused run '{record.id}' belongs to '{record.agent}'. "
+                f"A resume names the agent that paused, which the paused reply and the RunPaused event both carry; "
+                f"a request that names none is served by the default agent and fails here."
             )
 
         resolved = self.agents().get(record.agent)

@@ -31,7 +31,7 @@ def _pausing_stream_runner(*, open_tool_call=False, resume_answers=True):
                 interruptions=[PausedInterruption(id="i1", kind="tool_call", tool_name="refund")],
                 payload={"state": "blob"},
             )
-            yield RunPaused(run_id=record.id, interruptions=record.interruptions)
+            yield RunPaused(run_id=record.id, agent=agent.name, interruptions=record.interruptions)
 
         async def resume_stream(self, agent, session, requests, decisions, record):
             self.resumed_with = decisions
@@ -76,6 +76,16 @@ class TestPausedTerminalSequence:
         paused = [c.event for c in chunks if isinstance(c.event, RunPaused)]
         assert len(paused) == 1
         assert paused[0].interruptions[0].tool_name == "refund"
+
+    @pytest.mark.asyncio
+    async def test_the_pause_names_the_agent_to_resume(self, runtime):
+        """A resume is rejected unless it names this agent, and a stream carries nothing else that does."""
+        agent = PausingAgent(runner=_pausing_stream_runner())
+        runtime.register(agent)
+        chunks = await _stream(runtime, agent, runtime.sessions().new("s1"), [AgentRequestText(prompt="refund it")])
+
+        paused = next(c.event for c in chunks if isinstance(c.event, RunPaused))
+        assert paused.agent == "refunds"
 
     @pytest.mark.asyncio
     async def test_an_open_tool_call_is_closed_before_the_stream_ends(self, runtime):

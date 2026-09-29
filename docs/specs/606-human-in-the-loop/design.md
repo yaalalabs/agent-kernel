@@ -147,7 +147,12 @@ transports and the `Runner` interface are all unchanged.
 - `PausedInterruption` carries what a human needs in order to decide, and what the client echoes
   back: `id: str`, `kind: Literal["tool_call", "input_required", "confirmation"]`,
   `tool_name: str | None`, `arguments: str | None` (JSON-encoded), `message: str | None`,
-  `payload: dict | None`.
+  `payload: JsonValue`.
+  - **`payload` is any JSON value, not an object.** Pydantic AI takes a bare list as a deferred
+    call's result and LangGraph's `Command(resume=…)` takes whatever the node author expects, often
+    a plain string (`research/verification.md`). Typed as a `dict`, AK could only deliver a wrapper
+    no framework asked for. `JsonValue` rather than `Any` because a stream event must stay JSON-
+    and pickle-safe: it still refuses a framework-native object.
   - **`id` must be unique across every paused run a session holds**, not just within one record.
     This is load-bearing rather than tidy: it is what lets `Runtime` resolve which run a decision
     belongs to when no `run_id` is given, which is the only thing AG-UI can do. Frameworks supply
@@ -289,7 +294,7 @@ transports and the `Runner` interface are all unchanged.
   |---|---|
   | `status: Literal["approved", "denied", "cancelled"] \| None` | the verb, for an interruption that is an approval |
   | `message: str \| None` | the human's words — a free-text answer, or the reason for a refusal |
-  | `payload: dict \| None` | the structured answer — the option(s) chosen, overridden arguments, a confirmation body |
+  | `payload: JsonValue` | the structured answer — the option(s) chosen, overridden arguments, a confirmation body. Any JSON value, for the reason given under `PausedInterruption` |
 
   - **`status` is three-valued, not a bool.** *(Decision.)* Approve, deny and cancel are three
     different things a human can do, and collapsing the last two lets an agent report a refusal
@@ -425,7 +430,7 @@ Around that dispatch:
     `try`.** *(Decision.)* `Runtime` cannot know that OpenAI has no channel for a structured
     answer, or that Pydantic AI needs every deferred call resolved, without framework knowledge
     moving into `core/`, which is what the adapter pattern exists to prevent. So the rule splits:
-    - **Generic checks live in `Runtime`** — the four failure modes. They need no framework
+    - **Generic checks live in `Runtime`** — the five failure modes. They need no framework
       knowledge and would otherwise be written four times.
     - **Framework-specific checks live in the adapter, before the `try` opens.** Every adapter's
       body sits inside one `try` whose `except Exception` returns
@@ -491,10 +496,25 @@ Around that dispatch:
 2. a `ResumeDecision.id` matching no `PausedInterruption.id`;
 3. an opaque payload that no longer deserialises — an SDK upgrade (OpenAI's `RunState` carries a
    `_schema_version`), or an agent whose framework changed while the pause was outstanding;
-4. **agent mismatch** — `Runtime` resolves the agent **from the record**, and a conflicting
-   explicit `req.agent` is an error rather than an override. Resuming the wrong agent would
-   rebuild OpenAI's state with the wrong `initial_agent`, and on ADK or Pydantic AI would resume
-   another agent's conversation.
+4. **agent mismatch** — **a resume names the agent that paused**, and one that disagrees with the
+   record is an error rather than an override. Resuming the wrong agent would rebuild OpenAI's
+   state with the wrong `initial_agent`, and on ADK or Pydantic AI would resume another agent's
+   conversation.
+   - The agent is **required**, not optional, and that is forced rather than chosen: `AgentService`
+     has already defaulted to the first registered agent by the time `Runtime` sees the request, so
+     "named the wrong agent" and "named none" arrive identically. Silently resolving from the record
+     would have AK rewrite what the client asked for, so both are rejected and the message says
+     where to find the right name.
+   - So **both paused surfaces state it**: `agent` is a top-level key on the paused response body
+     beside `run_id`, and a field on the `RunPaused` event. Without that a streaming client has
+     nothing to name.
+   - **AG-UI (PR 3) has to source it itself.** `ResumeEntry` carries neither a run id nor an agent;
+     the run id is resolved from the interruption ids, but the agent must come from the AG-UI run's
+     own agent field.
+5. **an approval answered with no verb** — `status` is required when the matching interruption's
+   `kind` is `tool_call` or `confirmation`, and ignored for `input_required`, which takes a value
+   rather than a yes or no. Checked per interruption, not per request, because one resume can
+   answer both kinds at once.
 
 **Answering one interruption at a time is allowed.** *(Decision — corrected. An earlier draft
 refused any resume that did not address every open interruption, on the stated grounds that "the
@@ -760,6 +780,14 @@ cases distinguishable to the model**:
   (`redis`, `valkey`, `dynamodb`, `cosmosdb`, `firestore`) on any multi-replica deployment — and
   that **clearing the non-volatile cache discards a pending pause**, which is the accepted cost of
   not taking a reserved key.
+- **And that two replicas appending a pause at the same moment can lose one.** *(Accepted risk.)*
+  Writing a record is read-modify-write over the non-volatile cache, and the session lock is an
+  `asyncio.Lock` held per process, so the later `SessionStore.store()` wins whole. This is a
+  property of the non-volatile cache itself — `framework_context`, AG-UI shared state and session
+  attachments share it — and fixing it means a compare-and-set at the `SessionStore` level, well
+  outside this issue. What HITL changes is the consequence: the entry lost is a human's pending
+  decision, and supporting several pauses per session is exactly what makes concurrent appends
+  plausible. Documented in PR 3, not worked around here.
 - **And that a pending decision should be answered before the conversation continues.** AK does
   not detect an overtaken pause (see the record section), so this is the only place the
   expectation is set: a paused reply means **answer it soon or lose it**.

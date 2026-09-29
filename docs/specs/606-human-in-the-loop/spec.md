@@ -56,7 +56,8 @@ class PausedInterruption(BaseModel):
     tool_name: str | None = None
     arguments: str | None = None  # JSON-encoded; never a framework object
     message: str | None = None
-    payload: dict | None = None   # the question's own shape, as the framework produced it
+    payload: JsonValue = None     # the question's own shape, as the framework produced it — any
+                                  # JSON value, since a framework may pose one as a list or a string
 
 
 class ResumeDecision(BaseModel):
@@ -64,7 +65,7 @@ class ResumeDecision(BaseModel):
     id: str                                                        # matches a PausedInterruption.id
     status: Literal["approved", "denied", "cancelled"] | None = None
     message: str | None = None                                     # free text
-    payload: dict | None = None                                    # structured answer
+    payload: JsonValue = None                                      # structured answer, any JSON value
 
 
 class ResumeSpec(BaseModel):
@@ -285,7 +286,7 @@ Four rules:
 3. **Validation is generic and lives here.** Every adapter wraps its whole body in one `try` whose
    `except Exception` returns `AgentReplyText(user_facing_error_message(e))` (`openai.py:199-221`,
    `langgraph.py:429`, `pydanticai.py:184`, `adk.py:266`), so a check raised inside the adapter is
-   swallowed. The four failure modes need no framework knowledge, so adapter-side checks would be
+   swallowed. The five failure modes need no framework knowledge, so adapter-side checks would be
    written four times.
 4. **`Runtime` clears a leftover record after a resume that did not pause.** `PausedRunState.clear`
    is otherwise the adapter's, because a resume can pause again and the adapter writes the new
@@ -573,8 +574,9 @@ supplies the message that keeps the two negative cases distinguishable to the mo
 `message` is typically empty. AK generates wording that reads as *an absence of a decision* rather
 than a refusal — "we could not get this approved", not "your refund was declined". A bool plus a
 client-supplied message could not guarantee that: a client sending nothing would leave the model to
-infer a refusal. Defined once as a module constant in `core/model.py`
-(`AK_CANCELLED_DECISION_MESSAGE`) so the four adapters do not each invent their own.
+infer a refusal. Defined once as `Runner.CANCELLED_DECISION_MESSAGE` in `core/base.py` — it is
+runner behaviour, only adapters read it, and an adapter whose framework needs different wording
+overrides it — so the four adapters do not each invent their own.
 
 **`status` is required only where there is something to approve.** `Runtime` requires it when the
 matching interruption's `kind` is `tool_call` or `confirmation`, and ignores it for
@@ -707,11 +709,22 @@ existing `ValueError` → 400 mapping in the presentation wrappers.
 | 1 | no paused run matches — unknown `run_id`, decisions resolving to no record, a `run_id` disagreeing with its decisions' record, or decisions spanning **two** records | the session id and how many paused runs it holds |
 | 2 | a `ResumeDecision.id` matching no `PausedInterruption.id` in the resolved record | the offending id and the ids the record holds |
 | 3 | the opaque payload no longer deserialises — an SDK upgrade (OpenAI's `RunState` carries a `_schema_version`), or an agent whose framework changed while the pause was outstanding | the runner and the underlying error |
-| 4 | agent mismatch — a `req.agent` conflicting with `record.agent` | both agent names |
+| 4 | agent mismatch — the agent on the request differs from `record.agent` | both agent names, and where to find the right one |
+| 5 | an interruption of kind `tool_call` or `confirmation` answered with `status=None` | the offending ids and the three verbs |
 
-`Runtime` resolves the agent **from the record**; a conflicting explicit `req.agent` is an error
-rather than an override. Resuming the wrong agent would rebuild OpenAI's state with the wrong
+A resume **names the agent that paused**, and one that disagrees with the record is an error rather
+than an override. Resuming the wrong agent would rebuild OpenAI's state with the wrong
 `initial_agent`, and on ADK or Pydantic AI would resume another agent's conversation.
+
+Naming it is required rather than optional, and that is forced: `AgentService.select`
+(`core/service.py`) has already defaulted to the first registered agent by the time `Runtime` sees
+the request, so a client that named the wrong agent and one that named none are indistinguishable
+here. Resolving from the record regardless would have AK rewrite what the client asked for, so both
+are rejected and the message points at the paused reply. Both paused surfaces therefore carry the
+name: `agent` is a top-level key on the paused response body, and a field on `RunPaused`.
+
+Check 5 is per interruption rather than per request: one resume can answer an `input_required`
+pause, which legitimately omits `status`, beside a `tool_call` pause, which must not.
 
 `supports_pause` is checked here too, so an unsupported runner names itself in the error rather than
 reaching a `NotImplementedError` inside the adapter's `try`.

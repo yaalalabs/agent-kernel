@@ -67,11 +67,13 @@ class RequestBuilder:
         if isinstance(req, BaseRunRequest):
             RequestBuilder._add_images(requests, req.images)
             RequestBuilder._add_files(requests, req.files)
+            RequestBuilder._add_resume(requests, req)
             RequestBuilder._attach_additional_context(req, requests)
         else:
             # For other subclasses (e.g., upload objects) try async multipart
             await RequestBuilder._add_multipart_files(requests, getattr(req, "files", None))
             await RequestBuilder._add_multipart_images(requests, getattr(req, "images", None))
+            RequestBuilder._add_resume(requests, req)
 
         return requests
 
@@ -324,8 +326,10 @@ class ResponseBuilder:
     def build_response(status_code: int, session_id: Optional[str], rest_api_mode: bool, result: Any = None, error: Optional[Exception] = None):
         """Build response from agent result or error.
 
-        A paused reply also carries `status: "PAUSED"`, `run_id` and `interruptions` as top-level
-        keys, so a client branches on the outcome without parsing `result`.
+        A paused reply also carries `status: "PAUSED"`, `run_id`, `agent` and `interruptions` as
+        top-level keys, so a client branches on the outcome without parsing `result`. `agent` is
+        there because a resume has to name the agent that paused, and a request that named none was
+        served by the default agent — without this the client cannot answer its own pause.
 
         :param status_code: HTTP status code
         :param session_id: Session identifier for the response
@@ -347,6 +351,7 @@ class ResponseBuilder:
             # is what separates them, and a client branches on it without parsing `result`.
             response_dict["status"] = "PAUSED"
             response_dict["run_id"] = result.run_id
+            response_dict["agent"] = result.agent
             response_dict["interruptions"] = [i.model_dump(mode="json") for i in result.interruptions]
 
         if session_id:
@@ -598,7 +603,7 @@ class ChatService:
             raise ValueError("A request cannot carry both 'schedule' and 'resume': a decision deferred to a later occurrence is no longer a decision")
 
     @staticmethod
-    def _success_status(req: BaseChatRequest, reply: Optional[AgentReply] = None) -> int:
+    def success_status(req: BaseChatRequest, reply: Optional[AgentReply] = None) -> int:
         """Return the status a successful response carries: 202 when deferred, or when paused.
 
         Two sources, deliberately not collapsed into one condition: a deferred request is knowable
@@ -648,7 +653,7 @@ class ChatService:
         """
         try:
             result, session_id = self.execute_sync(req, requests)
-            return ResponseBuilder.build_response(self._success_status(req, result), session_id, self.rest_api_mode, result=result)
+            return ResponseBuilder.build_response(self.success_status(req, result), session_id, self.rest_api_mode, result=result)
         except ValueError as ve:
             self._log.error(f"ValueError processing request: {ve}")
             return ResponseBuilder.build_response(400, req.session_id, self.rest_api_mode, error=ve)
@@ -666,7 +671,7 @@ class ChatService:
         """
         try:
             result, session_id = await self.execute(req)
-            return ResponseBuilder.build_response(self._success_status(req, result), session_id, self.rest_api_mode, result=result)
+            return ResponseBuilder.build_response(self.success_status(req, result), session_id, self.rest_api_mode, result=result)
         except ValueError as ve:
             self._log.error(f"ValueError processing request: {ve}")
             return ResponseBuilder.build_response(400, req.session_id, self.rest_api_mode, error=ve)

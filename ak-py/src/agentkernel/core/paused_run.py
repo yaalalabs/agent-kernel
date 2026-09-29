@@ -141,7 +141,8 @@ class PausedRunState:
         :param payload: The framework's opaque resume state.
         :return: The stored record, carrying its assigned id.
         :raises TypeError: If the payload cannot be pickled.
-        :raises ValueError: If an interruption id is already used by another run in this session.
+        :raises ValueError: If an interruption id repeats within this run, or is already used by
+            another run in this session.
         """
         if not_picklable(payload):
             offender = first_unpicklable_entry(payload) if isinstance(payload, dict) else type(payload).__name__
@@ -150,9 +151,17 @@ class PausedRunState:
                 f"The payload must be pickle-serializable so the session can be persisted."
             )
 
+        incoming = [i.id for i in interruptions]
+        repeated = sorted({i for i in incoming if incoming.count(i) > 1})
+        if repeated:
+            raise ValueError(
+                f"Session '{session.id}' was given a paused run repeating interruption id(s): {', '.join(repeated)}. "
+                f"Ids must be unique across a session's paused runs so a decision resolves to one run."
+            )
+
         existing = PausedRunState.list(session)
         taken = {i.id for record in existing for i in record.interruptions}
-        collisions = sorted(taken & {i.id for i in interruptions})
+        collisions = sorted(taken & set(incoming))
         if collisions:
             raise ValueError(
                 f"Session '{session.id}' already holds a paused run using interruption id(s): {', '.join(collisions)}. "

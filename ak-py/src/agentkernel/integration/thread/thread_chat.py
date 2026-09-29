@@ -23,7 +23,7 @@ from fastapi.responses import StreamingResponse
 from ...api.handler import AgentRESTRequestHandler, AuthorisedRESTRequestHandler
 from ...auth.authoriser import Authoriser
 from ...core import Config
-from ...core.chat_service import RequestBuilder, ResponseBuilder
+from ...core.chat_service import ChatService, RequestBuilder, ResponseBuilder
 from ...core.model import BaseChatRequest, BaseRunRequest, ExecutionMode, StreamChunk
 from ...core.service import AgentService
 from ...pipeline.envelope import ATTR_THREAD
@@ -134,7 +134,7 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
             requests, _ = self._recorder.pre_run(req, requests)
             result, session_id = await self.chat_service.execute(req, requests=requests)
             self._recorder.post_run(req, result)
-            return ResponseBuilder.build_response(200, session_id, True, result=result)
+            return ResponseBuilder.build_response(ChatService.success_status(req, result), session_id, True, result=result)
         except ValueError as ve:
             self._log.error(f"ValueError processing request: {ve}")
             return ResponseBuilder.build_response(400, req.session_id, True, error=ve)
@@ -276,7 +276,7 @@ class ThreadRequestHandler(RequestHandler):
         """
         if not body.session_id:
             raise HTTPException(status_code=400, detail={"error": "No session_id is provided in the request"})
-        if not body.prompt:
+        if not body.prompt and body.resume is None:
             raise HTTPException(status_code=400, detail={"error": "No prompt provided in the request", "session_id": body.session_id})
         self._reject_unroutable(body)
         if body.schedule is None:

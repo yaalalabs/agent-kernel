@@ -110,6 +110,21 @@ class TestResolvingARun:
         with pytest.raises(ValueError, match="already holds a paused run using interruption id"):
             PausedRunState.add(session, agent="a", interruptions=_interruptions("i1"))
 
+    def test_duplicate_interruption_id_within_one_run_is_rejected(self):
+        """The cross-record check cannot see this one: the ids are compared against what is stored."""
+        session = Session("s1")
+
+        with pytest.raises(ValueError, match="repeating interruption id"):
+            PausedRunState.add(session, agent="a", interruptions=_interruptions("i1", "i1"))
+
+    def test_a_rejected_record_is_not_stored(self):
+        session = Session("s1")
+
+        with pytest.raises(ValueError):
+            PausedRunState.add(session, agent="a", interruptions=_interruptions("i1", "i1"))
+
+        assert PausedRunState.list(session) == []
+
 
 class TestDurability:
     @pytest.mark.asyncio

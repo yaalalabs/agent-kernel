@@ -135,7 +135,7 @@ class TestStreamWarning:
         class PausingStreamRunner(PausingRunner):
             async def stream(self, agent, session, requests):
                 record = PausedRunState.add(session, agent=agent.name, interruptions=[PausedInterruption(id="i1", kind="tool_call")])
-                yield RunPaused(run_id=record.id, interruptions=record.interruptions)
+                yield RunPaused(run_id=record.id, agent=agent.name, interruptions=record.interruptions)
 
         agent = PausingAgent(runner=PausingStreamRunner())
         agent.post_hooks.append(PauseSwallowingPostHook())
@@ -155,7 +155,7 @@ class TestStreamWarning:
         class PausingStreamRunner(PausingRunner):
             async def stream(self, agent, session, requests):
                 record = PausedRunState.add(session, agent=agent.name, interruptions=[PausedInterruption(id="i1", kind="tool_call")])
-                yield RunPaused(run_id=record.id, interruptions=record.interruptions)
+                yield RunPaused(run_id=record.id, agent=agent.name, interruptions=record.interruptions)
 
         agent = PausingAgent(runner=PausingStreamRunner())
         agent.post_hooks.append(PauseSwallowingPostHook())

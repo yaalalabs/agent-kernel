@@ -116,14 +116,14 @@ class TestAmbiguousCombinations:
 
 class TestPausedResponse:
     def test_a_paused_reply_carries_202(self):
-        assert ChatService._success_status(BaseChatRequest(session_id="s1"), _paused_reply()) == 202
+        assert ChatService.success_status(BaseChatRequest(session_id="s1"), _paused_reply()) == 202
 
     def test_an_ordinary_reply_carries_200(self):
-        assert ChatService._success_status(BaseChatRequest(session_id="s1"), AgentReplyText(response="hi")) == 200
+        assert ChatService.success_status(BaseChatRequest(session_id="s1"), AgentReplyText(response="hi")) == 200
 
     def test_a_deferred_request_still_carries_202(self):
         req = BaseChatRequest(session_id="s1", prompt="later", schedule=ScheduleSpec(at="2030-01-01T00:00:00"))
-        assert ChatService._success_status(req) == 202
+        assert ChatService.success_status(req) == 202
 
     def test_the_body_carries_a_top_level_discriminator(self):
         body = ResponseBuilder.build_response(202, "sess-1", rest_api_mode=False, result=_paused_reply())[1]
@@ -131,6 +131,12 @@ class TestPausedResponse:
         assert body["status"] == "PAUSED"
         assert body["run_id"] == "run-1"
         assert [i["id"] for i in body["interruptions"]] == ["i1"]
+
+    def test_the_body_names_the_agent_that_paused(self):
+        """A resume must name that agent, and a request that named none was served by the default."""
+        body = ResponseBuilder.build_response(202, "sess-1", rest_api_mode=False, result=_paused_reply())[1]
+
+        assert body["agent"] == "refunds"
 
     def test_the_result_key_still_renders_the_reply(self):
         body = ResponseBuilder.build_response(202, "sess-1", rest_api_mode=False, result=_paused_reply())[1]
@@ -153,3 +159,56 @@ class TestPausedResponse:
 
         assert "status" not in scheduled
         assert paused["status"] == "PAUSED"
+
+
+class TestAsyncRequestBuilding:
+    """
+    The async builder is what every REST, streaming and thread request goes through.
+
+    Mirrors TestRequestBuilding on purpose: the two builders diverged once — `_add_resume` was
+    added to the sync one alone — and a resume-only request here built an empty list that failed
+    validation as "No requests provided", making the feature unusable everywhere but the sync path.
+    """
+
+    @pytest.mark.asyncio
+    async def test_decisions_become_a_resume_request(self):
+        requests = await RequestBuilder.from_base_request_async(BaseRunRequest(session_id="s1", resume=_resume()))
+
+        assert len(requests) == 1
+        assert isinstance(requests[0], AgentResumeRequestAny)
+        assert requests[0].decisions[0].id == "i1"
+
+    @pytest.mark.asyncio
+    async def test_a_multipart_style_request_also_carries_the_decisions(self):
+        """The other branch: a request that is not a BaseRunRequest takes the async attachment path."""
+        requests = await RequestBuilder.from_base_request_async(BaseChatRequest(session_id="s1", resume=_resume()))
+
+        assert [type(r) for r in requests] == [AgentResumeRequestAny]
+
+    @pytest.mark.asyncio
+    async def test_a_prompt_sent_alongside_a_decision_stays_first(self):
+        requests = await RequestBuilder.from_base_request_async(BaseRunRequest(session_id="s1", prompt="and the weather?", resume=_resume()))
+
+        assert isinstance(requests[0], AgentRequestText)
+        assert isinstance(requests[-1], AgentResumeRequestAny)
+
+    @pytest.mark.asyncio
+    async def test_an_ordinary_request_is_unchanged(self):
+        requests = await RequestBuilder.from_base_request_async(BaseRunRequest(session_id="s1", prompt="hello"))
+
+        assert [type(r) for r in requests] == [AgentRequestText]
+
+    @pytest.mark.asyncio
+    async def test_a_resume_only_request_survives_the_whole_chat_service(self):
+        """End to end past validation, which is where the empty list actually failed."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        handler = MagicMock()
+        handler.get_response_session_id.side_effect = lambda sid: sid
+        handler.run_async = AsyncMock(return_value=AgentReplyText(response="resumed"))
+
+        with patch("agentkernel.core.chat_service.AgentHandler", return_value=handler):
+            result, _ = await ChatService().execute(BaseRunRequest(session_id="s1", agent="a1", resume=_resume()))
+
+        assert result.response == "resumed"
+        assert any(isinstance(r, AgentResumeRequestAny) for r in handler.run_async.call_args.args[0])

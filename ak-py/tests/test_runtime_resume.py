@@ -27,9 +27,10 @@ class PausingRunner(Runner):
 
     supports_pause = True
 
-    def __init__(self, name="pausing", pause_again=False):
+    def __init__(self, name="pausing", pause_again=False, kind="tool_call"):
         super().__init__(name)
         self.pause_again = pause_again
+        self.kind = kind
         self.resumed_with = None
         self.resumed_requests = None
         self._paused = 0
@@ -39,7 +40,7 @@ class PausingRunner(Runner):
         record = PausedRunState.add(
             session,
             agent=agent.name,
-            interruptions=[PausedInterruption(id=f"i{self._paused}", kind="tool_call", tool_name="refund")],
+            interruptions=[PausedInterruption(id=f"i{self._paused}", kind=self.kind, tool_name="refund")],
             payload={"state": "blob"},
         )
         return AgentPausedReplyAny(run_id=record.id, session_id=session.id, agent=agent.name, interruptions=record.interruptions)
@@ -252,3 +253,80 @@ class TestFailureModes:
 
         with pytest.raises(ValueError, match="does not support resuming"):
             await runtime.run(agent, session, _resume_requests("i1"))
+
+
+class TestStatusIsRequiredForApprovals:
+    """
+    An approval pause answered with no verb has no defined rendering in any adapter.
+
+    `status` stays optional on the model because an `input_required` pause has nothing to approve —
+    the frameworks take a value there, not a yes or no — so the requirement is per interruption
+    kind and can only be checked once the record says which kind each decision answers.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("kind", ["tool_call", "confirmation"])
+    async def test_an_approval_answered_without_a_status_is_rejected(self, runtime, kind):
+        agent = PausingAgent(runner=PausingRunner(kind=kind))
+        runtime.register(agent)
+        session = runtime.sessions().new("s1")
+        await _pause(runtime, agent, session)
+
+        with pytest.raises(ValueError, match="gives no status for interruption"):
+            await runtime.run(agent, session, _resume_requests("i1", status=None))
+
+    @pytest.mark.asyncio
+    async def test_a_value_pause_may_omit_the_status(self, runtime):
+        agent = PausingAgent(runner=PausingRunner(kind="input_required"))
+        runtime.register(agent)
+        session = runtime.sessions().new("s1")
+        await _pause(runtime, agent, session)
+
+        reply = await runtime.run(agent, session, _resume_requests("i1", status=None))
+
+        assert reply.response == "resumed:None"
+
+    @pytest.mark.asyncio
+    async def test_the_check_is_per_interruption_not_per_request(self, runtime):
+        """A value pause answered beside an approval pause must not excuse the missing verb."""
+        agent = PausingAgent()
+        runtime.register(agent)
+        session = runtime.sessions().new("s1")
+        record = PausedRunState.add(
+            session,
+            agent=agent.name,
+            interruptions=[
+                PausedInterruption(id="ask", kind="input_required"),
+                PausedInterruption(id="approve", kind="tool_call"),
+            ],
+        )
+        decisions = [ResumeDecision(id="ask", message="two"), ResumeDecision(id="approve")]
+
+        with pytest.raises(ValueError, match=r"awaiting approval: \['approve'\]"):
+            await runtime.run(agent, session, [AgentResumeRequestAny(run_id=record.id, decisions=decisions)])
+
+
+class TestTheAgentMismatchErrorIsActionable:
+    """
+    A resume names the agent that paused; there is no way for Runtime to relax that.
+
+    AgentService.select has already defaulted to the first registered agent by the time Runtime
+    sees the request, so "the client named the wrong agent" and "the client named none" arrive
+    identically. Rejecting both is the deliberate choice — AK does not quietly rewrite what the
+    client asked for — which makes the message the only thing that can tell them apart.
+    """
+
+    @pytest.mark.asyncio
+    async def test_the_error_says_where_to_find_the_agent_name(self, runtime):
+        agent = PausingAgent()
+        other = PausingAgent(name="billing")
+        runtime.register(agent)
+        runtime.register(other)
+        session = runtime.sessions().new("s1")
+        paused = await _pause(runtime, agent, session)
+
+        with pytest.raises(ValueError) as excinfo:
+            await runtime.run(other, session, _resume_requests("i1", run_id=paused.run_id))
+
+        assert "paused reply" in str(excinfo.value)
+        assert "default agent" in str(excinfo.value)
