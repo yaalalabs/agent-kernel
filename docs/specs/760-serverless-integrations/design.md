@@ -21,7 +21,7 @@ This change fixes both ends by reusing the pipeline's code rather than copying i
 > `examples/`. Unqualified Terraform paths are under `ak-deployment/ak-aws/serverless/`.
 >
 > This design supersedes the reply-only design on `fix/760-serverless-integration-delivery`
-> (draft PR #767). Both parts are implemented on `feature/760-serverless-integrations`.
+> (draft PR #767). Both parts ship together; [`spec.md`](spec.md) details them.
 
 ---
 
@@ -103,7 +103,7 @@ consumers drop it in three places.
 - **Error statuses are lost.** `Lambda.handler` turns every exception into a 500
   (`deployment/aws/serverless/aklambda.py:84-91`). A rejected signature, such as
   `HTTPException(403)` (`telegram/adapter.py:124`), reaches the platform as a retryable 500.
-- **Terraform blocks the edge in three places.**
+- **Terraform blocks the edge in four places.**
   - **Authorizer:** when one is configured, every gateway endpoint gets `CUSTOM` authorization
     (`modules/api-gateway/main.tf:94`). Platforms send no bearer token.
     - `APIGatewayAuthorizer` Denies a request with no `Authorization` header, because
@@ -124,24 +124,42 @@ consumers drop it in three places.
     - Adapters download and offload attachments at the edge, and the producer insists on a
       shared store (`integration/adapter/producer.py:35-59`). An attachment-bearing message
       therefore fails in that Lambda.
+  - **Output queue URL** (found at spec time): `WebhookRESTRequestHandler` builds the pipeline
+    transport when it is constructed (`integration/adapter/producer.py:32`,
+    `pipeline/producer.py:22`), and the `sqs` transport requires both queue URLs
+    (`pipeline/transport/base.py:143-146`).
+    - The request handler gets only `AK_EXECUTION__QUEUES__INPUT__URL`
+      (`modules/request-handler/main.tf:388-390`), so constructing the handler fails at import.
+    - The chat route never noticed: it sends through `SQSHandler`, which reads only the input URL
+      (`deployment/aws/core/sqs_handler.py:73-80`).
   - **WebSocket modes:** no REST API Gateway is created (`state.tf:39-41`), and
     `gateway_endpoints` is rejected (`variables.tf:286-289`).
 
 ### Both parts: packaging, and the docs
 
-- **Packaging.** FastAPI is missing from the platform extras.
+- **Packaging.** The platform extras can run neither Lambda.
   - The six webhook adapter modules, `adapter/meta.py` and `adapter/webhook.py` import `fastapi`
     at module scope. Inbound and outbound share each module, so the response handler (part 1)
     and the request handler (part 2) both need it.
   - No platform extra ships it. The `slack` extra, for example, is `slack-bolt` + `httpx`
     (`ak-py/pyproject.toml:126-129`); FastAPI comes only from the `api` extra (`:120-125`), with
     uvicorn and gunicorn.
+  - The `slack` extra also lacks `aiohttp`, which Bolt's async app imports at module scope
+    (`slack_bolt/app/async_app.py:8`, slack-bolt 1.22.0). The `teams` extra already declares it
+    (`ak-py/pyproject.toml:145`).
+  - The webhook host also needs `uvicorn`. `adapter/webhook.py:7` imports `api.handler`, whose
+    package `__init__` eagerly imports `api.http` (`api/__init__.py:15`), which imports `uvicorn`
+    at module scope (`api/http.py:3`). Tests patch `agentkernel.api.http.uvicorn.run`
+    (`ak-py/tests/test_api_http.py:319`), so that import stays where it is.
   - Verified in a clean `agentkernel[aws,slack]` environment:
-    `IntegrationAdapterFactory.create_outbound("slack")` raises "integration 'slack' requires the
-    'slack' extra", caused by `ModuleNotFoundError: No module named 'fastapi'`. `require_extra`
-    blames the installed extra (`core/util/factory.py:61-64`).
+    - `IntegrationAdapterFactory.create_outbound("slack")` raises "integration 'slack' requires
+      the 'slack' extra", caused by `ModuleNotFoundError: No module named 'fastapi'`, and by
+      `'aiohttp'` once FastAPI is installed. `require_extra` blames the installed extra
+      (`core/util/factory.py:61-64`).
+    - With both installed, importing `WebhookRESTRequestHandler` raises
+      `No module named 'uvicorn'`.
   - The serverless import path is deliberately fastapi-free
-    (`ak-py/tests/test_aws_lazy_exports.py:13-30`).
+    (`ak-py/tests/test_aws_lazy_exports.py:13-28`).
 - **The docs overpromise.** The Telegram, Messenger and Instagram pages offer "Serverless (AWS
   Lambda)" and point at `examples/aws-serverless` (`docs/docs/integrations/telegram.md:287`,
   `messenger.md:505`, `instagram.md:530`). None of those examples contains an integration.
@@ -241,8 +259,8 @@ flowchart LR
 - The ASYNC, STREAM and response-store branches then deliver as their code intends: an error frame
   over WebSocket, or a 500 record for the REST poll.
 - The error payload carries the session id once, before the branches. The pipeline
-  (`pipeline/response_handler.py:119-122`) and ECS (`containerized/akoutputconsumer.py:100-106`)
-  already do this. It replaces the ASYNC branch's own assignment (`:167`).
+  (`pipeline/response_handler.py:93-94`, `:107-108`, `:116-117`) and ECS
+  (`containerized/akoutputconsumer.py:100-106`) already do this. It replaces the ASYNC branch's own assignment (`:167`).
 - The error text, the message types and the 500 status are unchanged.
 
 ### Pipeline classes: refactor only, no behaviour change
@@ -333,13 +351,14 @@ flowchart LR
 - Integration routes stay on the same API Gateway, behind the same authorizer. The authorizer
   lets them through; it never validates their tokens.
 - **`APIGatewayAuthorizer(validator, bypass=None)`**: a new optional `bypass` callable, taking
-  the raw authorizer event and returning `bool`.
+  the raw authorizer event and returning the name of the integration whose route it matched, or
+  `None`. A name rather than a `bool`, because the Allow's principal carries it.
   - It is checked first, before `_build_request`. Otherwise the required `Headers.Authorization`
     (`akauthorizer.py:10-11`) turns a header-less webhook into a Deny.
-  - `True` returns an Allow for the event's exact `methodArn`, with principal
+  - A name returns an Allow for the event's exact `methodArn`, with principal
     `integration:<name>` and no claims. The validator is never called, so Teams' Bot Framework
     JWT never reaches the app's `AuthValidator`.
-  - `False`, or no callable at all, leaves today's path byte-for-byte unchanged.
+  - `None`, or no callable at all, leaves today's path byte-for-byte unchanged.
 - **`WebhookRouteMatcher`** (`integration/adapter/`): the callable the integrations provide.
   - It matches the event's method and path, after stripping `/<API_BASE_PATH>/<API_VERSION>` the
     way the router does (`rest_lambda.py:394-401`), against the declared webhook routes: `POST`
@@ -350,9 +369,10 @@ flowchart LR
     stays the real check.
   - It is built from route strings, without importing any platform adapter. The adapter modules
     import FastAPI and platform SDKs at module scope (`slack/adapter.py:17-18`), and the
-    authorizer package must not need them. How the built-in routes are named without drift (for
-    example a contract test asserting they equal each adapter's `webhook_path` and
-    `challenge_path`) is settled in `spec.md`.
+    authorizer package must not need them.
+  - The built-in routes have one definition: a fastapi-free route table that both the six
+    adapters' `webhook_path`/`challenge_path` and `WebhookRouteMatcher.for_integrations` read, so
+    they cannot drift (`spec.md`, "Built-in webhook routes").
   - Usage:
     `APIGatewayAuthorizer(validator=MyValidator(), bypass=WebhookRouteMatcher.for_integrations("slack")).handle`.
 - **Authorizer caching must be off (`result_ttl_in_seconds = 0`) wherever a bypass is used.**
@@ -365,25 +385,19 @@ flowchart LR
   - The existing auth example already runs with TTL 0
     (`examples/aws-serverless/openai-auth/deploy/main.tf:55`).
 
-### Retry-aware acknowledgement (`integration/adapter/`), Q4
+### Slack retries after a cold start (Q4)
 
-- **`InboundAdapter.is_retry(raw) -> bool`**: a new overridable method, defaulting to `False`.
-  - `SlackInboundAdapter` returns `True` when the `x-slack-retry-num` header is present. Slack
-    sets it to `1`, `2` or `3` on every retry, along with `x-slack-retry-reason`
-    ([Events API](https://docs.slack.dev/apis/events-api/)).
-- **`WebhookRESTRequestHandler.handle`** skips `outbound.acknowledge()` for a retry, and still
-  enqueues it.
-  - Enqueueing stays safe because the dedup key does not change across retries: Slack's
-    `request_id` is `f"{channel}:{ts}"` (`slack/adapter.py:158`), which makes the dedup ID
-    `slack:{channel}:{ts}` (`producer.py:88`).
-  - The fix: today a cold start past Slack's 3 s triggers a retry. That retry posts a second
-    "thinking…" message (`slack/adapter.py:241-246`), whose `ack_ts` rides only on the
-    deduplicated message. The reply then updates the first message (`slack/adapter.py:257-258`),
-    and the second spinner spins forever.
-- **Every surface, not only Lambda.** The pipeline and ECS hit Slack timeouts too. This is a
-  behaviour change there, for Slack retries only: no second acknowledgement.
-  - Edge case: if the first attempt failed before acknowledging, the retry enqueues without a
-    spinner. The reply still arrives.
+- **No code change.** A retry Slack sends because the first attempt missed its 3 s deadline is
+  already dropped at the edge.
+  - `SlackInboundAdapter.parse` returns an empty result for `x-slack-retry-reason: http_timeout`
+    (`integration/slack/adapter.py:73-79`), so the host neither acknowledges nor enqueues it
+    (`webhook.py:70`). `ak-py/tests/test_slack_integration.py:216-224` pins this.
+  - The first attempt still completes: a synchronous Lambda invocation runs to the end whether or
+    not the caller is still waiting (AWS behaviour, not verified in this repo). So the user gets one
+    "thinking…" message and one reply.
+  - An `http_error` retry runs again (`test_slack_integration.py:226-234`). The first attempt
+    genuinely failed, so the retry is the recovery.
+- The remaining cold-start cost is covered by the docs (see Docs and skills).
 - Not used: `x-slack-no-retry: 1`. Slack honours it only on a non-200 response the app sends, and
   on a timeout Slack never received ours.
 
@@ -391,21 +405,24 @@ flowchart LR
 
 - **Verification secrets**: mounting raises `AKConfigError` when a mounted adapter's signature
   secret is unset, naming the missing setting.
-  - This matters because the authorizer no longer guards these routes, and several adapters skip
+  - This matters because the authorizer no longer guards these routes, and four adapters skip
     verification when their secret is empty:
     - `whatsapp.app_secret`, `messenger.app_secret`, `instagram.app_secret`: no secret means no
       check (`integration/adapter/meta.py:23-31`; fields at `core/config.py:178`, `:191`, `:203`)
-    - `telegram.webhook_secret`: no check when empty (`telegram/adapter.py:118-120`,
+    - `telegram.webhook_secret`: no check when empty (`telegram/adapter.py:120-121`,
       `core/config.py:215`)
-    - `teams.app_id` and `teams.app_password`: only logs an error when missing
-      (`teams/adapter.py:62-63`)
-    - Slack: Bolt verifies with `SLACK_SIGNING_SECRET`. Its behaviour when that is unset is
-      confirmed in `spec.md`.
+  - Slack and Teams already refuse to construct without theirs, so they fail at module scope,
+    before `Lambda.mount` runs:
+    - `teams.app_id` and `teams.app_password`: `_TeamsCredentials` logs and raises `ValueError`
+      (`teams/adapter.py:62-64`)
+    - Slack: Bolt verifies with `SLACK_SIGNING_SECRET`. An empty or unset value makes
+      `AsyncApp(...)` raise `ValueError("signing_secret must not be empty.")` from slack-sdk's
+      `SignatureVerifier` (slack-sdk 3.44.0, `slack_sdk/signature/__init__.py:41`)
   - An open route lets anyone enqueue a forged message. The agent runs at the owner's cost, and
     the reply goes to a reply address the attacker supplied.
   - Pluggable: a new overridable `InboundAdapter.missing_verification_settings() -> list[str]`,
-    defaulting to `[]` so bring-your-own adapters stay mountable. The six built-in webhook
-    adapters override it.
+    defaulting to `[]` so bring-your-own adapters stay mountable. WhatsApp, Messenger,
+    Instagram and Telegram override it; Slack and Teams need no override.
   - Lambda only. The pipeline and ECS keep today's optional secrets; tightening those is a
     separate issue.
 - **Transport**: mounting a handler with `requires_pipeline = True` raises `AKConfigError` unless
@@ -423,8 +440,9 @@ flowchart LR
   `API_VERSION` or `AGENT_ENDPOINT` is unset, since without them every webhook would reach the
   chat handler (see above).
 - **Response store: still required, unchanged.** In queue mode, building the router raises
-  `ValueError` when `execution.response_store` is absent (`rest_lambda.py:54-57`). That already
-  happens before any mount guard runs.
+  `ValueError` when `execution.response_store` is absent (`rest_lambda.py:54-57`). That happens
+  when `Lambda.mount` builds the router after its own guards pass, or earlier if a
+  `Lambda.register` route built it first.
   - The requirement stays because the stack always exposes the chat route on this Lambda
     (`state.tf:75-79`), and that route needs the store.
   - Every `create_*_response_store` flag defaults to `false` (`variables.tf:118-147`). So the docs
@@ -443,7 +461,12 @@ flowchart LR
 ### Imports and packaging
 
 - **`fastapi` joins the six webhook platform extras** (`slack`, `teams`, `telegram`, `whatsapp`,
-  `messenger`, `instagram`; not `gmail`, which does not import it). Decided in Q5.
+  `messenger`, `instagram`; not `gmail`, which does not import it), and **`aiohttp` joins
+  `slack`**. Decided in Q5.
+- **`agentkernel.api` exports lazily** (PEP 562, the `integration/adapter/__init__.py:14-46`
+  pattern), so importing `api.handler` no longer imports `api.http` and `uvicorn`.
+  - `from agentkernel.api import RESTAPI` keeps working, and so does every
+    `agentkernel.api.http.uvicorn` patch target.
   - Then `agentkernel[aws,<platform>]` works for both the request handler and the response
     handler, with no uvicorn or gunicorn. `ak-py/uv.lock` is regenerated.
 - `from agentkernel.aws import Lambda` stays fastapi-free. `LambdaWebhookHost` and
@@ -463,6 +486,9 @@ flowchart LR
   Lambda's environment, merged over `authorizer.environment_variables`.
   - Today it gets only the user's variables (`ak-deployment/ak-aws/common/modules/authorizer/main.tf:130`),
     so `WebhookRouteMatcher` could not strip the base path the way the router does.
+  - The merge happens at this stack's own module call (`state.tf:206`). The authorizer module is
+    consumed from a pinned registry release (`state.tf:202-203`), so an edit under
+    `ak-aws/common` would take effect only after `ak-common` is re-released.
 - **Authorizer TTL**: no default change (`variables.tf:300` stays 150). The docs and the example
   set `result_ttl_in_seconds = 0` for deployments that serve integrations behind an authorizer.
 - **Attachment store at the edge**: under `queue_mode`, stop withholding the multimodal DynamoDB
@@ -471,6 +497,10 @@ flowchart LR
   handler then gets the table-name env var and the IAM policy.
   - Session and thread wiring stay nulled under `queue_mode`, as today (`state.tf:591`, `:593-596`,
     `:599-601`).
+- **Output queue URL at the edge**: under `queue_mode`, the request handler also gets
+  `AK_EXECUTION__QUEUES__OUTPUT__URL`, through a new input on the local `modules/request-handler`
+  (`state.tf:546`). There is no new stack variable and no IAM change, because the request handler
+  never sends to the output queue.
   - Redis and Valkey attachment stores need no Terraform change: their URL comes from the app's
     own `multimodal.*` config. The docs must say that the request handler needs network reach to
     that cluster.
@@ -536,8 +566,9 @@ flowchart LR
     - It asserts at most 10 `MessageAttributes`.
   - Import hygiene: importing the serverless consumers loads no `agentkernel.integration` module.
   - A missing platform extra: `batchItemFailures`, and a log naming the extra.
-  - `IntegrationDelivery` unit tests: the routing predicate, reply-context stripping, non-dict
-    bodies, and the lazy import.
+  - `IntegrationDelivery` unit tests, in their own `ak-py/tests/test_pipeline_integration_delivery.py`
+    because the class lives in `pipeline/`: the routing predicate, reply-context stripping,
+    non-dict bodies, and the lazy import.
   - Unmodified: `test_pipeline_response_handler.py`, `test_pipeline_agent_runner.py`,
     `test_integration_roundtrip.py`, `test_serverless_status_propagation.py`,
     `test_serverless_agent_runner_schedule.py`, `test_akresponsehandler.py` and
@@ -557,13 +588,10 @@ flowchart LR
     - an `in_memory` transport raises `AKConfigError`
     - a WebSocket mode raises `AKConfigError`
     - missing base-path env vars raise `AKConfigError`
-    - a missing verification secret raises `AKConfigError`, naming the setting, for each built-in
+    - a missing verification secret raises `AKConfigError`, naming the setting, for WhatsApp,
+      Messenger, Instagram and Telegram; constructing the Slack or Teams adapter without its
+      secrets raises `ValueError`
     - a non-webhook handler raises `TypeError`
-  - **Retry-aware acknowledgement** (in `ak-py/tests/test_integration_webhook_handler.py`, so it
-    covers every surface):
-    - a Slack delivery carrying `x-slack-retry-num` is enqueued without calling `acknowledge()`
-    - a first delivery still acknowledges
-    - an adapter that does not override `is_retry` behaves exactly as today
   - **Authorizer bypass**:
     - a header-less webhook event on a declared route gets an Allow for its exact `methodArn`,
       and the validator is not called
@@ -581,8 +609,15 @@ flowchart LR
   - **Parity, per built-in webhook adapter**: the same delivery, sent as an API Gateway event and
     as an HTTP request through the FastAPI route, gives the same status, body and enqueued
     message.
-    - The deliveries come from `IntegrationAdapterContract`'s hooks (`integration/adapter/testing.py:35-55`),
-      which each built-in implements (`ak-py/tests/test_integration_adapter_contract.py:53-273`).
+    - WhatsApp, Messenger, Instagram and Telegram take their deliveries from
+      `IntegrationAdapterContract`'s hooks (`integration/adapter/testing.py:35-55`), whose fake
+      requests carry a body, headers and a query (`ak-py/tests/test_integration_adapter_contract.py:23-35`,
+      `:53-172`).
+    - Slack's and Teams' hooks bypass their SDK's dispatch: a raw event dict and a fake
+      `TurnContext` (`test_integration_adapter_contract.py:239-248`, `:314-319`). Their
+      deliveries are HTTP-level instead: a signed Bolt request (the helper at
+      `test_slack_integration.py:159-173`), and a Teams activity with the Bot Framework's
+      `process_activity` stubbed.
     - Handshake cases are added for WhatsApp, Messenger and Instagram.
     - Cases: valid delivery; unauthentic delivery (401/403, not 500); ignored delivery; handshake.
   - **End to end**: an API Gateway event → host → input queue → `ServerlessAgentRunner` →
@@ -594,8 +629,9 @@ flowchart LR
     - This holds today: `integration/__init__.py` and `integration/adapter/__init__.py` load
       lazily, and in a clean `agentkernel[aws,slack]` environment importing
       `agentkernel.integration.adapter` and `APIGatewayAuthorizer` loads neither module.
+  - importing `WebhookRESTRequestHandler` loads neither `agentkernel.api.http` nor `uvicorn`
 - **Packaging**: in a clean `agentkernel[aws,slack]` environment, `create_outbound("slack")`
-  succeeds.
+  succeeds and `WebhookRESTRequestHandler` imports.
 
 ### Docs and skills
 
@@ -621,7 +657,8 @@ flowchart LR
     - keep the request-handler package slim, with no agent frameworks
     - the authorizer call adds to the budget
     - provisioned concurrency or a warm-up, configured outside the module for now
-    - a timeout retry no longer posts a second "thinking…"
+    - a timeout retry is dropped at the edge, so the user still sees one "thinking…" and one
+      reply
   - **Stores:** a response store is still required, and attachments need a shared store.
   - **REST modes only.**
 - `docs/docs/advanced/queue-mode-guide.md` and `docs/docs/integrations/overview.md`: serverless
@@ -634,8 +671,8 @@ flowchart LR
     - the serverless class table
     - the messaging "Hosting" bullet
   - `ak-dev-testing-conventions`: the new test files
-  - `ak-dev-new-messaging-integration`: its hosting section, `is_retry`, and
-    `missing_verification_settings`
+  - `ak-dev-new-messaging-integration`: its hosting section, `missing_verification_settings`,
+    and the route table a built-in's paths come from
   - bundled `ak-add-integration` and `ak-cloud-deploy`: the Lambda wiring
 - Before merge, confirm through the `ak-dev-sync-docs-from-branch` and
   `ak-dev-sync-skills-from-branch` flows.
@@ -655,8 +692,10 @@ flowchart LR
    timing out, and WebSocket clients get their error frame (D1).
 5. **Webhooks can be served on Lambda**, through `Lambda.mount`, in `rest_sync`/`rest_async` with
    `sqs`.
-6. **A Slack retry no longer posts a second "thinking…"**, on every surface (Q4).
-7. **Installing a webhook platform extra now installs FastAPI** (Q5).
+6. **Installing a webhook platform extra now installs FastAPI**, and the `slack` extra also
+   installs aiohttp (Q5).
+7. **`agentkernel.api` resolves its exports lazily** (Q5). Importing `agentkernel.api.handler`
+   no longer imports `agentkernel.api.http` or `uvicorn`.
 8. **Log lines:** the serverless response handler logs integration deliveries under
    `ak.aws.responsehandler`. Pipeline log names and messages are unchanged.
 
@@ -754,23 +793,35 @@ flowchart LR
       runs a whole app where one handler call is enough.
   - Revisit if other handlers (schedule, thread, AG-UI) come to Lambda. Those need path
     parameters and FastAPI routing, which favours one of the two rejected options.
-- **Q4: cold starts versus Slack's 3 s acknowledgement deadline. Resolved: a retry-aware
-  acknowledgement, plus cold-start guidance in the docs.**
-  - Why: the enqueue is already deduplicated across retries (`producer.py:88`), so the only
-    symptom a user sees is the orphaned second spinner. `acknowledge()` runs before the enqueue
-    (`webhook.py:73`). Behind an authorizer, the Q1 bypass adds one more Lambda call to the budget.
+- **Q4: cold starts versus Slack's 3 s acknowledgement deadline. Resolved: cold-start guidance
+  in the docs; no code change.**
+  - Why: a timeout retry is already dropped at the edge, before it is acknowledged
+    (`slack/adapter.py:73-79`, `webhook.py:70`), and the enqueue is deduplicated across retries
+    anyway (`producer.py:88`). A cold start therefore costs Slack's patience, not a duplicate.
+    Behind an authorizer, the Q1 bypass adds one more Lambda call to the budget.
   - Rejected:
-    - Docs only. That leaves the orphaned spinner.
+    - A retry-aware acknowledgement (`InboundAdapter.is_retry`, skipping `acknowledge()` on a
+      retry), proposed in an earlier revision of this design and dropped at spec time. It rested
+      on a timeout retry posting a second "thinking…", which the code at base does not do. It
+      would change only `http_error` retries, where the first attempt's spinner is orphaned
+      whether or not the retry acknowledges.
     - A provisioned-concurrency setting in this change. It is the real fix for the cold start
       itself, but it needs published versions or aliases wired into API Gateway and the
       authorizer, so it goes to a follow-up issue.
     - `x-slack-no-retry`. It is ineffective on a timeout.
-- **Q5: packaging. Resolved: add `fastapi` to the six webhook platform extras,** in this change.
+- **Q5: packaging. Resolved: add `fastapi` to the six webhook platform extras and `aiohttp` to
+  `slack`, and make `agentkernel.api` export lazily,** in this change.
   - With both parts on one branch, the response handler (part 1) and the request handler
-    (part 2) both need it.
+    (part 2) both need FastAPI, and Slack's async SDK needs aiohttp on either side.
+  - The lazy exports are what keep `uvicorn` out: `api/__init__.py:15` is the only thing that
+    drags `api.http` into an import of `api.handler`.
   - Rejected:
     - Documenting `agentkernel[aws,api,<platform>]`. It pulls a server stack into Lambdas that
       never run one.
+    - Adding `uvicorn` to the platform extras. The same objection, per platform.
+    - Moving `import uvicorn` inside `RESTAPI.run()`. It breaks the
+      `agentkernel.api.http.uvicorn.run` patch targets (`ak-py/tests/test_api_http.py:319`,
+      `:435`, `:450`, `:469`, `:484`, `:521`, `:541`).
     - Removing the module-scope FastAPI imports from the outbound half now. That refactors all
       six adapters, and the request handler needs FastAPI regardless. It is a possible later
       clean-up.
