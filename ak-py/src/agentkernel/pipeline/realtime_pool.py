@@ -268,6 +268,7 @@ class RealtimeConnectionPool:
         with cls._lock:
             if cls._instance is None:
                 cls._instance = cls()
+                cls._instance._start_background_thread()
             return cls._instance
 
     @classmethod
@@ -283,6 +284,12 @@ class RealtimeConnectionPool:
         self._conn_lock = threading.Lock()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._loop_ready = threading.Event()
+        self._thread: Optional[threading.Thread] = None
+
+    def _start_background_thread(self) -> None:
+        if self._thread is None:
+            self._thread = threading.Thread(target=self.start, daemon=True, name="realtime-pool")
+            self._thread.start()
 
     def start(self) -> None:
         """Blocking entry point: runs the shared asyncio event loop until shutdown.

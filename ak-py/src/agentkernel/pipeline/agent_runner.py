@@ -106,20 +106,6 @@ class AgentRunner:
         # arrives and pod/task stop hangs until SIGKILL instead of draining in-flight runs.
         ThreadRunner.install_shutdown_signal_handlers(cls._log)
 
-        if AKConfig.get().execution.mode == ExecutionMode.REALTIME:
-            from .realtime_pool import RealtimeConnectionPool
-
-            pool = RealtimeConnectionPool.initialize()
-            runner_instance = cls()
-            tasks = [
-                ThreadRunner.Task(execution_function=pool.start, thread_name="realtime-pool", stop_all_on_failure=True),
-                ThreadRunner.Task(
-                    execution_function=lambda: runner_instance.start(exit_on_shutdown=False), thread_name="agent-runner", stop_all_on_failure=True
-                ),
-            ]
-            ThreadRunner.run(tasks=tasks, max_workers=len(tasks))
-            return
-
         cls().start()
 
     # -- shared plumbing --------------------------------------------------------------------
@@ -250,9 +236,7 @@ class StreamAgentRunner(AgentRunner):
         if realtime:
             from .realtime_pool import RealtimeConnectionPool
 
-            pool = RealtimeConnectionPool.get()
-            if not pool:
-                raise RuntimeError("RealtimeConnectionPool not initialized")
+            pool = RealtimeConnectionPool.initialize()
 
             # Resolve the agent/session only when the session's connection is first created;
             # every later audio chunk reuses it (resolving here would load the session and log

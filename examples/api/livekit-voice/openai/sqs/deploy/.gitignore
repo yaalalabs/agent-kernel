@@ -1,0 +1,9 @@
+# Local Terraform state and variable files
+terraform.tfvars
+terraform.tfstate
+terraform.tfstate.backup
+.terraform/
+.terraform.lock.hcl
+
+# Build directories
+dist-*/

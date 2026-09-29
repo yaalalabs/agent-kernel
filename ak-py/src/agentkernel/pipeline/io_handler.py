@@ -144,17 +144,6 @@ class IOHandler:
                     execution_function=lambda: runner.start(exit_on_shutdown=False), thread_name="agent-runner", stop_all_on_failure=True
                 )
             )
-            if mode == ExecutionMode.REALTIME:
-                from .realtime_pool import RealtimeConnectionPool
-
-                pool = RealtimeConnectionPool.initialize()
-                tasks.append(
-                    ThreadRunner.Task(
-                        execution_function=pool.start,
-                        thread_name="realtime-pool",
-                        stop_all_on_failure=True,
-                    )
-                )
             for poller in pollers or []:
                 tasks.append(
                     ThreadRunner.Task(
