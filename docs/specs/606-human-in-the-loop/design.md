@@ -37,7 +37,7 @@ The two places that leaves worth a reviewer's attention, both accepted on purpos
   - *Silently empty* — ADK's `get_response` keeps only `is_final_response()` text
     (`adk.py:270-276`) and never inspects `event.long_running_tool_ids`.
   - *Ignored* — OpenAI reads `.final_output` and never `.interruptions` (`openai.py:217`).
-  - *Stringified* — Pydantic AI reads `result.output` (`pydanticai.py:201`, `:182`).
+  - *Stringified* — Pydantic AI reads `result.output` (`pydanticai.py:201`, `:205`).
     `DeferredToolRequests` is a **dataclass, not a `BaseModel`** (verified —
     `research/verification.md`), so `AgentReplyAny.from_output` returns `None` (`model.py:151-161`)
     and the user receives an `AgentReplyText` containing a dataclass repr.

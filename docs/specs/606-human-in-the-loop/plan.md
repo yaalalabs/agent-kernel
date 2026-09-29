@@ -68,7 +68,7 @@ optional (Iteration 3 lands that change).
   3. `RequestBuilder`: `"resume"` into `known_fields`; append an `AgentResumeRequestAny` when the
      block is present.
   4. `ChatService._reject_ambiguous(req)` for `schedule` + `resume`, called as the **first**
-     statement of all four entry points (`:390`, `:407`, `:428`, `:455`) — ahead of
+     statement of all four entry points (`:378`, `:399`, `:416`, `:444`) — ahead of
      `_maybe_schedule`, or it never fires.
   5. `_success_status(req, reply=None)` and `ResponseBuilder.build_response`'s `status: "PAUSED"`
      keys.
@@ -114,9 +114,9 @@ optional (Iteration 3 lands that change).
 - **Goal:** a graph calling `interrupt()` pauses and resumes; single- and multi-select work.
 - **Files:** `framework/langgraph/langgraph.py`, `tests/test_langgraph_runner.py` (new if absent).
 - **Steps:**
-  1. Detect `"__interrupt__"` **before** `result["messages"][-1]` (`:427`) — the literal string,
+  1. Detect `"__interrupt__"` **before** `result["messages"][-1]` (`:490`) — the literal string,
      not `langgraph.constants.INTERRUPT`.
-  2. Streaming detection after the stream drains, at the existing `aget_state` (`:481`).
+  2. Streaming detection after the stream drains, at the existing `aget_state` (`:545`).
   3. `resume()`: `Command(resume={id: value})` on the same `thread_id`.
   4. Prompt alongside a decision via `Command(update={"messages": [...]})` — AK's encoding, marked
      as such in the adapter docstring.
@@ -128,8 +128,8 @@ optional (Iteration 3 lands that change).
 - **Goal:** both its axes work — approvals and deferred calls.
 - **Files:** `framework/pydanticai/pydanticai.py`, `tests/test_pydanticai_runner.py`.
 - **Steps:**
-  1. Detect `DeferredToolRequests` **before** `AgentReplyAny.from_output` (`:178`) — the bug that
-     currently hands the user a dataclass repr at `:182`.
+  1. Detect `DeferredToolRequests` **before** `AgentReplyAny.from_output` (`:201`) — the bug that
+     currently hands the user a dataclass repr at `:205`.
   2. Map `approvals` → `kind: "tool_call"`, `calls` → `kind: "input_required"`.
   3. `resume()`: `DeferredToolResults(approvals=..., calls=...)`, with the decision's
      `payload`/`message` supplied as the deferred call's **result**.
@@ -142,7 +142,7 @@ optional (Iteration 3 lands that change).
 - **Goal:** long-running tools and confirmations pause and resume; the `App` change lands.
 - **Files:** `framework/adk/adk.py`, `tests/test_adk_runner.py` (new if absent).
 - **Steps:**
-  1. Detect per event in `get_response` (`:204-230`): `long_running_tool_ids` ∩ `function_call.id`,
+  1. Detect per event in `get_response` (`:250-279`): `long_running_tool_ids` ∩ `function_call.id`,
      or a `function_call` named `adk_request_confirmation`.
   2. Wrap the agent in an `App` with `ResumabilityConfig(is_resumable=True)`, preserving the
      `app_name` override so AK's session key is unchanged.

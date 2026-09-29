@@ -115,8 +115,8 @@ adapter already drains the stream fully (`openai.py:268-276`), so the check slot
    to Pydantic AI and ADK.
 2. ~~**Multimodal runs pass no session.**~~ **Resolved by #679** (merged as `ad189723`).
    `_get_run_input` (`openai.py:175-189`) now returns only the input *shape*, and both `run()`
-   and `stream()` pass `session=self._session(session)` unconditionally (`openai.py:217`,
-   `:257`). A paused multimodal run resumes on the same path as a text one; no decision needed.
+   and `stream()` pass `session=self._session(session)` unconditionally (`openai.py:216`,
+   `:265`). A paused multimodal run resumes on the same path as a text one; no decision needed.
    See `design.md`'s Adapters section.
 3. **`framework_context` collides with `RunState` context serialization.** AK injects the #526
    context as `context=produced` (`openai.py:213-216`) and the SDK documents context

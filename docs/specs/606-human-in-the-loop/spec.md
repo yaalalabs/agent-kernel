@@ -357,7 +357,7 @@ dispatching to `resume_stream`, plus three stream-specific rules:
 - **`RequestBuilder`** appends an `AgentResumeRequestAny` built from `req.resume` when present.
   Order: it is appended after any text/image/file requests, so a prompt sent alongside it (allowed
   — see below) stays first.
-- **`ChatService._validate`** (`:672-688`) becomes prompt **or** resume on the built path:
+- **`ChatService._validate`** (`:680-696`) becomes prompt **or** resume on the built path:
 
   ```python
   if requests is None:
@@ -366,7 +366,7 @@ dispatching to `resume_stream`, plus three stream-specific rules:
   ```
 
   The message is unchanged for the existing case so no test string moves.
-- **`_success_status`** (`:547-554`) gains a second source. A pause is knowable only from the
+- **`_success_status`** (`:550-556`) gains a second source. A pause is knowable only from the
   *reply*; a schedule only from the *request*. Both converge on `202` for different reasons from
   different inputs, so they stay two conditions:
 
@@ -381,7 +381,7 @@ dispatching to `resume_stream`, plus three stream-specific rules:
   ```
 
   The new parameter defaults to `None` so existing call sites that have no reply keep working.
-- **`ResponseBuilder.build_response`** (`:302-335`) adds the discriminator keys when the result is
+- **`ResponseBuilder.build_response`** (`:303-335`) adds the discriminator keys when the result is
   an `AgentPausedReplyAny`, alongside the existing `result`:
 
   ```json
@@ -392,16 +392,16 @@ dispatching to `resume_stream`, plus three stream-specific rules:
   `status` is a **top-level key**, so a client branches without parsing `result`. **`202` now
   carries two meanings** — `"SCHEDULED"` for a deferred request, `"PAUSED"` for one waiting on a
   human — which is exactly why the key is required rather than optional. The existing
-  `rest_api_mode and status_code != 200` branch (`:330`) already returns a `JSONResponse`, so the
+  `rest_api_mode and status_code != 200` branch (`:328`) already returns a `JSONResponse`, so the
   202 travels unchanged.
 - **Case is deliberate and the two fields differ.** The model `type` is lowercase `"paused"`, like
   every other discriminator in `model.py`; the body's `status` is uppercase `"PAUSED"`, matching the
   scheduling acknowledgement's `"SCHEDULED"` (`chat_service.py:496`). Do not align them.
 - **`schedule` + `resume` is rejected** with `ValueError` → 400: a decision cannot be deferred to a
   cron slot and still be a decision. **Placement is the requirement.** `_maybe_schedule` is the
-  first statement of all four entry points — `execute` (`:390`), `execute_sync` (`:407`),
-  `execute_stream` (`:428`), `execute_stream_sync` (`:455`) — while `_validate` is not reached until
-  `:564`/`:575`. A guard in `_validate` would never fire: the scheduled `202` has already been
+  first statement of all four entry points — `execute` (`:378`), `execute_sync` (`:399`),
+  `execute_stream` (`:416`), `execute_stream_sync` (`:444`) — while `_validate` is not reached until
+  `:558`/`:569`. A guard in `_validate` would never fire: the scheduled `202` has already been
   returned. Implementation: a new `ChatService._reject_ambiguous(req)` static method called as the
   first statement of each of the four entry points, ahead of `_maybe_schedule`.
 - **`prompt` + `resume` is *not* rejected.** Forwarded to the adapter, which carries or refuses it
@@ -490,7 +490,7 @@ a paused multimodal run resumes on the same path and needs no special case.
   but raises `LangGraphDeprecatedSinceV10`.
 - **Streaming detection** reads graph state after the stream drains: the adapter calls
   `astream_events(version="v2")` (`langgraph.py:537`), which has no `.interrupts`, and already
-  calls `aget_state(config)` at `:481`.
+  calls `aget_state(config)` at `:545`.
 - **A prompt alongside a decision is carried, and the mapping is AK's.** `Command.update` means
   *update the graph state*; there is no "send a prompt with your resume" feature. AK writes the
   prompt into the `messages` channel its adapter already feeds
@@ -505,14 +505,15 @@ a paused multimodal run resumes on the same path and needs no special case.
 | | |
 |---|---|
 | Detect | `isinstance(result.output, DeferredToolRequests)`, checked **before** `AgentReplyAny.from_output` (`pydanticai.py:201`) |
-| `payload` | `to_jsonable_python(result.all_messages())` (already written at `:173-174`) plus the requests |
+| `payload` | `to_jsonable_python(result.all_messages())` (already written at `:197`) plus the requests |
 | Resume | `run(content, message_history=..., deferred_tool_results=DeferredToolResults(...))` |
 | Interruption `id` | `ToolCallPart.tool_call_id` |
 | `kind` | `approvals` → `"tool_call"`; **`calls` → `"input_required"`** |
 
 - **`DeferredToolRequests` is a dataclass, not a `BaseModel`** (verified), so
   `AgentReplyAny.from_output` returns `None` for it (`model.py:151-161`) and today's adapter falls
-  through to `str(result.output)` at `:182`, handing the user a dataclass repr. Detecting before
+  through to `str(result.output)` at `pydanticai.py:205`, handing the user a dataclass repr.
+  Detecting before
   that call is the fix.
 - **Two axes, and both are the answer channel.** `approvals` takes
   `bool | ToolApproved(override_args=dict) | ToolDenied(message=str)`; **`calls` takes an arbitrary
