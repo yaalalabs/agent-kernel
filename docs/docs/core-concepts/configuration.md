@@ -180,6 +180,15 @@ okf:
       producer: [Ingest_Agent]   # read and write; instructed to add new knowledge
       curator: [Steward_Agent]   # read and write; instructed to maintain existing knowledge
 
+# Secret resolution (always available - the default env provider costs nothing, so there is no
+# enabled flag. A set, non-empty environment variable named by the key always wins.
+# See /docs/advanced/secrets)
+secret:
+  prefix: ""  # Deployment scope; required by aws_ssm (injected as AK_SECRET__PREFIX by the AWS Terraform modules), ignored by env
+  provider:
+    type: env  # env | aws_ssm, or a dotted path to a SecretProvider subclass
+  cache_ttl: 300  # Seconds a provider hit is served from the process cache; 0 disables caching
+
 # Messaging platform integrations
 slack:
   agent: ""  # Default agent for Slack
@@ -501,6 +510,16 @@ export AK_MCP__EXPOSE_AGENTS=true  # Expose agents as MCP tools (default: false)
 export AK_MCP__AGENTS="agent1,agent2"  # Comma-separated list (default: ["*"])
 export AK_MCP__STATELESS_HTTP=false  # Run in stateless HTTP mode, no Mcp-Session-Id (default: false)
 # Note: MCP is always served at /mcp on the main API server. Use AK_API__PORT to change the port.
+```
+
+### Secret Resolution
+
+See [Secret Resolution](../advanced/secrets.md) for the resolution order and providers.
+
+```bash
+export AK_SECRET__PROVIDER__TYPE=aws_ssm  # Options: 'env', 'aws_ssm', or a dotted path to a SecretProvider subclass (default: 'env')
+export AK_SECRET__PREFIX=myproduct-dev-agents  # Deployment scope; required by aws_ssm, ignored by env (default: '')
+export AK_SECRET__CACHE_TTL=300  # Seconds a provider hit is cached; 0 disables caching (default: 300)
 ```
 
 ### Test Configuration {#test-configuration-env-vars}
