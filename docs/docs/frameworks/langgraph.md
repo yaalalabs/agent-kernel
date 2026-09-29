@@ -172,6 +172,39 @@ Reserved (raise `ValueError` at declaration): `input`, `version`, `stream_mode`,
 `print_mode` (the runner reads `result["messages"]` and `structured_response`, so a changed result
 shape breaks the reply mapping) and the nested `config.configurable.thread_id`.
 
+## Human in the loop
+
+A node calling `interrupt()` pauses the graph, and whatever the resume supplies becomes that call's
+return value:
+
+```python
+from langgraph.types import interrupt
+
+def ask(state):
+    choice = interrupt({"question": "Which method?", "options": ["Card", "Credit"]})
+```
+
+The answer is passed through as the human gave it — the decision's `payload` if there is one, else
+its `message`, else the bare status verb. A node written as `choice = interrupt(...)` receives the
+choice itself, so ordinary LangGraph code works unchanged. This adapter carries all three decision
+statuses natively.
+
+Three things to know, all LangGraph's behaviour rather than Agent Kernel's:
+
+- **The interrupting node re-runs from the top** on resume. The first `interrupt()` then returns the
+  stored answer instead of pausing again — so any side effect belongs *after* the questions, never
+  before them.
+- **Agent Kernel assigns its own checkpointer**, overwriting one you supplied. That has always been
+  true; human-in-the-loop makes it load-bearing, because the pause lives in it.
+- **A second pause replaces the first.** LangGraph keeps one thread per session, so an earlier record
+  could never be resumed.
+
+A prompt sent alongside a decision **is** carried, encoded by Agent Kernel as a write to the
+`messages` channel the adapter already feeds. That mapping is Agent Kernel's, not LangGraph's — the
+framework has no "send a prompt with your resume" feature.
+
+See [Human in the Loop](../advanced/human-in-the-loop.md).
+
 ## Features
 
 - ✅ Graph-based workflows

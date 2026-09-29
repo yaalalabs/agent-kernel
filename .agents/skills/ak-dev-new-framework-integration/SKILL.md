@@ -419,6 +419,8 @@ Create at minimum:
 - [ ] `<Name>Session` (if needed), `<Name>Runner`, `<Name>Agent`, `<Name>Module`, `<Name>ToolBuilder`
 - [ ] `<Name>Runner.stream()` implemented — either real event streaming or a `NotImplementedError` stub
 - [ ] `<Name>Runner.supports_streaming` declared — `False` when `stream()` only raises, so callers reject instead of provoking it
+- [ ] `<Name>Runner.supports_pause` declared (#606) — leave it at the inherited `False` unless the framework has a **durable, programmatic** pause. Unlike `supports_streaming` it defaults to False, so a framework without one needs no declaration and `resume()`/`resume_stream()` keep their raising defaults
+- [ ] When it does pause: detection placed **before** the existing reply mapping (a paused run still fills the answer field with the text produced on the way to stopping), the record written with `PausedRunState.add` inside the `try` after a successful call, and any framework-specific rejection raised **above** the `try` — the adapter's `except Exception` would otherwise flatten it into a generic reply
 - [ ] `<Name>Runner`'s `name` (passed to `super().__init__()`) matches the session key used in `session.get/set(...)` — required for `Session.get_framework_session()` to resolve it
 - [ ] Public alias at `ak-py/src/agentkernel/<name>.py`
 - [ ] Optional dependency group in `ak-py/pyproject.toml`

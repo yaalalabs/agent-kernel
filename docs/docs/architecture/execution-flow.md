@@ -386,6 +386,35 @@ sequenceDiagram
 
 See [AWS Serverless Deployment](../deployment/aws-serverless) for configuration, authentication, and Terraform wiring.
 
+## Pausing for a Human
+
+A run does not always finish. When a framework stops to ask a person something, `Runtime` takes a
+different exit from the same flow above.
+
+```
+run:      pre-hooks → runner.run() → framework pauses → adapter writes ak.paused_runs
+                                                      → AgentPausedReplyAny → post-hooks → 202
+resume:   pre-hooks → Runtime validates the record → runner.resume() → post-hooks → reply
+```
+
+Four things are worth reading off that:
+
+- **The pause is a reply, not an error.** It travels the post-hook chain like any other and is stored
+  before returning, because the record has to outlive the process.
+- **Validation happens in `Runtime`, before the adapter is called.** Five checks — the run exists, the
+  interruption ids are real, an approval carries a verdict, the agent matches, the runner supports
+  pausing — all raised ahead of the adapter's own `except Exception`, which would otherwise flatten
+  them into "something went wrong".
+- **Pre-hooks run on a resume too.** A human's free text reaches the model exactly as a prompt does,
+  so skipping the chain would leave a route no input guardrail inspects. A hook may still drop or halt
+  a decision; `Runtime` warns rather than preventing it, because that is the application's call.
+- **Streaming ends normally.** The pause is emitted as a `run_paused` event, any open boundary is
+  drained so a frontend does not render a gated tool as work still in progress, and the stream
+  finishes with `done=True` — never through `StreamChunk.error`.
+
+The record itself lives in the session's non-volatile cache, which means a durable pause needs a
+shared session backend. See [Human in the Loop](../advanced/human-in-the-loop.md).
+
 ## Mode Selection Cheat Sheet
 
 | `execution.mode` | Transport | Reply delivery | Queues | Response store | Available on |
