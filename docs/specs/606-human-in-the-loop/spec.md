@@ -506,11 +506,29 @@ a paused multimodal run resumes on the same path and needs no special case.
 | Detect | `"__interrupt__" in result`, checked **before** `result["messages"][-1]` (`langgraph.py:490`) |
 | `payload` | interrupt ids and `.value`s only — AK's checkpointer already holds the state |
 | Resume | `ainvoke(Command(resume={id: value}), config)` on the same `thread_id` (= `session.id`) |
+| Resume `value` | the human's own answer — `payload`, else `message`, else the bare status verb |
 | Interruption `id` | `Interrupt.id` |
 | `kind` | `"input_required"` |
 
-- **No new persistence.** `_prepare_session_and_messages` already assigns AK's own
-  pickle-serializable checkpointer and derives `thread_id` from `session.id`
+- **~~No new persistence.~~ Two pre-existing defects in `CheckPointer` had to be fixed first.**
+  *(Found in PR 2 by driving a real compiled graph; both are invisible to a mocked test.)* The
+  design assumed AK's checkpointer was already sufficient because its docstring says
+  "pickle-serializable". Measured, neither half of that held:
+  - **`get_tuple` never returned `pending_writes`.** A graph records `interrupt()` as a pending
+    write and `Command(resume=...)` records the answer the same way, so both were invisible:
+    `aget_state(...).interrupts` was always empty and a resume silently re-ran the node from the
+    top. Fixed by returning them, keyed by `(thread_id, checkpoint_ns, checkpoint_id)` and
+    `(task_id, index)` as LangGraph's own `InMemorySaver` does — so one turn's interrupt cannot
+    leak into the next and a replayed task replaces rather than stacks its entry.
+  - **A fresh `CheckPointer()` could not be pickled at all.** `BaseCheckpointSaver.__init__`
+    attaches a serializer whose msgpack hook is a closure. Since `SessionStore` pickles the whole
+    session, a session holding a LangGraph conversation has never reached a shared backend —
+    unrelated to HITL, but fatal for it, since "the decision may arrive an hour later, on another
+    replica" is the requirement. Fixed with `__getstate__`/`__setstate__` carrying `_storage` and
+    `_writes` and rebuilding the serializer on load.
+  - Both are pre-existing bugs affecting every LangGraph user, not only paused ones, and deserve
+    their own issue and release-note line (PR 3).
+- `_prepare_session_and_messages` already derives `thread_id` from `session.id`
   (`langgraph.py:405`). The spec records that AK **overwrites** a user-supplied checkpointer —
   pre-existing behaviour that HITL makes load-bearing, and that the docs must state (PR 3).
 - **Use the literal `"__interrupt__"`**, not `langgraph.constants.INTERRUPT`, which still resolves
@@ -518,6 +536,12 @@ a paused multimodal run resumes on the same path and needs no special case.
 - **Streaming detection** reads graph state after the stream drains: the adapter calls
   `astream_events(version="v2")` (`langgraph.py:537`), which has no `.interrupts`, and already
   calls `aget_state(config)` at `:545`.
+- **The resume value is the answer itself, not an AK envelope.** *(Settled in PR 2.)* A node
+  written as `choice = interrupt("pick one")` receives the choice, so ordinary LangGraph code works
+  unchanged: `payload` when the answer is structured, `message` when it is free text, and the bare
+  status verb when the human only pressed a button — so `cancelled` arrives as `"cancelled"`. The
+  cost, accepted: a `denied` sent *with* a reason arrives as the reason, so the verb is not
+  separately visible inside the node. It remains on the paused-run record and the reply.
 - **A prompt alongside a decision is carried, and the mapping is AK's.** `Command.update` means
   *update the graph state*; there is no "send a prompt with your resume" feature. AK writes the
   prompt into the `messages` channel its adapter already feeds
