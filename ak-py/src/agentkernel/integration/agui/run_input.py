@@ -8,7 +8,14 @@ from urllib.parse import unquote, urlparse
 from fastapi import HTTPException
 
 from ...core.base import Session
-from ...core.model import AgentRequest, AgentRequestFile, AgentRequestImage, AgentRequestText
+from ...core.model import (
+    AgentRequest,
+    AgentRequestFile,
+    AgentRequestImage,
+    AgentRequestText,
+    AgentResumeRequestAny,
+    ResumeDecision,
+)
 from .state import AGUIState
 
 if TYPE_CHECKING:
@@ -32,7 +39,19 @@ class AGUIRunInput:
 
     @staticmethod
     def parse(body: dict) -> "RunAgentInput":
-        """Validate the body and keep only the final user message."""
+        """Validate the body and keep only the turn's own user message.
+
+        A resume is a turn without a new prompt, so a body carrying `resume` is accepted with no
+        user message at all — the same "prompt **or** resume" rule the REST, WebSocket and thread
+        surfaces apply.
+
+        On a resume the user message is taken only when it is the **last** message in the list. AG-UI
+        replays the whole conversation, so searching backwards for any user message would reach past
+        the assistant's reply and re-send the prompt that caused the pause — a turn the client never
+        asked for, and one that OpenAI and ADK reject outright when it rides beside a decision. A
+        prompt the client genuinely appended is still carried, and it is the adapter's business
+        whether its framework can take it.
+        """
         from ag_ui.core import RunAgentInput
         from pydantic import ValidationError
 
@@ -40,14 +59,20 @@ class AGUIRunInput:
         if not isinstance(messages, list):
             raise HTTPException(status_code=400, detail="RunAgentInput.messages must be a list")
 
-        user_message = next((m for m in reversed(messages) if isinstance(m, dict) and m.get("role") == "user"), None)
-        if user_message is None:
-            raise HTTPException(status_code=400, detail="RunAgentInput.messages carries no user message; there is no turn to run")
+        resuming = bool(body.get("resume"))
+        if resuming:
+            last = messages[-1] if messages else None
+            user_message = last if isinstance(last, dict) and last.get("role") == "user" else None
+        else:
+            user_message = next((m for m in reversed(messages) if isinstance(m, dict) and m.get("role") == "user"), None)
+            if user_message is None:
+                raise HTTPException(status_code=400, detail="RunAgentInput.messages carries no user message; there is no turn to run")
 
-        AGUIRunInput._reject_empty_content(user_message)
-        AGUIRunInput._reject_unknown_content_types(user_message)
+        if user_message is not None:
+            AGUIRunInput._reject_empty_content(user_message)
+            AGUIRunInput._reject_unknown_content_types(user_message)
 
-        filtered = {**body, "messages": [user_message]}
+        filtered = {**body, "messages": [user_message] if user_message is not None else []}
         for wire_name, python_name, default in _OPTIONAL_ON_THE_WIRE:
             if wire_name not in filtered and python_name not in filtered:
                 filtered[wire_name] = default
@@ -77,7 +102,60 @@ class AGUIRunInput:
 
     @staticmethod
     def to_requests(run_input: "RunAgentInput") -> list[AgentRequest]:
-        """Convert the final user message into AK requests."""
+        """Convert the turn's user message, then any decisions, into AK requests.
+
+        The resume request goes last so a prompt the client appended stays first, matching the order
+        `RequestBuilder` builds for every other surface.
+        """
+        requests: list[AgentRequest] = []
+        if run_input.messages:
+            requests.extend(AGUIRunInput._message_requests(run_input))
+
+        resume = AGUIRunInput.to_resume(run_input)
+        if resume is not None:
+            requests.append(resume)
+        return requests
+
+    @staticmethod
+    def to_resume(run_input: "RunAgentInput") -> Optional[AgentResumeRequestAny]:
+        """Map `RunAgentInput.resume` onto one resume request, or None when the body carries none.
+
+        **No `run_id` is set, because the protocol has no field for one.** The run is resolved from
+        the interruption ids, which is exactly why `AgentResumeRequestAny.run_id` is optional and why
+        `PausedInterruption.id` must be unique across a session's records.
+
+        :param run_input: The parsed RunAgentInput.
+        :return: The decisions as one AK resume request, or None.
+        """
+        entries = getattr(run_input, "resume", None)
+        if not entries:
+            return None
+        return AgentResumeRequestAny(decisions=[AGUIRunInput._to_decision(entry) for entry in entries])
+
+    @staticmethod
+    def _to_decision(entry: Any) -> ResumeDecision:
+        """Map one `ResumeEntry` onto a decision, without flattening its status.
+
+        The protocol carries two statuses where Agent Kernel carries three: `cancelled` passes
+        through unchanged, and `resolved` becomes `approved` or `denied` according to the payload —
+        an explicit `False`, or an object saying `approved: false`, is a refusal. Anything else a
+        human resolved with is an approval, since they supplied an answer rather than withholding one.
+
+        :param entry: One ResumeEntry from the protocol.
+        :return: The AK decision.
+        """
+        payload = entry.payload
+        if entry.status == "cancelled":
+            status = "cancelled"
+        elif payload is False or (isinstance(payload, dict) and payload.get("approved") is False):
+            status = "denied"
+        else:
+            status = "approved"
+        return ResumeDecision(id=entry.interrupt_id, status=status, payload=payload)
+
+    @staticmethod
+    def _message_requests(run_input: "RunAgentInput") -> list[AgentRequest]:
+        """Convert the turn's user message into AK requests."""
         message = cast("UserMessage", run_input.messages[0])
         content = message.content
 
