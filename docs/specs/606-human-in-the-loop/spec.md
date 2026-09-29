@@ -556,7 +556,7 @@ a paused multimodal run resumes on the same path and needs no special case.
 | | |
 |---|---|
 | Detect | `isinstance(result.output, DeferredToolRequests)`, checked **before** `AgentReplyAny.from_output` (`pydanticai.py:201`) |
-| `payload` | `to_jsonable_python(result.all_messages())` (already written at `:197`) plus the requests |
+| `payload` | `{"messages": to_jsonable_python(result.all_messages())}` |
 | Resume | `run(content, message_history=..., deferred_tool_results=DeferredToolResults(...))` |
 | Interruption `id` | `ToolCallPart.tool_call_id` |
 | `kind` | `approvals` → `"tool_call"`; **`calls` → `"input_required"`** |
@@ -579,6 +579,18 @@ a paused multimodal run resumes on the same path and needs no special case.
   deferred_tool_results=...)` returns a normal answer. The guard that otherwise blocks a new prompt
   (*"Cannot provide a new user prompt when the message history contains unprocessed tool calls"*) is
   lifted precisely by supplying the results.
+- **Replaces rather than appends.** *(Settled in PR 2.)* The framework keeps one message history per
+  session and refuses a new question while a decision is outstanding, so an earlier record could
+  never be resumed. Only OpenAI, whose `RunState` is self-contained, appends.
+- **The record carries its own copy of the message history**, rather than leaning on
+  `PydanticAISession.messages`. *(Deviation from the original payload line, which also named "the
+  requests".)* The requests are already on the record as its interruptions, so storing them twice
+  buys nothing; the history is what a resume actually needs, and holding it on the record keeps the
+  pause resumable whatever the session does next.
+- **Streaming detects the pause from the final `agent_run_result` event**, not from
+  `DeferredToolRequestsEvent`. *(Deviation, PR 2.)* The adapter already captures that result to
+  persist history, and reading `result.output` there is the same check the non-streamed path makes —
+  so the two cannot drift apart as the event vocabulary changes.
 
 #### Google ADK (PR 2)
 

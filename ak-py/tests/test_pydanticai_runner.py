@@ -30,7 +30,15 @@ from pydantic_core import to_jsonable_python
 from agentkernel.core import Session
 from agentkernel.core.builder import SessionStoreBuilder
 from agentkernel.core.config import AKConfig
-from agentkernel.core.model import AgentReplyAny, AgentReplyText, AgentRequestText
+from agentkernel.core.model import (
+    AgentPausedReplyAny,
+    AgentReplyAny,
+    AgentReplyText,
+    AgentRequestText,
+    AgentResumeRequestAny,
+    ResumeDecision,
+)
+from agentkernel.core.paused_run import PausedRunState
 from agentkernel.core.runtime import Runtime
 from agentkernel.core.session.serde import BinarySerde
 from agentkernel.core.tool import SystemToolFactory
@@ -975,3 +983,291 @@ class TestPydanticAIRunOptions:
 
             module.run_options(native, retries=2)
             assert module.get_agent("reserved-keys-agent").run_options == {"retries": 2}
+
+
+class _Gated:
+    """
+    A real agent whose tools defer or need approval, driven by `FunctionModel` so no model is called.
+
+    Built rather than mocked because the assertion that matters is what the **model receives** as a
+    tool's return value, and a mock can only prove the adapter passed along what the test gave it.
+    """
+
+    def __init__(self, *, approvals=False, calls=True, repeat=False):
+        from pydantic_ai import DeferredToolRequests
+        from pydantic_ai.exceptions import ApprovalRequired, CallDeferred
+        from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart, ToolReturnPart
+        from pydantic_ai.models.function import FunctionModel
+
+        self.returns: list[tuple[str, object]] = []
+        self.prompts: list[str] = []
+        self._rounds = 0
+
+        def model_fn(messages, info):
+            done = [p for m in messages for p in m.parts if isinstance(p, ToolReturnPart)]
+            self.returns = [(p.tool_name, p.content) for p in done]
+            raw = [p.content for m in messages for p in m.parts if getattr(p, "part_kind", "") == "user-prompt"]
+            self.prompts = [t for c in raw for t in (c if isinstance(c, list) else [c])]
+            self._rounds += 1
+            if not done or (repeat and self._rounds == 2):
+                parts = []
+                if calls:
+                    parts.append(ToolCallPart("ask_size", {"q": "size?"}, tool_call_id=f"c{self._rounds}"))
+                if approvals:
+                    parts.append(ToolCallPart("refund", {"amount": 100}, tool_call_id=f"a{self._rounds}"))
+                return ModelResponse(parts=parts)
+            return ModelResponse(parts=[TextPart("all done")])
+
+        agent = Agent(FunctionModel(model_fn), output_type=[str, DeferredToolRequests])
+
+        @agent.tool(name="ask_size")
+        def _ask(ctx: RunContext, q: str) -> str:
+            raise CallDeferred
+
+        @agent.tool(name="refund", requires_approval=True)
+        def _refund(ctx: RunContext, amount: int) -> str:
+            return f"refunded {amount}"
+
+        self.agent = PydanticAIAgent(name="gated", runner=PydanticAIRunner(), agent=agent)
+
+
+def _resume_requests(*decisions, prompt=None):
+    requests = [AgentRequestText(prompt=prompt)] if prompt else []
+    return requests + [AgentResumeRequestAny(decisions=list(decisions))], list(decisions)
+
+
+class TestPydanticAIPauseDetection:
+    def test_the_runner_declares_the_capability(self):
+        assert PydanticAIRunner().supports_pause is True
+
+    @pytest.mark.asyncio
+    async def test_a_deferred_call_returns_a_paused_reply(self):
+        runner, session, g = PydanticAIRunner(), Session("s"), _Gated()
+
+        reply = await runner.run(g.agent, session, [AgentRequestText(prompt="hi")])
+
+        assert isinstance(reply, AgentPausedReplyAny)
+        assert reply.interruptions[0].kind == "input_required"
+        assert reply.interruptions[0].tool_name == "ask_size"
+
+    @pytest.mark.asyncio
+    async def test_an_approval_and_a_deferred_call_get_different_kinds(self):
+        """ "May I?" and "what is it?" are different questions; one kind would lose that."""
+        runner, session, g = PydanticAIRunner(), Session("s"), _Gated(approvals=True)
+
+        reply = await runner.run(g.agent, session, [AgentRequestText(prompt="hi")])
+
+        kinds = {i.tool_name: i.kind for i in reply.interruptions}
+        assert kinds == {"ask_size": "input_required", "refund": "tool_call"}
+
+    @pytest.mark.asyncio
+    async def test_the_user_no_longer_receives_a_dataclass_repr(self):
+        """The bug this detection fixes: DeferredToolRequests is a dataclass, so from_output
+        returned None and the adapter fell through to str(result.output)."""
+        runner, session, g = PydanticAIRunner(), Session("s"), _Gated()
+
+        reply = await runner.run(g.agent, session, [AgentRequestText(prompt="hi")])
+
+        assert not isinstance(reply, AgentReplyText)
+        assert "DeferredToolRequests(" not in str(reply.content)
+
+    @pytest.mark.asyncio
+    async def test_the_arguments_ride_along(self):
+        runner, session, g = PydanticAIRunner(), Session("s"), _Gated()
+
+        reply = await runner.run(g.agent, session, [AgentRequestText(prompt="hi")])
+
+        assert reply.interruptions[0].arguments == '{"q": "size?"}'
+
+    @pytest.mark.asyncio
+    async def test_the_record_carries_its_own_history_and_survives_a_pickle(self):
+        import pickle
+
+        runner, session, g = PydanticAIRunner(), Session("s"), _Gated()
+        reply = await runner.run(g.agent, session, [AgentRequestText(prompt="hi")])
+
+        record = PausedRunState.get(pickle.loads(pickle.dumps(session)), reply.run_id)
+
+        assert record is not None
+        assert record.payload["messages"]
+
+
+class TestPydanticAIResume:
+    @pytest.mark.asyncio
+    async def test_the_chosen_value_is_what_the_model_receives(self):
+        """The assertion the spec asks for: not that the run completed, but what reached the model."""
+        runner, session, g = PydanticAIRunner(), Session("s"), _Gated()
+        paused = await runner.run(g.agent, session, [AgentRequestText(prompt="hi")])
+        record = PausedRunState.get(session, paused.run_id)
+        requests, decisions = _resume_requests(ResumeDecision(id=paused.interruptions[0].id, payload="large"))
+
+        reply = await runner.resume(g.agent, session, requests, decisions, record)
+
+        assert reply.response == "all done"
+        assert g.returns == [("ask_size", "large")]
+
+    @pytest.mark.asyncio
+    async def test_a_list_reaches_the_model_as_a_list(self):
+        """Why the payload type had to widen past dict: the value is passed through untouched."""
+        runner, session, g = PydanticAIRunner(), Session("s"), _Gated()
+        paused = await runner.run(g.agent, session, [AgentRequestText(prompt="hi")])
+        record = PausedRunState.get(session, paused.run_id)
+        requests, decisions = _resume_requests(ResumeDecision(id=paused.interruptions[0].id, payload=["damaged", "wrong_item"]))
+
+        await runner.resume(g.agent, session, requests, decisions, record)
+
+        assert g.returns == [("ask_size", ["damaged", "wrong_item"])]
+
+    @pytest.mark.asyncio
+    async def test_free_text_is_used_when_there_is_no_payload(self):
+        runner, session, g = PydanticAIRunner(), Session("s"), _Gated()
+        paused = await runner.run(g.agent, session, [AgentRequestText(prompt="hi")])
+        record = PausedRunState.get(session, paused.run_id)
+        requests, decisions = _resume_requests(ResumeDecision(id=paused.interruptions[0].id, message="medium"))
+
+        await runner.resume(g.agent, session, requests, decisions, record)
+
+        assert g.returns == [("ask_size", "medium")]
+
+    @pytest.mark.asyncio
+    async def test_the_resume_clears_its_record(self):
+        runner, session, g = PydanticAIRunner(), Session("s"), _Gated()
+        paused = await runner.run(g.agent, session, [AgentRequestText(prompt="hi")])
+        record = PausedRunState.get(session, paused.run_id)
+        requests, decisions = _resume_requests(ResumeDecision(id=paused.interruptions[0].id, payload="large"))
+
+        await runner.resume(g.agent, session, requests, decisions, record)
+
+        assert PausedRunState.list(session) == []
+
+    @pytest.mark.asyncio
+    async def test_a_prompt_alongside_a_decision_is_native_here(self):
+        """Supplying the results is what lifts the framework's own guard against a new prompt."""
+        runner, session, g = PydanticAIRunner(), Session("s"), _Gated()
+        paused = await runner.run(g.agent, session, [AgentRequestText(prompt="hi")])
+        record = PausedRunState.get(session, paused.run_id)
+        requests, decisions = _resume_requests(ResumeDecision(id=paused.interruptions[0].id, payload="large"), prompt="and the weather?")
+
+        reply = await runner.resume(g.agent, session, requests, decisions, record)
+
+        assert reply.response == "all done"
+        assert "and the weather?" in g.prompts
+
+
+class TestPydanticAIApprovals:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("status,expected", [("approved", "refunded 100"), ("denied", None), ("cancelled", None)])
+    async def test_the_three_verbs_render_onto_the_approval_channel(self, status, expected):
+        runner, session, g = PydanticAIRunner(), Session("s"), _Gated(calls=False, approvals=True)
+        paused = await runner.run(g.agent, session, [AgentRequestText(prompt="refund it")])
+        record = PausedRunState.get(session, paused.run_id)
+        requests, decisions = _resume_requests(ResumeDecision(id=paused.interruptions[0].id, status=status, message="too much"))
+
+        await runner.resume(g.agent, session, requests, decisions, record)
+
+        returned = dict(g.returns).get("refund")
+        if expected:
+            assert returned == expected
+        else:
+            assert returned != "refunded 100"
+
+    @pytest.mark.asyncio
+    async def test_cancelled_does_not_read_as_a_refusal(self):
+        runner, session, g = PydanticAIRunner(), Session("s"), _Gated(calls=False, approvals=True)
+        paused = await runner.run(g.agent, session, [AgentRequestText(prompt="refund it")])
+        record = PausedRunState.get(session, paused.run_id)
+        requests, decisions = _resume_requests(ResumeDecision(id=paused.interruptions[0].id, status="cancelled"))
+
+        await runner.resume(g.agent, session, requests, decisions, record)
+
+        assert "not a refusal" in str(dict(g.returns).get("refund"))
+
+
+class TestPydanticAIRejectsAPartialResume:
+    """
+    Raised above the `try`, which is what `pytest.raises` here is really asserting.
+
+    The framework's own message names the expected and received ids — genuinely useful — and the
+    adapter's `except Exception` would replace it with "Sorry, something went wrong".
+    """
+
+    @pytest.mark.asyncio
+    async def test_leaving_one_unanswered_is_refused(self):
+        runner, session, g = PydanticAIRunner(), Session("s"), _Gated(approvals=True)
+        paused = await runner.run(g.agent, session, [AgentRequestText(prompt="hi")])
+        record = PausedRunState.get(session, paused.run_id)
+        requests, decisions = _resume_requests(ResumeDecision(id=paused.interruptions[0].id, payload="large"))
+
+        with pytest.raises(ValueError, match="every deferred tool call resolved"):
+            await runner.resume(g.agent, session, requests, decisions, record)
+
+    @pytest.mark.asyncio
+    async def test_the_record_is_left_intact_so_the_human_can_answer_again(self):
+        runner, session, g = PydanticAIRunner(), Session("s"), _Gated(approvals=True)
+        paused = await runner.run(g.agent, session, [AgentRequestText(prompt="hi")])
+        record = PausedRunState.get(session, paused.run_id)
+        requests, decisions = _resume_requests(ResumeDecision(id=paused.interruptions[0].id, payload="large"))
+
+        with pytest.raises(ValueError):
+            await runner.resume(g.agent, session, requests, decisions, record)
+
+        assert PausedRunState.get(session, paused.run_id) is not None
+
+
+def _streamable_gated(approvals=False):
+    """A gated agent on TestModel, which supports streaming where FunctionModel needs a second hook."""
+    from pydantic_ai import DeferredToolRequests
+    from pydantic_ai.exceptions import CallDeferred
+    from pydantic_ai.models.test import TestModel
+
+    agent = Agent(TestModel(), output_type=[str, DeferredToolRequests])
+
+    @agent.tool(name="ask_size")
+    def _ask(ctx: RunContext, q: str) -> str:
+        raise CallDeferred
+
+    if approvals:
+
+        @agent.tool(name="refund", requires_approval=True)
+        def _refund(ctx: RunContext, amount: int) -> str:
+            return f"refunded {amount}"
+
+    return PydanticAIAgent(name="gated", runner=PydanticAIRunner(), agent=agent)
+
+
+class TestPydanticAIStreamingPause:
+    @pytest.mark.asyncio
+    async def test_a_streamed_deferred_call_ends_with_run_paused(self):
+        from agentkernel.core.event import RunPaused
+
+        runner, session, agent = PydanticAIRunner(), Session("s"), _streamable_gated()
+
+        events = [e async for e in runner.stream(agent, session, [AgentRequestText(prompt="hi")])]
+
+        assert isinstance(events[-1], RunPaused)
+        assert events[-1].agent == "gated"
+        assert events[-1].interruptions[0].tool_name == "ask_size"
+
+    @pytest.mark.asyncio
+    async def test_resume_stream_delivers_the_value_and_clears_the_record(self):
+        from agentkernel.core.event import RunPaused
+
+        runner, session, agent = PydanticAIRunner(), Session("s"), _streamable_gated()
+        events = [e async for e in runner.stream(agent, session, [AgentRequestText(prompt="hi")])]
+        record = PausedRunState.get(session, events[-1].run_id)
+        requests, decisions = _resume_requests(ResumeDecision(id=events[-1].interruptions[0].id, payload="large"))
+
+        resumed = [e async for e in runner.resume_stream(agent, session, requests, decisions, record)]
+
+        assert not any(isinstance(e, RunPaused) for e in resumed)
+        assert PausedRunState.list(session) == []
+
+    @pytest.mark.asyncio
+    async def test_resume_stream_refuses_a_partial_resume_before_streaming(self):
+        runner, session, agent = PydanticAIRunner(), Session("s"), _streamable_gated(approvals=True)
+        events = [e async for e in runner.stream(agent, session, [AgentRequestText(prompt="hi")])]
+        record = PausedRunState.get(session, events[-1].run_id)
+        requests, decisions = _resume_requests(ResumeDecision(id=record.interruptions[0].id, payload="large"))
+
+        with pytest.raises(ValueError, match="every deferred tool call resolved"):
+            _ = [e async for e in runner.resume_stream(agent, session, requests, decisions, record)]
