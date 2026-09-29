@@ -215,13 +215,12 @@ class StreamAgentRunner(AgentRunner):
     _log = logging.getLogger("ak.pipeline.stream_agent_runner")
 
     def process(self, message: QueueMessage) -> None:
-        body = BaseRunRequest.model_validate(json.loads(message.body))
         if message.attributes.get(ATTR_INTEGRATION):
             return super().process(message)
 
+        body = BaseRunRequest.model_validate(json.loads(message.body))
+
         request_id = self._resolve_request_metadata(message, body)
-        # The WebSocket STREAM path pushes chunks to the authenticated user's sockets, so a broker
-        # message must carry user_id.
         if not message.attributes.get(ATTR_USER_ID) and QueueTransportFactory.resolve_type() != "in_memory":
             raise ValueError("user_id is required in queue message attributes for STREAM mode over a broker transport")
 
@@ -246,8 +245,6 @@ class StreamAgentRunner(AgentRunner):
         self._log.info(f"[STREAM AGENT DONE] request_id={request_id}, chunks={chunk_count}")
 
     def on_permanent_failure(self, message: QueueMessage) -> None:
-        # Integration traffic fails through the base handler: it stamps status 500, which the
-        # Response Handler turns into ``adapter.deliver_error()`` for the platform.
         if message.attributes.get(ATTR_INTEGRATION):
             return super().on_permanent_failure(message)
 
