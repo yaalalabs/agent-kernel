@@ -154,6 +154,35 @@ Reserved (raise `ValueError` at declaration): `agent`, `app`, `app_name`, `node`
 `auto_create_session`, `user_id`, `session_id`, `new_message`, `state_delta` (state seeding belongs
 to the framework context above), `invocation_id`, `yield_user_message`.
 
+## Human in the loop
+
+A `LongRunningFunctionTool` pauses for a **result**; a tool declared `require_confirmation` pauses for
+a **verdict**, arriving as ADK's own `adk_request_confirmation` call. They map to `tool_call` and
+`confirmation` respectively.
+
+Enabling this changes how every ADK run is set up, and the consequences are real:
+
+- **Resumability is on for every run.** `ResumabilityConfig(is_resumable=True)` lives on an `App`, so
+  the adapter now wraps your agent in one. A per-agent flag would reintroduce the enable switch this
+  feature deliberately avoids.
+- **Sub-agent routing changes.** With resumability on, a turn whose previous event was a function
+  response is routed back to the agent that made the call. **Which agent handles the next turn can
+  change in an existing multi-agent app.**
+- **ADK sessions grow**, because `is_resumable` also gates agent-state event emission. This is
+  inherent to ADK.
+- **`ResumabilityConfig` is marked experimental** by ADK and may change without notice. It is the
+  only way to enable resumability.
+
+ADK's own warning applies: **a tool may run more than once when resuming.**
+
+**A prompt sent beside a decision is refused** — established by test, not assumption. ADK itself
+rejects a message holding both a function response and text, because a function response resumes an
+existing invocation while text starts a new one.
+
+Streaming pauses and resumes correctly at `google-adk` 2.8.0, verified against a real run.
+
+See [Human in the Loop](../advanced/human-in-the-loop.md).
+
 ## Features
 
 - ✅ Gemini models

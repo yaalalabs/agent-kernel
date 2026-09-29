@@ -10,6 +10,7 @@ import Layout from "@theme/Layout";
 import styles from "./features.module.css";
 import indexStyles from "./index.module.css";
 import {
+  MdHowToReg,
   MdMemory,
   MdSwapHoriz,
   MdCloud,
@@ -823,6 +824,19 @@ function CoreFeatures() {
         "Early termination with custom responses",
       ],
       link: "/docs/integrations/hooks",
+    },
+    {
+      icon: <MdHowToReg />,
+      title: "Human in the Loop",
+      description:
+        "Let a run pause for a person's approval or answer, and resume from their decision — minutes or hours later, on any replica.",
+      highlights: [
+        "Gated tools, confirmations, and questions needing a value",
+        "Three-valued decisions: approved, denied, or nobody decided",
+        "OpenAI, LangGraph, Pydantic AI and Google ADK",
+        "REST, streaming and AG-UI, durable on any shared session store",
+      ],
+      link: "/docs/advanced/human-in-the-loop",
     },
     {
       icon: <MdMemory />,

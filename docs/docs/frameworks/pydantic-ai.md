@@ -234,6 +234,30 @@ stream events carry the same information; `usage_limits` applies in both modes.
 Reserved (raise `ValueError` at declaration): `user_prompt`, `message_history` (the
 `PydanticAISession`) and `deps` (the framework context above).
 
+## Human in the loop
+
+This adapter pauses on **both** of the framework's axes, and they mean different things:
+
+| Raised by | The model is waiting for | `kind` |
+|---|---|---|
+| `CallDeferred` | a **value** — the tool's return | `input_required` |
+| `requires_approval` | a **verdict** | `tool_call` |
+
+A deferred call's answer is supplied as the tool's result, passed through exactly as given: send a
+list and the model receives a list, send a string and it receives a string.
+
+**A partial resume is refused.** The framework requires every deferred call resolved together, and
+Agent Kernel pre-empts it — naming the ids you missed — so the error reaches you instead of being
+flattened into a generic reply by the adapter's error handling.
+
+A prompt sent alongside a decision is **native** here: supplying the deferred results is precisely
+what lifts the framework's own guard against a new prompt while tool calls are outstanding.
+
+Of the four, this is the adapter that **detects a stale resume** itself, refusing a new question
+while a decision is outstanding.
+
+See [Human in the Loop](../advanced/human-in-the-loop.md).
+
 ## Features
 
 - ✅ Function calling
