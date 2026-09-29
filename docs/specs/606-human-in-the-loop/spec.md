@@ -710,11 +710,24 @@ Verified present at AK's **pinned** `ag-ui-protocol` 0.1.22, so no dependency bu
 - **State must be emitted first**: any `StateSnapshot`/`MessagesSnapshot` needed for resume precedes
   the `RunFinished` carrying the interrupt.
 - **Resume arrives as `RunAgentInput.resume` with no `run_id`** — `ResumeEntry` is
-  `{interrupt_id, status, payload}` and the protocol has no field for a run. The run is resolved
+  `{interrupt_id, status, payload, metadata}` and the protocol has no field pointing at a *paused*
+  run. (`RunAgentInput.run_id` exists but identifies the invocation being started, not the one being
+  resumed, so it cannot be used to find the record.) The run is resolved
   from the `interrupt_id`s via `PausedRunState.find_by_interruption`, which is exactly why
   `run_id` is optional and why `PausedInterruption.id` must be unique across records.
-- **`ResumeEntry.status` maps without flattening**: `cancelled` stays `cancelled`; `resolved`
-  becomes `approved` or `denied` according to the entry's payload.
+- **`ResumeEntry.status` maps without flattening**: the wire carries two values where Agent Kernel
+  carries three. `cancelled` stays `cancelled`; `resolved` becomes `denied` when the payload is
+  `False` or an object saying `approved: false`, and `approved` otherwise — a human who supplied an
+  answer approved, rather than withheld one.
+- **The agent comes from the route, not the body.** *(Established in PR 3.)* `RunAgentInput` has no
+  agent field, but AG-UI runs are addressed as `POST {prefix}/{agent_name}`, so a resume names its
+  agent the same way the original turn did.
+- **A stale history prompt must not be re-sent.** *(Found in PR 3.)* AG-UI replays the whole
+  conversation, so "the last user message" is not "this turn's prompt". On a resume the user message
+  is taken only when it is the **last** message in the list; reaching past the assistant's reply
+  would re-send the prompt that caused the pause, which OpenAI and ADK then reject for riding beside
+  a decision. A prompt the client genuinely appended **is** carried — Agent Kernel does not restrict
+  it, and whether the framework accepts it is the adapter's call.
 - `RunAgentInput.resume` is `Optional[List[ResumeEntry]]` — nothing in the protocol requires every
   open interrupt to be addressed in one resume, and AK does not enforce it on any surface.
 
