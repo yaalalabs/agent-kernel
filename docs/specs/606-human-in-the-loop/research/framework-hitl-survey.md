@@ -140,9 +140,9 @@ resume by id map: `Command(resume={interrupt_id: response, ...})`.
 
 **Streaming.** The docs recommend `stream_events(input, config, version="v3")`, which exposes
 `stream.interrupts` (tuple of `Interrupt`) and `stream.interrupted` (bool). **AK's adapter calls
-`astream_events(..., version="v2")`** (`langgraph.py:469-473`), which has no such attribute — on
+`astream_events(..., version="v2")`** (`langgraph.py:537`), which has no such attribute — on
 v2 a pause has to be detected by reading graph state after the stream drains, which AK already
-does for another reason at `langgraph.py:481`.
+does for another reason at `langgraph.py:545`.
 
 **Documented caveats, all of which AK must pass on to users verbatim:**
 
@@ -210,7 +210,7 @@ Each resumed run gets a fresh `run_id` but shares the original `conversation_id`
 
 **Streaming.** Supported and typed: `DeferredToolRequestsEvent` is emitted before a handler runs
 and carries the `DeferredToolRequests`; `DeferredToolResultsEvent` when a handler resolves them.
-AK's Pydantic AI adapter already consumes `run_stream_events()` (`pydanticai.py:190+`), so these
+AK's Pydantic AI adapter already consumes `run_stream_events()` (`pydanticai.py:249+`), so these
 events arrive on a stream AK is already reading.
 
 **Also available:** `HandleDeferredToolCalls(handler=...)` as an agent capability resolves
@@ -299,7 +299,7 @@ produced the pending call**.
 **Caveats — the sharpest of any framework here:**
 
 1. **`Runner` must be built from an `App`, not from a bare agent**, for resumability. AK builds
-   `Runner(agent=..., app_name=..., session_service=...)` (`adk.py:201`) — no `App` object, so
+   `Runner(agent=..., app_name=..., session_service=...)` (`adk.py:246`) — no `App` object, so
    `ResumabilityConfig` is currently unreachable.
 2. **"Tools in an agent are run at least once, and may run more than once when resuming"** —
    ADK's own documented warning. Idempotency is the user's problem, and AK must say so.
@@ -351,8 +351,8 @@ supported), and resume is `Flow.from_pending(flow_id)` then `flow.resume(feedbac
 
 **Why it is still out of reach.** `@human_feedback` decorates methods on a **`Flow`**. AK's
 CrewAI adapter has no Flow anywhere in it: `CrewAIModule` takes a list of CrewAI `Agent` objects
-(`crewai.py:544-550`), and `CrewAIRunner.run` builds a fresh `Task` and `Crew` per run and calls
-`crew.kickoff_async(inputs={})` (`crewai.py:375-386`). The other option, `Task(human_input=True)`,
+(`crewai.py:543`), and `CrewAIRunner.run` builds a fresh `Task` and `Crew` per run and calls
+`crew.kickoff_async(inputs={})` (`crewai.py:370-384`). The other option, `Task(human_input=True)`,
 blocks on console `input()` — actively wrong inside a server process, and the CrewAI docs do not
 document its mechanics at all.
 
@@ -379,7 +379,7 @@ concept and no serialisable pause record: the callback is expected either to blo
 input or to interrupt and have the operator re-run.
 
 AK's adapter already hydrates and syncs `agent.agent.memory.steps` to the session
-(`smolagents.py:98-125`), so a *coarse* pause is conceivable — the paused turn's memory is
+(`smolagents.py:110-125`), so a *coarse* pause is conceivable — the paused turn's memory is
 already persisted. But there is no framework-level record of *what* was being asked or *which*
 call to resume, so any pause payload would be AK-invented rather than framework-native. That is
 the line this survey recommends not crossing.

@@ -269,7 +269,7 @@ class Runtime:
         """
         return next((req for req in requests if isinstance(req, AgentResumeRequestAny)), None)
 
-    def _validate_resume(self, agent: Agent, session: Session, resume: AgentResumeRequestAny) -> tuple[Agent, PausedRun]:
+    def _validate_resume(self, agent: Agent, session: Session, resume: AgentResumeRequestAny) -> PausedRun:
         """
         Resolves and validates the paused run a resume request answers, before anything acts on it.
 
@@ -278,10 +278,11 @@ class Runtime:
         error instead of naming what went wrong. These five checks also need no framework knowledge,
         so an adapter-side implementation would be written five times.
 
-        :param agent: The agent named on the request, used only to reject a conflicting one.
+        :param agent: The agent this run will execute, checked against the record rather than
+            replaced by it, so the agent Runtime activated stays the agent the runner receives.
         :param session: The session holding the paused-run records.
         :param resume: The decisions to validate.
-        :return: The agent resolved from the record, and the record itself.
+        :return: The record the decisions answer.
         :raises ValueError: If no run matches, a decision names an unknown interruption, an approval
             interruption is answered without a status, the named agent disagrees with the record, or
             the record's agent is no longer registered.
@@ -314,12 +315,11 @@ class Runtime:
                 f"a request that names none is served by the default agent and fails here."
             )
 
-        resolved = self.agents().get(record.agent)
-        if resolved is None:
+        if self.agents().get(record.agent) is None:
             raise ValueError(f"Paused run '{record.id}' belongs to agent '{record.agent}', which is no longer registered.")
-        if not resolved.runner.supports_pause:
-            raise ValueError(f"Runner '{resolved.runner.name}' for agent '{resolved.name}' does not support resuming a paused run.")
-        return resolved, record
+        if not agent.runner.supports_pause:
+            raise ValueError(f"Runner '{agent.runner.name}' for agent '{agent.name}' does not support resuming a paused run.")
+        return record
 
     def _clear_leftover_record(self, session: Session, record: PausedRun, paused_again: bool) -> None:
         """
@@ -422,7 +422,7 @@ class Runtime:
                     self._log.debug(f"Running agent '{agent.name}' with requests: {requests}")
 
                     if resume is not None:
-                        agent, record = self._validate_resume(agent, session, resume)
+                        record = self._validate_resume(agent, session, resume)
                         reply = await agent.runner.resume(agent, session, requests, resume.decisions, record)
                         self._clear_leftover_record(session, record, isinstance(reply, AgentPausedReplyAny))
                     else:
@@ -486,7 +486,7 @@ class Runtime:
 
                     record = None
                     if resume is not None:
-                        agent, record = self._validate_resume(agent, session, resume)
+                        record = self._validate_resume(agent, session, resume)
                         events = agent.runner.resume_stream(agent, session, requests, resume.decisions, record)
                     else:
                         events = agent.runner.stream(agent, session, requests)
@@ -542,6 +542,12 @@ class Runtime:
                         for closing in boundaries.drain():
                             yield StreamChunk(event=closing)
                         yield StreamChunk(error=halt.reason, done=True)
+                    finally:
+                        # Both early exits above leave the runner's generator suspended, and an
+                        # adapter holding a framework stream there would keep it open until GC —
+                        # on a pause, that is for as long as the human takes. A no-op once the
+                        # generator has run to completion.
+                        await events.aclose()
             finally:
                 session.get_volatile_cache().clear()
 

@@ -100,7 +100,7 @@ optional (Iteration 3 lands that change).
 - **Goal:** a real OpenAI agent pauses on a gated tool and resumes.
 - **Files:** `framework/openai/openai.py`, `tests/test_openai_runner.py`.
 - **Steps:**
-  1. Detect `result.interruptions` **before** `.final_output` (`openai.py:211`); write the record
+  1. Detect `result.interruptions` **before** `.final_output` (`openai.py:217`); write the record
      with `result.to_state().to_json()`; build the reply.
   2. `resume()` / `resume_stream()`: `RunState.from_json`, apply `approve`/`reject`, re-run.
   3. The two rejections **above the `try`**: a `payload` on any decision, and a `prompt` alongside

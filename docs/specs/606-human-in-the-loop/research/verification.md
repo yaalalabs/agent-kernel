@@ -109,9 +109,9 @@ Run to answer open question 5 — what breaks if the adapter wraps agents in an 
 | **AK already runs through an `App`** | `Runner.__init__` docstring: "Exactly one of `app`, `agent`, or `node` must be provided. When `agent` or `node` is provided, **the Runner wraps it into an `App` internally**. Providing `app` is the recommended way to create a runner." So passing `app=` is not a new concept — AK currently gets an implicit `App` with the default (non-resumable) config. |
 | **Session key is preserved** | `Runner.__init__` body: `self.app_name = app_name or app.name`. Passing `app=App(name="AgentKernel", …)` with the existing `app_name="AgentKernel"` keeps `create_session(app_name="AgentKernel", …)` (`adk.py:190-195`) matching. |
 | **Name-alignment check does not fire** | `Runner._enforce_app_name_alignment` only `logger.warning`s, and only when `_agent_origin_app_name` is set — i.e. the root agent was loaded from a directory implying a different app name. AK builds agents in code. |
-| **One real behavioural change** | `runners.py:1772-1786`: with resumability on, a turn whose previous event was a function response is routed back to the agent that made the call; with it off, that routing is skipped. ADK's own comment defends the off behaviour as deliberate — "In non-resumable scenarios, a turn ending with function call response shouldn't trap the next turn on that same agent if it's not transferable." **For existing AK users with ADK sub-agents, which agent handles the next turn can change.** A trade-off, not a bug fix. |
-| **Second-order cost** | `is_resumable` also gates agent-state event emission in `llm_agent.py:563`, `sequential_agent.py:87,105`, `parallel_agent.py:197,227`, `loop_agent.py:101,135` and `base_llm_flow.py:966,984`. Those events accumulate in the ADK session, which AK pickles into its session store, so ADK sessions grow for every user. |
-| **Different invocation setup path** | `runners.py:1155-1175`: resumable runs take the `_resolve_invocation_id` branch instead of `_setup_context_for_new_invocation`, and only a resumable app may be run with no `new_message`. |
+| **One real behavioural change** | `google/adk/runners.py:1772-1786`: with resumability on, a turn whose previous event was a function response is routed back to the agent that made the call; with it off, that routing is skipped. ADK's own comment defends the off behaviour as deliberate — "In non-resumable scenarios, a turn ending with function call response shouldn't trap the next turn on that same agent if it's not transferable." **For existing AK users with ADK sub-agents, which agent handles the next turn can change.** A trade-off, not a bug fix. |
+| **Second-order cost** | `is_resumable` also gates agent-state event emission in `google/adk/agents/llm_agent.py:563`, `google/adk/agents/sequential_agent.py:87,105`, `google/adk/agents/parallel_agent.py:197,227`, `google/adk/agents/loop_agent.py:101,135` and `google/adk/flows/llm_flows/base_llm_flow.py:966,984`. Those events accumulate in the ADK session, which AK pickles into its session store, so ADK sessions grow for every user. |
+| **Different invocation setup path** | `google/adk/runners.py:1155-1175`: resumable runs take the `_resolve_invocation_id` branch instead of `_setup_context_for_new_invocation`, and only a resumable app may be run with no `new_message`. |
 
 ## Follow-up: retracting the "ADK streaming is documented unsupported" claim
 
@@ -136,15 +136,15 @@ streaming.
 
 What **can** be stated, read from 2.8.0's installed source rather than inferred:
 
-- **The pause check was partly addressed.** `base_llm_flow.py:966-978` now tests whether a
+- **The pause check was partly addressed.** `google/adk/flows/llm_flows/base_llm_flow.py:966-978` now tests whether a
   function call was resolved by the following response (`fc_ids.issubset(fr_ids)`) — the fix
   #5064 asked for. But it carries ADK's own comment: *"This only checks the last 2 events… This is
   a known limitation of the current 2-event window."*
 - **The partial/persisted id split is intact.** `populate_client_function_call_id`
-  (`functions.py:245-246`) assigns an id only when one is absent, and
+  (`google/adk/flows/llm_flows/functions.py:245-246`) assigns an id only when one is absent, and
   `_finalize_model_response_event` runs for both partial and non-partial events
-  (`base_llm_flow.py:1122`, `:1235`), while only non-partial events are persisted
-  (`base_llm_flow.py:1130-1133`). So an id a client reads from a streamed partial event may never
+  (`google/adk/flows/llm_flows/base_llm_flow.py:1122`, `:1235`), while only non-partial events are persisted
+  (`google/adk/flows/llm_flows/base_llm_flow.py:1130-1133`). So an id a client reads from a streamed partial event may never
   have been stored.
 - **Neither mechanism has been observed failing at 2.8.0.** They are reasons to test, not
   evidence of breakage.
@@ -246,7 +246,7 @@ the pause is later resumed?
 | **Pydantic AI** | **Refused.** `UserError: Cannot provide a new user prompt when the message history contains unprocessed tool calls.` | Cannot arise. Answering an already-answered pause is also refused: `UserError: Tool call results were provided, but the message history does not contain any unprocessed tool calls.` |
 | **LangGraph** | **Sticky interrupt.** A new input on the same `thread_id` merges into state, re-enters the interrupted node and pauses again — `__interrupt__` present, `get_state().next` unchanged at `('ask',)`, `len(state.interrupts) == 1`. | Cannot go stale; a later `Command(resume=...)` completes the original interrupt normally |
 | **OpenAI** | **Allowed** — the ordinary run returns a normal answer | **No signal.** `RunState.from_json` + `approve` + `Runner.run` returns a normal answer, `interruptions == []`. The snapshot is detached and has no notion of being current |
-| **Google ADK** | not executed | **No validation found.** `long_running_tool_ids` appears only in event emission (`tools/base_tool.py:77`), A2A conversion (`a2a/converters/event_converter.py:183-189,308-332`) and logging plugins; nothing in `flows/llm_flows/functions.py` matches an incoming `function_response` id against outstanding calls. *Source read, not executed* |
+| **Google ADK** | not executed | **No validation found.** `long_running_tool_ids` appears only in event emission (`google/adk/tools/base_tool.py:77`), A2A conversion (`google/adk/a2a/converters/event_converter.py:183-189,308-332`) and logging plugins; nothing in `flows/llm_flows/functions.py` matches an incoming `function_response` id against outstanding calls. *Source read, not executed* |
 
 Method note: OpenAI and Pydantic AI were driven with fake models (`agents.models.interface.Model`
 subclass, and `pydantic_ai.models.function.FunctionModel`) so no network call was made. LangGraph

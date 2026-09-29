@@ -330,3 +330,56 @@ class TestTheAgentMismatchErrorIsActionable:
 
         assert "paused reply" in str(excinfo.value)
         assert "default agent" in str(excinfo.value)
+
+
+class TestTheActivatedAgentIsTheOneThatRuns:
+    """
+    Runtime must not swap the agent out from under the contextvar it already activated.
+
+    `_activate()` is entered before the resume is validated, and `Agent.current()` is what
+    `session.get_framework_session()` resolves the runner key through — so an adapter's `resume()`
+    reading it has to see the same agent it was handed. Validation therefore checks the record
+    against the agent, rather than resolving a replacement from it.
+    """
+
+    @pytest.mark.asyncio
+    async def test_a_stale_agent_reference_runs_itself_not_the_registry_entry(self, runtime):
+        """`Module.unload()` then `load()` again replaces the registry entry with a new wrapper.
+
+        A caller holding the old one is what separates "checked against the record" from "resolved
+        from it": both agents are named 'refunds', so the mismatch check passes either way.
+        """
+        seen = {}
+
+        class RecordingRunner(PausingRunner):
+            async def resume(self, agent, session, requests, decisions, record):
+                seen["passed"] = agent
+                seen["current"] = Agent.current()
+                return AgentReplyText(response="done")
+
+        stale = PausingAgent(runner=RecordingRunner())
+        runtime.register(stale)
+        session = runtime.sessions().new("s1")
+        paused = await _pause(runtime, stale, session)
+
+        runtime.deregister(stale)
+        reloaded = PausingAgent(runner=RecordingRunner())
+        runtime.register(reloaded)
+
+        await runtime.run(stale, session, _resume_requests("i1", run_id=paused.run_id))
+
+        assert seen["passed"] is stale
+        assert seen["current"] is stale
+        assert reloaded.runner.resumed_with is None
+
+    @pytest.mark.asyncio
+    async def test_a_record_whose_agent_was_deregistered_is_still_rejected(self, runtime):
+        """The registry is checked, not used as a source — the failure mode survives the change."""
+        agent = PausingAgent()
+        runtime.register(agent)
+        session = runtime.sessions().new("s1")
+        paused = await _pause(runtime, agent, session)
+        runtime.deregister(agent)
+
+        with pytest.raises(ValueError, match="no longer registered"):
+            await runtime.run(agent, session, _resume_requests("i1", run_id=paused.run_id))

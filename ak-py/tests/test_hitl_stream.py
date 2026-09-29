@@ -148,3 +148,57 @@ class TestStreamingResume:
         await _stream(runtime, agent, session, _resume_requests("i1", run_id=run_id))
 
         assert PausedRunState.list(session) == []
+
+
+class TestTheRunnerGeneratorIsClosed:
+    """
+    A pause ends the stream by breaking out of the runner's generator, leaving it suspended.
+
+    Python would finalize it whenever GC or the loop's async-generator hooks got round to it. An
+    adapter holding a framework HTTP stream at the pause point would therefore keep that connection
+    open for as long as the human takes to answer, which is the whole point of pausing.
+    """
+
+    @pytest.mark.asyncio
+    async def test_a_paused_stream_closes_the_generator_it_broke_out_of(self, runtime):
+        closed = []
+
+        class LeakyRunner(PausingRunner):
+            async def stream(self, agent, session, requests):
+                try:
+                    record = PausedRunState.add(
+                        session,
+                        agent=agent.name,
+                        interruptions=[PausedInterruption(id="i1", kind="tool_call", tool_name="refund")],
+                    )
+                    yield RunPaused(run_id=record.id, agent=agent.name, interruptions=record.interruptions)
+                    yield TextDelta(message_id="m1", content="never reached")
+                finally:
+                    closed.append(True)
+
+        agent = PausingAgent(runner=LeakyRunner())
+        runtime.register(agent)
+
+        await _stream(runtime, agent, runtime.sessions().new("s1"), [AgentRequestText(prompt="refund it")])
+
+        assert closed == [True]
+
+    @pytest.mark.asyncio
+    async def test_an_ordinary_stream_still_finishes_cleanly(self, runtime):
+        """Closing an exhausted generator is a no-op — the normal path must not change."""
+        closed = []
+
+        class PlainRunner(PausingRunner):
+            async def stream(self, agent, session, requests):
+                try:
+                    yield TextDelta(message_id="m1", content="hello")
+                finally:
+                    closed.append(True)
+
+        agent = PausingAgent(runner=PlainRunner())
+        runtime.register(agent)
+
+        chunks = await _stream(runtime, agent, runtime.sessions().new("s1"), [AgentRequestText(prompt="hi")])
+
+        assert closed == [True]
+        assert chunks[-1].done is True

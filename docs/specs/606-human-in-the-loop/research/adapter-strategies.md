@@ -22,12 +22,12 @@ All six `run()` methods end in a catch-all that converts any exception into a te
 
 | Adapter | `except` site |
 |---|---|
-| OpenAI | `openai.py:221` |
-| LangGraph | `langgraph.py:429` |
-| Pydantic AI | `pydanticai.py:184` |
-| Google ADK | `adk.py:266` |
-| CrewAI | `crewai.py:405` |
-| smolagents | `smolagents.py:181` |
+| OpenAI | `openai.py:227` |
+| LangGraph | `langgraph.py:492` |
+| Pydantic AI | `pydanticai.py:207` |
+| Google ADK | `adk.py:318` |
+| CrewAI | `crewai.py:403` |
+| smolagents | `smolagents.py:194` |
 
 Each is `except Exception as e: return AgentReplyText(response=user_facing_error_message(e), ...)`.
 A framework that signals a pause **by raising** would therefore be reported to the user as an
@@ -44,27 +44,27 @@ Where a framework returns the pause as data, the adapters throw that data away w
 text:
 
 - **LangGraph** — `ainvoke` returns normally with `__interrupt__` in the result dict. The adapter
-  reads `result["messages"][-1]` (`langgraph.py:427`) and returns its text. On a paused graph the
+  reads `result["messages"][-1]` (`langgraph.py:490`) and returns its text. On a paused graph the
   last message is whatever preceded the interrupt, so **the user gets a plausible-looking but
   wrong answer** and the graph stays parked in the checkpointer forever. This is the worst
   failure mode of the six, because nothing looks broken.
 - **Google ADK** — `get_response()` iterates events and keeps only `is_final_response()` text
-  (`adk.py:220-229`). `event.long_running_tool_ids` is never inspected, so a pending
+  (`adk.py:270-276`). `event.long_running_tool_ids` is never inspected, so a pending
   long-running call or an `adk_request_confirmation` call is dropped and the reply is empty or
   partial.
-- **OpenAI** — the adapter reads `.final_output` off the `RunResult` (`openai.py:211`) and never
+- **OpenAI** — the adapter reads `.final_output` off the `RunResult` (`openai.py:217`) and never
   looks at `.interruptions`.
 - **Pydantic AI** — the adapter reads `result.output` (`pydanticai.py:171,178-182`).
   `DeferredToolRequests` is a **dataclass, not a `BaseModel`** (verified —
   [`verification.md`](verification.md)), so `AgentReplyAny.from_output` returns `None`
-  (`model.py:157-161`) and the adapter falls through to `str(result.output)`
-  (`pydanticai.py:182`) — the user gets an `AgentReplyText` holding a dataclass repr, not a
+  (`model.py:151-161`) and the adapter falls through to `str(result.output)`
+  (`pydanticai.py:205`) — the user gets an `AgentReplyText` holding a dataclass repr, not a
   structured reply.
 
 ### 3. Pause state has a natural home already
 
 `Session` persists every non-volatile top-level key through `SessionStore.store()`
-(`runtime.py:228`), serialised with `pickle` (`core/session/serde.py:2,24,36`). The reserved-key
+(`runtime.py:295`), serialised with `pickle` (`core/session/serde.py:2,24,36`). The reserved-key
 pattern with dedicated accessors already exists for `framework_context`
 (`base.py:41-48,187-214`), added by #526. A paused-run record is the same shape of problem and
 should reuse that pattern rather than invent a second one.
@@ -72,7 +72,7 @@ should reuse that pattern rather than invent a second one.
 The **only** hard constraint this imposes: whatever a framework hands back as its pause payload
 must be **picklable**. All four target payloads are (JSON dicts, jsonable message lists, id
 strings) — but this must be asserted, not assumed, exactly as `_ensure_framework_context_picklable`
-does today (`base.py:329-348`).
+does today (`base.py:330-348`).
 
 ---
 
@@ -83,7 +83,7 @@ does today (`base.py:329-348`).
 ### Pause
 
 After `Runner.run(...)` returns, check `result.interruptions` before reading `.final_output`
-(`openai.py:211`). Non-empty ⇒ pause.
+(`openai.py:217`). Non-empty ⇒ pause.
 
 ### Persist
 
@@ -103,8 +103,8 @@ entire existing `run()` body.
 
 Documented as supported: drain `stream_events()` to completion, then check
 `RunResultStreaming.interruptions`, and resume with `Runner.run_streamed(agent, state)`. The AK
-adapter already drains the stream fully (`openai.py:259-266`), so the check slots in right where
-`_store_framework_context` is called at `openai.py:270`.
+adapter already drains the stream fully (`openai.py:268-276`), so the check slots in right where
+`_store_framework_context` is called at `openai.py:279`.
 
 ### Adapter-specific problems to solve
 
@@ -114,12 +114,12 @@ adapter already drains the stream fully (`openai.py:259-266`), so the check slot
    themselves. **This is the single biggest open question for this adapter** and applies equally
    to Pydantic AI and ADK.
 2. ~~**Multimodal runs pass no session.**~~ **Resolved by #679** (merged as `ad189723`).
-   `_get_run_input` (`openai.py:173-187`) now returns only the input *shape*, and both `run()`
-   and `stream()` pass `session=self._session(session)` unconditionally (`openai.py:211`,
+   `_get_run_input` (`openai.py:175-189`) now returns only the input *shape*, and both `run()`
+   and `stream()` pass `session=self._session(session)` unconditionally (`openai.py:217`,
    `:257`). A paused multimodal run resumes on the same path as a text one; no decision needed.
    See `design.md`'s Adapters section.
 3. **`framework_context` collides with `RunState` context serialization.** AK injects the #526
-   context as `context=produced` (`openai.py:206-208`) and the SDK documents context
+   context as `context=produced` (`openai.py:213-216`) and the SDK documents context
    serialization as "intentionally conservative" — mapping contexts round-trip, custom types need
    explicit serializers. AK's context is constrained to a `dict` (`base.py:292-297`), so the
    common case round-trips, but the interaction must be tested rather than assumed.
@@ -140,11 +140,11 @@ session_config = LangGraphSessionConfigModel(configurable=LangGraphSessionConfig
 lg_session = self._session(session)
 agent.agent.checkpointer = lg_session.checkpointer
 ```
-(`langgraph.py:368-370`)
+(`langgraph.py:405`)
 
 That `CheckPointer` is described in its own docstring as "a pickle-serializable checkpointer"
-(`langgraph.py:53-55`) and is held on the `LangGraphSession` stored under the framework key
-(`langgraph.py:341`), so it is persisted with the AK session. `thread_id` is `session.id`.
+(`langgraph.py:50-53`) and is held on the `LangGraphSession` stored under the framework key
+(`langgraph.py:323`), so it is persisted with the AK session. `thread_id` is `session.id`.
 
 **Everything `interrupt()` needs is therefore already in place** — a checkpointer, a stable
 thread id, and durability through AK's own session store. Two consequences worth stating
@@ -157,7 +157,7 @@ plainly:
 
 ### Pause
 
-After `ainvoke` (`langgraph.py:414-417`), check for `__interrupt__` in the result **before**
+After `ainvoke` (`langgraph.py:480`), check for `__interrupt__` in the result **before**
 `result["messages"][-1]` at line 427. Each `Interrupt` carries `.value` and `.id`.
 
 ### Persist
@@ -174,10 +174,10 @@ interrupts resume by id map.
 
 ### Streaming
 
-The adapter uses `astream_events(..., version="v2")` (`langgraph.py:469-473`). The `.interrupts` /
+The adapter uses `astream_events(..., version="v2")` (`langgraph.py:537`). The `.interrupts` /
 `.interrupted` attributes the docs describe belong to the newer `stream_events(version="v3")`
 surface. On v2 the pause must be detected after the stream drains — and the adapter **already
-calls `aget_state(config)` at that exact point** (`langgraph.py:481`) for framework-context
+calls `aget_state(config)` at that exact point** (`langgraph.py:545`) for framework-context
 write-back, so pause detection has a natural, already-written home. Whether to instead migrate to
 v3 is a real decision with blast radius beyond this issue.
 
@@ -201,15 +201,15 @@ v3 is a real decision with blast radius beyond this issue.
 
 ### Pause
 
-`DeferredToolRequests` arrives as `result.output` (`pydanticai.py:171`). Detection is a clean
+`DeferredToolRequests` arrives as `result.output` (`pydanticai.py:201`). Detection is a clean
 `isinstance` check — but it must be placed **before** `AgentReplyAny.from_output(result.output,
-prompt)` at `pydanticai.py:178`, which would otherwise happily serialise the pause into an
-ordinary structured reply because it accepts any `BaseModel` (`model.py:157-158`).
+prompt)` at `pydanticai.py:201`, which would otherwise happily serialise the pause into an
+ordinary structured reply because it accepts any `BaseModel` (`model.py:151-158`).
 
 ### Persist
 
 Two pieces: `to_jsonable_python(result.all_messages())` — which the adapter **already writes to
-the session** at `pydanticai.py:173-174` — plus the `DeferredToolRequests` object itself
+the session** at `pydanticai.py:197` — plus the `DeferredToolRequests` object itself
 (`.approvals`, `.calls`, `.metadata`), so the resume side can rebuild `DeferredToolResults`
 keyed by `tool_call_id`.
 
@@ -219,13 +219,13 @@ keyed by `tool_call_id`.
 result = await agent.agent.run(content, message_history=history, deferred_tool_results=results)
 ```
 
-The `message_history` reconstruction is **already written** — `pydanticai.py:166` builds it from
+The `message_history` reconstruction is **already written** — `pydanticai.py:187` builds it from
 the stored session messages on every run. So resume is the existing call with one extra kwarg.
 
 ### Streaming
 
 Best-supported of the four: `DeferredToolRequestsEvent` is emitted on the stream, and the
-adapter already consumes `run_stream_events()` (`pydanticai.py:190+`). Mapping that event to an
+adapter already consumes `run_stream_events()` (`pydanticai.py:249+`). Mapping that event to an
 AK pause event is a direct translation, no state reconstruction needed.
 
 ### Adapter-specific problems to solve
@@ -237,7 +237,7 @@ AK pause event is a direct translation, no state reconstruction needed.
    tools** — a decision with real consequences that must not be made silently.
 2. **`requires_approval` has the same reachability problem as OpenAI's `needs_approval`** — it is
    declared at tool-definition time, which AK's `ToolBuilder` owns.
-3. `deps=` is already used for `framework_context` (`pydanticai.py:169-171`), so the resume path
+3. `deps=` is already used for `framework_context` (`pydanticai.py:190-193`), so the resume path
    must keep loading and storing it exactly as `run()` does, or a resumed turn silently drops the
    caller's context.
 
@@ -250,7 +250,7 @@ adapter and unresolved upstream bugs.**
 
 ### Pause
 
-The adapter must stop discarding events. `get_response()` (`adk.py:204-230`) keeps only
+The adapter must stop discarding events. `get_response()` (`adk.py:250-279`) keeps only
 `is_final_response()` text; it needs to also inspect each event for:
 
 - `event.long_running_tool_ids` intersecting a part's `function_call.id` — a
@@ -283,13 +283,13 @@ plus `invocation_id=` when the app is resumable.
 
 ### Adapter-specific problems to solve
 
-1. **The `Runner` is built from a bare agent, not an `App`** (`adk.py:201`), so
+1. **The `Runner` is built from a bare agent, not an `App`** (`adk.py:246`), so
    `ResumabilityConfig(is_resumable=True)` is unreachable. Enabling it means constructing
    `App(name=..., root_agent=agent.agent, resumability_config=...)` and building the `Runner`
    from that — a change to how every ADK run is set up, affecting agents that never pause.
 2. **`create_session` is a one-shot no-op after the first call** (`adk.py:79-82`: `if
    self._session is None`), so resume reuses the same ADK session, which is what we want — but
-   `_setup_session_context` also appends a state-delta event on every run (`adk.py:196-199`).
+   `_setup_session_context` also appends a state-delta event on every run (`adk.py:197-199`).
    Whether that extra event disturbs a resumed invocation is untested.
 3. **Streaming pause: decide by test, do not declare it unsupported up front.** *(Revised.)* The
    earlier recommendation here — spend issue #606's "documents explicit incompatibility"
@@ -309,8 +309,8 @@ plus `invocation_id=` when the app is resumable.
 Not a scope cut for convenience; the mechanism genuinely does not intersect the adapter.
 
 - `@human_feedback` decorates methods on a CrewAI **`Flow`**. AK wraps CrewAI **`Agent`s**
-  (`crewai.py:544-550`) and builds a throwaway `Task` + `Crew` per run
-  (`crewai.py:375-386`). There is no Flow to decorate.
+  (`crewai.py:543`) and builds a throwaway `Task` + `Crew` per run
+  (`crewai.py:370-384`). There is no Flow to decorate.
 - The other route, `Task(human_input=True)`, blocks on console `input()` — wrong inside a server
   process, and undocumented mechanically by CrewAI itself.
 - The production-shaped webhook route is Enterprise/AMP only.
@@ -320,7 +320,7 @@ Not a scope cut for convenience; the mechanism genuinely does not intersect the 
 
 **Recommendation:** `supports_pause = False`; a `resume()` that raises a clear
 `NotImplementedError` naming the reason; and a documented pointer to CrewAI Flows for users who
-need it. This mirrors how the adapter already handles streaming (`crewai.py:412-423`) and
+need it. This mirrors how the adapter already handles streaming (`crewai.py:409-422`) and
 `framework_context` (`crewai.py:381-385`, warn-once and skip).
 
 ## smolagents — recommend explicit non-support
@@ -331,12 +331,12 @@ need it. This mirrors how the adapter already handles streaming (`crewai.py:412-
   call resumes. AK would have to invent the pause payload, which is exactly the "never fake a
   guarantee" line.
 - The adapter already persists `agent.memory.steps` to the session
-  (`smolagents.py:98-125`), so a coarser "re-run with preserved memory" pause is *conceivable* —
+  (`smolagents.py:110-125`), so a coarser "re-run with preserved memory" pause is *conceivable* —
   but it would be an AK-invented mechanism wearing a framework-native name, and it would not
   survive multiple replicas because the callback runs in-process.
 
 **Recommendation:** same treatment as CrewAI — `supports_pause = False`, matching the existing
-streaming stance (`smolagents.py:187-199`).
+streaming stance (`smolagents.py:193-206`).
 
 ---
 

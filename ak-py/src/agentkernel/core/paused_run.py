@@ -117,8 +117,10 @@ class PausedRunState:
 
         :param session: The session to read from.
         :param interruption_ids: The ids the decisions address.
-        :return: The single record holding all of them, or None when they match none or span more
-            than one — the caller reports that as a failed resume rather than guessing.
+        :return: The single record any of them belong to, or None when they match no record or span
+            more than one — the caller reports that as a failed resume rather than guessing. Matching
+            is by intersection, so an id the record does not hold still resolves here and is rejected
+            by Runtime's unknown-interruption check, which names the offending id.
         """
         wanted = set(interruption_ids)
         if not wanted:
