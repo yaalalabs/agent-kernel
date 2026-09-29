@@ -1133,3 +1133,32 @@ class TestLangGraphStreamingPause:
 
         assert not any(isinstance(e, RunPaused) for e in events)
         assert PausedRunState.list(session) == []
+
+
+class TestCheckPointerPickleHooks:
+    """
+    The hooks exclude one attribute by name rather than listing what to keep.
+
+    Listing what to keep means an attribute added to the class later is silently dropped on every
+    round trip — no error, it just comes back missing. Excluding the known problem carries the rest.
+    """
+
+    def test_an_attribute_added_later_still_survives(self):
+        import pickle
+
+        from agentkernel.framework.langgraph.langgraph import CheckPointer
+
+        cp = CheckPointer()
+        cp._added_by_a_later_change = {"still": "here"}
+
+        restored = pickle.loads(pickle.dumps(cp))
+
+        assert restored._added_by_a_later_change == {"still": "here"}
+
+    def test_the_serializer_is_the_only_thing_left_out(self):
+        from agentkernel.framework.langgraph.langgraph import CheckPointer
+
+        cp = CheckPointer()
+
+        assert "serde" not in cp.__getstate__()
+        assert set(cp.__getstate__()) == set(cp.__dict__) - {"serde"}
