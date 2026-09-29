@@ -6,6 +6,7 @@ from collections.abc import AsyncGenerator
 from typing import Any, Callable, ClassVar, List, Mapping
 
 from agents import Agent, Runner, function_tool
+from agents.run_state import RunState
 from openai.types.responses.response_output_item_added_event import ResponseOutputItemAddedEvent
 from openai.types.responses.response_output_item_done_event import ResponseOutputItemDoneEvent
 from openai.types.responses.response_reasoning_summary_text_delta_event import ResponseReasoningSummaryTextDeltaEvent
@@ -20,9 +21,11 @@ from ...core.config import AKConfig
 from ...core.event import (
     MessageEnd,
     MessageStart,
+    PausedInterruption,
     ReasoningDelta,
     ReasoningEnd,
     ReasoningStart,
+    RunPaused,
     StreamEvent,
     TextDelta,
     ToolCallArgs,
@@ -31,6 +34,7 @@ from ...core.event import (
     ToolCallStart,
 )
 from ...core.model import (
+    AgentPausedReplyAny,
     AgentReply,
     AgentReplyAny,
     AgentReplyText,
@@ -39,7 +43,9 @@ from ...core.model import (
     AgentRequestFile,
     AgentRequestImage,
     AgentRequestText,
+    ResumeDecision,
 )
+from ...core.paused_run import PausedRun, PausedRunState
 from ...core.util.error_util import user_facing_error_message
 from ...trace import Trace
 
@@ -214,10 +220,14 @@ class OpenAIRunner(BaseRunner):
             produced = copy.deepcopy(incoming)
             # Resolved run options (max_turns, hooks, run_config, ...) first; the keys AK owns are written last.
             kwargs = self._native_kwargs(options, session=self._session(session), context=produced)
-            reply = (await Runner.run(agent.agent, input_data, **kwargs)).final_output
+            result = await Runner.run(agent.agent, input_data, **kwargs)
 
             self._store_framework_context(session, incoming, produced)
 
+            if result.interruptions:
+                return self._paused_reply(agent, session, result)
+
+            reply = result.final_output
             structured = AgentReplyAny.from_output(reply, prompt)
             if structured is not None:
                 return structured
@@ -226,6 +236,223 @@ class OpenAIRunner(BaseRunner):
             return AgentReplyText(response=reply_text, prompt=prompt)
         except Exception as e:
             return AgentReplyText(response=user_facing_error_message(e), prompt=prompt)
+        finally:
+            if context is not None:
+                context.reset()
+
+    @property
+    def supports_pause(self) -> bool:
+        """
+        :return: True — the SDK's RunState is a self-contained, JSON-serialisable snapshot.
+        """
+        return True
+
+    def _paused_reply(self, agent: Any, session: Session, result: Any) -> AgentPausedReplyAny:
+        """
+        Records a paused run and returns the reply that carries it back to the caller.
+
+        Appends rather than replaces, which only this adapter can do: a `RunState` is a
+        self-contained snapshot, and two were verified to resume independently
+        (`research/verification.md`). The single-thread adapters replace, because their framework
+        keeps one conversation per session and the earlier pause stops being resumable.
+
+        :param agent: The agent that paused.
+        :param session: The session the record is written to.
+        :param result: The SDK result carrying non-empty `interruptions`.
+        :return: The paused reply, carrying the assigned run id.
+        """
+        record = PausedRunState.add(
+            session,
+            agent=agent.name,
+            interruptions=[
+                PausedInterruption(id=item.call_id, kind="tool_call", tool_name=item.name, arguments=item.arguments) for item in result.interruptions
+            ],
+            payload=result.to_state().to_json(),
+        )
+        return AgentPausedReplyAny(run_id=record.id, session_id=session.id, agent=agent.name, interruptions=record.interruptions)
+
+    @staticmethod
+    def _reject_unresumable(decisions: list[ResumeDecision], requests: list[AgentRequest]) -> None:
+        """
+        Refuses the two things this SDK has no channel for, before the adapter's `try` opens.
+
+        Both are raised here rather than in `Runtime` because neither is a framework-agnostic rule —
+        `Runtime` would need to know what the OpenAI SDK accepts — and above the `try` because the
+        `except Exception` below would turn either into a generic "something went wrong" reply.
+
+        :param decisions: The human's decisions.
+        :param requests: The hook-processed request list.
+        :raises ValueError: If a decision carries a payload, or a prompt rides along with the resume.
+        """
+        with_payload = sorted(decision.id for decision in decisions if decision.payload is not None)
+        if with_payload:
+            raise ValueError(
+                f"The OpenAI adapter cannot deliver a structured answer: decision(s) {with_payload} carry a payload, "
+                f"and RunState.approve() takes no value. Model the question as a gated tool's arguments instead."
+            )
+
+        if any(isinstance(req, AgentRequestText) and req.prompt for req in requests):
+            raise ValueError(
+                "The OpenAI adapter cannot carry a prompt alongside a decision: Runner.run()'s input is either "
+                "a RunState or new input, never both. Send the prompt as a separate turn once the run has resumed."
+            )
+
+    @staticmethod
+    async def _restore(agent: Any, record: PausedRun) -> RunState:
+        """
+        Rebuilds the paused run's SDK state from the stored payload.
+
+        Also above the `try`: a payload written by an older SDK fails `_schema_version` here, and
+        that has to reach the caller naming the runner rather than arriving as a generic reply.
+
+        `from_json` is async — it may re-resolve handoffs and hosted tools while rebuilding — which
+        is the one place this adapter awaits something the rest of the SDK's state API does not.
+
+        :param agent: The agent the record belongs to.
+        :param record: The validated paused-run record.
+        :return: The restored state, ready for decisions to be applied.
+        :raises ValueError: If the payload no longer deserialises.
+        """
+        try:
+            return await RunState.from_json(agent.agent, record.payload)
+        except Exception as e:
+            raise ValueError(
+                f"Paused run '{record.id}' cannot be resumed: its stored OpenAI RunState no longer deserialises "
+                f"({type(e).__name__}: {e}). This usually means the SDK was upgraded while the run was paused."
+            ) from e
+
+    def _apply(self, state: RunState, decisions: list[ResumeDecision]) -> None:
+        """
+        Renders each decision onto the restored state.
+
+        `cancelled` reaches the model as a rejection carrying AK's own wording, because the SDK has
+        only approve and reject: without it, "nobody decided" would be indistinguishable from "the
+        human refused", which is the distinction the three-valued status exists to keep.
+
+        :param state: The restored state.
+        :param decisions: The human's decisions, already validated against the record by Runtime.
+        :raises ValueError: If a decision names an interruption the restored state does not hold.
+        """
+        pending = {item.call_id: item for item in state.get_interruptions()}
+        for decision in decisions:
+            item = pending.get(decision.id)
+            if item is None:
+                raise ValueError(
+                    f"Decision '{decision.id}' matches no interruption in the restored OpenAI state, "
+                    f"which is waiting on: {sorted(i for i in pending if i)}."
+                )
+            if decision.status == "approved":
+                state.approve(item)
+            elif decision.status == "denied":
+                state.reject(item, rejection_message=decision.message)
+            else:
+                state.reject(item, rejection_message=self.CANCELLED_DECISION_MESSAGE)
+
+    async def resume(
+        self,
+        agent: Any,
+        session: Session,
+        requests: list[AgentRequest],
+        decisions: list[ResumeDecision],
+        record: PausedRun,
+    ) -> AgentReply:
+        """
+        Continues a paused OpenAI run from the human's decisions.
+
+        Mirrors `run()`'s envelope exactly — same tool context, same framework-context load and
+        store, same resolved run options through `_native_kwargs` — so a resumed turn is not a
+        second-class one: a tool called after the resume sees what a tool called before it saw.
+
+        :param agent: The agent that paused.
+        :param session: The session holding the record.
+        :param requests: The hook-processed request list, carrying the resume request.
+        :param decisions: One per interruption being answered.
+        :param record: The record Runtime validated.
+        :return: The continued run's reply, which may itself be paused again.
+        """
+        self._reject_unresumable(decisions, requests)
+        state = await self._restore(agent, record)
+
+        context: ToolContext | None = None
+        try:
+            context = ToolContext(Runtime.current(), agent, session, requests).set()
+            self._apply(state, decisions)
+
+            options = await agent.resolve_run_options(session, requests)
+            incoming = self._load_framework_context(session)
+            produced = copy.deepcopy(incoming)
+            kwargs = self._native_kwargs(options, session=self._session(session), context=produced)
+            result = await Runner.run(agent.agent, state, **kwargs)
+
+            self._store_framework_context(session, incoming, produced)
+            PausedRunState.clear(session, record.id)
+
+            if result.interruptions:
+                return self._paused_reply(agent, session, result)
+
+            reply = result.final_output
+            structured = AgentReplyAny.from_output(reply)
+            if structured is not None:
+                return structured
+            return AgentReplyText(response="" if reply is None else str(reply))
+        except Exception as e:
+            return AgentReplyText(response=user_facing_error_message(e))
+        finally:
+            if context is not None:
+                context.reset()
+
+    async def resume_stream(
+        self,
+        agent: Any,
+        session: Session,
+        requests: list[AgentRequest],
+        decisions: list[ResumeDecision],
+        record: PausedRun,
+    ) -> AsyncGenerator[StreamEvent, None]:
+        """
+        Streaming counterpart of `resume()`, mapping events exactly as `stream()` does.
+
+        A pause is detected only once the stream has drained, because `RunResultStreaming` fills
+        `interruptions` as the run completes, not as events arrive.
+
+        :param agent: The agent that paused.
+        :param session: The session holding the record.
+        :param requests: The hook-processed request list, carrying the resume request.
+        :param decisions: One per interruption being answered.
+        :param record: The record Runtime validated.
+        :return: The events the continued run produces, ending in RunPaused if it pauses again.
+        """
+        self._reject_unresumable(decisions, requests)
+        state = await self._restore(agent, record)
+
+        context: ToolContext | None = None
+        try:
+            context = ToolContext(Runtime.current(), agent, session, requests).set()
+            self._apply(state, decisions)
+
+            options = await agent.resolve_run_options(session, requests)
+            incoming = self._load_framework_context(session)
+            produced = copy.deepcopy(incoming)
+            kwargs = self._native_kwargs(options, session=self._session(session), context=produced)
+            result = Runner.run_streamed(agent.agent, state, **kwargs)
+
+            async for event in result.stream_events():
+                if event.type == "raw_response_event":
+                    for stream_event in self._map_raw_response(event.data):
+                        yield stream_event
+                elif event.type == "run_item_stream_event":
+                    for stream_event in self._map_run_item(event.name, event.item):
+                        yield stream_event
+
+            try:
+                self._store_framework_context(session, incoming, produced)
+            except Exception as e:
+                self._log_framework_context_stream_failure(session, e)
+
+            PausedRunState.clear(session, record.id)
+            if result.interruptions:
+                paused = self._paused_reply(agent, session, result)
+                yield RunPaused(run_id=paused.run_id, agent=agent.name, interruptions=paused.interruptions)
         finally:
             if context is not None:
                 context.reset()
@@ -279,6 +506,10 @@ class OpenAIRunner(BaseRunner):
                 self._store_framework_context(session, incoming, produced)
             except Exception as e:
                 self._log_framework_context_stream_failure(session, e)
+
+            if result.interruptions:
+                paused = self._paused_reply(agent, session, result)
+                yield RunPaused(run_id=paused.run_id, agent=agent.name, interruptions=paused.interruptions)
         finally:
             if context is not None:
                 context.reset()
