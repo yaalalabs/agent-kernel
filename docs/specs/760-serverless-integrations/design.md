@@ -296,8 +296,13 @@ flowchart LR
       body (Slack's signing secret, Meta's `X-Hub-Signature-256`).
     - Headers: taken from `multiValueHeaders`, falling back to `headers`; lookup is
       case-insensitive.
-    - Query: taken from `multiValueQueryStringParameters`. Meta's `hub.challenge` handshake reads
-      it (`integration/adapter/meta.py:53`).
+    - Query: taken from `multiValueQueryStringParameters`, falling back to
+      `queryStringParameters`, the same rule as headers.
+      - A valid proxy event can carry only the single-value map, and existing serverless handlers
+        read that shape (`examples/aws-serverless/schedule-openai/lambda_request_handler.py:37`).
+      - Meta's `hub.challenge` handshake reads `hub.mode`, `hub.verify_token` and `hub.challenge`
+        from it (`integration/adapter/meta.py:53-55`). Without the fallback, those are missing and
+        every handshake returns 403.
     - Method, path, and host/scheme: taken from the event.
   - **Result → proxy response**, producing the same status and bytes the FastAPI surfaces send:
     - A Starlette `Response` (Bolt's own, or Teams' `JSONResponse`) passes through with its
@@ -543,6 +548,8 @@ flowchart LR
   - **Translator**:
     - base64 and plain bodies reach `await request.body()` byte-exact
     - multi-value headers and query strings survive
+    - an event with only `headers` and `queryStringParameters` (no multi-value maps) still
+      yields them, and a Meta `hub.challenge` handshake in that shape returns the challenge
     - response mapping for a Starlette `Response`, a dict, an `int` and an `HTTPException`
   - **Host**:
     - `POST` is registered, and `GET` only when `challenge_path` is set
