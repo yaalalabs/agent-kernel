@@ -3,7 +3,20 @@ execution:
   queues:
     type: nats
     nats:
-      servers: ["nats://localhost:4222"]
-      stream_name: "ak-stream"
-      input_subject: "ak.input"
-      output_subject: "ak.output"
+      url: "nats://localhost:4222"
+      input_stream: AGENT_REQUESTS
+      input_subject_prefix: chat.req
+      output_stream: AGENT_REPLIES
+      output_subject_prefix: chat.out
+      partitions: 1
+      ack_wait: 300
+      retry_backoff: 1.0
+      duplicate_window: 300
+      auto_provision: true
+
+    input:
+      max_receive_count: 2
+      no_of_consumers: 1
+
+    output:
+      no_of_consumers: 1
