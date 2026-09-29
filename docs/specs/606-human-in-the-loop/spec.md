@@ -722,12 +722,31 @@ Verified present at AK's **pinned** `ag-ui-protocol` 0.1.22, so no dependency bu
 - **The agent comes from the route, not the body.** *(Established in PR 3.)* `RunAgentInput` has no
   agent field, but AG-UI runs are addressed as `POST {prefix}/{agent_name}`, so a resume names its
   agent the same way the original turn did.
-- **A stale history prompt must not be re-sent.** *(Found in PR 3.)* AG-UI replays the whole
-  conversation, so "the last user message" is not "this turn's prompt". On a resume the user message
-  is taken only when it is the **last** message in the list; reaching past the assistant's reply
-  would re-send the prompt that caused the pause, which OpenAI and ADK then reject for riding beside
-  a decision. A prompt the client genuinely appended **is** carried — Agent Kernel does not restrict
-  it, and whether the framework accepts it is the adapter's call.
+- **On a resume, AG-UI messages are history and no prompt is derived from them.** *(Found in PR 3,
+  by running it.)* AG-UI replays the whole conversation on every run and has no field marking a
+  message as new this turn, so any rule for picking one out is a guess — and the guess fails in
+  exactly the case that matters. A run that pauses emits **no assistant reply**, because the pause is
+  its outcome, so the conversation still ends with the prompt that caused the pause. A "take the last
+  user message" rule therefore re-sends it, landing a prompt beside a decision that OpenAI and ADK
+  reject outright.
+  - This is a limit of the protocol, not a restriction Agent Kernel is imposing: there is nothing to
+    pass through, because the client has no way to say "this one is new".
+  - A client that needs to send a prompt **with** a decision uses the REST surface, where `prompt`
+    and `resume` are separate fields and the adapter decides whether its framework accepts both.
+- **The verdict is a boolean payload, and it is not forwarded as an answer.** `ResumeEntry.status`
+  carries two values where Agent Kernel carries three, so approve and deny are told apart by
+  `payload: true` / `payload: false` — which is simply the answer to "may I?". A bare boolean is
+  therefore consumed as the verdict and not passed on: forwarding it would hand an adapter a
+  structured answer nobody gave, which OpenAI refuses since `RunState.approve()` takes no value. Any
+  other payload is the answer the agent asked for and travels untouched.
+- **A refusal carries no wording over AG-UI.** *(Decided in PR 3.)* The protocol has no field for
+  one. An earlier draft reserved `approved` and `message` inside `payload` to smuggle it, which was
+  wrong twice over: the SDK states `payload` is "the answer the agent asked for and will act on", so
+  reserving keys there contradicts the protocol, and it swallowed any real answer that happened to
+  use those names. The distinction that matters — `denied` versus `cancelled` — survives in `status`.
+  A client needing the human's words uses the REST surface, where `message` is a field of its own.
+  - This is the same rule applied to prompt-beside-resume above: where the protocol cannot express
+    something, Agent Kernel does not invent a private encoding for it.
 - `RunAgentInput.resume` is `Optional[List[ResumeEntry]]` — nothing in the protocol requires every
   open interrupt to be addressed in one resume, and AK does not enforce it on any surface.
 

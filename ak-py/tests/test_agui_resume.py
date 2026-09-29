@@ -227,8 +227,7 @@ class TestStatusMapsWithoutFlattening:
         "entry,expected",
         [
             ({"interruptId": "i1", "status": "cancelled"}, "cancelled"),
-            ({"interruptId": "i1", "status": "resolved", "payload": {"approved": True}}, "approved"),
-            ({"interruptId": "i1", "status": "resolved", "payload": {"approved": False}}, "denied"),
+            ({"interruptId": "i1", "status": "resolved", "payload": True}, "approved"),
             ({"interruptId": "i1", "status": "resolved", "payload": False}, "denied"),
             ({"interruptId": "i1", "status": "resolved", "payload": "large"}, "approved"),
             ({"interruptId": "i1", "status": "resolved"}, "approved"),
@@ -238,6 +237,33 @@ class TestStatusMapsWithoutFlattening:
         run_input = AGUIRunInput.parse(body(messages=[{"id": "m1", "role": "user", "content": "hi"}], resume=[entry]))
 
         assert AGUIRunInput.to_resume(run_input).decisions[0].status == expected
+
+    def test_a_refusal_carries_no_wording_over_this_surface(self):
+        """AG-UI has no field for one, and Agent Kernel does not reserve keys inside `payload` to
+        smuggle it — the SDK states `payload` is "the answer the agent asked for". `denied` still
+        reaches the model as a refusal distinct from `cancelled`, which is the distinction that
+        matters; a client needing the human's words uses REST, where `message` is its own field.
+        """
+        run_input = AGUIRunInput.parse(body(resume=[{"interruptId": "i1", "status": "resolved", "payload": False}]))
+        decision = AGUIRunInput.to_resume(run_input).decisions[0]
+
+        assert (decision.status, decision.message) == ("denied", None)
+
+    def test_a_boolean_verdict_is_not_forwarded_as_an_answer(self):
+        """`true` answers "may I?" and is nothing more. Forwarding it would hand an adapter a
+        structured answer nobody gave, which OpenAI refuses since `approve()` takes no value.
+        """
+        run_input = AGUIRunInput.parse(body(resume=[{"interruptId": "i1", "status": "resolved", "payload": True}]))
+
+        assert AGUIRunInput.to_resume(run_input).decisions[0].payload is None
+
+    def test_an_answer_using_a_reserved_sounding_key_survives(self):
+        """Nothing is reserved, so a question whose answer happens to be shaped like one is safe."""
+        run_input = AGUIRunInput.parse(body(resume=[{"interruptId": "i1", "status": "resolved", "payload": {"message": "Dear customer"}}]))
+        decision = AGUIRunInput.to_resume(run_input).decisions[0]
+
+        assert decision.payload == {"message": "Dear customer"}
+        assert decision.message is None
 
     def test_the_payload_is_carried_through_untouched(self):
         run_input = AGUIRunInput.parse(body(resume=[{"interruptId": "i1", "status": "resolved", "payload": ["damaged", "wrong_item"]}]))
@@ -269,22 +295,25 @@ class TestThePromptTheClientDidNotSend:
 
         assert [type(r).__name__ for r in AGUIRunInput.to_requests(run_input)] == ["AgentResumeRequestAny"]
 
-    def test_a_prompt_the_client_appended_is_carried(self):
-        """AK does not restrict it; whether the framework can take it is the adapter's call."""
-        run_input = AGUIRunInput.parse(
-            body(
-                messages=[
-                    {"id": "m1", "role": "user", "content": "refund my order"},
-                    {"id": "m2", "role": "assistant", "content": "checking"},
-                    {"id": "m3", "role": "user", "content": "and the weather?"},
-                ],
-                resume=[{"interruptId": "i1", "status": "resolved"}],
-            )
+    def test_no_prompt_is_derived_however_the_history_ends(self):
+        """A paused run emits no assistant reply, so the conversation still ends with the prompt
+        that caused the pause. Any rule for picking a "new" message out of replayed history is a
+        guess, and this is the case where the guess sends a prompt beside a decision."""
+        ends_with_user = body(
+            messages=[{"id": "m1", "role": "user", "content": "refund my order"}],
+            resume=[{"interruptId": "i1", "status": "resolved"}],
         )
-        requests = AGUIRunInput.to_requests(run_input)
+        ends_with_assistant = body(
+            messages=[
+                {"id": "m1", "role": "user", "content": "refund my order"},
+                {"id": "m2", "role": "assistant", "content": "checking"},
+            ],
+            resume=[{"interruptId": "i1", "status": "resolved"}],
+        )
 
-        assert [type(r).__name__ for r in requests] == ["AgentRequestText", "AgentResumeRequestAny"]
-        assert requests[0].prompt == "and the weather?"
+        for payload in (ends_with_user, ends_with_assistant):
+            requests = AGUIRunInput.to_requests(AGUIRunInput.parse(payload))
+            assert [type(r).__name__ for r in requests] == ["AgentResumeRequestAny"]
 
     def test_a_resume_with_no_messages_at_all_is_accepted(self):
         """Prompt **or** resume — the same rule the REST, WebSocket and thread surfaces apply."""
