@@ -8,7 +8,7 @@ from ..auth.handler import AuthValidator
 from ..core.config import AKConfig
 from ..core.model import ExecutionMode
 from ..core.util.factory import AKConfigError
-from .agent_runner import AgentRunner, StreamAgentRunner
+from .agent_runner import AgentRunner, RealtimeAgentRunner, StreamAgentRunner
 from .request_handler import RequestHandler
 from .response_handler import ResponseHandler
 from .thread_runner import ThreadRunner
@@ -138,7 +138,15 @@ class IOHandler:
             ),
         ]
         if single_process:
-            runner = StreamAgentRunner() if mode in (ExecutionMode.STREAM, ExecutionMode.REALTIME) else AgentRunner()
+
+            if mode == ExecutionMode.STREAM:
+                runner = StreamAgentRunner()
+
+            elif mode == ExecutionMode.REALTIME:
+                runner = RealtimeAgentRunner()
+            else:
+                runner = AgentRunner()
+
             tasks.append(
                 ThreadRunner.Task(
                     execution_function=lambda: runner.start(exit_on_shutdown=False), thread_name="agent-runner", stop_all_on_failure=True
