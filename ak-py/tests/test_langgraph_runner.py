@@ -13,13 +13,22 @@ from agentkernel.core.event import (
     ReasoningDelta,
     ReasoningEnd,
     ReasoningStart,
+    RunPaused,
     TextDelta,
     ToolCallArgs,
     ToolCallEnd,
     ToolCallResult,
     ToolCallStart,
 )
-from agentkernel.core.model import AgentReplyAny, AgentReplyText, AgentRequestText
+from agentkernel.core.model import (
+    AgentPausedReplyAny,
+    AgentReplyAny,
+    AgentReplyText,
+    AgentRequestText,
+    AgentResumeRequestAny,
+    ResumeDecision,
+)
+from agentkernel.core.paused_run import PausedRunState
 from agentkernel.core.runtime import Runtime
 from agentkernel.framework.langgraph.langgraph import LangGraphAgent, LangGraphModule, LangGraphRunner
 
@@ -32,8 +41,14 @@ class WeatherResponse(BaseModel):
 
 
 def _mock_agent(result):
+    """Agent mock whose ainvoke returns the given result.
+
+    `name` is a real string rather than a MagicMock attribute because the paused-run record stores
+    the agent name and rejects anything else.
+    """
     agent = MagicMock()
     agent._system_prompt = ""
+    agent.name = "test-agent"
     agent.agent = MagicMock()
     agent.run_options = {}
     agent.resolve_run_options = AsyncMock(side_effect=lambda session, requests: dict(agent.run_options))
@@ -42,9 +57,14 @@ def _mock_agent(result):
 
 
 def _mock_stream_agent(events, state_values):
-    """Agent mock whose astream_events yields the given events and aget_state returns state_values."""
+    """Agent mock whose astream_events yields the given events and aget_state returns state_values.
+
+    The state reports no interrupts, which is what the adapter reads once the stream drains to tell
+    a completed run from a paused one.
+    """
     agent = MagicMock()
     agent._system_prompt = ""
+    agent.name = "test-agent"
     agent.agent = MagicMock()
     agent.run_options = {}
     agent.resolve_run_options = AsyncMock(side_effect=lambda session, requests: dict(agent.run_options))
@@ -56,6 +76,7 @@ def _mock_stream_agent(events, state_values):
     agent.agent.astream_events = astream_events
     state = MagicMock()
     state.values = state_values
+    state.interrupts = ()
     agent.agent.aget_state = AsyncMock(return_value=state)
     return agent
 
@@ -545,7 +566,7 @@ def _capturing_stream_agent(captured: dict):
             yield event
 
     agent.agent.astream_events = astream_events
-    agent.agent.aget_state = AsyncMock(return_value=MagicMock(values={}))
+    agent.agent.aget_state = AsyncMock(return_value=MagicMock(values={}, interrupts=()))
     return agent
 
 
@@ -745,3 +766,370 @@ class TestLangGraphStreamStateReadBack:
         expected = {"configurable": {"checkpoint_ns": "x", "thread_id": "s"}}
         assert captured["config"] == expected
         assert agent.agent.aget_state.call_args.args[0] == expected
+
+
+def _gated_graph(question=None, second=False):
+    """A graph whose node stops on interrupt() and reports the value it was resumed with."""
+    from operator import add
+    from typing import Annotated, TypedDict
+
+    from langgraph.graph import END, START, StateGraph
+    from langgraph.types import interrupt
+
+    class S(TypedDict):
+        messages: Annotated[list, add]
+        answer: str
+        second: str
+
+    def ask(state: S):
+        got = interrupt(question if question is not None else {"question": "approve?", "options": ["yes", "no"]})
+        if second and not state.get("second"):
+            again = interrupt({"question": "anything else?"})
+            return {"answer": repr(got), "second": repr(again)}
+        return {"answer": repr(got)}
+
+    graph = StateGraph(S)
+    graph.add_node("ask", ask)
+    graph.add_edge(START, "ask")
+    graph.add_edge("ask", END)
+    return graph.compile()
+
+
+def _real_agent(graph=None):
+    return LangGraphAgent(name="gated", runner=LangGraphRunner(), agent=graph or _gated_graph())
+
+
+def _resume_requests(*decisions, prompt=None):
+    requests = [AgentRequestText(prompt=prompt)] if prompt else []
+    return requests + [AgentResumeRequestAny(decisions=list(decisions))], list(decisions)
+
+
+class TestLangGraphPauseDetection:
+    """
+    Pause detection (spec `docs/specs/606-human-in-the-loop/`, iteration 6).
+
+    These drive a real compiled graph rather than a mock. `interrupt()` needs no model call, so the
+    pause path is offline and fast — and a mock would only prove the adapter calls what the test
+    told it to call, which is how two pre-existing checkpointer defects had survived.
+    """
+
+    def test_the_runner_declares_the_capability(self):
+        assert LangGraphRunner().supports_pause is True
+
+    def test_the_interrupt_key_is_spelled_literally(self):
+        """`langgraph.constants.INTERRUPT` still resolves at 1.2.11 but raises on access."""
+        import warnings
+
+        from agentkernel.framework.langgraph.langgraph import INTERRUPT_KEY
+
+        assert INTERRUPT_KEY == "__interrupt__"
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            with pytest.raises(Exception, match="deprecated"):
+                from langgraph.constants import INTERRUPT  # noqa: F401
+
+    @pytest.mark.asyncio
+    async def test_a_graph_that_interrupts_returns_a_paused_reply(self):
+        runner, session, agent = LangGraphRunner(), Session("s"), _real_agent()
+
+        reply = await runner.run(agent, session, [AgentRequestText(prompt="start")])
+
+        assert isinstance(reply, AgentPausedReplyAny)
+        assert len(reply.interruptions) == 1
+        assert reply.interruptions[0].kind == "input_required"
+
+    @pytest.mark.asyncio
+    async def test_the_question_travels_as_the_node_wrote_it(self):
+        """AK defines no form schema — the node's own value is what reaches the client."""
+        runner, session = LangGraphRunner(), Session("s")
+        agent = _real_agent(_gated_graph(question={"question": "size?", "options": ["S", "M", "L"]}))
+
+        reply = await runner.run(agent, session, [AgentRequestText(prompt="start")])
+
+        assert reply.interruptions[0].payload == {"question": "size?", "options": ["S", "M", "L"]}
+
+    @pytest.mark.asyncio
+    async def test_a_string_question_survives_too(self):
+        runner, session = LangGraphRunner(), Session("s")
+        agent = _real_agent(_gated_graph(question="what size?"))
+
+        reply = await runner.run(agent, session, [AgentRequestText(prompt="start")])
+
+        assert reply.interruptions[0].payload == "what size?"
+
+    @pytest.mark.asyncio
+    async def test_the_record_is_thin_because_the_checkpointer_holds_the_state(self):
+        runner, session, agent = LangGraphRunner(), Session("s"), _real_agent()
+
+        reply = await runner.run(agent, session, [AgentRequestText(prompt="start")])
+
+        assert PausedRunState.get(session, reply.run_id).payload == {"thread_id": "s"}
+
+    @pytest.mark.asyncio
+    async def test_the_record_survives_a_session_pickle_round_trip(self):
+        import pickle
+
+        runner, session, agent = LangGraphRunner(), Session("s"), _real_agent()
+        reply = await runner.run(agent, session, [AgentRequestText(prompt="start")])
+
+        restored = pickle.loads(pickle.dumps(session))
+
+        assert PausedRunState.get(restored, reply.run_id) is not None
+
+
+class TestLangGraphResume:
+    @pytest.mark.asyncio
+    async def test_the_chosen_value_is_what_the_node_receives(self):
+        """The contract: a node written as `choice = interrupt(...)` gets the choice itself."""
+        runner, session, agent = LangGraphRunner(), Session("s"), _real_agent()
+        paused = await runner.run(agent, session, [AgentRequestText(prompt="start")])
+        record = PausedRunState.get(session, paused.run_id)
+        requests, decisions = _resume_requests(ResumeDecision(id=paused.interruptions[0].id, payload={"size": "L"}))
+
+        reply = await runner.resume(agent, session, requests, decisions, record)
+
+        assert isinstance(reply, AgentReplyText)
+        assert "{'size': 'L'}" in (await agent.agent.aget_state({"configurable": {"thread_id": "s"}})).values["answer"]
+
+    @pytest.mark.asyncio
+    async def test_free_text_reaches_the_node_when_there_is_no_payload(self):
+        runner, session, agent = LangGraphRunner(), Session("s"), _real_agent()
+        paused = await runner.run(agent, session, [AgentRequestText(prompt="start")])
+        record = PausedRunState.get(session, paused.run_id)
+        requests, decisions = _resume_requests(ResumeDecision(id=paused.interruptions[0].id, message="ship it"))
+
+        await runner.resume(agent, session, requests, decisions, record)
+
+        assert (await agent.agent.aget_state({"configurable": {"thread_id": "s"}})).values["answer"] == "'ship it'"
+
+    @pytest.mark.asyncio
+    async def test_the_status_reaches_the_node_intact_when_it_is_all_there_is(self):
+        """`cancelled` must not read as `denied` — the node sees the verb the human pressed."""
+        runner, session, agent = LangGraphRunner(), Session("s"), _real_agent()
+        paused = await runner.run(agent, session, [AgentRequestText(prompt="start")])
+        record = PausedRunState.get(session, paused.run_id)
+        requests, decisions = _resume_requests(ResumeDecision(id=paused.interruptions[0].id, status="cancelled"))
+
+        await runner.resume(agent, session, requests, decisions, record)
+
+        assert (await agent.agent.aget_state({"configurable": {"thread_id": "s"}})).values["answer"] == "'cancelled'"
+
+    @pytest.mark.asyncio
+    async def test_the_resume_clears_its_own_record(self):
+        runner, session, agent = LangGraphRunner(), Session("s"), _real_agent()
+        paused = await runner.run(agent, session, [AgentRequestText(prompt="start")])
+        record = PausedRunState.get(session, paused.run_id)
+        requests, decisions = _resume_requests(ResumeDecision(id=paused.interruptions[0].id, message="yes"))
+
+        await runner.resume(agent, session, requests, decisions, record)
+
+        assert PausedRunState.list(session) == []
+
+    @pytest.mark.asyncio
+    async def test_a_prompt_alongside_a_decision_reaches_the_messages_channel(self):
+        """AK's own encoding: `Command.update` writes the prompt into the channel the adapter feeds."""
+        runner, session, agent = LangGraphRunner(), Session("s"), _real_agent()
+        paused = await runner.run(agent, session, [AgentRequestText(prompt="start")])
+        record = PausedRunState.get(session, paused.run_id)
+        requests, decisions = _resume_requests(ResumeDecision(id=paused.interruptions[0].id, message="yes"), prompt="and the weather?")
+
+        await runner.resume(agent, session, requests, decisions, record)
+
+        texts = [m.content for m in (await agent.agent.aget_state({"configurable": {"thread_id": "s"}})).values["messages"]]
+        assert "and the weather?" in texts
+
+    @pytest.mark.asyncio
+    async def test_a_second_interrupt_pauses_again_with_a_fresh_record(self):
+        runner, session = LangGraphRunner(), Session("s")
+        agent = _real_agent(_gated_graph(second=True))
+        paused = await runner.run(agent, session, [AgentRequestText(prompt="start")])
+        record = PausedRunState.get(session, paused.run_id)
+        requests, decisions = _resume_requests(ResumeDecision(id=paused.interruptions[0].id, message="yes"))
+
+        again = await runner.resume(agent, session, requests, decisions, record)
+
+        assert isinstance(again, AgentPausedReplyAny)
+        assert again.run_id != paused.run_id
+        assert [r.id for r in PausedRunState.list(session)] == [again.run_id]
+
+    @pytest.mark.asyncio
+    async def test_a_second_pause_replaces_rather_than_appends(self):
+        """LangGraph keeps one thread per session, so the earlier record could never be resumed."""
+        runner, session = LangGraphRunner(), Session("s")
+        agent = _real_agent(_gated_graph(second=True))
+        paused = await runner.run(agent, session, [AgentRequestText(prompt="start")])
+        record = PausedRunState.get(session, paused.run_id)
+        requests, decisions = _resume_requests(ResumeDecision(id=paused.interruptions[0].id, message="yes"))
+
+        await runner.resume(agent, session, requests, decisions, record)
+
+        assert len(PausedRunState.list(session)) == 1
+
+
+class TestCheckPointerDurability:
+    """
+    Two things the checkpointer must do for a pause to survive, both missing before #606.
+
+    The class docstring called it "pickle-serializable" while a fresh instance could not be pickled
+    at all, and it recorded pending writes without ever handing them back — so `interrupt()` was
+    invisible and a session holding a LangGraph conversation could not reach a shared backend.
+    """
+
+    def test_a_fresh_checkpointer_pickles(self):
+        """The inherited serializer holds a closure; only the stored data is carried across."""
+        import pickle
+
+        from agentkernel.framework.langgraph.langgraph import CheckPointer
+
+        restored = pickle.loads(pickle.dumps(CheckPointer()))
+
+        assert restored._storage == {} and restored._writes == {}
+        assert restored.serde is not None
+
+    def test_stored_data_survives_the_round_trip(self):
+        import pickle
+
+        from agentkernel.framework.langgraph.langgraph import CheckPointer
+
+        cp = CheckPointer()
+        cp.put_writes({"configurable": {"thread_id": "t", "checkpoint_id": "c"}}, [("__interrupt__", "v")], "task-1")
+        restored = pickle.loads(pickle.dumps(cp))
+
+        assert restored._pending_writes("t", "", "c") == [("task-1", "__interrupt__", "v")]
+
+    def test_writes_are_scoped_to_their_checkpoint(self):
+        """Without checkpoint-id scoping, one turn's interrupt leaks into the next turn's state."""
+        from agentkernel.framework.langgraph.langgraph import CheckPointer
+
+        cp = CheckPointer()
+        cp.put_writes({"configurable": {"thread_id": "t", "checkpoint_id": "c1"}}, [("__interrupt__", "first")], "task-1")
+        cp.put_writes({"configurable": {"thread_id": "t", "checkpoint_id": "c2"}}, [("__interrupt__", "second")], "task-2")
+
+        assert cp._pending_writes("t", "", "c1") == [("task-1", "__interrupt__", "first")]
+        assert cp._pending_writes("t", "", "c2") == [("task-2", "__interrupt__", "second")]
+
+    def test_a_replayed_task_replaces_its_interrupt_rather_than_stacking_one(self):
+        """`WRITES_IDX_MAP` gives `__interrupt__` a negative index precisely so it overwrites."""
+        from agentkernel.framework.langgraph.langgraph import CheckPointer
+
+        cp = CheckPointer()
+        config = {"configurable": {"thread_id": "t", "checkpoint_id": "c"}}
+        cp.put_writes(config, [("__interrupt__", "first")], "task-1")
+        cp.put_writes(config, [("__interrupt__", "second")], "task-1")
+
+        assert cp._pending_writes("t", "", "c") == [("task-1", "__interrupt__", "second")]
+
+    def test_an_ordinary_channel_keeps_its_first_write(self):
+        from agentkernel.framework.langgraph.langgraph import CheckPointer
+
+        cp = CheckPointer()
+        config = {"configurable": {"thread_id": "t", "checkpoint_id": "c"}}
+        cp.put_writes(config, [("messages", "one")], "task-1")
+        cp.put_writes(config, [("messages", "two")], "task-1")
+
+        assert cp._pending_writes("t", "", "c") == [("task-1", "messages", "one")]
+
+    def test_delete_thread_clears_its_writes(self):
+        from agentkernel.framework.langgraph.langgraph import CheckPointer
+
+        cp = CheckPointer()
+        cp.put_writes({"configurable": {"thread_id": "t", "checkpoint_id": "c"}}, [("messages", "x")], "task-1")
+        cp.delete_thread("t")
+
+        assert cp._pending_writes("t", "", "c") == []
+
+
+class TestLangGraphResumeEnvelope:
+    """A resumed turn is not a second-class one: same context, same options as an ordinary run."""
+
+    @pytest.mark.asyncio
+    async def test_framework_context_survives_a_resume(self):
+        runner, session, agent = LangGraphRunner(), Session("s"), _real_agent()
+        session.set(FRAMEWORK_CONTEXT, {"user_id": "42"})
+        paused = await runner.run(agent, session, [AgentRequestText(prompt="start")])
+        record = PausedRunState.get(session, paused.run_id)
+        requests, decisions = _resume_requests(ResumeDecision(id=paused.interruptions[0].id, message="yes"))
+
+        await runner.resume(agent, session, requests, decisions, record)
+
+        assert session.get_framework_context() == {"user_id": "42"}
+
+    @pytest.mark.asyncio
+    async def test_a_declared_run_option_reaches_the_resumed_call(self):
+        """The thread id assertion is the other half: an AK-owned key still wins over a caller's."""
+        runner, session, agent = LangGraphRunner(), Session("s"), _real_agent()
+        paused = await runner.run(agent, session, [AgentRequestText(prompt="start")])
+        record = PausedRunState.get(session, paused.run_id)
+        requests, decisions = _resume_requests(ResumeDecision(id=paused.interruptions[0].id, message="yes"))
+        agent.run_options["recursion_limit"] = 9
+        captured = {}
+
+        original = agent.agent.ainvoke
+
+        async def _capture(**kwargs):
+            captured.update(kwargs)
+            return await original(**kwargs)
+
+        agent.agent.ainvoke = _capture
+        await runner.resume(agent, session, requests, decisions, record)
+
+        assert captured["recursion_limit"] == 9
+        assert captured["config"]["configurable"]["thread_id"] == "s"
+
+    @pytest.mark.asyncio
+    async def test_a_tool_on_the_resumed_turn_sees_the_resume_request(self):
+        from agentkernel.core import ToolContext as TC
+
+        runner, session, agent = LangGraphRunner(), Session("s"), _real_agent()
+        paused = await runner.run(agent, session, [AgentRequestText(prompt="start")])
+        record = PausedRunState.get(session, paused.run_id)
+        requests, decisions = _resume_requests(ResumeDecision(id=paused.interruptions[0].id, message="yes"))
+        seen = {}
+
+        original = agent.agent.ainvoke
+
+        async def _capture(**kwargs):
+            seen["requests"] = TC.get().requests
+            return await original(**kwargs)
+
+        agent.agent.ainvoke = _capture
+        await runner.resume(agent, session, requests, decisions, record)
+
+        assert any(isinstance(r, AgentResumeRequestAny) for r in seen["requests"])
+
+
+class TestLangGraphStreamingPause:
+    """`astream_events` carries no interrupt event, so the pause is only visible in state afterwards."""
+
+    @pytest.mark.asyncio
+    async def test_a_streamed_gated_run_ends_with_run_paused(self):
+        runner, session, agent = LangGraphRunner(), Session("s"), _real_agent()
+
+        events = [e async for e in runner.stream(agent, session, [AgentRequestText(prompt="start")])]
+
+        assert isinstance(events[-1], RunPaused)
+        assert events[-1].agent == "gated"
+        assert events[-1].interruptions[0].payload == {"question": "approve?", "options": ["yes", "no"]}
+
+    @pytest.mark.asyncio
+    async def test_resume_stream_continues_the_graph_and_clears_the_record(self):
+        runner, session, agent = LangGraphRunner(), Session("s"), _real_agent()
+        events = [e async for e in runner.stream(agent, session, [AgentRequestText(prompt="start")])]
+        record = PausedRunState.get(session, events[-1].run_id)
+        requests, decisions = _resume_requests(ResumeDecision(id=events[-1].interruptions[0].id, message="yes"))
+
+        resumed = [e async for e in runner.resume_stream(agent, session, requests, decisions, record)]
+
+        assert not any(isinstance(e, RunPaused) for e in resumed)
+        assert PausedRunState.list(session) == []
+        assert (await agent.agent.aget_state({"configurable": {"thread_id": "s"}})).values["answer"] == "'yes'"
+
+    @pytest.mark.asyncio
+    async def test_an_ordinary_stream_emits_no_run_paused(self):
+        runner, session = LangGraphRunner(), Session("s")
+        agent = _mock_stream_agent([], {})
+
+        events = [e async for e in runner.stream(agent, session, [AgentRequestText(prompt="hi")])]
+
+        assert not any(isinstance(e, RunPaused) for e in events)
+        assert PausedRunState.list(session) == []
