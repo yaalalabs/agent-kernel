@@ -15,8 +15,8 @@ class SecretProviderFactory:
     _log = logging.getLogger("ak.secret.provider.factory")
 
     @staticmethod
-    def create(config: _SecretConfig) -> SecretProvider:
-        """Create the configured provider, delegating to its ``create_provider``.
+    def get(config: _SecretConfig) -> SecretProvider:
+        """Create the configured provider, delegating to its ``create``.
 
         :param config: The `secret` configuration block.
         :return: The configured provider.
@@ -29,15 +29,15 @@ class SecretProviderFactory:
         if key == "env":
             from .providers.env import EnvSecretProvider
 
-            return EnvSecretProvider.create_provider(config)
+            return EnvSecretProvider.create(config)
         if key == "aws_ssm":
             with require_extra("aws", "secret.provider.type: aws_ssm"):
                 from .providers.aws_ssm import AWSSMSecretProvider
 
-            return AWSSMSecretProvider.create_provider(config)
+            return AWSSMSecretProvider.create(config)
         if "." not in provider_type:
             raise AKConfigError(
                 f"unknown secret provider type '{provider_type}'; expected one of {_BUILTIN_SECRET_PROVIDERS} "
                 "or a dotted path to a SecretProvider subclass"
             )
-        return resolve_dotted(provider_type, base=SecretProvider).create_provider(config)
+        return resolve_dotted(provider_type, base=SecretProvider).create(config)

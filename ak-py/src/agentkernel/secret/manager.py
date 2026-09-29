@@ -48,7 +48,7 @@ class SecretManager:
         with cls._instance_lock:
             if cls._instance is None:
                 config = AKConfig.get().secret
-                cls._instance = cls(provider=SecretProviderFactory.create(config), cache_ttl=config.cache_ttl)
+                cls._instance = cls(provider=SecretProviderFactory.get(config), cache_ttl=config.cache_ttl)
             return cls._instance
 
     @classmethod

@@ -11,7 +11,7 @@ class SecretProvider(ABC):
     """A backend that holds secrets, addressed by an environment-variable-style key."""
 
     @classmethod
-    def create_provider(cls, config: "_SecretConfig") -> "SecretProvider":
+    def create(cls, config: "_SecretConfig") -> "SecretProvider":
         """Build the provider from the `secret` block. Providers needing no settings inherit this default.
 
         :raises AKConfigError: If the settings this provider needs are missing or malformed.

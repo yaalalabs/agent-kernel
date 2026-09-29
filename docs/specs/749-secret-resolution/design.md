@@ -70,7 +70,7 @@ One seam: **the provider answers where a value lives**, selected by `secret.prov
 
 - `SecretProvider` (ABC, `secret/base.py`):
   - `get_secret(key: str) -> Optional[str]` — the value stored for the key, or `None` when the backend does not have it. Owns its addressing; never caches, never falls back to another layer; must tolerate concurrent calls.
-  - `create_provider(config: _SecretConfig) -> SecretProvider` — the single construction seam. **A deviation from the `ScheduleProvider.from_config` precedent** (`schedule/provider/base.py:35`), which receives only the provider sub-block: this one receives the whole `secret` block, because `secret.prefix` is a deployment-wide scope a provider may need.
+  - `create(config: _SecretConfig) -> SecretProvider` — the single construction seam. **A deviation from the `ScheduleProvider.from_config` precedent** (`schedule/provider/base.py:35`), which receives only the provider sub-block: this one receives the whole `secret` block, because `secret.prefix` is a deployment-wide scope a provider may need.
 - `SecretProviderFactory` (`secret/factory.py`) — the `core/util/factory.py` house shape: built-in short names as `if/elif` real-import branches, `require_extra("aws", "secret.provider.type: aws_ssm")` around the boto3 import, `resolve_dotted` for any other value. An unknown short name raises `AKConfigError`.
 - Provider types in v1:
   - `env` (**default**) — reads `os.environ`, `""` treated as absent. Since the environment is already layer 1, under `env` resolution is effectively environment-only; the default makes no network call and needs no credentials.
@@ -119,7 +119,7 @@ All classes, one responsibility each, in `agentkernel/secret/` — a top-level c
 | --- | --- | --- |
 | `SecretManager` | `manager.py` | `get`/`invalidate`/`clear` and the `current()` singleton; validates the key and drives the environment → cache → provider order |
 | `SecretCache` | `cache.py` | TTL'd key → value store for provider hits; owns the cache write lock |
-| `SecretProvider` | `base.py` | ABC: `get_secret(key)`, `create_provider(config)` |
+| `SecretProvider` | `base.py` | ABC: `get_secret(key)`, `create(config)` |
 | `EnvSecretProvider` | `providers/env.py` | `os.environ` as the backing store; the default |
 | `AWSSMSecretProvider` | `providers/aws_ssm.py` | SSM Parameter Store; composes `/ak/{prefix}/{key.lower()}`; `aws` extra |
 | `SecretProviderFactory` | `factory.py` | Config-keyed selection; `env`/`aws_ssm` built-ins, `require_extra`, dotted-path BYO |

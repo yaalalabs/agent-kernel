@@ -153,9 +153,9 @@ make lint-check-all
   1. The environment wins for **every** provider — `env`, `aws_ssm` seeded with a different value
      (the fake client records no `get_parameter` call), and a seeded dotted-path
      `_DictSecretProvider` (zero provider calls) — and a `""` variable reaches `aws_ssm`.
-  2. `SecretProviderFactory.create(config)` never calls `AKConfig.get()`, asserted loudly (the
+  2. `SecretProviderFactory.get(config)` never calls `AKConfig.get()`, asserted loudly (the
      `tests/test_pipeline_factory_seams.py` pattern).
-  3. A dotted-path provider is built through its own `create_provider` and receives the whole `secret`
+  3. A dotted-path provider is built through its own `create` and receives the whole `secret`
      block, including `prefix`.
 - **Verify:** `cd ak-py && uv run pytest` and `make lint-check-all`, both clean.
 

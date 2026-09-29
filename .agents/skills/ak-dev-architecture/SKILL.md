@@ -652,12 +652,12 @@ ever writes `os.environ` — callers hand the value to the SDK explicitly
   `invalidate(key)` / `clear()` drop cache entries. Resolution takes no manager lock; the provider is
   called outside any lock.
 - **`SecretProvider`** (`base.py`): the ABC — `get_secret(key) -> Optional[str]` (`None` = miss;
-  raise `SecretError` only on backend failure) plus a `create_provider(_SecretConfig)` classmethod that
+  raise `SecretError` only on backend failure) plus a `create(_SecretConfig)` classmethod that
   receives the **whole** `secret` block (so `secret.prefix` is shared across backends). Providers own
   their addressing, never cache, never fall back, and must tolerate concurrent calls.
 - **`SecretCache`** (`cache.py`): TTL'd dict of provider hits only; lock-free reads of immutable
   `(value, expires_at)` tuples, write lock for set/evict/clear. `cache_ttl: 0` disables it.
-- **`SecretProviderFactory`** (`factory.py`): `create(config)` maps `env` / `aws_ssm` (behind
+- **`SecretProviderFactory`** (`factory.py`): `get(config)` maps `env` / `aws_ssm` (behind
   `require_extra("aws", ...)`) or a dotted path via `resolve_dotted(..., base=SecretProvider)`;
   anything else is `AKConfigError`.
 - **Providers** (`providers/`): `EnvSecretProvider` (reads `os.environ` verbatim) and
