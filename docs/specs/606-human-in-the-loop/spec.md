@@ -466,14 +466,29 @@ know that OpenAI has no channel for a structured answer without framework knowle
 | Detect | `result.interruptions` non-empty, checked **before** `.final_output` (`openai.py:217`) |
 | `payload` | `result.to_state().to_json()` |
 | Resume | `RunState.from_json(initial_agent=agent.agent, state_json=payload)`, apply `approve`/`reject`, `Runner.run(agent.agent, state)` |
-| Interruption `id` | `item.raw_item.call_id` |
+| Interruption `id` | `item.call_id` |
 | `kind` | `"tool_call"` |
 
-Above the `try`, two rejections — OpenAI has a channel for neither:
+`item.call_id` rather than `item.raw_item.call_id`: at 0.20.0 `call_id` is a property that
+normalises across raw-item shapes (`_extract_call_id`), so reading it is the more robust of the two.
+On resume the same property keys `RunState.get_interruptions()`, which is what maps a decision back
+to its `ToolApprovalItem`.
+
+**Appends rather than replaces.** *(Settled here; `design.md` leaves it to the adapter.)* A
+`RunState` is a self-contained snapshot and two were verified to resume independently
+(`research/verification.md`), so a second pause in the same session is a second record. The
+single-thread adapters replace, because their framework keeps one conversation per session and the
+earlier pause stops being resumable. A resume that pauses *again* clears its own record first, so
+the run it continues is represented once.
+
+Above the `try`, three things — the two the SDK has no channel for, plus the restore:
 
 - any `ResumeDecision.payload` is not `None` → `ValueError` naming the decision id;
 - `req.prompt` present alongside the resume → `ValueError`. `Runner.run`'s `input` is
-  `str | list[TResponseInputItem] | RunState`, mutually exclusive (verified).
+  `str | list[TResponseInputItem] | RunState`, mutually exclusive (verified);
+- `RunState.from_json` itself, so failure mode 3 — the payload no longer deserialising after an SDK
+  upgrade — reaches the caller naming the runner instead of arriving as a generic reply. It needs
+  nothing from the tool context, so hoisting it costs nothing.
 
 Decision rendering: `approved` → `state.approve(item)`; `denied` → `state.reject(item,
 rejection_message=message)`; `cancelled` → `state.reject(item, rejection_message=<AK's dismissal
