@@ -175,6 +175,20 @@ Enabling this changes how every ADK run is set up, and the consequences are real
 
 ADK's own warning applies: **a tool may run more than once when resuming.**
 
+A confirmation is a **verdict and nothing else**, and both limits were established by running it.
+ADK consumes the confirmation response and writes its own for the original call, so:
+
+- **A structured answer is refused.** Approving with `{"amount": 5}` ran the tool with its original
+  arguments — the payload never reaches it. It is now rejected rather than dropped. Model the
+  question as a `LongRunningFunctionTool`, whose result *is* the human's answer and takes any shape,
+  or have the model propose the value in the tool's arguments for the human to approve.
+- **`cancelled` reads as `denied`.** The wording Agent Kernel sends for "nobody decided" rides in
+  ADK's `hint`, which does not reach the model. This is the one adapter where the two negative
+  statuses are indistinguishable; a long-running tool on ADK keeps the distinction.
+
+A second pause replaces the earlier one, but only among ADK's own: a pause another framework holds
+on the same session is independent and stays answerable.
+
 **A prompt sent beside a decision is refused** — established by test, not assumption. ADK itself
 rejects a message holding both a function response and text, because a function response resumes an
 existing invocation while text starts a new one.

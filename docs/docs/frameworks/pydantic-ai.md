@@ -250,6 +250,12 @@ list and the model receives a list, send a string and it receives a string.
 Agent Kernel pre-empts it — naming the ids you missed — so the error reaches you instead of being
 flattened into a generic reply by the adapter's error handling.
 
+**On an approval, a payload must be a JSON object.** There it becomes `ToolApproved(override_args=...)`,
+which replaces the gated call's arguments, so `{"amount": 25}` works and `"large"` has nowhere to go.
+Any other shape is refused rather than dropped — silently ignoring it would run the tool with its
+original arguments while the human believed their answer was used. A **deferred** call is unaffected:
+there the payload is the tool's return value and any shape passes through.
+
 A prompt sent alongside a decision is **native** here: supplying the deferred results is precisely
 what lifts the framework's own guard against a new prompt while tool calls are outstanding.
 
