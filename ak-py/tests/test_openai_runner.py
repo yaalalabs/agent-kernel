@@ -1591,6 +1591,33 @@ class TestOpenAIStreamingPause:
         assert PausedRunState.list(session) == []
 
     @pytest.mark.asyncio
+    async def test_a_streamed_resume_maps_events_and_can_pause_again(self):
+        """Answer one question, get asked the next — the flow the feature exists for, streamed."""
+        runner, session, agent = OpenAIRunner(), Session("s"), _mock_agent()
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
+            MockRunner.run_streamed = MagicMock(side_effect=_streamed(_approval_item()))
+            events = [e async for e in runner.stream(agent, session, [AgentRequestText(prompt="refund it")])]
+
+        first = events[-1]
+        record = PausedRunState.get(session, first.run_id)
+        requests, decisions = _resume_requests("call-1")
+
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner, patch("agentkernel.framework.openai.openai.RunState") as MockState:
+            MockState.from_json = AsyncMock(return_value=_FakeState([_approval_item()]))
+            MockRunner.run_streamed = MagicMock(
+                side_effect=_streamed(_approval_item("call-2"), events=[_delta_event("checking"), _delta_event(" that")])
+            )
+
+            resumed = [e async for e in runner.resume_stream(agent, session, requests, decisions, record)]
+
+        assert [e.content for e in resumed if isinstance(e, TextDelta)] == ["checking", " that"]
+        again = resumed[-1]
+        assert isinstance(again, RunPaused)
+        assert again.run_id != first.run_id
+        assert [i.id for i in again.interruptions] == ["call-2"]
+        assert [r.id for r in PausedRunState.list(session)] == [again.run_id]
+
+    @pytest.mark.asyncio
     async def test_resume_stream_refuses_a_payload_before_streaming_anything(self):
         runner, session, agent = OpenAIRunner(), Session("s"), _mock_agent()
         with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:

@@ -407,3 +407,77 @@ class TestTheActivatedAgentIsTheOneThatRuns:
 
         with pytest.raises(ValueError, match="no longer registered"):
             await runtime.run(agent, session, _resume_requests("i1", run_id=paused.run_id))
+
+
+class TestAnAgentRebountToAnotherFramework:
+    """
+    A deploy can move an agent between frameworks while a pause is outstanding — the name survives,
+    the stored state does not.
+
+    Without the check the record reaches the new adapter, which cannot read a payload written by the
+    old one, runs from scratch, and answers a decision nobody applied. Demonstrated before the fix:
+    an OpenAI record went into the LangGraph adapter and came back as a fresh pause.
+    """
+
+    @pytest.mark.asyncio
+    async def test_a_resume_is_refused_when_the_runner_no_longer_matches(self, runtime):
+        agent = PausingAgent(runner=PausingRunner(name="openai"))
+        runtime.register(agent)
+        session = runtime.sessions().new("s1")
+        paused = await _pause(runtime, agent, session)
+
+        runtime.deregister(agent)  # the redeploy
+        rebound = PausingAgent(runner=PausingRunner(name="langgraph"))
+        runtime.register(rebound)
+
+        with pytest.raises(ValueError, match="was created by runner 'openai'"):
+            await runtime.run(rebound, session, _resume_requests("i1", run_id=paused.run_id))
+
+    @pytest.mark.asyncio
+    async def test_the_message_names_both_frameworks(self, runtime):
+        agent = PausingAgent(runner=PausingRunner(name="openai"))
+        runtime.register(agent)
+        session = runtime.sessions().new("s1")
+        paused = await _pause(runtime, agent, session)
+        runtime.deregister(agent)
+        rebound = PausingAgent(runner=PausingRunner(name="langgraph"))
+        runtime.register(rebound)
+
+        with pytest.raises(ValueError) as exc:
+            await runtime.run(rebound, session, _resume_requests("i1", run_id=paused.run_id))
+
+        assert "'openai'" in str(exc.value) and "'langgraph'" in str(exc.value)
+
+    @pytest.mark.asyncio
+    async def test_the_adapter_is_never_reached(self, runtime):
+        """The point of raising in Runtime: the wrong adapter must not see the record at all."""
+        agent = PausingAgent(runner=PausingRunner(name="openai"))
+        runtime.register(agent)
+        session = runtime.sessions().new("s1")
+        paused = await _pause(runtime, agent, session)
+        runtime.deregister(agent)
+        rebound_runner = PausingRunner(name="langgraph")
+        rebound = PausingAgent(runner=rebound_runner)
+        runtime.register(rebound)
+
+        with pytest.raises(ValueError):
+            await runtime.run(rebound, session, _resume_requests("i1", run_id=paused.run_id))
+
+        assert rebound_runner.resumed_with is None
+        assert PausedRunState.get(session, paused.run_id) is not None
+
+    @pytest.mark.asyncio
+    async def test_a_record_with_no_runner_is_still_resumable(self, runtime):
+        """Written before the field existed, so there is nothing to compare — today's behaviour."""
+        agent = PausingAgent()
+        runtime.register(agent)
+        session = runtime.sessions().new("s1")
+        paused = await _pause(runtime, agent, session)
+        record = PausedRunState.get(session, paused.run_id)
+        record.runner = None
+        PausedRunState.clear(session, record.id)
+        session.get_non_volatile_cache().set("ak.paused_runs", [record])
+
+        reply = await runtime.run(agent, session, _resume_requests("i1", run_id=paused.run_id))
+
+        assert reply.response == "resumed:approved"

@@ -545,7 +545,10 @@ function response for the original call, so two things the other adapters manage
 
 Both in LangGraph's `CheckPointer`, both predating this work, both affecting every LangGraph user:
 
-1. **`get_tuple` dropped pending writes** — so `interrupt()` was never resumable.
+1. **`get_tuple` dropped pending writes** — so `interrupt()` was never resumable. Handing them back
+   made a third thing matter: the writes are now bounded, because `put` forgets those of the
+   checkpoint it supersedes. This saver keeps one checkpoint per namespace, so those entries were
+   already unreachable — but they still rode the pickled session, half a kilobyte a turn.
 2. **The checkpointer could not be pickled** — so a LangGraph session never reached a shared backend,
    despite the class docstring claiming "pickle-serializable" since the day it was written.
 

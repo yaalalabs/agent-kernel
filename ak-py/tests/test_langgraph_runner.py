@@ -980,6 +980,7 @@ class TestLangGraphResume:
         await runner.run(_real_agent(_gated_graph()), session, [AgentRequestText(prompt="start")])
 
         assert foreign.id in [r.id for r in PausedRunState.list(session)]
+        assert [r.runner for r in PausedRunState.list(session) if r.id != foreign.id] == ["langgraph"]
 
 
 class TestCheckPointerDurability:
@@ -1023,6 +1024,47 @@ class TestCheckPointerDurability:
 
         assert cp._pending_writes("t", "", "c1") == [("task-1", "__interrupt__", "first")]
         assert cp._pending_writes("t", "", "c2") == [("task-2", "__interrupt__", "second")]
+
+    def test_put_forgets_the_writes_of_the_checkpoint_it_supersedes(self):
+        """They are unreachable — get_tuple reads writes for the one stored checkpoint — but they
+        still ride the pickled session on every store."""
+        from agentkernel.framework.langgraph.langgraph import CheckPointer
+
+        cp = CheckPointer()
+        cp.put_writes({"configurable": {"thread_id": "t", "checkpoint_id": "c1"}}, [("messages", "one")], "task-1")
+        cp.put({"configurable": {"thread_id": "t"}}, {"id": "c2"}, {}, {})
+        cp.put_writes({"configurable": {"thread_id": "t", "checkpoint_id": "c2"}}, [("__interrupt__", "ask")], "task-2")
+
+        assert cp._pending_writes("t", "", "c1") == []
+        assert cp._pending_writes("t", "", "c2") == [("task-2", "__interrupt__", "ask")]
+
+    def test_pruning_is_scoped_to_one_namespace_and_thread(self):
+        from agentkernel.framework.langgraph.langgraph import CheckPointer
+
+        cp = CheckPointer()
+        cp.put_writes({"configurable": {"thread_id": "t", "checkpoint_ns": "sub", "checkpoint_id": "c1"}}, [("messages", "ns")], "task-1")
+        cp.put_writes({"configurable": {"thread_id": "other", "checkpoint_id": "c1"}}, [("messages", "other")], "task-2")
+
+        cp.put({"configurable": {"thread_id": "t"}}, {"id": "c2"}, {}, {})
+
+        assert cp._pending_writes("t", "sub", "c1") == [("task-1", "messages", "ns")]
+        assert cp._pending_writes("other", "", "c1") == [("task-2", "messages", "other")]
+
+    @pytest.mark.asyncio
+    async def test_the_bookkeeping_does_not_grow_with_the_conversation(self):
+        """The record payload is thin because the state lives here, so here must stay bounded."""
+        runner, session = LangGraphRunner(), Session("s")
+        agent = _real_agent(_gated_graph())
+        sizes = []
+
+        for turn in range(3):
+            paused = await runner.run(agent, session, [AgentRequestText(prompt=f"start {turn}")])
+            record = PausedRunState.get(session, paused.run_id)
+            requests, decisions = _resume_requests(ResumeDecision(id=paused.interruptions[0].id, message="yes"))
+            await runner.resume(agent, session, requests, decisions, record)
+            sizes.append(len(session.get("langgraph").checkpointer._writes))
+
+        assert sizes == [0, 0, 0]
 
     def test_a_replayed_task_replaces_its_interrupt_rather_than_stacking_one(self):
         """`WRITES_IDX_MAP` gives `__interrupt__` a negative index precisely so it overwrites."""
@@ -1139,6 +1181,24 @@ class TestLangGraphStreamingPause:
         assert not any(isinstance(e, RunPaused) for e in resumed)
         assert PausedRunState.list(session) == []
         assert (await agent.agent.aget_state({"configurable": {"thread_id": "s"}})).values["answer"] == "'yes'"
+
+    @pytest.mark.asyncio
+    async def test_a_streamed_resume_that_pauses_again_emits_a_fresh_run_paused(self):
+        """Answer one question, get asked the next — the flow the feature exists for, streamed."""
+        runner, session = LangGraphRunner(), Session("s")
+        agent = _real_agent(_gated_graph(second=True))
+        events = [e async for e in runner.stream(agent, session, [AgentRequestText(prompt="start")])]
+        first = events[-1]
+        record = PausedRunState.get(session, first.run_id)
+        requests, decisions = _resume_requests(ResumeDecision(id=first.interruptions[0].id, message="yes"))
+
+        resumed = [e async for e in runner.resume_stream(agent, session, requests, decisions, record)]
+
+        again = resumed[-1]
+        assert isinstance(again, RunPaused)
+        assert again.run_id != first.run_id
+        assert again.interruptions[0].payload == {"question": "anything else?"}
+        assert [r.id for r in PausedRunState.list(session)] == [again.run_id]
 
     @pytest.mark.asyncio
     async def test_an_ordinary_stream_emits_no_run_paused(self):

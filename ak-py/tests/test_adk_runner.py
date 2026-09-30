@@ -989,8 +989,12 @@ class _FakeLlm:
     """
 
 
-def _gated_adk(confirmation=False):
-    """A real ADK agent whose tool pauses, wired through a fake model."""
+def _gated_adk(confirmation=False, repeat=False):
+    """A real ADK agent whose tool pauses, wired through a fake model.
+
+    `repeat` makes the model ask a second question once the first is answered, which is the only way
+    to reach the pause-again branch of resume()/resume_stream().
+    """
     from typing import AsyncGenerator
 
     from google.adk.agents import LlmAgent
@@ -1019,7 +1023,13 @@ def _gated_adk(confirmation=False):
                 FakeLlm.seen = [
                     p.function_response.response for m in llm_request.contents for p in (m.parts or []) if getattr(p, "function_response", None)
                 ]
-                yield LlmResponse(content=types.Content(role="model", parts=[types.Part(text="all done")]))
+                # Round 2 still belongs to the first turn: a long-running call does not end it. The
+                # resume opens round 3, which is the only place a second question is a *new* pause.
+                if repeat and self.rounds == 3:
+                    again = types.FunctionCall(id="call-2", name="ask_size", args={"q": "anything else?"})
+                    yield LlmResponse(content=types.Content(role="model", parts=[types.Part(function_call=again)]))
+                else:
+                    yield LlmResponse(content=types.Content(role="model", parts=[types.Part(text="all done")]))
 
     def ask_size(q: str) -> dict:
         """Ask the human for a size."""
@@ -1083,6 +1093,7 @@ class TestGoogleADKPause:
         await runner.run(agent, session, [AgentRequestText(prompt="ask me")])
 
         assert foreign.id in [r.id for r in PausedRunState.list(session)]
+        assert [r.runner for r in PausedRunState.list(session) if r.id != foreign.id] == ["adk"]
 
     @pytest.mark.asyncio
     async def test_the_record_carries_the_invocation_to_resume(self):
@@ -1365,3 +1376,46 @@ class TestGoogleADKConfirmation:
         assert paused.interruptions[0].kind == "confirmation"
         assert FakeLlm.seen == [{"result": "refunded 100"}]
         assert not any(isinstance(e, RunPaused) for e in resumed)
+
+
+class TestGoogleADKStreamedRePause:
+    """
+    Answer one question, get asked the next — the flow the feature exists for, streamed.
+
+    The branch that emits the second `RunPaused` is only reachable when the model asks again *after*
+    a resume, which is why `_gated_adk(repeat=True)` keys on the round the resume opens rather than
+    on the second: a long-running call does not end the first turn.
+    """
+
+    @pytest.mark.asyncio
+    async def test_a_streamed_resume_that_pauses_again_emits_a_fresh_run_paused(self):
+        from agentkernel.core.event import RunPaused
+
+        runner, session = GoogleADKRunner(), Session("s")
+        agent, _ = _gated_adk(repeat=True)
+        events = [e async for e in runner.stream(agent, session, [AgentRequestText(prompt="ask me")])]
+        first = events[-1]
+        record = PausedRunState.get(session, first.run_id)
+        requests, decisions = _resume_requests(ResumeDecision(id="call-1", payload="large"))
+
+        resumed = [e async for e in runner.resume_stream(agent, session, requests, decisions, record)]
+
+        again = resumed[-1]
+        assert isinstance(again, RunPaused)
+        assert again.run_id != first.run_id
+        assert [i.id for i in again.interruptions] == ["call-2"]
+        assert [r.id for r in PausedRunState.list(session)] == [again.run_id]
+
+    @pytest.mark.asyncio
+    async def test_the_non_streaming_resume_pauses_again_too(self):
+        runner, session = GoogleADKRunner(), Session("s")
+        agent, _ = _gated_adk(repeat=True)
+        first = await runner.run(agent, session, [AgentRequestText(prompt="ask me")])
+        record = PausedRunState.get(session, first.run_id)
+        requests, decisions = _resume_requests(ResumeDecision(id="call-1", payload="large"))
+
+        again = await runner.resume(agent, session, requests, decisions, record)
+
+        assert isinstance(again, AgentPausedReplyAny)
+        assert again.run_id != first.run_id
+        assert [r.id for r in PausedRunState.list(session)] == [again.run_id]

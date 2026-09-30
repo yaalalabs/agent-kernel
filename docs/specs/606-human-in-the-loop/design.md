@@ -436,7 +436,7 @@ Around that dispatch:
     `try`.** *(Decision.)* `Runtime` cannot know that OpenAI has no channel for a structured
     answer, or that Pydantic AI needs every deferred call resolved, without framework knowledge
     moving into `core/`, which is what the adapter pattern exists to prevent. So the rule splits:
-    - **Generic checks live in `Runtime`** — the five failure modes. They need no framework
+    - **Generic checks live in `Runtime`** — the six failure modes. They need no framework
       knowledge and would otherwise be written four times.
     - **Framework-specific checks live in the adapter, before the `try` opens.** Every adapter's
       body sits inside one `try` whose `except Exception` returns
