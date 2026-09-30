@@ -10,7 +10,7 @@ resolution-markers = [
 [[package]]
 name = "agentkernel"
 version = "0.9.3"
-source = { registry = "../../../ak-py/dist" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "deprecated" },
     { name = "pydantic" },
@@ -18,15 +18,12 @@ dependencies = [
     { name = "pyyaml" },
     { name = "singleton-type" },
 ]
-sdist = { path = "agentkernel-0.9.3.tar.gz" }
+sdist = { url = "https://files.pythonhosted.org/packages/4c/c8/7da082f4d1840c4490282e8d9c0cfe3e6ec4eddca46a93c7dd800f99bf31/agentkernel-0.9.3.tar.gz", hash = "sha256:83d3e3e6f7e67e7889a77b49d4a16a7b76fae4232eabf5d24c914c4bf046889f", size = 577718, upload-time = "2026-09-25T06:55:25.045Z" }
 wheels = [
-    { path = "agentkernel-0.9.3-py3-none-any.whl" },
+    { url = "https://files.pythonhosted.org/packages/ff/66/161a87a05e9f77d7ab73fc37559badef7d5b189fd27fbef6ebd297dedb1e/agentkernel-0.9.3-py3-none-any.whl", hash = "sha256:3306be629e2879c27726b8f4213bf8702924604948a6f58a3fcb1b10ac912437", size = 764573, upload-time = "2026-09-25T06:55:23.113Z" },
 ]
 
 [package.optional-dependencies]
-jev = [
-    { name = "typesafe-sdk" },
-]
 openai = [
     { name = "openai-agents" },
     { name = "openai-guardrails" },
@@ -613,7 +610,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "agentkernel", extra = ["jev", "test"] },
+    { name = "agentkernel", extra = ["test"] },
     { name = "black" },
     { name = "isort" },
     { name = "mypy" },
@@ -3547,22 +3544,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/16/f7/57713ba479fd405eb76de31404b2c744c289e336b2d999511ebf51e496f7/typer-0.27.2.tar.gz", hash = "sha256:269b7eb9d3c202ca84b4bc9618cb04ebb43d3d4d1e567e4c768607232c05f945", size = 204045, upload-time = "2026-08-28T10:26:55.046Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/dc/bf/205d0004930ede8f542fb58f601526fccf4ae7626075ca1e6c4de5d3d652/typer-0.27.2-py3-none-any.whl", hash = "sha256:b3a5fc4342d5fc8fda8fc3010b1cf117e9249aab7fae800c2eff62fd3842d97d", size = 123130, upload-time = "2026-08-28T10:26:53.752Z" },
-]
-
-[[package]]
-name = "typesafe-sdk"
-version = "0.7.2"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "httpx2" },
-    { name = "pydantic" },
-    { name = "pydantic-core" },
-    { name = "tenacity" },
-    { name = "typing-extensions" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/42/ac/8bad2c02c038b85039cdb198ba106650d54bade0c0c986c68dc6e9cef8c3/typesafe_sdk-0.7.2.tar.gz", hash = "sha256:2434f4af5cdfc45d6ab5ff27048e8b257207f786b60456e69995e345b32e77e1", size = 23169, upload-time = "2026-09-26T21:20:24.988Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/99/5e/2b97ba9b0b77612e3a480ddb60c0c0325b4809ef57a7b565341d65ef7bec/typesafe_sdk-0.7.2-py3-none-any.whl", hash = "sha256:0a961148187d52e18276ed7f2d02617cfac48e3b97673cb631a8749397d43d1e", size = 36448, upload-time = "2026-09-26T21:20:23.511Z" },
 ]
 
 [[package]]

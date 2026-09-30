@@ -46,7 +46,7 @@ mode: score       # Options: score | llm | fallback (default: fallback)
 | Mode | How it Works | Best For |
 |------|-------------|----------|
 | **score** | Deterministic string-match scoring (built-in `deepeval`: `Scorer.quasi_exact_match_score`; built-in `opik`: graded `LevenshteinRatio`; built-in `jev` has no score mode) | Deterministic responses, exact answers |
-| **llm** | LLM evaluates if response is semantically correct (`GEval`, from either built-in evaluator) | Open-ended responses, creative agents |
+| **llm** | LLM evaluates if response is semantically correct (`deepeval` and `opik`: `GEval`; `jev`: a hosted yes/no Noul question) | Open-ended responses, creative agents |
 | **fallback** | Tries score first, falls back to llm if score fails | General-purpose testing |
 
 For llm mode, configure the llm model:
@@ -75,7 +75,7 @@ evaluator: my_evaluator.MyEvaluator   # resolves against my_evaluator.py next to
 
 #### 2a. Bring Your Own Evaluator (optional)
 
-Use this when neither built-in evaluator's scoring fits your agent — e.g. `deepeval`'s binary
+Use this when none of the built-in evaluators' scoring fits your agent — e.g. `deepeval`'s binary
 exact-match score mode is too strict and `opik`'s graded `LevenshteinRatio` still doesn't capture
 what you need, or you want a judge call that doesn't depend on DeepEval/Opik/JEV at all, or a
 domain-specific rubric. No AK core change is required: any dotted path to an `AKEvaluator` subclass
