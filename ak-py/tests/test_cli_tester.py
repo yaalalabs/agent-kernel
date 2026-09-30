@@ -316,7 +316,7 @@ def test_resolve_evaluator_class_dotted_path_to_fake(monkeypatch):
 
 
 def test_resolve_evaluator_class_unknown_short_name_raises():
-    with pytest.raises(AKConfigError, match=r"\['deepeval', 'opik'\]"):
+    with pytest.raises(AKConfigError, match=r"\['deepeval', 'opik', 'jev'\]"):
         CliTest._resolve_evaluator_class("deepval")
 
 
