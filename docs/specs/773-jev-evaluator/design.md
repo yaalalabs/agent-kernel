@@ -58,7 +58,7 @@ Contract background: [`../555-pluggable-test-evaluators/design.md`](../555-plugg
 
 - Add `"jev"` to `_BUILTIN_EVALUATORS` (`test.py:14`) and a branch in `Test._resolve_evaluator_class` (`test.py:148-158`) using `require_extra("jev", "evaluator: jev")` around the import of `JevAKEvaluator`
 - Dotted-path bring-your-own branch and the unknown-name `AKConfigError` message are unchanged
-- New optional extra in `ak-py/pyproject.toml` beside `opik` (`:191-193`): `jev = ["typesafe-sdk>=0.7.2"]`
+- New optional extra in `ak-py/pyproject.toml` beside `opik` (`:191-193`): `jev = ["typesafe-sdk>=0.7.2,<0.8"]` (0.x SDK, so capped below the next minor)
   - Separate extra, not folded into `test` (which stays DeepEval's); latest PyPI release checked is 0.7.2; SDK needs Python >=3.10, ak-py requires `>=3.12,<3.14` (`pyproject.toml:10`)
 
 ### Configuration
@@ -132,9 +132,9 @@ Contract background: [`../555-pluggable-test-evaluators/design.md`](../555-plugg
 
 ## Open questions
 
-- Short name: `jev` (as requested) vs `typesafe` (vendor/SDK name). Chosen `jev`; confirm
-- Noul (chosen; score is the yes-probability) vs a Score question with an ordered rubric that adds a confidence signal
+- Resolved: short name is `jev` (as requested), not `typesafe`
+- Resolved: Noul (score is the yes-probability), not a Score question with an ordered rubric
 - Should `fallback` support judge-only evaluators in a follow-up, so `jev` is not restricted to `mode: llm`? Out of scope here; conflicts with #555's rationale
-- The JEV docs publish no rate limits or pricing; is the SDK's default retry policy acceptable for CI, or should the example pin a timeout?
-- `typesafe-sdk` is 0.x; is `>=0.7.2` (unbounded) acceptable or should it carry an upper bound?
-- Repo admin must create the `TYPESAFE_API_KEY` secret before merge; who owns that
+- Resolved: the SDK's default retry policy is used unchanged (`spec.md`)
+- Resolved: `typesafe-sdk` carries the upper bound `<0.8`
+- Resolved: the `TYPESAFE_API_KEY` secret exists (the `jev-evaluator` e2e job ran with it and passed)

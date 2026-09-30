@@ -58,7 +58,7 @@ llm:
 ```
 
 **Evaluator backend:** `evaluator` selects the scoring backend used by both `score` and `llm`
-modes — `deepeval` (the default, `pip install "agentkernel[test]"`) `opik` (`pip install
+modes — `deepeval` (the default, `pip install "agentkernel[test]"`), `opik` (`pip install
 "agentkernel[opik]"`, [Opik](https://www.comet.com/docs/opik/) by Comet, runs entirely locally) and `jev`
 (`pip install "agentkernel[jev]"`, hosted [TypeSafe JEV](https://docs.typesafe.ai) judge: `mode: llm` only, needs
 `TYPESAFE_API_KEY`, sends the comparison text to `api.typesafe.ai`) are the three built-ins. Set it to a dotted path (e.g. `my_evaluator.MyEvaluator`) to bring your own
@@ -140,8 +140,8 @@ their own bring-your-own backends.
    ```
 
 5. No AK extra beyond `agentkernel[test]` is needed unless your evaluator's own dependencies
-   (an LLM client, a scoring library) require one — each built-in's import (`deepeval`, `opik`)
-   lives entirely inside its own resolution branch, so a custom evaluator never pulls either in.
+   (an LLM client, a scoring library) require one — each built-in's import (`deepeval`, `opik`, `jev`)
+   lives entirely inside its own resolution branch, so a custom evaluator never pulls any in.
 
 See `examples/cli/custom-evaluator/` for a complete worked example — a stdlib-only Jaccard
 token-overlap scorer plus a raw `litellm` judge call, no DeepEval dependency at all — and

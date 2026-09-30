@@ -140,6 +140,10 @@ class Test:
             with require_extra("opik", "evaluator: opik"):
                 from .core.evaluator.opik import OpikAKEvaluator
             return OpikAKEvaluator
+        if configured == "jev":
+            with require_extra("jev", "evaluator: jev"):
+                from .core.evaluator.jev import JevAKEvaluator
+            return JevAKEvaluator
         if configured == "<provider>":                                        # ADD THIS
             with require_extra("<provider>", "evaluator: <provider>"):
                 from .core.evaluator.<provider> import <Provider>AKEvaluator

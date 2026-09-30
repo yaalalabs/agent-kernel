@@ -95,8 +95,8 @@ Rules:
 1. **SDK imports are top-level in `jev.py` only.** `Test._resolve_evaluator_class` imports the module inside
    `require_extra`, so a missing SDK surfaces as the actionable `ImportError`. This is the same shape as `opik.py:10`.
 2. **The client is built lazily and at most once.** The first `evaluate_by_llm` call that reaches the API builds it.
-   - It isn't built in `__init__`: `Test._resolve_evaluator` constructs the evaluator on every `compare` path
-     (`test.py:130-146`), and the SDK constructor raises without a key. Eager construction would turn a missing
+   - It isn't built in `__init__`: `Test.__init__` builds the evaluator once per process per `evaluator` value
+     (`test.py:46`), and the SDK constructor raises without a key. Eager construction would turn a missing
      key into a failure at resolution time, outside the `AKEvaluationError` mapping below.
    - `_get_client` is a double-checked lock (`if self._client is None: with self._client_lock: if self._client is None: …`).
      One evaluator instance is shared per process (`test.py:27-28`, `:130-146`), so the check-then-act has to be race-free even though pytest normally drives it from one thread.
@@ -330,7 +330,7 @@ constraint and the outbound-data note where the surface describes behaviour:
 
 ## Open items for review
 
-- `typesafe-sdk` upper bound `<0.8` (proposed here; design.md left it open)
+- Resolved: `typesafe-sdk` upper bound `<0.8` (shipped in `pyproject.toml`)
 - `case.criteria` override drops AK's true/false criteria entirely (Rule, step 3), rather than merging with them
-- The design's open questions on the short name (`jev`) and on Noul vs Score still stand. This spec implements `jev` + Noul
-- The SDK's default retry policy is used unchanged (2 retries, 10 s timeout). No example-level override is proposed
+- Resolved: short name `jev` and Noul (not Score), as implemented
+- Resolved: the SDK's default retry policy is used unchanged (2 retries, 10 s timeout). No example-level override
