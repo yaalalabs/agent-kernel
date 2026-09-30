@@ -1107,6 +1107,7 @@ class TestPydanticAIPauseDetection:
         await runner.run(g.agent, session, [AgentRequestText(prompt="hi")])
 
         assert foreign.id in [r.id for r in PausedRunState.list(session)]
+        assert [r.runner for r in PausedRunState.list(session) if r.id != foreign.id] == ["pydanticai"]
 
 
 class TestPydanticAIResume:
@@ -1298,6 +1299,38 @@ def _streamable_gated(approvals=False):
     return PydanticAIAgent(name="gated", runner=PydanticAIRunner(), agent=agent)
 
 
+def _repeating_streamable_gated():
+    """
+    A streaming agent that defers again once the first deferral is answered.
+
+    `TestModel` cannot be steered into a second deferral — a resumed run goes straight to output —
+    so this one drives `FunctionModel`'s `stream_function`, which is the only way to reach the
+    pause-again branch of `resume_stream`.
+    """
+    from pydantic_ai import DeferredToolRequests
+    from pydantic_ai.exceptions import CallDeferred
+    from pydantic_ai.messages import ToolReturnPart
+    from pydantic_ai.models.function import DeltaToolCall, FunctionModel
+
+    rounds = {"n": 0}
+
+    async def stream_fn(messages, info):
+        rounds["n"] += 1
+        answered = any(isinstance(part, ToolReturnPart) for message in messages for part in message.parts)
+        if not answered or rounds["n"] == 2:
+            yield {0: DeltaToolCall(name="ask_size", json_args='{"q": "size?"}', tool_call_id=f"c{rounds['n']}")}
+        else:
+            yield "all done"
+
+    agent = Agent(FunctionModel(stream_function=stream_fn), output_type=[str, DeferredToolRequests])
+
+    @agent.tool(name="ask_size")
+    def _ask(ctx: RunContext, q: str) -> str:
+        raise CallDeferred
+
+    return PydanticAIAgent(name="gated", runner=PydanticAIRunner(), agent=agent)
+
+
 class TestPydanticAIStreamingPause:
     @pytest.mark.asyncio
     async def test_a_streamed_deferred_call_ends_with_run_paused(self):
@@ -1324,6 +1357,25 @@ class TestPydanticAIStreamingPause:
 
         assert not any(isinstance(e, RunPaused) for e in resumed)
         assert PausedRunState.list(session) == []
+
+    @pytest.mark.asyncio
+    async def test_a_streamed_resume_that_pauses_again_emits_a_fresh_run_paused(self):
+        """Answer one question, get asked the next — the flow the feature exists for, streamed."""
+        from agentkernel.core.event import RunPaused
+
+        runner, session, agent = PydanticAIRunner(), Session("s"), _repeating_streamable_gated()
+        events = [e async for e in runner.stream(agent, session, [AgentRequestText(prompt="hi")])]
+        first = events[-1]
+        record = PausedRunState.get(session, first.run_id)
+        requests, decisions = _resume_requests(ResumeDecision(id=first.interruptions[0].id, payload="large"))
+
+        resumed = [e async for e in runner.resume_stream(agent, session, requests, decisions, record)]
+
+        again = resumed[-1]
+        assert isinstance(again, RunPaused)
+        assert again.run_id != first.run_id
+        assert [i.id for i in again.interruptions] == ["c2"]
+        assert [r.id for r in PausedRunState.list(session)] == [again.run_id]
 
     @pytest.mark.asyncio
     async def test_resume_stream_refuses_a_partial_resume_before_streaming(self):

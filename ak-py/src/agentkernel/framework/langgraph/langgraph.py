@@ -79,7 +79,9 @@ class CheckPointer(BaseCheckpointSaver):
     from the top — which is how human-in-the-loop (#606) found this. Writes are keyed by
     `(thread_id, checkpoint_ns, checkpoint_id)` and `(task_id, index)`, mirroring LangGraph's own
     `InMemorySaver`, so writes from one turn cannot leak into the next and a replayed task replaces
-    rather than duplicates its entries.
+    rather than duplicates its entries. They are also bounded: this saver keeps one checkpoint per
+    namespace, so `put` forgets the writes of the checkpoint it supersedes, which nothing can read
+    back. Unbounded here means an ever-growing pickled session on every backend.
     """
 
     def __init__(self):
@@ -187,8 +189,31 @@ class CheckPointer(BaseCheckpointSaver):
             "metadata": metadata,
             "parent_config": config.get("parent_config"),
         }
+        self._drop_unreachable_writes(thread_id, checkpoint_ns, checkpoint.get("id", ""))
 
         return config
+
+    def _drop_unreachable_writes(self, thread_id: str, checkpoint_ns: str, checkpoint_id: str) -> None:
+        """
+        Forgets the writes of every superseded checkpoint in one namespace.
+
+        This class keeps a single checkpoint per `(thread_id, checkpoint_ns)`, and `get_tuple` reads
+        writes for exactly that checkpoint's id — so an entry under any other id can never be
+        returned again. Without this they still accumulate, one set per superstep, inside a session
+        that is pickled to the configured backend on every store: measured at roughly half a
+        kilobyte per turn on a graph whose state never grows, and more where the retained values are
+        messages.
+
+        Called after the new checkpoint is stored, which is also after the previous one's writes have
+        been read: a resume records its answer against the paused checkpoint *before* the superstep
+        that supersedes it, so the pause is never dropped out from under a resume.
+
+        :param thread_id: The thread whose namespace was just written.
+        :param checkpoint_ns: The namespace that now holds one checkpoint.
+        :param checkpoint_id: The checkpoint now stored, whose writes are the ones still reachable.
+        """
+        for key in [k for k in self._writes if k[0] == thread_id and k[1] == checkpoint_ns and k[2] != checkpoint_id]:
+            del self._writes[key]
 
     def put_writes(
         self,

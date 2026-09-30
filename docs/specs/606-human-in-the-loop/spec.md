@@ -213,6 +213,10 @@ Rules:
    2's review round.)* It removes the records carrying that runner's name and no others, because a
    session may hold an independent, still-answerable pause from an agent on another framework. A
    record with no `runner` predates the field and is left alone rather than guessed at.
+   `add` fills `runner` from `Agent.current()` when the caller omits it — the same handle
+   `Session.get_framework_session()` resolves its key by — so an adapter cannot lose its scoping by
+   forgetting to name itself. That failure would otherwise be silent: an unowned record is one
+   `clear_for_runner` skips forever.
 7. **Named `…State`, not `…Store`.** Every `*Store` in AK is a pluggable backend with an ABC,
    factory and config block. This is accessors over a dict `SessionStore` already persists
    (`runtime.py:295`). No ABC, no factory, no config — and none is warranted, because there is
@@ -310,7 +314,7 @@ Four rules:
 3. **Validation is generic and lives here.** Every adapter wraps its whole body in one `try` whose
    `except Exception` returns `AgentReplyText(user_facing_error_message(e))` (`openai.py:201-228`,
    `langgraph.py:492`, `pydanticai.py:207`, `adk.py:318`), so a check raised inside the adapter is
-   swallowed. The five failure modes need no framework knowledge, so adapter-side checks would be
+   swallowed. The six failure modes need no framework knowledge, so adapter-side checks would be
    written four times.
 4. **Clearing the record is the adapter's alone; `Runtime` does not tidy up.** *(Reversed in review —
    an earlier draft had `Runtime` clear a leftover record after a resume that did not pause.)* The
@@ -793,7 +797,7 @@ ignores.
 
 ## Error handling
 
-### The five resume failure modes
+### The six resume failure modes
 
 Raised by `Runtime._validate_resume` **before** the branch, so none is swallowed by an adapter's
 `except`. Each is a `ValueError` carrying an actionable message, surfacing as **400** through the
@@ -803,9 +807,18 @@ existing `ValueError` → 400 mapping in the presentation wrappers.
 |---|---|---|
 | 1 | no paused run matches — unknown `run_id`, decisions resolving to no record, a `run_id` disagreeing with its decisions' record, or decisions spanning **two** records | the session id and how many paused runs it holds |
 | 2 | a `ResumeDecision.id` matching no `PausedInterruption.id` in the resolved record | the offending id and the ids the record holds |
-| 3 | the opaque payload no longer deserialises — an SDK upgrade (OpenAI's `RunState` carries a `_schema_version`), or an agent whose framework changed while the pause was outstanding | the runner and the underlying error |
+| 3 | the opaque payload no longer deserialises — an SDK upgrade, which OpenAI's `RunState` catches through its `_schema_version` | the runner and the underlying error |
 | 4 | agent mismatch — the agent on the request differs from `record.agent` | both agent names, and where to find the right one |
 | 5 | an interruption of kind `tool_call` or `confirmation` answered with `status=None` | the offending ids and the three verbs |
+| 6 | the record's `runner` disagrees with the agent's current one — a redeploy rebound the name to another framework while the pause was outstanding *(added in PR 2's review round)* | both framework names |
+
+Mode 6 was expected to fall out of mode 3 and does not: the design assumed a payload written by
+another framework would simply fail to deserialise. Driving it proved otherwise — an OpenAI record
+handed to the LangGraph adapter is not rejected at all. That adapter has no payload to deserialise
+(its state lives in the checkpointer), so it ignored the record, ran the graph from scratch and
+returned a **fresh pause**: a plausible answer to a decision nobody applied. Hence a check of its
+own, against the `runner` the record carries. A record written before that field exists has nothing
+to compare and keeps the old behaviour.
 
 A resume **names the agent that paused**, and one that disagrees with the record is an error rather
 than an override. Resuming the wrong agent would rebuild OpenAI's state with the wrong
