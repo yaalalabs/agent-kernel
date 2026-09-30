@@ -404,7 +404,9 @@ class GoogleADKRunner(BaseRunner):
         Records a paused run and returns the reply that carries it back to the caller.
 
         Replaces rather than appends: ADK keeps one conversation per session in its session service,
-        and resuming addresses one `invocation_id`, so an earlier record could never be answered.
+        and resuming addresses one `invocation_id`, so an earlier ADK record could never be
+        answered. Scoped to this runner — a pause another framework holds on the same session is
+        independent and stays.
 
         The `invocation_id` is the whole payload — the conversation itself already lives in the ADK
         session inside `GoogleADKSession`, which the AK session persists.
@@ -414,8 +416,7 @@ class GoogleADKRunner(BaseRunner):
         :param turn: The drained turn carrying the pending calls and the invocation to resume.
         :return: The paused reply, carrying the assigned run id.
         """
-        for stale in PausedRunState.list(session):
-            PausedRunState.clear(session, stale.id)
+        PausedRunState.clear_for_runner(session, self.name)
 
         interruptions = []
         for call, kind in turn.pending:
@@ -428,6 +429,7 @@ class GoogleADKRunner(BaseRunner):
         record = PausedRunState.add(
             session,
             agent=agent.name,
+            runner=self.name,
             interruptions=interruptions,
             payload={"invocation_id": turn.invocation_id},
         )
@@ -454,15 +456,45 @@ class GoogleADKRunner(BaseRunner):
                 "Send the prompt as a separate turn once the run has resumed."
             )
 
+    @staticmethod
+    def _reject_payload_on_a_confirmation(decisions: list[ResumeDecision], record: PausedRun) -> None:
+        """
+        Refuses a structured answer on a confirmation, before the adapter's `try` opens.
+
+        ADK's `ToolConfirmation` carries a boolean and a hint, and nothing else: it consumes the
+        response and reissues the original call unchanged, so a payload never reaches the tool.
+        Verified by running it — an approval carrying different arguments ran the tool with its
+        original ones. Refused rather than dropped, so the human is told instead of being shown a
+        confident answer computed from arguments they thought they had replaced.
+
+        A long-running tool is unaffected: there the payload *is* the tool's return value.
+
+        :param decisions: The human's decisions.
+        :param record: The record naming which interruption is which kind.
+        :raises ValueError: If a decision answering a confirmation carries a payload.
+        """
+        kinds = {i.id: i.kind for i in record.interruptions}
+        offenders = sorted(d.id for d in decisions if kinds.get(d.id) == "confirmation" and d.payload is not None)
+        if offenders:
+            raise ValueError(
+                f"The Google ADK adapter cannot deliver a structured answer to a confirmation: decision(s) {offenders} carry a payload, "
+                f"and ADK's ToolConfirmation holds only a verdict. Model the question as a LongRunningFunctionTool, whose result is the "
+                f"human's answer, or have the model propose the value in the tool arguments for the human to approve."
+            )
+
     def _decision_parts(self, decisions: list[ResumeDecision], record: PausedRun) -> list[types.Part]:
         """
         Renders the decisions as the function responses ADK resumes on.
 
         The two kinds answer differently. A long-running tool is waiting for a **result**, so the
         human's payload or message is handed back as the tool's return. A confirmation is waiting
-        for a verdict, so it takes ADK's own `{"confirmed": ...}` shape — with `cancelled` carrying
-        Agent Kernel's wording, since ADK has only a boolean and "nobody decided" must not reach the
-        model as a refusal.
+        for a verdict, so it takes ADK's own `{"confirmed": ...}` shape.
+
+        The `hint` on a confirmation is best-effort. ADK consumes the confirmation response and
+        writes its own function response for the original call, so the wording does not reach the
+        model: **on this adapter `cancelled` is indistinguishable from `denied`**, unlike every
+        other pausing adapter. Measured, not assumed. It is still sent, because ADK owns that
+        response shape and may start surfacing it.
 
         :param decisions: The human's decisions.
         :param record: The record naming which interruption is which kind.
@@ -509,6 +541,7 @@ class GoogleADKRunner(BaseRunner):
         :return: The continued run's reply, which may itself be paused again.
         """
         self._reject_prompt_alongside(requests)
+        self._reject_payload_on_a_confirmation(decisions, record)
 
         context = None
         try:
@@ -666,6 +699,7 @@ class GoogleADKRunner(BaseRunner):
         :return: The events the continued run produces, ending in RunPaused if it pauses again.
         """
         self._reject_prompt_alongside(requests)
+        self._reject_payload_on_a_confirmation(decisions, record)
 
         options = await agent.resolve_run_options(session, requests)
         incoming = self._load_framework_context(session)

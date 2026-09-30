@@ -1197,7 +1197,8 @@ class TestOpenAIRecordDurability:
 
         assert record is not None
         assert record.payload == {"_schema_version": "1.0", "gated": ["call-1"]}
-        assert record.agent == session.id or record.agent is not None
+        assert record.agent == "test-agent"
+        assert record.runner == "openai"
 
     @pytest.mark.asyncio
     async def test_the_state_json_is_what_gets_stored(self):

@@ -602,6 +602,9 @@ class LangGraphRunner(BaseRunner):
         record could never be resumed. Only OpenAI, whose `RunState` is a self-contained snapshot,
         can genuinely hold two.
 
+        Scoped to this runner: the same session may also hold a pause from another framework, which
+        is a different conversation and still answerable.
+
         The record's own payload is deliberately thin — the graph state lives in AK's checkpointer,
         which the session already persists, so there is nothing framework-shaped to store. Each
         question's own shape rides on `PausedInterruption.payload`, exactly as the node passed it
@@ -612,12 +615,12 @@ class LangGraphRunner(BaseRunner):
         :param interrupts: The `Interrupt` objects the graph returned.
         :return: The paused reply, carrying the assigned run id.
         """
-        for stale in PausedRunState.list(session):
-            PausedRunState.clear(session, stale.id)
+        PausedRunState.clear_for_runner(session, self.name)
 
         record = PausedRunState.add(
             session,
             agent=agent.name,
+            runner=self.name,
             interruptions=[PausedInterruption(id=item.id, kind="input_required", payload=item.value) for item in interrupts],
             payload={"thread_id": session.id},
         )

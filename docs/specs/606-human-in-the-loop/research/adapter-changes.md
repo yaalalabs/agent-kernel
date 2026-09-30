@@ -36,6 +36,19 @@ whatever the model said on its way to stopping.
 That is literally what the old code did. On Pydantic AI it was worse than a half-sentence: the user
 received a **Python dataclass repr** as the agent's answer.
 
+### The second rule: clear the record only once the framework has taken the decisions
+
+Each adapter calls `PausedRunState.clear` on its success path, inside its `try`, and Runtime does
+nothing afterwards. That is deliberate rather than an omission.
+
+Runtime cannot tell a failure from an ordinary reply. Every adapter reports a framework failure as
+`AgentReplyText(user_facing_error_message(e))` — an ordinary text reply. A tidy-up in Runtime would
+therefore fire on exactly the case it must not: a model timeout on the resume call would delete the
+record, and the human's decision would have nothing left to apply to. There is no retry, because the
+pause is gone.
+
+So the record surviving **is** the failure signal: the decisions can be sent again.
+
 ### One turn, end to end
 
 ```
@@ -120,6 +133,7 @@ Everything else follows:
 | What the record's `payload` holds | the whole snapshot | `{"thread_id"}` | the message history | `{"invocation_id"}` |
 | Payload size | largest (~4.7 KB for one gated call, measured) | tiny | medium | tiny |
 | Second pause in one session | **appends** | replaces | replaces | replaces |
+| Scope of that replacement | n/a | its own runner's records | its own runner's records | its own runner's records |
 | Prompt beside a decision | rejected | AK's encoding | native | rejected |
 | Structured answer (`payload`) | rejected | native | native | native |
 | Interruption `kind` | `tool_call` | `input_required` | both | `tool_call` + `confirmation` |
@@ -159,6 +173,13 @@ answer, and AK would not detect it.
 > subscription"*. On OpenAI, both can sit waiting for a manager and be approved in either order. On
 > the other three, the second question replaces the first — so the UI must not offer two pending
 > approvals.
+
+**Replacement stops at the framework boundary.** One session is one conversation id, and a client is
+free to point it at a different agent on the next turn — the AG-UI example does exactly that, with an
+OpenAI agent and a LangGraph agent sharing one thread. Their pauses are independent, because a
+framework session is keyed by runner name. So a replacing adapter clears only the records its own
+runner owns (`PausedRunState.clear_for_runner`), never the whole list. Clearing the list would let a
+LangGraph question silently delete an OpenAI approval that a manager was still about to give.
 
 ---
 
@@ -489,6 +510,19 @@ reads off the stream is one ADK actually persisted.
 
 So the adapter rejects it above the `try`, like OpenAI.
 
+### What a confirmation cannot carry, also settled by running it
+
+A confirmation is a **verdict and nothing else**. ADK consumes the response and writes its own
+function response for the original call, so two things the other adapters manage do not survive:
+
+- **A structured answer.** Approving with `payload={"amount": 5}` ran the tool with its original
+  `amount: 100`. Refused above the `try` now, rather than dropped — the same rule as OpenAI's
+  structured answer and Pydantic AI's non-object `override_args`. Model the question as a
+  `LongRunningFunctionTool`, where the payload *is* the tool's return value and any shape works.
+- **The wording of a refusal.** The `hint` carrying AK's "nobody decided" text never reaches the
+  model, so **on ADK alone, `cancelled` is indistinguishable from `denied`.** AK still sends it,
+  since ADK owns that response shape and may start surfacing it.
+
 ---
 
 ## 8. Cheat sheet
@@ -504,6 +538,8 @@ So the adapter rejects it above the `try`, like OpenAI.
 | Why does ADK wrap the agent in an `App`? | `ResumabilityConfig` lives on an `App`, not on a `Runner` |
 | Why reject things above the `try`? | Every adapter's `except Exception` would flatten a precise message into "Sorry, something went wrong" |
 | Why use real frameworks in tests? | Mocks hid an un-awaited coroutine on OpenAI and would have hidden both LangGraph bugs entirely |
+| Why does Runtime not tidy up the record? | It cannot tell a failed resume from an ordinary reply, so it would delete the pause on a transient error |
+| Why is replacement scoped to a runner? | One session can hold pauses from two frameworks, and they are independent |
 
 ## 9. The two pre-existing bugs, for the record
 
