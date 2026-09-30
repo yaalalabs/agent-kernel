@@ -262,7 +262,7 @@ class PydanticAIRunner(BaseRunner):
         return AgentPausedReplyAny(run_id=record.id, session_id=session.id, agent=agent.name, interruptions=record.interruptions)
 
     @staticmethod
-    def _interruption(part: Any, kind: Literal["tool_call", "input_required", "confirmation"]) -> PausedInterruption:
+    def _interruption(part: Any, kind: Literal["tool_call", "input_required"]) -> PausedInterruption:
         """
         Maps one pending `ToolCallPart` onto an interruption.
 
