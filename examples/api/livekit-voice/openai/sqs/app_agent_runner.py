@@ -3,7 +3,6 @@ import logging
 from agentkernel.aws import ECSAgentRunner
 from agentkernel.framework.openai import (
     OpenAIModule,
-    OpenAIRealtimeAdapter,
     OpenAIToolBuilder,
 )
 from agents import Agent as OpenAIAgent
@@ -22,7 +21,7 @@ general_agent = OpenAIAgent(
     tools=OpenAIToolBuilder.bind([get_weather]),
 )
 
-OpenAIModule([general_agent], realtime_runner_cls=OpenAIRealtimeAdapter)
+OpenAIModule([general_agent])
 
 if __name__ == "__main__":
     ECSAgentRunner.run()

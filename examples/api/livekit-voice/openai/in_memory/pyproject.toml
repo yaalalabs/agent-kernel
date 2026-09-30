@@ -4,12 +4,12 @@ version = "0.1.0"
 description = "Agent Kernel LiveKit Realtime Voice Example"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[livekit,openai,api] >=0.9.2"
+    "agentkernel[livekit,openai,api] >=0.9.3"
 ]
 
 [dependency-groups]
 dev = [
-    "agentkernel[test]>=0.9.2",
+    "agentkernel[test]>=0.9.3",
     "black==26.5.1",
     "isort>=5.0.0",
     "mypy>=1.0.0",
@@ -18,7 +18,17 @@ dev = [
 [tool.uv]
 package = false
 
-# The `livekit` extra is not in the published agentkernel release yet, so this example must build
-# against the local checkout until it ships. Drop this override once that extra is on the index.
-[tool.uv.sources]
-agentkernel = { path = "../../../../../ak-py", editable = true }
+[tool.isort]
+profile = "black"
+line_length = 120
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+
+[tool.black]
+line-length = 120
+target-version = ["py312"]

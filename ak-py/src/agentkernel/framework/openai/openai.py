@@ -565,7 +565,7 @@ class OpenAIAgent(BaseAgent):
         :param agent: The OpenAI agent instance.
         :param realtime_runner_cls: Optional realtime adapter class for this agent.
         """
-        super().__init__(name, runner, realtime_runner_cls=realtime_runner_cls)
+        super().__init__(name, runner, realtime_runner_cls)
         self._agent = agent
         self._attach_system_tools()
         self._setup_system_prompt()

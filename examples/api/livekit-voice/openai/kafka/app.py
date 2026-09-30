@@ -14,7 +14,6 @@ import sys
 
 from agentkernel.framework.openai import (
     OpenAIModule,
-    OpenAIRealtimeAdapter,
     OpenAIToolBuilder,
 )
 from agentkernel.integration.adapter import GatewayRunner
@@ -39,7 +38,7 @@ general_agent = OpenAIAgent(
     tools=OpenAIToolBuilder.bind([get_weather]),
 )
 
-OpenAIModule([general_agent], realtime_runner_cls=OpenAIRealtimeAdapter)
+OpenAIModule([general_agent])
 
 gateway = LiveKitEdgeGateway(session_id="room_01")
 

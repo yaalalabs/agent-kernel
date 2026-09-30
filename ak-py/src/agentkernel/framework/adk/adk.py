@@ -504,231 +504,6 @@ class GoogleADKRunner(BaseRunner):
             return ""
 
 
-class GoogleADKAgent(AKBaseAgent):
-    """
-    GoogleADKAgent class provides an agent wrapping for Google ADK Agent SDK based agents.
-    """
-
-    RESERVED_RUN_OPTIONS: ClassVar[Mapping[str, str]] = {
-        "agent": "the native agent is the one this GoogleADKAgent wraps",
-        "app": "the runner constructs the ADK Runner from the agent, not an App",
-        "app_name": "fixed to 'AgentKernel' by the runner",
-        "node": "the runner constructs the ADK Runner from the agent",
-        "session_service": "the GoogleADKSession stored on the Agent Kernel session",
-        "auto_create_session": "the runner creates the ADK session itself",
-        "user_id": "fixed to 'AgentKernel' by the runner",
-        "session_id": "the Agent Kernel session id",
-        "new_message": "built from the AgentRequest list by the runner",
-        "state_delta": "state is seeded from the session's framework_context; seed it with Session.set_framework_context()",
-        "invocation_id": "assigned by ADK per run",
-        "yield_user_message": "the stream mapping expects model events only",
-    }
-
-    def __init__(self, name: str, runner: GoogleADKRunner, agent: BaseAgent, realtime_runner_cls: type[BaseRealtimeRunner] | None = None):
-        """
-        Initializes a GoogleADKAgent instance.
-        :param name: Name of the agent.
-        :param runner: BaseRunner associated with the agent.
-        :param agent: The Google ADK agent instance.
-        :param realtime_runner_cls: Optional realtime adapter class for this agent.
-        """
-        super().__init__(name, runner, realtime_runner_cls=realtime_runner_cls)
-        self._agent = agent
-        self._attach_system_tools()
-        self._setup_system_prompt()
-
-    @property
-    def agent(self) -> BaseAgent:
-        """
-        Returns the GoogleADK agent instance.
-        """
-        return self._agent
-
-    def get_description(self):
-        """
-        Returns the description of the agent.
-        """
-        return self.agent.description
-
-    def override_system_prompt(self, prompt: str) -> None:
-        """
-        Appends the given prompt text to the ADK agent's description.
-        Called by the base Agent._setup_system_prompt() at init when multimodal is enabled.
-        """
-        if hasattr(self._agent, "description") and self._agent.description and prompt not in self._agent.description:
-            self._agent.description += "\n" + prompt
-
-    def attach_tool(self, tool: Any) -> None:
-        """
-        Accepts a raw Callable and wraps it with GoogleADKToolBuilder before attaching,
-        so the base Agent._attach_system_tools() can pass raw functions generically.
-        :param tool: Raw Python callable or already-wrapped ADK FunctionTool.
-        """
-        # Delegate to the tool builder to handle binding
-        self._append_tools(self._agent, GoogleADKToolBuilder.bind([tool]))
-
-    def get_a2a_card(self):
-        """
-        Returns the A2A AgentCard associated with the agent.
-        """
-        # TODO Add A2A card support
-        pass
-
-
-class GoogleADKModule(Module):
-    """
-    GoogleADKModule class provides a module for Google ADK-based agents.
-    """
-
-    def __init__(self, agents: list[BaseAgent], runner: GoogleADKRunner = None, realtime_runner_cls: type[BaseRealtimeRunner] | None = None):
-        """
-        Initializes a Google ADK Module instance.
-        :param agents: List of agents in the module.
-        :param runner: Custom runner associated with the module.
-        :param realtime_runner_cls: Realtime adapter class enabling ``execution.mode: realtime``
-            for this module's agents. Opt-in: without it an agent has no realtime adapter and
-            REALTIME mode fails loudly instead of silently picking one.
-        """
-        super().__init__()
-        self.realtime_runner_cls = realtime_runner_cls
-        if runner is not None:
-            self.runner = runner
-        elif AKConfig.get().trace.enabled:
-            self.runner = Trace.get().adk()
-        else:
-            self.runner = GoogleADKRunner()
-        self.load(agents)
-
-    def _wrap(self, agent: BaseAgent, agents: List[BaseAgent]) -> AKBaseAgent:
-        """
-        Wraps the provided agent in a GoogleADKAgent instance.
-        :param agent: The agent to wrap.
-        :param agents: List of agents in the module.
-        :return: GoogleADKAgent instance.
-        """
-        # The realtime adapter is opted into by the caller (passed to the module); only the
-        # pipeline (in REALTIME mode) ever instantiates it, so the framework need not know the
-        # execution mode.
-        return GoogleADKAgent(agent.name, self.runner, agent, realtime_runner_cls=self.realtime_runner_cls)
-
-    def load(self, agents: list[BaseAgent]) -> "GoogleADKModule":
-        """
-        Loads the specified agents into the module. By replacing the current agents.
-        :param agents: List of agents to load.
-        :return: GoogleADKModule instance.
-        """
-        super().load(agents)
-        return self
-
-
-class GoogleADKToolBuilder(ToolBuilder):
-    """
-    Tool builder for Google ADK.
-
-    Wraps generic tool functions into ADK-compatible FunctionTool instances.
-    """
-
-    @classmethod
-    def bind(cls, funcs: list[Callable]) -> list[Any]:
-        """
-        Bind generic tool functions to ADK FunctionTool instances.
-
-        :param funcs: List of generic tool functions to bind.
-        :return: List of ADK-compatible FunctionTool instances.
-        """
-        tools = []
-        for func in funcs:
-            tools.append(FunctionTool(cls._wrap(func)))
-        return tools
-
-    @classmethod
-    def _wrap(cls, func: Callable) -> Callable:
-        """
-        Wraps a generic tool function to ensure it can be used with the Google ADK.
-
-        :param func: The generic tool function to wrap.
-        :return: A wrapped version of the function that is compatible with the Google ADK.
-        :raises TypeError: If the function is not callable.
-        """
-        if not callable(func):
-            raise TypeError(f"Expected a callable, got {type(func).__name__}")
-
-        signature = inspect.signature(func)
-        parameters = list(signature.parameters.values())
-
-        # ADK-aware tools declare `tool_context` themselves and expect the live ADK
-        # context to reach them, so it has to be forwarded. Generic tools do not, and
-        # for those the parameter is consumed here purely to activate the AK context.
-        declares_tool_context = "tool_context" in signature.parameters
-        tool_context_position = list(signature.parameters).index("tool_context") if declares_tool_context else -1
-
-        def forwarded_kwargs(args: tuple[Any, ...], kwargs: dict[str, Any], tool_context: ToolContext | None) -> dict[str, Any]:
-            """
-            Builds the keyword arguments for the wrapped function.
-
-            :param args: Positional arguments the wrapper was called with.
-            :param kwargs: Keyword arguments the wrapper was called with.
-            :param tool_context: The ADK tool context supplied to the wrapper.
-            :return: The keyword arguments to pass to the wrapped function.
-            """
-            if not declares_tool_context or "tool_context" in kwargs:
-                return kwargs
-            # The caller already bound tool_context positionally; do not bind it twice.
-            if len(args) > tool_context_position:
-                return kwargs
-            return {**kwargs, "tool_context": tool_context}
-
-        if asyncio.iscoroutinefunction(func):
-
-            @functools.wraps(func)
-            async def wrapper(*args: Any, tool_context: ToolContext | None = None, **kwargs: Any) -> Any:
-                tctx: AKToolContext | None = None
-                try:
-                    if tool_context and tool_context.state and tool_context.state.get("ak_tool_context"):
-                        tctx = AKToolContext.fetch(tool_context.state["ak_tool_context"]).set()
-                    return await func(*args, **forwarded_kwargs(args, kwargs, tool_context))
-                finally:
-                    if tctx:
-                        tctx.reset()
-
-        else:
-
-            @functools.wraps(func)
-            def wrapper(*args: Any, tool_context: ToolContext | None = None, **kwargs: Any) -> Any:
-                tctx: AKToolContext | None = None
-                try:
-                    if tool_context and tool_context.state and tool_context.state.get("ak_tool_context"):
-                        tctx = AKToolContext.fetch(tool_context.state["ak_tool_context"]).set()
-                    return func(*args, **forwarded_kwargs(args, kwargs, tool_context))
-                finally:
-                    if tctx:
-                        tctx.reset()
-
-        # Only add a tool_context parameter if the original function does not already
-        # declare one, and insert it before any **kwargs (VAR_KEYWORD) parameter to
-        # maintain a valid inspect.Signature ordering.
-        if not declares_tool_context:
-            tool_context_param = inspect.Parameter(
-                "tool_context",
-                kind=inspect.Parameter.KEYWORD_ONLY,
-                default=None,
-            )
-
-            insert_index = None
-            for idx, param in enumerate(parameters):
-                if param.kind is inspect.Parameter.VAR_KEYWORD:
-                    insert_index = idx
-                    break
-
-            if insert_index is not None:
-                parameters.insert(insert_index, tool_context_param)
-            else:
-                parameters.append(tool_context_param)
-
-        wrapper.__signature__ = signature.replace(parameters=parameters)
-        return wrapper
-
-
 class GoogleADKRealtimeRunner(BaseRealtimeRunner):
     """Drives a persistent Gemini Live (BidiGenerateContent) socket behind the realtime pool.
 
@@ -947,3 +722,228 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
             await self._cm.__aexit__(None, None, None)
             self._connection = None
             self._cm = None
+
+class GoogleADKAgent(AKBaseAgent):
+    """
+    GoogleADKAgent class provides an agent wrapping for Google ADK Agent SDK based agents.
+    """
+
+    RESERVED_RUN_OPTIONS: ClassVar[Mapping[str, str]] = {
+        "agent": "the native agent is the one this GoogleADKAgent wraps",
+        "app": "the runner constructs the ADK Runner from the agent, not an App",
+        "app_name": "fixed to 'AgentKernel' by the runner",
+        "node": "the runner constructs the ADK Runner from the agent",
+        "session_service": "the GoogleADKSession stored on the Agent Kernel session",
+        "auto_create_session": "the runner creates the ADK session itself",
+        "user_id": "fixed to 'AgentKernel' by the runner",
+        "session_id": "the Agent Kernel session id",
+        "new_message": "built from the AgentRequest list by the runner",
+        "state_delta": "state is seeded from the session's framework_context; seed it with Session.set_framework_context()",
+        "invocation_id": "assigned by ADK per run",
+        "yield_user_message": "the stream mapping expects model events only",
+    }
+
+    def __init__(self, name: str, runner: GoogleADKRunner, agent: BaseAgent, realtime_runner_cls: type[BaseRealtimeRunner] | None = None):
+        """
+        Initializes a GoogleADKAgent instance.
+        :param name: Name of the agent.
+        :param runner: BaseRunner associated with the agent.
+        :param agent: The Google ADK agent instance.
+        :param realtime_runner_cls: Optional realtime adapter class for this agent.
+        """
+        super().__init__(name, runner, realtime_runner_cls)
+        self._agent = agent
+        self._attach_system_tools()
+        self._setup_system_prompt()
+
+    @property
+    def agent(self) -> BaseAgent:
+        """
+        Returns the GoogleADK agent instance.
+        """
+        return self._agent
+
+    def get_description(self):
+        """
+        Returns the description of the agent.
+        """
+        return self.agent.description
+
+    def override_system_prompt(self, prompt: str) -> None:
+        """
+        Appends the given prompt text to the ADK agent's description.
+        Called by the base Agent._setup_system_prompt() at init when multimodal is enabled.
+        """
+        if hasattr(self._agent, "description") and self._agent.description and prompt not in self._agent.description:
+            self._agent.description += "\n" + prompt
+
+    def attach_tool(self, tool: Any) -> None:
+        """
+        Accepts a raw Callable and wraps it with GoogleADKToolBuilder before attaching,
+        so the base Agent._attach_system_tools() can pass raw functions generically.
+        :param tool: Raw Python callable or already-wrapped ADK FunctionTool.
+        """
+        # Delegate to the tool builder to handle binding
+        self._append_tools(self._agent, GoogleADKToolBuilder.bind([tool]))
+
+    def get_a2a_card(self):
+        """
+        Returns the A2A AgentCard associated with the agent.
+        """
+        # TODO Add A2A card support
+        pass
+
+
+class GoogleADKModule(Module):
+    """
+    GoogleADKModule class provides a module for Google ADK-based agents.
+    """
+
+    def __init__(self, agents: list[BaseAgent], runner: GoogleADKRunner = None, realtime_runner_cls: type[BaseRealtimeRunner] | None = None):
+        """
+        Initializes a Google ADK Module instance.
+        :param agents: List of agents in the module.
+        :param runner: Custom runner associated with the module.
+        :param realtime_runner_cls: Realtime adapter class enabling ``execution.mode: realtime``
+            for this module's agents. Opt-in: without it an agent has no realtime adapter and
+            REALTIME mode fails loudly instead of silently picking one.
+        """
+        super().__init__()
+        self.realtime_runner_cls = realtime_runner_cls or GoogleADKRealtimeRunner
+        if runner is not None:
+            self.runner = runner
+        elif AKConfig.get().trace.enabled:
+            self.runner = Trace.get().adk()
+        else:
+            self.runner = GoogleADKRunner()
+        self.load(agents)
+
+    def _wrap(self, agent: BaseAgent, agents: List[BaseAgent]) -> AKBaseAgent:
+        """
+        Wraps the provided agent in a GoogleADKAgent instance.
+        :param agent: The agent to wrap.
+        :param agents: List of agents in the module.
+        :return: GoogleADKAgent instance.
+        """
+        # The realtime adapter is opted into by the caller (passed to the module); only the
+        # pipeline (in REALTIME mode) ever instantiates it, so the framework need not know the
+        # execution mode.
+        return GoogleADKAgent(agent.name, self.runner, agent, realtime_runner_cls=self.realtime_runner_cls)
+
+    def load(self, agents: list[BaseAgent]) -> "GoogleADKModule":
+        """
+        Loads the specified agents into the module. By replacing the current agents.
+        :param agents: List of agents to load.
+        :return: GoogleADKModule instance.
+        """
+        super().load(agents)
+        return self
+
+
+class GoogleADKToolBuilder(ToolBuilder):
+    """
+    Tool builder for Google ADK.
+
+    Wraps generic tool functions into ADK-compatible FunctionTool instances.
+    """
+
+    @classmethod
+    def bind(cls, funcs: list[Callable]) -> list[Any]:
+        """
+        Bind generic tool functions to ADK FunctionTool instances.
+
+        :param funcs: List of generic tool functions to bind.
+        :return: List of ADK-compatible FunctionTool instances.
+        """
+        tools = []
+        for func in funcs:
+            tools.append(FunctionTool(cls._wrap(func)))
+        return tools
+
+    @classmethod
+    def _wrap(cls, func: Callable) -> Callable:
+        """
+        Wraps a generic tool function to ensure it can be used with the Google ADK.
+
+        :param func: The generic tool function to wrap.
+        :return: A wrapped version of the function that is compatible with the Google ADK.
+        :raises TypeError: If the function is not callable.
+        """
+        if not callable(func):
+            raise TypeError(f"Expected a callable, got {type(func).__name__}")
+
+        signature = inspect.signature(func)
+        parameters = list(signature.parameters.values())
+
+        # ADK-aware tools declare `tool_context` themselves and expect the live ADK
+        # context to reach them, so it has to be forwarded. Generic tools do not, and
+        # for those the parameter is consumed here purely to activate the AK context.
+        declares_tool_context = "tool_context" in signature.parameters
+        tool_context_position = list(signature.parameters).index("tool_context") if declares_tool_context else -1
+
+        def forwarded_kwargs(args: tuple[Any, ...], kwargs: dict[str, Any], tool_context: ToolContext | None) -> dict[str, Any]:
+            """
+            Builds the keyword arguments for the wrapped function.
+
+            :param args: Positional arguments the wrapper was called with.
+            :param kwargs: Keyword arguments the wrapper was called with.
+            :param tool_context: The ADK tool context supplied to the wrapper.
+            :return: The keyword arguments to pass to the wrapped function.
+            """
+            if not declares_tool_context or "tool_context" in kwargs:
+                return kwargs
+            # The caller already bound tool_context positionally; do not bind it twice.
+            if len(args) > tool_context_position:
+                return kwargs
+            return {**kwargs, "tool_context": tool_context}
+
+        if asyncio.iscoroutinefunction(func):
+
+            @functools.wraps(func)
+            async def wrapper(*args: Any, tool_context: ToolContext | None = None, **kwargs: Any) -> Any:
+                tctx: AKToolContext | None = None
+                try:
+                    if tool_context and tool_context.state and tool_context.state.get("ak_tool_context"):
+                        tctx = AKToolContext.fetch(tool_context.state["ak_tool_context"]).set()
+                    return await func(*args, **forwarded_kwargs(args, kwargs, tool_context))
+                finally:
+                    if tctx:
+                        tctx.reset()
+
+        else:
+
+            @functools.wraps(func)
+            def wrapper(*args: Any, tool_context: ToolContext | None = None, **kwargs: Any) -> Any:
+                tctx: AKToolContext | None = None
+                try:
+                    if tool_context and tool_context.state and tool_context.state.get("ak_tool_context"):
+                        tctx = AKToolContext.fetch(tool_context.state["ak_tool_context"]).set()
+                    return func(*args, **forwarded_kwargs(args, kwargs, tool_context))
+                finally:
+                    if tctx:
+                        tctx.reset()
+
+        # Only add a tool_context parameter if the original function does not already
+        # declare one, and insert it before any **kwargs (VAR_KEYWORD) parameter to
+        # maintain a valid inspect.Signature ordering.
+        if not declares_tool_context:
+            tool_context_param = inspect.Parameter(
+                "tool_context",
+                kind=inspect.Parameter.KEYWORD_ONLY,
+                default=None,
+            )
+
+            insert_index = None
+            for idx, param in enumerate(parameters):
+                if param.kind is inspect.Parameter.VAR_KEYWORD:
+                    insert_index = idx
+                    break
+
+            if insert_index is not None:
+                parameters.insert(insert_index, tool_context_param)
+            else:
+                parameters.append(tool_context_param)
+
+        wrapper.__signature__ = signature.replace(parameters=parameters)
+        return wrapper
+

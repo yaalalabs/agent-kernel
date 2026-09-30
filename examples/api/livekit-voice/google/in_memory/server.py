@@ -2,7 +2,7 @@ import logging
 
 from google.adk.agents import Agent as GoogleAgent
 
-from agentkernel.framework.adk import GoogleADKModule, GoogleADKRealtimeRunner, GoogleADKToolBuilder
+from agentkernel.framework.adk import GoogleADKModule, GoogleADKToolBuilder
 from agentkernel.integration.adapter import GatewayRunner
 from agentkernel.integration.livekit import LiveKitEdgeGateway
 from agentkernel.pipeline import IOHandler
@@ -24,7 +24,7 @@ general_agent = GoogleAgent(
     tools=GoogleADKToolBuilder.bind([get_weather]),
 )
 
-GoogleADKModule([general_agent], realtime_runner_cls=GoogleADKRealtimeRunner)
+GoogleADKModule([general_agent])
 
 gateway = LiveKitEdgeGateway(session_id="room_01")
 

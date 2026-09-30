@@ -1,6 +1,6 @@
 module "containerized_agents" {
-  source  = "yaalalabs/ak-containerized/aws"
-  version = "0.9.3"
+  source  = "../../../../../../ak-deployment/ak-aws/containerized" # AK_PROVIDER=aws
+  # version = "0.9.3" # AK_LOCAL_DEV_COMMENT
 
   providers = { aws = aws, docker = docker }
 
@@ -14,6 +14,7 @@ module "containerized_agents" {
   # IO Service (LiveKit Gateway): Connects out to LiveKit Cloud, pushes mic audio to SQS input queue.
   rest_service = {
     package_path = "../dist-livekit-io"
+    desired_count = 1
     command      = ["python", "app_livekit_io.py"]
     environment_variables = {
       LIVEKIT_URL        = var.livekit_url
@@ -50,12 +51,7 @@ module "containerized_agents" {
   }
 
   scaling_config = {
-    enabled            = true
-    min_count          = 1
-    max_count          = 10
-    backlog_target     = 10
-    scale_in_cooldown  = 120
-    scale_out_cooldown = 30
+    enabled = false
   }
 
   enable_api_gateway_logs = false
