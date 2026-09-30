@@ -29,4 +29,3 @@ Because this is designed for production AWS deployments (AWS ECS), the pipeline 
 
 ### Production AWS Deployment
 1. Ensure you have your `OPENAI_API_KEY`, `AK_LIVEKIT__URL`, `AK_LIVEKIT__API_KEY`, and `AK_LIVEKIT__API_SECRET` set in your environment.
-2. Use the Terraform modules in `ak-deployment/aws/containerized` to provision the real SQS queues and spin up the two separate ECS tasks!
