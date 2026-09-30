@@ -11,6 +11,12 @@ business, not Agent Kernel's: only OpenAI can hold two resumable runs at once, w
 Pydantic AI and Google ADK keep a single thread per session. Whether a new pause appends or replaces
 is therefore the adapter's call, since only it knows whether the earlier one is still resumable.
 
+A replacing adapter supersedes **its own framework's** records and no others. One session can be
+shared by agents on different frameworks — a client sends the session id and names the agent per
+request — and a framework session is keyed by runner name, so those runs are independent. Hence the
+`runner` on each record and `clear_for_runner`: replacement that reached across frameworks would
+discard a pause someone can still answer.
+
 Accepted risk, documented rather than hidden: the non-volatile cache is application space, so an
 application calling `get_non_volatile_cache().clear()` discards pending decisions. The `ak.` key
 prefix marks the key as framework-owned, and the user-facing docs say so.
@@ -39,8 +45,10 @@ class PausedRun(BaseModel):
 
     id: str : assigned by PausedRunState.add. Agent Kernel has no other notion of an individual
         run, and a client needs one to say which pause it is answering
-    agent: str : the agent that paused. Also identifies the framework, since an agent resolves to
-        its runner, which is why no separate runner name is stored
+    agent: str : the agent that paused, checked against the agent a resume names
+    runner: str | None : the runner that owns the record, so a replacing adapter supersedes only
+        its own framework's runs. None on a record written before this field existed, which
+        `clear_for_runner` therefore leaves alone
     created_at: str : ISO-8601 UTC, for diagnostics and operator triage only
     interruptions: list[PausedInterruption] : the same list carried on the reply, so a resume can be
         validated without deserialising the payload
@@ -50,6 +58,7 @@ class PausedRun(BaseModel):
 
     id: str
     agent: str
+    runner: Optional[str] = None
     created_at: str
     interruptions: List[PausedInterruption]
     payload: Any = None
@@ -146,7 +155,7 @@ class PausedRunState:
         return matched[0] if len(matched) == 1 else None
 
     @staticmethod
-    def add(session: Session, agent: str, interruptions: List[PausedInterruption], payload: Any = None) -> PausedRun:
+    def add(session: Session, agent: str, interruptions: List[PausedInterruption], payload: Any = None, runner: Optional[str] = None) -> PausedRun:
         """
         Stores a new paused run and returns it, so the caller can read the assigned id back.
 
@@ -157,6 +166,8 @@ class PausedRunState:
         :param agent: The name of the agent that paused.
         :param interruptions: What the human has to decide.
         :param payload: The framework's opaque resume state.
+        :param runner: The name of the runner that owns this record, which `clear_for_runner`
+            matches on. Adapters pass their own; omitting it only costs that scoping.
         :return: The stored record, carrying its assigned id.
         :raises TypeError: If the payload cannot be pickled.
         :raises ValueError: If an interruption id repeats within this run, or is already used by
@@ -189,6 +200,7 @@ class PausedRunState:
         record = PausedRun(
             id=uuid.uuid4().hex,
             agent=agent,
+            runner=runner,
             created_at=datetime.now(timezone.utc).isoformat(),
             interruptions=interruptions,
             payload=payload,
@@ -207,6 +219,23 @@ class PausedRunState:
         """
         remaining = [record for record in PausedRunState.list(session) if record.id != run_id]
         PausedRunState._write(session, remaining)
+
+    @staticmethod
+    def clear_for_runner(session: Session, runner: str) -> None:
+        """
+        Removes every paused run one runner owns, for an adapter whose new pause supersedes its
+        earlier one.
+
+        Scoped to the runner rather than emptying the list, because a session is free to hold runs
+        from other frameworks and those are still answerable. A record carrying no runner name
+        predates the field and is left in place: guessing that it belongs here would reintroduce
+        exactly the loss this prevents.
+
+        :param session: The session to write to.
+        :param runner: The runner name whose records to remove.
+        """
+        remaining = [record for record in PausedRunState.list(session) if record.runner != runner]
+        session.get_non_volatile_cache().set(AK_PAUSED_RUNS_KEY, remaining)
 
     @classmethod
     def _warn_once_on_process_local_store(cls, session: Session) -> None:

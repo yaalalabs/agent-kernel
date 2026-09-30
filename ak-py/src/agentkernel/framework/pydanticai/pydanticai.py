@@ -237,6 +237,8 @@ class PydanticAIRunner(BaseRunner):
 
         Replaces rather than appends: the framework keeps one message history per session and refuses
         a new question while a decision is outstanding, so an earlier record could never be resumed.
+        Scoped to this runner, since a pause another framework holds on the same session is a
+        separate conversation and still answerable.
 
         The record carries the message history rather than leaning on the session's copy, so the
         pause stays resumable no matter what the session does next.
@@ -246,8 +248,7 @@ class PydanticAIRunner(BaseRunner):
         :param result: The run result whose `output` is a `DeferredToolRequests`.
         :return: The paused reply, carrying the assigned run id.
         """
-        for stale in PausedRunState.list(session):
-            PausedRunState.clear(session, stale.id)
+        PausedRunState.clear_for_runner(session, self.name)
 
         requested = result.output
         interruptions = [self._interruption(part, "tool_call") for part in requested.approvals]
@@ -256,6 +257,7 @@ class PydanticAIRunner(BaseRunner):
         record = PausedRunState.add(
             session,
             agent=agent.name,
+            runner=self.name,
             interruptions=interruptions,
             payload={"messages": to_jsonable_python(result.all_messages())},
         )
@@ -298,6 +300,37 @@ class PydanticAIRunner(BaseRunner):
                 f"Answer all of {sorted(i.id for i in record.interruptions)} together."
             )
 
+    @staticmethod
+    def _reject_unusable_override(decisions: list[ResumeDecision], record: PausedRun) -> None:
+        """
+        Refuses a payload an approval cannot carry, before the adapter's `try` opens.
+
+        On an approval the payload becomes `ToolApproved(override_args=...)`, which replaces the
+        tool call's arguments and so must be an object. Anything else has nowhere to go, and
+        dropping it silently would run the tool with its original arguments while the human believes
+        their answer was used. A deferred call is unaffected — there the payload is the tool's return
+        value and any JSON shape is passed through.
+
+        :param decisions: The human's decisions.
+        :param record: The record naming which interruption is which kind.
+        :raises ValueError: If an approved gated call carries a payload that is not an object.
+        """
+        kinds = {i.id: i.kind for i in record.interruptions}
+        offenders = sorted(
+            decision.id
+            for decision in decisions
+            if kinds.get(decision.id) == "tool_call"
+            and decision.status == "approved"
+            and decision.payload is not None
+            and not isinstance(decision.payload, dict)
+        )
+        if offenders:
+            raise ValueError(
+                f"A Pydantic AI approval can only carry a JSON object as its payload; decision(s) {offenders} carry another shape. "
+                f"The payload becomes the tool call's override_args, so send an object of argument names, or answer the question "
+                f"as a deferred tool call instead, where any value is passed through."
+            )
+
     def _deferred_results(self, decisions: list[ResumeDecision], record: PausedRun) -> DeferredToolResults:
         """
         Renders the decisions onto the two channels the framework takes.
@@ -324,11 +357,14 @@ class PydanticAIRunner(BaseRunner):
         """
         The approval verb for one gated tool call.
 
+        A payload here is the tool call's replacement arguments. `_reject_unusable_override` has
+        already refused any shape but an object, so this reads it straight.
+
         :param decision: The human's decision.
         :return: A `ToolApproved` or `ToolDenied` for the framework.
         """
         if decision.status == "approved":
-            return ToolApproved(override_args=decision.payload) if isinstance(decision.payload, dict) else ToolApproved()
+            return ToolApproved(override_args=decision.payload) if decision.payload is not None else ToolApproved()
         if decision.status == "denied":
             return ToolDenied(message=decision.message) if decision.message else ToolDenied()
         return ToolDenied(message=self.CANCELLED_DECISION_MESSAGE)
@@ -356,6 +392,7 @@ class PydanticAIRunner(BaseRunner):
         :return: The continued run's reply, which may itself be paused again.
         """
         self._reject_partial(decisions, record)
+        self._reject_unusable_override(decisions, record)
 
         prompt = ""
         context: ToolContext | None = None
@@ -488,6 +525,7 @@ class PydanticAIRunner(BaseRunner):
         :return: The events the continued run produces, ending in RunPaused if it pauses again.
         """
         self._reject_partial(decisions, record)
+        self._reject_unusable_override(decisions, record)
 
         context: ToolContext | None = None
         try:
@@ -736,6 +774,7 @@ class PydanticAIAgent(BaseAgent):
         "user_prompt": "built from the AgentRequest list by the runner",
         "message_history": "the PydanticAISession stored on the Agent Kernel session",
         "deps": "populated from the session's framework_context; seed it with Session.set_framework_context()",
+        "deferred_tool_results": "built from the human's decisions by the runner when a paused run is resumed",
     }
 
     def __init__(self, name: str, runner: PydanticAIRunner, agent: PydanticAgent):

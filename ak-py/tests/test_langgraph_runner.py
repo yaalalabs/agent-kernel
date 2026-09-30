@@ -10,6 +10,7 @@ from agentkernel.core.builder import SessionStoreBuilder
 from agentkernel.core.event import (
     MessageEnd,
     MessageStart,
+    PausedInterruption,
     ReasoningDelta,
     ReasoningEnd,
     ReasoningStart,
@@ -964,6 +965,21 @@ class TestLangGraphResume:
         await runner.resume(agent, session, requests, decisions, record)
 
         assert len(PausedRunState.list(session)) == 1
+
+    @pytest.mark.asyncio
+    async def test_it_replaces_only_its_own_framework_s_pause(self):
+        """A session shared with another framework's agent keeps that agent's pause."""
+        runner, session = LangGraphRunner(), Session("s")
+        foreign = PausedRunState.add(
+            session,
+            agent="support",
+            runner="openai",
+            interruptions=[PausedInterruption(id="openai-1", kind="tool_call", tool_name="issue_refund")],
+        )
+
+        await runner.run(_real_agent(_gated_graph()), session, [AgentRequestText(prompt="start")])
+
+        assert foreign.id in [r.id for r in PausedRunState.list(session)]
 
 
 class TestCheckPointerDurability:

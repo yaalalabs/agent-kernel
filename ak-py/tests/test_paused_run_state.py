@@ -74,6 +74,40 @@ class TestAddAndRead:
         assert len(PausedRunState.list(session)) == 1
 
 
+class TestReplacementIsScopedToOneRunner:
+    """
+    One session can be shared by agents on different frameworks, and their paused runs are
+    independent. A replacing adapter supersedes only its own.
+    """
+
+    def test_clear_for_runner_leaves_another_framework_alone(self):
+        session = Session("s1")
+        openai = PausedRunState.add(session, agent="support", runner="openai", interruptions=_interruptions("i1"))
+        PausedRunState.add(session, agent="planner", runner="langgraph", interruptions=_interruptions("i2"))
+
+        PausedRunState.clear_for_runner(session, "langgraph")
+
+        assert [r.id for r in PausedRunState.list(session)] == [openai.id]
+
+    def test_clear_for_runner_removes_every_record_that_runner_owns(self):
+        session = Session("s1")
+        PausedRunState.add(session, agent="a", runner="openai", interruptions=_interruptions("i1"))
+        PausedRunState.add(session, agent="b", runner="openai", interruptions=_interruptions("i2"))
+
+        PausedRunState.clear_for_runner(session, "openai")
+
+        assert PausedRunState.list(session) == []
+
+    def test_a_record_with_no_runner_is_left_alone(self):
+        """Written before the field existed; guessing where it belongs would risk losing it."""
+        session = Session("s1")
+        older = PausedRunState.add(session, agent="a", interruptions=_interruptions("i1"))
+
+        PausedRunState.clear_for_runner(session, "openai")
+
+        assert [r.id for r in PausedRunState.list(session)] == [older.id]
+
+
 class TestResolvingARun:
     def test_find_by_interruption_resolves_one_record(self):
         session = Session("s1")

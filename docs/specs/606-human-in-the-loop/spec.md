@@ -167,6 +167,7 @@ class PausedRun(BaseModel):
     """One paused run. Framework-agnostic envelope around an opaque payload."""
     id: str                                    # assigned by PausedRunState.add
     agent: str
+    runner: str | None = None                  # who may replace it; see clear_for_runner
     created_at: str                            # ISO-8601 UTC, diagnostics only
     interruptions: list[PausedInterruption]
     payload: Any                               # per-framework; must be picklable
@@ -182,9 +183,12 @@ class PausedRunState:
     @staticmethod
     def find_by_interruption(session: Session, interruption_ids: Iterable[str]) -> PausedRun | None: ...
     @staticmethod
-    def add(session: Session, agent: str, interruptions: list[PausedInterruption], payload: Any = None) -> PausedRun: ...
+    def add(session: Session, agent: str, interruptions: list[PausedInterruption], payload: Any = None,
+            runner: str | None = None) -> PausedRun: ...
     @staticmethod
     def clear(session: Session, run_id: str) -> None: ...
+    @staticmethod
+    def clear_for_runner(session: Session, runner: str) -> None: ...
 ```
 
 Rules:
@@ -205,7 +209,11 @@ Rules:
 5. **`PausedRunState` is not a `Runner` method.** `Runtime` must read the record to validate a
    resume and `Runtime` is not a `Runner`; adapters must write it. A standalone class is the only
    home both can reach.
-6. **Named `…State`, not `…Store`.** Every `*Store` in AK is a pluggable backend with an ABC,
+6. **`clear_for_runner` is how a replacing adapter supersedes its earlier pause.** *(Added in PR
+   2's review round.)* It removes the records carrying that runner's name and no others, because a
+   session may hold an independent, still-answerable pause from an agent on another framework. A
+   record with no `runner` predates the field and is left alone rather than guessed at.
+7. **Named `…State`, not `…Store`.** Every `*Store` in AK is a pluggable backend with an ABC,
    factory and config block. This is accessors over a dict `SessionStore` already persists
    (`runtime.py:295`). No ABC, no factory, no config — and none is warranted, because there is
    nothing to select between.
@@ -645,9 +653,17 @@ supplies the message that keeps the two negative cases distinguishable to the mo
 | Adapter | `approved` | `denied` | `cancelled` |
 |---|---|---|---|
 | OpenAI | `state.approve(item)` | `state.reject(item, rejection_message=message)` | `state.reject(item, rejection_message=<AK text>)` |
-| Pydantic AI | `ToolApproved(override_args=payload)` | `ToolDenied(message=message)` | `ToolDenied(message=<AK text>)` |
-| Google ADK | `{"confirmed": true, "payload": payload}` | `{"confirmed": false}` | `{"confirmed": false}` with AK's text where the body allows |
+| Pydantic AI | `ToolApproved(override_args=payload)` — payload must be an **object** | `ToolDenied(message=message)` | `ToolDenied(message=<AK text>)` |
+| Google ADK | `{"confirmed": true}` — a **payload is refused** | `{"confirmed": false}` | `{"confirmed": false}` — reads as `denied` |
 | LangGraph | `Command(resume=...)` | `Command(resume=...)` | `Command(resume=...)` — **carries the status faithfully** |
+
+*(Both ADK entries corrected in PR 2's review round, by running it.* ADK consumes the confirmation
+response and writes its own for the original call, so neither a `payload` nor the `hint` reaches the
+model: an approval carrying different arguments ran the tool with its original ones, and `cancelled`
+is indistinguishable from `denied` on this adapter alone. The payload is now refused above the `try`
+rather than dropped; the text is still sent, since ADK owns that shape and may surface it later.
+Pydantic AI's `override_args` replaces the call's arguments and so must be an object — any other
+shape is refused for the same reason.*)
 
 **The dismissal text is AK's, not the client's.** On `cancelled` the human gave no reason, so
 `message` is typically empty. AK generates wording that reads as *an absence of a decision* rather
@@ -859,9 +875,8 @@ Raised in the adapter, **above its `try`**, so they reach the caller:
 - **`PausedRunState` holds no state**, so it is thread-safe by construction; the list it reads lives
   on the `Session`, whose lock `Runtime.run` already holds (`async with session`). No new
   concurrency contract.
-- **Per-operation cost on the hot path is one dict lookup.** `Runtime` reads `ak.paused_runs` only
-  when a request carries an `AgentResumeRequestAny`; an ordinary turn touches it once, in the
-  dispatch, and only on a resume. Serialised size grows by the
+- **Per-operation cost on the hot path is nothing.** `Runtime` reads `ak.paused_runs` only when a
+  request carries an `AgentResumeRequestAny`; an ordinary turn never touches it. Serialised size grows by the
   opaque payload — largest on OpenAI, where a `RunState` JSON was ~4.7 KB for a single gated call in
   the probe. That rides the existing session pickle and its TTL.
 

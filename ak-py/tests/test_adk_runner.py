@@ -1007,12 +1007,14 @@ def _gated_adk(confirmation=False):
         async def generate_content_async(self, llm_request, stream: bool = False) -> AsyncGenerator[LlmResponse, None]:
             self.rounds += 1
             if self.rounds == 1:
-                yield LlmResponse(
-                    content=types.Content(
-                        role="model",
-                        parts=[types.Part(function_call=types.FunctionCall(id="call-1", name="ask_size", args={"q": "size?"}))],
-                    )
+                # The call has to match the tool that is actually registered below, or ADK never
+                # reaches the branch under test.
+                call = (
+                    types.FunctionCall(id="call-1", name="refund", args={"amount": 100})
+                    if confirmation
+                    else types.FunctionCall(id="call-1", name="ask_size", args={"q": "size?"})
                 )
+                yield LlmResponse(content=types.Content(role="model", parts=[types.Part(function_call=call)]))
             else:
                 FakeLlm.seen = [
                     p.function_response.response for m in llm_request.contents for p in (m.parts or []) if getattr(p, "function_response", None)
@@ -1063,6 +1065,24 @@ class TestGoogleADKPause:
         reply = await runner.run(agent, session, [AgentRequestText(prompt="ask me")])
 
         assert reply.interruptions[0].arguments == '{"q": "size?"}'
+
+    @pytest.mark.asyncio
+    async def test_it_replaces_only_its_own_framework_s_pause(self):
+        """A session shared with another framework's agent keeps that agent's pause."""
+        from agentkernel.core.event import PausedInterruption
+
+        runner, session = GoogleADKRunner(), Session("s")
+        agent, _ = _gated_adk()
+        foreign = PausedRunState.add(
+            session,
+            agent="support",
+            runner="openai",
+            interruptions=[PausedInterruption(id="openai-1", kind="tool_call", tool_name="issue_refund")],
+        )
+
+        await runner.run(agent, session, [AgentRequestText(prompt="ask me")])
+
+        assert foreign.id in [r.id for r in PausedRunState.list(session)]
 
     @pytest.mark.asyncio
     async def test_the_record_carries_the_invocation_to_resume(self):
@@ -1236,3 +1256,112 @@ class TestGoogleADKStreamingPause:
 
         with pytest.raises(ValueError, match="cannot carry a prompt alongside a decision"):
             _ = [e async for e in runner.resume_stream(agent, session, requests, decisions, record)]
+
+
+class TestGoogleADKConfirmation:
+    """
+    `require_confirmation` is ADK's second pause: a verdict, not a result.
+
+    ADK intercepts the model's call and asks through its own `adk_request_confirmation` call, so the
+    interruption carries ADK's generated id and the original call in its arguments rather than the
+    tool's own.
+    """
+
+    @pytest.mark.asyncio
+    async def test_a_confirmation_pauses_with_its_own_kind(self):
+        runner, session = GoogleADKRunner(), Session("s")
+        agent, _ = _gated_adk(confirmation=True)
+
+        reply = await runner.run(agent, session, [AgentRequestText(prompt="refund it")])
+
+        assert isinstance(reply, AgentPausedReplyAny)
+        assert reply.interruptions[0].kind == "confirmation"
+        assert reply.interruptions[0].tool_name == "adk_request_confirmation"
+
+    @pytest.mark.asyncio
+    async def test_the_original_call_rides_along_in_the_arguments(self):
+        """All the human has to go on: which tool, with which arguments."""
+        runner, session = GoogleADKRunner(), Session("s")
+        agent, _ = _gated_adk(confirmation=True)
+
+        reply = await runner.run(agent, session, [AgentRequestText(prompt="refund it")])
+
+        assert '"name": "refund"' in reply.interruptions[0].arguments
+        assert '"amount": 100' in reply.interruptions[0].arguments
+
+    @pytest.mark.asyncio
+    async def test_approving_runs_the_gated_tool(self):
+        runner, session = GoogleADKRunner(), Session("s")
+        agent, FakeLlm = _gated_adk(confirmation=True)
+        paused = await runner.run(agent, session, [AgentRequestText(prompt="refund it")])
+        record = PausedRunState.get(session, paused.run_id)
+        requests, decisions = _resume_requests(ResumeDecision(id=paused.interruptions[0].id, status="approved"))
+
+        await runner.resume(agent, session, requests, decisions, record)
+
+        assert FakeLlm.seen == [{"result": "refunded 100"}]
+        assert PausedRunState.list(session) == []
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("status", ["denied", "cancelled"])
+    async def test_a_refused_confirmation_never_runs_the_tool(self, status):
+        """
+        Both read identically to the model, which is ADK's doing, not Agent Kernel's.
+
+        ADK consumes the confirmation response and writes its own for the original call, so the
+        `hint` carrying AK's "nobody decided" wording is dropped. This is the one adapter where
+        `cancelled` cannot be told apart from `denied`.
+        """
+        runner, session = GoogleADKRunner(), Session("s")
+        agent, FakeLlm = _gated_adk(confirmation=True)
+        paused = await runner.run(agent, session, [AgentRequestText(prompt="refund it")])
+        record = PausedRunState.get(session, paused.run_id)
+        requests, decisions = _resume_requests(ResumeDecision(id=paused.interruptions[0].id, status=status))
+
+        await runner.resume(agent, session, requests, decisions, record)
+
+        assert FakeLlm.seen != [{"result": "refunded 100"}]
+        assert "reject" in str(FakeLlm.seen).lower()
+
+    @pytest.mark.asyncio
+    async def test_a_payload_on_a_confirmation_is_refused_rather_than_dropped(self):
+        """ADK reissues the original call unchanged, so an override would vanish silently."""
+        runner, session = GoogleADKRunner(), Session("s")
+        agent, _ = _gated_adk(confirmation=True)
+        paused = await runner.run(agent, session, [AgentRequestText(prompt="refund it")])
+        record = PausedRunState.get(session, paused.run_id)
+        requests, decisions = _resume_requests(ResumeDecision(id=paused.interruptions[0].id, status="approved", payload={"amount": 5}))
+
+        with pytest.raises(ValueError, match="cannot deliver a structured answer to a confirmation"):
+            await runner.resume(agent, session, requests, decisions, record)
+
+    @pytest.mark.asyncio
+    async def test_a_payload_on_a_long_running_tool_is_still_the_answer(self):
+        """The rejection is about confirmations only; the other kind carries the value."""
+        runner, session = GoogleADKRunner(), Session("s")
+        agent, FakeLlm = _gated_adk()
+        paused = await runner.run(agent, session, [AgentRequestText(prompt="ask me")])
+        record = PausedRunState.get(session, paused.run_id)
+        requests, decisions = _resume_requests(ResumeDecision(id="call-1", payload="large"))
+
+        await runner.resume(agent, session, requests, decisions, record)
+
+        assert FakeLlm.seen == [{"result": "large"}]
+
+    @pytest.mark.asyncio
+    async def test_a_confirmation_streams_and_resumes(self):
+        from agentkernel.core.event import RunPaused
+
+        runner, session = GoogleADKRunner(), Session("s")
+        agent, FakeLlm = _gated_adk(confirmation=True)
+        events = [e async for e in runner.stream(agent, session, [AgentRequestText(prompt="refund it")])]
+        paused = events[-1]
+        record = PausedRunState.get(session, paused.run_id)
+        requests, decisions = _resume_requests(ResumeDecision(id=paused.interruptions[0].id, status="approved"))
+
+        resumed = [e async for e in runner.resume_stream(agent, session, requests, decisions, record)]
+
+        assert isinstance(paused, RunPaused)
+        assert paused.interruptions[0].kind == "confirmation"
+        assert FakeLlm.seen == [{"result": "refunded 100"}]
+        assert not any(isinstance(e, RunPaused) for e in resumed)

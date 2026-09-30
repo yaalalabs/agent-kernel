@@ -264,6 +264,7 @@ class OpenAIRunner(BaseRunner):
         record = PausedRunState.add(
             session,
             agent=agent.name,
+            runner=self.name,
             interruptions=[
                 PausedInterruption(id=item.call_id, kind="tool_call", tool_name=item.name, arguments=item.arguments) for item in result.interruptions
             ],
