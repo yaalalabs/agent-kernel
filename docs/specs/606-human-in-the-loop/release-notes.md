@@ -59,6 +59,15 @@ Answer it by sending `resume` **instead of** a prompt (`prompt` is now optional)
   its `payload` go through the same input guardrail path as a prompt, so a resume is not a route
   that bypasses them. WalledAI redaction rewrites those strings in place, leaving the payload's
   shape untouched.
+- **What an adapter cannot carry is refused, never dropped.** A structured answer on an OpenAI
+  approval or an ADK confirmation, a non-object payload on a Pydantic AI approval, and a prompt
+  beside a decision on OpenAI or ADK each fail with a message naming the limit, rather than running
+  the tool as though the human had said nothing. The per-framework table is in the docs.
+- **A failed resume keeps the pause**, so the same decisions can be sent again; only a resume the
+  framework accepted clears the record.
+- **A resume is refused when the agent has moved frameworks.** A deploy can rebind an agent name to
+  another adapter while a pause is outstanding; the stored state means nothing there, so the resume
+  is rejected naming both frameworks instead of answering from a fresh run.
 
 A pause is stored in the session's non-volatile cache, so **a durable pause needs a shared session
 backend** — the in-memory default loses pending pauses on restart, and clearing the non-volatile

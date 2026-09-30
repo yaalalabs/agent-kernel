@@ -197,7 +197,8 @@ Three things to know, all LangGraph's behaviour rather than Agent Kernel's:
 - **Agent Kernel assigns its own checkpointer**, overwriting one you supplied. That has always been
   true; human-in-the-loop makes it load-bearing, because the pause lives in it.
 - **A second pause replaces the first.** LangGraph keeps one thread per session, so an earlier record
-  could never be resumed.
+  could never be resumed. Only LangGraph's own pauses are replaced: if the same session also holds a
+  pause from an agent on another framework, that one is independent and stays answerable.
 
 A prompt sent alongside a decision **is** carried, encoded by Agent Kernel as a write to the
 `messages` channel the adapter already feeds. That mapping is Agent Kernel's, not LangGraph's — the

@@ -89,6 +89,15 @@ A decision carries up to three things:
 `status` is required for `tool_call` and `confirmation`, and ignored for `input_required` — a
 question asking for a value has nothing to approve.
 
+**A failed resume keeps the pause.** If the framework call fails — a model timeout, a network
+blip — the record stays where it was, so sending the same decisions again picks up from the pause
+rather than from nothing. The reply you get is an ordinary error reply; the pause is still there.
+
+**A resume is refused when the agent has moved frameworks.** Deploys happen while a pause is
+outstanding. If the agent name still resolves but now runs on a different adapter, the stored state
+means nothing to it, so the resume is rejected naming both frameworks instead of answering from a
+fresh run. The same applies when the agent is no longer registered at all.
+
 ### Why `cancelled` is not `denied`
 
 `denied` means a person said no. `cancelled` means **nobody decided** — a timeout, a closed tab, a
@@ -142,10 +151,15 @@ where it can still reach you, rather than being flattened into "something went w
 
 | | OpenAI | LangGraph | Pydantic AI | Google ADK |
 |---|---|---|---|---|
-| A structured `payload` | **rejected** | yes | yes | yes |
+| A structured `payload` | **rejected** | yes | on an approval, an **object** only | on a confirmation, **rejected** |
 | A `prompt` beside a decision | **rejected** | yes | yes | **rejected** |
 | A second pause in one session | **appends** | replaces | replaces | replaces |
+| `cancelled` distinguishable from `denied` | yes | yes | yes | **no, on a confirmation** |
 | Detects a stale resume | **no** | n/a — re-pauses | yes, refuses | no |
+
+Replacement stops at the framework boundary. One session can be shared by agents on different
+frameworks — you send the session id and name the agent per request — so a LangGraph question never
+discards an OpenAI approval someone is still about to give.
 
 **OpenAI cannot ask a question.** An approval is recorded as a boolean — `RunState.approve()` takes
 no value — so a gated tool can only be approved or denied. To offer a choice there, have the model
@@ -161,6 +175,15 @@ conversation.
 returns the stored answer instead of pausing again — so any side effect must sit *after* the
 questions, not before them. Agent Kernel also assigns its own checkpointer, overwriting one you
 supplied.
+
+**Pydantic AI's approval payload replaces the tool's arguments**, so it must be a JSON object;
+any other shape is refused rather than quietly ignored. On a **deferred** call the payload is the
+tool's return value and any shape passes through.
+
+**Google ADK cannot carry an answer on a confirmation.** ADK's confirmation holds a verdict and
+nothing else, so a payload is refused, and the "nobody decided" wording does not reach the model —
+`cancelled` therefore reads as `denied` there. Use a `LongRunningFunctionTool` when the question
+needs a value or the distinction matters.
 
 **Google ADK** enables `ResumabilityConfig(is_resumable=True)` on every run. Two consequences:
 a turn following a function response is routed back to the agent that made the call, which can
