@@ -129,8 +129,8 @@ their own bring-your-own backends.
    `AKEvaluationError` if your backend fails (bad credentials, transport error, unparseable judge
    output) — never return a `0.0` to stand in for a failure, since `0.0` must only ever mean
    "scored zero". If your evaluator only supports one of the two modes (e.g. judge-only, no offline
-   scoring), raise `AKMetricNotSupported` from the other — `fallback` mode uses this to skip
-   straight to the supported one.
+   scoring), raise `AKMetricNotSupported` from the other and set `mode` to the supported one
+   (e.g. `mode: llm`) — `fallback` does not catch it, so the error propagates and the test fails.
 4. Point `test-config.yaml` at it by dotted path — `module_name.ClassName`, resolved against the
    module's location (next to your test file, since that's what's on `sys.path` under pytest's
    default import mode):

@@ -116,9 +116,9 @@ class <Provider>AKEvaluator(AKEvaluator):
 ```
 
 If a mode genuinely doesn't apply to your backend (e.g. a provider that is LLM-judge-only), raise
-`AKMetricNotSupported` from that method instead of faking a result — `Test.compare`'s `fallback`
-mode relies on this to skip straight to the other mode rather than treating an unsupported metric
-as a failed score.
+`AKMetricNotSupported` from that method instead of faking a result. `Test.compare` does not catch
+it — in `fallback` mode it propagates out of `evaluate_by_score` before `evaluate_by_llm` runs — so
+document that users of your provider must set the matching `mode` (e.g. JEV requires `mode: llm`).
 
 ### 2. Register with the Factory
 
