@@ -1509,9 +1509,9 @@ function TestingSection() {
       icon: <MdFactCheck />,
       title: "Pluggable Evaluators",
       description:
-        "Every comparison runs through an AKEvaluator. DeepEval ships built in; swap in your own backend with one line of test-config.yaml.",
+        "Every comparison runs through an AKEvaluator. DeepEval, Opik and JEV ship built in; swap in your own backend with one line of test-config.yaml.",
       highlights: [
-        "DeepEval built in: quasi-exact match and GEval",
+        "DeepEval, Opik and JEV built in: exact match, fuzzy match, GEval and a hosted judge",
         "Bring your own AKEvaluator subclass",
         "Selected by short name or dotted path",
         "Backend failures raise, never read as a failing agent",

@@ -45,7 +45,7 @@ Agent Kernel supports three comparison modes for validating responses:
 
 Deterministic, offline string-match scoring — no LLM call. Behavior depends on the configured
 evaluator: DeepEval (the default) uses `Scorer.quasi_exact_match_score`, a normalised whole-string
-equality check, while Opik uses its `LevenshteinRatio` metric, a graded fuzzy-similarity score. See
+equality check, while Opik uses its `LevenshteinRatio` metric, a graded fuzzy-similarity score. JEV has no score mode. See
 [Built-in evaluators](./cli-testing#configuration-based-mode) for how to switch:
 
 ```python
@@ -75,8 +75,9 @@ gives a graded similarity score instead, so a close-but-not-exact match can stil
 
 ### Llm Mode
 
-Uses LLM-as-judge evaluation for semantic similarity. Both built-in evaluators use a `GEval` metric
-here — DeepEval's `GEval` via an `LLMTestCase`, Opik's `GEval` via a single packed `output` string:
+Uses LLM-as-judge evaluation for semantic similarity. DeepEval and Opik use a `GEval` metric here —
+DeepEval's `GEval` via an `LLMTestCase`, Opik's `GEval` via a single packed `output` string — while
+JEV asks one yes/no Noul question and uses its probability as the score:
 
 ```python
 @pytest.mark.order(2)
@@ -135,7 +136,7 @@ Set the default mode via a `test-config.yaml` file in the directory the tests ru
 ```yaml
 # test-config.yaml
 mode: fallback  # Options: score, llm, fallback
-evaluator: deepeval  # Built-in short name ('deepeval' or 'opik'), or a dotted path to your own AKEvaluator subclass
+evaluator: deepeval  # Built-in short name ('deepeval', 'opik' or 'jev'), or a dotted path to your own AKEvaluator subclass
 llm:
   model: gpt-4o-mini
   provider: openai
@@ -354,7 +355,7 @@ Configure the default test comparison mode in `test-config.yaml`. The file is re
 ```yaml
 # test-config.yaml
 mode: fallback  # Options: score, llm, fallback (default: fallback)
-evaluator: deepeval  # Built-in short name ('deepeval' or 'opik'), or a dotted path to your own AKEvaluator subclass
+evaluator: deepeval  # Built-in short name ('deepeval', 'opik' or 'jev'), or a dotted path to your own AKEvaluator subclass
 llm:
   model: gpt-4o-mini  # LLM model for llm mode
   provider: openai  # LLM provider

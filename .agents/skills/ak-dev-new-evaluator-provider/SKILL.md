@@ -2,7 +2,7 @@
 name: ak-dev-new-evaluator-provider
 description: >
   Step-by-step guide for adding a new built-in test evaluator provider to Agent Kernel
-  (beyond DeepEval and Opik). Use this skill when you need to give the test framework's pluggable
+  (beyond DeepEval, Opik and JEV). Use this skill when you need to give the test framework's pluggable
   AKEvaluator interface a new first-party scoring/judge backend addressable by a short
   config name (e.g. "trulens"), not a one-off bring-your-own evaluator. Covers implementing
   score-based and LLM-as-judge evaluation, factory registration, configuration, optional
@@ -34,6 +34,7 @@ a **first-party, in-repo** provider that ships with AK and gets its own short `t
 |---|---|---|---|---|
 | DeepEval | `deepeval` | `Scorer.quasi_exact_match_score` (whole-string, normalised) | `GEval` LLM-as-judge metric | `agentkernel[test]` |
 | Opik | `opik` | `LevenshteinRatio` (fuzzy string similarity) | `GEval` LLM-as-judge metric | `agentkernel[opik]` |
+| JEV | `jev` | — (`AKMetricNotSupported`) | TypeSafe Noul (yes/no probability) | `agentkernel[jev]` |
 
 ## Architecture Overview
 
@@ -125,7 +126,7 @@ Add the short name to `_BUILTIN_EVALUATORS` and a branch in `Test._resolve_evalu
 in `ak-py/src/agentkernel/test/test.py`:
 
 ```python
-_BUILTIN_EVALUATORS = ["deepeval", "opik", "<provider>"]          # ADD THIS
+_BUILTIN_EVALUATORS = ["deepeval", "opik", "jev", "<provider>"]          # ADD THIS
 
 class Test:
     ...

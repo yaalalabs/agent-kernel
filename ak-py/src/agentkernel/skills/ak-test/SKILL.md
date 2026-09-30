@@ -45,7 +45,7 @@ mode: score       # Options: score | llm | fallback (default: fallback)
 
 | Mode | How it Works | Best For |
 |------|-------------|----------|
-| **score** | Deterministic string-match scoring (built-in `deepeval`: `Scorer.quasi_exact_match_score`; built-in `opik`: graded `LevenshteinRatio`) | Deterministic responses, exact answers |
+| **score** | Deterministic string-match scoring (built-in `deepeval`: `Scorer.quasi_exact_match_score`; built-in `opik`: graded `LevenshteinRatio`; built-in `jev` has no score mode) | Deterministic responses, exact answers |
 | **llm** | LLM evaluates if response is semantically correct (`GEval`, from either built-in evaluator) | Open-ended responses, creative agents |
 | **fallback** | Tries score first, falls back to llm if score fails | General-purpose testing |
 
@@ -58,13 +58,14 @@ llm:
 ```
 
 **Evaluator backend:** `evaluator` selects the scoring backend used by both `score` and `llm`
-modes — `deepeval` (the default, `pip install "agentkernel[test]"`) and `opik` (`pip install
-"agentkernel[opik]"`, [Opik](https://www.comet.com/docs/opik/) by Comet, runs entirely locally) are
-the two built-ins. Set it to a dotted path (e.g. `my_evaluator.MyEvaluator`) to bring your own
+modes — `deepeval` (the default, `pip install "agentkernel[test]"`) `opik` (`pip install
+"agentkernel[opik]"`, [Opik](https://www.comet.com/docs/opik/) by Comet, runs entirely locally) and `jev`
+(`pip install "agentkernel[jev]"`, hosted [TypeSafe JEV](https://docs.typesafe.ai) judge: `mode: llm` only, needs
+`TYPESAFE_API_KEY`, sends the comparison text to `api.typesafe.ai`) are the three built-ins. Set it to a dotted path (e.g. `my_evaluator.MyEvaluator`) to bring your own
 `AKEvaluator` subclass instead:
 
 ```yaml
-evaluator: opik   # switch to the other built-in
+evaluator: opik   # switch to another built-in (jev also needs mode: llm)
 ```
 
 ```yaml
@@ -76,7 +77,7 @@ evaluator: my_evaluator.MyEvaluator   # resolves against my_evaluator.py next to
 
 Use this when neither built-in evaluator's scoring fits your agent — e.g. `deepeval`'s binary
 exact-match score mode is too strict and `opik`'s graded `LevenshteinRatio` still doesn't capture
-what you need, or you want a judge call that doesn't depend on DeepEval/Opik at all, or a
+what you need, or you want a judge call that doesn't depend on DeepEval/Opik/JEV at all, or a
 domain-specific rubric. No AK core change is required: any dotted path to an `AKEvaluator` subclass
 works as the `evaluator:` value, resolved the same way sandbox providers and session stores resolve
 their own bring-your-own backends.
