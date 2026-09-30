@@ -116,8 +116,13 @@ class GoogleADKSession:
         return {k: v for k, v in state.items() if not k.startswith((State.APP_PREFIX, State.USER_PREFIX, State.TEMP_PREFIX))}
 
 
-PauseKind = Literal["tool_call", "input_required", "confirmation"]
-"""The interruption kinds this adapter produces; ADK has no `input_required`."""
+PauseKind = Literal["tool_call", "confirmation"]
+"""
+The interruption kinds this adapter produces, narrower than `PausedInterruption.kind`.
+
+ADK never asks for a value on its own: a `LongRunningFunctionTool` is answered with the tool's
+result and `adk_request_confirmation` with a verdict, so `input_required` has no producer here.
+"""
 
 
 @dataclass(frozen=True)

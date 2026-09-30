@@ -124,6 +124,27 @@ Everything else follows:
 | Structured answer (`payload`) | rejected | native | native | native |
 | Interruption `kind` | `tool_call` | `input_required` | both | `tool_call` + `confirmation` |
 
+### The `kind` vocabulary, and where it is spelled in full
+
+All three kinds — `tool_call`, `input_required`, `confirmation` — are declared once, on
+`PausedInterruption.kind` in `core/event.py`. That union is the vocabulary **across** adapters; no
+single adapter produces all of it, as the row above shows.
+
+Each adapter's own types were narrowed to what it can actually emit, so the type checker rejects a
+kind the adapter has no producer for:
+
+- **ADK** — `PauseKind` is `Literal["tool_call", "confirmation"]` (`adk.py:119`). It had carried the
+  full three-value union under a docstring reading *"ADK has no `input_required`"* — a comment
+  apologising for the line above it. ADK never asks for a value on its own: a
+  `LongRunningFunctionTool` is answered with the tool's result, `adk_request_confirmation` with a
+  verdict.
+- **Pydantic AI** — `_interruption`'s `kind` parameter is `Literal["tool_call", "input_required"]`
+  (`pydanticai.py:265`), matching its two channels. `confirmation` was reachable in the signature and
+  produced by nothing.
+- **OpenAI and LangGraph** — nothing to narrow. Each produces exactly one kind and writes the literal
+  straight into `PausedInterruption(...)` (`openai.py:268`, `langgraph.py:621`), with no helper or
+  alias in between to widen.
+
 ### Why only OpenAI appends
 
 A `RunState` is a **self-contained photograph**. Two photographs are two independent pauses — and
@@ -479,6 +500,7 @@ So the adapter rejects it above the `try`, like OpenAI.
 | Why did LangGraph need `__getstate__`? | It's the only adapter subclassing a framework class, so it inherited an unpicklable serializer |
 | Why did that matter now? | HITL means Redis, Redis means pickling, and that step had never run on one process |
 | Why does Pydantic AI have two kinds? | Its two channels ask different questions: a value vs. a verdict |
+| Why do the adapters' `kind` types differ from core's? | The three-value union is the vocabulary across adapters; each adapter's type states only what it produces |
 | Why does ADK wrap the agent in an `App`? | `ResumabilityConfig` lives on an `App`, not on a `Runner` |
 | Why reject things above the `try`? | Every adapter's `except Exception` would flatten a precise message into "Sorry, something went wrong" |
 | Why use real frameworks in tests? | Mocks hid an un-awaited coroutine on OpenAI and would have hidden both LangGraph bugs entirely |
