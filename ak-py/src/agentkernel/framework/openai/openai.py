@@ -464,32 +464,37 @@ class OpenAIRealtimeAdapter(BaseRealtimeRunner):
         """Report model events to the pool, in order. The pool paces audio and emits chunks."""
         try:
             async for event in self._connection:
-                event_type = event.type
-                if event_type == "response.output_audio.delta":
-                    await self._callback("audio_delta", {"delta": event.delta, "message_id": getattr(event, "item_id", "")})
-                elif event_type == "response.output_audio_transcript.delta":
-                    await self._callback("transcript_delta", {"delta": event.delta, "message_id": getattr(event, "item_id", "")})
-                elif event_type == "input_audio_buffer.speech_started":
-                    await self._callback("interrupt", {})
-                elif event_type == "response.done":
-                    response = getattr(event, "response", None)
-                    status = getattr(response, "status", None)
-                    await self._callback("done", {"status": status})
-                elif event_type == "response.function_call_arguments.done":
-                    await self._callback(
-                        "tool_call",
-                        {
-                            "call_id": getattr(event, "call_id", None),
-                            "name": getattr(event, "name", None),
-                            "arguments": getattr(event, "arguments", "{}"),
-                        },
-                    )
-                elif event_type == "error":
-                    _log.error(f"OpenAI Realtime socket error: {getattr(event, 'error', 'unknown')}")
+                await self._handle_message(event)
+        except asyncio.CancelledError:
+            raise
         except Exception as e:
             _log.error(f"OpenAI Realtime socket error: {e}")
             if not self._closing:
                 await self._callback("error", {"message": f"OpenAI Realtime socket error: {e}"})
+
+    async def _handle_message(self, event: Any) -> None:
+        event_type = event.type
+        if event_type == "response.output_audio.delta":
+            await self._callback("audio_delta", {"delta": event.delta, "message_id": getattr(event, "item_id", "")})
+        elif event_type == "response.output_audio_transcript.delta":
+            await self._callback("transcript_delta", {"delta": event.delta, "message_id": getattr(event, "item_id", "")})
+        elif event_type == "input_audio_buffer.speech_started":
+            await self._callback("interrupt", {})
+        elif event_type == "response.done":
+            response = getattr(event, "response", None)
+            status = getattr(response, "status", None)
+            await self._callback("done", {"status": status})
+        elif event_type == "response.function_call_arguments.done":
+            await self._callback(
+                "tool_call",
+                {
+                    "call_id": getattr(event, "call_id", None),
+                    "name": getattr(event, "name", None),
+                    "arguments": getattr(event, "arguments", "{}"),
+                },
+            )
+        elif event_type == "error":
+            _log.error(f"OpenAI Realtime socket error: {getattr(event, 'error', 'unknown')}")
 
     async def append_audio(self, base64_audio: str) -> None:
         if self._connection:

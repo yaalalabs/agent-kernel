@@ -24,6 +24,8 @@ _log = logging.getLogger("ak.pipeline.realtime_pool")
 
 # Bound on a consumer thread's wait for a model send to complete before the input is acked.
 _SEND_TIMEOUT_SECONDS = 10.0
+# Connections idle for this long are evicted and closed by the pool's background thread.
+_IDLE_TIMEOUT_SECONDS = 300.0
 
 
 class RealtimeConnection:
@@ -55,6 +57,7 @@ class RealtimeConnection:
         # Audio + terminal/control events are paced here, once for every framework adapter.
         self._audio_queue: asyncio.Queue = asyncio.Queue()
         self._pacing_task: Optional[asyncio.Task] = None
+        self.last_activity_at: float = time.time()
 
         if not getattr(self.agent, "realtime_runner_cls", None):
             raise ValueError(f"Agent {self.agent.name} has no realtime_runner_cls configured")
@@ -81,6 +84,7 @@ class RealtimeConnection:
         streams immediately; a tool call runs on the loop. The adapters only report events in
         order — pacing is shared here for every framework.
         """
+        self.last_activity_at = time.time()
         if event_type == "audio_delta":
             self._audio_queue.put_nowait(("audio_delta", data))
         elif event_type == "interrupt":
@@ -199,12 +203,14 @@ class RealtimeConnection:
 
     def append_audio(self, audio_data: str) -> None:
         """Thread-safe: convert edge-rate audio to the model's input rate, then schedule the append."""
+        self.last_activity_at = time.time()
         pcm16 = resample_pcm16(base64.b64decode(audio_data), EDGE_SAMPLE_RATE, self.adapter.input_sample_rate)
         converted = base64.b64encode(pcm16).decode("utf-8")
         self._dispatch_send(self.adapter.append_audio(converted), "append_audio")
 
     def send_text(self, text: str) -> None:
         """Thread-safe: schedule text send on the pool's event loop."""
+        self.last_activity_at = time.time()
         self._dispatch_send(self.adapter.send_text(text), "send_text")
 
     def _dispatch_send(self, coro, action: str) -> None:
@@ -308,7 +314,24 @@ class RealtimeConnectionPool:
             self._loop.close()
 
     async def _wait_for_shutdown(self) -> None:
+        last_sweep = time.time()
         while not ThreadRunner.shutdown_event.is_set():
+            now = time.time()
+            if now - last_sweep > 5.0:
+                last_sweep = now
+                idle_sessions = []
+                with self._conn_lock:
+                    for session_id, conn in self._connections.items():
+                        if not conn.closed and (now - conn.last_activity_at) > _IDLE_TIMEOUT_SECONDS:
+                            idle_sessions.append(session_id)
+                            conn.closed = True
+                
+                for session_id in idle_sessions:
+                    with self._conn_lock:
+                        conn = self._connections.pop(session_id, None)
+                    if conn:
+                        _log.info(f"Realtime session {session_id} idle for > {_IDLE_TIMEOUT_SECONDS}s; evicting.")
+                        self._loop.create_task(conn.close())
             await asyncio.sleep(0.5)
 
     async def _close_all(self) -> None:
