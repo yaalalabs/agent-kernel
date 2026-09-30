@@ -84,8 +84,10 @@ class ResponseHandler:
         try:
             integration = message.attributes.get(ATTR_INTEGRATION)
             if integration:
-                adapter = self._outbound_adapter(integration)
-                run_async_sync(adapter.deliver_error(adapter.ERROR_MESSAGE, self._reply_context(message)))
+                reply_context = self._reply_context(message)
+                session_id = reply_context.get("session_id")
+                adapter = self._outbound_adapter(integration, session_id)
+                run_async_sync(adapter.deliver_error(adapter.ERROR_MESSAGE, reply_context))
                 self._log.info(f"Delivered permanent-failure message to {integration}: session_id={message.group_id}")
                 return
 
@@ -150,7 +152,7 @@ class ResponseHandler:
     # -- delivery paths ----------------------------------------------------------------------
 
     @staticmethod
-    def _outbound_adapter(integration: str):
+    def _outbound_adapter(integration: str, session_id: Optional[str] = None):
         """Resolve the outbound adapter named by a message's integration attribute.
 
         Imported lazily and locally: messaging platforms are an `integration` capability, and
@@ -159,13 +161,14 @@ class ResponseHandler:
         to reach the AG-UI state helpers.
 
         :param integration: The adapter name stamped by the producer.
+        :param session_id: Optional session id to fetch a specific stateful connection.
         :return: The outbound adapter for that name.
         :raises AKConfigError: If the name resolves to no adapter — the message is then retried
             and permanently failed rather than silently disappearing.
         """
         from ..integration.adapter.factory import IntegrationAdapterFactory
 
-        return IntegrationAdapterFactory.create_outbound(integration)
+        return IntegrationAdapterFactory.create_outbound(integration, session_id=session_id)
 
     @staticmethod
     def _reply_context(message: QueueMessage) -> dict:
@@ -179,8 +182,9 @@ class ResponseHandler:
         up to ``max_receive_count`` and then hands it to ``on_permanent_failure``, so a briefly
         unreachable platform API gets its retries.
         """
-        adapter = self._outbound_adapter(integration)
         reply_context = self._reply_context(message)
+        session_id = reply_context.get("session_id")
+        adapter = self._outbound_adapter(integration, session_id)
         request_id = message.attributes.get(ATTR_REQUEST_ID)
         body = json.loads(message.body) if message.body else {}
         if not isinstance(body, dict):

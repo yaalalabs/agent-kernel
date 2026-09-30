@@ -5,11 +5,15 @@ import logging
 import uuid
 from typing import Dict, Optional
 
+from livekit import api, rtc
+
+from ...core.config import AKConfig
 from ...core.model import AgentReply, AgentRequestText, AgentRequestVoice, BaseRunRequest, StreamChunk
 from ...core.realtime import EDGE_SAMPLE_RATE
 from ...core.util.factory import AKConfigError
 from ...pipeline.envelope import ATTR_INTEGRATION, REPLY_CONTEXT_PREFIX
 from ...pipeline.producer import RequestProducer
+from ...pipeline.thread_runner import ThreadRunner
 from ..adapter.base import GatewayAdapter
 
 _log = logging.getLogger("ak.integration.livekit")
@@ -21,12 +25,6 @@ _BATCH_BYTES = int(EDGE_SAMPLE_RATE * 2 * 0.1)
 # far faster than the edge produces, so this only bites when the broker is slow or down, where
 # dropping the oldest frame beats growing the queue without bound.
 _MAX_PENDING_REQUESTS = 64
-
-
-try:
-    from livekit import rtc
-except ImportError:
-    rtc = None  # type: ignore
 
 
 class LiveKitEdgeGateway(GatewayAdapter):
@@ -53,8 +51,6 @@ class LiveKitEdgeGateway(GatewayAdapter):
         if rtc is None:
             raise AKConfigError("LiveKit SDK is not installed. Run: pip install livekit-api livekit")
 
-        from ...core.config import AKConfig
-
         config = AKConfig.get()
         self.room_url = room_url or config.livekit.livekit_url
         self.agent_name = agent_name or config.livekit.agent or "general"
@@ -67,7 +63,6 @@ class LiveKitEdgeGateway(GatewayAdapter):
             final_api_secret = api_secret or config.livekit.api_secret
 
             if final_api_key and final_api_secret:
-                from livekit import api
 
                 self.token = (
                     api.AccessToken(final_api_key, final_api_secret)
@@ -130,8 +125,6 @@ class LiveKitEdgeGateway(GatewayAdapter):
         except Exception as e:
             _log.error(f"Failed to publish track: {e}")
         self.audio_source = source
-
-        from ...pipeline.thread_runner import ThreadRunner
 
         _log.info("Entering LiveKitEdgeGateway main wait loop...")
         while not ThreadRunner.shutdown_event.is_set():

@@ -43,5 +43,9 @@ class GatewayRunner:
         adapter's ``name``. It happens here rather than in the adapter's constructor so the side
         effect is tied to being hosted, not to merely existing.
         """
-        IntegrationAdapterFactory.register_outbound(self._adapter.name, self._adapter)
-        run_async_sync(self._adapter.start())
+        session_id = getattr(self._adapter, "session_id", None)
+        IntegrationAdapterFactory.register_outbound(self._adapter.name, self._adapter, session_id=session_id)
+        try:
+            run_async_sync(self._adapter.start())
+        finally:
+            IntegrationAdapterFactory.unregister_outbound(self._adapter.name, session_id=session_id)

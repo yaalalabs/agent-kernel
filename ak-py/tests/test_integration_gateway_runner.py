@@ -46,10 +46,22 @@ def test_adapter_property_is_the_hosted_adapter():
     assert GatewayRunner(adapter).adapter is adapter
 
 
-def test_start_registers_the_outbound_adapter_and_runs_it():
+def test_start_registers_and_unregisters_the_outbound_adapter():
     adapter = FakeGatewayAdapter()
+    was_registered = False
+
+    async def fake_start():
+        adapter.started = True
+        nonlocal was_registered
+        # Check if it's registered WHILE running
+        was_registered = (IntegrationAdapterFactory.create_outbound("fakegateway") is adapter)
+
+    adapter.start = fake_start
     GatewayRunner(adapter).start()
 
     assert adapter.started is True
-    # The registration is what lets the Response Handler resolve this live connection by name.
-    assert IntegrationAdapterFactory.create_outbound("fakegateway") is adapter
+    assert was_registered is True
+    # Verify it cleans up properly after the blocking loop exits
+    from agentkernel.core.util.factory import AKConfigError
+    with pytest.raises(AKConfigError):
+        IntegrationAdapterFactory.create_outbound("fakegateway")
