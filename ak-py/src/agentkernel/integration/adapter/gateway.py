@@ -46,6 +46,26 @@ class GatewayRunner:
         session_id = getattr(self._adapter, "session_id", None)
         IntegrationAdapterFactory.register_outbound(self._adapter.name, self._adapter, session_id=session_id)
         try:
-            run_async_sync(self._adapter.start())
+            run_async_sync(self._run_until_shutdown())
         finally:
             IntegrationAdapterFactory.unregister_outbound(self._adapter.name, session_id=session_id)
+
+    async def _run_until_shutdown(self) -> None:
+        import asyncio
+
+        from ...pipeline.thread_runner import ThreadRunner
+
+        task = asyncio.create_task(self._adapter.start())
+
+        while not ThreadRunner.shutdown_event.is_set():
+            if task.done():
+                task.result()  # raise if exception occurred
+                return
+            await asyncio.sleep(0.5)
+
+        self._log.info(f"Gateway {self._adapter.name} stopping due to shutdown event")
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass

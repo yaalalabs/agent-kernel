@@ -54,7 +54,7 @@ def test_start_registers_and_unregisters_the_outbound_adapter():
         adapter.started = True
         nonlocal was_registered
         # Check if it's registered WHILE running
-        was_registered = (IntegrationAdapterFactory.create_outbound("fakegateway") is adapter)
+        was_registered = IntegrationAdapterFactory.create_outbound("fakegateway") is adapter
 
     adapter.start = fake_start
     GatewayRunner(adapter).start()
@@ -63,5 +63,6 @@ def test_start_registers_and_unregisters_the_outbound_adapter():
     assert was_registered is True
     # Verify it cleans up properly after the blocking loop exits
     from agentkernel.core.util.factory import AKConfigError
+
     with pytest.raises(AKConfigError):
         IntegrationAdapterFactory.create_outbound("fakegateway")

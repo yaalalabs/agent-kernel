@@ -163,7 +163,7 @@ class TestRealtimeRunnerReuse:
     def test_audio_chunks_reuse_connection_without_re_resolving(self, monkeypatch):
         from unittest.mock import MagicMock
 
-        from agentkernel.pipeline.agent_runner import StreamAgentRunner
+        from agentkernel.pipeline.agent_runner import RealtimeAgentRunner
         from agentkernel.pipeline.envelope import QueueMessage
 
         class _Cfg:
@@ -179,12 +179,13 @@ class TestRealtimeRunnerReuse:
         handler = types.SimpleNamespace(service=types.SimpleNamespace(agent=_Agent(), runtime=Runtime(InMemorySessionStore()), session=Session("s1")))
         chat_service = MagicMock()
         chat_service.prepare_agent_handler.return_value = handler
+        chat_service.process_chat_request.return_value = (200, {})
 
         pool = RealtimeConnectionPool.initialize()
         thread = threading.Thread(target=pool.start, daemon=True)
         thread.start()
         try:
-            runner = StreamAgentRunner(transport=transport, chat_service=chat_service)
+            runner = RealtimeAgentRunner(transport=transport, chat_service=chat_service)
             body = json.dumps({"prompt": "", "session_id": "s1", "requests": [{"type": "text", "prompt": "hi"}]})
             for i in range(3):
                 runner.process(QueueMessage(body=body, attributes={"request_id": f"r{i}", "integration": "livekit"}, group_id="s1", dedup_id=f"d{i}"))
@@ -404,7 +405,7 @@ class TestBrokerRealtimeUserGate:
         user_id requirement that guards the STREAM path must not apply to it."""
         from unittest.mock import MagicMock
 
-        from agentkernel.pipeline.agent_runner import StreamAgentRunner
+        from agentkernel.pipeline.agent_runner import RealtimeAgentRunner
         from agentkernel.pipeline.envelope import QueueMessage
 
         class _Cfg:
@@ -421,12 +422,13 @@ class TestBrokerRealtimeUserGate:
         handler = types.SimpleNamespace(service=types.SimpleNamespace(agent=_Agent(), runtime=Runtime(InMemorySessionStore()), session=Session("s1")))
         chat_service = MagicMock()
         chat_service.prepare_agent_handler.return_value = handler
+        chat_service.process_chat_request.return_value = (200, {})
 
         pool = RealtimeConnectionPool.initialize()
         thread = threading.Thread(target=pool.start, daemon=True)
         thread.start()
         try:
-            runner = StreamAgentRunner(transport=transport, chat_service=chat_service)
+            runner = RealtimeAgentRunner(transport=transport, chat_service=chat_service)
             body = json.dumps({"prompt": "", "session_id": "s1", "requests": [{"type": "text", "prompt": "hi"}]})
             # No user_id: on a broker transport this used to raise for realtime and drop every chunk.
             runner.process(QueueMessage(body=body, attributes={"request_id": "r0", "integration": "livekit"}, group_id="s1", dedup_id="d0"))
