@@ -243,6 +243,23 @@ This adapter pauses on **both** of the framework's axes, and they mean different
 | `CallDeferred` | a **value** — the tool's return | `input_required` |
 | `requires_approval` | a **verdict** | `tool_call` |
 
+**The agent must declare `DeferredToolRequests` as an output type**, or neither axis can pause:
+
+```python
+from pydantic_ai import Agent, DeferredToolRequests
+
+agent = Agent(model="openai:gpt-4.1-mini", output_type=[str, DeferredToolRequests])
+
+@agent.tool(name="ask_reason")
+def ask_reason(ctx: RunContext, order_id: str) -> str:
+    raise CallDeferred
+```
+
+This is the framework's requirement, not Agent Kernel's: a pause *is* a run whose output is a
+`DeferredToolRequests`, so an agent that cannot return one has nowhere to put it. Leave it out and
+the run fails with *"A deferred tool call was present, but `DeferredToolRequests` is not among
+output types"* however the tools are declared.
+
 A deferred call's answer is supplied as the tool's result, passed through exactly as given: send a
 list and the model receives a list, send a string and it receives a string.
 

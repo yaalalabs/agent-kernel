@@ -36,6 +36,11 @@ Four frameworks can pause: **OpenAI Agents SDK**, **LangGraph**, **Pydantic AI**
 CrewAI and smolagents cannot, and say so rather than pretending — their runners report
 `supports_pause = False`.
 
+Two of them need one more line of setup, because the pause is part of the agent's own declaration
+rather than something Agent Kernel can switch on: Pydantic AI needs `DeferredToolRequests` among its
+`output_type`s, and Google ADK enables resumability on every run as a consequence of wrapping your
+agent in an `App`. Both are covered on the framework pages linked below.
+
 ## What a paused run looks like
 
 The request answers **HTTP 202** with a top-level discriminator, so a client branches on the outcome
