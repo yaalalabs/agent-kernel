@@ -9,7 +9,7 @@ module "containerized_agents" {
   region               = var.region
   vpc_id               = var.vpc_id
   private_subnet_ids   = var.private_subnet_ids
-  product_display_name = "LiveKit Voice (SQS Scalable)"
+  product_display_name = "LiveKit Voice (SQS) - Gemini Live"
 
   # IO Service (LiveKit Gateway): Connects out to LiveKit Cloud, pushes mic audio to SQS input queue.
   rest_service = {
@@ -38,7 +38,7 @@ module "containerized_agents" {
     output_queue_create_dlq                = true
   }
 
-  # Agent Runner: separate ECS service that polls the Input Queue, runs the agent via OpenAI Realtime WebSocket, sends results to Output Queue.
+  # Agent Runner: separate ECS service that polls the Input Queue, drives Gemini Live, and sends results to the Output Queue.
   agent_runner = {
     cpu           = 1024
     memory        = 2048
@@ -46,7 +46,7 @@ module "containerized_agents" {
     package_path  = "../dist-agent-runner"
     command       = ["python", "app_agent_runner.py"]
     environment_variables = {
-      OPENAI_API_KEY = var.openai_api_key
+      GOOGLE_API_KEY = var.GOOGLE_API_KEY
     }
   }
 
@@ -57,7 +57,7 @@ module "containerized_agents" {
   enable_api_gateway_logs = false
 
   tags = {
-    Example    = "livekit-voice-sqs"
+    Example    = "livekit-voice-sqs-gemini"
     Deployment = var.prefix
   }
 }

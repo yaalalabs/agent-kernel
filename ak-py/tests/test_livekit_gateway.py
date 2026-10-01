@@ -14,7 +14,7 @@ import pytest
 
 import agentkernel.integration.livekit.adapter as livekit_adapter
 from agentkernel.core.event import AudioDelta, Interrupt, TextDelta
-from agentkernel.core.model import AgentRequestText, StreamChunk
+from agentkernel.core.model import AgentRequestText, AgentRequestVoice, StreamChunk
 from agentkernel.integration.livekit.adapter import LiveKitEdgeGateway
 
 
@@ -57,11 +57,42 @@ def _gateway() -> LiveKitEdgeGateway:
     gateway.audio_source = None
     gateway._transcript = []
     gateway._interrupted = False
+    gateway._input_batch_ms = 100
+    gateway._input_batch_bytes = 4800
     return gateway
 
 
 def _packet(text: str, topic: str = "lk-chat"):
     return types.SimpleNamespace(topic=topic, data=text.encode("utf-8"), participant=types.SimpleNamespace(identity="human"))
+
+
+class _FakeFrame:
+    def __init__(self, data: bytes):
+        self.data = types.SimpleNamespace(tobytes=lambda: data)
+
+
+class _FakeAudioStream:
+    def __init__(self, frames):
+        self._frames = frames
+
+    def __aiter__(self):
+        self._it = iter(self._frames)
+        return self
+
+    async def __anext__(self):
+        try:
+            return types.SimpleNamespace(frame=next(self._it))
+        except StopIteration:
+            raise StopAsyncIteration
+
+
+def _fake_rtc(frames):
+    class _Rtc:
+        @staticmethod
+        def AudioStream(track, **kwargs):
+            return _FakeAudioStream([_FakeFrame(f) for f in frames])
+
+    return _Rtc
 
 
 class TestInboundStaging:
@@ -109,6 +140,45 @@ class TestInboundStaging:
         gateway._handle_chat_message(_packet("ignored", topic="some-other-topic"))
 
         assert [request.prompt for request in seen] == ["hello", "plain text"]
+
+
+class TestInboundAudioBatching:
+    @pytest.mark.asyncio
+    async def test_pass_through_enqueues_every_frame_when_batch_is_zero(self, monkeypatch):
+        frames = [b"\x01\x02", b"\x03\x04", b"\x05\x06"]
+        monkeypatch.setattr(livekit_adapter, "rtc", _fake_rtc(frames))
+        gateway = _gateway()
+        gateway._input_batch_bytes = 0
+        seen = []
+        gateway._enqueue = lambda request: seen.append(request)
+
+        await gateway._process_incoming_audio(object())
+
+        assert [base64.b64decode(request.audio_data) for request in seen] == frames
+
+    @pytest.mark.asyncio
+    async def test_batches_frames_to_the_configured_size_and_flushes_the_tail(self, monkeypatch):
+        frames = [b"\x00" * 3, b"\x00" * 3, b"\x00" * 3, b"\x00" * 2]
+        monkeypatch.setattr(livekit_adapter, "rtc", _fake_rtc(frames))
+        gateway = _gateway()
+        gateway._input_batch_bytes = 6
+        seen = []
+        gateway._enqueue = lambda request: seen.append(request)
+
+        await gateway._process_incoming_audio(object())
+
+        assert [len(base64.b64decode(request.audio_data)) for request in seen] == [6, 5]
+
+    def test_enqueue_audio_base64_encodes_a_voice_request(self):
+        gateway = _gateway()
+        seen = []
+        gateway._enqueue = lambda request: seen.append(request)
+
+        gateway._enqueue_audio(b"\x01\x02\x03\x04")
+
+        [request] = seen
+        assert isinstance(request, AgentRequestVoice)
+        assert request.audio_data == base64.b64encode(b"\x01\x02\x03\x04").decode("utf-8")
 
 
 class TestOutboundDelivery:

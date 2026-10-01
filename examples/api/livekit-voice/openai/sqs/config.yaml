@@ -2,3 +2,9 @@ execution:
   mode: realtime
   queues:
     type: sqs
+  # SQS is store-and-forward, so each audio chunk pays a send + long-poll + deliver hop that is
+  # larger and jitterier than in-process/Kafka/NATS. Buffer more audio at the edge than the 50 ms
+  # default so playback does not underrun (which is heard as choppy / missing chunks).
+  realtime:
+    playback_lead_ms: 250
+    input_batch_ms: 50

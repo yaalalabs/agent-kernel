@@ -32,7 +32,7 @@ The `LiveKitEdgeGateway` handles Realtime WebRTC sessions with end-users. Unlike
 ### 2. Required Environment Variables
 
 ```bash
-export AK_LIVEKIT__URL="wss://<your-project>.livekit.cloud"
+export AK_LIVEKIT__LIVEKIT_URL="wss://<your-project>.livekit.cloud"
 export AK_LIVEKIT__API_KEY="your_api_key"
 export AK_LIVEKIT__API_SECRET="your_api_secret"
 ```
@@ -73,6 +73,31 @@ if __name__ == "__main__":
 :::note Execution Mode
 LiveKit requires the Agent Kernel execution mode to be set to `realtime`. Standard async/sync text modes will not work. Ensure you have `execution.mode: realtime` set in your `config.yaml`.
 :::
+
+### Realtime pacing and audio batching
+
+Two `execution.realtime` knobs tune the audio pipeline:
+
+- `playback_lead_ms` (default `50`): outbound model audio is paced so the edge holds this much
+  audio ahead of playback. Low-latency transports (in-process, Kafka, NATS) are fine at the
+  default; a store-and-forward broker such as SQS adds latency and jitter per chunk, so raise it
+  to keep playback from underrunning (heard as choppy or missing audio).
+- `input_batch_ms` (default `100`): inbound mic audio is accumulated to this many milliseconds per
+  input-queue message. Batching keeps message count, broker cost, and per-message overhead low.
+  Set it to `0` to pass every frame straight through for the lowest input latency (many more
+  messages, so only sensible on a low-cost transport).
+
+```yaml
+execution:
+  mode: realtime
+  realtime:
+    playback_lead_ms: 250
+    input_batch_ms: 100
+```
+
+Both are settable from the environment too (`AK_EXECUTION__REALTIME__PLAYBACK_LEAD_MS`,
+`AK_EXECUTION__REALTIME__INPUT_BATCH_MS`). A larger playback lead is smoother but adds a little
+latency at the start of each response.
 
 ## Example Projects
 

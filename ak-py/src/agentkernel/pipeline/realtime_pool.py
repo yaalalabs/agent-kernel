@@ -9,6 +9,7 @@ from typing import Optional
 
 from ..core.base import Agent as BaseAgent
 from ..core.base import Session
+from ..core.config import AKConfig
 from ..core.event import AudioDelta, Interrupt, TextDelta
 from ..core.model import StreamChunk
 from ..core.realtime import EDGE_SAMPLE_RATE
@@ -43,6 +44,9 @@ class RealtimeConnection:
         self.runtime = runtime
         self.session = session
         self.loop = loop
+        # Audio kept ahead of playback at the edge; a higher value absorbs the per-chunk latency
+        # and jitter of a store-and-forward broker.
+        self._playback_lead_ms = AKConfig.get().execution.realtime.playback_lead_ms
 
         self.request_id: Optional[str] = None
         self.user_id: Optional[str] = None
@@ -152,7 +156,7 @@ class RealtimeConnection:
                 audio_played_ms += duration_ms
 
                 elapsed_ms = (time.time() - item_start_time) * 1000.0
-                sleep_ms = (audio_played_ms - 50.0) - elapsed_ms
+                sleep_ms = (audio_played_ms - self._playback_lead_ms) - elapsed_ms
                 if sleep_ms > 0:
                     await asyncio.sleep(sleep_ms / 1000.0)
 
@@ -325,7 +329,7 @@ class RealtimeConnectionPool:
                         if not conn.closed and (now - conn.last_activity_at) > _IDLE_TIMEOUT_SECONDS:
                             idle_sessions.append(session_id)
                             conn.closed = True
-                
+
                 for session_id in idle_sessions:
                     with self._conn_lock:
                         conn = self._connections.pop(session_id, None)

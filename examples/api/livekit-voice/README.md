@@ -47,7 +47,7 @@ export AK_LIVEKIT__API_SECRET="your-livekit-api-secret"
 ```
 
 Each variant lives in its own directory (`openai/in_memory`, `openai/kafka`, `openai/nats`,
-`openai/sqs`, `google/in_memory`); run these commands from the variant you picked.
+`openai/sqs`, `google/in_memory`, `google/sqs`); run these commands from the variant you picked.
 
 For the single-process `in_memory` example, start the server from its directory:
 

@@ -19,8 +19,6 @@ from ..adapter.base import GatewayAdapter
 _log = logging.getLogger("ak.integration.livekit")
 
 INTEGRATION_NAME = "livekit"
-# Enqueue mic audio in ~100 ms batches of PCM16 mono at the edge's rate.
-_BATCH_BYTES = int(EDGE_SAMPLE_RATE * 2 * 0.1)
 # Cap on inbound requests staged for the sender task (~6 s of audio). A reachable broker drains
 # far faster than the edge produces, so this only bites when the broker is slow or down, where
 # dropping the oldest frame beats growing the queue without bound.
@@ -55,6 +53,10 @@ class LiveKitEdgeGateway(GatewayAdapter):
         self.room_url = room_url or config.livekit.livekit_url
         self.agent_name = agent_name or config.livekit.agent or "general"
         self.session_id = session_id or str(uuid.uuid4())
+        # Mic audio is accumulated to one input-queue message of this many bytes; 0 passes every
+        # frame LiveKit hands us straight through (lowest latency, many more queue messages).
+        self._input_batch_ms = config.execution.realtime.input_batch_ms
+        self._input_batch_bytes = int(EDGE_SAMPLE_RATE * 2 * (self._input_batch_ms / 1000))
 
         if token:
             self.token = token
@@ -163,29 +165,38 @@ class LiveKitEdgeGateway(GatewayAdapter):
             _log.error(f"Failed to process chat: {e}")
 
     async def _process_incoming_audio(self, track: "rtc.Track") -> None:
-        """Pass continuous mic audio to the queue, batching frames to prevent thread starvation."""
+        """Pass continuous mic audio to the queue, batched per ``execution.realtime.input_batch_ms``.
+
+        Batching keeps the input-queue message count (and broker cost/overhead) low; setting the
+        batch to 0 passes every incoming frame straight through.
+        """
         audio_stream = rtc.AudioStream(track, sample_rate=EDGE_SAMPLE_RATE, num_channels=1)
-        _log.info("Listening for audio stream (with 100ms batching)...")
+        _log.info(f"Listening for audio stream (batching at {self._input_batch_ms} ms; 0 = pass-through)...")
 
         buffer = bytearray()
 
         async for event in audio_stream:
             try:
                 raw_bytes = event.frame.data.tobytes()
-                if raw_bytes:
-                    buffer.extend(raw_bytes)
-
-                    # Flush to the queue once a ~100 ms batch has accumulated.
-                    if len(buffer) >= _BATCH_BYTES:
-                        b64_audio = base64.b64encode(buffer).decode("utf-8")
-                        self._enqueue(AgentRequestVoice(prompt="", audio_data=b64_audio, name=self.agent_name))
-                        buffer.clear()
+                if not raw_bytes:
+                    continue
+                if self._input_batch_bytes == 0:
+                    self._enqueue_audio(raw_bytes)
+                    continue
+                buffer.extend(raw_bytes)
+                if len(buffer) >= self._input_batch_bytes:
+                    self._enqueue_audio(buffer)
+                    buffer.clear()
             except Exception as e:
                 _log.error(f"Failed to process incoming audio frame: {e}")
 
         if buffer:
-            b64_audio = base64.b64encode(buffer).decode("utf-8")
-            self._enqueue(AgentRequestVoice(prompt="", audio_data=b64_audio, name=self.agent_name))
+            self._enqueue_audio(buffer)
+
+    def _enqueue_audio(self, raw_bytes: bytes) -> None:
+        """Base64-encode a PCM16 frame/batch and stage it as one ``AgentRequestVoice``."""
+        b64_audio = base64.b64encode(raw_bytes).decode("utf-8")
+        self._enqueue(AgentRequestVoice(prompt="", audio_data=b64_audio, name=self.agent_name))
 
     def _enqueue(self, request) -> None:
         """Stage one request for the sender task, tagged for this livekit session.

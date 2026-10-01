@@ -512,11 +512,11 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
     back through the callback the pool supplied, so the pool keeps owning queue emission and this
     class never imports pipeline types.
 
-    ``input_sample_rate`` is intentionally left at the edge rate (24 kHz), matching the OpenAI
-    adapter, so the pool does **no** resampling before :meth:`append_audio`. The stream is sent
-    with ``audio/pcm;rate=24000`` and Gemini resamples server-side. (The old 24k->16k pure-Python
-    linear resample added aliasing that degraded server-side VAD.)
+    Gemini Live's realtime input is 16 kHz PCM16 mono (the edge carries 24 kHz), so
+    ``input_sample_rate`` is set to 16 kHz and the pool resamples before :meth:`append_audio`.
     """
+
+    input_sample_rate = 16000
 
     def __init__(self):
         super().__init__(FRAMEWORK)
@@ -722,6 +722,7 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
             await self._cm.__aexit__(None, None, None)
             self._connection = None
             self._cm = None
+
 
 class GoogleADKAgent(AKBaseAgent):
     """
@@ -946,4 +947,3 @@ class GoogleADKToolBuilder(ToolBuilder):
 
         wrapper.__signature__ = signature.replace(parameters=parameters)
         return wrapper
-

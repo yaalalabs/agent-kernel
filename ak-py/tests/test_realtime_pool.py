@@ -100,6 +100,19 @@ class TestRealtimeConnection:
         with pytest.raises(ValueError, match="no realtime_runner_cls"):
             _connection(agent=_Agent(realtime_runner_cls=None))
 
+    def test_reads_configured_playback_lead(self, monkeypatch):
+        """The pacing lead is config-driven so a higher-latency broker can buffer more audio
+        (execution.realtime.playback_lead_ms), instead of the old hard-coded 50 ms."""
+
+        class _Cfg:
+            class execution:
+                class realtime:
+                    playback_lead_ms = 250
+
+        monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _Cfg))
+        monkeypatch.setattr(QueueTransportFactory, "create", staticmethod(lambda *a, **k: InMemoryTransport()))
+        assert _connection()._playback_lead_ms == 250
+
     @pytest.mark.asyncio
     async def test_emit_stamps_realtime_and_integration(self, monkeypatch):
         transport = InMemoryTransport()
@@ -170,6 +183,9 @@ class TestRealtimeRunnerReuse:
             class execution:
                 mode = ExecutionMode.REALTIME
                 queues = None
+
+                class realtime:
+                    playback_lead_ms = 50
 
         monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _Cfg))
 
@@ -386,6 +402,9 @@ class TestRealtimePermanentFailure:
                 mode = ExecutionMode.REALTIME
                 queues = _Queues()
 
+                class realtime:
+                    playback_lead_ms = 50
+
         monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _Cfg))
 
         transport = InMemoryTransport()
@@ -412,6 +431,9 @@ class TestBrokerRealtimeUserGate:
             class execution:
                 mode = ExecutionMode.REALTIME
                 queues = None
+
+                class realtime:
+                    playback_lead_ms = 50
 
         monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _Cfg))
         monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda *a, **k: "kafka"))

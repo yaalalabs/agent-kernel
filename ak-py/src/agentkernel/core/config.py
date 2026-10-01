@@ -665,6 +665,28 @@ class _LoggingConfig(BaseModel):
     system: _LogLevelConfig = Field(description="System logging configuration", default_factory=_LogLevelConfig)
 
 
+class _RealtimeConfig(BaseModel):
+    """Realtime-mode playback pacing.
+
+    Outbound model audio is paced so the edge holds ``playback_lead_ms`` of audio ahead of
+    wall-clock. A larger lead absorbs the per-chunk latency and jitter of a store-and-forward
+    broker (SQS adds more than Kafka/NATS), trading a little added latency for smoother playback;
+    a small lead is right for a low-latency transport. Only read when ``execution.mode`` is
+    ``realtime``.
+    """
+
+    playback_lead_ms: int = Field(
+        default=50,
+        ge=0,
+        description="Audio buffered ahead of playback at the edge, in milliseconds (higher = smoother over higher-latency transports)",
+    )
+    input_batch_ms: int = Field(
+        default=100,
+        ge=0,
+        description="Mic audio batched into this many milliseconds per input-queue message; 0 passes every frame through (lowest input latency, many more messages)",
+    )
+
+
 class _ExecutionConfig(BaseModel):
     mode: Optional[ExecutionMode] = Field(
         default=None,
@@ -684,6 +706,10 @@ class _ExecutionConfig(BaseModel):
     response_store: Optional[_ResponseStoreConfig] = Field(
         default=None,
         description="Response storage configuration for async execution mode",
+    )
+    realtime: _RealtimeConfig = Field(
+        default_factory=_RealtimeConfig,
+        description="Realtime execution playback pacing (used only when execution.mode is realtime)",
     )
 
 

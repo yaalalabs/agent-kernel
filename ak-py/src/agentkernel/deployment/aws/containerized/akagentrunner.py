@@ -6,6 +6,7 @@ import logging
 from ....core.chat_service import ChatService
 from ....core.config import AKConfig, ExecutionMode
 from ....core.model import BaseRunRequest, StreamChunk
+from ....pipeline.envelope import ATTR_INTEGRATION, REPLY_CONTEXT_PREFIX
 from ..core.sqs_handler import SQSHandler
 from .core import ECSSQSConsumer
 
@@ -312,9 +313,9 @@ class ECSRealtimeAgentRunner(ECSAgentRunner):
             conn = pool.get_or_create(body.session_id, handler.service.agent, handler.service.runtime, handler.service.session)
             conn.session = handler.service.session
 
-        custom_attrs = SQSHandler.get_message_custom_attributes(raw_queue_message=record)
-        integration = custom_attrs.get("integration")
-        reply_context = {k[len("reply_ctx_") :]: v for k, v in custom_attrs.items() if k.startswith("reply_ctx_")}
+        custom_attrs = SQSHandler.get_message_custom_attributes(record)
+        integration = custom_attrs.get(ATTR_INTEGRATION)
+        reply_context = {k[len(REPLY_CONTEXT_PREFIX) :]: v for k, v in custom_attrs.items() if k.startswith(REPLY_CONTEXT_PREFIX)}
 
         conn.update_delivery_context(
             request_id=request_id,
