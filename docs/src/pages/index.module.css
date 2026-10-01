@@ -1032,52 +1032,10 @@
   margin-left: 0.4rem;
 }
 
-.heroOrDivider {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  margin: 0.75rem 0;
-  max-width: 18rem;
-}
 
-.heroOrDivider::before,
-.heroOrDivider::after {
-  content: "";
-  flex: 1;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.18), transparent);
-}
 
-.heroOrDivider span {
-  font-size: 0.75rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.4);
-}
 
-.heroInstallRow {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.55rem;
-  margin-top: -0.15rem;
-  padding: 0.4rem 0.4rem 0.4rem 0.85rem;
-  border: 1px solid rgba(0, 221, 255, 0.18);
-  border-radius: 999px;
-  background:
-    linear-gradient(180deg, rgba(10, 16, 28, 0.82) 0%, rgba(2, 3, 8, 0.92) 100%);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.05),
-    0 8px 26px rgba(0, 0, 0, 0.32);
-  transition: border-color 0.25s ease, box-shadow 0.25s ease;
-}
 
-.heroInstallRow:hover {
-  border-color: rgba(0, 221, 255, 0.4);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    0 0 0 1px rgba(0, 221, 255, 0.12),
-    0 10px 30px rgba(0, 0, 0, 0.4);
-}
 
 .heroInstallPrompt {
   font-family: 'JetBrains Mono', var(--ifm-font-family-monospace);
@@ -1088,28 +1046,8 @@
   user-select: none;
 }
 
-.heroQuickStartBelow {
-  margin-top: -0.75rem;
-  border: none !important;
-  background: #010002 !important;
-  font-weight: 400 !important;
-  box-shadow: none !important;
-}
 
-.heroQuickStartBelow:hover {
-  background: #010002 !important;
-  box-shadow: none !important;
-}
 
-.heroInstallCmd {
-  margin: 0;
-  font-family: 'JetBrains Mono', var(--ifm-font-family-monospace);
-  font-size: 0.82rem;
-  letter-spacing: 0.01em;
-  color: rgba(232, 248, 255, 0.95);
-  line-height: 1;
-  white-space: nowrap;
-}
 
 .heroInstallCopy {
   display: inline-flex;
@@ -1147,6 +1085,106 @@
   border-color: rgba(64, 224, 160, 0.8);
   background: rgba(64, 224, 160, 0.22);
   box-shadow: 0 0 12px rgba(64, 224, 160, 0.25);
+}
+
+/* Hero actions: CTA buttons above a deliberately low-key Agent Skills block. */
+.heroActions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+}
+
+.heroSkills {
+  width: 100%;
+  max-width: 31rem;
+  padding: 0.7rem 0.85rem 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(10, 16, 28, 0.6) 0%, rgba(2, 3, 8, 0.75) 100%);
+  text-align: left;
+}
+
+.heroSkillsHead {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-bottom: 0.45rem;
+}
+
+.heroSkillsLabel {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(147, 210, 255, 0.85);
+}
+
+.heroSkillsHint {
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.42);
+}
+
+.heroSkillsCmds {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.1rem;
+}
+
+.heroSkillsCmd {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: 'JetBrains Mono', var(--ifm-font-family-monospace);
+  font-size: 0.8rem;
+  letter-spacing: 0.01em;
+  color: rgba(232, 248, 255, 0.92);
+  white-space: nowrap;
+}
+
+.heroSkillsCopy {
+  width: 26px;
+  height: 26px;
+  margin-left: auto;
+}
+
+.heroSkillsText {
+  margin: 0.55rem 0 0;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.heroSkillsLink {
+  color: rgba(147, 210, 255, 0.9);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.heroSkillsLink:hover {
+  color: #ffffff;
+  text-decoration: none;
+}
+
+@media (max-width: 768px) {
+  .heroActions {
+    align-items: center;
+    width: 100%;
+  }
+
+  .heroSkills {
+    max-width: 100%;
+  }
+
+  .heroSkillsCmds {
+    gap: 0.4rem 0.9rem;
+  }
 }
 
 .heroBullets {
@@ -1447,16 +1485,7 @@
     justify-content: center;
   }
 
-  .heroInstallRow {
-    width: min(100%, 340px);
-    justify-content: space-between;
-  }
 
-  .heroInstallCmd {
-    font-size: 0.76rem;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
 
   .heroInstallCopy {
     padding: 0;
@@ -2155,447 +2184,6 @@
   line-height: 1.75;
   max-width: 650px;
   margin: 0 auto;
-}
-
-/* ─── Agent Skills ────────────────────────────────────────────────────────────────── */
-
-.agentSkillsSection {
-  padding: 8rem 0 8rem;
-  position: relative;
-  overflow: hidden;
-}
-
-.agentSkillsContainer {
-  max-width: 980px;
-  margin: 0 auto;
-  margin-top: -4rem;
-}
-
-/* Section header — badge + title centred */
-.sectionHeader {
-  text-align: center;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  margin-bottom: 2.5rem;
-}
-
-/* Tab row */
-.agentSkillsTopicsRow {
-  display: flex;
-  gap: 1rem;
-  flex-wrap: nowrap;
-  justify-content: space-between;
-  margin-bottom: 1rem;
-}
-
-.agentSkillsTopicButton {
-  position: relative;
-  background: #303031;
-  backdrop-filter: blur(12px);
-  color: #dfe1f0;
-  border: 2px solid rgba(255, 255, 255, 0.06);
-  padding: 0.65rem 0.9rem;
-  font-size: 0.85rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  white-space: nowrap;
-  border-radius: 999px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: all 0.18s ease;
-  flex: 1 1 0;
-  min-width: 0;
-  overflow: hidden;
-}
-
-.agentSkillsTopicButton:hover {
-  transform: translateY(-2px);
-  border-color: rgba(0, 221, 255, 0.2);
-}
-
-/* Active tab — gradient glow matching the image */
-.agentSkillsTopicActive {
-  border-color: rgba(0, 221, 255, 0.65) !important;
-  color: #ffffff !important;
-  background: linear-gradient(135deg,
-      #009bb3 0%,
-      #006f82 50%,
-      #003d48 100%) !important;
-  box-shadow: 0 0 25px rgba(0, 221, 255, 0.35);
-}
-
-.agentSkillsTopicActive::before,
-.agentSkillsTopicActive::after {
-  content: none !important;
-}
-
-/* Keep text above pseudo-elements */
-.agentSkillsTopicButton span,
-.agentSkillsTopicButton {
-  z-index: 1;
-}
-
-/* Split grid */
-.agentSkillsSplitGrid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 1.5rem;
-  align-items: stretch;
-  margin-bottom: 2rem;
-  margin-top: 2rem;
-}
-
-/* Shared panel shell */
-.agentSkillsPanel {
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 1rem;
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-/* ── IDE chrome ── */
-.agentSkillsIdeHeader {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.6rem 1rem;
-  background: rgba(255, 255, 255, 0.04);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  flex-shrink: 0;
-}
-
-.agentSkillsIdeDots {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-}
-
-.agentSkillsIdeDots span {
-  display: block;
-  width: 11px;
-  height: 11px;
-  border-radius: 50%;
-}
-
-.agentSkillsDotRed {
-  background: #ff5f57;
-}
-
-.agentSkillsDotYellow {
-  background: #febc2e;
-}
-
-.agentSkillsDotGreen {
-  background: #28c840;
-}
-
-.agentSkillsIdeActions {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  color: rgba(255, 255, 255, 0.3);
-}
-
-.agentSkillsIdeActions svg {
-  display: block;
-  transition: color 0.15s ease;
-  cursor: pointer;
-}
-
-.agentSkillsIdeActions svg:hover {
-  color: rgba(255, 255, 255, 0.65);
-}
-
-/* IDE body = line numbers + code side by side */
-.agentSkillsIdeBody {
-  display: flex;
-  flex: 1 1 auto;
-  overflow: hidden;
-}
-
-.agentSkillsLineNumbers {
-  display: flex;
-  flex-direction: column;
-  padding: 1.25rem 0.75rem 1.25rem 1rem;
-  font-family: "JetBrains Mono", "Fira Code", monospace;
-  font-size: 0.82rem;
-  line-height: 1.9;
-  color: rgba(255, 255, 255, 0.18);
-  user-select: none;
-  flex-shrink: 0;
-  border-right: 1px solid rgba(255, 255, 255, 0.06);
-  text-align: right;
-  min-width: 2.25rem;
-}
-
-.agentSkillsCodeBlock {
-  flex: 1 1 auto;
-  padding: 1.25rem 1.5rem;
-  font-family: "JetBrains Mono", "Fira Code", monospace;
-  font-size: 0.88rem;
-  line-height: 1.9;
-  color: #dfe1f0;
-  overflow-x: hidden;
-  overflow-wrap: anywhere;
-}
-
-.agentSkillsCodeBlock>div {
-  min-width: 0;
-}
-
-.agentSkillsCodeComment {
-  color: #5e627d;
-  overflow-wrap: anywhere;
-  word-break: break-word;
-}
-
-.agentSkillsCodeCmd {
-  color: #5dcaa5;
-}
-
-.agentSkillsCodeArg {
-  color: #00ddff;
-  display: inline-block;
-  max-width: 100%;
-  overflow-wrap: anywhere;
-  word-break: break-word;
-}
-
-/* Right panel padding (no IDE chrome) */
-.agentSkillsPanel:last-of-type {
-  padding: 1.5rem;
-}
-
-.agentSkillsSectionLabel {
-  text-align: left;
-  font-size: 1.25rem;
-  font-weight: 500;
-  color: #ffffff;
-  margin-bottom: 1.5rem;
-  letter-spacing: -0.01em;
-  width: 100%;
-}
-
-.agentSkillsDetailWrap {
-  display: flex;
-  justify-content: center;
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.agentSkillsDetailBox {
-  width: 100%;
-  min-width: 0;
-  border: 1px solid rgba(255, 255, 255, 0.121);
-  border-radius: 0.75rem;
-  backdrop-filter: blur(6px);
-  padding: 1.25rem;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  overflow: hidden;
-}
-
-.agentSkillsSkillHeader {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  margin-bottom: 0.4rem;
-  will-change: transform, opacity, filter;
-}
-
-.agentSkillsSkillIcon {
-  font-size: 1.75rem;
-  color: #00ddff;
-  flex-shrink: 0;
-}
-
-.agentSkillsSkillName {
-  font-size: 1.25rem;
-  font-weight: 700;
-  color: #ffffff;
-  margin: 0;
-}
-
-.agentSkillsSkillBody {
-  font-size: 1rem;
-  color: rgba(255, 255, 255, 0.85);
-  line-height: 1.625;
-  margin: 0 0 0.6rem;
-  will-change: transform, opacity;
-}
-
-.agentSkillsPillRow {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
-.agentSkillsPill {
-  font-size: 0.82rem;
-  font-weight: 600;
-  padding: 0.35rem 0.8rem;
-  border-radius: 999px;
-  background: #303031;
-  color: #dfe1f0;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  will-change: transform, opacity;
-}
-
-/* Footer row — subtitle left, CTA right */
-.agentSkillsFooter {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 2rem;
-  margin-top: 0.5rem;
-}
-
-.agentSkillsFooterText {
-  font-size: 0.95rem;
-  color: rgba(255, 255, 255, 0.5);
-  line-height: 1.6;
-  max-width: 520px;
-  margin: 0;
-}
-
-.agentSkillsCtaLink {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-size: 0.92rem;
-  font-weight: 700;
-  white-space: nowrap;
-  flex-shrink: 0;
-  color: #00ddff;
-  text-decoration: none;
-  transition: color 0.2s ease, transform 0.2s ease;
-}
-
-.agentSkillsCtaLink:hover {
-  color: #66f5ff;
-  transform: translateY(-1px);
-  text-decoration: none;
-}
-
-/* Scramble animation (unchanged) */
-@keyframes agentSkillsCommandReveal {
-  from {
-    opacity: 0;
-    transform: translateY(12px);
-    filter: blur(3px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-    filter: blur(0px);
-  }
-}
-
-.agentSkillsCommandsVisible .agentSkillsCodeComment,
-.agentSkillsCommandsVisible .agentSkillsCodeArg {
-  animation: agentSkillsCommandReveal 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
-  animation-delay: var(--agent-skills-reveal-delay, 0ms);
-}
-
-.agentSkillsCommandsVisible .agentSkillsCodeComment:nth-of-type(1) {
-  --agent-skills-reveal-delay: 60ms;
-}
-
-.agentSkillsCommandsVisible .agentSkillsCodeComment:nth-of-type(2) {
-  --agent-skills-reveal-delay: 240ms;
-}
-
-.agentSkillsCommandsVisible .agentSkillsCodeComment:nth-of-type(3) {
-  --agent-skills-reveal-delay: 420ms;
-}
-
-.agentSkillsCommandsVisible .agentSkillsCodeArg:nth-of-type(1) {
-  --agent-skills-reveal-delay: 140ms;
-}
-
-.agentSkillsCommandsVisible .agentSkillsCodeArg:nth-of-type(2) {
-  --agent-skills-reveal-delay: 320ms;
-}
-
-.agentSkillsCommandsVisible .agentSkillsCodeArg:nth-of-type(3) {
-  --agent-skills-reveal-delay: 500ms;
-}
-
-/* ─── Responsive ─────────────────────────────────────────────────────────────── */
-
-@media (max-width: 1024px) {
-  .agentSkillsSplitGrid {
-    grid-template-columns: 1fr;
-    gap: 1rem;
-  }
-}
-
-@media (max-width: 768px) {
-  .agentSkillsTopicsRow {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    gap: 0.6rem;
-    justify-content: flex-start;
-    margin-bottom: 0.75rem;
-    padding-bottom: 0.25rem;
-    scrollbar-width: none;
-  }
-
-  .agentSkillsTopicsRow::-webkit-scrollbar {
-    display: none;
-  }
-
-  .agentSkillsTopicButton {
-    flex: 0 0 auto;
-    padding: 0.5rem 0.75rem;
-    font-size: 0.82rem;
-    white-space: nowrap;
-    min-width: auto;
-  }
-
-  .agentSkillsCodeBlock {
-    font-size: 0.8rem;
-    line-height: 1.7;
-  }
-
-  .agentSkillsDetailBox {
-    padding: 0.85rem;
-  }
-
-  .agentSkillsFooter {
-    flex-direction: column;
-    align-items: center;
-    gap: 1rem;
-  }
-}
-
-@media (max-width: 420px) {
-  .agentSkillsTopicButton {
-    padding: 0.45rem 0.65rem;
-    font-size: 0.78rem;
-  }
-
-  .agentSkillsSkillIcon {
-    font-size: 1.4rem;
-  }
-
-  .agentSkillsCodeBlock {
-    font-size: 0.75rem;
-    line-height: 1.65;
-  }
-
-  .agentSkillsLineNumbers {
-    font-size: 0.72rem;
-  }
 }
 
 /* ─── Deploy Anywhere ────────────────────────────────────────────────────────────────── */
@@ -5749,9 +5337,6 @@
    ============================================================================= */
 
 @media (max-width: 768px) {
-  .agentSkillsSplitGrid {
-    grid-template-columns: 1fr;
-  }
 
   /* Hero */
   .heroTagline {
@@ -5781,13 +5366,7 @@
     justify-content: center !important;
   }
 
-  .agentSkillsPanel {
-    padding: 1.25rem;
-  }
 
-  .agentSkillsSectionLabel {
-    font-size: 1.1rem;
-  }
 
   /* AffiliationsStrip */
   .affiliationsStrip {
@@ -5970,17 +5549,8 @@
     min-height: 4.5rem;
   }
 
-  .agentSkillsPanel {
-    padding: 1rem;
-  }
 
-  .agentSkillsCodeBlock {
-    padding: 1rem;
-  }
 
-  .agentSkillsDetailBox {
-    padding: 1rem;
-  }
 
   .heroTagline {
     font-size: 1.25rem;
@@ -6524,485 +6094,5 @@
 
   .trustSection {
     padding: 3rem 1rem 4rem;
-  }
-}
-
-/* ─── Sandboxed Execution ─────────────────────────────────────────────────── */
-
-.sandboxSection {
-  padding: 8rem 0;
-  position: relative;
-  overflow: hidden;
-}
-
-.sandboxHeader {
-  text-align: center;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  max-width: 820px;
-  margin: 0 auto 3rem;
-  margin-top: -4rem;
-}
-
-.sandboxTitle {
-  font-size: 2.4rem;
-  font-weight: 600;
-  background: linear-gradient(to bottom, #ffffff 0%, #a0a0a0 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  letter-spacing: -0.03em;
-  line-height: 1.15;
-  margin-bottom: 0.25rem;
-}
-
-.sandboxSubtitle {
-  font-size: 1.1rem;
-  color: #94a3b8;
-  line-height: 1.7;
-  margin-top: 1rem;
-  margin-bottom: 0;
-}
-
-/* Execution path strip: agent tools, broker, broker lanes; feeds the provider grid below */
-.sandboxFlow {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.75rem;
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 0 1rem;
-  position: relative;
-  z-index: 1;
-}
-
-.sandboxFlowNode {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  gap: 0.15rem;
-  padding: 0.9rem 1.25rem 1rem;
-  border-radius: 1rem;
-  background: #010002;
-  z-index: 0;
-  flex: 0 1 auto;
-}
-
-/* Gradient border via masked ::before, matching .sandboxLogoCard */
-.sandboxFlowNode::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: 1rem;
-  padding: 1px;
-  background: linear-gradient(160deg,
-      rgba(255, 255, 255, 0.4) 0%,
-      rgba(255, 255, 255, 0.2) 25%,
-      rgba(255, 255, 255, 0.1) 55%,
-      rgba(255, 255, 255, 0.05) 100%);
-  -webkit-mask:
-    linear-gradient(#fff 0 0) content-box,
-    linear-gradient(#fff 0 0);
-  mask:
-    linear-gradient(#fff 0 0) content-box,
-    linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  pointer-events: none;
-  z-index: -1;
-}
-
-.sandboxFlowBroker {
-  flex-direction: row;
-  align-items: center;
-  gap: 0.85rem;
-  text-align: left;
-  background:
-    linear-gradient(180deg, rgba(255, 181, 71, 0.14) 0%, rgba(255, 181, 71, 0.03) 100%),
-    #010002;
-}
-
-.sandboxFlowBroker::before {
-  background: linear-gradient(160deg,
-      rgba(255, 181, 71, 0.85) 0%,
-      rgba(255, 181, 71, 0.45) 40%,
-      rgba(255, 255, 255, 0.12) 100%);
-}
-
-.sandboxFlowBrokerText {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0.15rem;
-}
-
-.sandboxFlowLogo {
-  width: 2.4rem;
-  height: 2.4rem;
-  flex-shrink: 0;
-  filter: drop-shadow(0 0 10px rgba(0, 221, 255, 0.45));
-}
-
-.sandboxFlowEyebrow {
-  margin: 0;
-  font-size: 0.62rem;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.5);
-  line-height: 1.4;
-}
-
-.sandboxFlowBroker .sandboxFlowEyebrow,
-.sandboxFlowLaneQueue .sandboxFlowEyebrow {
-  color: #ffb547;
-}
-
-.sandboxFlowTitle {
-  margin: 0;
-  font-size: 1rem;
-  font-weight: 700;
-  color: #ffffff;
-  line-height: 1.25;
-}
-
-.sandboxFlowSub {
-  margin: 0.15rem 0 0;
-  font-size: 0.74rem;
-  line-height: 1.45;
-  color: rgba(255, 255, 255, 0.55);
-}
-
-/* connector between strip nodes: a line ending in an arrowhead */
-.sandboxFlowArrow {
-  position: relative;
-  flex: 0 0 2.25rem;
-  height: 1px;
-  background: rgba(0, 221, 255, 0.5);
-}
-
-.sandboxFlowArrow::after {
-  content: "";
-  position: absolute;
-  right: -1px;
-  top: -3.5px;
-  border-top: 4px solid transparent;
-  border-bottom: 4px solid transparent;
-  border-left: 6px solid rgba(0, 221, 255, 0.85);
-}
-
-/* the two broker flavors, stacked */
-.sandboxFlowLanes {
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
-  flex: 0 1 auto;
-}
-
-.sandboxFlowLane {
-  padding: 0.6rem 0.95rem 0.65rem;
-  border-radius: 0.75rem;
-  border: 1px solid rgba(0, 221, 255, 0.28);
-  background: rgba(255, 255, 255, 0.04);
-  text-align: left;
-}
-
-.sandboxFlowLaneQueue {
-  border-color: rgba(255, 181, 71, 0.45);
-  background: rgba(255, 181, 71, 0.05);
-}
-
-.sandboxFlowLaneTitle {
-  margin: 0.1rem 0 0;
-  font-size: 0.9rem;
-  font-weight: 700;
-  color: #ffffff;
-  line-height: 1.3;
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  flex-wrap: wrap;
-}
-
-.sandboxFlowChip {
-  font-family: var(--ifm-font-family-monospace, monospace);
-  font-size: 0.7rem;
-  font-weight: 600;
-  white-space: nowrap;
-  color: rgba(255, 255, 255, 0.85);
-  border: 1px solid rgba(0, 221, 255, 0.35);
-  border-radius: 4px;
-  padding: 0.12rem 0.5rem;
-  line-height: 1.5;
-}
-
-.sandboxFlowChipWorker {
-  color: #ffd69c;
-  border-color: rgba(255, 181, 71, 0.6);
-  background: rgba(255, 181, 71, 0.08);
-}
-
-.sandboxFlowChipArrow {
-  position: relative;
-  width: 1.25rem;
-  height: 1px;
-  flex-shrink: 0;
-  background: rgba(0, 221, 255, 0.5);
-}
-
-.sandboxFlowChipArrow::after {
-  content: "";
-  position: absolute;
-  right: -1px;
-  top: -3px;
-  border-top: 3.5px solid transparent;
-  border-bottom: 3.5px solid transparent;
-  border-left: 5px solid rgba(0, 221, 255, 0.8);
-}
-
-/* stem from the strip down to the provider bus */
-.sandboxFlowStem {
-  width: 1px;
-  height: 2rem;
-  margin: 0.25rem auto 0;
-  background: linear-gradient(180deg,
-      rgba(0, 221, 255, 0.5),
-      rgba(0, 221, 255, 0.25));
-}
-
-/* Provider logo cards */
-.sandboxLogoGrid {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 1rem;
-  max-width: 1200px;
-  margin: 0 auto;
-  position: relative;
-  z-index: 1;
-  padding: 0 1rem;
-}
-
-.sandboxLogoCard {
-  border-radius: 1.25rem;
-  padding: 1.4rem 1rem 1.25rem;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  gap: 0.55rem;
-  position: relative;
-  z-index: 0;
-  background: #010002;
-  transition: transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-}
-
-/* Gradient border via masked ::before, matching .cloudCard */
-.sandboxLogoCard::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: 1.25rem;
-  padding: 1px;
-  background: linear-gradient(160deg,
-      rgba(255, 255, 255, 0.4) 0%,
-      rgba(255, 255, 255, 0.2) 25%,
-      rgba(255, 255, 255, 0.1) 55%,
-      rgba(255, 255, 255, 0.05) 100%);
-  -webkit-mask:
-    linear-gradient(#fff 0 0) content-box,
-    linear-gradient(#fff 0 0);
-  mask:
-    linear-gradient(#fff 0 0) content-box,
-    linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  pointer-events: none;
-  z-index: -1;
-  transition: background 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-}
-
-.sandboxLogoCard,
-.sandboxLogoCard:hover {
-  text-decoration: none;
-}
-
-.sandboxLogoCard:hover {
-  transform: translateY(-4px);
-}
-
-.sandboxLogoCard:hover::before {
-  background: linear-gradient(160deg,
-      rgba(160, 220, 255, 0.75) 10%,
-      rgba(100, 180, 255, 0.45) 25%,
-      rgba(255, 255, 255, 0.18) 45%,
-      rgba(255, 255, 255, 0.08) 100%);
-}
-
-.sandboxLogoIcon {
-  width: 3.25rem;
-  height: 3.25rem;
-  border-radius: 1rem;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.75rem;
-  color: #ffffff;
-}
-
-.sandboxLogoImg {
-  width: 2.1rem;
-  height: 2.1rem;
-  border-radius: 8px;
-  display: block;
-}
-
-.sandboxLogoImgInvert {
-  filter: invert(1);
-}
-
-.sandboxLogoName {
-  font-size: 1rem;
-  font-weight: 700;
-  color: #ffffff;
-  margin: 0;
-  line-height: 1.2;
-}
-
-.sandboxLogoTag {
-  font-size: 0.8rem;
-  color: rgba(255, 255, 255, 0.6);
-  line-height: 1.45;
-  margin: 0;
-}
-
-/* Wiring the provider grid to the strip: a top bus between the first and last
-   card centers (6 columns, 1rem gaps, 1rem side padding), plus one drop per card */
-.sandboxLogoGridWired {
-  padding-top: 1.25rem;
-}
-
-.sandboxLogoGridWired::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: calc(1rem + (100% - 7rem) / 12);
-  right: calc(1rem + (100% - 7rem) / 12);
-  height: 1px;
-  background: rgba(0, 221, 255, 0.3);
-}
-
-.sandboxLogoDrop {
-  position: absolute;
-  top: -1.25rem;
-  left: 50%;
-  width: 1px;
-  height: 1.25rem;
-  background: linear-gradient(180deg,
-      rgba(0, 221, 255, 0.3),
-      rgba(0, 221, 255, 0.45));
-  pointer-events: none;
-}
-
-/* Footer row: text left, CTA right */
-.sandboxFooter {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 2rem;
-  max-width: 1200px;
-  margin: 2rem auto 0;
-  padding: 0 1rem;
-}
-
-.sandboxFooterText {
-  font-size: 0.95rem;
-  color: rgba(255, 255, 255, 0.5);
-  line-height: 1.6;
-  max-width: 620px;
-  margin: 0;
-}
-
-@media (max-width: 1024px) {
-  .sandboxLogoGrid {
-    grid-template-columns: repeat(3, 1fr);
-    max-width: 800px;
-  }
-
-  /* strip stacks vertically; connectors turn into downward arrows */
-  .sandboxFlow {
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-
-  .sandboxFlowArrow {
-    flex-basis: auto;
-    width: 1px;
-    height: 1.5rem;
-  }
-
-  .sandboxFlowArrow::after {
-    right: auto;
-    top: auto;
-    left: -3.5px;
-    bottom: -1px;
-    border-left: 4px solid transparent;
-    border-right: 4px solid transparent;
-    border-top: 6px solid rgba(0, 221, 255, 0.85);
-    border-bottom: 0;
-  }
-
-  .sandboxFlowLanes {
-    width: 100%;
-    max-width: 34rem;
-  }
-
-  /* the 6-column bus geometry no longer holds once the grid wraps */
-  .sandboxFlowStem {
-    height: 1.5rem;
-    margin-bottom: 1.25rem;
-  }
-
-  .sandboxLogoGridWired {
-    padding-top: 0;
-  }
-
-  .sandboxLogoGridWired::before,
-  .sandboxLogoDrop {
-    display: none;
-  }
-}
-
-@media (max-width: 768px) {
-  .sandboxSection {
-    padding: 5rem 0;
-  }
-
-  .sandboxTitle {
-    font-size: 1.9rem;
-  }
-
-  .sandboxSubtitle {
-    font-size: 1rem;
-  }
-
-  .sandboxLogoGrid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-
-  .sandboxFooter {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 1.25rem;
-  }
-}
-
-@media (max-width: 480px) {
-  .sandboxLogoGrid {
-    grid-template-columns: 1fr;
   }
 }
