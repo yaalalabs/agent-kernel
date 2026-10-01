@@ -22,12 +22,13 @@ export default function App() {
   const patch = (id: string, text: string) =>
     setLines((current) => current.map((line) => (line.id === id && line.kind === "agent" ? { ...line, text } : line)));
 
-  async function run(args: { prompt?: string; resume?: { interruptId: string; verdict: Verdict }[] }) {
+  async function run(args: { prompt?: string; resume?: { interruptId: string; verdict: Verdict }[] }): Promise<boolean> {
     setRunning(true);
     try {
-      await runAgent({ agent, threadId: threadId.current, messages: messages.current, ...args }, emit, patch);
+      return await runAgent({ agent, threadId: threadId.current, messages: messages.current, ...args }, emit, patch);
     } catch (error) {
       emit({ kind: "error", id: uuid(), text: String(error) });
+      return false;
     } finally {
       setRunning(false);
     }
@@ -43,9 +44,11 @@ export default function App() {
     void run({ prompt: text });
   }
 
-  function decide(lineId: string, interruptId: string, verdict: Verdict, settled: string) {
+  async function decide(lineId: string, interruptId: string, verdict: Verdict, settled: string) {
+    // Retire the question only once the run accepted the decision. A failed resume leaves the pause
+    // in place precisely so it can be answered again, which a card with no buttons left cannot do.
+    if (!(await run({ resume: [{ interruptId, verdict }] }))) return;
     setLines((current) => current.map((line) => (line.id === lineId && line.kind === "pause" ? { ...line, settled } : line)));
-    void run({ resume: [{ interruptId, verdict }] });
   }
 
   return (
