@@ -126,9 +126,11 @@ Two consequences of reading the state back wholesale:
 
 Google ADK's own per-run options are declared per agent with
 [`Module.run_options`](../core-concepts/runner.md#native-run-options). Agent Kernel constructs the
-ADK `Runner` per run, so the options have two destinations: `plugins`, `memory_service`,
-`artifact_service`, `credential_service` and `plugin_close_timeout` go to the `Runner(...)`
-constructor, and `run_config` goes to `run_async`:
+ADK `Runner` per run, so the options have three destinations: `plugins` go to the `App` (ADK refuses
+an `App` and `plugins` on the `Runner` together, and this adapter always builds an `App` — see
+[Human in the Loop](#human-in-the-loop)), `memory_service`, `artifact_service`, `credential_service`
+and `plugin_close_timeout` go to the `Runner(...)` constructor, and `run_config` goes to `run_async`.
+You declare them all the same way:
 
 ```python
 from google.adk.agents.run_config import RunConfig
