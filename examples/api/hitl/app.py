@@ -67,8 +67,8 @@ OpenAIModule([support_agent])
 # something, needs a framework whose pause carries a value back. LangGraph's `interrupt()` returns
 # whatever the resume supplies, so both shapes work here.
 #
-# This graph calls no model at all: `interrupt()` is plain Python, which is also why this half of the
-# demo runs without an API key.
+# Asking costs nothing: `interrupt()` is plain Python and the two questions below reach no model. The
+# `confirm` node that follows them does call one, so finishing the flow still needs an API key.
 
 
 class RefundPlan(TypedDict):

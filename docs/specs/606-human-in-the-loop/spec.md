@@ -717,8 +717,8 @@ Verified present at AK's **pinned** `ag-ui-protocol` 0.1.22, so no dependency bu
   `run_id` is optional and why `PausedInterruption.id` must be unique across records.
 - **`ResumeEntry.status` maps without flattening**: the wire carries two values where Agent Kernel
   carries three. `cancelled` stays `cancelled`; `resolved` becomes `denied` when the payload is
-  `False` or an object saying `approved: false`, and `approved` otherwise — a human who supplied an
-  answer approved, rather than withheld one.
+  `False`, and `approved` otherwise — a human who supplied an answer approved, rather than withheld
+  one.
 - **The agent comes from the route, not the body.** *(Established in PR 3.)* `RunAgentInput` has no
   agent field, but AG-UI runs are addressed as `POST {prefix}/{agent_name}`, so a resume names its
   agent the same way the original turn did.

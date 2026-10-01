@@ -16,12 +16,16 @@ type Turn = { id: string; role: "user" | "assistant"; content: string };
  * `resume` carries the human's decisions when this turn answers a pause, and is omitted otherwise.
  * Typing the body as the SDK's `RunAgentInput` checks the outbound half of the protocol the same way
  * the event types check the inbound half.
+ *
+ * Returns whether the run succeeded. The caller needs to know, because Agent Kernel keeps a paused
+ * record when a resume fails so the same decision can be sent again — a UI that retires the question
+ * regardless would throw that away.
  */
 export async function runAgent(
   args: { agent: string; threadId: string; messages: Turn[]; prompt?: string; resume?: { interruptId: string; verdict: Verdict }[] },
   emit: (line: Line) => void,
   patch: (id: string, text: string) => void,
-): Promise<void> {
+): Promise<boolean> {
   const body: RunAgentInput = {
     threadId: args.threadId,
     runId: uuid(),
@@ -35,9 +39,17 @@ export async function runAgent(
 
   const response = await fetch(`/agui/${args.agent}`, {
     method: "POST",
-    headers: { "content-type": "application/json", authorization: `Bearer ${TOKEN}` },
+    headers: { "content-type": "application/json", accept: "text/event-stream", authorization: `Bearer ${TOKEN}` },
     body: JSON.stringify(body),
   });
+
+  // A rejected request answers with JSON, not SSE, so the parser below would find no events and the
+  // run would end looking like an empty success. AG-UI has no anonymous mode, which makes a bad
+  // token the likeliest way to land here.
+  if (!response.ok) {
+    emit({ kind: "error", id: uuid(), text: `${response.status} ${await response.text()}` });
+    return false;
+  }
 
   let agentLineId: string | null = null;
   let text = "";
@@ -69,7 +81,9 @@ export async function runAgent(
 
       case "RUN_ERROR":
         emit({ kind: "error", id: uuid(), text: event.message });
-        break;
+        return false;
     }
   }
+
+  return true;
 }
