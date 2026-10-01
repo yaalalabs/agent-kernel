@@ -65,12 +65,17 @@ class PausingRunner(Runner):
 
     async def resume(self, agent, session, requests, decisions, record):
         self.resumed_with = decisions
+        # Clearing is the adapter's, on its success path — Runtime deliberately does not tidy up,
+        # because it cannot tell a failed resume from an ordinary reply. A double that skipped this
+        # would model a contract no real adapter follows.
+        PausedRunState.clear(session, record.id)
         return AgentReplyText(response="resumed")
 
     async def resume_stream(self, agent, session, requests, decisions, record):
         self.resumed_with = decisions
         self.resumed_requests = requests
         yield TextDelta(message_id="m2", content="resumed")
+        PausedRunState.clear(session, record.id)
 
 
 class PausingAgent(Agent):
