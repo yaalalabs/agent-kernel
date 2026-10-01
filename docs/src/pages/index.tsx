@@ -584,7 +584,7 @@ const AGENT_SKILLS = [
     icon: MdBugReport,
     name: "ak-test",
     description:
-      "Tests your agent in score, llm, and fallback modes through a pluggable evaluator: DeepEval built in, or your own AKEvaluator. When something breaks, a step-by-step debugging playbook helps you fix it fast.",
+      "Tests your agent in score, llm, and fallback modes through a pluggable evaluator: DeepEval, Opik and JEV built in, or your own AKEvaluator. When something breaks, a step-by-step debugging playbook helps you fix it fast.",
     pills: [
       "Score mode",
       "LLM mode",

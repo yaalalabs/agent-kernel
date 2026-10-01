@@ -196,6 +196,9 @@ kubernetes = [
 opik = [
     "opik>=1.7.0",
 ]
+jev = [
+    "typesafe-sdk>=0.7.2,<0.8",
+]
 
 [project.scripts]
 ak = "agentkernel.cli.ak:main"

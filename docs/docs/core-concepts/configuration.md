@@ -724,10 +724,10 @@ If `test-config.yaml` is missing, defaults apply silently (no warning is printed
 
 **Test Modes:**
 - `score` - Deterministic, offline string-match scoring via the configured evaluator (DeepEval uses `Scorer.quasi_exact_match_score`; Opik uses `LevenshteinRatio`)
-- `llm` - LLM-as-judge evaluation via the configured evaluator (DeepEval and Opik both use a `GEval` metric) for semantic similarity
+- `llm` - LLM-as-judge evaluation via the configured evaluator (DeepEval and Opik use a `GEval` metric; JEV asks one yes/no Noul question) for semantic similarity
 - `fallback` - Tries score first, falls back to llm if score fails
 
-**Evaluator backend:** `evaluator` selects the pluggable scoring backend used by both `score` and `llm` modes. Built-in values are `deepeval` (the default, requires the `test` extra) and `opik` (requires the `opik` extra); any other value is treated as a dotted path to your own `AKEvaluator` subclass (`agentkernel.test.core.evaluator.AKEvaluator`) — see [Bring your own evaluator](../testing/cli-testing.md#bring-your-own-evaluator). Opik's `GEval` judge runs entirely locally against the LLM configured under `llm:` below — it does not require an Opik Cloud account, API key, or self-hosted server (AK disables its trace logging by default).
+**Evaluator backend:** `evaluator` selects the pluggable scoring backend used by both `score` and `llm` modes. Built-in values are `deepeval` (the default, requires the `test` extra), `opik` (requires the `opik` extra) and `jev` (requires the `jev` extra); any other value is treated as a dotted path to your own `AKEvaluator` subclass (`agentkernel.test.core.evaluator.AKEvaluator`) — see [Bring your own evaluator](../testing/cli-testing.md#bring-your-own-evaluator). Opik's `GEval` judge runs entirely locally against the LLM configured under `llm:` below — it does not require an Opik Cloud account, API key, or self-hosted server (AK disables its trace logging by default). `jev` is a hosted judge ([TypeSafe JEV](https://docs.typesafe.ai)) that works only with `mode: llm` (`score` and `fallback` raise `AKMetricNotSupported`); it reads `TYPESAFE_API_KEY` from the environment, ignores the `llm:` block, and sends the user input, expected output and actual output to `api.typesafe.ai`.
 
 ### Custom Test Configuration File Path
 
