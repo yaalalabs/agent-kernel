@@ -1,5 +1,7 @@
 """Unit tests for the shared database drivers in ``agentkernel.core.util.driver``."""
 
+import decimal
+import json
 from unittest.mock import MagicMock
 
 import pytest
@@ -75,6 +77,55 @@ class TestRetry:
             _ = driver.table
         assert calls["n"] == 3
         assert sleep_calls["n"] == 2
+
+
+class TestDynamoDecimalCodec:
+    """DynamoDB stores no floats and returns no ints; both halves of that are converted here."""
+
+    def test_floats_become_decimals_recursively(self):
+        from agentkernel.core.util.driver.dynamodb import DynamoDecimalCodec
+
+        converted = DynamoDecimalCodec.to_dynamo({"price": 2.5, "nested": {"xs": [1.5, 2]}, "name": "x"})
+
+        assert converted == {"price": decimal.Decimal("2.5"), "nested": {"xs": [decimal.Decimal("1.5"), 2]}, "name": "x"}
+
+    def test_decimal_uses_the_printed_form_not_the_binary_expansion(self):
+        from agentkernel.core.util.driver.dynamodb import DynamoDecimalCodec
+
+        assert DynamoDecimalCodec.to_dynamo({"price": 0.1})["price"] == decimal.Decimal("0.1")
+
+    def test_bools_are_not_treated_as_numbers(self):
+        from agentkernel.core.util.driver.dynamodb import DynamoDecimalCodec
+
+        converted = DynamoDecimalCodec.to_dynamo({"active": True, "off": False})
+
+        assert converted == {"active": True, "off": False}
+        assert isinstance(converted["active"], bool)
+
+    def test_decimals_come_back_as_int_or_float(self):
+        from agentkernel.core.util.driver.dynamodb import DynamoDecimalCodec
+
+        restored = DynamoDecimalCodec.from_dynamo({"count": decimal.Decimal("3"), "price": decimal.Decimal("2.5")})
+
+        assert restored == {"count": 3, "price": 2.5}
+        assert isinstance(restored["count"], int)
+        assert isinstance(restored["price"], float)
+
+    def test_round_trip_leaves_a_payload_json_serialisable(self):
+        """The point of converting on read: no consumer ever meets a Decimal."""
+        from agentkernel.core.util.driver.dynamodb import DynamoDecimalCodec
+
+        payload = {"price": 250.0, "count": 3, "coords": [1.5, -2.25], "label": "x", "ok": True}
+
+        restored = DynamoDecimalCodec.from_dynamo(DynamoDecimalCodec.to_dynamo(payload))
+
+        assert restored == payload
+        assert json.loads(json.dumps(restored)) == payload
+
+    def test_from_dynamo_passes_none_through(self):
+        from agentkernel.core.util.driver.dynamodb import DynamoDecimalCodec
+
+        assert DynamoDecimalCodec.from_dynamo(None) is None
 
 
 class TestPingReconnect:

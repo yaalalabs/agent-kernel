@@ -158,3 +158,49 @@ class TestBypasses:
         reply.content["at"] = datetime.datetime(2026, 9, 22, 14, 30)
 
         assert isinstance(reply.content["at"], datetime.datetime)
+
+
+class TestGatesUseTheCodec:
+    """The six call sites exist so one rule serializes every response body.
+
+    Each is a value that bare ``json.dumps`` rejects, proving the gate is not the stdlib call it
+    replaced. The copy-drift this prevents is the reason `encode` is on the codec rather than
+    written out at each site.
+    """
+
+    def test_a_body_that_bare_json_rejects_still_encodes(self):
+        body = {"result": {"at": datetime.datetime(2026, 9, 22, 14, 30), "amount": decimal.Decimal("250.00")}, "session_id": "s-1"}
+
+        with pytest.raises(TypeError):
+            json.dumps(body)
+
+        assert json.loads(PayloadCodec.encode(body)) == {"result": {"at": "2026-09-22T14:30:00", "amount": "250.00"}, "session_id": "s-1"}
+
+    def test_queue_runner_gate(self):
+        from agentkernel.pipeline import agent_runner
+
+        assert agent_runner.PayloadCodec is PayloadCodec
+
+    def test_sqs_transport_gate_serializes_a_dict_body(self):
+        from agentkernel.pipeline.transport.sqs import serialize_message_body
+
+        assert json.loads(serialize_message_body({"result": {"at": datetime.datetime(2026, 9, 22, 14, 30)}})) == {
+            "result": {"at": "2026-09-22T14:30:00"}
+        }
+
+    def test_sqs_transport_gate_passes_strings_through(self):
+        from agentkernel.pipeline.transport.sqs import serialize_message_body
+
+        assert serialize_message_body("already encoded") == "already encoded"
+
+    def test_serverless_and_azure_gates(self):
+        from agentkernel.deployment.aws.serverless.core.router import rest_lambda
+        from agentkernel.deployment.azure import akfunction
+
+        assert rest_lambda.PayloadCodec is PayloadCodec
+        assert akfunction.PayloadCodec is PayloadCodec
+
+    def test_pipeline_request_handler_gate(self):
+        from agentkernel.pipeline import request_handler
+
+        assert request_handler.PayloadCodec is PayloadCodec

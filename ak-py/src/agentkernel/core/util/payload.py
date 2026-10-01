@@ -62,10 +62,21 @@ class PayloadCodec:
         """
         Serialise a response body to JSON, coping with values that never passed `normalise`.
 
+        Deliberately two passes rather than one. Pydantic converts whatever bare ``json.dumps``
+        would have refused, and ``json.dumps`` then writes it out — so a body that was already
+        JSON-safe produces the bytes it produced before this gate existed, down to the spacing. The
+        gates run on every queue message and every serverless response, not only on labelled ones,
+        and changing their bytes for everybody would be exactly the kind of untargeted change this
+        work promises not to make.
+
+        Unlike `normalise` this is lenient: a non-finite float becomes ``null`` here rather than
+        raising, because a gate's job is to get the message out, not to re-litigate a payload that
+        already passed validation or bypassed it.
+
         :param body: The response body, usually a dict built by `ResponseBuilder`.
         :return: The JSON text.
         """
-        return cls._adapter.dump_json(body).decode()
+        return json.dumps(json.loads(cls._adapter.dump_json(body)))
 
     @classmethod
     def _require_finite(cls, value: Any, path: str = "content") -> None:

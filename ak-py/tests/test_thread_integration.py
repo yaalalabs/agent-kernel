@@ -283,3 +283,54 @@ class TestEndToEnd:
         listing = client.get("/api/v1/threads", params={"user_id": "alice"})
         assert listing.status_code == 200
         assert [t["session_id"] for t in listing.json()["threads"]] == ["s-e2e"]
+
+
+class TestThreadContentEncoding:
+    """Both recording paths must store the same bytes for the same reply.
+
+    ``ThreadRecorder.post_run`` is called with three different types — an ``AgentReply`` from the
+    direct handler, the accumulated text from the streaming one, and the response body's ``result``
+    value from the queue runner, which for a labelled reply is a dict.
+    """
+
+    def test_agent_reply_records_json(self):
+        from agentkernel.core.model import AgentReplyAny
+        from agentkernel.integration.thread.recorder import ThreadRecorder
+
+        assert ThreadRecorder._as_thread_content(AgentReplyAny(content={"a": 1})) == '{"a": 1}'
+
+    def test_text_reply_records_its_text(self):
+        from agentkernel.core.model import AgentReplyText
+        from agentkernel.integration.thread.recorder import ThreadRecorder
+
+        assert ThreadRecorder._as_thread_content(AgentReplyText(response="hello")) == "hello"
+
+    def test_accumulated_stream_text_passes_through(self):
+        from agentkernel.integration.thread.recorder import ThreadRecorder
+
+        assert ThreadRecorder._as_thread_content("hel" + "lo") == "hello"
+
+    def test_dict_records_json_not_a_python_repr(self):
+        from agentkernel.integration.thread.recorder import ThreadRecorder
+
+        content = ThreadRecorder._as_thread_content({"root": None, "ok": True})
+
+        assert content == '{"root": null, "ok": true}'
+        assert "'" not in content
+        assert "None" not in content
+
+    def test_both_paths_record_identical_bytes(self):
+        """The queue path and the direct path hold different types for the same reply."""
+        import json
+
+        from agentkernel.core.model import AgentReplyAny
+        from agentkernel.integration.thread.recorder import ThreadRecorder
+
+        content = {"version": "v1.0", "createSurface": {"surfaceId": "s1"}}
+        reply = AgentReplyAny(content=content, media_type="application/a2ui+json")
+
+        direct = ThreadRecorder._as_thread_content(reply)
+        queue = ThreadRecorder._as_thread_content(content)
+
+        assert direct == queue
+        assert json.loads(direct) == content
