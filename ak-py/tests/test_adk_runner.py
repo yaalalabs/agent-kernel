@@ -1419,3 +1419,86 @@ class TestGoogleADKStreamedRePause:
         assert isinstance(again, AgentPausedReplyAny)
         assert again.run_id != first.run_id
         assert [r.id for r in PausedRunState.list(session)] == [again.run_id]
+
+
+def _restating_adk():
+    """An agent whose outstanding long-running call is re-surfaced on the next round.
+
+    ADK re-emits a call that is still waiting, so a drained turn can carry the same id twice. Found
+    by running the demo: a model that asked once and then restated the question crashed the pause.
+    """
+    from typing import AsyncGenerator
+
+    from google.adk.agents import LlmAgent
+    from google.adk.models.base_llm import BaseLlm
+    from google.adk.models.llm_response import LlmResponse
+    from google.adk.tools import LongRunningFunctionTool
+    from google.genai import types
+
+    class FakeLlm(BaseLlm):
+        model: str = "fake"
+        rounds: int = 0
+
+        async def generate_content_async(self, llm_request, stream: bool = False) -> AsyncGenerator[LlmResponse, None]:
+            self.rounds += 1
+            if self.rounds <= 2:
+                call = types.FunctionCall(id="call-1", name="ask_size", args={"q": "size?"})
+                yield LlmResponse(content=types.Content(role="model", parts=[types.Part(function_call=call)]))
+            else:
+                yield LlmResponse(content=types.Content(role="model", parts=[types.Part(text="all done")]))
+
+    def ask_size(q: str) -> dict:
+        """Ask the human for a size."""
+        return {"status": "pending"}
+
+    native = LlmAgent(name="gated", model=FakeLlm(), tools=[LongRunningFunctionTool(func=ask_size)])
+    return GoogleADKAgent(name="gated", runner=GoogleADKRunner(), agent=native)
+
+
+class TestARepeatedCallIsOneQuestion:
+    """
+    The same call reaching a turn twice is the model restating itself, not two things to decide.
+
+    Carried through, the repeat fails `PausedRunState.add`'s uniqueness check, and the adapter's
+    `except Exception` hands that internal message to the user in place of the pause.
+    """
+
+    @pytest.mark.asyncio
+    async def test_a_restated_call_pauses_once_instead_of_failing(self):
+        runner, session = GoogleADKRunner(), Session("s")
+
+        reply = await runner.run(_restating_adk(), session, [AgentRequestText(prompt="ask me")])
+
+        assert isinstance(reply, AgentPausedReplyAny), getattr(reply, "response", reply)
+        assert [i.id for i in reply.interruptions] == ["call-1"]
+        assert len(PausedRunState.list(session)) == 1
+
+    @pytest.mark.asyncio
+    async def test_the_internal_uniqueness_error_never_reaches_the_caller(self):
+        runner, session = GoogleADKRunner(), Session("s")
+
+        reply = await runner.run(_restating_adk(), session, [AgentRequestText(prompt="ask me")])
+
+        assert "repeating interruption id" not in str(getattr(reply, "response", ""))
+
+    @pytest.mark.asyncio
+    async def test_a_streamed_run_pauses_once_too(self):
+        from agentkernel.core.event import RunPaused
+
+        runner, session = GoogleADKRunner(), Session("s")
+
+        events = [e async for e in runner.stream(_restating_adk(), session, [AgentRequestText(prompt="ask me")])]
+
+        assert isinstance(events[-1], RunPaused)
+        assert [i.id for i in events[-1].interruptions] == ["call-1"]
+
+    @pytest.mark.asyncio
+    async def test_two_genuinely_different_calls_are_still_two_questions(self):
+        """The dedupe is by id, so it must not collapse a turn that really asks twice."""
+        runner, session = GoogleADKRunner(), Session("s")
+        agent, _ = _gated_adk()
+
+        reply = await runner.run(agent, session, [AgentRequestText(prompt="ask me")])
+
+        assert len(reply.interruptions) == 1  # this fixture asks once; the ids are what matters
+        assert len({i.id for i in reply.interruptions}) == len(reply.interruptions)

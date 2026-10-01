@@ -411,6 +411,13 @@ class GoogleADKRunner(BaseRunner):
         The `invocation_id` is the whole payload — the conversation itself already lives in the ADK
         session inside `GoogleADKSession`, which the AK session persists.
 
+        One call can reach a turn more than once. A drained turn is many events, and an outstanding
+        long-running call is re-surfaced on each round the model takes while it waits, so collecting
+        them produces repeats rather than distinct questions. Carried through, the repeat fails
+        `PausedRunState.add`'s uniqueness check and the pause is lost to an error reply, which is a
+        confusing way to say "the model asked twice". Deduplicated here because this is the one place
+        pending calls become interruptions, so every path — run, stream and both resumes — is covered.
+
         :param agent: The agent that paused.
         :param session: The session the record is written to.
         :param turn: The drained turn carrying the pending calls and the invocation to resume.
@@ -419,7 +426,11 @@ class GoogleADKRunner(BaseRunner):
         PausedRunState.clear_for_runner(session, self.name)
 
         interruptions = []
+        seen: set[str] = set()
         for call, kind in turn.pending:
+            if call.id in seen:
+                continue
+            seen.add(call.id)
             try:
                 arguments = json.dumps(dict(call.args or {}), default=str)
             except Exception:
