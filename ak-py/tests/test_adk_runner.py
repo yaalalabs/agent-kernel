@@ -743,6 +743,27 @@ class TestGoogleADKRunnerStructuredOutput:
         assert reply.prompt == "capital of France?"
 
     @pytest.mark.asyncio
+    async def test_a_resumed_turn_parses_the_schema_the_same_way(self):
+        """The reply type must not depend on whether a human was involved in the turn."""
+        runner, session = GoogleADKRunner(), Session("s")
+        agent, _ = _gated_adk()
+        agent.agent.output_schema = CapitalOutput
+        paused = await runner.run(agent, session, [AgentRequestText(prompt="ask me")])
+        record = PausedRunState.get(session, paused.run_id)
+        requests, decisions = _resume_requests(ResumeDecision(id="call-1", payload="large"))
+
+        with patch.object(
+            GoogleADKRunner,
+            "get_response",
+            new_callable=AsyncMock,
+            return_value=_turn('{"country": "France", "capital": "Paris"}'),
+        ):
+            reply = await runner.resume(agent, session, requests, decisions, record)
+
+        assert isinstance(reply, AgentReplyAny)
+        assert reply.content == {"country": "France", "capital": "Paris"}
+
+    @pytest.mark.asyncio
     async def test_output_schema_with_invalid_json_falls_back_to_text(self):
         runner = GoogleADKRunner()
         session = Session("test-session")
@@ -837,8 +858,14 @@ class TestGoogleADKRunOptions:
 
     @pytest.mark.asyncio
     async def test_constructor_options_reach_the_per_run_adk_runner(self):
+        from google.adk.plugins.base_plugin import BasePlugin
+
+        class _Plugin(BasePlugin):
+            def __init__(self):
+                super().__init__(name="probe")
+
         runner = GoogleADKRunner()
-        plugin = object()
+        plugin = _Plugin()  # a real one: App validates its plugins, where a mocked Runner took anything
         agent = _mock_agent()
         agent.run_options = {"plugins": ["static, not read by the setup"]}  # the setup takes the resolved mapping, not the agent
         adk_session = MagicMock()
@@ -854,12 +881,40 @@ class TestGoogleADKRunOptions:
             )
 
         kwargs = MockRunner.call_args.kwargs
-        assert kwargs["plugins"] == [plugin]
+        # Plugins ride the App, not the Runner: ADK rejects both at once, and this adapter always
+        # provides an App because resumability lives there.
+        assert kwargs["app"].plugins == [plugin]
+        assert "plugins" not in kwargs
         assert kwargs["app"].root_agent is agent.agent
         assert kwargs["app"].resumability_config.is_resumable is True
         assert kwargs["app_name"] == "AgentKernel"
         assert kwargs["session_service"] is adk_session.session_service
         assert "run_config" not in kwargs
+
+    @pytest.mark.asyncio
+    async def test_the_real_adk_runner_accepts_what_the_adapter_builds(self):
+        """No mock: a mocked Runner accepts any kwargs, which is how `plugins` shipped broken.
+
+        ADK raises `ValueError("When app is provided, plugins should not be provided...")`, so the
+        assertion that matters is that construction simply succeeds.
+        """
+        from google.adk.plugins.base_plugin import BasePlugin
+
+        class _Plugin(BasePlugin):
+            def __init__(self):
+                super().__init__(name="probe")
+
+        runner = GoogleADKRunner()
+        agent = _mock_agent()
+        adk_session = MagicMock()
+        adk_session.create_session = AsyncMock()
+        adk_session.update_session_state = AsyncMock()
+        adk_session.session_service = __import__("google.adk.sessions", fromlist=["InMemorySessionService"]).InMemorySessionService()
+
+        with patch.object(GoogleADKRunner, "_session", return_value=adk_session):
+            _, built, _, _ = await runner._setup_session_context(agent, Session("s"), [AgentRequestText(prompt="hi")], None, {"plugins": [_Plugin()]})
+
+        assert [p.name for p in built.app.plugins] == ["probe"]
 
     @pytest.mark.asyncio
     async def test_run_mode_forwards_the_run_config_untouched(self):
@@ -1502,3 +1557,65 @@ class TestARepeatedCallIsOneQuestion:
 
         assert len(reply.interruptions) == 1  # this fixture asks once; the ids are what matters
         assert len({i.id for i in reply.interruptions}) == len(reply.interruptions)
+
+
+class TestAnOrdinaryTurnWhileAPauseIsPending:
+    """
+    `design.md` pins this per adapter. ADK answers normally — its conversation lives in the ADK
+    session, which an ordinary turn simply continues — and the pending record is left alone, since
+    nothing but a resume or a replacing pause may clear it.
+    """
+
+    @pytest.mark.asyncio
+    async def test_it_answers_normally_and_leaves_the_record_alone(self):
+        runner, session = GoogleADKRunner(), Session("s")
+        agent, _ = _gated_adk()
+        paused = await runner.run(agent, session, [AgentRequestText(prompt="ask me")])
+
+        reply = await runner.run(agent, session, [AgentRequestText(prompt="something else")])
+
+        assert isinstance(reply, AgentReplyText)
+        assert PausedRunState.get(session, paused.run_id) is not None
+
+
+class TestAResumedStreamCarriesReasoning:
+    """
+    `resume_stream` used to hold a second copy of the event mapping that dropped the thinking text,
+    so an agent emitted reasoning before a pause and none after it. Both paths share one mapper now.
+    """
+
+    @staticmethod
+    def _events(mapper, *events):
+        out = []
+        for event in events:
+            out.extend(mapper.events(event))
+        out.extend(mapper.close())
+        return [type(e).__name__ for e in out]
+
+    def test_the_mapper_emits_reasoning_for_a_thinking_event(self):
+        from agentkernel.framework.adk.adk import _AdkStreamMapper
+
+        mapped = self._events(_AdkStreamMapper(GoogleADKRunner()), _partial_event(thought="weighing it up"))
+
+        assert mapped == ["ReasoningStart", "ReasoningDelta", "ReasoningEnd"]
+
+    def test_reasoning_closes_when_prose_starts(self):
+        from agentkernel.framework.adk.adk import _AdkStreamMapper
+
+        mapped = self._events(
+            _AdkStreamMapper(GoogleADKRunner()),
+            _partial_event(thought="weighing it up"),
+            _partial_event(text="here you go"),
+        )
+
+        assert mapped == ["ReasoningStart", "ReasoningDelta", "ReasoningEnd", "MessageStart", "TextDelta", "MessageEnd"]
+
+    def test_both_paths_use_the_same_mapper(self):
+        """The regression guard: a second copy is what let the two drift apart."""
+        import inspect
+
+        from agentkernel.framework.adk.adk import GoogleADKRunner as R
+
+        assert "_AdkStreamMapper(self)" in inspect.getsource(R.stream)
+        assert "_AdkStreamMapper(self)" in inspect.getsource(R.resume_stream)
+        assert "_event_text(event)" not in inspect.getsource(R.resume_stream)

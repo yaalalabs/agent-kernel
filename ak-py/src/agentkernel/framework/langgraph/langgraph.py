@@ -500,6 +500,22 @@ class LangGraphRunner(BaseRunner):
                 return prompt, False
         return prompt, True
 
+    def _session_config(self, agent: Any, session: Session) -> dict:
+        """
+        The RunnableConfig addressing this session's thread, with AK's checkpointer attached.
+
+        The one seam every path builds its config through — an ordinary turn and a resume alike — so
+        a subclass that needs to reach the config (the Langfuse runner, which appends its callback
+        handler) overrides this and is not silently bypassed by whichever path a turn takes. Tracing
+        a resumed run matters most, since that is where a gated tool finally executes.
+
+        :param agent: The LangGraph agent, whose checkpointer is pointed at this session's.
+        :param session: The AgentKernel session, whose id is the graph's `thread_id`.
+        :return: The config dict addressing this session's thread.
+        """
+        agent.agent.checkpointer = self._session(session).checkpointer
+        return LangGraphSessionConfigModel(configurable=LangGraphSessionConfigurable(thread_id=session.id)).model_dump()
+
     def _prepare_session_and_messages(self, agent: Any, session: Session, prompt: str) -> tuple[dict, list]:
         """
         Prepare session config and messages for LangGraph agent.
@@ -508,9 +524,8 @@ class LangGraphRunner(BaseRunner):
         :param prompt: The prompt text.
         :return: Tuple of (session_config, messages).
         """
-        session_config = LangGraphSessionConfigModel(configurable=LangGraphSessionConfigurable(thread_id=session.id))
+        session_config = self._session_config(agent, session)
         lg_session = self._session(session)
-        agent.agent.checkpointer = lg_session.checkpointer
 
         messages = []
         system_prompt = getattr(agent, "_system_prompt", "")
@@ -519,7 +534,7 @@ class LangGraphRunner(BaseRunner):
             lg_session._system_prompt_injected = True
         messages.append(HumanMessage(content=prompt))
 
-        return session_config.model_dump(), messages
+        return session_config, messages
 
     @staticmethod
     def _merge_run_config(base: dict, caller: Mapping[str, Any] | None) -> dict:
@@ -676,14 +691,15 @@ class LangGraphRunner(BaseRunner):
 
         Deliberately not `_prepare_session_and_messages`: that also appends a `HumanMessage` and
         consumes the one-shot system-prompt injection, both of which belong to a new turn rather
-        than to continuing a parked one.
+        than to continuing a parked one. It shares `_session_config` with that method instead, so a
+        subclass reaching the config — the Langfuse runner's callback handler — is not lost on the
+        resume path, which is where the gated tool actually runs.
 
         :param agent: The agent being resumed.
         :param session: The session whose id is the graph's `thread_id`.
         :return: The config dict addressing this session's thread.
         """
-        agent.agent.checkpointer = self._session(session).checkpointer
-        return LangGraphSessionConfigModel(configurable=LangGraphSessionConfigurable(thread_id=session.id)).model_dump()
+        return self._session_config(agent, session)
 
     def _resume_command(self, decisions: list[ResumeDecision], prompt: str) -> Command:
         """

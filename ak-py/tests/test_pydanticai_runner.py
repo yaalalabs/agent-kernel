@@ -1386,3 +1386,56 @@ class TestPydanticAIStreamingPause:
 
         with pytest.raises(ValueError, match="every deferred tool call resolved"):
             _ = [e async for e in runner.resume_stream(agent, session, requests, decisions, record)]
+
+
+class TestAnOrdinaryTurnWhileAPauseIsPending:
+    """
+    `design.md` pins a different reply per adapter here; this is Pydantic AI's.
+
+    The framework refuses a new prompt while tool calls are unprocessed, so the turn fails either
+    way. Raised above the `try` so it fails saying why, instead of "Sorry, something went wrong".
+    """
+
+    @pytest.mark.asyncio
+    async def test_it_is_refused_with_a_message_that_names_the_waiting_run(self):
+        runner, session, g = PydanticAIRunner(), Session("s"), _Gated()
+        paused = await runner.run(g.agent, session, [AgentRequestText(prompt="hi")])
+
+        with pytest.raises(ValueError, match=paused.run_id):
+            await runner.run(g.agent, session, [AgentRequestText(prompt="something else")])
+
+    @pytest.mark.asyncio
+    async def test_the_message_points_at_the_resume_block(self):
+        runner, session, g = PydanticAIRunner(), Session("s"), _Gated()
+        await runner.run(g.agent, session, [AgentRequestText(prompt="hi")])
+
+        with pytest.raises(ValueError, match="resume"):
+            await runner.run(g.agent, session, [AgentRequestText(prompt="something else")])
+
+    @pytest.mark.asyncio
+    async def test_the_pause_survives_the_refusal(self):
+        """Refusing the turn must not cost the human their pending decision."""
+        runner, session, g = PydanticAIRunner(), Session("s"), _Gated()
+        paused = await runner.run(g.agent, session, [AgentRequestText(prompt="hi")])
+
+        with pytest.raises(ValueError):
+            await runner.run(g.agent, session, [AgentRequestText(prompt="something else")])
+
+        assert PausedRunState.get(session, paused.run_id) is not None
+
+    @pytest.mark.asyncio
+    async def test_another_framework_s_pause_does_not_block_this_one(self):
+        """The guard is scoped to this runner, like the replacement rule it mirrors."""
+        from agentkernel.core.event import PausedInterruption
+
+        runner, session, g = PydanticAIRunner(), Session("s"), _Gated()
+        PausedRunState.add(
+            session,
+            agent="support",
+            runner="openai",
+            interruptions=[PausedInterruption(id="openai-1", kind="tool_call", tool_name="issue_refund")],
+        )
+
+        reply = await runner.run(g.agent, session, [AgentRequestText(prompt="hi")])
+
+        assert isinstance(reply, AgentPausedReplyAny)

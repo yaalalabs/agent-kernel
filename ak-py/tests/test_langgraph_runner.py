@@ -1238,3 +1238,29 @@ class TestCheckPointerPickleHooks:
 
         assert "serde" not in cp.__getstate__()
         assert set(cp.__getstate__()) == set(cp.__dict__) - {"serde"}
+
+
+class TestAnOrdinaryTurnWhileAPauseIsPending:
+    """`design.md` pins a different reply per adapter; LangGraph's is a second paused reply."""
+
+    @pytest.mark.asyncio
+    async def test_the_new_prompt_merges_into_state_and_the_node_interrupts_again(self):
+        runner, session = LangGraphRunner(), Session("s")
+        agent = _real_agent(_gated_graph())
+        first = await runner.run(agent, session, [AgentRequestText(prompt="start")])
+
+        again = await runner.run(agent, session, [AgentRequestText(prompt="something else")])
+
+        assert isinstance(again, AgentPausedReplyAny)
+        assert again.run_id != first.run_id
+
+    @pytest.mark.asyncio
+    async def test_the_session_still_holds_exactly_one_record(self):
+        """Replacement, not accumulation: one thread per session means one answerable pause."""
+        runner, session = LangGraphRunner(), Session("s")
+        agent = _real_agent(_gated_graph())
+        await runner.run(agent, session, [AgentRequestText(prompt="start")])
+
+        again = await runner.run(agent, session, [AgentRequestText(prompt="something else")])
+
+        assert [r.id for r in PausedRunState.list(session)] == [again.run_id]

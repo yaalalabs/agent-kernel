@@ -125,6 +125,94 @@ result and `adk_request_confirmation` with a verdict, so `input_required` has no
 """
 
 
+class _AdkStreamMapper:
+    """
+    Maps one drained ADK turn's events onto Agent Kernel stream events.
+
+    A class rather than a function because the mapping is stateful: whether text is a delta of an open
+    message or a whole one, and whether reasoning has been streamed, is only knowable from the events
+    before it. The three values it carries were locals in `stream()`, which is why `resume_stream()`
+    could not reuse that logic and grew a second copy — one that silently dropped reasoning. Both
+    paths now hold one of these instead, so the envelope a client sees cannot differ by whether a
+    human was involved.
+
+    One instance per run: it is per-turn state, never shared across sessions.
+    """
+
+    def __init__(self, runner: "GoogleADKRunner") -> None:
+        """
+        :param runner: The runner whose `_event_text` and `_tool_events` helpers do the extraction.
+        """
+        self._runner = runner
+        self._message_id: str | None = None
+        self._reasoning_id: str | None = None
+        self._reasoning_streamed = False
+
+    def events(self, event: Event) -> list[StreamEvent]:
+        """
+        The Agent Kernel events one ADK event produces.
+
+        :param event: One event from the ADK runner.
+        :return: The mapped events, in order; empty when the event carries nothing a client sees.
+        """
+        out: list[StreamEvent] = []
+        chunk, thinking = self._runner._event_text(event)
+        partial = getattr(event, "partial", False)
+
+        if partial and thinking:
+            self._reasoning_streamed = True
+            if self._reasoning_id is None:
+                self._reasoning_id = uuid4().hex
+                out.append(ReasoningStart(message_id=self._reasoning_id))
+            out.append(ReasoningDelta(message_id=self._reasoning_id, content=thinking))
+        elif thinking and not self._reasoning_streamed:
+            whole_reasoning = uuid4().hex
+            out.append(ReasoningStart(message_id=whole_reasoning))
+            out.append(ReasoningDelta(message_id=whole_reasoning, content=thinking))
+            out.append(ReasoningEnd(message_id=whole_reasoning))
+
+        if chunk and self._reasoning_id is not None:
+            out.append(ReasoningEnd(message_id=self._reasoning_id))
+            self._reasoning_id = None
+
+        if partial:
+            if chunk:
+                if self._message_id is None:
+                    self._message_id = uuid4().hex
+                    out.append(MessageStart(message_id=self._message_id))
+                out.append(TextDelta(message_id=self._message_id, content=chunk))
+        elif self._message_id is not None:
+            out.append(MessageEnd(message_id=self._message_id))
+            self._message_id = None
+        elif chunk:
+            whole = uuid4().hex
+            out.append(MessageStart(message_id=whole))
+            out.append(TextDelta(message_id=whole, content=chunk))
+            out.append(MessageEnd(message_id=whole))
+
+        tool_events = self._runner._tool_events(event)
+        if tool_events and self._reasoning_id is not None:
+            out.append(ReasoningEnd(message_id=self._reasoning_id))
+            self._reasoning_id = None
+        out.extend(tool_events)
+        return out
+
+    def close(self) -> list[StreamEvent]:
+        """
+        Closes whatever the drained turn left open.
+
+        :return: The trailing boundary events, empty when nothing is open.
+        """
+        out: list[StreamEvent] = []
+        if self._message_id is not None:
+            out.append(MessageEnd(message_id=self._message_id))
+            self._message_id = None
+        if self._reasoning_id is not None:
+            out.append(ReasoningEnd(message_id=self._reasoning_id))
+            self._reasoning_id = None
+        return out
+
+
 @dataclass(frozen=True)
 class _AdkTurn:
     """
@@ -276,9 +364,40 @@ class GoogleADKRunner(BaseRunner):
 
         # Resolved constructor options (plugins, services) first; the keys AK owns are written last.
         ctor_options, _ = self._split_run_options(options or {})
-        app = App(name=app_name, root_agent=agent.agent, resumability_config=ResumabilityConfig(is_resumable=True))
+        # `plugins` belongs to the App, not the Runner: ADK refuses both at once ("When app is provided,
+        # plugins should not be provided and should be provided in the app instead"), and this adapter
+        # always provides an App because resumability lives there.
+        plugins = ctor_options.pop("plugins", None)
+        app = App(
+            name=app_name,
+            root_agent=agent.agent,
+            resumability_config=ResumabilityConfig(is_resumable=True),
+            **({"plugins": plugins} if plugins is not None else {}),
+        )
         runner = Runner(**self._native_kwargs(ctor_options, app=app, app_name=app_name, session_service=adk_session.session_service))
         return user_id, runner, ctx, adk_session
+
+    def _text_reply(self, agent: Any, text: str, prompt: str = "") -> AgentReply:
+        """
+        Maps a finished turn's text onto a reply, honouring the agent's declared `output_schema`.
+
+        Shared by `run` and `resume` so a structured-output agent answers the same way either side of
+        a pause. Returning text from one and parsed content from the other would make the reply type
+        depend on whether a human was involved, which no client should have to branch on.
+
+        :param agent: The agent that produced the text, read for its `output_schema`.
+        :param text: The turn's text.
+        :param prompt: The prompt this answers, carried on the reply; empty on a resume, which has none.
+        :return: `AgentReplyAny` when the text parses against the schema, `AgentReplyText` otherwise.
+        """
+        output_schema = getattr(agent.agent, "output_schema", None)
+        if output_schema is not None:
+            try:
+                parsed = output_schema.model_validate_json(text)
+                return AgentReplyAny(content=parsed.model_dump(mode="json"), prompt=prompt)
+            except ValidationError:
+                self._log.warning(f"Agent '{agent.name}' has output_schema set but reply is not valid JSON for it; returning text")
+        return AgentReplyText(response=text, prompt=prompt)
 
     @staticmethod
     def _pending_calls(event: Event) -> list[tuple[Any, PauseKind]]:
@@ -380,15 +499,7 @@ class GoogleADKRunner(BaseRunner):
             if turn.pending:
                 return self._paused_reply(agent, session, turn)
 
-            reply = turn.text
-            output_schema = getattr(agent.agent, "output_schema", None)
-            if output_schema is not None:
-                try:
-                    parsed = output_schema.model_validate_json(reply)
-                    return AgentReplyAny(content=parsed.model_dump(mode="json"), prompt=prompt)
-                except ValidationError:
-                    self._log.warning(f"Agent '{agent.name}' has output_schema set but reply is not valid JSON for it; returning text")
-            return AgentReplyText(response=reply, prompt=prompt)
+            return self._text_reply(agent, turn.text, prompt)
         except Exception as e:
             return AgentReplyText(response=user_facing_error_message(e), prompt=prompt)
 
@@ -554,7 +665,6 @@ class GoogleADKRunner(BaseRunner):
         self._reject_prompt_alongside(requests)
         self._reject_payload_on_a_confirmation(decisions, record)
 
-        context = None
         try:
             options = await agent.resolve_run_options(session, requests)
             incoming = self._load_framework_context(session)
@@ -579,12 +689,9 @@ class GoogleADKRunner(BaseRunner):
 
             if turn.pending:
                 return self._paused_reply(agent, session, turn)
-            return AgentReplyText(response=turn.text)
+            return self._text_reply(agent, turn.text)
         except Exception as e:
             return AgentReplyText(response=user_facing_error_message(e))
-        finally:
-            if context is not None:
-                context.reset()
 
     async def stream(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[StreamEvent, None]:
         """
@@ -622,58 +729,17 @@ class GoogleADKRunner(BaseRunner):
 
         if hasattr(runner, "run_async"):
             with ctx:
-                message_id: str | None = None  # open message id; local, never on self
-                reasoning_id: str | None = None
-                reasoning_streamed = False
+                mapper = _AdkStreamMapper(self)  # per-run state; the runner is shared across sessions
                 pending: list[tuple[Any, PauseKind]] = []
                 invocation_id: str | None = None
                 async for event in runner.run_async(**kwargs):
                     invocation_id = getattr(event, "invocation_id", None) or invocation_id
                     pending.extend(self._pending_calls(event))
-                    chunk, thinking = self._event_text(event)
+                    for mapped in mapper.events(event):
+                        yield mapped
 
-                    if getattr(event, "partial", False) and thinking:
-                        reasoning_streamed = True
-                        if reasoning_id is None:
-                            reasoning_id = uuid4().hex
-                            yield ReasoningStart(message_id=reasoning_id)
-                        yield ReasoningDelta(message_id=reasoning_id, content=thinking)
-                    elif thinking and not reasoning_streamed:
-                        whole_reasoning = uuid4().hex
-                        yield ReasoningStart(message_id=whole_reasoning)
-                        yield ReasoningDelta(message_id=whole_reasoning, content=thinking)
-                        yield ReasoningEnd(message_id=whole_reasoning)
-
-                    if chunk and reasoning_id is not None:
-                        yield ReasoningEnd(message_id=reasoning_id)
-                        reasoning_id = None
-
-                    if getattr(event, "partial", False):
-                        if chunk:
-                            if message_id is None:
-                                message_id = uuid4().hex
-                                yield MessageStart(message_id=message_id)
-                            yield TextDelta(message_id=message_id, content=chunk)
-                    elif message_id is not None:
-                        yield MessageEnd(message_id=message_id)
-                        message_id = None
-                    elif chunk:
-                        whole = uuid4().hex
-                        yield MessageStart(message_id=whole)
-                        yield TextDelta(message_id=whole, content=chunk)
-                        yield MessageEnd(message_id=whole)
-
-                    tool_events = self._tool_events(event)
-                    if tool_events and reasoning_id is not None:
-                        yield ReasoningEnd(message_id=reasoning_id)
-                        reasoning_id = None
-                    for tool_event in tool_events:
-                        yield tool_event
-
-                if reasoning_id is not None:
-                    yield ReasoningEnd(message_id=reasoning_id)
-                if message_id is not None:
-                    yield MessageEnd(message_id=message_id)
+                for closing in mapper.close():
+                    yield closing
 
                 # After a normal drain only — disconnect/error leaves stored context intact.
                 if incoming is not None:
@@ -729,34 +795,17 @@ class GoogleADKRunner(BaseRunner):
         )
 
         with ctx:
-            message_id: str | None = None
+            mapper = _AdkStreamMapper(self)  # the same envelope an ordinary stream produces, reasoning included
             pending: list[tuple[Any, PauseKind]] = []
             resumed_invocation: str | None = None
             async for event in runner.run_async(**kwargs):
                 resumed_invocation = getattr(event, "invocation_id", None) or resumed_invocation
                 pending.extend(self._pending_calls(event))
-                chunk, _ = self._event_text(event)
+                for mapped in mapper.events(event):
+                    yield mapped
 
-                if getattr(event, "partial", False):
-                    if chunk:
-                        if message_id is None:
-                            message_id = uuid4().hex
-                            yield MessageStart(message_id=message_id)
-                        yield TextDelta(message_id=message_id, content=chunk)
-                elif message_id is not None:
-                    yield MessageEnd(message_id=message_id)
-                    message_id = None
-                elif chunk:
-                    whole = uuid4().hex
-                    yield MessageStart(message_id=whole)
-                    yield TextDelta(message_id=whole, content=chunk)
-                    yield MessageEnd(message_id=whole)
-
-                for tool_event in self._tool_events(event):
-                    yield tool_event
-
-            if message_id is not None:
-                yield MessageEnd(message_id=message_id)
+            for closing in mapper.close():
+                yield closing
 
             if incoming is not None:
                 try:
@@ -848,7 +897,7 @@ class GoogleADKAgent(AKBaseAgent):
 
     RESERVED_RUN_OPTIONS: ClassVar[Mapping[str, str]] = {
         "agent": "the native agent is the one this GoogleADKAgent wraps",
-        "app": "the runner constructs the ADK Runner from the agent, not an App",
+        "app": "the runner builds the App itself, carrying the ResumabilityConfig a pause depends on; declare plugins instead",
         "app_name": "fixed to 'AgentKernel' by the runner",
         "node": "the runner constructs the ADK Runner from the agent",
         "session_service": "the GoogleADKSession stored on the Agent Kernel session",
@@ -857,7 +906,7 @@ class GoogleADKAgent(AKBaseAgent):
         "session_id": "the Agent Kernel session id",
         "new_message": "built from the AgentRequest list by the runner",
         "state_delta": "state is seeded from the session's framework_context; seed it with Session.set_framework_context()",
-        "invocation_id": "assigned by ADK per run",
+        "invocation_id": "assigned by ADK per run, and set by the runner from the paused record when a run is resumed",
         "yield_user_message": "the stream mapping expects model events only",
     }
 

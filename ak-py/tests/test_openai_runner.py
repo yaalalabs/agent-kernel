@@ -1629,3 +1629,40 @@ class TestOpenAIStreamingPause:
 
         with pytest.raises(ValueError, match="cannot deliver a structured answer"):
             _ = [e async for e in runner.resume_stream(agent, session, requests, decisions, record)]
+
+
+class TestAnOrdinaryTurnWhileAPauseIsPending:
+    """
+    `design.md` pins this per adapter. OpenAI simply answers: a `RunState` is a self-contained
+    snapshot, so the pending one is untouched by a turn that does not mention it.
+
+    This is also why the docs warn that a stale resume is undetected here — answering the old pause
+    afterwards computes as though these turns never happened.
+    """
+
+    @pytest.mark.asyncio
+    async def test_it_answers_normally(self):
+        runner, session, agent = OpenAIRunner(), Session("s"), _mock_agent()
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
+            MockRunner.run = AsyncMock(return_value=_paused_result(_approval_item()))
+            await runner.run(agent, session, [AgentRequestText(prompt="refund it")])
+
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
+            MockRunner.run = AsyncMock(return_value=_done_result("the weather is fine"))
+            reply = await runner.run(agent, session, [AgentRequestText(prompt="and the weather?")])
+
+        assert isinstance(reply, AgentReplyText)
+        assert reply.response == "the weather is fine"
+
+    @pytest.mark.asyncio
+    async def test_the_pending_pause_is_left_alone(self):
+        runner, session, agent = OpenAIRunner(), Session("s"), _mock_agent()
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
+            MockRunner.run = AsyncMock(return_value=_paused_result(_approval_item()))
+            paused = await runner.run(agent, session, [AgentRequestText(prompt="refund it")])
+
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
+            MockRunner.run = AsyncMock(return_value=_done_result())
+            await runner.run(agent, session, [AgentRequestText(prompt="and the weather?")])
+
+        assert PausedRunState.get(session, paused.run_id) is not None
