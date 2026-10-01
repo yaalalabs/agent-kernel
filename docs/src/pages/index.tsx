@@ -9,6 +9,7 @@ import { ScrollTrigger } from "gsap/dist/ScrollTrigger";
 import { StepTimeline } from "../components/StepTimeline";
 import PlantParticlesBackground from "../components/PlantParticlesBackground";
 import FAQ from "../components/FAQ";
+import IntegrationsMarquee from "../components/IntegrationsMarquee";
 import {
   MdRocketLaunch,
   MdBugReport,
@@ -323,116 +324,6 @@ function Hero() {
             </span>
           </div>
         </div>
-      </div>
-    </section>
-  );
-}
-
-/* ─── Frameworks Strip ──────────────────────────────────────────────────── */
-
-function FrameworksStrip() {
-  const frameworksRef = useRef(null);
-  const labelRef = useRef(null);
-  const badgeRef = useRef(null);
-  const rowRef = useRef(null);
-
-  const frameworks = [
-    {
-      name: "Open AI Agents SDK",
-      logo: "/img/integrations/chatgpt.png",
-      link: "/docs/frameworks/openai",
-    },
-    {
-      name: "LangGraph",
-      logo: "/img/integrations/langgraph.png",
-      link: "/docs/frameworks/langgraph",
-    },
-    {
-      name: "CrewAI",
-      logo: "/img/integrations/crewai.png",
-      link: "/docs/frameworks/crewai",
-    },
-    {
-      name: "Google ADK",
-      logo: "/img/integrations/googleADK.png",
-      link: "/docs/frameworks/google-adk",
-    },
-    {
-      name: "Smolagents",
-      logo: "/img/integrations/smolagents.png",
-      link: "https://huggingface.co/docs/smolagents/index",
-    },
-    {
-      name: "Pydantic AI",
-      logo: "/img/integrations/pydantic-ai.png",
-      link: "/docs/frameworks/pydantic-ai",
-    },
-    {
-      name: "LiveKit",
-      logo: "/img/integrations/livekit.png",
-      link: "https://docs.livekit.io/",
-    },
-  ];
-
-  useEffect(() => {
-    gsap.registerPlugin(ScrollTrigger);
-
-    gsap.set([badgeRef.current, labelRef.current], { opacity: 0, y: 16 });
-    gsap.set(rowRef.current?.children || [], { opacity: 0, y: 24 });
-
-    const tl = gsap.timeline({
-      scrollTrigger: {
-        trigger: frameworksRef.current,
-        start: "top 85%",
-        toggleActions: "play none none none",
-        once: true,
-      },
-    });
-
-    tl.to(badgeRef.current, { opacity: 1, y: 0, duration: 0.5, ease: "power2.out" })
-      .to(labelRef.current, { opacity: 1, y: 0, duration: 0.5, ease: "power2.out" }, "-=0.3")
-      .to(
-        rowRef.current?.children || [],
-        { opacity: 1, y: 0, duration: 0.4, ease: "power2.out", stagger: 0.07 },
-        "-=0.2"
-      );
-
-    return () => {
-      tl.kill();
-      if (tl.scrollTrigger) {
-        tl.scrollTrigger.kill();
-      }
-    };
-  }, []);
-
-  return (
-    <section ref={frameworksRef} className={styles.frameworksStrip}>
-      {/* Top border + gradient glow */}
-      <div className={styles.topGlow} />
-
-      <div ref={badgeRef} className={styles.Badge}>
-        <span className={styles.badgeStar}>✦</span>
-        Integrates Seamlessly
-      </div>
-
-      <p ref={labelRef} className={styles.frameworksLabel}>
-        Works with the frameworks you already use.
-      </p>
-
-      <div ref={rowRef} className={styles.frameworksRow}>
-        {frameworks.map((framework) => (
-          <Link
-            key={framework.name}
-            to={framework.link}
-            className={styles.frameworkItem}
-          >
-            <img
-              src={framework.logo}
-              alt={framework.name}
-              className={styles.frameworkLogo}
-            />
-          </Link>
-        ))}
       </div>
     </section>
   );
@@ -1816,7 +1707,7 @@ export default function Home() {
       <WhatsNewBanner />
       <Hero />
       <main>
-        <FrameworksStrip />
+        <IntegrationsMarquee />
         <div ref={levelsRef} id="levels">
           <Levels />
         </div>
