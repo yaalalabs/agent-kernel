@@ -204,12 +204,14 @@ class _AdkStreamMapper:
         :return: The trailing boundary events, empty when nothing is open.
         """
         out: list[StreamEvent] = []
-        if self._message_id is not None:
-            out.append(MessageEnd(message_id=self._message_id))
-            self._message_id = None
+        # Reasoning first: a thought arriving after prose leaves both open, and the inner boundary
+        # closes before the outer one. This is the order `stream()` has always emitted.
         if self._reasoning_id is not None:
             out.append(ReasoningEnd(message_id=self._reasoning_id))
             self._reasoning_id = None
+        if self._message_id is not None:
+            out.append(MessageEnd(message_id=self._message_id))
+            self._message_id = None
         return out
 
 

@@ -1619,3 +1619,22 @@ class TestAResumedStreamCarriesReasoning:
         assert "_AdkStreamMapper(self)" in inspect.getsource(R.stream)
         assert "_AdkStreamMapper(self)" in inspect.getsource(R.resume_stream)
         assert "_event_text(event)" not in inspect.getsource(R.resume_stream)
+
+
+class TestTheClosingOrderWhenBothBoundariesAreOpen:
+    """A thought arriving after prose leaves a message and a reasoning block both open.
+
+    The inner boundary closes first. Pinned because extracting the shared mapper silently reversed
+    this once already — the fixtures in use elsewhere never leave both open, so nothing caught it.
+    """
+
+    def test_reasoning_closes_before_the_message(self):
+        from agentkernel.framework.adk.adk import _AdkStreamMapper
+
+        mapper = _AdkStreamMapper(GoogleADKRunner())
+        out = []
+        for event in (_partial_event(text="hi"), _partial_event(thought="hmm")):
+            out += mapper.events(event)
+        out += mapper.close()
+
+        assert [type(e).__name__ for e in out][-2:] == ["ReasoningEnd", "MessageEnd"]
