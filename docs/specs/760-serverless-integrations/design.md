@@ -290,15 +290,19 @@ flowchart LR
 
 ### Lambda webhook host (`deployment/aws/serverless/`)
 
-- **`LambdaWebhookHost`**: a new class that hosts one `WebhookRESTRequestHandler` on the Lambda
-  router.
+- **`LambdaWebhookHost`**: a new class that serves one `WebhookRESTRequestHandler` from routes
+  the application registers on the Lambda router.
   - It wraps the existing handler and copies nothing. `verify`, `parse`, `acknowledge` and
     `enqueue` keep one definition, shared with the pipeline `IOHandler`, which is also the
     supported ECS path.
-  - It registers routes through the existing `RESTLambdaRouter.register`:
-    - `POST <adapter.webhook_path>` → `handler.handle`
-    - `GET <adapter.challenge_path>` → `handler.challenge`, only when that path is set (WhatsApp,
-      Messenger, Instagram)
+  - It exposes `handle` and `challenge`, both with the router's `(event, context)` contract. The
+    application registers them with the existing `Lambda.register`, like any custom route:
+    - `POST <adapter.webhook_path>` → `host.handle`
+    - `GET <adapter.challenge_path>` → `host.challenge`, only for the adapters that declare one
+      (WhatsApp, Messenger, Instagram)
+  - The host does not read the paths. The registered path is hand-written, so it must equal the
+    adapter's `webhook_path`/`challenge_path`, the routes the authorizer bypass lets through (one
+    of the three places an integration is declared, see Docs and skills).
   - The routing logic is unchanged. The router's exact-match table and base-path stripping
     (`rest_lambda.py:394-401`) decide which route runs, and no built-in webhook path has path
     parameters.
@@ -306,8 +310,9 @@ flowchart LR
       `dispatch` sends every event to the default chat handler (`rest_lambda.py:402-404`), so a
       webhook would be silently parsed as a chat request. Terraform always sets them
       (`modules/request-handler/main.tf:348-351`), and a guard below covers other deployments.
-- **`WebhookRESTRequestHandler.adapter`**: a new read-only property, so the host reads the paths
-  without touching `_adapter`. `PollerRunner.adapter` is the precedent (`integration/adapter/poller.py:38-41`).
+- **`WebhookRESTRequestHandler.adapter`**: a new read-only property, so the host's guard reads the
+  adapter's verification settings without touching `_adapter`. `PollerRunner.adapter` is the
+  precedent (`integration/adapter/poller.py:38-41`).
 - **`LambdaEventTranslator`**: a new class with one job, API Gateway v1 proxy event ⇄ Starlette (Q3).
   - **Event → `Request`** (a real `starlette.requests.Request`):
     - Body: the exact bytes, base64-decoded when `isBase64Encoded`. Signature checks hash the raw
@@ -337,14 +342,18 @@ flowchart LR
   - `run_async_sync` gives no such guarantee: it falls back to `asyncio.run`, a fresh loop per
     call, whenever the thread has no current loop (`core/util/async_bridge.py:34-40`). So the host
     owns its loop explicitly.
-- **Public entry point**: `Lambda.mount(handlers=[WebhookRESTRequestHandler(SlackInboundAdapter())])`,
-  called at module scope in the request-handler Lambda.
-  - It takes the same handler objects an app passes to the pipeline's
+- **Public entry point**: `LambdaWebhookHost(WebhookRESTRequestHandler(SlackInboundAdapter()))`,
+  built at module scope in the request-handler Lambda, with its `handle` registered through
+  `@Lambda.register("/slack/events", method="POST")`.
+  - It is exported from `agentkernel.aws`, lazily (see Imports and packaging).
+  - It takes the same handler object an app passes to the pipeline's
     `IOHandler.run(handlers=...)`. `ECSIOHandler.run` refuses these handlers by design: its REST
     branch calls `AWSRestAPI.run` (`deployment/aws/containerized/ecs_io_handler.py:72`), which
     reaches `_reject_pipeline_only_handlers` (`api/http.py:109`).
   - In this change it accepts only `WebhookRESTRequestHandler`. Any other `RESTRequestHandler`
     raises `TypeError` naming the supported type (see Non-goals).
+  - `Lambda` itself is unchanged: `register` and `handler` serve the host's endpoints as they
+    serve any custom route.
 
 ### Authorizer bypass for integration routes (`deployment/aws/serverless/akauthorizer.py`), Q1
 
@@ -372,7 +381,8 @@ flowchart LR
     authorizer package must not need them.
   - The built-in routes have one definition: a fastapi-free route table that both the six
     adapters' `webhook_path`/`challenge_path` and `WebhookRouteMatcher.for_integrations` read, so
-    they cannot drift (`spec.md`, "Built-in webhook routes").
+    they cannot drift (`spec.md`, "Built-in webhook routes"). The paths the application passes to
+    `Lambda.register` are hand-written, and must match the table.
   - Usage:
     `APIGatewayAuthorizer(validator=MyValidator(), bypass=WebhookRouteMatcher.for_integrations("slack")).handle`.
 - **Authorizer caching must be off (`result_ttl_in_seconds = 0`) wherever a bypass is used.**
@@ -401,9 +411,13 @@ flowchart LR
 - Not used: `x-slack-no-retry: 1`. Slack honours it only on a non-200 response the app sends, and
   on a timeout Slack never received ours.
 
-### Fail-fast guards (at `Lambda.mount`, so they fire on cold start)
+### Fail-fast guards (in the `LambdaWebhookHost` constructor, so they fire on cold start)
 
-- **Verification secrets**: mounting raises `AKConfigError` when a mounted adapter's signature
+- **Where they run**: `LambdaWebhookGuard().check(handler)`, called by the host's constructor.
+  - The host is built at module scope, so a failed check fails the Lambda's init.
+  - The application registers the host's endpoints only after building it, so a failed check
+    leaves nothing registered for that host.
+- **Verification secrets**: building the host raises `AKConfigError` when its adapter's signature
   secret is unset, naming the missing setting.
   - This matters because the authorizer no longer guards these routes, and four adapters skip
     verification when their secret is empty:
@@ -412,7 +426,7 @@ flowchart LR
     - `telegram.webhook_secret`: no check when empty (`telegram/adapter.py:120-121`,
       `core/config.py:215`)
   - Slack and Teams already refuse to construct without theirs, so they fail at module scope,
-    before `Lambda.mount` runs:
+    before the host is built:
     - `teams.app_id` and `teams.app_password`: `_TeamsCredentials` logs and raises `ValueError`
       (`teams/adapter.py:62-64`)
     - Slack: Bolt verifies with `SLACK_SIGNING_SECRET`. An empty or unset value makes
@@ -421,12 +435,12 @@ flowchart LR
   - An open route lets anyone enqueue a forged message. The agent runs at the owner's cost, and
     the reply goes to a reply address the attacker supplied.
   - Pluggable: a new overridable `InboundAdapter.missing_verification_settings() -> list[str]`,
-    defaulting to `[]` so bring-your-own adapters stay mountable. WhatsApp, Messenger,
+    defaulting to `[]` so bring-your-own adapters stay servable. WhatsApp, Messenger,
     Instagram and Telegram override it; Slack and Teams need no override.
   - Lambda only. The pipeline and ECS keep today's optional secrets; tightening those is a
     separate issue.
-- **Transport**: mounting a handler with `requires_pipeline = True` raises `AKConfigError` unless
-  `QueueTransportFactory.resolve_type() == "sqs"`.
+- **Transport**: building a host for a handler with `requires_pipeline = True` raises
+  `AKConfigError` unless `QueueTransportFactory.resolve_type() == "sqs"`.
   - It requires `sqs` rather than any broker because the serverless agent runner consumes the
     input queue through an SQS event source mapping. Nothing on Lambda drains Kafka or NATS.
   - The message names both halves of the fix: `queue_mode = true` in Terraform, and
@@ -434,15 +448,15 @@ flowchart LR
   - Keying the check off `requires_pipeline`, rather than off the class, covers future
     pipeline-only handlers.
 - **Execution mode**: webhooks are served in `rest_sync` and `rest_async` only, the modes that
-  have a REST gateway. Mounting under `async`/`stream` raises `AKConfigError`, because Lambda
-  would route REST events to `WSLambdaRouter` (`aklambda.py:31`). Decided in Q2.
-- **Base-path environment**: mounting raises `AKConfigError` when any of `API_BASE_PATH`,
+  have a REST gateway. Building the host under `async`/`stream` raises `AKConfigError`, because
+  Lambda would route REST events to `WSLambdaRouter` (`aklambda.py:31`). Decided in Q2.
+- **Base-path environment**: building the host raises `AKConfigError` when any of `API_BASE_PATH`,
   `API_VERSION` or `AGENT_ENDPOINT` is unset, since without them every webhook would reach the
   chat handler (see above).
 - **Response store: still required, unchanged.** In queue mode, building the router raises
   `ValueError` when `execution.response_store` is absent (`rest_lambda.py:54-57`). That happens
-  when `Lambda.mount` builds the router after its own guards pass, or earlier if a
-  `Lambda.register` route built it first.
+  on whichever call first builds the router (`aklambda.py:29-32`): the application's first
+  `Lambda.register`, or else `Lambda.handler`.
   - The requirement stays because the stack always exposes the chat route on this Lambda
     (`state.tf:75-79`), and that route needs the store.
   - Every `create_*_response_store` flag defaults to `false` (`variables.tf:118-147`). So the docs
@@ -455,7 +469,7 @@ flowchart LR
 
 - **No new `AKConfig` field**, no `enabled` flag, no new block.
   - The `integration` attribute on a message is the switch for delivery, as in the pipeline.
-  - Mounting a webhook handler is the switch for receiving.
+  - Building a `LambdaWebhookHost` and registering its endpoints is the switch for receiving.
   - `bypass=` is the switch for the authorizer.
 
 ### Imports and packaging
@@ -469,8 +483,11 @@ flowchart LR
     `agentkernel.api.http.uvicorn` patch target.
   - Then `agentkernel[aws,<platform>]` works for both the request handler and the response
     handler, with no uvicorn or gunicorn. `ak-py/uv.lock` is regenerated.
-- `from agentkernel.aws import Lambda` stays fastapi-free. `LambdaWebhookHost` and
-  `LambdaEventTranslator` are imported inside `Lambda.mount`, never at module scope.
+- `from agentkernel.aws import Lambda` stays fastapi-free.
+  - `LambdaWebhookHost` is a lazy export of `agentkernel.aws` (`deployment/aws/__init__.py`'s
+    `_LAZY_EXPORTS`, mapping to `.serverless.core.webhook_host`). Touching it imports FastAPI.
+  - `Lambda` never imports the host, and no package `__init__` imports `webhook_host` or
+    `event_translator` eagerly.
 - `agentkernel.integration` is imported by the serverless consumers only when an integration
   message arrives.
 
@@ -525,7 +542,8 @@ flowchart LR
 
 - A new `examples/aws-serverless/slack-openai/`, the first serverless example with an integration:
   - a request-handler Lambda:
-    `Lambda.mount(handlers=[WebhookRESTRequestHandler(SlackInboundAdapter())])`
+    `LambdaWebhookHost(WebhookRESTRequestHandler(SlackInboundAdapter()))`, its `handle`
+    registered with `@Lambda.register("/slack/events", method="POST")`
   - an agent-runner Lambda
   - a response-handler Lambda, packaged with `agentkernel[aws,slack]`
   - an authorizer Lambda:
@@ -583,7 +601,8 @@ flowchart LR
       yields them, and a Meta `hub.challenge` handshake in that shape returns the challenge
     - response mapping for a Starlette `Response`, a dict, an `int` and an `HTTPException`
   - **Host**:
-    - `POST` is registered, and `GET` only when `challenge_path` is set
+    - `handle` and `challenge`, registered with `Lambda.register`, are reached through
+      `Lambda.handler`, and a rejected delivery keeps its 403
     - two invocations run on the same event loop
     - an `in_memory` transport raises `AKConfigError`
     - a WebSocket mode raises `AKConfigError`
@@ -624,6 +643,7 @@ flowchart LR
     `ResponseHandler` → a recording outbound adapter.
 - **Lazy import** (`test_aws_lazy_exports.py`):
   - importing `Lambda` loads neither the host modules nor `fastapi`
+  - touching `LambdaWebhookHost` through `agentkernel.aws` resolves it
   - importing `APIGatewayAuthorizer` and `WebhookRouteMatcher` loads neither `fastapi` nor
     `slack_bolt`
     - This holds today: `integration/__init__.py` and `integration/adapter/__init__.py` load
@@ -641,18 +661,20 @@ flowchart LR
     response handler delivers whatever the mode; `stream` gives one reply.
   - **Packages:** `agentkernel[aws,<platform>]` in the request-handler and response-handler
     packages, and the platform credentials in both Lambdas' environment variables.
-  - **Receiving:** `Lambda.mount`, and the webhook routes in `gateway_endpoints`.
+  - **Receiving:** `LambdaWebhookHost`, its `handle` (and, for the Meta platforms, `challenge`)
+    registered with `Lambda.register` on the adapter's paths, and the webhook routes in
+    `gateway_endpoints`.
   - **Behind an authorizer:** `bypass=WebhookRouteMatcher...`, `result_ttl_in_seconds = 0`, and why.
   - **The three places an integration is declared**, and what drift between them looks like:
-    `WebhookRouteMatcher.for_integrations(...)`, `Lambda.mount(handlers=[...])`, and
+    `WebhookRouteMatcher.for_integrations(...)`, the host's `Lambda.register` routes, and
     `gateway_endpoints`. Each mistake fails silently from AK's side:
-    - declared in the authorizer and the gateway, but not mounted: a 500 from the router's
+    - declared in the authorizer and the gateway, but not registered: a 500 from the router's
       no-match error
-    - mounted and in the gateway, but not in the authorizer: a 401 or 403, with the token
+    - registered and in the gateway, but not in the authorizer: a 401 or 403, with the token
       validator logging a failed or missing token
     - a nonzero authorizer TTL: a 401 that AK never logs, because API Gateway answers before the
       authorizer runs
-  - **The verification secrets** `Lambda.mount` requires.
+  - **The verification secrets** `LambdaWebhookHost` requires.
   - **Cold starts versus Slack's 3 s:**
     - keep the request-handler package slim, with no agent frameworks
     - the authorizer call adds to the budget
@@ -690,8 +712,8 @@ flowchart LR
    - A prompt is still required: `QueueMessageBody.prompt` (`deployment/aws/core/sqs_handler.py:56`).
 4. **Serverless permanent failures are delivered.** REST pollers get the 500 record instead of
    timing out, and WebSocket clients get their error frame (D1).
-5. **Webhooks can be served on Lambda**, through `Lambda.mount`, in `rest_sync`/`rest_async` with
-   `sqs`.
+5. **Webhooks can be served on Lambda**, through a `LambdaWebhookHost` whose endpoints the
+   application registers with `Lambda.register`, in `rest_sync`/`rest_async` with `sqs`.
 6. **Installing a webhook platform extra now installs FastAPI**, and the `slack` extra also
    installs aiohttp (Q5).
 7. **`agentkernel.api` resolves its exports lazily** (Q5). Importing `agentkernel.api.handler`
@@ -755,8 +777,8 @@ flowchart LR
     lives in Python, next to the adapters.
   - Accepted costs: authorizer caching off (TTL 0) wherever a bypass is used, and one authorizer
     call per webhook.
-  - Paired with: path-and-method-only matching, and required verification secrets at
-    `Lambda.mount`.
+  - Paired with: path-and-method-only matching, and required verification secrets when the
+    `LambdaWebhookHost` is built.
   - Rejected:
     - `public = optional(bool, false)` on `gateway_endpoints` (per-route `authorization = "NONE"`).
       Cheaper at runtime and keeps caching, but it puts the decision in Terraform and adds a new
