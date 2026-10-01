@@ -113,9 +113,13 @@ class AgentReplyAny(BaseModel):
 - **`content` widens from `dict` (`core/model.py:143`) to `dict | list`.** A JSON array is a
   legitimate structured reply the type has always excluded, and A2UI forces it: on v0.9.1 a UI is a
   *sequence* of messages (Decision 10).
-- **`from_output` (`core/model.py:151`) gains `list` in its second branch**, so a plain list is
-  accepted the way a plain dict is. The `BaseModel` branch is untouched — a pydantic model still
-  dumps to a dict.
+- **`from_output` (`core/model.py:151`) is *not* widened** — a bare list stays unstructured there,
+  even though `content` accepts one. An earlier draft of this spec widened it; implementing that
+  showed it changes `result` for an agent that never opted in: a list-returning framework produced
+  `AgentReplyText(str(["a", "b"]))` → `"['a', 'b']"`, and promoting it to `AgentReplyAny` makes that
+  `'["a", "b"]'`. Ungated, so it contradicts Decision 3's guarantee. A caller that means to send an
+  array builds the reply itself, which is what piece 5's hook does — the only thing the widening was
+  needed for.
 - **`__str__` (`core/model.py:147`) is not edited.** It already calls `json.dumps(self.content,
   default=str)`, which serialises a list as readily as a dict. Its *output* changes for content that
   was never JSON-safe — see Behavioural changes.
@@ -472,8 +476,10 @@ Numbered, exhaustive. Every one is intentional.
    it previously accepted it and `default=str` shipped `"<Row object at 0x…>"` to a client as data.
    *Justification:* raising at construction beats shipping a repr as data.
 5. **`AgentReplyAny(content=...)` raises for `NaN` / `inf` / `-inf`.** *Justification:* Decision 8.
-6. **`AgentReplyAny.content` accepts a top-level list.** Widening only; no previously valid input is
-   rejected. *Justification:* Decision 10.
+6. **`AgentReplyAny.content` accepts a top-level list.** Widening only, and reachable only by direct
+   construction — `from_output` still returns `None` for a bare list, so no adapter's behaviour
+   changes. *Justification:* Decision 10, without the ungated side effect widening `from_output`
+   would have caused.
 7. **The DynamoDB response store converts floats to `Decimal` on write and back on read.** A payload
    carrying a float previously failed the write outright. Round-tripped values are `float`/`int`, not
    `Decimal`, on every read path. *Justification:* the feature ships broken otherwise.
@@ -534,7 +540,8 @@ Run with `cd ak-py && uv run pytest`.
 - Parameterised coercion: `datetime`, `date`, `Decimal`, `UUID`, `Enum`, `set`, `bytes`, non-string
   keys.
 - Raises: an arbitrary object; `NaN`; `inf`; `-inf`.
-- A top-level list validates; a scalar does not.
+- A top-level list validates; a scalar does not. `from_output` still returns `None` for a bare list
+  — pinned, because widening it is the tempting change that breaks back-compat.
 - **The bypasses, pinned as tested behaviour:** `model_copy(update={"content": ...})` does *not*
   normalise, and neither does in-place mutation. Pin them so nobody builds on a guarantee that is
   not there.

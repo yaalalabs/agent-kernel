@@ -398,7 +398,11 @@ class TestRESTAPIIntegration:
 
 
 class TestResponseBuilderStructuredResult:
-    """Tests for ResponseBuilder handling of structured (AgentReplyAny) results."""
+    """ResponseBuilder's one gate: the object form is reached only by a reply carrying a media type.
+
+    The unlabelled assertions below are the back-compat guarantee — they must keep passing
+    byte-for-byte, because no adapter sets a media type and nothing else in the framework does.
+    """
 
     def test_structured_result_serialized_as_json_string(self):
         import json
@@ -419,6 +423,54 @@ class TestResponseBuilderStructuredResult:
         response = ResponseBuilder.build_response(200, "session-1", rest_api_mode=True, result=AgentReplyText(response="hello"))
 
         assert response["result"] == "hello"
+
+    def test_labelled_structured_result_carries_the_object(self):
+        from agentkernel.core.chat_service import ResponseBuilder
+        from agentkernel.core.model import AgentReplyAny
+
+        content = {"version": "v1.0", "createSurface": {"surfaceId": "s1"}}
+        reply = AgentReplyAny(content=content, media_type="application/a2ui+json")
+
+        response = ResponseBuilder.build_response(200, "session-1", rest_api_mode=True, result=reply)
+
+        assert response["result"] == content
+        assert response["media_type"] == "application/a2ui+json"
+        assert response["session_id"] == "session-1"
+
+    def test_labelled_list_content_carries_the_array(self):
+        from agentkernel.core.chat_service import ResponseBuilder
+        from agentkernel.core.model import AgentReplyAny
+
+        content = [{"createSurface": {"surfaceId": "s1"}}, {"updateComponents": {}}]
+        reply = AgentReplyAny(content=content, media_type="application/a2ui+json")
+
+        response = ResponseBuilder.build_response(200, "session-1", rest_api_mode=True, result=reply)
+
+        assert response["result"] == content
+
+    def test_unlabelled_replies_never_carry_a_media_type(self):
+        """The gate, from the other side: nothing without a media type gains the key."""
+        from agentkernel.core.chat_service import ResponseBuilder
+        from agentkernel.core.model import AgentReplyAny, AgentReplyImage, AgentReplyText
+
+        unlabelled = [
+            AgentReplyAny(content={"a": 1}),
+            AgentReplyText(response="hello"),
+            AgentReplyImage(response="here", image_data="x", name="i.png", mime_type="image/png"),
+            object(),
+        ]
+
+        for result in unlabelled:
+            response = ResponseBuilder.build_response(200, "session-1", rest_api_mode=True, result=result)
+            assert "media_type" not in response
+            assert isinstance(response["result"], str)
+
+    def test_non_reply_result_keeps_its_fallback(self):
+        from agentkernel.core.chat_service import ResponseBuilder
+
+        response = ResponseBuilder.build_response(200, "session-1", rest_api_mode=True, result=object())
+
+        assert response["result"] == "Non textual result received"
 
 
 class TestPipelineDelegation:

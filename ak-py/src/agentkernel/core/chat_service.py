@@ -303,6 +303,13 @@ class ResponseBuilder:
     def build_response(status_code: int, session_id: Optional[str], rest_api_mode: bool, result: Any = None, error: Optional[Exception] = None):
         """Build response from agent result or error.
 
+        A structured reply whose ``media_type`` is set puts its content in ``result`` as an object
+        and names the format alongside it, so a client parses once instead of twice. Every other
+        reply — text, image, and a structured reply with no media type — is serialised exactly as it
+        was before that field existed, which is what makes ``result``'s ``str | dict | list`` shape
+        unobservable to anyone who has not opted in. Only a post-hook sets a media type; no framework
+        adapter does.
+
         :param status_code: HTTP status code
         :param session_id: Session identifier for the response
         :param rest_api_mode: If True, return dict only on success or raise HTTPException on error; if False, return tuple
@@ -312,6 +319,8 @@ class ResponseBuilder:
         """
         if error:
             response_dict = {"error": str(error)}
+        elif isinstance(result, AgentReplyAny) and result.media_type:
+            response_dict = {"result": result.content, "media_type": result.media_type}
         else:
             response_dict = {
                 "result": str(result) if isinstance(result, (AgentReplyText, AgentReplyImage, AgentReplyAny)) else "Non textual result received"
