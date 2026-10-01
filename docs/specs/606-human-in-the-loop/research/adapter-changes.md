@@ -468,7 +468,7 @@ the framework's own guard against a new prompt while tool calls are outstanding.
 **Scenario.** A `LongRunningFunctionTool` is called. ADK ends the turn with the call still
 outstanding and hands back an `invocation_id` — a ticket number to quote when you come back.
 
-### Three changes
+### Four changes
 
 **1. The agent is now wrapped in an `App`.** `ResumabilityConfig(is_resumable=True)` lives on an
 `App`, and the adapter was building a bare `Runner`. Enabled unconditionally, because a per-agent
@@ -487,6 +487,12 @@ produces **no final response**, so reading the text alone made a pause look like
 **3. Two kinds**, because ADK asks two different things — a long-running tool waiting for a
 **result** (`tool_call`), and `adk_request_confirmation` waiting for a **verdict** (`confirmation`),
 which takes ADK's own `{"confirmed": ...}` shape.
+
+**4. One call can arrive twice.** A drained turn is many events, and ADK re-surfaces a long-running
+call that is still outstanding on each round the model takes while it waits. Collecting them yields
+repeats, not distinct questions — and a repeat fails `PausedRunState.add`'s uniqueness check, so the
+pause is replaced by an error reply carrying an internal message. `_paused_reply` therefore keeps the
+first occurrence of each call id. Found by running the demo, not by reading the SDK.
 
 ### The two open questions, settled by running it
 
