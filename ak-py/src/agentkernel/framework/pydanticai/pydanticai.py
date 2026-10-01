@@ -178,6 +178,8 @@ class PydanticAIRunner(BaseRunner):
         :param requests: The requests to the agent.
         :return: The result of the agent's execution.
         """
+        self._reject_while_a_decision_is_outstanding(session)
+
         context: ToolContext | None = None
         prompt = ""
         try:
@@ -277,6 +279,27 @@ class PydanticAIRunner(BaseRunner):
         except Exception:
             arguments = None
         return PausedInterruption(id=part.tool_call_id, kind=kind, tool_name=part.tool_name, arguments=arguments)
+
+    def _reject_while_a_decision_is_outstanding(self, session: Session) -> None:
+        """
+        Refuses an ordinary turn while this framework's pause is still unanswered.
+
+        Pydantic AI's `Agent.run` will not take a new prompt while the message history holds
+        unprocessed tool calls — it raises `UserError`, which the `except` below would flatten into
+        "Sorry, something went wrong". The run is going to fail either way; this makes it fail saying
+        *why*, and names the run to resume. Only this runner's records are consulted: a pause another
+        framework holds on the same session has no bearing on this agent's history.
+
+        :param session: The session whose paused runs to inspect.
+        :raises ValueError: If this runner holds an unanswered paused run in this session.
+        """
+        outstanding = next((record for record in PausedRunState.list(session) if record.runner == self.name), None)
+        if outstanding is not None:
+            raise ValueError(
+                f"Pydantic AI cannot take a new prompt while run '{outstanding.id}' is waiting on a decision: "
+                f"the message history still holds unprocessed tool calls. Answer it with a 'resume' block first, "
+                f"or start a new session."
+            )
 
     @staticmethod
     def _reject_partial(decisions: list[ResumeDecision], record: PausedRun) -> None:

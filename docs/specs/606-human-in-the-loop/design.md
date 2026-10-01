@@ -217,12 +217,13 @@ transports and the `Runner` interface are all unchanged.
     pause it is answering, and it is carried on the paused reply and echoed back on the decision.
   - `agent: str` — the agent name. Required because OpenAI's
     `RunState.from_json(initial_agent=..., state_json=...)` needs the original starting agent, and
-    AK resolves agents by name. **This is also what identifies the framework**, since the agent
-    resolves to its runner — no separate `runner` field. *(Decision.)* The one case a stored
-    runner name would have caught, and no longer does, is an agent whose framework is changed
-    while a pause is outstanding; that now surfaces as a deserialisation failure from the adapter
-    rather than a named error, which is accepted as the price of not duplicating state that is
-    already derivable.
+    AK resolves agents by name. *(Decision, reversed in PR 2's review round — the record carries a
+    `runner` after all; see the scoping bullet below.)* The original reasoning was that the agent
+    also identifies the framework, since it resolves to its runner, and that an agent whose framework
+    changes mid-pause would surface as a deserialisation failure. Both halves turned out wrong when
+    run: the record outlives the agent, so the registry cannot be trusted to interpret it later, and
+    an adapter with no payload to deserialise — LangGraph, whose state lives in the checkpointer —
+    does not fail at all. It ran the graph from scratch and returned a fresh pause.
   - `created_at: str` — ISO-8601 UTC, for diagnostics and operator triage only.
   - `interruptions: list[PausedInterruption]` — the same list carried on the reply, so a resume
     can be validated **without deserialising the opaque payload**.
