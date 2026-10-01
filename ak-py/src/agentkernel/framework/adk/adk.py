@@ -526,7 +526,11 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
         self._session = None
         self._connection = None
         self._cm = None
+        self._client = None
         self._listen_task: asyncio.Task | None = None
+        # Per-turn barge-in state; reset at each turn_complete.
+        self._interrupted_this_turn = False
+        self._model_speaking = False
         # call_id -> function name, needed to build the FunctionResponse Gemini expects.
         self._tool_names: dict[str, str] = {}
         # True once disconnect() runs; the listen loop suppresses its error callback then so a
@@ -584,19 +588,12 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
         self._callback = callback
         self._agent = agent
         self._session = session
-        import os
-
-        api_version = os.environ.get("GOOGLE_GENAI_API_VERSION")
-        http_options = {"api_version": api_version} if api_version else None
-        client = genai.Client(http_options=http_options)
+        self._client = genai.Client()
         model = self._realtime_model(agent)
         self._log.info(f"Connecting to Gemini Live (model={model})")
 
-        self._cm = client.aio.live.connect(model=model, config=self._connect_config(agent))
+        self._cm = self._client.aio.live.connect(model=model, config=self._connect_config(agent))
         self._connection = await self._cm.__aenter__()
-        self._interrupted_this_turn = False
-        self._model_speaking = False
-        self._audio_buffer = None
         self._listen_task = asyncio.create_task(self._listen())
 
     async def _listen(self) -> None:
@@ -633,11 +630,6 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
                     self._model_speaking = False
                     self._log.info("Gemini barge-in (user speaking); stopping playback")
                     await self._callback("interrupt", {})
-
-            # Interim transcription updates word by word while the user talks;
-            # the final one lands when VAD commits end-of-turn.
-            interim = getattr(server_content, "interim_input_transcription", None)
-            input_transcription = getattr(server_content, "input_transcription", None)
 
             output_transcription = getattr(server_content, "output_transcription", None)
             if output_transcription is not None and output_transcription.text:
@@ -722,6 +714,9 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
             await self._cm.__aexit__(None, None, None)
             self._connection = None
             self._cm = None
+        if self._client is not None:
+            await self._client.aio.aclose()
+            self._client = None
 
 
 class GoogleADKAgent(AKBaseAgent):
@@ -806,8 +801,8 @@ class GoogleADKModule(Module):
         :param agents: List of agents in the module.
         :param runner: Custom runner associated with the module.
         :param realtime_runner_cls: Realtime adapter class enabling ``execution.mode: realtime``
-            for this module's agents. Opt-in: without it an agent has no realtime adapter and
-            REALTIME mode fails loudly instead of silently picking one.
+            for this module's agents. Defaults to :class:`GoogleADKRealtimeRunner`; pass a custom
+            class to override. Only the pipeline (in REALTIME mode) ever instantiates it.
         """
         super().__init__()
         self.realtime_runner_cls = realtime_runner_cls or GoogleADKRealtimeRunner
@@ -826,9 +821,8 @@ class GoogleADKModule(Module):
         :param agents: List of agents in the module.
         :return: GoogleADKAgent instance.
         """
-        # The realtime adapter is opted into by the caller (passed to the module); only the
-        # pipeline (in REALTIME mode) ever instantiates it, so the framework need not know the
-        # execution mode.
+        # The realtime adapter class is attached unconditionally; only the pipeline (in REALTIME
+        # mode) ever instantiates it, so the framework need not know the execution mode.
         return GoogleADKAgent(agent.name, self.runner, agent, realtime_runner_cls=self.realtime_runner_cls)
 
     def load(self, agents: list[BaseAgent]) -> "GoogleADKModule":

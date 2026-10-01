@@ -401,6 +401,7 @@ class OpenAIRealtimeAdapter(BaseRealtimeRunner):
         self._callback = None
         self._agent = None
         self._cm = None
+        self._client = None
         self._listen_task = None
         # True once disconnect() runs; the listen loop suppresses its error callback then so a
         # normal shutdown does not surface as a model-socket failure.
@@ -423,10 +424,10 @@ class OpenAIRealtimeAdapter(BaseRealtimeRunner):
 
         self._callback = callback
         self._agent = agent
-        client = AsyncOpenAI()
+        self._client = AsyncOpenAI()
         model = self._realtime_model(agent)
 
-        self._cm = client.realtime.connect(model=model)
+        self._cm = self._client.realtime.connect(model=model)
         self._connection = await self._cm.__aenter__()
 
         try:
@@ -545,6 +546,10 @@ class OpenAIRealtimeAdapter(BaseRealtimeRunner):
         if self._connection and self._cm is not None:
             await self._cm.__aexit__(None, None, None)
             self._connection = None
+            self._cm = None
+        if self._client is not None:
+            await self._client.close()
+            self._client = None
 
 
 class OpenAIAgent(BaseAgent):

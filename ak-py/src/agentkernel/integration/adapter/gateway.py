@@ -18,6 +18,8 @@ class GatewayRunner:
     """
 
     _log = logging.getLogger("ak.integration.gateway_runner")
+    GRACEFUL_STOP_TIMEOUT_SECONDS: float = 10.0
+    """Bound on the adapter's own teardown before it is force-cancelled."""
 
     def __init__(self, adapter: GatewayAdapter):
         """
@@ -64,8 +66,12 @@ class GatewayRunner:
             await asyncio.sleep(0.5)
 
         self._log.info(f"Gateway {self._adapter.name} stopping due to shutdown event")
-        task.cancel()
         try:
-            await task
-        except asyncio.CancelledError:
-            pass
+            await asyncio.wait_for(asyncio.shield(task), timeout=self.GRACEFUL_STOP_TIMEOUT_SECONDS)
+        except asyncio.TimeoutError:
+            self._log.warning(f"Gateway {self._adapter.name} did not stop within {self.GRACEFUL_STOP_TIMEOUT_SECONDS}s; cancelling")
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
