@@ -174,8 +174,7 @@ Potential user-skill files:
 
 Required inventory/docs files when the skill set changes:
 
-- `docs/docs/agent-skills.md` (developer and user skill tables and counts)
-- `docs/src/pages/index.tsx` (`AGENT_SKILLS` list on the landing page) when a bundled user skill is added, removed, or renamed
+- `docs/docs/agent-skills.md` (developer and user skill tables and counts). The landing page no longer lists individual skills (its hero shows only the install commands), so a bundled skill change needs no edit under `docs/src/`
 
 Also update other contributor docs if they explicitly enumerate developer skills.
 
@@ -223,7 +222,6 @@ When using this skill, the coding agent should produce:
 - Adding a new skill when an existing skill should simply be expanded.
 - Forgetting eval updates after changing a user skill.
 - Forgetting docs/spec inventory counts after adding or removing a developer skill.
-- Forgetting the `AGENT_SKILLS` list in `docs/src/pages/index.tsx` after adding or removing a bundled user skill.
 - Describing a capability from memory instead of checking the live example/module/test files.
 
 ## Quick Heuristic

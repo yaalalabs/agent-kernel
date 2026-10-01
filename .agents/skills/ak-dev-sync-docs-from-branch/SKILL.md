@@ -137,29 +137,44 @@ You must evaluate all of these surfaces before deciding no documentation work is
 
 ### Docs-Site Landing and Features Pages (React)
 
-`docs/src/pages/index.tsx` (the landing page) and `docs/src/pages/features.tsx` (the features page) enumerate the product surface in hard-coded data lists inside the components. Check them on every branch that changes an inventory, and read the current list before editing (names below are the identifiers at the time of writing; confirm with `grep -n "const " docs/src/pages/index.tsx docs/src/pages/features.tsx`):
+The landing page (`docs/src/pages/index.tsx`) and the features page (`docs/src/pages/features.tsx`) enumerate the product surface in hard-coded data, so a new framework, integration, provider, transport, or capability is invisible there until its entry is added by hand. On the landing page the inventories live in three component data files, not in `index.tsx` itself:
 
-| Branch changes ... | `index.tsx` | `features.tsx` |
+| Data file | What it drives | Entry shape |
 |---|---|---|
-| A headline capability worth announcing | `WhatsNewBanner` text and link | `FEATURE_PAGE_MAP` hint, and a card in the `features` list under Core Capabilities when it is a durable capability |
-| A framework adapter | `frameworks` in `FrameworksStrip` | `integrations` list; the "Framework adapters for N SDKs" highlight on the Six Core Abstractions card |
-| A messaging integration | `pills` on the `ak-add-integration` entry in `AGENT_SKILLS` | `MESSAGING_PLATFORMS` |
-| A sandbox provider or broker flavor | `SANDBOX_PROVIDER_CARDS`, `SandboxSection` copy | the sandbox entry hint in `FEATURE_PAGE_MAP` (provider count), the provider and broker highlights on the Sandboxed Code Execution card, the sandbox section copy |
-| A queue transport | (none) | the "Queue broker over ..." highlight on the Sandboxed Code Execution card, the "Queue-backed scaling" highlight on the Multi-Cloud Deployment card |
-| A deployment target or topology | `clouds` in `Deployment` | the Multi-Cloud Deployment card highlights |
-| A session, thread, or attachment store backend | (none) | the "Backends: ..." highlight on the Smart Memory Management card |
-| A bundled user skill (`ak-py/src/agentkernel/skills/`) | `AGENT_SKILLS` (name, description, `pills`) | (none) |
-| A knowledge base backend | (none) | the Knowledge Bases card description and highlights |
-| A guardrail or tracing provider | (none) | the Observability card highlights (tracing); the `with:` cells in the Problem section's `rows` that name the built-in guardrail and tracing providers |
-| A protocol surface (MCP, A2A, AG-UI) | `pills` on the `ak-add-capabilities` entry in `AGENT_SKILLS` | `protocols` |
-| Testing modes or evaluators | (none) | `approaches` / `modes` under Testing & Evaluation |
+| `docs/src/components/IntegrationsMarquee/data.tsx` (`INTEGRATION_ROWS`) | "Popular integrations": five scrolling rows, one tile per third-party integration | `{ name, role, href, logo or icon, mono?, wide?, soon?, title? }` placed in the matching row |
+| `docs/src/components/ArchitectureOverview/data.tsx` (`SOURCES`, `DESTINATIONS`, `CORE_PILLS`, `FLOW_WORDS`) | the architecture diagram: summary cards of icon chips, four runtime pills, the flow line | a chip is `pick("<marquee tile name>")`; the name must match the marquee tile exactly or the static build fails |
+| `docs/src/components/FeatureExplorer/data.tsx` (`FEATURE_TABS`) | the tabbed feature catalogue (Build, Connect, Remember, Guard, Scale, Observe) | a card has `title`, `description`, `tags`, `docs`, and an optional `example` folder under `examples/` |
+
+`index.tsx` itself still holds the `WhatsNewBanner` text, the hero's Agent Skills block (the two install commands only; there is no per-skill list on the landing page any more), and the `clouds` list in `Deployment`. Read the current data before editing and confirm identifiers with `grep -n "const " docs/src/pages/index.tsx docs/src/components/*/data.tsx`.
+
+| Branch changes ... | Marquee row and role | Architecture card | Feature card (tab) | `features.tsx` |
+|---|---|---|---|---|
+| A headline capability worth announcing | (none) | (none) | a card on the fitting tab | `FEATURE_PAGE_MAP` hint; a card in the `features` list under Core Capabilities when it is durable; plus `WhatsNewBanner` in `index.tsx` |
+| A framework adapter | Agent frameworks & dev tools, `Framework` | Agent frameworks | Framework Adapters (Build): `tags` and `description` | `integrations`; the "Framework adapters for N SDKs" highlight on the Six Core Abstractions card |
+| A messaging integration | Channels & protocols, `Channel` | Messaging channels | Messaging Channels (Connect): `tags` and `description` | `MESSAGING_PLATFORMS` |
+| A protocol surface (MCP, A2A, AG-UI) | Channels & protocols, `Protocol` | Protocols & APIs | its own card under Connect | `protocols` |
+| A session, thread, response, schedule, or attachment store backend | Memory, knowledge & data, `Memory` (list every store it backs in `title`) | Memory & knowledge | Pluggable Session Stores or Attachment Storage (Remember): `tags` | the "Backends: ..." highlight on the Smart Memory Management card |
+| A knowledge base backend | Memory, knowledge & data, `Vector knowledge` / `Graph knowledge` / `SQL knowledge` | Memory & knowledge | Knowledge Bases (Remember): `tags` and `description` | the Knowledge Bases card description and highlights |
+| A queue transport | Cloud & infrastructure, `Queue` | (none) | Queue Pipeline (Scale): `tags` and `description` | the "Queue broker over ..." highlight on the Sandboxed Code Execution card, the "Queue-backed scaling" highlight on the Multi-Cloud Deployment card |
+| A sandbox provider or broker flavor | Cloud & infrastructure, `Sandbox` | (none) | Sandboxed Execution (Scale): `tags` and `description` | the sandbox entry hint in `FEATURE_PAGE_MAP` (provider count), the provider and broker highlights on the Sandboxed Code Execution card, `docs/src/components/SandboxFlowDiagram` |
+| A deployment target or topology | Cloud & infrastructure, `Serverless` / `Containers` / `Gateway` | Clouds & observability | Multi-Cloud Deployment or Kubernetes Helm Chart (Scale) | the Multi-Cloud Deployment card highlights; plus `clouds` in `Deployment` in `index.tsx` |
+| A schedule provider | Cloud & infrastructure, `Scheduler` | (none) | Scheduled Tasks (Scale): `tags` | (none) |
+| A secret provider | Cloud & infrastructure, `Secrets` | (none) | Secret Resolution (Guard): `tags` and `description` | (none) |
+| A guardrail provider | Observability, safety & testing, `Guardrail` | (none) | Content Guardrails (Guard): `tags` and `description` | the `with:` cells in the Problem section's `rows` that name the built-in guardrail providers |
+| A tracing provider | Observability, safety & testing, `Tracing` | Clouds & observability (optional) | Tracing (Observe): `tags` and `description` | the Observability card highlights; the `with:` cells in the Problem section's `rows` |
+| A test evaluator | Observability, safety & testing, `Evaluator` | (none) | Pluggable Evaluators (Observe): `tags` and `description` | `approaches` / `modes` under Testing & Evaluation |
+| A bundled user skill (`ak-py/src/agentkernel/skills/`) | (none) | (none) | (none) | (none); only `docs/docs/agent-skills.md` lists individual skills |
 
 Rules for these pages:
 
 - Keep counts and names in sync with the code and with `docs/docs/` (a "six providers" hint or "4 SDKs" highlight goes stale the moment a backend is added).
-- Follow the existing entry shape exactly (icon or logo asset under `docs/static/img/`, `link` to the matching `docs/docs/` page); do not restyle or restructure a section to add one entry.
-- Showcase sections are visual (flow diagrams under `docs/src/components/`, cards, strips); when a new capability needs a section, prefer a diagram component over a text-heavy card grid.
+- Every third-party integration (a vendor, a protocol, a managed service) gets a marquee tile; built-ins such as `in_memory`, `local_subprocess`, or `env` do not. `href` points at the docs page; a page that exists only in the unreleased docs takes the `/docs/next/...` path with a comment to drop `next` after the release.
+- Logo, in this order: an existing asset under `docs/static/img/integrations/`; a Simple Icons glyph from `react-icons/si` (confirm the export exists, since Simple Icons has dropped the AWS, Microsoft, Slack, and OpenAI marks); otherwise the vendor's own SVG or PNG saved under `docs/static/img/integrations/`. Set `mono: true` for a black-on-transparent mark and `wide: true` for a wordmark.
+- A marquee tile `name` is an identifier: `ArchitectureOverview` picks chips by it, so a rename there without the matching `pick()` change fails the static build.
+- `FLOW_WORDS` in the architecture data and the `label`s in `FEATURE_TABS` are the same six words; change both or neither.
+- Follow the existing entry shape exactly; do not restyle or restructure a section to add one entry.
 - The other persona pages (`docs/src/pages/developer.tsx`, `ai-engineer.tsx`, `business-leader.tsx`, `use-cases.tsx`) carry their own feature groups; grep them for the old name or count whenever an inventory changes.
+- Verify with the docs build, which also fails on broken internal links: `cd docs && npm ci && NODE_OPTIONS=--max-old-space-size=8192 npm run build`.
 
 ### Deployment Docs
 
@@ -216,6 +231,7 @@ Depending on branch impact, review and update files from this list:
 - `docs/docs/**`
 - `docs/sidebars.js`
 - `docs/src/pages/index.tsx`
+- `docs/src/components/IntegrationsMarquee/data.tsx`, `docs/src/components/ArchitectureOverview/data.tsx`, `docs/src/components/FeatureExplorer/data.tsx` (the landing page inventories)
 - `docs/src/pages/features.tsx`
 - `docs/src/pages/developer.tsx`, `ai-engineer.tsx`, `business-leader.tsx`, `use-cases.tsx` (when an inventory or count they display changes)
 - `ak-deployment/**/README.md`

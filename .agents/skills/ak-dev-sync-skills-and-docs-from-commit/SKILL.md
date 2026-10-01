@@ -162,7 +162,7 @@ Do not stop after one side if the capability impact clearly affects both contrib
 Evaluate and update all relevant documentation surfaces:
 
 1. `ak-py/README.md`
-2. docs website pages under `docs/` (including intro/getting-started/reference and example pages, the What's New tip in `docs/docs/intro.md`, and the hard-coded inventories in the React landing and features pages `docs/src/pages/index.tsx` and `docs/src/pages/features.tsx`; the surface table in `ak-dev-sync-docs-from-branch` maps change types to the data lists on those pages)
+2. docs website pages under `docs/` (including intro/getting-started/reference and example pages, the What's New tip in `docs/docs/intro.md`, and the hard-coded inventories of the React landing and features pages: the landing page's live in `docs/src/components/IntegrationsMarquee/data.tsx`, `ArchitectureOverview/data.tsx`, and `FeatureExplorer/data.tsx`, the features page's in `docs/src/pages/features.tsx`; the surface table in `ak-dev-sync-docs-from-branch` maps change types to the entries in those files)
 3. README files under `ak-deployment/`
 4. changed/new example READMEs under `examples/` plus docs-site references to those examples
 5. root `README.md`
@@ -196,7 +196,7 @@ If developer skill inventory changes, update:
 
 - `docs/docs/agent-skills.md`
 
-If user (bundled) skill inventory changes, also update the `AGENT_SKILLS` list in `docs/src/pages/index.tsx`.
+A user (bundled) skill inventory change needs no landing page edit: the hero's Agent Skills block shows only the install commands, and individual skills are listed in `docs/docs/agent-skills.md` alone.
 
 Ensure skill counts, tables, and file inventories match `.agents/skills/` and `ak-py/src/agentkernel/skills/` exactly.
 
@@ -220,6 +220,7 @@ Documentation files:
 - `docs/docs/**`
 - `docs/sidebars.js`
 - `docs/src/pages/index.tsx`
+- `docs/src/components/IntegrationsMarquee/data.tsx`, `docs/src/components/ArchitectureOverview/data.tsx`, `docs/src/components/FeatureExplorer/data.tsx` (the landing page inventories)
 - `docs/src/pages/features.tsx`
 - `ak-deployment/**/README.md`
 - `examples/**/README.md`
@@ -269,7 +270,7 @@ When this skill runs successfully, produce:
 - Updating skills but not documentation, or documentation but not skills.
 - Updating docs references to examples without updating the example README (or vice versa).
 - Updating only one documentation surface when the same capability appears in multiple surfaces.
-- Updating `docs/docs/` markdown but not the hard-coded lists in `docs/src/pages/index.tsx` and `docs/src/pages/features.tsx` when the commit adds, removes, or renames a framework, integration, provider, transport, deployment target, bundled skill, or headline capability.
+- Updating `docs/docs/` markdown but not the hard-coded inventories (`docs/src/components/*/data.tsx` on the landing page, `docs/src/pages/features.tsx` on the features page) when the commit adds, removes, or renames a framework, integration, provider, transport, deployment target, or headline capability.
 - Describing behavior from memory instead of checking live code, examples, or Terraform inputs.
 
 ## Quick Heuristic

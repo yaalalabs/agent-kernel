@@ -410,7 +410,8 @@ Create at minimum:
 
 - Add a page under `docs/docs/frameworks/<name>.md` — note the page slug may differ from the adapter directory name (e.g. the `adk` adapter's page is `docs/docs/frameworks/google-adk.md`, referenced as `'frameworks/google-adk'` in `docs/sidebars.js`)
 - Update `docs/sidebars.js` to include the new framework
-- Update the docs-site React pages that enumerate frameworks: the `frameworks` list in `FrameworksStrip` in `docs/src/pages/index.tsx` (logo under `docs/static/img/integrations/`, link to the new page) and the `integrations` list in `docs/src/pages/features.tsx`, plus the "Framework adapters for N SDKs" highlight on the Six Core Abstractions card there. Grep `docs/src/pages/*.tsx` and `docs/docs/intro.md` for the framework roll call and add the new name wherever the others are listed
+- Landing page (`docs/src/components/*/data.tsx`): add a tile to the **Agent frameworks & dev tools** row in `IntegrationsMarquee/data.tsx` (role `Framework`, `href` to the new page, logo or `react-icons/si` glyph); add `pick("<tile name>")` to the **Agent frameworks** card in `ArchitectureOverview/data.tsx`; add the framework to the **Framework Adapters** card's `tags` and `description` under the Build tab in `FeatureExplorer/data.tsx`. Logo sourcing and the build check are in `ak-dev-sync-docs-from-branch`, *Docs-Site Landing and Features Pages*
+- Features page (`docs/src/pages/features.tsx`): the `integrations` list and the "Framework adapters for N SDKs" highlight on the Six Core Abstractions card. Grep `docs/src/pages/*.tsx` and `docs/docs/intro.md` for the framework roll call and add the new name wherever the others are listed
 
 ## Checklist
 
@@ -428,4 +429,5 @@ Create at minimum:
 - [ ] Unit tests in `ak-py/tests/`, including: declared run options reach the native call, an AK-owned key wins over a bypassed declaration, the declared dict is not mutated across runs, and the reserved keys are rejected through the module; a factory-merged mapping (a mock whose `resolve_run_options` returns it) wins over the static key at the native call, and `resolve_run_options` is awaited exactly once per `run` and per `stream` (#758)
 - [ ] CLI example in `examples/cli/<name>/`
 - [ ] Documentation in `docs/docs/frameworks/<name>.md`
-- [ ] Framework inventories on the docs-site pages (`docs/src/pages/index.tsx` `FrameworksStrip`, `docs/src/pages/features.tsx` `integrations` and SDK count) and in `docs/docs/intro.md`
+- [ ] Landing page inventories: marquee tile (`IntegrationsMarquee/data.tsx`), `pick()` chip on the Agent frameworks card (`ArchitectureOverview/data.tsx`), Framework Adapters card tags (`FeatureExplorer/data.tsx`)
+- [ ] Framework inventories on `docs/src/pages/features.tsx` (`integrations` and SDK count) and in `docs/docs/intro.md`
