@@ -1,0 +1,41 @@
+[project]
+name = "maf-demo"
+version = "0.1.0"
+description = "Agent Kernel - MAF CLI Demo"
+requires-python = ">=3.12"
+dependencies = [
+    "agentkernel[maf]",
+    "agent-framework>=1.0.0",
+    "agent-framework-openai>=1.0.0",
+]
+
+[dependency-groups]
+dev = [
+    "agentkernel[test]",
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "black==26.5.1",
+    "isort>=5.0.0",
+    "mypy>=1.0.0",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+agentkernel = { path = "../../../ak-py" }
+
+[tool.isort]
+profile = "black"
+line_length = 120
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+
+[tool.black]
+line-length = 120
+target-version = ["py312"]

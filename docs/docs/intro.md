@@ -204,6 +204,7 @@ Agent Kernel currently supports:
 - **LangGraph** - Graph-based agent orchestration
 - **Google ADK** - Google's Agent Development Kit
 - **Smolagents** - Hugging Face's lightweight agentic framework
+- **Microsoft Agents** - Microsoft Agent Framework (MAF)
 
 Coming soon:
 - **LiveKit Agents** - Real-time audio/video agent framework for voice-enabled AI applications

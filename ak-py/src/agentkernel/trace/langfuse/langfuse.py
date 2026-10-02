@@ -74,3 +74,11 @@ class LangFuse(BaseTrace):
         from .pydanticai import LangFusePydanticAIRunner
 
         return LangFusePydanticAIRunner(self._client)
+
+    def maf(self) -> Runner:
+        """
+        Returns the Langfuse MAF runner instance.
+        """
+        from .maf import LangFuseMAFRunner
+
+        return LangFuseMAFRunner(self._client)

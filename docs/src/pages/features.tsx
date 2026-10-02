@@ -1280,6 +1280,22 @@ function FrameworkSupport() {
         />
       ),
     },
+    {
+      key: "maf",
+      name: "Microsoft Agents",
+      description:
+        "Microsoft Agent Framework (MAF), the unified successor to AutoGen and Semantic Kernel.",
+      link: "/docs/frameworks/microsoft-agents",
+      logo: (
+        <img
+          src="https://upload.wikimedia.org/wikipedia/commons/4/44/Microsoft_logo.svg"
+          alt=""
+          className={styles.frameworkLogoImg}
+          width={150}
+          height={50}
+        />
+      ),
+    },
   ];
 
   const multiFramework = {
