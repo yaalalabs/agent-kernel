@@ -264,6 +264,33 @@
   line-height: 1.3;
 }
 
+/* ─── Focus inside a row: static, wrapping grid ──────────────────────────── */
+/* Only the first copy is focusable and the animation can leave it off screen, so while focus is
+   inside a row the first copy is laid out as a static grid (the same rules as reduced motion
+   below). Keyed on :focus-within rather than :focus-visible so it does not depend on the
+   browser's keyboard-detection heuristic; a mouse click navigates away anyway. */
+.viewport:focus-within {
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
+.viewport:focus-within .track {
+  animation: none;
+  width: auto;
+  justify-content: center;
+  padding: 0 1.5rem;
+}
+
+.viewport:focus-within .group {
+  flex-wrap: wrap;
+  justify-content: center;
+  padding-right: 0;
+}
+
+.viewport:focus-within .group:not(:first-child) {
+  display: none;
+}
+
 /* ─── Reduced motion: static, wrapping grid ──────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   .track {

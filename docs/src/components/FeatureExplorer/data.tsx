@@ -270,7 +270,7 @@ export const FEATURE_TABS: FeatureTab[] = [
       {
         title: "Fault Tolerance",
         description:
-          "Multi-AZ deployments, automatic recovery, health monitoring and zero-downtime rollouts across every deployment mode.",
+          "Multi-AZ deployments, automatic recovery, health monitoring and zero-downtime rollouts on the cloud and Kubernetes deployment modes. Local mode stays single-instance for development.",
         tags: ["Multi-AZ", "Auto-recovery", "Health checks"],
         docs: "/docs/core-concepts/fault-tolerance",
       },

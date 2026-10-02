@@ -128,7 +128,8 @@ export default function ArchitectureOverview() {
     const destinations = destinationRefs.current.filter((el): el is HTMLDivElement => el !== null);
     destinations.forEach((el, index) => {
       const r = rectWithin(el, diagram);
-      const x1 = r.x;
+      // Same gap as the core end of a source path, so the arrowhead sits just outside the card border.
+      const x1 = r.x - CORE_INSET;
       const y1 = r.y + r.h / 2;
       const x2 = box.x + box.w + CORE_INSET;
       const xm = x1 - (x1 - x2) * 0.5;
@@ -189,14 +190,21 @@ export default function ArchitectureOverview() {
               <path d="M 1 1 L 9 5 L 1 9" className={styles.arrowHead} />
             </marker>
           </defs>
-          {connectors.map((connector, index) => (
-            <path
-              key={index}
-              d={connector.d}
-              className={clsx(styles.connector, styles[`connector-${connector.kind}`])}
-              markerEnd={connector.kind === "pill" ? undefined : "url(#ak-arch-arrow)"}
-            />
-          ))}
+          {connectors.map((connector, index) => {
+            // Requests flow into the core and responses back out, so a source path carries its arrowhead
+            // at the core end and a destination path at the card end (the marker's auto-start-reverse
+            // orientation flips it to point into the card).
+            const arrow = "url(#ak-arch-arrow)";
+            return (
+              <path
+                key={index}
+                d={connector.d}
+                className={clsx(styles.connector, styles[`connector-${connector.kind}`])}
+                markerEnd={connector.kind === "source" ? arrow : undefined}
+                markerStart={connector.kind === "destination" ? arrow : undefined}
+              />
+            );
+          })}
         </svg>
 
         <div className={styles.columns}>
