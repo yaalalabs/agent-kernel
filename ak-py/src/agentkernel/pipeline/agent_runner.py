@@ -100,11 +100,16 @@ class AgentRunner:
         if QueueTransportFactory.resolve_type() == "in_memory":
             raise AKConfigError("the in_memory transport runs in-process: start IOHandler (single-process topology) instead of AgentRunner")
         # cls check avoids redirect loops when StreamAgentRunner.run() is reached via inheritance.
-        if cls is AgentRunner and AKConfig.get().execution.mode == ExecutionMode.STREAM:
-            return StreamAgentRunner.run()
+        if cls is AgentRunner:
+            mode = AKConfig.get().execution.mode
+            if mode == ExecutionMode.REALTIME:
+                return RealtimeAgentRunner.run()
+            if mode == ExecutionMode.STREAM:
+                return StreamAgentRunner.run()
         # A standalone runner container is usually PID 1: without these handlers SIGTERM never
         # arrives and pod/task stop hangs until SIGKILL instead of draining in-flight runs.
         ThreadRunner.install_shutdown_signal_handlers(cls._log)
+
         cls().start()
 
     # -- shared plumbing --------------------------------------------------------------------
@@ -214,6 +219,7 @@ class StreamAgentRunner(AgentRunner):
             return super().process(message)
 
         body = BaseRunRequest.model_validate(json.loads(message.body))
+
         request_id = self._resolve_request_metadata(message, body)
         if not message.attributes.get(ATTR_USER_ID) and QueueTransportFactory.resolve_type() != "in_memory":
             raise ValueError("user_id is required in queue message attributes for STREAM mode over a broker transport")
@@ -251,3 +257,41 @@ class StreamAgentRunner(AgentRunner):
             self._send_to_output(message, error_chunk, status_code=None, dedup_suffix=f"{message.receive_count}-error")
         except Exception:
             self._log.exception("Failed to send permanent-failure stream chunk to output queue")
+
+
+class RealtimeAgentRunner(AgentRunner):
+    """REALTIME-mode sibling: dedicated consumer for WebRTC/audio streaming."""
+
+    _log = logging.getLogger("ak.pipeline.realtime_agent_runner")
+
+    def process(self, message: QueueMessage) -> None:
+        body = BaseRunRequest.model_validate(json.loads(message.body))
+        request_id = self._resolve_request_metadata(message, body)
+
+        from .realtime_pool import RealtimeConnectionPool
+
+        pool = RealtimeConnectionPool.initialize()
+
+        # Resolve the agent/session only when the session's connection is first created;
+        # every later audio chunk reuses it (resolving here would load the session and log
+        # the selection on each chunk).
+        conn = pool.get_connection(body.session_id)
+        if conn is None:
+            handler = self._chat_service.prepare_agent_handler(body.session_id, body.agent)
+            conn = pool.get_or_create(body.session_id, handler.service.agent, handler.service.runtime, handler.service.session)
+            conn.session = handler.service.session
+
+        conn.update_delivery_context(
+            request_id=request_id,
+            user_id=message.attributes.get(ATTR_USER_ID),
+            integration=message.attributes.get(ATTR_INTEGRATION),
+            reply_context={k[len(REPLY_CONTEXT_PREFIX) :]: v for k, v in message.attributes.items() if k.startswith(REPLY_CONTEXT_PREFIX)},
+        )
+
+        for request in body.requests:
+            if getattr(request, "type", None) == "voice":
+                conn.append_audio(request.audio_data)
+            elif getattr(request, "type", None) == "text":
+                conn.send_text(request.prompt)
+
+        self._log.debug(f"[REALTIME CHUNK] request_id={request_id} (receive_count={message.receive_count})")

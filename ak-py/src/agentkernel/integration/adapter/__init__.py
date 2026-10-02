@@ -12,6 +12,8 @@ import importlib
 from typing import TYPE_CHECKING, Any
 
 _LAZY_EXPORTS = {
+    "GatewayAdapter": ".base",
+    "GatewayRunner": ".gateway",
     "InboundAdapter": ".base",
     "InboundParseResult": ".base",
     "InboundRequest": ".base",
@@ -27,8 +29,9 @@ _LAZY_EXPORTS = {
 __all__ = sorted(_LAZY_EXPORTS)
 
 if TYPE_CHECKING:  # pragma: no cover: static resolution only, preserves laziness at runtime
-    from .base import InboundAdapter, InboundParseResult, InboundRequest, OutboundAdapter, PollingInboundAdapter, Source
+    from .base import GatewayAdapter, InboundAdapter, InboundParseResult, InboundRequest, OutboundAdapter, PollingInboundAdapter, Source
     from .factory import IntegrationAdapterFactory
+    from .gateway import GatewayRunner
     from .poller import PollerRunner
     from .producer import IntegrationProducer
     from .webhook import WebhookRESTRequestHandler

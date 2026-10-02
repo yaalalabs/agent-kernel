@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import copy
 import logging
 from collections.abc import AsyncGenerator
-from typing import Any, Callable, ClassVar, List, Mapping
+from typing import Any, Callable, ClassVar, List, Mapping, Type
 
 from agents import Agent, Runner, function_tool
 from openai.types.responses.response_output_item_added_event import ResponseOutputItemAddedEvent
@@ -13,6 +14,7 @@ from openai.types.responses.response_text_delta_event import ResponseTextDeltaEv
 
 from ...core import Agent as BaseAgent
 from ...core import Module
+from ...core import RealtimeRunner as BaseRealtimeRunner
 from ...core import Runner as BaseRunner
 from ...core import Runtime, Session, ToolBuilder, ToolContext
 from ...core.builder import A2ACardBuilder
@@ -39,6 +41,7 @@ from ...core.model import (
     AgentRequestFile,
     AgentRequestImage,
     AgentRequestText,
+    AgentRequestVoice,
 )
 from ...core.util.error_util import user_facing_error_message
 from ...trace import Trace
@@ -154,20 +157,40 @@ class OpenAIRunner(BaseRunner):
 
                 file_url = req.file_data
                 if file_url.startswith(("http://", "https://", "s3://")):
+                    # A remote reference goes as ``file_url``; adding an inline ``file_data`` part
+                    # for it too would send the URL as if it were base64 payload.
                     message_content.append({"role": "user", "content": [{"type": "input_file", "file_url": file_url}]})
                 else:
-                    mime_type = req.mime_type
-                    if not file_url.startswith(("data:")):
+                    if not file_url.startswith("data:"):
                         if not req.mime_type:
                             raise ValueError("mime_type is missing for file input, either in the base64 or explicitly")
-                        file_url = f"data:{mime_type};base64,{file_url}"
+                        file_url = f"data:{req.mime_type};base64,{file_url}"
+                    message_content.append({"role": "user", "content": [{"type": "input_file", "filename": req.name, "file_data": file_url}]})
 
-                    message_content.append(
-                        {
-                            "role": "user",
-                            "content": [{"type": "input_file", "filename": req.name, "file_data": file_url}],
-                        }
-                    )
+            elif isinstance(req, AgentRequestVoice):
+                if not req.audio_data:
+                    raise ValueError("no audio input provided")
+
+                audio_data = req.audio_data
+                if audio_data.startswith(("http://", "https://", "s3://")):
+                    # The Responses API audio part takes inline base64 only; a remote reference
+                    # has no native mapping here rather than a silently wrong shape.
+                    raise ValueError("remote audio URLs are not supported as OpenAI audio input; provide base64 audio data")
+
+                if audio_data.startswith("data:"):
+                    mime_type = audio_data.split(";")[0][5:]
+                    audio_data = audio_data.split(",", 1)[-1]
+                else:
+                    mime_type = req.mime_type or "audio/wav"
+
+                # Responses accepts only mp3/wav, so the MIME subtype is normalised to those names.
+                audio_format = {"mpeg": "mp3", "mp3": "mp3", "wav": "wav", "x-wav": "wav", "wave": "wav"}.get(mime_type.split("/")[-1])
+                if audio_format is None:
+                    raise ValueError(f"unsupported audio format '{mime_type}' for OpenAI audio input; supported: mp3, wav")
+
+                message_content.append(
+                    {"role": "user", "content": [{"type": "input_audio", "input_audio": {"data": audio_data, "format": audio_format}}]}
+                )
 
         return prompt, message_content
 
@@ -367,6 +390,168 @@ class OpenAIRunner(BaseRunner):
         return getattr(raw, field, None)
 
 
+class OpenAIRealtimeAdapter(BaseRealtimeRunner):
+    """
+    OpenAIRealtimeAdapter implements RealtimeRunner for the OpenAI Realtime WebSocket API.
+    """
+
+    def __init__(self):
+        super().__init__(FRAMEWORK)
+        self._connection = None
+        self._callback = None
+        self._agent = None
+        self._cm = None
+        self._client = None
+        self._listen_task = None
+        # True once disconnect() runs; the listen loop suppresses its error callback then so a
+        # normal shutdown does not surface as a model-socket failure.
+        self._closing = False
+
+    @staticmethod
+    def _realtime_model(agent: BaseAgent) -> str:
+        """The realtime model named by the agent definition.
+
+        Deliberately no adapter-level default: the model is the agent's choice, and a silent
+        fallback would run a different model than the one the caller declared.
+        """
+        model = getattr(getattr(agent, "agent", None), "model", None)
+        if not isinstance(model, str) or not model:
+            raise ValueError(f"Agent '{getattr(agent, 'name', '?')}' must define a realtime model to run in REALTIME mode")
+        return model
+
+    async def connect(self, session: Session, agent: BaseAgent, callback: Callable) -> None:
+        from openai import AsyncOpenAI
+
+        self._callback = callback
+        self._agent = agent
+        self._client = AsyncOpenAI()
+        model = self._realtime_model(agent)
+
+        self._cm = self._client.realtime.connect(model=model)
+        self._connection = await self._cm.__aenter__()
+
+        try:
+            sdk_agent = getattr(agent, "agent", None)
+            instructions = getattr(sdk_agent, "instructions", None) or "You are a helpful assistant."
+
+            tools_payload = []
+            if sdk_agent and hasattr(sdk_agent, "tools"):
+                for tool in sdk_agent.tools:
+                    if type(tool).__name__ == "FunctionTool":
+                        tools_payload.append(
+                            {"type": "function", "name": tool.name, "description": tool.description, "parameters": tool.params_json_schema}
+                        )
+
+            await self._connection.send(
+                {
+                    "type": "session.update",
+                    "session": {
+                        "type": "realtime",
+                        "instructions": instructions,
+                        "tools": tools_payload,
+                        "audio": {"input": {"turn_detection": {"type": "server_vad", "interrupt_response": True, "create_response": True}}},
+                    },
+                }
+            )
+        except Exception:
+            # A failure after the socket opened would otherwise leak it: the pool drops the
+            # RealtimeConnection, but the WebSocket would stay up until the process exits.
+            await self.disconnect()
+            raise
+
+        self._listen_task = asyncio.create_task(self._listen())
+
+    async def _listen(self) -> None:
+        """Report model events to the pool, in order. The pool paces audio and emits chunks."""
+        try:
+            async for event in self._connection:
+                await self._handle_message(event)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            _log.error(f"OpenAI Realtime socket error: {e}")
+            if not self._closing:
+                await self._callback("error", {"message": f"OpenAI Realtime socket error: {e}"})
+
+    async def _handle_message(self, event: Any) -> None:
+        event_type = event.type
+        if event_type == "response.output_audio.delta":
+            await self._callback("audio_delta", {"delta": event.delta, "message_id": getattr(event, "item_id", "")})
+        elif event_type == "response.output_audio_transcript.delta":
+            await self._callback("transcript_delta", {"delta": event.delta, "message_id": getattr(event, "item_id", "")})
+        elif event_type == "input_audio_buffer.speech_started":
+            await self._callback("interrupt", {})
+        elif event_type == "response.done":
+            response = getattr(event, "response", None)
+            status = getattr(response, "status", None)
+            await self._callback("done", {"status": status})
+        elif event_type == "response.function_call_arguments.done":
+            await self._callback(
+                "tool_call",
+                {
+                    "call_id": getattr(event, "call_id", None),
+                    "name": getattr(event, "name", None),
+                    "arguments": getattr(event, "arguments", "{}"),
+                },
+            )
+        elif event_type == "error":
+            _log.error(f"OpenAI Realtime socket error: {getattr(event, 'error', 'unknown')}")
+
+    async def append_audio(self, base64_audio: str) -> None:
+        if self._connection:
+            await self._connection.send({"type": "input_audio_buffer.append", "audio": base64_audio})
+
+    async def send_text(self, text: str) -> None:
+        if self._connection:
+            await self._connection.send(
+                {"type": "conversation.item.create", "item": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": text}]}}
+            )
+            await self._connection.send({"type": "response.create"})
+
+    async def send_tool_result(self, call_id: str, result: str) -> None:
+        if self._connection:
+            await self._connection.send(
+                {"type": "conversation.item.create", "item": {"type": "function_call_output", "call_id": call_id, "output": result}}
+            )
+            await self._connection.send({"type": "response.create"})
+
+    async def execute_tool(self, name: str, arguments: str, context: ToolContext, call_id: str) -> str:
+        """Invoke a tool on the OpenAI SDK agent and return its result.
+
+        The SDK's ``on_invoke_tool`` wants its own ``ToolContext`` (built around the run
+        context), not the Agent Kernel one, so it is constructed here. The Agent Kernel
+        context is set as the active contextvar for the call, which is what a tool function's
+        ``ToolContext.get()`` reads.
+        """
+        from agents.tool_context import ToolContext as SDKToolContext
+        from agents.usage import Usage
+
+        sdk_agent = getattr(self._agent, "agent", None)
+        for tool in getattr(sdk_agent, "tools", None) or []:
+            if getattr(tool, "name", None) == name:
+                sdk_context = SDKToolContext(context=context, usage=Usage(), tool_name=name, tool_call_id=call_id, tool_arguments=arguments)
+                context.set()
+                try:
+                    result = await tool.on_invoke_tool(sdk_context, arguments)
+                finally:
+                    context.reset()
+                return str(result) if result is not None else ""
+        return f"Error: Tool {name} not found"
+
+    async def disconnect(self) -> None:
+        self._closing = True
+        if self._listen_task:
+            self._listen_task.cancel()
+            self._listen_task = None
+        if self._connection and self._cm is not None:
+            await self._cm.__aexit__(None, None, None)
+            self._connection = None
+            self._cm = None
+        if self._client is not None:
+            await self._client.close()
+            self._client = None
+
+
 class OpenAIAgent(BaseAgent):
     """
     OpenAIAgent class provides an agent wrapping for OpenAI Agent SDK-based agents.
@@ -382,14 +567,15 @@ class OpenAIAgent(BaseAgent):
         "auto_previous_response_id": "conversation state is the OpenAISession passed as session=; the SDK rejects combining them",
     }
 
-    def __init__(self, name: str, runner: OpenAIRunner, agent: Agent):
+    def __init__(self, name: str, runner: OpenAIRunner, agent: Agent, realtime_runner_cls: Type[BaseRealtimeRunner] = None):
         """
         Initializes an OpenAIAgent instance.
         :param name: Name of the agent.
         :param runner: Runner associated with the agent.
         :param agent: The OpenAI agent instance.
+        :param realtime_runner_cls: Optional realtime adapter class for this agent.
         """
-        super().__init__(name, runner)
+        super().__init__(name, runner, realtime_runner_cls)
         self._agent = agent
         self._attach_system_tools()
         self._setup_system_prompt()
@@ -442,13 +628,20 @@ class OpenAIModule(Module):
     OpenAIModule class provides a module for OpenAI Agents SDK based agents.
     """
 
-    def __init__(self, agents: list[Agent], runner: OpenAIRunner = None):
+    def __init__(
+        self,
+        agents: list[Agent],
+        runner: OpenAIRunner = None,
+        realtime_runner_cls: Type[BaseRealtimeRunner] = None,
+    ):
         """
         Initializes an OpenAIModule instance.
         :param agents: List of agents in the module.
         :param runner: Custom runner associated with the module.
+        :param realtime_runner_cls: Optional realtime runner class for WebSocket connections.
         """
         super().__init__()
+        self.realtime_runner_cls = realtime_runner_cls or OpenAIRealtimeAdapter
         if runner is not None:
             self.runner = runner
         elif AKConfig.get().trace.enabled:
@@ -464,7 +657,9 @@ class OpenAIModule(Module):
         :param agents: List of agents in the module.
         :return: OpenAIAgent instance.
         """
-        return OpenAIAgent(agent.name, self.runner, agent)
+        # The realtime adapter class is attached unconditionally: only the pipeline (in REALTIME
+        # mode) ever instantiates it, so the framework need not know the execution mode.
+        return OpenAIAgent(agent.name, self.runner, agent, realtime_runner_cls=self.realtime_runner_cls)
 
     def load(self, agents: list[Agent]) -> OpenAIModule:
         """

@@ -11,6 +11,7 @@ from .model import (
     AgentReplyAny,
     AgentReplyImage,
     AgentReplyText,
+    AgentReplyVoice,
     AgentRequest,
     AgentRequestAny,
     AgentRequestFile,
@@ -314,7 +315,11 @@ class ResponseBuilder:
             response_dict = {"error": str(error)}
         else:
             response_dict = {
-                "result": str(result) if isinstance(result, (AgentReplyText, AgentReplyImage, AgentReplyAny)) else "Non textual result received"
+                "result": (
+                    str(result)
+                    if isinstance(result, (AgentReplyText, AgentReplyImage, AgentReplyVoice, AgentReplyAny))
+                    else "Non textual result received"
+                )
             }
 
         if session_id:

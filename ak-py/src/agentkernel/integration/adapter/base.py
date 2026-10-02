@@ -19,7 +19,7 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
-from ...core.model import AgentReply, AgentRequestUnion
+from ...core.model import AgentReply, AgentRequestUnion, StreamChunk
 
 ATTACHMENTS_DISABLED_ERROR = (
     "Attachments from messaging integrations require multimodal support — " "set multimodal.enabled: true in config.yaml to accept images and files"
@@ -36,10 +36,11 @@ SESSION_CACHE_ERROR = (
 
 
 class Source(StrEnum):
-    """How an inbound adapter is hosted."""
+    """How an adapter that feeds the input queue is hosted."""
 
     WEBHOOK = "webhook"
     POLLER = "poller"
+    REALTIME = "realtime"
 
 
 class InboundRequest(BaseModel):
@@ -185,6 +186,19 @@ class OutboundAdapter(ABC):
         :param reply_context: The delivery coordinates resolved at the edge.
         """
 
+    async def deliver_chunk(self, chunk: StreamChunk, reply_context: Dict[str, str]) -> None:
+        """Send a real-time streaming chunk to the platform.
+
+        A realtime run emits the same typed chunks as text streaming: audio as an ``AudioDelta``
+        event, transcript as ``TextDelta``, barge-in as ``Interrupt``, and a final ``done``
+        chunk. Platforms that support streaming (e.g., LiveKit for voice) override this to play
+        chunks in real-time; the default is a no-op.
+
+        :param chunk: The streamed chunk, carrying a ``StreamEvent`` (or ``done``).
+        :param reply_context: The delivery coordinates resolved at the edge.
+        """
+        pass
+
     @abstractmethod
     async def deliver_error(self, message: str, reply_context: Dict[str, str]) -> None:
         """Send a user-facing failure message, so a user is never left silent.
@@ -216,3 +230,21 @@ class OutboundAdapter(ABC):
         if self.MAX_CHUNKS is not None and len(chunks) > self.MAX_CHUNKS:
             chunks = chunks[: self.MAX_CHUNKS] + [self.TRUNCATION_NOTICE]
         return chunks
+
+
+class GatewayAdapter(OutboundAdapter):
+    """A stateful edge that both feeds the input queue and delivers replies (spec #524).
+
+    Unlike the stateless inbound/outbound pair, a gateway owns a long-lived connection to a
+    platform — a LiveKit WebRTC room, for instance — because only it can read the live input
+    *and* play the live output. It is therefore one object, not two halves, and it is hosted by
+    :class:`~agentkernel.integration.adapter.gateway.GatewayRunner`, which registers it as the
+    outbound adapter for its ``name``.
+    """
+
+    source: Source = Source.REALTIME
+
+    @abstractmethod
+    async def start(self) -> None:
+        """Connect and run the edge's loop until the process shuts down."""
+        raise NotImplementedError()

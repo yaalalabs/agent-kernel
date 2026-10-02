@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from agentkernel.core import Session
 from agentkernel.core.event import TextDelta
 from agentkernel.core.model import AgentReplyAny, AgentReplyText, AgentRequestImage, AgentRequestText
+from agentkernel.framework.adk import GoogleADKRealtimeRunner
 from agentkernel.framework.adk.adk import GoogleADKAgent, GoogleADKRunner, GoogleADKSession
 
 FRAMEWORK_CONTEXT = Session.Keys.FRAMEWORK_CONTEXT.value
@@ -949,3 +950,9 @@ class TestGoogleADKRunOptions:
 
         assert "No valid content" in reply.response
         agent.resolve_run_options.assert_not_awaited()
+
+
+def test_realtime_adapter_declares_gemini_native_input_rate():
+    """Gemini Live realtime input is 16 kHz PCM16; sending the edge's 24 kHz makes the server
+    abort the turn with a 1011 Internal error (the pool resamples using this declared rate)."""
+    assert GoogleADKRealtimeRunner.input_sample_rate == 16000

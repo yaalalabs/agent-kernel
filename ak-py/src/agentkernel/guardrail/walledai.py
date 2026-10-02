@@ -7,7 +7,7 @@ from walledai import WalledProtect, WalledRedact
 
 from ..core.base import Agent, Session
 from ..core.config import AKConfig
-from ..core.model import AgentReply, AgentReplyAny, AgentReplyImage, AgentReplyText, AgentRequest, AgentRequestText
+from ..core.model import AgentReply, AgentReplyAny, AgentReplyImage, AgentReplyText, AgentReplyVoice, AgentRequest, AgentRequestText
 from .guardrail import BaseGuardrailUtil, InputGuardrail, OutputGuardrail
 
 log = logging.getLogger("ak.guardrail.walledai")
@@ -204,6 +204,9 @@ class WalledAIOutputGuardrail(OutputGuardrail, WalledAIGuardrailBase):
             return agent_reply.model_copy(update={"content": self._unmask(agent_reply.content, mapping)})
 
         if isinstance(agent_reply, AgentReplyImage):
+            return agent_reply.model_copy(update={"response": self._unmask(agent_reply.response, mapping)})
+
+        if isinstance(agent_reply, AgentReplyVoice):
             return agent_reply.model_copy(update={"response": self._unmask(agent_reply.response, mapping)})
 
         if isinstance(agent_reply, AgentReplyText):

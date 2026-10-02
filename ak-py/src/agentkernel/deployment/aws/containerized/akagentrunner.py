@@ -6,6 +6,7 @@ import logging
 from ....core.chat_service import ChatService
 from ....core.config import AKConfig, ExecutionMode
 from ....core.model import BaseRunRequest, StreamChunk
+from ....pipeline.envelope import ATTR_INTEGRATION, REPLY_CONTEXT_PREFIX
 from ..core.sqs_handler import SQSHandler
 from .core import ECSSQSConsumer
 
@@ -163,10 +164,13 @@ class ECSAgentRunner(ECSSQSConsumer):
 
     @classmethod
     def run(cls) -> None:
-        """Dispatch to ECSStreamAgentRunner when execution.mode is STREAM."""
+        """Dispatch to ECSStreamAgentRunner or ECSRealtimeAgentRunner based on execution.mode."""
         # cls check avoids redirect loops when a subclass (e.g. ECSStreamAgentRunner) calls this via inheritance.
-        if cls is ECSAgentRunner and cls._config.execution.mode == ExecutionMode.STREAM:
-            return ECSStreamAgentRunner.run()
+        if cls is ECSAgentRunner:
+            if cls._config.execution.mode == ExecutionMode.STREAM:
+                return ECSStreamAgentRunner.run()
+            elif cls._config.execution.mode == ExecutionMode.REALTIME:
+                return ECSRealtimeAgentRunner.run()
         return super().run()
 
 
@@ -277,3 +281,53 @@ class ECSStreamAgentRunner(ECSAgentRunner):
             )
         except Exception:
             cls._log.exception("Failed to send permanent-failure stream chunk to output queue")
+
+
+class ECSRealtimeAgentRunner(ECSAgentRunner):
+    """
+    ECS Agent Runner for REALTIME execution mode — polls the Input Queue and forwards
+    audio/text chunks to the RealtimeConnectionPool.
+
+    The ECS equivalent of pipeline.agent_runner.RealtimeAgentRunner.
+    """
+
+    _log = logging.getLogger("ak.ecs.realtimeagentrunner")
+
+    @classmethod
+    def process_message(cls, record: dict) -> None:
+        message_id = record.get("MessageId")
+        receive_count = record.get("Attributes", {}).get("ApproximateReceiveCount", "1")
+
+        body = BaseRunRequest.model_validate(json.loads(record["Body"]))
+        record_attributes = cls._get_record_attributes(raw_queue_message=record, body=body)
+        request_id = record_attributes["request_id"]
+        user_id = record_attributes.get("user_id")
+
+        from ....pipeline.realtime_pool import RealtimeConnectionPool
+
+        pool = RealtimeConnectionPool.initialize()
+
+        conn = pool.get_connection(body.session_id)
+        if conn is None:
+            handler = cls._get_chat_service().prepare_agent_handler(body.session_id, body.agent)
+            conn = pool.get_or_create(body.session_id, handler.service.agent, handler.service.runtime, handler.service.session)
+            conn.session = handler.service.session
+
+        custom_attrs = SQSHandler.get_message_custom_attributes(record)
+        integration = custom_attrs.get(ATTR_INTEGRATION)
+        reply_context = {k[len(REPLY_CONTEXT_PREFIX) :]: v for k, v in custom_attrs.items() if k.startswith(REPLY_CONTEXT_PREFIX)}
+
+        conn.update_delivery_context(
+            request_id=request_id,
+            user_id=user_id,
+            integration=integration,
+            reply_context=reply_context,
+        )
+
+        for request in body.requests:
+            if getattr(request, "type", None) == "voice":
+                conn.append_audio(request.audio_data)
+            elif getattr(request, "type", None) == "text":
+                conn.send_text(request.prompt)
+
+        cls._log.debug(f"[REALTIME CHUNK] request_id={request_id} (receive_count={receive_count})")
