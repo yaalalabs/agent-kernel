@@ -82,7 +82,7 @@ optional (Iteration 3 lands that change).
   `tests/test_runtime_resume_warnings.py` (new), `tests/test_hitl_stream.py` (new),
   `tests/test_hitl_guardrail.py` (new).
 - **Steps:**
-  1. `Runtime._extract_resume` and `_validate_resume` (the five failure modes, the agent named on
+  1. `Runtime._extract_resume` and `_validate_resume` (the failure modes — five here, a sixth added in PR 2's review round — the agent named on
      the request compared against the record, `supports_pause` checked here).
   2. Dispatch in `run` (`:278-286`) and `stream` (`:328-341`), acting on the **post-hook** list.
   3. The three `WARNING`s per *spec.md § diagnostics*, on the `ak.runtime` logger (`:139`).

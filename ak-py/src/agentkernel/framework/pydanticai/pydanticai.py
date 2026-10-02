@@ -5,12 +5,13 @@ import copy
 import json
 import logging
 from collections.abc import AsyncGenerator
-from typing import Any, Callable, ClassVar, List, Mapping
+from typing import Any, Callable, ClassVar, List, Literal, Mapping
 from uuid import uuid4
 
 from pydantic_ai import Agent as PydanticAgent
-from pydantic_ai import BinaryContent, DocumentUrl, FunctionToolset, ImageUrl, Tool
+from pydantic_ai import BinaryContent, DeferredToolRequests, DeferredToolResults, DocumentUrl, FunctionToolset, ImageUrl, Tool
 from pydantic_ai.messages import ModelMessagesTypeAdapter, UserContent
+from pydantic_ai.tools import ToolApproved, ToolDenied
 from pydantic_core import to_jsonable_python
 
 from ...core import Agent as BaseAgent
@@ -22,9 +23,11 @@ from ...core.config import AKConfig
 from ...core.event import (
     MessageEnd,
     MessageStart,
+    PausedInterruption,
     ReasoningDelta,
     ReasoningEnd,
     ReasoningStart,
+    RunPaused,
     StreamEvent,
     TextDelta,
     ToolCallArgs,
@@ -33,6 +36,7 @@ from ...core.event import (
     ToolCallStart,
 )
 from ...core.model import (
+    AgentPausedReplyAny,
     AgentReply,
     AgentReplyAny,
     AgentReplyText,
@@ -41,7 +45,9 @@ from ...core.model import (
     AgentRequestFile,
     AgentRequestImage,
     AgentRequestText,
+    ResumeDecision,
 )
+from ...core.paused_run import PausedRun, PausedRunState
 from ...core.util.error_util import user_facing_error_message
 from ...trace import Trace
 
@@ -172,6 +178,8 @@ class PydanticAIRunner(BaseRunner):
         :param requests: The requests to the agent.
         :return: The result of the agent's execution.
         """
+        self._reject_while_a_decision_is_outstanding(session)
+
         context: ToolContext | None = None
         prompt = ""
         try:
@@ -198,12 +206,250 @@ class PydanticAIRunner(BaseRunner):
 
             self._store_framework_context(session, incoming, produced)
 
+            if isinstance(result.output, DeferredToolRequests):
+                return self._paused_reply(agent, session, result)
+
             structured = AgentReplyAny.from_output(result.output, prompt)
             if structured is not None:
                 return structured
 
             reply_text = "" if result.output is None else str(result.output)
             return AgentReplyText(response=reply_text, prompt=prompt)
+        except Exception as e:
+            return AgentReplyText(response=user_facing_error_message(e), prompt=prompt)
+        finally:
+            if context is not None:
+                context.reset()
+
+    @property
+    def supports_pause(self) -> bool:
+        """
+        :return: True — deferred requests come back as typed output and resume through the same run call.
+        """
+        return True
+
+    def _paused_reply(self, agent: Any, session: Session, result: Any) -> AgentPausedReplyAny:
+        """
+        Records a paused run and returns the reply that carries it back to the caller.
+
+        Two axes arrive together and mean different things. `approvals` is a gated tool waiting for a
+        yes or no, so it maps to `tool_call`; `calls` is a tool that raised `CallDeferred` and is
+        waiting for somebody to supply its **return value**, so it maps to `input_required`. Mapping
+        both to one kind would lose the difference between "may I?" and "what is it?".
+
+        Replaces rather than appends: the framework keeps one message history per session and refuses
+        a new question while a decision is outstanding, so an earlier record could never be resumed.
+        Scoped to this runner, since a pause another framework holds on the same session is a
+        separate conversation and still answerable.
+
+        The record carries the message history rather than leaning on the session's copy, so the
+        pause stays resumable no matter what the session does next.
+
+        :param agent: The agent that paused.
+        :param session: The session the record is written to.
+        :param result: The run result whose `output` is a `DeferredToolRequests`.
+        :return: The paused reply, carrying the assigned run id.
+        """
+        PausedRunState.clear_for_runner(session, self.name)
+
+        requested = result.output
+        interruptions = [self._interruption(part, "tool_call") for part in requested.approvals]
+        interruptions += [self._interruption(part, "input_required") for part in requested.calls]
+
+        record = PausedRunState.add(
+            session,
+            agent=agent.name,
+            runner=self.name,
+            interruptions=interruptions,
+            payload={"messages": to_jsonable_python(result.all_messages())},
+        )
+        return AgentPausedReplyAny(run_id=record.id, session_id=session.id, agent=agent.name, interruptions=record.interruptions)
+
+    @staticmethod
+    def _interruption(part: Any, kind: Literal["tool_call", "input_required"]) -> PausedInterruption:
+        """
+        Maps one pending `ToolCallPart` onto an interruption.
+
+        :param part: The tool call awaiting a human.
+        :param kind: `tool_call` for an approval, `input_required` for a deferred call.
+        :return: The interruption to carry back to the caller.
+        """
+        try:
+            arguments = part.args if isinstance(part.args, str) else json.dumps(part.args, default=str)
+        except Exception:
+            arguments = None
+        return PausedInterruption(id=part.tool_call_id, kind=kind, tool_name=part.tool_name, arguments=arguments)
+
+    def _reject_while_a_decision_is_outstanding(self, session: Session) -> None:
+        """
+        Refuses an ordinary turn while this framework's pause is still unanswered.
+
+        Pydantic AI's `Agent.run` will not take a new prompt while the message history holds
+        unprocessed tool calls — it raises `UserError`, which the `except` below would flatten into
+        "Sorry, something went wrong". The run is going to fail either way; this makes it fail saying
+        *why*, and names the run to resume. Only this runner's records are consulted: a pause another
+        framework holds on the same session has no bearing on this agent's history.
+
+        :param session: The session whose paused runs to inspect.
+        :raises ValueError: If this runner holds an unanswered paused run in this session.
+        """
+        outstanding = next((record for record in PausedRunState.list(session) if record.runner == self.name), None)
+        if outstanding is not None:
+            raise ValueError(
+                f"Pydantic AI cannot take a new prompt while run '{outstanding.id}' is waiting on a decision: "
+                f"the message history still holds unprocessed tool calls. Answer it with a 'resume' block first, "
+                f"or start a new session."
+            )
+
+    @staticmethod
+    def _reject_partial(decisions: list[ResumeDecision], record: PausedRun) -> None:
+        """
+        Refuses a resume that leaves any deferred call unanswered, before the adapter's `try` opens.
+
+        The framework's own error here is unusually good — it names the expected and received ids —
+        and the `except Exception` below would replace it with "Sorry, something went wrong". Agent
+        Kernel pre-empts it to keep a message of the same quality, and to stop a partial answer
+        reaching a framework that cannot use one.
+
+        :param decisions: The human's decisions.
+        :param record: The record Runtime validated.
+        :raises ValueError: If any interruption in the record has no decision.
+        """
+        answered = {decision.id for decision in decisions}
+        missing = sorted(i.id for i in record.interruptions if i.id not in answered)
+        if missing:
+            raise ValueError(
+                f"Pydantic AI needs every deferred tool call resolved in one resume; {missing} were not answered. "
+                f"Answer all of {sorted(i.id for i in record.interruptions)} together."
+            )
+
+    @staticmethod
+    def _reject_unusable_override(decisions: list[ResumeDecision], record: PausedRun) -> None:
+        """
+        Refuses a payload an approval cannot carry, before the adapter's `try` opens.
+
+        On an approval the payload becomes `ToolApproved(override_args=...)`, which replaces the
+        tool call's arguments and so must be an object. Anything else has nowhere to go, and
+        dropping it silently would run the tool with its original arguments while the human believes
+        their answer was used. A deferred call is unaffected — there the payload is the tool's return
+        value and any JSON shape is passed through.
+
+        :param decisions: The human's decisions.
+        :param record: The record naming which interruption is which kind.
+        :raises ValueError: If an approved gated call carries a payload that is not an object.
+        """
+        kinds = {i.id: i.kind for i in record.interruptions}
+        offenders = sorted(
+            decision.id
+            for decision in decisions
+            if kinds.get(decision.id) == "tool_call"
+            and decision.status == "approved"
+            and decision.payload is not None
+            and not isinstance(decision.payload, dict)
+        )
+        if offenders:
+            raise ValueError(
+                f"A Pydantic AI approval can only carry a JSON object as its payload; decision(s) {offenders} carry another shape. "
+                f"The payload becomes the tool call's override_args, so send an object of argument names, or answer the question "
+                f"as a deferred tool call instead, where any value is passed through."
+            )
+
+    def _deferred_results(self, decisions: list[ResumeDecision], record: PausedRun) -> DeferredToolResults:
+        """
+        Renders the decisions onto the two channels the framework takes.
+
+        An approval becomes a verb: `cancelled` is a denial carrying Agent Kernel's own wording,
+        because the framework has only approve and deny and "nobody decided" must not read as a
+        refusal. A deferred call becomes a **value** — whatever the human supplied is what the tool
+        appears to have returned, so a list arrives as a list and a string as a string.
+
+        :param decisions: The human's decisions.
+        :param record: The record naming which interruption is which kind.
+        :return: The results to hand the framework.
+        """
+        kinds = {i.id: i.kind for i in record.interruptions}
+        results = DeferredToolResults()
+        for decision in decisions:
+            if kinds.get(decision.id) == "tool_call":
+                results.approvals[decision.id] = self._approval(decision)
+            else:
+                results.calls[decision.id] = decision.payload if decision.payload is not None else decision.message
+        return results
+
+    def _approval(self, decision: ResumeDecision) -> Any:
+        """
+        The approval verb for one gated tool call.
+
+        A payload here is the tool call's replacement arguments. `_reject_unusable_override` has
+        already refused any shape but an object, so this reads it straight.
+
+        :param decision: The human's decision.
+        :return: A `ToolApproved` or `ToolDenied` for the framework.
+        """
+        if decision.status == "approved":
+            return ToolApproved(override_args=decision.payload) if decision.payload is not None else ToolApproved()
+        if decision.status == "denied":
+            return ToolDenied(message=decision.message) if decision.message else ToolDenied()
+        return ToolDenied(message=self.CANCELLED_DECISION_MESSAGE)
+
+    async def resume(
+        self,
+        agent: Any,
+        session: Session,
+        requests: list[AgentRequest],
+        decisions: list[ResumeDecision],
+        record: PausedRun,
+    ) -> AgentReply:
+        """
+        Continues a paused run from the human's decisions.
+
+        A prompt riding along is native here rather than encoded: supplying the deferred results is
+        exactly what lifts the framework's own guard against a new prompt while tool calls are
+        outstanding, so the prompt is passed as the run content unchanged.
+
+        :param agent: The agent that paused.
+        :param session: The session holding the record.
+        :param requests: The hook-processed request list, carrying the resume request.
+        :param decisions: One per interruption being answered.
+        :param record: The record Runtime validated.
+        :return: The continued run's reply, which may itself be paused again.
+        """
+        self._reject_partial(decisions, record)
+        self._reject_unusable_override(decisions, record)
+
+        prompt = ""
+        context: ToolContext | None = None
+        try:
+            context = ToolContext(Runtime.current(), agent, session, requests).set()
+            prompt, content = self._process_requests(requests)
+
+            options = await agent.resolve_run_options(session, requests)
+            fw_session = self._session(session)
+            history = ModelMessagesTypeAdapter.validate_python(record.payload["messages"])
+
+            incoming = self._load_framework_context(session)
+            produced = copy.deepcopy(incoming)
+            kwargs = self._native_kwargs(
+                options,
+                message_history=history,
+                deps=produced,
+                deferred_tool_results=self._deferred_results(decisions, record),
+            )
+            result = await agent.agent.run(content or "", **kwargs)
+
+            if fw_session is not None:
+                fw_session.messages = to_jsonable_python(result.all_messages())
+
+            self._store_framework_context(session, incoming, produced)
+            PausedRunState.clear(session, record.id)
+
+            if isinstance(result.output, DeferredToolRequests):
+                return self._paused_reply(agent, session, result)
+
+            structured = AgentReplyAny.from_output(result.output, prompt)
+            if structured is not None:
+                return structured
+            return AgentReplyText(response="" if result.output is None else str(result.output), prompt=prompt)
         except Exception as e:
             return AgentReplyText(response=user_facing_error_message(e), prompt=prompt)
         finally:
@@ -272,6 +518,89 @@ class PydanticAIRunner(BaseRunner):
                 self._store_framework_context(session, incoming, produced)
             except Exception as e:
                 self._log_framework_context_stream_failure(session, e)
+
+            if run_result is not None and isinstance(run_result.output, DeferredToolRequests):
+                paused = self._paused_reply(agent, session, run_result)
+                yield RunPaused(run_id=paused.run_id, agent=agent.name, interruptions=paused.interruptions)
+        finally:
+            if context is not None:
+                context.reset()
+
+    async def resume_stream(
+        self,
+        agent: Any,
+        session: Session,
+        requests: list[AgentRequest],
+        decisions: list[ResumeDecision],
+        record: PausedRun,
+    ) -> AsyncGenerator[StreamEvent, None]:
+        """
+        Streaming counterpart of `resume()`, mapping events exactly as `stream()` does.
+
+        The pause is read off the final `agent_run_result` rather than from a deferred event, so the
+        streamed and non-streamed paths decide it the same way and cannot drift apart.
+
+        :param agent: The agent that paused.
+        :param session: The session holding the record.
+        :param requests: The hook-processed request list, carrying the resume request.
+        :param decisions: One per interruption being answered.
+        :param record: The record Runtime validated.
+        :return: The events the continued run produces, ending in RunPaused if it pauses again.
+        """
+        self._reject_partial(decisions, record)
+        self._reject_unusable_override(decisions, record)
+
+        context: ToolContext | None = None
+        try:
+            context = ToolContext(Runtime.current(), agent, session, requests).set()
+            _, content = self._process_requests(requests)
+
+            options = await agent.resolve_run_options(session, requests)
+            fw_session = self._session(session)
+            history = ModelMessagesTypeAdapter.validate_python(record.payload["messages"])
+
+            incoming = self._load_framework_context(session)
+            produced = copy.deepcopy(incoming)
+
+            open_parts: dict[int, tuple[str, str]] = {}
+            carried: dict[str, str] = {}
+            run_result: Any = None
+
+            kwargs = self._native_kwargs(
+                self._stream_run_options(options),
+                message_history=history,
+                deps=produced,
+                deferred_tool_results=self._deferred_results(decisions, record),
+            )
+            async with agent.agent.run_stream_events(content or "", **kwargs) as events:
+                async for event in events:
+                    kind = getattr(event, "event_kind", None)
+                    if kind == "agent_run_result":
+                        run_result = getattr(event, "result", None)
+                        continue
+                    for stream_event in self._map_event(kind, event, open_parts, carried):
+                        yield stream_event
+
+            for index in list(open_parts):
+                for stream_event in self._close_part(index, open_parts, carried):
+                    yield stream_event
+            for part_kind, stream_id in list(carried.items()):
+                del carried[part_kind]
+                yield MessageEnd(message_id=stream_id) if part_kind == "text" else ReasoningEnd(message_id=stream_id)
+
+            if fw_session is not None and run_result is not None:
+                fw_session.messages = to_jsonable_python(run_result.all_messages())
+
+            try:
+                self._store_framework_context(session, incoming, produced)
+            except Exception as e:
+                self._log_framework_context_stream_failure(session, e)
+
+            PausedRunState.clear(session, record.id)
+
+            if run_result is not None and isinstance(run_result.output, DeferredToolRequests):
+                paused = self._paused_reply(agent, session, run_result)
+                yield RunPaused(run_id=paused.run_id, agent=agent.name, interruptions=paused.interruptions)
         finally:
             if context is not None:
                 context.reset()
@@ -468,6 +797,7 @@ class PydanticAIAgent(BaseAgent):
         "user_prompt": "built from the AgentRequest list by the runner",
         "message_history": "the PydanticAISession stored on the Agent Kernel session",
         "deps": "populated from the session's framework_context; seed it with Session.set_framework_context()",
+        "deferred_tool_results": "built from the human's decisions by the runner when a paused run is resumed",
     }
 
     def __init__(self, name: str, runner: PydanticAIRunner, agent: PydanticAgent):

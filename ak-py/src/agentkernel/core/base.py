@@ -447,7 +447,7 @@ class Runner(ABC):
         record: "PausedRun",
     ) -> AsyncGenerator[StreamEvent, None]:
         """
-        Streaming counterpart of resume().
+        Streaming counterpart of resume(), including its rule on clearing the record.
 
         :param agent: The agent that paused.
         :param session: The session holding the record.

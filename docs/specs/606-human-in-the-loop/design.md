@@ -217,12 +217,13 @@ transports and the `Runner` interface are all unchanged.
     pause it is answering, and it is carried on the paused reply and echoed back on the decision.
   - `agent: str` — the agent name. Required because OpenAI's
     `RunState.from_json(initial_agent=..., state_json=...)` needs the original starting agent, and
-    AK resolves agents by name. **This is also what identifies the framework**, since the agent
-    resolves to its runner — no separate `runner` field. *(Decision.)* The one case a stored
-    runner name would have caught, and no longer does, is an agent whose framework is changed
-    while a pause is outstanding; that now surfaces as a deserialisation failure from the adapter
-    rather than a named error, which is accepted as the price of not duplicating state that is
-    already derivable.
+    AK resolves agents by name. *(Decision, reversed in PR 2's review round — the record carries a
+    `runner` after all; see the scoping bullet below.)* The original reasoning was that the agent
+    also identifies the framework, since it resolves to its runner, and that an agent whose framework
+    changes mid-pause would surface as a deserialisation failure. Both halves turned out wrong when
+    run: the record outlives the agent, so the registry cannot be trusted to interpret it later, and
+    an adapter with no payload to deserialise — LangGraph, whose state lives in the checkpointer —
+    does not fail at all. It ran the graph from scratch and returned a fresh pause.
   - `created_at: str` — ISO-8601 UTC, for diagnostics and operator triage only.
   - `interruptions: list[PausedInterruption]` — the same list carried on the reply, so a resume
     can be validated **without deserialising the opaque payload**.
@@ -250,6 +251,12 @@ transports and the `Runner` interface are all unchanged.
     The honest consequence on the single-thread frameworks: if an adapter appends where its
     framework cannot hold two, the older entry is no longer resumable and **AK will not detect
     that** — the same trade as dropping the staleness counter.
+  - **A replacing adapter supersedes only its own framework's records.** *(Added in PR 2's review
+    round.)* One session can be shared by agents on different frameworks — the client sends the
+    session id and names the agent per request — and a framework session is keyed by runner name,
+    so those pauses are independent. A record therefore carries the runner that wrote it, and
+    replacement goes through `PausedRunState.clear_for_runner`. Clearing the whole list would let a
+    pause on one framework silently delete an answerable pause on another.
 - **AK does not track whether a pause has been overtaken.** *(Decision.)* An earlier draft
   carried a `Runtime`-owned run counter at `ak.run_seq` and refused a resume once an ordinary run
   had advanced past the pause. That is removed: no framework has such a counter, and inventing one
@@ -430,7 +437,7 @@ Around that dispatch:
     `try`.** *(Decision.)* `Runtime` cannot know that OpenAI has no channel for a structured
     answer, or that Pydantic AI needs every deferred call resolved, without framework knowledge
     moving into `core/`, which is what the adapter pattern exists to prevent. So the rule splits:
-    - **Generic checks live in `Runtime`** — the five failure modes. They need no framework
+    - **Generic checks live in `Runtime`** — the six failure modes. They need no framework
       knowledge and would otherwise be written four times.
     - **Framework-specific checks live in the adapter, before the `try` opens.** Every adapter's
       body sits inside one `try` whose `except Exception` returns
@@ -668,8 +675,8 @@ cases distinguishable to the model**:
 | Adapter | `approved` | `denied` | `cancelled` |
 |---|---|---|---|
 | **OpenAI** | `state.approve(item)` | `state.reject(item, rejection_message=message)` | `state.reject(item, rejection_message=`AK's dismissal text`)` |
-| **Pydantic AI** | `ToolApproved(override_args=payload)` | `ToolDenied(message=message)` | `ToolDenied(message=`AK's dismissal text`)` |
-| **Google ADK** | `{"confirmed": true, "payload": payload}` | `{"confirmed": false}` | `{"confirmed": false}`, with AK's text where the response body allows |
+| **Pydantic AI** | `ToolApproved(override_args=payload)` — an **object** payload only | `ToolDenied(message=message)` | `ToolDenied(message=`AK's dismissal text`)` |
+| **Google ADK** | `{"confirmed": true}` — a **payload is refused** | `{"confirmed": false}` | `{"confirmed": false}` — reads as `denied`; see `spec.md` |
 | **LangGraph** | `Command(resume=…)` | `Command(resume=…)` | `Command(resume=…)` — **carries the status faithfully**, since `resume` takes an arbitrary value and the user's node decides what to do with it |
 
 - **The dismissal text is AK's, not the client's.** On a `cancelled` decision the human gave no

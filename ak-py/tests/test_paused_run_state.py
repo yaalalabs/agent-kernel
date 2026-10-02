@@ -11,10 +11,11 @@ import logging
 
 import pytest
 
-from agentkernel.core.base import Runner, Session
+from agentkernel.core.base import Agent, Runner, Session
 from agentkernel.core.event import PausedInterruption
-from agentkernel.core.model import AgentReplyText
+from agentkernel.core.model import AgentReplyText, AgentRequestText
 from agentkernel.core.paused_run import AK_PAUSED_RUNS_KEY, PausedRun, PausedRunState
+from agentkernel.core.runtime import Runtime
 from agentkernel.core.session.in_memory import InMemorySessionStore
 
 
@@ -72,6 +73,40 @@ class TestAddAndRead:
         PausedRunState.clear(session, "no-such-run")
 
         assert len(PausedRunState.list(session)) == 1
+
+
+class TestReplacementIsScopedToOneRunner:
+    """
+    One session can be shared by agents on different frameworks, and their paused runs are
+    independent. A replacing adapter supersedes only its own.
+    """
+
+    def test_clear_for_runner_leaves_another_framework_alone(self):
+        session = Session("s1")
+        openai = PausedRunState.add(session, agent="support", runner="openai", interruptions=_interruptions("i1"))
+        PausedRunState.add(session, agent="planner", runner="langgraph", interruptions=_interruptions("i2"))
+
+        PausedRunState.clear_for_runner(session, "langgraph")
+
+        assert [r.id for r in PausedRunState.list(session)] == [openai.id]
+
+    def test_clear_for_runner_removes_every_record_that_runner_owns(self):
+        session = Session("s1")
+        PausedRunState.add(session, agent="a", runner="openai", interruptions=_interruptions("i1"))
+        PausedRunState.add(session, agent="b", runner="openai", interruptions=_interruptions("i2"))
+
+        PausedRunState.clear_for_runner(session, "openai")
+
+        assert PausedRunState.list(session) == []
+
+    def test_a_record_with_no_runner_is_left_alone(self):
+        """Written before the field existed; guessing where it belongs would risk losing it."""
+        session = Session("s1")
+        older = PausedRunState.add(session, agent="a", interruptions=_interruptions("i1"))
+
+        PausedRunState.clear_for_runner(session, "openai")
+
+        assert [r.id for r in PausedRunState.list(session)] == [older.id]
 
 
 class TestResolvingARun:
@@ -266,3 +301,70 @@ class TestTheCacheHoldsNoModelInstances:
         read = PausedRunState.get(session, record.id)
 
         assert read == record and read.payload == {"k": "v"}
+
+
+class TestTheRunnerIsDerivedWhenNotGiven:
+    """
+    Forgetting `runner=` would fail silently — `clear_for_runner` leaves an unowned record alone
+    forever — so `add` reads it off the running agent instead of trusting the caller to say.
+    """
+
+    class _Pausing(Runner):
+        supports_pause = True
+
+        async def run(self, agent, session, requests):
+            record = PausedRunState.add(session, agent=agent.name, interruptions=_interruptions("i1"))
+            return AgentReplyText(response=record.runner or "")
+
+        async def stream(self, agent, session, requests):
+            raise NotImplementedError()
+            yield
+
+    class _PausingAgent(Agent):
+        def __init__(self, runner):
+            super().__init__("refunds", runner)
+
+        def get_description(self) -> str:
+            return "pauses"
+
+        def get_a2a_card(self):
+            return None
+
+        def override_system_prompt(self, prompt):
+            pass
+
+        def attach_tool(self, tool):
+            pass
+
+    @pytest.mark.asyncio
+    async def test_an_adapter_that_omits_it_still_gets_its_own_name(self):
+        runtime = Runtime(InMemorySessionStore())
+        agent = self._PausingAgent(self._Pausing("langgraph"))
+        runtime.register(agent)
+        session = runtime.sessions().new("s1")
+
+        await runtime.run(agent, session, [AgentRequestText(prompt="refund it")])
+
+        assert PausedRunState.list(session)[0].runner == "langgraph"
+
+    @pytest.mark.asyncio
+    async def test_an_explicit_runner_still_wins(self):
+        class _Explicit(self._Pausing):
+            async def run(self, agent, session, requests):
+                PausedRunState.add(session, agent=agent.name, runner="openai", interruptions=_interruptions("i1"))
+                return AgentReplyText(response="ok")
+
+        runtime = Runtime(InMemorySessionStore())
+        agent = self._PausingAgent(_Explicit("langgraph"))
+        runtime.register(agent)
+        session = runtime.sessions().new("s1")
+
+        await runtime.run(agent, session, [AgentRequestText(prompt="refund it")])
+
+        assert PausedRunState.list(session)[0].runner == "openai"
+
+    def test_it_stays_none_outside_a_run(self):
+        """No agent is running, so there is nothing to derive from and nothing to guess."""
+        record = PausedRunState.add(Session("s1"), agent="a", interruptions=_interruptions("i1"))
+
+        assert record.runner is None
