@@ -31,6 +31,7 @@ Hosting depends on how the platform delivers events:
 | Source | Host | Entry point |
 |---|---|---|
 | `Source.WEBHOOK` (pushed) | `WebhookRESTRequestHandler` | `IOHandler.run(handlers=[WebhookRESTRequestHandler(MyInboundAdapter())])` |
+| `Source.WEBHOOK` on AWS Lambda | `WebhookRESTRequestHandler` via `LambdaWebhookHost` | `host = LambdaWebhookHost(WebhookRESTRequestHandler(MyInboundAdapter()))` at module scope in the request-handler Lambda, with `Lambda.register(<webhook_path>, method="POST")(host.handle)` (and `GET` → `host.challenge` when the adapter declares a `challenge_path`) (`rest_sync`/`rest_async`, `sqs`), with the route in `gateway_endpoints` and `APIGatewayAuthorizer(bypass=WebhookRouteMatcher(...))` behind an authorizer |
 | `Source.POLLER` (pulled) | `PollerRunner` | `IOHandler.run(pollers=[PollerRunner(MyInboundAdapter())])` on `in_memory`, `PollerRunner.run(adapter)` as its own container on a broker |
 
 **Adapters must be mounted inside the pipeline.** `WebhookRESTRequestHandler` sets `requires_pipeline = True`, so `RESTAPI.run([...])` refuses it with an `AKConfigError`: without a queue there would be no runner to drain what it enqueues, and the platform would get its 200 while the user never got a reply.
@@ -65,6 +66,7 @@ from ..adapter.base import (
     InboundRequest,
     OutboundAdapter,
 )
+from ..adapter.routes import BUILTIN_WEBHOOK_ROUTES
 
 NAME = "<platform>"
 _log = logging.getLogger("ak.integration.<platform>")
@@ -74,8 +76,10 @@ class <Platform>InboundAdapter(InboundAdapter):
     """<Platform> deliveries -> normalized requests."""
 
     name = NAME
-    webhook_path = "/<platform>/webhook"
-    challenge_path = None  # set to the same path when the platform has a GET handshake
+    # A built-in reads its paths from the route table (see step 7), so the Lambda authorizer's
+    # WebhookRouteMatcher lets exactly this route through; a bring-your-own adapter spells it out.
+    webhook_path = BUILTIN_WEBHOOK_ROUTES[NAME].webhook_path
+    challenge_path = BUILTIN_WEBHOOK_ROUTES[NAME].challenge_path  # None unless the platform has a GET handshake
 
     _log = _log
 
@@ -129,6 +133,10 @@ Rules the adapter must hold to:
 3. **`verify` before `parse`, `parse` before enqueue.** `verify` is concrete and a no-op on the base: override it only when verification is separable from parsing. (Slack and Teams verify inside their SDK's dispatch, so theirs stays the default.)
 4. **`request_id` is the platform's message id** wherever one exists; that is what makes a webhook retry deduplicate instead of running the agent twice. Synthesize a stable one only when the platform gives you none (Slack: `f"slack:{channel}:{ts}"`).
 5. **An ignored delivery returns an empty request list**, never an exception.
+6. **Override `missing_verification_settings()`** when `verify` skips its check for an unset secret
+   (return e.g. `["<platform>.webhook_secret"]` while it is empty). `LambdaWebhookHost` refuses such an
+   adapter on cold start, because behind the authorizer's integration bypass the adapter's own check is
+   the only one. An adapter that refuses to construct without its secret (Slack, Teams) needs no override.
 
 ### 3. Implement the Outbound Adapter
 
@@ -199,6 +207,11 @@ from .integration.<platform> import *
 The Response Handler holds only the `integration` attribute string, so **the outbound half is resolved by name**. Add the platform to `IntegrationAdapterFactory` (`integration/adapter/factory.py`): its short name in `_BUILTIN_NAMES`, and an `if/elif` branch in `_builtin` importing the class inside `require_extra`.
 
 (The inbound half is never resolved by name: the application constructs it and hands it to a host, so bring-your-own inbound is just passing a different instance.)
+
+Add the platform's routes to `BUILTIN_WEBHOOK_ROUTES` in `integration/adapter/routes.py` as well, a
+`WebhookRoute(name, webhook_path, challenge_path=...)`. It is the one definition the adapter's path
+attributes and `WebhookRouteMatcher.for_integrations(...)` both read, and
+`IntegrationAdapterContract.test_a_builtin_is_served_where_the_authorizer_expects` fails when they drift.
 
 ### 8. Add Configuration
 
@@ -307,6 +320,8 @@ Then update the docs-site React pages that enumerate platforms: the `MESSAGING_P
 - [ ] `MESSAGE_LIMIT` (and `MAX_CHUNKS`) set to the platform's limits
 - [ ] Package `__init__.py` and public alias at `ak-py/src/agentkernel/<platform>.py`
 - [ ] Registered in `IntegrationAdapterFactory._BUILTIN_NAMES` and `_builtin`
+- [ ] A `WebhookRoute` in `integration/adapter/routes.py::BUILTIN_WEBHOOK_ROUTES`, with the adapter's paths read from it
+- [ ] `missing_verification_settings()` overridden if `verify` skips its check for an unset secret
 - [ ] Configuration class in `config.py`, including `outbound_adapter`
 - [ ] Optional dependency group in `pyproject.toml`
 - [ ] Example in `examples/api/<platform>/` mounting through `IOHandler.run`

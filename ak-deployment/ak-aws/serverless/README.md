@@ -473,7 +473,7 @@ module "serverless_api_auth" {
 | `create_redis_response_store` | Create or reuse Redis for response storage. Ignored in WebSocket modes (`async`/`stream`). | `bool` | `false` | no |
 | `create_valkey_response_store` | Create or reuse Valkey for response storage. Ignored in WebSocket modes (`async`/`stream`). | `bool` | `false` | no |
 | `create_dynamodb_response_store` | Create a DynamoDB table for response storage. Ignored in WebSocket modes (`async`/`stream`). | `bool` | `false` | no |
-| `create_dynamodb_multimodal_memory_table` | Create a DynamoDB table for multimodal memory | `bool` | `false` | no |
+| `create_dynamodb_multimodal_memory_table` | Create a DynamoDB table for multimodal memory. The request handler gets the table in every mode, `queue_mode` included, because messaging integrations download and store attachments at the edge. | `bool` | `false` | no |
 | `authorizer` | Authorizer configuration object (see table below). **Cannot be set** in WebSocket modes (`async`/`stream`) — authentication is handled by the connection handler Lambda. | `object` | `null` | no |
 | `request_handler` | Request handler configuration object (see table below) | `object` | `{}` | no |
 | `ws_connection_handler` | WebSocket connection handler configuration object (see table below). `package_path` is required when `execution_mode` is `async` or `stream`. | `object` | `{}` | no |
@@ -496,11 +496,11 @@ module "serverless_api_auth" {
 | `handler_path` | Authorizer Lambda handler path | `string` | n/a | yes |
 | `package_path` | Authorizer package path | `string` | n/a | yes |
 | `package_type` | Deployment type (`LocalZip`, `S3Zip`, or `Image`) | `string` | n/a | yes |
-| `result_ttl_in_seconds` | Cache TTL for authorization results | `number` | `150` | no |
+| `result_ttl_in_seconds` | Cache TTL for authorization results. Set it to `0` when the authorizer uses a messaging-integration `bypass`: with caching on, API Gateway answers a request that has no `Authorization` header with 401 before the authorizer runs. | `number` | `150` | no |
 | `timeout` | Authorizer Lambda timeout in seconds | `number` | `30` | no |
 | `memory_size` | Authorizer Lambda memory size in MB | `number` | `128` | no |
 | `layers` | List of Lambda layer ARNs to attach | `list(string)` | `[]` | no |
-| `environment_variables` | Environment variables for authorizer | `map(string)` | `{}` | no |
+| `environment_variables` | Environment variables for authorizer. The module adds `API_BASE_PATH` and `API_VERSION`, overriding a user value of either name, so `WebhookRouteMatcher` can strip the base path the way the request handler's router does. | `map(string)` | `{}` | no |
 
 ### Request Handler Object Structure
 

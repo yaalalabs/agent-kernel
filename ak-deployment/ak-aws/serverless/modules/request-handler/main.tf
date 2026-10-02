@@ -388,6 +388,9 @@ module "lambda_deployment" {
       var.input_queue_url != null ? {
       AK_EXECUTION__QUEUES__INPUT__URL = var.input_queue_url
     } : {},
+      var.output_queue_url != null ? {
+      AK_EXECUTION__QUEUES__OUTPUT__URL = var.output_queue_url
+    } : {},
       var.websocket_connections_dynamodb != null ? {
       AK_WEBSOCKET_API__CONNECTION_TABLE__TABLE_NAME = var.websocket_connections_dynamodb.table_name
     } : {}

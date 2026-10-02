@@ -7,29 +7,22 @@ from ..core.config import AKConfig
 from ..core.model import BaseRunRequest, ExecutionMode, StreamChunk
 from ..core.util.factory import AKConfigError
 from .consumer import ConsumerLoop
-from .envelope import (
-    ATTR_ENDPOINT_URL,
-    ATTR_INTEGRATION,
-    ATTR_REQUEST_ID,
-    ATTR_STATUS_CODE,
-    ATTR_THREAD,
-    ATTR_USER_ID,
-    REPLY_CONTEXT_PREFIX,
-    QueueMessage,
-    QueueName,
-)
+from .envelope import ATTR_ENDPOINT_URL, ATTR_REQUEST_ID, ATTR_STATUS_CODE, ATTR_THREAD, ATTR_USER_ID, QueueMessage, QueueName
+from .integration_delivery import IntegrationDelivery
 from .thread_runner import ThreadRunner
 from .transport.base import QueueTransport, QueueTransportFactory
 
 # Attributes forwarded from an input message to its output message(s). ENDPOINT_URL is part of
 # the SQS/ECS wire format only (the pipeline neither stamps nor reads it, spec #495 §2): it is
 # forwarded so ECS-entered messages keep their return address through a pipeline runner.
-_FORWARDED_ATTRIBUTES = (ATTR_REQUEST_ID, ATTR_USER_ID, ATTR_ENDPOINT_URL, ATTR_INTEGRATION)
+# The integration return address (``integration`` plus every ``reply_*``) is the rule shared with
+# the serverless runner, so it comes from IntegrationDelivery.
+_FORWARDED_ATTRIBUTES = (ATTR_REQUEST_ID, ATTR_USER_ID, ATTR_ENDPOINT_URL)
 
 
 def _is_forwarded(key: str) -> bool:
     """Whether an input attribute travels on to the output message."""
-    return key in _FORWARDED_ATTRIBUTES or key.startswith(REPLY_CONTEXT_PREFIX)
+    return key in _FORWARDED_ATTRIBUTES or IntegrationDelivery.is_routing_attribute(key)
 
 
 class AgentRunner:
@@ -125,7 +118,7 @@ class AgentRunner:
         safer direction (the caller still got its answer).
 
         Imported lazily and locally for the same reason as
-        ``ResponseHandler._outbound_adapter``: threads are an ``integration`` capability, and a
+        ``IntegrationDelivery._outbound_adapter``: threads are an ``integration`` capability, and a
         module-scope import would make every runner process — including ones with no thread
         block configured — pay for the thread stores.
 
@@ -210,7 +203,7 @@ class StreamAgentRunner(AgentRunner):
     _log = logging.getLogger("ak.pipeline.stream_agent_runner")
 
     def process(self, message: QueueMessage) -> None:
-        if message.attributes.get(ATTR_INTEGRATION):
+        if IntegrationDelivery.integration_of(message.attributes):
             return super().process(message)
 
         body = BaseRunRequest.model_validate(json.loads(message.body))
@@ -239,7 +232,7 @@ class StreamAgentRunner(AgentRunner):
         self._log.info(f"[STREAM AGENT DONE] request_id={request_id}, chunks={chunk_count}")
 
     def on_permanent_failure(self, message: QueueMessage) -> None:
-        if message.attributes.get(ATTR_INTEGRATION):
+        if IntegrationDelivery.integration_of(message.attributes):
             return super().on_permanent_failure(message)
 
         self._log.error(f"Permanent failure for message {message.message_id}")

@@ -1244,6 +1244,167 @@ Relevant outputs: `schedule_group_name`, `schedule_group_arn`, `scheduler_execut
 
 For the application side see the [Scheduling guide](../advanced/scheduling.md).
 
+## Messaging integrations
+
+Slack, Teams, WhatsApp, Messenger, Instagram and Telegram run on Lambda in the REST modes
+(`rest_sync`, `rest_async`) with `queue_mode = true`. The platform's webhook reaches the
+request-handler Lambda, which verifies, acknowledges and enqueues each message; the agent runs behind
+the Input Queue; and the response-handler Lambda delivers the reply back to the platform.
+[`examples/aws-serverless/slack-openai`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/slack-openai)
+deploys the whole path for Slack.
+
+```
+Platform --webhook--> API Gateway --> Authorizer (bypass) --> Request-handler Lambda
+                                                              LambdaWebhookHost -> WebhookRESTRequestHandler
+                                                                   | verify, "thinking...", enqueue
+                                                                   v
+            Input Queue --> Agent-runner Lambda --> Output Queue --> Response-handler Lambda
+                                                                     IntegrationDelivery -> platform API
+```
+
+### Receiving webhooks
+
+Wrap the same `WebhookRESTRequestHandler` an app passes to the pipeline's `IOHandler.run` in a
+`LambdaWebhookHost`, at module scope in the request-handler Lambda, and register its `handle` on the
+adapter's webhook path with `Lambda.register`, like any custom route:
+
+```python
+from agentkernel.aws import Lambda, LambdaWebhookHost
+from agentkernel.integration.adapter import WebhookRESTRequestHandler
+from agentkernel.slack import SlackInboundAdapter
+
+slack = LambdaWebhookHost(WebhookRESTRequestHandler(SlackInboundAdapter()))
+
+
+@Lambda.register("/slack/events", method="POST")
+def slack_events(event, context):
+    return slack.handle(event, context)
+
+
+handler = Lambda.handler
+```
+
+WhatsApp, Messenger and Instagram also need their subscription handshake: register the host's
+`challenge` for GET on the same path.
+
+```python
+whatsapp = LambdaWebhookHost(WebhookRESTRequestHandler(WhatsAppInboundAdapter()))
+Lambda.register("/whatsapp/webhook", method="POST")(whatsapp.handle)
+Lambda.register("/whatsapp/webhook", method="GET")(whatsapp.challenge)
+```
+
+The paths are the adapters' `webhook_path` and `challenge_path`: `/slack/events`, `/teams/messages`,
+`/telegram/webhook`, and `/<platform>/webhook` for the three Meta platforms. The Lambda router strips
+`/<api_base_path>/<api_version>` and matches the rest exactly. The host turns the API Gateway event into
+the Starlette request every adapter reads, and answers with the status the platform expects: a rejected
+signature stays a 401 or 403 rather than becoming a retryable 500.
+
+Declare the route in Terraform through `gateway_endpoints`; it nests under `/<api_base_path>/<api_version>`
+like the chat route:
+
+```hcl
+gateway_endpoints = [
+  { path = "/slack/events", method = "POST" },
+]
+# WhatsApp, Messenger and Instagram need both GET (the handshake) and POST on their path.
+```
+
+`LambdaWebhookHost` checks the deployment when it is built, on cold start, and fails the Lambda's init,
+rather than dropping deliveries later, when:
+
+- the handler is not a `WebhookRESTRequestHandler` (`TypeError`);
+- `execution.mode` is not `rest_sync` or `rest_async`;
+- the queue transport is not `sqs` (set `queue_mode = true` in Terraform and `execution.queues.type: sqs`
+  in `config.yaml`);
+- `API_BASE_PATH`, `API_VERSION` or `AGENT_ENDPOINT` is unset (the module always sets them);
+- the adapter's verification secret is unset: `whatsapp.app_secret`, `messenger.app_secret`,
+  `instagram.app_secret` or `telegram.webhook_secret`. Behind the authorizer's bypass the adapter's own
+  check is the only one, so an open route would let anyone enqueue a message. Slack
+  (`SLACK_SIGNING_SECRET`) and Teams (`teams.app_id`, `teams.app_password`) already refuse to construct
+  without theirs.
+
+### Delivering replies
+
+Nothing to configure. The agent runner passes the prebuilt request list (text, stored attachment
+references, context) to the agent and copies the message's return address (the `integration`
+attribute plus the `reply_*` context) onto the reply. The response handler sees `integration` and
+delivers to the platform through its outbound adapter, in every execution mode; integration replies
+never touch the response store or the WebSocket. In `stream` mode an integration message is run as one
+reply, since a platform has no streaming consumer. A failed delivery is retried up to
+`output_queue_max_receive_count` times, then the user gets the adapter's generic error message.
+
+### Packages and credentials
+
+Both the request-handler and the response-handler packages need `agentkernel[aws,<platform>]`: the
+request handler verifies and acknowledges, and the response handler delivers. The platform extras
+include FastAPI (and aiohttp for Slack); neither Lambda needs the `api` extra or its server stack.
+Pass the platform credentials to both Lambdas through `request_handler.environment_variables` and
+`response_handler.environment_variables`.
+
+### Behind an authorizer
+
+Platforms send no bearer token, so an authorizer would deny their webhooks. Give
+`APIGatewayAuthorizer` a bypass for the integration routes:
+
+```python
+from agentkernel.aws import APIGatewayAuthorizer
+from agentkernel.integration.adapter import WebhookRouteMatcher
+
+handler = APIGatewayAuthorizer(validator=MyValidator(), bypass=WebhookRouteMatcher.for_integrations("slack")).handle
+```
+
+The bypass matches the request's method and path only, never a header: the authorizer event carries
+no body, so no signature can be checked there, and a header test could be spoofed onto a chat request.
+A matched request gets an Allow for its exact `methodArn` with principal `integration:<name>`, and your
+validator is never called. The module passes `API_BASE_PATH` and `API_VERSION` to the authorizer Lambda
+so the matcher strips the prefix exactly as the router does.
+
+**Set `authorizer.result_ttl_in_seconds = 0`.** With caching on, API Gateway answers a request that has
+no `Authorization` header with 401 before calling the authorizer, so the bypass never gets a say. The
+cost is one authorizer call per request, chat routes included.
+
+### Declare the integration in three places
+
+| Where | What |
+|---|---|
+| Authorizer Lambda | `WebhookRouteMatcher.for_integrations("slack")` |
+| Request-handler Lambda | `@Lambda.register("/slack/events", method="POST")` calling `LambdaWebhookHost(WebhookRESTRequestHandler(SlackInboundAdapter())).handle` |
+| Terraform | `gateway_endpoints = [{ path = "/slack/events", method = "POST" }]` |
+
+Each mismatch fails quietly from Agent Kernel's side:
+
+- In the authorizer and the gateway, but not registered: a 500 from the router's no-route error.
+- Registered and in the gateway, but not in the authorizer: a 403. A platform that sends no
+  `Authorization` header is denied before your validator runs, with the authorizer logging
+  `Event validation failed`; Teams, whose Bot Framework token does arrive in that header, reaches your
+  validator and is rejected there.
+- A nonzero authorizer TTL: a 401 that Agent Kernel never logs, because API Gateway answers before the
+  authorizer runs.
+
+### Cold starts and Slack's 3 seconds
+
+Slack expects its 200 within 3 seconds, and a cold start imports Bolt and FastAPI. Keep the
+request-handler package slim (no agent frameworks: those belong to the agent runner); remember that
+the authorizer call is part of the budget; and use provisioned concurrency or a warm-up schedule for
+the request-handler and authorizer Lambdas, configured outside the module for now. A retry Slack sends
+because the first attempt timed out is dropped at the edge, so the user still sees one "thinking..."
+and one reply.
+
+### Stores
+
+- A response store is still required (`create_dynamodb_response_store = true` is the cheapest), because
+  the chat route on the same Lambda polls it. Integration replies never use it.
+- Attachments need `multimodal.enabled` with a store every Lambda can reach: adapters download and
+  store them at the edge. With `create_dynamodb_multimodal_memory_table = true` the table reaches the
+  request handler too, in queue mode. A Redis or Valkey store needs network reach from the request
+  handler.
+
+### Limits
+
+- REST modes only. The WebSocket modes (`async`, `stream`) create no REST API; run the integrations
+  in a second stack in `rest_async`, or on the pipeline.
+- Gmail (a poller) is not supported on Lambda.
+
 ## Cost Optimization
 
 ### Lambda Configuration
@@ -1259,6 +1420,7 @@ Refer to [Terraform modules](https://registry.terraform.io/modules/yaalalabs/ak-
 - Use provisioned concurrency for critical endpoints
 - Keep Lambda warm with scheduled pings
 - Optimize package size
+- For messaging webhooks, see [Cold starts and Slack's 3 seconds](#cold-starts-and-slacks-3-seconds)
 
 ## Fault Tolerance
 

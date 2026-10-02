@@ -198,12 +198,19 @@ module "vpc" {
 }
 
 module "authorizer" {
-  count                      = local.create_authorizer ? 1 : 0
-  source                     = "yaalalabs/ak-common/aws//modules/authorizer"
-  version                    = "0.9.3"
-  region                     = var.region
-  prefix                     = var.prefix
-  authorizer_info            = var.authorizer
+  count   = local.create_authorizer ? 1 : 0
+  source  = "yaalalabs/ak-common/aws//modules/authorizer"
+  version = "0.9.3"
+  region  = var.region
+  prefix  = var.prefix
+  # WebhookRouteMatcher strips /<API_BASE_PATH>/<API_VERSION> the way the router does (#760).
+  # AK's values win, as on the request handler (modules/request-handler/main.tf).
+  authorizer_info = var.authorizer == null ? null : merge(var.authorizer, {
+    environment_variables = merge(var.authorizer.environment_variables, {
+      API_BASE_PATH = var.api_base_path
+      API_VERSION   = var.api_version
+    })
+  })
   module_type                = var.module_type
   tags                       = var.tags
   vpc_id                     = local.vpc_id
@@ -588,14 +595,16 @@ module "request_handler" {
       version_id = module.request_handler_source_package[0].s3_object_version
     }
   ) : null
-  create_dynamodb_memory_table            = var.queue_mode ? false : var.create_dynamodb_memory_table
-  create_dynamodb_multimodal_memory_table = var.queue_mode ? false : var.create_dynamodb_multimodal_memory_table
-  redis_url                               = var.queue_mode ? null : local.redis_url
-  valkey_url                              = var.queue_mode ? null : local.valkey_url
-  dynamodb_memory_table_arn               = var.queue_mode ? null : local.dynamodb_memory_table_arn
-  dynamodb_memory_table_name              = var.queue_mode ? null : local.dynamodb_memory_table_name
-  dynamodb_multimodal_memory_table_arn    = var.queue_mode ? null : local.dynamodb_multimodal_memory_table_arn
-  dynamodb_multimodal_memory_table_name   = var.queue_mode ? null : local.dynamodb_multimodal_memory_table_name
+  create_dynamodb_memory_table = var.queue_mode ? false : var.create_dynamodb_memory_table
+  redis_url                    = var.queue_mode ? null : local.redis_url
+  valkey_url                   = var.queue_mode ? null : local.valkey_url
+  dynamodb_memory_table_arn    = var.queue_mode ? null : local.dynamodb_memory_table_arn
+  dynamodb_memory_table_name   = var.queue_mode ? null : local.dynamodb_memory_table_name
+  # Not nulled under queue_mode, unlike the session and thread wiring around it: messaging
+  # integrations download and offload attachments at the edge, in this Lambda (#760).
+  create_dynamodb_multimodal_memory_table = var.create_dynamodb_multimodal_memory_table
+  dynamodb_multimodal_memory_table_arn    = local.dynamodb_multimodal_memory_table_arn
+  dynamodb_multimodal_memory_table_name   = local.dynamodb_multimodal_memory_table_name
   create_dynamodb_thread_table            = var.queue_mode ? false : var.create_dynamodb_thread_table
   dynamodb_thread_table_arn               = var.queue_mode ? null : local.dynamodb_thread_table_arn
   dynamodb_thread_table_name              = var.queue_mode ? null : local.dynamodb_thread_table_name
@@ -611,6 +620,8 @@ module "request_handler" {
   dynamodb_schedule_table_name   = local.dynamodb_schedule_table_name
   input_queue_arn                = local.input_queue_arn
   input_queue_url                = local.input_queue_url
+  # WebhookRESTRequestHandler builds the pipeline SQS transport, which requires both queue URLs (#760).
+  output_queue_url = local.output_queue_url
   websocket_connections_dynamodb = local.websocket_api_enabled ? {
     table_name = module.websocket_connections[0].table_name
     table_arn  = module.websocket_connections[0].table_arn

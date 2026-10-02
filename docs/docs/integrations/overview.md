@@ -78,6 +78,11 @@ Mount an integration with `IOHandler.run(...)`, which starts the queue topology 
 webhook routes. `RESTAPI.run([...])` builds a bare API with no runner behind it, so it rejects an
 integration handler rather than silently accepting messages nothing will answer.
 
+On AWS Lambda, wrap the same handler in a `LambdaWebhookHost` and register its `handle` with
+`Lambda.register` in the request-handler Lambda; the serverless agent runner and response handler carry the reply back to the platform. See
+[Messaging integrations on AWS Lambda](../deployment/aws-serverless.md#messaging-integrations) for the
+Terraform routes, the authorizer bypass and the REST-modes-only limit.
+
 Bring your own delivery for any platform by pointing its `outbound_adapter` setting at a dotted
 path to your own `OutboundAdapter` subclass; bring your own parsing by passing your own
 `InboundAdapter` subclass to the handler.

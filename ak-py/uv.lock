@@ -124,6 +124,7 @@ gmail = [
     { name = "google-auth-oauthlib" },
 ]
 instagram = [
+    { name = "fastapi" },
     { name = "httpx" },
 ]
 kafka = [
@@ -150,6 +151,7 @@ mcp = [
     { name = "fastmcp" },
 ]
 messenger = [
+    { name = "fastapi" },
     { name = "httpx" },
 ]
 multimodal = [
@@ -184,6 +186,8 @@ sandbox-docker = [
     { name = "docker" },
 ]
 slack = [
+    { name = "aiohttp" },
+    { name = "fastapi" },
     { name = "httpx" },
     { name = "slack-bolt" },
 ]
@@ -194,10 +198,12 @@ teams = [
     { name = "aiohttp" },
     { name = "botbuilder-core" },
     { name = "botbuilder-schema" },
+    { name = "fastapi" },
     { name = "httpx" },
     { name = "msal" },
 ]
 telegram = [
+    { name = "fastapi" },
     { name = "httpx" },
 ]
 test = [
@@ -222,6 +228,7 @@ walledai = [
     { name = "walledai" },
 ]
 whatsapp = [
+    { name = "fastapi" },
     { name = "httpx" },
 ]
 
@@ -236,6 +243,7 @@ dev = [
 requires-dist = [
     { name = "a2a-sdk", extras = ["http-server"], marker = "extra == 'a2a'", specifier = ">=0.3.6" },
     { name = "ag-ui-protocol", marker = "extra == 'agui'", specifier = ">=0.1.16" },
+    { name = "aiohttp", marker = "extra == 'slack'", specifier = ">=3.9.0" },
     { name = "aiohttp", marker = "extra == 'teams'", specifier = ">=3.9.0" },
     { name = "azure-core", marker = "extra == 'azure'", specifier = ">=1.26.0" },
     { name = "azure-data-tables", marker = "extra == 'azure'", specifier = ">=12.4.0" },
@@ -253,6 +261,12 @@ requires-dist = [
     { name = "docker", marker = "extra == 'sandbox-docker'", specifier = ">=7.0.0" },
     { name = "e2b-code-interpreter", marker = "extra == 'e2b'", specifier = ">=2.8.0" },
     { name = "fastapi", marker = "extra == 'api'", specifier = ">=0.118.0" },
+    { name = "fastapi", marker = "extra == 'instagram'", specifier = ">=0.118.0" },
+    { name = "fastapi", marker = "extra == 'messenger'", specifier = ">=0.118.0" },
+    { name = "fastapi", marker = "extra == 'slack'", specifier = ">=0.118.0" },
+    { name = "fastapi", marker = "extra == 'teams'", specifier = ">=0.118.0" },
+    { name = "fastapi", marker = "extra == 'telegram'", specifier = ">=0.118.0" },
+    { name = "fastapi", marker = "extra == 'whatsapp'", specifier = ">=0.118.0" },
     { name = "fastmcp", marker = "extra == 'mcp'", specifier = ">=3.2.0,<4.0.0" },
     { name = "google-adk", marker = "extra == 'adk'", specifier = ">=1.14.1" },
     { name = "google-api-python-client", marker = "extra == 'gmail'", specifier = ">=2.0.0" },

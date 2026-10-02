@@ -258,6 +258,12 @@ variable "input_queue_url" {
   default     = null
 }
 
+variable "output_queue_url" {
+  type        = string
+  description = "URL of the output SQS queue. The request handler never sends to it, but a WebhookRESTRequestHandler builds the pipeline SQS transport, which requires both queue URLs"
+  default     = null
+}
+
 variable "redis_url" {
   type        = string
   description = "URL of the Redis cluster"
