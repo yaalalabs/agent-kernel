@@ -246,7 +246,8 @@ This adapter pauses on **both** of the framework's axes, and they mean different
 **The agent must declare `DeferredToolRequests` as an output type**, or neither axis can pause:
 
 ```python
-from pydantic_ai import Agent, DeferredToolRequests
+from pydantic_ai import Agent, DeferredToolRequests, RunContext
+from pydantic_ai.exceptions import CallDeferred
 
 agent = Agent(model="openai:gpt-4.1-mini", output_type=[str, DeferredToolRequests])
 

@@ -5,13 +5,17 @@ import type { Interrupt } from "@ag-ui/core";
  * A pause line carries its own `id`, not the interrupt's: LangGraph re-runs an interrupting node
  * from the top, so a second question inside the same node arrives under the **same interrupt id**.
  * Keying the line by that would collide, and settling one would settle both.
+ *
+ * It also carries the `agent` that asked. One session can hold pauses from several agents at once —
+ * which is the point, since each framework's replacement is scoped to its own — so the answer must go
+ * back to whoever asked rather than to whichever agent happens to be selected when a human replies.
  */
 export type Line =
   | { kind: "user"; id: string; text: string }
   | { kind: "agent"; id: string; text: string }
   | { kind: "tool"; id: string; name: string }
   | { kind: "error"; id: string; text: string }
-  | { kind: "pause"; id: string; interrupt: Interrupt; settled?: string };
+  | { kind: "pause"; id: string; interrupt: Interrupt; agent: string; settled?: string };
 
 /**
  * What the client sends back for one interrupt.

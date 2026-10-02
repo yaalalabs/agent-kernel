@@ -107,8 +107,12 @@ class AGUIRunInput:
     def to_requests(run_input: "RunAgentInput") -> list[AgentRequest]:
         """Convert the turn's user message, then any decisions, into AK requests.
 
-        The resume request goes last so a prompt the client appended stays first, matching the order
-        `RequestBuilder` builds for every other surface.
+        **Through `parse` the two are mutually exclusive**: a body carrying `resume` arrives here with
+        no messages at all, because AG-UI replays the whole conversation and has no field marking one
+        message as new — see `parse`. So this builds one branch or the other, never both.
+
+        The ordering still matters for a caller building a `RunAgentInput` directly: the resume goes
+        last so a prompt stays first, matching what `RequestBuilder` produces on every other surface.
         """
         requests: list[AgentRequest] = []
         if run_input.messages:

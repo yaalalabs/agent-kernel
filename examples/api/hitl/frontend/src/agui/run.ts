@@ -73,11 +73,15 @@ export async function runAgent(
         // The third terminal shape: the run ended because it needs a person. A pause is an outcome
         // of the run, not an error and not something that happened during it.
         if (event.outcome?.type === "interrupt") {
-          for (const interrupt of event.outcome.interrupts) emit({ kind: "pause", id: uuid(), interrupt });
+          // The agent is carried on the line because a pause is answered by whoever asked, which is
+          // not necessarily whoever is selected by the time a human gets to it.
+          for (const interrupt of event.outcome.interrupts) emit({ kind: "pause", id: uuid(), interrupt, agent: args.agent });
         } else if (text) {
           args.messages.push({ id: uuid(), role: "assistant", content: text });
         }
-        break;
+        // Success is this event arriving, not the body ending: a dropped or truncated stream leaves
+        // the loop too, and reporting that as success would retire an approval the server still holds.
+        return true;
 
       case "RUN_ERROR":
         emit({ kind: "error", id: uuid(), text: event.message });
@@ -85,5 +89,6 @@ export async function runAgent(
     }
   }
 
-  return true;
+  emit({ kind: "error", id: uuid(), text: "The run ended without finishing — the connection dropped partway." });
+  return false;
 }
