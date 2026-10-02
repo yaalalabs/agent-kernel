@@ -420,6 +420,13 @@ class Runner(ABC):
         """
         Continues a paused run from the human's decisions.
 
+        The implementation clears the record with `PausedRunState.clear` once the framework has
+        accepted the decisions, and only then. Runtime deliberately does not clean up afterwards:
+        it cannot tell a failure from an ordinary reply, since this method reports framework
+        failures as text, so a fallback there would delete the record on a transient error and
+        leave the human with a decision that can no longer be applied. The record surviving is what
+        makes a retry possible.
+
         :param agent: The agent that paused.
         :param session: The session holding the record.
         :param requests: The hook-processed request list, carrying the resume request. Adapters put
@@ -459,6 +466,10 @@ class Runner(ABC):
 
         Every adapter emits events; a runner that yields a bare `str` is rejected by
         `StreamChunk.event` with a `ValidationError` rather than being normalised (§4 rule 6).
+
+        **`RunPaused` is the last thing a paused run yields.** `Runtime` breaks out of the loop on it
+        and closes this generator, so anything after that yield — writing the record, storing context
+        — never runs. Do that work first and yield `RunPaused` last.
 
         :param agent: The agent to run.
         :param session: The session to use for the agent.

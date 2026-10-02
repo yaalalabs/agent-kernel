@@ -376,6 +376,29 @@ class BaseChatRequest(BaseModel):
     schedule: Optional[ScheduleSpec] = None
     resume: Optional[ResumeSpec] = None
 
+    @model_validator(mode="after")
+    def _require_a_prompt_or_a_resume(self) -> "BaseChatRequest":
+        """
+        Rejects a body carrying neither key, which is how a queue consumer spots a poison message.
+
+        `prompt` is a required field everywhere else in the product, and every queue consumer relies
+        on `BaseRunRequest.model_validate` raising to drive retry -> max_receive_count -> dead-letter
+        (`pipeline/agent_runner.py`, both ECS runners, both serverless runners). Defaulting it so a
+        decision can stand alone removed the only structural check distinguishing a run request from
+        arbitrary JSON, and a poison message was then acked instead of dead-lettered.
+
+        Keyed on `model_fields_set` rather than on the value, so `{"prompt": ""}` behaves exactly as
+        it did before: an explicitly empty prompt is a run request, an absent one is not. A prebuilt
+        `requests` list counts too — that is the shape a producer composing its own list sends, and it
+        carries the turn without a prompt key.
+
+        :return: This request, when it carries a prompt key, a prebuilt request list, or a resume.
+        :raises ValueError: If it carries none of them, making it indistinguishable from unrelated JSON.
+        """
+        if not (self.model_fields_set & {"prompt", "requests"}) and self.resume is None:
+            raise ValueError("a chat request must carry a 'prompt', a 'resume' block, or a prebuilt 'requests' list")
+        return self
+
 
 class BaseRunRequest(BaseChatRequest):
     """Chat request with file and image attachments (base64/URL format).

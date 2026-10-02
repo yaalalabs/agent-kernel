@@ -36,6 +36,7 @@ def _pausing_stream_runner(*, open_tool_call=False, resume_answers=True):
         async def resume_stream(self, agent, session, requests, decisions, record):
             self.resumed_with = decisions
             yield TextDelta(message_id="m2", content=f"resumed:{decisions[0].status}")
+            PausedRunState.clear(session, record.id)
 
     return _Runner()
 
@@ -148,6 +149,32 @@ class TestStreamingResume:
         await _stream(runtime, agent, session, _resume_requests("i1", run_id=run_id))
 
         assert PausedRunState.list(session) == []
+
+    @pytest.mark.asyncio
+    async def test_a_failed_streamed_resume_keeps_the_record(self, runtime):
+        """The streaming half of the same rule: a failure must leave the decision applicable."""
+
+        class FailingRunner(PausingRunner):
+            async def stream(self, agent, session, requests):
+                record = PausedRunState.add(
+                    session,
+                    agent=agent.name,
+                    interruptions=[PausedInterruption(id="i1", kind="tool_call", tool_name="refund")],
+                )
+                yield RunPaused(run_id=record.id, agent=agent.name, interruptions=record.interruptions)
+
+            async def resume_stream(self, agent, session, requests, decisions, record):
+                yield TextDelta(message_id="m2", content="Sorry, something went wrong.")
+
+        agent = PausingAgent(runner=FailingRunner())
+        runtime.register(agent)
+        session = runtime.sessions().new("s1")
+        chunks = await _stream(runtime, agent, session, [AgentRequestText(prompt="refund it")])
+        run_id = next(c.event.run_id for c in chunks if isinstance(c.event, RunPaused))
+
+        await _stream(runtime, agent, session, _resume_requests("i1", run_id=run_id))
+
+        assert PausedRunState.get(session, run_id) is not None
 
 
 class TestTheRunnerGeneratorIsClosed:

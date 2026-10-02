@@ -362,7 +362,7 @@ class TestThreadPauseAndResume:
         handler = ThreadRequestHandler()
 
         with pytest.raises(HTTPException) as exc:
-            await handler.run_chat(BaseRunRequest(session_id="s1", user_id="u1", agent=registered_agent.name))
+            await handler.run_chat(BaseRunRequest(session_id="s1", user_id="u1", agent=registered_agent.name, prompt=""))
 
         assert exc.value.status_code == 400
         assert "No prompt provided" in exc.value.detail["error"]

@@ -96,6 +96,22 @@ class PausedRunState:
         return records
 
     @staticmethod
+    def _write(session: Session, records: List[PausedRun]) -> None:
+        """
+        Writes the record list as plain dicts, never as model instances.
+
+        The session store pickles the non-volatile cache as one value, so a stored `PausedRun` would
+        carry its class path with it. A replica on an older Agent Kernel — mid rolling deploy, or
+        after a rollback — would then fail to unpickle it, and that fails the **whole session load**,
+        not just this entry. Renaming or moving the class later would do the same to every session
+        holding a pause. Dicts have no such coupling, and `list` already revalidates them.
+
+        :param session: The session to write to.
+        :param records: The records to store.
+        """
+        session.get_non_volatile_cache().set(AK_PAUSED_RUNS_KEY, [record.model_dump() for record in records])
+
+    @staticmethod
     def get(session: Session, run_id: str) -> Optional[PausedRun]:
         """
         Finds one paused run by its id.
@@ -177,7 +193,7 @@ class PausedRunState:
             interruptions=interruptions,
             payload=payload,
         )
-        session.get_non_volatile_cache().set(AK_PAUSED_RUNS_KEY, existing + [record])
+        PausedRunState._write(session, existing + [record])
         PausedRunState._warn_once_on_process_local_store(session)
         return record
 
@@ -190,7 +206,7 @@ class PausedRunState:
         :param run_id: The run to remove.
         """
         remaining = [record for record in PausedRunState.list(session) if record.id != run_id]
-        session.get_non_volatile_cache().set(AK_PAUSED_RUNS_KEY, remaining)
+        PausedRunState._write(session, remaining)
 
     @classmethod
     def _warn_once_on_process_local_store(cls, session: Session) -> None:

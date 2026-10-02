@@ -220,3 +220,49 @@ class TestRunnerSurface:
         with pytest.raises(NotImplementedError, match="'bare'"):
             async for _ in runner.resume_stream(None, Session("s1"), [], [], None):
                 pass
+
+
+class TestTheCacheHoldsNoModelInstances:
+    """
+    A record is stored as a plain dict, so a replica on another Agent Kernel version can read it.
+
+    The session store pickles the non-volatile cache as one value. A stored model instance carries
+    its class path, so an older replica — mid rolling deploy, or after a rollback — raises on
+    unpickle and loses the **whole session**, not just the pause.
+    """
+
+    def test_a_stored_record_is_a_dict(self):
+        session = Session("s1")
+        PausedRunState.add(session, agent="refunds", interruptions=_interruptions("i1"), payload={"state": "blob"})
+
+        stored = session.get_non_volatile_cache().get(AK_PAUSED_RUNS_KEY)
+
+        assert all(isinstance(entry, dict) for entry in stored), stored
+
+    def test_the_pickled_session_names_no_paused_run_class(self):
+        import pickle
+
+        session = Session("s1")
+        PausedRunState.add(session, agent="refunds", interruptions=_interruptions("i1"))
+
+        blob = pickle.dumps(session)
+
+        assert b"PausedRun" not in blob and b"PausedInterruption" not in blob
+
+    def test_clear_rewrites_the_remainder_as_dicts(self):
+        session = Session("s1")
+        first = PausedRunState.add(session, agent="a", interruptions=_interruptions("i1"))
+        PausedRunState.add(session, agent="a", interruptions=_interruptions("i2"))
+
+        PausedRunState.clear(session, first.id)
+
+        assert all(isinstance(entry, dict) for entry in session.get_non_volatile_cache().get(AK_PAUSED_RUNS_KEY))
+
+    def test_reading_them_back_still_yields_models(self):
+        """The read side is unchanged: `list` revalidates, so callers never see the dicts."""
+        session = Session("s1")
+        record = PausedRunState.add(session, agent="a", interruptions=_interruptions("i1"), payload={"k": "v"})
+
+        read = PausedRunState.get(session, record.id)
+
+        assert read == record and read.payload == {"k": "v"}

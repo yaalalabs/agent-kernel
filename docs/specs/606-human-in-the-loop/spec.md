@@ -27,7 +27,17 @@ they are called out before anything else.
 1. **`BaseChatRequest.prompt` is required** — `prompt: str` with no default. A resume-only request
    carries no prompt, so pydantic rejects it before any AK code runs. It becomes **`str = ""`, not
    `Optional[str] = None`** (§ *Config and model changes*). Widening a required field is
-   backward-compatible for every existing sender.
+   backward-compatible for every existing **sender** — but not for every **reader**, which is the
+   trap: every queue consumer treats `BaseRunRequest.model_validate` raising as "this is not a run
+   request", and that raise is what drives retry → `max_receive_count` → dead-letter
+   (`pipeline/agent_runner.py`, both ECS runners, both serverless runners). Widening `prompt` removed
+   the only structural check distinguishing a run request from arbitrary JSON, so a poison message
+   validated, failed later on a missing `session_id`, came back as a 400 reply and was **acked** —
+   silently swallowed instead of dead-lettered, which the transport e2e caught.
+   `BaseChatRequest` therefore carries a `model_validator(mode="after")` requiring a `prompt` key, a
+   prebuilt `requests` list, or a `resume` block. Keyed on `model_fields_set`, so `{"prompt": ""}`
+   behaves exactly as it did before: an explicitly empty prompt is a run request, an absent one is
+   not.
 2. **Three places relied on `prompt` being required for validation they never wrote.** Widening it
    makes each accept a request it used to reject, so each needs the same "prompt **or** resume"
    check:
@@ -127,6 +137,7 @@ Rules this section pins:
 class RunPaused(StreamEventBase):
     type: Literal["run_paused"] = "run_paused"
     run_id: str
+    agent: str
     interruptions: list[PausedInterruption]
 ```
 
@@ -272,10 +283,8 @@ if incoming_resume is not None and resume_req is None:
     self._log.warning(...)                                # warning 1
 if resume_req is not None:
     record = self._validate_resume(agent, session, resume_req)     # raises; see Error handling
-    agent = Runtime.current().agents()[record.agent]               # agent resolved from the record
     reply = await agent.runner.resume(agent, session, requests, resume_req.decisions, record)
-    if not isinstance(reply, AgentPausedReplyAny) and PausedRunState.get(session, record.id):
-        PausedRunState.clear(session, record.id)          # leftover-record cleanup
+                                                          # the adapter clears its own record
 else:
     reply = await agent.runner.run(agent, session, requests)       # :286
 ```
@@ -295,11 +304,14 @@ Four rules:
    `langgraph.py:492`, `pydanticai.py:207`, `adk.py:318`), so a check raised inside the adapter is
    swallowed. The five failure modes need no framework knowledge, so adapter-side checks would be
    written four times.
-4. **`Runtime` clears a leftover record after a resume that did not pause.** `PausedRunState.clear`
-   is otherwise the adapter's, because a resume can pause again and the adapter writes the new
-   record. Scoped to *the reply is not an `AgentPausedReplyAny`*, no new pause was created, so a
-   record still present can only be the one just resumed. Removing the failure mode beats warning
-   about it: the next turn cannot inherit a phantom pause.
+4. **Clearing the record is the adapter's alone; `Runtime` does not tidy up.** *(Reversed in review —
+   an earlier draft had `Runtime` clear a leftover record after a resume that did not pause.)* The
+   narrowing that was meant to make it safe does not hold: every adapter reports a framework failure
+   as an ordinary `AgentReplyText`, so "the reply is not an `AgentPausedReplyAny`" is also true of a
+   failed resume. Since each adapter clears on its own success path, a record still present at that
+   point means the resume **failed** — and deleting it there would destroy the pause on a transient
+   model or network error, leaving the human's decision with nothing to apply to and no way to retry.
+   The record surviving is the retry signal.
 
 `_extract_resume(requests) -> AgentResumeRequestAny | None` and
 `_validate_resume(agent, session, req) -> PausedRun` are private methods of `Runtime`.
@@ -366,13 +378,13 @@ dispatching to `resume_stream`, plus three stream-specific rules:
   ```
 
   The message is unchanged for the existing case so no test string moves.
-- **`_success_status`** (`:550-556`) gains a second source. A pause is knowable only from the
+- **`success_status`** (`:550-556`) gains a second source. A pause is knowable only from the
   *reply*; a schedule only from the *request*. Both converge on `202` for different reasons from
   different inputs, so they stay two conditions:
 
   ```python
   @staticmethod
-  def _success_status(req: BaseChatRequest, reply: AgentReply | None = None) -> int:
+  def success_status(req: BaseChatRequest, reply: AgentReply | None = None) -> int:
       if req.schedule is not None:
           return 202
       if isinstance(reply, AgentPausedReplyAny):
@@ -420,7 +432,7 @@ elif isinstance(req, AgentResumeRequestAny):
         if d.message:
             text_parts.append(d.message)
         if d.payload:
-            text_parts.extend(str(v) for v in d.payload.values() if isinstance(v, str))
+            text_parts.extend(BaseGuardrailUtil._payload_text(d.payload))   # str / list / dict
 ```
 
 Only **string** payload values are extracted; a nested structure is not flattened, because a
@@ -706,7 +718,7 @@ ignores.
 
 ## Error handling
 
-### The four resume failure modes
+### The five resume failure modes
 
 Raised by `Runtime._validate_resume` **before** the branch, so none is swallowed by an adapter's
 `except`. Each is a `ValueError` carrying an actionable message, surfacing as **400** through the
@@ -790,7 +802,7 @@ Raised in the adapter, **above its `try`**, so they reach the caller:
   concurrency contract.
 - **Per-operation cost on the hot path is one dict lookup.** `Runtime` reads `ak.paused_runs` only
   when a request carries an `AgentResumeRequestAny`; an ordinary turn touches it once, in the
-  leftover-record check, which is itself scoped to resumed runs. Serialised size grows by the
+  dispatch, and only on a resume. Serialised size grows by the
   opaque payload — largest on OpenAI, where a `RunState` JSON was ~4.7 KB for a single gated call in
   the probe. That rides the existing session pickle and its TTL.
 
@@ -808,7 +820,7 @@ follow `DummyRunner`/`DummyAgent` from `ak-dev-testing-conventions`, and a strea
 |---|---|
 | `tests/test_paused_run_state.py` | PR 1. `add` assigns an id and returns the stored record; `list`/`get`/`clear` round-trip; `find_by_interruption` resolves one record and returns `None` when ids span two; a corrupted cache entry is dropped with a warning rather than raising; a non-picklable payload raises `TypeError` naming the entry; a duplicate interruption id raises `ValueError`; the record survives a real `SessionStore` round trip (not just an in-process set/get); **`get_non_volatile_cache().clear()` discards the pause** — a test of accepted behaviour, so it is known rather than discovered in production |
 | `tests/test_hitl_models.py` | PR 1. The five types round-trip through pydantic; `AgentPausedReplyAny` satisfies `isinstance(x, AgentReplyAny)`; its `content` is derived and a caller-supplied one is overwritten; `str()` is readable JSON; `type` is `"paused"` while the body's status is `"PAUSED"`; `ResumeSpec` rejects an empty `decisions` list and duplicate ids; ids that merely fail to match a pending interruption are **not** rejected here (that is a `Runtime` check with a different error) |
-| `tests/test_runtime_resume.py` | PR 1. Driven by a `DummyRunner` that pauses. Dispatch reaches `resume()` with the hook-processed list; the **four** failure modes each raise their own error; `supports_pause = False` names the runner; the agent is resolved from the record and a conflicting `req.agent` raises; a resume with no `run_id` resolves by interruption id, and decisions spanning two records are refused; a leftover record is cleared after a non-paused resume reply, and an **ordinary** turn with a pause pending leaves it alone |
+| `tests/test_runtime_resume.py` | PR 1. Driven by a `DummyRunner` that pauses. Dispatch reaches `resume()` with the hook-processed list; the **five** failure modes each raise their own error; `supports_pause = False` names the runner; the agent `Runtime` activated is the one the runner receives, and a conflicting `req.agent` raises; a resume with no `run_id` resolves by interruption id, and decisions spanning two records are refused; a successful resume clears the record while a **failed** one leaves it so the decision can be retried, and an **ordinary** turn with a pause pending leaves it alone |
 | `tests/test_runtime_resume_warnings.py` | PR 1. All three warnings fire with the session and agent named: a pre-hook that drops the `AgentResumeRequestAny` (and the run proceeds as a new turn, record intact), a pre-hook that halts on a resume (record intact, answerable again), and a post-hook returning `None` for `RunPaused` (pause dropped, record intact, hook named). These are the only signal the behaviour is deliberately unconstrained. |
 | `tests/test_hitl_stream.py` | PR 1. A paused stream emits `RunPaused` → the tracker's owed closing events → `StreamChunk(done=True)`; the pause never reaches `StreamChunk.error`; the session **is** stored (unlike the `StreamHalt` path); pausing with a `ToolCallStart` open yields `ToolCallEnd` before `done` |
 | `tests/test_hitl_chat_service.py` | PR 1. A resume-only request (no prompt) is accepted; a request with neither raises the existing message; `schedule` + `resume` raises **from all four entry points**, asserted specifically because a guard in `_validate` runs after `_maybe_schedule` has already returned its 202; the response carries `202` with top-level `status: "PAUSED"`, `run_id` and `interruptions`, distinguishable from `202` + `"SCHEDULED"`; `resume` never reaches an agent as `AgentRequestAny` |

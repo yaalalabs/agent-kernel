@@ -321,26 +321,6 @@ class Runtime:
             raise ValueError(f"Runner '{agent.runner.name}' for agent '{agent.name}' does not support resuming a paused run.")
         return record
 
-    def _clear_leftover_record(self, session: Session, record: PausedRun, paused_again: bool) -> None:
-        """
-        Removes a record a resumed run left behind, rather than warning that the adapter forgot it.
-
-        Clearing is otherwise the adapter's, because a resume can pause again and the adapter writes
-        the new record. Narrowed to a run that did *not* pause again, no new record is in play, so
-        one still present can only be the resumed one — and removing it means the next turn cannot
-        inherit a phantom pause.
-
-        :param session: The session holding the record.
-        :param record: The record that was resumed.
-        :param paused_again: Whether the resumed run produced another pause.
-        """
-        if paused_again:
-            return
-        if PausedRunState.get(session, record.id) is None:
-            return
-        self._log.debug(f"Session '{session.id}': clearing paused run '{record.id}' left behind by a resumed run.")
-        PausedRunState.clear(session, record.id)
-
     def _warn_resume_dropped(self, agent: Agent, session: Session) -> None:
         """
         Warns that a pre-hook removed the decisions, so this run proceeds as an ordinary turn.
@@ -424,7 +404,6 @@ class Runtime:
                     if resume is not None:
                         record = self._validate_resume(agent, session, resume)
                         reply = await agent.runner.resume(agent, session, requests, resume.decisions, record)
-                        self._clear_leftover_record(session, record, isinstance(reply, AgentPausedReplyAny))
                     else:
                         reply = await agent.runner.run(agent, session, requests)
 
@@ -484,7 +463,6 @@ class Runtime:
 
                     self._log.debug(f"Streaming agent '{agent.name}' with requests: {requests}")
 
-                    record = None
                     if resume is not None:
                         record = self._validate_resume(agent, session, resume)
                         events = agent.runner.resume_stream(agent, session, requests, resume.decisions, record)
@@ -514,7 +492,7 @@ class Runtime:
                             else:
                                 emitted = [ev]
 
-                            if isinstance(ev, RunPaused) and not emitted:
+                            if isinstance(ev, RunPaused) and not any(isinstance(e, RunPaused) for e in emitted):
                                 self._warn_pause_dropped(agent, session, hook.name())
 
                             for event in emitted:
@@ -531,9 +509,6 @@ class Runtime:
                                 for closing in boundaries.drain():
                                     yield StreamChunk(event=closing)
                                 break
-
-                        if record is not None:
-                            self._clear_leftover_record(session, record, paused)
 
                         self.sessions().store(session)
                         yield StreamChunk(done=True)

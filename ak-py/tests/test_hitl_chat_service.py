@@ -10,6 +10,7 @@ catches a guard placed one layer too low.
 import json
 
 import pytest
+from pydantic import ValidationError
 
 from agentkernel.core.chat_service import ChatService, RequestBuilder, ResponseBuilder
 from agentkernel.core.event import PausedInterruption
@@ -45,9 +46,16 @@ class TestRequestShape:
         req = BaseChatRequest(session_id="s1", resume=_resume())
         assert req.prompt == ""
 
-    def test_a_request_with_neither_is_still_rejected(self):
+    def test_an_explicitly_empty_prompt_with_no_resume_is_still_rejected(self):
+        """What ChatService still owns: the key is there, the turn is empty."""
         with pytest.raises(ValueError, match="No prompt provided in the request"):
-            ChatService._validate(BaseChatRequest(session_id="s1"), None)
+            ChatService._validate(BaseChatRequest(session_id="s1", prompt=""), None)
+
+    def test_a_body_carrying_neither_key_is_rejected_by_the_model(self):
+        """Earlier than ChatService, and deliberately so: a queue consumer spots a poison message by
+        `model_validate` raising, which is what drives retry -> max_receive_count -> dead-letter."""
+        with pytest.raises(ValidationError, match="must carry a 'prompt'"):
+            BaseChatRequest(session_id="s1")
 
     def test_a_resume_only_request_validates(self):
         ChatService._validate(BaseChatRequest(session_id="s1", resume=_resume()), None)
@@ -116,10 +124,10 @@ class TestAmbiguousCombinations:
 
 class TestPausedResponse:
     def test_a_paused_reply_carries_202(self):
-        assert ChatService.success_status(BaseChatRequest(session_id="s1"), _paused_reply()) == 202
+        assert ChatService.success_status(BaseChatRequest(session_id="s1", prompt=""), _paused_reply()) == 202
 
     def test_an_ordinary_reply_carries_200(self):
-        assert ChatService.success_status(BaseChatRequest(session_id="s1"), AgentReplyText(response="hi")) == 200
+        assert ChatService.success_status(BaseChatRequest(session_id="s1", prompt=""), AgentReplyText(response="hi")) == 200
 
     def test_a_deferred_request_still_carries_202(self):
         req = BaseChatRequest(session_id="s1", prompt="later", schedule=ScheduleSpec(at="2030-01-01T00:00:00"))

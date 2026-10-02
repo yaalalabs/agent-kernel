@@ -16,7 +16,7 @@ import logging
 import pytest
 from test_runtime_resume import PausingAgent, PausingRunner, _resume_requests
 
-from agentkernel.core.event import PausedInterruption, RunPaused
+from agentkernel.core.event import PausedInterruption, RunPaused, TextDelta
 from agentkernel.core.hooks import PostHook, PreHook
 from agentkernel.core.model import AgentReplyText, AgentRequestText, AgentResumeRequestAny
 from agentkernel.core.paused_run import PausedRunState
@@ -165,3 +165,76 @@ class TestStreamWarning:
         [c async for c in runtime.stream(agent, session, [AgentRequestText(prompt="refund it")])]
 
         assert len(PausedRunState.list(session)) == 1
+
+
+class SubstitutingPostHook(PostHook):
+    """Replaces the pause with something else, rather than dropping it outright.
+
+    Returning a list is how a hook emits several events in place of one, so this is the realistic
+    shape of a hook that rewrites a pause into, say, a notice of its own.
+    """
+
+    async def on_run(self, session, requests, agent, agent_reply):
+        return agent_reply
+
+    async def on_stream_event(self, session, requests, agent, event):
+        if isinstance(event, RunPaused):
+            return [TextDelta(message_id="m-sub", content="(a pause was here)")]
+        return event
+
+    def name(self):
+        return "substituting_hook"
+
+
+class TestAPauseReplacedByOtherEvents:
+    """
+    The warning exists for a dropped pause, and a hook returning `[other_event]` drops it just as
+    surely as returning `None` — the emitted list is non-empty, so a `not emitted` check misses it.
+    """
+
+    @pytest.mark.asyncio
+    async def test_substituting_the_pause_warns(self, runtime, caplog):
+        class PausingStreamRunner(PausingRunner):
+            async def stream(self, agent, session, requests):
+                record = PausedRunState.add(session, agent=agent.name, interruptions=[PausedInterruption(id="i1", kind="tool_call")])
+                yield RunPaused(run_id=record.id, agent=agent.name, interruptions=record.interruptions)
+
+        agent = PausingAgent(runner=PausingStreamRunner())
+        agent.post_hooks.append(SubstitutingPostHook())
+        runtime.register(agent)
+        session = runtime.sessions().new("s1")
+
+        with caplog.at_level(logging.WARNING, logger="ak.runtime"):
+            chunks = [c async for c in runtime.stream(agent, session, [AgentRequestText(prompt="refund it")])]
+
+        assert any("dropped by post-hook 'substituting_hook'" in r.message for r in caplog.records)
+        assert not any(isinstance(c.event, RunPaused) for c in chunks)
+
+    @pytest.mark.asyncio
+    async def test_a_hook_that_keeps_the_pause_in_its_list_does_not_warn(self, runtime, caplog):
+        """The guard must not fire on a hook that adds events beside the pause rather than replacing it."""
+
+        class AugmentingPostHook(SubstitutingPostHook):
+            async def on_stream_event(self, session, requests, agent, event):
+                if isinstance(event, RunPaused):
+                    return [TextDelta(message_id="m-note", content="heads up"), event]
+                return event
+
+            def name(self):
+                return "augmenting_hook"
+
+        class PausingStreamRunner(PausingRunner):
+            async def stream(self, agent, session, requests):
+                record = PausedRunState.add(session, agent=agent.name, interruptions=[PausedInterruption(id="i1", kind="tool_call")])
+                yield RunPaused(run_id=record.id, agent=agent.name, interruptions=record.interruptions)
+
+        agent = PausingAgent(runner=PausingStreamRunner())
+        agent.post_hooks.append(AugmentingPostHook())
+        runtime.register(agent)
+        session = runtime.sessions().new("s1")
+
+        with caplog.at_level(logging.WARNING, logger="ak.runtime"):
+            chunks = [c async for c in runtime.stream(agent, session, [AgentRequestText(prompt="refund it")])]
+
+        assert not any("dropped by post-hook" in r.message for r in caplog.records)
+        assert any(isinstance(c.event, RunPaused) for c in chunks)

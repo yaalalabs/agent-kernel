@@ -54,6 +54,7 @@ class PausingRunner(Runner):
             PausedRunState.clear(session, record.id)
             again = PausedRunState.add(session, agent=agent.name, interruptions=[PausedInterruption(id="resumed-again", kind="tool_call")])
             return AgentPausedReplyAny(run_id=again.id, session_id=session.id, agent=agent.name, interruptions=again.interruptions)
+        PausedRunState.clear(session, record.id)
         return AgentReplyText(response=f"resumed:{decisions[0].status}")
 
     async def stream(self, agent, session, requests):
@@ -145,18 +146,41 @@ class TestDispatch:
 
 class TestLeftoverRecordCleanup:
     @pytest.mark.asyncio
-    async def test_a_record_the_adapter_left_behind_is_cleared(self, runtime):
-        class ForgetfulRunner(PausingRunner):
-            async def resume(self, agent, session, requests, decisions, record):
-                return AgentReplyText(response="done")
-
-        agent = PausingAgent(runner=ForgetfulRunner())
+    async def test_a_successful_resume_clears_its_record(self, runtime):
+        agent = PausingAgent()
         runtime.register(agent)
         session = runtime.sessions().new("s1")
         paused = await _pause(runtime, agent, session)
 
         await runtime.run(agent, session, _resume_requests("i1", run_id=paused.run_id))
 
+        assert PausedRunState.list(session) == []
+
+    @pytest.mark.asyncio
+    async def test_a_failed_resume_keeps_the_record_so_the_decision_can_be_retried(self, runtime):
+        """A transient framework failure must not cost the human their decision."""
+
+        class FlakyRunner(PausingRunner):
+            attempts = 0
+
+            async def resume(self, agent, session, requests, decisions, record):
+                FlakyRunner.attempts += 1
+                if FlakyRunner.attempts == 1:
+                    # What every adapter does with a framework failure: report it as text, without
+                    # reaching its own PausedRunState.clear.
+                    return AgentReplyText(response="Sorry, something went wrong.")
+                return await super().resume(agent, session, requests, decisions, record)
+
+        agent = PausingAgent(runner=FlakyRunner())
+        runtime.register(agent)
+        session = runtime.sessions().new("s1")
+        paused = await _pause(runtime, agent, session)
+
+        await runtime.run(agent, session, _resume_requests("i1", run_id=paused.run_id))
+        assert PausedRunState.get(session, paused.run_id) is not None
+
+        reply = await runtime.run(agent, session, _resume_requests("i1", run_id=paused.run_id))
+        assert reply.response == "resumed:approved"
         assert PausedRunState.list(session) == []
 
     @pytest.mark.asyncio
