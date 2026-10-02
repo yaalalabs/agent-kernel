@@ -17,12 +17,17 @@ export default function App() {
   const [prompt, setPrompt] = useState("");
   const threadId = useRef(uuid());
   const messages = useRef<{ id: string; role: "user" | "assistant"; content: string }[]>([]);
+  // A ref, not the `running` state: state updates are asynchronous, so two fast clicks would both
+  // read the old value and both send. This latches synchronously.
+  const inFlight = useRef(false);
 
   const emit = (line: Line) => setLines((current) => [...current, line]);
   const patch = (id: string, text: string) =>
     setLines((current) => current.map((line) => (line.id === id && line.kind === "agent" ? { ...line, text } : line)));
 
-  async function run(args: { prompt?: string; resume?: { interruptId: string; verdict: Verdict }[] }): Promise<boolean> {
+  async function run(args: { agent?: string; prompt?: string; resume?: { interruptId: string; verdict: Verdict }[] }): Promise<boolean> {
+    if (inFlight.current) return false;
+    inFlight.current = true;
     setRunning(true);
     try {
       return await runAgent({ agent, threadId: threadId.current, messages: messages.current, ...args }, emit, patch);
@@ -30,6 +35,7 @@ export default function App() {
       emit({ kind: "error", id: uuid(), text: String(error) });
       return false;
     } finally {
+      inFlight.current = false;
       setRunning(false);
     }
   }
@@ -45,9 +51,15 @@ export default function App() {
   }
 
   async function decide(lineId: string, interruptId: string, verdict: Verdict, settled: string) {
+    // Answer goes back to the agent that asked, not the one selected now — switching the picker
+    // while a pause is open would otherwise post it to an agent the record does not belong to, which
+    // Agent Kernel rejects as an agent mismatch.
+    const asked = lines.find((line) => line.id === lineId && line.kind === "pause");
+    if (asked?.kind !== "pause") return;
+
     // Retire the question only once the run accepted the decision. A failed resume leaves the pause
     // in place precisely so it can be answered again, which a card with no buttons left cannot do.
-    if (!(await run({ resume: [{ interruptId, verdict }] }))) return;
+    if (!(await run({ agent: asked.agent, resume: [{ interruptId, verdict }] }))) return;
     setLines((current) => current.map((line) => (line.id === lineId && line.kind === "pause" ? { ...line, settled } : line)));
   }
 
@@ -103,7 +115,9 @@ export default function App() {
                 </div>
               );
             case "pause":
-              return <Approval key={line.id} lineId={line.id} interrupt={line.interrupt} settled={line.settled} onDecide={decide} />;
+              return (
+                <Approval key={line.id} lineId={line.id} interrupt={line.interrupt} settled={line.settled} busy={running} onDecide={decide} />
+              );
           }
         })}
       </main>

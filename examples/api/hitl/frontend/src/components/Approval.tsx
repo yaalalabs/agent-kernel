@@ -21,11 +21,15 @@ export function Approval({
   lineId,
   interrupt,
   settled,
+  busy,
   onDecide,
 }: {
   lineId: string;
   interrupt: Interrupt;
   settled?: string;
+  /** A run is in flight. The in-flight latch in App already drops a second decision; this is what
+   *  tells the human why, instead of letting a click look accepted and do nothing. */
+  busy?: boolean;
   onDecide: (lineId: string, interruptId: string, verdict: Verdict, settled: string) => void;
 }) {
   const [text, setText] = useState("");
@@ -58,7 +62,7 @@ export function Approval({
       ) : question.options ? (
         <div className="actions">
           {question.options.map((option) => (
-            <button key={option} onClick={() => decide({ status: "resolved", payload: option }, `Answered: ${option}`)}>
+            <button key={option} disabled={busy} onClick={() => decide({ status: "resolved", payload: option }, `Answered: ${option}`)}>
               {option}
             </button>
           ))}
@@ -67,24 +71,25 @@ export function Approval({
         <div className="actions">
           <input
             className="answer"
+            disabled={busy}
             value={text}
             onChange={(event) => setText(event.target.value)}
             onKeyDown={(event) => event.key === "Enter" && decide({ status: "resolved", payload: text }, `Answered: ${text || "(nothing)"}`)}
             placeholder="Type your answer, or leave blank"
           />
-          <button className="ok" onClick={() => decide({ status: "resolved", payload: text }, `Answered: ${text || "(nothing)"}`)}>
+          <button className="ok" disabled={busy} onClick={() => decide({ status: "resolved", payload: text }, `Answered: ${text || "(nothing)"}`)}>
             Send
           </button>
         </div>
       ) : (
         <div className="actions">
-          <button className="ok" onClick={() => decide({ status: "resolved", payload: true }, "Approved — the tool ran.")}>
+          <button className="ok" disabled={busy} onClick={() => decide({ status: "resolved", payload: true }, "Approved — the tool ran.")}>
             Approve
           </button>
-          <button className="no" onClick={() => decide({ status: "resolved", payload: false }, "Denied — the tool did not run.")}>
+          <button className="no" disabled={busy} onClick={() => decide({ status: "resolved", payload: false }, "Denied — the tool did not run.")}>
             Deny
           </button>
-          <button onClick={() => decide({ status: "cancelled" }, "Cancelled — nobody decided, and the model is told so.")}>Cancel</button>
+          <button disabled={busy} onClick={() => decide({ status: "cancelled" }, "Cancelled — nobody decided, and the model is told so.")}>Cancel</button>
         </div>
       )}
     </div>

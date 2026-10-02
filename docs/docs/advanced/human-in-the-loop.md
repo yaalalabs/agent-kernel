@@ -110,6 +110,11 @@ shift ending. Only LangGraph carries that distinction natively; on the others Ag
 wording that reads as *undecided* rather than refused, so the agent does not report a refusal that
 never happened.
 
+**One exception, and it is ADK's doing rather than a choice:** on an ADK *confirmation* the wording
+never reaches the model, because ADK consumes the response and writes its own for the original call.
+There `cancelled` is indistinguishable from `denied`. A `LongRunningFunctionTool` on ADK keeps the
+distinction; see the table below.
+
 A boolean would collapse the two, and the model would confidently tell your customer they were
 turned down.
 
