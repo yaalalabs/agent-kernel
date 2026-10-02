@@ -142,6 +142,7 @@ const sidebars = {
         'advanced/multimodal',
         'advanced/threads',
         'advanced/scheduling',
+        'advanced/human-in-the-loop',
         'advanced/sandbox',
         'advanced/secrets',
         'advanced/knowledge-bases',

@@ -515,9 +515,12 @@ Around that dispatch:
    - So **both paused surfaces state it**: `agent` is a top-level key on the paused response body
      beside `run_id`, and a field on the `RunPaused` event. Without that a streaming client has
      nothing to name.
-   - **AG-UI (PR 3) has to source it itself.** `ResumeEntry` carries neither a run id nor an agent;
-     the run id is resolved from the interruption ids, but the agent must come from the AG-UI run's
-     own agent field.
+   - **AG-UI needs nothing extra.** *(Corrected in PR 3 — an earlier draft of this point claimed
+     AG-UI could not name the agent and left it as an obligation. It can.)* `RunAgentInput` indeed
+     has no agent field, but AG-UI carries the agent **in the route**: `POST {prefix}/{agent_name}`,
+     which `AGUIRequestHandler._resolve_agent` uses. The only case that errors is a client posting to
+     the bare `POST {prefix}` route with `agui.default_agent` set while the pause belongs to a
+     different agent — which is the mismatch this check exists to catch.
 5. **an approval answered with no verb** — `status` is required when the matching interruption's
    `kind` is `tool_call` or `confirmation`, and ignored for `input_required`, which takes a value
    rather than a yes or no. Checked per interruption, not per request, because one resume can
