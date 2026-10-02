@@ -1,6 +1,6 @@
 # Research: #603 Identity layer, RBAC and agent registry
 
-Supporting investigation for a future `../design.md`. Written 2026-09-28, before any design exists.
+Supporting investigation behind `../design.md` (written 2026-10-01). Research written 2026-09-28.
 Single ticket #603 (RBAC Capability Design), into which the requirements of #441 (auth provider
 support: Auth0, Cognito), #521 (RBAC capability for auth providers) and #658 (agent entity and
 registry) were merged on 2026-09-28; those three issues are closed in its favour. Related:
