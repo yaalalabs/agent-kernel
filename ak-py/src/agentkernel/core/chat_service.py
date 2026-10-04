@@ -349,10 +349,15 @@ class ResponseBuilder:
 
         :param chunk: StreamChunk to format
         :param session_id: Session identifier to include in the payload
+        Dumped in JSON mode so an event carrying a payload reaches ``json.dumps`` already converted.
+        Every field of every other event is a str, int or bool, so this is byte-identical for them;
+        without it a payload would raise here, mid-stream, after the client had rendered part of
+        the message.
+
         :param sse_format: When True, wrap the JSON payload as an SSE frame.
         :return: JSON string or SSE-formatted string with excluded None values
         """
-        payload_dict = chunk.model_dump(exclude_none=True)
+        payload_dict = chunk.model_dump(mode="json", exclude_none=True)
         payload_dict["session_id"] = session_id
         payload = json.dumps(payload_dict)
         return f"data: {payload}\n\n" if sse_format else payload

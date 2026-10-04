@@ -34,8 +34,6 @@ class DynamoDecimalCodec:
         :param value: The value to convert; containers are rebuilt, scalars returned as they are.
         :return: The value with no floats left in it.
         """
-        if isinstance(value, bool):
-            return value
         if isinstance(value, float):
             return decimal.Decimal(str(value))
         if isinstance(value, dict):

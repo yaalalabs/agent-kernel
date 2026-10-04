@@ -143,7 +143,7 @@ class AgentReplyAny(BaseModel):
                            somewhere down the pipeline. Replacing this field with
                            ``model_copy(update={"content": ...})`` skips that validation, so build a
                            new reply instead; updating only ``media_type`` by copy is safe.
-    media_type: str|None : The format of ``content``, e.g. ``application/a2ui+json``. Unset by
+    media_type: str|None : The format of ``content``, as a media type string. Unset by
                            default, and never set by a framework adapter — a post-hook applies it.
                            Surfaces that can carry an object do so only when this is set; with it
                            unset every surface behaves exactly as it did before the field existed.

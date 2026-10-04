@@ -73,3 +73,23 @@ result = mcp_client.call_tool(
     {"param": "Hello!"}
 )
 ```
+
+## Structured replies
+
+A tool returns the agent's reply as text, unless that reply carries a format label — set by the
+[A2UI capability](../advanced/a2ui.md) or by an application post-hook. A labelled reply arrives as
+`structuredContent`, with the format in MCP's own `_meta` slot:
+
+```json
+{
+  "structuredContent": {"version": "v1.0", "createSurface": {"surfaceId": "s1"}},
+  "_meta": {"media_type": "application/a2ui+json"}
+}
+```
+
+fastmcp emits a text block alongside it, so a client reading only text blocks keeps working. Every
+unlabelled reply — text, image, or structured-but-unlabelled — returns exactly the string it always
+did.
+
+Note that `_meta` is optional in MCP: a host is free to drop it, in which case the client receives
+the payload without knowing its format.

@@ -13,6 +13,7 @@ except importlib.metadata.PackageNotFoundError:
 
 from .base import Agent, Runner, Session
 from .event import (
+    DataMessage,
     MessageEnd,
     MessageStart,
     ReasoningDelta,

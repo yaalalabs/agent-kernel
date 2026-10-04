@@ -5,6 +5,7 @@ import pytest
 from pydantic import BaseModel, ValidationError
 
 from agentkernel.core.event import (
+    DataMessage,
     MessageEnd,
     MessageStart,
     ReasoningDelta,
@@ -41,6 +42,7 @@ ALL_EVENTS = [
     ReasoningStart(message_id="m1"),
     ReasoningDelta(message_id="m1", content="thinking"),
     ReasoningEnd(message_id="m1"),
+    DataMessage(message_id="m1", content={"version": "v1.0"}, media_type="application/a2ui+json"),
 ]
 
 
@@ -64,10 +66,12 @@ def test_event_round_trips_through_the_discriminated_union(event):
 def test_event_is_json_serialisable(event):
     # No field may carry a framework-native object: a StreamChunk crosses the queue transport. The
     # scalar set matches spec §1 rule 4 rather than being narrower than it, so an int or bool field
-    # added by a later adapter PR is accepted here instead of failing a spec-legal change.
+    # added by a later adapter PR is accepted here instead of failing a spec-legal change. A dict or
+    # list is admitted for a payload field, whose JSON-safety the shared annotated type guarantees,
+    # and None for an optional one.
     dumped = event.model_dump()
     assert json.loads(json.dumps(dumped)) == dumped
-    assert all(isinstance(value, (str, int, bool)) for value in dumped.values())
+    assert all(value is None or isinstance(value, (str, int, bool, dict, list)) for value in dumped.values())
 
 
 @pytest.mark.parametrize("event", ALL_EVENTS, ids=lambda ev: ev.type)
@@ -91,3 +95,27 @@ def test_union_rejects_a_bare_string():
     # boundary, naming the offending field, rather than degrading into a silently empty stream.
     with pytest.raises(ValidationError):
         _Envelope.model_validate({"event": "hello"})
+
+
+class TestDataMessage:
+    """The one member carrying a payload rather than scalars."""
+
+    def test_content_is_normalised_on_construction(self):
+        import datetime
+
+        event = DataMessage(message_id="m1", content={"at": datetime.datetime(2026, 9, 22, 14, 30)})
+
+        assert event.content == {"at": "2026-09-22T14:30:00"}
+
+    def test_content_accepts_a_sequence_of_messages(self):
+        content = [{"createSurface": {"surfaceId": "s1"}}, {"updateComponents": {}}]
+
+        assert DataMessage(message_id="m1", content=content).content == content
+
+    def test_media_type_is_optional(self):
+        assert DataMessage(message_id="m1", content={"a": 1}).media_type is None
+
+    def test_unserialisable_content_raises_before_the_stream(self):
+        """The reason content uses the shared type: a mid-stream raise reaches a half-rendered client."""
+        with pytest.raises(ValidationError):
+            DataMessage(message_id="m1", content={"row": object()})

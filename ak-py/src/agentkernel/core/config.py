@@ -783,6 +783,20 @@ class _SandboxProfileConfig(BaseModel):
     ec2_ssm: Optional[_SandboxEC2SSMConfig] = Field(default=None, description="Configuration for the 'ec2_ssm' provider")
 
 
+class _A2UIConfig(BaseModel):
+    """Scopes the A2UI labelling capability. Two keys, because the capability does two things:
+    decide whether to run at all, and decide which agents it runs for."""
+
+    enabled: bool = Field(
+        default=False,
+        description="Enable the A2UI capability; when False no hook runs and no reply is labelled",
+    )
+    agents: Optional[list[str]] = Field(
+        default=None,
+        description="Agent names whose JSON replies are labelled as A2UI; omitted = all agents",
+    )
+
+
 class _SandboxConfig(BaseModel):
     enabled: bool = Field(
         default=False, description="Enable the sandbox capability; when False it is inert (no tools, no hook behavior, no provider imports)"
@@ -917,6 +931,7 @@ class AKConfig(YamlBaseSettingsModified):
     trace: _TraceConfig = Field(description="Tracing related configurations", default_factory=_TraceConfig)
     guardrail: _GuardrailConfig = Field(description="Guardrail related configurations", default_factory=_GuardrailConfig)
     sandbox: _SandboxConfig = Field(description="Sandbox capability configurations", default_factory=_SandboxConfig)
+    a2ui: _A2UIConfig = Field(description="A2UI labelling capability configurations", default_factory=_A2UIConfig)
     execution: _ExecutionConfig = Field(description="Execution mode and queue related configurations", default_factory=_ExecutionConfig)
     logging: _LoggingConfig = Field(description="Logging related configurations", default_factory=_LoggingConfig)
     library_version: str = Field(default=_get_ak_version(), description="Library version")

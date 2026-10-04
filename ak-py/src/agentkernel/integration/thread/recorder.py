@@ -77,10 +77,13 @@ class ThreadRecorder:
         Python repr, not JSON. Left alone, the same agent would record one encoding in
         single-process mode and another through the queue, permanently.
 
-        The dict branch deliberately mirrors ``AgentReplyAny.__str__``'s own call rather than using
-        ``PayloadCodec.encode``: the aim is that both paths record byte-identical rows, and the
-        codec's compact separators would differ from the reply's by whitespace alone — the kind of
-        divergence that is invisible until someone diffs two stores.
+        The dict branch deliberately mirrors ``AgentReplyAny.__str__``'s own call, including its
+        ``default=str`` fallback, rather than using ``PayloadCodec.encode``. For JSON-safe content
+        the two agree; they part on a value that reached ``content`` through one of the documented
+        bypasses, where ``default=str`` renders a datetime as the reply's ``__str__`` does and the
+        codec renders it as ISO 8601. Matching the reply exactly is the point — the alternative is
+        two stores holding the same reply in two encodings, which is invisible until someone diffs
+        them.
 
         :param result: An AgentReply, a plain string, or the response body's ``result`` value.
         :return: The thread message content.

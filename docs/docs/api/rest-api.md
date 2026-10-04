@@ -46,6 +46,34 @@ Execute an agent with a message.
 }
 ```
 
+#### Structured replies
+
+`result` is a **string** unless the reply carries a format label. An agent configured for structured
+output returns its content as a JSON string, which is what every example on this page shows:
+
+```json
+{
+  "result": "{\"city\": \"Colombo\", \"temp_c\": 31}",
+  "session_id": "user-123"
+}
+```
+
+When a reply **is** labelled — by the [A2UI capability](../advanced/a2ui.md) or by an application
+post-hook that sets `media_type` — `result` carries the object itself and the format travels beside
+it:
+
+```json
+{
+  "result": {"city": "Colombo", "temp_c": 31},
+  "media_type": "application/a2ui+json",
+  "session_id": "user-123"
+}
+```
+
+So `result` is `string | object | array`, and `media_type` is the discriminator: **present means the
+object form, absent means the string**. A client that has not opted into a labelled format never
+sees the object form, because no framework adapter sets a media type.
+
 ### GET /api/v1/agents
 
 List all available agents.

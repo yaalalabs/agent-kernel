@@ -175,6 +175,13 @@ Reading the table:
 - **Audio and video content is rejected with a 400.** AK has no equivalent request type, and mapping
   them onto the generic file type produces misleading model output. Images and documents are accepted,
   from an inline base64 `data` source or a `url` source.
+- **A structured payload maps onto AG-UI's `CustomEvent`.** `DataMessage` — the one stream event
+  that carries an object rather than scalars — becomes a `CustomEvent` whose `name` is the media
+  type and whose `value` is the payload. Nothing in Agent Kernel emits one: a `PostHook` assembles
+  it from what it has accumulated and returns it alongside the closing event, which is what
+  `on_stream_event`'s list form is for. Note the cost of that approach — a hook cannot know whether
+  a message is UI or prose until the closing boundary, so it holds every delta back, and such an
+  agent streams nothing incrementally. See [A2UI](../advanced/a2ui.md).
 - **Tool-call payloads are inspectable, but only if you write a hook.** Every event an AG-UI run emits
   passes through `PostHook.on_stream_event`, including `ToolCallArgs` and `ToolCallResult`, so a hook
   can rewrite or drop them before they reach the client, or raise `StreamHalt` to end the run. The
