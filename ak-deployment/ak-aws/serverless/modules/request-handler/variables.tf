@@ -332,3 +332,9 @@ variable "websocket_connections_dynamodb" {
   })
   default = null
 }
+
+variable "ssm_enabled" {
+  type        = bool
+  description = "Whether this tier's role may read /ak/<prefix>/* from SSM Parameter Store and receive AK_SECRET__PREFIX"
+  default     = false
+}

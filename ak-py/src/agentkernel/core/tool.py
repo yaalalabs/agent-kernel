@@ -205,6 +205,15 @@ class SystemToolFactory:
 
             tools.extend(get_schedule_tools())
 
+        # Deliberately not passed through _agent_allowed: that helper reads a flat `agents`
+        # list, and OKF's scoping is per (agent, database) and lives in its own role registry.
+        # Passing the block would silently allow every agent, since it has no `agents` field.
+        okf_config = getattr(AKConfig.get(), "okf", None)
+        if okf_config is not None:
+            from ..knowledgebase.okf.tools import OKFToolFactory
+
+            tools.extend(OKFToolFactory.get_tools(agent_name))
+
         agui_config = getattr(AKConfig.get(), "agui", None)
         state_config = getattr(agui_config, "state", None)
         if state_config and state_config.enabled and SystemToolFactory._agent_allowed(state_config, agent_name):
@@ -221,23 +230,47 @@ class SystemToolFactory:
         return tools
 
     @staticmethod
+    def get_prompt_sections(agent_name: str | None = None) -> list[str]:
+        """
+        Collect the prompt sections capabilities contribute directly, outside any tool.
+
+        A capability whose instructions describe the capability itself rather than one of its
+        tools belongs here: the text is written into the agent's system prompt instead of being
+        carried on a `SystemTool.description`, which the frameworks never read.
+
+        :param agent_name: When given, sections are scoped to that agent.
+        :return: The non-empty sections, in the order they are appended to the prompt.
+        """
+        sections: list[str] = []
+
+        # Lazily imported behind the same enabled-check the tools branch uses, so a process
+        # with no `okf` block never pays for the knowledgebase tier.
+        okf_config = getattr(AKConfig.get(), "okf", None)
+        if okf_config is not None:
+            from ..knowledgebase.okf.prompts import OKFPromptComposer
+
+            sections.append(OKFPromptComposer.for_agent(agent_name))
+
+        return [section for section in sections if section]
+
+    @staticmethod
     def get_system_prompt_suffix(agent_name: str | None = None) -> str:
         """
-        Generate the system prompt suffix based on enabled tools.
+        Generate the system prompt suffix from the enabled capabilities.
 
-        This method retrieves all enabled system tools and constructs a suffix string
-        containing their descriptions, which can be appended to the system prompt for agents.
+        Two sources are concatenated: the descriptions of the enabled system tools, and the
+        sections capabilities contribute directly via :meth:`get_prompt_sections`.
 
         :param agent_name: When given, capabilities restricted via their `agents` config
                            list contribute to the suffix only for the named agent.
-        :return: A string containing the concatenated descriptions of all enabled tools,
-                 or an empty string if no tools are enabled.
+        :return: A string containing the concatenated sections, or an empty string when no
+                 capability contributes anything.
         """
 
         tools: List[SystemTool] = SystemToolFactory.get_all(agent_name)
 
-        if tools is None or len(tools) == 0:
-            return ""
         # A capability may carry its whole prompt section on one tool and leave the
         # others' descriptions empty (the sandbox pattern) — skip the empties.
-        return "\n".join(tool.description for tool in tools if tool.description)
+        sections = [tool.description for tool in tools or [] if tool.description]
+        sections.extend(SystemToolFactory.get_prompt_sections(agent_name))
+        return "\n".join(sections)

@@ -7,12 +7,12 @@ requires-python = ">=3.12"
 dependencies = [
     # nats and valkey are only needed for the two-process run; the default single-process
     # run uses the built-in in_memory transport and store.
-    "agentkernel[openai,agui,api,multimodal,nats,valkey]>=0.9.2",
+    "agentkernel[openai,agui,api,multimodal,nats,valkey]>=0.9.3",
 ]
 
 [dependency-groups]
 dev = [
-    "agentkernel[test]>=0.9.2",
+    "agentkernel[test]>=0.9.3",
     "black==26.5.1",
     "isort>=5.0.0",
     "mypy>=1.0.0",

@@ -1,7 +1,7 @@
 # OpenAI Agents over WebSocket, stream mode, no queue — agent runs inline
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/aws"
-  version = "0.9.2"
+  version = "0.9.3"
 
   providers = { aws = aws, docker = docker }
 

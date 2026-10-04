@@ -406,6 +406,52 @@ class _ScheduleConfig(BaseModel):
     )
 
 
+class _OKFDatabaseConfig(BaseModel):
+    """One Open Knowledge Format bundle and the agents that may reach it.
+
+    Permission is per (agent, database): an agent may produce into one bundle and only consume
+    another, and both hold at once.
+
+    The three role lists default to None rather than an empty list, so an omitted role reads as
+    "not declared" rather than "declared empty". At least one of them must name an agent; that
+    rule is enforced in OKFRoleRegistry.from_config rather than here, because a field validator
+    cannot see which database key it belongs to and so could not name it in the error."""
+
+    type: str = Field(description="Document store for this bundle: 'local', 's3', or a dotted path to a DocumentStore subclass")
+    uri: str = Field(
+        description="Bundle location passed to the resolved store: a filesystem path, an s3://bucket/prefix URI, or the store's own location string"
+    )
+    description: Optional[str] = Field(
+        default=None,
+        description="Human-readable description of this bundle, surfaced to the agent in its instructions and through get_schemas",
+    )
+    refresh_seconds: Optional[float] = Field(
+        default=300.0,
+        description="How stale the bundle manifest may get before the next operation re-walks the store; null disables automatic refresh",
+    )
+    consumer: Optional[list[str]] = Field(default=None, description="Agent names granted read access to this bundle")
+    producer: Optional[list[str]] = Field(
+        default=None,
+        description="Agent names granted read and write access, instructed to add new knowledge to this bundle",
+    )
+    curator: Optional[list[str]] = Field(
+        default=None,
+        description="Agent names granted read and write access, instructed to review and maintain existing knowledge in this bundle",
+    )
+
+
+class _OKFConfig(BaseModel):
+    """Configuration for the Open Knowledge Format capability.
+
+    The presence of the block is the enablement signal; naming an agent in a role is the
+    deliberate opt-in, and the block does nothing without at least one."""
+
+    databases: dict[str, _OKFDatabaseConfig] = Field(
+        default_factory=dict,
+        description="OKF bundles keyed by backend name; the key is what agents pass as the 'backend' argument to the knowledge-base tools",
+    )
+
+
 class _TraceConfig(BaseModel):
     enabled: bool = Field(default=False, description="Enable tracing")
     type: str = Field(
@@ -853,6 +899,31 @@ class _SandboxConfig(BaseModel):
         return self
 
 
+class _SecretProviderConfig(BaseModel):
+    type: str = Field(
+        default="env",
+        description="Secret backend: a built-in short name (env, aws_ssm) or a dotted path to a SecretProvider subclass. "
+        "'env' reads the environment variable named by the key. 'aws_ssm' is AWS SSM Parameter Store and requires "
+        "secret.prefix. A set, non-empty environment variable named by the key always wins over the provider.",
+    )
+
+
+class _SecretConfig(BaseModel):
+    """Configuration for secret resolution (deployment scope, backend, cache)."""
+
+    prefix: str = Field(
+        default="",
+        description="Deployment scope a provider uses to namespace its secrets, e.g. 'myproduct-dev-agents'. The aws_ssm "
+        "provider reads OPENAI_API_KEY from the SSM parameter /ak/{prefix}/openai_api_key. Required by aws_ssm; ignored by env",
+    )
+    provider: _SecretProviderConfig = Field(default_factory=_SecretProviderConfig, description="Backend the secret values are read from")
+    cache_ttl: int = Field(
+        default=300,
+        ge=0,
+        description="Seconds a resolved secret is served from the process cache before it is re-resolved; 0 disables caching",
+    )
+
+
 class _AGUIStateConfig(BaseModel):
     """Opt-in for the AG-UI shared-state tools (`get_agui_state` / `update_agui_state`)."""
 
@@ -914,9 +985,15 @@ class AKConfig(YamlBaseSettingsModified):
         description="Scheduling capability configurations (trigger provider, task store, tool scoping). Absent = the capability is disabled.",
     )
 
+    okf: Optional[_OKFConfig] = Field(
+        default=None,
+        description="Open Knowledge Format capability configurations (bundles and the agents that consume, produce, or curate them). Absent = the capability is disabled.",
+    )
+
     trace: _TraceConfig = Field(description="Tracing related configurations", default_factory=_TraceConfig)
     guardrail: _GuardrailConfig = Field(description="Guardrail related configurations", default_factory=_GuardrailConfig)
     sandbox: _SandboxConfig = Field(description="Sandbox capability configurations", default_factory=_SandboxConfig)
+    secret: _SecretConfig = Field(description="Secret resolution configurations", default_factory=_SecretConfig)
     execution: _ExecutionConfig = Field(description="Execution mode and queue related configurations", default_factory=_ExecutionConfig)
     logging: _LoggingConfig = Field(description="Logging related configurations", default_factory=_LoggingConfig)
     library_version: str = Field(default=_get_ak_version(), description="Library version")

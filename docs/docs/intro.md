@@ -8,6 +8,8 @@ slug: /
 **The Operating System for Scalable & Compliant Enterprise AI Agents.**
 
 :::tip What's New
+🎛️ **Per-agent native run options** - Pass each framework's own run arguments (OpenAI `RunHooks`, `RunConfig` and `max_turns`, LangGraph `config`, ADK `plugins`, Pydantic AI `usage_limits`, CrewAI `step_callback`, smolagents `max_steps`) through `Module.run_options`, statically or computed per run by a factory, with the keys Agent Kernel owns kept safe. [Learn more →](./core-concepts/runner.md#native-run-options)
+
 ☸️ **On-Prem Kubernetes** - Official Helm chart that runs the queue pipeline on any cluster (bare metal, EKS, or a laptop k3d), with NATS, Kafka, or SQS as the broker, KEDA autoscaling, a sandbox worker tier, and air-gapped installs. [Learn more →](/docs/deployment/onprem-kubernetes)
 
 ⏰ **Scheduling** - Defer chat execution to a later moment or a recurring cadence (`at`/`cron`), with a management REST API and agent-facing scheduling tools. [Learn more →](./advanced/scheduling.md)
@@ -104,9 +106,10 @@ Easily extend Agent Kernel with custom framework adapters, memory back-ends, and
   - ChromaDB for semantic/vector search
   - Neo4j for entity and relationship graph queries
   - Starburst Galaxy for SQL analytics over MongoDB, Google Sheets, PostgreSQL, and more
-  - `KnowledgeBuilder` composes multiple backends with framework-agnostic tools
+  - Open Knowledge Format bundles - a directory of markdown documents, served from disk or S3, with no database to run
+  - `KnowledgeBuilder` composes multiple backends with framework-agnostic tools, gated on what each backend declares it supports
   - `semantic_map` keeps agent prompts portable across deployments
-  - You can also build your own backend by implementing a `KnowledgeBase` adapter and registering it with `KnowledgeBuilder`
+  - You can also build your own backend by declaring its capabilities and implementing a `KnowledgeBase` adapter, then registering it with `KnowledgeBuilder`
   [Learn more about knowledge bases →](/docs/advanced/knowledge-bases)
 - **Session Management**: Built-in conversational state tracking across multiple backends
 - **Memory Management**: Pluggable memory with smart caching
@@ -137,6 +140,7 @@ Easily extend Agent Kernel with custom framework adapters, memory back-ends, and
 - **Multimodal Attachments**: Image and file support with pluggable attachment storage and on-demand vision analysis
 - **Sandbox**: Execute agent-generated code and shell commands in an isolated, permission-bounded environment, with pluggable providers (`local_subprocess`, `docker`, `e2b`, `daytona`, `ec2_ssm`), workload profiles, policy enforcement, and per-user identity. [Learn more →](/docs/advanced/sandbox)
 - **Conversation Threads**: Persistent, named threads with auto-naming and REST read APIs
+- **Secret Resolution**: Resolve API keys and passwords through `SecretManager` — environment first, then a managed store (`env` or AWS SSM Parameter Store, or your own provider) — with only `config.yaml` changing between laptop and production. [Learn more →](./advanced/secrets.md)
 - **Structured Output**: Typed/JSON agent replies (`AgentReplyAny`) across OpenAI, LangGraph, ADK, CrewAI, Smolagents, and Pydantic AI
 - **Agent Testing Capability**: Built in Agent test framework so that you can write automated tests easily
 - **Governance**: Input/output guardrails with OpenAI Guardrails, AWS Bedrock Guardrails, and Walled AI (including PII redaction)

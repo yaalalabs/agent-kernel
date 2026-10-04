@@ -68,7 +68,7 @@ locals {
 
 module "vpc" {
   source               = "yaalalabs/ak-common/aws//modules/vpc"
-  version              = "0.9.2"
+  version              = "0.9.3"
   count                = var.vpc_id == null ? 1 : 0
   vpc_cidr             = var.vpc_cidr
   public_subnet_cidrs  = var.public_subnet_cidrs
@@ -79,7 +79,7 @@ module "vpc" {
 
 module "redis" {
   source     = "yaalalabs/ak-common/aws//modules/redis"
-  version    = "0.9.2"
+  version    = "0.9.3"
   count      = var.create_redis_cluster == true ? 1 : 0
   prefix     = var.prefix
   vpc_cidr   = local.vpc_cidr
@@ -89,7 +89,7 @@ module "redis" {
 
 module "valkey" {
   source     = "yaalalabs/ak-common/aws//modules/valkey"
-  version    = "0.9.2"
+  version    = "0.9.3"
   count      = var.create_valkey_cluster == true ? 1 : 0
   prefix     = var.prefix
   vpc_cidr   = local.vpc_cidr
@@ -100,7 +100,7 @@ module "valkey" {
 module "docker_image" {
   count       = 1
   source      = "yaalalabs/ak-common/aws//modules/ecr"
-  version     = "0.9.2"
+  version     = "0.9.3"
   prefix      = var.prefix
   source_path = var.rest_service.package_path
 }
@@ -109,14 +109,14 @@ module "docker_image" {
 module "agent_runner_docker_image" {
   count       = var.queue_mode && var.agent_runner.package_path != null ? 1 : 0
   source      = "yaalalabs/ak-common/aws//modules/ecr"
-  version     = "0.9.2"
+  version     = "0.9.3"
   prefix      = "${var.prefix}-runner"
   source_path = var.agent_runner.package_path
 }
 
 module "dynamodb_memory" {
   source  = "yaalalabs/ak-common/aws//modules/dynamodb"
-  version = "0.9.2"
+  version = "0.9.3"
   count   = var.create_dynamodb_memory_table == true ? 1 : 0
   attributes = [
     { name = "session_id", type = "S" },
@@ -132,7 +132,7 @@ module "dynamodb_memory" {
 
 module "dynamodb_thread" {
   source  = "yaalalabs/ak-common/aws//modules/dynamodb"
-  version = "0.9.2"
+  version = "0.9.3"
   count   = var.create_dynamodb_thread_table == true ? 1 : 0
   attributes = [
     { name = "session_id", type = "S" },
