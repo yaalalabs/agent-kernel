@@ -285,9 +285,7 @@ class RequestHandler(RestHandler):
                 status_code=400,
                 detail={"error": "ASYNC mode delivers responses over the WebSocket route: connect to /ws instead", "session_id": body.session_id},
             )
-        if mode == ExecutionMode.STREAM and not self.get_response_store().supports_chunk_streaming():
-            # Broker topologies pair STREAM with a shared store that cannot stream chunks;
-            # there the chunks are pushed over WebSocket and this route has nothing to serve.
+        if mode == ExecutionMode.STREAM and not self._store_can_serve_sse():
             raise HTTPException(
                 status_code=400,
                 detail={
@@ -295,6 +293,20 @@ class RequestHandler(RestHandler):
                     "session_id": body.session_id,
                 },
             )
+
+    def _store_can_serve_sse(self) -> bool:
+        """Whether the configured response store can carry this route's chunks back to the caller.
+
+        Two predicates, because chunk streaming and cross-process visibility are different facts
+        and SSE on a broker needs both: ``InMemoryResponseStore`` streams chunks but holds them in
+        class-level state, so the edge and the Response Handler would hold separate copies.
+
+        :return: True when the store can stream chunks and the runner's writes are readable here.
+        """
+        store = self.get_response_store()
+        if not store.supports_chunk_streaming():
+            return False
+        return store.shared or QueueTransportFactory.resolve_type() == "in_memory"
 
     async def _run_chat_stream(self, body: BaseRunRequest) -> StreamingResponse:
         """Enqueue and serve the chunks over SSE; _reject_unroutable has vouched for the store."""
