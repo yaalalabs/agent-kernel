@@ -200,11 +200,12 @@ same order. Nothing in `frontend/` knows where the agent ran.
 |---|---|---|
 | Transport | `in_memory` (the default) | NATS |
 | Reply path | in-memory response store | Valkey |
-| To run | `python app.py` | two terminals, plus containers |
+| To run | `python app.py` | two terminals + Docker |
 | Shows | the wiring | the topology the design is for |
 
 Mode A is the default because it costs nothing: `IOHandler` runs the API, the response handler and
-the agent runner as threads in one process, so there is nothing to install and no container.
+the agent runner as threads in one process, so there is nothing to install and **no Docker**. Mode B
+needs a broker and a Redis-compatible store; the example ships a compose file for them.
 
 ## Install and run
 
@@ -217,26 +218,31 @@ Then run the Python app and the Vite frontend side by side. Vite proxies `/agui`
     python app.py
     cd frontend && npm install && npm run dev     # http://localhost:5173
 
-### Mode B: the agent in its own process
+### Mode B: the agent in its own process (needs Docker)
 
-Start the broker and the store, then run the two halves against `config.broker.yaml`:
+Two containers, from this directory's `docker-compose.yaml`: **NATS** carries the work to the agent,
+**Valkey** carries the reply chunks back and holds the conversation. Nothing Docker-specific about
+either — point `config.broker.yaml` at a NATS and a Valkey you already run and skip the compose step.
 
+Three terminals, all from `examples/api/agui`:
+
+    # terminal 0 — the broker and the store
     docker compose up -d --wait
 
-    AK_CONFIG_PATH_OVERRIDE=config.broker.yaml python app.py          # keeps the browser's connection
-    AK_CONFIG_PATH_OVERRIDE=config.broker.yaml python app_runner.py   # runs the agent
+    # terminal 1 — the API: keeps the browser's connection, enqueues, drains the reply
+    AK_CONFIG_PATH_OVERRIDE=config.broker.yaml uv run python app.py
 
-Four things worth watching, each one something mode A cannot show you:
+    # terminal 2 — the agent runner: no HTTP, no routes, just the agent
+    AK_CONFIG_PATH_OVERRIDE=config.broker.yaml uv run python app_runner.py
 
-1. **The run leaves the web tier.** Ask the agent something and watch `[AGUI AGENT START]` appear in
-   the *runner's* terminal while the browser's connection is held by the other one.
-2. **The conversation survives the hop.** Add a task, then ask how many are left. The runner reads
-   the history from Valkey, not from the process that took the request.
-3. **A failed run is retried.** Kill the runner mid-answer and start it again. The queue redelivers
-   the message and the answer arrives; under the direct handler that run would simply be lost.
-4. **A bad topology is refused at boot.** Set `execution.response_store.type: dynamodb` and restart
-   — `app.py` exits with a message naming the store, instead of accepting a request whose answer
-   could never come back. DynamoDB has no blocking read, so it cannot carry a chunk stream.
+    # terminal 3 — the UI, unchanged from mode A
+    cd frontend && npm run dev            # http://localhost:5173
+
+Wait for terminal 1 to log `IOHandler starting: … topology=multi-process` and terminal 2 to log
+`Stream AGUI_REQUESTS provisioned` before sending anything.
+
+Then use the UI exactly as in mode A — same URL, same events. What to watch for is in
+[Checking mode B by hand](#checking-mode-b-by-hand).
 
 Stop the containers with `docker compose down -v`.
 
@@ -361,6 +367,30 @@ Requires `OPENAI_API_KEY`. The suite speaks AG-UI to the app over real HTTP, so 
 outbound chain: a real adapter, the AG-UI mapping, the SDK encoder and a live model. The two multimodal
 cases assert structurally — the image part is accepted, the run brackets and finishes — rather than on
 what a vision model says about a given picture, so they check the wiring without flaking on wording.
+
+It runs against mode A, which is enough: the suite drives the same queue-mode handler, so the
+marker, the inbound envelope and the store round trip are all exercised — just in one process.
+
+### Checking mode B by hand
+
+The suite cannot cover the two-process topology, so these four are worth a manual pass. Each is
+something mode A structurally cannot show you:
+
+1. **The run leaves the API process.** Ask the agent anything and watch `[AGUI AGENT START]` appear
+   in **terminal 2** while terminal 1 holds the browser's connection. The `request_id` on both lines
+   is the same run.
+2. **The conversation survives the hop.** Add a task, then ask how many are left. Terminal 2 reads
+   the history from Valkey, not from the process that took the request.
+3. **A failed run is retried.** Kill terminal 2 mid-answer and restart it. The queue redelivers and
+   the answer still arrives — watch `receive_count` climb. Under the direct handler that run is
+   simply lost with the connection.
+4. **A bad topology is refused at boot.** Set `execution.response_store.type: dynamodb` in
+   `config.broker.yaml` and restart terminal 1: it exits naming the store, rather than accepting a
+   request whose answer could never come back. DynamoDB has no blocking read, so it cannot carry a
+   chunk stream.
+
+Set `logging.ak.level: INFO` (already set in both configs) or you will see none of the `[AGUI …]`
+lines — the level is nested per logger tree, and a bare `logging.level` is silently ignored.
 
 ## Notes and limits
 

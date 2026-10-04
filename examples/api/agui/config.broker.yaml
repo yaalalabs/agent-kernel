@@ -52,3 +52,9 @@ execution:
 
 api:
   custom_router_prefix: ""
+
+logging:
+  # Nested per logger tree, same as config.yaml. Worth leaving on here: the two [AGUI …] lines in
+  # the runner's terminal are how you see the run leave the API process.
+  ak:
+    level: INFO
