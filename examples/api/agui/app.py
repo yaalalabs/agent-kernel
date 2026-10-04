@@ -2,11 +2,12 @@ import os
 from pathlib import Path
 from typing import Optional
 
-from agentkernel.agui import AGUIRequestHandler, AGUIState
+from agentkernel.agui import AGUIPipelineRequestHandler, AGUIState
 from agentkernel.api import RESTAPI
 from agentkernel.auth import Authoriser
 from agentkernel.core import Session
 from agentkernel.openai import OpenAIModule, OpenAIToolBuilder
+from agentkernel.pipeline import IOHandler
 from agents import Agent, ModelSettings
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
@@ -108,8 +109,14 @@ RESTAPI.add(ui_router)
 
 
 def runner() -> None:
-    """Mount AG-UI and start the API. Referenced by the Dockerfile."""
-    RESTAPI.run(handlers=[AGUIRequestHandler(authoriser=DemoAuthoriser())])
+    """Mount AG-UI on the queue pipeline and serve. Referenced by the Dockerfile.
+
+    IOHandler rather than RESTAPI.run: the agent runs on the queue, not inside the SSE request.
+    On the default in_memory transport that is still one process — the API, the response handler
+    and the agent runner are threads — so this stays a single command with nothing to install.
+    Point config at a broker and the agent runner moves out; see README "Two ways to run it".
+    """
+    IOHandler.run(handlers=[AGUIPipelineRequestHandler(authoriser=DemoAuthoriser())])
 
 
 if __name__ == "__main__":

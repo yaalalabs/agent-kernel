@@ -41,8 +41,9 @@ class AGUIPipelineRequestHandler(AGUIRequestHandler):
 
     Same routes, same protocol, same events: what changes is where the agent runs. The edge keeps
     the caller's SSE socket, enqueues the run, and drains the reply back out of the response store
-    that the Response Handler writes into. The direct ``AGUIRequestHandler`` is unchanged and stays
-    the documented default; mounting this class instead is what selects the queue path.
+    that the Response Handler writes into. The direct ``AGUIRequestHandler`` is unchanged and
+    remains supported for deployments that want no queue; mounting this class is what selects the
+    queue path, and it is what ``examples/api/agui`` ships with.
 
     Mount through ``IOHandler.run(handlers=[AGUIPipelineRequestHandler(...)])``. ``requires_pipeline``
     refuses a bare ``RESTAPI.run`` app, where the enqueued run would reach no runner and the caller

@@ -2,8 +2,8 @@
 
 AG-UI runs the agent inside its own SSE request, so a slow model holds a web connection and the run
 can be neither retried nor scaled apart from the web tier. This change adds a **queue-mode sibling**
-handler that enqueues the run and drains the reply back through the response store, leaving the
-existing direct handler as the documented default. The one new piece of machinery is chunk streaming
+handler that enqueues the run and drains the reply back through the response store. The existing
+direct handler is unchanged and stays supported for deployments that want no queue. The one new piece of machinery is chunk streaming
 on the shared response stores — an optional capability the `ResponseStore` base class already
 declares and no shared store implements.
 
@@ -369,8 +369,10 @@ the socket. `request_id` is a string, so it fits a queue attribute where a socke
 
 ## Non-goals
 
-- **Migrating `AGUIRequestHandler`.** It stays the direct-execution handler and the documented
-  default; this change adds a sibling. Considered and rejected for this CR:
+- **Migrating `AGUIRequestHandler`.** It stays the direct-execution handler, supported for
+  deployments that want no queue; this change adds a sibling. The shipped example mounts the
+  queue-mode one, so queue mode is what a reader copies — but the direct handler is not deprecated
+  and removing it was considered and rejected for this CR:
   - **It would remove AG-UI from the ECS containerized deployment.** `AGUIRequestHandler` inherits
     `requires_pipeline = False` (`api/handler.py:17`), so it mounts today through
     `ECSIOHandler.run(handlers=[...])`. `AGUIPipelineRequestHandler` declares it `True`, and

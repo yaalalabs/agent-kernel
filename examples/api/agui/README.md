@@ -187,6 +187,25 @@ still be answered from the description in the history, but the analysis tool wil
 if the 📎 button does nothing at all, the frontend was not rebuilt — run `./build.sh` (or
 `cd frontend && npm run build`).
 
+## Two ways to run it
+
+The agent runs on the **queue pipeline** either way — `app.py` mounts `AGUIPipelineRequestHandler`,
+not the direct `AGUIRequestHandler`, so a slow model never holds the web connection and a failed run
+can be redelivered. What changes between the two modes is how many processes that takes.
+
+**The frontend is identical in both.** That is the point worth noticing: same routes, same events,
+same order. Nothing in `frontend/` knows where the agent ran.
+
+| | Mode A — one process | Mode B — two processes |
+|---|---|---|
+| Transport | `in_memory` (the default) | NATS |
+| Reply path | in-memory response store | Valkey |
+| To run | `python app.py` | two terminals, plus containers |
+| Shows | the wiring | the topology the design is for |
+
+Mode A is the default because it costs nothing: `IOHandler` runs the API, the response handler and
+the agent runner as threads in one process, so there is nothing to install and no container.
+
 ## Install and run
 
 Install Python dependencies:
@@ -197,6 +216,44 @@ Then run the Python app and the Vite frontend side by side. Vite proxies `/agui`
 
     python app.py
     cd frontend && npm install && npm run dev     # http://localhost:5173
+
+### Mode B: the agent in its own process
+
+Start the broker and the store, then run the two halves against `config.broker.yaml`:
+
+    docker compose up -d --wait
+
+    AK_CONFIG_PATH_OVERRIDE=config.broker.yaml python app.py          # keeps the browser's connection
+    AK_CONFIG_PATH_OVERRIDE=config.broker.yaml python app_runner.py   # runs the agent
+
+Four things worth watching, each one something mode A cannot show you:
+
+1. **The run leaves the web tier.** Ask the agent something and watch `[AGUI AGENT START]` appear in
+   the *runner's* terminal while the browser's connection is held by the other one.
+2. **The conversation survives the hop.** Add a task, then ask how many are left. The runner reads
+   the history from Valkey, not from the process that took the request.
+3. **A failed run is retried.** Kill the runner mid-answer and start it again. The queue redelivers
+   the message and the answer arrives; under the direct handler that run would simply be lost.
+4. **A bad topology is refused at boot.** Set `execution.response_store.type: dynamodb` and restart
+   — `app.py` exits with a message naming the store, instead of accepting a request whose answer
+   could never come back. DynamoDB has no blocking read, so it cannot carry a chunk stream.
+
+Stop the containers with `docker compose down -v`.
+
+### Using the direct handler instead
+
+`AGUIRequestHandler` runs the agent inside the SSE request. It needs no queue and no store, which
+makes it the smaller thing to reason about for a demo or low traffic:
+
+```python
+from agentkernel.agui import AGUIRequestHandler
+from agentkernel.api import RESTAPI
+
+RESTAPI.run(handlers=[AGUIRequestHandler(authoriser=DemoAuthoriser())])
+```
+
+The routes and the events are the same; what you give up is retries and scaling the agent apart
+from the web tier.
 
 `./build.sh` also builds the frontend when it is run locally, so `GET /` on :8000 serves the UI. It
 skips that step in CI (`$CI` is set there): the `/agui` routes and `app_test.py` do not need the built

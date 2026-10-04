@@ -154,3 +154,28 @@ Two decisions taken up front, so no iteration stalls on them:
     guidance needs the `shared` distinction; state explicitly if it does not.
 - **Verify:** run the `ak-dev-sync-docs-from-branch` and `ak-dev-sync-skills-from-branch` flows
   before merge, and confirm each surface above was either changed or deliberately left.
+
+## Iteration 10: Move the AG-UI example onto the queue
+
+- **Goal:** the shipped example demonstrates queue mode, and the frontend does not change to prove
+  it. Added after iteration 9: the capability is only real once the example a reader copies uses it.
+- **Files:** `examples/api/agui/app.py`, `app_runner.py` (new), `config.broker.yaml` (new),
+  `docker-compose.yaml` (new), `README.md`, `pyproject.toml`
+- **Steps:**
+  1. **First, the risk check.** Switch `app.py` to `IOHandler.run(handlers=[AGUIPipelineRequestHandler(...)])`
+     and run the existing `app_test.py` unchanged. `IOHandler` owns its own `uvicorn.Server` and
+     installs signal handlers, so the subprocess start/teardown the test relies on is the thing most
+     likely to break. Everything else is downstream of this working.
+  2. Confirm the demo UI router still serves: `IOHandler` goes through `RESTAPI.build_app`, which
+     includes `_custom_routers` (`api/http.py:163-166`), so `RESTAPI.add(ui_router)` should survive.
+  3. Add mode B — `app_runner.py` (`AgentRunner.run()`), `config.broker.yaml` (nats + valkey) and a
+     compose file, so a reader can see the two-process topology the design is actually for.
+  4. README: "Two ways to run it", and the four things to watch in mode B — the runner's log while
+     the socket is held elsewhere, the task list surviving the hop, a killed runner redelivering,
+     and a `dynamodb` response store refused at boot.
+- **Verify:** `uv run pytest` in the example (mode A, no containers), then mode B by hand against
+  the compose stack with the unchanged frontend.
+- **Decision taken in this iteration:** "the documented default" is gone from `design.md`, the
+  handler's docstring and the AG-UI docs page. The direct handler is now described as *supported for
+  deployments that want no queue*, and the example is named as what a reader copies. It is not
+  deprecated; the Non-goals still record why removing it was rejected.

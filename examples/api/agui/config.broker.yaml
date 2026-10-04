@@ -1,0 +1,54 @@
+# Two-process topology for the AG-UI example: the API keeps the browser's connection, a separate
+# process runs the agent. Select it with AK_CONFIG_PATH_OVERRIDE=config.broker.yaml on both.
+#
+# Everything under `agui:` is identical to config.yaml — the surface does not know it is on a
+# queue. What changes is where the agent runs and how the reply gets back.
+
+agui:
+  default_agent: planner
+  state:
+    enabled: true
+  client_context:
+    enabled: true
+
+multimodal:
+  enabled: true
+  # Not session_cache: the runner resolves attachment ids in another process, so the bytes must
+  # live somewhere both can read.
+  storage_type: in_memory
+
+session:
+  # The runner reads the conversation in its own process, so a process-local store would hand it
+  # an empty history on every turn. The handler refuses to start if this is left at in_memory.
+  type: valkey
+  valkey:
+    url: valkey://localhost:6379
+    prefix: "ak:agui:session:"
+
+execution:
+  queues:
+    type: nats
+    nats:
+      url: nats://localhost:4222
+      input_stream: AGUI_REQUESTS
+      input_subject_prefix: agui.req
+      output_stream: AGUI_REPLIES
+      output_subject_prefix: agui.out
+      partitions: 2
+      ack_wait: 300          # must exceed the longest agent turn, or the run is redelivered mid-answer
+      auto_provision: true   # create the streams at startup; production manages them declaratively
+    input:
+      no_of_consumers: 2
+    output:
+      no_of_consumers: 1
+
+  response_store:
+    # The return path. Needs chunk streaming, which valkey and redis have and dynamodb does not:
+    # a reader has to block on a chunk the agent has not produced yet.
+    type: valkey
+    valkey:
+      url: valkey://localhost:6379
+      prefix: "ak:agui:responses:"
+
+api:
+  custom_router_prefix: ""
