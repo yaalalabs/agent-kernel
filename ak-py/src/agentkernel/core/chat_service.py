@@ -140,6 +140,9 @@ class RequestBuilder:
             "scheduled_task_id",
             "scheduled_time",
             "requests",
+            # AG-UI envelope: the client's per-run state/forwardedProps/context,
+            # applied to the session by the runner. Not something the user asked the agent.
+            "agui",
         }
         for key, value in req.model_dump().items():
             if key in known_fields:

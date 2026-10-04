@@ -252,6 +252,22 @@ class _RedisLikeDriver(BaseDriver):
             return None
         return item.decode() if isinstance(item, (bytes, bytearray)) else item
 
+    def blpop(self, key: str, timeout: float) -> Optional[str]:
+        """
+        Removes and returns the first element of the list, blocking until one arrives.
+
+        :param key: The list key.
+        :param timeout: Maximum seconds to block. Clamped above zero, because redis reads a
+            timeout of 0 as "block forever", which would hang the caller past any budget.
+        :return: The popped element, or None if the timeout expired first.
+        """
+        self._log.debug(f"BLPOP {key}")
+        item = self.client.blpop([key], timeout=max(timeout, 0.001))
+        if item is None:
+            return None
+        value = item[1]
+        return value.decode() if isinstance(value, (bytes, bytearray)) else value
+
     def llen(self, key: str) -> int:
         """
         Returns the length of the list stored at the given key.

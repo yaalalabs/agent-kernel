@@ -290,7 +290,7 @@ class AGUIPipelineRequestHandler(AGUIRequestHandler):
         self._producer = RequestProducer()
 
     async def _run(self, agent_name: str, request: Request) -> StreamingResponse:
-        agent, run_input, requests = self._prepare(agent_name, request)   # shared with the direct path
+        agent, run_input, requests = self._resolve_run_inputs(agent_name, request)   # shared with the direct path
         envelope = AGUIRunEnvelope.build(run_input)
         requests = AttachmentStorageManager.offload(requests)
         request_id = uuid4().hex
@@ -306,7 +306,7 @@ class AGUIPipelineRequestHandler(AGUIRequestHandler):
                                  media_type=encoder.get_content_type())
 ```
 
-`_prepare` is the extracted edge half of `AGUIRequestHandler._run` (`handler.py:177-205`): authorise,
+`_resolve_run_inputs` is the extracted edge half of `AGUIRequestHandler._run` (`handler.py:177-205`): authorise,
 resolve the agent, parse the body, map to requests. Both handlers call it, so the 404/400 contract
 cannot drift. What stays behind in the direct handler is everything from `prepare_agent_handler`
 onward (`handler.py:206-220`) — the queue-mode handler creates no session.
@@ -363,7 +363,7 @@ what is wrong, name the transport, name the way out. The third check compares th
 | File                          | Change                                                                                                  | Verified unchanged                                                      |
 | ----------------------------- | ------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
 | `pipeline/request_handler.py` | `_reject_unroutable`'s STREAM branch (`:288-296`) also requires `store.shared` on a broker transport    | every other route; the `rest_sync`/`rest_async` paths                   |
-| `integration/agui/handler.py` | `_run` splits; `_prepare` extracted; `set_agui_session_keys` becomes `AGUIRunEnvelope.build` + `.apply` | routes, `_resolve_agent`, `_warn_if_unreadable`, `_events`, the bracket |
+| `integration/agui/handler.py` | `_run` splits; `_resolve_run_inputs` extracted; `set_agui_session_keys` becomes `AGUIRunEnvelope.build` + `.apply` | routes, `_resolve_agent`, `_warn_if_unreadable`, `_events`, the bracket |
 | `integration/agui/state.py`   | none — it stays the only module that knows the cache per field                                          | all accessors                                                           |
 | `pipeline/io_handler.py`      | **none.** Its REST-only shared-store guard is left alone; recorded as a follow-up                       | all fail-fasts                                                          |
 

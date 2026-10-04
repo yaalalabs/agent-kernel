@@ -47,6 +47,10 @@ Two decisions taken up front, so no iteration stalls on them:
 
 ## Iteration 3: Pipeline dispatch
 
+> **Runs after iteration 4.** `_process_agui` validates an `AGUIRunRequest` and applies an
+> `AGUIRunEnvelope`, both of which iteration 4 creates; iteration 4 has no reverse dependency.
+> Corrected during implementation rather than renumbering, so the iteration names stay stable.
+
 - **Goal:** a marked message streams and its chunks reach the store, whatever `execution.mode` says.
 - **Files:** `pipeline/agent_runner.py`, `pipeline/response_handler.py`
 - **Steps:**
@@ -69,7 +73,7 @@ Two decisions taken up front, so no iteration stalls on them:
   1. Add `AGUIRunEnvelope` with `build` / `apply`, and `AGUIRunRequest` (spec §6).
   2. Split `set_agui_session_keys`: validation and the 400s into `build`, the three `AGUIState`
      writes into `apply`. Point the direct handler at `apply(session, build(run_input))`.
-  3. Extract `_prepare` from `AGUIRequestHandler._run` — everything up to agent resolution, parse and
+  3. Extract `_resolve_run_inputs` from `AGUIRequestHandler._run` — everything up to agent resolution, parse and
      `to_requests`. What follows stays in the direct handler.
   4. Add `"agui"` to `RequestBuilder.known_fields`.
   5. Enforce the 64 KB budget in `build`, raising HTTP 400 naming the field and the budget.
