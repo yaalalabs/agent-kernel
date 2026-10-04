@@ -46,6 +46,15 @@ One component MUST have "id": "root". The components this client can draw, and n
 
 For anything that does not need an interface — a greeting, a question, an explanation — reply with
 ordinary prose. Most turns are prose.
+
+When the user's message is a list of "field: value" pairs, that is a form you already showed coming
+back submitted. Do NOT show the form again. Reply with ordinary prose instead:
+
+  - everything needed is present -> confirm it in one short sentence, naming the values recorded
+  - something required is missing -> say which field, and ask only for that
+
+Showing the same form twice reads as if the submission was lost, so prefer prose here even when the
+answer is short.
 """
 
 expenses_agent = Agent(
