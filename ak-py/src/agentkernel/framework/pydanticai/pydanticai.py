@@ -5,7 +5,7 @@ import copy
 import json
 import logging
 from collections.abc import AsyncGenerator
-from typing import Any, Callable, List
+from typing import Any, Callable, ClassVar, List, Mapping
 from uuid import uuid4
 
 from pydantic_ai import Agent as PydanticAgent
@@ -14,7 +14,7 @@ from pydantic_ai.messages import ModelMessagesTypeAdapter, UserContent
 from pydantic_core import to_jsonable_python
 
 from ...core import Agent as BaseAgent
-from ...core import Module, PostHook, PreHook
+from ...core import Module
 from ...core import Runner as BaseRunner
 from ...core import Runtime, Session, ToolBuilder, ToolContext
 from ...core.builder import A2ACardBuilder
@@ -90,6 +90,25 @@ class PydanticAIRunner(BaseRunner):
         Initializes a PydanticAIRunner instance.
         """
         super().__init__(FRAMEWORK)
+        self._event_stream_handler_warned = False
+        """Whether the stream-mode event_stream_handler drop was already logged for this runner."""
+
+    def _stream_run_options(self, options: Mapping[str, Any]) -> dict[str, Any]:
+        """
+        The run options resolved for one run without `event_stream_handler`, which `run_stream_events` does not
+        accept (it is itself the event stream, and the runner's own StreamEvents carry the same information). Logged
+        once per runner when a handler was present.
+        :param options: The run options resolved for this run.
+        :return: A filtered copy of the options for the stream call; the input mapping is untouched.
+        """
+        filtered = dict(options)
+        if filtered.pop("event_stream_handler", None) is not None and not self._event_stream_handler_warned:
+            _log.warning(
+                "Pydantic AI event_stream_handler is ignored in Agent Kernel stream mode; the runner's own stream events "
+                "carry the same information"
+            )
+            self._event_stream_handler_warned = True
+        return filtered
 
     @staticmethod
     def _session(session: Session) -> PydanticAISession | None:
@@ -162,13 +181,17 @@ class PydanticAIRunner(BaseRunner):
             if not content:
                 return AgentReplyText(response="Sorry. No valid content found in the requests")
 
+            # Resolved once per run: the static options with a declared factory's result merged over them.
+            options = await agent.resolve_run_options(session, requests)
             fw_session = self._session(session)
             history = ModelMessagesTypeAdapter.validate_python(fw_session.messages) if fw_session and fw_session.messages else None
 
             # Deep copy so in-place tool mutations do not alter `incoming`.
             incoming = self._load_framework_context(session)
             produced = copy.deepcopy(incoming)
-            result = await agent.agent.run(content, message_history=history, deps=produced)
+            # Resolved run options (usage_limits, model_settings, ...) first; the keys AK owns are written last.
+            kwargs = self._native_kwargs(options, message_history=history, deps=produced)
+            result = await agent.agent.run(content, **kwargs)
 
             if fw_session is not None:
                 fw_session.messages = to_jsonable_python(result.all_messages())
@@ -210,6 +233,8 @@ class PydanticAIRunner(BaseRunner):
             if not content:
                 return
 
+            # Resolved once per run: the static options with a declared factory's result merged over them.
+            options = await agent.resolve_run_options(session, requests)
             fw_session = self._session(session)
             history = ModelMessagesTypeAdapter.validate_python(fw_session.messages) if fw_session and fw_session.messages else None
 
@@ -220,7 +245,8 @@ class PydanticAIRunner(BaseRunner):
             carried: dict[str, str] = {}  # kind -> id when a stream continues across a part boundary
             run_result: Any = None
 
-            async with agent.agent.run_stream_events(content, message_history=history, deps=produced) as events:
+            kwargs = self._native_kwargs(self._stream_run_options(options), message_history=history, deps=produced)
+            async with agent.agent.run_stream_events(content, **kwargs) as events:
                 async for event in events:
                     kind = getattr(event, "event_kind", None)
                     if kind == "agent_run_result":
@@ -438,6 +464,12 @@ class PydanticAIAgent(BaseAgent):
     PydanticAIAgent class provides an agent wrapping for Pydantic AI-based agents.
     """
 
+    RESERVED_RUN_OPTIONS: ClassVar[Mapping[str, str]] = {
+        "user_prompt": "built from the AgentRequest list by the runner",
+        "message_history": "the PydanticAISession stored on the Agent Kernel session",
+        "deps": "populated from the session's framework_context; seed it with Session.set_framework_context()",
+    }
+
     def __init__(self, name: str, runner: PydanticAIRunner, agent: PydanticAgent):
         """
         Initializes a PydanticAIAgent instance.
@@ -565,26 +597,6 @@ class PydanticAIModule(Module):
         :return: PydanticAIModule instance.
         """
         super().load(agents)
-        return self
-
-    def pre_hook(self, agent: PydanticAgent, hooks: list[PreHook]) -> "PydanticAIModule":
-        """
-        Attaches pre-execution hooks to the agent.
-        :param agent: The agent to attach hooks to.
-        :param hooks: List of pre-execution hooks to attach.
-        :return: PydanticAIModule instance.
-        """
-        super().get_agent(agent.name).pre_hooks.extend(hooks)
-        return self
-
-    def post_hook(self, agent: PydanticAgent, hooks: list[PostHook]) -> "PydanticAIModule":
-        """
-        Attaches post-execution hooks to the agent.
-        :param agent: The agent to attach hooks to.
-        :param hooks: List of post-execution hooks to attach.
-        :return: PydanticAIModule instance.
-        """
-        super().get_agent(agent.name).post_hooks.extend(hooks)
         return self
 
 

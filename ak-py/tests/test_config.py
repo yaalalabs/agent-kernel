@@ -4,7 +4,7 @@ import sys
 import pytest
 from pydantic import ValidationError
 
-from agentkernel.core.config import AKConfig, _ScheduleConfig, _ThreadStoreConfig, _ThreadValkeyConfig
+from agentkernel.core.config import AKConfig, _ScheduleConfig, _SecretConfig, _ThreadStoreConfig, _ThreadValkeyConfig
 
 
 @pytest.fixture(autouse=True)
@@ -307,6 +307,38 @@ def test_schedule_env_var_materializes_the_block(monkeypatch):
     assert schedule is not None
     assert schedule.store.type == "redis"
     assert schedule.provider.type == "local"
+
+
+def test_secret_defaults(monkeypatch):
+    # The block is always present and zero-configuration: the env provider with a 5-minute cache.
+    monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+
+    secret = AKConfig.get().secret
+    assert secret.prefix == ""
+    assert secret.provider.type == "env"
+    assert secret.cache_ttl == 300
+    # Resolution order is fixed, so there is no manager selector.
+    assert "type" not in _SecretConfig.model_fields
+
+
+def test_secret_env_vars(monkeypatch):
+    monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+    monkeypatch.setenv("AK_SECRET__PREFIX", "myproduct-dev-agents")
+    monkeypatch.setenv("AK_SECRET__PROVIDER__TYPE", "aws_ssm")
+    monkeypatch.setenv("AK_SECRET__CACHE_TTL", "0")
+
+    secret = AKConfig.get().secret
+    assert secret.prefix == "myproduct-dev-agents"
+    assert secret.provider.type == "aws_ssm"
+    assert secret.cache_ttl == 0
+
+
+def test_secret_negative_cache_ttl_rejected(monkeypatch):
+    monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+    monkeypatch.setenv("AK_SECRET__CACHE_TTL", "-1")
+
+    with pytest.raises(ValidationError):
+        AKConfig.get()
 
 
 def test_import_does_not_load_config(tmp_path):

@@ -128,6 +128,45 @@ OpenAIModule(
 )
 ```
 
+### Native run options
+
+`run_options(agent, [factory], **options)` declares the framework's own per-run options for one
+agent, in the framework's own types, and is chained like `pre_hook` / `post_hook`:
+
+```python
+from agents import Agent, RunConfig
+
+agent = Agent(name="assistant", instructions="...")
+
+OpenAIModule([agent]).run_options(
+    agent,
+    max_turns=25,
+    hooks=ProgressHooks(),
+    run_config=RunConfig(call_model_input_filter=trim_history),
+).pre_hook(agent, [RAGHook()])
+```
+
+Every keyword is a keyword argument of that framework's native run call (LangGraph's `config`, ADK's
+`plugins` and `run_config`, Pydantic AI's `usage_limits`, CrewAI's `step_callback`, smolagents'
+`max_steps`). Repeated calls merge, the later call winning per key. A key the adapter populates
+itself (`session`, `context`, `input`, ...) raises `ValueError` at declaration. See
+[Runner → Per-agent native run options](./runner.md#native-run-options) for the merge rule and the
+per-framework table.
+
+A callable given positionally before the keywords computes options per run. It is called as
+`factory(agent, session, requests)` on every run, sync or async, and its mapping is merged over the
+static keywords, a factory key winning. One factory per agent, a later call replacing it; a
+non-callable raises `TypeError` at declaration. The factory is accepted only positionally (the agent
+keeps its keyword form, as with `pre_hook` / `post_hook`), so a native option named `factory` is still
+declared as a keyword.
+
+```python
+def options_for(agent, session, requests):
+    return {"max_turns": 10} if session.id.startswith("guest") else {}
+
+OpenAIModule([agent]).run_options(agent, options_for, max_turns=25, hooks=ProgressHooks())
+```
+
 ## Best Practices
 
 ### One Module Per Application

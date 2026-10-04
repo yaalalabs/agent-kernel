@@ -4,6 +4,7 @@ import pytest
 from pydantic import BaseModel
 
 from agentkernel.core import Session
+from agentkernel.core.builder import SessionStoreBuilder
 from agentkernel.core.model import (
     AgentReplyAny,
     AgentReplyText,
@@ -11,10 +12,19 @@ from agentkernel.core.model import (
     AgentRequestImage,
     AgentRequestText,
 )
+from agentkernel.core.runtime import Runtime
 from agentkernel.core.util.error_util import user_facing_error_message
-from agentkernel.framework.smolagents.smolagents import SmolagentsRunner
+from agentkernel.framework.smolagents.smolagents import SmolagentsAgent, SmolagentsModule, SmolagentsRunner
 
 FRAMEWORK_CONTEXT = Session.Keys.FRAMEWORK_CONTEXT.value
+
+
+def _mock_agent():
+    """A mock AK agent carrying the members the runner reads before its native call; `.agent` stays an auto child."""
+    mock_agent = MagicMock()
+    mock_agent.run_options = {}
+    mock_agent.resolve_run_options = AsyncMock(side_effect=lambda session, requests: dict(mock_agent.run_options))
+    return mock_agent
 
 
 class TestSmolagentsRunnerFrameworkContext:
@@ -27,7 +37,7 @@ class TestSmolagentsRunnerFrameworkContext:
         session.set(FRAMEWORK_CONTEXT, {"seeded": 1})
         requests = [AgentRequestText(prompt="hi")]
 
-        mock_agent = MagicMock()
+        mock_agent = _mock_agent()
         # A tool mutated the seeded key and also added a brand-new internal entry.
         mock_agent.agent.state = {"seeded": 5, "internal": "leak"}
 
@@ -51,7 +61,7 @@ class TestSmolagentsRunnerFrameworkContext:
         session = Session("s")
         requests = [AgentRequestText(prompt="hi")]
 
-        mock_agent = MagicMock()
+        mock_agent = _mock_agent()
 
         with (
             patch.object(runner, "_hydrate_memory"),
@@ -72,7 +82,7 @@ class TestSmolagentsRunnerFrameworkContext:
         session.set(FRAMEWORK_CONTEXT, {"seeded": 1})
         requests = [AgentRequestText(prompt="hi")]
 
-        mock_agent = MagicMock()
+        mock_agent = _mock_agent()
         mock_agent.agent.state = {"seeded": 5}
 
         with (
@@ -96,7 +106,7 @@ class TestSmolagentsRunnerErrorHandling:
         session = Session("test-session")
         requests = [AgentRequestText(prompt="hello")]
 
-        mock_agent = MagicMock()
+        mock_agent = _mock_agent()
 
         with (
             patch.object(runner, "_hydrate_memory"),
@@ -117,7 +127,7 @@ class TestSmolagentsRunnerErrorHandling:
         session = Session("test-session")
         requests = [AgentRequestText(prompt="Hello smolagents")]
 
-        mock_agent = MagicMock()
+        mock_agent = _mock_agent()
 
         with (
             patch.object(runner, "_hydrate_memory") as mock_hydrate,
@@ -143,7 +153,7 @@ class TestSmolagentsRunnerErrorHandling:
         session = Session("test-session")
         requests = [AgentRequestText(prompt="Fail me")]
 
-        mock_agent = MagicMock()
+        mock_agent = _mock_agent()
 
         with (
             patch.object(runner, "_hydrate_memory"),
@@ -166,7 +176,7 @@ class TestSmolagentsRunnerErrorHandling:
         session = Session("test-session")
         requests = [AgentRequestText(prompt="what is 2+2?")]
 
-        mock_agent = MagicMock()
+        mock_agent = _mock_agent()
 
         with (
             patch.object(runner, "_hydrate_memory"),
@@ -189,7 +199,7 @@ class TestSmolagentsRunnerErrorHandling:
         session = Session("test-session")
         requests = [AgentRequestImage(image_data="base64data", name="image.png", type="image", mime_type="image/png")]
 
-        reply = await runner.run(MagicMock(), session, requests)
+        reply = await runner.run(_mock_agent(), session, requests)
 
         assert isinstance(reply, AgentReplyText)
         assert "unable to handle content other than text" in reply.response
@@ -201,7 +211,7 @@ class TestSmolagentsRunnerErrorHandling:
         session = Session("test-session")
         requests = [AgentRequestAny(content={"foo": "bar"}, name="custom_data", type="other", mime_type="other"), AgentRequestText(prompt="   ")]
 
-        reply = await runner.run(MagicMock(), session, requests)
+        reply = await runner.run(_mock_agent(), session, requests)
 
         assert isinstance(reply, AgentReplyText)
         assert "No valid text prompt found" in reply.response
@@ -228,7 +238,7 @@ class TestSmolagentsRunnerStructuredOutput:
         ):
             mock_to_thread.return_value = {"verdict": "spam", "confidence": 0.97}
 
-            reply = await runner.run(MagicMock(), session, requests)
+            reply = await runner.run(_mock_agent(), session, requests)
 
             assert isinstance(reply, AgentReplyAny)
             assert reply.content == {"verdict": "spam", "confidence": 0.97}
@@ -247,7 +257,118 @@ class TestSmolagentsRunnerStructuredOutput:
         ):
             mock_to_thread.return_value = FinalAnswer(verdict="ham", confidence=0.5)
 
-            reply = await runner.run(MagicMock(), session, requests)
+            reply = await runner.run(_mock_agent(), session, requests)
 
             assert isinstance(reply, AgentReplyAny)
             assert reply.content == {"verdict": "ham", "confidence": 0.5}
+
+
+class TestSmolagentsRunOptions:
+    """Declared run options merge into agent.run's kwargs; reset and additional_args stay AK-owned (spec #754)."""
+
+    def test_reserved_keys(self):
+        assert set(SmolagentsAgent.RESERVED_RUN_OPTIONS) == {"task", "reset", "additional_args", "stream", "return_full_result"}
+
+    @pytest.mark.asyncio
+    async def test_max_steps_is_forwarded_beside_reset(self):
+        runner = SmolagentsRunner()
+        mock_agent = _mock_agent()
+        mock_agent.run_options = {"max_steps": 4}
+
+        with (
+            patch.object(runner, "_hydrate_memory"),
+            patch.object(runner, "_sync_memory"),
+            patch("agentkernel.framework.smolagents.smolagents.asyncio.to_thread") as mock_to_thread,
+        ):
+            mock_to_thread.return_value = "ok"
+            await runner.run(mock_agent, Session("s"), [AgentRequestText(prompt="hi")])
+
+            mock_to_thread.assert_called_once_with(mock_agent.agent.run, "hi", max_steps=4, reset=False)
+
+    @pytest.mark.asyncio
+    async def test_bypassed_reset_and_additional_args_are_overwritten_by_the_ak_owned_values(self):
+        runner = SmolagentsRunner()
+        session = Session("s")
+        session.set(FRAMEWORK_CONTEXT, {"seeded": 1})
+        mock_agent = _mock_agent()
+        mock_agent.agent.state = {"seeded": 1}
+        mock_agent.run_options = {"max_steps": 4, "reset": True, "additional_args": {"bypass": 1}}
+
+        with (
+            patch.object(runner, "_hydrate_memory"),
+            patch.object(runner, "_sync_memory"),
+            patch("agentkernel.framework.smolagents.smolagents.asyncio.to_thread") as mock_to_thread,
+        ):
+            mock_to_thread.return_value = "ok"
+            await runner.run(mock_agent, session, [AgentRequestText(prompt="hi")])
+
+            mock_to_thread.assert_called_once_with(mock_agent.agent.run, "hi", max_steps=4, reset=False, additional_args={"seeded": 1})
+
+        assert mock_agent.run_options == {"max_steps": 4, "reset": True, "additional_args": {"bypass": 1}}
+
+    @pytest.mark.asyncio
+    async def test_bypassed_additional_args_is_dropped_when_there_is_no_framework_context(self):
+        runner = SmolagentsRunner()
+        mock_agent = _mock_agent()
+        mock_agent.run_options = {"max_steps": 4, "additional_args": {"bypass": 1}}
+
+        with (
+            patch.object(runner, "_hydrate_memory"),
+            patch.object(runner, "_sync_memory"),
+            patch("agentkernel.framework.smolagents.smolagents.asyncio.to_thread") as mock_to_thread,
+        ):
+            mock_to_thread.return_value = "ok"
+            await runner.run(mock_agent, Session("s"), [AgentRequestText(prompt="hi")])
+
+            mock_to_thread.assert_called_once_with(mock_agent.agent.run, "hi", max_steps=4, reset=False)
+
+    @pytest.mark.asyncio
+    async def test_run_uses_the_resolved_options_and_resolves_once_per_run(self):
+        runner = SmolagentsRunner()
+        session = Session("s")
+        requests = [AgentRequestText(prompt="hi")]
+        mock_agent = _mock_agent()
+        mock_agent.run_options = {"max_steps": 4}
+        mock_agent.resolve_run_options = AsyncMock(return_value={"max_steps": 2, "images": None})  # the factory-merged mapping
+
+        with (
+            patch.object(runner, "_hydrate_memory"),
+            patch.object(runner, "_sync_memory"),
+            patch("agentkernel.framework.smolagents.smolagents.asyncio.to_thread") as mock_to_thread,
+        ):
+            mock_to_thread.return_value = "ok"
+            await runner.run(mock_agent, session, requests)
+
+            mock_agent.resolve_run_options.assert_awaited_once_with(session, requests)
+            mock_to_thread.assert_called_once_with(mock_agent.agent.run, "hi", max_steps=2, images=None, reset=False)
+
+    @pytest.mark.asyncio
+    async def test_a_rejected_request_returns_before_resolving(self):
+        runner = SmolagentsRunner()
+        mock_agent = _mock_agent()
+
+        reply = await runner.run(mock_agent, Session("s"), [AgentRequestText(prompt="   ")])
+
+        assert "No valid text prompt" in reply.response
+        mock_agent.resolve_run_options.assert_not_awaited()
+
+    def test_module_resolves_the_agent_by_its_native_name_and_rejects_reserved_keys(self):
+        from smolagents import ToolCallingAgent
+
+        native = ToolCallingAgent(tools=[], model=MagicMock(), name="smol_reserved")
+
+        with Runtime(SessionStoreBuilder.build()):
+            module = SmolagentsModule([native])
+
+            with pytest.raises(ValueError) as exc:
+                module.run_options(native, reset=True)
+            assert "'reset'" in str(exc.value)
+            assert "'smolagents'" in str(exc.value)
+
+            module.run_options(native, max_steps=6)
+            assert module.get_agent("smol_reserved").run_options == {"max_steps": 6}
+
+            hook = object()
+            module.pre_hook(native, [hook]).post_hook(native, [hook])  # resolved by the smolagents name rule
+            assert module.get_agent("smol_reserved").pre_hooks == [hook]
+            assert module.get_agent("smol_reserved").post_hooks == [hook]

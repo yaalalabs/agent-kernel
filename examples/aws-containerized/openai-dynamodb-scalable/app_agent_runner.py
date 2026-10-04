@@ -1,6 +1,11 @@
 from agentkernel.aws import ECSAgentRunner
 from agentkernel.openai import OpenAIModule
-from agents import Agent
+from agentkernel.secret import SecretManager
+from agents import Agent, set_default_openai_key
+
+# OPENAI_API_KEY from the environment when set, else from SSM (/ak/<prefix>/openai_api_key). The value is
+# handed to the SDK in memory; it is never written back to os.environ.
+set_default_openai_key(SecretManager.current().get("OPENAI_API_KEY"))
 
 math_agent = Agent(
     name="math",

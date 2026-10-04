@@ -153,7 +153,6 @@ Branch from and target `develop`, not `main` — CI (`.github/workflows/code-qua
 - **Add examples** — for new features, add or update examples
 - **Conventional title**: `type: description` or `type(scope): description` using one of the commit types above; the PR Title Check workflow blocks anything else
 - **Fill in the PR template** — description, type of change, testing done
-- **Check [CODEOWNERS](../../../CODEOWNERS)** — confirm the required reviewer for the paths touched before assuming no one needs to review a change
 
 ### Review Workflow
 

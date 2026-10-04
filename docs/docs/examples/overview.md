@@ -40,9 +40,10 @@ Command-line interface examples for local development and testing:
 - **`openai/`** - OpenAI Agent SDK integration examples
 - **`openai-dynamic/`** - OpenAI Agent SDK agents registered dynamically at runtime
 - **`openai_structured/`** - OpenAI Agent SDK agent returning structured (Pydantic) output
+- **`openai-secret/`** - Secrets resolved through `SecretManager` with the default `env` provider: a required model key read at startup and an optional tool key that degrades gracefully (see the [Secret Resolution](../advanced/secrets.md) guide)
 - **`pydanticai/`** - Pydantic AI framework integration examples
 - **`smolagents/`** - HuggingFace smolagents `CodeAgent` integration examples
-- **`knowledgebase/openai/`** - OpenAI Agents knowledge base demos split into `chromadb/`, `neo4j/`, `starburst/`, and `multi/`
+- **`knowledgebase/openai/`** - OpenAI Agents knowledge base demos split into `chromadb/`, `neo4j/`, `starburst/`, `okf/` (Open Knowledge Format markdown bundle), and `multi/`
 
 Per-run framework context/state demos — a grocery assistant that carries a cart across turns through the reserved `framework_context` session key, one per framework, using each framework's native context mechanism (see the [Session](../core-concepts/session.md) guide):
 
@@ -50,6 +51,16 @@ Per-run framework context/state demos — a grocery assistant that carries a car
 - **`langgraph_context/`** - LangGraph, via a declared state channel on a custom graph
 - **`adk_context/`** - Google ADK, via `ToolContext.state`
 - **`pydanticai_context/`** - Pydantic AI, via `RunContext.deps`
+
+Per-agent native run options demos, one per framework plus a per-run factory variant: each declares that framework's turn-limit option and progress-hook option through `Module.run_options` and appends a deterministic `Run stats:` line to every reply (see the [Runner](../core-concepts/runner.md#native-run-options) guide):
+
+- **`openai-run-options/`** - OpenAI Agents SDK, `max_turns`, `RunHooks` and a `RunConfig` with `call_model_input_filter`
+- **`openai-dynamic-run-options/`** - OpenAI Agents SDK, a `Module.run_options` factory computing a `RunConfig` and `max_turns` per run beside static keywords
+- **`langgraph-run-options/`** - LangGraph, a `RunnableConfig` with `callbacks` and `recursion_limit`
+- **`adk-run-options/`** - Google ADK, `plugins` and a `RunConfig` with `max_llm_calls`
+- **`pydanticai-run-options/`** - Pydantic AI, `UsageLimits` and an `event_stream_handler`
+- **`crewai-run-options/`** - CrewAI, a `Crew` `step_callback` and `max_rpm`
+- **`smolagents-run-options/`** - smolagents, `max_steps` (progress via the native `step_callbacks` constructor argument)
 
 ### 📁 Sandbox Examples (`/examples/sandbox`)
 
@@ -78,7 +89,7 @@ AWS ECS/Fargate deployment examples:
 
 - **`adk/`** - Google ADK agents deployed on AWS container services
 - **`crewai/`** - CrewAI agents deployed on AWS container services
-- **`openai-dynamodb-scalable/`** - OpenAI agents on AWS ECS with SQS queue mode for scalable, asynchronous request processing and DynamoDB response storage
+- **`openai-dynamodb-scalable/`** - OpenAI agents on AWS ECS with SQS queue mode for scalable, asynchronous request processing and DynamoDB response storage; the OpenAI key is read from SSM Parameter Store (`ssm_enabled`, `secret.provider.type: aws_ssm`)
 - **`openai-websocket/`** - OpenAI agents on AWS ECS over a WebSocket API in direct (non-queue) mode: one service authenticates `$connect`, runs the agent inline, and pushes the reply back over the same connection
 - **`openai-websocket-scalable/`** - OpenAI agents on AWS ECS over a WebSocket API in queue mode: the REST/IO service enqueues chat frames and pushes responses, while a separately-scalable Agent Runner service processes them from SQS
 - **`openai-stream/`** - OpenAI agents on AWS ECS over a WebSocket API in direct (non-queue), STREAM execution mode: the reply is delivered token-by-token as `STREAM_CHUNK` messages instead of one final `CHAT_RESPONSE`
@@ -92,7 +103,7 @@ AWS Lambda serverless deployment examples:
 - **`adk/`** - Google ADK agents running on AWS Lambda
 - **`crewai/`** - CrewAI agents running on AWS Lambda
 - **`langgraph/`** - LangGraph agents running on AWS Lambda
-- **`openai/`** - OpenAI agents running on AWS Lambda
+- **`openai/`** - OpenAI agents running on AWS Lambda, with the OpenAI key read from SSM Parameter Store (`ssm_enabled`, `secret.provider.type: aws_ssm`)
 - **`websocket-openai/`** - OpenAI agents with WebSocket API for real-time bidirectional communication
 - **`streaming-openai/`** - OpenAI agents with WebSocket event streaming (`execution.mode: stream`)
 - **`schedule-openai/`** - Deferred and recurring chats on AWS Lambda: EventBridge Scheduler delivers each occurrence into the Input Queue for the agent-runner Lambda, backed by a DynamoDB schedule store
@@ -227,6 +238,7 @@ The [`use-cases/`](https://github.com/yaalalabs/agent-kernel/tree/develop/use-ca
 ### Available Use Cases
 
 - **`waste-sorting-assistant/`**: A waste sorting advisor agent that recommends disposal categories (recycle, compost, landfill, hazardous waste) based on item material and the user's local recycling rules. Includes OpenAI Agents SDK integration, session memory for region-specific rules, and AWS Lambda deployment with DynamoDB-backed session persistence.
+- **`mathru-phm-companion/`**: A WhatsApp maternal health companion that helps expectant mothers track clinic schedules and report symptoms, and helps their assigned Public Health Midwife triage escalations. Includes multi-agent handoffs via the OpenAI Agents module, WhatsApp integration, phone-number-keyed session memory, input/output guardrails, and a SQLite-backed store for registrations and escalations.
 
 ### How to Use the Use Cases
 

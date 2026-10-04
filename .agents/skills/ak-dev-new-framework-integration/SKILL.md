@@ -119,6 +119,7 @@ class <Name>Runner(Runner):
 - Always reset `ToolContext` in a `finally` block
 - Handle all `AgentRequest` subtypes (`AgentRequestText`, `AgentRequestImage`, `AgentRequestFile`)
 - Return an `AgentReply` (`AgentReplyText` or `AgentReplyImage`)
+- Resolve the run options once per `run()` and once per `stream()` with `options = await agent.resolve_run_options(session, requests)` (#758), after the request-shape early returns and before the framework-context load, then build the native call's keyword arguments with `self._native_kwargs(options, <ak_owned>=...)` (#754), never a fixed keyword set: the resolved per-agent run options (the static declaration with a per-run factory's result merged over it) are copied first and the keys your adapter populates (the session, the framework context, the input) are written last. Pass the same mapping to any helper of yours that reads options; never read `agent.run_options` at a call site. If the framework's options object and yours are one object (LangGraph's `config`) or must be adjusted per mode (ADK's `RunConfig` in stream mode), merge or copy it before passing it as an AK-owned key, and do the same in `stream()`
 
 ### 3b. Implement `stream()` with AK Stream Events
 
@@ -282,6 +283,7 @@ class <Name>Agent(Agent):
 - `get_description()` must return a meaningful description from the native framework agent
 - `get_a2a_card()` must return a valid A2A agent card built via `A2ACardBuilder`
 - Store the native agent in `self._native_agent` for access in the Runner
+- Declare `RESERVED_RUN_OPTIONS: ClassVar[Mapping[str, str]]` (#754): every keyword your runner passes itself, plus any that changes the result shape your reply mapping reads, each mapped to a one-line reason. `Module.run_options` rejects them at declaration with that reason. Override `validate_run_options` only for a nested key (LangGraph's `config.configurable.thread_id`)
 
 ### 5. Implement the ToolBuilder
 
@@ -308,7 +310,6 @@ Subclass `Module` from `agentkernel.core.module`:
 
 ```python
 from agentkernel.core.module import Module
-from agentkernel.core.hooks import PreHook, PostHook
 from agentkernel.trace.trace import Trace
 
 class <Name>Module(Module):
@@ -325,23 +326,16 @@ class <Name>Module(Module):
     def load(self, agents: list) -> "Module":
         return super().load(agents)
 
-    def pre_hook(self, agent, hooks: list[PreHook]) -> "Module":
-        wrapped = self.get_agent(agent.name)
-        if wrapped:
-            wrapped.pre_hooks.extend(hooks)
-        return self
-
-    def post_hook(self, agent, hooks: list[PostHook]) -> "Module":
-        wrapped = self.get_agent(agent.name)
-        if wrapped:
-            wrapped.post_hooks.extend(hooks)
-        return self
+    # pre_hook / post_hook / run_options are inherited from Module: they resolve the wrapped agent
+    # through _native_agent_name(agent), which defaults to agent.name. Override that hook only when
+    # your framework registers agents under something else (CrewAI: role).
 ```
 
 **Key requirements:**
 - Constructor takes native framework agents, creates a Runner, calls `self.load(agents)`
 - `_wrap()` creates the Agent wrapper — the agent `name` must come from the native agent
 - Support trace runners via `Trace.get().<name>()`
+- `pre_hook`, `post_hook` and `run_options` are inherited and concrete (they share `Module._wrapped`, which raises `ValueError` for an agent not loaded in the module); override `_native_agent_name(agent)` only when the native agent is not registered under `agent.name` (CrewAI uses `role`, smolagents a fallback name)
 
 ### 7. Create the `__init__.py`
 
@@ -416,7 +410,8 @@ Create at minimum:
 
 - Add a page under `docs/docs/frameworks/<name>.md` — note the page slug may differ from the adapter directory name (e.g. the `adk` adapter's page is `docs/docs/frameworks/google-adk.md`, referenced as `'frameworks/google-adk'` in `docs/sidebars.js`)
 - Update `docs/sidebars.js` to include the new framework
-- Update the docs-site React pages that enumerate frameworks: the `frameworks` list in `FrameworksStrip` in `docs/src/pages/index.tsx` (logo under `docs/static/img/integrations/`, link to the new page) and the `integrations` list in `docs/src/pages/features.tsx`, plus the "Framework adapters for N SDKs" highlight on the Six Core Abstractions card there. Grep `docs/src/pages/*.tsx` and `docs/docs/intro.md` for the framework roll call and add the new name wherever the others are listed
+- Landing page (`docs/src/components/*/data.tsx`): add a tile to the **Agent frameworks & dev tools** row in `IntegrationsMarquee/data.tsx` (role `Framework`, `href` to the new page, logo or `react-icons/si` glyph); add `pick("<tile name>")` to the **Agent frameworks** card in `ArchitectureOverview/data.tsx`; add the framework to the **Framework Adapters** card's `tags` and `description` under the Build tab in `FeatureExplorer/data.tsx`. Logo sourcing and the build check are in `ak-dev-sync-docs-from-branch`, *Docs-Site Landing and Features Pages*
+- Features page (`docs/src/pages/features.tsx`): the `integrations` list and the "Framework adapters for N SDKs" highlight on the Six Core Abstractions card. Grep `docs/src/pages/*.tsx` and `docs/docs/intro.md` for the framework roll call and add the new name wherever the others are listed
 
 ## Checklist
 
@@ -429,7 +424,10 @@ Create at minimum:
 - [ ] Optional dependency group in `ak-py/pyproject.toml`
 - [ ] Trace runners in `ak-py/src/agentkernel/trace/langfuse/<name>.py` and `ak-py/src/agentkernel/trace/openllmetry/<name>.py` (optional)
 - [ ] Updates to `trace/base.py` and `trace/trace.py` (if adding tracing)
-- [ ] Unit tests in `ak-py/tests/`
+- [ ] `<Name>Agent.RESERVED_RUN_OPTIONS` declared; `run()` and `stream()` each resolve once with `await agent.resolve_run_options(session, requests)` after the early returns and pass the mapping to `_native_kwargs` and your helpers (#754, #758)
+- [ ] `_native_agent_name` overridden if the registered name is not `agent.name`
+- [ ] Unit tests in `ak-py/tests/`, including: declared run options reach the native call, an AK-owned key wins over a bypassed declaration, the declared dict is not mutated across runs, and the reserved keys are rejected through the module; a factory-merged mapping (a mock whose `resolve_run_options` returns it) wins over the static key at the native call, and `resolve_run_options` is awaited exactly once per `run` and per `stream` (#758)
 - [ ] CLI example in `examples/cli/<name>/`
 - [ ] Documentation in `docs/docs/frameworks/<name>.md`
-- [ ] Framework inventories on the docs-site pages (`docs/src/pages/index.tsx` `FrameworksStrip`, `docs/src/pages/features.tsx` `integrations` and SDK count) and in `docs/docs/intro.md`
+- [ ] Landing page inventories: marquee tile (`IntegrationsMarquee/data.tsx`), `pick()` chip on the Agent frameworks card (`ArchitectureOverview/data.tsx`), Framework Adapters card tags (`FeatureExplorer/data.tsx`)
+- [ ] Framework inventories on `docs/src/pages/features.tsx` (`integrations` and SDK count) and in `docs/docs/intro.md`

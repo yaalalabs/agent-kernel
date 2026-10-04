@@ -393,6 +393,30 @@ module = OpenAIModule([triage_agent, math_agent, general_agent, support_agent])
 module.pre_hook(support_agent, [RAGPreHook()])
 ```
 
+**Framework-native run options (optional):** to pass the framework's own run arguments for one agent
+(OpenAI `max_turns`, `hooks=RunHooks()` and `run_config=RunConfig(...)`; LangGraph `config`; ADK
+`plugins` and `run_config`; Pydantic AI `usage_limits`; CrewAI `step_callback`; smolagents
+`max_steps`), declare them with `run_options` on the same module, in the framework's own types:
+
+```python
+from agents import RunConfig
+
+module.run_options(support_agent, max_turns=25, hooks=ProgressHooks(), run_config=RunConfig(...))
+```
+
+Keys the adapter populates itself (`session`, `context`, `input`, ...) raise `ValueError` at
+declaration. See the `ak-add-capabilities` skill for the per-framework destinations.
+
+To compute options per run, give `run_options` a callable before the keywords; it is called with
+`(agent, session, requests)` on every run and its mapping is merged over the static keywords:
+
+```python
+def options_for(agent, session, requests):
+    return {"max_turns": 10} if session.id.startswith("guest") else {}
+
+module.run_options(support_agent, options_for, max_turns=25, hooks=ProgressHooks())
+```
+
 ---
 
 ### Step 7: Update Dependencies (If Needed)
@@ -401,7 +425,7 @@ If the new tool or agent requires additional packages, update `pyproject.toml`:
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,redis]>=0.9.2",
+    "agentkernel[openai,api,redis]>=0.9.3",
     "httpx>=0.27.0",        # Add any new deps for your tool
 ]
 ```

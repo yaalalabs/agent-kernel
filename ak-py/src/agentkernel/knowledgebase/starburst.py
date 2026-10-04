@@ -1,11 +1,13 @@
 import logging
 import os
-from typing import Any, Iterable, List, Mapping, Optional
+import re
+from typing import Any, List, Mapping
 
 import trino
 import trino.exceptions
 
 from .base import KnowledgeBase
+from .model import KnowledgeCapabilities
 
 logger = logging.getLogger("ak.StarburstManager")
 
@@ -13,6 +15,15 @@ STARBURST_HOST = os.getenv("STARBURST_HOST", "")
 STARBURST_USER = os.getenv("STARBURST_USER", "")
 STARBURST_PASSWORD = os.getenv("STARBURST_PASSWORD", "")
 STARBURST_PORT = int(os.getenv("STARBURST_PORT", "443"))
+
+# A row limit on the outer query, which Trino only accepts at the end of the statement. Anchored
+# there because a LIMIT anywhere also matched one in a subquery, which bounds the subquery and
+# not the result. The keyword needs its own token and its count, or `credit_limits` matches too.
+# FETCH FIRST is the other spelling: appending a LIMIT after one is invalid SQL.
+OUTER_ROW_LIMIT = re.compile(
+    r"\b(?:LIMIT\s+(?:\d+|ALL)|FETCH\s+(?:FIRST|NEXT)\s+(?:\d+\s+)?ROWS?\s+ONLY)\s*$",
+    re.IGNORECASE,
+)
 
 
 class StarburstManager(KnowledgeBase):
@@ -57,14 +68,17 @@ class StarburstManager(KnowledgeBase):
         :param description: Optional human-readable backend description.
         :return: None.
         """
-        super().__init__()
+        super().__init__(
+            capabilities=KnowledgeCapabilities(kinds=["structured"], query=True, query_language="sql", writable=False),
+            name=name,
+        )
 
         self.host = host or STARBURST_HOST
         self.port = port or STARBURST_PORT
         self.user = user or STARBURST_USER
         self.password = password or STARBURST_PASSWORD
         self.catalog = catalog
-        self.schema = schema
+        self.db_schema = schema
         self.table_name = table_name
         self.name = name
         self.description = description or (f"Starburst Galaxy read-only backend. " f"Query target: {catalog}.{schema}.{table_name}")
@@ -108,12 +122,12 @@ class StarburstManager(KnowledgeBase):
             port=self.port,
             user=self.user,
             catalog=self.catalog or None,
-            schema=self.schema or None,
+            schema=self.db_schema or None,
             http_scheme="https",
             auth=trino.auth.BasicAuthentication(self.user, self.password),
             request_timeout=60,
         )
-        logger.info(f"[KB][{self.name}] Connected → {self.host} " f"| {self.catalog}.{self.schema}.{self.table_name}")
+        logger.info(f"[KB][{self.name}] Connected → {self.host} " f"| {self.catalog}.{self.db_schema}.{self.table_name}")
 
     def close(self) -> None:
         """
@@ -129,17 +143,6 @@ class StarburstManager(KnowledgeBase):
             finally:
                 self.connection = None
 
-    def write(self, records: Optional[Iterable[Mapping[str, Any]]] = None, **kwargs) -> None:
-        """
-        Reject write attempts because this backend is read-only.
-
-        :param records: Unused write payload.
-        :param kwargs: Reserved for interface compatibility.
-        :return: None.
-        :raises NotImplementedError: Always raised for this backend.
-        """
-        raise NotImplementedError(f"[KB][{self.name}] StarburstManager is read-only.")
-
     def get_description(self) -> str:
         """
         Return a human-readable backend summary.
@@ -148,7 +151,7 @@ class StarburstManager(KnowledgeBase):
         """
         return f"{self.backend_name}: {self.description}"
 
-    def read(self, query: str = "", limit: int = 5, **kwargs) -> List[Mapping[str, Any]]:
+    def query(self, statement: str = "", limit: int = 3, **kwargs) -> List[Mapping[str, Any]]:
         """
         Execute a validated read-only SQL query against Starburst Galaxy.
 
@@ -156,29 +159,30 @@ class StarburstManager(KnowledgeBase):
         ``DESCRIBE``. If no ``LIMIT`` clause is present, a safe fallback limit is
         appended before execution.
 
-        :param query: Agent-generated SQL statement.
+        :param statement: Agent-generated SQL statement.
         :param limit: Fallback row limit applied when SQL has no LIMIT clause.
         :param kwargs: Reserved for interface compatibility.
         :return: Normalized list of records with ``text`` and ``metadata`` keys.
         """
-        if not query or not query.strip():
+        if not statement or not statement.strip():
             logger.warning(f"[KB][{self.name}] Empty query received.")
             return []
 
-        sql = query.strip().rstrip(";")
+        sql = statement.strip().rstrip(";")
         if not sql:
             logger.warning(f"[KB][{self.name}] Empty query after normalization.")
             return []
 
-        statement = sql.upper().split()[0]
+        verb = sql.upper().split()[0]
 
         # Only allow read-safe statements
-        if statement not in ("SELECT", "SHOW", "DESCRIBE"):
+        if verb not in ("SELECT", "SHOW", "DESCRIBE"):
             logger.error(f"[KB][{self.name}] Rejected non-read SQL: {sql[:80]}")
             return []
 
-        # Append a safe LIMIT if the agent omitted one for SELECT statements.
-        if statement == "SELECT" and "LIMIT" not in sql.upper():
+        # Append a safe LIMIT when a SELECT does not already end with one. Only a clause closing
+        # the statement counts: one in a subquery bounds that subquery, not the result.
+        if verb == "SELECT" and not OUTER_ROW_LIMIT.search(sql):
             sql = f"{sql} LIMIT {limit}"
 
         return self._execute(sql, retried=False)
@@ -201,7 +205,7 @@ class StarburstManager(KnowledgeBase):
 
             columns = [desc[0] for desc in cursor.description]
             rows = cursor.fetchall()
-            source = f"{self.catalog}.{self.schema}.{self.table_name}"
+            source = f"{self.catalog}.{self.db_schema}.{self.table_name}"
 
             results = [
                 {

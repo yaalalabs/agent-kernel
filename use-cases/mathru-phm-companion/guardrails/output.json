@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "pre_flight": {
+    "version": 1,
+    "guardrails": []
+  },
+  "input": {
+    "version": 1,
+    "guardrails": []
+  },
+  "output": {
+    "version": 1,
+    "guardrails": [
+      {
+        "name": "NSFW Text",
+        "config": {
+          "confidence_threshold": 0.7,
+          "model": "gpt-5.4-mini"
+        }
+      }
+    ]
+  }
+}

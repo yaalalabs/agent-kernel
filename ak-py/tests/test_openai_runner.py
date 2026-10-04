@@ -4,9 +4,13 @@ from unittest import mock
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from agents import Agent as SDKAgent
+from agents import RunHooks
 from pydantic import BaseModel
 
 from agentkernel.core import Session
+from agentkernel.core.base import Agent as AKAgent
+from agentkernel.core.builder import SessionStoreBuilder
 from agentkernel.core.event import (
     MessageEnd,
     MessageStart,
@@ -25,9 +29,20 @@ from agentkernel.core.model import (
     AgentRequestImage,
     AgentRequestText,
 )
-from agentkernel.framework.openai.openai import OpenAIRunner
+from agentkernel.core.runtime import Runtime
+from agentkernel.core.util.error_util import user_facing_error_message
+from agentkernel.framework.openai.openai import OpenAIAgent, OpenAIModule, OpenAIRunner, OpenAISession
 
 FRAMEWORK_CONTEXT = Session.Keys.FRAMEWORK_CONTEXT.value
+
+
+def _mock_agent():
+    """A mock AK agent over a mock native agent, carrying the members the runner reads before its native call."""
+    mock_agent = MagicMock()
+    mock_agent.agent = MagicMock()
+    mock_agent.run_options = {}
+    mock_agent.resolve_run_options = AsyncMock(side_effect=lambda session, requests: dict(mock_agent.run_options))
+    return mock_agent
 
 
 class CalendarEvent(BaseModel):
@@ -67,8 +82,7 @@ class TestOpenAIRunnerFrameworkContext:
             result = MagicMock()
             result.final_output = "done"
             MockRunner.run = AsyncMock(return_value=result)
-            mock_agent = MagicMock()
-            mock_agent.agent = MagicMock()
+            mock_agent = _mock_agent()
 
             await runner.run(mock_agent, session, requests)
 
@@ -92,8 +106,7 @@ class TestOpenAIRunnerFrameworkContext:
 
         with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
             MockRunner.run = fake_run
-            mock_agent = MagicMock()
-            mock_agent.agent = MagicMock()
+            mock_agent = _mock_agent()
 
             await runner.run(mock_agent, session, requests)
 
@@ -108,8 +121,7 @@ class TestOpenAIRunnerFrameworkContext:
 
         with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
             MockRunner.run = AsyncMock(side_effect=Exception("boom"))
-            mock_agent = MagicMock()
-            mock_agent.agent = MagicMock()
+            mock_agent = _mock_agent()
 
             reply = await runner.run(mock_agent, session, requests)
 
@@ -126,8 +138,7 @@ class TestOpenAIRunnerFrameworkContext:
             result = MagicMock()
             result.final_output = "done"
             MockRunner.run = AsyncMock(return_value=result)
-            mock_agent = MagicMock()
-            mock_agent.agent = MagicMock()
+            mock_agent = _mock_agent()
 
             await runner.run(mock_agent, session, requests)
 
@@ -157,8 +168,7 @@ class TestOpenAIRunnerFrameworkContext:
 
         with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
             MockRunner.run_streamed = MagicMock(side_effect=fake_run_streamed)
-            mock_agent = MagicMock()
-            mock_agent.agent = MagicMock()
+            mock_agent = _mock_agent()
 
             _ = [delta async for delta in runner.stream(mock_agent, session, requests)]
 
@@ -185,8 +195,7 @@ class TestOpenAIRunnerFrameworkContext:
 
         with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
             MockRunner.run_streamed = MagicMock(side_effect=fake_run_streamed)
-            mock_agent = MagicMock()
-            mock_agent.agent = MagicMock()
+            mock_agent = _mock_agent()
 
             agen = runner.stream(mock_agent, session, requests)
             first = await agen.__anext__()
@@ -216,8 +225,7 @@ class TestOpenAIRunnerFrameworkContext:
 
         with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
             MockRunner.run_streamed = MagicMock(side_effect=fake_run_streamed)
-            mock_agent = MagicMock()
-            mock_agent.agent = MagicMock()
+            mock_agent = _mock_agent()
 
             with caplog.at_level(logging.ERROR, logger="ak.core.runner"):
                 events = [event async for event in runner.stream(mock_agent, session, requests)]
@@ -323,8 +331,7 @@ async def _collect(runner, events):
 
     with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
         MockRunner.run_streamed = MagicMock(side_effect=fake_run_streamed)
-        mock_agent = MagicMock()
-        mock_agent.agent = MagicMock()
+        mock_agent = _mock_agent()
         return [event async for event in runner.stream(mock_agent, session, requests)]
 
 
@@ -453,8 +460,7 @@ class TestOpenAIRunnerErrorHandling:
         runner = OpenAIRunner()
         session = Session("test-session")
         requests = [AgentRequestImage(name="empty.png", image_data="")]  # raises inside _process_requests
-        mock_agent = MagicMock()
-        mock_agent.agent = MagicMock()
+        mock_agent = _mock_agent()
 
         reply = await runner.run(mock_agent, session, requests)
 
@@ -478,8 +484,7 @@ class TestOpenAIRunnerErrorHandling:
             MockRunner.run = AsyncMock(return_value=mock_run_result)
 
             # Mock the agent
-            mock_agent = MagicMock()
-            mock_agent.agent = MagicMock()
+            mock_agent = _mock_agent()
 
             reply = await runner.run(mock_agent, session, requests)
 
@@ -502,8 +507,7 @@ class TestOpenAIRunnerErrorHandling:
 
             MockRunner.run = AsyncMock(return_value=mock_run_result)
 
-            mock_agent = MagicMock()
-            mock_agent.agent = MagicMock()
+            mock_agent = _mock_agent()
 
             reply = await runner.run(mock_agent, session, requests)
 
@@ -522,8 +526,7 @@ class TestOpenAIRunnerErrorHandling:
             error = Exception("Something went wrong")
             MockRunner.run = AsyncMock(side_effect=error)
 
-            mock_agent = MagicMock()
-            mock_agent.agent = MagicMock()
+            mock_agent = _mock_agent()
 
             reply = await runner.run(mock_agent, session, requests)
 
@@ -547,8 +550,7 @@ class TestOpenAIRunnerErrorHandling:
             error = ServiceUnavailableError()
             MockRunner.run = AsyncMock(side_effect=error)
 
-            mock_agent = MagicMock()
-            mock_agent.agent = MagicMock()
+            mock_agent = _mock_agent()
 
             reply = await runner.run(mock_agent, session, requests)
 
@@ -572,8 +574,7 @@ class TestOpenAIRunnerErrorHandling:
             error = RateLimitError()
             MockRunner.run = AsyncMock(side_effect=error)
 
-            mock_agent = MagicMock()
-            mock_agent.agent = MagicMock()
+            mock_agent = _mock_agent()
 
             reply = await runner.run(mock_agent, session, requests)
 
@@ -594,8 +595,7 @@ class TestOpenAIRunnerErrorHandling:
 
             MockRunner.run = AsyncMock(return_value=mock_run_result)
 
-            mock_agent = MagicMock()
-            mock_agent.agent = MagicMock()
+            mock_agent = _mock_agent()
 
             reply = await runner.run(mock_agent, session, requests)
 
@@ -618,8 +618,7 @@ class TestOpenAIRunnerStructuredOutput:
             mock_run_result.final_output = CalendarEvent(name="Launch", date="2026-07-08")
             MockRunner.run = AsyncMock(return_value=mock_run_result)
 
-            mock_agent = MagicMock()
-            mock_agent.agent = MagicMock()
+            mock_agent = _mock_agent()
 
             reply = await runner.run(mock_agent, session, requests)
 
@@ -638,8 +637,7 @@ class TestOpenAIRunnerStructuredOutput:
             mock_run_result.final_output = {"name": "Launch", "date": "2026-07-08"}
             MockRunner.run = AsyncMock(return_value=mock_run_result)
 
-            mock_agent = MagicMock()
-            mock_agent.agent = MagicMock()
+            mock_agent = _mock_agent()
 
             reply = await runner.run(mock_agent, session, requests)
 
@@ -670,8 +668,7 @@ class TestOpenAIRunnerSessionMemory:
         runner = OpenAIRunner()
         with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
             MockRunner.run = fake_run
-            mock_agent = MagicMock()
-            mock_agent.agent = MagicMock()
+            mock_agent = _mock_agent()
             asyncio.run(runner.run(mock_agent, Session("s"), requests))
         return captured["session"]
 
@@ -697,8 +694,7 @@ class TestOpenAIRunnerSessionMemory:
 
         with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
             MockRunner.run_streamed = fake_run_streamed
-            mock_agent = MagicMock()
-            mock_agent.agent = MagicMock()
+            mock_agent = _mock_agent()
             asyncio.run(drain())
         return captured["session"]
 
@@ -717,3 +713,340 @@ class TestOpenAIRunnerSessionMemory:
     def test_streaming_remembers_the_turn(self):
         requests = [AgentRequestImage(image_data="https://example.com/cat.png", name="cat.png", mime_type="image/png")]
         assert self._captured_stream_session(requests) is not None
+
+
+class TestOpenAISessionGetItems:
+    """get_items(limit) must return the most recent items, in chronological order."""
+
+    @pytest.mark.asyncio
+    async def test_limit_returns_latest_items_in_chronological_order(self):
+        session = OpenAISession()
+        await session.add_items([{"id": 1}, {"id": 2}, {"id": 3}, {"id": 4}])
+
+        items = await session.get_items(limit=2)
+
+        assert items == [{"id": 3}, {"id": 4}]
+
+    @pytest.mark.asyncio
+    async def test_limit_greater_than_item_count_returns_all_items(self):
+        session = OpenAISession()
+        await session.add_items([{"id": 1}, {"id": 2}])
+
+        items = await session.get_items(limit=10)
+
+        assert items == [{"id": 1}, {"id": 2}]
+
+    @pytest.mark.asyncio
+    async def test_zero_limit_returns_no_items(self):
+        session = OpenAISession()
+        await session.add_items([{"id": 1}, {"id": 2}])
+
+        items = await session.get_items(limit=0)
+
+        assert items == []
+
+    @pytest.mark.asyncio
+    async def test_no_limit_returns_all_items_in_chronological_order(self):
+        session = OpenAISession()
+        await session.add_items([{"id": 1}, {"id": 2}, {"id": 3}])
+
+        items = await session.get_items()
+
+        assert items == [{"id": 1}, {"id": 2}, {"id": 3}]
+
+
+def _run_result(output="done"):
+    result = MagicMock()
+    result.final_output = output
+    return result
+
+
+class TestOpenAIRunnerRunOptions:
+    """Declared run options reach the SDK call; AK-owned keys win; the declared dict is never mutated (spec #754)."""
+
+    @pytest.mark.asyncio
+    async def test_options_are_forwarded_to_runner_run_beside_the_ak_owned_keys(self):
+        runner = OpenAIRunner()
+        session = Session("s")
+        hooks, run_config = object(), object()
+
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
+            MockRunner.run = AsyncMock(return_value=_run_result())
+            mock_agent = _mock_agent()
+            mock_agent.run_options = {"max_turns": 25, "hooks": hooks, "run_config": run_config}
+
+            await runner.run(mock_agent, session, [AgentRequestText(prompt="hi")])
+
+            args, kwargs = MockRunner.run.call_args
+            assert args == (mock_agent.agent, "hi")
+            assert kwargs["max_turns"] == 25
+            assert kwargs["hooks"] is hooks
+            assert kwargs["run_config"] is run_config
+            assert isinstance(kwargs["session"], OpenAISession)
+            assert set(kwargs) == {"max_turns", "hooks", "run_config", "session", "context"}
+
+    @pytest.mark.asyncio
+    async def test_options_are_forwarded_to_runner_run_streamed(self):
+        runner = OpenAIRunner()
+        hooks = object()
+        captured: dict = {}
+
+        def fake_run_streamed(agent, input_data, **kwargs):
+            captured.update(kwargs)
+            result = MagicMock()
+
+            async def stream_events():
+                for event in ():
+                    yield event
+
+            result.stream_events = stream_events
+            return result
+
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
+            MockRunner.run_streamed = MagicMock(side_effect=fake_run_streamed)
+            mock_agent = _mock_agent()
+            mock_agent.run_options = {"max_turns": 25, "hooks": hooks}
+
+            _ = [e async for e in runner.stream(mock_agent, Session("s"), [AgentRequestText(prompt="hi")])]
+
+        assert captured["max_turns"] == 25
+        assert captured["hooks"] is hooks
+        assert set(captured) == {"max_turns", "hooks", "session", "context"}
+
+    @pytest.mark.asyncio
+    async def test_the_ak_owned_context_wins_over_a_declared_one(self):
+        runner = OpenAIRunner()
+        session = Session("s")
+        session.set(FRAMEWORK_CONTEXT, {"user_id": "42"})
+
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
+            MockRunner.run = AsyncMock(return_value=_run_result())
+            mock_agent = _mock_agent()
+            mock_agent.run_options = {"context": "caller"}  # only reachable by bypassing Module.run_options
+
+            await runner.run(mock_agent, session, [AgentRequestText(prompt="hi")])
+
+            assert MockRunner.run.call_args.kwargs["context"] == {"user_id": "42"}
+
+    @pytest.mark.asyncio
+    async def test_the_declared_dict_is_the_same_unmutated_object_after_two_runs(self):
+        runner = OpenAIRunner()
+        declared = {"max_turns": 25}
+
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
+            MockRunner.run = AsyncMock(return_value=_run_result())
+            mock_agent = _mock_agent()
+            mock_agent.run_options = declared
+
+            await runner.run(mock_agent, Session("s"), [AgentRequestText(prompt="hi")])
+            await runner.run(mock_agent, Session("t"), [AgentRequestText(prompt="hi")])
+
+        assert mock_agent.run_options is declared
+        assert declared == {"max_turns": 25}
+
+    def test_the_reserved_keys_are_rejected_at_declaration_through_the_module(self):
+        native = SDKAgent(name="reserved-keys-agent", instructions="x")
+
+        with Runtime(SessionStoreBuilder.build()):
+            module = OpenAIModule([native])
+
+            for key in ("starting_agent", "input", "session", "context", "conversation_id", "previous_response_id", "auto_previous_response_id"):
+                with pytest.raises(ValueError) as exc:
+                    module.run_options(native, **{key: object()})
+                assert f"'{key}'" in str(exc.value)
+                assert "'openai'" in str(exc.value)
+
+            module.run_options(native, max_turns=25)  # an unreserved key is accepted
+            assert module.get_agent("reserved-keys-agent").run_options == {"max_turns": 25}
+
+            hook = object()
+            assert module.pre_hook(native, [hook]).post_hook(native, [hook]) is module  # base-class hook methods
+            assert module.get_agent("reserved-keys-agent").pre_hooks == [hook]
+            assert module.get_agent("reserved-keys-agent").post_hooks == [hook]
+
+    @pytest.mark.asyncio
+    async def test_run_uses_the_resolved_options_and_resolves_once_per_run(self):
+        runner = OpenAIRunner()
+        session = Session("s")
+        requests = [AgentRequestText(prompt="hi")]
+
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
+            MockRunner.run = AsyncMock(return_value=_run_result())
+            mock_agent = _mock_agent()
+            mock_agent.run_options = {"max_turns": 25}
+            mock_agent.resolve_run_options = AsyncMock(return_value={"max_turns": 3, "hooks": "per-run"})  # the factory-merged mapping
+
+            await runner.run(mock_agent, session, requests)
+
+            mock_agent.resolve_run_options.assert_awaited_once_with(session, requests)
+            kwargs = MockRunner.run.call_args.kwargs
+            assert kwargs["max_turns"] == 3
+            assert kwargs["hooks"] == "per-run"
+            assert set(kwargs) == {"max_turns", "hooks", "session", "context"}
+
+    @pytest.mark.asyncio
+    async def test_stream_uses_the_resolved_options_and_resolves_once_per_stream(self):
+        runner = OpenAIRunner()
+        session = Session("s")
+        requests = [AgentRequestText(prompt="hi")]
+        captured: dict = {}
+
+        def fake_run_streamed(agent, input_data, **kwargs):
+            captured.update(kwargs)
+            result = MagicMock()
+
+            async def stream_events():
+                for event in ():
+                    yield event
+
+            result.stream_events = stream_events
+            return result
+
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
+            MockRunner.run_streamed = MagicMock(side_effect=fake_run_streamed)
+            mock_agent = _mock_agent()
+            mock_agent.run_options = {"max_turns": 25}
+            mock_agent.resolve_run_options = AsyncMock(return_value={"max_turns": 3})
+
+            _ = [e async for e in runner.stream(mock_agent, session, requests)]
+
+        mock_agent.resolve_run_options.assert_awaited_once_with(session, requests)
+        assert captured["max_turns"] == 3
+        assert set(captured) == {"max_turns", "session", "context"}
+
+    @pytest.mark.asyncio
+    async def test_a_request_without_content_returns_before_resolving_in_both_modes(self):
+        runner = OpenAIRunner()
+        mock_agent = _mock_agent()
+
+        reply = await runner.run(mock_agent, Session("s"), [])
+        _ = [e async for e in runner.stream(mock_agent, Session("s"), [])]
+
+        assert "No valid content" in reply.response
+        mock_agent.resolve_run_options.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_a_failing_resolution_surfaces_as_the_user_facing_error_reply_in_run(self):
+        runner = OpenAIRunner()
+        error = RuntimeError("factory boom")
+
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
+            MockRunner.run = AsyncMock(return_value=_run_result())
+            mock_agent = _mock_agent()
+            mock_agent.resolve_run_options = AsyncMock(side_effect=error)
+
+            reply = await runner.run(mock_agent, Session("s"), [AgentRequestText(prompt="hi")])
+
+            MockRunner.run.assert_not_called()
+
+        assert isinstance(reply, AgentReplyText)
+        assert reply.response == user_facing_error_message(error)
+        assert reply.prompt == "hi"
+
+    @pytest.mark.asyncio
+    async def test_a_failing_resolution_propagates_out_of_stream(self):
+        runner = OpenAIRunner()
+
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
+            mock_agent = _mock_agent()
+            mock_agent.resolve_run_options = AsyncMock(side_effect=RuntimeError("factory boom"))
+
+            with pytest.raises(RuntimeError, match="factory boom"):
+                _ = [e async for e in runner.stream(mock_agent, Session("s"), [AgentRequestText(prompt="hi")])]
+
+            MockRunner.run_streamed.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_a_factory_declared_through_the_module_runs_per_call_on_a_real_agent(self):
+        seen: list[tuple] = []
+
+        def options_for(agent, session, requests):
+            seen.append((agent, session, requests))
+            return {"max_turns": 3}
+
+        with Runtime(SessionStoreBuilder.build()):
+            native = SDKAgent(name="factory-agent", instructions="x")
+            module = OpenAIModule([native]).run_options(native, options_for, max_turns=25, hooks="static")
+            agent = module.get_agent("factory-agent")
+            session = Session("s")
+            requests = [AgentRequestText(prompt="hi")]
+
+            with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
+                MockRunner.run = AsyncMock(return_value=_run_result())
+                await OpenAIRunner().run(agent, session, requests)
+                kwargs = MockRunner.run.call_args.kwargs
+
+        assert kwargs["max_turns"] == 3  # the factory's value, over the static 25
+        assert kwargs["hooks"] == "static"  # the static key the factory did not name
+        assert seen == [(agent, session, requests)]
+        assert agent.run_options == {"max_turns": 25, "hooks": "static"}  # the static dict is untouched
+
+
+class RecordingHooks(RunHooks):
+    """A real SDK RunHooks that records what Session.current() / Agent.current() resolve to inside a callback."""
+
+    def __init__(self):
+        self.seen: list[tuple] = []
+
+    async def on_tool_start(self, context, agent, tool) -> None:
+        self.seen.append((Session.current(), AKAgent.current()))
+
+
+class TestOpenAIHooksSeeTheAKSession:
+    """A native hook declared once at load time can read the AK session and agent in both execution modes."""
+
+    @pytest.fixture(autouse=True)
+    def reset_system_hook_caches(self):
+        Runtime._system_pre_hooks = None
+        Runtime._system_post_hooks = None
+        yield
+        Runtime._system_pre_hooks = None
+        Runtime._system_post_hooks = None
+
+    @staticmethod
+    def _agent_with_hooks(hooks: RunHooks) -> OpenAIAgent:
+        agent = OpenAIAgent("hooked", OpenAIRunner(), SDKAgent(name="hooked", instructions="x"))
+        agent.run_options["hooks"] = hooks
+        return agent
+
+    @pytest.mark.asyncio
+    async def test_session_and_agent_resolve_inside_a_hook_during_run(self):
+        hooks = RecordingHooks()
+        agent = self._agent_with_hooks(hooks)
+        runtime = Runtime(SessionStoreBuilder.build())
+        session = runtime.sessions().new("hook-run")
+
+        async def fake_run(native_agent, input_data, **kwargs):
+            await kwargs["hooks"].on_tool_start(MagicMock(), native_agent, MagicMock())
+            return _run_result()
+
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
+            MockRunner.run = AsyncMock(side_effect=fake_run)
+            await runtime.run(agent, session, [AgentRequestText(prompt="hi")])
+
+        assert hooks.seen == [(session, agent)]
+
+    @pytest.mark.asyncio
+    async def test_session_and_agent_resolve_inside_a_hook_fired_from_a_spawned_task_during_stream(self):
+        hooks = RecordingHooks()
+        agent = self._agent_with_hooks(hooks)
+        runtime = Runtime(SessionStoreBuilder.build())
+        session = runtime.sessions().new("hook-stream")
+
+        def fake_run_streamed(native_agent, input_data, **kwargs):
+            result = MagicMock()
+
+            async def stream_events():
+                # run_streamed drives the SDK loop from tasks it creates; a task inherits a copy of the contextvars.
+                await asyncio.create_task(kwargs["hooks"].on_tool_start(MagicMock(), native_agent, MagicMock()))
+                for event in ():
+                    yield event
+
+            result.stream_events = stream_events
+            return result
+
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
+            MockRunner.run_streamed = MagicMock(side_effect=fake_run_streamed)
+            _ = [chunk async for chunk in runtime.stream(agent, session, [AgentRequestText(prompt="hi")])]
+
+        assert hooks.seen == [(session, agent)]

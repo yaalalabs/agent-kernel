@@ -4,7 +4,7 @@
 module "containerized_agents" {
   # When using from registry:
   source  = "yaalalabs/ak-containerized/aws"
-  version = "0.9.2"
+  version = "0.9.3"
 
   providers            = { aws = aws, docker = docker }
   prefix               = var.prefix
@@ -26,9 +26,6 @@ module "containerized_agents" {
     health_check_endpoint = "/health"
     # Override the Docker CMD to specify the correct entrypoint
     command = ["python", "app_rest_service.py"]
-    environment_variables = {
-      OPENAI_API_KEY = var.openai_api_key
-    }
   }
 
   # ---- Agent Memory (Session Store) ----
@@ -39,6 +36,11 @@ module "containerized_agents" {
   # Enable queue-based execution for scalable, async processing
   queue_mode     = true
   execution_mode = "rest_sync" # "rest_sync" | "rest_async"
+
+  # ---- Secret Resolution ----
+  # Grants ssm:GetParameter on /ak/<prefix>/* and injects AK_SECRET__PREFIX, so the agent runner
+  # resolves OPENAI_API_KEY from /ak/<prefix>/openai_api_key (config.yaml `secret:` block)
+  ssm_enabled = true
 
   # ---- Queue Configuration ----
   # SQS queues for request/response handling
@@ -76,9 +78,6 @@ module "containerized_agents" {
     package_path = "../dist-agent-runner"
     # Override the Docker CMD to specify the correct entrypoint
     command = ["python", "app_agent_runner.py"]
-    environment_variables = {
-      OPENAI_API_KEY = var.openai_api_key
-    }
   }
 
   # ---- Agent Runner Auto Scaling ----

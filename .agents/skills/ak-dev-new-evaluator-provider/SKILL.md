@@ -2,7 +2,7 @@
 name: ak-dev-new-evaluator-provider
 description: >
   Step-by-step guide for adding a new built-in test evaluator provider to Agent Kernel
-  (beyond DeepEval and Opik). Use this skill when you need to give the test framework's pluggable
+  (beyond DeepEval, Opik and JEV). Use this skill when you need to give the test framework's pluggable
   AKEvaluator interface a new first-party scoring/judge backend addressable by a short
   config name (e.g. "trulens"), not a one-off bring-your-own evaluator. Covers implementing
   score-based and LLM-as-judge evaluation, factory registration, configuration, optional
@@ -34,6 +34,7 @@ a **first-party, in-repo** provider that ships with AK and gets its own short `t
 |---|---|---|---|---|
 | DeepEval | `deepeval` | `Scorer.quasi_exact_match_score` (whole-string, normalised) | `GEval` LLM-as-judge metric | `agentkernel[test]` |
 | Opik | `opik` | `LevenshteinRatio` (fuzzy string similarity) | `GEval` LLM-as-judge metric | `agentkernel[opik]` |
+| JEV | `jev` | — (`AKMetricNotSupported`) | TypeSafe Noul (yes/no probability) | `agentkernel[jev]` |
 
 ## Architecture Overview
 
@@ -115,9 +116,9 @@ class <Provider>AKEvaluator(AKEvaluator):
 ```
 
 If a mode genuinely doesn't apply to your backend (e.g. a provider that is LLM-judge-only), raise
-`AKMetricNotSupported` from that method instead of faking a result — `Test.compare`'s `fallback`
-mode relies on this to skip straight to the other mode rather than treating an unsupported metric
-as a failed score.
+`AKMetricNotSupported` from that method instead of faking a result. `Test.compare` does not catch
+it — in `fallback` mode it propagates out of `evaluate_by_score` before `evaluate_by_llm` runs — so
+document that users of your provider must set the matching `mode` (e.g. JEV requires `mode: llm`).
 
 ### 2. Register with the Factory
 
@@ -125,7 +126,7 @@ Add the short name to `_BUILTIN_EVALUATORS` and a branch in `Test._resolve_evalu
 in `ak-py/src/agentkernel/test/test.py`:
 
 ```python
-_BUILTIN_EVALUATORS = ["deepeval", "opik", "<provider>"]          # ADD THIS
+_BUILTIN_EVALUATORS = ["deepeval", "opik", "jev", "<provider>"]          # ADD THIS
 
 class Test:
     ...
@@ -139,6 +140,10 @@ class Test:
             with require_extra("opik", "evaluator: opik"):
                 from .core.evaluator.opik import OpikAKEvaluator
             return OpikAKEvaluator
+        if configured == "jev":
+            with require_extra("jev", "evaluator: jev"):
+                from .core.evaluator.jev import JevAKEvaluator
+            return JevAKEvaluator
         if configured == "<provider>":                                        # ADD THIS
             with require_extra("<provider>", "evaluator: <provider>"):
                 from .core.evaluator.<provider> import <Provider>AKEvaluator
@@ -226,9 +231,14 @@ enumerates the built-ins by name, not just one page:
   walkthrough section.
 - The user-facing `ak-test` skill (`ak-py/src/agentkernel/skills/ak-test/SKILL.md`) and its
   `evals/evals.json`.
-- Docs-site pages that describe testing/evaluators (`docs/src/pages/features.tsx`,
-  `docs/src/pages/index.tsx`) — check whether either needs updating, per
-  `ak-dev-sync-docs-from-branch`.
+- Landing page inventories (`docs/src/components/*/data.tsx`): a tile in the **Observability,
+  safety & testing** row of `IntegrationsMarquee/data.tsx` (role `Evaluator`, `href` to the
+  automated testing page, logo or `react-icons/si` glyph), and the provider in the **Pluggable
+  Evaluators** card's `tags` and `description` under the Observe tab in
+  `FeatureExplorer/data.tsx`. Logo sourcing and the build check are in
+  `ak-dev-sync-docs-from-branch`, *Docs-Site Landing and Features Pages*.
+- The features page (`docs/src/pages/features.tsx`): the `approaches` entry for Pluggable
+  Evaluators under Testing & Evaluation names every built-in.
 
 ## Checklist
 
@@ -242,4 +252,6 @@ enumerates the built-ins by name, not just one page:
       `docs/docs/testing/cli-testing.md`, `docs/docs/testing/automated-testing.md`,
       `docs/docs/testing/overview.md`, `docs/docs/agent-skills.md`,
       `.agents/skills/ak-dev-testing-conventions/SKILL.md`, `ak-py/README.md`, the `ak-test` skill
-      and its `evals/evals.json`, and the docs-site pages if they need it
+      and its `evals/evals.json`
+- [ ] Landing page inventories: marquee tile (`IntegrationsMarquee/data.tsx`), Pluggable Evaluators card
+      tags (`FeatureExplorer/data.tsx`); the Pluggable Evaluators `approaches` entry in `features.tsx`

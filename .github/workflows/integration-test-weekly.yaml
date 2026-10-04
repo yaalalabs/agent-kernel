@@ -122,6 +122,16 @@ jobs:
       - name: Inject dependencies
         run: python3 scripts/deploy/inject_dependencies.py
 
+      - name: Seed SSM secrets - ${{ fromJson(needs.setup.outputs.deployment-base).path }}
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          python .github/scripts/run_single_test.py \
+            --type ${{ fromJson(needs.setup.outputs.deployment-base).type }} \
+            --path ${{ fromJson(needs.setup.outputs.deployment-base).path }} \
+            --deploy-dir ${{ fromJson(needs.setup.outputs.deployment-base).deploy_dir }} \
+            --action seed-secrets
+
       - name: Deploy ${{ fromJson(needs.setup.outputs.deployment-base).path }}
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -272,6 +282,18 @@ jobs:
         run: |
           echo "Waiting ${{ matrix.deploy_stagger }}s before deploy to avoid simultaneous VPC connector provisioning..."
           sleep ${{ matrix.deploy_stagger }}
+
+      # No-op unless the example's config.yaml uses the aws_ssm secret provider
+      - name: Seed SSM secrets - ${{ matrix.path }}
+        if: matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless'
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          python .github/scripts/run_single_test.py \
+            --type ${{ matrix.type }} \
+            --path ${{ matrix.path }} \
+            --deploy-dir ${{ matrix.deploy_dir }} \
+            --action seed-secrets
 
       - name: Deploy - ${{ matrix.path }}
         id: deploy

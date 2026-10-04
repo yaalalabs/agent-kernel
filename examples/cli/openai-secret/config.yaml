@@ -1,0 +1,7 @@
+secret:
+  provider:
+    # The default, spelled out: secrets are read from the process environment. Swap to `aws_ssm`
+    # (plus `prefix`) to read them from SSM Parameter Store without touching demo.py.
+    type: env
+  # Seconds a resolved secret is served from the process cache before it is re-resolved
+  cache_ttl: 300

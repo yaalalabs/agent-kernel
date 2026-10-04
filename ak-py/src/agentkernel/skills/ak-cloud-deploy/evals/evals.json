@@ -1,7 +1,7 @@
 {
   "skill": "ak-cloud-deploy",
   "description": "Evaluations for the ak-cloud-deploy (AWS/Azure/GCP/Kubernetes deployment) skill with sync/async and scalable modes",
-  "version": "0.9.2",
+  "version": "0.9.3",
   "evals": [
     {
       "id": "deploy-aws-serverless",
@@ -140,6 +140,23 @@
         "schedule:",
         "type: eventbridge",
         "type: dynamodb"
+      ],
+      "must_not_contain": [
+        "azurerm"
+      ]
+    },
+    {
+      "id": "deploy-aws-secret-ssm",
+      "name": "Deploy to AWS Lambda with secrets from SSM Parameter Store",
+      "input": "Deploy my agent to AWS Lambda and read OPENAI_API_KEY from SSM Parameter Store instead of a Lambda environment variable",
+      "expected_outputs": [
+        "yaalalabs/ak-serverless/aws",
+        "ssm_enabled = true",
+        "secret:",
+        "type: aws_ssm",
+        "SecretManager",
+        "/ak/",
+        "SecureString"
       ],
       "must_not_contain": [
         "azurerm"

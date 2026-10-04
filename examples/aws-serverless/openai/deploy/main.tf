@@ -6,7 +6,7 @@
 # docs/specs/716-reuse-sg-in-integration-test-pipeline.
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.9.2"
+  version = "0.9.3"
 
   providers = { aws = aws, docker = docker }
   # Basic lambda configuration
@@ -19,6 +19,10 @@ module "serverless_agents" {
   # Execution mode
   queue_mode     = true
   execution_mode = "rest_sync"
+
+  # Secret resolution: grants ssm:GetParameter on /ak/<prefix>/* and injects AK_SECRET__PREFIX, so the
+  # agent runner resolves OPENAI_API_KEY from /ak/<prefix>/openai_api_key (config.yaml `secret:` block)
+  ssm_enabled = true
 
   # Response Store Config - reuses the same Redis cluster created above
   create_redis_response_store = true
@@ -49,9 +53,6 @@ module "serverless_agents" {
     package_path         = "../dist_request_handler"
     package_type         = "Image"
     memory_size          = 256
-    environment_variables = {
-      "OPENAI_API_KEY" = var.openai_api_key
-    }
   }
 
   # Agent runner configuration
@@ -63,9 +64,6 @@ module "serverless_agents" {
     package_path         = "../dist_agent_runner"
     package_type         = "Image"
     memory_size          = 1024
-    environment_variables = {
-      "OPENAI_API_KEY" = var.openai_api_key
-    }
   }
 
   # Response handler configuration

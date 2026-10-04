@@ -205,6 +205,17 @@ class TestRunLoop:
         assert "Available agents:" in capsys.readouterr().out
 
     @pytest.mark.asyncio
+    async def test_command_case_is_ignored_but_argument_case_is_kept(self, stub_service, monkeypatch):
+        # Agent and module names are identifiers, so only the command word may be folded to lower
+        # case -- "!S KB_Consumer_Agent" must reach the service with the name spelled as typed.
+        monkeypatch.setattr(builtins, "input", ScriptedInput(["!S KB_Consumer_Agent", "!LD My_Module", "!q"]))
+
+        await CLI().run()
+
+        assert ("select", "KB_Consumer_Agent", "session-1") in stub_service.calls
+        assert ("load", "My_Module", "session-1") in stub_service.calls
+
+    @pytest.mark.asyncio
     async def test_commands_with_wrong_arity_print_usage(self, stub_service, monkeypatch, capsys):
         monkeypatch.setattr(builtins, "input", ScriptedInput(["!ld", "!s", "!q"]))
 

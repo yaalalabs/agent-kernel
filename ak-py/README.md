@@ -10,8 +10,9 @@ Agent Kernel is a lightweight **AI agent runtime** and adapter layer for buildin
 - **Unified API**: Common abstractions (Agent, Runner, Session, Module, Runtime) across frameworks
 - **Multi-Framework Support**: OpenAI Agents SDK, CrewAI, LangGraph, Google ADK, Smolagents, and Pydantic AI
 - **Session Management**: Built-in session abstraction with pluggable storage backends
-- **Knowledge Bases**: Unified `KnowledgeBase` interface with ChromaDB, Neo4j, and Starburst/Trino backends via `KnowledgeBuilder`
+- **Knowledge Bases**: Unified, capability-declaring `KnowledgeBase` interface with ChromaDB, Neo4j, Starburst/Trino and Open Knowledge Format bundle (local directory or S3) backends via `KnowledgeBuilder`
 - **Sandbox**: Execute agent-generated code and shell commands in an isolated, permission-bounded environment with pluggable providers (`local_subprocess`, `docker`, `kubernetes`, `e2b`, `daytona`, `ec2_ssm`), workload profiles, policy enforcement, per-user identity, and a queue-decoupled broker for long-running executions
+- **Secret Resolution**: `SecretManager` resolves API keys and passwords environment-first, falling back to a pluggable provider (`env`, `aws_ssm` for AWS SSM Parameter Store, or your own) with a TTL'd process cache
 - **Scheduled Tasks**: Deferred and recurring chat execution (`schedule.at`/`schedule.cron`) with a management REST API, five agent-facing tools, and pluggable provider (`local`, `eventbridge`) and store (`in_memory`, `redis`, `valkey`, `dynamodb`) backends
 - **Flexible Deployment**: Interactive CLI, REST API, serverless, or containerized deployment — see the "Multi-Cloud Deployment" section below
 - **Pluggable Architecture**: Easy to extend with custom framework adapters
@@ -35,6 +36,9 @@ pip install "agentkernel[neo4j]"
 pip install "agentkernel[trino]"
 ```
 
+Open Knowledge Format bundles need no extra - `pyyaml` is a core dependency. Serving a bundle from S3
+uses the `aws` extra: `pip install "agentkernel[aws]"`.
+
 For LLM-based thread naming with Conversation Thread Support:
 
 ```bash
@@ -56,6 +60,12 @@ pip install "agentkernel[kubernetes]"       # kubernetes provider (pod per sandb
 pip install "agentkernel[e2b]"              # e2b cloud provider
 pip install "agentkernel[daytona]"          # daytona cloud provider
 pip install "agentkernel[aws]"              # ec2_ssm provider (boto3)
+```
+
+For the `aws_ssm` secret provider (AWS SSM Parameter Store):
+
+```bash
+pip install "agentkernel[aws]"
 ```
 
 For cron parsing with the Scheduling capability (the `eventbridge` provider rides the `aws` extra):
@@ -674,6 +684,41 @@ sort key; the AWS Terraform modules create it when `create_dynamodb_schedule_tab
   - **Description**: DynamoDB item TTL in seconds
   - **Environment Variable**: `AK_SCHEDULE__STORE__DYNAMODB__TTL`
 
+#### Secret Resolution
+
+`SecretManager.current().get("OPENAI_API_KEY")` resolves a secret by the same environment-variable-style
+name the SDKs already read (`^[A-Z][A-Z0-9_]*$`). Resolution order is fixed: a set, non-empty environment
+variable always wins, then the process cache, then the configured provider. A resolved value is returned to
+the caller and never written back to the environment, so hand it to the SDK explicitly
+(`set_default_openai_key(...)`). A miss raises `SecretNotFoundError` unless a `default` is passed; a provider
+failure raises `SecretError` even with a `default`. The capability is always available — there is no
+`enabled` flag; selecting a provider other than `env` is the only opt-in. See `examples/cli/openai-secret`.
+
+- **Provider Type**
+  - **Field**: `secret.provider.type`
+  - **Type**: string
+  - **Default**: `env`
+  - **Options**: `env` (the process environment), `aws_ssm` (AWS SSM Parameter Store; requires
+    `secret.prefix` and the `aws` extra — `OPENAI_API_KEY` is read from `/ak/<prefix>/openai_api_key`), or a
+    dotted path to a `SecretProvider` subclass
+  - **Environment Variable**: `AK_SECRET__PROVIDER__TYPE`
+
+- **Prefix**
+  - **Field**: `secret.prefix`
+  - **Type**: string
+  - **Default**: `""`
+  - **Description**: Deployment scope providers namespace secrets under; a single path segment. Required by
+    `aws_ssm`, ignored by `env`. Injected by the AWS Terraform modules when `ssm_enabled = true`
+  - **Environment Variable**: `AK_SECRET__PREFIX`
+
+- **Cache TTL**
+  - **Field**: `secret.cache_ttl`
+  - **Type**: integer
+  - **Default**: `300`
+  - **Description**: Seconds a provider hit is served from the process cache (`0` disables caching); the
+    rotation-pickup window for values read per call
+  - **Environment Variable**: `AK_SECRET__CACHE_TTL`
+
 #### Execution Configuration
 
 Configure queue-backed and serverless execution behavior.
@@ -1133,7 +1178,7 @@ Configure test comparison modes for automated testing. Test configuration is sep
 - **Evaluator**
   - **Field**: `evaluator`
   - **Default**: `deepeval`
-  - **Description**: Built-in evaluator short name (`deepeval` or `opik`), or a dotted path to your own `AKEvaluator` subclass
+  - **Description**: Built-in evaluator short name (`deepeval`, `opik` or `jev`), or a dotted path to your own `AKEvaluator` subclass
   - **Environment Variable**: `AK_TEST__EVALUATOR`
 
 - **Llm Model**
@@ -1155,8 +1200,8 @@ Configure test comparison modes for automated testing. Test configuration is sep
   - **Environment Variable**: `AK_TEST__LLM__EMBEDDING_MODEL`
 
 **Test Modes:**
-- `score`: Deterministic, offline string-match scoring via the configured evaluator (built-in `deepeval`: `Scorer.quasi_exact_match_score`; built-in `opik`: `LevenshteinRatio`, requires `pip install "agentkernel[opik]"`)
-- `llm`: LLM-as-judge evaluation via the configured evaluator (built-in `deepeval` or `opik`: `GEval`) for semantic similarity
+- `score`: Deterministic, offline string-match scoring via the configured evaluator (built-in `deepeval`: `Scorer.quasi_exact_match_score`; built-in `opik`: `LevenshteinRatio`, requires `pip install "agentkernel[opik]"`; built-in `jev` has no score mode)
+- `llm`: LLM-as-judge evaluation via the configured evaluator (built-in `deepeval` or `opik`: `GEval`; built-in `jev`: a TypeSafe JEV yes/no Noul question) for semantic similarity
 - `fallback`: Tries score first, falls back to llm if score fails
 
 ```yaml
@@ -1518,7 +1563,7 @@ export AK_TRACE__TYPE=langfuse  # or openllmetry, logfire
 # export LOGFIRE_TOKEN=your-write-token
 # Test harness (loaded from the separate test-config.yaml — see Test Configuration)
 export AK_TEST__MODE=fallback  # Options: score, llm, fallback
-export AK_TEST__EVALUATOR=deepeval  # Built-in short name (deepeval or opik), or a dotted path to your own AKEvaluator subclass
+export AK_TEST__EVALUATOR=deepeval  # Built-in short name (deepeval, opik or jev), or a dotted path to your own AKEvaluator subclass
 export AK_TEST__LLM__MODEL=gpt-4o-mini
 export AK_TEST__LLM__PROVIDER=openai
 export AK_TEST__LLM__EMBEDDING_MODEL=text-embedding-3-small
@@ -1788,7 +1833,7 @@ gmail:
 
 Test harness configuration (comparison mode, evaluator backend, llm models) is separate from the application configuration. It is not part of `config.yaml` — it lives in its own `test-config.yaml` file, resolved from the current working directory, and is only loaded when the testing utilities (`agentkernel.test`) are used. A legacy `test:` section in `config.yaml` is ignored. See [Test Configuration](#test-configuration) under Configuration Options for the full list of fields and defaults.
 
-The `evaluator` field accepts two built-in short names — `deepeval` (default, `pip install "agentkernel[test]"`) or `opik` (`pip install "agentkernel[opik]"`, [Opik](https://www.comet.com/docs/opik/) by Comet, runs entirely locally with `OPIK_TRACK_DISABLE` set so no Opik Cloud account or API key is needed) — or a dotted path to your own `AKEvaluator` subclass.
+The `evaluator` field accepts three built-in short names — `deepeval` (default, `pip install "agentkernel[test]"`) or `opik` (`pip install "agentkernel[opik]"`, [Opik](https://www.comet.com/docs/opik/) by Comet, runs entirely locally with `OPIK_TRACK_DISABLE` set so no Opik Cloud account or API key is needed) or `jev` (`pip install "agentkernel[jev]"`, hosted [TypeSafe JEV](https://docs.typesafe.ai) judge; `mode: llm` only, needs `TYPESAFE_API_KEY`, and sends the comparison text to `api.typesafe.ai`) — or a dotted path to your own `AKEvaluator` subclass.
 
 **test-config.yaml:**
 

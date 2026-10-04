@@ -88,7 +88,7 @@ export default function AIEngineerPage() {
     {
       num: "05",
       label: "Knowledge Bases",
-      items: ["ChromaDB", "Neo4j", "Starburst", "SQLDB"],
+      items: ["ChromaDB", "Neo4j", "Starburst", "SQLDB", "OKF"],
     },
     {
       num: "06",
