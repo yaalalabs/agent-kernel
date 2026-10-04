@@ -1,6 +1,7 @@
 import asyncio
 import subprocess
 import sys
+import time
 import uuid
 
 import httpx
@@ -49,15 +50,54 @@ class APITestClient:
         )
 
 
+HOST, PORT = "localhost", 8000
+STARTUP_TIMEOUT = 90
+
+
+async def _wait_until_serving(proc):
+    """Block until the app accepts a connection, or explain why it never will.
+
+    Uvicorn binds the port only after application startup has finished, so a successful connection
+    means the app is ready to answer — there is nothing further to poll for.
+
+    :param proc: The running `app.py` process, watched so a startup crash is reported as itself.
+    :raises RuntimeError: If the process exits first, or nothing is serving within the timeout.
+    """
+    deadline = time.monotonic() + STARTUP_TIMEOUT
+    while time.monotonic() < deadline:
+        if proc.poll() is not None:
+            raise RuntimeError(f"app.py exited with code {proc.returncode} before it began serving")
+        try:
+            _, writer = await asyncio.wait_for(asyncio.open_connection(HOST, PORT), timeout=1)
+        except (OSError, asyncio.TimeoutError):
+            await asyncio.sleep(0.25)
+            continue
+        writer.close()
+        await writer.wait_closed()
+        return
+    raise RuntimeError(f"app.py did not serve {HOST}:{PORT} within {STARTUP_TIMEOUT}s")
+
+
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
 async def http_client():
-    proc = subprocess.Popen(["python3", "app.py"], stdout=sys.stdout, stderr=sys.stderr)
-    await asyncio.sleep(5)
+    """Run the demo app for the whole session, starting the tests only once it is serving.
+
+    Startup is not a fixed cost: this example imports both framework adapters plus AG-UI, and a cold
+    CI runner spends several times longer on those imports than a warm laptop does. A sleep long
+    enough locally is therefore short enough in CI for the first requests to be refused outright,
+    which is why the wait polls rather than guesses.
+    """
+    proc = subprocess.Popen([sys.executable, "app.py"], stdout=sys.stdout, stderr=sys.stderr)
     try:
-        yield APITestClient("http://localhost:8000")
+        await _wait_until_serving(proc)
+        yield APITestClient(f"http://{HOST}:{PORT}")
     finally:
         proc.terminate()
-        proc.wait()
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
 
 
 @pytest.mark.asyncio
