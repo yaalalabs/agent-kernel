@@ -204,6 +204,26 @@ class TestRedisCommandSurface:
         driver._client.lpop.return_value = None
         assert driver.lpop("k") is None
 
+    def test_blpop_returns_the_value_and_decodes_bytes(self):
+        """The client answers (key, value); callers want the value."""
+        driver = _driver()
+        driver._client.blpop.return_value = (b"k", b"a1")
+        assert driver.blpop("k", timeout=5) == "a1"
+        driver._client.blpop.return_value = ("k", "a1")
+        assert driver.blpop("k", timeout=5) == "a1"
+
+    def test_blpop_returns_none_on_timeout(self):
+        driver = _driver()
+        driver._client.blpop.return_value = None
+        assert driver.blpop("k", timeout=0.5) is None
+
+    def test_blpop_never_passes_a_zero_timeout(self):
+        """Redis reads 0 as 'block forever', which would hang a worker past any budget."""
+        driver = _driver()
+        driver._client.blpop.return_value = None
+        driver.blpop("k", timeout=0)
+        assert driver._client.blpop.call_args.kwargs["timeout"] > 0
+
 
 class TestDynamoDBDriver:
     """Item-dict semantics of the shared DynamoDB driver."""
