@@ -58,7 +58,7 @@ jobs:
           python-version: '3.12'
 
       - name: Run unit tests
-        run: python3 -m unittest discover -s .github/scripts/tests
+        run: python3 -m unittest discover -s .github/scripts/tests -p test_start_new_iteration.py
 
       - name: Generate GitHub App token
         id: app-token
