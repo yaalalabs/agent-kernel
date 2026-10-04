@@ -197,6 +197,20 @@
       ]
     },
     {
+      "id": "cap-agui-queue",
+      "name": "Run AG-UI on the queue pipeline",
+      "input": "My AG-UI agent holds a web connection for the whole run. Move the run off the web tier.",
+      "expected_outputs": [
+        "AGUIPipelineRequestHandler",
+        "IOHandler",
+        "response_store",
+        "session"
+      ],
+      "must_not_contain": [
+        "RESTAPI.run"
+      ]
+    },
+    {
       "id": "cap-hooks-pre",
       "name": "Add pre-hook",
       "input": "Add a RAG pre-hook to my agent",

@@ -366,9 +366,20 @@ deletes the stale mapping and keeps delivering to the user's other connections, 
 and is then dropped with an error log: bounded, never a crash loop.
 
 On broker transports the REST chat routes refuse the WebSocket-delivered modes explicitly:
-`async` always answers over `/ws`, and `stream` answers over `/ws` whenever the shared response
-store cannot stream chunks (SSE `stream` remains available on the single-process `in_memory`
-topology, where WebSocket co-hosting is optional).
+`async` always answers over `/ws`, and `stream` answers over `/ws` whenever the configured response
+store cannot serve SSE. That takes two things, not one — the store must be able to stream chunks,
+**and** a second process must be able to read what the runner wrote:
+
+| Store | Streams chunks | Readable from another process | SSE on a broker |
+|---|---|---|---|
+| `in_memory` | yes | no — class-level state | no (works on the `in_memory` transport, one process) |
+| `redis`, `valkey` | yes | yes | **yes** |
+| `dynamodb` | no — no blocking read | yes | no |
+
+`redis` and `valkey` gained chunk streaming in #710; before that, `stream` answered over `/ws` on
+every broker. An explicitly configured `in_memory` store is the case worth knowing: it reports that
+it can stream chunks and is still refused, because the edge and the agent runner would hold separate
+copies and the request would hang until it timed out.
 
 ---
 
