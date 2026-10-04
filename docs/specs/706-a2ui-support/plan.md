@@ -94,7 +94,7 @@ Per iteration: `cd ak-py && uv run pytest tests/<file>` for the named test, then
 
 - **Goal:** `a2ui: {enabled: true}` labels a declared agent's JSON replies. **The first iteration
   whose behaviour a user can observe.**
-- **Files:** `a2ui/__init__.py` (new), `a2ui/hooks.py` (new), `core/config.py`, `core/runtime.py`
+- **Files:** `a2ui/__init__.py` (new), `a2ui/hook.py` (new), `core/config.py`, `core/runtime.py`
 - **Steps:**
   1. `A2UIPostHook`, `NoOpA2UIPostHook`, `A2UIPostHookFactory` — copy `SandboxPreHookFactory`
      (`sandbox/hooks.py:134-149`) for the enabled/disabled/failed resolution.

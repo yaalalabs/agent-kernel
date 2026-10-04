@@ -9,7 +9,7 @@ from typing import Optional
 
 from singleton_type import Singleton
 
-from ..a2ui.hooks import A2UIPostHookFactory
+from ..a2ui.hook import A2UIPostHookFactory
 from ..guardrail.guardrail import InputGuardrailFactory, OutputGuardrailFactory
 from ..sandbox.hooks import SandboxPreHookFactory
 from .base import Agent, Session

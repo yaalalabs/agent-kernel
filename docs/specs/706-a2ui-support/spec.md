@@ -20,7 +20,7 @@ no `type` field and no second implementation to select, by design: an applicatio
 payload format writes its own `PostHook` and attaches it, which is the BYO path and predates this
 change. **Every component this change introduces is a class**, per the house rules: `PayloadCodec`
 (`core/util/payload.py`), `DynamoDecimalCodec` (beside the DynamoDB driver), `DataMessage`
-(`core/event.py`), `A2UIPostHook` / `NoOpA2UIPostHook` / `A2UIPostHookFactory` (`a2ui/hooks.py`) and
+(`core/event.py`), `A2UIPostHook` / `NoOpA2UIPostHook` / `A2UIPostHookFactory` (`a2ui/hook.py`) and
 `_A2UIConfig` (`core/config.py`). **One module-level name survives** — `JSONPayload`, a pydantic
 annotated type, which cannot be anything else and is a type alias rather than a component. Every
 other change edits a method on a class that already exists.
@@ -228,7 +228,7 @@ loops.
 
 **`A2UIPostHookFactory.get()`** copies `SandboxPreHookFactory.get()` (`sandbox/hooks.py:137-149`)
 exactly: the real hook when `a2ui.enabled`, `NoOpA2UIPostHook` otherwise, and `NoOpA2UIPostHook` on
-*any* initialization exception, logged via `logging.getLogger("ak.a2ui.hooks").exception(...)`. The
+*any* initialization exception, logged via `logging.getLogger("ak.a2ui.hook").exception(...)`. The
 hook chain must never break the runtime.
 
 ### `core/chat_service.py` — the response builder
@@ -515,7 +515,7 @@ Numbered, exhaustive. Every one is intentional.
 | `NaN`/`inf` in `content` | `ValueError` from the validator with the offending key path, wrapped by pydantic into `ValidationError`. |
 | A value reaching a serialisation gate through a bypass | Encoded by `PayloadCodec.encode` rather than raising `TypeError` and losing the message to retry exhaustion. |
 | `a2ui` block absent or `enabled: false` | `A2UIPostHookFactory.get()` returns `NoOpA2UIPostHook`. No error, no log noise. |
-| `A2UIPostHookFactory.get()` raises | Logged via `logging.getLogger("ak.a2ui.hooks").exception(...)`; returns `NoOpA2UIPostHook`. The hook chain never breaks the runtime. |
+| `A2UIPostHookFactory.get()` raises | Logged via `logging.getLogger("ak.a2ui.hook").exception(...)`; returns `NoOpA2UIPostHook`. The hook chain never breaks the runtime. |
 | Reply body is not JSON | Returned untouched and unlabelled — the normal prose case, not an error. Not logged: it is most turns. |
 | Reply body parses to a scalar | Returned untouched. Guarded explicitly so `JSONPayload` never sees it. |
 | Reply parses but is not valid A2UI | Labelled and forwarded. Agent Kernel does not validate; the renderer rejects it, which is the correct and visible outcome. |

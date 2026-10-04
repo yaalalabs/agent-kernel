@@ -8,7 +8,7 @@ an `output_type` agent.
 
 import pytest
 
-from agentkernel.a2ui.hooks import A2UIPostHook, A2UIPostHookFactory, NoOpA2UIPostHook
+from agentkernel.a2ui.hook import A2UIPostHook, A2UIPostHookFactory, NoOpA2UIPostHook
 from agentkernel.core.config import AKConfig
 from agentkernel.core.model import AgentReplyAny, AgentReplyImage, AgentReplyText
 
@@ -180,7 +180,7 @@ class TestFactory:
         """`on_run` is never called for a streamed run, so the block would silently do nothing."""
         _configure(monkeypatch, enabled=True, mode="stream")
 
-        with caplog.at_level("WARNING", logger="ak.a2ui.hooks"):
+        with caplog.at_level("WARNING", logger="ak.a2ui.hook"):
             hook = A2UIPostHookFactory.get()
 
         assert isinstance(hook, A2UIPostHook)

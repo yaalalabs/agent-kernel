@@ -5,6 +5,6 @@ nothing else. No catalog, no prompt injection, no validation, no dependency on t
 those have to match a particular frontend, so they stay with the application.
 """
 
-from .hooks import A2UIPostHook, A2UIPostHookFactory, NoOpA2UIPostHook
+from .hook import A2UIPostHook, A2UIPostHookFactory, NoOpA2UIPostHook
 
 __all__ = ["A2UIPostHook", "A2UIPostHookFactory", "NoOpA2UIPostHook"]

@@ -95,7 +95,7 @@ class NoOpA2UIPostHook(PostHook):
 class A2UIPostHookFactory:
     """Factory returning the A2UI post-hook, or a no-op when the capability is disabled."""
 
-    _log = logging.getLogger("ak.a2ui.hooks")
+    _log = logging.getLogger("ak.a2ui.hook")
 
     @classmethod
     def get(cls) -> PostHook:
