@@ -79,7 +79,7 @@ async def _wait_until_serving(proc):
 
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
-async def http_client():
+async def app_server():
     """Run the demo app for the whole session, starting the tests only once it is serving.
 
     Startup is not a fixed cost: this example imports both framework adapters plus AG-UI, and a cold
@@ -90,7 +90,7 @@ async def http_client():
     proc = subprocess.Popen([sys.executable, "app.py"], stdout=sys.stdout, stderr=sys.stderr)
     try:
         await _wait_until_serving(proc)
-        yield APITestClient(f"http://{HOST}:{PORT}")
+        yield f"http://{HOST}:{PORT}"
     finally:
         proc.terminate()
         try:
@@ -98,6 +98,19 @@ async def http_client():
         except subprocess.TimeoutExpired:
             proc.kill()
             proc.wait()
+
+
+@pytest.fixture
+def http_client(app_server):
+    """Give each test a session of its own, against the one shared app process.
+
+    Two of these tests assert that a run pauses and then deliberately leave that pause unanswered —
+    that is the whole assertion. On a shared session the record, and the turn that asked for it,
+    stay in the conversation: the next resume continues the earlier unfinished request instead of
+    the one being approved, and pauses all over again. Whether the model does that varies per run,
+    which is how this passed locally and failed in CI. A session per test removes the question.
+    """
+    return APITestClient(app_server)
 
 
 @pytest.mark.asyncio
