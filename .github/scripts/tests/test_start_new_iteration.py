@@ -1,5 +1,6 @@
 """Unit tests for .github/scripts/start_new_iteration.py. Run: python3 -m unittest discover -s .github/scripts/tests"""
 
+import http.client
 import io
 import sys
 import unittest
@@ -488,6 +489,16 @@ class ProjectsClientTest(unittest.TestCase):
         client = ProjectsClient("token", sleep=lambda _: None)
         with mock.patch("urllib.request.urlopen", side_effect=[TimeoutError("timed out"), response]):
             self.assertEqual(client.graphql("query { ok }", {}), {"ok": True})
+
+    def test_truncated_response_is_retried_and_can_recover(self):
+        truncated, ok = mock.MagicMock(), mock.MagicMock()
+        truncated.__enter__.return_value.read.side_effect = http.client.IncompleteRead(b'{"data": {"o', 10)
+        ok.__enter__.return_value.read.return_value = b'{"data": {"ok": true}}'
+        sleeps = []
+        client = ProjectsClient("token", sleep=sleeps.append)
+        with mock.patch("urllib.request.urlopen", side_effect=[truncated, ok]):
+            self.assertEqual(client.graphql("query { ok }", {}), {"ok": True})
+        self.assertEqual(len(sleeps), 1)
 
 
 if __name__ == "__main__":

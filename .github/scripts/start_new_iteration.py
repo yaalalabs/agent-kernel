@@ -2,6 +2,7 @@
 
 
 import argparse
+import http.client
 import json
 import os
 import re
@@ -354,8 +355,8 @@ class ProjectsClient:
                     self.sleep(self._retry_delay(e.headers, attempt))
                     continue
                 raise RolloverError(f"GitHub API HTTP {e.code}: {detail}") from e
-            except (urllib.error.URLError, OSError, ValueError) as e:
-                # Connection reset, DNS failure, timeout or a truncated/non-JSON response.
+            except (urllib.error.URLError, OSError, http.client.HTTPException, ValueError) as e:
+                # Connection reset, DNS failure, timeout or a truncated (IncompleteRead) or non-JSON response.
                 if attempt < self.MAX_ATTEMPTS:
                     self.sleep(self._retry_delay(None, attempt))
                     continue
