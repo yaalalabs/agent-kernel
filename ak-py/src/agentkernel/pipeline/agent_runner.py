@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import Optional
+from typing import Optional, List
 
 from ..core.chat_service import ChatService
 from ..core.config import AKConfig
@@ -95,7 +95,7 @@ class AgentRunner:
             extra_tasks=self._get_extra_tasks(),
         ).run()
 
-    def _get_extra_tasks(self) -> list[ThreadRunner.Task]:
+    def _get_extra_tasks(self) -> List[ThreadRunner.Task]:
         """Override in subclasses to run additional background tasks alongside the consumer loop."""
         return []
 
@@ -269,7 +269,7 @@ class RealtimeAgentRunner(AgentRunner):
 
     _log = logging.getLogger("ak.pipeline.realtime_agent_runner")
 
-    def _get_extra_tasks(self) -> list[ThreadRunner.Task]:
+    def _get_extra_tasks(self) -> List[ThreadRunner.Task]:
         from .realtime_pool import RealtimeConnectionPool
 
         pool = RealtimeConnectionPool.initialize()

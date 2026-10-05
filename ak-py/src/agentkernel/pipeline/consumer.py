@@ -2,7 +2,7 @@ import asyncio
 import inspect
 import logging
 import time
-from typing import Callable, Optional
+from typing import Callable, Optional, List
 
 from .envelope import QueueMessage, QueueName
 from .thread_runner import ThreadRunner
@@ -42,7 +42,7 @@ class ConsumerLoop:
         wait_seconds: float = 20.0,
         logger: Optional[logging.Logger] = None,
         exit_on_shutdown: bool = True,
-        extra_tasks: Optional[list[ThreadRunner.Task]] = None,
+        extra_tasks: Optional[List[ThreadRunner.Task]] = None,
     ):
         """
         :param process: Handles one message; raising leaves the message for redelivery.
