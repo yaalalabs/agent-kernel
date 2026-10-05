@@ -2,7 +2,7 @@ import asyncio
 import inspect
 import logging
 import time
-from typing import Callable, Optional, List
+from typing import Callable, List, Optional
 
 from .envelope import QueueMessage, QueueName
 from .thread_runner import ThreadRunner

@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import Optional, List
+from typing import List, Optional
 
 from ..core.chat_service import ChatService
 from ..core.config import AKConfig
