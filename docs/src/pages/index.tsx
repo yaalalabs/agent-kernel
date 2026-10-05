@@ -9,25 +9,19 @@ import { ScrollTrigger } from "gsap/dist/ScrollTrigger";
 import { StepTimeline } from "../components/StepTimeline";
 import PlantParticlesBackground from "../components/PlantParticlesBackground";
 import FAQ from "../components/FAQ";
+import IntegrationsMarquee from "../components/IntegrationsMarquee";
+import ArchitectureOverview from "../components/ArchitectureOverview";
+import FeatureExplorer from "../components/FeatureExplorer";
 import {
-  MdRocketLaunch,
-  MdBugReport,
-  MdBuild,
-  MdExtension,
-  MdIntegrationInstructions,
-  MdCloudUpload,
   MdCheck,
-  MdClose,
   MdContentCopy,
   MdNorthEast,
 } from "react-icons/md";
 import {
-  FaGithub,
   FaAws,
   FaMicrosoft,
-  FaDocker,
 } from "react-icons/fa";
-import { SiTerraform, SiGmail, SiGooglecloud, SiKubernetes, SiHelm } from "react-icons/si";
+import { SiTerraform, SiGooglecloud, SiKubernetes, SiHelm } from "react-icons/si";
 import { useHistory } from "@docusaurus/router";
 
 /* ─── What's New Banner ─────────────────────────────────────────────────── */
@@ -104,7 +98,7 @@ function WhatsNewBanner() {
 /* ─── Hero ──────────────────────────────────────────────────────────────── */
 
 function Hero() {
-  const installCommand = "pip install agentkernel";
+  const installCommands = ["pip install agentkernel", "ak skill install"];
   const leftRef = useRef(null);
   const titleRef = useRef(null);
   const subtitleRef = useRef(null);
@@ -119,7 +113,7 @@ function Hero() {
     }
 
     try {
-      await navigator.clipboard.writeText(installCommand);
+      await navigator.clipboard.writeText(installCommands.join("\n"));
       setCopiedInstall(true);
       window.setTimeout(() => setCopiedInstall(false), 1800);
     } catch {
@@ -253,51 +247,57 @@ function Hero() {
             enterprise AI agents seamlessly at scale.
           </p>
 
-          <div ref={buttonsRef} className={styles.heroButtons}>
-            <button
-              type="button"
-              className={`button button--secondary button--sm ${styles.heroBtnPrimary}`}
-              onClick={() =>
-                document
-                  .getElementById("agent-skills")
-                  ?.scrollIntoView({ behavior: "smooth", block: "start" })
-              }
-            >
-              Download Agent Skills
-            </button>
-          </div>
+          <div ref={buttonsRef} className={styles.heroActions}>
+            <div className={styles.heroButtons}>
+              <Link
+                className={`button button--secondary button--sm ${styles.heroBtnPrimary}`}
+                to="/docs/quick-start"
+              >
+                Quick Start
+                <MdNorthEast className={styles.quickStartIcon} aria-hidden="true" />
+              </Link>
+            </div>
 
-          <div className={styles.heroOrDivider} aria-hidden="true">
-            <span>or</span>
+            {/* Agent Skills: deliberately low-key; the id keeps old #agent-skills links landing here. */}
+            <div id="agent-skills" className={styles.heroSkills}>
+              <div className={styles.heroSkillsHead}>
+                <span className={styles.heroSkillsLabel}>Agent Skills</span>
+                <span className={styles.heroSkillsHint}>
+                  Claude Code · Cursor · Codex · Windsurf · Copilot
+                </span>
+              </div>
+              <div className={styles.heroSkillsCmds}>
+                {installCommands.map((command) => (
+                  <code key={command} className={styles.heroSkillsCmd}>
+                    <span className={styles.heroInstallPrompt} aria-hidden="true">$</span>
+                    {command}
+                  </code>
+                ))}
+                <button
+                  type="button"
+                  className={`${styles.heroInstallCopy} ${styles.heroSkillsCopy} ${
+                    copiedInstall ? styles.heroInstallCopied : ""
+                  }`}
+                  onClick={handleCopyInstall}
+                  aria-label="Copy install commands"
+                  title={copiedInstall ? "Copied" : "Copy commands"}
+                >
+                  {copiedInstall ? (
+                    <MdCheck className={styles.heroInstallCopyIcon} aria-hidden="true" />
+                  ) : (
+                    <MdContentCopy className={styles.heroInstallCopyIcon} aria-hidden="true" />
+                  )}
+                </button>
+              </div>
+              <p className={styles.heroSkillsText}>
+                Guides your coding assistant follows to scaffold, extend, test and deploy
+                Agent Kernel agents.{" "}
+                <Link to="/docs/agent-skills" className={styles.heroSkillsLink}>
+                  Learn more <span aria-hidden="true">→</span>
+                </Link>
+              </p>
+            </div>
           </div>
-
-          <div className={styles.heroInstallRow}>
-            <span className={styles.heroInstallPrompt} aria-hidden="true">$</span>
-            <code className={styles.heroInstallCmd}>{installCommand}</code>
-            <button
-              type="button"
-              className={`${styles.heroInstallCopy} ${
-                copiedInstall ? styles.heroInstallCopied : ""
-              }`}
-              onClick={handleCopyInstall}
-              aria-label="Copy pip install command"
-              title={copiedInstall ? "Copied" : "Copy command"}
-            >
-              {copiedInstall ? (
-                <MdCheck className={styles.heroInstallCopyIcon} aria-hidden="true" />
-              ) : (
-                <MdContentCopy className={styles.heroInstallCopyIcon} aria-hidden="true" />
-              )}
-            </button>
-          </div>
-
-          <Link
-            className={`button button--primary button--lg ${styles.heroBtnSecondary} ${styles.heroQuickStartBelow}`}
-            to="/docs/quick-start"
-          >
-            Quick Start
-            <MdNorthEast className={styles.quickStartIcon} aria-hidden="true" />
-          </Link>
         </div>
 
         {/* ── RIGHT – particle video ───────────── */}
@@ -323,116 +323,6 @@ function Hero() {
             </span>
           </div>
         </div>
-      </div>
-    </section>
-  );
-}
-
-/* ─── Frameworks Strip ──────────────────────────────────────────────────── */
-
-function FrameworksStrip() {
-  const frameworksRef = useRef(null);
-  const labelRef = useRef(null);
-  const badgeRef = useRef(null);
-  const rowRef = useRef(null);
-
-  const frameworks = [
-    {
-      name: "Open AI Agents SDK",
-      logo: "/img/integrations/chatgpt.png",
-      link: "/docs/frameworks/openai",
-    },
-    {
-      name: "LangGraph",
-      logo: "/img/integrations/langgraph.png",
-      link: "/docs/frameworks/langgraph",
-    },
-    {
-      name: "CrewAI",
-      logo: "/img/integrations/crewai.png",
-      link: "/docs/frameworks/crewai",
-    },
-    {
-      name: "Google ADK",
-      logo: "/img/integrations/googleADK.png",
-      link: "/docs/frameworks/google-adk",
-    },
-    {
-      name: "Smolagents",
-      logo: "/img/integrations/smolagents.png",
-      link: "https://huggingface.co/docs/smolagents/index",
-    },
-    {
-      name: "Pydantic AI",
-      logo: "/img/integrations/pydantic-ai.png",
-      link: "/docs/frameworks/pydantic-ai",
-    },
-    {
-      name: "LiveKit",
-      logo: "/img/integrations/livekit.png",
-      link: "https://docs.livekit.io/",
-    },
-  ];
-
-  useEffect(() => {
-    gsap.registerPlugin(ScrollTrigger);
-
-    gsap.set([badgeRef.current, labelRef.current], { opacity: 0, y: 16 });
-    gsap.set(rowRef.current?.children || [], { opacity: 0, y: 24 });
-
-    const tl = gsap.timeline({
-      scrollTrigger: {
-        trigger: frameworksRef.current,
-        start: "top 85%",
-        toggleActions: "play none none none",
-        once: true,
-      },
-    });
-
-    tl.to(badgeRef.current, { opacity: 1, y: 0, duration: 0.5, ease: "power2.out" })
-      .to(labelRef.current, { opacity: 1, y: 0, duration: 0.5, ease: "power2.out" }, "-=0.3")
-      .to(
-        rowRef.current?.children || [],
-        { opacity: 1, y: 0, duration: 0.4, ease: "power2.out", stagger: 0.07 },
-        "-=0.2"
-      );
-
-    return () => {
-      tl.kill();
-      if (tl.scrollTrigger) {
-        tl.scrollTrigger.kill();
-      }
-    };
-  }, []);
-
-  return (
-    <section ref={frameworksRef} className={styles.frameworksStrip}>
-      {/* Top border + gradient glow */}
-      <div className={styles.topGlow} />
-
-      <div ref={badgeRef} className={styles.Badge}>
-        <span className={styles.badgeStar}>✦</span>
-        Integrates Seamlessly
-      </div>
-
-      <p ref={labelRef} className={styles.frameworksLabel}>
-        Works with the frameworks you already use.
-      </p>
-
-      <div ref={rowRef} className={styles.frameworksRow}>
-        {frameworks.map((framework) => (
-          <Link
-            key={framework.name}
-            to={framework.link}
-            className={styles.frameworkItem}
-          >
-            <img
-              src={framework.logo}
-              alt={framework.name}
-              className={styles.frameworkLogo}
-            />
-          </Link>
-        ))}
       </div>
     </section>
   );
@@ -523,351 +413,6 @@ function AffiliationsStrip() {
               className={styles.affiliationLogo}
             />
           </a>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-/* ─── Agent Skills ────────────────────────────────────────────────────── */
-
-const AGENT_SKILLS = [
-  {
-    icon: MdRocketLaunch,
-    name: "ak-init",
-    description:
-      "Scaffolds a clean, ready-to-build project structure so you can skip the setup and start building straight away. Works with any framework or deployment target.",
-    pills: ["Any framework", "Any deployment target", "Guided setup"],
-  },
-  {
-    icon: MdBuild,
-    name: "ak-build",
-    description:
-      "Adds tools, agents, and task handoffs to your project. Your coding assistant understands your framework, so the code it generates actually works.",
-    pills: ["Tool integration", "Agent handoffs", "Framework-aware"],
-  },
-  {
-    icon: MdExtension,
-    name: "ak-add-capabilities",
-    description:
-      "Plugs in production-grade features like guardrails, tracing, session memory, and multimodal support without having to build them from scratch.",
-    pills: [
-      "Guardrails",
-      "Tracing",
-      "Session memory",
-      "MCP support",
-      "Multimodal",
-    ],
-  },
-  {
-    icon: MdIntegrationInstructions,
-    name: "ak-add-integration",
-    description:
-      "Connects your agent to the messaging platforms your users already rely on, with authentication and message handling taken care of for each one.",
-    pills: ["Slack", "WhatsApp", "Messenger", "Instagram", "Telegram", "Gmail"],
-  },
-  {
-    icon: MdCloudUpload,
-    name: "ak-cloud-deploy",
-    description:
-      "Deploys your agent to the cloud with full Terraform configuration included. Pick your platform and it handles the infrastructure, no manual setup needed.",
-    pills: [
-      "AWS Lambda",
-      "ECS",
-      "Azure Functions",
-      "Container Apps",
-      "GCP Cloud Run",
-      "Full Terraform",
-    ],
-  },
-  {
-    icon: MdBugReport,
-    name: "ak-test",
-    description:
-      "Tests your agent in score, llm, and fallback modes through a pluggable evaluator: DeepEval, Opik and JEV built in, or your own AKEvaluator. When something breaks, a step-by-step debugging playbook helps you fix it fast.",
-    pills: [
-      "Score mode",
-      "LLM mode",
-      "Fallback mode",
-      "Pluggable evaluators",
-      "Debugging playbook",
-    ],
-  },
-] as const;
-
-function AgentSkills() {
-  const [activeSkillIndex, setActiveSkillIndex] = useState(0);
-  const detailContentRef = useRef<HTMLDivElement>(null);
-  const hasAnimatedSkillChangeRef = useRef(false);
-  const ActiveIcon = AGENT_SKILLS[activeSkillIndex].icon;
-
-  gsap.registerPlugin(ScrollTrigger, ScrambleTextPlugin);
-
-  const cmd1Ref = useRef<HTMLSpanElement>(null);
-  const cmd2Ref = useRef<HTMLSpanElement>(null);
-  const cmd3Ref = useRef<HTMLSpanElement>(null);
-  const commandsPanelRef = useRef<HTMLDivElement>(null);
-  const sectionRef = useRef<HTMLElement | null>(null);
-
-  useEffect(() => {
-    const panel = commandsPanelRef.current;
-    if (!panel) return;
-
-    const targets = Array.from(
-      panel.querySelectorAll(
-        `.${styles.agentSkillsCodeComment}, .${styles.agentSkillsCodeArg}`,
-      ),
-    ) as HTMLElement[];
-
-    targets.forEach((target) => {
-      if (!target.dataset.finalText) {
-        target.dataset.finalText = target.textContent ?? "";
-      }
-    });
-
-    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (reducedMotion) return;
-
-    const playScramble = () => {
-      targets.forEach((target, index) => {
-        const text = target.dataset.finalText ?? target.textContent ?? "";
-        gsap.killTweensOf(target);
-        gsap.to(target, {
-          scrambleText: {
-            text,
-            chars: "lowerCase",
-            revealDelay: 0.25,
-            tweenLength: false,
-          },
-          duration: 1.6,
-          delay: index * 0.18,
-          ease: "power2.out",
-          overwrite: "auto",
-          onComplete: () => {
-            target.textContent = text;
-          },
-        });
-      });
-    };
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const entry = entries[0];
-        if (!entry) return;
-        if (entry.isIntersecting) playScramble();
-      },
-      { threshold: 0.35, rootMargin: "0px 0px -10% 0px" },
-    );
-
-    observer.observe(panel);
-
-    const rect = panel.getBoundingClientRect();
-    const isVisible = rect.top < window.innerHeight && rect.bottom > 0;
-    if (isVisible) playScramble();
-
-    return () => { observer.disconnect(); };
-  }, []);
-
-  // Scroll animation for the whole AgentSkills section
-  useEffect(() => {
-    const el = sectionRef.current;
-    if (!el) return;
-
-    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (reducedMotion) return;
-
-    const container = el.querySelector(`.${styles.agentSkillsContainer}`);
-    const splitGrid = el.querySelector(`.${styles.agentSkillsSplitGrid}`);
-    const panels = splitGrid ? Array.from(splitGrid.querySelectorAll(`.${styles.agentSkillsPanel}`)) : [];
-
-    const tl = gsap.timeline({
-      scrollTrigger: {
-        trigger: el,
-        start: "top 82%",
-        toggleActions: "play none none reverse",
-      },
-    });
-
-    if (container) {
-      tl.fromTo(container, { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.6, ease: "power3.out" });
-    }
-
-    if (panels.length) {
-      tl.fromTo(panels, { opacity: 0, y: 18 }, { opacity: 1, y: 0, duration: 0.5, ease: "power2.out", stagger: 0.06 }, "-=0.36");
-    }
-
-    return () => {
-      try {
-        if (tl.scrollTrigger) tl.scrollTrigger.kill();
-        tl.kill();
-      } catch (e) {
-        // ignore
-      }
-    };
-  }, []);
-
-  useLayoutEffect(() => {
-    if (!detailContentRef.current) return;
-
-    if (!hasAnimatedSkillChangeRef.current) {
-      hasAnimatedSkillChangeRef.current = true;
-      return;
-    }
-
-    const content = detailContentRef.current;
-    const motionTargets = content.querySelectorAll(
-      `.${styles.agentSkillsSkillHeader}, .${styles.agentSkillsSkillBody}, .${styles.agentSkillsPill}`,
-    );
-
-    gsap.killTweensOf([content, motionTargets]);
-
-    gsap.fromTo(
-      content,
-      { opacity: 0.55, y: 14, scale: 0.985, filter: "blur(4px)" },
-      { opacity: 1, y: 0, scale: 1, filter: "blur(0px)", duration: 0.42, ease: "power3.out" },
-    );
-
-    gsap.fromTo(
-      Array.from(motionTargets),
-      { opacity: 0, y: 10 },
-      { opacity: 1, y: 0, duration: 0.32, ease: "power2.out", stagger: 0.04, delay: 0.04 },
-    );
-  }, [activeSkillIndex]);
-
-  return (
-    <section ref={sectionRef} id="agent-skills" className={styles.agentSkillsSection}>
-      {/* Top border + gradient glow */}
-      <div className={styles.topGlow} />
-
-      <div className="container">
-        <div className={styles.agentSkillsContainer}>
-          <div className={styles.sectionHeader}>
-            <div className={styles.Badge}>
-              <span className={styles.badgeStar}>✦</span>
-              Agent Skills
-            </div>
-            <h2 className={styles.sectionTitle}>
-              Boost Your Coding Assistant With Agent Kernel
-            </h2>
-          </div>
-
-          <div className={styles.agentSkillsTopicsRow} role="tablist">
-            {AGENT_SKILLS.map((skill, idx) => (
-              <button
-                key={skill.name}
-                role="tab"
-                aria-selected={activeSkillIndex === idx}
-                className={`${styles.agentSkillsTopicButton} ${activeSkillIndex === idx ? styles.agentSkillsTopicActive : ""
-                  }`}
-                onClick={() => setActiveSkillIndex(idx)}
-              >
-                {skill.name}
-              </button>
-            ))}
-          </div>
-
-          <div className={styles.agentSkillsSplitGrid}>
-            {/* Left — IDE-style code panel */}
-            <div ref={commandsPanelRef} className={styles.agentSkillsPanel}>
-              <div className={styles.agentSkillsIdeHeader}>
-                <div className={styles.agentSkillsIdeDots}>
-                  <span className={styles.agentSkillsDotRed} />
-                  <span className={styles.agentSkillsDotYellow} />
-                  <span className={styles.agentSkillsDotGreen} />
-                </div>
-                <div className={styles.agentSkillsIdeActions}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><line x1="8.59" y1="13.51" x2="15.42" y2="17.49" /><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" /></svg>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden><polyline points="15 3 21 3 21 9" /><polyline points="9 21 3 21 3 15" /><line x1="21" y1="3" x2="14" y2="10" /><line x1="3" y1="21" x2="10" y2="14" /></svg>
-                </div>
-              </div>
-
-              <div className={styles.agentSkillsIdeBody}>
-                <div className={styles.agentSkillsLineNumbers}>
-                  {Array.from({ length: 10 }, (_, i) => (
-                    <span key={i}>{i + 1}</span>
-                  ))}
-                </div>
-                <div className={styles.agentSkillsCodeBlock}>
-                  <div className={styles.agentSkillsCodeComment}>
-                    # 1. Install the CLI
-                  </div>
-                  <div>
-                    <span className={styles.agentSkillsCodeCmd}>$</span>{" "}
-                    <span ref={cmd1Ref} className={styles.agentSkillsCodeArg}>
-                      pip install agentkernel
-                    </span>
-                  </div>
-                  <br />
-                  <div className={styles.agentSkillsCodeComment}>
-                    # 2. Install skills for your coding assistant
-                  </div>
-                  <div>
-                    <span className={styles.agentSkillsCodeCmd}>$</span>{" "}
-                    <span ref={cmd2Ref} className={styles.agentSkillsCodeArg}>
-                      ak skill install
-                    </span>
-                  </div>
-                  <div className={styles.agentSkillsCodeComment}>
-                    &nbsp;&nbsp;or target a specific assistant:
-                  </div>
-                  <div>
-                    <span className={styles.agentSkillsCodeCmd}>$</span>{" "}
-                    <span ref={cmd3Ref} className={styles.agentSkillsCodeArg}>
-                      ak skill install --assistant claude
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Right — skill detail panel */}
-            <div className={styles.agentSkillsPanel}>
-              <div className={styles.agentSkillsSectionLabel}>
-                What each skill does
-              </div>
-              <div className={styles.agentSkillsDetailWrap}>
-                <div
-                  ref={detailContentRef}
-                  className={styles.agentSkillsDetailBox}
-                >
-                  <div className={styles.agentSkillsSkillHeader}>
-                    <ActiveIcon
-                      aria-hidden
-                      className={styles.agentSkillsSkillIcon}
-                    />
-                    <p className={styles.agentSkillsSkillName}>
-                      {AGENT_SKILLS[activeSkillIndex].name}
-                    </p>
-                  </div>
-                  <p className={styles.agentSkillsSkillBody}>
-                    {AGENT_SKILLS[activeSkillIndex].description}
-                  </p>
-                  <div className={styles.agentSkillsPillRow}>
-                    {AGENT_SKILLS[activeSkillIndex].pills.map((pill) => (
-                      <span key={pill} className={styles.agentSkillsPill}>
-                        {pill}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Bottom row — subtitle left, CTA right */}
-          <div className={styles.agentSkillsFooter}>
-            <p className={styles.agentSkillsFooterText}>
-              Agent Skills works with the tools you already use, like Copilot, Claude, Cursor, or Windsurf, to help you build and ship AI agents faster. No more guesswork, no more broken code suggestions.
-            </p>
-            <Link
-              className={`button button--primary button--md ${styles.terraformLink}`}
-              to="/docs/agent-skills"
-            >
-              Learn more
-            </Link>
-          </div>
         </div>
       </div>
     </section>
@@ -1072,236 +617,6 @@ function Deployment() {
 
             </div>
           ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-/* ─── Sandboxed Execution ───────────────────────────────────────────────── */
-
-const SANDBOX_PROVIDER_CARDS = [
-  {
-    key: "docker",
-    icon: <FaDocker />,
-    name: "Docker",
-    tag: "Container sandboxes on your own infrastructure",
-    link: "/docs/advanced/sandbox#docker-setup",
-  },
-  {
-    key: "kubernetes",
-    icon: <SiKubernetes />,
-    name: "Kubernetes",
-    tag: "Pod per sandbox, RBAC as the boundary",
-    link: "/docs/advanced/sandbox#kubernetes-setup",
-  },
-  {
-    key: "e2b",
-    icon: (
-      <img
-        src="/img/integrations/e2b.png"
-        alt=""
-        className={`${styles.sandboxLogoImg} ${styles.sandboxLogoImgInvert}`}
-      />
-    ),
-    name: "E2B",
-    tag: "Managed micro-VM sandboxes",
-    link: "/docs/advanced/sandbox#e2b-setup",
-  },
-  {
-    key: "daytona",
-    icon: (
-      <img
-        src="/img/integrations/daytona.png"
-        alt=""
-        className={styles.sandboxLogoImg}
-      />
-    ),
-    name: "Daytona",
-    tag: "Managed cloud container sandboxes",
-    link: "/docs/advanced/sandbox#daytona-setup",
-  },
-  {
-    key: "ec2",
-    icon: <FaAws />,
-    name: "AWS EC2",
-    tag: "Attach to instances you already run",
-    link: "/docs/advanced/sandbox#ec2_ssm-setup",
-  },
-  {
-    key: "byo",
-    icon: <MdExtension />,
-    name: "Bring Your Own",
-    tag: "Plug in any sandbox backend you choose",
-    link: "/docs/advanced/sandbox#bring-your-own-provider",
-  },
-] as const;
-
-function SandboxSection() {
-  const sectionRef = useRef<HTMLElement>(null);
-
-  useEffect(() => {
-    gsap.registerPlugin(ScrollTrigger);
-
-    const section = sectionRef.current;
-    if (!section) return;
-
-    const reducedMotion =
-      typeof window !== "undefined" &&
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-    const header = section.querySelector(`.${styles.sandboxHeader}`);
-    const flow = section.querySelector(`.${styles.sandboxFlow}`);
-    const stem = section.querySelector(`.${styles.sandboxFlowStem}`);
-    const cards = Array.from(
-      section.querySelectorAll(`.${styles.sandboxLogoCard}`),
-    );
-    const footer = section.querySelector(`.${styles.sandboxFooter}`);
-
-    if (reducedMotion) {
-      gsap.set([header, flow, stem, ...cards, footer], { opacity: 1, y: 0 });
-      return;
-    }
-
-    gsap.set(header, { opacity: 0, y: 24 });
-    gsap.set(flow, { opacity: 0, y: 20 });
-    gsap.set(stem, { opacity: 0 });
-    gsap.set(cards, { opacity: 0, y: 20 });
-    gsap.set(footer, { opacity: 0, y: 16 });
-
-    const tl = gsap.timeline({
-      scrollTrigger: {
-        trigger: section,
-        start: "top 78%",
-        toggleActions: "play none none none",
-        once: true,
-      },
-    });
-
-    tl.to(header, { opacity: 1, y: 0, duration: 0.6, ease: "power2.out" })
-      .to(
-        flow,
-        { opacity: 1, y: 0, duration: 0.5, ease: "power2.out" },
-        "+=0.2",
-      )
-      .to(stem, { opacity: 1, duration: 0.3, ease: "power2.out" }, "-=0.1")
-      .to(
-        cards,
-        { opacity: 1, y: 0, duration: 0.45, stagger: 0.07, ease: "power2.out" },
-        "-=0.05",
-      )
-      .to(footer, { opacity: 1, y: 0, duration: 0.4, ease: "power2.out" }, "-=0.2");
-
-    return () => {
-      tl.kill();
-      if (tl.scrollTrigger) {
-        tl.scrollTrigger.kill();
-      }
-    };
-  }, []);
-
-  return (
-    <section ref={sectionRef} id="sandbox" className={styles.sandboxSection}>
-      {/* Top border + gradient glow */}
-      <div className={styles.topGlow} />
-
-      <div className="container">
-        <div className={styles.sandboxHeader}>
-          <div className={styles.Badge}>
-            <span className={styles.badgeStar}>✦</span>
-            Sandboxed Execution
-          </div>
-          <h2 className={styles.sandboxTitle}>Let Agents Run Code, Safely</h2>
-          <p className={styles.sandboxSubtitle}>
-            Flip one switch and every agent gains code, shell, and file tools
-            that run in isolated sandboxes.
-            <br />
-            Each execution flows through the Agent Kernel Execution Broker,
-            in-process or over a queue, to a pluggable provider governed by
-            fail-closed policies.
-          </p>
-        </div>
-
-        {/* Execution path: agent tools, the broker, then its two lanes into the provider grid */}
-        <div className={styles.sandboxFlow} aria-label="Sandbox execution path">
-          <div className={styles.sandboxFlowNode}>
-            <p className={styles.sandboxFlowEyebrow}>Any framework</p>
-            <p className={styles.sandboxFlowTitle}>Agent + sandbox tools</p>
-            <p className={styles.sandboxFlowSub}>
-              run_code · run_command · files · sessions
-            </p>
-          </div>
-          <span className={styles.sandboxFlowArrow} aria-hidden="true" />
-          <div className={`${styles.sandboxFlowNode} ${styles.sandboxFlowBroker}`}>
-            <img
-              src="/img/branding/agent-kernel-icon-color.svg"
-              alt=""
-              className={styles.sandboxFlowLogo}
-            />
-            <div className={styles.sandboxFlowBrokerText}>
-              <p className={styles.sandboxFlowEyebrow}>Agent Kernel</p>
-              <p className={styles.sandboxFlowTitle}>Execution Broker</p>
-              <p className={styles.sandboxFlowSub}>
-                fail-closed policy · identity · workload profiles
-              </p>
-            </div>
-          </div>
-          <span className={styles.sandboxFlowArrow} aria-hidden="true" />
-          <div className={styles.sandboxFlowLanes}>
-            <div className={styles.sandboxFlowLane}>
-              <p className={styles.sandboxFlowEyebrow}>in-process</p>
-              <p className={styles.sandboxFlowLaneTitle}>thread · embedded</p>
-              <p className={styles.sandboxFlowSub}>CLI and REST deployments</p>
-            </div>
-            <div className={`${styles.sandboxFlowLane} ${styles.sandboxFlowLaneQueue}`}>
-              <p className={styles.sandboxFlowEyebrow}>queue-decoupled</p>
-              <p className={styles.sandboxFlowLaneTitle}>
-                <span className={styles.sandboxFlowChip}>Request queue</span>
-                <span className={styles.sandboxFlowChipArrow} aria-hidden="true" />
-                <span
-                  className={`${styles.sandboxFlowChip} ${styles.sandboxFlowChipWorker}`}
-                >
-                  Sandbox Worker fleet
-                </span>
-              </p>
-              <p className={styles.sandboxFlowSub}>
-                sqs · kafka · nats · completions return over the output queue
-                and response store
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Stem from the broker lanes into the provider fan-out below */}
-        <div className={styles.sandboxFlowStem} aria-hidden="true" />
-
-        {/* Provider logo cards (the fan-out) */}
-        <div className={`${styles.sandboxLogoGrid} ${styles.sandboxLogoGridWired}`}>
-          {SANDBOX_PROVIDER_CARDS.map((p) => (
-            <Link key={p.key} to={p.link} className={styles.sandboxLogoCard}>
-              <span className={styles.sandboxLogoDrop} aria-hidden="true" />
-              <span className={styles.sandboxLogoIcon} aria-hidden="true">
-                {p.icon}
-              </span>
-              <p className={styles.sandboxLogoName}>{p.name}</p>
-              <p className={styles.sandboxLogoTag}>{p.tag}</p>
-            </Link>
-          ))}
-        </div>
-
-        {/* Footer: text left, CTA right */}
-        <div className={styles.sandboxFooter}>
-          <p className={styles.sandboxFooterText}>
-            Fully pluggable by design: swap providers, bring your own, or move
-            execution onto a queue-backed worker fleet, all in configuration
-            and never in agent code.
-          </p>
-          <Link
-            className={`button button--primary button--md ${styles.terraformLink}`}
-            to="/docs/advanced/sandbox"
-          >
-            Explore the Sandbox
-          </Link>
         </div>
       </div>
     </section>
@@ -1816,13 +1131,13 @@ export default function Home() {
       <WhatsNewBanner />
       <Hero />
       <main>
-        <FrameworksStrip />
+        <ArchitectureOverview />
         <div ref={levelsRef} id="levels">
           <Levels />
         </div>
-        <AgentSkills />
+        <FeatureExplorer />
         <Deployment />
-        <SandboxSection />
+        <IntegrationsMarquee />
         <TrustSection />
         <FAQ />
         <Community sectionRef={communityRef} />

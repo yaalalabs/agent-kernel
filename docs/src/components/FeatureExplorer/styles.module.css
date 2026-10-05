@@ -1,0 +1,352 @@
+/* ─── Feature Explorer ──────────────────────────────────────────────────── */
+
+.section {
+  position: relative;
+  padding: 5rem 1.5rem 5.5rem;
+  text-align: center;
+  background: transparent;
+  overflow: hidden;
+}
+
+.topGlow {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.15) 20%,
+    rgba(255, 255, 255, 0.4) 50%,
+    rgba(255, 255, 255, 0.15) 80%,
+    transparent 100%
+  );
+}
+
+.topGlow::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 60%;
+  height: 150px;
+  background: radial-gradient(
+    ellipse at top center,
+    rgba(255, 255, 255, 0.07) 0%,
+    rgba(255, 255, 255, 0.03) 40%,
+    transparent 70%
+  );
+  pointer-events: none;
+}
+
+/* Header */
+.header {
+  max-width: 820px;
+  margin: 0 auto 3rem;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 1rem;
+  border: 2px solid #2a272e;
+  border-radius: 999px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: rgba(147, 210, 255, 0.9);
+  letter-spacing: 0.01em;
+  margin-bottom: 1.25rem;
+  background: #131017;
+}
+
+.badgeStar {
+  font-size: 0.8rem;
+}
+
+.title {
+  font-size: 2.6rem;
+  font-weight: 600;
+  background: linear-gradient(to bottom, #ffffff 0%, #898989 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  letter-spacing: -0.03em;
+  line-height: 1.12;
+  margin: 0;
+}
+
+.subtitle {
+  font-size: 1.05rem;
+  color: #9a91b8;
+  line-height: 1.7;
+  margin: 1rem auto 0;
+  max-width: 720px;
+}
+
+/* ─── Explorer ──────────────────────────────────────────────────────────── */
+.explorer {
+  max-width: 1280px;
+  margin: 0 auto;
+  text-align: left;
+}
+
+/* Tabs: spread across the full width with a shared baseline rule, like the reference. */
+.tabs {
+  display: flex;
+  justify-content: space-between;
+  align-items: stretch;
+  gap: 1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  margin-bottom: 3rem;
+}
+
+.tab {
+  position: relative;
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0.9rem 0.25rem 1rem;
+  font-size: 0.86rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.55);
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.tab:hover,
+.tab:focus-visible {
+  color: rgba(255, 255, 255, 0.9);
+  outline: none;
+}
+
+.tab::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  background: #00ddff;
+  box-shadow: 0 0 12px rgba(0, 221, 255, 0.6);
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 0.25s ease;
+}
+
+.tabActive {
+  color: #ffffff;
+}
+
+.tabActive::after {
+  transform: scaleX(1);
+}
+
+/* Panel: intro on the left, card grid on the right. */
+.panel {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.8fr) minmax(0, 2.6fr);
+  gap: 3rem;
+  align-items: start;
+  animation: panelIn 0.35s ease both;
+}
+
+@keyframes panelIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.intro {
+  position: sticky;
+  top: 6rem;
+}
+
+.introTitle {
+  margin: 0 0 1rem;
+  font-size: 2rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #ffffff;
+}
+
+.introBody {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.7;
+  color: #9a91b8;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1.1rem;
+}
+
+/* ─── Cards ─────────────────────────────────────────────────────────────── */
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  padding: 1.3rem 1.35rem 1.25rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  background: rgba(10, 10, 16, 0.92);
+  transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.card:hover {
+  border-color: rgba(147, 210, 255, 0.4);
+  transform: translateY(-2px);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.4);
+}
+
+.cardTitle {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #ffffff;
+  letter-spacing: -0.01em;
+}
+
+.cardBody {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.68);
+  flex: 1;
+}
+
+.tagRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.tag {
+  display: inline-block;
+  padding: 0.2rem 0.55rem;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  font-family: "JetBrains Mono", var(--ifm-font-family-monospace);
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.72);
+  white-space: nowrap;
+}
+
+.linkRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.1rem;
+  margin-top: 0.2rem;
+}
+
+.cardLink {
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: #00ddff;
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+.cardLink:hover,
+.cardLink:focus-visible {
+  color: #8fefff;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* ─── Reduced motion ───────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .panel {
+    animation: none;
+  }
+
+  .tab::after {
+    transition: none;
+  }
+}
+
+/* ─── Tablet (≤ 1100px) ────────────────────────────────────────────────── */
+@media (max-width: 1100px) {
+  .panel {
+    grid-template-columns: 1fr;
+    gap: 1.75rem;
+  }
+
+  .intro {
+    position: static;
+  }
+
+  .grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* ─── Mobile (≤ 768px) ─────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .tabs {
+    justify-content: flex-start;
+    gap: 1.5rem;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    margin-bottom: 2rem;
+  }
+
+  .tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .tab {
+    flex: 0 0 auto;
+    font-size: 0.8rem;
+  }
+
+  .grid {
+    grid-template-columns: 1fr;
+  }
+
+  .introTitle {
+    font-size: 1.6rem;
+  }
+}
+
+/* ─── Small phones (≤ 540px) ───────────────────────────────────────────── */
+@media (max-width: 540px) {
+  .section {
+    padding: 3rem 1rem 3.5rem;
+  }
+
+  .header {
+    margin-bottom: 2rem;
+  }
+
+  .title {
+    font-size: 1.8rem;
+  }
+
+  .subtitle {
+    font-size: 0.95rem;
+  }
+
+  .card {
+    padding: 1.1rem 1.1rem 1.05rem;
+  }
+
+  .topGlow::after {
+    width: 100%;
+    height: 160px;
+  }
+}

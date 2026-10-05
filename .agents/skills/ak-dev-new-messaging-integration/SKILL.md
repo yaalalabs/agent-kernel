@@ -295,7 +295,9 @@ Add `docs/docs/integrations/<platform>.md` covering:
 - Webhook URL setup
 - The `multimodal.enabled` requirement if the platform accepts attachments
 
-Then update the docs-site React pages that enumerate platforms: the `MESSAGING_PLATFORMS` list in `docs/src/pages/features.tsx` (logo under `docs/static/img/integrations/`, link to the new page) and the `pills` on the `ak-add-integration` entry in `AGENT_SKILLS` in `docs/src/pages/index.tsx`. Grep `docs/src/pages/*.tsx`, `README.md`, and `docs/docs/intro.md` for the platform roll call ("Slack, WhatsApp, ...") and add the new name wherever the others are listed.
+Then update the landing page inventories in `docs/src/components/*/data.tsx`: add a tile to the **Channels & protocols** row in `IntegrationsMarquee/data.tsx` (role `Channel`, `href` to the new page, logo under `docs/static/img/integrations/` or a `react-icons/si` glyph); add `pick("<tile name>")` to the **Messaging channels** card in `ArchitectureOverview/data.tsx`; add the platform to the **Messaging Channels** card's `tags` and `description` under the Connect tab in `FeatureExplorer/data.tsx`. Logo sourcing and the build check are in `ak-dev-sync-docs-from-branch`, *Docs-Site Landing and Features Pages*.
+
+Then the features page: the `MESSAGING_PLATFORMS` list in `docs/src/pages/features.tsx` (logo, link to the new page). Grep `docs/src/pages/*.tsx`, `README.md`, and `docs/docs/intro.md` for the platform roll call ("Slack, WhatsApp, ...") and add the new name wherever the others are listed.
 
 ## Checklist
 
@@ -312,4 +314,5 @@ Then update the docs-site React pages that enumerate platforms: the `MESSAGING_P
 - [ ] Example in `examples/api/<platform>/` mounting through `IOHandler.run`
 - [ ] `IntegrationAdapterContract` subclass plus the per-platform test file
 - [ ] Documentation in `docs/docs/integrations/<platform>.md`
-- [ ] Platform inventories on the docs-site pages (`docs/src/pages/features.tsx` `MESSAGING_PLATFORMS`, `docs/src/pages/index.tsx` `AGENT_SKILLS` pills) and in the README/intro roll calls
+- [ ] Landing page inventories: marquee tile (`IntegrationsMarquee/data.tsx`), `pick()` chip on the Messaging channels card (`ArchitectureOverview/data.tsx`), Messaging Channels card tags (`FeatureExplorer/data.tsx`)
+- [ ] Platform inventories on `docs/src/pages/features.tsx` (`MESSAGING_PLATFORMS`) and in the README/intro roll calls
