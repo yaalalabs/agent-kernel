@@ -55,3 +55,49 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v5
+
+  sync-medium:
+    name: Sync new blog posts to Medium
+    runs-on: ubuntu-latest
+    needs: deploy
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install pyyaml markdown
+
+      - name: Configure git
+        run: |
+          git config user.name "agent-kernel-ci[bot]"
+          git config user.email "agent-kernel-ci[bot]@users.noreply.github.com"
+
+      - name: Sync not-yet-published posts to Medium
+        env:
+          MEDIUM_INTEGRATION_TOKEN: ${{ secrets.MEDIUM_INTEGRATION_TOKEN }}
+          MEDIUM_PUBLICATION_ID: ${{ secrets.MEDIUM_PUBLICATION_ID }}
+        run: |
+          if [ -z "$MEDIUM_INTEGRATION_TOKEN" ]; then
+            echo "MEDIUM_INTEGRATION_TOKEN secret is not set - skipping Medium sync."
+            exit 0
+          fi
+          python scripts/sync_medium_blog.py --publish-status draft
+
+      - name: Commit updated Medium sync state
+        run: |
+          if [ -n "$(git status --porcelain docs/blog/.medium-sync-state.json)" ]; then
+            git add docs/blog/.medium-sync-state.json
+            git commit -m "chore: record blog posts synced to Medium"
+            git push
+          else
+            echo "No new Medium posts synced."
+          fi

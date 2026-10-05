@@ -2,6 +2,58 @@
 
 This directory contains utility scripts for the agent-kernel project.
 
+## sync_medium_blog.py
+
+Publishes `docs/blog/*.md` posts to Medium (a publication, or the token owner's
+personal profile) so blog content gets Medium's built-in reach on top of the
+Agent Kernel website. Run automatically by `.github/workflows/deploy-docs.yml`
+after every docs deploy; also runnable locally.
+
+**Important limitation:** Medium's public API stopped issuing new integration
+tokens on 2025-01-01, and it has no endpoint to update or delete a post once
+created - only to create one. Because of that, this script only ever *creates*
+a Medium post for a blog file it has never seen before. If a previously-synced
+file changes afterwards, the script leaves the Medium post alone and prints a
+warning instead of creating a duplicate. A JSON state file
+(`docs/blog/.medium-sync-state.json`) tracks what has already been synced.
+
+**Usage:**
+```bash
+pip install pyyaml markdown
+
+export MEDIUM_INTEGRATION_TOKEN=...        # required
+export MEDIUM_PUBLICATION_ID=...           # optional; omit to post to the personal profile
+
+# Find the publicationId to put in MEDIUM_PUBLICATION_ID
+python scripts/sync_medium_blog.py --list-publications
+
+# Preview what would be created, without calling the Medium API
+python scripts/sync_medium_blog.py --dry-run
+
+# Create Medium drafts for every not-yet-synced post
+python scripts/sync_medium_blog.py
+```
+
+**Options:**
+- `--blog-dir`: directory of blog markdown files (default: `docs/blog`)
+- `--state-file`: path to the sync-state JSON file (default: `<blog-dir>/.medium-sync-state.json`)
+- `--site-url`: canonical site origin used for `canonicalUrl` and for absolutizing image/link paths (default: `https://kernel.yaala.ai`)
+- `--publish-status`: `draft` (default), `public`, or `unlisted` - kept as `draft` in CI so a human reviews and publishes on Medium's side
+- `--notify-followers`: notify the account's Medium followers on publish (default: off)
+- `--dry-run`: print what would be created without writing to Medium or the state file
+- `--list-publications`: print the publications this token can post to, then exit
+
+**Original publish date:** Medium's API has no field for a post's original date, so the
+script writes it into the post body instead - the footer reads *"Originally published on
+14 September 2026 at kernel.yaala.ai"*. The date comes from the post's frontmatter `date`
+when set, otherwise from the `YYYY-MM-DD-` filename prefix (the same rule Docusaurus uses).
+
+**Opting a post out:** add `medium: false` to that post's frontmatter.
+
+> A `preview_medium_post.py` helper that runs just `sync_medium_blog.py`'s parsing/rendering
+> step against a single post (no token, no network, no sync-state write) lives in
+> `Scratches/10.medium-blog-sync/` - it's a local testing aid, not a tracked repo script.
+
 ## bump_version.py
 
 Handles semantic versioning for the project with support for:
