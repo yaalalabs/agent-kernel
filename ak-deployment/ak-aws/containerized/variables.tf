@@ -268,8 +268,8 @@ variable "execution_mode" {
     error_message = "execution_mode must be one of: rest_sync, rest_async, async, stream, realtime."
   }
   validation {
-    condition     = var.queue_mode || contains(["rest_sync", "async", "stream", "realtime"], var.execution_mode)
-    error_message = "execution_mode must be rest_sync, async, stream, or realtime when queue_mode is false. (rest_async requires queue_mode = true.)"
+    condition     = var.queue_mode || contains(["rest_sync", "async", "stream"], var.execution_mode)
+    error_message = "execution_mode must be rest_sync, async, or stream when queue_mode is false. (rest_async and realtime require queue_mode = true.)"
   }
 }
 

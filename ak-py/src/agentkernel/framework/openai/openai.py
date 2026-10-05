@@ -424,6 +424,7 @@ class OpenAIRealtimeAdapter(BaseRealtimeRunner):
 
         self._callback = callback
         self._agent = agent
+        self._session = session
         self._client = AsyncOpenAI()
         model = self._realtime_model(agent)
 
@@ -442,17 +443,41 @@ class OpenAIRealtimeAdapter(BaseRealtimeRunner):
                             {"type": "function", "name": tool.name, "description": tool.description, "parameters": tool.params_json_schema}
                         )
 
-            await self._connection.send(
-                {
-                    "type": "session.update",
-                    "session": {
-                        "type": "realtime",
-                        "instructions": instructions,
-                        "tools": tools_payload,
-                        "audio": {"input": {"turn_detection": {"type": "server_vad", "interrupt_response": True, "create_response": True}}},
-                    },
-                }
-            )
+            session_update_payload = {
+                "type": "session.update",
+                "session": {
+                    "type": "realtime",
+                    "instructions": instructions,
+                    "tools": tools_payload,
+                    "audio": {"input": {"turn_detection": {"type": "server_vad", "interrupt_response": True, "create_response": True}}},
+                },
+            }
+
+            config = AKConfig.get()
+            inject_history = config.execution.realtime.inject_history
+            history_limit = config.execution.realtime.history_limit
+
+            if inject_history:
+                session_update_payload["session"]["input_audio_transcription"] = {"model": "whisper-1"}
+
+            await self._connection.send(session_update_payload)
+
+            if inject_history:
+                openai_session = OpenAISession._session(session)
+                past_items = await openai_session.get_items(limit=history_limit)
+                for item in past_items:
+                    # item is {"role": "user"|"assistant", "content": "text"}
+                    await self._connection.send(
+                        {
+                            "type": "conversation.item.create",
+                            "item": {
+                                "type": "message",
+                                "role": item.get("role", "user"),
+                                "content": [{"type": "input_text", "text": item.get("content", "")}],
+                            },
+                        }
+                    )
+
         except Exception:
             # A failure after the socket opened would otherwise leak it: the pool drops the
             # RealtimeConnection, but the WebSocket would stay up until the process exits.
@@ -479,11 +504,31 @@ class OpenAIRealtimeAdapter(BaseRealtimeRunner):
             await self._callback("audio_delta", {"delta": event.delta, "message_id": getattr(event, "item_id", "")})
         elif event_type == "response.output_audio_transcript.delta":
             await self._callback("transcript_delta", {"delta": event.delta, "message_id": getattr(event, "item_id", "")})
+        elif event_type == "conversation.item.input_audio_transcription.completed":
+            text = getattr(event, "transcript", "")
+            if text and self._session:
+                openai_session = OpenAISession._session(self._session)
+                await openai_session.add_items([{"role": "user", "content": text}])
         elif event_type == "input_audio_buffer.speech_started":
             await self._callback("interrupt", {})
         elif event_type == "response.done":
             response = getattr(event, "response", None)
             status = getattr(response, "status", None)
+
+            # Save assistant text to session if available
+            if status == "completed" and self._session:
+                # Find the text in the response output
+                output = getattr(response, "output", [])
+                for item in output:
+                    if getattr(item, "type", None) == "message":
+                        content_arr = getattr(item, "content", [])
+                        for c in content_arr:
+                            if getattr(c, "type", None) == "audio" and hasattr(c, "transcript"):
+                                text = c.transcript
+                                if text:
+                                    openai_session = OpenAISession._session(self._session)
+                                    await openai_session.add_items([{"role": "assistant", "content": text}])
+
             await self._callback("done", {"status": status})
         elif event_type == "response.function_call_arguments.done":
             await self._callback(

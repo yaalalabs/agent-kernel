@@ -92,7 +92,12 @@ class AgentRunner:
             queue=QueueName.INPUT,
             logger=self._log,
             exit_on_shutdown=exit_on_shutdown,
+            extra_tasks=self._get_extra_tasks(),
         ).run()
+
+    def _get_extra_tasks(self) -> list[ThreadRunner.Task]:
+        """Override in subclasses to run additional background tasks alongside the consumer loop."""
+        return []
 
     @classmethod
     def run(cls) -> None:
@@ -264,6 +269,12 @@ class RealtimeAgentRunner(AgentRunner):
 
     _log = logging.getLogger("ak.pipeline.realtime_agent_runner")
 
+    def _get_extra_tasks(self) -> list[ThreadRunner.Task]:
+        from .realtime_pool import RealtimeConnectionPool
+
+        pool = RealtimeConnectionPool.initialize()
+        return [pool.get_task()]
+
     def process(self, message: QueueMessage) -> None:
         body = BaseRunRequest.model_validate(json.loads(message.body))
         request_id = self._resolve_request_metadata(message, body)
@@ -279,7 +290,6 @@ class RealtimeAgentRunner(AgentRunner):
         if conn is None:
             handler = self._chat_service.prepare_agent_handler(body.session_id, body.agent)
             conn = pool.get_or_create(body.session_id, handler.service.agent, handler.service.runtime, handler.service.session)
-            conn.session = handler.service.session
 
         conn.update_delivery_context(
             request_id=request_id,

@@ -49,7 +49,7 @@ def _gateway() -> LiveKitEdgeGateway:
     gateway = object.__new__(LiveKitEdgeGateway)
     gateway.session_id = "s1"
     gateway.agent_name = "general"
-    gateway.producer = None
+    gateway._producer = None
     gateway._pending = None
     gateway._sender_task = None
     gateway._loop = None
@@ -99,19 +99,19 @@ class TestInboundStaging:
     @pytest.mark.asyncio
     async def test_enqueue_stages_and_the_sender_delivers_to_the_producer(self):
         gateway = _gateway()
-        gateway.producer = _Producer()
+        gateway._producer = _Producer()
         gateway._pending = asyncio.Queue(maxsize=4)
         sender = asyncio.create_task(gateway._drain_requests())
         try:
-            gateway._enqueue(AgentRequestText(prompt="hi", name="general"))
+            gateway._stage_request(AgentRequestText(prompt="hi", name="general"))
             for _ in range(50):
-                if gateway.producer.calls:
+                if gateway._producer.calls:
                     break
                 await asyncio.sleep(0.01)
         finally:
             sender.cancel()
 
-        [call] = gateway.producer.calls
+        [call] = gateway._producer.calls
         assert call["group_id"] == "s1"
         assert call["attributes"]["integration"] == "livekit"
         assert call["body"].session_id == "s1"
@@ -119,12 +119,12 @@ class TestInboundStaging:
     @pytest.mark.asyncio
     async def test_enqueue_drops_a_frame_when_the_staging_queue_is_full(self, caplog):
         gateway = _gateway()
-        gateway.producer = _Producer()
+        gateway._producer = _Producer()
         gateway._pending = asyncio.Queue(maxsize=1)
         gateway._pending.put_nowait(("body", "id", {}))
 
         with caplog.at_level(logging.WARNING):
-            gateway._enqueue(AgentRequestText(prompt="hi", name="general"))
+            gateway._stage_request(AgentRequestText(prompt="hi", name="general"))
 
         assert gateway._pending.qsize() == 1
         assert any("full" in record.message for record in caplog.records)
@@ -133,7 +133,7 @@ class TestInboundStaging:
     async def test_chat_message_parses_json_and_plain_text(self, monkeypatch):
         gateway = _gateway()
         seen = []
-        monkeypatch.setattr(gateway, "_enqueue", lambda request: seen.append(request))
+        monkeypatch.setattr(gateway, "_stage_request", lambda request: seen.append(request))
 
         gateway._handle_chat_message(_packet('{"message": "hello"}'))
         gateway._handle_chat_message(_packet("plain text", topic="chat"))
@@ -150,7 +150,7 @@ class TestInboundAudioBatching:
         gateway = _gateway()
         gateway._input_batch_bytes = 0
         seen = []
-        gateway._enqueue = lambda request: seen.append(request)
+        gateway._stage_request = lambda request: seen.append(request)
 
         await gateway._process_incoming_audio(object())
 
@@ -163,7 +163,7 @@ class TestInboundAudioBatching:
         gateway = _gateway()
         gateway._input_batch_bytes = 6
         seen = []
-        gateway._enqueue = lambda request: seen.append(request)
+        gateway._stage_request = lambda request: seen.append(request)
 
         await gateway._process_incoming_audio(object())
 
@@ -172,9 +172,9 @@ class TestInboundAudioBatching:
     def test_enqueue_audio_base64_encodes_a_voice_request(self):
         gateway = _gateway()
         seen = []
-        gateway._enqueue = lambda request: seen.append(request)
+        gateway._stage_request = lambda request: seen.append(request)
 
-        gateway._enqueue_audio(b"\x01\x02\x03\x04")
+        gateway._stage_request(gateway._enqueue_audio(b"\x01\x02\x03\x04", "general"))
 
         [request] = seen
         assert isinstance(request, AgentRequestVoice)

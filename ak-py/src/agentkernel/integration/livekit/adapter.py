@@ -13,8 +13,7 @@ from ...core.realtime import EDGE_SAMPLE_RATE
 from ...core.util.factory import AKConfigError
 from ...pipeline.envelope import ATTR_INTEGRATION, REPLY_CONTEXT_PREFIX
 from ...pipeline.producer import RequestProducer
-from ...pipeline.thread_runner import ThreadRunner
-from ..adapter.base import GatewayAdapter
+from ..adapter.base import StatefulEdgeAdapter
 
 _log = logging.getLogger("ak.integration.livekit")
 
@@ -25,7 +24,7 @@ INTEGRATION_NAME = "livekit"
 _MAX_PENDING_REQUESTS = 64
 
 
-class LiveKitEdgeGateway(GatewayAdapter):
+class LiveKitEdgeGateway(StatefulEdgeAdapter):
     """Bridges a LiveKit WebRTC room with the Agent Kernel queue.
 
     Unlike standard messaging webhook adapters which are stateless and split into Inbound/Outbound
@@ -46,6 +45,7 @@ class LiveKitEdgeGateway(GatewayAdapter):
         api_key: Optional[str] = None,
         api_secret: Optional[str] = None,
     ):
+        super().__init__()
         if rtc is None:
             raise AKConfigError("LiveKit SDK is not installed. Run: pip install livekit-api livekit")
 
@@ -78,7 +78,6 @@ class LiveKitEdgeGateway(GatewayAdapter):
 
         self.room: Optional["rtc.Room"] = None
         self.audio_source: Optional["rtc.AudioSource"] = None
-        self.producer: Optional[RequestProducer] = None
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._connected = False
         # Bounded staging queue drained by one sender task, so inbound frames never spawn an
@@ -93,9 +92,10 @@ class LiveKitEdgeGateway(GatewayAdapter):
         """Connect to the LiveKit room and bridge audio until the pipeline shuts down."""
         _log.info(f"Connecting to LiveKit room at {self.room_url}")
 
+        self._stop_event = asyncio.Event()
         self._loop = asyncio.get_running_loop()
         self.room = rtc.Room()
-        self.producer = RequestProducer()
+        self._init_producer()
         self._pending = asyncio.Queue(maxsize=_MAX_PENDING_REQUESTS)
         self._sender_task = asyncio.create_task(self._drain_requests())
 
@@ -111,6 +111,12 @@ class LiveKitEdgeGateway(GatewayAdapter):
         def on_data_received(data_packet: "rtc.DataPacket"):
             self._handle_chat_message(data_packet)
 
+        @self.room.on("disconnected")
+        def on_disconnected(*args, **kwargs):
+            _log.info(f"LiveKit room {self.room_url} disconnected.")
+            if not self._stop_event.is_set():
+                self._stop_event.set()
+
         await self.room.connect(self.room_url, self.token)
         self._connected = True
         _log.info("LiveKit WebRTC connection established.")
@@ -122,21 +128,25 @@ class LiveKitEdgeGateway(GatewayAdapter):
         try:
             await asyncio.wait_for(self.room.local_participant.publish_track(track, options), timeout=10.0)
             _log.info("AI audio track published successfully.")
-        except asyncio.TimeoutError:
-            _log.error("Timed out waiting for publish_track!")
+        except asyncio.TimeoutError as e:
+            raise RuntimeError("Timed out waiting for publish_track!") from e
         except Exception as e:
-            _log.error(f"Failed to publish track: {e}")
+            raise RuntimeError(f"Failed to publish track: {e}") from e
         self.audio_source = source
 
         _log.info("Entering LiveKitEdgeGateway main wait loop...")
-        while not ThreadRunner.shutdown_event.is_set():
-            await asyncio.sleep(0.5)
+        await self._stop_event.wait()
 
+    async def stop(self) -> None:
+        """Gracefully disconnect and release resources."""
         _log.info("LiveKitEdgeGateway shutting down: disconnecting from room")
         if self._sender_task:
             self._sender_task.cancel()
             self._sender_task = None
-        await self.room.disconnect()
+        if self.room:
+            await self.room.disconnect()
+        if hasattr(self, "_stop_event"):
+            self._stop_event.set()
         _log.info("LiveKitEdgeGateway disconnected successfully")
 
     # -- inbound: room -> queue --------------------------------------------------------------
@@ -145,7 +155,7 @@ class LiveKitEdgeGateway(GatewayAdapter):
         """Kick off the conversation once a participant's mic appears."""
         _log.info(f"Triggering auto-greeting for {participant_identity}")
         prompt = f"A user named {participant_identity} just connected their microphone. Say a very short hello to them and confirm you are connected!"
-        self._enqueue(AgentRequestText(prompt=prompt, name=self.agent_name))
+        self._stage_request(AgentRequestText(prompt=prompt, name=self.agent_name))
 
     def _handle_chat_message(self, data_packet: "rtc.DataPacket") -> None:
         if data_packet.topic not in ("chat", "lk-chat-topic", "lk-chat", ""):
@@ -160,7 +170,7 @@ class LiveKitEdgeGateway(GatewayAdapter):
             if not text:
                 return
             _log.info(f"Text chat received from {data_packet.participant.identity}: {text}")
-            self._enqueue(AgentRequestText(prompt=text, name=self.agent_name))
+            self._stage_request(AgentRequestText(prompt=text, name=self.agent_name))
         except Exception as e:
             _log.error(f"Failed to process chat: {e}")
 
@@ -181,34 +191,28 @@ class LiveKitEdgeGateway(GatewayAdapter):
                 if not raw_bytes:
                     continue
                 if self._input_batch_bytes == 0:
-                    self._enqueue_audio(raw_bytes)
+                    self._stage_request(self._enqueue_audio(raw_bytes, self.agent_name))
                     continue
                 buffer.extend(raw_bytes)
                 if len(buffer) >= self._input_batch_bytes:
-                    self._enqueue_audio(buffer)
+                    self._stage_request(self._enqueue_audio(buffer, self.agent_name))
                     buffer.clear()
             except Exception as e:
                 _log.error(f"Failed to process incoming audio frame: {e}")
 
         if buffer:
-            self._enqueue_audio(buffer)
+            self._stage_request(self._enqueue_audio(buffer, self.agent_name))
 
-    def _enqueue_audio(self, raw_bytes: bytes) -> None:
-        """Base64-encode a PCM16 frame/batch and stage it as one ``AgentRequestVoice``."""
-        b64_audio = base64.b64encode(raw_bytes).decode("utf-8")
-        self._enqueue(AgentRequestVoice(prompt="", audio_data=b64_audio, name=self.agent_name))
-
-    def _enqueue(self, request) -> None:
+    def _stage_request(self, request) -> None:
         """Stage one request for the sender task, tagged for this livekit session.
 
         Staging (rather than spawning a fire-and-forget task per frame) bounds what a stalled
         broker can accumulate; a full queue drops the frame with a warning instead of growing.
         """
-        if self.producer is None or self._pending is None:
+        if self._producer is None or self._pending is None:
             return
-        body = BaseRunRequest(prompt="", session_id=self.session_id, requests=[request])
-        request_id = str(uuid.uuid4())
-        attributes = {ATTR_INTEGRATION: INTEGRATION_NAME, f"{REPLY_CONTEXT_PREFIX}session_id": self.session_id}
+
+        body, request_id, attributes = self._enqueue(request)
         try:
             self._pending.put_nowait((body, request_id, attributes))
         except asyncio.QueueFull:
@@ -224,7 +228,7 @@ class LiveKitEdgeGateway(GatewayAdapter):
         while True:
             body, request_id, attributes = await self._pending.get()
             try:
-                await asyncio.to_thread(self.producer.enqueue, body=body, request_id=request_id, attributes=attributes, group_id=self.session_id)
+                await asyncio.to_thread(self._producer.enqueue, body=body, request_id=request_id, attributes=attributes, group_id=self.session_id)
             except Exception as e:
                 _log.error(f"Failed to enqueue request for session {self.session_id}: {e}")
 

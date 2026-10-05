@@ -1,5 +1,5 @@
 import threading
-from typing import Dict, Optional
+from typing import Dict
 
 from ...core.config import AKConfig
 from ...core.util.factory import AKConfigError, require_extra, resolve_dotted
@@ -24,20 +24,15 @@ class IntegrationAdapterFactory:
     _lock = threading.Lock()
 
     @classmethod
-    def create_outbound(cls, name: str, session_id: Optional[str] = None) -> OutboundAdapter:
+    def create_outbound(cls, name: str) -> OutboundAdapter:
         """Return the outbound adapter for an ``integration`` attribute value.
 
         :param name: A built-in short name, or a dotted path to an OutboundAdapter subclass.
-        :param session_id: Optional session id to route to a specific stateful connection.
         :return: The adapter instance (shared; adapters are stateless per message).
         :raises AKConfigError: If the name is neither a built-in nor a resolvable dotted path.
         :raises ImportError: If a built-in's optional dependency is not installed.
         """
         with cls._lock:
-            if session_id:
-                adapter = cls._cache.get(f"{name}:{session_id}")
-                if adapter is not None:
-                    return adapter
             adapter = cls._cache.get(name)
             if adapter is None:
                 adapter = cls._build(name)
@@ -49,36 +44,6 @@ class IntegrationAdapterFactory:
         """Drop the instance cache. For tests that swap configuration between cases."""
         with cls._lock:
             cls._cache.clear()
-
-    @classmethod
-    def register_outbound(cls, name: str, adapter: OutboundAdapter, session_id: Optional[str] = None) -> None:
-        """Register a live outbound adapter instance under a name.
-
-        Built-in adapters are stateless and constructed by :meth:`create_outbound`; a stateful
-        edge like LiveKit (which owns a persistent WebRTC room) constructs itself and registers
-        here so the Response Handler can route replies back to the same connection.
-
-        :param name: The integration name stamped on output messages.
-        :param adapter: The adapter instance to return for that name.
-        :param session_id: Optional session id to register a unique stateful connection.
-        """
-        key = f"{name}:{session_id}" if session_id else name
-        with cls._lock:
-            cls._cache[key] = adapter
-
-    @classmethod
-    def unregister_outbound(cls, name: str, session_id: Optional[str] = None) -> None:
-        """Remove a live outbound adapter instance from the cache.
-
-        Called when a stateful connection (like LiveKit) disconnects, preventing memory leaks
-        by allowing the garbage collector to destroy the adapter.
-
-        :param name: The integration name.
-        :param session_id: Optional session id of the specific connection to remove.
-        """
-        key = f"{name}:{session_id}" if session_id else name
-        with cls._lock:
-            cls._cache.pop(key, None)
 
     @classmethod
     def _build(cls, name: str) -> OutboundAdapter:

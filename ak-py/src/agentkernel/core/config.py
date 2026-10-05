@@ -685,6 +685,15 @@ class _RealtimeConfig(BaseModel):
         ge=0,
         description="Mic audio batched into this many milliseconds per input-queue message; 0 passes every frame through (lowest input latency, many more messages)",
     )
+    inject_history: bool = Field(
+        default=False,
+        description="Whether to inject past session history (user/assistant text transcripts) on Realtime WebSocket reconnection.",
+    )
+    history_limit: int = Field(
+        default=20,
+        ge=1,
+        description="Maximum number of recent messages to inject when inject_history is enabled.",
+    )
 
 
 class _ExecutionConfig(BaseModel):

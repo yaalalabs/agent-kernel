@@ -1,6 +1,6 @@
 module "containerized_agents" {
-  source  = "../../../../../../ak-deployment/ak-aws/containerized" # AK_PROVIDER=aws
-  # version = "0.9.3" # AK_LOCAL_DEV_COMMENT
+  source  = "yaalalabs/ak-containerized/aws"
+  version = "0.9.3"
 
   providers = { aws = aws, docker = docker }
 

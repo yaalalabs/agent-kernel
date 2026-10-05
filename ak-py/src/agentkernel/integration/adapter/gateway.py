@@ -1,12 +1,12 @@
 import logging
 
 from ...core.util.async_bridge import run_async_sync
-from .base import GatewayAdapter, Source
-from .factory import IntegrationAdapterFactory
+from .base import Source, StatefulEdgeAdapter
+from .registry import StatefulEdgeRegistry
 
 
 class GatewayRunner:
-    """Hosts a stateful :class:`GatewayAdapter` (spec #524 §7).
+    """Hosts a stateful :class:`StatefulEdgeAdapter` (spec #524 §7).
 
     The bidirectional sibling of :class:`WebhookRESTRequestHandler` and ``PollerRunner``: a
     gateway owns a long-lived platform connection, feeds the input queue with what it reads, and
@@ -21,7 +21,7 @@ class GatewayRunner:
     GRACEFUL_STOP_TIMEOUT_SECONDS: float = 10.0
     """Bound on the adapter's own teardown before it is force-cancelled."""
 
-    def __init__(self, adapter: GatewayAdapter):
+    def __init__(self, adapter: StatefulEdgeAdapter):
         """
         :param adapter: The gateway adapter to host.
         :raises ValueError: If the adapter's ``source`` is not ``Source.REALTIME``.
@@ -34,7 +34,7 @@ class GatewayRunner:
         self._adapter = adapter
 
     @property
-    def adapter(self) -> GatewayAdapter:
+    def adapter(self) -> StatefulEdgeAdapter:
         """The hosted adapter (IOHandler names its thread after it)."""
         return self._adapter
 
@@ -42,15 +42,16 @@ class GatewayRunner:
         """Register the outbound adapter, then run the gateway's blocking loop.
 
         The registration is what lets the Response Handler resolve this live connection by the
-        adapter's ``name``. It happens here rather than in the adapter's constructor so the side
+        adapter's ``session_id``. It happens here rather than in the adapter's constructor so the side
         effect is tied to being hosted, not to merely existing.
         """
         session_id = getattr(self._adapter, "session_id", None)
-        IntegrationAdapterFactory.register_outbound(self._adapter.name, self._adapter, session_id=session_id)
+        StatefulEdgeRegistry.register(self._adapter, session_id=session_id)
         try:
             run_async_sync(self._run_until_shutdown())
         finally:
-            IntegrationAdapterFactory.unregister_outbound(self._adapter.name, session_id=session_id)
+            if session_id:
+                StatefulEdgeRegistry.unregister(session_id)
 
     async def _run_until_shutdown(self) -> None:
         import asyncio
@@ -66,6 +67,12 @@ class GatewayRunner:
             await asyncio.sleep(0.5)
 
         self._log.info(f"Gateway {self._adapter.name} stopping due to shutdown event")
+
+        try:
+            await self._adapter.stop()
+        except Exception:
+            self._log.exception(f"Error calling stop() on Gateway {self._adapter.name}")
+
         try:
             await asyncio.wait_for(asyncio.shield(task), timeout=self.GRACEFUL_STOP_TIMEOUT_SECONDS)
         except asyncio.TimeoutError:

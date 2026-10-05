@@ -59,7 +59,7 @@ class RealtimeConnection:
         # second, and building a transport (and its client) per chunk is pure overhead.
         self._transport = QueueTransportFactory.create()
         # Audio + terminal/control events are paced here, once for every framework adapter.
-        self._audio_queue: asyncio.Queue = asyncio.Queue()
+        self._audio_queue: asyncio.Queue = asyncio.Queue(maxsize=1024)
         self._pacing_task: Optional[asyncio.Task] = None
         self.last_activity_at: float = time.time()
 
@@ -90,15 +90,18 @@ class RealtimeConnection:
         """
         self.last_activity_at = time.time()
         if event_type == "audio_delta":
-            self._audio_queue.put_nowait(("audio_delta", data))
+            await self._audio_queue.put(("audio_delta", data))
         elif event_type == "interrupt":
             # Drop audio not yet emitted, then queue the interrupt behind it so it cannot
             # overtake audio already in flight to the edge.
             while not self._audio_queue.empty():
-                self._audio_queue.get_nowait()
-            self._audio_queue.put_nowait(("interrupt", data))
+                try:
+                    self._audio_queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    break
+            await self._audio_queue.put(("interrupt", data))
         elif event_type == "done":
-            self._audio_queue.put_nowait(("done", data))
+            await self._audio_queue.put(("done", data))
         elif event_type == "transcript_delta":
             message_id = data.get("message_id") or ""
             await self._emit(StreamChunk(event=TextDelta(message_id=message_id, content=data["delta"]), delta=data["delta"]))
@@ -278,7 +281,6 @@ class RealtimeConnectionPool:
         with cls._lock:
             if cls._instance is None:
                 cls._instance = cls()
-                cls._instance._start_background_thread()
             return cls._instance
 
     @classmethod
@@ -294,12 +296,15 @@ class RealtimeConnectionPool:
         self._conn_lock = threading.Lock()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._loop_ready = threading.Event()
-        self._thread: Optional[threading.Thread] = None
 
-    def _start_background_thread(self) -> None:
-        if self._thread is None:
-            self._thread = threading.Thread(target=self.start, daemon=True, name="realtime-pool")
-            self._thread.start()
+    def get_task(self) -> ThreadRunner.Task:
+        """Returns the ThreadRunner.Task that runs this pool's event loop."""
+        return ThreadRunner.Task(
+            execution_function=self.start,
+            thread_name="realtime-pool",
+            stop_all_on_failure=True,
+            graceful=True,
+        )
 
     def start(self) -> None:
         """Blocking entry point: runs the shared asyncio event loop until shutdown.

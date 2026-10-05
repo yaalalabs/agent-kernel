@@ -86,7 +86,19 @@ class ResponseHandler:
             if integration:
                 reply_context = self._reply_context(message)
                 session_id = reply_context.get("session_id")
-                adapter = self._outbound_adapter(integration, session_id)
+
+                if message.attributes.get(ATTR_REALTIME):
+                    from ..integration.adapter.registry import StatefulEdgeRegistry
+
+                    adapter = StatefulEdgeRegistry.get(message.group_id)
+                    if adapter:
+                        run_async_sync(adapter.deliver_error(adapter.ERROR_MESSAGE, reply_context))
+                        self._log.info(f"Delivered permanent-failure message to {integration}: session_id={message.group_id}")
+                    else:
+                        self._log.warning(f"Could not find live edge connection for session_id={message.group_id}")
+                    return
+
+                adapter = self._outbound_adapter(integration)
                 run_async_sync(adapter.deliver_error(adapter.ERROR_MESSAGE, reply_context))
                 self._log.info(f"Delivered permanent-failure message to {integration}: session_id={message.group_id}")
                 return
@@ -152,7 +164,7 @@ class ResponseHandler:
     # -- delivery paths ----------------------------------------------------------------------
 
     @staticmethod
-    def _outbound_adapter(integration: str, session_id: Optional[str] = None):
+    def _outbound_adapter(integration: str):
         """Resolve the outbound adapter named by a message's integration attribute.
 
         Imported lazily and locally: messaging platforms are an `integration` capability, and
@@ -161,14 +173,13 @@ class ResponseHandler:
         to reach the AG-UI state helpers.
 
         :param integration: The adapter name stamped by the producer.
-        :param session_id: Optional session id to fetch a specific stateful connection.
         :return: The outbound adapter for that name.
         :raises AKConfigError: If the name resolves to no adapter — the message is then retried
             and permanently failed rather than silently disappearing.
         """
         from ..integration.adapter.factory import IntegrationAdapterFactory
 
-        return IntegrationAdapterFactory.create_outbound(integration, session_id=session_id)
+        return IntegrationAdapterFactory.create_outbound(integration)
 
     @staticmethod
     def _reply_context(message: QueueMessage) -> dict:
@@ -183,13 +194,32 @@ class ResponseHandler:
         unreachable platform API gets its retries.
         """
         reply_context = self._reply_context(message)
-        session_id = reply_context.get("session_id")
-        adapter = self._outbound_adapter(integration, session_id)
         request_id = message.attributes.get(ATTR_REQUEST_ID)
         body = json.loads(message.body) if message.body else {}
         if not isinstance(body, dict):
             body = {"result": body}
         status_code = int(message.attributes.get(ATTR_STATUS_CODE, "200"))
+
+        if message.attributes.get(ATTR_REALTIME):
+            from ..integration.adapter.registry import StatefulEdgeRegistry
+
+            # The edge connection is unique per session_id (which is group_id for realtime chunk messages)
+            adapter = StatefulEdgeRegistry.get(message.group_id)
+            if not adapter:
+                raise ValueError(f"No active realtime edge connection found for session {message.group_id}")
+
+            if status_code >= 400:
+                self._log.error(
+                    f"[OUTPUT ERROR] integration={integration}, session_id={message.group_id}, "
+                    f"request_id={request_id}, status_code={status_code}, error={body.get('error')}"
+                )
+                run_async_sync(adapter.deliver_error(adapter.ERROR_MESSAGE, reply_context))
+                return
+
+            self._deliver_realtime_chunk(adapter, message, body, reply_context, integration)
+            return
+
+        adapter = self._outbound_adapter(integration)
 
         if status_code >= 400:
             self._log.error(
@@ -197,10 +227,6 @@ class ResponseHandler:
                 f"request_id={request_id}, status_code={status_code}, error={body.get('error')}"
             )
             run_async_sync(adapter.deliver_error(adapter.ERROR_MESSAGE, reply_context))
-            return
-
-        if message.attributes.get(ATTR_REALTIME):
-            self._deliver_realtime_chunk(adapter, message, body, reply_context, integration)
             return
 
         run_async_sync(adapter.deliver(AgentReplyText(response=str(body.get("result", ""))), reply_context))

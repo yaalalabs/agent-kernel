@@ -42,6 +42,7 @@ class ConsumerLoop:
         wait_seconds: float = 20.0,
         logger: Optional[logging.Logger] = None,
         exit_on_shutdown: bool = True,
+        extra_tasks: Optional[list[ThreadRunner.Task]] = None,
     ):
         """
         :param process: Handles one message; raising leaves the message for redelivery.
@@ -71,6 +72,7 @@ class ConsumerLoop:
         self._wait_seconds = wait_seconds
         self._log = logger or logging.getLogger("ak.pipeline.consumer")
         self._exit_on_shutdown = exit_on_shutdown
+        self._extra_tasks = extra_tasks or []
 
     def run(self) -> None:
         """Block forever, consuming the queue with ``num_consumers`` threads."""
@@ -78,17 +80,19 @@ class ConsumerLoop:
             raise ValueError(f"num_consumers must be >= 1, got {self._num_consumers}")
         queue_label = f"{self._queue.value} queue, " if self._queue else ""
         self._log.debug(f"ConsumerLoop starting: {queue_label}consumers: {self._num_consumers}")
+        tasks = [
+            ThreadRunner.Task(
+                execution_function=self._consumer_loop,
+                thread_name=f"{self._thread_name_prefix}-{i}",
+                stop_all_on_failure=True,
+                graceful=True,
+            )
+            for i in range(self._num_consumers)
+        ] + self._extra_tasks
+
         ThreadRunner.run(
-            tasks=[
-                ThreadRunner.Task(
-                    execution_function=self._consumer_loop,
-                    thread_name=f"{self._thread_name_prefix}-{i}",
-                    stop_all_on_failure=True,
-                    graceful=True,
-                )
-                for i in range(self._num_consumers)
-            ],
-            max_workers=self._num_consumers,
+            tasks=tasks,
+            max_workers=self._num_consumers + len(self._extra_tasks),
             exit_on_shutdown=self._exit_on_shutdown,
         )
 

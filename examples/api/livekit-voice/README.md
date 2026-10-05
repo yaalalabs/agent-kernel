@@ -6,6 +6,20 @@ This example shows how to run an Agent Kernel instance connected directly to a L
 
 You will need a LiveKit project (e.g. via [LiveKit Cloud](https://cloud.livekit.io/)). Obtain your WebSocket URL, API Key, and API Secret.
 
+## Realtime Configuration
+
+Agent Kernel handles realtime streaming pacing via the `execution.realtime` block in your config.
+
+```yaml
+execution:
+  mode: realtime
+  realtime:
+    playback_lead_ms: 50    # Audio buffered ahead of playback at the edge (higher = smoother playback over slow brokers)
+    input_batch_ms: 100     # Mic audio batched into this many milliseconds per input-queue message
+    inject_history: false   # Whether to inject past chat session history when reconnecting
+    history_limit: 20       # Maximum number of past messages to inject if inject_history is enabled
+```
+
 ## Build
 
 Install dependencies using `uv` and the provided build script:
@@ -19,18 +33,6 @@ To install local dependencies in development mode (linking directly to your loca
 ```bash
 ./build.sh local
 ```
-
-> **Developing against a local Agent Kernel clone:** `./build.sh local` installs the wheel from
-> `ak-py/dist`, and `uv run server.py` re-syncs that wheel on every launch. After changing anything
-> under `ak-py/src`, rebuild the wheel or you will keep running the old code:
->
-> ```bash
-> (cd ../../../ak-py && uv build --wheel) && ./build.sh local
-> ```
->
-> **Note:** `openai/in_memory` pins `agentkernel` to this checkout in its `pyproject.toml`
-> (`[tool.uv.sources]`) because the `livekit` extra is not in a published release yet, so even its
-> plain `./build.sh` builds against the local source. Drop that override once the extra ships.
 
 ## Run
 
