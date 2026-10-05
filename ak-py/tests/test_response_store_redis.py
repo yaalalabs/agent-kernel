@@ -5,12 +5,11 @@ There was no redis response-store test before #710 — only valkey — so this a
 record path the chunk work builds on.
 """
 
-import json
-
 import pytest
 
 from agentkernel.core.util.driver import redis as redis_driver_module
-from agentkernel.pipeline.response_store.redis import _CLOSE_SENTINEL, RedisResponseStore
+from agentkernel.pipeline.response_store.redis import RedisResponseStore
+from agentkernel.pipeline.response_store.redis_like import _CLOSE_MARKER_TTL_SECONDS, _CLOSE_SENTINEL
 
 
 class FakeRedisClient:
@@ -91,15 +90,35 @@ def test_no_ttl_is_applied_when_the_driver_has_none(client):
     assert client.expires == {}
 
 
-def test_the_sentinel_ends_the_stream_without_being_yielded(client):
-    """close_stream's marker releases the reader; it must never surface as a chunk."""
-    store = _store()
+def test_closing_a_stream_with_no_reader_drops_the_key_instead_of_signalling(client):
+    """Nothing is parked, so a pushed marker would only resurrect the key (PR #755 review)."""
+    store = _store(ttl=604800)
     store.add_chunk("r1", {"delta": "a"})
+
     store.close_stream("r1")
 
-    received = list(store.stream("r1", chunk_timeout=5))
-    assert received == [{"delta": "a"}]
-    assert _CLOSE_SENTINEL not in [json.dumps(chunk) for chunk in received]
+    assert "ak:resp:chunks:r1" not in client.lists
+    assert _CLOSE_SENTINEL not in client.lists.get("ak:resp:chunks:r1", [])
+
+
+def test_closing_a_live_stream_marks_the_key_with_its_own_short_ttl(client):
+    """A reader suspended at `yield` never consumes the marker, so the marker must expire itself.
+
+    Reading one chunk and stopping is what suspends the generator while leaving it registered live.
+
+    The configured TTL is deliberately 0 here (keep forever) — the one case where inheriting the
+    store's TTL would leave the key behind permanently.
+    """
+    store = _store(ttl=0)
+    store.add_chunk("r1", {"delta": "a"})
+    stream = store.stream("r1", chunk_timeout=5)
+    assert next(stream) == {"delta": "a"}
+
+    store.close_stream("r1")
+
+    assert client.lists["ak:resp:chunks:r1"] == [_CLOSE_SENTINEL]
+    assert client.expires["ak:resp:chunks:r1"] == _CLOSE_MARKER_TTL_SECONDS
+    stream.close()
 
 
 def test_the_chunk_key_is_dropped_when_the_stream_ends(client):

@@ -71,16 +71,17 @@ from agentkernel.pipeline import IOHandler
 IOHandler.run(handlers=[AGUIPipelineRequestHandler(authoriser=MyAuthoriser())])
 ```
 
-It needs a response store that can carry a chunk stream, and on a broker transport a session store
-the agent runner can read:
+It needs a response store that can carry a chunk stream — everywhere, not only on a broker — and on
+a broker transport a session store and an attachment store the agent runner can read:
 
 | Setting | Local (`in_memory` transport) | On a broker (sqs, kafka, nats) |
 |---|---|---|
-| `execution.response_store.type` | anything, or unset | `redis` or `valkey` — `dynamodb` has no blocking read |
+| `execution.response_store.type` | `in_memory`, `redis` or `valkey` — `dynamodb` has no blocking read | `redis` or `valkey` |
 | `session.type` | anything, or unset | `redis`, `valkey`, `dynamodb`, `cosmosdb` or `firestore` |
+| `multimodal.storage_type` (when `multimodal.enabled`) | anything, or unset | `redis` or `dynamodb` |
 
-The handler checks both at startup and refuses to boot with a message naming the setting to change,
-rather than accepting a request whose answer could never come back.
+The handler checks all of these at startup and refuses to boot with a message naming the setting to
+change, rather than accepting a request whose answer could never come back.
 
 Discovery publishes **names only** — deliberately not each agent's description, because several
 framework adapters return the agent's *instructions* from `get_description()`, which would publish

@@ -212,6 +212,20 @@ class TestRedisCommandSurface:
         driver.expire("k")
         driver._client.expire.assert_not_called()
 
+    def test_expire_in_overrides_the_configured_ttl(self):
+        """For state with a lifetime of its own — the response store's chunk close-marker.
+
+        A configured ttl of 0 is the case that matters: "keep forever" must not mean forever here.
+        """
+        driver = _driver(ttl=0)
+        driver.expire_in("k", 60)
+        driver._client.expire.assert_called_once_with(name="k", time=60)
+
+    def test_expire_in_is_noop_for_a_non_positive_ttl(self):
+        driver = _driver(ttl=604800)
+        driver.expire_in("k", 0)
+        driver._client.expire.assert_not_called()
+
     def test_key_applies_prefix(self):
         driver = _driver(prefix="ak:test:")
         assert driver.key("s1:meta") == "ak:test:s1:meta"

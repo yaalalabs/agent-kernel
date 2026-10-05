@@ -353,9 +353,23 @@ class _RedisLikeDriver(BaseDriver):
 
         :param key: The key to set the TTL for.
         """
-        if self._ttl > 0:
-            self._log.debug(f"EXPIRE {key} {self._ttl}")
-            self.client.expire(name=key, time=self._ttl)
+        self.expire_in(key, self._ttl)
+
+    def expire_in(self, key: str, ttl: int) -> None:
+        """
+        Applies an explicit TTL to the given key, ignoring the configured one.
+
+        For state whose lifetime is its own, not the store's: the response store's chunk
+        close-marker must die in minutes even where records are kept for a week, and must still
+        expire where the configured TTL is 0 (keep forever). No-op when ``ttl <= 0``, since a
+        raw ``EXPIRE key 0`` would delete the key.
+
+        :param key: The key to set the TTL for.
+        :param ttl: TTL in seconds.
+        """
+        if ttl > 0:
+            self._log.debug(f"EXPIRE {key} {ttl}")
+            self.client.expire(name=key, time=ttl)
 
     def clear_prefix(self) -> None:
         """Deletes all keys matching the configured prefix pattern."""

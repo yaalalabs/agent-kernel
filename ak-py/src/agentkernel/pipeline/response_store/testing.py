@@ -78,9 +78,10 @@ class ResponseStoreContract:
         """close_stream must unblock a reader mid-wait, not only drop state."""
         store = self.make_store()
         finished = threading.Event()
+        received = []
 
         def read():
-            list(store.stream("r-close", chunk_timeout=self.read_wait))
+            received.extend(store.stream("r-close", chunk_timeout=self.read_wait))
             finished.set()
 
         threading.Thread(target=read, daemon=True).start()
@@ -89,6 +90,24 @@ class ResponseStoreContract:
 
         store.close_stream("r-close")
         assert finished.wait(timeout=self.read_wait), "close_stream left the reader parked"
+        assert received == [], "whatever a store uses to release the reader must not surface as a chunk"
+
+    def test_close_stream_after_the_stream_ended_leaves_no_state(self):
+        """The handler's real sequence: drain to the done chunk, then close in a finally.
+
+        A store that signals unconditionally recreates the chunk state its finished reader has
+        just dropped, leaving one abandoned stream behind per run for the whole record lifetime.
+        The close must therefore be a no-op (or a plain cleanup) once no reader is left.
+        """
+        store = self.make_store()
+        store.add_chunk("r-ended", {"delta": "a"})
+        store.add_chunk("r-ended", {"done": True})
+        assert list(store.stream("r-ended", chunk_timeout=self.read_wait)) == [{"delta": "a"}, {"done": True}]
+
+        store.close_stream("r-ended")
+
+        with pytest.raises(TimeoutError):
+            list(store.stream("r-ended", chunk_timeout=0.2))
 
     def test_a_reader_that_arrives_after_the_writer_still_sees_every_chunk(self):
         store = self.make_store()

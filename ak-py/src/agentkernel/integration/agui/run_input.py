@@ -185,7 +185,7 @@ class AGUIRunEnvelope(BaseModel):
 
         :param run_input: The parsed RunAgentInput.
         :return: The envelope to put on the body.
-        :raises HTTPException: 400 when `state` is not an object, or the envelope exceeds its budget.
+        :raises HTTPException: 400 when `state` is not an object.
         """
         state = None
         if run_input.state is not None:
@@ -204,12 +204,17 @@ class AGUIRunEnvelope(BaseModel):
         if run_input.context:
             context = [{"description": entry.description, "value": entry.value} for entry in run_input.context]
 
-        envelope = AGUIRunEnvelope(state=state, forwarded_props=forwarded_props, context=context)
-        envelope._reject_if_oversized()
-        return envelope
+        return AGUIRunEnvelope(state=state, forwarded_props=forwarded_props, context=context)
 
-    def _reject_if_oversized(self) -> None:
-        """Fail at the edge rather than as a transport-specific send error after enqueue."""
+    def reject_if_oversized(self) -> None:
+        """Fail at the edge rather than as a transport-specific send error after enqueue.
+
+        Called by the handler that enqueues the envelope, not by ``build``: the direct handler
+        builds one too and puts it on nothing, so charging it a transport budget there would
+        reject a request that works today.
+
+        :raises HTTPException: 400 when the three fields together exceed ``BUDGET_BYTES``.
+        """
         size = len(self.model_dump_json(exclude_none=True).encode())
         if size > self.BUDGET_BYTES:
             raise HTTPException(

@@ -140,6 +140,15 @@ Two decisions taken up front, so no iteration stalls on them:
   refactor — the existing store tests patch the driver module rather than store internals, so they
   should survive untouched.
 
+> **Outcome (done during the PR #755 review round, not as a standalone iteration).** Step 1 was done
+> for a reason better than tidiness: `close_stream` recreated the chunk key its own reader had just
+> deleted, and applying that fix to two byte-identical copies is how the copies drift. The shared
+> class is `RedisLikeResponseStore`. Step 2 resolved the other way — the two chunk loops stay
+> separate, because they read different inputs (`AgentHandler.run_stream_sync` versus
+> `ChatService.process_stream_chat_sync`) and differ in what they hold back and what they record.
+> What they genuinely shared was the *dispatch*, and that was hoisted above both instead:
+> `AgentRunner.process` is now the dispatcher and `_process_run` the subclass hook.
+
 ## Iteration 9: Sync docs and skills
 
 - **Goal:** the documented architecture matches what shipped.

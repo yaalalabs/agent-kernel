@@ -13,9 +13,13 @@ agui:
 
 multimodal:
   enabled: true
-  # Not session_cache: the runner resolves attachment ids in another process, so the bytes must
-  # live somewhere both can read.
-  storage_type: in_memory
+  # Not in_memory or session_cache: the runner resolves attachment ids in another process, so the
+  # bytes must live somewhere both can read. There is no valkey attachment store, but Valkey speaks
+  # the Redis protocol, so this reaches the same container.
+  storage_type: redis
+  redis:
+    url: redis://localhost:6379
+    prefix: "ak:agui:attachments:"
 
 session:
   # The runner reads the conversation in its own process, so a process-local store would hand it

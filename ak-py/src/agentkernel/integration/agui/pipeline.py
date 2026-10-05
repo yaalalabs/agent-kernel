@@ -69,8 +69,14 @@ class AGUIPipelineRequestHandler(AGUIRequestHandler):
     def _validate_topology() -> None:
         """Refuse a configuration whose pieces cannot reach each other, before the first request.
 
-        :raises AKConfigError: If the response store cannot stream chunks, or either store is
-                               process-local while the agent runs in another process.
+        The attachment check is the least obvious of the three: the edge offloads attachment bytes
+        before enqueueing (see ``_run``) and ``MultimodalPreHook`` resolves the reference in the
+        runner, so an unshared store hands the runner an id it cannot look up — a per-request
+        failure with nothing wrong at startup.
+
+        :raises AKConfigError: If the response store cannot stream chunks, or any of the response,
+                               session and attachment stores is process-local while the agent runs
+                               in another process.
         """
         store = ResponseStoreFactory.create()
         transport = QueueTransportFactory.resolve_type()
@@ -94,6 +100,13 @@ class AGUIPipelineRequestHandler(AGUIRequestHandler):
                 f"session store 'in_memory' is single-process only, but the queue transport is '{transport}'; "
                 f"configure session.type as redis, valkey, dynamodb, cosmosdb or firestore"
             )
+        if AKConfig.get().multimodal.enabled and transport != "in_memory" and not AttachmentStorageManager.store_is_shared():
+            raise AKConfigError(
+                f"multimodal.storage_type '{AKConfig.get().multimodal.storage_type}' keeps attachments in the process "
+                f"that wrote them, but the queue transport is '{transport}', so the agent runs in another one: an "
+                f"AG-UI attachment offloaded at the edge would be unresolvable in the runner. Use redis or dynamodb, "
+                f"or run the single-process in_memory transport"
+            )
 
     async def _run(self, agent_name: str, request: Request) -> StreamingResponse:
         """Enqueue the run and hand back the event stream the store will fill.
@@ -111,6 +124,7 @@ class AGUIPipelineRequestHandler(AGUIRequestHandler):
 
         user_id, agent, run_input, requests = await self._resolve_run_inputs(agent_name, request)
         envelope = AGUIRunEnvelope.build(run_input)
+        envelope.reject_if_oversized()
         self._warn_if_unreadable(agent, run_input)
 
         # Bytes must not ride the queue: brokers cap a message far below api.max_file_size.

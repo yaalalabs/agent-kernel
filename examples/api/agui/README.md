@@ -181,7 +181,7 @@ Two things worth trying because they should *not* work:
 - Attach something over 4MB. It is refused at the moment you pick it, before you have typed anything,
   and the reason appears in the transcript — the run is never attempted, so no prompt is swallowed.
 
-Two things that look like bugs but are not. `storage_type` defaults to `in_memory`, so restarting
+Two things that look like bugs but are not. In mode A `storage_type` is `in_memory`, so restarting
 `app.py` drops the stored bytes: a follow-up question about an image attached before the restart can
 still be answered from the description in the history, but the analysis tool will not find the id. And
 if the 📎 button does nothing at all, the frontend was not rebuilt — run `./build.sh` (or
@@ -200,6 +200,7 @@ same order. Nothing in `frontend/` knows where the agent ran.
 |---|---|---|
 | Transport | `in_memory` (the default) | NATS |
 | Reply path | in-memory response store | Valkey |
+| Attachment bytes | in-memory store | Valkey, over the redis store |
 | To run | `python app.py` | two terminals + Docker |
 | Shows | the wiring | the topology the design is for |
 

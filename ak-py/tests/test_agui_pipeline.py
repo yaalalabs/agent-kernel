@@ -11,6 +11,7 @@ import json
 from unittest.mock import patch
 
 import pytest
+from fastapi import HTTPException
 
 from agentkernel.auth.authoriser import Authoriser
 from agentkernel.core.base import Session
@@ -21,7 +22,7 @@ from agentkernel.core.util.factory import AKConfigError
 from agentkernel.integration.agui.pipeline import AGUIPipelineRequestHandler
 from agentkernel.integration.agui.run_input import AGUIRunEnvelope, AGUIRunRequest
 from agentkernel.integration.agui.state import AGUIState
-from agentkernel.pipeline.agent_runner import AgentRunner
+from agentkernel.pipeline.agent_runner import AgentRunner, StreamAgentRunner
 from agentkernel.pipeline.envelope import ATTR_AGUI, ATTR_REQUEST_ID, ATTR_USER_ID, QueueMessage, QueueName
 from agentkernel.pipeline.response_handler import ResponseHandler
 from agentkernel.pipeline.response_store.dynamodb import DynamoDBResponseStore
@@ -36,6 +37,11 @@ def _use_mode(monkeypatch, mode):
 
 def _use_session_type(monkeypatch, session_type):
     monkeypatch.setattr(AKConfig.get().session, "type", session_type)
+
+
+def _use_attachment_store(monkeypatch, storage_type, enabled=True):
+    monkeypatch.setattr(AKConfig.get().multimodal, "enabled", enabled)
+    monkeypatch.setattr(AKConfig.get().multimodal, "storage_type", storage_type)
 
 
 @pytest.fixture(autouse=True)
@@ -123,11 +129,71 @@ def _drain_output(transport, limit=20):
     return messages
 
 
-def _run_through_runner(session, chunks, envelope=None, during_run=None, attributes=None):
+RUNNER_CLASSES = [AgentRunner, StreamAgentRunner]
+
+
+def _run_through_runner(session, chunks, envelope=None, during_run=None, attributes=None, runner_cls=AgentRunner):
     transport = InMemoryTransport()
     chat_service = _FakeChatService(session, chunks, during_run)
-    AgentRunner(transport=transport, chat_service=chat_service).process(_agui_message(envelope, attributes))
+    runner_cls(transport=transport, chat_service=chat_service).process(_agui_message(envelope, attributes))
     return _drain_output(transport), chat_service
+
+
+class TestMarkerDispatchIsStructural:
+    """The bypass this guards against was invisible because the tests only built AgentRunner.
+
+    ``RUNNER_CLASSES`` is every class IOHandler can pick from ``execution.mode``; an AG-UI message
+    must take the same path through all of them, so these cases run once per entry.
+
+    ``process`` is the dispatcher and must stay the base class's for every runner; a subclass with
+    different run behaviour overrides ``_process_run``. An override of ``process`` compiles, passes
+    every ordinary test, and silently drops the AG-UI branch for whichever execution mode selects
+    that class.
+    """
+
+    def test_the_matrix_covers_every_runner_class(self):
+        """So a new sibling cannot be added without the cases below being run against it."""
+        assert set(RUNNER_CLASSES) == {AgentRunner, *AgentRunner.__subclasses__()}
+
+    @pytest.mark.parametrize("runner_cls", RUNNER_CLASSES)
+    def test_no_subclass_overrides_the_dispatcher(self, runner_cls):
+        assert runner_cls.process is AgentRunner.process, f"{runner_cls.__name__} must override _process_run, not process"
+
+    @pytest.mark.parametrize("runner_cls", RUNNER_CLASSES)
+    def test_the_agui_run_is_identical_whichever_class_was_selected(self, runner_cls):
+        """Envelope applied, state snapshot emitted, marker on every output — for both classes."""
+        envelope = AGUIRunEnvelope(state={"tasks": []}, forwarded_props={"page": "/x"})
+        seen = {}
+
+        def during_run(run_session):
+            seen["forwarded_props"] = AGUIState.read_forwarded_props(run_session)
+            AGUIState.write_state(run_session, {"tasks": [{"title": "buy milk"}]})
+
+        outputs, chat_service = _run_through_runner(Session("t-1"), _text_run(), envelope=envelope, during_run=during_run, runner_cls=runner_cls)
+        bodies = [json.loads(out.body) for out in outputs]
+
+        assert chat_service.prepared == [("t-1", "planner")], "the AG-UI branch was not taken"
+        assert seen["forwarded_props"] == {"page": "/x"}
+        assert all(ATTR_AGUI in out.attributes for out in outputs)
+        assert any("agui_state" in body for body in bodies)
+        assert bodies[-1].get("done") is True
+
+    @pytest.mark.parametrize("runner_cls", RUNNER_CLASSES)
+    def test_a_permanent_failure_terminates_the_stream(self, runner_cls):
+        """Without `done` the edge waits out its whole budget and reports a timeout instead.
+
+        This is the runner's own handler, not the Response Handler's: the two are separate
+        methods, and only this one runs when the input message exhausts its retries.
+        """
+        transport = InMemoryTransport()
+        runner_cls(transport=transport, chat_service=_FakeChatService(Session("t-1"), [])).on_permanent_failure(_agui_message())
+
+        outputs = _drain_output(transport)
+        assert len(outputs) == 1
+        body = json.loads(outputs[0].body)
+        assert body["done"] is True, "an AG-UI error chunk without `done` never ends the client's stream"
+        assert body["error"]
+        assert ATTR_AGUI in outputs[0].attributes
 
 
 class TestTheMarkerSurvivesTheRunnerHop:
@@ -261,6 +327,38 @@ class TestResponseHandlerDispatch:
         assert store.get_record("r1")["body"] == {"result": "hi"}
 
 
+class TestTheEnvelopeBudget:
+    """The budget belongs to the queue hop, not to the protocol (PR #755 review).
+
+    ``build`` is shared with the direct handler, which puts the envelope on nothing, so charging
+    the budget there would start rejecting large-state requests that work today.
+    """
+
+    class _Input:
+        """The three fields `build` reads off a RunAgentInput."""
+
+        def __init__(self, state):
+            self.state = state
+            self.forwarded_props = None
+            self.context = []
+
+    def _oversized(self):
+        return AGUIRunEnvelope.build(self._Input({"blob": "x" * (AGUIRunEnvelope.BUDGET_BYTES + 1)}))
+
+    def test_building_an_oversized_envelope_is_not_an_error(self):
+        assert self._oversized().state is not None
+
+    def test_the_enqueueing_handler_rejects_it_with_a_400_naming_the_budget(self):
+        with pytest.raises(HTTPException) as excinfo:
+            self._oversized().reject_if_oversized()
+
+        assert excinfo.value.status_code == 400
+        assert str(AGUIRunEnvelope.BUDGET_BYTES) in excinfo.value.detail
+
+    def test_an_envelope_within_budget_passes(self):
+        AGUIRunEnvelope.build(self._Input({"tasks": []})).reject_if_oversized()
+
+
 class TestPreconditions:
     """Capability alone is not enough: the in-memory store streams chunks and is process-local."""
 
@@ -306,6 +404,45 @@ class TestPreconditions:
         _use_session_type(monkeypatch, "in_memory")
         with pytest.raises(AKConfigError, match="single-process only"):
             self._construct(_Shared(), "sqs")
+
+    def test_a_process_local_attachment_store_is_refused_on_a_broker(self, monkeypatch):
+        """The edge offloads the bytes and the runner resolves the id, so both need the store.
+
+        Nothing fails at startup without this check: the mismatch only surfaces as a per-request
+        error, on the requests that carry an attachment.
+        """
+
+        class _Shared(InMemoryResponseStore):
+            @property
+            def shared(self):
+                return True
+
+        _use_session_type(monkeypatch, "redis")
+        _use_attachment_store(monkeypatch, "in_memory")
+        with pytest.raises(AKConfigError, match="keeps attachments in the process"):
+            self._construct(_Shared(), "sqs")
+
+    def test_a_shared_attachment_store_is_accepted_on_a_broker(self, monkeypatch):
+        class _Shared(InMemoryResponseStore):
+            @property
+            def shared(self):
+                return True
+
+        _use_session_type(monkeypatch, "redis")
+        _use_attachment_store(monkeypatch, "dynamodb")
+        assert self._construct(_Shared(), "sqs") is not None
+
+    def test_the_attachment_store_is_not_checked_when_multimodal_is_off(self, monkeypatch):
+        """Attachments are refused outright before they reach a store, so the store is moot."""
+
+        class _Shared(InMemoryResponseStore):
+            @property
+            def shared(self):
+                return True
+
+        _use_session_type(monkeypatch, "redis")
+        _use_attachment_store(monkeypatch, "in_memory", enabled=False)
+        assert self._construct(_Shared(), "sqs") is not None
 
     def test_a_dotted_path_session_store_is_left_alone(self, monkeypatch):
         """The accepted blind spot (#710 §6): the check proves the literal name, nothing more."""

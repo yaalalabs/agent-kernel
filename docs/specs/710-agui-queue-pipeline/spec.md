@@ -146,18 +146,27 @@ Drivers never read `AKConfig` — the timeout arrives as a parameter, per the sh
 
 ### 4. Agent Runner — `pipeline/agent_runner.py`
 
-`AgentRunner.process` gains one branch at the top, the mirror of `StreamAgentRunner.process`'s
-existing `ATTR_INTEGRATION` fallback (`:212-214`):
+`AgentRunner.process` becomes a marker dispatcher, and the run body it used to hold moves to a new
+`_process_run` hook:
 
 ```python
 def process(self, message: QueueMessage) -> None:
+    """Not an override point."""
     if message.attributes.get(ATTR_AGUI):
         return self._process_agui(message)
-    ...unchanged...
+    return self._process_run(message)
+
+def _process_run(self, message: QueueMessage) -> None:
+    ...the old body of process, unchanged...
 ```
 
-`StreamAgentRunner` inherits it, so the branch is reached whatever class `IOHandler` selected — which
-is the point: the app's `execution.mode` no longer decides whether an AG-UI run streams.
+`StreamAgentRunner` overrides `_process_run` (`:285-292`), not `process`, and its `ATTR_INTEGRATION`
+fallback delegates to `super()._process_run`. **The invariant: marker dispatch happens exactly once,
+above whichever class `IOHandler` selected from `execution.mode`** — which is the point, since that
+mode must no longer decide whether an AG-UI run streams. A subclass that overrides `process` instead
+compiles, passes every ordinary test, and silently drops the AG-UI branch for its mode; the structural
+test in `test_agui_pipeline.py` asserts `cls.process is AgentRunner.process` for every subclass so the
+invariant cannot be broken quietly.
 
 `_process_agui` is a method on `AgentRunner`, not a separate class: it is one execution path of the
 same component, and it reuses `_resolve_request_metadata` and `_send_to_output` unchanged.
@@ -189,14 +198,23 @@ def _process_agui(self, message: QueueMessage) -> None:
 
 Four things it deliberately does **not** do:
 
-- **No** `ATTR_USER_ID` **check.** The guard at `:218` is the WebSocket-entered marker and applies to
-`StreamAgentRunner.process`, which this branch returns before reaching.
+- **No** `ATTR_USER_ID` **check.** The guard at `:291` is the WebSocket-entered marker and applies to
+`StreamAgentRunner._process_run`, which this branch returns before reaching.
 - **No** `process_stream_chat_sync`**.** That wrapper hides the `AgentHandler`, and this path needs the
 session between load and run — the documented reason `prepare_agent_handler` exists
 (`core/chat_service.py:362-370`).
 - **No thread recording.** `_record_thread_reply` is not called; `ATTR_AGUI` is not `ATTR_THREAD`.
 - **No session write at the end.** `Runtime.stream` already stores the session and clears the
 volatile cache in its `finally` (`core/runtime.py:364`, `:372`).
+
+`AgentRunner.on_permanent_failure` gains an `ATTR_AGUI` branch of its own, emitting
+`StreamChunk(error=..., done=True)` rather than the plain `{"error": ...}` the ordinary path sends.
+This is the runner's handler, distinct from the Response Handler's: it runs when the *input* message
+exhausts its retries. Without `done` the edge records an error and keeps waiting, then reports a
+generic timeout after its whole budget, so the real reason never reaches the client.
+`StreamAgentRunner.on_permanent_failure` delegates up for `ATTR_AGUI` as it already does for
+`ATTR_INTEGRATION`, because its own branch stamps `session_id` from `group_id` — which for AG-UI is
+the thread, not the session.
 
 Both imports are lazy inside the method, the rule `_record_thread_reply` (`:125-150`) and
 `ResponseHandler._outbound_adapter` already follow: a runner process without the `agui` extra must

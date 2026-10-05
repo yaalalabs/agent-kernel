@@ -90,9 +90,12 @@ the socket. `request_id` is a string, so it fits a queue attribute where a socke
 - **The runner streams on the marker, not on `execution.mode`.** `IOHandler` selects
   `StreamAgentRunner` only when `mode == stream` (`pipeline/io_handler.py:132`), so an app on the
   default `rest_sync` would otherwise run an AG-UI message through `process_chat_request` and produce
-  one non-streamed reply. `AgentRunner.process` routes a marked message to the streaming
-  implementation — the mirror of `StreamAgentRunner.process` already routing an `ATTR_INTEGRATION`
-  message down to the non-streaming one (`pipeline/agent_runner.py:212-213`).
+  one non-streamed reply. **Marker dispatch therefore happens exactly once, above the class the mode
+  selected:** `AgentRunner.process` is the dispatcher for every runner, and a subclass that needs
+  different run behaviour overrides the `_process_run` hook instead. Framing this as a mirror of
+  `StreamAgentRunner`'s existing `ATTR_INTEGRATION` fallback would be the wrong shape — a subclass
+  delegating *up* is the opposite of a base class dispatching *down*, and only the second reaches the
+  branch whichever class was selected.
 - **`ATTR_AGUI` joins `_FORWARDED_ATTRIBUTES`** (`pipeline/agent_runner.py:27`). That tuple is a
   strict allowlist applied in `_send_to_output` (`:184`), so an unlisted attribute is dropped on the
   hop and §3's dispatch would never fire — every AG-UI chunk would take the ordinary
