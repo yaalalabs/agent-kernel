@@ -3,7 +3,7 @@ name: Start new iteration
 # Jira-style "Complete sprint" for the org project board: creates the new iteration (or uses it if it exists),
 # moves every agent-kernel issue and draft that is not Done/Canceled out of the previous iteration into it, then
 # closes open Done/Canceled issues.
-# See docs/specs/NNN-start-new-iteration/design.md.
+# See .github/SPRINT_ROLLOVER.md.
 
 on:
   workflow_dispatch:

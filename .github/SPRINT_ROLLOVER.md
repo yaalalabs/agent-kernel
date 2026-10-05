@@ -14,10 +14,6 @@ does for the [Agent Kernel project board](https://github.com/orgs/yaalalabs/proj
 4. puts back any Status that the board's "Item closed" automation changed when step 3 closed the issue
    (see [Status restore after closing](#status-restore-after-closing)).
 
-Design and plan: [`docs/specs/NNN-start-new-iteration/`](../docs/specs/NNN-start-new-iteration/)
-([`design.md`](../docs/specs/NNN-start-new-iteration/design.md),
-[`plan.md`](../docs/specs/NNN-start-new-iteration/plan.md)).
-
 **Contents:** [Why it exists](#why-it-exists) · [Running it](#running-it) ·
 [How a run works](#how-a-run-works) · [Which items it touches](#which-items-it-touches) ·
 [Creating the iteration](#creating-the-iteration) · [Closing issues](#closing-done-and-canceled-issues) ·
