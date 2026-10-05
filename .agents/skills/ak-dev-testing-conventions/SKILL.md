@@ -153,6 +153,9 @@ fixture.
 | `test_schedule_provider_local.py` | `LocalScheduleProvider`: next-fire computation, one-time vs re-armed occurrences, token substitution, body-only delivery into `InMemoryTransport`, pause/delete disarm, `ScheduleProviderFactory` resolution |
 | `test_schedule_provider_eventbridge.py` | `EventBridgeScheduleProvider` against a mocked `boto3.client`: cron/at expression translation, exact registration/amendment/removal kwargs sent to the Scheduler API, error mapping to `ScheduleError`, `ScheduleProviderFactory` wiring |
 | `test_schedule_router.py` | `ScheduleRESTRequestHandler`: 404 when unconfigured, the three 401 variants from the shared `AuthorisedRESTRequestHandler`, listings forced to the authorised user, 403-before-404 ordering, PUT amendment happy path + validation 400s, DELETE returning the cancelled task, mount-time validation of the configured backends (`get_router()` building the manager, an unusable provider failing the mount, mounting while unconfigured still allowed), and the guard that importing the package does not pull in FastAPI |
+| `test_secret_manager.py` | `SecretManager`: env → cache → provider precedence (empty env var is a miss, env hits never cached), `SecretNotFoundError` vs `default`, provider `SecretError` never masked, `os.environ` never written, key validation, TTL expiry with a fake clock, `invalidate`/`clear`, no lock held across the provider call, `current()` singleton built from config |
+| `test_secret_factory.py` | `SecretProviderFactory`: `env`/`aws_ssm`/dotted-path resolution, unknown names and non-subclass paths rejected, missing `aws` extra raised before the prefix check, never reads `AKConfig` |
+| `test_secret_providers.py` | `EnvSecretProvider` and `AWSSMSecretProvider` (mocked boto3: path composition, `ParameterNotFound` → `None`, other errors → `SecretError`, prefix validation), each run against the reusable `SecretProviderContract` (`secret/testing.py`) |
 | `test_schedule_tools.py` | Schedule system tools: `SystemToolFactory` registration + `schedule.agents` scoping, prompt-suffix content, disabled short-circuit, acting-user read from the session volatile cache, and each tool's JSON contract including the no-identity and unknown-agent errors |
 | `test_chat_service_schedule.py` | ChatService interception on all four entry points: 202 wire shapes, streaming terminal chunk, unconfigured 400, occurrence recording, no scheduling field leaking as `AgentRequestAny` |
 | `test_serverless_status_propagation.py` | The status a chat run produced (e.g. 202 deferred-to-schedule, 4xx rejected) survives the serverless queue round trip: `ServerlessAgentRunner` forwards it as the `ATTR_STATUS_CODE` output-message attribute, `ResponseHandler` stores it on the response record, and the REST surface (`DefaultEndpointsHandler`, response-store polling) replays it to the caller |
@@ -377,14 +380,14 @@ Configured via `test-config.yaml` — a separate, un-nested file resolved from t
 
 ```yaml
 mode: score    # score | llm | fallback (default: fallback)
-evaluator: deepeval   # built-in short name ('deepeval' or 'opik'), or a dotted path to your own AKEvaluator subclass
+evaluator: deepeval   # built-in short name ('deepeval', 'opik' or 'jev'), or a dotted path to your own AKEvaluator subclass
 llm:
   model: gpt-4o-mini
   provider: openai
 ```
 
-- **score**: Deterministic, offline scoring via the configured `AKEvaluator`'s `evaluate_by_score` — the built-in `DeepevalAKEvaluator` uses `Scorer.quasi_exact_match_score` (normalised whole-string equality, no LLM call); the built-in `OpikAKEvaluator` uses Opik's `LevenshteinRatio` instead (graded fuzzy-similarity, not exact-match)
-- **llm**: LLM-as-judge scoring via `evaluate_by_llm` — both built-ins use a `GEval` metric against the expected answer(s) (ground truth): `DeepevalAKEvaluator` via DeepEval's `GEval` and an `LLMTestCase`, `OpikAKEvaluator` via Opik's `GEval` and a single packed `output` string. Evaluation backends are pluggable (`agentkernel.test.core.evaluator.AKEvaluator`); see `ak-py/src/agentkernel/test/test.py`
+- **score**: Deterministic, offline scoring via the configured `AKEvaluator`'s `evaluate_by_score` — the built-in `DeepevalAKEvaluator` uses `Scorer.quasi_exact_match_score` (normalised whole-string equality, no LLM call); the built-in `OpikAKEvaluator` uses Opik's `LevenshteinRatio` instead (graded fuzzy-similarity, not exact-match); the built-in `JevAKEvaluator` has no score mode (`AKMetricNotSupported`), so `evaluator: jev` needs `mode: llm`
+- **llm**: LLM-as-judge scoring via `evaluate_by_llm` — `deepeval` and `opik` use a `GEval` metric against the expected answer(s) (ground truth), while `jev` asks one TypeSafe Noul yes/no question (its probability is the score; comparison text is sent to `api.typesafe.ai`): `DeepevalAKEvaluator` via DeepEval's `GEval` and an `LLMTestCase`, `OpikAKEvaluator` via Opik's `GEval` and a single packed `output` string. Evaluation backends are pluggable (`agentkernel.test.core.evaluator.AKEvaluator`); see `ak-py/src/agentkernel/test/test.py`
 - **fallback**: Tries score first, falls back to llm if score fails
 
 `evaluator` is resolved by `Test._resolve_evaluator` (`agentkernel/test/test.py`), the same

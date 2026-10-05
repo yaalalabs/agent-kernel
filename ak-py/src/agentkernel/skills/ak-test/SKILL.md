@@ -45,8 +45,8 @@ mode: score       # Options: score | llm | fallback (default: fallback)
 
 | Mode | How it Works | Best For |
 |------|-------------|----------|
-| **score** | Deterministic string-match scoring (built-in `deepeval`: `Scorer.quasi_exact_match_score`; built-in `opik`: graded `LevenshteinRatio`) | Deterministic responses, exact answers |
-| **llm** | LLM evaluates if response is semantically correct (`GEval`, from either built-in evaluator) | Open-ended responses, creative agents |
+| **score** | Deterministic string-match scoring (built-in `deepeval`: `Scorer.quasi_exact_match_score`; built-in `opik`: graded `LevenshteinRatio`; built-in `jev` has no score mode) | Deterministic responses, exact answers |
+| **llm** | LLM evaluates if response is semantically correct (`deepeval` and `opik`: `GEval`; `jev`: a hosted yes/no Noul question) | Open-ended responses, creative agents |
 | **fallback** | Tries score first, falls back to llm if score fails | General-purpose testing |
 
 For llm mode, configure the llm model:
@@ -58,13 +58,14 @@ llm:
 ```
 
 **Evaluator backend:** `evaluator` selects the scoring backend used by both `score` and `llm`
-modes — `deepeval` (the default, `pip install "agentkernel[test]"`) and `opik` (`pip install
-"agentkernel[opik]"`, [Opik](https://www.comet.com/docs/opik/) by Comet, runs entirely locally) are
-the two built-ins. Set it to a dotted path (e.g. `my_evaluator.MyEvaluator`) to bring your own
+modes — `deepeval` (the default, `pip install "agentkernel[test]"`), `opik` (`pip install
+"agentkernel[opik]"`, [Opik](https://www.comet.com/docs/opik/) by Comet, runs entirely locally) and `jev`
+(`pip install "agentkernel[jev]"`, hosted [TypeSafe JEV](https://docs.typesafe.ai) judge: `mode: llm` only, needs
+`TYPESAFE_API_KEY`, sends the comparison text to `api.typesafe.ai`) are the three built-ins. Set it to a dotted path (e.g. `my_evaluator.MyEvaluator`) to bring your own
 `AKEvaluator` subclass instead:
 
 ```yaml
-evaluator: opik   # switch to the other built-in
+evaluator: opik   # switch to another built-in (jev also needs mode: llm)
 ```
 
 ```yaml
@@ -74,9 +75,9 @@ evaluator: my_evaluator.MyEvaluator   # resolves against my_evaluator.py next to
 
 #### 2a. Bring Your Own Evaluator (optional)
 
-Use this when neither built-in evaluator's scoring fits your agent — e.g. `deepeval`'s binary
+Use this when none of the built-in evaluators' scoring fits your agent — e.g. `deepeval`'s binary
 exact-match score mode is too strict and `opik`'s graded `LevenshteinRatio` still doesn't capture
-what you need, or you want a judge call that doesn't depend on DeepEval/Opik at all, or a
+what you need, or you want a judge call that doesn't depend on DeepEval/Opik/JEV at all, or a
 domain-specific rubric. No AK core change is required: any dotted path to an `AKEvaluator` subclass
 works as the `evaluator:` value, resolved the same way sandbox providers and session stores resolve
 their own bring-your-own backends.
@@ -128,8 +129,8 @@ their own bring-your-own backends.
    `AKEvaluationError` if your backend fails (bad credentials, transport error, unparseable judge
    output) — never return a `0.0` to stand in for a failure, since `0.0` must only ever mean
    "scored zero". If your evaluator only supports one of the two modes (e.g. judge-only, no offline
-   scoring), raise `AKMetricNotSupported` from the other — `fallback` mode uses this to skip
-   straight to the supported one.
+   scoring), raise `AKMetricNotSupported` from the other and set `mode` to the supported one
+   (e.g. `mode: llm`) — `fallback` does not catch it, so the error propagates and the test fails.
 4. Point `test-config.yaml` at it by dotted path — `module_name.ClassName`, resolved against the
    module's location (next to your test file, since that's what's on `sys.path` under pytest's
    default import mode):
@@ -139,8 +140,8 @@ their own bring-your-own backends.
    ```
 
 5. No AK extra beyond `agentkernel[test]` is needed unless your evaluator's own dependencies
-   (an LLM client, a scoring library) require one — each built-in's import (`deepeval`, `opik`)
-   lives entirely inside its own resolution branch, so a custom evaluator never pulls either in.
+   (an LLM client, a scoring library) require one — each built-in's import (`deepeval`, `opik`, `jev`)
+   lives entirely inside its own resolution branch, so a custom evaluator never pulls any in.
 
 See `examples/cli/custom-evaluator/` for a complete worked example — a stdlib-only Jaccard
 token-overlap scorer plus a raw `litellm` judge call, no DeepEval dependency at all — and

@@ -180,6 +180,15 @@ okf:
       producer: [Ingest_Agent]   # read and write; instructed to add new knowledge
       curator: [Steward_Agent]   # read and write; instructed to maintain existing knowledge
 
+# Secret resolution (always available - the default env provider costs nothing, so there is no
+# enabled flag. A set, non-empty environment variable named by the key always wins.
+# See /docs/advanced/secrets)
+secret:
+  prefix: ""  # Deployment scope; required by aws_ssm (injected as AK_SECRET__PREFIX by the AWS Terraform modules), ignored by env
+  provider:
+    type: env  # env | aws_ssm, or a dotted path to a SecretProvider subclass
+  cache_ttl: 300  # Seconds a provider hit is served from the process cache; 0 disables caching
+
 # Messaging platform integrations
 slack:
   agent: ""  # Default agent for Slack
@@ -503,6 +512,16 @@ export AK_MCP__STATELESS_HTTP=false  # Run in stateless HTTP mode, no Mcp-Sessio
 # Note: MCP is always served at /mcp on the main API server. Use AK_API__PORT to change the port.
 ```
 
+### Secret Resolution
+
+See [Secret Resolution](../advanced/secrets.md) for the resolution order and providers.
+
+```bash
+export AK_SECRET__PROVIDER__TYPE=aws_ssm  # Options: 'env', 'aws_ssm', or a dotted path to a SecretProvider subclass (default: 'env')
+export AK_SECRET__PREFIX=myproduct-dev-agents  # Deployment scope; required by aws_ssm, ignored by env (default: '')
+export AK_SECRET__CACHE_TTL=300  # Seconds a provider hit is cached; 0 disables caching (default: 300)
+```
+
 ### Test Configuration {#test-configuration-env-vars}
 
 These variables configure the test harness (`AKTestConfig`), which is separate from the application configuration; see the [Test Configuration](#test-configuration) section below for the `test-config.yaml` file and full details. `AK_TEST__MODE` accepts the renamed `score`/`llm`/`fallback` values, and `AK_TEST__JUDGE__*` was renamed to `AK_TEST__LLM__*`:
@@ -705,10 +724,10 @@ If `test-config.yaml` is missing, defaults apply silently (no warning is printed
 
 **Test Modes:**
 - `score` - Deterministic, offline string-match scoring via the configured evaluator (DeepEval uses `Scorer.quasi_exact_match_score`; Opik uses `LevenshteinRatio`)
-- `llm` - LLM-as-judge evaluation via the configured evaluator (DeepEval and Opik both use a `GEval` metric) for semantic similarity
+- `llm` - LLM-as-judge evaluation via the configured evaluator (DeepEval and Opik use a `GEval` metric; JEV asks one yes/no Noul question) for semantic similarity
 - `fallback` - Tries score first, falls back to llm if score fails
 
-**Evaluator backend:** `evaluator` selects the pluggable scoring backend used by both `score` and `llm` modes. Built-in values are `deepeval` (the default, requires the `test` extra) and `opik` (requires the `opik` extra); any other value is treated as a dotted path to your own `AKEvaluator` subclass (`agentkernel.test.core.evaluator.AKEvaluator`) — see [Bring your own evaluator](../testing/cli-testing.md#bring-your-own-evaluator). Opik's `GEval` judge runs entirely locally against the LLM configured under `llm:` below — it does not require an Opik Cloud account, API key, or self-hosted server (AK disables its trace logging by default).
+**Evaluator backend:** `evaluator` selects the pluggable scoring backend used by both `score` and `llm` modes. Built-in values are `deepeval` (the default, requires the `test` extra), `opik` (requires the `opik` extra) and `jev` (requires the `jev` extra); any other value is treated as a dotted path to your own `AKEvaluator` subclass (`agentkernel.test.core.evaluator.AKEvaluator`) — see [Bring your own evaluator](../testing/cli-testing.md#bring-your-own-evaluator). Opik's `GEval` judge runs entirely locally against the LLM configured under `llm:` below — it does not require an Opik Cloud account, API key, or self-hosted server (AK disables its trace logging by default). `jev` is a hosted judge ([TypeSafe JEV](https://docs.typesafe.ai)) that works only with `mode: llm` (`score` and `fallback` raise `AKMetricNotSupported`); it reads `TYPESAFE_API_KEY` from the environment, ignores the `llm:` block, and sends the user input, expected output and actual output to `api.typesafe.ai`.
 
 ### Custom Test Configuration File Path
 

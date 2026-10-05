@@ -15,6 +15,8 @@ e2e:
     - type: cli
       path: examples/cli/openai_context
     - type: cli
+      path: examples/cli/openai-secret
+    - type: cli
       path: examples/cli/session-context
     - type: cli
       path: examples/cli/adk
@@ -62,6 +64,8 @@ e2e:
       path: examples/cli/custom-evaluator
     - type: cli
       path: examples/cli/opik-evaluator
+    - type: cli
+      path: examples/cli/jev-evaluator
     # - type: cli
     #   path: examples/cli/guardrail/walledai
 

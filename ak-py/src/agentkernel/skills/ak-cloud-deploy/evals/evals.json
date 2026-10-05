@@ -146,6 +146,23 @@
       ]
     },
     {
+      "id": "deploy-aws-secret-ssm",
+      "name": "Deploy to AWS Lambda with secrets from SSM Parameter Store",
+      "input": "Deploy my agent to AWS Lambda and read OPENAI_API_KEY from SSM Parameter Store instead of a Lambda environment variable",
+      "expected_outputs": [
+        "yaalalabs/ak-serverless/aws",
+        "ssm_enabled = true",
+        "secret:",
+        "type: aws_ssm",
+        "SecretManager",
+        "/ak/",
+        "SecureString"
+      ],
+      "must_not_contain": [
+        "azurerm"
+      ]
+    },
+    {
       "id": "deploy-aws-containerized-websocket",
       "name": "Deploy to AWS ECS Fargate over WebSocket",
       "input": "Deploy my agent to AWS ECS Fargate with a WebSocket API for real-time chat",

@@ -56,7 +56,10 @@ Python script that runs a single test. Used by the parallel GitHub Actions jobs.
 
 **Features:**
 - Runs individual tests (api, memory, aws-containerized, aws-serverless)
-- Supports both `test` and `destroy` actions
+- Supports `deploy`, `test`, `destroy` and `seed-secrets` actions
+- `seed-secrets` writes `OPENAI_API_KEY` from the job env to SSM (`/ak/<prefix>/openai_api_key`, SecureString)
+  for examples whose `config.yaml` uses the `aws_ssm` secret provider; a no-op for every other example.
+  The CI role needs `ssm:PutParameter` on `arn:aws:ssm:<region>:<account>:parameter/ak/*`
 - Used by GitHub Actions matrix strategy for parallel execution
 - Detailed logging and error reporting
 
@@ -64,6 +67,9 @@ Python script that runs a single test. Used by the parallel GitHub Actions jobs.
 ```bash
 # Run a test
 python .github/scripts/run_single_test.py --type api --path examples/api/openai --action test
+
+# Seed SSM secrets for an aws_ssm example (run before deploy)
+python .github/scripts/run_single_test.py --type aws-serverless --path examples/aws-serverless/openai --action seed-secrets
 
 # Destroy AWS resources
 python .github/scripts/run_single_test.py --type aws-serverless --path examples/aws-serverless/openai --action destroy

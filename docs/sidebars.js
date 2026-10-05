@@ -143,6 +143,7 @@ const sidebars = {
         'advanced/threads',
         'advanced/scheduling',
         'advanced/sandbox',
+        'advanced/secrets',
         'advanced/knowledge-bases',
         'advanced/queue-mode-guide',
         {

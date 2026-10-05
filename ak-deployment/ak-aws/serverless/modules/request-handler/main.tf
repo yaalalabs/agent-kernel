@@ -250,6 +250,30 @@ resource "aws_iam_role_policy_attachment" "lambda_scheduler_attachment" {
   policy_arn = aws_iam_policy.lambda_scheduler_policy[0].arn
 }
 
+# Secret resolution: read-only access to this deployment's SSM parameters (AWSSMSecretProvider)
+resource "aws_iam_policy" "ssm_secret_policy" {
+  count = var.ssm_enabled ? 1 : 0
+  name  = "${var.prefix}-${var.function_name}-ssm-secret"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "ReadAKSecrets"
+        Effect   = "Allow"
+        Action   = ["ssm:GetParameter"]
+        Resource = "arn:aws:ssm:${var.region}:${var.account_id}:parameter/ak/${var.prefix}/*"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "ssm_secret_attachment" {
+  count      = var.ssm_enabled ? 1 : 0
+  role       = aws_iam_role.lambda_role.name
+  policy_arn = aws_iam_policy.ssm_secret_policy[0].arn
+}
+
 resource "aws_iam_policy" "lambda_schedule_store_policy" {
   count = var.create_dynamodb_schedule_table ? 1 : 0
   name  = "${var.prefix}-${var.function_name}-schedule-store"
@@ -375,6 +399,10 @@ module "lambda_deployment" {
     } : {},
     var.dynamodb_schedule_table_arn != null ? {
       AK_SCHEDULE__STORE__DYNAMODB__TABLE_NAME = var.dynamodb_schedule_table_name
+    } : {},
+    # Secret resolution scope; `secret.provider.type` comes from the app's config.yaml
+    var.ssm_enabled ? {
+      AK_SECRET__PREFIX = var.prefix
     } : {},
       var.response_store_redis != null ? {
       AK_EXECUTION__RESPONSE_STORE__REDIS__URL = var.response_store_redis.url

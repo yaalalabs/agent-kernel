@@ -62,7 +62,7 @@ interface.
 
 Deterministic, offline string-match scoring — no LLM call. Behavior depends on the configured
 evaluator: DeepEval (the default) uses `Scorer.quasi_exact_match_score`, a normalised whole-string
-equality check, while Opik uses its `LevenshteinRatio` metric, a graded fuzzy-similarity score. See
+equality check, while Opik uses its `LevenshteinRatio` metric, a graded fuzzy-similarity score. JEV has no score mode. See
 "Built-in evaluators" below for how to switch:
 
 ```python
@@ -94,9 +94,9 @@ exact match can still pass above `match_threshold` without partial credit being 
 
 ### Llm Mode
 
-Uses LLM-as-judge evaluation for semantic similarity. Both built-in evaluators use a `GEval` metric
+Uses LLM-as-judge evaluation for semantic similarity. DeepEval and Opik use a `GEval` metric
 here — DeepEval's `GEval` via an `LLMTestCase`, Opik's `GEval` via a single packed `output` string —
-judging whether the actual response conveys the same information as the expected answer. The rubric
+and JEV asks a single yes/no Noul question, all judging whether the actual response conveys the same information as the expected answer. The rubric
 is written to give credit when `expected` is a short phrase or keyword embedded in a longer,
 otherwise-correct response — llm mode (and the llm fallback in `fallback` mode) is the intended way
 to match the verbose-but-correct case that score mode's exact match rejects:
@@ -159,7 +159,7 @@ Set default mode via a `test-config.yaml` file (in the directory the tests run f
 ```yaml
 # test-config.yaml
 mode: llm  # Options: score, llm, fallback
-evaluator: deepeval  # Built-in short name ('deepeval' or 'opik'), or a dotted path to your own AKEvaluator subclass
+evaluator: deepeval  # Built-in short name ('deepeval', 'opik' or 'jev'), or a dotted path to your own AKEvaluator subclass
 llm:
   model: gpt-4o-mini
   provider: openai
@@ -173,12 +173,20 @@ await test.send("Hello")
 await test.expect(["Hello! How can I help?"])  # Uses configured mode
 ```
 
-**Built-in evaluators:** `deepeval` (default, requires `pip install "agentkernel[test]"`) and `opik`
+**Built-in evaluators:** `deepeval` (default, requires `pip install "agentkernel[test]"`), `opik`
 (requires `pip install "agentkernel[opik]"`, [Opik](https://www.comet.com/docs/opik/) by Comet).
 Opik's `score` mode uses its `LevenshteinRatio` metric, an offline string-similarity check that
 never calls an LLM; `llm` mode uses its `GEval` judge, which runs locally against the LLM configured
 under `llm:`. Neither mode requires an Opik Cloud account, API key, or self-hosted server. See
 [`examples/cli/opik-evaluator`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/opik-evaluator)
+for a complete working example.
+
+`jev` (requires `pip install "agentkernel[jev]"`) is a hosted judge, [TypeSafe JEV](https://docs.typesafe.ai). It
+has no score-based metric, so it works only with `mode: llm` (`score` and `fallback` raise
+`AKMetricNotSupported`). It reads `TYPESAFE_API_KEY` from the environment and ignores the `llm:` block.
+**Every judged comparison sends the user input, expected output and actual output to `api.typesafe.ai`** — for
+sensitive data use `deepeval` or `opik`, which judge with your own LLM. See
+[`examples/cli/jev-evaluator`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/jev-evaluator)
 for a complete working example.
 
 ### Bring your own evaluator

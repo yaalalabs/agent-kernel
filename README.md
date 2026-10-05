@@ -112,6 +112,7 @@ Enterprises can't ship agents they can't audit. Agent Kernel makes compliance th
 - **Framework-Native Run Options**: Pass each framework's own run arguments and lifecycle hooks (OpenAI `RunHooks` and `RunConfig`, LangGraph callbacks, ADK plugins, Pydantic AI usage limits) per agent through `Module.run_options`, statically or computed per run by a factory, with the keys Agent Kernel owns kept safe.
 - **Full Traceability** — Every agent action, tool call, and LLM invocation logged with configurable verbosity.
 - **Observability** — LangFuse, OpenLLMetry, and Pydantic Logfire tracing with a single config line.
+- **Secret Resolution** — Resolve API keys from the environment locally and from AWS SSM Parameter Store in production via `SecretManager`, with only `config.yaml` changing.
 - **Data Residency** — Pick your cloud, your region, your storage backend. Your data stays where you need it.
 
 ### 📦 Sandboxed Code Execution
