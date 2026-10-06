@@ -76,6 +76,79 @@ Secrets and variables -> Actions). If either is missing, the workflow job skips 
 Run workflow) and fill in `hashnode_post` with the blog file name. Pushes to `develop` still
 sync every new/changed post.
 
+## sync_devto_blog.py
+
+Publishes `docs/blog/*.md` posts to DEV Community (dev.to), the same way
+`sync_hashnode_blog.py` does for Hashnode. Run automatically by
+`.github/workflows/deploy-docs.yml` (the `sync-devto` job, in parallel with the Hashnode
+sync) after every docs deploy; also runnable locally.
+
+**How it works:**
+- A blog file that has never been synced is published to DEV right away (no draft step).
+- A blog file that was synced and then edited has its DEV article updated in place.
+- A JSON state file (`docs/blog/.devto-sync-state.json`, committed back by CI) tracks
+  which posts are synced, their DEV article id, and a content hash.
+
+**Authors:** every article is published by the account that owns the API key, optionally
+under a DEV organization (`DEVTO_ORGANIZATION_ID`). DEV has no subtitle field, so the real
+authors from `docs/blog/authors.json` are credited in a linked byline at the top of the body.
+
+**Original source and date:** each article's `canonical_url` points at its kernel.yaala.ai
+page. DEV's API cannot backdate an article, so the date the post went live on the website
+(frontmatter `date`, else the `YYYY-MM-DD-` filename prefix) is stated in the
+*"Originally published at kernel.yaala.ai on ..."* footer instead.
+
+**Tags:** DEV allows at most 4 tags per article, lowercase alphanumeric only, so the first 4
+frontmatter tags are used with non-alphanumerics removed (`ai-agents` -> `aiagents`).
+
+**Usage:**
+```bash
+pip install pyyaml
+
+export DEVTO_API_KEY=...                 # Settings -> Extensions -> DEV Community API Keys
+export DEVTO_ORGANIZATION_ID=...         # optional: publish under this organization
+
+# Find the id to put in DEVTO_ORGANIZATION_ID (no API key needed)
+python scripts/sync_devto_blog.py --find-organization agentkernel
+
+# Write the Markdown that would be sent next to each post (<post>.devto-preview.md, gitignored); no API key needed
+python scripts/sync_devto_blog.py --preview
+
+# Print what would be published/updated, without calling the DEV API
+python scripts/sync_devto_blog.py --dry-run
+
+# Publish new posts and update changed ones
+python scripts/sync_devto_blog.py
+
+# Sync just one post (repeat --post for several)
+python scripts/sync_devto_blog.py --post 2026-09-14-scheduled-tasks.md
+```
+
+**Options:**
+- `--blog-dir`: directory of blog markdown files (default: `docs/blog`)
+- `--state-file`: path to the sync-state JSON file (default: `<blog-dir>/.devto-sync-state.json`)
+- `--site-url`: canonical site origin used for `canonical_url` and for absolutizing image/link paths (default: `https://kernel.yaala.ai`)
+- `--preview`: write the rendered Markdown and article metadata to `<post>.devto-preview.md`; no API calls
+- `--dry-run`: print what would be published or updated without writing to DEV or the state file
+- `--find-organization USERNAME`: print the id of the DEV organization at `dev.to/USERNAME`, then exit
+- `--post FILE`: only sync this post (file name under `--blog-dir`); repeatable. Default: every post
+
+**Content conversion:** identical to the Hashnode sync - `<Tabs>` become headed sections,
+`:::` admonitions become blockquotes, JSX `<div>` blocks become Markdown images and captions
+(which also removes the `style={{...}}` props DEV would otherwise parse as Liquid tags), the
+leading `# Title` is dropped, and root-relative links/images are made absolute.
+
+**Rate limits:** DEV throttles article writes; on HTTP 429 the script waits (`Retry-After`,
+else 30s) and retries, so a first full sync of every post just takes a few minutes.
+
+**Opting a post out:** add `devto: false` to that post's frontmatter.
+
+**CI secrets:** `DEVTO_API_KEY` (required) and `DEVTO_ORGANIZATION_ID` (optional). If the
+API key is missing, the workflow job skips the sync.
+
+**Syncing a single post from CI:** run the *Deploy GitHub Pages* workflow manually and fill in
+`devto_post` with the blog file name.
+
 ## bump_version.py
 
 Handles semantic versioning for the project with support for:

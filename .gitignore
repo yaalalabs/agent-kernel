@@ -12,3 +12,4 @@ pytest-report.xml
 .kiro
 .claude/settings.local.json
 docs/blog/*.hashnode-preview.md
+docs/blog/*.devto-preview.md
