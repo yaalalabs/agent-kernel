@@ -77,7 +77,7 @@ from utils.common import (
     build_canonical_url,
     content_hash,
 )
-from utils.svg_raster import raster_site_svgs, raster_url
+from utils.images import check_blog_dir
 
 DEVTO_API_URL = "https://dev.to/api"
 # DEV ignores width/height on body images (it re-measures the source), so fixed-size images
@@ -339,9 +339,7 @@ def build_tags(frontmatter: dict) -> list:
 
 def render_markdown(path: Path, frontmatter: dict, body: str, site_url: str, authors: list) -> tuple:
     # Posts live in docs/blog/, their root-relative images in docs/static/.
-    static_dir = path.parent.parent / "static"
-    body = raster_site_svgs(clean_mdx(body, static_dir), site_url, static_dir)
-    body = resize_fixed_images(absolutize_urls(body, site_url))
+    body = resize_fixed_images(absolutize_urls(clean_mdx(body, path.parent.parent / "static"), site_url))
     body = body.replace(SHIELDS_SVG_URL, SHIELDS_PNG_URL)
     # DEV renders the article title itself, so drop the duplicate leading H1.
     body = LEADING_H1_RE.sub("", body, count=1).strip()
@@ -372,7 +370,7 @@ def build_article(
         "published": True,
         "tags": build_tags(frontmatter),
         "canonical_url": canonical_url,
-        "main_image": absolutize_url(raster_url(frontmatter.get("image"), site_url, path.parent.parent / "static"), site_url),
+        "main_image": absolutize_url(frontmatter.get("image"), site_url),
         "description": frontmatter.get("description"),
     }
     return {key: value for key, value in article.items() if value is not None}
@@ -443,6 +441,8 @@ def main() -> None:
     state = load_state(state_file)
     authors_map = load_authors(args.blog_dir)
 
+    # Fail before anything is published if any post (not just --post ones) uses an SVG image.
+    check_blog_dir(args.blog_dir)
     paths = list_posts(args.blog_dir)
     if args.post:
         wanted = {Path(name).name for name in args.post}

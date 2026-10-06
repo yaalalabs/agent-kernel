@@ -72,7 +72,7 @@ from utils.common import (
     build_canonical_url,
     content_hash,
 )
-from utils.svg_raster import raster_site_svgs, raster_url
+from utils.images import check_blog_dir
 
 # gql.hashnode.com was retired on 2026-05-13 and now 301s to an announcement page.
 HASHNODE_API_URL = "https://gql-beta.hashnode.com"
@@ -218,8 +218,8 @@ def build_tags(frontmatter: dict) -> list:
     return tags
 
 
-def render_markdown(frontmatter: dict, body: str, site_url: str, static_dir: Path, authors: list) -> tuple:
-    body = absolutize_urls(raster_site_svgs(clean_mdx(body), site_url, static_dir), site_url)
+def render_markdown(frontmatter: dict, body: str, site_url: str, authors: list) -> tuple:
+    body = absolutize_urls(clean_mdx(body), site_url)
     # Hashnode renders the post title itself, so drop the duplicate leading H1.
     body = LEADING_H1_RE.sub("", body, count=1).strip()
 
@@ -240,9 +240,7 @@ def build_post_input(
         authors_map: dict,
 ) -> dict:
     authors = resolve_authors(frontmatter, authors_map)
-    # Posts live in docs/blog/, their root-relative images in docs/static/.
-    static_dir = path.parent.parent / "static"
-    content, canonical_url = render_markdown(frontmatter, body, site_url, static_dir, authors)
+    content, canonical_url = render_markdown(frontmatter, body, site_url, authors)
     post_input = {
         "title": frontmatter["title"],
         "subtitle": build_subtitle(authors),
@@ -250,7 +248,7 @@ def build_post_input(
         "slug": build_hashnode_slug(frontmatter["slug"]),
         "tags": build_tags(frontmatter),
         "originalArticleURL": canonical_url,
-        "coverImage": absolutize_url(raster_url(frontmatter.get("image"), site_url, static_dir), site_url),
+        "coverImage": absolutize_url(frontmatter.get("image"), site_url),
         "metaDescription": frontmatter.get("description"),
     }
     published_on = resolve_post_date(path, frontmatter)
@@ -326,6 +324,8 @@ def main() -> None:
     state = load_state(state_file)
     authors_map = load_authors(args.blog_dir)
 
+    # Fail before anything is published if any post (not just --post ones) uses an SVG image.
+    check_blog_dir(args.blog_dir)
     paths = list_posts(args.blog_dir)
     if args.post:
         wanted = {Path(name).name for name in args.post}

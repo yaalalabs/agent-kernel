@@ -6,21 +6,34 @@ This directory contains utility scripts for the agent-kernel project.
 
 Syncs the website's blog posts to Hashnode (`hashnode.py`) and DEV Community (`devto.py`).
 Helpers both scripts share live in `sync_blogs/utils/`: `common.py` (post/frontmatter
-parsing, authors, sync state, dates, URLs) and `svg_raster.py` (SVG images served as PNG,
-see below).
+parsing, authors, sync state, dates, URLs) and `images.py` (the SVG image check below).
+Dependencies for all of them are in `sync_blogs/requirements.txt`.
+
+**No SVG images in blog posts.** DEV Community and Hashnode can't display SVG images and
+neither has an upload API, so a post with one would publish with a broken image. Use
+PNG/JPEG/GIF/WebP instead (body images and the frontmatter `image`). The docs deploy runs
+`python scripts/sync_blogs/check_images.py` before building the website, and both sync scripts
+run the same check across every post before publishing, so an SVG image fails the run before
+anything is published. Plain links to an `.svg` file are fine, and so are shields.io badges.
+
+**Sync state through a PR.** `develop` only accepts changes through pull requests, so CI
+records the updated sync-state file in a PR from the `chore/blog-sync-state` branch instead of
+pushing it. Until that PR is merged, each run starts from the state on that branch and adds its
+changes to the same PR. Merging it doesn't redeploy the website.
 
 ### sync_blogs/hashnode.py
 
 Publishes `docs/blog/*.md` posts to a Hashnode publication so blog content gets
-Hashnode's reach on top of the Agent Kernel website. Run automatically by
-`.github/workflows/deploy-docs.yml` after every docs deploy; also runnable locally.
+Hashnode's reach on top of the Agent Kernel website. Runnable locally; its job in
+`.github/workflows/deploy-docs.yml` (`sync-hashnode`) is commented out for now, as only DEV
+Community is published to at the moment.
 
 **How it works:**
 - A blog file that has never been synced is published to Hashnode right away
   (no draft step).
 - A blog file that was synced and then edited has its Hashnode post updated in
   place, so the website stays the single source of truth.
-- A JSON state file (`docs/blog/.hashnode-sync-state.json`, committed back by CI)
+- A JSON state file (`docs/blog/.hashnode-sync-state.json`)
   tracks which posts are synced, their Hashnode post id, and a content hash.
 
 **Authors:** every post is published by the single Agent Kernel account that owns the
@@ -39,7 +52,7 @@ plan, for reads and writes alike.
 
 **Usage:**
 ```bash
-pip install pyyaml
+pip install -r scripts/sync_blogs/requirements.txt
 
 export HASHNODE_PAT=...                  # Personal Access Token (Account settings -> Developer)
 export HASHNODE_PUBLICATION_ID=...       # the publication to publish to
@@ -72,31 +85,28 @@ python scripts/sync_blogs/hashnode.py --post 2026-09-14-scheduled-tasks.md
 **Content conversion:** Docusaurus-only syntax is rewritten into plain Markdown - `<Tabs>`
 become headed sections, `:::` admonitions become blockquotes, JSX `<div>` image/badge/caption
 blocks become Markdown images and italic captions, the leading `# Title` is dropped (Hashnode
-renders the title itself), and root-relative links/images are made absolute. Neither Hashnode
-nor DEV can show SVG images, so a root-relative `.svg` (body image or frontmatter `image`) is
-pointed at [wsrv.nl](https://wsrv.nl), an open-source image proxy that returns it as a PNG
-at 2x the SVG's width; the platforms mirror the image when the post is synced.
+renders the title itself), and root-relative links/images are made absolute.
 
 **Opting a post out:** add `hashnode: false` to that post's frontmatter.
 
 **CI secrets:** `HASHNODE_PAT` and `HASHNODE_PUBLICATION_ID` (GitHub repo -> Settings ->
 Secrets and variables -> Actions). If either is missing, the workflow job skips the sync.
 
-**Syncing a single post from CI:** run the *Deploy GitHub Pages* workflow manually (Actions ->
-Run workflow) and fill in `hashnode_post` with the blog file name. Pushes to `develop` still
-sync every new/changed post.
+**Syncing a single post from CI:** once the `sync-hashnode` job is re-enabled, run the *Deploy
+GitHub Pages* workflow manually (Actions -> Run workflow) and fill in `hashnode_post` with the
+blog file name. Pushes to `develop` still sync every new/changed post.
 
 ### sync_blogs/devto.py
 
 Publishes `docs/blog/*.md` posts to DEV Community (dev.to), the same way
 `sync_blogs/hashnode.py` does for Hashnode. Run automatically by
-`.github/workflows/deploy-docs.yml` (the `sync-devto` job, in parallel with the Hashnode
-sync) after every docs deploy; also runnable locally.
+`.github/workflows/deploy-docs.yml` (the `sync-devto` job) after every docs deploy; also
+runnable locally.
 
 **How it works:**
 - A blog file that has never been synced is published to DEV right away (no draft step).
 - A blog file that was synced and then edited has its DEV article updated in place.
-- A JSON state file (`docs/blog/.devto-sync-state.json`, committed back by CI) tracks
+- A JSON state file (`docs/blog/.devto-sync-state.json`, recorded by CI through the sync-state PR) tracks
   which posts are synced, their DEV article id, and a content hash.
 
 **Authors:** every article is published by the account that owns the API key, optionally
@@ -113,7 +123,7 @@ frontmatter tags are used with non-alphanumerics removed (`ai-agents` -> `aiagen
 
 **Usage:**
 ```bash
-pip install pyyaml
+pip install -r scripts/sync_blogs/requirements.txt
 
 export DEVTO_API_KEY=...                 # Settings -> Extensions -> DEV Community API Keys
 export DEVTO_ORGANIZATION_ID=...         # optional: publish under this organization
@@ -146,8 +156,7 @@ python scripts/sync_blogs/devto.py --post 2026-09-14-scheduled-tasks.md
 **Content conversion:** identical to the Hashnode sync - `<Tabs>` become headed sections,
 `:::` admonitions become blockquotes, JSX `<div>` blocks become Markdown images and captions
 (which also removes the `style={{...}}` props DEV would otherwise parse as Liquid tags), the
-leading `# Title` is dropped, root-relative links/images are made absolute, and SVG images
-are served as PNG. On top of that, DEV only recognizes a bare language after a code fence, so
+leading `# Title` is dropped, and root-relative links/images are made absolute. On top of that, DEV only recognizes a bare language after a code fence, so
 Docusaurus fence metadata (```` ```yaml title="config.yaml" ````) is stripped to the language,
 with the `title` shown as a bold label above the block.
 
