@@ -5,11 +5,14 @@ install one: `otel_globals` patches the `get_tracer_provider` / `set_tracer_prov
 instead. Spans are recorded by a real SDK `TracerProvider` with an in-memory exporter.
 """
 
+import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+import requests
 from botocore.exceptions import NoCredentialsError
 from botocore.session import Session as BotocoreSession
+from google.rpc.status_pb2 import Status
 from opentelemetry import baggage
 from opentelemetry import trace as trace_api
 from opentelemetry.sdk.trace import TracerProvider
@@ -227,6 +230,21 @@ def test_sigv4_session_signs_each_request_for_xray():
     assert headers["X-Amz-Security-Token"] == "session-token"
     assert "X-Amz-Date" in headers
     assert send.call_args.kwargs["data"] == b"\x0a\x00"  # the signed body is the body sent
+
+
+def test_sigv4_session_logs_why_xray_rejected_the_export(caplog):
+    # X-Ray answers a rejected export with an OTLP google.rpc.Status body; the exporter itself only logs "Bad Request"
+    reason = "The OTLP API is supported with CloudWatch Logs as a Trace Segment Destination."
+    rejected = requests.Response()
+    rejected.status_code, rejected.reason, rejected._content = 400, "Bad Request", Status(code=3, message=reason).SerializeToString()
+    session = SigV4Session("us-west-2", botocore_session=_botocore_session())
+
+    with patch("requests.Session.request", return_value=rejected):
+        with caplog.at_level(logging.ERROR, logger="ak.trace.cloudwatch"):
+            response = session.post("https://xray.us-west-2.amazonaws.com/v1/traces", data=b"")
+
+    assert response is rejected  # the exporter still sees the failure
+    assert f"X-Ray in us-west-2 rejected the span export (HTTP 400): {reason}" in caplog.text  # the region shows a mismatch
 
 
 def test_sigv4_session_without_credentials_fails_the_export():

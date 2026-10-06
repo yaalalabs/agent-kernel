@@ -314,8 +314,8 @@ python -c "import logfire; logfire.configure(send_to_logfire='if-token-present')
 
 **Traces Not Appearing:**
 
-1. **Check Transaction Search**: `aws xray get-trace-segment-destination` must report `"Destination": "CloudWatchLogs"` and `"Status": "ACTIVE"`
-2. **Check Permissions**: an export log line `Failed to export span batch code: 403` means the role lacks `AWSXrayWriteOnlyAccess`
+1. **Check Transaction Search**: an `ak.trace.cloudwatch` error `X-Ray in <region> rejected the span export (HTTP 400): The OTLP API is supported with CloudWatch Logs as a Trace Segment Destination...` means it is not enabled in the region named in the message (which is the region exports go to: `AWS_REGION`, else your profile's default) — `aws xray get-trace-segment-destination` must report `"Destination": "CloudWatchLogs"` and `"Status": "ACTIVE"`
+2. **Check Permissions**: `X-Ray in <region> rejected the span export (HTTP 403)` means the role lacks `AWSXrayWriteOnlyAccess`
 3. **Check Credentials**: `Exception while exporting Span.` with `NoCredentialsError` means no AWS credentials resolved in the process
 4. **Check Region**: spans land in the region named by `AWS_REGION` (or the endpoint URL), so open the console in that region
 5. **Review Logs**: look for the `ak.trace.cloudwatch` "CloudWatch tracing configured" debug message

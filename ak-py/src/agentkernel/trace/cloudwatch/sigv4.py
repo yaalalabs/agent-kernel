@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import logging
+
 import requests
 from botocore.auth import SigV4Auth
 from botocore.awsrequest import AWSRequest
 from botocore.session import Session as BotocoreSession
+from google.protobuf.message import DecodeError
+from google.rpc.status_pb2 import Status
 
 
 class SigV4Session(requests.Session):
@@ -25,6 +29,7 @@ class SigV4Session(requests.Session):
         self.region = region
         self.service = service
         self._botocore_session = botocore_session or BotocoreSession()
+        self._log = logging.getLogger("ak.trace.cloudwatch")
 
     def request(self, method, url, *args, data=None, headers=None, **kwargs):
         """
@@ -35,4 +40,18 @@ class SigV4Session(requests.Session):
         credentials = self._botocore_session.get_credentials()
         signed = AWSRequest(method=method, url=url, data=data, headers={"Content-Type": "application/x-protobuf"})
         SigV4Auth(credentials, self.service, self.region).add_auth(signed)
-        return super().request(method, url, *args, data=data, headers={**(headers or {}), **dict(signed.headers)}, **kwargs)
+        response = super().request(method, url, *args, data=data, headers={**(headers or {}), **dict(signed.headers)}, **kwargs)
+        if response.status_code >= 400:
+            self._log.error("X-Ray in %s rejected the span export (HTTP %s): %s", self.region, response.status_code, self._rejection(response))
+        return response
+
+    @staticmethod
+    def _rejection(response: requests.Response) -> str:
+        """
+        The message of the OTLP google.rpc.Status a rejected export returns, or the raw body if it is not one.
+        """
+        try:
+            message = Status.FromString(response.content).message
+        except DecodeError:
+            message = ""
+        return message or response.text
