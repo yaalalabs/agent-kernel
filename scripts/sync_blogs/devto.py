@@ -18,19 +18,19 @@ stated in the "Originally published" footer instead.
 
 Usage:
     # Write the Markdown that would be sent to DEV next to each post (no API key needed)
-    python scripts/sync_devto_blog.py --preview
+    python scripts/sync_blogs/devto.py --preview
 
     # See what would be created/updated, without calling the DEV API
-    python scripts/sync_devto_blog.py --dry-run
+    python scripts/sync_blogs/devto.py --dry-run
 
     # Find the organization id for DEVTO_ORGANIZATION_ID
-    python scripts/sync_devto_blog.py --find-organization agentkernel
+    python scripts/sync_blogs/devto.py --find-organization agentkernel
 
     # Publish new posts and update changed ones
-    python scripts/sync_devto_blog.py
+    python scripts/sync_blogs/devto.py
 
     # Sync just one post
-    python scripts/sync_devto_blog.py --post 2026-09-14-scheduled-tasks.md
+    python scripts/sync_blogs/devto.py --post 2026-09-14-scheduled-tasks.md
 
 Environment:
     DEVTO_API_KEY             Required (except for --preview/--dry-run/--find-organization).
@@ -42,8 +42,6 @@ A post is skipped entirely if its frontmatter sets `devto: false`.
 """
 
 import argparse
-import datetime
-import hashlib
 import json
 import os
 import re
@@ -55,7 +53,31 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-import yaml
+from utils.common import (
+    DEFAULT_BLOG_DIR,
+    DEFAULT_SITE_URL,
+    IMPORT_RE,
+    TABS_RE,
+    TAB_ITEM_RE,
+    HTML_BLOCK_RE,
+    LINKED_IMG_RE,
+    IMG_RE,
+    CAPTION_RE,
+    LEADING_H1_RE,
+    list_posts,
+    load_state,
+    save_state,
+    parse_post,
+    load_authors,
+    resolve_authors,
+    join_names,
+    convert_admonitions,
+    absolutize_url,
+    resolve_post_date,
+    build_canonical_url,
+    content_hash,
+)
+from utils.svg_raster import raster_site_svgs, raster_url
 
 DEVTO_API_URL = "https://dev.to/api"
 # DEV ignores width/height on body images (it re-measures the source), so fixed-size images
@@ -69,9 +91,6 @@ DEVTO_IMAGE_RESIZER = "https://media2.dev.to/dynamic/image/width={width},height=
 # shields.io badges show as broken images; shields' raster endpoint serves the same badge as PNG.
 SHIELDS_SVG_URL = "https://img.shields.io/"
 SHIELDS_PNG_URL = "https://raster.shields.io/"
-DEFAULT_BLOG_DIR = Path("docs/blog")
-DEFAULT_SITE_URL = "https://kernel.yaala.ai"
-AUTHORS_FILENAME = "authors.json"
 STATE_FILENAME = ".devto-sync-state.json"
 PREVIEW_SUFFIX = ".devto-preview.md"
 # DEV allows at most 4 tags per article, each lowercase alphanumeric only.
@@ -81,19 +100,8 @@ MAX_TAG_LENGTH = 30
 RATE_LIMIT_RETRIES = 5
 RATE_LIMIT_DEFAULT_WAIT = 30
 
-FILENAME_DATE_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})-")
-FRONTMATTER_RE = re.compile(r"^---\n(.*?)\n---\n(.*)$", re.DOTALL)
-IMPORT_RE = re.compile(r"^import .+ from ['\"]@theme/\w+['\"];?\s*$\n?", re.MULTILINE)
-TABS_RE = re.compile(r"<Tabs>(.*?)</Tabs>", re.DOTALL)
-TAB_ITEM_RE = re.compile(r'<TabItem\s+value="[^"]*"\s+label="([^"]*)"[^>]*>(.*?)</TabItem>', re.DOTALL)
-ADMONITION_RE = re.compile(r"^:::(\w+)(?:[ \t]+([^\n]*))?\n(.*?)\n:::[ \t]*$", re.MULTILINE | re.DOTALL)
-HTML_BLOCK_RE = re.compile(r"^<div[^>]*>\n(.*?)\n</div>[ \t]*$", re.MULTILINE | re.DOTALL)
-LINKED_IMG_RE = re.compile(r"<a\s[^>]*?href=\"([^\"]+)\"[^>]*>\s*(<img\s[^>]*?/?>)\s*</a>", re.DOTALL)
-IMG_RE = re.compile(r"<img\s[^>]*?/?>")
 STYLE_PX_RE = r"\b{}:\s*'(\d+)px'"
 SIZED_IMG_RE = re.compile(r'<img src="(https?://[^"]+)" alt="([^"]*)"(?: width="(\d+)")?(?: height="(\d+)")? />')
-CAPTION_RE = re.compile(r"<p(?:\s[^>]*)?>(.*?)</p>", re.DOTALL)
-LEADING_H1_RE = re.compile(r"^\s*# [^\n]*\n")
 CODE_FENCE_META_RE = re.compile(r"^([ \t]*)(`{3,}|~{3,})([\w+-]+)[ \t]+([^\n]*?)[ \t]*$", re.MULTILINE)
 
 
@@ -126,49 +134,6 @@ def devto_request(api_key: str | None, method: str, path: str, body: dict | None
     raise AssertionError("unreachable")
 
 
-def load_state(state_file: Path) -> dict:
-    if state_file.exists():
-        return json.loads(state_file.read_text())
-    return {}
-
-
-def save_state(state_file: Path, state: dict) -> None:
-    state_file.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n")
-
-
-def parse_post(path: Path) -> dict:
-    raw = path.read_text(encoding="utf-8")
-    match = FRONTMATTER_RE.match(raw)
-    if not match:
-        raise ValueError(f"{path}: missing YAML frontmatter")
-    frontmatter = yaml.safe_load(match.group(1)) or {}
-    return {"frontmatter": frontmatter, "body": match.group(2), "raw": raw}
-
-
-def load_authors(blog_dir: Path) -> dict:
-    authors_path = blog_dir / AUTHORS_FILENAME
-    if not authors_path.exists():
-        return {}
-    return json.loads(authors_path.read_text(encoding="utf-8"))
-
-
-def resolve_authors(frontmatter: dict, authors_map: dict) -> list:
-    keys = frontmatter.get("authors") or []
-    if isinstance(keys, str):
-        keys = [keys]
-    resolved = []
-    for key in keys:
-        info = authors_map.get(key, {})
-        resolved.append({"name": info.get("name", key), "url": info.get("url")})
-    return resolved
-
-
-def join_names(names: list) -> str:
-    if len(names) <= 1:
-        return "".join(names)
-    return f"{', '.join(names[:-1])} & {names[-1]}"
-
-
 def build_byline(authors: list) -> str:
     """DEV has no subtitle field, so the body byline is the only place the real authors are credited."""
     if not authors:
@@ -193,17 +158,6 @@ def convert_tabs(body: str) -> str:
         return "\n\n".join(sections)
 
     return TABS_RE.sub(replace_tabs, body)
-
-
-def convert_admonitions(body: str) -> str:
-    """Turn Docusaurus `:::type Title ... :::` admonitions into a plain blockquote."""
-
-    def replace_admonition(match: re.Match) -> str:
-        title = (match.group(2) or match.group(1)).strip().capitalize()
-        quoted = "\n".join(f"> {line}".rstrip() for line in match.group(3).strip().split("\n"))
-        return f"> **{title}**\n>\n{quoted}"
-
-    return ADMONITION_RE.sub(replace_admonition, body)
 
 
 def convert_code_fences(body: str) -> str:
@@ -371,38 +325,6 @@ def resize_fixed_images(body: str) -> str:
     return SIZED_IMG_RE.sub(repl, body)
 
 
-def absolutize_url(url: str | None, site_url: str) -> str | None:
-    if url and url.startswith("/"):
-        return f"{site_url}{url}"
-    return url
-
-
-def resolve_post_date(path: Path, frontmatter: dict) -> datetime.date | None:
-    """Return the date the post went live on the website, the same way Docusaurus picks it.
-
-    A frontmatter `date` wins; otherwise the `YYYY-MM-DD-` filename prefix is used.
-    """
-    value = frontmatter.get("date")
-    if isinstance(value, datetime.datetime):
-        return value.date()
-    if isinstance(value, datetime.date):
-        return value
-    if isinstance(value, str):
-        try:
-            return datetime.date.fromisoformat(value.strip()[:10])
-        except ValueError:
-            pass
-    match = FILENAME_DATE_RE.match(path.name)
-    if match:
-        return datetime.date(*(int(part) for part in match.groups()))
-    return None
-
-
-def build_canonical_url(site_url: str, slug: str) -> str:
-    slug = slug if slug.startswith("/") else f"/{slug}"
-    return f"{site_url}/blog{slug}"
-
-
 def build_tags(frontmatter: dict) -> list:
     """DEV tags are lowercase alphanumeric (no hyphens), so `ai-agents` becomes `aiagents`."""
     tags = []
@@ -417,7 +339,9 @@ def build_tags(frontmatter: dict) -> list:
 
 def render_markdown(path: Path, frontmatter: dict, body: str, site_url: str, authors: list) -> tuple:
     # Posts live in docs/blog/, their root-relative images in docs/static/.
-    body = resize_fixed_images(absolutize_urls(clean_mdx(body, path.parent.parent / "static"), site_url))
+    static_dir = path.parent.parent / "static"
+    body = raster_site_svgs(clean_mdx(body, static_dir), site_url, static_dir)
+    body = resize_fixed_images(absolutize_urls(body, site_url))
     body = body.replace(SHIELDS_SVG_URL, SHIELDS_PNG_URL)
     # DEV renders the article title itself, so drop the duplicate leading H1.
     body = LEADING_H1_RE.sub("", body, count=1).strip()
@@ -448,14 +372,10 @@ def build_article(
         "published": True,
         "tags": build_tags(frontmatter),
         "canonical_url": canonical_url,
-        "main_image": absolutize_url(frontmatter.get("image"), site_url),
+        "main_image": absolutize_url(raster_url(frontmatter.get("image"), site_url, path.parent.parent / "static"), site_url),
         "description": frontmatter.get("description"),
     }
     return {key: value for key, value in article.items() if value is not None}
-
-
-def content_hash(raw: str) -> str:
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
 def article_hash(article: dict) -> str:
@@ -523,7 +443,7 @@ def main() -> None:
     state = load_state(state_file)
     authors_map = load_authors(args.blog_dir)
 
-    paths = sorted(path for path in args.blog_dir.glob("*.md") if not path.name.endswith(PREVIEW_SUFFIX))
+    paths = list_posts(args.blog_dir)
     if args.post:
         wanted = {Path(name).name for name in args.post}
         missing = wanted - {path.name for path in paths}
@@ -535,7 +455,7 @@ def main() -> None:
     for path in paths:
 
         post = parse_post(path)
-        frontmatter, body, raw = post["frontmatter"], post["body"], post["raw"]
+        frontmatter, body = post["frontmatter"], post["body"]
 
         if frontmatter.get("devto") is False:
             continue

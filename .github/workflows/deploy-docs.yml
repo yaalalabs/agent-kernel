@@ -101,9 +101,9 @@ jobs:
             exit 0
           fi
           if [ -n "$HASHNODE_POST" ]; then
-            python scripts/sync_hashnode_blog.py --post "$HASHNODE_POST"
+            python scripts/sync_blogs/hashnode.py --post "$HASHNODE_POST"
           else
-            python scripts/sync_hashnode_blog.py
+            python scripts/sync_blogs/hashnode.py
           fi
 
       - name: Commit updated Hashnode sync state
@@ -154,9 +154,9 @@ jobs:
             exit 0
           fi
           if [ -n "$DEVTO_POST" ]; then
-            python scripts/sync_devto_blog.py --post "$DEVTO_POST"
+            python scripts/sync_blogs/devto.py --post "$DEVTO_POST"
           else
-            python scripts/sync_devto_blog.py
+            python scripts/sync_blogs/devto.py
           fi
 
       - name: Commit updated DEV Community sync state

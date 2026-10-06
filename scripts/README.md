@@ -2,7 +2,14 @@
 
 This directory contains utility scripts for the agent-kernel project.
 
-## sync_hashnode_blog.py
+## sync_blogs/
+
+Syncs the website's blog posts to Hashnode (`hashnode.py`) and DEV Community (`devto.py`).
+Helpers both scripts share live in `sync_blogs/utils/`: `common.py` (post/frontmatter
+parsing, authors, sync state, dates, URLs) and `svg_raster.py` (SVG images served as PNG,
+see below).
+
+### sync_blogs/hashnode.py
 
 Publishes `docs/blog/*.md` posts to a Hashnode publication so blog content gets
 Hashnode's reach on top of the Agent Kernel website. Run automatically by
@@ -38,19 +45,19 @@ export HASHNODE_PAT=...                  # Personal Access Token (Account settin
 export HASHNODE_PUBLICATION_ID=...       # the publication to publish to
 
 # Find the id to put in HASHNODE_PUBLICATION_ID
-python scripts/sync_hashnode_blog.py --find-publication agentkernel.hashnode.dev
+python scripts/sync_blogs/hashnode.py --find-publication agentkernel.hashnode.dev
 
 # Write the Markdown that would be sent next to each post (<post>.hashnode-preview.md, gitignored); no token needed
-python scripts/sync_hashnode_blog.py --preview
+python scripts/sync_blogs/hashnode.py --preview
 
 # Print what would be published/updated, without calling the Hashnode API
-python scripts/sync_hashnode_blog.py --dry-run
+python scripts/sync_blogs/hashnode.py --dry-run
 
 # Publish new posts and update changed ones
-python scripts/sync_hashnode_blog.py
+python scripts/sync_blogs/hashnode.py
 
 # Sync just one post (repeat --post for several)
-python scripts/sync_hashnode_blog.py --post 2026-09-14-scheduled-tasks.md
+python scripts/sync_blogs/hashnode.py --post 2026-09-14-scheduled-tasks.md
 ```
 
 **Options:**
@@ -65,7 +72,10 @@ python scripts/sync_hashnode_blog.py --post 2026-09-14-scheduled-tasks.md
 **Content conversion:** Docusaurus-only syntax is rewritten into plain Markdown - `<Tabs>`
 become headed sections, `:::` admonitions become blockquotes, JSX `<div>` image/badge/caption
 blocks become Markdown images and italic captions, the leading `# Title` is dropped (Hashnode
-renders the title itself), and root-relative links/images are made absolute.
+renders the title itself), and root-relative links/images are made absolute. Neither Hashnode
+nor DEV can show SVG images, so a root-relative `.svg` (body image or frontmatter `image`) is
+pointed at [wsrv.nl](https://wsrv.nl), an open-source image proxy that returns it as a PNG
+at 2x the SVG's width; the platforms mirror the image when the post is synced.
 
 **Opting a post out:** add `hashnode: false` to that post's frontmatter.
 
@@ -76,10 +86,10 @@ Secrets and variables -> Actions). If either is missing, the workflow job skips 
 Run workflow) and fill in `hashnode_post` with the blog file name. Pushes to `develop` still
 sync every new/changed post.
 
-## sync_devto_blog.py
+### sync_blogs/devto.py
 
 Publishes `docs/blog/*.md` posts to DEV Community (dev.to), the same way
-`sync_hashnode_blog.py` does for Hashnode. Run automatically by
+`sync_blogs/hashnode.py` does for Hashnode. Run automatically by
 `.github/workflows/deploy-docs.yml` (the `sync-devto` job, in parallel with the Hashnode
 sync) after every docs deploy; also runnable locally.
 
@@ -109,19 +119,19 @@ export DEVTO_API_KEY=...                 # Settings -> Extensions -> DEV Communi
 export DEVTO_ORGANIZATION_ID=...         # optional: publish under this organization
 
 # Find the id to put in DEVTO_ORGANIZATION_ID (no API key needed)
-python scripts/sync_devto_blog.py --find-organization agentkernel
+python scripts/sync_blogs/devto.py --find-organization agentkernel
 
 # Write the Markdown that would be sent next to each post (<post>.devto-preview.md, gitignored); no API key needed
-python scripts/sync_devto_blog.py --preview
+python scripts/sync_blogs/devto.py --preview
 
 # Print what would be published/updated, without calling the DEV API
-python scripts/sync_devto_blog.py --dry-run
+python scripts/sync_blogs/devto.py --dry-run
 
 # Publish new posts and update changed ones
-python scripts/sync_devto_blog.py
+python scripts/sync_blogs/devto.py
 
 # Sync just one post (repeat --post for several)
-python scripts/sync_devto_blog.py --post 2026-09-14-scheduled-tasks.md
+python scripts/sync_blogs/devto.py --post 2026-09-14-scheduled-tasks.md
 ```
 
 **Options:**
@@ -136,7 +146,10 @@ python scripts/sync_devto_blog.py --post 2026-09-14-scheduled-tasks.md
 **Content conversion:** identical to the Hashnode sync - `<Tabs>` become headed sections,
 `:::` admonitions become blockquotes, JSX `<div>` blocks become Markdown images and captions
 (which also removes the `style={{...}}` props DEV would otherwise parse as Liquid tags), the
-leading `# Title` is dropped, and root-relative links/images are made absolute.
+leading `# Title` is dropped, root-relative links/images are made absolute, and SVG images
+are served as PNG. On top of that, DEV only recognizes a bare language after a code fence, so
+Docusaurus fence metadata (```` ```yaml title="config.yaml" ````) is stripped to the language,
+with the `title` shown as a bold label above the block.
 
 **Rate limits:** DEV throttles article writes; on HTTP 429 the script waits (`Retry-After`,
 else 30s) and retries, so a first full sync of every post just takes a few minutes.

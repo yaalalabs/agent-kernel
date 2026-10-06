@@ -16,19 +16,19 @@ in a byline at the top of the body. The Docusaurus site stays the source of trut
 
 Usage:
     # Write the Markdown that would be sent to Hashnode next to each post (no token needed)
-    python scripts/sync_hashnode_blog.py --preview
+    python scripts/sync_blogs/hashnode.py --preview
 
     # See what would be created/updated, without calling the Hashnode API
-    python scripts/sync_hashnode_blog.py --dry-run
+    python scripts/sync_blogs/hashnode.py --dry-run
 
     # Find the publication id for HASHNODE_PUBLICATION_ID
-    python scripts/sync_hashnode_blog.py --find-publication agentkernel.hashnode.dev
+    python scripts/sync_blogs/hashnode.py --find-publication agentkernel.hashnode.dev
 
     # Publish new posts and update changed ones
-    python scripts/sync_hashnode_blog.py
+    python scripts/sync_blogs/hashnode.py
 
     # Sync just one post
-    python scripts/sync_hashnode_blog.py --post 2026-09-14-scheduled-tasks.md
+    python scripts/sync_blogs/hashnode.py --post 2026-09-14-scheduled-tasks.md
 
 Environment:
     HASHNODE_PAT              Required (except for --preview/--dry-run). A Hashnode
@@ -40,8 +40,6 @@ A post is skipped entirely if its frontmatter sets `hashnode: false`.
 """
 
 import argparse
-import datetime
-import hashlib
 import json
 import os
 import re
@@ -50,28 +48,38 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-import yaml
+from utils.common import (
+    DEFAULT_BLOG_DIR,
+    DEFAULT_SITE_URL,
+    IMPORT_RE,
+    TABS_RE,
+    TAB_ITEM_RE,
+    HTML_BLOCK_RE,
+    LINKED_IMG_RE,
+    IMG_RE,
+    CAPTION_RE,
+    LEADING_H1_RE,
+    list_posts,
+    load_state,
+    save_state,
+    parse_post,
+    load_authors,
+    resolve_authors,
+    join_names,
+    convert_admonitions,
+    absolutize_url,
+    resolve_post_date,
+    build_canonical_url,
+    content_hash,
+)
+from utils.svg_raster import raster_site_svgs, raster_url
 
 # gql.hashnode.com was retired on 2026-05-13 and now 301s to an announcement page.
 HASHNODE_API_URL = "https://gql-beta.hashnode.com"
-DEFAULT_BLOG_DIR = Path("docs/blog")
-DEFAULT_SITE_URL = "https://kernel.yaala.ai"
-AUTHORS_FILENAME = "authors.json"
 STATE_FILENAME = ".hashnode-sync-state.json"
 PREVIEW_SUFFIX = ".hashnode-preview.md"
 MAX_TAGS = 15
 
-FILENAME_DATE_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})-")
-FRONTMATTER_RE = re.compile(r"^---\n(.*?)\n---\n(.*)$", re.DOTALL)
-IMPORT_RE = re.compile(r"^import .+ from ['\"]@theme/\w+['\"];?\s*$\n?", re.MULTILINE)
-TABS_RE = re.compile(r"<Tabs>(.*?)</Tabs>", re.DOTALL)
-TAB_ITEM_RE = re.compile(r'<TabItem\s+value="[^"]*"\s+label="([^"]*)"[^>]*>(.*?)</TabItem>', re.DOTALL)
-ADMONITION_RE = re.compile(r"^:::(\w+)(?:[ \t]+([^\n]*))?\n(.*?)\n:::[ \t]*$", re.MULTILINE | re.DOTALL)
-HTML_BLOCK_RE = re.compile(r"^<div[^>]*>\n(.*?)\n</div>[ \t]*$", re.MULTILINE | re.DOTALL)
-LINKED_IMG_RE = re.compile(r"<a\s[^>]*?href=\"([^\"]+)\"[^>]*>\s*(<img\s[^>]*?/?>)\s*</a>", re.DOTALL)
-IMG_RE = re.compile(r"<img\s[^>]*?/?>")
-CAPTION_RE = re.compile(r"<p(?:\s[^>]*)?>(.*?)</p>", re.DOTALL)
-LEADING_H1_RE = re.compile(r"^\s*# [^\n]*\n")
 
 PUBLISH_POST_MUTATION = """
 mutation PublishPost($input: PublishPostInput!) {
@@ -118,49 +126,6 @@ def hashnode_request(token: str, query: str, variables: dict) -> dict:
     return payload["data"]
 
 
-def load_state(state_file: Path) -> dict:
-    if state_file.exists():
-        return json.loads(state_file.read_text())
-    return {}
-
-
-def save_state(state_file: Path, state: dict) -> None:
-    state_file.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n")
-
-
-def parse_post(path: Path) -> dict:
-    raw = path.read_text(encoding="utf-8")
-    match = FRONTMATTER_RE.match(raw)
-    if not match:
-        raise ValueError(f"{path}: missing YAML frontmatter")
-    frontmatter = yaml.safe_load(match.group(1)) or {}
-    return {"frontmatter": frontmatter, "body": match.group(2), "raw": raw}
-
-
-def load_authors(blog_dir: Path) -> dict:
-    authors_path = blog_dir / AUTHORS_FILENAME
-    if not authors_path.exists():
-        return {}
-    return json.loads(authors_path.read_text(encoding="utf-8"))
-
-
-def resolve_authors(frontmatter: dict, authors_map: dict) -> list:
-    keys = frontmatter.get("authors") or []
-    if isinstance(keys, str):
-        keys = [keys]
-    resolved = []
-    for key in keys:
-        info = authors_map.get(key, {})
-        resolved.append({"name": info.get("name", key), "url": info.get("url")})
-    return resolved
-
-
-def join_names(names: list) -> str:
-    if len(names) <= 1:
-        return "".join(names)
-    return f"{', '.join(names[:-1])} & {names[-1]}"
-
-
 def build_subtitle(authors: list) -> str | None:
     """Hashnode shows the subtitle right under the title - the most visible place to credit authors."""
     if not authors:
@@ -191,17 +156,6 @@ def convert_tabs(body: str) -> str:
         return "\n\n".join(sections)
 
     return TABS_RE.sub(replace_tabs, body)
-
-
-def convert_admonitions(body: str) -> str:
-    """Turn Docusaurus `:::type Title ... :::` admonitions into a plain blockquote."""
-
-    def replace_admonition(match: re.Match) -> str:
-        title = (match.group(2) or match.group(1)).strip().capitalize()
-        quoted = "\n".join(f"> {line}".rstrip() for line in match.group(3).strip().split("\n"))
-        return f"> **{title}**\n>\n{quoted}"
-
-    return ADMONITION_RE.sub(replace_admonition, body)
 
 
 def img_to_markdown(tag: str) -> str:
@@ -250,38 +204,6 @@ def absolutize_urls(body: str, site_url: str) -> str:
     return body
 
 
-def absolutize_url(url: str | None, site_url: str) -> str | None:
-    if url and url.startswith("/"):
-        return f"{site_url}{url}"
-    return url
-
-
-def resolve_post_date(path: Path, frontmatter: dict) -> datetime.date | None:
-    """Return the date the post went live on the website, the same way Docusaurus picks it.
-
-    A frontmatter `date` wins; otherwise the `YYYY-MM-DD-` filename prefix is used.
-    """
-    value = frontmatter.get("date")
-    if isinstance(value, datetime.datetime):
-        return value.date()
-    if isinstance(value, datetime.date):
-        return value
-    if isinstance(value, str):
-        try:
-            return datetime.date.fromisoformat(value.strip()[:10])
-        except ValueError:
-            pass
-    match = FILENAME_DATE_RE.match(path.name)
-    if match:
-        return datetime.date(*(int(part) for part in match.groups()))
-    return None
-
-
-def build_canonical_url(site_url: str, slug: str) -> str:
-    slug = slug if slug.startswith("/") else f"/{slug}"
-    return f"{site_url}/blog{slug}"
-
-
 def build_hashnode_slug(slug: str) -> str:
     """Hashnode slugs are a single path segment; use the last segment of the Docusaurus slug."""
     return slug.strip("/").split("/")[-1]
@@ -296,8 +218,8 @@ def build_tags(frontmatter: dict) -> list:
     return tags
 
 
-def render_markdown(frontmatter: dict, body: str, site_url: str, authors: list) -> tuple:
-    body = absolutize_urls(clean_mdx(body), site_url)
+def render_markdown(frontmatter: dict, body: str, site_url: str, static_dir: Path, authors: list) -> tuple:
+    body = absolutize_urls(raster_site_svgs(clean_mdx(body), site_url, static_dir), site_url)
     # Hashnode renders the post title itself, so drop the duplicate leading H1.
     body = LEADING_H1_RE.sub("", body, count=1).strip()
 
@@ -318,7 +240,9 @@ def build_post_input(
         authors_map: dict,
 ) -> dict:
     authors = resolve_authors(frontmatter, authors_map)
-    content, canonical_url = render_markdown(frontmatter, body, site_url, authors)
+    # Posts live in docs/blog/, their root-relative images in docs/static/.
+    static_dir = path.parent.parent / "static"
+    content, canonical_url = render_markdown(frontmatter, body, site_url, static_dir, authors)
     post_input = {
         "title": frontmatter["title"],
         "subtitle": build_subtitle(authors),
@@ -326,7 +250,7 @@ def build_post_input(
         "slug": build_hashnode_slug(frontmatter["slug"]),
         "tags": build_tags(frontmatter),
         "originalArticleURL": canonical_url,
-        "coverImage": absolutize_url(frontmatter.get("image"), site_url),
+        "coverImage": absolutize_url(raster_url(frontmatter.get("image"), site_url, static_dir), site_url),
         "metaDescription": frontmatter.get("description"),
     }
     published_on = resolve_post_date(path, frontmatter)
@@ -335,8 +259,9 @@ def build_post_input(
     return {key: value for key, value in post_input.items() if value is not None}
 
 
-def content_hash(raw: str) -> str:
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+def post_input_hash(post_input: dict) -> str:
+    """Hash what is sent (not the source), so converter fixes also refresh already-synced posts."""
+    return content_hash(json.dumps(post_input, sort_keys=True))
 
 
 def publish_post(token: str, publication_id: str, post_input: dict) -> dict:
@@ -401,7 +326,7 @@ def main() -> None:
     state = load_state(state_file)
     authors_map = load_authors(args.blog_dir)
 
-    paths = sorted(path for path in args.blog_dir.glob("*.md") if not path.name.endswith(PREVIEW_SUFFIX))
+    paths = list_posts(args.blog_dir)
     if args.post:
         wanted = {Path(name).name for name in args.post}
         missing = wanted - {path.name for path in paths}
@@ -413,7 +338,7 @@ def main() -> None:
     for path in paths:
 
         post = parse_post(path)
-        frontmatter, body, raw = post["frontmatter"], post["body"], post["raw"]
+        frontmatter, body = post["frontmatter"], post["body"]
 
         if frontmatter.get("hashnode") is False:
             continue
@@ -433,7 +358,7 @@ def main() -> None:
             print(f"wrote {preview_path}")
             continue
 
-        digest = content_hash(raw)
+        digest = post_input_hash(post_input)
         record = state.get(path.name)
 
         if record and record.get("content_hash") == digest:
