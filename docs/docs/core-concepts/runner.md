@@ -329,7 +329,7 @@ load time therefore needs no per-request plumbing. It is shared by every concurr
 agent, so keep per-run state in the session (its volatile cache is cleared after each run), never on
 the hook.
 
-Run options compose with tracing: the Langfuse, Logfire and OpenLLMetry runners delegate to the base
+Run options compose with tracing: the Langfuse, Logfire, OpenLLMetry and CloudWatch runners delegate to the base
 runner, so a declared `hooks=` still reaches the SDK when `trace.enabled` is on. The
 [custom-runner path](../advanced/traceability.md#how-to-add-your-own-platform) remains for behaviour
 that is not a keyword argument of the native call.

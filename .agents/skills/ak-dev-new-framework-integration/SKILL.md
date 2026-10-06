@@ -372,7 +372,7 @@ In `ak-py/pyproject.toml`, add an optional dependency group:
 
 ### 11. Add Tracing Support
 
-There are **two** tracing backends, each with per-framework traced runners. A new framework needs a traced runner under **both** `ak-py/src/agentkernel/trace/langfuse/<name>.py` and `ak-py/src/agentkernel/trace/openllmetry/<name>.py`:
+There are **four** built-in tracing backends, each with per-framework traced runners. A new framework needs a traced runner under **each** of `ak-py/src/agentkernel/trace/langfuse/<name>.py`, `trace/openllmetry/<name>.py`, `trace/logfire/<name>.py`, and `trace/cloudwatch/<name>.py` (the CloudWatch runner takes the `CloudWatch` tracer and wraps `super().run()` in `self._tracer.span(...)`):
 
 ```python
 from ...framework.<name>.<name> import <Name>Runner
@@ -422,7 +422,7 @@ Create at minimum:
 - [ ] `<Name>Runner`'s `name` (passed to `super().__init__()`) matches the session key used in `session.get/set(...)` — required for `Session.get_framework_session()` to resolve it
 - [ ] Public alias at `ak-py/src/agentkernel/<name>.py`
 - [ ] Optional dependency group in `ak-py/pyproject.toml`
-- [ ] Trace runners in `ak-py/src/agentkernel/trace/langfuse/<name>.py` and `ak-py/src/agentkernel/trace/openllmetry/<name>.py` (optional)
+- [ ] Trace runners in `ak-py/src/agentkernel/trace/{langfuse,openllmetry,logfire,cloudwatch}/<name>.py` (optional)
 - [ ] Updates to `trace/base.py` and `trace/trace.py` (if adding tracing)
 - [ ] `<Name>Agent.RESERVED_RUN_OPTIONS` declared; `run()` and `stream()` each resolve once with `await agent.resolve_run_options(session, requests)` after the early returns and pass the mapping to `_native_kwargs` and your helpers (#754, #758)
 - [ ] `_native_agent_name` overridden if the registered name is not `agent.name`

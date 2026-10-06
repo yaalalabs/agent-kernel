@@ -20,7 +20,7 @@ graph TB
     D --> G[Trace Events]
     E --> G
     F --> G
-    G --> H[Langfuse/OpenLLMetry/Logfire]
+    G --> H[Langfuse/OpenLLMetry/Logfire/CloudWatch]
     
     style G fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
     style H fill:#ff6b35,stroke:#fff,stroke-width:2px,color:#fff
@@ -33,6 +33,7 @@ Agent Kernel supports the following observability platforms:
 - **Langfuse** - Open-source LLM engineering platform for tracing, evaluating, and monitoring AI applications
 - **OpenLLMetry (Traceloop)** - OpenTelemetry-based observability for LLM applications with support for multiple backends
 - **Pydantic Logfire** - OpenTelemetry-based observability from the Pydantic team, with a native OpenAI Agents SDK integration
+- **AWS CloudWatch** - OpenTelemetry traces exported straight to AWS X-Ray, searchable in CloudWatch Transaction Search and GenAI Observability
 
 ## Getting Started with Langfuse
 
@@ -307,6 +308,24 @@ python -c "from traceloop.sdk import Traceloop; Traceloop.init(app_name='test');
 python -c "import logfire; logfire.configure(send_to_logfire='if-token-present'); print('Success')"
 ```
 
+### CloudWatch Issues
+
+**Startup fails with "trace.type: cloudwatch needs an AWS region":** set `AWS_REGION`, or point `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` at a collector or the CloudWatch agent.
+
+**Traces Not Appearing:**
+
+1. **Check Transaction Search**: `aws xray get-trace-segment-destination` must report `"Destination": "CloudWatchLogs"` and `"Status": "ACTIVE"`
+2. **Check Permissions**: an export log line `Failed to export span batch code: 403` means the role lacks `AWSXrayWriteOnlyAccess`
+3. **Check Credentials**: `Exception while exporting Span.` with `NoCredentialsError` means no AWS credentials resolved in the process
+4. **Check Region**: spans land in the region named by `AWS_REGION` (or the endpoint URL), so open the console in that region
+5. **Review Logs**: look for the `ak.trace.cloudwatch` "CloudWatch tracing configured" debug message
+
+**Setup Check:**
+
+```bash
+aws sts get-caller-identity && aws xray get-trace-segment-destination
+```
+
 ### Performance Impact
 
 Tracing adds minimal overhead:
@@ -331,6 +350,7 @@ When tracing is enabled:
 - **Langfuse**: Data sent to Langfuse cloud or self-hosted instance
 - **OpenLLMetry**: Data sent to Traceloop or configured OpenTelemetry backend
 - **Logfire**: Data sent to Logfire when `LOGFIRE_TOKEN` is set; otherwise kept local
+- **CloudWatch**: Data sent to AWS X-Ray and stored in your account's CloudWatch Logs (`aws/spans`), in the region you export to
 - Ensure compliance with your data privacy requirements
 - Consider self-hosting for sensitive data
 
@@ -459,6 +479,100 @@ Logfire configures the global OpenTelemetry tracer provider, and each non-stream
 | LangGraph | Session span only |
 | Smolagents | Session span only |
 
+## Getting Started with AWS CloudWatch
+
+[Amazon CloudWatch](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/CloudWatch-Transaction-Search.html) ingests OpenTelemetry traces through AWS X-Ray, makes every span searchable with Transaction Search, and shows agent sessions in GenAI Observability. Agent Kernel exports spans over OTLP/HTTP straight to the regional X-Ray endpoint, signed with your AWS credentials (SigV4), so no collector or sidecar is needed. That makes it work the same way on AWS Lambda, ECS, EKS, and EC2.
+
+### Installation
+
+```bash
+pip install agentkernel[cloudwatch]
+```
+
+Or with a framework integration:
+
+```bash
+# OpenAI with CloudWatch
+pip install agentkernel[openai,cloudwatch]
+
+# CrewAI with CloudWatch
+pip install agentkernel[crewai,cloudwatch]
+
+# Google ADK with CloudWatch
+pip install agentkernel[adk,cloudwatch]
+```
+
+### Configuration
+
+#### Method 1: Configuration File
+
+```yaml
+trace:
+  enabled: true
+  type: cloudwatch
+```
+
+#### Method 2: Environment Variables
+
+```bash
+export AK_TRACE__ENABLED=true
+export AK_TRACE__TYPE=cloudwatch
+```
+
+### AWS Prerequisites
+
+1. **Enable Transaction Search** once per account and region. In the CloudWatch console, choose **Application Signals → Transaction Search → Enable Transaction Search**. To do it with the AWS CLI instead, follow the [AWS guide](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/Enable-TransactionSearch.html): add a CloudWatch Logs resource policy for `xray.amazonaws.com`, then run `aws xray update-trace-segment-destination --destination CloudWatchLogs`. `aws xray get-trace-segment-destination` reports `"Status": "ACTIVE"` once spans are being ingested, which can take about 10 minutes.
+2. **Grant write access**: attach the AWS managed policy `AWSXrayWriteOnlyAccess` to the identity that runs your agent (the Lambda execution role, ECS task role, or your local profile). Agent Kernel's Terraform modules do not attach it for you.
+3. **Region and credentials** come from the standard AWS SDK chain. The region is read from `AWS_REGION`, then `AWS_DEFAULT_REGION` or the active profile; Lambda and ECS set it for you. Credentials can come from environment variables, a profile, SSO, or an instance or task role.
+
+### Export Endpoint
+
+The exporter uses the standard OpenTelemetry environment variables, so no Agent Kernel configuration beyond `trace.type` is needed:
+
+| Setting | Behaviour |
+|---------|-----------|
+| No endpoint variable set | Exports to `https://xray.<region>.amazonaws.com/v1/traces`, SigV4-signed (`amazonaws.com.cn` for `cn-*` regions) |
+| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` (or `OTEL_EXPORTER_OTLP_ENDPOINT`) set to an X-Ray URL | Exports there, signed for the region in the URL |
+| Either variable set to any other URL, such as the CloudWatch agent or an OpenTelemetry collector on `http://localhost:4318/v1/traces` | Exports there unsigned, and the agent or collector handles authentication |
+| `OTEL_SERVICE_NAME` | Service name in CloudWatch (default `AgentKernel`) |
+| `OTEL_RESOURCE_ATTRIBUTES` | Extra resource attributes, e.g. `deployment.environment.name=prod` |
+
+The other standard `OTEL_*` variables (headers, timeout, compression, sampler, batch processor, attribute limits) apply as usual.
+
+If an OpenTelemetry tracer provider is already installed, Agent Kernel reuses it rather than registering a second one. This happens, for example, when you run under `opentelemetry-instrument` with the AWS Distro for OpenTelemetry, or inside Bedrock AgentCore Runtime. In that case it adds only its session processor, and the existing provider's exporter configuration applies.
+
+### What Gets Traced
+
+Each non-streaming agent run (`execution.mode: invoke`) is wrapped in a span named `Agent Kernel <Framework>`. The span carries:
+
+- `session.id`: the Agent Kernel session ID. It is also copied onto every span the framework instrumentation emits during the run, so you can filter a whole conversation in Transaction Search, and GenAI Observability can group it as a session.
+- `input.value` / `output.value`: the prompt and the agent's reply.
+
+The service resource defaults to `service.name=AgentKernel` and `aws.service.type=gen_ai_agent`. Values set through `OTEL_SERVICE_NAME` or `OTEL_RESOURCE_ATTRIBUTES` win.
+
+Streaming runs (`execution.mode: stream`) are not wrapped in a session span, which matches the other providers, though deep instrumentation still emits LLM and tool spans where it is active. How deep the LLM- and tool-level instrumentation goes depends on the framework:
+
+| Framework | Depth under CloudWatch |
+|-----------|------------------------|
+| OpenAI Agents SDK | Full — OpenInference OpenAI Agents instrumentor |
+| CrewAI | Full — OpenInference CrewAI + LiteLLM instrumentors |
+| Google ADK | Full — OpenInference Google ADK instrumentor |
+| Pydantic AI | Full — Pydantic AI instrumentation + OpenInference span processor |
+| LangGraph | Session span only |
+| Smolagents | Session span only |
+
+X-Ray rejects spans larger than 200 KB. If your prompts or replies are very large, cap attribute sizes with `OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT`.
+
+### Running on AWS Lambda
+
+The batch span processor normally exports in the background, but Lambda freezes the execution environment as soon as an invocation returns. When `AWS_LAMBDA_FUNCTION_NAME` is set, Agent Kernel therefore flushes pending spans at the end of every agent run, including failed runs. The cost is one export round trip added to each invocation. Agent spans are not parented under the function's own X-Ray segment when Lambda active tracing is on: with X-Ray sampling, that parent would cause most agent spans to be dropped.
+
+### Viewing Traces in CloudWatch
+
+1. Open the CloudWatch console in the region you export to.
+2. Go to **Application Signals → Transaction Search** and filter spans by `session.id` or by service `AgentKernel`. Open a trace to see the run span with its agent, LLM, and tool spans nested under it.
+3. Go to **GenAI Observability** for the agent and session views.
+
 ## Integrate with Your Own Traceability Platform
 
 Agent Kernel's plugin architecture makes it easy to integrate your own observability platform. If you're already using a different monitoring solution or have specific requirements, you can add support in just a few steps.
@@ -538,15 +652,17 @@ Upcoming observability features:
 
 - [Langfuse Documentation](https://langfuse.com/docs)
 - [Traceloop/OpenLLMetry Documentation](https://www.traceloop.com/docs)
+- [CloudWatch Transaction Search Documentation](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/CloudWatch-Transaction-Search.html)
 - [Configuration Guide](../core-concepts/configuration.md)
 
 ## Summary
 
 - Enable observability with simple configuration
-- **Three Platform Options**: Choose between Langfuse, OpenLLMetry, and Pydantic Logfire
+- **Four Platform Options**: Choose between Langfuse, OpenLLMetry, Pydantic Logfire, and AWS CloudWatch
 - **Langfuse**: Specialized LLM observability platform with rich analytics
 - **OpenLLMetry**: OpenTelemetry-based solution with multi-backend support
 - **Pydantic Logfire**: OpenTelemetry-based platform with a native OpenAI Agents SDK integration
+- **AWS CloudWatch**: OpenTelemetry traces in your own AWS account via X-Ray, with no collector needed
 - Comprehensive trace data including LLM calls, tools, and performance
 - Minimal performance impact
 - Self-hosting and custom backend options for data privacy

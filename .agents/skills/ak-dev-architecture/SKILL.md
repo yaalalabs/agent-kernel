@@ -1012,7 +1012,9 @@ ak-py/src/agentkernel/
 │   ├── base.py              # BaseTrace
 │   ├── trace.py             # Trace factory
 │   ├── langfuse/            # Langfuse adapter
-│   └── openllmetry/         # OpenLLMetry adapter
+│   ├── openllmetry/         # OpenLLMetry adapter
+│   ├── logfire/             # Pydantic Logfire adapter
+│   └── cloudwatch/          # AWS CloudWatch adapter (OpenTelemetry → X-Ray OTLP, SigV4-signed)
 ├── sandbox/                 # Sandbox capability (execute code/commands in an isolated env)
 │   ├── base.py              # Sandbox, SandboxProvider ABCs
 │   ├── model.py             # SandboxCapabilities, SandboxResult, SandboxSession, policy/principal

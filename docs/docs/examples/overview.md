@@ -36,6 +36,7 @@ Command-line interface examples for local development and testing:
   - `openai/` - OpenAI Guardrails integration with LangGraph agents
 - **`langgraph/`** - LangGraph framework integration examples
 - **`logfire/`** - Pydantic Logfire tracing over the OpenAI Agents SDK example
+- **`cloudwatch/`** - AWS CloudWatch tracing (OpenTelemetry to X-Ray) over the OpenAI Agents SDK example
 - **`multi/`** - Multi-agent examples combining different frameworks
 - **`openai/`** - OpenAI Agent SDK integration examples
 - **`openai-dynamic/`** - OpenAI Agent SDK agents registered dynamically at runtime

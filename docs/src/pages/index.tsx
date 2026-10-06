@@ -1125,7 +1125,7 @@ export default function Home() {
   return (
     <Layout
       title={`${siteConfig.title} - ${siteConfig.tagline}`}
-      description="Agent Kernel is the open-source operating system for scalable, compliant enterprise AI agents. Build, test, and deploy with OpenAI, LangGraph, CrewAI, Google ADK, Smolagents, or Pydantic AI to AWS, Azure, or GCP, with built-in messaging, memory, knowledge bases, guardrails, sandboxed code execution, and observability (Langfuse, OpenLLMetry, Pydantic Logfire)."
+      description="Agent Kernel is the open-source operating system for scalable, compliant enterprise AI agents. Build, test, and deploy with OpenAI, LangGraph, CrewAI, Google ADK, Smolagents, or Pydantic AI to AWS, Azure, or GCP, with built-in messaging, memory, knowledge bases, guardrails, sandboxed code execution, and observability (Langfuse, OpenLLMetry, Pydantic Logfire, AWS CloudWatch)."
     >
       {/* <PlantParticlesBackground ref={backgroundRef} /> */}
       <WhatsNewBanner />
