@@ -12,6 +12,9 @@ the top of the body. The Docusaurus site stays the source of truth:
     updated in place.
   - What has already been synced is tracked in a small JSON state file next to
     the posts, so re-runs are idempotent.
+  - A post missing from that state file is matched against the organization's
+    articles on DEV by canonical URL first, so a lost state file updates the
+    existing article instead of publishing a duplicate.
 
 DEV's API cannot backdate an article, so the date the post went live on the website is
 stated in the "Originally published" footer instead.
@@ -99,6 +102,8 @@ MAX_TAG_LENGTH = 30
 # DEV rate-limits article writes; on a 429 wait (Retry-After, else this many seconds) and retry.
 RATE_LIMIT_RETRIES = 5
 RATE_LIMIT_DEFAULT_WAIT = 30
+# Page size when listing the organization's articles (DEV's maximum).
+ARTICLES_PAGE_SIZE = 1000
 
 STYLE_PX_RE = r"\b{}:\s*'(\d+)px'"
 SIZED_IMG_RE = re.compile(r'<img src="(https?://[^"]+)" alt="([^"]*)"(?: width="(\d+)")?(?: height="(\d+)")? />')
@@ -132,6 +137,44 @@ def devto_request(api_key: str | None, method: str, path: str, body: dict | None
                 continue
             raise DevtoAPIError(f"DEV API request failed ({exc.code}): {detail}") from exc
     raise AssertionError("unreachable")
+
+
+class ExistingArticles:
+    """The organization's articles already on DEV, by canonical URL; fetched once, only when needed.
+
+    A post with no sync-state record (a new post, or a lost or stale state file) is looked up
+    here first, so an article that is already on DEV gets updated instead of published twice.
+    """
+
+    def __init__(self, api_key: str | None, organization_id: str | None):
+        self.api_key = api_key
+        self.organization_id = organization_id
+        self.by_canonical_url = None
+
+    def find(self, canonical_url: str) -> dict | None:
+        if not self.organization_id:
+            return None
+        if self.by_canonical_url is None:
+            self.by_canonical_url = self.fetch()
+        return self.by_canonical_url.get(canonical_url.rstrip("/"))
+
+    def fetch(self) -> dict:
+        # The articles list is keyed by the organization's username, not its id. Both calls are
+        # public reads; a 429 is retried by devto_request.
+        username = devto_request(self.api_key, "GET", f"/organizations/{self.organization_id}")["username"]
+        articles, page = {}, 1
+        while True:
+            batch = devto_request(
+                self.api_key, "GET", f"/organizations/{username}/articles?per_page={ARTICLES_PAGE_SIZE}&page={page}"
+            )
+            for article in batch:
+                url = (article.get("canonical_url") or "").rstrip("/")
+                # If a post is somehow on DEV more than once already, keep using the oldest article.
+                if url and (url not in articles or article["id"] < articles[url]["id"]):
+                    articles[url] = article
+            if len(batch) < ARTICLES_PAGE_SIZE:
+                return articles
+            page += 1
 
 
 def build_byline(authors: list) -> str:
@@ -436,7 +479,15 @@ def main() -> None:
         print("Error: DEVTO_API_KEY is not set.", file=sys.stderr)
         sys.exit(1)
 
+    if not organization_id and not args.preview:
+        print(
+            "warning: DEVTO_ORGANIZATION_ID is not set, so posts missing from the sync state can't be matched "
+            "to articles already on DEV and would be published again.",
+            file=sys.stderr,
+        )
+
     site_url = args.site_url.rstrip("/")
+    existing_articles = ExistingArticles(api_key, organization_id)
     state_file = args.state_file or (args.blog_dir / STATE_FILENAME)
     state = load_state(state_file)
     authors_map = load_authors(args.blog_dir)
@@ -480,6 +531,13 @@ def main() -> None:
 
         if record and record.get("content_hash") == digest:
             continue
+
+        if not record:
+            # Not in the sync state: make sure it isn't already on DEV before publishing it.
+            existing = existing_articles.find(article["canonical_url"])
+            if existing:
+                print(f"{path.name} is not in the sync state but is already on DEV ({existing.get('url')}); updating that article")
+                record = {"devto_article_id": existing["id"], "devto_url": existing.get("url")}
 
         action = "update" if record else "publish"
         if args.dry_run:

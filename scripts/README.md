@@ -108,6 +108,10 @@ runnable locally.
 - A blog file that was synced and then edited has its DEV article updated in place.
 - A JSON state file (`docs/blog/.devto-sync-state.json`, recorded by CI through the sync-state PR) tracks
   which posts are synced, their DEV article id, and a content hash.
+- A post with no state record (a new post, or a lost or stale state file) is first looked up
+  among the organization's articles on DEV by its canonical URL (one list call per run, only
+  when needed; needs `DEVTO_ORGANIZATION_ID`). If it is already there, that article is updated
+  instead, so a lost state file can't cause duplicate articles, only a one-off redundant update.
 
 **Authors:** every article is published by the account that owns the API key, optionally
 under a DEV organization (`DEVTO_ORGANIZATION_ID`). DEV has no subtitle field, so the real
