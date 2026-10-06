@@ -47,15 +47,24 @@ import hashlib
 import json
 import os
 import re
+import struct
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
 import yaml
 
 DEVTO_API_URL = "https://dev.to/api"
+# DEV ignores width/height on body images (it re-measures the source), so fixed-size images
+# are served through DEV's own resizer at the size we want, scaled down a little since DEV's
+# body column renders them larger than the website does.
+DEVTO_FIXED_IMAGE_SCALE = 0.7
+# Minimum non-breaking spaces padding each cell of a logo-row table (see image_row_table).
+IMAGE_ROW_MIN_SPACER = 20
+DEVTO_IMAGE_RESIZER = "https://media2.dev.to/dynamic/image/width={width},height={height},fit=scale-down,gravity=auto,format=auto/{url}"
 DEFAULT_BLOG_DIR = Path("docs/blog")
 DEFAULT_SITE_URL = "https://kernel.yaala.ai"
 AUTHORS_FILENAME = "authors.json"
@@ -77,6 +86,8 @@ ADMONITION_RE = re.compile(r"^:::(\w+)(?:[ \t]+([^\n]*))?\n(.*?)\n:::[ \t]*$", r
 HTML_BLOCK_RE = re.compile(r"^<div[^>]*>\n(.*?)\n</div>[ \t]*$", re.MULTILINE | re.DOTALL)
 LINKED_IMG_RE = re.compile(r"<a\s[^>]*?href=\"([^\"]+)\"[^>]*>\s*(<img\s[^>]*?/?>)\s*</a>", re.DOTALL)
 IMG_RE = re.compile(r"<img\s[^>]*?/?>")
+STYLE_PX_RE = r"\b{}:\s*'(\d+)px'"
+SIZED_IMG_RE = re.compile(r'<img src="(https?://[^"]+)" alt="([^"]*)"(?: width="(\d+)")?(?: height="(\d+)")? />')
 CAPTION_RE = re.compile(r"<p(?:\s[^>]*)?>(.*?)</p>", re.DOTALL)
 LEADING_H1_RE = re.compile(r"^\s*# [^\n]*\n")
 
@@ -190,26 +201,115 @@ def convert_admonitions(body: str) -> str:
     return ADMONITION_RE.sub(replace_admonition, body)
 
 
-def img_to_markdown(tag: str) -> str:
+def png_size(path: Path) -> tuple | None:
+    """Read a PNG's intrinsic (width, height) from its IHDR header, without an image library."""
+    try:
+        with path.open("rb") as f:
+            header = f.read(24)
+    except OSError:
+        return None
+    if len(header) < 24 or header[:8] != b"\x89PNG\r\n\x1a\n":
+        return None
+    return struct.unpack(">II", header[16:24])
+
+
+def img_fixed_size(tag: str, src: str, static_dir: Path | None) -> tuple | None:
+    """Return (width, height) for an <img> whose JSX style pins a px width/height, else None.
+
+    Logos are sized via `style={{height: '60px'}}`; dropping that would make DEV show them
+    at full column width, so a pinned dimension is kept and the other one is derived from
+    the image's intrinsic aspect ratio when the file is available locally.
+    """
+    width = re.search(STYLE_PX_RE.format("width"), tag)
+    height = re.search(STYLE_PX_RE.format("height"), tag)
+    if not width and not height:
+        return None
+    width = int(width.group(1)) if width else None
+    height = int(height.group(1)) if height else None
+    intrinsic = png_size(static_dir / src.lstrip("/")) if static_dir and src.startswith("/") else None
+    if intrinsic and all(intrinsic):
+        if width is None:
+            width = round(height * intrinsic[0] / intrinsic[1])
+        elif height is None:
+            height = round(width * intrinsic[1] / intrinsic[0])
+    return width, height
+
+
+def img_to_markdown(tag: str, static_dir: Path | None = None) -> str:
     src = re.search(r'src="([^"]+)"', tag)
     alt = re.search(r'alt="([^"]*)"', tag)
-    return f"![{alt.group(1) if alt else ''}]({src.group(1)})" if src else ""
+    if not src:
+        return ""
+    alt_text = alt.group(1) if alt else ""
+    size = img_fixed_size(tag, src.group(1), static_dir)
+    if size:
+        # Kept as a sized <img> here; resize_fixed_images() turns it into a pre-resized image.
+        attrs = "".join(f' {name}="{value}"' for name, value in zip(("width", "height"), size) if value)
+        return f'<img src="{src.group(1)}" alt="{alt_text}"{attrs} />'
+    return f"![{alt_text}]({src.group(1)})"
 
 
-def convert_html_blocks(body: str) -> str:
+def image_row_table(cells: list) -> str:
+    """Render [(img, caption | None), ...] as a one-row table: images as the header, captions below.
+
+    DEV sizes table columns to their content, so each image cell gets a line of non-breaking
+    spaces above and below it (DEV shows images as blocks): that gives every column the same
+    width, wider than the longest caption, so the logos are evenly spaced with some breathing room.
+    """
+    longest_caption = max((len(caption) for _, caption in cells if caption), default=0)
+    spacer = "&nbsp;" * max(IMAGE_ROW_MIN_SPACER, 2 * longest_caption + 4)
+    rows = [
+        "| " + " | ".join(f"{spacer} {img} {spacer}" for img, _ in cells) + " |",
+        "|" + ":---:|" * len(cells),
+    ]
+    if any(caption for _, caption in cells):
+        rows.append("| " + " | ".join(caption or "" for _, caption in cells) + " |")
+    return "\n".join(rows)
+
+
+def group_image_rows(lines: list) -> list:
+    """Collapse runs of 2+ fixed-size images (each optionally followed by a caption) into tables."""
+    paragraphs, cells = [], []
+
+    def flush() -> None:
+        if len(cells) > 1:
+            paragraphs.append(image_row_table(cells))
+        else:
+            paragraphs.extend(part for cell in cells for part in cell if part)
+        cells.clear()
+
+    for line in lines:
+        if line.startswith("<img "):
+            cells.append((line, None))
+        elif cells and cells[-1][1] is None and line.startswith("*") and line.endswith("*"):
+            cells[-1] = (cells[-1][0], line)
+        else:
+            flush()
+            paragraphs.append(line)
+    flush()
+    return paragraphs
+
+
+def convert_html_blocks(body: str, static_dir: Path | None = None) -> str:
     """Rewrite the JSX `<div>` image/badge/caption blocks our posts use into plain Markdown.
 
     DEV sanitizes most raw HTML (and the JSX `style={{...}}` props are not valid HTML,
     and `{{` would be read as a Liquid tag anyway), so images, linked badges and captions
     are converted to their Markdown equivalents and the layout-only <div> wrappers are removed.
+    Images with a fixed px size become a plain sized <img>. DEV wraps every body image in a
+    block-level link, so a row of two or more of them (logos, each optionally followed by a
+    caption) is laid out as a Markdown table to keep them side by side.
     """
 
     def replace_block(match: re.Match) -> str:
-        inner = LINKED_IMG_RE.sub(lambda m: f"[{img_to_markdown(m.group(2))}]({m.group(1)})", match.group(1))
-        inner = IMG_RE.sub(lambda m: img_to_markdown(m.group(0)), inner)
+        inner = LINKED_IMG_RE.sub(
+            lambda m: f"[{img_to_markdown(m.group(2), static_dir)}]({m.group(1)})", match.group(1)
+        )
+        inner = IMG_RE.sub(lambda m: img_to_markdown(m.group(0), static_dir), inner)
         inner = CAPTION_RE.sub(lambda m: f"*{m.group(1).strip()}*", inner)
         lines = [line.strip() for line in inner.split("\n")]
-        return "\n\n".join(line for line in lines if line and not re.fullmatch(r"</?div[^>]*>", line))
+        lines = [line for line in lines if line and not re.fullmatch(r"</?div[^>]*>", line)]
+        return "\n\n".join(group_image_rows(lines))
 
     return HTML_BLOCK_RE.sub(replace_block, body)
 
@@ -221,8 +321,8 @@ def strip_jsx(body: str) -> str:
     return body
 
 
-def clean_mdx(body: str) -> str:
-    return strip_jsx(convert_html_blocks(convert_admonitions(convert_tabs(body))))
+def clean_mdx(body: str, static_dir: Path | None = None) -> str:
+    return strip_jsx(convert_html_blocks(convert_admonitions(convert_tabs(body)), static_dir))
 
 
 def absolutize_urls(body: str, site_url: str) -> str:
@@ -234,6 +334,18 @@ def absolutize_urls(body: str, site_url: str) -> str:
     body = re.sub(r"(\]\()(/[^)\s]*)", repl, body)
     body = re.sub(r'((?:src|href)=["\'])(/[^"\']*)', repl, body)
     return body
+
+
+def resize_fixed_images(body: str) -> str:
+    """Swap each sized <img> (absolute src) for a Markdown image pre-resized by DEV's resizer."""
+
+    def repl(match: re.Match) -> str:
+        src, alt, width, height = match.groups()
+        width, height = (round(int(value) * DEVTO_FIXED_IMAGE_SCALE) if value else "" for value in (width, height))
+        url = DEVTO_IMAGE_RESIZER.format(width=width, height=height, url=urllib.parse.quote(src, safe=""))
+        return f"![{alt}]({url})"
+
+    return SIZED_IMG_RE.sub(repl, body)
 
 
 def absolutize_url(url: str | None, site_url: str) -> str | None:
@@ -281,7 +393,8 @@ def build_tags(frontmatter: dict) -> list:
 
 
 def render_markdown(path: Path, frontmatter: dict, body: str, site_url: str, authors: list) -> tuple:
-    body = absolutize_urls(clean_mdx(body), site_url)
+    # Posts live in docs/blog/, their root-relative images in docs/static/.
+    body = resize_fixed_images(absolutize_urls(clean_mdx(body, path.parent.parent / "static"), site_url))
     # DEV renders the article title itself, so drop the duplicate leading H1.
     body = LEADING_H1_RE.sub("", body, count=1).strip()
 
@@ -413,7 +526,8 @@ def main() -> None:
             print(f"wrote {preview_path}")
             continue
 
-        digest = content_hash(raw)
+        # Hash what is sent (not the source), so converter fixes also refresh already-synced articles.
+        digest = content_hash(json.dumps(article, sort_keys=True))
         record = state.get(path.name)
 
         if record and record.get("content_hash") == digest:
