@@ -94,6 +94,7 @@ STYLE_PX_RE = r"\b{}:\s*'(\d+)px'"
 SIZED_IMG_RE = re.compile(r'<img src="(https?://[^"]+)" alt="([^"]*)"(?: width="(\d+)")?(?: height="(\d+)")? />')
 CAPTION_RE = re.compile(r"<p(?:\s[^>]*)?>(.*?)</p>", re.DOTALL)
 LEADING_H1_RE = re.compile(r"^\s*# [^\n]*\n")
+CODE_FENCE_META_RE = re.compile(r"^([ \t]*)(`{3,}|~{3,})([\w+-]+)[ \t]+([^\n]*?)[ \t]*$", re.MULTILINE)
 
 
 class DevtoAPIError(RuntimeError):
@@ -203,6 +204,23 @@ def convert_admonitions(body: str) -> str:
         return f"> **{title}**\n>\n{quoted}"
 
     return ADMONITION_RE.sub(replace_admonition, body)
+
+
+def convert_code_fences(body: str) -> str:
+    """Strip Docusaurus fence metadata (```yaml title="config.yaml") down to the bare language.
+
+    DEV only recognizes a single language word after the opening fence; anything more and the
+    fence is not opened, so the block renders as plain text and the next fence swallows the
+    prose after it. A `title` is kept as a bold label above the block.
+    """
+
+    def replace_fence(match: re.Match) -> str:
+        indent, fence, language, meta = match.groups()
+        title = re.search(r'title="([^"]*)"', meta)
+        label = f"{indent}**{title.group(1)}**\n\n" if title else ""
+        return f"{label}{indent}{fence}{language}"
+
+    return CODE_FENCE_META_RE.sub(replace_fence, body)
 
 
 def png_size(path: Path) -> tuple | None:
@@ -326,6 +344,7 @@ def strip_jsx(body: str) -> str:
 
 
 def clean_mdx(body: str, static_dir: Path | None = None) -> str:
+    body = convert_code_fences(body)
     return strip_jsx(convert_html_blocks(convert_admonitions(convert_tabs(body)), static_dir))
 
 
