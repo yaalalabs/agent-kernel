@@ -17,7 +17,7 @@ type ProviderNode = {
 };
 
 const FRAMEWORKS =
-  "OpenAI · LangGraph · CrewAI · Google ADK · Smolagents · Pydantic AI";
+  "OpenAI · LangGraph · CrewAI · Google ADK · Smolagents · Pydantic AI · Microsoft Agents";
 
 const PROVIDERS: ProviderNode[] = [
   {

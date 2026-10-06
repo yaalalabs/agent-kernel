@@ -38,4 +38,3 @@ class LangFuseMAFRunner(MAFRunner):
                 span.update(input=result.prompt, output=str(result))
 
         return result
-

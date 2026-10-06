@@ -53,7 +53,6 @@ class BaseTrace(ABC):
         """
         raise NotImplementedError
 
-    @abstractmethod
     def maf(self) -> Runner:
         """
         Initialize Microsoft Agent Framework instrumentation

@@ -11,7 +11,4 @@ def test_maf_tool_builder():
     tools = MAFToolBuilder.bind([my_tool, another_tool])
     assert len(tools) == 2
 
-    # In a real environment with agent-framework installed, these would be MAF tool wrappers.
-    # Without it, it falls back to the original functions.
-    assert any(getattr(t, "__name__", getattr(t, "name", "")) == "my_tool" for t in tools)
-    assert any(getattr(t, "__name__", getattr(t, "name", "")) == "another_tool" for t in tools)
+    assert [tool.name for tool in tools] == ["my_tool", "another_tool"]

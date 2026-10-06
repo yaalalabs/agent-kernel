@@ -15,5 +15,4 @@ Run this demo using the following:
     uv run app.py
 
 To run tests:
-    
     uv run pytest app_test.py -v

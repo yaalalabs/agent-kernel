@@ -590,12 +590,9 @@ requires-dist = [
     { name = "langgraph-prebuilt", marker = "extra == 'langgraph'", specifier = "~=1.1.0" },
     { name = "litellm", marker = "extra == 'adk'", specifier = "~=1.89.2" },
     { name = "litellm", marker = "extra == 'langgraph'", specifier = "~=1.89.2" },
-    { name = "litellm", marker = "extra == 'livekit'", specifier = ">=1.44.0" },
     { name = "litellm", marker = "extra == 'multimodal'", specifier = ">=1.74.9" },
     { name = "litellm", marker = "extra == 'test'", specifier = ">=1.89.2" },
     { name = "litellm", marker = "extra == 'thread'", specifier = ">=1.74.9" },
-    { name = "livekit", marker = "extra == 'livekit'", specifier = ">=0.18.0" },
-    { name = "livekit-api", marker = "extra == 'livekit'", specifier = ">=0.4.0" },
     { name = "logfire", marker = "extra == 'logfire'", specifier = ">=3.0" },
     { name = "msal", marker = "extra == 'teams'", specifier = ">=1.31.1" },
     { name = "nats-py", marker = "extra == 'nats'", specifier = ">=2.15.0" },
@@ -631,7 +628,7 @@ requires-dist = [
     { name = "valkey", marker = "extra == 'valkey'", specifier = ">=6.0.0" },
     { name = "walledai", marker = "extra == 'walledai'", specifier = ">=4.9.3" },
 ]
-provides-extras = ["auth", "langfuse", "openllmetry", "logfire", "crewai", "langgraph", "smolagents", "pydanticai", "maf", "cli", "livekit", "aws", "azure", "redis", "valkey", "kafka", "nats", "thread", "agui", "cron", "neo4j", "chromadb", "trino", "openai", "adk", "walledai", "api", "slack", "whatsapp", "messenger", "instagram", "telegram", "teams", "gmail", "gcp", "test", "a2a", "mcp", "multimodal", "sandbox-docker", "e2b", "daytona", "kubernetes", "opik", "jev"]
+provides-extras = ["auth", "langfuse", "openllmetry", "logfire", "crewai", "langgraph", "smolagents", "pydanticai", "maf", "cli", "aws", "azure", "redis", "valkey", "kafka", "nats", "thread", "agui", "cron", "neo4j", "chromadb", "trino", "openai", "adk", "walledai", "api", "slack", "whatsapp", "messenger", "instagram", "telegram", "teams", "gmail", "gcp", "test", "a2a", "mcp", "multimodal", "sandbox-docker", "e2b", "daytona", "kubernetes", "opik", "jev"]
 
 [package.metadata.requires-dev]
 dev = [

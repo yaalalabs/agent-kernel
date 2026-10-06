@@ -30,5 +30,3 @@ class OpenLLMetryMAFRunner(MAFRunner):
         with TraceloopContext(app_name="AgentKernel MAF", association_properties={"session_id": session.id}):
             result = await super().run(agent, session, requests)
         return result
-
-    

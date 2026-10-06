@@ -16,5 +16,4 @@ Run this demo using the following.
     uv run demo.py
 
 To run tests:
-    
     uv run pytest demo_test.py -v
