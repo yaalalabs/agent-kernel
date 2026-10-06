@@ -7,6 +7,7 @@ from ....core.chat_service import ChatService
 from ....core.config import AKConfig, ExecutionMode
 from ....core.model import BaseRunRequest, StreamChunk
 from ....pipeline.envelope import ATTR_INTEGRATION, REPLY_CONTEXT_PREFIX
+from ....pipeline.thread_runner import ThreadRunner
 from ..core.sqs_handler import SQSHandler
 from .core import ECSSQSConsumer
 
@@ -292,6 +293,13 @@ class ECSRealtimeAgentRunner(ECSAgentRunner):
     """
 
     _log = logging.getLogger("ak.ecs.realtimeagentrunner")
+
+    @classmethod
+    def _get_extra_tasks(cls) -> list[ThreadRunner.Task]:
+        from ....pipeline.realtime_pool import RealtimeConnectionPool
+
+        pool = RealtimeConnectionPool.initialize()
+        return [pool.get_task()]
 
     @classmethod
     def process_message(cls, record: dict) -> None:

@@ -1,8 +1,19 @@
 import json
+import threading
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from agentkernel.deployment.aws.containerized.akagentrunner import ECSRealtimeAgentRunner
+import pytest
+
+from agentkernel.core.base import Session
+from agentkernel.core.realtime import RealtimeRunner
+from agentkernel.core.runtime import Runtime
+from agentkernel.core.session.in_memory import InMemorySessionStore
+from agentkernel.deployment.aws.containerized.akagentrunner import ECSAgentRunner, ECSRealtimeAgentRunner, ECSStreamAgentRunner
 from agentkernel.pipeline.realtime_pool import RealtimeConnectionPool
+from agentkernel.pipeline.thread_runner import ThreadRunner
+from agentkernel.pipeline.transport.base import QueueTransportFactory
+from agentkernel.pipeline.transport.in_memory import InMemoryTransport
 
 
 def _make_record(requests, session_id: str = "room_01"):
@@ -68,3 +79,101 @@ def test_process_message_reuses_existing_connection_without_loading_agent():
         ECSRealtimeAgentRunner.process_message(_make_record([{"type": "text", "prompt": "hi"}]))
 
     chat_service.prepare_agent_handler.assert_not_called()
+
+
+class _RecordingRealtimeRunner(RealtimeRunner):
+    """Model socket double; the ECS consumer and realtime pool remain real."""
+
+    def __init__(self):
+        super().__init__("test-realtime")
+        self.connect_count = 0
+        self.audio: list[str] = []
+        self.texts: list[str] = []
+        self.disconnected = False
+
+    async def connect(self, session, agent, callback):
+        self.connect_count += 1
+
+    async def append_audio(self, base64_audio):
+        self.audio.append(base64_audio)
+
+    async def send_text(self, text):
+        self.texts.append(text)
+
+    async def execute_tool(self, name, arguments, context, call_id):
+        raise NotImplementedError()
+
+    async def send_tool_result(self, call_id, result):
+        raise NotImplementedError()
+
+    async def disconnect(self):
+        self.disconnected = True
+
+
+def test_consumer_loop_starts_real_pool_processes_requests_and_closes_connection(monkeypatch):
+    """The ECS-built consumer must start the pool task before the first request can connect."""
+    RealtimeConnectionPool.reset()
+    monkeypatch.setattr(ThreadRunner, "shutdown_event", threading.Event())
+    transport = InMemoryTransport()
+    monkeypatch.setattr(QueueTransportFactory, "create", staticmethod(lambda *args, **kwargs: transport))
+    monkeypatch.setattr(ECSRealtimeAgentRunner, "num_consumers", 1)
+
+    session = Session("room_01")
+    agent = SimpleNamespace(name="general", realtime_runner_cls=_RecordingRealtimeRunner)
+    service = SimpleNamespace(agent=agent, runtime=Runtime(InMemorySessionStore()), session=session)
+    chat_service = MagicMock()
+    chat_service.prepare_agent_handler.return_value = SimpleNamespace(service=service)
+    monkeypatch.setattr(ECSRealtimeAgentRunner, "_get_chat_service", classmethod(lambda cls: chat_service))
+
+    records = [
+        _make_record([{"type": "voice", "audio_data": "AAA=", "name": "general"}]),
+        _make_record([{"type": "text", "prompt": "hello"}]),
+    ]
+    pool = RealtimeConnectionPool.initialize()
+    connections = []
+
+    def poll():
+        if records:
+            return [records.pop(0)]
+        ThreadRunner.shutdown_event.wait(0.05)
+        return []
+
+    def acknowledge(record):
+        connections.append(pool.get_connection("room_01"))
+        if len(connections) == 2:
+            ThreadRunner.shutdown_event.set()
+
+    monkeypatch.setattr(ECSRealtimeAgentRunner, "poll", classmethod(lambda cls: poll()))
+    monkeypatch.setattr(ECSRealtimeAgentRunner, "delete_message", classmethod(lambda cls, record: acknowledge(record)))
+    consumer_loop = ECSRealtimeAgentRunner._build_consumer_loop()
+    # Exercise ThreadRunner's real startup/drain without exiting the pytest process on shutdown.
+    consumer_loop._exit_on_shutdown = False
+    consumer_thread = threading.Thread(target=consumer_loop.run, daemon=True)
+
+    try:
+        consumer_thread.start()
+        consumer_thread.join(timeout=5)
+        assert not consumer_thread.is_alive(), "ECS consumer did not process the requests and drain"
+        assert len(connections) == 2
+        first, second = connections
+        assert first is second
+        assert first.session is session
+        assert first.adapter.connect_count == 1
+        assert first.adapter.audio == ["AAA="]
+        assert first.adapter.texts == ["hello"]
+        assert first.adapter.disconnected
+        assert first.closed
+        assert pool.get_connection("room_01") is None
+        chat_service.prepare_agent_handler.assert_called_once_with("room_01", "general")
+    finally:
+        ThreadRunner.shutdown_event.set()
+        consumer_thread.join(timeout=15)
+        RealtimeConnectionPool.reset()
+
+
+@pytest.mark.parametrize("runner_cls", [ECSAgentRunner, ECSStreamAgentRunner])
+def test_non_realtime_consumer_does_not_initialize_pool(runner_cls):
+    with patch.object(RealtimeConnectionPool, "initialize") as initialize:
+        runner_cls._build_consumer_loop()
+
+    initialize.assert_not_called()
