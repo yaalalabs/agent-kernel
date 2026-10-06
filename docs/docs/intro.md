@@ -8,6 +8,8 @@ slug: /
 **The Operating System for Scalable & Compliant Enterprise AI Agents.**
 
 :::tip What's New
+🎙️ **LiveKit Voice Integration** - Connect OpenAI Agents SDK and Google ADK agents to LiveKit WebRTC rooms through the realtime execution pipeline. [Learn more →](./integrations/livekit.md)
+
 🎛️ **Per-agent native run options** - Pass each framework's own run arguments (OpenAI `RunHooks`, `RunConfig` and `max_turns`, LangGraph `config`, ADK `plugins`, Pydantic AI `usage_limits`, CrewAI `step_callback`, smolagents `max_steps`) through `Module.run_options`, statically or computed per run by a factory, with the keys Agent Kernel owns kept safe. [Learn more →](./core-concepts/runner.md#native-run-options)
 
 ☸️ **On-Prem Kubernetes** - Official Helm chart that runs the queue pipeline on any cluster (bare metal, EKS, or a laptop k3d), with NATS, Kafka, or SQS as the broker, KEDA autoscaling, a sandbox worker tier, and air-gapped installs. [Learn more →](/docs/deployment/onprem-kubernetes)
@@ -45,13 +47,12 @@ flowchart LR
     E["LangGraph"] --> B
     F["Google ADK"] --> B
     SA["Smolagents"] --> B
-    LK["LiveKit *(soon)*"] --> B
+    LK["LiveKit"] -->|Voice integration| B
     G["Test Framework"]
     B --> G
     style A fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
     style B fill:#2e4555,stroke:#fff,stroke-width:2px,color:#fff
     style G fill:#005073,stroke:#fff,stroke-width:2px,color:#fff
-    style LK fill:#555,stroke:#fff,stroke-width:1px,color:#ccc,stroke-dasharray: 5 5
 ```
 
 ## Why Agent Kernel?
@@ -73,6 +74,7 @@ Agent Kernel provides pre-built execution capabilities:
   - Instagram
   - Gmail
   - Microsoft Teams
+  - [LiveKit](./integrations/livekit.md) realtime voice for OpenAI Agents SDK and Google ADK agents
 - **Multi-Cloud Serverless Deployment** for scalable production
   - AWS Lambda
   - Azure Functions
@@ -205,9 +207,6 @@ Agent Kernel currently supports:
 - **Google ADK** - Google's Agent Development Kit
 - **Smolagents** - Hugging Face's lightweight agentic framework
 
-Coming soon:
-- **LiveKit Agents** - Real-time audio/video agent framework for voice-enabled AI applications
-
 ### Flexible Deployment
 
 ```mermaid
@@ -224,6 +223,7 @@ flowchart LR
     B -- Azure Cloud --> K["Azure Functions"] & L["Azure Container Apps"]
     B -- GCP Cloud --> Q["Cloud Run (serverless)"] & R["Cloud Run (always-on)"]
     D -- Integration --> I["Slack"] & J["WhatsApp"] & M["Messenger"] & N["Instagram"] & O["Telegram"] & P["Gmail"] & T["Teams"]
+    B -- Realtime --> LK["LiveKit"]
 
     style A fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
     style E fill:#FF9900,stroke:#fff,stroke-width:2px,color:#fff

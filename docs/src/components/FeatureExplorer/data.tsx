@@ -93,6 +93,15 @@ export const FEATURE_TABS: FeatureTab[] = [
         example: "api/slack",
       },
       {
+        title: "LiveKit",
+        description:
+          "Connect OpenAI Agents SDK and Google ADK agents to LiveKit WebRTC rooms. A stateful gateway carries user audio and text and returns streamed model audio and transcripts through the realtime pipeline.",
+        tags: ["Voice integration", "WebRTC", "Realtime"],
+        // Drop /next after the LiveKit integration is released.
+        docs: "/docs/next/integrations/livekit",
+        example: "api/livekit-voice",
+      },
+      {
         title: "REST, WebSocket & Streaming",
         description:
           "A FastAPI server with sync, async and SSE streaming modes, a WebSocket gateway for push delivery, and multipart uploads for attachments.",

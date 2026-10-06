@@ -16,10 +16,8 @@ graph LR
     A --> E[Google ADK]
     A --> F[Smolagents]
     A --> G[Pydantic AI]
-    A -.->|coming soon| LK[LiveKit Agents]
     
     style A fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-    style LK fill:#555,stroke:#ccc,stroke-width:1px,color:#ccc
 ```
 
 ## Framework Comparison
@@ -32,7 +30,6 @@ graph LR
 | **Google ADK** | Google ecosystem | Low | Yes |
 | **Smolagents** | Lightweight tool-driven agents | Medium | Yes |
 | **Pydantic AI** | Multi-provider apps, provider failover, typed structured output | Low | Yes |
-| **LiveKit Agents** *(coming soon)* | Real-time voice/video agents | Medium | Yes |
 
 ## Capability Matrix
 
@@ -98,12 +95,6 @@ Not every Agent Kernel capability is available on every framework:
 - Delegation-via-tool for multi-agent routing (no `handoffs=` primitive)
 
 [Learn more →](./pydantic-ai)
-
-### LiveKit Agents *(coming soon)*
-- Real-time audio and video agent framework
-- Voice-enabled AI applications
-- Low-latency media pipelines
-- Ideal for conversational voice assistants and live-streaming AI bots
 
 ## Migration Between Frameworks
 

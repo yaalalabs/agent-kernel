@@ -13,6 +13,10 @@ Agent Kernel provides powerful execution hooks that let you customize agent beha
 - **Langfuse** - Open-source LLM engineering platform for tracing, evaluating, and monitoring AI applications. See [Traceability and Observability](../advanced/traceability) for detailed setup and usage.
 - **OpenLLMetry (Traceloop)** - OpenTelemetry-based observability for LLM applications with support for multiple backends including Traceloop, Datadog, New Relic, and Honeycomb. See [Traceability and Observability](../advanced/traceability) for detailed setup and usage.
 
+## Realtime voice
+
+- **[LiveKit](./livekit)** - Connect OpenAI Agents SDK and Google ADK agents to LiveKit WebRTC rooms with `execution.mode: realtime`. A stateful `LiveKitEdgeGateway`, hosted by `GatewayRunner`, receives user audio and text and delivers the model's streamed voice and transcript back to the room.
+
 ## Social media
 These are built on REST APIs and you can install custom integrations as well.
 

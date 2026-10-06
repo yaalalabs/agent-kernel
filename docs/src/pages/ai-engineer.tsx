@@ -76,7 +76,6 @@ export default function AIEngineerPage() {
         "Google ADK",
         "Smolagents",
         "Pydantic AI",
-        "LiveKit",
         "Bring your own [advanced]",
       ],
     },
@@ -124,6 +123,7 @@ export default function AIEngineerPage() {
         "Messenger",
         "Instagram",
         "Gmail",
+        "LiveKit",
         "Redis",
         "DynamoDB",
       ],
@@ -310,7 +310,7 @@ export default function AIEngineerPage() {
         {
           icon: MdAutoAwesome,
           title: "Multi-Framework Support",
-          body: "Run OpenAI Agents, LangGraph, CrewAI, Google ADK, Smolagents, Pydantic AI, LiveKit side-by-side. Keep one runtime across teams while using the best framework per use case.",
+          body: "Run OpenAI Agents, LangGraph, CrewAI, Google ADK, Smolagents and Pydantic AI side-by-side. Keep one runtime across teams while using the best framework per use case.",
         },
       ],
     },
@@ -331,7 +331,7 @@ export default function AIEngineerPage() {
         {
           icon: MdPermMedia,
           title: "Multimodal Support",
-          body: "In-built framework-neutral multimodal support across all integration channels. Handle files/images cleanly and keep sessions lightweight. Additional voice and video support via LiveKit.",
+          body: "In-built framework-neutral multimodal support across integration channels. Handle files/images cleanly and keep sessions lightweight. Realtime voice is available through the LiveKit integration for OpenAI Agents SDK and Google ADK agents.",
         },
       ],
     },
@@ -363,7 +363,7 @@ export default function AIEngineerPage() {
         {
           icon: MdMessage,
           title: "Messaging Integrations",
-          body: "Slack, WhatsApp, Instagram, Telegram, Gmail, Teams, Messenger plug and play.",
+          body: "Slack, WhatsApp, Instagram, Telegram, Gmail, Teams and Messenger integrations, plus realtime voice through LiveKit for OpenAI Agents SDK and Google ADK agents.",
         },
         {
           icon: MdScience,

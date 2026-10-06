@@ -1,6 +1,6 @@
-# LiveKit
+# LiveKit Voice Integration
 
-The LiveKit integration allows you to deploy Agent Kernel agents as Realtime Voice agents that can participate in WebRTC voice calls. This integration uses LiveKit as the frontend gateway to stream incredibly fast, low-latency audio directly to and from your agents over a message broker pipeline.
+LiveKit is a realtime voice integration for OpenAI Agents SDK and Google ADK agents. The `LiveKitEdgeGateway` connects agents to LiveKit WebRTC rooms, receiving user audio and text and returning the model's streamed audio and transcript through Agent Kernel's realtime execution pipeline.
 
 ## Overview
 

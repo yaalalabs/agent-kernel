@@ -88,7 +88,7 @@ const config = {
       tagName: 'meta',
       attributes: {
         property: 'og:description',
-        content: 'Agent Kernel is the open-source operating system for building and deploying scalable, compliant enterprise AI agents. Works with any major AI framework (OpenAI, LangGraph, CrewAI, Google ADK, Smolagents, LiveKit) and runs agents from multiple frameworks together in a single runtime. Deploys to AWS, Azure, or GCP with full Terraform modules and zero platform code, plus built-in messaging, memory, knowledge bases, guardrails, and observability.',
+        content: 'Agent Kernel is the open-source operating system for building and deploying scalable, compliant enterprise AI agents. Works with any major AI framework (OpenAI, LangGraph, CrewAI, Google ADK, Smolagents) and runs agents from multiple frameworks together in a single runtime. Deploys to AWS, Azure, or GCP with full Terraform modules and zero platform code, plus the LiveKit voice integration, built-in messaging, memory, knowledge bases, guardrails, and observability.',
       },
     },
     {
@@ -186,7 +186,7 @@ const config = {
         '@type': 'SoftwareApplication',
         name: 'Agent Kernel',
         applicationCategory: 'DeveloperApplication',
-        description: 'Agent Kernel is the open-source operating system for scalable, compliant enterprise AI agents. Build, test, and deploy production AI agents with any major framework (OpenAI, LangGraph, CrewAI, Google ADK, Smolagents, LiveKit) and run multiple frameworks simultaneously in a single runtime. Deploy to AWS, Azure, or GCP with full Terraform modules.',
+        description: 'Agent Kernel is the open-source operating system for scalable, compliant enterprise AI agents. Build, test, and deploy production AI agents with any major framework (OpenAI, LangGraph, CrewAI, Google ADK, Smolagents) and run multiple frameworks simultaneously in a single runtime. Connect agents to LiveKit rooms for realtime voice. Deploy to AWS, Azure, or GCP with full Terraform modules.',
         operatingSystem: 'Linux, macOS, Windows',
         offers: {
           '@type': 'Offer',
@@ -201,7 +201,8 @@ const config = {
         url: 'https://kernel.yaala.ai',
         keywords: 'Agent Kernel, agentkernel, agent os, agent operating system, agent runtime, enterprise agents, agent deployment, compliant agents, scalable production agents, Yaala Labs, AI agent framework, AI agent runtime, AI agent deployment, agentic AI, enterprise AI agents, multi-cloud AI agents, framework-agnostic AI, LangGraph, OpenAI Agents, CrewAI, Google ADK, Smolagents, LiveKit, AWS, Azure, GCP, knowledge bases, AI agent guardrails, AI agent observability',
         featureList: [
-          'Framework-neutral runtime: OpenAI Agents, LangGraph, CrewAI, Google ADK, Smolagents, LiveKit',
+          'Framework-neutral runtime: OpenAI Agents, LangGraph, CrewAI, Google ADK, Smolagents',
+          'Realtime voice through the LiveKit integration for OpenAI Agents SDK and Google ADK agents',
           'Run multiple frameworks simultaneously in a single runtime',
           'Multi-cloud deployment to AWS, Azure, and GCP with full Terraform modules',
           'Built-in Slack, WhatsApp, Messenger, Instagram, Telegram, Microsoft Teams, and Gmail integrations',
