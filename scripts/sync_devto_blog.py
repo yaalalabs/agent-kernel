@@ -65,6 +65,10 @@ DEVTO_FIXED_IMAGE_SCALE = 0.7
 # Minimum non-breaking spaces padding each cell of a logo-row table (see image_row_table).
 IMAGE_ROW_MIN_SPACER = 20
 DEVTO_IMAGE_RESIZER = "https://media2.dev.to/dynamic/image/width={width},height={height},fit=scale-down,gravity=auto,format=auto/{url}"
+# DEV's image proxy passes SVGs through labelled image/webp, so browsers can't decode them and
+# shields.io badges show as broken images; shields' raster endpoint serves the same badge as PNG.
+SHIELDS_SVG_URL = "https://img.shields.io/"
+SHIELDS_PNG_URL = "https://raster.shields.io/"
 DEFAULT_BLOG_DIR = Path("docs/blog")
 DEFAULT_SITE_URL = "https://kernel.yaala.ai"
 AUTHORS_FILENAME = "authors.json"
@@ -395,6 +399,7 @@ def build_tags(frontmatter: dict) -> list:
 def render_markdown(path: Path, frontmatter: dict, body: str, site_url: str, authors: list) -> tuple:
     # Posts live in docs/blog/, their root-relative images in docs/static/.
     body = resize_fixed_images(absolutize_urls(clean_mdx(body, path.parent.parent / "static"), site_url))
+    body = body.replace(SHIELDS_SVG_URL, SHIELDS_PNG_URL)
     # DEV renders the article title itself, so drop the duplicate leading H1.
     body = LEADING_H1_RE.sub("", body, count=1).strip()
 
