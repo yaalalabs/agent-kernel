@@ -14,12 +14,25 @@ neither has an upload API, so a post with one would publish with a broken image.
 PNG/JPEG/GIF/WebP instead (body images and the frontmatter `image`). The docs deploy runs
 `python scripts/sync_blogs/check_images.py` before building the website, and both sync scripts
 run the same check across every post before publishing, so an SVG image fails the run before
-anything is published. Plain links to an `.svg` file are fine, and so are shields.io badges.
+anything is published. Plain links to an `.svg` file are fine, and so are shields.io badges:
+both syncs point them at shields' PNG endpoint (`raster.shields.io`).
 
 **Sync state through a PR.** `develop` only accepts changes through pull requests, so CI
-records the updated sync-state file in a PR from the `chore/blog-sync-state` branch instead of
-pushing it. Until that PR is merged, each run starts from the state on that branch and adds its
-changes to the same PR. Merging it doesn't redeploy the website.
+records the updated sync-state files in one PR from the `chore/blog-sync-state` branch instead
+of pushing them. Until that PR is merged, each run starts from the state files on that branch
+and adds its changes to the same PR. Each sync job loads and commits both platforms' state
+files (the PR is rebuilt from the job's files, so leaving one out would drop the other sync's
+unmerged changes), and the Hashnode job runs after the DEV one. Merging the PR doesn't redeploy
+the website.
+
+**Duplicate protection.** A post with no record in the state file (a new post, or a lost or
+stale state file) is first looked up on the platform by its canonical URL: DEV's organization
+articles (`DEVTO_ORGANIZATION_ID`) or Hashnode's publication posts. This takes one list request
+per run, and only when such a post exists. If the post is already there it is updated instead,
+so a lost state file causes at most a one-off redundant update, never a duplicate article.
+
+**Rate limits.** Both scripts retry a rate-limited request up to 5 times, waiting for the
+server's `Retry-After` (else 30s).
 
 ### sync_blogs/hashnode.py
 
@@ -33,8 +46,11 @@ Community is published to at the moment.
   (no draft step).
 - A blog file that was synced and then edited has its Hashnode post updated in
   place, so the website stays the single source of truth.
-- A JSON state file (`docs/blog/.hashnode-sync-state.json`)
-  tracks which posts are synced, their Hashnode post id, and a content hash.
+- A JSON state file (`docs/blog/.hashnode-sync-state.json`, recorded by CI through the
+  sync-state PR) tracks which posts are synced, their Hashnode post id, and a content hash.
+- A post with no state record is matched against the publication's posts by canonical URL
+  first (see *Duplicate protection* above). Hashnode returns at most 100 posts per page, so
+  the lookup follows the cursor through every page.
 
 **Authors:** every post is published by the single Agent Kernel account that owns the
 publication (one Pro seat). The real authors from the post's `authors` frontmatter
@@ -48,7 +64,9 @@ website - the frontmatter `date` when set, otherwise the `YYYY-MM-DD-` filename 
 
 **Requirements:** Hashnode's GraphQL API (`https://gql-beta.hashnode.com`; the old
 `gql.hashnode.com` was retired on 2026-05-13) needs the publication to be on the **Pro**
-plan, for reads and writes alike.
+plan, for reads and writes alike. Its Cloudflare front rejects Python's default
+User-Agent, so the script sends its own. Rate limits are 20,000 queries and 500 mutations per
+minute; a rate-limited request (HTTP 429, or a GraphQL rate-limit error) is retried.
 
 **Usage:**
 ```bash
@@ -85,7 +103,12 @@ python scripts/sync_blogs/hashnode.py --post 2026-09-14-scheduled-tasks.md
 **Content conversion:** Docusaurus-only syntax is rewritten into plain Markdown - `<Tabs>`
 become headed sections, `:::` admonitions become blockquotes, JSX `<div>` image/badge/caption
 blocks become Markdown images and italic captions, the leading `# Title` is dropped (Hashnode
-renders the title itself), and root-relative links/images are made absolute.
+renders the title itself), and root-relative links/images are made absolute. Docusaurus code
+fence metadata (```` ```yaml title="config.yaml" ````) is stripped to the language, with the
+`title` shown as a bold label above the block.
+
+**Tags:** Hashnode allows at most 5 tags per post, so the first 5 frontmatter tags are used
+(as slugs, e.g. `AI Agents` -> `ai-agents`).
 
 **Opting a post out:** add `hashnode: false` to that post's frontmatter.
 
@@ -160,9 +183,9 @@ python scripts/sync_blogs/devto.py --post 2026-09-14-scheduled-tasks.md
 **Content conversion:** identical to the Hashnode sync - `<Tabs>` become headed sections,
 `:::` admonitions become blockquotes, JSX `<div>` blocks become Markdown images and captions
 (which also removes the `style={{...}}` props DEV would otherwise parse as Liquid tags), the
-leading `# Title` is dropped, and root-relative links/images are made absolute. On top of that, DEV only recognizes a bare language after a code fence, so
-Docusaurus fence metadata (```` ```yaml title="config.yaml" ````) is stripped to the language,
-with the `title` shown as a bold label above the block.
+leading `# Title` is dropped, root-relative links/images are made absolute, and code fence
+metadata is stripped (DEV only recognizes a bare language after a code fence; without this the
+block breaks and swallows the text after it).
 
 **Rate limits:** DEV throttles article writes; on HTTP 429 the script waits (`Retry-After`,
 else 30s) and retries, so a first full sync of every post just takes a few minutes.

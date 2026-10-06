@@ -24,6 +24,14 @@ CAPTION_RE = re.compile(r"<p(?:\s[^>]*)?>(.*?)</p>", re.DOTALL)
 LEADING_H1_RE = re.compile(r"^\s*# [^\n]*\n")
 # Both syncs write <post>.<platform>-preview.md next to the posts (--preview); never sync those.
 PREVIEW_FILE_SUFFIX = "-preview.md"
+CODE_FENCE_META_RE = re.compile(r"^([ \t]*)(`{3,}|~{3,})([\w+-]+)[ \t]+([^\n]*?)[ \t]*$", re.MULTILINE)
+# shields.io badges are SVGs, which DEV can't display (its image proxy labels them image/webp)
+# and posts may not use (see utils/images.py); shields' raster endpoint serves the same badge as PNG.
+SHIELDS_SVG_URL = "https://img.shields.io/"
+SHIELDS_PNG_URL = "https://raster.shields.io/"
+# On a rate-limit response, wait (Retry-After, else this many seconds) and retry, this many times.
+RATE_LIMIT_RETRIES = 5
+RATE_LIMIT_DEFAULT_WAIT = 30
 
 
 def load_state(state_file: Path) -> dict:
@@ -82,6 +90,33 @@ def convert_admonitions(body: str) -> str:
         return f"> **{title}**\n>\n{quoted}"
 
     return ADMONITION_RE.sub(replace_admonition, body)
+
+
+def convert_code_fences(body: str) -> str:
+    """Strip Docusaurus fence metadata (```yaml title="config.yaml") down to the bare language.
+
+    DEV only recognizes a single language word after the opening fence; anything more and the
+    fence is not opened, so the block renders as plain text and the next fence swallows the
+    prose after it. CommonMark renderers ignore everything after the language, dropping the
+    title. So the title is kept as a bold label above the block.
+    """
+
+    def replace_fence(match: re.Match) -> str:
+        indent, fence, language, meta = match.groups()
+        title = re.search(r'title="([^"]*)"', meta)
+        label = f"{indent}**{title.group(1)}**\n\n" if title else ""
+        return f"{label}{indent}{fence}{language}"
+
+    return CODE_FENCE_META_RE.sub(replace_fence, body)
+
+
+def raster_shields_badges(body: str) -> str:
+    return body.replace(SHIELDS_SVG_URL, SHIELDS_PNG_URL)
+
+
+def rate_limit_wait(retry_after: str | None) -> int:
+    """Seconds to wait before retrying a rate-limited request: the server's Retry-After, else a default."""
+    return int(retry_after) if retry_after and retry_after.isdigit() else RATE_LIMIT_DEFAULT_WAIT
 
 
 def absolutize_url(url: str | None, site_url: str) -> str | None:

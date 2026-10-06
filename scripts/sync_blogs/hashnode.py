@@ -13,6 +13,9 @@ in a byline at the top of the body. The Docusaurus site stays the source of trut
     updated in place (Hashnode's API supports updates, unlike Medium's).
   - What has already been synced is tracked in a small JSON state file next to
     the posts, so re-runs are idempotent.
+  - A post missing from that state file is matched against the publication's
+    posts on Hashnode by canonical URL first, so a lost state file updates the
+    existing post instead of publishing a duplicate.
 
 Usage:
     # Write the Markdown that would be sent to Hashnode next to each post (no token needed)
@@ -44,6 +47,7 @@ import json
 import os
 import re
 import sys
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -71,6 +75,10 @@ from utils.common import (
     resolve_post_date,
     build_canonical_url,
     content_hash,
+    convert_code_fences,
+    raster_shields_badges,
+    rate_limit_wait,
+    RATE_LIMIT_RETRIES,
 )
 from utils.images import check_blog_dir
 
@@ -78,7 +86,10 @@ from utils.images import check_blog_dir
 HASHNODE_API_URL = "https://gql-beta.hashnode.com"
 STATE_FILENAME = ".hashnode-sync-state.json"
 PREVIEW_SUFFIX = ".hashnode-preview.md"
-MAX_TAGS = 15
+# Hashnode allows at most 5 tags per post.
+MAX_TAGS = 5
+# Hashnode caps a page of publication posts at 100 (asking for more silently returns 100).
+POSTS_PAGE_SIZE = 100
 
 
 PUBLISH_POST_MUTATION = """
@@ -93,6 +104,17 @@ mutation UpdatePost($input: UpdatePostInput!) {
 }
 """
 
+EXISTING_POSTS_QUERY = """
+query ExistingPosts($id: ObjectId!, $first: Int!, $after: String) {
+  publication(id: $id) {
+    posts(first: $first, after: $after) {
+      pageInfo { hasNextPage endCursor }
+      edges { node { id url canonicalUrl } }
+    }
+  }
+}
+"""
+
 FIND_PUBLICATION_QUERY = """
 query FindPublication($host: String!) {
   publication(host: $host) { id title url isTeam }
@@ -104,26 +126,87 @@ class HashnodeAPIError(RuntimeError):
     pass
 
 
-def hashnode_request(token: str, query: str, variables: dict) -> dict:
-    request = urllib.request.Request(
-        HASHNODE_API_URL,
-        data=json.dumps({"query": query, "variables": variables}).encode("utf-8"),
-        method="POST",
-    )
-    # Hashnode expects the raw Personal Access Token, without a "Bearer" prefix.
-    request.add_header("Authorization", token)
-    request.add_header("Content-Type", "application/json")
-    request.add_header("Accept", "application/json")
-    try:
-        with urllib.request.urlopen(request) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")
-        raise HashnodeAPIError(f"Hashnode API request failed ({exc.code}): {detail}") from exc
-    if payload.get("errors"):
-        messages = "; ".join(error.get("message", str(error)) for error in payload["errors"])
-        raise HashnodeAPIError(f"Hashnode API returned errors: {messages}")
-    return payload["data"]
+def is_rate_limited(errors: list) -> bool:
+    """Hashnode doesn't document its rate-limit response, so also recognize it as a GraphQL error."""
+    for error in errors:
+        code = str((error.get("extensions") or {}).get("code", "")).upper()
+        message = str(error.get("message", "")).lower()
+        if code in ("RATE_LIMITED", "TOO_MANY_REQUESTS") or "rate limit" in message or "too many requests" in message:
+            return True
+    return False
+
+
+def hashnode_request(token: str | None, query: str, variables: dict) -> dict:
+    data = json.dumps({"query": query, "variables": variables}).encode("utf-8")
+    for attempt in range(RATE_LIMIT_RETRIES + 1):
+        request = urllib.request.Request(HASHNODE_API_URL, data=data, method="POST")
+        if token:
+            # Hashnode expects the raw Personal Access Token, without a "Bearer" prefix.
+            request.add_header("Authorization", token)
+        request.add_header("Content-Type", "application/json")
+        request.add_header("Accept", "application/json")
+        # Hashnode's Cloudflare bans Python's default User-Agent (error 1010).
+        request.add_header("User-Agent", "agent-kernel-blog-sync")
+        retry_after = None
+        try:
+            with urllib.request.urlopen(request) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            if exc.code != 429 or attempt == RATE_LIMIT_RETRIES:
+                raise HashnodeAPIError(f"Hashnode API request failed ({exc.code}): {detail}") from exc
+            retry_after = exc.headers.get("Retry-After")
+        else:
+            errors = payload.get("errors")
+            if not errors:
+                return payload["data"]
+            if not is_rate_limited(errors) or attempt == RATE_LIMIT_RETRIES:
+                messages = "; ".join(error.get("message", str(error)) for error in errors)
+                raise HashnodeAPIError(f"Hashnode API returned errors: {messages}")
+        wait = rate_limit_wait(retry_after)
+        print(f"  rate-limited by Hashnode, retrying in {wait}s...")
+        time.sleep(wait)
+    raise AssertionError("unreachable")
+
+
+class ExistingPosts:
+    """The publication's posts already on Hashnode, by canonical URL; fetched once, only when needed.
+
+    A post with no sync-state record (a new post, or a lost or stale state file) is looked up
+    here first, so a post that is already on Hashnode gets updated instead of published twice.
+    """
+
+    def __init__(self, token: str | None, publication_id: str | None):
+        self.token = token
+        self.publication_id = publication_id
+        self.by_canonical_url = None
+
+    def find(self, canonical_url: str) -> dict | None:
+        if not self.publication_id:
+            return None
+        if self.by_canonical_url is None:
+            self.by_canonical_url = self.fetch()
+        return self.by_canonical_url.get(canonical_url.rstrip("/"))
+
+    def fetch(self) -> dict:
+        posts, after = {}, None
+        while True:
+            variables = {"id": self.publication_id, "first": POSTS_PAGE_SIZE, "after": after}
+            publication = hashnode_request(self.token, EXISTING_POSTS_QUERY, variables)["publication"]
+            if not publication:
+                raise HashnodeAPIError(f"Hashnode publication {self.publication_id} not found")
+            connection = publication["posts"]
+            for edge in connection["edges"]:
+                post = edge["node"]
+                url = (post.get("canonicalUrl") or "").rstrip("/")
+                # If a post is somehow on Hashnode more than once already, keep using the oldest one
+                # (ids are MongoDB ObjectIds, which sort by creation time).
+                if url and (url not in posts or post["id"] < posts[url]["id"]):
+                    posts[url] = post
+            page_info = connection["pageInfo"]
+            if not page_info["hasNextPage"] or not page_info["endCursor"] or page_info["endCursor"] == after:
+                return posts
+            after = page_info["endCursor"]
 
 
 def build_subtitle(authors: list) -> str | None:
@@ -190,6 +273,7 @@ def strip_jsx(body: str) -> str:
 
 
 def clean_mdx(body: str) -> str:
+    body = convert_code_fences(body)
     return strip_jsx(convert_html_blocks(convert_admonitions(convert_tabs(body))))
 
 
@@ -219,7 +303,7 @@ def build_tags(frontmatter: dict) -> list:
 
 
 def render_markdown(frontmatter: dict, body: str, site_url: str, authors: list) -> tuple:
-    body = absolutize_urls(clean_mdx(body), site_url)
+    body = raster_shields_badges(absolutize_urls(clean_mdx(body), site_url))
     # Hashnode renders the post title itself, so drop the duplicate leading H1.
     body = LEADING_H1_RE.sub("", body, count=1).strip()
 
@@ -319,7 +403,15 @@ def main() -> None:
         print("Error: HASHNODE_PUBLICATION_ID is not set.", file=sys.stderr)
         sys.exit(1)
 
+    if not publication_id and args.dry_run:
+        print(
+            "warning: HASHNODE_PUBLICATION_ID is not set, so this dry run can't tell whether posts missing from "
+            "the sync state are already on Hashnode.",
+            file=sys.stderr,
+        )
+
     site_url = args.site_url.rstrip("/")
+    existing_posts = ExistingPosts(token, publication_id)
     state_file = args.state_file or (args.blog_dir / STATE_FILENAME)
     state = load_state(state_file)
     authors_map = load_authors(args.blog_dir)
@@ -363,6 +455,13 @@ def main() -> None:
 
         if record and record.get("content_hash") == digest:
             continue
+
+        if not record:
+            # Not in the sync state: make sure it isn't already on Hashnode before publishing it.
+            existing = existing_posts.find(post_input["originalArticleURL"])
+            if existing:
+                print(f"{path.name} is not in the sync state but is already on Hashnode ({existing.get('url')}); updating that post")
+                record = {"hashnode_post_id": existing["id"], "hashnode_url": existing.get("url")}
 
         action = "update" if record else "publish"
         if args.dry_run:

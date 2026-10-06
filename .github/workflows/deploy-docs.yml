@@ -82,62 +82,6 @@ jobs:
         id: deployment
         uses: actions/deploy-pages@v5
 
-  # Disabled for now: we only publish to DEV Community at the moment. Before re-enabling, move its
-  # state commit to the chore/blog-sync-state PR the same way sync-devto does (and make the two jobs
-  # not run in parallel, since they would both push that branch).
-  # sync-hashnode:
-  #   name: Sync blog posts to Hashnode
-  #   runs-on: ubuntu-latest
-  #   needs: deploy
-  #   permissions:
-  #     contents: write
-  #   steps:
-  #     - name: Checkout
-  #       uses: actions/checkout@v5
-  #       with:
-  #         ref: ${{ github.ref_name }}
-  #
-  #     - name: Set up Python
-  #       uses: actions/setup-python@v5
-  #       with:
-  #         python-version: '3.12'
-  #
-  #     - name: Install dependencies
-  #       run: pip install -r scripts/sync_blogs/requirements.txt
-  #
-  #     - name: Configure git
-  #       run: |
-  #         git config user.name "agent-kernel-ci[bot]"
-  #         git config user.email "agent-kernel-ci[bot]@users.noreply.github.com"
-  #
-  #     - name: Publish new and update changed posts on Hashnode
-  #       env:
-  #         HASHNODE_PAT: ${{ secrets.HASHNODE_PAT }}
-  #         HASHNODE_PUBLICATION_ID: ${{ secrets.HASHNODE_PUBLICATION_ID }}
-  #         HASHNODE_POST: ${{ inputs.hashnode_post }}
-  #       run: |
-  #         if [ -z "$HASHNODE_PAT" ] || [ -z "$HASHNODE_PUBLICATION_ID" ]; then
-  #           echo "HASHNODE_PAT / HASHNODE_PUBLICATION_ID secrets are not set - skipping Hashnode sync."
-  #           exit 0
-  #         fi
-  #         if [ -n "$HASHNODE_POST" ]; then
-  #           python scripts/sync_blogs/hashnode.py --post "$HASHNODE_POST"
-  #         else
-  #           python scripts/sync_blogs/hashnode.py
-  #         fi
-  #
-  #     - name: Commit updated Hashnode sync state
-  #       if: always()
-  #       run: |
-  #         if [ -n "$(git status --porcelain docs/blog/.hashnode-sync-state.json)" ]; then
-  #           git add docs/blog/.hashnode-sync-state.json
-  #           git commit -m "chore: record blog posts synced to Hashnode"
-  #           git pull --rebase origin "${{ github.ref_name }}"
-  #           git push
-  #         else
-  #           echo "No Hashnode sync state changes."
-  #         fi
-
   sync-devto:
     name: Sync blog posts to DEV Community
     runs-on: ubuntu-latest
@@ -162,20 +106,24 @@ jobs:
 
       # The sync state reaches the branch through a PR (it only accepts PRs). Until that PR is merged
       # its branch holds the latest state, so start from it - otherwise already published posts would
-      # look new and be published again.
+      # look new. Both platforms' files are loaded: the PR is rebuilt from this job's files, so one
+      # left out here would drop the other sync's unmerged changes from the PR.
       - name: Load the sync state from the open sync-state PR
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           open_pr=$(gh pr list --head chore/blog-sync-state --base "${{ github.ref_name }}" --state open --json number --jq '.[0].number')
-          if [ -n "$open_pr" ]; then
-            git fetch --depth=1 origin chore/blog-sync-state
-            if git checkout FETCH_HEAD -- docs/blog/.devto-sync-state.json; then
-              echo "Loaded docs/blog/.devto-sync-state.json from PR #$open_pr."
-            fi
-          else
-            echo "No open sync-state PR; using the state file on ${{ github.ref_name }}."
+          if [ -z "$open_pr" ]; then
+            echo "No open sync-state PR; using the state files on ${{ github.ref_name }}."
+            exit 0
           fi
+          git fetch --depth=1 origin chore/blog-sync-state
+          for file in docs/blog/.devto-sync-state.json docs/blog/.hashnode-sync-state.json; do
+            if git cat-file -e "FETCH_HEAD:$file" 2>/dev/null; then
+              git checkout FETCH_HEAD -- "$file"
+              echo "Loaded $file from PR #$open_pr."
+            fi
+          done
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -210,19 +158,118 @@ jobs:
           branch: chore/blog-sync-state
           base: ${{ github.ref_name }}
           delete-branch: true
+          # Both platforms' state files (git pathspec glob).
           add-paths: |
-            docs/blog/.devto-sync-state.json
+            docs/blog/.*-sync-state.json
           author: "agent-kernel-ci[bot] <agent-kernel-ci[bot]@users.noreply.github.com>"
           committer: "agent-kernel-ci[bot] <agent-kernel-ci[bot]@users.noreply.github.com>"
           commit-message: "chore(blog): record blog posts synced to DEV Community"
-          title: "chore(blog): record blog posts synced to DEV Community"
+          title: "chore(blog): update the blog sync state"
           body: |
-            Blog posts were published or updated on DEV Community, and this PR records that in `docs/blog/.devto-sync-state.json`.
+            Blog posts were published or updated on DEV Community and/or Hashnode, and this PR records that in their sync-state files (`docs/blog/.devto-sync-state.json`, `docs/blog/.hashnode-sync-state.json`).
 
-            **Why:** the state file maps each blog post to its DEV article id and a hash of what was last sent. The sync uses it to update existing articles in place and skip unchanged ones, instead of publishing them again as new articles.
+            **Why:** each state file maps every blog post to its article/post id on that platform and a hash of what was last sent. The sync uses it to update existing articles in place and skip unchanged ones instead of publishing them again.
 
             **Please merge this soon.** Until it is merged, each sync run starts from this PR's branch, and further runs keep adding their changes to this same PR. Merging it does not redeploy the website.
 
             Opened automatically by the "Deploy GitHub Pages" workflow.
           labels: |
             documentation
+
+  # Disabled for now: we only publish to DEV Community at the moment. To re-enable, uncomment this
+  # job and the hashnode_post input at the top.
+  # sync-hashnode:
+  #   name: Sync blog posts to Hashnode
+  #   runs-on: ubuntu-latest
+  #   # Runs after sync-devto, since both update the same sync-state PR, but even if that job failed.
+  #   needs: [deploy, sync-devto]
+  #   if: ${{ !cancelled() && needs.deploy.result == 'success' }}
+  #   permissions:
+  #     contents: read
+  #   steps:
+  #     - name: Checkout
+  #       uses: actions/checkout@v5
+  #       with:
+  #         ref: ${{ github.ref_name }}
+  #
+  #     - name: Generate GitHub App Token
+  #       id: app-token
+  #       uses: actions/create-github-app-token@v3
+  #       with:
+  #         app-id: ${{ secrets.APP_ID }}
+  #         private-key: ${{ secrets.APP_PRIVATE_KEY }}
+  #         owner: yaalalabs
+  #         repositories: |
+  #           agent-kernel
+  #
+  #     # The sync state reaches the branch through a PR (it only accepts PRs). Until that PR is merged
+  #     # its branch holds the latest state, so start from it - otherwise already published posts would
+  #     # look new. Both platforms' files are loaded: the PR is rebuilt from this job's files, so one
+  #     # left out here would drop the other sync's unmerged changes from the PR.
+  #     - name: Load the sync state from the open sync-state PR
+  #       env:
+  #         GH_TOKEN: ${{ steps.app-token.outputs.token }}
+  #       run: |
+  #         open_pr=$(gh pr list --head chore/blog-sync-state --base "${{ github.ref_name }}" --state open --json number --jq '.[0].number')
+  #         if [ -z "$open_pr" ]; then
+  #           echo "No open sync-state PR; using the state files on ${{ github.ref_name }}."
+  #           exit 0
+  #         fi
+  #         git fetch --depth=1 origin chore/blog-sync-state
+  #         for file in docs/blog/.devto-sync-state.json docs/blog/.hashnode-sync-state.json; do
+  #           if git cat-file -e "FETCH_HEAD:$file" 2>/dev/null; then
+  #             git checkout FETCH_HEAD -- "$file"
+  #             echo "Loaded $file from PR #$open_pr."
+  #           fi
+  #         done
+  #
+  #     - name: Set up Python
+  #       uses: actions/setup-python@v5
+  #       with:
+  #         python-version: '3.12'
+  #
+  #     - name: Install dependencies
+  #       run: pip install -r scripts/sync_blogs/requirements.txt
+  #
+  #     - name: Publish new and update changed posts on Hashnode
+  #       env:
+  #         HASHNODE_PAT: ${{ secrets.HASHNODE_PAT }}
+  #         HASHNODE_PUBLICATION_ID: ${{ secrets.HASHNODE_PUBLICATION_ID }}
+  #         HASHNODE_POST: ${{ inputs.hashnode_post }}
+  #       run: |
+  #         if [ -z "$HASHNODE_PAT" ] || [ -z "$HASHNODE_PUBLICATION_ID" ]; then
+  #           echo "HASHNODE_PAT / HASHNODE_PUBLICATION_ID secrets are not set - skipping Hashnode sync."
+  #           exit 0
+  #         fi
+  #         if [ -n "$HASHNODE_POST" ]; then
+  #           python scripts/sync_blogs/hashnode.py --post "$HASHNODE_POST"
+  #         else
+  #           python scripts/sync_blogs/hashnode.py
+  #         fi
+  #
+  #     # Runs even if the sync failed part-way, so the posts it did publish are still recorded.
+  #     - name: Open or update the sync-state PR
+  #       if: always() && steps.app-token.outcome == 'success'
+  #       uses: peter-evans/create-pull-request@v8
+  #       with:
+  #         token: ${{ steps.app-token.outputs.token }}
+  #         branch: chore/blog-sync-state
+  #         base: ${{ github.ref_name }}
+  #         delete-branch: true
+  #         # Both platforms' state files (git pathspec glob).
+  #         add-paths: |
+  #           docs/blog/.*-sync-state.json
+  #         author: "agent-kernel-ci[bot] <agent-kernel-ci[bot]@users.noreply.github.com>"
+  #         committer: "agent-kernel-ci[bot] <agent-kernel-ci[bot]@users.noreply.github.com>"
+  #         commit-message: "chore(blog): record blog posts synced to Hashnode"
+  #         title: "chore(blog): update the blog sync state"
+  #         body: |
+  #           Blog posts were published or updated on DEV Community and/or Hashnode, and this PR records that in their sync-state files (`docs/blog/.devto-sync-state.json`, `docs/blog/.hashnode-sync-state.json`).
+  #
+  #           **Why:** each state file maps every blog post to its article/post id on that platform and a hash of what was last sent. The sync uses it to update existing articles in place and skip unchanged ones instead of publishing them again.
+  #
+  #           **Please merge this soon.** Until it is merged, each sync run starts from this PR's branch, and further runs keep adding their changes to this same PR. Merging it does not redeploy the website.
+  #
+  #           Opened automatically by the "Deploy GitHub Pages" workflow.
+  #         labels: |
+  #           documentation
