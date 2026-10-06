@@ -434,6 +434,11 @@ def content_hash(raw: str) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
+def article_hash(article: dict) -> str:
+    """Hash what is sent (not the source), so converter fixes also refresh already-synced articles."""
+    return content_hash(json.dumps(article, sort_keys=True))
+
+
 def publish_article(api_key: str, organization_id: str | None, article: dict) -> dict:
     if organization_id:
         article = {**article, "organization_id": int(organization_id)}
@@ -526,8 +531,7 @@ def main() -> None:
             print(f"wrote {preview_path}")
             continue
 
-        # Hash what is sent (not the source), so converter fixes also refresh already-synced articles.
-        digest = content_hash(json.dumps(article, sort_keys=True))
+        digest = article_hash(article)
         record = state.get(path.name)
 
         if record and record.get("content_hash") == digest:
