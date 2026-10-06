@@ -1,6 +1,6 @@
-# #749 (phase 2): Resolve secrets from a Kubernetes Secret, the in-cluster managed store
+# #749 (phase 2): Resolve secrets from a Kubernetes Secret mounted into the pod
 
-A built-in `kubernetes` secret provider for the `agentkernel.secret` capability that shipped in phase 1 (`docs/specs/749-secret-resolution/`). It plays the role on Kubernetes that `aws_ssm` plays on AWS. The provider reads a key such as `OPENAI_API_KEY` from **one Kubernetes Secret per deployment**, named `ak-{prefix}` and living in the pod's own namespace, by calling the API server. The data key is the AK key itself, verbatim. The resolution order, the cache and the key grammar stay unchanged: an environment variable that is set still wins. The Helm chart gains one opt-in value. It gives the agent-runner tier a ServiceAccount, plus a Role that can `get` exactly that one Secret, and injects `AK_SECRET__PREFIX`.
+A built-in `kubernetes` secret provider for the `agentkernel.secret` capability that shipped in phase 1 (`docs/specs/749-secret-resolution/`). It plays the role on Kubernetes that `aws_ssm` plays on AWS. **The Kubernetes Secret is attached to the pod as a read-only volume**, and the provider reads a key such as `OPENAI_API_KEY` from the file of the same name in that volume. The provider never calls the API server, so it needs no ServiceAccount, no RBAC and no `kubernetes` package. The resolution order, the cache and the key grammar stay unchanged: an environment variable that is set still wins. The Helm chart gains one opt-in value that mounts one named Secret into the tier that runs agents.
 
 ## Motivation
 
@@ -13,92 +13,80 @@ A built-in `kubernetes` secret provider for the `agentkernel.secret` capability 
 - Phase 1 gave AWS a managed store (`aws_ssm`), but Kubernetes has no equivalent.
   - `ak-py/src/agentkernel/secret/factory.py:9`: `_BUILTIN_SECRET_PROVIDERS = ["env", "aws_ssm"]`.
   - Today a Kubernetes user's only option is a bring-your-own dotted-path provider.
-- No app pod can read a Secret from the API today.
-  - The io, agent-runner and ws-gateway Deployments set no `serviceAccountName`, so they run as the namespace's `default` ServiceAccount. The only `serviceAccountName` in the chart is `templates/deployment-sandbox-worker.yaml:35`.
-  - The only chart RBAC is the sandbox worker's Role (`templates/rbac-sandbox.yaml:8-21`, rules at `:15-21`), which covers pods and `pods/exec` and nothing on `secrets`.
-- The chart has no deployment prefix that could scope a secret name.
-  - The resource-name stem is `agent-kernel.fullname` (`templates/_helpers.tpl:11`).
-  - The only chart `prefix` values are store keyspaces (`responseStore.prefix`, `session.prefix`, injected at `templates/configmap-env.yaml:56,65`).
-- The Python `kubernetes` client is already an optional extra (`ak-py/pyproject.toml:188-189`: `kubernetes = ["kubernetes>=29.0.0"]`), so the provider adds no new dependency.
-  - The sandbox provider already establishes how to load in-cluster config: try in-cluster first, then fall back to kubeconfig (`ak-py/src/agentkernel/sandbox/providers/kubernetes.py:207-219`).
-- Why not just keep `secretKeyRef`: it keeps working unchanged, because the environment is layer 1. The provider adds three things:
-  - rotation without a pod restart, for code that calls `get` again after `cache_ttl` expires or after `invalidate`. A value handed to an SDK once at startup, such as `set_default_openai_key`, still needs a restart, the same caveat as phase 1;
-  - new keys with no Helm edit: add a data key to the one Secret;
-  - each read appears in the API-server audit log.
+- No app tier mounts any volume today.
+  - The io, agent-runner and ws-gateway Deployments declare no `volumes` or `volumeMounts` (e.g. `templates/deployment-agent-runner.yaml:34-66`). The only `volumes` in the chart's templates is the Kafka cluster's (`templates/kafka-cluster.yaml:25`).
+  - Secrets reach containers only through `env` (`extraEnv`) and `envFrom` (`extraEnvFrom`, `values.yaml:38-39`).
+- Why a mounted volume rather than reading the Secret from the API server:
+  - The kubelet already delivers the Secret to the pod. Reading it from a file needs no ServiceAccount, Role or RoleBinding, and no API-server round trip per `get`.
+  - A missing Secret is caught by Kubernetes itself: a non-`optional` secret volume keeps the pod in `ContainerCreating` with a `FailedMount` event, so a misconfiguration never reaches the application.
+  - The provider is stdlib-only, so no new optional dependency lands in the runner image.
+- Why not just keep `secretKeyRef`: it keeps working unchanged, because the environment is layer 1. A mounted volume adds two things that env vars cannot:
+  - rotation without a pod restart. The kubelet refreshes a mounted Secret volume in place after the Secret changes (Kubernetes docs: within the kubelet sync period plus its Secret-cache delay). Code that calls `get` again after `cache_ttl` expires, or after `invalidate`, sees the new value. A value handed to an SDK once at startup, such as `set_default_openai_key`, still needs a restart, the same caveat as phase 1;
+  - new keys with no Helm edit: add a data key to the one Secret, and the kubelet projects it as a new file.
 
 ## Requirements
 
 ### Addressing and resolution
 
-- **Resolution order is unchanged**: environment, then cache, then provider (phase 1's `SecretManager`). A set, non-empty environment variable always wins, so an existing `secretKeyRef` injection takes precedence over the Secret.
-- **One Secret per deployment.** For every key, the provider reads the Secret named **`ak-{prefix}`**.
-  - `prefix` is the existing top-level `secret.prefix` (`AK_SECRET__PREFIX`), the same deployment scope that `aws_ssm` uses.
-  - The **data key is the AK key verbatim**: `OPENAI_API_KEY` is read from `.data["OPENAI_API_KEY"]`.
+- **Resolution order is unchanged**: environment, then cache, then provider (phase 1's `SecretManager`). A set, non-empty environment variable always wins, so an existing `secretKeyRef` injection takes precedence over the mounted Secret.
+- **One Secret per deployment, mounted whole** at the fixed directory **`/var/run/secrets/agentkernel`**.
+  - Each data key of the Secret appears as one file named after the key. The **file name is the AK key verbatim**: `OPENAI_API_KEY` is read from `/var/run/secrets/agentkernel/OPENAI_API_KEY`.
     - No case folding is needed. Every key matching the phase-1 grammar `^[A-Z][A-Z0-9_]*$` is a valid Secret data key, since data keys allow `[-._a-zA-Z0-9]+`.
-    - Distinct keys never collapse onto one entry.
-  - The provider base64-decodes the data value, decodes it as UTF-8, and returns it verbatim. Whitespace and newlines are preserved, matching the contract's round-trip test.
-- **The namespace is the pod's own.** No configuration field sets it.
-  - In-cluster, the namespace comes from `/var/run/secrets/kubernetes.io/serviceaccount/namespace`.
-  - Outside a cluster, it is the active kubeconfig context's namespace, or `default` when the context sets none. This covers local runs against a cluster.
-- **Prefix validation**, in the provider at construction:
-  - An empty prefix raises `AKConfigError`, because it would address `ak-`. This matches `aws_ssm`.
-  - `prefix` must match `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`, and `ak-{prefix}` must be at most 253 characters. Anything else raises `AKConfigError`.
-    - This is stricter than `aws_ssm`'s single-path-segment rule, because the composed name must be a valid DNS-1123 Secret name.
-    - The provider does not strip or rewrite the prefix. A value like `MyProduct` is rejected instead of being silently lowercased, so the name the Role grants and the name the provider reads cannot differ.
-- Rotation: the user updates the Secret (`kubectl apply`, or `kubectl create secret … --dry-run=client -o yaml | kubectl apply -f -`). The next `get` after `cache_ttl` expires, or after `invalidate(key)`, returns the new value, with no restart.
-- The phase-1 rule still applies: **resolve during startup, not on the request hot path.** Every uncached `get` is one `GET /api/v1/namespaces/{ns}/secrets/ak-{prefix}` request.
+    - The grammar has no `/` or `.`, and `SecretManager.get` validates it before the provider is called, so a key can never address a path outside the mount directory.
+  - The provider reads the file's bytes, decodes them as UTF-8, and returns them verbatim. Whitespace and newlines are preserved, matching the contract's round-trip test. The kubelet writes decoded values, so there is no base64 step.
+- **The directory is a fixed convention, not a configuration field.** The chart mounts there and the provider reads there.
+  - The constructor takes the directory as a parameter defaulting to that constant, so tests and bring-your-own subclasses can point it elsewhere; `create(config)` always uses the default.
+- **`secret.prefix` is ignored by this provider.** The mount itself scopes the store to one deployment: the pod sees only the Secret its Deployment mounts.
+- Rotation: the user updates the Secret (`kubectl apply`, or `kubectl create secret … --dry-run=client -o yaml | kubectl apply -f -`). Once the kubelet has refreshed the volume, the next `get` after `cache_ttl` expires, or after `invalidate(key)`, returns the new value, with no restart.
+  - The worst-case pickup delay is the kubelet refresh delay plus `cache_ttl`.
+  - Rotation requires the whole-Secret mount. A `subPath` mount, or a volume that projects only listed `items`, is never refreshed or never shows new keys, so the chart uses neither.
+- The phase-1 rule still applies: resolve during startup, not on the request hot path. An uncached `get` is one local file read.
 
 ```mermaid
 graph LR
     M["SecretManager.get('OPENAI_API_KEY')<br/>env → cache → provider (unchanged)"] -->|"3: provider"| P["KubernetesSecretProvider"]
-    P -->|"read_namespaced_secret"| S["Secret ak-{prefix}<br/>in the pod's namespace<br/>.data.OPENAI_API_KEY"]
-    R["Role: get secrets<br/>resourceNames: [ak-{prefix}]"] -.grants.-> SA["agent-runner ServiceAccount"]
-    SA -.runs.-> P
+    P -->|"read file"| F["/var/run/secrets/agentkernel/OPENAI_API_KEY"]
+    S["Secret &lt;secretStore.secretName&gt;<br/>in the release namespace"] -.kubelet mounts, refreshes.-> F
 ```
 
 ### Provider
 
 - `KubernetesSecretProvider(SecretProvider)` in `ak-py/src/agentkernel/secret/providers/kubernetes.py`, short name **`kubernetes`**, logger `ak.secret.provider.kubernetes`. The name matches the sandbox provider of the same backend.
-  - `create(config)` builds the provider from `config.prefix` and runs the prefix validation above. It inherits the whole-block `create` seam from `secret/base.py`.
-  - The `CoreV1Api` client and the resolved namespace are created **lazily on first `get_secret`**, behind a lock with double-checked initialization, as `aws_ssm` does at `secret/providers/aws_ssm.py:44-50`.
-    - Config loading is in-cluster first with a kubeconfig fallback, the same order as `sandbox/providers/kubernetes.py:207-219`.
-    - Construction makes no network call and reads no files, so a misconfigured cluster fails at the first `get`, not at `SecretManager.current()`.
-  - `get_secret(key)` makes one `read_namespaced_secret` call. The provider does not cache (that is the manager's job) and must tolerate concurrent calls.
-- Factory: a `kubernetes` branch in `SecretProviderFactory` (`secret/factory.py`), wrapped in `require_extra("kubernetes", "secret.provider.type: kubernetes")`, following the `aws_ssm` branch.
+  - It inherits the default `create(config)` from `secret/base.py:13-19`, which takes no settings, as `EnvSecretProvider` does (`secret/providers/env.py`).
+  - Construction does no I/O, so a missing mount fails at the first `get`, not at `SecretManager.current()`.
+  - `get_secret(key)` reads one file. The provider holds no mutable state and does not cache (that is the manager's job), so concurrent calls need no lock.
+- Factory: a `kubernetes` branch in `SecretProviderFactory` (`secret/factory.py`), next to the `env` branch.
+  - It has **no `require_extra`**: the provider imports only the standard library.
   - `_BUILTIN_SECRET_PROVIDERS` becomes `["env", "aws_ssm", "kubernetes"]`.
-  - A missing `kubernetes` package raises `ImportError` naming the `kubernetes` extra. This happens at factory time, before the prefix is checked, which is the phase-1 ordering.
 - Contract: the provider passes `SecretProviderContract` (`secret/testing.py`) with `reads_environment = False`.
-  - Seeding writes the base64-encoded value into a fake `CoreV1Api`'s Secret `ak-{prefix}`.
+  - The `provider` fixture points the directory at a `tmp_path`, and seeding writes the value to `<tmp_path>/<key>`.
 
 ### Error handling
 
-- **Miss** (returns `None`): the Secret exists but has no data key equal to `key`.
+- **Miss** (returns `None`):
+  - the mount directory exists but has no file named `key`;
+  - the file is empty, matching `EnvSecretProvider`'s "an empty value is a miss" (`secret/providers/env.py`).
 - **Failure** (`SecretError`, with the original exception chained):
-  - **404 on the Secret `ak-{prefix}`.** The Role grants exactly that Secret, so if the object is missing the deployment is misconfigured; this is not a per-key miss.
-    - The per-key analog of `aws_ssm`'s `ParameterNotFound` miss (`secret/providers/aws_ssm.py:65`) is the missing **data key**, not the missing Secret. The Secret is the whole store, like the IAM-scoped `/ak/{prefix}/*` path.
-    - This matches native Kubernetes behavior: a non-`optional` `secretKeyRef` to a missing Secret stops the container from starting (`CreateContainerConfigError`).
-    - A wrong or mistyped prefix therefore fails loudly instead of letting every `get(key, default=…)` silently return its default. `SecretManager.get` never masks a `SecretError` with `default` (`secret/manager.py:68`), so this holds for callers that pass a default as well.
-    - Deploying before the Secret exists fails the first `get` at startup. Create the Secret before running `helm install`, or before the next rollout.
-    - The message names the namespace and Secret name, and says to create it with `kubectl create secret generic ak-{prefix}`.
-  - 403, which means the RBAC grant is missing or wrong. The message names the ServiceAccount-needs-`get`-on-`secrets/ak-{prefix}` requirement.
-  - Any other `ApiException`, and any connection error.
-  - A config-load failure: not in a cluster and no usable kubeconfig.
-  - A value that is not valid base64 or not valid UTF-8.
-- No secret value appears in a log record, an exception message or a trace. Messages carry only the key, namespace and Secret name, as in phase 1.
+  - **The mount directory does not exist.** The volume is not attached, so the deployment is misconfigured; this is not a per-key miss.
+    - This is the analog of the earlier design's "Secret missing" failure. The Secret is the whole store, so its absence is not a miss.
+    - A wrong mount fails loudly instead of letting every `get(key, default=…)` silently return its default. `SecretManager.get` never masks a `SecretError` with `default` (`secret/manager.py:68`), so this holds for callers that pass a default as well.
+    - The message names the directory and says to set `secretStore.enabled` and `secretStore.secretName` in the chart, or mount a Secret there.
+  - Any other `OSError` while reading the file, e.g. a permission error.
+  - A file that is not valid UTF-8.
+- No secret value appears in a log record, an exception message or a trace. Messages carry only the key and the path, as in phase 1.
 
 ### Configuration
 
 - **No new configuration fields.** The provider reuses phase 1's `_SecretConfig` (`ak-py/src/agentkernel/core/config.py:911-924`) whole:
-  - `secret.prefix` names the Secret (`ak-{prefix}`). It is already top-level so that a later managed-store provider can reuse it.
   - `secret.provider.type: kubernetes` is the only opt-in.
-  - `secret.cache_ttl` is the rotation-pickup window, with its meaning unchanged.
+  - `secret.cache_ttl` is the rotation-pickup window on top of the kubelet's refresh, with its meaning unchanged.
+  - `secret.prefix` is not read (see *Addressing and resolution*).
 - No `secret.provider.kubernetes` block:
-  - The namespace is the pod's own (see Non-goals).
-  - The Secret name is derived from `prefix`.
-  - The kubeconfig follows the client's standard `KUBECONFIG` discovery. It deliberately does not reuse `sandbox.kubernetes.*` (`_SandboxKubernetesConfig`, `core/config.py:736`, whose `namespace` defaults to `"default"` at `:737`), which configures where sandbox pods are created, a different concern.
+  - The mount directory is a fixed convention shared by the chart and the provider. A field would only let the two drift apart.
+  - It does not reuse `sandbox.kubernetes.*` (`_SandboxKubernetesConfig`, `core/config.py:737`), which configures where sandbox pods are created, a different concern.
 - Only field **descriptions** change:
-  - `_SecretProviderConfig.type` (`core/config.py:903-908`) lists `kubernetes`.
-  - `_SecretConfig.prefix` (`:914-918`) documents the `ak-{prefix}` Secret name and the DNS-1123 constraint.
+  - `_SecretProviderConfig.type` (`core/config.py:902-908`) lists `kubernetes` and says it reads the Secret mounted at `/var/run/secrets/agentkernel`.
+  - `_SecretConfig.prefix` (`:914-918`) says it is ignored by `kubernetes` as well as `env`.
 - Existing YAML and `AK_*` environment variables are unaffected, and the default (`env`) is unchanged.
 
 ### Deployment (`ak-deployment/ak-k8s/chart`)
@@ -107,72 +95,64 @@ graph LR
 
 ```yaml
 secretStore:
-  enabled: false        # grant the agent-runner read access to Secret ak-<prefix> and inject AK_SECRET__PREFIX
-  prefix: ""            # required when enabled; Secret name is ak-<prefix>
-  serviceAccount:
-    create: true
-    name: ""            # use an existing ServiceAccount instead (e.g. one already bound to EKS Pod Identity)
+  enabled: false        # mount Secret <secretName> read-only at /var/run/secrets/agentkernel in the agent-executing tier
+  secretName: ""        # required when enabled; the Secret the user creates in the release namespace
 ```
 
-- **`secretStore.prefix` is required when `secretStore.enabled`.** It has no default.
-  - An empty value fails `helm template` / `helm install` with `required "secretStore.prefix is required when secretStore.enabled"`. This is the chart's existing pattern (`templates/configmap-env.yaml:48`, `templates/secret-push-token.yaml:15`).
-  - A value that does not match the provider's DNS-1123 rule (`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`, with `ak-{prefix}` at most 253 characters) fails at template time with `fail`. A bad prefix therefore never renders a Role the provider would reject at runtime.
-  - Why not default to the fullname:
-    - The user has to create a Secret whose name they can read straight from their values. A fullname default turns release `ak` into the Secret `ak-ak-agent-kernel`, a name derived through `templates/_helpers.tpl:11-22`.
-    - The fullname changes when `fullnameOverride`, `nameOverride` or the release name changes. That would silently re-point the Role and `AK_SECRET__PREFIX` at a Secret that does not exist.
-    - The chart has no deployment prefix to reuse (see Motivation), and the Terraform analog takes an explicit `var.prefix` (`ak-deployment/ak-aws/serverless/modules/agent-runner/main.tf:357`).
-- **Additive only.** Every new resource and env entry is gated on `secretStore.enabled`, so with the defaults `helm template` renders identically to today's output.
-- When enabled:
-  - A ServiceAccount `<fullname>-agent-runner` is created, unless `serviceAccount.create: false`, in which case `serviceAccount.name` is used.
-  - A Role allows `get` on `secrets` with **`resourceNames: [ak-<prefix>]`** and nothing else: no `list`, no `watch`, no other Secret.
-  - A RoleBinding binds that Role to the ServiceAccount.
-  - The agent-runner Deployment gets `serviceAccountName` and the env entry `AK_SECRET__PREFIX: <prefix>`.
-- **Least privilege: only the tier that executes agents gets the ServiceAccount, the grant and `AK_SECRET__PREFIX`.** This is the chart analog of the Terraform `ssm_enabled && !queue_mode` split.
+- **`secretStore.secretName` is required when `secretStore.enabled`.** It has no default.
+  - An empty value fails `helm template` / `helm install` with `required "secretStore.secretName is required when secretStore.enabled"`. This is the chart's existing pattern (`templates/configmap-env.yaml:48`, `templates/gateway.yaml:40`).
+  - Why not default to a name derived from the fullname: the user has to create a Secret whose name they can read straight from their values, and a derived name silently changes with `fullnameOverride`, `nameOverride` or the release name.
+  - Any existing Secret works, including one created by the External Secrets Operator.
+- **Additive only.** Every new entry is gated on `secretStore.enabled`, so with the defaults `helm template` renders identically to today's output.
+- When enabled, the agent-executing Deployment gets:
+  - a pod `volume` of type `secret` with `secretName: <secretStore.secretName>` and **`optional: false`**, and no `items`;
+  - a container `volumeMount` at `/var/run/secrets/agentkernel` with **`readOnly: true`** and no `subPath`.
+  - `defaultMode` stays at the Kubernetes default (`0644`) so non-root images can read the files; access is limited by which pod mounts the volume.
+- **Least privilege: only the tier that executes agents mounts the Secret.** This is the chart analog of the Terraform `ssm_enabled && !queue_mode` split.
   - When `agentRunner.enabled: true` (the default, `values.yaml:145`), that tier is agent-runner. The io tier runs only the Request and Response Handlers.
-  - When `agentRunner.enabled: false` (the single-process profile, `values-dev.yaml:48-49`), the agents run inside the io pod, so the io Deployment gets them instead.
-  - The ws-gateway and sandbox-worker tiers never get `secrets` access.
-  - The ServiceAccount token must be mounted. The chart sets no `automountServiceAccountToken` today, so the Kubernetes default (`true`) applies, and the new ServiceAccount must not disable it, because `load_incluster_config` reads it.
-- **No drift**: one `_helpers.tpl` helper validates `secretStore.prefix` and returns it, enforcing `required` and the DNS-1123 check. Both the Role's `resourceNames` and the injected `AK_SECRET__PREFIX` use it.
+  - When `agentRunner.enabled: false` (the single-process profile, `values-dev.yaml:48-49`), the agents run inside the io pod, so the io Deployment mounts it instead.
+  - The ws-gateway and sandbox-worker tiers never mount it.
+- **No RBAC.** No ServiceAccount, Role or RoleBinding is created, and no `serviceAccountName` is set, because the kubelet, not the pod, reads the Secret.
+- **No drift**: one `_helpers.tpl` helper owns the mount path and the volume name, and both the `volume` and the `volumeMount` use it.
 - The chart **does not create the Secret** and does not set `AK_SECRET__PROVIDER__TYPE`. The application's `config.yaml` selects the provider, the same "app declares WHAT, chart injects WHERE" split that `templates/configmap-env.yaml:3` states.
-- EKS: `values-eks.yaml:8` already expects "Pod Identity associations for the app service account" when using SQS. When `secretStore.enabled`, that association targets the new agent-runner ServiceAccount, or an existing one passed through `serviceAccount.name`. The README states this.
 
 ### Examples and docs
 
-- **`examples/k8s/openai-queue-mode` moves to the Secret path.**
-  - Its `config.*.yaml` selects `secret.provider.type: kubernetes`, and its `ak-values.yaml` sets `secretStore.enabled: true` and an explicit `secretStore.prefix`, and drops the `OPENAI_API_KEY` `secretKeyRef` entry.
+- **`examples/k8s/openai-queue-mode` moves to the mounted-Secret path.**
+  - Its `config.*.yaml` selects `secret.provider.type: kubernetes`, and its `ak-values.yaml` sets `secretStore.enabled: true` and `secretStore.secretName: ak-openai-queue-mode`, and drops the `OPENAI_API_KEY` `secretKeyRef` entry.
   - `app_agent_runner.py` calls `set_default_openai_key(SecretManager.current().get("OPENAI_API_KEY"))` at startup, as `examples/aws-serverless/openai/lambda_agent_runner.py:8` does.
-  - The README replaces `kubectl create secret generic openai …` with `kubectl create secret generic ak-<prefix> --from-literal=OPENAI_API_KEY="$OPENAI_API_KEY"`, and documents rotation.
-  - The example's `pyproject.toml:8` gains the `kubernetes` extra (`agentkernel[openai,api,nats,kafka,valkey,auth,kubernetes]`); otherwise the factory raises `ImportError` in the runner image.
+  - The README replaces `kubectl create secret generic openai …` with `kubectl create secret generic ak-openai-queue-mode --from-literal=OPENAI_API_KEY="$OPENAI_API_KEY"`, and documents rotation.
+  - The example's `pyproject.toml` needs no new extra, because the provider is stdlib-only.
   - Removing the top-level `extraEnv` takes the key away from every tier. That is safe: only `app_agent_runner.py` uses OpenAI, and `app_io_handler.py` and `app_ws_gateway.py` never read `OPENAI_API_KEY`.
-- **CI exercises the Secret path on kind.** The `kind-smoke` job in `.github/workflows/chart-test.yaml` deploys this example for the `dev` flavor (`:155`).
-  - Its `Install chart` step (`:149`) creates the `ak-<prefix>` Secret with an `OPENAI_API_KEY` data key, replacing `kubectl create secret generic openai`, so the existing "Chat request through NATS" check proves resolution end to end. In that flavor `agentRunner` is enabled, so the grant lands on the runner.
-  - The `baremetal` and `eks` flavors keep `extraEnv` + `secretKeyRef` (`:165-167`, `extraEnv[0]` set via `--set`), so CI keeps covering the environment-first path too. Those flavors still need an `openai` Secret, so the step creates both.
-  - The `helm template` render loop (`:69-86`) gains `secretStore.enabled=true,secretStore.prefix=<p>` renders, with and without `agentRunner.enabled=false`, to cover both grant placements.
-    - It also gains one expected-failure render with `secretStore.enabled=true` and no prefix, which asserts the `required` error.
+- **CI exercises the mounted-Secret path on kind.** The `kind-smoke` job in `.github/workflows/chart-test.yaml` deploys this example for the `dev` flavor.
+  - Its `Install chart` step (`:147-149`) also creates `ak-openai-queue-mode` with an `OPENAI_API_KEY` data key, so the existing "Chat request through NATS" check proves resolution end to end. In that flavor `agentRunner` is enabled, so the mount lands on the runner.
+  - The `baremetal` and `eks` flavors keep `extraEnv` + `secretKeyRef` (`:165-167`), so CI keeps covering the environment-first path too. Those flavors still need the `openai` Secret, so the step creates both.
+  - The `helm template` render loop (`:69-91`) gains `secretStore.enabled=true,secretStore.secretName=<n>` renders, with and without `agentRunner.enabled=false`, to cover both mount placements.
+    - It also gains one expected-failure render with `secretStore.enabled=true` and no `secretName`, which asserts the `required` error.
 - The other Kubernetes examples (`examples/sandbox/broker-*`) keep `secretKeyRef` unchanged.
 - `ak-deployment/ak-k8s/README.md` and `docs/docs/advanced/secrets.md` document:
-  - the provider, the `ak-{prefix}` naming and the pod's-namespace rule;
-  - the `secretStore` values and the exact RBAC they create;
-  - creating and rotating the Secret;
+  - the provider, the mount directory and the file-per-key rule;
+  - the `secretStore` values and the exact volume and mount they render;
+  - creating and rotating the Secret, including the kubelet refresh delay and the no-`subPath` rule;
   - that env (`secretKeyRef`) still wins.
 - The remaining surfaces that list the built-in providers (`env`, `aws_ssm`) gain `kubernetes`. Per the `ak-dev-new-secret-provider` checklist:
   - `ak-py/README.md`;
   - `.agents/skills/ak-dev-architecture/SKILL.md` (*Secret Resolution*);
-  - `.agents/skills/ak-dev-new-secret-provider/SKILL.md` (*Existing Providers*), with a note that its step 6, deployment wiring, has a Helm analog;
+  - `.agents/skills/ak-dev-new-secret-provider/SKILL.md` (*Existing Providers*), with a note that its step 6, deployment wiring, has a Helm analog (a volume mount, not an IAM grant);
   - the bundled `ak-cloud-deploy` and `ak-add-capabilities` skills under `ak-py/src/agentkernel/skills/`.
 
 ## Non-goals
 
-- **One Secret per key.** `resourceNames` cannot wildcard, so this would need namespace-wide `get secrets`. Confirmed with the requester.
-- **Cross-namespace Secrets or a configurable namespace.** The Secret lives in the pod's namespace. Confirmed with the requester.
-- Reading Secrets mounted as files or volumes. That is a separate provider, and it needs no API access.
-- Watch- or informer-driven push rotation. Rotation is pull-based through `cache_ttl` / `invalidate`.
+- **Reading Secrets from the Kubernetes API.** The kubelet delivers the Secret; the provider never calls the API server and the chart grants no `secrets` RBAC.
+- **More than one Secret per deployment**, or one Secret per key. A user who needs keys from several Secrets merges them into one (e.g. with a `projected` volume of their own), outside this change.
+- **Cross-namespace Secrets.** A pod can only mount a Secret from its own namespace.
+- **Injecting secrets as environment variables** (`envFrom` on the Secret). That needs no provider, since `env` already reads it, and it loses rotation and new-key pickup.
+- Watch- or inotify-driven push rotation. Rotation is pull-based through `cache_ttl` / `invalidate`.
 - Creating, writing or rotating Secrets from the runtime or the chart.
 - External Secrets Operator, the Secrets Store CSI driver, Vault, and cloud KMS envelope encryption. These operate below or beside a Kubernetes Secret and stay compatible with this provider.
-- `list` / `watch` permissions, or a sweep of all keys in the Secret.
-- Granting `secrets` access to the io, ws-gateway or sandbox-worker tiers.
+- Mounting the Secret into the io, ws-gateway or sandbox-worker tiers when they do not execute agents.
 - Migrating examples other than `examples/k8s/openai-queue-mode`.
 
 ## Open questions
 
-- None. Both earlier questions are resolved above: a 404 on the Secret is a failure (*Error handling*), and `secretStore.prefix` is required when the store is enabled (*Deployment*).
+- Should the mount directory be overridable through a field (e.g. `secret.provider.kubernetes.mount_path`) for users who mount the Secret themselves outside the chart? This design keeps it fixed at `/var/run/secrets/agentkernel` to avoid chart/provider drift.
