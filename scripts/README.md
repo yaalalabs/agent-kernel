@@ -7,7 +7,7 @@ This directory contains utility scripts for the agent-kernel project.
 Syncs the website's blog posts to Hashnode (`hashnode.py`) and DEV Community (`devto.py`).
 Helpers both scripts share live in `sync_blogs/utils/`: `common.py` (post/frontmatter
 parsing, authors, sync state, dates, URLs) and `images.py` (the SVG image check below).
-Dependencies for all of them are in `sync_blogs/requirements.txt`.
+The only dependency is `pyyaml`.
 
 **No SVG images in blog posts.** DEV Community and Hashnode can't display SVG images and
 neither has an upload API, so a post with one would publish with a broken image. Use
@@ -70,7 +70,7 @@ minute; a rate-limited request (HTTP 429, or a GraphQL rate-limit error) is retr
 
 **Usage:**
 ```bash
-pip install -r scripts/sync_blogs/requirements.txt
+pip install pyyaml
 
 export HASHNODE_PAT=...                  # Personal Access Token (Account settings -> Developer)
 export HASHNODE_PUBLICATION_ID=...       # the publication to publish to
@@ -150,7 +150,7 @@ frontmatter tags are used with non-alphanumerics removed (`ai-agents` -> `aiagen
 
 **Usage:**
 ```bash
-pip install -r scripts/sync_blogs/requirements.txt
+pip install pyyaml
 
 export DEVTO_API_KEY=...                 # Settings -> Extensions -> DEV Community API Keys
 export DEVTO_ORGANIZATION_ID=...         # optional: publish under this organization

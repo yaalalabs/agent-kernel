@@ -50,7 +50,7 @@ jobs:
       - name: Check blog posts for SVG images
         working-directory: .
         run: |
-          pip install -r scripts/sync_blogs/requirements.txt
+          pip install pyyaml
           python scripts/sync_blogs/check_images.py
         
       - name: Setup Node.js
@@ -131,7 +131,7 @@ jobs:
           python-version: '3.12'
 
       - name: Install dependencies
-        run: pip install -r scripts/sync_blogs/requirements.txt
+        run: pip install pyyaml
 
       - name: Publish new and update changed posts on DEV Community
         env:
@@ -229,7 +229,7 @@ jobs:
   #         python-version: '3.12'
   #
   #     - name: Install dependencies
-  #       run: pip install -r scripts/sync_blogs/requirements.txt
+  #       run: pip install pyyaml
   #
   #     - name: Publish new and update changed posts on Hashnode
   #       env:
