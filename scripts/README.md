@@ -2,57 +2,79 @@
 
 This directory contains utility scripts for the agent-kernel project.
 
-## sync_medium_blog.py
+## sync_hashnode_blog.py
 
-Publishes `docs/blog/*.md` posts to Medium (a publication, or the token owner's
-personal profile) so blog content gets Medium's built-in reach on top of the
-Agent Kernel website. Run automatically by `.github/workflows/deploy-docs.yml`
-after every docs deploy; also runnable locally.
+Publishes `docs/blog/*.md` posts to a Hashnode publication so blog content gets
+Hashnode's reach on top of the Agent Kernel website. Run automatically by
+`.github/workflows/deploy-docs.yml` after every docs deploy; also runnable locally.
 
-**Important limitation:** Medium's public API stopped issuing new integration
-tokens on 2025-01-01, and it has no endpoint to update or delete a post once
-created - only to create one. Because of that, this script only ever *creates*
-a Medium post for a blog file it has never seen before. If a previously-synced
-file changes afterwards, the script leaves the Medium post alone and prints a
-warning instead of creating a duplicate. A JSON state file
-(`docs/blog/.medium-sync-state.json`) tracks what has already been synced.
+**How it works:**
+- A blog file that has never been synced is published to Hashnode right away
+  (no draft step).
+- A blog file that was synced and then edited has its Hashnode post updated in
+  place, so the website stays the single source of truth.
+- A JSON state file (`docs/blog/.hashnode-sync-state.json`, committed back by CI)
+  tracks which posts are synced, their Hashnode post id, and a content hash.
+
+**Authors:** every post is published by the single Agent Kernel account that owns the
+publication (one Pro seat). The real authors from the post's `authors` frontmatter
+(resolved through `docs/blog/authors.json`) are credited in the Hashnode subtitle
+(*"By A & B"*) and in a linked byline at the top of the post body.
+
+**Original source and date:** each post's `originalArticleURL` (canonical) points at its
+kernel.yaala.ai page, and `publishedAt` is backdated to the date it went live on the
+website - the frontmatter `date` when set, otherwise the `YYYY-MM-DD-` filename prefix
+(the same rule Docusaurus uses). A footer line also links back to the website.
+
+**Requirements:** Hashnode's GraphQL API (`https://gql-beta.hashnode.com`; the old
+`gql.hashnode.com` was retired on 2026-05-13) needs the publication to be on the **Pro**
+plan, for reads and writes alike.
 
 **Usage:**
 ```bash
-pip install pyyaml markdown
+pip install pyyaml
 
-export MEDIUM_INTEGRATION_TOKEN=...        # required
-export MEDIUM_PUBLICATION_ID=...           # optional; omit to post to the personal profile
+export HASHNODE_PAT=...                  # Personal Access Token (Account settings -> Developer)
+export HASHNODE_PUBLICATION_ID=...       # the publication to publish to
 
-# Find the publicationId to put in MEDIUM_PUBLICATION_ID
-python scripts/sync_medium_blog.py --list-publications
+# Find the id to put in HASHNODE_PUBLICATION_ID
+python scripts/sync_hashnode_blog.py --find-publication agentkernel.hashnode.dev
 
-# Preview what would be created, without calling the Medium API
-python scripts/sync_medium_blog.py --dry-run
+# Write the Markdown that would be sent next to each post (<post>.hashnode-preview.md, gitignored); no token needed
+python scripts/sync_hashnode_blog.py --preview
 
-# Create Medium drafts for every not-yet-synced post
-python scripts/sync_medium_blog.py
+# Print what would be published/updated, without calling the Hashnode API
+python scripts/sync_hashnode_blog.py --dry-run
+
+# Publish new posts and update changed ones
+python scripts/sync_hashnode_blog.py
+
+# Sync just one post (repeat --post for several)
+python scripts/sync_hashnode_blog.py --post 2026-09-14-scheduled-tasks.md
 ```
 
 **Options:**
 - `--blog-dir`: directory of blog markdown files (default: `docs/blog`)
-- `--state-file`: path to the sync-state JSON file (default: `<blog-dir>/.medium-sync-state.json`)
-- `--site-url`: canonical site origin used for `canonicalUrl` and for absolutizing image/link paths (default: `https://kernel.yaala.ai`)
-- `--publish-status`: `draft` (default), `public`, or `unlisted` - kept as `draft` in CI so a human reviews and publishes on Medium's side
-- `--notify-followers`: notify the account's Medium followers on publish (default: off)
-- `--dry-run`: print what would be created without writing to Medium or the state file
-- `--list-publications`: print the publications this token can post to, then exit
+- `--state-file`: path to the sync-state JSON file (default: `<blog-dir>/.hashnode-sync-state.json`)
+- `--site-url`: canonical site origin used for `originalArticleURL` and for absolutizing image/link paths (default: `https://kernel.yaala.ai`)
+- `--preview`: write the rendered Markdown and post metadata to `<post>.hashnode-preview.md`; no API calls
+- `--dry-run`: print what would be published or updated without writing to Hashnode or the state file
+- `--find-publication HOST`: print the id of the publication at `HOST`, then exit
+- `--post FILE`: only sync this post (file name under `--blog-dir`); repeatable. Default: every post
 
-**Original publish date:** Medium's API has no field for a post's original date, so the
-script writes it into the post body instead - the footer reads *"Originally published on
-14 September 2026 at kernel.yaala.ai"*. The date comes from the post's frontmatter `date`
-when set, otherwise from the `YYYY-MM-DD-` filename prefix (the same rule Docusaurus uses).
+**Content conversion:** Docusaurus-only syntax is rewritten into plain Markdown - `<Tabs>`
+become headed sections, `:::` admonitions become blockquotes, JSX `<div>` image/badge/caption
+blocks become Markdown images and italic captions, the leading `# Title` is dropped (Hashnode
+renders the title itself), and root-relative links/images are made absolute.
 
-**Opting a post out:** add `medium: false` to that post's frontmatter.
+**Opting a post out:** add `hashnode: false` to that post's frontmatter.
 
-> A `preview_medium_post.py` helper that runs just `sync_medium_blog.py`'s parsing/rendering
-> step against a single post (no token, no network, no sync-state write) lives in
-> `Scratches/10.medium-blog-sync/` - it's a local testing aid, not a tracked repo script.
+**CI secrets:** `HASHNODE_PAT` and `HASHNODE_PUBLICATION_ID` (GitHub repo -> Settings ->
+Secrets and variables -> Actions). If either is missing, the workflow job skips the sync.
+
+**Syncing a single post from CI:** run the *Deploy GitHub Pages* workflow manually (Actions ->
+Run workflow) and fill in `hashnode_post` with the blog file name. Pushes to `develop` still
+sync every new/changed post.
 
 ## bump_version.py
 

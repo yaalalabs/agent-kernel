@@ -7,6 +7,11 @@ on:
     paths:
       - 'docs/**'
   workflow_dispatch:
+    inputs:
+      hashnode_post:
+        description: 'Sync only this blog file to Hashnode (e.g. 2026-09-14-scheduled-tasks.md). Leave empty to sync all new/changed posts.'
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -56,8 +61,8 @@ jobs:
         id: deployment
         uses: actions/deploy-pages@v5
 
-  sync-medium:
-    name: Sync new blog posts to Medium
+  sync-hashnode:
+    name: Sync blog posts to Hashnode
     runs-on: ubuntu-latest
     needs: deploy
     permissions:
@@ -74,30 +79,36 @@ jobs:
           python-version: '3.12'
 
       - name: Install dependencies
-        run: pip install pyyaml markdown
+        run: pip install pyyaml
 
       - name: Configure git
         run: |
           git config user.name "agent-kernel-ci[bot]"
           git config user.email "agent-kernel-ci[bot]@users.noreply.github.com"
 
-      - name: Sync not-yet-published posts to Medium
+      - name: Publish new and update changed posts on Hashnode
         env:
-          MEDIUM_INTEGRATION_TOKEN: ${{ secrets.MEDIUM_INTEGRATION_TOKEN }}
-          MEDIUM_PUBLICATION_ID: ${{ secrets.MEDIUM_PUBLICATION_ID }}
+          HASHNODE_PAT: ${{ secrets.HASHNODE_PAT }}
+          HASHNODE_PUBLICATION_ID: ${{ secrets.HASHNODE_PUBLICATION_ID }}
+          HASHNODE_POST: ${{ inputs.hashnode_post }}
         run: |
-          if [ -z "$MEDIUM_INTEGRATION_TOKEN" ]; then
-            echo "MEDIUM_INTEGRATION_TOKEN secret is not set - skipping Medium sync."
+          if [ -z "$HASHNODE_PAT" ] || [ -z "$HASHNODE_PUBLICATION_ID" ]; then
+            echo "HASHNODE_PAT / HASHNODE_PUBLICATION_ID secrets are not set - skipping Hashnode sync."
             exit 0
           fi
-          python scripts/sync_medium_blog.py --publish-status draft
+          if [ -n "$HASHNODE_POST" ]; then
+            python scripts/sync_hashnode_blog.py --post "$HASHNODE_POST"
+          else
+            python scripts/sync_hashnode_blog.py
+          fi
 
-      - name: Commit updated Medium sync state
+      - name: Commit updated Hashnode sync state
+        if: always()
         run: |
-          if [ -n "$(git status --porcelain docs/blog/.medium-sync-state.json)" ]; then
-            git add docs/blog/.medium-sync-state.json
-            git commit -m "chore: record blog posts synced to Medium"
+          if [ -n "$(git status --porcelain docs/blog/.hashnode-sync-state.json)" ]; then
+            git add docs/blog/.hashnode-sync-state.json
+            git commit -m "chore: record blog posts synced to Hashnode"
             git push
           else
-            echo "No new Medium posts synced."
+            echo "No Hashnode sync state changes."
           fi
