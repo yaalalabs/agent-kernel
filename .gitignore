@@ -11,3 +11,5 @@ pytest-report.xml
 *.pip-cache
 .kiro
 .claude/settings.local.json
+docs/blog/*.hashnode-preview.md
+docs/blog/*.devto-preview.md
