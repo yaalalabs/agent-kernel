@@ -318,6 +318,131 @@ class TestRealtimePacing:
         assert kinds[-1] == "done"
 
 
+class TestRealtimeBargeIn:
+    """Barge-in against the pool's paced audio: ``speech_started`` interrupts only while audio is queued."""
+
+    @staticmethod
+    def _queued(conn):
+        return [item[0] for item in list(conn._audio_queue._queue)]
+
+    @pytest.mark.asyncio
+    async def test_speech_started_with_no_queued_audio_is_ignored(self, monkeypatch):
+        """The ordinary start of a user's turn must not reach the edge as an interrupt, or it would
+        clear playback and drop the transcript of the response that follows."""
+        monkeypatch.setattr(QueueTransportFactory, "create", staticmethod(lambda *a, **k: InMemoryTransport()))
+        conn = _connection(loop=asyncio.get_running_loop())
+
+        await conn.handle_framework_event("speech_started", {})
+
+        assert self._queued(conn) == []
+
+    @pytest.mark.asyncio
+    async def test_speech_started_over_queued_audio_interrupts_and_keeps_done(self, monkeypatch):
+        """The model finished generating but its paced audio is still queued: talking over it is a
+        barge-in, and the turn's done still follows so the edge resets its interrupted state."""
+        monkeypatch.setattr(QueueTransportFactory, "create", staticmethod(lambda *a, **k: InMemoryTransport()))
+        conn = _connection(loop=asyncio.get_running_loop())
+
+        await conn.handle_framework_event("audio_delta", {"delta": "QUFB"})
+        await conn.handle_framework_event("audio_delta", {"delta": "QUFB"})
+        await conn.handle_framework_event("done", {"status": "completed"})
+        await conn.handle_framework_event("speech_started", {})
+
+        assert self._queued(conn) == ["interrupt", "done"]
+        assert conn._queued_audio == 0
+
+    @pytest.mark.asyncio
+    async def test_interrupt_keeps_a_queued_done_behind_it(self, monkeypatch):
+        """Regression: the drain used to drop a queued done too, leaving the edge's interrupted state
+        set into the next turn, which then lost its transcript."""
+        monkeypatch.setattr(QueueTransportFactory, "create", staticmethod(lambda *a, **k: InMemoryTransport()))
+        conn = _connection(loop=asyncio.get_running_loop())
+
+        await conn.handle_framework_event("audio_delta", {"delta": "QUFB"})
+        await conn.handle_framework_event("done", {"status": "completed"})
+        await conn.handle_framework_event("audio_delta", {"delta": "QUFB"})
+        await conn.handle_framework_event("interrupt", {})
+
+        assert self._queued(conn) == ["interrupt", "done"]
+
+    @pytest.mark.asyncio
+    async def test_emitted_audio_no_longer_counts_as_queued(self, monkeypatch):
+        """Once the pacing loop has emitted a turn's audio, a later speech_started is a new turn."""
+        transport = InMemoryTransport()
+        monkeypatch.setattr(QueueTransportFactory, "create", staticmethod(lambda *a, **k: transport))
+        conn = _connection(loop=asyncio.get_running_loop())
+        await conn.connect()
+
+        await conn.handle_framework_event("audio_delta", {"delta": "QUFB"})
+        await conn.handle_framework_event("done", {"status": "completed"})
+        await asyncio.sleep(0.1)
+        await conn.handle_framework_event("speech_started", {})
+        await asyncio.sleep(0.1)
+        conn._pacing_task.cancel()
+
+        consumer = transport.create_consumer(QueueName.OUTPUT)
+        kinds = []
+        while True:
+            messages = consumer.fetch(10, 0.2)
+            if not messages:
+                break
+            for message in messages:
+                body = json.loads(message.body)
+                kinds.append("done" if body.get("done") else body["event"]["type"])
+                consumer.ack(message)
+
+        assert kinds == ["audio_delta", "done"]
+
+
+class TestOpenAIBargeIn:
+    """The OpenAI adapter reports ``interrupt`` only while a response is in flight."""
+
+    @staticmethod
+    def _adapter():
+        from agentkernel.framework.openai.openai import OpenAIRealtimeAdapter
+
+        adapter = OpenAIRealtimeAdapter()
+        adapter._session = None
+        adapter.events = []
+
+        async def callback(event_type, data):
+            adapter.events.append(event_type)
+
+        adapter._callback = callback
+        return adapter
+
+    @staticmethod
+    def _event(event_type, **fields):
+        return types.SimpleNamespace(type=event_type, **fields)
+
+    @pytest.mark.asyncio
+    async def test_speech_started_outside_a_response_is_reported_as_speech_started(self):
+        adapter = self._adapter()
+
+        await adapter._handle_message(self._event("input_audio_buffer.speech_started"))
+
+        assert adapter.events == ["speech_started"]
+
+    @pytest.mark.asyncio
+    async def test_speech_started_during_a_response_is_an_interrupt(self):
+        adapter = self._adapter()
+
+        await adapter._handle_message(self._event("response.created"))
+        await adapter._handle_message(self._event("input_audio_buffer.speech_started"))
+
+        assert adapter.events == ["interrupt"]
+
+    @pytest.mark.asyncio
+    async def test_speech_started_after_response_done_is_not_an_interrupt(self):
+        adapter = self._adapter()
+
+        await adapter._handle_message(self._event("response.created"))
+        await adapter._handle_message(self._event("response.done", response=types.SimpleNamespace(status="completed", output=[])))
+        await adapter._handle_message(self._event("input_audio_buffer.speech_started"))
+
+        assert adapter.events == ["done", "speech_started"]
+
+
 class TestRealtimeFailureHandling:
     """A dead model socket must be surfaced to the edge and evicted, not written to forever."""
 

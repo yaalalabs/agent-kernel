@@ -314,15 +314,15 @@ class RealtimeAgentRunner(AgentRunner):
         self._log.debug(f"[REALTIME CHUNK] request_id={request_id} (receive_count={message.receive_count})")
 
     def on_permanent_failure(self, message: QueueMessage) -> None:
-            """Tell the room its input failed, as a marked error chunk its edge can deliver. Catches own exceptions."""
-            self._log.error(f"Permanent failure for message {message.message_id}")
-            try:
-                max_receive_count = AKConfig.get().execution.queues.input.max_receive_count
-                error_chunk = StreamChunk(error=f"Failed to process message after {max_receive_count} retries", done=True).model_dump(exclude_none=True)
-                # The input message carries no realtime marker (the pool stamps it on output), so it is added here;
-                # without it the Response Handler routes the failure to a webhook outbound adapter this edge lacks.
-                self._send_to_output(
-                    message, error_chunk, status_code=None, dedup_suffix=f"{message.receive_count}-error", extra_attributes={ATTR_REALTIME: "true"}
-                )
-            except Exception:
-                self._log.exception("Failed to send permanent-failure error chunk to output queue")
+        """Tell the room its input failed, as a marked error chunk its edge can deliver. Catches own exceptions."""
+        self._log.error(f"Permanent failure for message {message.message_id}")
+        try:
+            max_receive_count = AKConfig.get().execution.queues.input.max_receive_count
+            error_chunk = StreamChunk(error=f"Failed to process message after {max_receive_count} retries", done=True).model_dump(exclude_none=True)
+            # The input message carries no realtime marker (the pool stamps it on output), so it is added here;
+            # without it the Response Handler routes the failure to a webhook outbound adapter this edge lacks.
+            self._send_to_output(
+                message, error_chunk, status_code=None, dedup_suffix=f"{message.receive_count}-error", extra_attributes={ATTR_REALTIME: "true"}
+            )
+        except Exception:
+            self._log.exception("Failed to send permanent-failure error chunk to output queue")

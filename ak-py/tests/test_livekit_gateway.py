@@ -256,3 +256,25 @@ class TestOutboundDelivery:
         assert source.clears == 1
         assert published == []  # the interrupted sentence is never published
         assert gateway._interrupted is False
+
+    @pytest.mark.asyncio
+    async def test_the_turn_after_an_interrupted_one_is_published(self, monkeypatch):
+        """The interrupted turn's done resets the state, so the next turn is published normally."""
+        gateway = _gateway()
+        gateway.audio_source = _AudioSource()
+        gateway._loop = asyncio.get_running_loop()
+
+        published = []
+
+        async def fake_publish(text):
+            published.append(text)
+
+        monkeypatch.setattr(gateway, "_publish_text", fake_publish)
+
+        await gateway.deliver_chunk(StreamChunk(event=TextDelta(message_id="m1", content="cut off")), {})
+        await gateway.deliver_chunk(StreamChunk(event=Interrupt()), {})
+        await gateway.deliver_chunk(StreamChunk(done=True), {})
+        await gateway.deliver_chunk(StreamChunk(event=TextDelta(message_id="m2", content="next answer")), {})
+        await gateway.deliver_chunk(StreamChunk(done=True), {})
+
+        assert published == ["next answer"]

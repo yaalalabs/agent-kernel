@@ -40,7 +40,11 @@ class RealtimeRunner(Runner):
         Establishes a persistent socket connection to the framework's Realtime API backend.
         :param session: The session to bind this connection to.
         :param agent: The agent instance.
-        :param callback: The event callback from the pool.
+        :param callback: The event callback from the pool, called as ``callback(event_type, data)``
+            with ``audio_delta``, ``transcript_delta``, ``tool_call``, ``done``, ``error``,
+            ``interrupt`` (the user spoke while the model was responding) or ``speech_started``
+            (the user spoke outside a response; the pool treats it as a barge-in only while it
+            still holds audio the user has not heard).
         """
         raise NotImplementedError()
 

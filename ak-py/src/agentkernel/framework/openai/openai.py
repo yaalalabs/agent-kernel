@@ -406,6 +406,9 @@ class OpenAIRealtimeAdapter(BaseRealtimeRunner):
         # True once disconnect() runs; the listen loop suppresses its error callback then so a
         # normal shutdown does not surface as a model-socket failure.
         self._closing = False
+        # True from ``response.created`` until ``response.done``: while it is set, the user starting
+        # to speak cuts off a response the model is still generating.
+        self._response_in_flight = False
 
     @staticmethod
     def _realtime_model(agent: BaseAgent) -> str:
@@ -509,9 +512,19 @@ class OpenAIRealtimeAdapter(BaseRealtimeRunner):
             if text and self._session:
                 openai_session = OpenAISession._session(self._session)
                 await openai_session.add_items([{"role": "user", "content": text}])
+        elif event_type == "response.created":
+            self._response_in_flight = True
         elif event_type == "input_audio_buffer.speech_started":
-            await self._callback("interrupt", {})
+            # During a response this is a barge-in (server VAD cancels the response itself). Outside
+            # one it is usually the start of the user's turn, but the pool may still be pacing the
+            # finished response's audio, so it is reported as speech_started and the pool decides.
+            if self._response_in_flight:
+                self._response_in_flight = False
+                await self._callback("interrupt", {})
+            else:
+                await self._callback("speech_started", {})
         elif event_type == "response.done":
+            self._response_in_flight = False
             response = getattr(event, "response", None)
             status = getattr(response, "status", None)
 

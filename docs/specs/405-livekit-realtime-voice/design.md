@@ -88,6 +88,9 @@ LiveKit voice gateway. Reuse the queue pipeline while keeping model adapters beh
 - Audio and terminal/control events must retain per-session queue order.
   - `done` must follow the completed turn's queued audio.
   - On interruption, discard audio still waiting in the pool and deliver `Interrupt` after chunks already emitted.
+  - Keep queued `done` events on interruption and deliver them after the `Interrupt`, so the edge resets its interrupted state on the cut-off turn rather than the next one.
+- Adapters report `interrupt` only when the user speaks while the model is responding; speech outside a response is reported as `speech_started`.
+  - The pool treats `speech_started` as an interruption only while it still holds paced audio, since the model finishes generating before playback ends; otherwise it is the start of the user's turn.
 - The gateway must clear buffered playback on `Interrupt` and suppress publication of the interrupted turn's transcript.
 - Outbound staging must be bounded and apply backpressure to the model-event reader when full.
   - The current pool queue has a capacity of 1,024 events; it is not an unbounded adapter queue.

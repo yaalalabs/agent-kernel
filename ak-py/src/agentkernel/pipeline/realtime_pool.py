@@ -82,6 +82,9 @@ class RealtimeConnection:
         self._transport = QueueTransportFactory.create()
         # Audio + terminal/control events are paced here, once for every framework adapter.
         self._audio_queue: asyncio.Queue = asyncio.Queue(maxsize=1024)
+        # Audio deltas in ``_audio_queue`` not yet emitted: the agent audio the user has still to
+        # hear, which is what makes a user starting to speak a barge-in.
+        self._queued_audio = 0
         self._pacing_task: Optional[asyncio.Task] = None
         self.last_activity_at: float = time.time()
 
@@ -109,19 +112,21 @@ class RealtimeConnection:
         ``_audio_queue`` so the pacing loop emits them in order at playback rate. The transcript
         streams immediately; a tool call runs on the loop. The adapters only report events in
         order — pacing is shared here for every framework.
+
+        ``interrupt`` is a barge-in the adapter saw while the model was responding. ``speech_started``
+        is the user starting to speak outside a response: the model has finished generating, but
+        paced audio may still be queued here, so it is a barge-in only while that audio remains;
+        otherwise it is the ordinary start of the user's turn and is ignored.
         """
         self.last_activity_at = time.time()
         if event_type == "audio_delta":
+            self._queued_audio += 1
             await self._audio_queue.put(("audio_delta", data))
         elif event_type == "interrupt":
-            # Drop audio not yet emitted, then queue the interrupt behind it so it cannot
-            # overtake audio already in flight to the edge.
-            while not self._audio_queue.empty():
-                try:
-                    self._audio_queue.get_nowait()
-                except asyncio.QueueEmpty:
-                    break
-            await self._audio_queue.put(("interrupt", data))
+            await self._interrupt(data)
+        elif event_type == "speech_started":
+            if self._queued_audio > 0:
+                await self._interrupt(data)
         elif event_type == "done":
             await self._audio_queue.put(("done", data))
         elif event_type == "transcript_delta":
@@ -131,6 +136,27 @@ class RealtimeConnection:
             self.loop.create_task(self._execute_tool_and_reply(data["call_id"], data["name"], data["arguments"]))
         elif event_type == "error":
             await self._fail(data.get("message") or "realtime model socket error")
+
+    async def _interrupt(self, data: dict) -> None:
+        """Drop the audio not yet emitted and queue the interrupt ahead of the kept control events.
+
+        Only audio is dropped: a queued ``done`` still has to reach the edge, which resets its
+        interrupted state on it — dropping one would leave that state set into the next turn and
+        swallow that turn's transcript. The interrupt goes before the kept events so the edge sees
+        it before the ``done`` of the turn it cuts off, and it cannot overtake audio already emitted.
+        """
+        kept = []
+        while True:
+            try:
+                item = self._audio_queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+            if item[0] != "audio_delta":
+                kept.append(item)
+        self._queued_audio = 0
+        await self._audio_queue.put(("interrupt", data))
+        for item in kept:
+            await self._audio_queue.put(item)
 
     async def _fail(self, message: str) -> None:
         """Report a dead model socket to the edge, then mark the connection for eviction.
@@ -168,6 +194,7 @@ class RealtimeConnection:
                         audio_played_ms = 0.0
                     continue
 
+                self._queued_audio = max(0, self._queued_audio - 1)
                 if audio_played_ms == 0.0:
                     item_start_time = time.time()
 
