@@ -717,17 +717,25 @@ class OpenAIToolBuilder(ToolBuilder):
     """
 
     @classmethod
-    def bind(cls, funcs: list[Callable]) -> list[Any]:
+    def bind(cls, funcs: list[Callable], **options: Any) -> list[Any]:
         """
         Bind generic tool functions to OpenAI Agents SDK tool definitions.
 
+        Keyword options are forwarded to `function_tool` untouched and apply to every function in
+        the call, so tools wanting different options are bound in separate calls. Without this a
+        gated tool could not be declared through the builder at all: `needs_approval` is one of
+        `function_tool`'s keyword-only arguments, and for this SDK that flag *is* the
+        human-in-the-loop pause. A caller would have been forced back to the decorator, giving up
+        the framework-free tool function the builder exists to allow.
+
         :param funcs: List of generic tool functions to bind.
+        :param options: Keyword arguments passed to `function_tool`, e.g. `needs_approval=True`.
         :return: List of OpenAI-compatible tool definitions.
-        :raises TypeError: If any item in funcs is not callable.
+        :raises TypeError: If any item in funcs is not callable, or an option is not one the SDK takes.
         """
         tools = []
         for func in funcs:
             if not callable(func):
                 raise TypeError(f"Expected a callable, got {type(func).__name__}")
-            tools.append(function_tool(func))
+            tools.append(function_tool(func, **options))
         return tools

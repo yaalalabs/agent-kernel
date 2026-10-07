@@ -162,6 +162,16 @@ A `LongRunningFunctionTool` pauses for a **result**; a tool declared `require_co
 a **verdict**, arriving as ADK's own `adk_request_confirmation` call. They map to `tool_call` and
 `confirmation` respectively.
 
+Build a confirmation tool natively, or let the tool builder forward the flag and keep the tool a
+plain function with nothing framework-specific on it. The options apply to every function in the
+call, so tools wanting different ones are bound separately:
+
+```python
+def issue_refund(order_id: str) -> str: ...
+
+tools = GoogleADKToolBuilder.bind([issue_refund], require_confirmation=True)
+```
+
 Enabling this changes how every ADK run is set up, and the consequences are real:
 
 - **Resumability is on for every run.** `ResumabilityConfig(is_resumable=True)` lives on an `App`, so

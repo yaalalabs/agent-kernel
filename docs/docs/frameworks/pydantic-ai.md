@@ -261,6 +261,16 @@ This is the framework's requirement, not Agent Kernel's: a pause *is* a run whos
 the run fails with *"A deferred tool call was present, but `DeferredToolRequests` is not among
 output types"* however the tools are declared.
 
+The tools themselves go on the agent natively, as above, or through the tool builder, which forwards
+its keyword options to `Tool` and leaves them plain functions. The options apply to every function in
+the call, so tools wanting different ones are bound separately:
+
+```python
+def issue_refund(order_id: str) -> str: ...
+
+tools = PydanticAIToolBuilder.bind([issue_refund], requires_approval=True)
+```
+
 A deferred call's answer is supplied as the tool's result, passed through exactly as given: send a
 list and the model receives a list, send a string and it receives a string.
 

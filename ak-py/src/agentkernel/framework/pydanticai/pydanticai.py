@@ -939,17 +939,24 @@ class PydanticAIToolBuilder(ToolBuilder):
     """
 
     @classmethod
-    def bind(cls, funcs: list[Callable]) -> list[Tool]:
+    def bind(cls, funcs: list[Callable], **options: Any) -> list[Tool]:
         """
         Bind generic tool functions to Pydantic AI ``Tool`` definitions.
 
+        Keyword options are forwarded to ``Tool`` untouched and apply to every function in the call,
+        so tools wanting different options are bound in separate calls. ``requires_approval`` is the
+        one that matters: it is this framework's gate for a tool needing a verdict, so without
+        forwarding, a gated tool could only be built by constructing ``Tool`` directly, giving up the
+        framework-free tool function the builder exists to allow.
+
         :param funcs: List of generic tool functions to bind.
+        :param options: Keyword arguments passed to ``Tool``, e.g. ``requires_approval=True``.
         :return: List of Pydantic AI ``Tool`` definitions.
-        :raises TypeError: If any item in funcs is not callable.
+        :raises TypeError: If any item in funcs is not callable, or an option ``Tool`` does not take.
         """
         tools = []
         for func in funcs:
             if not callable(func):
                 raise TypeError(f"Expected a callable, got {type(func).__name__}")
-            tools.append(Tool(func))
+            tools.append(Tool(func, **options))
         return tools

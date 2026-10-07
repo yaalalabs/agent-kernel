@@ -150,6 +150,16 @@ Declare a gated tool with the SDK's own flag:
 def issue_refund(order_id: str) -> str: ...
 ```
 
+Or pass it to the tool builder, which forwards its keyword options to `function_tool` and leaves the
+tool a plain function with nothing framework-specific on it. The options apply to every function in
+the call, so tools wanting different ones are bound separately:
+
+```python
+def issue_refund(order_id: str) -> str: ...
+
+tools = OpenAIToolBuilder.bind([issue_refund], needs_approval=True)
+```
+
 The run pauses before the tool executes and Agent Kernel returns a paused reply. Two limits are
 specific to this adapter, and both are reported rather than silently worked around:
 

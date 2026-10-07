@@ -136,6 +136,42 @@ class TestGoogleADKToolBuilderBind:
         assert tools[2].name == "no_params"
 
 
+# bind – keyword options forwarded to FunctionTool
+class TestGoogleADKToolBuilderOptions:
+    """
+    Without forwarding, a gated tool could not be declared through the builder at all.
+
+    `require_confirmation` is ADK's human-in-the-loop gate, so it stands in here for the rest.
+    Asserted on the private attribute because ADK keeps no plain accessor for it — the public
+    `check_require_confirmation` is a coroutine needing a live `ToolContext`, which proves the
+    runner's behaviour rather than that the builder passed the flag along, and the runner tests
+    already cover that.
+    """
+
+    def test_an_option_reaches_the_tool(self):
+        tools = GoogleADKToolBuilder.bind([get_weather], require_confirmation=True)
+        assert tools[0]._require_confirmation is True
+
+    def test_the_adk_default_is_untouched_when_no_option_is_given(self):
+        tools = GoogleADKToolBuilder.bind([get_weather])
+        assert tools[0]._require_confirmation is False
+
+    def test_an_option_applies_to_every_function_in_the_call(self):
+        """Why tools wanting different options are bound in separate calls."""
+        tools = GoogleADKToolBuilder.bind([get_weather, add], require_confirmation=True)
+        assert [t._require_confirmation for t in tools] == [True, True]
+
+    def test_the_wrapping_still_happens_with_an_option(self):
+        """The option must not displace `_wrap`, which is what activates the AK ToolContext."""
+        tools = GoogleADKToolBuilder.bind([get_weather], require_confirmation=True)
+        assert tools[0].name == "get_weather"
+        assert "tool_context" in inspect.signature(tools[0].func).parameters
+
+    def test_an_option_adk_does_not_take_raises(self):
+        with pytest.raises(TypeError):
+            GoogleADKToolBuilder.bind([get_weather], not_an_option=True)
+
+
 # Tool metadata – name, description
 class TestToolMetadata:
 

@@ -6,9 +6,10 @@ carries on from that decision.
 The whole setup is one argument:
 
 ```python
-@function_tool(needs_approval=True)
 def issue_refund(order_id: str) -> str:
     ...
+
+tools = OpenAIToolBuilder.bind([issue_refund], needs_approval=True)
 ```
 
 The OpenAI Agents SDK stops before running the tool and hands the pending call back. Agent Kernel

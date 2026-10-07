@@ -304,6 +304,15 @@ class <Name>ToolBuilder(ToolBuilder):
         return tools
 ```
 
+Add `**options` and forward them when the framework's own tool wrapper takes per-tool arguments that
+change what the tool *is*. Three adapters do — OpenAI (`function_tool`), Google ADK (`FunctionTool`)
+and Pydantic AI (`Tool`) — and in each the framework's human-in-the-loop gate (`needs_approval`,
+`require_confirmation`, `requires_approval`) is exactly such an argument: without forwarding, a gated
+tool could only be declared natively, giving up the framework-free function the builder exists to
+allow. Options apply to every function in the call, so tools wanting different ones are bound in
+separate calls. Do not add the parameter when the framework has no such arguments — smolagents'
+`tool()` takes only the function.
+
 ### 6. Implement the Module
 
 Subclass `Module` from `agentkernel.core.module`:

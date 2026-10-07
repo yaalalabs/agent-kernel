@@ -1007,16 +1007,24 @@ class GoogleADKToolBuilder(ToolBuilder):
     """
 
     @classmethod
-    def bind(cls, funcs: list[Callable]) -> list[Any]:
+    def bind(cls, funcs: list[Callable], **options: Any) -> list[Any]:
         """
         Bind generic tool functions to ADK FunctionTool instances.
 
+        Keyword options are forwarded to `FunctionTool` untouched and apply to every function in the
+        call, so tools wanting different options are bound in separate calls. `require_confirmation`
+        is the one that matters: it is this framework's human-in-the-loop gate, so without
+        forwarding, a gated tool could only be built by constructing `FunctionTool` directly, giving
+        up the framework-free tool function the builder exists to allow.
+
         :param funcs: List of generic tool functions to bind.
+        :param options: Keyword arguments passed to `FunctionTool`, e.g. `require_confirmation=True`.
         :return: List of ADK-compatible FunctionTool instances.
+        :raises TypeError: If any item in funcs is not callable, or an option ADK does not take.
         """
         tools = []
         for func in funcs:
-            tools.append(FunctionTool(cls._wrap(func)))
+            tools.append(FunctionTool(cls._wrap(func), **options))
         return tools
 
     @classmethod

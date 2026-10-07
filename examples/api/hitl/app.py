@@ -6,8 +6,8 @@ from agentkernel.agui import AGUIRequestHandler
 from agentkernel.api import RESTAPI
 from agentkernel.auth import Authoriser
 from agentkernel.langgraph import LangGraphModule
-from agentkernel.openai import OpenAIModule
-from agents import Agent, function_tool
+from agentkernel.openai import OpenAIModule, OpenAIToolBuilder
+from agents import Agent
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
 from langchain_core.messages import SystemMessage
@@ -18,10 +18,6 @@ from langgraph.types import interrupt
 REFUNDS: Dict[str, float] = {"ORD-1001": 42.50, "ORD-1002": 980.00}
 
 
-# `needs_approval=True` is the whole of the human-in-the-loop setup. The SDK stops before running
-# this tool and hands the pending call back instead; Agent Kernel turns that into a paused reply.
-# The tool body only runs once a human has approved it.
-@function_tool(needs_approval=True)
 def issue_refund(order_id: str) -> str:
     """
     Refund an order. Requires human approval before it runs.
@@ -35,7 +31,6 @@ def issue_refund(order_id: str) -> str:
     return f"Refunded ${amount:.2f} for {order_id}."
 
 
-@function_tool
 def lookup_order(order_id: str) -> str:
     """
     Look up an order's refundable amount. Runs without approval.
@@ -53,7 +48,12 @@ support_agent = Agent(
         "You handle refund requests. Look the order up first, then issue the refund. "
         "If a refund was not carried out, say so plainly and do not claim it succeeded."
     ),
-    tools=[lookup_order, issue_refund],
+    # `needs_approval=True` is the whole of the human-in-the-loop setup, and the builder forwards it
+    # to the SDK — so the tool above stays a plain function with nothing framework-specific on it.
+    # The SDK stops before running that tool and hands the pending call back instead; Agent Kernel
+    # turns that into a paused reply. Its body runs only once a human has approved. The two tools are
+    # bound separately because the options apply to every function in a call.
+    tools=OpenAIToolBuilder.bind([lookup_order]) + OpenAIToolBuilder.bind([issue_refund], needs_approval=True),
     model="openai/gpt-4.1-mini",
 )
 
