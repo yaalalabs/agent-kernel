@@ -36,7 +36,6 @@ api = [
     { name = "uvicorn" },
 ]
 livekit = [
-    { name = "litellm" },
     { name = "livekit" },
     { name = "livekit-api" },
 ]

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import inspect
 import logging
 from collections.abc import AsyncGenerator
 from typing import Any, Callable, ClassVar, List, Mapping, Type
@@ -412,6 +413,8 @@ class OpenAIRealtimeRunner(BaseRealtimeRunner):
         # Function calls of the last completed response still awaiting their output; the follow-up
         # response is requested once, when the last of them is answered.
         self._pending_tool_calls: set[str] = set()
+        # The tools offered to the session at connect, by name; execute_tool runs only these.
+        self._tools: dict[str, FunctionTool] = {}
 
     @staticmethod
     def _realtime_model(agent: BaseAgent) -> str:
@@ -438,14 +441,19 @@ class OpenAIRealtimeRunner(BaseRealtimeRunner):
 
         try:
             sdk_agent = getattr(agent, "agent", None)
+            run_context = RunContextWrapper(context=self._load_framework_context(session))
+            self._tools = await self._offered_tools(sdk_agent, run_context)
             session_config = {
                 "type": "realtime",
-                "tools": self._tools_payload(sdk_agent),
+                "tools": [
+                    {"type": "function", "name": tool.name, "description": tool.description, "parameters": tool.params_json_schema}
+                    for tool in self._tools.values()
+                ],
                 "audio": {"input": {"turn_detection": {"type": "server_vad", "interrupt_response": True, "create_response": True}}},
             }
             # Resolved the way the SDK resolves them for a run (a string, or a callable over the run
             # context, here the session's framework_context). None leaves the server's own default.
-            instructions = await sdk_agent.get_system_prompt(RunContextWrapper(context=self._load_framework_context(session)))
+            instructions = await sdk_agent.get_system_prompt(run_context)
             if instructions:
                 session_config["instructions"] = instructions
 
@@ -459,19 +467,36 @@ class OpenAIRealtimeRunner(BaseRealtimeRunner):
 
         self._listen_task = asyncio.create_task(self._listen())
 
-    def _tools_payload(self, sdk_agent: Agent) -> list[dict]:
-        """Describe the agent's function tools to the Realtime session.
+    async def _offered_tools(self, sdk_agent: Agent, run_context: RunContextWrapper) -> dict[str, FunctionTool]:
+        """The agent's tools the Realtime session may call, by name.
 
         The Realtime API calls only function tools; any other tool type (hosted tools such as web
-        search) cannot run over the socket, so it is skipped with a warning rather than silently.
+        search) cannot run over the socket. A tool that needs approval or carries tool guardrails
+        is not offered either: the SDK's runner applies those around a call, and this runner calls
+        the tool directly, so offering it would skip a check its author asked for. Both are skipped
+        with a warning rather than silently. A disabled tool (``is_enabled``) is left out, as the
+        SDK's own runner leaves it out.
         """
-        payload = []
+        tools = {}
         for tool in getattr(sdk_agent, "tools", None) or []:
-            if isinstance(tool, FunctionTool):
-                payload.append({"type": "function", "name": tool.name, "description": tool.description, "parameters": tool.params_json_schema})
-            else:
-                _log.warning(f"Tool {getattr(tool, 'name', type(tool).__name__)} is not a function tool; the Realtime API cannot call it")
-        return payload
+            name = getattr(tool, "name", type(tool).__name__)
+            if not isinstance(tool, FunctionTool):
+                _log.warning(f"Tool {name} is not a function tool; the Realtime API cannot call it")
+            elif tool.needs_approval is not False or tool.tool_input_guardrails or tool.tool_output_guardrails:
+                _log.warning(f"Tool {name} needs approval or has tool guardrails, which REALTIME mode does not apply; it is not offered")
+            elif await self._is_enabled(tool, run_context, sdk_agent):
+                tools[name] = tool
+        return tools
+
+    @staticmethod
+    async def _is_enabled(tool: FunctionTool, run_context: RunContextWrapper, sdk_agent: Agent) -> bool:
+        """Evaluate a tool's ``is_enabled``: a bool, or a (possibly async) callable over the run context."""
+        enabled = tool.is_enabled
+        if callable(enabled):
+            enabled = enabled(run_context, sdk_agent)
+            if inspect.isawaitable(enabled):
+                enabled = await enabled
+        return bool(enabled)
 
     async def _listen(self) -> None:
         """Report model events to the pool, in order. The pool paces audio and emits chunks."""
@@ -554,27 +579,31 @@ class OpenAIRealtimeRunner(BaseRealtimeRunner):
 
         Unlike a unary run, a realtime tool call never writes ``framework_context`` back: changes a
         tool makes to ``wrapper.context`` do not persist.
+
+        Only a tool offered to the session at connect runs, and it runs through the SDK's
+        ``invoke_function_tool``, which applies the tool's ``timeout_seconds``.
         """
+        from agents.tool import invoke_function_tool
         from agents.tool_context import ToolContext as SDKToolContext
         from agents.usage import Usage
 
-        sdk_agent = getattr(self._agent, "agent", None)
-        for tool in getattr(sdk_agent, "tools", None) or []:
-            if getattr(tool, "name", None) == name:
-                sdk_context = SDKToolContext(
-                    context=self._load_framework_context(context.session),
-                    usage=Usage(),
-                    tool_name=name,
-                    tool_call_id=call_id,
-                    tool_arguments=arguments,
-                )
-                context.set()
-                try:
-                    result = await tool.on_invoke_tool(sdk_context, arguments)
-                finally:
-                    context.reset()
-                return str(result) if result is not None else ""
-        return f"Error: Tool {name} not found"
+        tool = self._tools.get(name)
+        if tool is None:
+            return f"Error: Tool {name} not found"
+
+        sdk_context = SDKToolContext(
+            context=self._load_framework_context(context.session),
+            usage=Usage(),
+            tool_name=name,
+            tool_call_id=call_id,
+            tool_arguments=arguments,
+        )
+        context.set()
+        try:
+            result = await invoke_function_tool(function_tool=tool, context=sdk_context, arguments=arguments)
+        finally:
+            context.reset()
+        return str(result) if result is not None else ""
 
     async def disconnect(self) -> None:
         self._closing = True

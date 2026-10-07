@@ -16,7 +16,7 @@ from google.adk.agents.run_config import RunConfig, StreamingMode
 from google.adk.events import Event, EventActions
 from google.adk.runners import Runner
 from google.adk.sessions import BaseSessionService, InMemorySessionService, State
-from google.adk.tools import FunctionTool, ToolContext
+from google.adk.tools import BaseTool, FunctionTool, ToolContext
 from google.genai import types
 from pydantic import ValidationError
 
@@ -567,7 +567,7 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
             raise ValueError(f"Agent '{getattr(agent, 'name', '?')}' must define its instruction as a string to run in REALTIME mode")
 
         declarations = []
-        for tool in getattr(sdk_agent, "tools", None) or []:
+        for tool in self._live_tools(sdk_agent, warn=True).values():
             try:
                 # ADK exposes a tool's FunctionDeclaration only through this protected method; it is
                 # what ADK's own flows send to the model, so the Live session sees the same schema.
@@ -587,6 +587,27 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
             input_audio_transcription=types.AudioTranscriptionConfig(),
             output_audio_transcription=types.AudioTranscriptionConfig(),
         )
+
+    def _live_tools(self, sdk_agent: Any, warn: bool = False) -> dict[str, BaseTool]:
+        """The ADK agent's tools the Live session can call, by name.
+
+        ADK accepts a plain function in ``tools`` and wraps it in a ``FunctionTool`` itself when it
+        runs the agent; this runner does the same, so a plain function works in REALTIME mode too.
+        A toolset (e.g. MCP) is resolved by ADK's own Runner from a run context, which a Live
+        socket does not have, so it is skipped.
+        :param sdk_agent: The ADK agent.
+        :param warn: Log the skipped toolsets (once, at connect).
+        """
+        tools: dict[str, BaseTool] = {}
+        for tool in getattr(sdk_agent, "tools", None) or []:
+            if isinstance(tool, BaseTool):
+                tools[tool.name] = tool
+            elif callable(tool):
+                wrapped = FunctionTool(tool)
+                tools[wrapped.name] = wrapped
+            elif warn:
+                self._log.warning(f"Tool {type(tool).__name__} is a toolset, which REALTIME mode does not resolve; it is not offered")
+        return tools
 
     async def connect(self, session: Session, agent: AKBaseAgent, callback: Callable) -> None:
         from google import genai
@@ -686,7 +707,8 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
     async def send_tool_result(self, call_id: str, result: str) -> None:
         if self._connection:
             name = self._tool_names.pop(call_id, call_id)
-            await self._connection.send_tool_response(function_responses=types.FunctionResponse(id=call_id, name=name, response={"output": result}))
+            # Wrapped as ADK wraps a plain tool result, so the model sees the same shape as on a normal run.
+            await self._connection.send_tool_response(function_responses=types.FunctionResponse(id=call_id, name=name, response={"result": result}))
 
     async def execute_tool(self, name: str, arguments: str, context: AKToolContext, call_id: str) -> str:
         """Invoke an ADK tool through ADK's own ``run_async`` with a real ToolContext.
@@ -700,13 +722,13 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
         from google.adk.agents.invocation_context import InvocationContext
         from google.adk.tools import ToolContext as ADKToolContext
 
-        sdk_agent = getattr(self._agent, "agent", None)
-        tool = next((t for t in getattr(sdk_agent, "tools", None) or [] if getattr(t, "name", None) == name), None)
-        if tool is None:
-            return f"Error: Tool {name} not found"
-
         if self._tool_session is None:
             raise RuntimeError("Gemini Live connection is not open: call connect() before executing tools")
+
+        sdk_agent = getattr(self._agent, "agent", None)
+        tool = self._live_tools(sdk_agent).get(name)
+        if tool is None:
+            return f"Error: Tool {name} not found"
 
         invocation_context = InvocationContext(
             session_service=self._tool_session_service,

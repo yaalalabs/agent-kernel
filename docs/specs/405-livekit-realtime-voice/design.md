@@ -54,6 +54,9 @@ LiveKit voice gateway. Reuse the queue pipeline while keeping model adapters beh
   - OpenAI instructions are resolved with the SDK's `get_system_prompt` over the session's framework context; none leaves the server default.
   - ADK instructions must be a string: an `InstructionProvider` is rejected with a clear error, and the agent's `description` is not used as an instruction.
   - Only function tools are offered to the OpenAI session; other tool types are skipped with a warning.
+  - OpenAI tools that need approval or carry tool guardrails are not offered, with a warning, since the runner calls tools directly and cannot apply those checks; disabled tools (`is_enabled`) are left out.
+  - OpenAI tool calls run only for offered tools, through the SDK's `invoke_function_tool`, so `timeout_seconds` applies.
+  - ADK plain-function tools are wrapped in `FunctionTool`, as ADK's own Runner does; toolsets are skipped with a warning; `require_confirmation` is enforced by ADK's `run_async`, which returns an error to the model.
 - Use the `Runner` suffix for both implementations of the core contract.
   - The implementations are `OpenAIRealtimeRunner` and `GoogleADKRealtimeRunner`.
 
@@ -152,6 +155,7 @@ LiveKit voice gateway. Reuse the queue pipeline while keeping model adapters beh
   - OpenAI Realtime sessions last at most 60 minutes, with the same outcome.
 - Gemini `tool_call_cancellation` is not handled: a tool call the user interrupted still runs and its response is still sent.
 - An OpenAI `response.done` with a `failed` or `incomplete` status is reported as an ordinary `done`, not an error.
+- OpenAI barge-in does not send `conversation.item.truncate`: the model's history keeps the full interrupted answer, including audio the user never heard.
 - ADK instruction templates (`{state_key}` placeholders) are sent as written; ADK's own Runner is what fills them from session state.
 - The ADK runner builds each tool's `InvocationContext` itself, because the pool owns tool execution; ADK's native `Runner.run_live()`, which executes tools itself, is not used.
 

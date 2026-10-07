@@ -299,6 +299,7 @@ class TestFrameworkToolExecution:
 
         adapter = OpenAIRealtimeRunner()
         adapter._agent = agent
+        adapter._tools = {tool.name: tool}
 
         result = await adapter.execute_tool("get_weather", '{"location": "Paris"}', ToolContext(runtime, agent, session, []), "call-1")
         assert result == "Paris:s1"
@@ -321,6 +322,7 @@ class TestFrameworkToolExecution:
 
         adapter = OpenAIRealtimeRunner()
         adapter._agent = agent
+        adapter._tools = {get_cart.name: get_cart}
 
         result = await adapter.execute_tool("get_cart", "{}", ToolContext(Runtime(InMemorySessionStore()), agent, session, []), "call-1")
         assert result == "apple,pear"
@@ -648,6 +650,194 @@ class TestOpenAIRealtimeSession:
 
         assert [tool["name"] for tool in connection.sent[0]["session"]["tools"]] == ["get_weather"]
         assert "not a function tool" in caplog.text
+
+
+class TestOpenAIRealtimeToolGuards:
+    """The runner calls tools directly, so tools whose checks it cannot apply are not offered, and only
+    offered tools run, within their timeout."""
+
+    @staticmethod
+    def _tool(func, **changes):
+        import dataclasses
+
+        from agentkernel.framework.openai.openai import OpenAIToolBuilder
+
+        [tool] = OpenAIToolBuilder.bind([func])
+        return dataclasses.replace(tool, **changes) if changes else tool
+
+    @staticmethod
+    def _offered(*tools):
+        from agents import RunContextWrapper
+
+        from agentkernel.framework.openai.openai import OpenAIRealtimeRunner
+
+        sdk_agent = types.SimpleNamespace(tools=list(tools))
+        return asyncio.run(OpenAIRealtimeRunner()._offered_tools(sdk_agent, RunContextWrapper(context=None)))
+
+    @staticmethod
+    def plain(x: str) -> str:
+        """A tool with no extra checks."""
+        return x
+
+    def test_tools_needing_approval_or_guardrails_are_not_offered(self, caplog):
+        def approve(x: str) -> str:
+            """Needs approval."""
+            return x
+
+        def guarded(x: str) -> str:
+            """Has an input guardrail."""
+            return x
+
+        def checked(x: str) -> str:
+            """Has an output guardrail."""
+            return x
+
+        with caplog.at_level("WARNING"):
+            offered = self._offered(
+                self._tool(self.plain),
+                self._tool(approve, needs_approval=True),
+                self._tool(guarded, tool_input_guardrails=[object()]),
+                self._tool(checked, tool_output_guardrails=[object()]),
+            )
+
+        assert list(offered) == ["plain"]
+        assert caplog.text.count("needs approval or has tool guardrails") == 3
+
+    def test_disabled_tools_are_not_offered(self):
+        def off(x: str) -> str:
+            """Disabled."""
+            return x
+
+        def off_by_rule(x: str) -> str:
+            """Disabled by a callable."""
+            return x
+
+        def on_async(x: str) -> str:
+            """Enabled by an async callable."""
+            return x
+
+        async def enabled(ctx, agent):
+            return True
+
+        offered = self._offered(
+            self._tool(off, is_enabled=False),
+            self._tool(off_by_rule, is_enabled=lambda ctx, agent: False),
+            self._tool(on_async, is_enabled=enabled),
+        )
+
+        assert list(offered) == ["on_async"]
+
+    @pytest.mark.asyncio
+    async def test_a_tool_that_was_not_offered_does_not_run(self):
+        from agentkernel.framework.openai.openai import OpenAIRealtimeRunner
+
+        ran = []
+
+        def secret(x: str) -> str:
+            """Never offered."""
+            ran.append(x)
+            return x
+
+        agent = types.SimpleNamespace(agent=types.SimpleNamespace(tools=[self._tool(secret)]), name="general")
+        runner = OpenAIRealtimeRunner()
+        runner._agent = agent
+
+        result = await runner.execute_tool("secret", '{"x": "1"}', ToolContext(Runtime(InMemorySessionStore()), agent, Session("s1"), []), "call-1")
+
+        assert result == "Error: Tool secret not found"
+        assert ran == []
+
+    @pytest.mark.asyncio
+    async def test_the_tool_timeout_is_enforced(self):
+        from agentkernel.framework.openai.openai import OpenAIRealtimeRunner
+
+        async def slow() -> str:
+            """Takes too long."""
+            await asyncio.sleep(1)
+            return "late"
+
+        tool = self._tool(slow, timeout_seconds=0.05)
+        agent = types.SimpleNamespace(agent=types.SimpleNamespace(tools=[tool]), name="general")
+        runner = OpenAIRealtimeRunner()
+        runner._agent = agent
+        runner._tools = {tool.name: tool}
+
+        result = await runner.execute_tool("slow", "{}", ToolContext(Runtime(InMemorySessionStore()), agent, Session("s1"), []), "call-1")
+
+        assert "timed out" in result
+
+
+class TestADKRealtimeTools:
+    """Plain functions work as they do on a normal ADK run; toolsets are skipped; results are wrapped as ADK wraps them."""
+
+    @staticmethod
+    def get_weather(location: str) -> str:
+        """Get the weather."""
+        return f"sunny in {location}"
+
+    def _agent(self, *tools):
+        from google.adk.agents import Agent as GoogleAgent
+
+        return types.SimpleNamespace(name="general", agent=GoogleAgent(name="general", model="gemini-live", instruction="x", tools=list(tools)))
+
+    def test_a_plain_function_is_declared(self):
+        from agentkernel.framework.adk.adk import GoogleADKRealtimeRunner
+
+        config = GoogleADKRealtimeRunner()._connect_config(self._agent(self.get_weather))
+
+        assert [d.name for d in config.tools[0].function_declarations] == ["get_weather"]
+
+    @pytest.mark.asyncio
+    async def test_a_plain_function_runs(self):
+        from agentkernel.framework.adk.adk import GoogleADKRealtimeRunner
+
+        agent = self._agent(self.get_weather)
+        runner = GoogleADKRealtimeRunner()
+        runner._agent = agent
+        await runner._open_tool_session("s1")
+
+        result = await runner.execute_tool(
+            "get_weather", '{"location": "Paris"}', ToolContext(Runtime(InMemorySessionStore()), agent, Session("s1"), []), "call-1"
+        )
+
+        assert result == "sunny in Paris"
+
+    def test_a_toolset_is_skipped_with_a_warning(self, caplog):
+        from google.adk.tools.base_toolset import BaseToolset
+
+        from agentkernel.framework.adk.adk import GoogleADKRealtimeRunner
+
+        class _Toolset(BaseToolset):
+            async def get_tools(self, readonly_context=None):
+                return []
+
+            async def close(self):
+                pass
+
+        with caplog.at_level("WARNING"):
+            config = GoogleADKRealtimeRunner()._connect_config(self._agent(self.get_weather, _Toolset()))
+
+        assert [d.name for d in config.tools[0].function_declarations] == ["get_weather"]
+        assert "is a toolset" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_the_tool_result_is_wrapped_as_adk_wraps_it(self):
+        from agentkernel.framework.adk.adk import GoogleADKRealtimeRunner
+
+        sent = []
+
+        class _Connection:
+            async def send_tool_response(self, function_responses):
+                sent.append(function_responses)
+
+        runner = GoogleADKRealtimeRunner()
+        runner._connection = _Connection()
+        runner._tool_names["call-1"] = "get_weather"
+
+        await runner.send_tool_result("call-1", "sunny")
+
+        assert sent[0].name == "get_weather"
+        assert sent[0].response == {"result": "sunny"}
 
 
 class TestADKConnectConfig:

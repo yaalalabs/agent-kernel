@@ -134,6 +134,7 @@ Complete working examples (with In-Memory, Kafka, NATS, and AWS SQS architecture
 ## Limitations
 
 - **No guardrails or hooks on realtime turns**: voice and chat turns go to the model socket directly, not through `Runtime.run()`, so input/output guardrails, pre/post hooks and the multimodal pre-hook do not run.
+- **Tool limits**: OpenAI tools that need approval or have tool guardrails are not offered in realtime mode (a warning is logged), and ADK toolsets such as MCP are not supported. Plain function tools work on both frameworks.
 - **One room per gateway**: each `LiveKitEdgeGateway` joins one room, and all audio in that room goes to one session.
 - **History is held by the model connection**: the conversation lives in the model's own session. A new connection (after the connection is idle, or after a socket failure or the model's session time limit) starts with no earlier turns.
 - **Single replicas**: one Agent Runner replica and one IOHandler process, as described above.

@@ -20,6 +20,15 @@ class RealtimeRunner(Runner):
     ``input_sample_rate`` and ``output_sample_rate`` are the PCM16 mono rates the model wants. The
     pipeline converts between these and :data:`~agentkernel.core.realtime.pcm.EDGE_SAMPLE_RATE`, so
     an adapter never resamples and no adapter hardcodes the edge's rate.
+
+    The realtime pool creates one instance per session connection, so an instance may keep that
+    connection's socket and state on ``self``. The pool owns everything around the model socket
+    (audio pacing, barge-in decisions, tool execution scopes, queue emission); an adapter only
+    talks to the model and reports what it does through the ``callback`` given to :meth:`connect`,
+    which is why an adapter never imports pipeline types.
+
+    Bring your own adapter by passing its class as ``realtime_runner_cls`` to the framework's
+    ``Module``.
     """
 
     input_sample_rate: int = EDGE_SAMPLE_RATE
@@ -38,13 +47,31 @@ class RealtimeRunner(Runner):
     async def connect(self, session: Session, agent: "Agent", callback: Callable) -> None:
         """
         Establishes a persistent socket connection to the framework's Realtime API backend.
+
+        The pool relies on these rules:
+
+        - Report model events through ``callback`` **in the order the model sent them**: the pool
+          paces audio and orders ``done`` / ``interrupt`` behind it on that basis.
+        - ``callback`` is a coroutine function; await every call.
+        - If connecting fails, close anything already opened before raising: the pool drops a
+          connection that failed to connect without calling :meth:`disconnect`.
+        - Report a socket that fails while connected as ``error``, but not a close caused by
+          :meth:`disconnect`.
+
         :param session: The session to bind this connection to.
         :param agent: The agent instance.
-        :param callback: The event callback from the pool, called as ``callback(event_type, data)``
-            with ``audio_delta``, ``transcript_delta``, ``tool_call``, ``done``, ``error``,
-            ``interrupt`` (the user spoke while the model was responding) or ``speech_started``
-            (the user spoke outside a response; the pool treats it as a barge-in only while it
-            still holds audio the user has not heard).
+        :param callback: The event callback from the pool, awaited as ``callback(event_type, data)``:
+
+            - ``audio_delta``: ``{"delta": <base64 PCM16 at output_sample_rate>, "message_id": str}``
+            - ``transcript_delta``: ``{"delta": <text>, "message_id": str}``
+            - ``tool_call``: ``{"call_id": str, "name": str, "arguments": <JSON string>}``; the pool
+              then calls :meth:`execute_tool` and :meth:`send_tool_result`
+            - ``done``: ``{"status": ...}``, the end of a model turn
+            - ``error``: ``{"message": str}``, the socket failed; the pool tells the user and
+              replaces the connection
+            - ``interrupt``: ``{}``, the user spoke while the model was responding
+            - ``speech_started``: ``{}``, the user spoke outside a response; the pool treats it as a
+              barge-in only while it still holds audio the user has not heard
         """
         raise NotImplementedError()
 
@@ -85,5 +112,8 @@ class RealtimeRunner(Runner):
     async def disconnect(self) -> None:
         """
         Closes the active persistent socket connection.
+
+        Must be safe to call more than once, and after a :meth:`connect` that failed or never ran:
+        the pool calls it on idle eviction, on a failed socket, and at shutdown.
         """
         raise NotImplementedError()
