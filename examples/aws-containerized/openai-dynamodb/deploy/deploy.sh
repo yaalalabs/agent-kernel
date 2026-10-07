@@ -3,10 +3,13 @@ set -e
 
 push_to_ecr() {
 	AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-	AWS_REGION="ap-southeast-2"
 	local image_name="$1"
 	local dockerfile="$2"
 	local ecr_uri="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${image_name}:latest"
+
+	# ECR does not auto-create repositories on push, so ensure it exists first.
+	aws ecr describe-repositories --region "$AWS_REGION" --repository-names "$image_name" >/dev/null 2>&1 ||
+		aws ecr create-repository --region "$AWS_REGION" --repository-name "$image_name" >/dev/null
 
 	aws ecr get-login-password --region "$AWS_REGION" |
 		docker login --username AWS --password-stdin \
@@ -66,6 +69,8 @@ function wait_for_ecs_stable() {
 
 create_deployment_package $1
 
+# Read before pushd: read_tfvar resolves terraform.tfvars relative to the deploy dir.
+AWS_REGION=$(read_tfvar region)
 pushd ../dist || exit 1
 push_to_ecr "openai-dynamodb-ext" "Dockerfile"
 popd || exit 1
