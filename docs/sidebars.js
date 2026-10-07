@@ -144,6 +144,7 @@ const sidebars = {
         'advanced/scheduling',
         'advanced/sandbox',
         'advanced/secrets',
+        'advanced/a2ui',
         'advanced/knowledge-bases',
         'advanced/queue-mode-guide',
         {

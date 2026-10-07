@@ -1,9 +1,9 @@
+import datetime
 import json
 import threading
 
 import pytest
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, HTTPException, Response
 from fastapi.testclient import TestClient
 
 from agentkernel.core.base import Agent, Runner
@@ -250,9 +250,21 @@ class TestStatusHonoringResponses:
 
         response = RequestHandler()._build_sync_response(record)
 
-        assert isinstance(response, JSONResponse)
+        assert isinstance(response, Response)
         assert response.status_code == 202
+        assert response.media_type == "application/json"
         assert json.loads(response.body) == {"status": "SCHEDULED", "session_id": "s1"}
+
+    def test_2xx_non_200_body_survives_a_value_json_response_would_reject(self, monkeypatch):
+        """JSONResponse's encoder refuses values FastAPI's own return path accepts; the 202 path
+        goes through PayloadCodec so the two surfaces agree on the same payload."""
+        _configure(monkeypatch, mode="rest_sync")
+        record = {"request_id": "r1", "status_code": 202, "body": {"at": datetime.datetime(2026, 9, 22, 14, 30)}}
+
+        response = RequestHandler()._build_sync_response(record)
+
+        assert response.status_code == 202
+        assert json.loads(response.body) == {"at": "2026-09-22T14:30:00"}
 
     def test_200_returns_the_bare_body(self, monkeypatch):
         _configure(monkeypatch, mode="rest_sync")

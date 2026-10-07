@@ -425,3 +425,27 @@ def test_the_outbound_adapter_override_binds_from_the_environment(monkeypatch):
     monkeypatch.setenv("AK_SLACK__OUTBOUND_ADAPTER", "my_pkg.adapters.MySlackOutbound")
 
     assert AKConfig().slack.outbound_adapter == "my_pkg.adapters.MySlackOutbound"
+
+
+class TestA2UIConfig:
+    """The capability's two keys, and the defaults that keep it inert."""
+
+    def test_defaults_to_disabled_for_every_agent(self, monkeypatch):
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+        AKConfig._reset()
+
+        config = AKConfig.get()
+
+        assert config.a2ui.enabled is False
+        assert config.a2ui.agents is None
+
+    def test_reads_the_env_vars(self, monkeypatch):
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+        monkeypatch.setenv("AK_A2UI__ENABLED", "true")
+        monkeypatch.setenv("AK_A2UI__AGENTS", '["expenses"]')
+        AKConfig._reset()
+
+        config = AKConfig.get()
+
+        assert config.a2ui.enabled is True
+        assert config.a2ui.agents == ["expenses"]

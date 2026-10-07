@@ -35,12 +35,25 @@ class TestAgentReplyAny:
         reply = AgentReplyAny(content={"k": "v"}, prompt="the prompt")
 
         dumped = reply.model_dump()
-        assert dumped == {"content": {"k": "v"}, "prompt": "the prompt", "type": "other"}
+        assert dumped == {"content": {"k": "v"}, "media_type": None, "prompt": "the prompt", "type": "other"}
         assert json.loads(reply.model_dump_json()) == dumped
 
     def test_non_dict_content_raises(self):
         with pytest.raises(ValidationError):
             AgentReplyAny(content="not a dict")
+
+    def test_media_type_defaults_to_none_and_round_trips(self):
+        assert AgentReplyAny(content={"a": 1}).media_type is None
+
+        reply = AgentReplyAny(content={"a": 1}, media_type="application/a2ui+json")
+        assert AgentReplyAny.model_validate_json(reply.model_dump_json()).media_type == "application/a2ui+json"
+
+    def test_content_accepts_a_top_level_list(self):
+        """A2UI on v0.9.1 is a sequence of messages, so a reply may carry an array."""
+        content = [{"createSurface": {"surfaceId": "s1"}}, {"updateComponents": {}}]
+
+        assert AgentReplyAny(content=content).content == content
+        assert json.loads(str(AgentReplyAny(content=content))) == content
 
 
 class TestAgentReplyAnyFromOutput:
@@ -67,6 +80,11 @@ class TestAgentReplyAnyFromOutput:
         assert reply.prompt == ""
 
     def test_unstructured_values_return_none(self):
+        """A bare list stays unstructured even though `content` accepts one.
+
+        Promoting it would change `result` for a list-returning agent that never opted in: the
+        reply goes from AgentReplyText's Python repr to AgentReplyAny's JSON.
+        """
         assert AgentReplyAny.from_output("plain text") is None
         assert AgentReplyAny.from_output(42) is None
         assert AgentReplyAny.from_output(None) is None

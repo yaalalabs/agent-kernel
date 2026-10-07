@@ -9,6 +9,7 @@ from typing import Optional
 
 from singleton_type import Singleton
 
+from ..a2ui.hook import A2UIPostHookFactory
 from ..guardrail.guardrail import InputGuardrailFactory, OutputGuardrailFactory
 from ..sandbox.hooks import SandboxPreHookFactory
 from .base import Agent, Session
@@ -127,7 +128,7 @@ class Runtime:
         if Runtime._system_post_hooks is None:
             with Runtime._lock:
                 if Runtime._system_post_hooks is None:
-                    Runtime._system_post_hooks = [OutputGuardrailFactory.get()]
+                    Runtime._system_post_hooks = [OutputGuardrailFactory.get(), A2UIPostHookFactory.get()]
         return Runtime._system_post_hooks
 
     def __init__(self, sessions: SessionStore):

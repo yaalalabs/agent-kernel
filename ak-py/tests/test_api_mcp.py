@@ -71,3 +71,57 @@ class TestMCPHttpApp:
         mock_fastmcp_class.assert_called_once_with(MCP_NAME)
         assert fastmcp.http_app.call_count == 2
         assert fastmcp.http_app.call_args_list[-1].kwargs == {"path": "/", "stateless_http": True}
+
+
+class TestExecutorReplyShapes:
+    """The executor's three outcomes: a labelled payload, an unlabelled one, and text.
+
+    Verified against the pinned fastmcp: a ToolResult carrying `meta` round-trips to a client, so
+    the format label travels in MCP's own `_meta` slot rather than an Agent Kernel envelope.
+    """
+
+    @pytest.mark.asyncio
+    async def test_labelled_reply_returns_a_tool_result_with_meta(self):
+        from unittest.mock import AsyncMock, patch
+
+        from fastmcp.tools.tool import ToolResult
+
+        from agentkernel.api.mcp.akmcp import MCP
+        from agentkernel.core.model import AgentReplyAny
+
+        content = {"version": "v1.0", "createSurface": {"surfaceId": "s1"}}
+        reply = AgentReplyAny(content=content, media_type="application/a2ui+json")
+
+        with patch("agentkernel.api.mcp.akmcp.AgentService") as service_cls:
+            service_cls.return_value.run_multi = AsyncMock(return_value=reply)
+            result = await MCP.Executor("a").execute("s1", "hi", AsyncMock())
+
+        assert isinstance(result, ToolResult)
+        assert result.structured_content == content
+        assert result.meta == {"media_type": "application/a2ui+json"}
+
+    @pytest.mark.asyncio
+    async def test_unlabelled_structured_reply_still_returns_its_string(self):
+        from unittest.mock import AsyncMock, patch
+
+        from agentkernel.api.mcp.akmcp import MCP
+        from agentkernel.core.model import AgentReplyAny
+
+        with patch("agentkernel.api.mcp.akmcp.AgentService") as service_cls:
+            service_cls.return_value.run_multi = AsyncMock(return_value=AgentReplyAny(content={"a": 1}))
+            result = await MCP.Executor("a").execute("s1", "hi", AsyncMock())
+
+        assert result == '{"a": 1}'
+
+    @pytest.mark.asyncio
+    async def test_text_reply_returns_its_text(self):
+        from unittest.mock import AsyncMock, patch
+
+        from agentkernel.api.mcp.akmcp import MCP
+        from agentkernel.core.model import AgentReplyText
+
+        with patch("agentkernel.api.mcp.akmcp.AgentService") as service_cls:
+            service_cls.return_value.run_multi = AsyncMock(return_value=AgentReplyText(response="hello"))
+            result = await MCP.Executor("a").execute("s1", "hi", AsyncMock())
+
+        assert result == "hello"

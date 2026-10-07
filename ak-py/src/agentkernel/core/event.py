@@ -13,17 +13,22 @@ Two invariants hold across every member:
   request/reply models in `model.py`. The union is discriminated on it so a serialised event
   parses back to the class it came from — `StreamChunk` crosses the queue transport in
   distributed deployment topologies.
-- **No field carries a framework-native object.** Every field is a `str`, `int` or `bool`, so an
-  event stays picklable and JSON-serialisable no matter which framework produced it.
+- **No field carries a framework-native object.** Every field is a `str`, `int` or `bool`, except a
+  payload field, which is a `dict` or `list` of JSON-safe values guaranteed by the shared annotated
+  type in `core/util/payload.py`. Either way an event stays picklable and JSON-serialisable no
+  matter which framework produced it, which is what lets `StreamChunk` cross the queue transport in
+  distributed deployment topologies.
 
 `message_id` and `tool_call_id` correlate a start with its deltas and its end within a single run.
 Adapters take them from the framework's own stream where one is available and generate
 `uuid4().hex` otherwise. They are run-scoped and never persisted.
 """
 
-from typing import Annotated, Literal, Union
+from typing import Annotated, Literal, Optional, Union
 
 from pydantic import BaseModel, Field
+
+from .util.payload import JSONPayload
 
 
 class StreamEventBase(BaseModel):
@@ -128,6 +133,29 @@ class ReasoningEnd(StreamEventBase):
     message_id: str
 
 
+class DataMessage(StreamEventBase):
+    """A complete structured payload emitted inside the assistant's message.
+
+    Emitted immediately before the `MessageEnd` carrying the same `message_id`, and only when the
+    payload has a format to name — an unlabelled run streams exactly as it did before this member
+    existed. Nothing in the framework produces one: a post-hook assembles it from what it has
+    accumulated and returns it alongside the closing event, which is what `on_stream_event`'s list
+    form is for.
+
+    Named for A2A's `new_data_message`, the same concept on the other surface carrying this
+    payload. `DataDelta` was rejected: this is a whole payload, not a fragment, and the name would
+    invite streaming partial ones.
+
+    content: dict | list : The payload, normalised to plain JSON types on validation.
+    media_type: str|None : The format of `content`. Agent Kernel never interprets either.
+    """
+
+    type: Literal["data_message"] = "data_message"
+    message_id: str
+    content: JSONPayload
+    media_type: Optional[str] = None
+
+
 type StreamEvent = Annotated[
     Union[
         MessageStart,
@@ -142,6 +170,7 @@ type StreamEvent = Annotated[
         ReasoningStart,
         ReasoningDelta,
         ReasoningEnd,
+        DataMessage,
     ],
     Field(discriminator="type"),
 ]

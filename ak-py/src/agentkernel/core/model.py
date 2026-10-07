@@ -6,6 +6,7 @@ from typing import Annotated, Any, Callable, List, Literal, Optional, Union
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .event import StreamEvent
+from .util.payload import JSONPayload
 
 
 class AgentRequestText(BaseModel):
@@ -135,12 +136,23 @@ class AgentReplyAny(BaseModel):
     """
     AgentReplyAny encapsulates a structured (JSON) reply from an agent.
 
-    content: dict : The structured agent output as a JSON-compatible dict
+    content: dict | list : The structured agent output, normalised to plain JSON types on
+                           validation. A value with a canonical JSON form (datetime, Decimal, UUID,
+                           Enum, set, UTF-8 bytes, a non-string key) coerces silently; one with
+                           none — including NaN and the infinities — raises here rather than
+                           somewhere down the pipeline. Replacing this field with
+                           ``model_copy(update={"content": ...})`` skips that validation, so build a
+                           new reply instead; updating only ``media_type`` by copy is safe.
+    media_type: str|None : The format of ``content``, as a media type string. Unset by
+                           default, and never set by a framework adapter — a post-hook applies it.
+                           Surfaces that can carry an object do so only when this is set; with it
+                           unset every surface behaves exactly as it did before the field existed.
     prompt: str   : The text prompt sent to the agent
     type: Literal["other"]
     """
 
-    content: dict
+    content: JSONPayload
+    media_type: Optional[str] = None
     prompt: str = ""
     type: Literal["other"] = "other"
 
@@ -151,8 +163,14 @@ class AgentReplyAny(BaseModel):
     def from_output(cls, value: Any, prompt: str = "") -> "AgentReplyAny | None":
         """
         Builds an AgentReplyAny from a framework output value if it is structured.
-        Pydantic instances are converted with model_dump(mode="json") so the content
-        dict is JSON-compatible; plain dicts are used as content directly.
+        Pydantic instances are converted with model_dump(mode="json"); plain dicts are used as
+        content directly and reach the same normalisation through field validation, so both routes
+        produce equal content for equal values.
+
+        A bare list stays unstructured here even though ``content`` accepts one: a framework
+        returning a list has always produced a text reply, and promoting it would change ``result``
+        for an agent that never opted in. A caller that means to send an array builds the reply
+        itself.
 
         :param value: The framework output value to inspect.
         :param prompt: The text prompt sent to the agent.

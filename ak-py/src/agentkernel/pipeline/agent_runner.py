@@ -6,6 +6,7 @@ from ..core.chat_service import ChatService
 from ..core.config import AKConfig
 from ..core.model import BaseRunRequest, ExecutionMode, StreamChunk
 from ..core.util.factory import AKConfigError
+from ..core.util.payload import PayloadCodec
 from .consumer import ConsumerLoop
 from .envelope import (
     ATTR_ENDPOINT_URL,
@@ -195,7 +196,7 @@ class AgentRunner:
 
         self._transport.send(
             QueueName.OUTPUT,
-            QueueMessage(body=json.dumps(response_body), attributes=attributes, group_id=group_id, dedup_id=dedup_id),
+            QueueMessage(body=PayloadCodec.encode(response_body), attributes=attributes, group_id=group_id, dedup_id=dedup_id),
         )
 
 
