@@ -1036,6 +1036,9 @@ Configure the REST API server (if using the API module).
 Mounting `AGUIRequestHandler` (from `agentkernel.agui`, requires the `agentkernel[agui]` extra — `pip
 install "agentkernel[agui]"`) is what enables the [AG-UI protocol](https://github.com/ag-ui-protocol/ag-ui)
 surface; the `agui` block only parameterizes it, and it never switches the surface on by itself.
+Mount `AGUIPipelineRequestHandler` through `IOHandler.run(handlers=[...])` instead to run the agent
+on the queue pipeline rather than inside the SSE request; same routes and events, and it refuses to
+start unless the configured stores can serve a run from the runner process.
 `AGUIRequestHandler` refuses to construct without an `Authoriser` or `AuthValidator` — AG-UI runs
 agents on a caller's behalf and has no anonymous mode. Only agents whose runner declares
 `supports_streaming = True` are reachable (currently OpenAI Agents SDK, LangGraph, Google ADK, and

@@ -239,6 +239,28 @@ class _RedisLikeDriver(BaseDriver):
         self._log.debug(f"RPUSH {key}")
         self.client.rpush(key, value)
 
+    def rpush_with_expiry(self, key: str, value: Any, ttl: int) -> None:
+        """
+        Appends a value to the list stored at the given key and sets the key's TTL, atomically.
+
+        Two commands in one pipeline rather than ``rpush`` followed by ``expire_in``: RPUSH on a
+        missing key creates it with no expiry, so anything that interrupts the pair — a dropped
+        connection, a failover, a killed process — would leave the key alive forever. Callers that
+        create a key whose whole purpose is to expire need the pair to be indivisible.
+
+        :param key: The list key.
+        :param value: The value to append.
+        :param ttl: TTL in seconds; a non-positive value falls back to a plain append, since a
+            raw ``EXPIRE key 0`` would delete the key.
+        """
+        if ttl <= 0:
+            return self.rpush(key, value)
+        self._log.debug(f"RPUSH {key} + EXPIRE {ttl}")
+        pipeline = self.client.pipeline()
+        pipeline.rpush(key, value)
+        pipeline.expire(name=key, time=ttl)
+        pipeline.execute()
+
     def lpop(self, key: str) -> Optional[str]:
         """
         Removes and returns the first element of the list, decoded to a string.

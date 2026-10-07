@@ -339,12 +339,13 @@ class RequestHandler(RestHandler):
             yield f"data: {json.dumps(error_chunk)}\n\n"
         finally:
             # Deterministically release the per-request chunk state, including when the client
-            # disconnects mid-stream. close_stream is synchronous and non-blocking, so it runs
-            # even under task cancellation; a plain chunk_iterator.close() would raise
-            # "generator already executing" whenever the generator is mid-fetch in the worker
-            # thread (its sentinel unblocks that fetch and the generator returns on its own).
+            # disconnects mid-stream. Offloaded because close_stream blocks on a redis-like store
+            # (two to four round trips, seconds on a reconnect) and this runs on the event loop;
+            # the await still completes under task cancellation. A plain chunk_iterator.close()
+            # would raise "generator already executing" whenever the generator is mid-fetch in the
+            # worker thread (its sentinel unblocks that fetch and the generator returns on its own).
             if store.supports_chunk_streaming():
-                store.close_stream(request_id)
+                await asyncio.to_thread(store.close_stream, request_id)
 
     async def run_multipart_chat(
         self,

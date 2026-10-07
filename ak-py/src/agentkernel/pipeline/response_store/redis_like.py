@@ -87,9 +87,14 @@ class RedisLikeResponseStore(ResponseStore):
 
         Registers the key as live for as long as this generator exists, so ``close_stream`` can
         tell a reader that still needs waking from one that has already gone. Deregistration
-        happens **before** the key is deleted: the other order leaves a window in which a
-        concurrent ``close_stream`` still sees a live reader and pushes a marker onto the key
-        that was just removed, recreating it.
+        happens **before** the key is deleted, which closes the interleaving where a concurrent
+        ``close_stream`` reads the registry after this generator has removed the key; the
+        opposite interleaving is closed by ``close_stream`` itself, which rechecks after writing.
+
+        Both orderings are reachable because the two halves run on different threads: the SSE
+        edges drive this generator through ``asyncio.to_thread(next, ...)`` on an executor worker
+        while calling ``close_stream`` from the event loop, and a client disconnect cancels the
+        future without stopping the worker already parked in BLPOP.
 
         :param chunk_timeout: Max seconds to wait for each next chunk; defaults to the response
             store's ``retry_count * delay`` budget.
@@ -122,12 +127,23 @@ class RedisLikeResponseStore(ResponseStore):
         to: a thread parked in BLPOP is released only by something arriving on the list, and that
         reader's own ``finally`` then deletes the key. With no reader — the ordinary end of a run,
         where the generator already returned at the done chunk — a push would recreate the key it
-        had just cleaned up and leave it behind for the whole record TTL, so the key is deleted
-        instead. This mirrors ``InMemoryResponseStore.close_stream``, which pops the queue first
-        and only signals when one was there.
+        had just cleaned up, so the key is deleted instead.
 
-        The pushed marker carries its own short TTL, because a reader suspended at ``yield``
-        rather than parked in BLPOP never consumes it.
+        The recheck after the push is what makes that safe. Reading the registry and writing to
+        the key are two steps, and a reader running on another thread can finish between them: it
+        deregisters, deletes, and this push then resurrects the key it just removed. Rechecking is
+        cheaper than the obvious alternative of holding ``_live_lock`` across the write — that lock
+        is process-wide and every stream start and end contends for it, so a Redis outage (the
+        driver retries three times with two-second gaps) would stall all of them, not just this one.
+
+        ``InMemoryResponseStore`` needs none of this: it **pops** the queue under its lock, so the
+        decision is destructive and whichever thread pops first owns it, and the signal it then
+        sends goes to a detached ``Queue`` object. There is nothing to resurrect. Redis cannot
+        detach — the key *is* the shared state — so the recheck stands in for the pop.
+
+        The marker is pushed with its TTL in one pipeline, because a reader suspended at ``yield``
+        rather than parked in BLPOP never consumes it, and a plain RPUSH would otherwise leave a
+        key with no expiry at all if anything interrupted the pair.
         """
         key = self._chunk_key(request_id)
         with self._live_lock:
@@ -135,8 +151,13 @@ class RedisLikeResponseStore(ResponseStore):
         if not live:
             self._driver.delete(key)
             return
-        self._driver.rpush(key, _CLOSE_SENTINEL)
-        self._driver.expire_in(key, _CLOSE_MARKER_TTL_SECONDS)
+
+        self._driver.rpush_with_expiry(key, _CLOSE_SENTINEL, _CLOSE_MARKER_TTL_SECONDS)
+
+        with self._live_lock:
+            still_live = key in self._live_streams
+        if not still_live:
+            self._driver.delete(key)
 
     # -- key scan ---------------------------------------------------------------------------
 

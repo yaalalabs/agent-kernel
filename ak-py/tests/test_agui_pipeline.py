@@ -8,6 +8,7 @@ has to be taken after the inbound state is applied, not before.
 """
 
 import json
+import threading
 from unittest.mock import patch
 
 import pytest
@@ -53,6 +54,12 @@ def _reset_state():
     InMemoryTransport.reset()
     InMemoryResponseStore._records.clear()
     InMemoryResponseStore._chunks.clear()
+
+
+class _StubRequest:
+    """Only `headers` is read once `_resolve_run_inputs` is stubbed out."""
+
+    headers: dict = {}
 
 
 class _Auth(Authoriser):
@@ -357,6 +364,76 @@ class TestTheEnvelopeBudget:
 
     def test_an_envelope_within_budget_passes(self):
         AGUIRunEnvelope.build(self._Input({"tasks": []})).reject_if_oversized()
+
+
+class TestTheEdgeNeverBlocksTheEventLoop:
+    """The edge holds the caller's SSE socket, so a blocking call there stalls every request.
+
+    Both calls reach a network service with no async client: the broker send and, on a redis-like
+    store, close_stream's round trips. The shared driver retries a dead connection three times with
+    two-second gaps, so an outage is tens of seconds of a frozen uvicorn worker rather than one slow
+    request. `pipeline/request_handler.py` offloads the identical send and says why.
+    """
+
+    class _RecordingProducer:
+        def __init__(self):
+            self.threads = []
+
+        def enqueue(self, *args, **kwargs):
+            self.threads.append(threading.current_thread())
+            return {}
+
+    class _RunInput:
+        thread_id = "t-1"
+        run_id = "r-1"
+        parent_run_id = None
+        state = None
+        forwarded_props = None
+        context = []
+
+    def _handler(self, monkeypatch):
+        handler = TestPreconditions._construct(InMemoryResponseStore(), "in_memory")
+        agent = type("_Agent", (), {"name": "planner"})()
+
+        async def _resolved(agent_name, request):
+            return "u1", agent, self._RunInput(), []
+
+        monkeypatch.setattr(handler, "_resolve_run_inputs", _resolved)
+        monkeypatch.setattr(handler, "_warn_if_unreadable", lambda *a, **k: None)
+        return handler
+
+    @pytest.mark.asyncio
+    async def test_the_enqueue_runs_off_the_event_loop(self, monkeypatch):
+        handler = self._handler(monkeypatch)
+        producer = self._RecordingProducer()
+        handler._producer = producer
+
+        await handler._run("planner", _StubRequest())
+
+        assert producer.threads, "the producer was never called"
+        assert producer.threads[0] is not threading.current_thread(), "the broker send ran on the event loop"
+
+    @pytest.mark.asyncio
+    async def test_close_stream_runs_off_the_event_loop(self, monkeypatch):
+        """Including on the disconnect path, which is the only reason close_stream exists."""
+        handler = self._handler(monkeypatch)
+        handler._producer = self._RecordingProducer()
+        threads = []
+
+        class _Store(InMemoryResponseStore):
+            def stream(self, request_id, chunk_timeout=None):
+                yield {"done": True}
+
+            def close_stream(self, request_id):
+                threads.append(threading.current_thread())
+
+        handler._store = _Store()
+        response = await handler._run("planner", _StubRequest())
+        async for _ in response.body_iterator:
+            pass
+
+        assert threads, "close_stream was never called"
+        assert threads[0] is not threading.current_thread(), "close_stream ran on the event loop"
 
 
 class TestPreconditions:

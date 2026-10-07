@@ -71,6 +71,15 @@ topology.
 :::
 
 :::note
+[AG-UI](../integrations/agui.md#running-the-agent-off-the-web-tier) runs on the pipeline through
+`AGUIPipelineRequestHandler`, which joins the handler list rather than replacing the chat route:
+`IOHandler.run(handlers=[AGUIPipelineRequestHandler(authoriser=...)])`. The edge keeps the caller's
+SSE connection and drains the reply from the response store, so it needs a store that can stream
+chunks (the table below) whatever the transport. `AGUIRequestHandler` remains the direct-execution
+handler.
+:::
+
+:::note
 The **sandbox queue broker** (`sandbox.broker.flavor: queue`) rides these same transports
 with its own queue configuration: `sandbox.broker.queue` reuses the `execution.queues`
 shape, and sandbox executions travel a separate input/output queue pair to a

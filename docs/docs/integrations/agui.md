@@ -83,6 +83,9 @@ a broker transport a session store and an attachment store the agent runner can 
 The handler checks all of these at startup and refuses to boot with a message naming the setting to
 change, rather than accepting a request whose answer could never come back.
 
+Mounting, authorization and the `agui` config block are the same either way — see
+[AG-UI Server](../api/agui-server.md).
+
 Discovery publishes **names only** — deliberately not each agent's description, because several
 framework adapters return the agent's *instructions* from `get_description()`, which would publish
 your system prompt to every authorised caller.

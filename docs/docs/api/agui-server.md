@@ -47,6 +47,26 @@ no anonymous mode.
 > `GET {prefix}/agents`, `POST {prefix}/{agent_name}`, and `POST {prefix}` when `agui.default_agent`
 > is set.
 
+### Running the agent off the web tier
+
+`AGUIRequestHandler` runs the agent **inside** the SSE request, so a slow model holds a web
+connection for the whole run and a failed run cannot be retried. Mount `AGUIPipelineRequestHandler`
+instead to run it on the [queue pipeline](../advanced/queue-mode-guide.md). The routes, the events
+and their order are identical, so the frontend does not change:
+
+```python
+from agentkernel.agui import AGUIPipelineRequestHandler
+from agentkernel.pipeline import IOHandler
+
+IOHandler.run(handlers=[AGUIPipelineRequestHandler(authoriser=MyAuthoriser())])
+```
+
+It requires a response store that can carry a chunk stream, and on a broker transport a session
+store and an attachment store the agent runner can read; the handler checks these at startup and
+refuses to boot otherwise. See
+[AG-UI Protocol → Running the agent off the web tier](../integrations/agui.md#running-the-agent-off-the-web-tier)
+for the full table of what each setting may be.
+
 ## Configuration
 
 ```yaml

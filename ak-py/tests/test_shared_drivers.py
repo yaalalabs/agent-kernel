@@ -226,6 +226,32 @@ class TestRedisCommandSurface:
         driver.expire_in("k", 0)
         driver._client.expire.assert_not_called()
 
+    def test_rpush_with_expiry_sends_both_commands_in_one_pipeline(self):
+        """RPUSH creates a missing key with no expiry, so the pair must be indivisible.
+
+        Anything that interrupts two separate round trips — a dropped connection, a failover, a
+        killed process — would otherwise leave a key that was only ever meant to be short-lived
+        alive forever.
+        """
+        driver = _driver(ttl=0)
+        pipeline = driver._client.pipeline.return_value
+
+        driver.rpush_with_expiry("k", "v", 60)
+
+        driver._client.pipeline.assert_called_once_with()
+        pipeline.rpush.assert_called_once_with("k", "v")
+        pipeline.expire.assert_called_once_with(name="k", time=60)
+        pipeline.execute.assert_called_once_with()
+        driver._client.rpush.assert_not_called()
+
+    def test_rpush_with_expiry_falls_back_to_a_plain_append_without_a_ttl(self):
+        """A raw EXPIRE key 0 would delete the key the append just created."""
+        driver = _driver(ttl=604800)
+        driver.rpush_with_expiry("k", "v", 0)
+
+        driver._client.rpush.assert_called_once_with("k", "v")
+        driver._client.pipeline.assert_not_called()
+
     def test_key_applies_prefix(self):
         driver = _driver(prefix="ak:test:")
         assert driver.key("s1:meta") == "ak:test:s1:meta"

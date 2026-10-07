@@ -171,8 +171,11 @@ class AGUIRunEnvelope(BaseModel):
     back to back, so the two execution models cannot drift on which cache a field belongs in.
     """
 
-    # The body must fit the smallest built-in transport (SQS, 256 KB), and once attachments are
-    # offloaded this is the only unbounded client-controlled payload left on an AG-UI message.
+    # These three fields only, not the queue body: the client's message text rides on `requests`
+    # unmeasured, so a large enough turn still exceeds the smallest transport (SQS, 256 KB). That
+    # gap is pipeline-wide — no producer measures its body — and belongs at RequestProducer.enqueue.
+    # This bounds the part AG-UI adds, which a client can grow turn after turn because `state`
+    # round-trips back on every run.
     BUDGET_BYTES: ClassVar[int] = 65536
 
     state: Optional[dict] = None

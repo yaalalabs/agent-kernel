@@ -20,6 +20,31 @@ from agentkernel.pipeline.response_store.testing import ResponseStoreContract
 from agentkernel.pipeline.response_store.valkey import ValkeyResponseStore
 
 
+class FakePipeline:
+    """Queues commands and applies them in one go, as a real MULTI/EXEC does.
+
+    Deliberately all-or-nothing: the store uses a pipeline precisely so that nothing can observe
+    the list after the RPUSH but before the EXPIRE, and a fake that applied them one at a time
+    would hide a regression back to two round trips.
+    """
+
+    def __init__(self, client):
+        self._client = client
+        self._queued: list = []
+
+    def rpush(self, key, value):
+        self._queued.append(("rpush", (key, value), {}))
+        return self
+
+    def expire(self, name, time):  # noqa: A002 — the client's own parameter name
+        self._queued.append(("expire", (), {"name": name, "time": time}))
+        return self
+
+    def execute(self):
+        queued, self._queued = self._queued, []
+        return [getattr(self._client, name)(*args, **kwargs) for name, args, kwargs in queued]
+
+
 class FakeRedisLikeClient:
     """In-memory stand-in with the list semantics the chunk path uses, blocking included."""
 
@@ -69,6 +94,9 @@ class FakeRedisLikeClient:
 
     def expire(self, name, time):  # noqa: A002 — the client's own parameter name
         self.expires[name] = time
+
+    def pipeline(self):
+        return FakePipeline(self)
 
 
 class TestInMemoryResponseStoreContract(ResponseStoreContract):

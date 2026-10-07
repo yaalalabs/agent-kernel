@@ -577,13 +577,18 @@ IOHandler.run(handlers=[AGUIPipelineRequestHandler(authoriser=MyAuthoriser())])
    It needs a response store that can stream chunks — `in_memory` locally, `redis` or `valkey` on a
    broker transport — and refuses to start otherwise, naming the setting to change. On a broker it
    also needs a shared session store (`redis`, `valkey`, `dynamodb`, `cosmosdb` or `firestore`),
-   since the runner reads the conversation in another process:
+   since the runner reads the conversation in another process, and — when `multimodal.enabled` — a
+   shared attachment store (`redis` or `dynamodb`), since the edge offloads the bytes and the runner
+   resolves them:
 ```yaml
 session:
   type: valkey                 # not in_memory: the runner is a different process
 execution:
   response_store:
     type: valkey               # dynamodb cannot stream chunks
+multimodal:
+  enabled: true                # only if you accept attachments
+  storage_type: redis          # not in_memory/session_cache: the runner must read what the edge wrote
 ```
 
 ---

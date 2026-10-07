@@ -6,10 +6,11 @@ record path the chunk work builds on.
 """
 
 import pytest
+from test_response_store_contract import FakePipeline
 
 from agentkernel.core.util.driver import redis as redis_driver_module
 from agentkernel.pipeline.response_store.redis import RedisResponseStore
-from agentkernel.pipeline.response_store.redis_like import _CLOSE_MARKER_TTL_SECONDS, _CLOSE_SENTINEL
+from agentkernel.pipeline.response_store.redis_like import _CLOSE_MARKER_TTL_SECONDS, _CLOSE_SENTINEL, RedisLikeResponseStore
 
 
 class FakeRedisClient:
@@ -49,6 +50,9 @@ class FakeRedisClient:
 
     def expire(self, name, time):  # noqa: A002 — the client's own parameter name
         self.expires[name] = time
+
+    def pipeline(self):
+        return FakePipeline(self)
 
 
 @pytest.fixture
@@ -99,6 +103,39 @@ def test_closing_a_stream_with_no_reader_drops_the_key_instead_of_signalling(cli
 
     assert "ak:resp:chunks:r1" not in client.lists
     assert _CLOSE_SENTINEL not in client.lists.get("ak:resp:chunks:r1", [])
+
+
+def test_a_reader_finishing_during_close_stream_does_not_leave_the_key_behind(client):
+    """The interleaving the deregister-before-delete ordering does not cover (PR #755 review).
+
+    `close_stream` reads the registry and writes to the key as two steps. The SSE edges run the
+    two halves on different threads — the generator on an executor worker via `asyncio.to_thread`,
+    `close_stream` on the event loop — so a client disconnect can cancel the await while the
+    worker is still parked in BLPOP, and the worker can then finish inside the gap.
+
+    The fake's `rpush` stands in for that worker: it deregisters and deletes *just before* the push
+    lands — after `close_stream` has already read `live=True`. That is the losing order, and
+    without the recheck the push resurrects the key the reader had cleaned up.
+    """
+    store = _store(ttl=604800)
+    key = "ak:resp:chunks:r1"
+    store.add_chunk("r1", {"delta": "a"})
+    RedisLikeResponseStore._live_streams.add(key)
+
+    real_rpush = client.rpush
+
+    def the_reader_finishes_then_our_push_lands(name, value):
+        RedisLikeResponseStore._live_streams.discard(key)
+        client.delete(key)
+        real_rpush(name, value)
+
+    client.rpush = the_reader_finishes_then_our_push_lands
+    try:
+        store.close_stream("r1")
+    finally:
+        RedisLikeResponseStore._live_streams.discard(key)
+
+    assert key not in client.lists, "close_stream recreated the key the reader had just deleted"
 
 
 def test_closing_a_live_stream_marks_the_key_with_its_own_short_ttl(client):

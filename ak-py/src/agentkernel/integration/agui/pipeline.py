@@ -136,7 +136,9 @@ class AGUIPipelineRequestHandler(AGUIRequestHandler):
         )
 
         request_id = uuid4().hex
-        self._producer.enqueue(
+        # Offload the sync send so it doesn't block the event loop, as the REST handler does.
+        await asyncio.to_thread(
+            self._producer.enqueue,
             AGUIRunRequest(session_id=run_input.thread_id, agent=agent.name, user_id=user_id, requests=requests, agui=envelope),
             request_id=request_id,
             attributes={ATTR_AGUI: "1"},
@@ -196,7 +198,9 @@ class AGUIPipelineRequestHandler(AGUIRequestHandler):
             yield encoder.encode(RunErrorEvent(message="The run could not be delivered"))
             return
         finally:
-            self._store.close_stream(request_id)
+            # Offloaded like the enqueue: blocking on a redis-like store, and this runs on the
+            # event loop. The await still completes under the cancellation a disconnect raises.
+            await asyncio.to_thread(self._store.close_stream, request_id)
 
         if error is not None:
             yield encoder.encode(RunErrorEvent(message=error))
