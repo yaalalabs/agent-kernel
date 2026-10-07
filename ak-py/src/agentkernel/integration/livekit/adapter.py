@@ -44,7 +44,7 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
     ):
         super().__init__()
         config = AKConfig.get()
-        self.room_url = room_url or config.livekit.livekit_url
+        self.room_url = room_url or config.livekit.url
         # Carried on every request so the runner binds this room's session to the configured agent;
         # None (nothing configured) leaves selection to the runner's default agent.
         self.agent = agent_name or config.livekit.agent or None

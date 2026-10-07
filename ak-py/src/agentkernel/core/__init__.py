@@ -40,7 +40,6 @@ from .model import (
     AgentReplyAny,
     AgentReplyText,
     AgentReplyImage,
-    AgentReplyVoice,
     StreamChunk,
 )
 from .config import AKConfig as Config

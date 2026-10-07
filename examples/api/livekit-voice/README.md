@@ -41,7 +41,7 @@ Run this demo by first setting up your environment variables. Agent Kernel autom
 export OPENAI_API_KEY="your-openai-api-key"
 
 # Agent Kernel LiveKit credentials (AK_<SECTION>__<FIELD> binding)
-export AK_LIVEKIT__LIVEKIT_URL="wss://your-project.livekit.cloud"
+export AK_LIVEKIT__URL="wss://your-project.livekit.cloud"
 export AK_LIVEKIT__API_KEY="your-livekit-api-key"
 export AK_LIVEKIT__API_SECRET="your-livekit-api-secret"
 ```

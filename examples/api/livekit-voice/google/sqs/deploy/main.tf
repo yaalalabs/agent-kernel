@@ -17,9 +17,9 @@ module "containerized_agents" {
     desired_count = 1
     command      = ["python", "app_livekit_io.py"]
     environment_variables = {
-      AK_LIVEKIT__LIVEKIT_URL = var.livekit_url
-      AK_LIVEKIT__API_KEY     = var.livekit_api_key
-      AK_LIVEKIT__API_SECRET  = var.livekit_api_secret
+      AK_LIVEKIT__URL        = var.livekit_url
+      AK_LIVEKIT__API_KEY    = var.livekit_api_key
+      AK_LIVEKIT__API_SECRET = var.livekit_api_secret
     }
   }
 

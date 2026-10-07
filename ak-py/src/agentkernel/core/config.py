@@ -253,11 +253,11 @@ class _LiveKitConfig(BaseModel):
     """LiveKit realtime voice gateway settings.
 
     Bound like every other block, from YAML or ``AK_LIVEKIT__<FIELD>`` env vars (e.g.
-    ``AK_LIVEKIT__LIVEKIT_URL``, ``AK_LIVEKIT__API_KEY``, ``AK_LIVEKIT__API_SECRET``).
+    ``AK_LIVEKIT__URL``, ``AK_LIVEKIT__API_KEY``, ``AK_LIVEKIT__API_SECRET``).
     """
 
     agent: str = Field(default="", description="Default agent to use for LiveKit interactions")
-    livekit_url: str = Field(default="", description="LiveKit server WebSocket URL")
+    url: str = Field(default="", description="LiveKit server WebSocket URL")
     api_key: str = Field(default="", description="LiveKit API Key")
     api_secret: str = Field(default="", description="LiveKit API Secret")
 

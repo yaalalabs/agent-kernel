@@ -139,24 +139,8 @@ class AgentReplyImage(AgentRequestImage):
         return f"{self.response}. Image {self.name} is attached."
 
 
-class AgentReplyVoice(AgentRequestVoice):
-    """
-    AgentReplyVoice encapsulates a voice reply from an agent.
-
-    response: str : This is the agent output text/transcript
-
-    Inherits `prompt` (input), `audio_data`, `name`, `type`, and `mime_type` from
-    AgentRequestVoice, and `response` holds the agent output text/transcript.
-    """
-
-    response: str
-
-    def __str__(self) -> str:
-        return f"{self.response}. Voice {self.name} is attached."
-
-
 type AgentRequest = Union[AgentRequestText, AgentRequestFile, AgentRequestImage, AgentRequestVoice, AgentRequestAny, AgentRequestAttachmentRef]
-type AgentReply = Union[AgentReplyText, AgentReplyImage, AgentReplyVoice, AgentReplyAny]
+type AgentReply = Union[AgentReplyText, AgentReplyImage, AgentReplyAny]
 
 AgentRequestUnion = Annotated[
     Union[AgentRequestText, AgentRequestFile, AgentRequestImage, AgentRequestVoice, AgentRequestAny, AgentRequestAttachmentRef],

@@ -106,7 +106,7 @@ class TestToken:
     @pytest.mark.parametrize("agent_name, identity", [("support", "agent-support"), (None, "agent-general")])
     def test_generated_token_names_the_agent_participant(self, monkeypatch, agent_name, identity):
         cfg = types.SimpleNamespace(
-            livekit=types.SimpleNamespace(livekit_url="wss://lk", agent="", api_key="key", api_secret="secret" * 8),
+            livekit=types.SimpleNamespace(url="wss://lk", agent="", api_key="key", api_secret="secret" * 8),
             execution=types.SimpleNamespace(realtime=types.SimpleNamespace(input_batch_ms=100)),
         )
         monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: cfg))

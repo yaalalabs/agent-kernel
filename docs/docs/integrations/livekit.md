@@ -1,25 +1,29 @@
 # LiveKit Voice Integration
 
-LiveKit is a realtime voice integration for OpenAI Agents SDK and Google ADK agents. The `LiveKitEdgeGateway` connects agents to LiveKit WebRTC rooms, receiving user audio and text and returning the model's streamed audio and transcript through Agent Kernel's realtime execution pipeline.
+LiveKit is a realtime voice integration for OpenAI Agents SDK and Google ADK agents. The `LiveKitEdgeGateway` joins a LiveKit room, sends the user's audio and chat text to the agent, and plays the model's streamed audio and transcript back to the room through Agent Kernel's realtime execution pipeline.
 
 ## Overview
 
-The `LiveKitEdgeGateway` handles Realtime WebRTC sessions with end-users. Unlike standard text integrations, LiveKit requires the `REALTIME` pipeline execution mode and a persistent broker (like Kafka, SQS, or NATS) to securely transmit streaming audio chunks between the LiveKit server and the Agent Runner.
+The gateway runs in `realtime` execution mode. It works on every queue transport:
+
+- **`in_memory` (single process)**: the gateway, the Agent Runner and the Response Handler run in one process. This is the simplest setup and the recommended first run.
+- **A broker (`kafka`, `nats`, `sqs`)**: the gateway (IOHandler process) and the Agent Runner run as two processes that share the queues.
+
+Only OpenAI Agents SDK and Google ADK agents can run in realtime mode. They are the only adapters with a realtime runner (`OpenAIRealtimeRunner`, `GoogleADKRealtimeRunner`). The agent must name a realtime model, for example `gpt-realtime` or a Gemini Live model.
 
 ## How It Works
 
-1. A user connects to a LiveKit room and starts speaking.
-2. The `LiveKitEdgeGateway` (running in the IOHandler process) intercepts the audio and buffers it into chunks.
-3. The IOHandler places the audio chunks onto the `AGENT_REQUESTS` queue.
-4. The Agent Runner receives the chunks, utilizing a `RealtimeConnectionPool` to maintain an active WebRTC connection to OpenAI or Gemini.
-5. The LLM's audio response is pushed onto the `AGENT_REPLIES` queue.
-6. The `LiveKitEdgeGateway` receives the response and plays it back directly into the user's LiveKit room.
+1. A user joins the LiveKit room and starts speaking.
+2. The `LiveKitEdgeGateway` batches the microphone audio (see `input_batch_ms`) and puts it on the input queue. Chat text from the room's data channel goes the same way.
+3. The Agent Runner hands each chunk to the `RealtimeConnectionPool`, which keeps one persistent WebSocket per session to the OpenAI Realtime API or Gemini Live.
+4. The model's audio and transcript are paced at playback speed and put on the output queue.
+5. The Response Handler passes each chunk to the gateway, which plays the audio into the room and publishes the transcript as a chat message when the turn ends.
 
 ## Features
 
-- **Realtime Voice**: True bi-directional streaming audio over WebRTC.
-- **Barge-in Support**: Users can interrupt the AI at any time. The `LiveKitEdgeGateway` automatically clears buffered AI audio upon detecting a user barge-in.
-- **Distributed Architecture**: Scales horizontally via message brokers. `LiveKitEdgeGateway` acts as the edge frontend, keeping heavy LLM inference isolated in the Agent Runner backend.
+- **Realtime voice**: two-way streaming audio between the room and the model.
+- **Barge-in**: when the user talks over the model, the model's response is cancelled and the gateway clears the audio it has buffered.
+- **Tools**: the agent's function tools run during the call, with `ToolContext.get()` available as usual.
 
 ## Configuration Steps
 
@@ -27,48 +31,65 @@ The `LiveKitEdgeGateway` handles Realtime WebRTC sessions with end-users. Unlike
 
 1. Create a free account at [LiveKit Cloud](https://cloud.livekit.io/).
 2. Create a new project.
-3. Obtain your API URL, API Key, and API Secret from the project settings.
+3. Obtain your server URL, API key, and API secret from the project settings.
 
 ### 2. Required Environment Variables
 
 ```bash
-export AK_LIVEKIT__LIVEKIT_URL="wss://<your-project>.livekit.cloud"
+export AK_LIVEKIT__URL="wss://<your-project>.livekit.cloud"
 export AK_LIVEKIT__API_KEY="your_api_key"
 export AK_LIVEKIT__API_SECRET="your_api_secret"
 ```
 
 ## Implementation
 
-### Basic Integration
+The gateway is hosted with `GatewayRunner` and passed to `IOHandler.run(gateways=...)`. One gateway serves one room, and its `session_id` is the room name.
 
-Integrations run on the queue execution pipeline, so they are mounted with `IOHandler.run(...)`.
+### Single process (`in_memory`)
 
-```python
-from agentkernel.integration.livekit.adapter import LiveKitEdgeGateway
-from agentkernel.pipeline import IOHandler
-
-if __name__ == "__main__":
-    # Start the Front Door IO Handler with LiveKit Edge Gateway
-    IOHandler.run(handlers=[LiveKitEdgeGateway()])
+```yaml
+# config.yaml
+execution:
+  mode: realtime
 ```
-
-Because of the heavy distributed nature of real-time voice, you must run the Agent Runner in a completely separate process (or container):
 
 ```python
 from agents import Agent as OpenAIAgent
-from agentkernel.pipeline.agent_runner import AgentRunner
-from agentkernel.openai import OpenAIModule
+
+from agentkernel.framework.openai import OpenAIModule
+from agentkernel.integration.adapter import GatewayRunner
+from agentkernel.integration.livekit import LiveKitEdgeGateway
+from agentkernel.pipeline import IOHandler
 
 agent = OpenAIAgent(
     name="voice_assistant",
+    model="gpt-realtime",
     instructions="You are a helpful voice assistant.",
 )
 OpenAIModule([agent])
 
 if __name__ == "__main__":
-    # Start the Agent Runner backend
-    AgentRunner.run()
+    IOHandler.run(gateways=[GatewayRunner(LiveKitEdgeGateway(session_id="room_01"))])
 ```
+
+### Two processes (broker transport)
+
+With `execution.queues.type` set to `kafka`, `nats` or `sqs`, start the same module in two roles:
+the IOHandler with the gateway, and the Agent Runner.
+
+```python
+from agentkernel.integration.adapter import GatewayRunner
+from agentkernel.integration.livekit import LiveKitEdgeGateway
+from agentkernel.pipeline import AgentRunner, IOHandler
+
+# Process 1: the gateway and the Response Handler
+IOHandler.run(gateways=[GatewayRunner(LiveKitEdgeGateway(session_id="room_01"))])
+
+# Process 2: the Agent Runner, which holds the model sockets
+AgentRunner.run()
+```
+
+Run the Agent Runner as a single replica: its connection pool is local to the process. Run one IOHandler process that hosts the gateway for every room, because replies are routed to the gateway registered in that process.
 
 :::note Execution Mode
 LiveKit requires the Agent Kernel execution mode to be set to `realtime`. Standard async/sync text modes will not work. Ensure you have `execution.mode: realtime` set in your `config.yaml`.
@@ -109,3 +130,10 @@ persisted.
 ## Example Projects
 
 Complete working examples (with In-Memory, Kafka, NATS, and AWS SQS architectures) are available in the **examples/api/livekit-voice** directory.
+
+## Limitations
+
+- **No guardrails or hooks on realtime turns**: voice and chat turns go to the model socket directly, not through `Runtime.run()`, so input/output guardrails, pre/post hooks and the multimodal pre-hook do not run.
+- **One room per gateway**: each `LiveKitEdgeGateway` joins one room, and all audio in that room goes to one session.
+- **History is held by the model connection**: the conversation lives in the model's own session. A new connection (after the connection is idle, or after a socket failure or the model's session time limit) starts with no earlier turns.
+- **Single replicas**: one Agent Runner replica and one IOHandler process, as described above.

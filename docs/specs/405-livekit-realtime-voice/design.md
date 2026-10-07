@@ -61,10 +61,8 @@ LiveKit voice gateway. Reuse the queue pipeline while keeping model adapters beh
 
 - `AgentRequestVoice` must carry the inbound base64 PCM audio; `AgentRequestText` must carry data-channel text.
 - Stream output must use `StreamChunk` with `AudioDelta`, `TextDelta`, and `Interrupt`, plus terminal `done` or `error` chunks.
-- `AgentReplyVoice` is the branch's completed voice-reply model, distinct from streamed `AudioDelta` output.
-  - `Runtime` reply handling and `ResponseBuilder` recognize it.
-  - `BaseGuardrailUtil` reads its transcript and `WalledAIOutputGuardrail` can unmask that transcript.
-  - These branches do not enable guardrails on realtime turns; retaining this unused reply model is an open scope question.
+- Realtime output is streamed chunks only; no completed voice-reply model is added.
+  - A completed voice reply (and its `Runtime`, `ResponseBuilder` and guardrail branches) is deferred to the feature that produces one.
 - AG-UI must leave `AudioDelta` and `Interrupt` deliberately unmapped rather than inventing a voice protocol mapping.
 
 ### Stateful edge and delivery
@@ -111,7 +109,7 @@ LiveKit voice gateway. Reuse the queue pipeline while keeping model adapters beh
   - `execution.mode: realtime` selects execution behavior, and an explicitly hosted gateway starts the room connection.
   - The block has defaults even when omitted, and callers can supply gateway constructor arguments; presence is not an enablement signal like an optional thread/schedule block.
   - No `outbound_adapter` override is added: applications supply a `StatefulEdgeAdapter`, and the registry routes to that live instance.
-- `livekit.livekit_url` defaults to `""` and is read by `LiveKitEdgeGateway` as the room server URL.
+- `livekit.url` defaults to `""` and is read by `LiveKitEdgeGateway` as the room server URL.
   - The endpoint is deployment-specific and cannot be derived from agent or queue configuration.
 - `livekit.api_key` defaults to `""` and is read by the gateway when generating a room token.
   - LiveKit credentials are independent of model-provider and queue credentials.
@@ -159,6 +157,5 @@ LiveKit voice gateway. Reuse the queue pipeline while keeping model adapters beh
 
 ## Open questions
 
-- Keep `AgentReplyVoice` and its completed-reply branches in this PR without a producer, or defer them to a completed voice-reply feature?
 - How should realtime history be recorded, re-injected on reconnect, and saved on persistent session backends in the follow-up change?
 - What routing and ownership mechanism should lift the single-IO-process and single-Agent-Runner-replica constraints in a later change?

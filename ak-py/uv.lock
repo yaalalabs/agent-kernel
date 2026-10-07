@@ -147,7 +147,6 @@ langgraph = [
     { name = "litellm" },
 ]
 livekit = [
-    { name = "litellm" },
     { name = "livekit" },
     { name = "livekit-api" },
 ]
@@ -284,7 +283,6 @@ requires-dist = [
     { name = "langgraph-prebuilt", marker = "extra == 'langgraph'", specifier = "~=1.1.0" },
     { name = "litellm", marker = "extra == 'adk'", specifier = "~=1.89.2" },
     { name = "litellm", marker = "extra == 'langgraph'", specifier = "~=1.89.2" },
-    { name = "litellm", marker = "extra == 'livekit'", specifier = ">=1.44.0" },
     { name = "litellm", marker = "extra == 'multimodal'", specifier = ">=1.74.9" },
     { name = "litellm", marker = "extra == 'test'", specifier = ">=1.89.2" },
     { name = "litellm", marker = "extra == 'thread'", specifier = ">=1.74.9" },
