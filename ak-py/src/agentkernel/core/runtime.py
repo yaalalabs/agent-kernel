@@ -276,7 +276,7 @@ class Runtime:
         Runs here rather than in the adapter because every adapter wraps its body in one `except
         Exception` that returns a text reply, so a failure raised inside would surface as a generic
         error instead of naming what went wrong. These six checks also need no framework knowledge,
-        so an adapter-side implementation would be written six times.
+        so an adapter-side implementation would be written four times.
 
         :param agent: The agent this run will execute, checked against the record rather than
             replaced by it, so the agent Runtime activated stays the agent the runner receives.

@@ -293,6 +293,17 @@ class TestTheCacheHoldsNoModelInstances:
 
         assert all(isinstance(entry, dict) for entry in session.get_non_volatile_cache().get(AK_PAUSED_RUNS_KEY))
 
+    def test_clear_for_runner_rewrites_the_survivors_as_dicts(self):
+        """The survivors are another framework's, and a mixed-framework session is exactly what this
+        method exists for — so it is the path where storing a model instance would bite hardest."""
+        session = Session("s1")
+        PausedRunState.add(session, agent="a", runner="openai", interruptions=_interruptions("i1"))
+        PausedRunState.add(session, agent="b", runner="langgraph", interruptions=_interruptions("i2"))
+
+        PausedRunState.clear_for_runner(session, "langgraph")
+
+        assert all(isinstance(entry, dict) for entry in session.get_non_volatile_cache().get(AK_PAUSED_RUNS_KEY))
+
     def test_reading_them_back_still_yields_models(self):
         """The read side is unchanged: `list` revalidates, so callers never see the dicts."""
         session = Session("s1")

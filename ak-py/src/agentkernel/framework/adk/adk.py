@@ -631,8 +631,6 @@ class GoogleADKRunner(BaseRunner):
             name = interruption.tool_name if interruption else ""
             if interruption is not None and interruption.kind == "confirmation":
                 response: Any = {"confirmed": decision.status == "approved"}
-                if decision.payload is not None:
-                    response["payload"] = decision.payload
                 if decision.status == "cancelled":
                     response["hint"] = self.CANCELLED_DECISION_MESSAGE
                 elif decision.message:

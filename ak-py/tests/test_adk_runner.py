@@ -1,4 +1,5 @@
 import logging
+from contextlib import contextmanager
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -19,7 +20,7 @@ from agentkernel.core.model import (
     ResumeDecision,
 )
 from agentkernel.core.paused_run import PausedRunState
-from agentkernel.framework.adk.adk import GoogleADKAgent, GoogleADKRunner, GoogleADKSession
+from agentkernel.framework.adk.adk import GoogleADKAgent, GoogleADKRunner, GoogleADKSession, GoogleADKToolBuilder
 
 FRAMEWORK_CONTEXT = Session.Keys.FRAMEWORK_CONTEXT.value
 
@@ -1044,11 +1045,16 @@ class _FakeLlm:
     """
 
 
-def _gated_adk(confirmation=False, repeat=False):
+def _gated_adk(confirmation=False, repeat=False, with_probe=False):
     """A real ADK agent whose tool pauses, wired through a fake model.
 
     `repeat` makes the model ask a second question once the first is answered, which is the only way
     to reach the pause-again branch of resume()/resume_stream().
+
+    `with_probe` adds an ordinary tool the model calls on the resumed turn, bound through
+    `GoogleADKToolBuilder` so the Agent Kernel `ToolContext` is actually activated around it. ADK
+    stashes that context in its own state rather than setting it around `run_async`, so reading it
+    from inside a tool is the only place the resumed turn's request list is observable.
     """
     from typing import AsyncGenerator
 
@@ -1062,6 +1068,7 @@ def _gated_adk(confirmation=False, repeat=False):
         model: str = "fake"
         rounds: int = 0
         seen: list = []
+        tool_requests: list = []
 
         async def generate_content_async(self, llm_request, stream: bool = False) -> AsyncGenerator[LlmResponse, None]:
             self.rounds += 1
@@ -1083,6 +1090,9 @@ def _gated_adk(confirmation=False, repeat=False):
                 if repeat and self.rounds == 3:
                     again = types.FunctionCall(id="call-2", name="ask_size", args={"q": "anything else?"})
                     yield LlmResponse(content=types.Content(role="model", parts=[types.Part(function_call=again)]))
+                elif with_probe and self.rounds == 3:
+                    call = types.FunctionCall(id="call-probe", name="probe", args={})
+                    yield LlmResponse(content=types.Content(role="model", parts=[types.Part(function_call=call)]))
                 else:
                     yield LlmResponse(content=types.Content(role="model", parts=[types.Part(text="all done")]))
 
@@ -1094,10 +1104,20 @@ def _gated_adk(confirmation=False, repeat=False):
         """Refund the customer."""
         return f"refunded {amount}"
 
+    def probe() -> str:
+        """Report what the running turn's tool context holds."""
+        from agentkernel.core import ToolContext as AKToolContext
+
+        FakeLlm.tool_requests = AKToolContext.get().requests
+        return "ok"
+
     llm = FakeLlm()
     FakeLlm.seen = []
-    tool = FunctionTool(func=refund, require_confirmation=True) if confirmation else LongRunningFunctionTool(func=ask_size)
-    native = LlmAgent(name="gated", model=llm, tools=[tool])
+    FakeLlm.tool_requests = []
+    tools = [FunctionTool(func=refund, require_confirmation=True) if confirmation else LongRunningFunctionTool(func=ask_size)]
+    if with_probe:
+        tools += GoogleADKToolBuilder.bind([probe])
+    native = LlmAgent(name="gated", model=llm, tools=tools)
     return GoogleADKAgent(name="gated", runner=GoogleADKRunner(), agent=native), FakeLlm
 
 
@@ -1226,6 +1246,88 @@ class TestGoogleADKResume:
         await runner.resume(agent, session, requests, decisions, record)
 
         assert PausedRunState.list(session) == []
+
+
+@contextmanager
+def _capturing_real_setup(captured: dict):
+    """Wrap the real session setup so the ADK runner it builds records its `run_async` keywords.
+
+    `_capturing_setup` replaces the setup outright, so no real pause is ever produced; this one
+    needs the genuine run to leave a record worth resuming. The runner is wrapped in a proxy rather
+    than mutated, because the ADK `Runner` is a pydantic model and need not accept assignment.
+
+    :param captured: Filled with the keywords the adapter passed to `run_async`.
+    """
+    original = GoogleADKRunner._setup_session_context
+
+    class _Recording:
+        def __init__(self, inner):
+            self._inner = inner
+
+        def __getattr__(self, name):
+            return getattr(self._inner, name)
+
+        async def run_async(self, **kwargs):
+            captured.clear()
+            captured.update(kwargs)
+            async for event in self._inner.run_async(**kwargs):
+                yield event
+
+    async def _wrapped(self, *args, **kwargs):
+        user_id, adk_runner, ctx, adk_session = await original(self, *args, **kwargs)
+        return user_id, _Recording(adk_runner), ctx, adk_session
+
+    with patch.object(GoogleADKRunner, "_setup_session_context", _wrapped):
+        yield
+
+
+class TestGoogleADKResumeEnvelope:
+    """A resumed turn is not a second-class one: same context, same options as an ordinary run."""
+
+    @pytest.mark.asyncio
+    async def test_framework_context_survives_a_resume(self):
+        runner, session = GoogleADKRunner(), Session("s")
+        agent, _ = _gated_adk()
+        session.set(FRAMEWORK_CONTEXT, {"seeded": 1})
+        paused = await runner.run(agent, session, [AgentRequestText(prompt="ask me")])
+        record = PausedRunState.get(session, paused.run_id)
+        requests, decisions = _resume_requests(ResumeDecision(id="call-1", payload="large"))
+
+        await runner.resume(agent, session, requests, decisions, record)
+
+        # ADK writes its whole state back and is accumulate-only, so the claim is that the seeded
+        # key survived the resume, not that the dict came back untouched.
+        assert session.get(FRAMEWORK_CONTEXT)["seeded"] == 1
+
+    @pytest.mark.asyncio
+    async def test_a_declared_run_option_reaches_the_resumed_call(self):
+        """`new_message` is the other half: an AK-owned key is still written last."""
+        runner, session = GoogleADKRunner(), Session("s")
+        agent, _ = _gated_adk()
+        paused = await runner.run(agent, session, [AgentRequestText(prompt="ask me")])
+        record = PausedRunState.get(session, paused.run_id)
+        requests, decisions = _resume_requests(ResumeDecision(id="call-1", payload="large"))
+        agent.run_options["run_config"] = RunConfig(max_llm_calls=3)
+        captured: dict = {}
+
+        with _capturing_real_setup(captured):
+            await runner.resume(agent, session, requests, decisions, record)
+
+        assert captured["run_config"].max_llm_calls == 3
+        assert captured["new_message"] is not None
+
+    @pytest.mark.asyncio
+    async def test_a_tool_on_the_resumed_turn_sees_the_resume_request(self):
+        """Read from inside the tool, since that is the only place ADK activates the AK context."""
+        runner, session = GoogleADKRunner(), Session("s")
+        agent, FakeLlm = _gated_adk(with_probe=True)
+        paused = await runner.run(agent, session, [AgentRequestText(prompt="ask me")])
+        record = PausedRunState.get(session, paused.run_id)
+        requests, decisions = _resume_requests(ResumeDecision(id="call-1", payload="large"))
+
+        await runner.resume(agent, session, requests, decisions, record)
+
+        assert any(isinstance(r, AgentResumeRequestAny) for r in FakeLlm.tool_requests)
 
 
 class TestGoogleADKRejectsAPromptAlongside:

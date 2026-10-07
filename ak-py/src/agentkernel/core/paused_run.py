@@ -247,7 +247,7 @@ class PausedRunState:
         :param runner: The runner name whose records to remove.
         """
         remaining = [record for record in PausedRunState.list(session) if record.runner != runner]
-        session.get_non_volatile_cache().set(AK_PAUSED_RUNS_KEY, remaining)
+        PausedRunState._write(session, remaining)
 
     @classmethod
     def _warn_once_on_process_local_store(cls, session: Session) -> None:

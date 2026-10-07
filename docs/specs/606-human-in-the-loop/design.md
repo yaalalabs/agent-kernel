@@ -723,6 +723,15 @@ cases distinguishable to the model**:
     replaces a different part of the native call than a run does — OpenAI's `input` becomes the
     `RunState` — so a key an adapter reserves for `run()` may need a resume-specific reason, or a
     new key may need reserving.
+- **Tracing is *not* preserved across a resume.** *(Known gap, deferred to a follow-up issue.)*
+  All 18 traced runners under `trace/{langfuse,logfire,openllmetry}/` override `run()` and nothing
+  else, so a resumed turn carries no Agent Kernel span — and neither does a streamed one, which is
+  pre-existing. Recorded here rather than left to be discovered: closing it means 12 overrides (the
+  four pause-capable frameworks × 3 backends), and it should cover `stream`, `resume` and
+  `resume_stream` together instead of leaving `run()` and `resume()` traced while the streamed pair
+  is not. What is missing is the Agent Kernel span specifically — for Langfuse + LangGraph the
+  callback handler already reaches the resumed run through `_session_config`
+  (`trace/langfuse/langgraph.py`), and OpenLLMetry records no span even on `run()`.
 - **OpenAI multimodal runs carry the SDK session** after #679 (merged, `ad189723`), so a paused
   multimodal run resumes on the same path as a text one and needs no special case.
 
@@ -866,7 +875,7 @@ Tests that exist to defend a specific decision:
   second `AgentPausedReplyAny` with a fresh record, and answering those completes the run. On
   Pydantic AI, assert instead that AK refuses **before** the framework is called, naming the
   missing ids, rather than surfacing the adapter's generic error.
-- Plus the routine core cases: the new types round-trip; the **five** resume failure modes each
+- Plus the routine core cases: the new types round-trip; the **six** resume failure modes each
   raise their own error;
   `ToolContext.requests` on a resume holds the hook-processed list; `ResumeSpec` rejects an empty
   `decisions` list and duplicate ids; a pause never reaches `StreamChunk.error`; and CrewAI and

@@ -1172,6 +1172,68 @@ class TestPydanticAIResume:
         assert "and the weather?" in g.prompts
 
 
+class TestPydanticAIResumeEnvelope:
+    """A resumed turn is not a second-class one: same context, same options as an ordinary run."""
+
+    @pytest.mark.asyncio
+    async def test_framework_context_survives_a_resume(self):
+        runner, session, g = PydanticAIRunner(), Session("s"), _Gated()
+        session.set_framework_context({"user_id": "42"})
+        paused = await runner.run(g.agent, session, [AgentRequestText(prompt="hi")])
+        record = PausedRunState.get(session, paused.run_id)
+        requests, decisions = _resume_requests(ResumeDecision(id=paused.interruptions[0].id, payload="large"))
+
+        await runner.resume(g.agent, session, requests, decisions, record)
+
+        assert session.get_framework_context() == {"user_id": "42"}
+
+    @pytest.mark.asyncio
+    async def test_a_declared_run_option_reaches_the_resumed_call(self):
+        """`deferred_tool_results` is the other half: an AK-owned key is still written last."""
+        from pydantic_ai.usage import UsageLimits
+
+        runner, session, g = PydanticAIRunner(), Session("s"), _Gated()
+        paused = await runner.run(g.agent, session, [AgentRequestText(prompt="hi")])
+        record = PausedRunState.get(session, paused.run_id)
+        requests, decisions = _resume_requests(ResumeDecision(id=paused.interruptions[0].id, payload="large"))
+        limits = UsageLimits(request_limit=10)
+        g.agent.run_options["usage_limits"] = limits
+        captured = {}
+
+        original = g.agent.agent.run
+
+        async def _capture(*args, **kwargs):
+            captured.update(kwargs)
+            return await original(*args, **kwargs)
+
+        g.agent.agent.run = _capture
+        await runner.resume(g.agent, session, requests, decisions, record)
+
+        assert captured["usage_limits"] is limits
+        assert captured["deferred_tool_results"] is not None
+
+    @pytest.mark.asyncio
+    async def test_a_tool_on_the_resumed_turn_sees_the_resume_request(self):
+        from agentkernel.core import ToolContext as TC
+
+        runner, session, g = PydanticAIRunner(), Session("s"), _Gated()
+        paused = await runner.run(g.agent, session, [AgentRequestText(prompt="hi")])
+        record = PausedRunState.get(session, paused.run_id)
+        requests, decisions = _resume_requests(ResumeDecision(id=paused.interruptions[0].id, payload="large"))
+        seen = {}
+
+        original = g.agent.agent.run
+
+        async def _capture(*args, **kwargs):
+            seen["requests"] = TC.get().requests
+            return await original(*args, **kwargs)
+
+        g.agent.agent.run = _capture
+        await runner.resume(g.agent, session, requests, decisions, record)
+
+        assert any(isinstance(r, AgentResumeRequestAny) for r in seen["requests"])
+
+
 class TestPydanticAIApprovals:
     @pytest.mark.asyncio
     @pytest.mark.parametrize("status,expected", [("approved", "refunded 100"), ("denied", None), ("cancelled", None)])
@@ -1420,6 +1482,22 @@ class TestAnOrdinaryTurnWhileAPauseIsPending:
 
         with pytest.raises(ValueError):
             await runner.run(g.agent, session, [AgentRequestText(prompt="something else")])
+
+        assert PausedRunState.get(session, paused.run_id) is not None
+
+    @pytest.mark.asyncio
+    async def test_a_streamed_turn_is_refused_the_same_way(self):
+        """The requirement does not distinguish the execution modes, and `stream()` reaches the same
+        framework refusal — but as a raw `UserError` out of `Runtime.stream` unless it is caught here.
+
+        `stream()` is a generator, so the guard fires on the first iteration rather than at the call.
+        """
+        runner, session, g = PydanticAIRunner(), Session("s"), _Gated()
+        paused = await runner.run(g.agent, session, [AgentRequestText(prompt="hi")])
+
+        with pytest.raises(ValueError, match=paused.run_id):
+            async for _ in runner.stream(g.agent, session, [AgentRequestText(prompt="something else")]):
+                pass
 
         assert PausedRunState.get(session, paused.run_id) is not None
 

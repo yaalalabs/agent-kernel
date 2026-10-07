@@ -471,6 +471,8 @@ class PydanticAIRunner(BaseRunner):
         :param requests: The requests to the agent.
         :return: An async generator yielding StreamEvent objects.
         """
+        self._reject_while_a_decision_is_outstanding(session)
+
         context: ToolContext | None = None
         try:
             context = ToolContext(Runtime.current(), agent, session, requests).set()
