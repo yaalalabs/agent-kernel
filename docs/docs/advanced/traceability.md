@@ -543,7 +543,7 @@ If an OpenTelemetry tracer provider is already installed, Agent Kernel reuses it
 
 ### What Gets Traced
 
-Each non-streaming agent run (`execution.mode: invoke`) is wrapped in a span named `Agent Kernel <Framework>`. The span carries:
+Each non-streaming agent run is wrapped in a span named `Agent Kernel <Framework>`. The span carries:
 
 - `session.id`: the Agent Kernel session ID. It is also copied onto every span the framework instrumentation emits during the run, so you can filter a whole conversation in Transaction Search, and GenAI Observability can group it as a session.
 - `input.value` / `output.value`: the prompt and the agent's reply.
