@@ -8,11 +8,9 @@ from typing import Dict, Optional
 from livekit import api, rtc
 
 from ...core.config import AKConfig
-from ...core.model import AgentReply, AgentRequestText, AgentRequestVoice, BaseRunRequest, StreamChunk
+from ...core.model import AgentReply, AgentRequestText, StreamChunk
 from ...core.realtime import EDGE_SAMPLE_RATE
 from ...core.util.factory import AKConfigError
-from ...pipeline.envelope import ATTR_INTEGRATION, REPLY_CONTEXT_PREFIX
-from ...pipeline.producer import RequestProducer
 from ..adapter.base import StatefulEdgeAdapter
 
 _log = logging.getLogger("ak.integration.livekit")
@@ -52,6 +50,9 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
         config = AKConfig.get()
         self.room_url = room_url or config.livekit.livekit_url
         self.agent_name = agent_name or config.livekit.agent or "general"
+        # Carried on every request so the runner binds this room's session to the configured agent;
+        # None (nothing configured) leaves selection to the runner's default agent.
+        self.agent = agent_name or config.livekit.agent or None
         self.session_id = session_id or str(uuid.uuid4())
         # Mic audio is accumulated to one input-queue message of this many bytes; 0 passes every
         # frame LiveKit hands us straight through (lowest latency, many more queue messages).
@@ -155,7 +156,7 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
         """Kick off the conversation once a participant's mic appears."""
         _log.info(f"Triggering auto-greeting for {participant_identity}")
         prompt = f"A user named {participant_identity} just connected their microphone. Say a very short hello to them and confirm you are connected!"
-        self._stage_request(AgentRequestText(prompt=prompt, name=self.agent_name))
+        self._stage_request(AgentRequestText(prompt=prompt))
 
     def _handle_chat_message(self, data_packet: "rtc.DataPacket") -> None:
         if data_packet.topic not in ("chat", "lk-chat-topic", "lk-chat", ""):
@@ -170,7 +171,7 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
             if not text:
                 return
             _log.info(f"Text chat received from {data_packet.participant.identity}: {text}")
-            self._stage_request(AgentRequestText(prompt=text, name=self.agent_name))
+            self._stage_request(AgentRequestText(prompt=text))
         except Exception as e:
             _log.error(f"Failed to process chat: {e}")
 
@@ -191,17 +192,17 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
                 if not raw_bytes:
                     continue
                 if self._input_batch_bytes == 0:
-                    self._stage_request(self._enqueue_audio(raw_bytes, self.agent_name))
+                    self._stage_request(self._enqueue_audio(raw_bytes))
                     continue
                 buffer.extend(raw_bytes)
                 if len(buffer) >= self._input_batch_bytes:
-                    self._stage_request(self._enqueue_audio(buffer, self.agent_name))
+                    self._stage_request(self._enqueue_audio(buffer))
                     buffer.clear()
             except Exception as e:
                 _log.error(f"Failed to process incoming audio frame: {e}")
 
         if buffer:
-            self._stage_request(self._enqueue_audio(buffer, self.agent_name))
+            self._stage_request(self._enqueue_audio(buffer))
 
     def _stage_request(self, request) -> None:
         """Stage one request for the sender task, tagged for this livekit session.
@@ -212,9 +213,8 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
         if self._producer is None or self._pending is None:
             return
 
-        body, request_id, attributes = self._enqueue(request)
         try:
-            self._pending.put_nowait((body, request_id, attributes))
+            self._pending.put_nowait(self._enqueue(request))
         except asyncio.QueueFull:
             _log.warning(f"Realtime input queue is full for session {self.session_id}; dropping a frame (broker slow or unreachable?)")
 
@@ -226,9 +226,9 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
         """
         assert self._pending is not None
         while True:
-            body, request_id, attributes = await self._pending.get()
+            inbound = await self._pending.get()
             try:
-                await asyncio.to_thread(self._producer.enqueue, body=body, request_id=request_id, attributes=attributes, group_id=self.session_id)
+                await asyncio.to_thread(self._producer.enqueue, self.name, inbound)
             except Exception as e:
                 _log.error(f"Failed to enqueue request for session {self.session_id}: {e}")
 

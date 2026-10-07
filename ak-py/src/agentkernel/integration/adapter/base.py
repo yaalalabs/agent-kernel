@@ -17,13 +17,14 @@ import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
-from ...core.model import AgentReply, AgentRequestUnion, AgentRequestVoice, BaseRunRequest, StreamChunk
-from ...pipeline.envelope import ATTR_INTEGRATION, REPLY_CONTEXT_PREFIX
-from ...pipeline.producer import RequestProducer
+from ...core.model import AgentReply, AgentRequestUnion, AgentRequestVoice, StreamChunk
+
+if TYPE_CHECKING:  # typing only; producer.py imports this module
+    from .producer import IntegrationProducer
 
 ATTACHMENTS_DISABLED_ERROR = (
     "Attachments from messaging integrations require multimodal support — " "set multimodal.enabled: true in config.yaml to accept images and files"
@@ -252,9 +253,12 @@ class StatefulEdgeAdapter(ABC):
     source: Source = Source.REALTIME
     ERROR_MESSAGE: str = "Sorry, there was an error processing your request."
     session_id: str = ""
+    # Agent this edge's session is bound to; None selects the runner's default agent. A realtime
+    # session binds its agent once, when its connection is created from the first request.
+    agent: Optional[str] = None
 
     def __init__(self):
-        self._producer: Optional[RequestProducer] = None
+        self._producer: Optional["IntegrationProducer"] = None
 
     # ── Lifecycle ──
 
@@ -274,31 +278,31 @@ class StatefulEdgeAdapter(ABC):
 
     def _init_producer(self) -> None:
         """Call once in start() to set up the input queue producer."""
-        self._producer = RequestProducer()
+        # Imported here: producer.py imports InboundRequest from this module.
+        from .producer import IntegrationProducer
 
-    def _enqueue(self, request: AgentRequestUnion, extra_attributes: Optional[Dict[str, str]] = None) -> Tuple[BaseRunRequest, str, Dict[str, str]]:
-        """Stage one request for the pipeline input queue.
+        self._producer = IntegrationProducer()
 
-        :return: (body, request_id, attributes) for the caller to actually enqueue.
+    def _enqueue(self, request: AgentRequestUnion) -> InboundRequest:
+        """Build the normalized inbound request for one platform message.
+
+        The caller hands it to :meth:`IntegrationProducer.enqueue`, which stamps the integration
+        and reply-context attributes, so every integration shares one producer.
+
+        :return: The request, carrying this edge's session and (if set) its configured agent.
         """
-        if self._producer is None:
-            raise RuntimeError("RequestProducer not initialized. Call _init_producer() first.")
+        return InboundRequest(
+            session_id=self.session_id,
+            request_id=str(uuid.uuid4()),
+            requests=[request],
+            agent=self.agent,
+            reply_context={"session_id": self.session_id},
+        )
 
-        body = BaseRunRequest(prompt="", session_id=self.session_id, requests=[request])
-        request_id = str(uuid.uuid4())
-        attributes = {
-            ATTR_INTEGRATION: self.name,
-            f"{REPLY_CONTEXT_PREFIX}session_id": self.session_id,
-        }
-        if extra_attributes:
-            attributes.update(extra_attributes)
-
-        return body, request_id, attributes
-
-    def _enqueue_audio(self, raw_bytes: bytes, agent_name: str) -> AgentRequestVoice:
+    def _enqueue_audio(self, raw_bytes: bytes) -> AgentRequestVoice:
         """Base64-encode a PCM frame/batch into a voice request."""
         b64_audio = base64.b64encode(raw_bytes).decode("utf-8")
-        return AgentRequestVoice(prompt="", audio_data=b64_audio, name=agent_name)
+        return AgentRequestVoice(prompt="", audio_data=b64_audio, name="mic")
 
     # ── Outbound: Agent Kernel -> Platform ──
 

@@ -28,8 +28,8 @@ class _Producer:
     def __init__(self):
         self.calls = []
 
-    def enqueue(self, **kwargs):
-        self.calls.append(kwargs)
+    def enqueue(self, adapter_name, request):
+        self.calls.append({"adapter_name": adapter_name, "request": request})
 
 
 class _AudioSource:
@@ -49,6 +49,7 @@ def _gateway() -> LiveKitEdgeGateway:
     gateway = object.__new__(LiveKitEdgeGateway)
     gateway.session_id = "s1"
     gateway.agent_name = "general"
+    gateway.agent = "general"
     gateway._producer = None
     gateway._pending = None
     gateway._sender_task = None
@@ -103,7 +104,7 @@ class TestInboundStaging:
         gateway._pending = asyncio.Queue(maxsize=4)
         sender = asyncio.create_task(gateway._drain_requests())
         try:
-            gateway._stage_request(AgentRequestText(prompt="hi", name="general"))
+            gateway._stage_request(AgentRequestText(prompt="hi"))
             for _ in range(50):
                 if gateway._producer.calls:
                     break
@@ -112,19 +113,43 @@ class TestInboundStaging:
             sender.cancel()
 
         [call] = gateway._producer.calls
-        assert call["group_id"] == "s1"
-        assert call["attributes"]["integration"] == "livekit"
-        assert call["body"].session_id == "s1"
+        assert call["adapter_name"] == "livekit"
+        assert call["request"].session_id == "s1"
+        assert call["request"].agent == "general"
+        assert call["request"].reply_context == {"session_id": "s1"}
+
+    def test_enqueue_carries_no_agent_when_none_is_configured(self):
+        gateway = _gateway()
+        gateway.agent = None
+
+        assert gateway._enqueue(AgentRequestText(prompt="hi")).agent is None
+
+    def test_integration_producer_stamps_the_configured_agent_on_the_queued_body(self):
+        from agentkernel.integration.adapter.producer import IntegrationProducer
+
+        sent = []
+        producer = object.__new__(IntegrationProducer)
+        producer._producer = types.SimpleNamespace(enqueue=lambda body, **kwargs: sent.append((body, kwargs)))
+        gateway = _gateway()
+
+        producer.enqueue(gateway.name, gateway._enqueue(AgentRequestText(prompt="hi")))
+
+        [(body, kwargs)] = sent
+        assert body.agent == "general"
+        assert body.session_id == "s1"
+        assert kwargs["group_id"] == "s1"
+        assert kwargs["attributes"]["integration"] == "livekit"
+        assert kwargs["attributes"]["reply_session_id"] == "s1"
 
     @pytest.mark.asyncio
     async def test_enqueue_drops_a_frame_when_the_staging_queue_is_full(self, caplog):
         gateway = _gateway()
         gateway._producer = _Producer()
         gateway._pending = asyncio.Queue(maxsize=1)
-        gateway._pending.put_nowait(("body", "id", {}))
+        gateway._pending.put_nowait("staged")
 
         with caplog.at_level(logging.WARNING):
-            gateway._stage_request(AgentRequestText(prompt="hi", name="general"))
+            gateway._stage_request(AgentRequestText(prompt="hi"))
 
         assert gateway._pending.qsize() == 1
         assert any("full" in record.message for record in caplog.records)
@@ -174,7 +199,7 @@ class TestInboundAudioBatching:
         seen = []
         gateway._stage_request = lambda request: seen.append(request)
 
-        gateway._stage_request(gateway._enqueue_audio(b"\x01\x02\x03\x04", "general"))
+        gateway._stage_request(gateway._enqueue_audio(b"\x01\x02\x03\x04"))
 
         [request] = seen
         assert isinstance(request, AgentRequestVoice)
