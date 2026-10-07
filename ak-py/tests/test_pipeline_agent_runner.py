@@ -248,3 +248,103 @@ class TestIntegrationTraffic:
         assert json.loads(out.body) == {"error": "Failed to process message after 3 retries"}
         assert out.attributes["status_code"] == "500"
         assert out.attributes[ATTR_INTEGRATION] == "slack"
+
+
+class TestAPoisonBodyIsRejectedNotAcked:
+    """
+    `process` rejecting a malformed body is what drives retry -> max_receive_count -> dead-letter.
+
+    Making `prompt` optional for resume-only requests briefly removed the only structural check that
+    told a run request from arbitrary JSON: the body validated, failed later on a missing session_id,
+    came back as a 400 reply, and the message was acked — so a poison message was swallowed instead
+    of dead-lettered. The transport e2e caught it; this pins it where it is cheap to run.
+    """
+
+    @staticmethod
+    def _msg(body):
+        return QueueMessage(
+            body=json.dumps(body),
+            attributes={"request_id": "r1", "user_id": "u1"},
+            group_id="s1",
+            dedup_id="d1",
+            receive_count=1,
+            message_id="m1",
+        )
+
+    def test_a_body_that_is_not_a_run_request_raises(self):
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            AgentRunner(transport=InMemoryTransport()).process(self._msg({"not_a": "run request"}))
+
+    def test_an_explicitly_empty_prompt_still_validates(self):
+        """`{"prompt": ""}` is a run request and must behave exactly as it did before the widening."""
+        from agentkernel.core.model import BaseRunRequest
+
+        assert BaseRunRequest.model_validate({"prompt": "", "session_id": "s1"}).prompt == ""
+
+    def test_a_resume_only_body_still_validates(self):
+        """The widening's whole purpose: a decision can arrive with no prompt at all."""
+        from agentkernel.core.model import BaseRunRequest
+
+        body = {"session_id": "s1", "resume": {"decisions": [{"id": "i1", "status": "approved"}]}}
+
+        assert BaseRunRequest.model_validate(body).resume is not None
+
+
+class TestAPausedReplyThroughTheQueue:
+    """
+    A pause must survive the broker with its 202 intact, and stay distinguishable from a deferral.
+
+    `202` means two things since #606 — a scheduled acknowledgement and a paused run — and the only
+    thing telling them apart is the `status` key in the body. A client branching on the status code
+    alone would treat a question for a human as a booking confirmation, so this is asserted rather
+    than assumed.
+    """
+
+    @staticmethod
+    def _run(reply_body, status, dedup_id="d1"):
+        # The transport's queues are process-wide and per-group FIFO, so a previous run's unacked
+        # output would block this one. Reset rather than work around it.
+        InMemoryTransport.reset()
+        transport = InMemoryTransport()
+        chat_service = MagicMock()
+        chat_service.process_chat_request.return_value = (status, reply_body)
+
+        AgentRunner(transport=transport, chat_service=chat_service).process(_input_msg(dedup_id=dedup_id))
+
+        [out] = _fetch_output(transport)
+        return out
+
+    def test_the_202_survives_the_round_trip(self):
+        paused = {"status": "PAUSED", "run_id": "9f2c", "agent": "support", "interruptions": [], "session_id": "s1"}
+
+        out = self._run(paused, 202)
+
+        assert out.attributes["status_code"] == "202"
+        assert json.loads(out.body) == paused
+
+    def test_the_interruptions_reach_the_other_side(self):
+        """The record stays server-side, but what the human must decide has to travel."""
+        paused = {
+            "status": "PAUSED",
+            "run_id": "9f2c",
+            "agent": "support",
+            "interruptions": [{"id": "call_abc123", "kind": "tool_call", "tool_name": "issue_refund"}],
+            "session_id": "s1",
+        }
+
+        out = self._run(paused, 202)
+
+        assert json.loads(out.body)["interruptions"][0]["id"] == "call_abc123"
+
+    def test_a_pause_and_a_deferral_share_the_code_but_not_the_status(self):
+        scheduled = {"status": "SCHEDULED", "scheduled_task_id": "74ca19a5", "session_id": "s1"}
+        paused = {"status": "PAUSED", "run_id": "9f2c", "agent": "support", "interruptions": [], "session_id": "s1"}
+
+        deferred_out = self._run(scheduled, 202, dedup_id="d-sched")
+        paused_out = self._run(paused, 202, dedup_id="d-paused")
+
+        assert deferred_out.attributes["status_code"] == paused_out.attributes["status_code"] == "202"
+        assert json.loads(deferred_out.body)["status"] == "SCHEDULED"
+        assert json.loads(paused_out.body)["status"] == "PAUSED"
