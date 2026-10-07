@@ -27,6 +27,10 @@ wheels = [
 aws = [
     { name = "boto3" },
 ]
+multimodal = [
+    { name = "litellm" },
+    { name = "python-multipart" },
+]
 openai = [
     { name = "openai-agents" },
     { name = "openai-guardrails" },
@@ -279,7 +283,7 @@ source = { virtual = "." }
 
 [package.optional-dependencies]
 agent-runner = [
-    { name = "agentkernel", extra = ["aws", "openai"] },
+    { name = "agentkernel", extra = ["aws", "multimodal", "openai"] },
 ]
 authorizer = [
     { name = "agentkernel", extra = ["aws"] },
@@ -302,7 +306,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "agentkernel", extras = ["aws"], marker = "extra == 'authorizer'", specifier = ">=0.9.3" },
-    { name = "agentkernel", extras = ["aws", "openai"], marker = "extra == 'agent-runner'", specifier = ">=0.9.3" },
+    { name = "agentkernel", extras = ["aws", "openai", "multimodal"], marker = "extra == 'agent-runner'", specifier = ">=0.9.3" },
     { name = "agentkernel", extras = ["aws", "slack"], marker = "extra == 'request-handler'", specifier = ">=0.9.3" },
     { name = "agentkernel", extras = ["aws", "slack"], marker = "extra == 'response-handler'", specifier = ">=0.9.3" },
 ]

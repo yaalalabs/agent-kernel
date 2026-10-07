@@ -2,11 +2,22 @@
 set -eo pipefail # exit if any command in this script fails
 
 # The request handler, response handler and authorizer deploy as local zips; the agent runner
-# deploys as a container image because agentkernel[aws,openai] (the OpenAI Agents SDK in
+# deploys as a container image because agentkernel[aws,openai,multimodal] (the OpenAI Agents SDK in
 # particular) does not fit inside Lambda's 250 MB unzipped zip limit. Terraform builds and pushes
 # that image from ../dist_agent_runner, so Docker must be running.
 #
 # Pass `local` as the first argument to install agentkernel from ../../../ak-py/dist instead of PyPI.
+LAMBDA_TARGET=(--python-platform x86_64-manylinux_2_34 --python-version 3.12 --only-binary :all:)
+
+install_lambda_dependencies() {
+	local extra="$1" target="$2" local_extras="$3"
+	uv export --extra "$extra" --no-hashes --no-dev >requirements.txt
+	if [[ ${LOCAL_BUILD-} != "local" ]]; then
+		uv pip install -r requirements.txt --target="$target" "${LAMBDA_TARGET[@]}"
+	else
+		uv pip install --force-reinstall --target="$target" --find-links ../../../ak-py/dist "agentkernel[$local_extras]" --no-cache-dir "${LAMBDA_TARGET[@]}"
+	fi
+}
 
 # $1 = the pyproject extra, $2 = the entrypoint module, $3 = the dist directory name,
 # $4 = the extras to force-reinstall from the local ak-py dist.
@@ -16,12 +27,7 @@ create_zip_deployment_package() {
 	pushd ../
 	rm -rf "$dist" "$dist.zip"
 	mkdir -p "$dist"
-	uv export --extra "$extra" --no-hashes >requirements.txt
-	if [[ ${LOCAL_BUILD-} != "local" ]]; then
-		uv pip install -r requirements.txt --target="$dist"
-	else
-		uv pip install --force-reinstall --target="$dist" --find-links ../../../ak-py/dist "agentkernel[$local_extras]" --no-cache-dir
-	fi
+	install_lambda_dependencies "$extra" "$dist" "$local_extras"
 	cp -r "$entrypoint" config.yaml "$dist/"
 	cd "$dist" && zip -rq "../$dist.zip" .
 	popd || exit 1
@@ -36,12 +42,7 @@ create_image_deployment_package() {
 	pushd ../
 	rm -rf "$dist"
 	mkdir -p "$dist/data"
-	uv export --extra "$extra" --no-hashes >requirements.txt
-	if [[ ${LOCAL_BUILD-} != "local" ]]; then
-		uv pip install -r requirements.txt --target="$dist/data"
-	else
-		uv pip install --force-reinstall --target="$dist/data" --find-links ../../../ak-py/dist "agentkernel[$local_extras]" --no-cache-dir
-	fi
+	install_lambda_dependencies "$extra" "$dist/data" "$local_extras"
 	cp -r "$entrypoint" config.yaml "$dist/data"
 	popd || exit 1
 	cp Dockerfile.agent_runner "../$dist/Dockerfile"
@@ -62,7 +63,7 @@ report_zip_size() {
 LOCAL_BUILD=${1-}
 
 create_zip_deployment_package request_handler lambda_request_handler.py dist_request_handler "aws,slack"
-create_image_deployment_package agent_runner lambda_agent_runner.py dist_agent_runner "aws,openai"
+create_image_deployment_package agent_runner lambda_agent_runner.py dist_agent_runner "aws,openai,multimodal"
 create_zip_deployment_package response_handler lambda_response_handler.py dist_response_handler "aws,slack"
 create_zip_deployment_package authorizer lambda_auth.py dist_auth "aws"
 

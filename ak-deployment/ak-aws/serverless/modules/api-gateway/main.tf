@@ -133,7 +133,8 @@ resource "aws_api_gateway_deployment" "deployment" {
       values(aws_api_gateway_resource.sub)[*].id,
       values(aws_api_gateway_resource.child)[*].id,
       values(aws_api_gateway_method.endpoint)[*].id,
-      values(aws_api_gateway_integration.endpoint)[*].id
+      values(aws_api_gateway_integration.endpoint)[*].id,
+      [for a in aws_api_gateway_authorizer.lambda_authorizer : [a.identity_source, a.authorizer_result_ttl_in_seconds, a.authorizer_uri]]
     ]))
   }
   lifecycle {

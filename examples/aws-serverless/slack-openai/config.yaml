@@ -41,6 +41,8 @@ execution:
 # Attachments: the Slack adapter downloads files at the edge and stores them, so they need a store
 # every Lambda can reach. Uncomment this block and set create_dynamodb_multimodal_memory_table = true
 # in deploy/main.tf; the table then reaches the request handler as well as the agent runner.
+# The agent runner also needs the `multimodal` extra (LiteLLM) for MultimodalPreHook; both
+# pyproject.toml and `deploy.sh local` already install it for that Lambda.
 # multimodal:
 #   enabled: true
 #   storage_type: dynamodb
