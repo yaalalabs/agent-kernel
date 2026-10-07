@@ -3,7 +3,7 @@
 # Tracing is transparent: demo.py is the same OpenAI agent as examples/cli/openai —
 # only this config turns tracing on. Spans are exported to the X-Ray OTLP endpoint of
 # AWS_REGION, signed with your AWS credentials, and appear under CloudWatch Transaction
-# Search and GenAI Observability. See README.md for the one-time account setup.
+# Search. See README.md for the one-time account setup.
 trace:
   enabled: true
   type: cloudwatch

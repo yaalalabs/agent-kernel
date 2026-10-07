@@ -42,7 +42,7 @@ Most agent frameworks help you build a *prototype*. **Agent Kernel is the platfo
 | 🛡️ **Compliant by Default** | Built-in guardrails (OpenAI, AWS Bedrock), PII detection, full audit traces, jailbreak prevention. |
 | 🧠 **Stateful & Knowledge-Aware** | Pluggable session stores (Redis, Valkey, DynamoDB, Cosmos DB) + knowledge bases (ChromaDB, Neo4j, Starburst, Open Knowledge Format bundles). |
 | 💬 **Channels Built-In** | Slack, WhatsApp, Teams, Telegram, Gmail, Messenger, Instagram — out of the box. |
-| 🔍 **Production Observability** | LangFuse, OpenLLMetry, Pydantic Logfire, and AWS CloudWatch tracing wired in. Every agent, tool, and LLM call — visible. |
+| 🔍 **Production Observability** | LangFuse, OpenLLMetry, Pydantic Logfire, and AWS CloudWatch tracing wired in. Every agent run — visible, with LLM and tool calls where the framework supports it. |
 | 🤝 **Open Standards** | Native **MCP** (Model Context Protocol), **A2A** (Agent-to-Agent), and **AG-UI** (streamed event protocol for agent-facing frontends) support. |
 | 🆓 **Apache 2.0** | No licensing fees. No vendor lock-in. Production-ready open source. |
 

@@ -62,7 +62,7 @@ variables, a profile, SSO, or an instance/task role), then run the demo:
 
 Each agent run is a span named `Agent Kernel OpenAI` carrying the `session.id`, with the OpenAI Agents SDK's
 agent, LLM, and tool spans nested under it. Find them in the CloudWatch console under
-**Application Signals → Transaction Search** (filter on `session.id`), and under **GenAI Observability**.
+**Application Signals → Transaction Search** (filter on `session.id`).
 The service is named `AgentKernel`; set `OTEL_SERVICE_NAME` to change it.
 
 To export through a local collector or the CloudWatch agent instead of straight to X-Ray, point the

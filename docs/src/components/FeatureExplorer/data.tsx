@@ -285,7 +285,7 @@ export const FEATURE_TABS: FeatureTab[] = [
       {
         title: "Tracing",
         description:
-          "One config line enables Langfuse, OpenLLMetry on OpenTelemetry, Pydantic Logfire, or AWS CloudWatch across agents, LLM calls and tool invocations, with cost and latency.",
+          "One config line enables Langfuse, OpenLLMetry on OpenTelemetry, Pydantic Logfire, or AWS CloudWatch across agent runs, plus LLM calls and tool invocations where the framework supports them, with cost and latency.",
         tags: ["Langfuse", "OpenLLMetry", "Logfire", "CloudWatch", "OpenTelemetry"],
         docs: "/docs/advanced/traceability",
         example: "cli/logfire",

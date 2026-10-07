@@ -29,6 +29,7 @@ INPUT_VALUE = "input.value"
 OUTPUT_VALUE = "output.value"
 
 _XRAY_HOST = re.compile(r"^https://xray\.(?P<region>[a-z0-9-]+)\.amazonaws\.com(\.cn)?(/|$)")
+_AWS_REGION = re.compile(r"[a-z0-9-]+")
 
 
 class SessionSpanProcessor(SpanProcessor):
@@ -139,6 +140,8 @@ class CloudWatch(BaseTrace):
                 "trace.type: cloudwatch needs an AWS region to reach the X-Ray OTLP endpoint; set AWS_REGION, "
                 "or point OTEL_EXPORTER_OTLP_TRACES_ENDPOINT at a collector or the CloudWatch agent"
             )
+        if not _AWS_REGION.fullmatch(region):  # it becomes the signed endpoint's host, so nothing but a region name
+            raise AKConfigError(f"trace.type: cloudwatch got a malformed AWS region {region!r}; check AWS_REGION")
         domain = "amazonaws.com.cn" if region.startswith("cn-") else "amazonaws.com"
         return OTLPSpanExporter(
             endpoint=f"https://xray.{region}.{domain}/v1/traces",

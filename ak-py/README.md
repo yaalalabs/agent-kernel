@@ -1166,8 +1166,7 @@ trace:
 
 **AWS CloudWatch Setup:**
 
-To send traces to Amazon CloudWatch (via AWS X-Ray, searchable in Transaction Search and GenAI
-Observability), install the cloudwatch extra:
+To send traces to Amazon CloudWatch (via AWS X-Ray, searchable in Transaction Search), install the cloudwatch extra:
 
 ```bash
 pip install agentkernel[cloudwatch]

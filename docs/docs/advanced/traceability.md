@@ -33,7 +33,7 @@ Agent Kernel supports the following observability platforms:
 - **Langfuse** - Open-source LLM engineering platform for tracing, evaluating, and monitoring AI applications
 - **OpenLLMetry (Traceloop)** - OpenTelemetry-based observability for LLM applications with support for multiple backends
 - **Pydantic Logfire** - OpenTelemetry-based observability from the Pydantic team, with a native OpenAI Agents SDK integration
-- **AWS CloudWatch** - OpenTelemetry traces exported straight to AWS X-Ray, searchable in CloudWatch Transaction Search and GenAI Observability
+- **AWS CloudWatch** - OpenTelemetry traces exported straight to AWS X-Ray, searchable in CloudWatch Transaction Search
 
 ## Getting Started with Langfuse
 
@@ -481,7 +481,7 @@ Logfire configures the global OpenTelemetry tracer provider, and each non-stream
 
 ## Getting Started with AWS CloudWatch
 
-[Amazon CloudWatch](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/CloudWatch-Transaction-Search.html) ingests OpenTelemetry traces through AWS X-Ray, makes every span searchable with Transaction Search, and shows agent sessions in GenAI Observability. Agent Kernel exports spans over OTLP/HTTP straight to the regional X-Ray endpoint, signed with your AWS credentials (SigV4), so no collector or sidecar is needed. That makes it work the same way on AWS Lambda, ECS, EKS, and EC2.
+[Amazon CloudWatch](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/CloudWatch-Transaction-Search.html) ingests OpenTelemetry traces through AWS X-Ray and makes every span searchable with Transaction Search. Agent Kernel exports spans over OTLP/HTTP straight to the regional X-Ray endpoint, signed with your AWS credentials (SigV4), so no collector or sidecar is needed. That makes it work the same way on AWS Lambda, ECS, EKS, and EC2.
 
 ### Installation
 
@@ -545,7 +545,7 @@ If an OpenTelemetry tracer provider is already installed, Agent Kernel reuses it
 
 Each non-streaming agent run is wrapped in a span named `Agent Kernel <Framework>`. The span carries:
 
-- `session.id`: the Agent Kernel session ID. It is also copied onto every span the framework instrumentation emits during the run, so you can filter a whole conversation in Transaction Search, and GenAI Observability can group it as a session.
+- `session.id`: the Agent Kernel session ID. It is also copied onto every span the framework instrumentation emits during the run, so you can filter a whole conversation in Transaction Search.
 - `input.value` / `output.value`: the prompt and the agent's reply.
 
 The service resource defaults to `service.name=AgentKernel` and `aws.service.type=gen_ai_agent`. Values set through `OTEL_SERVICE_NAME` or `OTEL_RESOURCE_ATTRIBUTES` win.
@@ -571,7 +571,7 @@ The batch span processor normally exports in the background, but Lambda freezes 
 
 1. Open the CloudWatch console in the region you export to.
 2. Go to **Application Signals → Transaction Search** and filter spans by `session.id` or by service `AgentKernel`. Open a trace to see the run span with its agent, LLM, and tool spans nested under it.
-3. Go to **GenAI Observability** for the agent and session views.
+3. Optionally, check **GenAI Observability**. Agent Kernel sets the `aws.service.type=gen_ai_agent` resource attribute and `session.id` that the AWS Distro for OpenTelemetry sets, but AWS does not document whether its agent and session views list agents that export without the distro, so treat Transaction Search as the supported view.
 
 ## Integrate with Your Own Traceability Platform
 

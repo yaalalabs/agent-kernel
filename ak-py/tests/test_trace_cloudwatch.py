@@ -186,6 +186,17 @@ def test_missing_region_raises_config_error(otel_globals, exporter_cls):
     otel_globals.assert_not_called()
 
 
+@pytest.mark.parametrize("region", ["us-east-1@attacker.example/", "us-east-1.attacker.example", "US-EAST-1"])
+def test_malformed_region_raises_config_error(monkeypatch, otel_globals, exporter_cls, region):
+    monkeypatch.setenv("AWS_REGION", region)  # interpolated into the signed endpoint, so it must stay a region name
+
+    with pytest.raises(AKConfigError) as exc_info:
+        CloudWatch().init()
+
+    assert "AWS_REGION" in str(exc_info.value)
+    exporter_cls.assert_not_called()
+
+
 def test_resource_defaults_to_agent_kernel_agent_service(monkeypatch, otel_globals, exporter_cls):
     monkeypatch.setenv("AWS_REGION", "us-west-2")
 
