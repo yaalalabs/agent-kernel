@@ -7,7 +7,9 @@ from ....core.chat_service import ChatService
 from ....core.config import AKConfig, ExecutionMode
 from ....core.model import BaseRunRequest, StreamChunk
 from ....pipeline.envelope import ATTR_INTEGRATION, REPLY_CONTEXT_PREFIX
+from ....pipeline.realtime_pool import RealtimeConnectionPool, send_permanent_failure
 from ....pipeline.thread_runner import ThreadRunner
+from ....pipeline.transport.base import QueueTransportFactory
 from ..core.sqs_handler import SQSHandler
 from .core import ECSSQSConsumer
 
@@ -296,10 +298,28 @@ class ECSRealtimeAgentRunner(ECSAgentRunner):
 
     @classmethod
     def _get_extra_tasks(cls) -> list[ThreadRunner.Task]:
-        from ....pipeline.realtime_pool import RealtimeConnectionPool
-
         pool = RealtimeConnectionPool.initialize()
         return [pool.get_task()]
+
+    @classmethod
+    def on_permanent_failure(cls, record: dict) -> None:
+        """Tell the room its input failed, as a marked error chunk its edge can deliver. Catches own exceptions."""
+        cls._log.error(f"Permanent failure for message {record.get('MessageId')}")
+        try:
+            record_attributes = cls._get_record_attributes(raw_queue_message=record)
+            attributes = {**SQSHandler.get_message_custom_attributes(record), "request_id": record_attributes["request_id"]}
+            if record_attributes.get("user_id"):
+                attributes["user_id"] = record_attributes["user_id"]
+            dedup_id = record_attributes.get("message_deduplication_id")
+            send_permanent_failure(
+                QueueTransportFactory.create(),
+                attributes,
+                record_attributes["message_group_id"],
+                f"{dedup_id}-error" if dedup_id else None,
+                f"Failed to process message after {cls._config.execution.queues.input.max_receive_count} retries",
+            )
+        except Exception:
+            cls._log.exception("Failed to send permanent-failure error chunk to output queue")
 
     @classmethod
     def process_message(cls, record: dict) -> None:
@@ -310,8 +330,6 @@ class ECSRealtimeAgentRunner(ECSAgentRunner):
         record_attributes = cls._get_record_attributes(raw_queue_message=record, body=body)
         request_id = record_attributes["request_id"]
         user_id = record_attributes.get("user_id")
-
-        from ....pipeline.realtime_pool import RealtimeConnectionPool
 
         pool = RealtimeConnectionPool.initialize()
 

@@ -10,6 +10,7 @@ from agentkernel.core.realtime import RealtimeRunner
 from agentkernel.core.runtime import Runtime
 from agentkernel.core.session.in_memory import InMemorySessionStore
 from agentkernel.deployment.aws.containerized.akagentrunner import ECSAgentRunner, ECSRealtimeAgentRunner, ECSStreamAgentRunner
+from agentkernel.pipeline.envelope import QueueName
 from agentkernel.pipeline.realtime_pool import RealtimeConnectionPool
 from agentkernel.pipeline.thread_runner import ThreadRunner
 from agentkernel.pipeline.transport.base import QueueTransportFactory
@@ -51,6 +52,28 @@ def test_process_message_extracts_reply_context_from_reply_prefixed_attributes()
     assert ctx["user_id"] == "u1"
     assert ctx["integration"] == "livekit"
     assert ctx["reply_context"] == {"session_id": "room_01"}
+
+
+def test_permanent_failure_emits_a_marked_error_chunk_for_the_live_edge(monkeypatch):
+    """The generic ECS failure reply drops the realtime marker, so the Response Handler would route it
+    to a webhook adapter; the realtime runner must emit a marked error chunk instead."""
+    InMemoryTransport.reset()
+    transport = InMemoryTransport()
+    monkeypatch.setattr(QueueTransportFactory, "create", staticmethod(lambda *a, **k: transport))
+    monkeypatch.setattr(
+        ECSRealtimeAgentRunner,
+        "_config",
+        SimpleNamespace(execution=SimpleNamespace(queues=SimpleNamespace(input=SimpleNamespace(max_receive_count=3)))),
+    )
+
+    ECSRealtimeAgentRunner.on_permanent_failure(_make_record([{"type": "text", "prompt": "hi"}]))
+
+    [out] = transport.create_consumer(QueueName.OUTPUT).fetch(10, 0.5)
+    assert out.attributes["realtime"] == "true"
+    assert out.attributes["integration"] == "livekit"
+    assert out.attributes["reply_session_id"] == "room_01"
+    assert out.group_id == "room_01"
+    assert json.loads(out.body) == {"error": "Failed to process message after 3 retries", "done": True}
 
 
 def test_process_message_routes_text_and_audio_requests():

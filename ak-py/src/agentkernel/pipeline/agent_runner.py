@@ -10,6 +10,7 @@ from .consumer import ConsumerLoop
 from .envelope import (
     ATTR_ENDPOINT_URL,
     ATTR_INTEGRATION,
+    ATTR_REALTIME,
     ATTR_REQUEST_ID,
     ATTR_STATUS_CODE,
     ATTR_THREAD,
@@ -18,6 +19,7 @@ from .envelope import (
     QueueMessage,
     QueueName,
 )
+from .realtime_pool import RealtimeConnectionPool
 from .thread_runner import ThreadRunner
 from .transport.base import QueueTransport, QueueTransportFactory
 
@@ -190,8 +192,17 @@ class AgentRunner:
             message.attributes.setdefault(ATTR_USER_ID, body.user_id)
         return request_id
 
-    def _send_to_output(self, source: QueueMessage, response_body, status_code: Optional[int] = None, dedup_suffix: Optional[str] = None) -> None:
+    def _send_to_output(
+        self,
+        source: QueueMessage,
+        response_body,
+        status_code: Optional[int] = None,
+        dedup_suffix: Optional[str] = None,
+        extra_attributes: Optional[dict] = None,
+    ) -> None:
         attributes = {key: value for key, value in source.attributes.items() if _is_forwarded(key)}
+        if extra_attributes:
+            attributes.update(extra_attributes)
         if status_code is not None:
             attributes[ATTR_STATUS_CODE] = str(status_code)
 
@@ -270,16 +281,12 @@ class RealtimeAgentRunner(AgentRunner):
     _log = logging.getLogger("ak.pipeline.realtime_agent_runner")
 
     def _get_extra_tasks(self) -> List[ThreadRunner.Task]:
-        from .realtime_pool import RealtimeConnectionPool
-
         pool = RealtimeConnectionPool.initialize()
         return [pool.get_task()]
 
     def process(self, message: QueueMessage) -> None:
         body = BaseRunRequest.model_validate(json.loads(message.body))
         request_id = self._resolve_request_metadata(message, body)
-
-        from .realtime_pool import RealtimeConnectionPool
 
         pool = RealtimeConnectionPool.initialize()
 
@@ -305,3 +312,17 @@ class RealtimeAgentRunner(AgentRunner):
                 conn.send_text(request.prompt)
 
         self._log.debug(f"[REALTIME CHUNK] request_id={request_id} (receive_count={message.receive_count})")
+
+    def on_permanent_failure(self, message: QueueMessage) -> None:
+            """Tell the room its input failed, as a marked error chunk its edge can deliver. Catches own exceptions."""
+            self._log.error(f"Permanent failure for message {message.message_id}")
+            try:
+                max_receive_count = AKConfig.get().execution.queues.input.max_receive_count
+                error_chunk = StreamChunk(error=f"Failed to process message after {max_receive_count} retries", done=True).model_dump(exclude_none=True)
+                # The input message carries no realtime marker (the pool stamps it on output), so it is added here;
+                # without it the Response Handler routes the failure to a webhook outbound adapter this edge lacks.
+                self._send_to_output(
+                    message, error_chunk, status_code=None, dedup_suffix=f"{message.receive_count}-error", extra_attributes={ATTR_REALTIME: "true"}
+                )
+            except Exception:
+                self._log.exception("Failed to send permanent-failure error chunk to output queue")

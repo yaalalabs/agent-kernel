@@ -383,13 +383,16 @@ class TestLiveKitGatewayErrorChunk:
 
 
 class TestRealtimePermanentFailure:
-    def test_integration_permanent_failure_is_stamped_status_500(self, monkeypatch):
-        """A realtime integration failure must reach ``deliver_error`` (status 500), not be treated
-        as a normal reply that leaves the room silent."""
+    def test_permanent_failure_reaches_the_live_edge_as_an_error_chunk(self, monkeypatch):
+        """End to end: an input that exhausts its retries must be delivered by the registered edge's
+        ``deliver_chunk`` error path, not routed to a webhook outbound adapter (which a stateful
+        edge has none of), so the room is told instead of left silent."""
         from unittest.mock import MagicMock
 
-        from agentkernel.pipeline.agent_runner import StreamAgentRunner
-        from agentkernel.pipeline.envelope import ATTR_STATUS_CODE, QueueMessage
+        from agentkernel.integration.adapter.registry import StatefulEdgeRegistry
+        from agentkernel.pipeline.agent_runner import RealtimeAgentRunner
+        from agentkernel.pipeline.envelope import QueueMessage
+        from agentkernel.pipeline.response_handler import ResponseHandler
 
         class _Input:
             max_receive_count = 3
@@ -407,15 +410,37 @@ class TestRealtimePermanentFailure:
 
         monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _Cfg))
 
+        class _Edge:
+            ERROR_MESSAGE = "sorry"
+
+            def __init__(self):
+                self.chunks = []
+
+            async def deliver_chunk(self, chunk, reply_context):
+                self.chunks.append((chunk, reply_context))
+
+        edge = _Edge()
+        monkeypatch.setattr(StatefulEdgeRegistry, "get", classmethod(lambda cls, session_id: edge if session_id == "s1" else None))
+
         transport = InMemoryTransport()
-        runner = StreamAgentRunner(transport=transport, chat_service=MagicMock())
-        message = QueueMessage(body="{}", attributes={"request_id": "r0", "integration": "livekit"}, group_id="s1", dedup_id="d0")
+        runner = RealtimeAgentRunner(transport=transport, chat_service=MagicMock())
+        message = QueueMessage(
+            body="{}", attributes={"request_id": "r0", "integration": "livekit", "reply_session_id": "s1"}, group_id="s1", dedup_id="d0"
+        )
 
         runner.on_permanent_failure(message)
 
         [out] = transport.create_consumer(QueueName.OUTPUT).fetch(10, 0.5)
-        assert out.attributes[ATTR_STATUS_CODE] == "500"
+        assert out.attributes[ATTR_REALTIME] == "true"
         assert out.attributes[ATTR_INTEGRATION] == "livekit"
+        assert out.group_id == "s1"
+
+        ResponseHandler(transport=transport).process(out)
+
+        [(chunk, reply_context)] = edge.chunks
+        assert chunk.error == "Failed to process message after 3 retries"
+        assert chunk.done is True
+        assert reply_context == {"session_id": "s1"}
 
 
 class TestBrokerRealtimeUserGate:

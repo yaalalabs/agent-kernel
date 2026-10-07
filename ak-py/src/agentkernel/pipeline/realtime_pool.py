@@ -19,7 +19,7 @@ from ..core.runtime import Runtime
 from ..core.tool import ToolContext
 from .envelope import ATTR_INTEGRATION, ATTR_REALTIME, ATTR_REQUEST_ID, ATTR_USER_ID, REPLY_CONTEXT_PREFIX, QueueMessage, QueueName
 from .thread_runner import ThreadRunner
-from .transport.base import QueueTransportFactory
+from .transport.base import QueueTransport, QueueTransportFactory
 
 _log = logging.getLogger("ak.pipeline.realtime_pool")
 
@@ -27,6 +27,28 @@ _log = logging.getLogger("ak.pipeline.realtime_pool")
 _SEND_TIMEOUT_SECONDS = 10.0
 # Connections idle for this long are evicted and closed by the pool's background thread.
 _IDLE_TIMEOUT_SECONDS = 300.0
+
+
+def send_permanent_failure(transport: QueueTransport, source_attributes: dict, group_id: Optional[str], dedup_id: Optional[str], error: str) -> None:
+    """Send a terminal error chunk for an input message that exhausted its retries.
+
+    The runner's generic failure reply is a status-500 body without ``ATTR_REALTIME``, which the
+    Response Handler would route to a webhook outbound adapter that a stateful edge does not have.
+    Emitting the same marked ``StreamChunk`` shape the pool uses sends it to the registered edge's
+    ``deliver_chunk`` error path, so the room is told instead of left silent.
+
+    :param transport: The transport to send the output message on.
+    :param source_attributes: The failed input message's attributes (its routing is forwarded).
+    :param group_id: The session id, which is the output queue group.
+    :param dedup_id: Unique id for this output message.
+    :param error: The user-facing error text.
+    """
+    attributes = {ATTR_REALTIME: "true", ATTR_REQUEST_ID: source_attributes.get(ATTR_REQUEST_ID) or "unknown"}
+    for key, value in source_attributes.items():
+        if key in (ATTR_USER_ID, ATTR_INTEGRATION) or key.startswith(REPLY_CONTEXT_PREFIX):
+            attributes[key] = value
+    body = json.dumps(StreamChunk(error=error, done=True).model_dump(exclude_none=True, mode="json"))
+    transport.send(QueueName.OUTPUT, QueueMessage(body=body, attributes=attributes, group_id=group_id, dedup_id=dedup_id))
 
 
 class RealtimeConnection:
