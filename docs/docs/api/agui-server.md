@@ -140,15 +140,20 @@ Send the decisions on the next run:
   apart by a boolean `payload` — which is simply the answer to "may I?". Any other payload is treated
   as the answer the agent asked for and passed through untouched.
 
-Two things this protocol cannot express, which Agent Kernel does **not** invent an encoding for:
+Three things this protocol cannot express, which Agent Kernel does **not** invent an encoding for:
 
 - **The wording of a refusal.** There is no field for it, and reserving keys inside `payload` would
   contradict the SDK, which describes `payload` as "the answer the agent asked for and will act on".
 - **A prompt sent beside a decision.** On a resume the replayed `messages` are history — a run that
   pauses emits no assistant reply, so the conversation still ends with the prompt that caused the
   pause, and deriving a "new" prompt from it would re-send that turn.
+- **A boolean *answer*.** The boolean is already spent on the verdict, so it cannot also be the
+  reply to a question: a LangGraph node written `proceed = interrupt("Proceed?")` is resumed with
+  the status verb `"approved"`, not `True`. Either have the node read the verb, or send that
+  decision over REST, where the verdict and the answer are separate fields. Any non-boolean payload
+  is unaffected and reaches the node untouched.
 
-Both are available on the [REST API](rest-api.md), where `prompt`, `message` and `payload` are
+All three are available on the [REST API](rest-api.md), where `prompt`, `message` and `payload` are
 separate fields. See [Human in the Loop](../advanced/human-in-the-loop.md) for the full picture.
 
 ## Client-supplied context

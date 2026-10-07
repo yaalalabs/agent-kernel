@@ -370,9 +370,6 @@ dispatching to `resume_stream`, plus three stream-specific rules:
 3. **The session is stored on the pause path.** The record must survive, so the paused stream takes
    the normal `:364` store, not the `StreamHalt` skip.
 
-> **Note for `ak-dev-architecture`:** the skill places `StreamBoundaryTracker` in `core/stream.py`.
-> It is at `runtime.py:39`. Worth fixing when the docs/skills sync runs in PR 3.
-
 ### `core/chat_service.py` — request and response surface (PR 1)
 
 - **`RequestBuilder.known_fields`** (`chat_service.py:126-141`) gains `"resume"`, so the block is
