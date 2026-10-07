@@ -456,30 +456,7 @@ class OpenAIRealtimeAdapter(BaseRealtimeRunner):
                 },
             }
 
-            config = AKConfig.get()
-            inject_history = config.execution.realtime.inject_history
-            history_limit = config.execution.realtime.history_limit
-
-            if inject_history:
-                session_update_payload["session"]["input_audio_transcription"] = {"model": "whisper-1"}
-
             await self._connection.send(session_update_payload)
-
-            if inject_history:
-                openai_session = OpenAISession._session(session)
-                past_items = await openai_session.get_items(limit=history_limit)
-                for item in past_items:
-                    # item is {"role": "user"|"assistant", "content": "text"}
-                    await self._connection.send(
-                        {
-                            "type": "conversation.item.create",
-                            "item": {
-                                "type": "message",
-                                "role": item.get("role", "user"),
-                                "content": [{"type": "input_text", "text": item.get("content", "")}],
-                            },
-                        }
-                    )
 
         except Exception:
             # A failure after the socket opened would otherwise leak it: the pool drops the
@@ -507,11 +484,6 @@ class OpenAIRealtimeAdapter(BaseRealtimeRunner):
             await self._callback("audio_delta", {"delta": event.delta, "message_id": getattr(event, "item_id", "")})
         elif event_type == "response.output_audio_transcript.delta":
             await self._callback("transcript_delta", {"delta": event.delta, "message_id": getattr(event, "item_id", "")})
-        elif event_type == "conversation.item.input_audio_transcription.completed":
-            text = getattr(event, "transcript", "")
-            if text and self._session:
-                openai_session = OpenAISession._session(self._session)
-                await openai_session.add_items([{"role": "user", "content": text}])
         elif event_type == "response.created":
             self._response_in_flight = True
         elif event_type == "input_audio_buffer.speech_started":
@@ -525,23 +497,7 @@ class OpenAIRealtimeAdapter(BaseRealtimeRunner):
                 await self._callback("speech_started", {})
         elif event_type == "response.done":
             self._response_in_flight = False
-            response = getattr(event, "response", None)
-            status = getattr(response, "status", None)
-
-            # Save assistant text to session if available
-            if status == "completed" and self._session:
-                # Find the text in the response output
-                output = getattr(response, "output", [])
-                for item in output:
-                    if getattr(item, "type", None) == "message":
-                        content_arr = getattr(item, "content", [])
-                        for c in content_arr:
-                            if getattr(c, "type", None) == "audio" and hasattr(c, "transcript"):
-                                text = c.transcript
-                                if text:
-                                    openai_session = OpenAISession._session(self._session)
-                                    await openai_session.add_items([{"role": "assistant", "content": text}])
-
+            status = getattr(getattr(event, "response", None), "status", None)
             await self._callback("done", {"status": status})
         elif event_type == "response.function_call_arguments.done":
             await self._callback(
@@ -577,9 +533,14 @@ class OpenAIRealtimeAdapter(BaseRealtimeRunner):
         """Invoke a tool on the OpenAI SDK agent and return its result.
 
         The SDK's ``on_invoke_tool`` wants its own ``ToolContext`` (built around the run
-        context), not the Agent Kernel one, so it is constructed here. The Agent Kernel
-        context is set as the active contextvar for the call, which is what a tool function's
-        ``ToolContext.get()`` reads.
+        context), not the Agent Kernel one, so it is constructed here. Its run context is the
+        session's ``framework_context``, as on the unary path, so a tool reading
+        ``wrapper.context`` sees the same object in both modes. The Agent Kernel context is set as
+        the active contextvar for the call, which is what a tool function's ``ToolContext.get()``
+        reads.
+
+        Unlike a unary run, a realtime tool call never writes ``framework_context`` back: changes a
+        tool makes to ``wrapper.context`` do not persist.
         """
         from agents.tool_context import ToolContext as SDKToolContext
         from agents.usage import Usage
@@ -587,7 +548,13 @@ class OpenAIRealtimeAdapter(BaseRealtimeRunner):
         sdk_agent = getattr(self._agent, "agent", None)
         for tool in getattr(sdk_agent, "tools", None) or []:
             if getattr(tool, "name", None) == name:
-                sdk_context = SDKToolContext(context=context, usage=Usage(), tool_name=name, tool_call_id=call_id, tool_arguments=arguments)
+                sdk_context = SDKToolContext(
+                    context=self._load_framework_context(context.session),
+                    usage=Usage(),
+                    tool_name=name,
+                    tool_call_id=call_id,
+                    tool_arguments=arguments,
+                )
                 context.set()
                 try:
                     result = await tool.on_invoke_tool(sdk_context, arguments)

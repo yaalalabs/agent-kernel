@@ -16,8 +16,6 @@ execution:
   realtime:
     playback_lead_ms: 50    # Audio buffered ahead of playback at the edge (higher = smoother playback over slow brokers)
     input_batch_ms: 100     # Mic audio batched into this many milliseconds per input-queue message
-    inject_history: false   # Whether to inject past chat session history when reconnecting
-    history_limit: 20       # Maximum number of past messages to inject if inject_history is enabled
 ```
 
 ## Build

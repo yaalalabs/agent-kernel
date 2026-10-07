@@ -260,6 +260,28 @@ class TestFrameworkToolExecution:
         result = await adapter.execute_tool("get_weather", '{"location": "Paris"}', ToolContext(runtime, agent, session, []), "call-1")
         assert result == "Paris:s1"
 
+    @pytest.mark.asyncio
+    async def test_openai_execute_tool_passes_framework_context_as_run_context(self):
+        """Parity with the unary path: ``wrapper.context`` is the session's framework_context, not the AK ToolContext."""
+        from agents import RunContextWrapper, function_tool
+
+        from agentkernel.framework.openai.openai import OpenAIRealtimeAdapter
+
+        @function_tool
+        def get_cart(wrapper: RunContextWrapper) -> str:
+            """Read the cart."""
+            return ",".join(wrapper.context["cart"])
+
+        session = Session("s1")
+        session.set_framework_context({"cart": ["apple", "pear"]})
+        agent = types.SimpleNamespace(agent=types.SimpleNamespace(tools=[get_cart]), name="general")
+
+        adapter = OpenAIRealtimeAdapter()
+        adapter._agent = agent
+
+        result = await adapter.execute_tool("get_cart", "{}", ToolContext(Runtime(InMemorySessionStore()), agent, session, []), "call-1")
+        assert result == "apple,pear"
+
 
 class TestRealtimeResampling:
     @pytest.mark.asyncio

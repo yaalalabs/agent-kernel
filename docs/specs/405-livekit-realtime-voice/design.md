@@ -117,10 +117,6 @@ LiveKit voice gateway. Reuse the queue pipeline while keeping model adapters beh
   - Network and broker jitter vary within a transport type, so the transport name alone cannot determine the lead; SQS examples explicitly use `250` ms.
 - `execution.realtime.input_batch_ms` defaults to `100`, accepts `0` or greater, and is read by `LiveKitEdgeGateway` for microphone batching.
   - This controls input-message overhead independently of outbound pacing; `0` sends each received frame, and a final partial batch is flushed when input ends.
-- `execution.realtime.inject_history` defaults to `false` and is read by both model adapters on connection creation.
-  - Having session history must not implicitly opt into sending it to the model on reconnect.
-- `execution.realtime.history_limit` defaults to `20`, accepts `1` or greater, and is read by both adapters when history injection is enabled.
-  - This limits reconnect messages; it cannot be derived from playback pacing, audio batching, or session-store retention.
 
 ### Deployment and broker constraints
 
@@ -143,12 +139,12 @@ LiveKit voice gateway. Reuse the queue pipeline while keeping model adapters beh
   - Transcript forwarding is not a guardrail hook point; adding voice-reply branches does not change this limitation.
   - Tool calls activate session and agent scopes, but this does not run the Runtime hook pipeline.
 - Automatic acting-user propagation into the volatile cache; forwarding delivery user IDs is not `acting_user_id` propagation.
-- Durable realtime history across reconnects.
-  - Adapters mutate the loaded session, but the realtime path does not call `SessionStore.store()` on completion or close.
-  - Persistent backends such as Redis, Valkey, and DynamoDB can reload stale history; history injection is not a persistence guarantee.
+- Conversation history across reconnects.
+  - A replaced model connection (after idle eviction or a socket failure) starts with no prior turns; adapters neither record turns nor inject them on connect.
+  - Recording and re-injecting history, and saving it on persistent session backends, is deferred to a follow-up change.
 
 ## Open questions
 
 - Keep `AgentReplyVoice` and its completed-reply branches in this PR without a producer, or defer them to a completed voice-reply feature?
-- What session-save lifecycle and concurrency rules are needed before claiming durable realtime history on persistent session backends?
+- How should realtime history be recorded, re-injected on reconnect, and saved on persistent session backends in the follow-up change?
 - What routing and ownership mechanism should lift the single-IO-process and single-Agent-Runner-replica constraints in a later change?

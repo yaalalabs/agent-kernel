@@ -99,6 +99,13 @@ Both are settable from the environment too (`AK_EXECUTION__REALTIME__PLAYBACK_LE
 `AK_EXECUTION__REALTIME__INPUT_BATCH_MS`). A larger playback lead is smoother but adds a little
 latency at the start of each response.
 
+### Tools and framework context
+
+Realtime tool calls receive the session's `framework_context` as their run context, as unary runs
+do (`wrapper.context` on OpenAI), and `ToolContext.get()` works as usual. Unlike a unary run, a
+realtime tool call does not write `framework_context` back, so changes a tool makes to it are not
+persisted.
+
 ## Example Projects
 
 Complete working examples (with In-Memory, Kafka, NATS, and AWS SQS architectures) are available in the **examples/api/livekit-voice** directory.

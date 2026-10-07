@@ -536,9 +536,6 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
         # True once disconnect() runs; the listen loop suppresses its error callback then so a
         # normal shutdown does not surface as a model-socket failure.
         self._closing = False
-        # Text transcript accumulation for the current turn
-        self._current_user_text = ""
-        self._current_model_text = ""
 
     @staticmethod
     def _realtime_model(agent: Any) -> str:
@@ -598,18 +595,6 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
         self._cm = self._client.aio.live.connect(model=model, config=self._connect_config(agent))
         self._connection = await self._cm.__aenter__()
 
-        config = AKConfig.get()
-        if config.execution.realtime.inject_history:
-            history = self._session.get("adk_realtime_history") or []
-            limit = config.execution.realtime.history_limit
-            past_items = history[-limit:] if limit else history
-            if past_items:
-                turns = []
-                for item in past_items:
-                    turns.append(types.Content(role=item["role"], parts=[types.Part(text=item["text"])]))
-                if turns:
-                    await self._connection.send_client_content(turns=turns)
-
         self._listen_task = asyncio.create_task(self._listen())
 
     async def _listen(self) -> None:
@@ -647,10 +632,6 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
                     self._log.info("Gemini barge-in (user speaking); stopping playback")
                     await self._callback("interrupt", {})
 
-            interim_user = getattr(server_content, "interim_input_transcription", None)
-            if interim_user is not None and interim_user.text:
-                self._current_user_text = interim_user.text
-
             output_transcription = getattr(server_content, "output_transcription", None)
             if output_transcription is not None and output_transcription.text:
                 await self._callback("transcript_delta", {"delta": output_transcription.text, "message_id": ""})
@@ -663,25 +644,10 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
                         self._model_speaking = True
                         audio_b64 = base64.b64encode(inline.data).decode("utf-8")
                         await self._callback("audio_delta", {"delta": audio_b64, "message_id": ""})
-                    elif getattr(part, "text", None):
-                        self._current_model_text += part.text
 
             if getattr(server_content, "turn_complete", False):
                 self._interrupted_this_turn = False
                 self._model_speaking = False
-
-                # Save turn history
-                if self._session:
-                    history = self._session.get("adk_realtime_history") or []
-                    if self._current_user_text:
-                        history.append({"role": "user", "text": self._current_user_text})
-                    if self._current_model_text:
-                        history.append({"role": "model", "text": self._current_model_text})
-                    self._session.set("adk_realtime_history", history)
-
-                self._current_user_text = ""
-                self._current_model_text = ""
-
                 await self._callback("done", {"status": "completed"})
 
         tool_call = getattr(message, "tool_call", None)
