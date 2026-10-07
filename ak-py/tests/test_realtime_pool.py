@@ -235,14 +235,57 @@ class TestFrameworkToolExecution:
 
         runner = GoogleADKRealtimeRunner()
         runner._agent = agent
-        runner._session = session
+        await runner._open_tool_session(session.id)
 
         result = await runner.execute_tool("get_weather", '{"location": "Paris"}', ToolContext(runtime, agent, session, []), "call-1")
         assert result == "Paris:no-state"
 
     @pytest.mark.asyncio
+    async def test_adk_tool_state_lives_in_the_connection_not_the_ak_session(self):
+        """Tool calls on one connection share ``tool_context.state``; nothing is written into the
+        Agent Kernel session (the unary runner's ADK session key stays untouched)."""
+        from google.adk.agents import Agent as GoogleAgent
+        from google.adk.tools import ToolContext as ADKToolContext
+
+        from agentkernel.framework.adk.adk import FRAMEWORK, GoogleADKRealtimeRunner, GoogleADKToolBuilder
+
+        def remember(value: str, tool_context: ADKToolContext) -> str:
+            """Remember a value."""
+            tool_context.state["remembered"] = value
+            return "ok"
+
+        def recall(tool_context: ADKToolContext) -> str:
+            """Recall the value."""
+            return tool_context.state.get("remembered", "nothing")
+
+        adk_agent = GoogleAgent(name="general", model="gemini-2.0-flash", instruction="x", tools=GoogleADKToolBuilder.bind([remember, recall]))
+        agent = types.SimpleNamespace(agent=adk_agent, name="general")
+        session = Session("s1")
+        runtime = Runtime(InMemorySessionStore())
+
+        runner = GoogleADKRealtimeRunner()
+        runner._agent = agent
+        await runner._open_tool_session(session.id)
+
+        await runner.execute_tool("remember", '{"value": "blue"}', ToolContext(runtime, agent, session, []), "call-1")
+        result = await runner.execute_tool("recall", "{}", ToolContext(runtime, agent, session, []), "call-2")
+
+        assert result == "blue"
+        assert session.get(FRAMEWORK) is None
+
+    @pytest.mark.asyncio
+    async def test_adk_execute_tool_before_connect_fails_clearly(self):
+        from agentkernel.framework.adk.adk import GoogleADKRealtimeRunner
+
+        runner = GoogleADKRealtimeRunner()
+        runner._agent = types.SimpleNamespace(agent=types.SimpleNamespace(tools=[types.SimpleNamespace(name="t")]), name="general")
+
+        with pytest.raises(RuntimeError, match="connect"):
+            await runner.execute_tool("t", "{}", None, "call-1")
+
+    @pytest.mark.asyncio
     async def test_openai_execute_tool_injects_context(self):
-        from agentkernel.framework.openai.openai import OpenAIRealtimeAdapter, OpenAIToolBuilder
+        from agentkernel.framework.openai.openai import OpenAIRealtimeRunner, OpenAIToolBuilder
 
         def get_weather(location: str) -> str:
             """Get the weather."""
@@ -254,7 +297,7 @@ class TestFrameworkToolExecution:
         session = Session("s1")
         runtime = Runtime(InMemorySessionStore())
 
-        adapter = OpenAIRealtimeAdapter()
+        adapter = OpenAIRealtimeRunner()
         adapter._agent = agent
 
         result = await adapter.execute_tool("get_weather", '{"location": "Paris"}', ToolContext(runtime, agent, session, []), "call-1")
@@ -265,7 +308,7 @@ class TestFrameworkToolExecution:
         """Parity with the unary path: ``wrapper.context`` is the session's framework_context, not the AK ToolContext."""
         from agents import RunContextWrapper, function_tool
 
-        from agentkernel.framework.openai.openai import OpenAIRealtimeAdapter
+        from agentkernel.framework.openai.openai import OpenAIRealtimeRunner
 
         @function_tool
         def get_cart(wrapper: RunContextWrapper) -> str:
@@ -276,7 +319,7 @@ class TestFrameworkToolExecution:
         session.set_framework_context({"cart": ["apple", "pear"]})
         agent = types.SimpleNamespace(agent=types.SimpleNamespace(tools=[get_cart]), name="general")
 
-        adapter = OpenAIRealtimeAdapter()
+        adapter = OpenAIRealtimeRunner()
         adapter._agent = agent
 
         result = await adapter.execute_tool("get_cart", "{}", ToolContext(Runtime(InMemorySessionStore()), agent, session, []), "call-1")
@@ -421,10 +464,9 @@ class TestOpenAIBargeIn:
 
     @staticmethod
     def _adapter():
-        from agentkernel.framework.openai.openai import OpenAIRealtimeAdapter
+        from agentkernel.framework.openai.openai import OpenAIRealtimeRunner
 
-        adapter = OpenAIRealtimeAdapter()
-        adapter._session = None
+        adapter = OpenAIRealtimeRunner()
         adapter.events = []
 
         async def callback(event_type, data):
@@ -463,6 +505,187 @@ class TestOpenAIBargeIn:
         await adapter._handle_message(self._event("input_audio_buffer.speech_started"))
 
         assert adapter.events == ["done", "speech_started"]
+
+
+class TestOpenAIRealtimeSession:
+    """Session setup and the tool round trip follow the Realtime API's documented flow."""
+
+    class _Connection:
+        def __init__(self):
+            self.sent = []
+
+        async def send(self, payload):
+            self.sent.append(payload)
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            raise StopAsyncIteration
+
+    @classmethod
+    def _runner(cls):
+        from agentkernel.framework.openai.openai import OpenAIRealtimeRunner
+
+        runner = OpenAIRealtimeRunner()
+        runner._connection = cls._Connection()
+        runner.events = []
+
+        async def callback(event_type, data):
+            runner.events.append((event_type, data))
+
+        runner._callback = callback
+        return runner
+
+    @staticmethod
+    def _response_done(status, *calls):
+        output = [types.SimpleNamespace(type="function_call", call_id=call_id, name=name, arguments=args) for call_id, name, args in calls]
+        return types.SimpleNamespace(type="response.done", response=types.SimpleNamespace(status=status, output=output))
+
+    @pytest.mark.asyncio
+    async def test_function_calls_are_dispatched_from_the_completed_response(self):
+        runner = self._runner()
+
+        # The arguments event precedes response.done; acting on it would race the active response.
+        await runner._handle_message(types.SimpleNamespace(type="response.function_call_arguments.done", call_id="c1", name="a", arguments="{}"))
+        await runner._handle_message(self._response_done("completed", ("c1", "a", '{"x": 1}'), ("c2", "b", "")))
+
+        assert [(kind, data.get("call_id")) for kind, data in runner.events] == [("tool_call", "c1"), ("tool_call", "c2"), ("done", None)]
+        assert runner.events[0][1]["arguments"] == '{"x": 1}'
+        assert runner.events[1][1]["arguments"] == "{}"
+
+    @pytest.mark.asyncio
+    async def test_a_cancelled_response_dispatches_no_function_calls(self):
+        runner = self._runner()
+
+        await runner._handle_message(self._response_done("cancelled", ("c1", "a", "{}")))
+
+        assert [kind for kind, _ in runner.events] == ["done"]
+
+    @pytest.mark.asyncio
+    async def test_the_follow_up_response_is_requested_once_after_the_last_output(self):
+        runner = self._runner()
+        await runner._handle_message(self._response_done("completed", ("c1", "a", "{}"), ("c2", "b", "{}")))
+
+        await runner.send_tool_result("c1", "one")
+        assert [payload["type"] for payload in runner._connection.sent] == ["conversation.item.create"]
+
+        await runner.send_tool_result("c2", "two")
+        assert [payload["type"] for payload in runner._connection.sent] == ["conversation.item.create", "conversation.item.create", "response.create"]
+
+    @staticmethod
+    def _patch_socket(monkeypatch):
+        connection = TestOpenAIRealtimeSession._Connection()
+
+        class _ConnectManager:
+            async def __aenter__(self):
+                return connection
+
+            async def __aexit__(self, *exc):
+                return False
+
+        class _Client:
+            realtime = types.SimpleNamespace(connect=lambda model: _ConnectManager())
+
+            async def close(self):
+                pass
+
+        monkeypatch.setattr("openai.AsyncOpenAI", lambda *a, **k: _Client())
+        return connection
+
+    @staticmethod
+    async def _connect(sdk_agent, session=None):
+        from agentkernel.framework.openai.openai import OpenAIRealtimeRunner
+
+        runner = OpenAIRealtimeRunner()
+
+        async def callback(event_type, data):
+            pass
+
+        await runner.connect(session or Session("s1"), types.SimpleNamespace(name="general", agent=sdk_agent), callback)
+        await runner.disconnect()
+        return runner
+
+    @pytest.mark.asyncio
+    async def test_callable_instructions_are_resolved_with_the_framework_context(self, monkeypatch):
+        from agents import Agent as SDKAgent
+
+        connection = self._patch_socket(monkeypatch)
+        session = Session("s1")
+        session.set_framework_context({"name": "Ada"})
+        sdk_agent = SDKAgent(name="general", model="gpt-realtime", instructions=lambda ctx, agent: f"Greet {ctx.context['name']}")
+
+        await self._connect(sdk_agent, session)
+
+        assert connection.sent[0]["session"]["instructions"] == "Greet Ada"
+
+    @pytest.mark.asyncio
+    async def test_no_instructions_leaves_the_server_default(self, monkeypatch):
+        from agents import Agent as SDKAgent
+
+        connection = self._patch_socket(monkeypatch)
+
+        await self._connect(SDKAgent(name="general", model="gpt-realtime"))
+
+        assert "instructions" not in connection.sent[0]["session"]
+
+    @pytest.mark.asyncio
+    async def test_only_function_tools_are_offered_and_others_are_reported(self, monkeypatch, caplog):
+        from agents import Agent as SDKAgent
+        from agents import WebSearchTool
+
+        from agentkernel.framework.openai.openai import OpenAIToolBuilder
+
+        def get_weather(location: str) -> str:
+            """Get the weather."""
+            return location
+
+        connection = self._patch_socket(monkeypatch)
+        sdk_agent = SDKAgent(name="general", model="gpt-realtime", tools=[*OpenAIToolBuilder.bind([get_weather]), WebSearchTool()])
+
+        with caplog.at_level("WARNING"):
+            await self._connect(sdk_agent)
+
+        assert [tool["name"] for tool in connection.sent[0]["session"]["tools"]] == ["get_weather"]
+        assert "not a function tool" in caplog.text
+
+
+class TestADKConnectConfig:
+    """The Live session config carries only what the ADK agent declares."""
+
+    @staticmethod
+    def _agent(**kwargs):
+        from google.adk.agents import Agent as GoogleAgent
+
+        return types.SimpleNamespace(name="general", agent=GoogleAgent(name="general", model="gemini-live", **kwargs))
+
+    def test_string_instruction_is_the_system_instruction(self):
+        from agentkernel.framework.adk.adk import GoogleADKRealtimeRunner
+
+        config = GoogleADKRealtimeRunner()._connect_config(self._agent(instruction="Be brief."))
+
+        assert config.system_instruction.parts[0].text == "Be brief."
+
+    def test_description_is_not_used_as_an_instruction(self):
+        from agentkernel.framework.adk.adk import GoogleADKRealtimeRunner
+
+        config = GoogleADKRealtimeRunner()._connect_config(self._agent(description="Routes billing questions."))
+
+        assert config.system_instruction is None
+
+    def test_turn_detection_and_thinking_are_left_to_the_live_api(self):
+        from agentkernel.framework.adk.adk import GoogleADKRealtimeRunner
+
+        config = GoogleADKRealtimeRunner()._connect_config(self._agent(instruction="x"))
+
+        assert config.realtime_input_config is None
+        assert config.thinking_config is None
+
+    def test_a_callable_instruction_is_rejected_clearly(self):
+        from agentkernel.framework.adk.adk import GoogleADKRealtimeRunner
+
+        with pytest.raises(ValueError, match="instruction as a string"):
+            GoogleADKRealtimeRunner()._connect_config(self._agent(instruction=lambda ctx: "dynamic"))
 
 
 class TestRealtimeFailureHandling:

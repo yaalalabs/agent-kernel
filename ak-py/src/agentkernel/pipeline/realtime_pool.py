@@ -54,7 +54,7 @@ def send_permanent_failure(transport: QueueTransport, source_attributes: dict, g
 class RealtimeConnection:
     """A persistent realtime WebSocket connection for one session.
 
-    Wraps a framework-specific realtime adapter (e.g. ``OpenAIRealtimeAdapter``) and handles
+    Wraps a framework-specific realtime runner (e.g. ``OpenAIRealtimeRunner``) and handles
     queue emission for output events (audio deltas, tool calls, etc.).  Lives in the pipeline
     layer so the framework adapter never imports pipeline types — the adapter talks to the
     model socket and calls a callback; this class stamps queue attributes and emits.

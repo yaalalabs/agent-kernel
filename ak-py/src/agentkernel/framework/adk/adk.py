@@ -507,7 +507,7 @@ class GoogleADKRunner(BaseRunner):
 class GoogleADKRealtimeRunner(BaseRealtimeRunner):
     """Drives a persistent Gemini Live (BidiGenerateContent) socket behind the realtime pool.
 
-    Mirrors ``OpenAIRealtimeAdapter``: the pool calls :meth:`connect` once per session and then
+    Mirrors ``OpenAIRealtimeRunner``: the pool calls :meth:`connect` once per session and then
     pushes audio/text through :meth:`append_audio` / :meth:`send_text`. Model events are reported
     back through the callback the pool supplied, so the pool keeps owning queue emission and this
     class never imports pipeline types.
@@ -523,7 +523,10 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
         self._log = logging.getLogger("ak.adk.realtime")
         self._callback: Callable | None = None
         self._agent = None
-        self._session = None
+        # The ADK session tools run in, owned by this connection like the socket: ADK builds a
+        # tool's ToolContext from a session and its service, and neither outlives the connection.
+        self._tool_session_service: InMemorySessionService | None = None
+        self._tool_session = None
         self._connection = None
         self._cm = None
         self._client = None
@@ -551,13 +554,23 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
         return name
 
     def _connect_config(self, agent: Any) -> types.LiveConnectConfig:
-        """Build the Live session config from the ADK agent's instruction and tools."""
+        """Build the Live session config from the ADK agent's instruction and tools.
+
+        Only what the agent declares is sent; everything else (turn detection, thinking) is left to
+        the Live API's own defaults.
+        """
         sdk_agent = getattr(agent, "agent", None)
-        instructions = getattr(sdk_agent, "instruction", None) or getattr(sdk_agent, "description", None)
+        instructions = getattr(sdk_agent, "instruction", None)
+        if callable(instructions):
+            # An InstructionProvider is resolved by ADK's own Runner from a ReadonlyContext; this
+            # runner talks to Gemini Live directly, so it cannot resolve one faithfully.
+            raise ValueError(f"Agent '{getattr(agent, 'name', '?')}' must define its instruction as a string to run in REALTIME mode")
 
         declarations = []
         for tool in getattr(sdk_agent, "tools", None) or []:
             try:
+                # ADK exposes a tool's FunctionDeclaration only through this protected method; it is
+                # what ADK's own flows send to the model, so the Live session sees the same schema.
                 declaration = tool._get_declaration()
             except Exception as e:
                 self._log.warning(f"Could not build a Live declaration for tool {getattr(tool, 'name', '?')}: {e!r}")
@@ -569,17 +582,10 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
             response_modalities=[types.Modality.AUDIO],
             system_instruction=types.Content(parts=[types.Part(text=instructions)]) if instructions else None,
             tools=[types.Tool(function_declarations=declarations)] if declarations else None,
+            # Input transcription drives early barge-in (``interim_input_transcription``); output
+            # transcription is the transcript the edge publishes.
             input_audio_transcription=types.AudioTranscriptionConfig(),
             output_audio_transcription=types.AudioTranscriptionConfig(),
-            # Explicit turn policy — the Gemini equivalent of OpenAI's
-            # ``server_vad`` + ``interrupt_response: True``. Without it, end-of-turn and barge-in
-            # rely entirely on server defaults and behave inconsistently.
-            realtime_input_config=types.RealtimeInputConfig(
-                automatic_activity_detection=types.AutomaticActivityDetection(
-                    silence_duration_ms=800,
-                )
-            ),
-            thinking_config=types.ThinkingConfig(thinking_budget=0),
         )
 
     async def connect(self, session: Session, agent: AKBaseAgent, callback: Callable) -> None:
@@ -587,15 +593,26 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
 
         self._callback = callback
         self._agent = agent
-        self._session = session
-        self._client = genai.Client()
         model = self._realtime_model(agent)
+        # Opened before the socket, so a failure here leaves no live connection to clean up.
+        await self._open_tool_session(session.id)
+        self._client = genai.Client()
         self._log.info(f"Connecting to Gemini Live (model={model})")
 
         self._cm = self._client.aio.live.connect(model=model, config=self._connect_config(agent))
         self._connection = await self._cm.__aenter__()
 
         self._listen_task = asyncio.create_task(self._listen())
+
+    async def _open_tool_session(self, session_id: str) -> None:
+        """Create this connection's ADK session, the one every tool call's ToolContext is built from.
+
+        In-memory and connection-scoped: ``tool_context.state`` is shared by the tool calls of one
+        connection and starts empty on the next, as the model's conversation does.
+        :param session_id: The Agent Kernel session id, reused as the ADK session id.
+        """
+        self._tool_session_service = InMemorySessionService()
+        self._tool_session = await self._tool_session_service.create_session(app_name="AgentKernel", user_id="AgentKernel", session_id=session_id)
 
     async def _listen(self) -> None:
         try:
@@ -677,8 +694,8 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
         ADK *injects* a ``ToolContext`` (session state, actions, artifacts) into any tool that
         declares one, so calling the wrapped function directly would hand those tools ``None``
         and any ``tool_context.state`` access would fail. A fresh ``InvocationContext`` /
-        ``ToolContext`` is built here instead, carrying the active Agent Kernel context id in
-        the ADK session state the same way a normal ADK run does.
+        ``ToolContext`` is built here instead, from this connection's own ADK session, carrying
+        the active Agent Kernel context id in its state the same way a normal ADK run does.
         """
         from google.adk.agents.invocation_context import InvocationContext
         from google.adk.tools import ToolContext as ADKToolContext
@@ -688,12 +705,13 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
         if tool is None:
             return f"Error: Tool {name} not found"
 
-        adk_session = GoogleADKRunner._session(self._session)
-        session = await adk_session.create_session(app_name="AgentKernel", user_id="AgentKernel", session_id=self._session.id)
+        if self._tool_session is None:
+            raise RuntimeError("Gemini Live connection is not open: call connect() before executing tools")
+
         invocation_context = InvocationContext(
-            session_service=adk_session.session_service,
+            session_service=self._tool_session_service,
             invocation_id=str(uuid4()),
-            session=session,
+            session=self._tool_session,
             agent=sdk_agent,
         )
         tool_context = ADKToolContext(invocation_context=invocation_context, function_call_id=call_id)
@@ -718,6 +736,8 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
         if self._client is not None:
             await self._client.aio.aclose()
             self._client = None
+        self._tool_session = None
+        self._tool_session_service = None
 
 
 class GoogleADKAgent(AKBaseAgent):
@@ -746,7 +766,7 @@ class GoogleADKAgent(AKBaseAgent):
         :param name: Name of the agent.
         :param runner: BaseRunner associated with the agent.
         :param agent: The Google ADK agent instance.
-        :param realtime_runner_cls: Optional realtime adapter class for this agent.
+        :param realtime_runner_cls: Optional realtime runner class for this agent.
         """
         super().__init__(name, runner, realtime_runner_cls)
         self._agent = agent
@@ -822,7 +842,7 @@ class GoogleADKModule(Module):
         :param agents: List of agents in the module.
         :return: GoogleADKAgent instance.
         """
-        # The realtime adapter class is attached unconditionally; only the pipeline (in REALTIME
+        # The realtime runner class is attached unconditionally; only the pipeline (in REALTIME
         # mode) ever instantiates it, so the framework need not know the execution mode.
         return GoogleADKAgent(agent.name, self.runner, agent, realtime_runner_cls=self.realtime_runner_cls)
 

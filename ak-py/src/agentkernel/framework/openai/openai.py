@@ -6,7 +6,7 @@ import logging
 from collections.abc import AsyncGenerator
 from typing import Any, Callable, ClassVar, List, Mapping, Type
 
-from agents import Agent, Runner, function_tool
+from agents import Agent, FunctionTool, RunContextWrapper, Runner, function_tool
 from openai.types.responses.response_output_item_added_event import ResponseOutputItemAddedEvent
 from openai.types.responses.response_output_item_done_event import ResponseOutputItemDoneEvent
 from openai.types.responses.response_reasoning_summary_text_delta_event import ResponseReasoningSummaryTextDeltaEvent
@@ -390,9 +390,9 @@ class OpenAIRunner(BaseRunner):
         return getattr(raw, field, None)
 
 
-class OpenAIRealtimeAdapter(BaseRealtimeRunner):
+class OpenAIRealtimeRunner(BaseRealtimeRunner):
     """
-    OpenAIRealtimeAdapter implements RealtimeRunner for the OpenAI Realtime WebSocket API.
+    OpenAIRealtimeRunner implements RealtimeRunner for the OpenAI Realtime WebSocket API.
     """
 
     def __init__(self):
@@ -409,6 +409,9 @@ class OpenAIRealtimeAdapter(BaseRealtimeRunner):
         # True from ``response.created`` until ``response.done``: while it is set, the user starting
         # to speak cuts off a response the model is still generating.
         self._response_in_flight = False
+        # Function calls of the last completed response still awaiting their output; the follow-up
+        # response is requested once, when the last of them is answered.
+        self._pending_tool_calls: set[str] = set()
 
     @staticmethod
     def _realtime_model(agent: BaseAgent) -> str:
@@ -427,7 +430,6 @@ class OpenAIRealtimeAdapter(BaseRealtimeRunner):
 
         self._callback = callback
         self._agent = agent
-        self._session = session
         self._client = AsyncOpenAI()
         model = self._realtime_model(agent)
 
@@ -436,27 +438,18 @@ class OpenAIRealtimeAdapter(BaseRealtimeRunner):
 
         try:
             sdk_agent = getattr(agent, "agent", None)
-            instructions = getattr(sdk_agent, "instructions", None) or "You are a helpful assistant."
-
-            tools_payload = []
-            if sdk_agent and hasattr(sdk_agent, "tools"):
-                for tool in sdk_agent.tools:
-                    if type(tool).__name__ == "FunctionTool":
-                        tools_payload.append(
-                            {"type": "function", "name": tool.name, "description": tool.description, "parameters": tool.params_json_schema}
-                        )
-
-            session_update_payload = {
-                "type": "session.update",
-                "session": {
-                    "type": "realtime",
-                    "instructions": instructions,
-                    "tools": tools_payload,
-                    "audio": {"input": {"turn_detection": {"type": "server_vad", "interrupt_response": True, "create_response": True}}},
-                },
+            session_config = {
+                "type": "realtime",
+                "tools": self._tools_payload(sdk_agent),
+                "audio": {"input": {"turn_detection": {"type": "server_vad", "interrupt_response": True, "create_response": True}}},
             }
+            # Resolved the way the SDK resolves them for a run (a string, or a callable over the run
+            # context, here the session's framework_context). None leaves the server's own default.
+            instructions = await sdk_agent.get_system_prompt(RunContextWrapper(context=self._load_framework_context(session)))
+            if instructions:
+                session_config["instructions"] = instructions
 
-            await self._connection.send(session_update_payload)
+            await self._connection.send({"type": "session.update", "session": session_config})
 
         except Exception:
             # A failure after the socket opened would otherwise leak it: the pool drops the
@@ -465,6 +458,20 @@ class OpenAIRealtimeAdapter(BaseRealtimeRunner):
             raise
 
         self._listen_task = asyncio.create_task(self._listen())
+
+    def _tools_payload(self, sdk_agent: Agent) -> list[dict]:
+        """Describe the agent's function tools to the Realtime session.
+
+        The Realtime API calls only function tools; any other tool type (hosted tools such as web
+        search) cannot run over the socket, so it is skipped with a warning rather than silently.
+        """
+        payload = []
+        for tool in getattr(sdk_agent, "tools", None) or []:
+            if isinstance(tool, FunctionTool):
+                payload.append({"type": "function", "name": tool.name, "description": tool.description, "parameters": tool.params_json_schema})
+            else:
+                _log.warning(f"Tool {getattr(tool, 'name', type(tool).__name__)} is not a function tool; the Realtime API cannot call it")
+        return payload
 
     async def _listen(self) -> None:
         """Report model events to the pool, in order. The pool paces audio and emits chunks."""
@@ -497,17 +504,16 @@ class OpenAIRealtimeAdapter(BaseRealtimeRunner):
                 await self._callback("speech_started", {})
         elif event_type == "response.done":
             self._response_in_flight = False
-            status = getattr(getattr(event, "response", None), "status", None)
+            response = getattr(event, "response", None)
+            status = getattr(response, "status", None)
+            if status == "completed":
+                # Function calls are read from the completed response, as the Realtime docs describe:
+                # the response is over, so the follow-up ``response.create`` cannot collide with it.
+                calls = [item for item in getattr(response, "output", None) or [] if getattr(item, "type", None) == "function_call"]
+                self._pending_tool_calls = {call.call_id for call in calls}
+                for call in calls:
+                    await self._callback("tool_call", {"call_id": call.call_id, "name": call.name, "arguments": call.arguments or "{}"})
             await self._callback("done", {"status": status})
-        elif event_type == "response.function_call_arguments.done":
-            await self._callback(
-                "tool_call",
-                {
-                    "call_id": getattr(event, "call_id", None),
-                    "name": getattr(event, "name", None),
-                    "arguments": getattr(event, "arguments", "{}"),
-                },
-            )
         elif event_type == "error":
             _log.error(f"OpenAI Realtime socket error: {getattr(event, 'error', 'unknown')}")
 
@@ -523,11 +529,18 @@ class OpenAIRealtimeAdapter(BaseRealtimeRunner):
             await self._connection.send({"type": "response.create"})
 
     async def send_tool_result(self, call_id: str, result: str) -> None:
+        """Add one function call's output; request the follow-up response once every call is answered.
+
+        A response may carry several function calls. Requesting a response per output would start
+        one before the rest are answered, so ``response.create`` is sent once, after the last.
+        """
         if self._connection:
             await self._connection.send(
                 {"type": "conversation.item.create", "item": {"type": "function_call_output", "call_id": call_id, "output": result}}
             )
-            await self._connection.send({"type": "response.create"})
+            self._pending_tool_calls.discard(call_id)
+            if not self._pending_tool_calls:
+                await self._connection.send({"type": "response.create"})
 
     async def execute_tool(self, name: str, arguments: str, context: ToolContext, call_id: str) -> str:
         """Invoke a tool on the OpenAI SDK agent and return its result.
@@ -598,7 +611,7 @@ class OpenAIAgent(BaseAgent):
         :param name: Name of the agent.
         :param runner: Runner associated with the agent.
         :param agent: The OpenAI agent instance.
-        :param realtime_runner_cls: Optional realtime adapter class for this agent.
+        :param realtime_runner_cls: Optional realtime runner class for this agent.
         """
         super().__init__(name, runner, realtime_runner_cls)
         self._agent = agent
@@ -666,7 +679,7 @@ class OpenAIModule(Module):
         :param realtime_runner_cls: Optional realtime runner class for WebSocket connections.
         """
         super().__init__()
-        self.realtime_runner_cls = realtime_runner_cls or OpenAIRealtimeAdapter
+        self.realtime_runner_cls = realtime_runner_cls or OpenAIRealtimeRunner
         if runner is not None:
             self.runner = runner
         elif AKConfig.get().trace.enabled:
@@ -682,7 +695,7 @@ class OpenAIModule(Module):
         :param agents: List of agents in the module.
         :return: OpenAIAgent instance.
         """
-        # The realtime adapter class is attached unconditionally: only the pipeline (in REALTIME
+        # The realtime runner class is attached unconditionally: only the pipeline (in REALTIME
         # mode) ever instantiates it, so the framework need not know the execution mode.
         return OpenAIAgent(agent.name, self.runner, agent, realtime_runner_cls=self.realtime_runner_cls)
 

@@ -19,6 +19,7 @@ LiveKit voice gateway. Reuse the queue pipeline while keeping model adapters beh
 - Add `ExecutionMode.REALTIME`, selected through process-level `execution.mode: realtime`.
   - Keep the four existing execution modes and their behavior unchanged.
   - Requests must not select or override the process's execution mode.
+  - A stateful edge is the only entry: the REST chat routes reject REALTIME requests with a 400, and REALTIME never co-hosts the WebSocket handlers, since its replies are delivered to the edge that sent the request.
 - `RealtimeAgentRunner` must forward audio and text requests to the session's persistent connection.
 - `ECSRealtimeAgentRunner` must provide the equivalent input-consumer behavior for ECS/SQS.
 - Both runner hosts must start the pool's event loop before creating connections.
@@ -46,10 +47,15 @@ LiveKit voice gateway. Reuse the queue pipeline while keeping model adapters beh
   - Built-in realtime support is limited to OpenAI Agents SDK and Google ADK.
   - CrewAI, LangGraph, Smolagents, and Pydantic AI have no built-in realtime runner; connection creation must fail explicitly when the class is absent.
 - The OpenAI runner must use the native `client.realtime` socket and server voice activity detection.
+  - Function calls are read from a completed `response.done`, and the follow-up `response.create` is sent once, after every call of that response has its output.
 - `GoogleADKRealtimeRunner` must use the native Gemini Live connection.
 - Both model adapters must resolve the realtime model from the agent definition, with no fallback model.
+- Both model adapters must send only what the agent declares, with no defaults the native API would not apply.
+  - OpenAI instructions are resolved with the SDK's `get_system_prompt` over the session's framework context; none leaves the server default.
+  - ADK instructions must be a string: an `InstructionProvider` is rejected with a clear error, and the agent's `description` is not used as an instruction.
+  - Only function tools are offered to the OpenAI session; other tool types are skipped with a warning.
 - Use the `Runner` suffix for both implementations of the core contract.
-  - The selected OpenAI name is `OpenAIRealtimeRunner`; the current code name is `OpenAIRealtimeAdapter`, and its rename remains implementation work.
+  - The implementations are `OpenAIRealtimeRunner` and `GoogleADKRealtimeRunner`.
 
 ### Voice models and protocol boundaries
 
@@ -141,7 +147,15 @@ LiveKit voice gateway. Reuse the queue pipeline while keeping model adapters beh
 - Automatic acting-user propagation into the volatile cache; forwarding delivery user IDs is not `acting_user_id` propagation.
 - Conversation history across reconnects.
   - A replaced model connection (after idle eviction or a socket failure) starts with no prior turns; adapters neither record turns nor inject them on connect.
+  - Session state is not saved back to persistent session backends; a replaced connection starts with the session as last stored, so tool changes made during the previous connection are not carried over.
   - Recording and re-injecting history, and saving it on persistent session backends, is deferred to a follow-up change.
+- Model session limits and server-initiated reconnects.
+  - Gemini Live connections last about 10 minutes and audio sessions 15 minutes; `GoAway`, session resumption, and context window compression are not handled, so a long call ends with an error chunk and the next input opens a fresh connection.
+  - OpenAI Realtime sessions last at most 60 minutes, with the same outcome.
+- Gemini `tool_call_cancellation` is not handled: a tool call the user interrupted still runs and its response is still sent.
+- An OpenAI `response.done` with a `failed` or `incomplete` status is reported as an ordinary `done`, not an error.
+- ADK instruction templates (`{state_key}` placeholders) are sent as written; ADK's own Runner is what fills them from session state.
+- The ADK runner builds each tool's `InvocationContext` itself, because the pool owns tool execution; ADK's native `Runner.run_live()`, which executes tools itself, is not used.
 
 ## Open questions
 

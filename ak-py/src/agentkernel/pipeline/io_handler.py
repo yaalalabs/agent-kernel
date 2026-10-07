@@ -91,7 +91,7 @@ class IOHandler:
                 raise AKConfigError(
                     "WebSocket delivery over a broker transport needs a shared connection store: " "configure session.type redis, valkey or dynamodb"
                 )
-        ws_cohosted = single_process and auth_validator is not None and mode in (ExecutionMode.ASYNC, ExecutionMode.STREAM, ExecutionMode.REALTIME)
+        ws_cohosted = single_process and auth_validator is not None and mode in (ExecutionMode.ASYNC, ExecutionMode.STREAM)
         cls._log.info(
             f"IOHandler starting: mode={mode}, transport={transport_type}, "
             f"topology={'single-process' if single_process else 'multi-process'}, websocket={'co-hosted' if ws_cohosted else 'off'}"

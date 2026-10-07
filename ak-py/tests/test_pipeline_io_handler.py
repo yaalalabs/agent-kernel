@@ -249,6 +249,29 @@ class TestPollerCoHosting:
         assert "PollerRunner.run" in caplog.text
 
 
+class TestRealtimeWebSocket:
+    def test_realtime_does_not_co_host_the_websocket_handlers(self, monkeypatch, caplog):
+        """Realtime replies go to the stateful edge, never the WS push path, so a validator must not
+        mount the WebSocket handlers; it is ignored with the usual warning instead."""
+        from agentkernel.pipeline.ws.endpoint import PushEndpointHandler
+        from agentkernel.pipeline.ws.handler import PipelineWebSocketHandler
+
+        captured = {}
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+        monkeypatch.setenv("AK_EXECUTION__MODE", "realtime")
+        AKConfig._reset()
+        monkeypatch.setattr("agentkernel.api.http.RESTAPI.build_app", classmethod(lambda cls, handlers=None: captured.update(handlers=handlers)))
+        monkeypatch.setattr("agentkernel.pipeline.io_handler.uvicorn.Server", MagicMock())
+        monkeypatch.setattr(IOHandler, "_install_signal_handlers", classmethod(lambda cls, server: None))
+        monkeypatch.setattr(ThreadRunner, "run", staticmethod(lambda tasks, max_workers=None, exit_on_shutdown=True: None))
+
+        with caplog.at_level("WARNING"):
+            IOHandler.run(auth_validator=MagicMock())
+
+        assert not [h for h in captured["handlers"] if isinstance(h, (PipelineWebSocketHandler, PushEndpointHandler))]
+        assert "auth_validator ignored" in caplog.text
+
+
 class TestNestedDrainCoordination:
     def test_thread_runner_returns_instead_of_exiting_when_exit_on_shutdown_false(self, monkeypatch):
         exit_called = threading.Event()
