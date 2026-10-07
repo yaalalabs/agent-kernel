@@ -12,9 +12,8 @@ from ..core.base import Session
 from ..core.config import AKConfig
 from ..core.event import AudioDelta, Interrupt, TextDelta
 from ..core.model import StreamChunk
-from ..core.realtime import EDGE_SAMPLE_RATE
+from ..core.realtime import EDGE_SAMPLE_RATE, PCM16Resampler
 from ..core.realtime import RealtimeRunner as BaseRealtimeRunner
-from ..core.realtime import resample_pcm16
 from ..core.runtime import Runtime
 from ..core.tool import ToolContext
 from .envelope import ATTR_INTEGRATION, ATTR_REALTIME, ATTR_REQUEST_ID, ATTR_USER_ID, REPLY_CONTEXT_PREFIX, QueueMessage, QueueName
@@ -200,7 +199,7 @@ class RealtimeConnection:
 
                 # The model may output a different rate than the edge; convert once, here, so the
                 # edge always receives EDGE_SAMPLE_RATE audio and no adapter resamples.
-                pcm16 = resample_pcm16(base64.b64decode(data["delta"]), self.adapter.output_sample_rate, EDGE_SAMPLE_RATE)
+                pcm16 = PCM16Resampler.resample(base64.b64decode(data["delta"]), self.adapter.output_sample_rate, EDGE_SAMPLE_RATE)
                 message_id = data.get("message_id") or ""
                 await self._emit(StreamChunk(event=AudioDelta(message_id=message_id, content=base64.b64encode(pcm16).decode("utf-8"))))
 
@@ -260,7 +259,7 @@ class RealtimeConnection:
     def append_audio(self, audio_data: str) -> None:
         """Thread-safe: convert edge-rate audio to the model's input rate, then schedule the append."""
         self.last_activity_at = time.time()
-        pcm16 = resample_pcm16(base64.b64decode(audio_data), EDGE_SAMPLE_RATE, self.adapter.input_sample_rate)
+        pcm16 = PCM16Resampler.resample(base64.b64decode(audio_data), EDGE_SAMPLE_RATE, self.adapter.input_sample_rate)
         converted = base64.b64encode(pcm16).decode("utf-8")
         self._dispatch_send(self.adapter.append_audio(converted), "append_audio")
 
