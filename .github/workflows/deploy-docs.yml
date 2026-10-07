@@ -89,10 +89,10 @@ jobs:
     permissions:
       contents: read
     steps:
+      # No `ref`: check out the commit that was built and deployed (github.sha), not the branch tip,
+      # which a push made since then may have moved on to posts that aren't live yet.
       - name: Checkout
         uses: actions/checkout@v5
-        with:
-          ref: ${{ github.ref_name }}
 
       - name: Generate GitHub App Token
         id: app-token
@@ -106,22 +106,31 @@ jobs:
 
       # The sync state reaches the branch through a PR (it only accepts PRs). Until that PR is merged
       # its branch holds the latest state, so start from it - otherwise already published posts would
-      # look new. Both platforms' files are loaded: the PR is rebuilt from this job's files, so one
-      # left out here would drop the other sync's unmerged changes from the PR.
-      - name: Load the sync state from the open sync-state PR
+      # look new. Without an open PR, take the state from the branch's latest commit, not the deployed
+      # one checked out above: a sync-state PR merged since the deploy started is only there. Both
+      # platforms' files are loaded: the PR is rebuilt from this job's files, so one left out here
+      # would drop the other sync's unmerged changes from the PR.
+      - name: Load the latest sync state
+        id: load-state
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          # Passed as data: a branch name may contain `$(...)`, which would run if inlined into the script.
+          BASE_BRANCH: ${{ github.ref_name }}
         run: |
-          open_pr=$(gh pr list --head chore/blog-sync-state --base "${{ github.ref_name }}" --state open --json number --jq '.[0].number')
-          if [ -z "$open_pr" ]; then
-            echo "No open sync-state PR; using the state files on ${{ github.ref_name }}."
-            exit 0
+          open_pr=$(gh pr list --head chore/blog-sync-state --base "$BASE_BRANCH" --state open --json number --jq '.[0].number')
+          if [ -n "$open_pr" ]; then
+            source=chore/blog-sync-state
+            echo "Loading the sync state from the open sync-state PR #$open_pr."
+          else
+            source=$BASE_BRANCH
+            echo "No open sync-state PR; loading the sync state from the latest $BASE_BRANCH."
           fi
-          git fetch --depth=1 origin chore/blog-sync-state
+          # `--refmap=` only fills FETCH_HEAD, leaving origin/<branch> at the deployed commit.
+          git fetch --depth=1 --refmap= origin "refs/heads/$source"
           for file in docs/blog/.devto-sync-state.json docs/blog/.hashnode-sync-state.json; do
             if git cat-file -e "FETCH_HEAD:$file" 2>/dev/null; then
               git checkout FETCH_HEAD -- "$file"
-              echo "Loaded $file from PR #$open_pr."
+              echo "Loaded $file from $source."
             fi
           done
 
@@ -149,9 +158,11 @@ jobs:
             python scripts/sync_blogs/devto.py
           fi
 
-      # Runs even if the sync failed part-way, so the posts it did publish are still recorded.
+      # Runs even if the sync failed part-way, so the posts it did publish are still recorded - but only
+      # once the state loaded: rebuilt from the base branch's files instead, the PR would lose its
+      # unmerged records (and be closed, via delete-branch, if no diff were left).
       - name: Open or update the sync-state PR
-        if: always() && steps.app-token.outcome == 'success'
+        if: always() && steps.load-state.outcome == 'success'
         uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ steps.app-token.outputs.token }}
@@ -187,10 +198,10 @@ jobs:
   #   permissions:
   #     contents: read
   #   steps:
+  #     # No `ref`: check out the commit that was built and deployed (github.sha), not the branch tip,
+  #     # which a push made since then may have moved on to posts that aren't live yet.
   #     - name: Checkout
   #       uses: actions/checkout@v5
-  #       with:
-  #         ref: ${{ github.ref_name }}
   #
   #     - name: Generate GitHub App Token
   #       id: app-token
@@ -204,22 +215,31 @@ jobs:
   #
   #     # The sync state reaches the branch through a PR (it only accepts PRs). Until that PR is merged
   #     # its branch holds the latest state, so start from it - otherwise already published posts would
-  #     # look new. Both platforms' files are loaded: the PR is rebuilt from this job's files, so one
-  #     # left out here would drop the other sync's unmerged changes from the PR.
-  #     - name: Load the sync state from the open sync-state PR
+  #     # look new. Without an open PR, take the state from the branch's latest commit, not the deployed
+  #     # one checked out above: a sync-state PR merged since the deploy started is only there. Both
+  #     # platforms' files are loaded: the PR is rebuilt from this job's files, so one left out here
+  #     # would drop the other sync's unmerged changes from the PR.
+  #     - name: Load the latest sync state
+  #       id: load-state
   #       env:
   #         GH_TOKEN: ${{ steps.app-token.outputs.token }}
+  #         # Passed as data: a branch name may contain `$(...)`, which would run if inlined into the script.
+  #         BASE_BRANCH: ${{ github.ref_name }}
   #       run: |
-  #         open_pr=$(gh pr list --head chore/blog-sync-state --base "${{ github.ref_name }}" --state open --json number --jq '.[0].number')
-  #         if [ -z "$open_pr" ]; then
-  #           echo "No open sync-state PR; using the state files on ${{ github.ref_name }}."
-  #           exit 0
+  #         open_pr=$(gh pr list --head chore/blog-sync-state --base "$BASE_BRANCH" --state open --json number --jq '.[0].number')
+  #         if [ -n "$open_pr" ]; then
+  #           source=chore/blog-sync-state
+  #           echo "Loading the sync state from the open sync-state PR #$open_pr."
+  #         else
+  #           source=$BASE_BRANCH
+  #           echo "No open sync-state PR; loading the sync state from the latest $BASE_BRANCH."
   #         fi
-  #         git fetch --depth=1 origin chore/blog-sync-state
+  #         # `--refmap=` only fills FETCH_HEAD, leaving origin/<branch> at the deployed commit.
+  #         git fetch --depth=1 --refmap= origin "refs/heads/$source"
   #         for file in docs/blog/.devto-sync-state.json docs/blog/.hashnode-sync-state.json; do
   #           if git cat-file -e "FETCH_HEAD:$file" 2>/dev/null; then
   #             git checkout FETCH_HEAD -- "$file"
-  #             echo "Loaded $file from PR #$open_pr."
+  #             echo "Loaded $file from $source."
   #           fi
   #         done
   #
@@ -247,9 +267,11 @@ jobs:
   #           python scripts/sync_blogs/hashnode.py
   #         fi
   #
-  #     # Runs even if the sync failed part-way, so the posts it did publish are still recorded.
+  #     # Runs even if the sync failed part-way, so the posts it did publish are still recorded - but only
+  #     # once the state loaded: rebuilt from the base branch's files instead, the PR would lose its
+  #     # unmerged records (and be closed, via delete-branch, if no diff were left).
   #     - name: Open or update the sync-state PR
-  #       if: always() && steps.app-token.outcome == 'success'
+  #       if: always() && steps.load-state.outcome == 'success'
   #       uses: peter-evans/create-pull-request@v8
   #       with:
   #         token: ${{ steps.app-token.outputs.token }}
