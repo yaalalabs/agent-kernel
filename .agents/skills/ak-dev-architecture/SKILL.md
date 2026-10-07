@@ -100,7 +100,8 @@ Wraps a framework-specific agent. Key properties:
 Encapsulates framework-specific execution logic:
 
 - **`run(agent, session, requests) -> AgentReply`**: Async method that executes the agent with the given requests within a session context
-- **`stream(agent, session, requests) -> AsyncGenerator[StreamEvent, None]`**: Abstract async generator that yields AK stream events (`core/event.py`: `MessageStart`/`TextDelta`/`MessageEnd`, `ReasoningStart`/`ReasoningDelta`/`ReasoningEnd`, `ToolCallStart`/`ToolCallArgs`/`ToolCallEnd`/`ToolCallResult`, `StepStart`/`StepEnd`) for streaming execution (`execution.mode: stream`) — never a bare `str`; `StreamChunk.event` is a discriminated union and rejects one with a `ValidationError`. Frameworks without native token streaming (CrewAI, smolagents) implement it by raising `NotImplementedError`
+- **`stream(agent, session, requests) -> AsyncGenerator[StreamEvent, None]`**: Abstract async generator that yields AK stream events (`core/event.py`: `MessageStart`/`TextDelta`/`MessageEnd`, `ReasoningStart`/`ReasoningDelta`/`ReasoningEnd`, `ToolCallStart`/`ToolCallArgs`/`ToolCallEnd`/`ToolCallResult`, `StepStart`/`StepEnd`, `RunPaused`) for streaming execution (`execution.mode: stream`) — never a bare `str`; `StreamChunk.event` is a discriminated union and rejects one with a `ValidationError`. Frameworks without native token streaming (CrewAI, smolagents) implement it by raising `NotImplementedError`. **`RunPaused` must be the last event a paused run yields** — `Runtime.stream` breaks out of the loop on it and closes the generator, so any adapter work after that yield (writing the paused-run record, storing framework context) never runs
+- **`supports_pause` (#765, defaults `False`) / `resume(agent, session, requests, decisions, record) -> AgentReply` / `resume_stream(...) -> AsyncGenerator[StreamEvent, None]`**: the human-in-the-loop contract, same precedent as `supports_streaming` — a property a caller checks instead of provoking a raise. Unlike `supports_streaming` (`True` by default, because `stream()` is abstract and every runner implements it), `supports_pause` defaults `False`: `resume()`/`resume_stream()` are non-abstract raising defaults (`NotImplementedError(f"Runner '{self.name}' does not support resuming a paused run")`), so a `True` default would have a bring-your-own runner advertise a capability it does not have. `Runtime` checks `supports_pause` before dispatching to `resume()`/`resume_stream()` as a backstop for direct callers that skip the check; `CrewAIRunner` and `SmolagentsRunner` inherit both defaults and declare nothing. An adapter's `resume()` clears the record via `PausedRunState.clear` only once the framework has accepted the decisions — not in a `finally` — so a transient failure (reported as an ordinary text reply, same as `run()`) leaves the record intact for a retry. See *Human-in-the-loop (paused runs)* below
 - Each framework implements its own Runner (e.g., `OpenAIRunner`, `LangGraphRunner`, `CrewAIRunner`, `GoogleADKRunner`, `SmolagentsRunner`, `PydanticAIRunner`)
 - Runners handle: creating `ToolContext`, converting request models to framework-native formats, invoking the framework's execution API, converting responses back to `AgentReply`
 - **Per-run framework context**: the base `Runner` provides `_load_framework_context(session)` (returns a **deep copy** of the reserved `framework_context` key, or `None` when absent) and `_store_framework_context(session, incoming, produced)` (shallow-merges `produced` over `incoming`: framework-touched top-level keys win, untouched caller keys preserved: with a fail-fast picklability check). Each adapter's `run`/`stream` calls load before the native call, injects `incoming` via its native mechanism, and calls store **only after a successful native call** (inside the `try`, before the `except`; after the `async for` loop for streams, never in `finally`) so a crash/disconnect leaves the stored context intact. Both helpers go through the `Session` accessors, so the raw key name stays inside `Session`. Round-trip fidelity is per-framework (OpenAI and Pydantic AI full: injected as `context=` / `deps=`, mutated in place by tools; ADK all-but-internal-and-scope-prefixed keys, accumulate-only; smolagents pre-seeded keys only, and the context is also appended to the task prompt; LangGraph declared channels only; CrewAI unsupported: warns once per runner and skips). When an adapter seeds caller keys into a native state dict, write AK-internal keys **last** so a caller key cannot displace them (`ak_tool_context` in ADK, `messages` in LangGraph)
@@ -127,17 +128,18 @@ Global orchestrator and agent registry:
 - **`run(agent, session, requests, acting_user_id=None) -> AgentReply`**: The central execution method:
   1. Acquires session lock (`async with session`)
   2. When `acting_user_id` is given, publishes it under `ACTING_USER_CACHE_KEY` in the volatile cache (see Session's Reserved keys)
-  3. Runs pre-hooks (agent hooks + system hooks like input guardrails)
-  4. Calls `agent.runner.run(agent, session, requests)`
+  3. Runs pre-hooks (agent hooks + system hooks like input guardrails); if a pre-hook halts a request that arrived with a resume, warns via `_warn_resume_halted` — the decision was accepted but never delivered, and the paused run is untouched
+  4. When `requests` carries an `AgentResumeRequestAny` (#765), `_validate_resume` resolves and checks the targeted `PausedRun` (see *Human-in-the-loop*) and calls `agent.runner.resume(agent, session, requests, decisions, record)` instead; otherwise calls `agent.runner.run(agent, session, requests)`. If a pre-hook dropped the resume request from the list, warns via `_warn_resume_dropped` and the run proceeds as an ordinary turn
   5. Runs post-hooks (system hooks + agent hooks)
   6. Stores session via `SessionStore.store()`
   7. Clears volatile cache in `finally` block
 - **`stream(agent, session, requests, acting_user_id=None) -> AsyncGenerator[StreamChunk, None]`**: Streaming counterpart of `run()`, sharing the same pre-hook pipeline via `_prepare_requests()`:
-  1. Runs pre-hooks; if halted, yields a `StreamChunk(error=..., done=True)` and returns
-  2. Iterates `agent.runner.stream(agent, session, requests)`; a legacy `str` (TRANSITIONAL) is wrapped into a synthesised `TextDelta` before anything else runs, and its first occurrence allocates a `uuid4().hex` `message_id` shared by a synthesised `MessageStart`/`MessageEnd` pair bracketing the run
-  3. **Every** event passes through `PostHook.on_stream_event()` (return the event to pass it, a modified event of the same `type` to rewrite it, `None` to drop the whole chunk, or a `list[StreamEvent]` to emit several in its place — a list is emitted as-is and ends the chain for that event). A post-hook raising `StreamHalt` ends the run: `StreamBoundaryTracker` (`core/stream.py`, unexported) supplies the closes for any boundary still open, then one `StreamChunk(error=..., done=True)` is yielded and the session is **not** stored; any other exception propagates unchanged
-  4. Yields a `StreamChunk(delta=..., event=...)` per event — `delta` is populated only for `TextDelta` (every other event type carries `event` alone) — then a final `StreamChunk(done=True)`
-  5. Stores session and clears volatile cache in `finally`, same as `run()`
+  1. Runs pre-hooks; if halted, yields a `StreamChunk(error=..., done=True)` and returns (same resume-halted warning as `run()`)
+  2. Dispatches to `agent.runner.resume_stream(...)` instead of `agent.runner.stream(...)` when the requests carry a resume, same resolution as `run()` (same resume-dropped warning)
+  3. Iterates the chosen generator; a legacy `str` (TRANSITIONAL) is wrapped into a synthesised `TextDelta` before anything else runs, and its first occurrence allocates a `uuid4().hex` `message_id` shared by a synthesised `MessageStart`/`MessageEnd` pair bracketing the run
+  4. **Every** event passes through `PostHook.on_stream_event()` (return the event to pass it, a modified event of the same `type` to rewrite it, `None` to drop the whole chunk, or a `list[StreamEvent]` to emit several in its place — a list is emitted as-is and ends the chain for that event). A post-hook raising `StreamHalt` ends the run: `StreamBoundaryTracker` (`core/stream.py`, unexported) supplies the closes for any boundary still open, then one `StreamChunk(error=..., done=True)` is yielded and the session is **not** stored; any other exception propagates unchanged. If a post-hook filters a `RunPaused` event out of the emitted list, warns via `_warn_pause_dropped` — the paused run itself is untouched, but the client was never told one is owed
+  5. Yields a `StreamChunk(delta=..., event=...)` per event — `delta` is populated only for `TextDelta` (every other event type carries `event` alone). On `RunPaused`, any boundaries the stream left open are drained and closed (a pause is a valid outcome, not an invalidated partial — unlike the `StreamHalt` path, the session **is** stored) and the loop breaks instead of continuing to iterate; otherwise a final `StreamChunk(done=True)` follows normal completion
+  6. Stores session and clears volatile cache in `finally`, same as `run()`. A `finally` also calls `await events.aclose()` on the chosen generator: both early-exit paths above (`StreamHalt`, a pause) leave the runner's generator suspended, and an adapter holding a framework stream open there would keep it open until GC — on a pause, for as long as the human takes to decide
 - **System hooks**: Automatically includes `InputGuardrailFactory` as system pre-hook, `OutputGuardrailFactory` as system post-hook
 - **Context manager**: `with Runtime(sessions):` sets an isolated runtime as current
 
@@ -175,8 +177,9 @@ knowledge of conversation threads (that lives in `integration/thread/`).
     would be reset from a context they never belonged to and every sync stream would end on a spurious
     `"Token ... was created in a different Context"` error chunk after the real terminal one. `run_async_sync`
     (the coroutine half) is untouched — still a fresh `asyncio.run` loop per call on a consumer thread
-  - `requests=None`: `RequestBuilder` builds the list from the pydantic request (prompt required).
-    `requests` supplied: the caller-built list is used as-is (prompt optional, list must be non-empty): this
+  - `requests=None`: `RequestBuilder` builds the list from the pydantic request (`prompt` required unless
+    the request carries a `resume` block, in which case an empty `prompt` builds no `AgentRequestText` at
+    all). `requests` supplied: the caller-built list is used as-is (prompt optional, list must be non-empty): this
     is how messaging integrations pass platform-downloaded attachments and extra `AgentRequestAny` context
   - Each call selects the agent/session via `prepare_agent_handler(session_id, agent) -> AgentHandler`, which
     wraps `AgentService.ensure_agent_available(name)` (raises `ValueError` for an unmatched agent *before*
@@ -189,6 +192,21 @@ knowledge of conversation threads (that lives in `integration/thread/`).
     `_maybe_schedule` defers a request carrying a `schedule` block (returning the 202 acknowledgement
     instead of running it) and `_record_trigger` records the occurrence of a scheduled trigger. Both reach
     `schedule/` through a lazy import inside the enabled-check — see the Scheduling section
+  - **Resume (#765)**: `_reject_ambiguous`, called first in every entry point (ahead of
+    `_maybe_schedule`, since scheduling returns its own 202 before validation is ever reached), raises
+    `ValueError` when a request carries both a `schedule` and a `resume` block. `RequestBuilder._add_resume`
+    appends an `AgentResumeRequestAny` built from the request's `resume` block to the request list, after
+    any text/attachments so a prompt sent alongside a decision stays first; `resume` is excluded from the
+    `AgentRequestAny` extra-context sweep, since the decisions are consumed by the runner, never shown to
+    the agent as context. `ChatService.success_status(req, reply=None)` (renamed from the previous
+    `_success_status(req)`, now a `@staticmethod` other surfaces call directly — `thread_chat.py`'s
+    `AgentThreadRequestHandler` is one) returns 202 for either a deferred (`req.schedule`) or a paused
+    (`isinstance(reply, AgentPausedReplyAny)`) outcome, 200 otherwise — the two are deliberately not
+    collapsed into one condition, since a deferred request is knowable from the request alone, a paused
+    run only from the reply. `ResponseBuilder.build_response` adds `status: "PAUSED"`, `run_id`, `agent`
+    and `interruptions` as top-level JSON keys when `result` is an `AgentPausedReplyAny`, so a client
+    branches on the outcome without parsing `result` — `agent` is there because a resume must name the
+    agent that paused, and a request naming none was served by the default agent. See *Human-in-the-loop*
 - **Presentation wrappers**: `process_chat_request`, `process_async_chat_request`,
   `process_stream_chat_async`, `process_stream_chat_sync`: thin shells over the core adding the HTTP shapes
   (`ResponseBuilder` JSON dicts / `HTTPException` per `rest_api_mode`, SSE frames). Used by the REST handler
@@ -272,13 +290,90 @@ Pydantic-based configuration:
 
 ## Request/Reply Model (`ak-py/src/agentkernel/core/model.py`)
 
-- **Request types**: `AgentRequestText`, `AgentRequestFile`, `AgentRequestImage`, `AgentRequestAny`
+- **Request types**: `AgentRequestText`, `AgentRequestFile`, `AgentRequestImage`, `AgentRequestAny`, `AgentResumeRequestAny` (#765, see *Human-in-the-loop*)
 - **Reply types**: 
   - `AgentReplyText`, 
   - `AgentReplyImage`
   - `AgentReplyAny`: `content: dict`: returned when the agent is configured for structured output (OpenAI `output_type`, LangGraph `response_format`, ADK `output_schema`, CrewAI module-level `output_pydantic`/`output_json`, Smolagents dict/Pydantic `final_answer`, Pydantic AI `output_type`); `str(reply)` returns the JSON-serialized content. Non-streaming only.
-  - `StreamChunk`: `delta: str | None`, `event: StreamEvent | None`, `done: bool`, `error: str | None`, `session_id: str | None`: yielded by `Runtime.stream()` / `AgentService.stream_multi()` for streaming; `delta` is populated only for `TextDelta` events (back-compat for plain-text consumers), `event` carries the full `StreamEvent` (including tool calls and reasoning)
+  - `AgentPausedReplyAny` (#765): a subclass of `AgentReplyAny`, not a new `AgentReply` union member — see *Human-in-the-loop*
+  - `StreamChunk`: `delta: str | None`, `event: StreamEvent | None`, `done: bool`, `error: str | None`, `session_id: str | None`: yielded by `Runtime.stream()` / `AgentService.stream_multi()` for streaming; `delta` is populated only for `TextDelta` events (back-compat for plain-text consumers), `event` carries the full `StreamEvent` (including tool calls, reasoning, and `RunPaused`)
 - Type aliases: `AgentRequest = Union[...]`, `AgentReply = Union[...]`
+
+## Human-in-the-loop (`ak-py/src/agentkernel/core/paused_run.py`, #765)
+
+Durable pause/decision/resume: a framework stops mid-run to ask a human something, and the decision
+may arrive later, on another replica. Landed as core plumbing only — `supports_pause` is `False` on
+every shipping adapter today (`CrewAIRunner`, `SmolagentsRunner` inherit it and declare nothing;
+the other four adapters implement it in a follow-up PR). See `docs/specs/606-human-in-the-loop/` for
+the full design, spec and per-framework capability survey (`research/adapter-strategies.md`).
+
+- **`PausedRun`** (`core/paused_run.py`): a framework-agnostic envelope — `id` (assigned by
+  `PausedRunState.add`), `agent` (also identifies the framework, since an agent resolves to its
+  runner), `created_at`, `interruptions: list[PausedInterruption]`, and an opaque per-framework
+  `payload` that must be picklable and never reaches a client
+- **`PausedRunState`** (`core/paused_run.py`): static accessors over the session's **non-volatile**
+  cache under the reserved key `ak.paused_runs` (a `list`, since only OpenAI can hold two resumable
+  runs at once; LangGraph, Pydantic AI and Google ADK keep one thread per session — whether a new
+  pause appends or replaces is the adapter's call, since only it knows whether the earlier one is
+  still resumable). `list`/`get`/`find_by_interruption` read and revalidate (`PausedRun.model_validate`,
+  a corrupted entry is dropped with a warning rather than failing an intact one's resume);
+  `find_by_interruption` resolves which run a set of decision ids belongs to — needed because the
+  AG-UI protocol has no field for a run id, so a resume arriving over that surface can only be
+  identified this way. `add` stores a new record (raises `TypeError` if the payload is not
+  picklable, `ValueError` on a repeated or already-used interruption id — ids are unique across a
+  session's paused runs so a decision resolves to exactly one). `clear` removes one record, silent
+  if absent. Written as plain dicts (`model_dump()`), never as model instances — a stored `PausedRun`
+  would carry its class path with it, and a replica on an older Agent Kernel (mid rolling deploy, or
+  after a rollback) would then fail to **unpickle the whole session**, not just this entry
+- **Shared pickle-safety helpers** (`core/util/picklable.py`, #765): `not_picklable(value)` and
+  `first_unpicklable_entry(mapping)` are used by both `PausedRunState.add` and `Runner`'s per-run
+  framework-context check (`Runner._ensure_framework_context_picklable`, which previously duplicated
+  this logic as a private `Runner._not_picklable` staticmethod — now deleted in favor of the shared util)
+- **Events and models** (`core/event.py`, `core/model.py`): `PausedInterruption` (`id`, `kind:
+  Literal["tool_call", "input_required", "confirmation"]`, `tool_name`, `arguments`, `message`,
+  `payload: JsonValue`) is one thing a human must decide; it lives in `event.py` because both the
+  paused reply and `RunPaused` carry it and `model.py` imports `event.py`. `RunPaused(StreamEventBase)`
+  (`run_id`, `agent`, `interruptions`) is terminal for the run but not an error — emitted as an
+  ordinary stream chunk, never through `StreamChunk.error`. `ResumeDecision` (`id`, `status:
+  Literal["approved", "denied", "cancelled"] | None`, `message`, `payload: JsonValue`) is a human's
+  answer to one interruption; `status` is required only for `tool_call`/`confirmation` kinds.
+  `ResumeSpec` (the `resume` block on `BaseChatRequest`: optional `run_id` + `decisions`) and
+  `AgentResumeRequestAny` (a member of the `AgentRequest` union, `type="resume"`, carrying the same
+  shape — a subclass of a shared `_ResumeDecisions` base that rejects an empty or duplicate-id
+  decision list) both validate structurally but never check decisions against pending interruptions,
+  since that needs the session and is `Runtime._validate_resume`'s job
+- **`Runtime._validate_resume`** (`core/runtime.py`): the five framework-agnostic checks every
+  adapter would otherwise duplicate inside its own `except Exception`-wrapped `run()`/`stream()` —
+  resolves the record (by `run_id` or by interruption ids), rejects unknown interruption ids, rejects
+  a missing `status` on an approval-kind interruption, rejects an agent mismatch (`agent.name !=
+  record.agent`), and rejects a record whose agent is no longer registered or whose runner's
+  `supports_pause` is `False`
+- **`AgentPausedReplyAny`** (`core/model.py`): the non-streaming paused reply — `run_id`,
+  `session_id`, `agent`, `interruptions`, with `content` *derived* from those fields by a
+  `model_validator` (a caller-supplied `content` is always overwritten, so the two cannot drift).
+  Narrows the inherited `type` Literal to `"paused"`, which is an accepted Liskov violation (safe
+  only because a reply is never re-validated from JSON anywhere in `src/`) rather than a new
+  `AgentReply` union member, so every existing `isinstance` tuple over the union keeps working
+  untouched. The opaque per-framework resume state is never on this model — only the record in the
+  session carries it
+- **`Runner.CANCELLED_DECISION_MESSAGE`**: the class-level string told to the model when a human
+  cancels rather than denies a paused interruption. Only LangGraph carries a three-valued decision
+  natively, so on the other adapters this wording is what keeps "nobody decided" apart from
+  "refused" — override per-runner if a framework needs different phrasing
+- **Guardrails** (`guardrail/guardrail.py`, #765): `BaseGuardrailUtil._extract_text_from_requests`
+  also walks an `AgentResumeRequestAny`'s decisions — a decision's free-text `message` plus one level
+  of string values out of its `payload` (a bare string, a list's string items, or a dict's string
+  values; not descended further, since a payload is the framework's own shape and deeper descent
+  would have a guardrail report ids and enum values as findings) — so an input guardrail still sees
+  a human's own words on a resume
+- **Entry-surface wiring**: `BaseChatRequest.prompt` defaults to `""` and a `model_validator`
+  (`_require_a_prompt_or_a_resume`) requires the request to carry a `prompt` key, a prebuilt
+  `requests` list, or a `resume` block — keyed on `model_fields_set`, not the value, so
+  `{"prompt": ""}` still behaves as an explicit empty prompt and an absent key does not. Every
+  surface that previously guarded on `if not req.prompt: raise ValueError(...)` grew an `and
+  req.resume is None` branch: `ChatService._validate` (both sync/async), `thread_chat.py`'s
+  `AgentThreadRequestHandler._validate` and `ThreadRequestHandler`, and `pipeline/ws/handler.py`'s
+  WebSocket entry point (new check, since it previously didn't validate the prompt at all for this case)
 
 ## Tools (`ak-py/src/agentkernel/core/tool.py`)
 
