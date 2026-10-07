@@ -532,7 +532,7 @@ The exporter uses the standard OpenTelemetry environment variables, so no Agent 
 | Setting | Behaviour |
 |---------|-----------|
 | No endpoint variable set | Exports to `https://xray.<region>.amazonaws.com/v1/traces`, SigV4-signed (`amazonaws.com.cn` for `cn-*` regions) |
-| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` (or `OTEL_EXPORTER_OTLP_ENDPOINT`) set to an X-Ray URL | Exports there, signed for the region in the URL |
+| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` set to `https://xray.<region>.amazonaws.com/v1/traces`, or `OTEL_EXPORTER_OTLP_ENDPOINT` set to `https://xray.<region>.amazonaws.com` | Exports to X-Ray, signed for the region in the URL |
 | Either variable set to any other URL, such as the CloudWatch agent or an OpenTelemetry collector on `http://localhost:4318/v1/traces` | Exports there unsigned, and the agent or collector handles authentication |
 | `OTEL_SERVICE_NAME` | Service name in CloudWatch (default `AgentKernel`) |
 | `OTEL_RESOURCE_ATTRIBUTES` | Extra resource attributes, e.g. `deployment.environment.name=prod` |
