@@ -48,7 +48,6 @@ def _gateway() -> LiveKitEdgeGateway:
     """Build a gateway without the constructor's config/token work."""
     gateway = object.__new__(LiveKitEdgeGateway)
     gateway.session_id = "s1"
-    gateway.agent_name = "general"
     gateway.agent = "general"
     gateway._producer = None
     gateway._pending = None
@@ -94,6 +93,30 @@ def _fake_rtc(frames):
             return _FakeAudioStream([_FakeFrame(f) for f in frames])
 
     return _Rtc
+
+
+class TestToken:
+    @staticmethod
+    def _claims(token: str) -> dict:
+        import json
+
+        payload = token.split(".")[1]
+        return json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+
+    @pytest.mark.parametrize("agent_name, identity", [("support", "agent-support"), (None, "agent-general")])
+    def test_generated_token_names_the_agent_participant(self, monkeypatch, agent_name, identity):
+        cfg = types.SimpleNamespace(
+            livekit=types.SimpleNamespace(livekit_url="wss://lk", agent="", api_key="key", api_secret="secret" * 8),
+            execution=types.SimpleNamespace(realtime=types.SimpleNamespace(input_batch_ms=100)),
+        )
+        monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: cfg))
+
+        gateway = LiveKitEdgeGateway(agent_name=agent_name, session_id="room-1")
+
+        claims = self._claims(gateway.token)
+        assert claims["sub"] == identity
+        assert claims["video"]["room"] == "room-1"
+        assert gateway.agent == agent_name
 
 
 class TestInboundStaging:

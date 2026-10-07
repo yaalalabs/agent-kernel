@@ -10,7 +10,6 @@ from livekit import api, rtc
 from ...core.config import AKConfig
 from ...core.model import AgentReply, AgentRequestText, StreamChunk
 from ...core.realtime import EDGE_SAMPLE_RATE
-from ...core.util.factory import AKConfigError
 from ..adapter.base import StatefulEdgeAdapter
 
 _log = logging.getLogger("ak.integration.livekit")
@@ -44,12 +43,8 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
         api_secret: Optional[str] = None,
     ):
         super().__init__()
-        if rtc is None:
-            raise AKConfigError("LiveKit SDK is not installed. Run: pip install livekit-api livekit")
-
         config = AKConfig.get()
         self.room_url = room_url or config.livekit.livekit_url
-        self.agent_name = agent_name or config.livekit.agent or "general"
         # Carried on every request so the runner binds this room's session to the configured agent;
         # None (nothing configured) leaves selection to the runner's default agent.
         self.agent = agent_name or config.livekit.agent or None
@@ -66,11 +61,12 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
             final_api_secret = api_secret or config.livekit.api_secret
 
             if final_api_key and final_api_secret:
-
+                # The name the agent appears under in the room; cosmetic, unlike ``self.agent``.
+                participant = self.agent or "general"
                 self.token = (
                     api.AccessToken(final_api_key, final_api_secret)
-                    .with_identity(f"agent-{self.agent_name}")
-                    .with_name(f"{self.agent_name} Agent")
+                    .with_identity(f"agent-{participant}")
+                    .with_name(f"{participant} Agent")
                     .with_grants(api.VideoGrants(room_join=True, room=self.session_id))
                     .to_jwt()
                 )
