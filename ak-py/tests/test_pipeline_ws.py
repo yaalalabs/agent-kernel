@@ -425,7 +425,8 @@ class TestWebSocketChat:
         [
             ({"route": "chat"}, "body is required"),
             ({"route": "chat", "body": {"prompt": "hi"}}, "session_id is required"),
-            # A promptless body fails BaseRunRequest validation before the chat handler sees it.
+            # A promptless body with no resume block is rejected by the handler: `prompt` became
+            # optional when the resume envelope landed, so the model no longer rejects it.
             ({"route": "chat", "body": {"session_id": "s1"}}, "prompt"),
         ],
     )

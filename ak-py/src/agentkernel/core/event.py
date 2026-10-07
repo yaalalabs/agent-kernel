@@ -13,8 +13,11 @@ Two invariants hold across every member:
   request/reply models in `model.py`. The union is discriminated on it so a serialised event
   parses back to the class it came from — `StreamChunk` crosses the queue transport in
   distributed deployment topologies.
-- **No field carries a framework-native object.** Every field is a `str`, `int` or `bool`, so an
-  event stays picklable and JSON-serialisable no matter which framework produced it.
+- **No field carries a framework-native object.** Every field is composed of JSON primitives — a
+  `str`, `int`, `bool`, a model built only from those, or a `JsonValue` for a field whose shape
+  the framework owns — so an event stays picklable and JSON-serialisable no matter which framework
+  produced it. `JsonValue` is the widest a field may go: it still rejects a framework-native
+  object, which a bare `Any` would admit.
 
 `message_id` and `tool_call_id` correlate a start with its deltas and its end within a single run.
 Adapters take them from the framework's own stream where one is available and generate
@@ -23,7 +26,7 @@ Adapters take them from the framework's own stream where one is available and ge
 
 from typing import Annotated, Literal, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, JsonValue
 
 
 class StreamEventBase(BaseModel):
@@ -142,6 +145,51 @@ class Interrupt(StreamEventBase):
     type: Literal["interrupt"] = "interrupt"
 
 
+class PausedInterruption(BaseModel):
+    """
+    One thing a human must decide before a paused run can continue.
+
+    Lives here rather than in model.py because both the paused reply and the RunPaused event carry
+    it, and model.py imports this module — the reverse would be circular.
+
+    id: str : unique across every paused run the session holds, so a decision resolves to its run
+        even when the caller names none. Adapters use the framework's own id
+    kind: Literal["tool_call", "input_required", "confirmation"] : Agent Kernel's own vocabulary,
+        named after what the frameworks produce
+    tool_name: str | None : the tool awaiting approval, when there is one
+    arguments: str | None : JSON-encoded call arguments
+    message: str | None : what to show the human
+    payload: JsonValue : the question's own shape, as the framework produced it. Any JSON value,
+        not just an object, because a framework is free to pose a question as a bare list or string
+    """
+
+    id: str
+    kind: Literal["tool_call", "input_required", "confirmation"]
+    tool_name: str | None = None
+    arguments: str | None = None
+    message: str | None = None
+    payload: JsonValue = None
+
+
+class RunPaused(StreamEventBase):
+    """
+    The run stopped and needs a human before it can continue.
+
+    Terminal for the run but not an error: Runtime.stream emits it as an ordinary chunk, drains any
+    open boundary, then ends with StreamChunk(done=True) — never through StreamChunk.error. The
+    opaque per-framework resume state stays in the session and never rides on the event.
+
+    `agent` is the one field a client cannot derive: a resume must name the agent that paused, and
+    a request that named none was served by the default agent, so without it a streaming client
+    cannot answer its own pause. It mirrors `AgentPausedReplyAny.agent` on the non-streaming path.
+    """
+
+    type: Literal["run_paused"] = "run_paused"
+    run_id: str
+    agent: str
+    interruptions: list[PausedInterruption]
+
+
 type StreamEvent = Annotated[
     Union[
         MessageStart,
@@ -158,6 +206,7 @@ type StreamEvent = Annotated[
         ReasoningEnd,
         AudioDelta,
         Interrupt,
+        RunPaused,
     ],
     Field(discriminator="type"),
 ]

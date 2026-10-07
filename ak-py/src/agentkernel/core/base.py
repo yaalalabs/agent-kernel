@@ -12,8 +12,12 @@ from typing import TYPE_CHECKING, Any, ClassVar, Self, Type, cast
 
 from .event import StreamEvent
 from .hooks import PostHook, PreHook
-from .model import AgentReply, AgentRequest
+from .model import AgentReply, AgentRequest, ResumeDecision
 from .util.key_value_cache import KeyValueCache
+from .util.picklable import first_unpicklable_entry
+
+if TYPE_CHECKING:
+    from .paused_run import PausedRun
 
 if TYPE_CHECKING:  # pragma: no cover: typing only; avoids a base <-> realtime import cycle
     from .realtime import RealtimeRunner
@@ -259,6 +263,15 @@ class Runner(ABC):
     framework.
     """
 
+    CANCELLED_DECISION_MESSAGE: str = (
+        "A human reviewer closed this request without deciding on it, so it was not carried out. "
+        "This is not a refusal — report it as undecided rather than declined."
+    )
+    """What the model is told when a human cancels a paused run rather than denying it. Only
+    LangGraph carries a three-valued decision natively, so on the others this wording is what keeps
+    "nobody decided" apart from "refused". Override per runner if a framework needs different
+    phrasing."""
+
     def __init__(self, name: str):
         """
         Initializes a Runner instance.
@@ -317,19 +330,6 @@ class Runner(ABC):
         self._ensure_framework_context_picklable(session, merged)
         session.set_framework_context(merged)
 
-    @staticmethod
-    def _not_picklable(value: Any) -> bool:
-        """
-        Checks whether the given value can be pickled.
-        :param value: The value to test.
-        :return: True if the value cannot be pickled.
-        """
-        try:
-            pickle.dumps(value)
-            return False
-        except Exception:
-            return True
-
     @classmethod
     def _ensure_framework_context_picklable(cls, session: Session, ctx: Mapping[str, Any]) -> None:
         """
@@ -341,10 +341,7 @@ class Runner(ABC):
         try:
             pickle.dumps(ctx)
         except Exception as exc:
-            offender = next(
-                (f"{k!r} ({type(v).__name__})" for k, v in ctx.items() if cls._not_picklable(v)),
-                "<unknown key>",
-            )
+            offender = first_unpicklable_entry(ctx)
             raise TypeError(
                 f"Session '{session.id}' framework_context is not picklable; "
                 f"offending entry: {offender}. framework_context values must be "
@@ -402,6 +399,69 @@ class Runner(ABC):
         """
         return True
 
+    @property
+    def supports_pause(self) -> bool:
+        """
+        Whether this runner can hand a framework pause back to the caller and resume it later.
+
+        Defaults to False, unlike supports_streaming: stream() is abstract, so every runner
+        implements it and True is honest by default, whereas resume() is a non-abstract raising
+        default. A True default would have a bring-your-own runner advertise a capability it does
+        not have and then raise inside its own except, surfacing as a generic error.
+        :return: False unless the subclass overrides it.
+        """
+        return False
+
+    async def resume(
+        self,
+        agent: Any,
+        session: Session,
+        requests: list[AgentRequest],
+        decisions: list[ResumeDecision],
+        record: "PausedRun",
+    ) -> AgentReply:
+        """
+        Continues a paused run from the human's decisions.
+
+        The implementation clears the record with `PausedRunState.clear` once the framework has
+        accepted the decisions, and only then. Runtime deliberately does not clean up afterwards:
+        it cannot tell a failure from an ordinary reply, since this method reports framework
+        failures as text, so a fallback there would delete the record on a transient error and
+        leave the human with a decision that can no longer be applied. The record surviving is what
+        makes a retry possible.
+
+        :param agent: The agent that paused.
+        :param session: The session holding the record.
+        :param requests: The hook-processed request list, carrying the resume request. Adapters put
+            it in the ToolContext, so a tool running during a resumed turn sees what was asked.
+        :param decisions: One per interruption being answered.
+        :param record: The record Runtime validated, passed in so the adapter cannot resume a
+            different one.
+        :return: The result of continuing the run, which may itself be paused again.
+        """
+        raise NotImplementedError(f"Runner '{self.name}' does not support resuming a paused run")
+
+    async def resume_stream(
+        self,
+        agent: Any,
+        session: Session,
+        requests: list[AgentRequest],
+        decisions: list[ResumeDecision],
+        record: "PausedRun",
+    ) -> AsyncGenerator[StreamEvent, None]:
+        """
+        Streaming counterpart of resume().
+
+        :param agent: The agent that paused.
+        :param session: The session holding the record.
+        :param requests: The hook-processed request list, carrying the resume request.
+        :param decisions: One per interruption being answered.
+        :param record: The record Runtime validated.
+        :return: The events the continued run produces.
+        """
+        raise NotImplementedError(f"Runner '{self.name}' does not support resuming a paused run")
+        yield  # pragma: no cover - unreachable; makes this an async generator
+
     @abstractmethod
     async def stream(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[StreamEvent, None]:
         """
@@ -409,6 +469,10 @@ class Runner(ABC):
 
         Every adapter emits events; a runner that yields a bare `str` is rejected by
         `StreamChunk.event` with a `ValidationError` rather than being normalised (§4 rule 6).
+
+        **`RunPaused` is the last thing a paused run yields.** `Runtime` breaks out of the loop on it
+        and closes this generator, so anything after that yield — writing the record, storing context
+        — never runs. Do that work first and yield `RunPaused` last.
 
         :param agent: The agent to run.
         :param session: The session to use for the agent.

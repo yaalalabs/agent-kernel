@@ -9,9 +9,11 @@ from agentkernel.core.event import (
     Interrupt,
     MessageEnd,
     MessageStart,
+    PausedInterruption,
     ReasoningDelta,
     ReasoningEnd,
     ReasoningStart,
+    RunPaused,
     StepEnd,
     StepStart,
     StreamEvent,
@@ -45,6 +47,7 @@ ALL_EVENTS = [
     ReasoningEnd(message_id="m1"),
     AudioDelta(message_id="m1", content="YmFzZTY0Cg=="),
     Interrupt(),
+    RunPaused(run_id="run-1", agent="refunds", interruptions=[PausedInterruption(id="i1", kind="tool_call", tool_name="refund")]),
 ]
 
 
@@ -64,14 +67,28 @@ def test_event_round_trips_through_the_discriminated_union(event):
     assert parsed == event
 
 
+def _leaves(value):
+    """Yields every scalar inside a dumped event, descending through lists and dicts."""
+    if isinstance(value, dict):
+        for item in value.values():
+            yield from _leaves(item)
+    elif isinstance(value, list):
+        for item in value:
+            yield from _leaves(item)
+    else:
+        yield value
+
+
 @pytest.mark.parametrize("event", ALL_EVENTS, ids=lambda ev: ev.type)
 def test_event_is_json_serialisable(event):
-    # No field may carry a framework-native object: a StreamChunk crosses the queue transport. The
-    # scalar set matches spec §1 rule 4 rather than being narrower than it, so an int or bool field
-    # added by a later adapter PR is accepted here instead of failing a spec-legal change.
+    """No field may carry a framework-native object: a StreamChunk crosses the queue transport.
+
+    Descends rather than checking top-level values only, because RunPaused.interruptions is a list
+    of models — the invariant is that every leaf is a JSON primitive, not that every field is.
+    """
     dumped = event.model_dump()
     assert json.loads(json.dumps(dumped)) == dumped
-    assert all(isinstance(value, (str, int, bool)) for value in dumped.values())
+    assert all(leaf is None or isinstance(leaf, (str, int, bool)) for leaf in _leaves(dumped))
 
 
 @pytest.mark.parametrize("event", ALL_EVENTS, ids=lambda ev: ev.type)
