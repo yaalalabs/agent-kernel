@@ -111,6 +111,7 @@ fence metadata (```` ```yaml title="config.yaml" ````) is stripped to the langua
 (as slugs, e.g. `AI Agents` -> `ai-agents`).
 
 **Opting a post out:** add `hashnode: false` to that post's frontmatter.
+Posts with `draft: true` or `unlisted: true` are skipped too, since they aren't public on the website.
 
 **CI secrets:** `HASHNODE_PAT` and `HASHNODE_PUBLICATION_ID` (GitHub repo -> Settings ->
 Secrets and variables -> Actions). If either is missing, the workflow job skips the sync.
@@ -191,6 +192,7 @@ block breaks and swallows the text after it).
 else 30s) and retries, so a first full sync of every post just takes a few minutes.
 
 **Opting a post out:** add `devto: false` to that post's frontmatter.
+Posts with `draft: true` or `unlisted: true` are skipped too, since they aren't public on the website.
 
 **CI secrets:** `DEVTO_API_KEY` (required) and `DEVTO_ORGANIZATION_ID` (optional). If the
 API key is missing, the workflow job skips the sync.

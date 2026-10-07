@@ -48,6 +48,14 @@ def list_posts(blog_dir: Path) -> list:
     return sorted(path for path in blog_dir.glob("*.md") if not path.name.endswith(PREVIEW_FILE_SUFFIX))
 
 
+def is_hidden_on_site(frontmatter: dict) -> bool:
+    """True for a Docusaurus `draft` (left out of the production build) or `unlisted` post.
+
+    Neither is meant to be public on the website, so neither may be published elsewhere.
+    """
+    return frontmatter.get("draft") is True or frontmatter.get("unlisted") is True
+
+
 def parse_post(path: Path) -> dict:
     raw = path.read_text(encoding="utf-8")
     match = FRONTMATTER_RE.match(raw)

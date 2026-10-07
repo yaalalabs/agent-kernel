@@ -41,7 +41,8 @@ Environment:
     DEVTO_ORGANIZATION_ID     Optional. Publish new articles under this DEV organization
                               (the key's owner must be a member of it).
 
-A post is skipped entirely if its frontmatter sets `devto: false`.
+A post is skipped entirely if its frontmatter sets `devto: false`, or `draft: true` /
+`unlisted: true` (it isn't public on the website, so it isn't published here either).
 """
 
 import argparse
@@ -71,6 +72,7 @@ from utils.common import (
     load_state,
     save_state,
     parse_post,
+    is_hidden_on_site,
     load_authors,
     resolve_authors,
     join_names,
@@ -487,6 +489,11 @@ def main() -> None:
         frontmatter, body = post["frontmatter"], post["body"]
 
         if frontmatter.get("devto") is False:
+            continue
+
+        # --preview only writes local files, so a draft can still be previewed before it goes live.
+        if is_hidden_on_site(frontmatter) and not args.preview:
+            print(f"skipping {path.name}: draft/unlisted on the website")
             continue
 
         if not frontmatter.get("title") or not frontmatter.get("slug"):
