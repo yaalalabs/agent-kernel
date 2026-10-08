@@ -18,6 +18,14 @@ module "serverless_agents" {
   api_base_path  = "api"
   agent_endpoint = "chat"
 
+  # Extra API Gateway route for Slack's Events API webhook, added alongside the
+  # chat route the module always creates. It is served at
+  # POST /<api_base_path>/<api_version>/slack/events and routed to the request
+  # handler Lambda, which verifies the Slack signature and enqueues the message.
+  # The path must match the @Lambda.register route in lambda_request_handler.py.
+  # Set this URL as the Request URL in the Slack app's Event Subscriptions.
+  # The authorizer bypasses this route (see lambda_auth.py), since Slack can't
+  # send our bearer token.
   gateway_endpoints = [
     {
       path   = "/slack/events"
