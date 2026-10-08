@@ -1,0 +1,53 @@
+[project]
+name = "aws-serverless-slack-openai"
+version = "0.1.0"
+description = "Demo of a Slack integration served by Agent Kernel on AWS Lambda: webhooks in through the request handler, replies out through the response handler"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []
+
+[project.optional-dependencies]
+# Per-Lambda dependency sets. deploy.sh installs each package with `uv export --extra <name>`.
+#
+# The request handler verifies, acknowledges and enqueues Slack messages, and the response handler
+# delivers the replies, so both carry the `slack` extra (Bolt, FastAPI, aiohttp). Neither needs the
+# heavy OpenAI Agents SDK; only the agent runner does. The authorizer needs nothing but `aws`:
+# WebhookRouteMatcher imports no platform SDK.
+request_handler = [
+    "agentkernel[aws,slack]>=0.9.3",
+]
+response_handler = [
+    "agentkernel[aws,slack]>=0.9.3",
+]
+agent_runner = [
+    "agentkernel[aws,openai,multimodal]>=0.9.3",
+]
+authorizer = [
+    "agentkernel[aws]>=0.9.3",
+]
+
+[dependency-groups]
+dev = [
+    "agentkernel[test]>=0.9.3",
+    "black==26.5.1",
+    "isort>=5.0.0",
+    "mypy>=1.0.0",
+]
+
+[tool.uv]
+package = false
+
+[tool.isort]
+profile = "black"
+line_length = 120
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+
+[tool.black]
+line-length = 120
+target-version = ["py312"]
