@@ -527,7 +527,7 @@ function ProblemTable() {
     {
       problem: "Observability",
       without: "Manual instrumentation",
-      with: "Langfuse/OpenLLMetry/Pydantic Logfire with one config line",
+      with: "Langfuse/OpenLLMetry/Pydantic Logfire/AWS CloudWatch with one config line",
     },
     {
       problem: "Guardrails & Safety",
@@ -904,6 +904,7 @@ function CoreFeatures() {
         "Langfuse integration",
         "OpenLLMetry (OpenTelemetry-based)",
         "Pydantic Logfire integration",
+        "AWS CloudWatch (X-Ray) integration",
         "Multi-level verbosity",
         "Cost and latency tracking",
       ],

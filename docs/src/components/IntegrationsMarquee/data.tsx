@@ -149,6 +149,7 @@ export const INTEGRATION_ROWS: IntegrationRow[] = [
       { name: "Langfuse", role: "Tracing", href: TRACE, logo: "/img/integrations/langfuse.png" },
       { name: "OpenLLMetry", role: "Tracing", href: TRACE, logo: "/img/integrations/traceloop.png" },
       { name: "Pydantic Logfire", role: "Tracing", href: TRACE, icon: <SiPydantic /> },
+      { name: "Amazon CloudWatch", role: "Tracing", href: TRACE, icon: <FaAws /> },
       { name: "OpenTelemetry", role: "Tracing", href: TRACE, icon: <SiOpentelemetry /> },
       { name: "OpenAI Guardrails", role: "Guardrail", href: "/docs/advanced/guardrails-openai", logo: "/img/integrations/openai.svg", mono: true },
       { name: "Amazon Bedrock Guardrails", role: "Guardrail", href: "/docs/advanced/guardrails-bedrock", logo: "/img/integrations/bedrock.png" },

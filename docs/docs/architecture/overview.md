@@ -40,7 +40,7 @@ graph TB
         MM[Multimodal<br/>attachments]
         TH[Conversation Threads]
         KB[Knowledge Bases<br/>Chroma · Neo4j · Starburst · OKF]
-        TR[Tracing<br/>Langfuse · OpenLLMetry · Logfire]
+        TR[Tracing<br/>Langfuse · OpenLLMetry · Logfire · CloudWatch]
     end
 
     subgraph STORE["State Stores"]
@@ -172,7 +172,7 @@ Built-in support for:
 - Queue-pipeline execution everywhere: in-process by default, SQS-backed on Lambda and ECS, Kafka and NATS JetStream for on-prem / Kubernetes (deployed by the [Helm chart](../deployment/onprem-kubernetes))
 - Input/output guardrails and PII redaction
 - Multi-agent coordination and multimodal attachments
-- Observability and tracing (Langfuse, OpenLLMetry, Logfire)
+- Observability and tracing (Langfuse, OpenLLMetry, Logfire, CloudWatch)
 
 ### 5. Extensible
 

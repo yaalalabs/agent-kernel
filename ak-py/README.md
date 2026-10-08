@@ -1090,7 +1090,7 @@ Configure tracing and observability for monitoring agent execution.
 
 - **Type**
   - **Field**: `trace.type`
-  - **Options**: `langfuse`, `openllmetry`, `logfire`
+  - **Options**: `langfuse`, `openllmetry`, `logfire`, `cloudwatch`
   - **Default**: `langfuse`
   - **Description**: Type of tracing provider to use
   - **Environment Variable**: `AK_TRACE__TYPE`
@@ -1163,6 +1163,32 @@ Enable tracing in your configuration:
 trace:
   enabled: true
   type: logfire
+```
+
+**AWS CloudWatch Setup:**
+
+To send traces to Amazon CloudWatch (via AWS X-Ray, searchable in Transaction Search), install the cloudwatch extra:
+
+```bash
+pip install agentkernel[cloudwatch]
+```
+
+Spans are exported over OTLP to the X-Ray endpoint of your region, signed with the standard AWS credential
+chain (environment, profile, SSO, or instance/task role). Enable CloudWatch Transaction Search once in the
+account, and give the agent's role the `AWSXrayWriteOnlyAccess` managed policy:
+
+```bash
+export AWS_REGION=us-east-1
+# Optional: export through the CloudWatch agent or an OpenTelemetry collector instead
+# export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://localhost:4318/v1/traces
+```
+
+Enable tracing in your configuration:
+
+```yaml
+trace:
+  enabled: true
+  type: cloudwatch
 ```
 
 #### Test Configuration
@@ -1553,7 +1579,7 @@ export AK_API__PORT=8000
 export AK_A2A__ENABLED=true
 export AK_MCP__ENABLED=false
 export AK_TRACE__ENABLED=true
-export AK_TRACE__TYPE=langfuse  # or openllmetry, logfire
+export AK_TRACE__TYPE=langfuse  # or openllmetry, logfire, cloudwatch
 # For Langfuse:
 # export LANGFUSE_PUBLIC_KEY=pk-lf-...
 # export LANGFUSE_SECRET_KEY=sk-lf-...
@@ -1562,6 +1588,8 @@ export AK_TRACE__TYPE=langfuse  # or openllmetry, logfire
 # export TRACELOOP_API_KEY=your-api-key
 # For Logfire:
 # export LOGFIRE_TOKEN=your-write-token
+# For CloudWatch:
+# export AWS_REGION=us-east-1
 # Test harness (loaded from the separate test-config.yaml — see Test Configuration)
 export AK_TEST__MODE=fallback  # Options: score, llm, fallback
 export AK_TEST__EVALUATOR=deepeval  # Built-in short name (deepeval, opik or jev), or a dotted path to your own AKEvaluator subclass
@@ -1608,7 +1636,7 @@ AK_API__PORT=8080
 AK_A2A__ENABLED=true
 AK_A2A__URL=http://localhost:8080/a2a
 AK_TRACE__ENABLED=true
-AK_TRACE__TYPE=langfuse  # or openllmetry, logfire
+AK_TRACE__TYPE=langfuse  # or openllmetry, logfire, cloudwatch
 # Langfuse credentials (if using langfuse):
 # LANGFUSE_PUBLIC_KEY=pk-lf-...
 # LANGFUSE_SECRET_KEY=sk-lf-...
@@ -1617,6 +1645,8 @@ AK_TRACE__TYPE=langfuse  # or openllmetry, logfire
 # TRACELOOP_API_KEY=your-api-key
 # Logfire credentials (if using logfire):
 # LOGFIRE_TOKEN=your-write-token
+# CloudWatch region (if using cloudwatch; credentials come from the AWS credential chain):
+# AWS_REGION=us-east-1
 ```
 
 #### config.yaml

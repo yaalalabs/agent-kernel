@@ -34,7 +34,7 @@ Check for an existing Agent Kernel project with `pyproject.toml` and agent defin
 Which capability would you like to add?
 
 1. **Guardrails** — Content safety filters for input and/or output
-2. **Tracing** — Observability and monitoring (Langfuse, OpenLLMetry, or Pydantic Logfire)
+2. **Tracing** — Observability and monitoring (Langfuse, OpenLLMetry, Pydantic Logfire, or AWS CloudWatch)
 3. **Session Persistence** — Durable conversation state (Redis, DynamoDB, Cosmos DB, Firestore)
 4. **Knowledge Base** — Durable cross-session knowledge tools (ChromaDB, Neo4j, Starburst, Open Knowledge Format markdown bundle, or custom backend)
 5. **MCP Server** — Expose agents as Model Context Protocol tools
@@ -171,7 +171,7 @@ export WALLED_API_KEY="your-walledai-api-key"
 
 #### Tracing (Observability)
 
-**Ask:** Which tracing backend — Langfuse, OpenLLMetry (Traceloop), or Pydantic Logfire?
+**Ask:** Which tracing backend — Langfuse, OpenLLMetry (Traceloop), Pydantic Logfire, or AWS CloudWatch?
 
 **For Langfuse:**
 
@@ -238,6 +238,34 @@ export LOGFIRE_TOKEN="your-write-token"
 ```
 
 4. No code changes needed — tracing is automatically applied to all agent executions.
+
+**For AWS CloudWatch:**
+
+1. Update `pyproject.toml`:
+```toml
+dependencies = [
+    "agentkernel[openai,api,cloudwatch]>=0.9.3",
+]
+```
+
+2. Update `config.yaml`:
+```yaml
+trace:
+  enabled: true
+  type: cloudwatch
+```
+
+3. Set the region; credentials come from the standard AWS chain (env, profile, SSO, or instance/task role):
+```bash
+export AWS_REGION="us-east-1"
+# Optional: export through the CloudWatch agent or an OpenTelemetry collector instead of straight to X-Ray
+# export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT="http://localhost:4318/v1/traces"
+```
+
+4. One-time AWS setup: enable CloudWatch Transaction Search in the account, and attach the
+`AWSXrayWriteOnlyAccess` managed policy to the role that runs the agent.
+
+5. No code changes needed — tracing is automatically applied to all agent executions.
 
 ---
 

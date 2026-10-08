@@ -88,6 +88,24 @@
       ]
     },
     {
+      "id": "cap-tracing-cloudwatch",
+      "name": "Add AWS CloudWatch tracing",
+      "input": "Add AWS CloudWatch tracing to my project",
+      "expected_outputs": [
+        "trace:",
+        "type: cloudwatch",
+        "enabled: true",
+        "AWS_REGION",
+        "AWSXrayWriteOnlyAccess",
+        "agentkernel[",
+        "cloudwatch"
+      ],
+      "must_not_contain": [
+        "type: langfuse",
+        "type: logfire"
+      ]
+    },
+    {
       "id": "cap-session-redis",
       "name": "Add Redis session persistence",
       "input": "Add Redis session persistence to my project",

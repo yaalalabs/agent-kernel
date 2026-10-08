@@ -34,6 +34,12 @@ openllmetry = [
 logfire = [
     "logfire>=3.0",
 ]
+cloudwatch = [
+    "opentelemetry-sdk>=1.30.0",
+    "opentelemetry-exporter-otlp-proto-http>=1.30.0",
+    "botocore>=1.41.4",
+    "requests>=2.32.0",
+]
 crewai = [
     "crewai>=1.15.0",
     "openinference-instrumentation-crewai>=0.1.16",
