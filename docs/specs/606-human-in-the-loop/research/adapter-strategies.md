@@ -248,6 +248,10 @@ AK pause event is a direct translation, no state reconstruction needed.
 **Verdict: workable, but the only one of the four with structural blockers in the current
 adapter and unresolved upstream bugs.**
 
+> **Settled since.** The streaming-resume bugs this verdict flagged do not reproduce at
+> `google-adk` 2.8.0 — streaming pause and resume were verified against a real run. See
+> [`adapter-changes.md`](adapter-changes.md) §7 and [`verification.md`](verification.md).
+
 ### Pause
 
 The adapter must stop discarding events. `get_response()` (`adk.py:250-279`) keeps only
