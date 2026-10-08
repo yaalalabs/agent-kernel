@@ -168,6 +168,7 @@ jobs:
   get-base-outputs:
     needs: [setup, build-ak-py, deploy-openai]
     runs-on: ubuntu-latest
+    environment: ci-tests
     outputs:
       vpc_id: ${{ steps.base-outputs.outputs.vpc_id }}
       private_subnet_ids: ${{ steps.base-outputs.outputs.private_subnet_ids }}
