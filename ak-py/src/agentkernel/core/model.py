@@ -3,9 +3,9 @@ import uuid
 from enum import Enum
 from typing import Annotated, Any, Callable, List, Literal, Optional, Union
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
-from .event import StreamEvent
+from .event import PausedInterruption, StreamEvent
 
 
 class AgentRequestText(BaseModel):
@@ -122,11 +122,74 @@ class AgentReplyImage(AgentRequestImage):
         return f"{self.response}. Image {self.name} is attached."
 
 
-type AgentRequest = Union[AgentRequestText, AgentRequestFile, AgentRequestImage, AgentRequestAny, AgentRequestAttachmentRef]
+class ResumeDecision(BaseModel):
+    """
+    A human's answer to one PausedInterruption.
+
+    id: str : the interruption being answered
+    status: Literal["approved", "denied", "cancelled"] | None : the verb. Optional, because a pause
+        asking for a value has nothing to approve; Runtime requires it only for the approval kinds
+    message: str | None : the human's words — a free-text answer, or the reason for a refusal
+    payload: JsonValue : the structured answer — option(s) chosen, overridden arguments. Any JSON
+        value, not just an object: a framework may take a bare list or string as the answer, and
+        wrapping it in a dict AK invented would not survive the round trip
+    """
+
+    id: str
+    status: Optional[Literal["approved", "denied", "cancelled"]] = None
+    message: Optional[str] = None
+    payload: JsonValue = None
+
+
+class _ResumeDecisions(BaseModel):
+    """
+    Shared shape and structural validation for the two types carrying decisions.
+
+    Matching a decision to a pending interruption is deliberately not checked here: that needs the
+    session and is a Runtime check with its own error.
+    """
+
+    run_id: Optional[str] = None
+    decisions: List[ResumeDecision]
+
+    @model_validator(mode="after")
+    def _validate_decisions(self) -> "_ResumeDecisions":
+        if not self.decisions:
+            raise ValueError("resume requires at least one decision")
+        ids = [d.id for d in self.decisions]
+        duplicates = sorted({i for i in ids if ids.count(i) > 1})
+        if duplicates:
+            raise ValueError(f"resume carries more than one decision for: {', '.join(duplicates)}")
+        return self
+
+
+class ResumeSpec(_ResumeDecisions):
+    """
+    Resume block on a chat request: answer a pause instead of starting a new turn.
+
+    run_id: str | None : which paused run is being answered. Optional because the AG-UI protocol
+        has no field for it; the runtime resolves the run from the decisions' interruption ids
+    decisions: list[ResumeDecision] : one per interruption answered. Answering some now and the
+        rest later is allowed — the remainder comes back as another pause
+    """
+
+
+class AgentResumeRequestAny(_ResumeDecisions):
+    """
+    A human decision travelling through the request pipeline.
+
+    A member of the AgentRequest union rather than a subclass of AgentRequestAny, whose handling is
+    *skip* — exactly wrong for a decision that must reach the runner.
+    """
+
+    type: Literal["resume"] = "resume"
+
+
+type AgentRequest = Union[AgentRequestText, AgentRequestFile, AgentRequestImage, AgentRequestAny, AgentRequestAttachmentRef, AgentResumeRequestAny]
 type AgentReply = Union[AgentReplyText, AgentReplyImage, AgentReplyAny]
 
 AgentRequestUnion = Annotated[
-    Union[AgentRequestText, AgentRequestFile, AgentRequestImage, AgentRequestAny, AgentRequestAttachmentRef],
+    Union[AgentRequestText, AgentRequestFile, AgentRequestImage, AgentRequestAny, AgentRequestAttachmentRef, AgentResumeRequestAny],
     Field(discriminator="type"),
 ]
 
@@ -164,6 +227,49 @@ class AgentReplyAny(BaseModel):
         if isinstance(value, dict):
             return cls(content=value, prompt=prompt)
         return None
+
+
+class AgentPausedReplyAny(AgentReplyAny):
+    """
+    The run stopped and is waiting on a human.
+
+    A subclass of AgentReplyAny rather than a new member of the AgentReply union, so the union and
+    every isinstance tuple over it keep working untouched. Safe only because a reply is never
+    re-validated from JSON anywhere in src/. Narrowing the inherited `type` Literal is a Liskov
+    violation mypy flags; it is the accepted cost of the subclass (design.md, open question 1).
+
+    run_id: str : which paused run this is; the client echoes it back with its decision
+    session_id: str : the session holding the record
+    agent: str : the agent that paused, which also identifies the framework
+    interruptions: list[PausedInterruption] : what the human has to decide
+
+    content is derived from the fields above and never set independently — a caller-supplied one is
+    overwritten, so the two cannot drift. The opaque per-framework resume state is never on this
+    model: a reply crosses the queue transport and reaches clients.
+    """
+
+    content: dict = Field(default_factory=dict)
+    type: Literal["paused"] = "paused"  # type: ignore[assignment]
+    run_id: str
+    session_id: str
+    agent: str
+    interruptions: List[PausedInterruption]
+
+    @model_validator(mode="after")
+    def _derive_content(self) -> "AgentPausedReplyAny":
+        """
+        Rebuilds content from the typed fields, discarding anything the caller passed.
+
+        Safe from recursion: the model does not enable validate_assignment, so assigning here does
+        not re-run validation.
+        """
+        self.content = {
+            "run_id": self.run_id,
+            "session_id": self.session_id,
+            "agent": self.agent,
+            "interruptions": [interruption.model_dump(mode="json") for interruption in self.interruptions],
+        }
+        return self
 
 
 class ExecutionMode(str, Enum):
@@ -255,15 +361,43 @@ class BaseChatRequest(BaseModel):
     A schedule block defers the request: instead of running the agent, the request
     is registered as a scheduled task and acknowledged with HTTP 202. It requires
     the scheduling capability (a 'schedule' block in config.yaml) and a user_id.
+
+    A resume block answers a paused run instead of starting a new turn, so prompt
+    defaults to empty rather than being required. ChatService rejects a request
+    carrying neither, with the same error a missing prompt has always raised.
     """
 
-    prompt: str
+    prompt: str = ""
     agent: Optional[str] = None
     session_id: Optional[str] = None
     user_id: Optional[str] = None
     group_id: Optional[str] = None
     thread_name: Optional[str] = None
     schedule: Optional[ScheduleSpec] = None
+    resume: Optional[ResumeSpec] = None
+
+    @model_validator(mode="after")
+    def _require_a_prompt_or_a_resume(self) -> "BaseChatRequest":
+        """
+        Rejects a body carrying neither key, which is how a queue consumer spots a poison message.
+
+        `prompt` is a required field everywhere else in the product, and every queue consumer relies
+        on `BaseRunRequest.model_validate` raising to drive retry -> max_receive_count -> dead-letter
+        (`pipeline/agent_runner.py`, both ECS runners, both serverless runners). Defaulting it so a
+        decision can stand alone removed the only structural check distinguishing a run request from
+        arbitrary JSON, and a poison message was then acked instead of dead-lettered.
+
+        Keyed on `model_fields_set` rather than on the value, so `{"prompt": ""}` behaves exactly as
+        it did before: an explicitly empty prompt is a run request, an absent one is not. A prebuilt
+        `requests` list counts too — that is the shape a producer composing its own list sends, and it
+        carries the turn without a prompt key.
+
+        :return: This request, when it carries a prompt key, a prebuilt request list, or a resume.
+        :raises ValueError: If it carries none of them, making it indistinguishable from unrelated JSON.
+        """
+        if not (self.model_fields_set & {"prompt", "requests"}) and self.resume is None:
+            raise ValueError("a chat request must carry a 'prompt', a 'resume' block, or a prebuilt 'requests' list")
+        return self
 
 
 class BaseRunRequest(BaseChatRequest):

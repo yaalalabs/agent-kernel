@@ -1,0 +1,82 @@
+{
+  "2025-10-23-announcing-agent-kernel.md": {
+    "content_hash": "f6525df1183792620d441699a385492eb1465985481bb0bb48557a88bcacf1ff",
+    "devto_article_id": 4805362,
+    "devto_url": "https://dev.to/agent-kernel/introducing-agent-kernel-framework-agnostic-ai-agent-runtime-5cb0"
+  },
+  "2025-11-17-observability-support.md": {
+    "content_hash": "60b80fc9c4ff4fdbb2f837a012e712ffc715940597d994bb1ed4258664018328",
+    "devto_article_id": 4805736,
+    "devto_url": "https://dev.to/agent-kernel/production-grade-observability-agent-kernel-integrates-langfuse-and-openllmetry-3ab9"
+  },
+  "2025-11-21-messaging-platform-integrations.md": {
+    "content_hash": "f8e8f7fa12d787f317faf20fd0ab035a1b520f1a8f186a77e3180f3b7a2965c2",
+    "devto_article_id": 4805769,
+    "devto_url": "https://dev.to/agent-kernel/connect-everywhere-agent-kernel-now-supports-slack-whatsapp-and-messenger-2ig5"
+  },
+  "2025-12-18-hooks-and-smart-memory.md": {
+    "content_hash": "bbe939e0e9e9abebf394790b715dbb4baf2ac33c03309449c635fb1302deffb7",
+    "devto_article_id": 4806120,
+    "devto_url": "https://dev.to/agent-kernel/power-up-your-agents-execution-hooks-and-smart-memory-in-agent-kernel-5d1k"
+  },
+  "2026-01-13-guardrails-content-safety.md": {
+    "content_hash": "b5b0007f6b48ad0ebee5fd6a9266fd61a1ce395c2d138b18809ca4b1fba456e1",
+    "devto_article_id": 4806127,
+    "devto_url": "https://dev.to/agent-kernel/safe-ai-at-scale-introducing-guardrails-for-agent-kernel-34ec"
+  },
+  "2026-02-16-azure-multi-cloud.md": {
+    "content_hash": "68f041448f89155728144490b5febb17ad288ac8fa5f69b0a9e1b5fe29713315",
+    "devto_article_id": 4806162,
+    "devto_url": "https://dev.to/agent-kernel/agent-kernel-goes-multi-cloud-azure-support-is-here-29he"
+  },
+  "2026-02-18-framework-agnostic-tools.md": {
+    "content_hash": "a19dcdb7166e1c01056f8f82de1fee96cad365fc2eea4a70e6df384ee58851f8",
+    "devto_article_id": 4806178,
+    "devto_url": "https://dev.to/agent-kernel/write-once-run-anywhere-universal-tools-for-ai-agents-1mmg"
+  },
+  "2026-03-10-agent-skills-cli.md": {
+    "content_hash": "f77339b74a8f35a72a8b43c3bd1f7efda7cac5080dcfff8863fbcaceca28665e",
+    "devto_article_id": 4806187,
+    "devto_url": "https://dev.to/agent-kernel/agent-skills-agent-kernel-builds-enterprise-agents-for-you-h0d"
+  },
+  "2026-03-10-walledai-guardrails.md": {
+    "content_hash": "433f685b6b83dddd99223254838909353e47b5b1c9b412576aa370610e12e694",
+    "devto_article_id": 4806195,
+    "devto_url": "https://dev.to/agent-kernel/walled-ai-guardrails-in-practice-1j8g"
+  },
+  "2026-05-04-knowledge-bases-self-evolving-agents.md": {
+    "content_hash": "f6aa3806d1288c355ebd260fe39d38b910fde418dd9f4c7df5017ebac17c9a8e",
+    "devto_article_id": 4806207,
+    "devto_url": "https://dev.to/agent-kernel/knowledge-bases-the-missing-layer-that-lets-ai-agents-self-evolve-39g3"
+  },
+  "2026-05-27-agent-kernel-live-climate-impact-x.md": {
+    "content_hash": "6305921af26c2df98ca84a6bc12d9ab20c3a5f77c9c8e151241217545e9fd899",
+    "devto_article_id": 4806221,
+    "devto_url": "https://dev.to/agent-kernel/agent-kernel-is-live-at-climate-impact-x-4fap"
+  },
+  "2026-06-09-gcp-support.md": {
+    "content_hash": "03ff2a0e9ea38dae843f5602679f06c620acb56fb35fb96b923173e1bdbbc4e5",
+    "devto_article_id": 4806244,
+    "devto_url": "https://dev.to/agent-kernel/agent-kernel-now-runs-on-gcp-aws-azure-gcp-on-prem-one-platform-39i8"
+  },
+  "2026-08-06-agent-kernel-execution-broker.md": {
+    "content_hash": "21eb8dd9f353ccd898e6d4c2adf9a73e00542949ea063a09d3f7a2ecec93b712",
+    "devto_article_id": 4806258,
+    "devto_url": "https://dev.to/agent-kernel/introducing-the-agent-kernel-execution-broker-a-safe-place-for-ai-agents-to-run-code-48p8"
+  },
+  "2026-08-17-aws-queue-mode-scalability.md": {
+    "content_hash": "ddc4e78f88e3ed045d0ee1ed07b9d46d2ba6ccb147773764c2c4d01611d8cdb5",
+    "devto_article_id": 4806304,
+    "devto_url": "https://dev.to/agent-kernel/scaling-agent-kernel-on-aws-decoupling-request-handling-from-agent-execution-56bg"
+  },
+  "2026-09-14-kubernetes-on-prem-helm-chart.md": {
+    "content_hash": "a54ae96082aff7e50032c7f9350c6a6fd6a13cd16accb27991d3c093459ee8ed",
+    "devto_article_id": 4806317,
+    "devto_url": "https://dev.to/agent-kernel/your-cluster-your-data-one-helm-chart-agent-kernel-on-on-prem-kubernetes-5g9g"
+  },
+  "2026-09-14-scheduled-tasks.md": {
+    "content_hash": "307dd1d59d21586b0e2532c70baf04865b3aca1ab5576b81006b739c07af3756",
+    "devto_article_id": 4806343,
+    "devto_url": "https://dev.to/agent-kernel/scheduled-tasks-in-agent-kernel-work-that-runs-without-anyone-asking-4j09"
+  }
+}
