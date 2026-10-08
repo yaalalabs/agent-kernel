@@ -20,7 +20,7 @@ from google.adk.events import Event, EventActions
 from google.adk.flows.llm_flows.functions import REQUEST_CONFIRMATION_FUNCTION_CALL_NAME
 from google.adk.runners import Runner
 from google.adk.sessions import BaseSessionService, InMemorySessionService, State
-from google.adk.tools import FunctionTool, ToolContext
+from google.adk.tools import BaseTool, FunctionTool, ToolContext
 from google.genai import types
 from pydantic import ValidationError
 
@@ -34,11 +34,13 @@ from agentkernel.core.model import (
     AgentRequestFile,
     AgentRequestImage,
     AgentRequestText,
+    AgentRequestVoice,
     ResumeDecision,
 )
 
 from ...core import Agent as AKBaseAgent
 from ...core import Module
+from ...core import RealtimeRunner as BaseRealtimeRunner
 from ...core import Runner as BaseRunner
 from ...core import Runtime, Session, ToolBuilder
 from ...core import ToolContext as AKToolContext
@@ -63,6 +65,8 @@ from ...core.util.error_util import user_facing_error_message
 from ...trace import Trace
 
 FRAMEWORK = "adk"
+
+_log = logging.getLogger("ak.adk")
 
 
 class GoogleADKSession:
@@ -329,6 +333,25 @@ class GoogleADKRunner(BaseRunner):
                     mime_type = req.mime_type
 
                 raw_data = base64.b64decode(base64_data.split(",")[-1]) if base64_data.startswith("data:") else base64.b64decode(base64_data)
+                parts.append(types.Part(inline_data=types.Blob(mime_type=mime_type, data=raw_data)))
+
+            if isinstance(req, AgentRequestVoice):
+                if not req.audio_data:
+                    raise ValueError("no audio input provided")
+
+                audio_data = req.audio_data
+                if audio_data.startswith(("http://", "https://", "s3://")):
+                    parts.append(types.Part(file_data=types.FileData(file_uri=audio_data)))
+                    continue
+
+                if audio_data.startswith("data:"):
+                    mime_type = audio_data.split(";")[0][5:]
+                else:
+                    if not req.mime_type:
+                        raise ValueError("mime_type is missing for voice input, either in the base64 or explicitly")
+                    mime_type = req.mime_type
+
+                raw_data = base64.b64decode(audio_data.split(",")[-1]) if audio_data.startswith("data:") else base64.b64decode(audio_data)
                 parts.append(types.Part(inline_data=types.Blob(mime_type=mime_type, data=raw_data)))
 
         return prompt, parts
@@ -890,6 +913,264 @@ class GoogleADKRunner(BaseRunner):
             return ""
 
 
+class GoogleADKRealtimeRunner(BaseRealtimeRunner):
+    """Drives a persistent Gemini Live (BidiGenerateContent) socket behind the realtime pool.
+
+    Mirrors ``OpenAIRealtimeRunner``: the pool calls :meth:`connect` once per session and then
+    pushes audio/text through :meth:`append_audio` / :meth:`send_text`. Model events are reported
+    back through the callback the pool supplied, so the pool keeps owning queue emission and this
+    class never imports pipeline types.
+
+    Gemini Live's realtime input is 16 kHz PCM16 mono (the edge carries 24 kHz), so
+    ``input_sample_rate`` is set to 16 kHz and the pool resamples before :meth:`append_audio`.
+    """
+
+    input_sample_rate = 16000
+
+    def __init__(self):
+        super().__init__(FRAMEWORK)
+        self._log = logging.getLogger("ak.adk.realtime")
+        self._callback: Callable | None = None
+        self._agent = None
+        # The ADK session tools run in, owned by this connection like the socket: ADK builds a
+        # tool's ToolContext from a session and its service, and neither outlives the connection.
+        self._tool_session_service: InMemorySessionService | None = None
+        self._tool_session = None
+        self._connection = None
+        self._cm = None
+        self._client = None
+        self._listen_task: asyncio.Task | None = None
+        # Per-turn barge-in state; reset at each turn_complete.
+        self._interrupted_this_turn = False
+        self._model_speaking = False
+        # call_id -> function name, needed to build the FunctionResponse Gemini expects.
+        self._tool_names: dict[str, str] = {}
+        # True once disconnect() runs; the listen loop suppresses its error callback then so a
+        # normal shutdown does not surface as a model-socket failure.
+        self._closing = False
+
+    @staticmethod
+    def _realtime_model(agent: Any) -> str:
+        """The Gemini Live model named by the agent definition.
+
+        Deliberately no adapter-level default: the model is the agent's choice, and a silent
+        fallback would run a different model than the one the caller declared.
+        """
+        model = getattr(getattr(agent, "agent", None), "model", None)
+        name = model if isinstance(model, str) else getattr(model, "model", None)
+        if not isinstance(name, str) or not name:
+            raise ValueError(f"Agent '{getattr(agent, 'name', '?')}' must define a Gemini Live model to run in REALTIME mode")
+        return name
+
+    def _connect_config(self, agent: Any) -> types.LiveConnectConfig:
+        """Build the Live session config from the ADK agent's instruction and tools.
+
+        Only what the agent declares is sent; everything else (turn detection, thinking) is left to
+        the Live API's own defaults.
+        """
+        sdk_agent = getattr(agent, "agent", None)
+        instructions = getattr(sdk_agent, "instruction", None)
+        if callable(instructions):
+            # An InstructionProvider is resolved by ADK's own Runner from a ReadonlyContext; this
+            # runner talks to Gemini Live directly, so it cannot resolve one faithfully.
+            raise ValueError(f"Agent '{getattr(agent, 'name', '?')}' must define its instruction as a string to run in REALTIME mode")
+
+        declarations = []
+        for tool in self._live_tools(sdk_agent, warn=True).values():
+            try:
+                # ADK exposes a tool's FunctionDeclaration only through this protected method; it is
+                # what ADK's own flows send to the model, so the Live session sees the same schema.
+                declaration = tool._get_declaration()
+            except Exception as e:
+                self._log.warning(f"Could not build a Live declaration for tool {getattr(tool, 'name', '?')}: {e!r}")
+                declaration = None
+            if declaration is not None:
+                declarations.append(declaration)
+
+        return types.LiveConnectConfig(
+            response_modalities=[types.Modality.AUDIO],
+            system_instruction=types.Content(parts=[types.Part(text=instructions)]) if instructions else None,
+            tools=[types.Tool(function_declarations=declarations)] if declarations else None,
+            # Input transcription drives early barge-in (``interim_input_transcription``); output
+            # transcription is the transcript the edge publishes.
+            input_audio_transcription=types.AudioTranscriptionConfig(),
+            output_audio_transcription=types.AudioTranscriptionConfig(),
+        )
+
+    def _live_tools(self, sdk_agent: Any, warn: bool = False) -> dict[str, BaseTool]:
+        """The ADK agent's tools the Live session can call, by name.
+
+        ADK accepts a plain function in ``tools`` and wraps it in a ``FunctionTool`` itself when it
+        runs the agent; this runner does the same, so a plain function works in REALTIME mode too.
+        A toolset (e.g. MCP) is resolved by ADK's own Runner from a run context, which a Live
+        socket does not have, so it is skipped.
+        :param sdk_agent: The ADK agent.
+        :param warn: Log the skipped toolsets (once, at connect).
+        """
+        tools: dict[str, BaseTool] = {}
+        for tool in getattr(sdk_agent, "tools", None) or []:
+            if isinstance(tool, BaseTool):
+                tools[tool.name] = tool
+            elif callable(tool):
+                wrapped = FunctionTool(tool)
+                tools[wrapped.name] = wrapped
+            elif warn:
+                self._log.warning(f"Tool {type(tool).__name__} is a toolset, which REALTIME mode does not resolve; it is not offered")
+        return tools
+
+    async def connect(self, session: Session, agent: AKBaseAgent, callback: Callable) -> None:
+        from google import genai
+
+        self._callback = callback
+        self._agent = agent
+        model = self._realtime_model(agent)
+        # Opened before the socket, so a failure here leaves no live connection to clean up.
+        await self._open_tool_session(session.id)
+        self._client = genai.Client()
+        self._log.info(f"Connecting to Gemini Live (model={model})")
+
+        self._cm = self._client.aio.live.connect(model=model, config=self._connect_config(agent))
+        self._connection = await self._cm.__aenter__()
+
+        self._listen_task = asyncio.create_task(self._listen())
+
+    async def _open_tool_session(self, session_id: str) -> None:
+        """Create this connection's ADK session, the one every tool call's ToolContext is built from.
+
+        In-memory and connection-scoped: ``tool_context.state`` is shared by the tool calls of one
+        connection and starts empty on the next, as the model's conversation does.
+        :param session_id: The Agent Kernel session id, reused as the ADK session id.
+        """
+        self._tool_session_service = InMemorySessionService()
+        self._tool_session = await self._tool_session_service.create_session(app_name="AgentKernel", user_id="AgentKernel", session_id=session_id)
+
+    async def _listen(self) -> None:
+        try:
+            # receive() ends each turn at turn_complete, so the persistent socket is drained one
+            # turn at a time; the outer loop re-enters it for the next turn.
+            while True:
+                async for message in self._connection.receive():
+                    await self._handle_message(message)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            self._log.error(f"Gemini Live socket error: {e}")
+            if not self._closing:
+                await self._callback("error", {"message": f"Gemini Live socket error: {e}"})
+
+    async def _handle_message(self, message: types.LiveServerMessage) -> None:
+        server_content = getattr(message, "server_content", None)
+        if server_content is not None:
+            # Barge-in. The server signals it on ``interrupted``; its low-latency
+            # ``interim_input_transcription`` (updated while the user speaks) gives the same
+            # signal a beat earlier, so the edge can stop playback as soon as the user starts
+            # talking over the model. Only fires while the model is actually speaking, and only
+            # once per turn.
+            if getattr(server_content, "interrupted", False) and not self._interrupted_this_turn:
+                self._interrupted_this_turn = True
+                self._model_speaking = False
+                self._log.info("Gemini barge-in (server interruption); stopping playback")
+                await self._callback("interrupt", {})
+            elif self._model_speaking and not self._interrupted_this_turn:
+                interim = getattr(server_content, "interim_input_transcription", None)
+                if interim is not None and interim.text:
+                    self._interrupted_this_turn = True
+                    self._model_speaking = False
+                    self._log.info("Gemini barge-in (user speaking); stopping playback")
+                    await self._callback("interrupt", {})
+
+            output_transcription = getattr(server_content, "output_transcription", None)
+            if output_transcription is not None and output_transcription.text:
+                await self._callback("transcript_delta", {"delta": output_transcription.text, "message_id": ""})
+
+            model_turn = getattr(server_content, "model_turn", None)
+            if model_turn and model_turn.parts:
+                for part in model_turn.parts:
+                    inline = getattr(part, "inline_data", None)
+                    if inline is not None and inline.data:
+                        self._model_speaking = True
+                        audio_b64 = base64.b64encode(inline.data).decode("utf-8")
+                        await self._callback("audio_delta", {"delta": audio_b64, "message_id": ""})
+
+            if getattr(server_content, "turn_complete", False):
+                self._interrupted_this_turn = False
+                self._model_speaking = False
+                await self._callback("done", {"status": "completed"})
+
+        tool_call = getattr(message, "tool_call", None)
+        if tool_call and tool_call.function_calls:
+            for call in tool_call.function_calls:
+                self._tool_names[call.id] = call.name
+                await self._callback("tool_call", {"call_id": call.id, "name": call.name, "arguments": json.dumps(call.args or {})})
+
+    async def append_audio(self, base64_audio: str) -> None:
+        if self._connection:
+            await self._connection.send_realtime_input(
+                audio=types.Blob(data=base64.b64decode(base64_audio), mime_type=f"audio/pcm;rate={self.input_sample_rate}")
+            )
+
+    async def send_text(self, text: str) -> None:
+        if self._connection:
+            await self._connection.send_client_content(turns=types.Content(role="user", parts=[types.Part(text=text)]), turn_complete=True)
+
+    async def send_tool_result(self, call_id: str, result: str) -> None:
+        if self._connection:
+            name = self._tool_names.pop(call_id, call_id)
+            # Wrapped as ADK wraps a plain tool result, so the model sees the same shape as on a normal run.
+            await self._connection.send_tool_response(function_responses=types.FunctionResponse(id=call_id, name=name, response={"result": result}))
+
+    async def execute_tool(self, name: str, arguments: str, context: AKToolContext, call_id: str) -> str:
+        """Invoke an ADK tool through ADK's own ``run_async`` with a real ToolContext.
+
+        ADK *injects* a ``ToolContext`` (session state, actions, artifacts) into any tool that
+        declares one, so calling the wrapped function directly would hand those tools ``None``
+        and any ``tool_context.state`` access would fail. A fresh ``InvocationContext`` /
+        ``ToolContext`` is built here instead, from this connection's own ADK session, carrying
+        the active Agent Kernel context id in its state the same way a normal ADK run does.
+        """
+        from google.adk.agents.invocation_context import InvocationContext
+        from google.adk.tools import ToolContext as ADKToolContext
+
+        if self._tool_session is None:
+            raise RuntimeError("Gemini Live connection is not open: call connect() before executing tools")
+
+        sdk_agent = getattr(self._agent, "agent", None)
+        tool = self._live_tools(sdk_agent).get(name)
+        if tool is None:
+            return f"Error: Tool {name} not found"
+
+        invocation_context = InvocationContext(
+            session_service=self._tool_session_service,
+            invocation_id=str(uuid4()),
+            session=self._tool_session,
+            agent=sdk_agent,
+        )
+        tool_context = ADKToolContext(invocation_context=invocation_context, function_call_id=call_id)
+
+        # Entering the context populates the cache the ADK tool wrapper fetches the Agent
+        # Kernel context from; the wrapper then sets/resets the contextvar itself.
+        with context:
+            tool_context.state["ak_tool_context"] = context.id
+            args = json.loads(arguments) if arguments else {}
+            result = await tool.run_async(args=args, tool_context=tool_context)
+        return str(result) if result is not None else ""
+
+    async def disconnect(self) -> None:
+        self._closing = True
+        if self._listen_task:
+            self._listen_task.cancel()
+            self._listen_task = None
+        if self._connection and self._cm is not None:
+            await self._cm.__aexit__(None, None, None)
+            self._connection = None
+            self._cm = None
+        if self._client is not None:
+            await self._client.aio.aclose()
+            self._client = None
+        self._tool_session = None
+        self._tool_session_service = None
+
+
 class GoogleADKAgent(AKBaseAgent):
     """
     GoogleADKAgent class provides an agent wrapping for Google ADK Agent SDK based agents.
@@ -910,14 +1191,15 @@ class GoogleADKAgent(AKBaseAgent):
         "yield_user_message": "the stream mapping expects model events only",
     }
 
-    def __init__(self, name: str, runner: GoogleADKRunner, agent: BaseAgent):
+    def __init__(self, name: str, runner: GoogleADKRunner, agent: BaseAgent, realtime_runner_cls: type[BaseRealtimeRunner] | None = None):
         """
         Initializes a GoogleADKAgent instance.
         :param name: Name of the agent.
         :param runner: BaseRunner associated with the agent.
         :param agent: The Google ADK agent instance.
+        :param realtime_runner_cls: Optional realtime runner class for this agent.
         """
-        super().__init__(name, runner)
+        super().__init__(name, runner, realtime_runner_cls)
         self._agent = agent
         self._attach_system_tools()
         self._setup_system_prompt()
@@ -965,13 +1247,17 @@ class GoogleADKModule(Module):
     GoogleADKModule class provides a module for Google ADK-based agents.
     """
 
-    def __init__(self, agents: list[BaseAgent], runner: GoogleADKRunner = None):
+    def __init__(self, agents: list[BaseAgent], runner: GoogleADKRunner = None, realtime_runner_cls: type[BaseRealtimeRunner] | None = None):
         """
         Initializes a Google ADK Module instance.
         :param agents: List of agents in the module.
         :param runner: Custom runner associated with the module.
+        :param realtime_runner_cls: Realtime adapter class enabling ``execution.mode: realtime``
+            for this module's agents. Defaults to :class:`GoogleADKRealtimeRunner`; pass a custom
+            class to override. Only the pipeline (in REALTIME mode) ever instantiates it.
         """
         super().__init__()
+        self.realtime_runner_cls = realtime_runner_cls or GoogleADKRealtimeRunner
         if runner is not None:
             self.runner = runner
         elif AKConfig.get().trace.enabled:
@@ -983,11 +1269,13 @@ class GoogleADKModule(Module):
     def _wrap(self, agent: BaseAgent, agents: List[BaseAgent]) -> AKBaseAgent:
         """
         Wraps the provided agent in a GoogleADKAgent instance.
-        :param agent: Agent to wrap.
+        :param agent: The agent to wrap.
         :param agents: List of agents in the module.
         :return: GoogleADKAgent instance.
         """
-        return GoogleADKAgent(agent.name, self.runner, agent)
+        # The realtime runner class is attached unconditionally; only the pipeline (in REALTIME
+        # mode) ever instantiates it, so the framework need not know the execution mode.
+        return GoogleADKAgent(agent.name, self.runner, agent, realtime_runner_cls=self.realtime_runner_cls)
 
     def load(self, agents: list[BaseAgent]) -> "GoogleADKModule":
         """

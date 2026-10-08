@@ -269,7 +269,7 @@ const ORBIT_CARDS = [
     icon: <MdSwapHoriz />,
     color: '#00DDFF',
     title: 'Framework-Neutral',
-    desc: 'The only runtime that lets you bring in and swap between agents written with OpenAI Agents, CrewAI, LangGraph, Google ADK, Smolagents, Pydantic AI, and LiveKit with near-zero code change - and run all of them simultaneously in a single runtime.',
+    desc: 'The only runtime that lets you bring in and swap between agents written with OpenAI Agents, CrewAI, LangGraph, Google ADK, Smolagents, and Pydantic AI with near-zero code change - and run all of them simultaneously in a single runtime.',
   },
   {
     icon: <MdCloud />,
@@ -299,7 +299,7 @@ const ORBIT_CARDS = [
     icon: <MdMessage />,
     color: '#00DDFF',
     title: 'Built-in Messaging',
-    desc: 'Slack, WhatsApp, Instagram, Telegram, Messenger, Gmail - ship working integrations on day one, not months later.',
+    desc: 'Slack, WhatsApp, Instagram, Telegram, Messenger, and Gmail integrations, plus realtime voice through LiveKit for OpenAI Agents SDK and Google ADK agents.',
   },
   {
     icon: <FaLock />,

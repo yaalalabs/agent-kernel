@@ -1267,23 +1267,6 @@ function FrameworkSupport() {
       ),
     },
     {
-      key: "livekit",
-      name: "LiveKit",
-      description:
-        "LiveKit provides the complete stack for voice-based AI agents.",
-      link: "https://docs.livekit.io/",
-      external: true,
-      logo: (
-        <img
-          src="/img/integrations/livekit.png"
-          alt=""
-          className={styles.frameworkLogoImg}
-          width={38}
-          height={38}
-        />
-      ),
-    },
-    {
       key: "maf",
       name: "Microsoft Agents",
       description:
@@ -1755,6 +1738,13 @@ const MESSAGING_PLATFORMS = [
     color: "#FF7B6E",
     link: "/docs/integrations/gmail",
   },
+  {
+    name: "LiveKit",
+    icon: <img src="/img/integrations/livekit-mark.svg" alt="" width={28} height={28} />,
+    color: "#00DDFF",
+    // Drop /next after the LiveKit integration is released.
+    link: "/docs/next/integrations/livekit",
+  },
 ] as const;
 
 /* ─── Messaging Section ─────────────────────────────────────────────────── */
@@ -1821,7 +1811,7 @@ function MessagingSection() {
       <div className="container">
         <div className={styles.sectionHeader}>
           <p className={styles.sectionLabel}>06: Messaging</p>
-          <h2 className={styles.sectionTitle}>Messaging Integrations</h2>
+          <h2 className={styles.sectionTitle}>Messaging & Voice Integrations</h2>
           <p className={styles.sectionSubtitle}>
             Your agents meet users on the channels they already use. Every
             integration routes through the same Agent Kernel runtime. Pick a

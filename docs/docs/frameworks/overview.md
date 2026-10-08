@@ -17,10 +17,8 @@ graph LR
     A --> F[Smolagents]
     A --> G[Pydantic AI]
     A --> M[Microsoft Agent Framework]
-    A -.->|coming soon| LK[LiveKit Agents]
     
     style A fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-    style LK fill:#555,stroke:#ccc,stroke-width:1px,color:#ccc
 ```
 
 ## Framework Comparison
@@ -34,7 +32,6 @@ graph LR
 | **Smolagents** | Lightweight tool-driven agents | Medium | Yes |
 | **Pydantic AI** | Multi-provider apps, provider failover, typed structured output | Low | Yes |
 | **Microsoft Agent Framework** | Conversational agents in Microsoft ecosystem | Medium | Yes |
-| **LiveKit Agents** *(coming soon)* | Real-time voice/video agents | Medium | Yes |
 
 ## Capability Matrix
 
@@ -108,12 +105,6 @@ Not every Agent Kernel capability is available on every framework:
 - Good for Microsoft ecosystem
 
 [Learn more →](./microsoft-agents)
-
-### LiveKit Agents *(coming soon)*
-- Real-time audio and video agent framework
-- Voice-enabled AI applications
-- Low-latency media pipelines
-- Ideal for conversational voice assistants and live-streaming AI bots
 
 ## Migration Between Frameworks
 

@@ -146,7 +146,7 @@ module "containerized_agents" {
 
   # Enable queue mode
   queue_mode     = true
-  execution_mode = "rest_async"  # rest_sync | rest_async | async | stream
+  execution_mode = "rest_async"  # rest_sync | rest_async | async | stream | realtime
 
   # Queue configuration
   queue_config = {
@@ -522,6 +522,32 @@ ws_routes = [
 (e.g. `{"route":"chat","prompt":"..."}`). WebSocket `$context` values
 (`routeKey`, `connectionId`, `eventType`, `domainName`, `stage`) are forwarded to
 the app as `x-ws-*` request headers.
+
+### Realtime Mode (`realtime`)
+
+Used for external persistent WebRTC/WebSocket integrations like the LiveKit Voice Gateway.
+Unlike `async` and `stream`, this mode **does not create an AWS API Gateway WebSocket**.
+Instead, the ingress service acts as a background worker running an infinite loop to maintain
+a connection to the external realtime provider (e.g., LiveKit Cloud).
+
+It runs in either queue mode:
+
+- **`queue_mode = false`**: one container. The ingress service runs the app's
+  `IOHandler.run(gateways=[...])` on the `in_memory` transport, so the gateway, the agent runner
+  and the response handler share one process. No SQS queues or agent-runner service are created.
+- **`queue_mode = true`**: the ingress service hosts the gateway and the response handler, and the
+  agent-runner service holds the model sockets, with SQS between them.
+
+Either way, run a single replica of each service (`desired_count = 1`, and
+`scaling_config.enabled = false` in queue mode): the gateway owns its rooms and the runner's
+connection pool is local to its process.
+
+**Configuration:**
+
+```hcl
+queue_mode     = true   # or false for the single-container topology
+execution_mode = "realtime"
+```
 
 > **App contract**: WebSocket modes assume the container image supports the same
 > `AK_EXECUTION__MODE = async|stream` behavior as the serverless deployment, exposes

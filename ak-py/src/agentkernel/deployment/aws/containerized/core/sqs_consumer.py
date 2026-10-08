@@ -13,6 +13,7 @@ import boto3
 from .....core.config import AKConfig
 from .....pipeline.consumer import ConsumerLoop
 from .....pipeline.envelope import QueueMessage
+from .....pipeline.thread_runner import ThreadRunner
 from .....pipeline.transport.base import TransportConsumer
 from ...core.raw_queue_consumer import RawQueueConsumer
 
@@ -156,6 +157,11 @@ class ECSSQSConsumer(RawQueueConsumer):
             cls.process_message(record)
 
     @classmethod
+    def _get_extra_tasks(cls) -> List[ThreadRunner.Task]:
+        """Additional background tasks to run alongside the queue consumers."""
+        return []
+
+    @classmethod
     def _build_consumer_loop(cls) -> ConsumerLoop:
         """Bind a ConsumerLoop to this class's SQS surface; built per call so subclass overrides apply."""
         return ConsumerLoop(
@@ -167,6 +173,7 @@ class ECSSQSConsumer(RawQueueConsumer):
             consumer_factory=lambda: _ECSRecordConsumer(cls),
             thread_name_prefix="sqs-consumer",
             logger=cls._log,
+            extra_tasks=cls._get_extra_tasks(),
         )
 
     @classmethod

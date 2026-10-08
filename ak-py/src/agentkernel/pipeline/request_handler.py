@@ -280,6 +280,16 @@ class RequestHandler(RestHandler):
         :raises HTTPException: 400 when the mode or the response store cannot serve this route.
         """
         mode = self._effective_mode()
+        if mode == ExecutionMode.REALTIME:
+            # Realtime replies are delivered to the stateful edge (e.g. the LiveKit gateway) that
+            # sent the request; a REST caller has no edge, so its reply could never reach it.
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "REALTIME mode delivers responses through the realtime gateway: this route is not available",
+                    "session_id": body.session_id,
+                },
+            )
         if mode == ExecutionMode.ASYNC:
             raise HTTPException(
                 status_code=400,

@@ -1,0 +1,9 @@
+execution:
+  mode: realtime
+  queues:
+    type: kafka
+    kafka:
+      bootstrap_servers: "localhost:9092"
+      input_topic: agent-input
+      output_topic: agent-output
+      group_id: ak-livekit-demo

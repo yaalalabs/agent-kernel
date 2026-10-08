@@ -23,6 +23,8 @@ def _reset_state():
 
 class _FakeCfg:
     class execution:
+        mode = None
+
         class queues:
             class input:
                 max_receive_count = 3

@@ -113,6 +113,7 @@ const sidebars = {
         'integrations/teams',
         'integrations/hooks',
         'integrations/agui',
+        'integrations/livekit',
       ],
     },
     {

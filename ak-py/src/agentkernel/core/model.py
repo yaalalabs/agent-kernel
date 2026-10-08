@@ -70,6 +70,23 @@ class AgentRequestAny(BaseModel):
     type: Literal["other"] = "other"
 
 
+class AgentRequestVoice(BaseModel):
+    """
+    AgentRequestVoice encapsulates a voice request to an agent
+
+    audio_data: str  : This should be base64 encoded string or url
+    name: str : name of the voice clip
+    type: Literal["voice"]
+    mime_type: str | None = None : Optional. The IANA standard MIME type of the voice clip
+    """
+
+    prompt: str = ""
+    audio_data: str
+    name: str
+    type: Literal["voice"] = "voice"
+    mime_type: str | None = None
+
+
 class AgentRequestAttachmentRef(BaseModel):
     """
     AgentRequestAttachmentRef references an attachment whose bytes are already
@@ -185,11 +202,15 @@ class AgentResumeRequestAny(_ResumeDecisions):
     type: Literal["resume"] = "resume"
 
 
-type AgentRequest = Union[AgentRequestText, AgentRequestFile, AgentRequestImage, AgentRequestAny, AgentRequestAttachmentRef, AgentResumeRequestAny]
+type AgentRequest = Union[
+    AgentRequestText, AgentRequestFile, AgentRequestImage, AgentRequestVoice, AgentRequestAny, AgentRequestAttachmentRef, AgentResumeRequestAny
+]
 type AgentReply = Union[AgentReplyText, AgentReplyImage, AgentReplyAny]
 
 AgentRequestUnion = Annotated[
-    Union[AgentRequestText, AgentRequestFile, AgentRequestImage, AgentRequestAny, AgentRequestAttachmentRef, AgentResumeRequestAny],
+    Union[
+        AgentRequestText, AgentRequestFile, AgentRequestImage, AgentRequestVoice, AgentRequestAny, AgentRequestAttachmentRef, AgentResumeRequestAny
+    ],
     Field(discriminator="type"),
 ]
 
@@ -273,14 +294,24 @@ class AgentPausedReplyAny(AgentReplyAny):
 
 
 class ExecutionMode(str, Enum):
-    """
-    Execution mode enumeration for Lambda function behavior.
+    """How a request is executed and how its reply is delivered.
+
+    The mode is a process-level configuration value (``execution.mode``), read wherever a
+    component must branch on it; it is never carried on a request.
+
+    - ``REST_SYNC`` / ``REST_ASYNC``: the reply is written to the response store and read back
+      over REST.
+    - ``ASYNC``: WebSocket delivery, whole replies.
+    - ``STREAM``: token streaming (``StreamAgentRunner``), delivered over WebSocket.
+    - ``REALTIME``: a persistent model socket (voice), streamed and delivered through an
+      integration adapter such as the LiveKit gateway.
     """
 
     REST_SYNC = "rest_sync"
     REST_ASYNC = "rest_async"
     STREAM = "stream"
     ASYNC = "async"
+    REALTIME = "realtime"
 
 
 class StreamChunk(BaseModel):
