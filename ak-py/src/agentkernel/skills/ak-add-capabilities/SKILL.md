@@ -13,7 +13,7 @@ description: >
 license: Apache-2.0
 metadata:
   author: yaalalabs
-  version: "0.9.3"
+  version: "0.9.4"
   category: user
 ---
 
@@ -34,7 +34,7 @@ Check for an existing Agent Kernel project with `pyproject.toml` and agent defin
 Which capability would you like to add?
 
 1. **Guardrails** — Content safety filters for input and/or output
-2. **Tracing** — Observability and monitoring (Langfuse, OpenLLMetry, or Pydantic Logfire)
+2. **Tracing** — Observability and monitoring (Langfuse, OpenLLMetry, Pydantic Logfire, or AWS CloudWatch)
 3. **Session Persistence** — Durable conversation state (Redis, DynamoDB, Cosmos DB, Firestore)
 4. **Knowledge Base** — Durable cross-session knowledge tools (ChromaDB, Neo4j, Starburst, Open Knowledge Format markdown bundle, or custom backend)
 5. **MCP Server** — Expose agents as Model Context Protocol tools
@@ -61,7 +61,7 @@ Which capability would you like to add?
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api]>=0.9.3",
+    "agentkernel[openai,api]>=0.9.4",
     # OpenAI guardrails use the openai extra — already included if using OpenAI framework
 ]
 ```
@@ -115,7 +115,7 @@ guardrail:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,aws]>=0.9.3",
+    "agentkernel[openai,api,aws]>=0.9.4",
 ]
 ```
 
@@ -141,7 +141,7 @@ guardrail:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,walledai]>=0.9.3",
+    "agentkernel[openai,api,walledai]>=0.9.4",
 ]
 ```
 
@@ -171,14 +171,14 @@ export WALLED_API_KEY="your-walledai-api-key"
 
 #### Tracing (Observability)
 
-**Ask:** Which tracing backend — Langfuse, OpenLLMetry (Traceloop), or Pydantic Logfire?
+**Ask:** Which tracing backend — Langfuse, OpenLLMetry (Traceloop), Pydantic Logfire, or AWS CloudWatch?
 
 **For Langfuse:**
 
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,langfuse]>=0.9.3",
+    "agentkernel[openai,api,langfuse]>=0.9.4",
 ]
 ```
 
@@ -203,7 +203,7 @@ export LANGFUSE_HOST="https://cloud.langfuse.com"   # or self-hosted URL
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,openllmetry]>=0.9.3",
+    "agentkernel[openai,api,openllmetry]>=0.9.4",
 ]
 ```
 
@@ -221,7 +221,7 @@ trace:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,logfire]>=0.9.3",
+    "agentkernel[openai,api,logfire]>=0.9.4",
 ]
 ```
 
@@ -239,6 +239,34 @@ export LOGFIRE_TOKEN="your-write-token"
 
 4. No code changes needed — tracing is automatically applied to all agent executions.
 
+**For AWS CloudWatch:**
+
+1. Update `pyproject.toml`:
+```toml
+dependencies = [
+    "agentkernel[openai,api,cloudwatch]>=0.9.4",
+]
+```
+
+2. Update `config.yaml`:
+```yaml
+trace:
+  enabled: true
+  type: cloudwatch
+```
+
+3. Set the region; credentials come from the standard AWS chain (env, profile, SSO, or instance/task role):
+```bash
+export AWS_REGION="us-east-1"
+# Optional: export through the CloudWatch agent or an OpenTelemetry collector instead of straight to X-Ray
+# export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT="http://localhost:4318/v1/traces"
+```
+
+4. One-time AWS setup: enable CloudWatch Transaction Search in the account, and attach the
+`AWSXrayWriteOnlyAccess` managed policy to the role that runs the agent.
+
+5. No code changes needed — tracing is automatically applied to all agent executions.
+
 ---
 
 #### Session Persistence
@@ -250,7 +278,7 @@ export LOGFIRE_TOKEN="your-write-token"
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,redis]>=0.9.3",
+    "agentkernel[openai,api,redis]>=0.9.4",
 ]
 ```
 
@@ -270,7 +298,7 @@ session:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,aws]>=0.9.3",
+    "agentkernel[openai,api,aws]>=0.9.4",
 ]
 ```
 
@@ -292,7 +320,7 @@ session:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,azure]>=0.9.3",
+    "agentkernel[openai,api,azure]>=0.9.4",
 ]
 ```
 
@@ -314,7 +342,7 @@ session:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,gcp]>=0.9.3",
+    "agentkernel[openai,api,gcp]>=0.9.4",
 ]
 ```
 
@@ -348,13 +376,13 @@ Add durable knowledge tools that your agents can query and update across session
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,chromadb]>=0.9.3",  # for Chroma
-  # or "agentkernel[openai,api,neo4j]>=0.9.3"
-  # or "agentkernel[openai,api,trino]>=0.9.3"
+  "agentkernel[openai,api,chromadb]>=0.9.4",  # for Chroma
+  # or "agentkernel[openai,api,neo4j]>=0.9.4"
+  # or "agentkernel[openai,api,trino]>=0.9.4"
   # OKF needs NO extra - pyyaml is a core dependency:
-  #    "agentkernel[openai,api]>=0.9.3"
+  #    "agentkernel[openai,api]>=0.9.4"
   # ...unless the bundle is served from S3, which uses the aws extra:
-  #    "agentkernel[openai,api,aws]>=0.9.3"
+  #    "agentkernel[openai,api,aws]>=0.9.4"
 ]
 ```
 
@@ -479,7 +507,7 @@ Expose your agents as MCP (Model Context Protocol) tools so other AI systems can
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,mcp]>=0.9.3",
+    "agentkernel[openai,api,mcp]>=0.9.4",
 ]
 ```
 
@@ -505,7 +533,7 @@ Enable Agent-to-Agent communication via Google's A2A protocol.
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,a2a]>=0.9.3",
+    "agentkernel[openai,api,a2a]>=0.9.4",
 ]
 ```
 
@@ -531,7 +559,7 @@ text, tool calls, reasoning, and an optional shared JSON state, all as one typed
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,agui]>=0.9.3",
+    "agentkernel[openai,api,agui]>=0.9.4",
 ]
 ```
 
@@ -777,7 +805,7 @@ Enable image and file processing in your agents.
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,multimodal]>=0.9.3",
+    "agentkernel[openai,api,multimodal]>=0.9.4",
 ]
 ```
 
@@ -802,7 +830,7 @@ multimodal:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,redis,multimodal]>=0.9.3",
+    "agentkernel[openai,api,redis,multimodal]>=0.9.4",
 ]
 ```
 
@@ -825,7 +853,7 @@ multimodal:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,aws,multimodal]>=0.9.3",
+    "agentkernel[openai,api,aws,multimodal]>=0.9.4",
 ]
 ```
 
@@ -909,7 +937,7 @@ Enable persistent, named conversation threads keyed by `session_id`.
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api]>=0.9.3",
+    "agentkernel[openai,api]>=0.9.4",
 ]
 ```
 
@@ -939,7 +967,7 @@ thread:
 **For LLM-based thread naming**, add the `thread` extra:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,thread]>=0.9.3",
+    "agentkernel[openai,api,thread]>=0.9.4",
 ]
 ```
 ```yaml
@@ -954,7 +982,7 @@ thread:
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,redis,thread]>=0.9.3",
+    "agentkernel[openai,api,redis,thread]>=0.9.4",
 ]
 ```
 ```yaml
@@ -970,7 +998,7 @@ thread:
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,valkey,thread]>=0.9.3",
+    "agentkernel[openai,api,valkey,thread]>=0.9.4",
 ]
 ```
 ```yaml
@@ -986,7 +1014,7 @@ thread:
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,aws,thread]>=0.9.3",
+    "agentkernel[openai,api,aws,thread]>=0.9.4",
 ]
 ```
 ```yaml
@@ -1075,7 +1103,7 @@ means deploying in queue mode.
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,cron]>=0.9.3",
+    "agentkernel[openai,api,cron]>=0.9.4",
 ]
 ```
 The `cron` extra brings `croniter`, needed for cron parsing.
@@ -1154,7 +1182,7 @@ curl -X DELETE http://localhost:8000/api/v1/schedules/{task_id}
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,aws,cron]>=0.9.3",
+    "agentkernel[openai,api,aws,cron]>=0.9.4",
 ]
 ```
 ```yaml
@@ -1176,7 +1204,7 @@ them. See the `ak-cloud-deploy` skill.
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,redis,cron]>=0.9.3",   # or valkey
+    "agentkernel[openai,api,redis,cron]>=0.9.4",   # or valkey
 ]
 ```
 ```yaml

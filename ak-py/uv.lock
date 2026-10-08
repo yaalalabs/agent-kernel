@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.12, <3.14"
 resolution-markers = [
     "python_full_version >= '3.13' and sys_platform == 'win32'",
@@ -55,7 +55,7 @@ wheels = [
 
 [[package]]
 name = "agentkernel"
-version = "0.9.3"
+version = "0.9.4"
 source = { editable = "." }
 dependencies = [
     { name = "deprecated" },
@@ -99,6 +99,12 @@ azure = [
 chromadb = [
     { name = "chromadb", version = "1.1.1", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-11-agentkernel-crewai'" },
     { name = "chromadb", version = "1.5.9", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-11-agentkernel-test' or extra != 'extra-11-agentkernel-crewai'" },
+]
+cloudwatch = [
+    { name = "botocore" },
+    { name = "opentelemetry-exporter-otlp-proto-http" },
+    { name = "opentelemetry-sdk" },
+    { name = "requests" },
 ]
 crewai = [
     { name = "crewai" },
@@ -258,6 +264,7 @@ requires-dist = [
     { name = "botbuilder-core", marker = "extra == 'teams'", specifier = ">=4.17.0" },
     { name = "botbuilder-schema", marker = "extra == 'teams'", specifier = ">=4.17.0" },
     { name = "boto3", marker = "extra == 'aws'", specifier = ">=1.41.4" },
+    { name = "botocore", marker = "extra == 'cloudwatch'", specifier = ">=1.41.4" },
     { name = "chromadb", marker = "extra == 'chromadb'", specifier = ">=0.4.0" },
     { name = "confluent-kafka", marker = "extra == 'kafka'", specifier = ">=2.15.0" },
     { name = "crewai", marker = "extra == 'crewai'", specifier = ">=1.15.0" },
@@ -314,6 +321,8 @@ requires-dist = [
     { name = "openinference-instrumentation-litellm", marker = "extra == 'crewai'", specifier = ">=0.1.28" },
     { name = "openinference-instrumentation-openai-agents", marker = "extra == 'openai'", specifier = ">=1.4.0" },
     { name = "openinference-instrumentation-pydantic-ai", marker = "extra == 'pydanticai'", specifier = ">=0.1.17" },
+    { name = "opentelemetry-exporter-otlp-proto-http", marker = "extra == 'cloudwatch'", specifier = ">=1.30.0" },
+    { name = "opentelemetry-sdk", marker = "extra == 'cloudwatch'", specifier = ">=1.30.0" },
     { name = "opik", marker = "extra == 'opik'", specifier = ">=1.7.0" },
     { name = "pydantic", specifier = ">=2.11.7" },
     { name = "pydantic-ai-slim", marker = "extra == 'pydanticai'", specifier = "~=2.13.0" },
@@ -327,6 +336,7 @@ requires-dist = [
     { name = "python-multipart", marker = "extra == 'multimodal'", specifier = ">=0.0.12" },
     { name = "pyyaml", specifier = ">=6.0.2" },
     { name = "redis", marker = "extra == 'redis'", specifier = ">=7.1.0" },
+    { name = "requests", marker = "extra == 'cloudwatch'", specifier = ">=2.32.0" },
     { name = "singleton-type", specifier = ">=0.0.5" },
     { name = "slack-bolt", marker = "extra == 'slack'", specifier = "==1.22.0" },
     { name = "smolagents", marker = "extra == 'smolagents'", specifier = ">=1.0.0" },
@@ -337,7 +347,7 @@ requires-dist = [
     { name = "valkey", marker = "extra == 'valkey'", specifier = ">=6.0.0" },
     { name = "walledai", marker = "extra == 'walledai'", specifier = ">=4.9.3" },
 ]
-provides-extras = ["auth", "langfuse", "openllmetry", "logfire", "crewai", "langgraph", "smolagents", "pydanticai", "cli", "livekit", "aws", "azure", "redis", "valkey", "kafka", "nats", "thread", "agui", "cron", "neo4j", "chromadb", "trino", "openai", "adk", "walledai", "api", "slack", "whatsapp", "messenger", "instagram", "telegram", "teams", "gmail", "gcp", "test", "a2a", "mcp", "multimodal", "sandbox-docker", "e2b", "daytona", "kubernetes", "opik", "jev"]
+provides-extras = ["auth", "langfuse", "openllmetry", "logfire", "cloudwatch", "crewai", "langgraph", "smolagents", "pydanticai", "cli", "livekit", "aws", "azure", "redis", "valkey", "kafka", "nats", "thread", "agui", "cron", "neo4j", "chromadb", "trino", "openai", "adk", "walledai", "api", "slack", "whatsapp", "messenger", "instagram", "telegram", "teams", "gmail", "gcp", "test", "a2a", "mcp", "multimodal", "sandbox-docker", "e2b", "daytona", "kubernetes", "opik", "jev"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -3377,7 +3387,7 @@ wheels = [
 
 [[package]]
 name = "livekit"
-version = "1.1.19"
+version = "1.1.20"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiofiles" },
@@ -3385,13 +3395,13 @@ dependencies = [
     { name = "protobuf" },
     { name = "types-protobuf" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/09/94/e07651277616bc0c35048aae0d4135b04cc32d3632804f75bff47e0e22ce/livekit-1.1.19.tar.gz", hash = "sha256:46e5389dd843592ddefae497eb1aad404178596c69c359e0ca4153568a6527a8", size = 389710, upload-time = "2026-09-17T19:40:11.964Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e4/dd/651c7ad31d8f80b43511b2cb9ee1a8f5bf50a31ed4399182d09e70777e90/livekit-1.1.20.tar.gz", hash = "sha256:93f0ed9e8ee9ef356da6cbf71f98edcc891678da6872946a87e34e1458528c9c", size = 394319, upload-time = "2026-09-23T20:33:57.147Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/dd/f4/1565661b353ac1799395fd40393951347c8a11492b8884e6cd5924d34aba/livekit-1.1.19-py3-none-macosx_10_15_x86_64.whl", hash = "sha256:cbcd9ee7e6a83ea6b52e0f38a138d82c00781e62d07ad8f13e0769d016c49573", size = 10485771, upload-time = "2026-09-17T19:39:58.192Z" },
-    { url = "https://files.pythonhosted.org/packages/6e/25/706e0fe35fe0c464d28545af2505746394cf060ccb2012cf5218e1afbe60/livekit-1.1.19-py3-none-macosx_11_0_arm64.whl", hash = "sha256:23a9811d26311073e7776aa091f1b19dae497777198858dd29d7ea0329d9ca0b", size = 9304688, upload-time = "2026-09-17T19:40:01.276Z" },
-    { url = "https://files.pythonhosted.org/packages/ec/8e/b05ea0cd5fa804ef30fff5e1e0e980413e253edb5bd1ec62265836dbf14e/livekit-1.1.19-py3-none-manylinux_2_28_aarch64.whl", hash = "sha256:ed8aba52c4e3ff93529a32169af287b0f0299e629cb49a3390f1aa5f255c5af0", size = 10599288, upload-time = "2026-09-17T19:40:03.978Z" },
-    { url = "https://files.pythonhosted.org/packages/b3/0c/4b90aa95429fe91ef1772a18b35f418f6a79cfa27b323d06f88dd7baa4ec/livekit-1.1.19-py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:5716a5194ec3ceec19e25285149c62412e227a1fdb8fd9892411e15a1e24b700", size = 11830089, upload-time = "2026-09-17T19:40:06.879Z" },
-    { url = "https://files.pythonhosted.org/packages/af/70/d9ae3c8d76ade0fd710bf12892c5a5f9e344da8e2451f16b40463991da25/livekit-1.1.19-py3-none-win_amd64.whl", hash = "sha256:959b40e7210b302101e563bc59c75e9313dfdf7cb9589407f8d60eba9b0382b3", size = 10989594, upload-time = "2026-09-17T19:40:09.549Z" },
+    { url = "https://files.pythonhosted.org/packages/d8/96/2c0ab8b78779f9241017a6e1980dd24c95e7509870d9d3de9bd4acf4f739/livekit-1.1.20-py3-none-macosx_10_15_x86_64.whl", hash = "sha256:253e4d15a78bbb408e926d0b317c7a47c2ca3f6bb9f9d2c7d10528a49f9b4fd9", size = 10485365, upload-time = "2026-09-23T20:33:43.35Z" },
+    { url = "https://files.pythonhosted.org/packages/08/73/9d35e3ffec6e428b040d3b599d4e1ddf554d2046dacfffeae1c20c972f8f/livekit-1.1.20-py3-none-macosx_11_0_arm64.whl", hash = "sha256:a29120a0278a20ede380ac719cd084e39241546cfd3b415aa503c7b8a21afb4e", size = 9307974, upload-time = "2026-09-23T20:33:47.143Z" },
+    { url = "https://files.pythonhosted.org/packages/75/55/dd84369c741eb04a8ca92f7c586f6d24aa0491d4bcb81fa275d91568681c/livekit-1.1.20-py3-none-manylinux_2_28_aarch64.whl", hash = "sha256:c29a5f966806db961a0607ca8e2e4957e6900bbd44710f5f618b284043be584c", size = 10602682, upload-time = "2026-09-23T20:33:49.514Z" },
+    { url = "https://files.pythonhosted.org/packages/cc/15/a53a370dc5b1f2a7c3806f24f1543fbad98bcadb0588f28f938fc338a627/livekit-1.1.20-py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:83c0ea54d7ff505e92c3e88943e050e54825b0bf0f7e90652fb126eb447b3d76", size = 11832028, upload-time = "2026-09-23T20:33:51.835Z" },
+    { url = "https://files.pythonhosted.org/packages/5e/bf/dccec2015a5594eedf26c605fe4a2682d152fabcae0cce4b71d1412efbd2/livekit-1.1.20-py3-none-win_amd64.whl", hash = "sha256:64ea60b3293e3ce92c60592ff32c518bb7c278548b97de8026c1d0617510af4d", size = 10991380, upload-time = "2026-09-23T20:33:54.775Z" },
 ]
 
 [[package]]

@@ -56,7 +56,7 @@ Run stats: llm_calls=2, tool_calls=1, filter_runs=2, max_turns=25
   would more likely trim at message boundaries; the demo keeps it short to show the mechanism.
 - The `Run stats:` line reads the limit back from `agent.run_options`, so it reflects what was
   declared rather than echoing a constant; the counters are what prove the options reached the SDK.
-- Options compose with tracing: the Langfuse, Logfire and OpenLLMetry runners delegate to the base
+- Options compose with tracing: the Langfuse, Logfire, OpenLLMetry and CloudWatch runners delegate to the base
   runner, so a declared `hooks=` still reaches the SDK when tracing is enabled.
 
 ## Running

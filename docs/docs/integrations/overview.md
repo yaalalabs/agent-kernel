@@ -12,6 +12,7 @@ Agent Kernel provides powerful execution hooks that let you customize agent beha
 
 - **Langfuse** - Open-source LLM engineering platform for tracing, evaluating, and monitoring AI applications. See [Traceability and Observability](../advanced/traceability) for detailed setup and usage.
 - **OpenLLMetry (Traceloop)** - OpenTelemetry-based observability for LLM applications with support for multiple backends including Traceloop, Datadog, New Relic, and Honeycomb. See [Traceability and Observability](../advanced/traceability) for detailed setup and usage.
+- **AWS CloudWatch** - OpenTelemetry traces exported to AWS X-Ray and searchable in CloudWatch Transaction Search. See [Traceability and Observability](../advanced/traceability) for detailed setup and usage.
 
 ## Realtime voice
 

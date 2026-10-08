@@ -140,6 +140,7 @@ Easily extend Agent Kernel with custom framework adapters, memory back-ends, and
   - LangFuse
   - OpenLLMetry
   - Pydantic Logfire
+  - AWS CloudWatch
 - **Multi-Agent Collaboration**: Leverage multi-agent hierarchies of supported agentic frameworks
 - **Multimodal Attachments**: Image and file support with pluggable attachment storage and on-demand vision analysis
 - **Sandbox**: Execute agent-generated code and shell commands in an isolated, permission-bounded environment, with pluggable providers (`local_subprocess`, `docker`, `e2b`, `daytona`, `ec2_ssm`), workload profiles, policy enforcement, and per-user identity. [Learn more →](/docs/advanced/sandbox)

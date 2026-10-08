@@ -188,6 +188,7 @@ fixture.
 | `test_factory.py` | Shared pluggable-backend helpers (`resolve_dotted`, `require_extra`, `AKConfigError`) in `core/util/factory.py` |
 | `test_store_builders.py` | Session/thread/multimodal store builders: fail-loud on unknown type, BYO dotted-path subclass resolution |
 | `test_trace.py` | Trace factory built-in resolution, BYO dotted path, unknown-type error |
+| `test_trace_cloudwatch.py` | CloudWatch trace provider: provider installed once or an existing SDK provider reused, X-Ray endpoint and SigV4 selection from `AWS_REGION` / `OTEL_EXPORTER_OTLP_*`, resource defaults, SigV4 request signing, the run span's `session.id` / `input.value` / `output.value`, `session.id` stamped onto instrumentor child spans, and the per-run flush on Lambda. Records spans with a real SDK `TracerProvider` + `InMemorySpanExporter` and patches `trace.get_tracer_provider` / `set_tracer_provider`, never installing a global provider |
 
 ## Test Patterns
 

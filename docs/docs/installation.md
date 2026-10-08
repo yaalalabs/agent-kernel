@@ -128,6 +128,8 @@ pip install agentkernel[mcp]         # MCP server
 pip install agentkernel[a2a]         # Agent-to-Agent server
 pip install agentkernel[langfuse]    # Langfuse tracing
 pip install agentkernel[openllmetry] # OpenLLMetry tracing
+pip install agentkernel[logfire]     # Pydantic Logfire tracing
+pip install agentkernel[cloudwatch]  # AWS CloudWatch (X-Ray) tracing
 pip install agentkernel[auth]        # JWT auth helpers
 ```
 

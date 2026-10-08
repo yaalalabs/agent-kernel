@@ -595,7 +595,7 @@ export AK_TELEGRAM__API_VERSION=bot  # Bot API version prefix (default: bot)
 ```bash
 # Enable tracing functionality
 export AK_TRACE__ENABLED=true  # default: false
-export AK_TRACE__TYPE=langfuse  # Options: 'langfuse', 'openllmetry', 'logfire' (default: 'langfuse')
+export AK_TRACE__TYPE=langfuse  # Options: 'langfuse', 'openllmetry', 'logfire', 'cloudwatch' (default: 'langfuse')
 
 # Langfuse-specific configuration (required when using Langfuse)
 export LANGFUSE_PUBLIC_KEY=pk-lf-...  # Your Langfuse public key
@@ -860,7 +860,7 @@ teams:
 # Trace / Observability
 trace:
   enabled: false                # Enable tracing
-  type: "langfuse"              # Trace provider: 'langfuse', 'openllmetry', or 'logfire'
+  type: "langfuse"              # Trace provider: 'langfuse', 'openllmetry', 'logfire', or 'cloudwatch'
 
 # Guardrails configuration
 guardrail:
@@ -1085,6 +1085,29 @@ Install the logfire extra:
 pip install agentkernel[logfire]
 ```
 
+**AWS CloudWatch:**
+
+```bash
+# Enable CloudWatch tracing
+export AK_TRACE__ENABLED=true
+export AK_TRACE__TYPE=cloudwatch
+
+# Spans go to the X-Ray OTLP endpoint of this region, signed with the standard AWS credential chain
+export AWS_REGION=us-east-1
+# Optional: export through the CloudWatch agent or an OpenTelemetry collector instead
+# export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://localhost:4318/v1/traces
+# Optional: service name shown in CloudWatch (default: AgentKernel)
+# export OTEL_SERVICE_NAME=my-agent
+```
+
+Install the cloudwatch extra:
+
+```bash
+pip install agentkernel[cloudwatch]
+```
+
+CloudWatch Transaction Search must be enabled in the account, and the agent's role needs `AWSXrayWriteOnlyAccess`. See [Traceability](../advanced/traceability.md#getting-started-with-aws-cloudwatch).
+
 ## Validation and Error Handling
 
 Agent Kernel validates all configuration values at startup:
@@ -1100,7 +1123,7 @@ Example validation errors:
 # These will cause validation errors:
 export AK_SESSION__TYPE=invalid_storage  # Must be 'in_memory', 'redis', 'valkey', 'dynamodb', 'cosmosdb', or 'firestore'
 export AK_A2A__TASK_STORE_TYPE=invalid   # Must be 'in_memory' or 'redis'
-export AK_TRACE__TYPE=invalid_tracer     # Must be 'langfuse', 'openllmetry', or 'logfire'
+export AK_TRACE__TYPE=invalid_tracer     # Must be 'langfuse', 'openllmetry', 'logfire', 'cloudwatch', or a dotted BaseTrace path
 export AK_EXECUTION__MODE=invalid        # Must be 'rest_sync', 'rest_async', 'stream', or 'async'
 ```
 

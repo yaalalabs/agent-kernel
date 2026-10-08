@@ -3,7 +3,7 @@ name: ak-dev-new-tracing-provider
 description: >
   Step-by-step guide for adding a new observability/tracing provider to Agent Kernel.
   Use this skill when you need to integrate a new tracing backend (beyond Langfuse,
-  OpenLLMetry/Traceloop, and Pydantic Logfire). Covers implementing the BaseTrace interface, creating
+  OpenLLMetry/Traceloop, Pydantic Logfire, and AWS CloudWatch). Covers implementing the BaseTrace interface, creating
   framework-specific traced runners, configuration, and testing.
 license: Apache-2.0
 metadata:
@@ -13,7 +13,7 @@ metadata:
 
 # Adding a New Tracing Provider
 
-This guide walks through adding a new observability/tracing provider to Agent Kernel. Use the Langfuse implementation (`ak-py/src/agentkernel/trace/langfuse/`) as the canonical reference.
+This guide walks through adding a new observability/tracing provider to Agent Kernel. Use the Langfuse implementation (`ak-py/src/agentkernel/trace/langfuse/`) as the canonical reference. For a backend reached through plain OpenTelemetry (no vendor SDK), see the CloudWatch provider (`ak-py/src/agentkernel/trace/cloudwatch/`): it installs its own SDK `TracerProvider` and OTLP exporter once (or reuses one already installed, since OpenTelemetry honours only the first), wraps each run through a `span(name, session)` context manager on the provider class that its runners receive, and adds a provider-specific helper module (`sigv4.py`) beside the runners.
 
 ## Architecture Overview
 
@@ -188,7 +188,7 @@ a dotted path to a `BaseTrace` subclass (bring-your-own). When tracing is disabl
 `None`:
 
 ```python
-_BUILTIN_TRACERS = ["langfuse", "openllmetry", "logfire"]
+_BUILTIN_TRACERS = ["langfuse", "openllmetry", "logfire", "cloudwatch"]
 
 class Trace(BaseTrace):
     @classmethod
@@ -213,6 +213,10 @@ class Trace(BaseTrace):
             with require_extra("logfire", "trace.type: logfire"):
                 from .logfire.logfire import Logfire
             return Logfire()
+        if trace_type == "cloudwatch":
+            with require_extra("cloudwatch", "trace.type: cloudwatch"):
+                from .cloudwatch.cloudwatch import CloudWatch
+            return CloudWatch()
         if trace_type == "<provider>":                                    # ADD THIS
             with require_extra("<provider>", "trace.type: <provider>"):
                 from .<provider>.<provider> import <Provider>
@@ -231,7 +235,7 @@ addressable by a short name.
 ### 7. Add Configuration
 
 The existing `_TraceConfig.type` in `config.py` is a free-form string (no regex pattern) described
-as "a built-in short name (langfuse, openllmetry, logfire) or a dotted path to a BaseTrace subclass" — do
+as "a built-in short name (langfuse, openllmetry, logfire, cloudwatch) or a dotted path to a BaseTrace subclass" — do
 not add a `pattern=` constraint, since that would break the bring-your-own path. Your provider
 needs to respond to `type: "<provider>"`:
 
@@ -258,7 +262,7 @@ In `ak-py/pyproject.toml`:
 
 ### 9. Add Tests
 
-Create `ak-py/tests/test_trace_<provider>.py`. Note that no trace tests currently exist in `ak-py/tests/`, so there is no existing file to model after — your new test file establishes the convention:
+Create `ak-py/tests/test_trace_<provider>.py`, and add a missing-extra test to `tests/test_trace.py` asserting the friendly `agentkernel[<provider>]` `ImportError`. Two existing files show the two styles: `test_trace_logfire.py` injects a fake SDK module into `sys.modules` (the SDK is not a test dependency), and `test_trace_cloudwatch.py` records spans with a real OpenTelemetry SDK `TracerProvider` and `InMemorySpanExporter` while patching `trace.get_tracer_provider` / `set_tracer_provider` (the global provider is settable once per process, so a test must never install one). Cover:
 
 - Test that the factory creates the correct instance for `type: "<provider>"`
 - Test that traced runners properly wrap execution with spans

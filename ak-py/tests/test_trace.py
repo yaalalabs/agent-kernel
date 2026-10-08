@@ -108,3 +108,13 @@ def test_trace_logfire_missing_extra_raises_friendly_import_error(monkeypatch):
         with pytest.raises(ImportError) as exc_info:
             Trace.get()
     assert "agentkernel[logfire]" in str(exc_info.value)
+
+
+def test_trace_cloudwatch_missing_extra_raises_friendly_import_error(monkeypatch):
+    monkeypatch.setitem(sys.modules, "opentelemetry.exporter.otlp.proto.http.trace_exporter", None)  # simulate the exporter not installed
+    for name in [n for n in list(sys.modules) if n.startswith("agentkernel.trace.cloudwatch")]:
+        monkeypatch.delitem(sys.modules, name, raising=False)
+    with patch.object(AKConfig, "get", return_value=_config(True, "cloudwatch")):
+        with pytest.raises(ImportError) as exc_info:
+            Trace.get()
+    assert "agentkernel[cloudwatch]" in str(exc_info.value)

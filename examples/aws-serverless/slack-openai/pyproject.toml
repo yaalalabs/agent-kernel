@@ -14,21 +14,21 @@ dependencies = []
 # heavy OpenAI Agents SDK; only the agent runner does. The authorizer needs nothing but `aws`:
 # WebhookRouteMatcher imports no platform SDK.
 request_handler = [
-    "agentkernel[aws,slack]>=0.9.3",
+    "agentkernel[aws,slack]>=0.9.4",
 ]
 response_handler = [
-    "agentkernel[aws,slack]>=0.9.3",
+    "agentkernel[aws,slack]>=0.9.4",
 ]
 agent_runner = [
-    "agentkernel[aws,openai,multimodal]>=0.9.3",
+    "agentkernel[aws,openai,multimodal]>=0.9.4",
 ]
 authorizer = [
-    "agentkernel[aws]>=0.9.3",
+    "agentkernel[aws]>=0.9.4",
 ]
 
 [dependency-groups]
 dev = [
-    "agentkernel[test]>=0.9.3",
+    "agentkernel[test]>=0.9.4",
     "black==26.5.1",
     "isort>=5.0.0",
     "mypy>=1.0.0",

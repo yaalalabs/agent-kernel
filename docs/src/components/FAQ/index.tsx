@@ -61,7 +61,7 @@ const FAQ_ITEMS: FAQItem[] = [
     id: "observability",
     question: "How can I monitor and debug my agents in production?",
     answer:
-      "Agent Kernel comes with built-in observability through Langfuse, OpenLLMetry, and Pydantic Logfire. You get detailed logs, trace tracking, and metrics without any extra setup. Need something more custom? You can wire up hooks for your own analytics, monitoring, and alerting too.",
+      "Agent Kernel comes with built-in observability through Langfuse, OpenLLMetry, Pydantic Logfire, and AWS CloudWatch. Enable a provider with one config line to get detailed logs, trace tracking, and metrics; CloudWatch also needs AWS credentials and X-Ray Transaction Search enabled once per account. Need something more custom? You can wire up hooks for your own analytics, monitoring, and alerting too.",
   },
   {
     id: "mcp-support",
