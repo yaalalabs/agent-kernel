@@ -304,6 +304,15 @@ class <Name>ToolBuilder(ToolBuilder):
         return tools
 ```
 
+Add `**options` and forward them when the framework's own tool wrapper takes per-tool arguments that
+change what the tool *is*. Three adapters do — OpenAI (`function_tool`), Google ADK (`FunctionTool`)
+and Pydantic AI (`Tool`) — and in each the framework's human-in-the-loop gate (`needs_approval`,
+`require_confirmation`, `requires_approval`) is exactly such an argument: without forwarding, a gated
+tool could only be declared natively, giving up the framework-free function the builder exists to
+allow. Options apply to every function in the call, so tools wanting different ones are bound in
+separate calls. Do not add the parameter when the framework has no such arguments — smolagents'
+`tool()` takes only the function.
+
 ### 6. Implement the Module
 
 Subclass `Module` from `agentkernel.core.module`:
@@ -419,6 +428,11 @@ Create at minimum:
 - [ ] `<Name>Session` (if needed), `<Name>Runner`, `<Name>Agent`, `<Name>Module`, `<Name>ToolBuilder`
 - [ ] `<Name>Runner.stream()` implemented — either real event streaming or a `NotImplementedError` stub
 - [ ] `<Name>Runner.supports_streaming` declared — `False` when `stream()` only raises, so callers reject instead of provoking it
+- [ ] `<Name>Runner.supports_pause` declared (#606) — leave it at the inherited `False` unless the framework has a **durable, programmatic** pause. Unlike `supports_streaming` it defaults to False, so a framework without one needs no declaration and `resume()`/`resume_stream()` keep their raising defaults
+- [ ] When it does pause: detection placed **before** the existing reply mapping (a paused run still fills the answer field with the text produced on the way to stopping), the record written with `PausedRunState.add` inside the `try` after a successful call, and any framework-specific rejection raised **above** the `try` — the adapter's `except Exception` would otherwise flatten it into a generic reply
+- [ ] When it does pause: **you** clear the record with `PausedRunState.clear` on the success path, inside the `try`. `Runtime` deliberately does not tidy up after you — it cannot tell a failed resume from an ordinary reply, so a fallback there would destroy the pause on a transient error. A record still present after a resume means that resume failed and the decision can be sent again
+- [ ] When it does pause and your framework holds **one conversation per session**, replace with `PausedRunState.clear_for_runner(session, self.name)` rather than clearing the list — another framework's agent may hold an independent, still-answerable pause on the same session. Only OpenAI appends, because its `RunState` is a self-contained snapshot
+- [ ] When it does pause: `resume()` and `resume_stream()` produce the **same shapes `run()` and `stream()` do** — the structured-reply mapping, the event envelope, the reasoning events. Three of ADK's review findings were a resumed turn quietly differing from an ordinary one; share a helper between the pair rather than writing the second copy
 - [ ] `<Name>Runner`'s `name` (passed to `super().__init__()`) matches the session key used in `session.get/set(...)` — required for `Session.get_framework_session()` to resolve it
 - [ ] Public alias at `ak-py/src/agentkernel/<name>.py`
 - [ ] Optional dependency group in `ak-py/pyproject.toml`

@@ -10,9 +10,10 @@ from ...core.model import AgentReply, AgentRequest, AgentRequestFile, AgentReque
 from ...core.multimodal.storage import AttachmentStorageManager
 from ..adapter.base import ATTACHMENTS_DISABLED_ERROR, SESSION_CACHE_ERROR, InboundAdapter, InboundParseResult, InboundRequest, OutboundAdapter
 from ..adapter.meta import MetaSendAPIClient, answer_challenge, verify_signature
+from ..adapter.routes import BUILTIN_WEBHOOK_ROUTES
 
 NAME = "messenger"
-WEBHOOK_PATH = "/messenger/webhook"
+WEBHOOK_PATH = BUILTIN_WEBHOOK_ROUTES[NAME].webhook_path
 
 _log = logging.getLogger("ak.integration.messenger")
 
@@ -35,7 +36,7 @@ class MessengerInboundAdapter(InboundAdapter):
 
     name = NAME
     webhook_path = WEBHOOK_PATH
-    challenge_path = WEBHOOK_PATH
+    challenge_path = BUILTIN_WEBHOOK_ROUTES[NAME].challenge_path
 
     _log = _log
 
@@ -46,6 +47,10 @@ class MessengerInboundAdapter(InboundAdapter):
         self._app_secret = config.messenger.app_secret
         self._verify_token = config.messenger.verify_token
         self._api = _client()
+
+    def missing_verification_settings(self) -> List[str]:
+        """Without an app secret the delivery signature is never checked (``verify_signature``)."""
+        return [] if self._app_secret else ["messenger.app_secret"]
 
     async def verify(self, raw: Request) -> None:
         await verify_signature(raw, self._app_secret)

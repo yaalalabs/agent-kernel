@@ -133,6 +133,17 @@ class InboundAdapter(ABC):
         """The success body returned when the platform SDK did not produce a response itself."""
         return {"status": "ok"}
 
+    def missing_verification_settings(self) -> List[str]:
+        """Settings without which this adapter accepts deliveries it cannot authenticate.
+
+        LambdaWebhookHost refuses to serve an adapter that returns any, because behind the API Gateway
+        authorizer's integration bypass the adapter's own check is the only one. Empty by default,
+        so bring-your-own adapters stay servable.
+
+        :return: The unset settings, named as the user sets them (e.g. "whatsapp.app_secret").
+        """
+        return []
+
 
 class PollingInboundAdapter(InboundAdapter):
     """An inbound adapter whose events are pulled rather than pushed.

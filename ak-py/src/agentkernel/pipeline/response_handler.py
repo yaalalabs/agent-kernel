@@ -5,11 +5,12 @@ import threading
 from typing import Optional
 
 from ..core.config import AKConfig
-from ..core.model import AgentReplyText, ExecutionMode, StreamChunk
+from ..core.model import ExecutionMode, StreamChunk
 from ..core.util.async_bridge import run_async_sync
 from ..core.util.factory import AKConfigError
 from .consumer import ConsumerLoop
-from .envelope import ATTR_INTEGRATION, ATTR_REALTIME, ATTR_REQUEST_ID, ATTR_STATUS_CODE, ATTR_USER_ID, REPLY_CONTEXT_PREFIX, QueueMessage, QueueName
+from .envelope import ATTR_REALTIME, ATTR_REQUEST_ID, ATTR_STATUS_CODE, ATTR_USER_ID, QueueMessage, QueueName
+from .integration_delivery import IntegrationDelivery
 from .response_store.base import ResponseStore
 from .response_store.factory import ResponseStoreFactory
 from .transport.base import QueueTransport, QueueTransportFactory
@@ -38,6 +39,7 @@ class ResponseHandler:
         self._transport = transport or QueueTransportFactory.create()
         self._response_store = response_store
         self._ws_handler = ws_handler
+        self._integration_delivery = IntegrationDelivery(self._log)
         # Per-thread event loop reused for realtime chunk delivery: a turn delivers tens of
         # chunks a second, and run_async_sync would build and tear one down per chunk.
         self._delivery_local = threading.local()
@@ -56,9 +58,14 @@ class ResponseHandler:
 
     def process(self, message: QueueMessage) -> None:
         """Deliver one output message: to its messaging platform, or per the execution mode."""
-        integration = message.attributes.get(ATTR_INTEGRATION)
+        integration = IntegrationDelivery.integration_of(message.attributes)
+        if integration and message.attributes.get(ATTR_REALTIME):
+            self._deliver_realtime(message, integration)
+            return
         if integration:
-            self._deliver_integration(message, integration)
+            body = json.loads(message.body) if message.body else {}
+            status_code = int(message.attributes.get(ATTR_STATUS_CODE, "200"))
+            self._integration_delivery.deliver(integration, message.attributes, body, status_code, session_id=message.group_id)
             return
 
         mode = AKConfig.get().execution.mode
@@ -82,25 +89,12 @@ class ResponseHandler:
         max_receive_count = AKConfig.get().execution.queues.output.max_receive_count
         self._log.error(f"Permanent failure for output message {message.message_id} after {max_receive_count} retries")
         try:
-            integration = message.attributes.get(ATTR_INTEGRATION)
+            integration = IntegrationDelivery.integration_of(message.attributes)
             if integration:
-                reply_context = self._reply_context(message)
-                session_id = reply_context.get("session_id")
-
                 if message.attributes.get(ATTR_REALTIME):
-                    from ..integration.adapter.registry import StatefulEdgeRegistry
-
-                    adapter = StatefulEdgeRegistry.get(message.group_id)
-                    if adapter:
-                        run_async_sync(adapter.deliver_error(adapter.ERROR_MESSAGE, reply_context))
-                        self._log.info(f"Delivered permanent-failure message to {integration}: session_id={message.group_id}")
-                    else:
-                        self._log.warning(f"Could not find live edge connection for session_id={message.group_id}")
-                    return
-
-                adapter = self._outbound_adapter(integration)
-                run_async_sync(adapter.deliver_error(adapter.ERROR_MESSAGE, reply_context))
-                self._log.info(f"Delivered permanent-failure message to {integration}: session_id={message.group_id}")
+                    self._deliver_realtime_failure(message, integration)
+                else:
+                    self._integration_delivery.deliver_permanent_failure(integration, message.attributes, session_id=message.group_id)
                 return
 
             request_id = message.attributes.get(ATTR_REQUEST_ID)
@@ -164,83 +158,45 @@ class ResponseHandler:
     # -- delivery paths ----------------------------------------------------------------------
 
     @staticmethod
-    def _outbound_adapter(integration: str):
-        """Resolve the outbound adapter named by a message's integration attribute.
+    def _realtime_edge(message: QueueMessage):
+        """The live edge (e.g. a LiveKit room) a realtime output message belongs to, or None.
 
-        Imported lazily and locally: messaging platforms are an `integration` capability, and
-        importing that package at module scope would make every pipeline process (including a
-        Lambda that never sees integration traffic) pay for its SDKs. The same shape core uses
-        to reach the AG-UI state helpers.
-
-        :param integration: The adapter name stamped by the producer.
-        :return: The outbound adapter for that name.
-        :raises AKConfigError: If the name resolves to no adapter — the message is then retried
-            and permanently failed rather than silently disappearing.
+        A stateful edge registers itself in this process when its gateway starts, keyed by session
+        id, which is the output message's group id. Imported lazily, as ``IntegrationDelivery``
+        imports the adapter factory, so a process without integrations never loads that package.
         """
-        from ..integration.adapter.factory import IntegrationAdapterFactory
+        from ..integration.adapter.registry import StatefulEdgeRegistry
 
-        return IntegrationAdapterFactory.create_outbound(integration)
+        return StatefulEdgeRegistry.get(message.group_id)
 
-    @staticmethod
-    def _reply_context(message: QueueMessage) -> dict:
-        """Rebuild the adapter's reply context from the message's reply_-prefixed attributes."""
-        return {key.removeprefix(REPLY_CONTEXT_PREFIX): value for key, value in message.attributes.items() if key.startswith(REPLY_CONTEXT_PREFIX)}
+    def _deliver_realtime(self, message: QueueMessage, integration: str) -> None:
+        """Deliver one realtime output message to the live edge that sent the request.
 
-    def _deliver_integration(self, message: QueueMessage, integration: str) -> None:
-        """Deliver one reply back to the messaging platform it came from.
-
-        Raising is deliberate, exactly as in ``_broadcast``: the ConsumerLoop retries the message
-        up to ``max_receive_count`` and then hands it to ``on_permanent_failure``, so a briefly
-        unreachable platform API gets its retries.
+        Realtime traffic is integration traffic, but its outbound side is a live connection in this
+        process rather than a webhook adapter, so it is resolved from the edge registry instead of
+        going through ``IntegrationDelivery``. The body is the serialised ``StreamChunk`` the realtime
+        pool emitted, re-parsed so the edge receives the typed chunk, and it is delivered on this
+        thread's persistent loop because ``run_async_sync`` would create and destroy one per chunk
+        at realtime rates. Raising when the edge is gone is deliberate, as for every delivery: the
+        ConsumerLoop retries, then hands the message to ``on_permanent_failure``.
         """
-        reply_context = self._reply_context(message)
-        request_id = message.attributes.get(ATTR_REQUEST_ID)
+        adapter = self._realtime_edge(message)
+        if adapter is None:
+            raise ValueError(f"No active realtime edge connection found for session {message.group_id}")
+
+        reply_context = IntegrationDelivery.reply_context(message.attributes)
         body = json.loads(message.body) if message.body else {}
         if not isinstance(body, dict):
             body = {"result": body}
         status_code = int(message.attributes.get(ATTR_STATUS_CODE, "200"))
-
-        if message.attributes.get(ATTR_REALTIME):
-            from ..integration.adapter.registry import StatefulEdgeRegistry
-
-            # The edge connection is unique per session_id (which is group_id for realtime chunk messages)
-            adapter = StatefulEdgeRegistry.get(message.group_id)
-            if not adapter:
-                raise ValueError(f"No active realtime edge connection found for session {message.group_id}")
-
-            if status_code >= 400:
-                self._log.error(
-                    f"[OUTPUT ERROR] integration={integration}, session_id={message.group_id}, "
-                    f"request_id={request_id}, status_code={status_code}, error={body.get('error')}"
-                )
-                run_async_sync(adapter.deliver_error(adapter.ERROR_MESSAGE, reply_context))
-                return
-
-            self._deliver_realtime_chunk(adapter, message, body, reply_context, integration)
-            return
-
-        adapter = self._outbound_adapter(integration)
-
         if status_code >= 400:
             self._log.error(
                 f"[OUTPUT ERROR] integration={integration}, session_id={message.group_id}, "
-                f"request_id={request_id}, status_code={status_code}, error={body.get('error')}"
+                f"request_id={message.attributes.get(ATTR_REQUEST_ID)}, status_code={status_code}, error={body.get('error')}"
             )
             run_async_sync(adapter.deliver_error(adapter.ERROR_MESSAGE, reply_context))
             return
 
-        run_async_sync(adapter.deliver(AgentReplyText(response=str(body.get("result", ""))), reply_context))
-        self._log.info(f"[OUTPUT DONE] Delivered to {integration}: session_id={message.group_id}, request_id={request_id}")
-
-    def _deliver_realtime_chunk(self, adapter, message: QueueMessage, body: dict, reply_context: dict, integration: str) -> None:
-        """Deliver one realtime stream chunk on this thread's persistent event loop.
-
-        The message is marked with ``ATTR_REALTIME`` by the realtime pool, so routing is explicit
-        rather than inferred from the body shape. The body is the serialised ``StreamChunk`` the
-        pool emitted; it is re-parsed here so the adapter receives the typed chunk. The loop is
-        reused across chunks because ``run_async_sync`` would create and destroy one per chunk at
-        realtime rates.
-        """
         chunk = StreamChunk.model_validate(body)
         loop = getattr(self._delivery_local, "loop", None)
         if loop is None or loop.is_closed():
@@ -248,6 +204,15 @@ class ResponseHandler:
             self._delivery_local.loop = loop
         loop.run_until_complete(adapter.deliver_chunk(chunk, reply_context))
         self._log.debug(f"[OUTPUT DONE] Delivered chunk to {integration}: session_id={message.group_id}")
+
+    def _deliver_realtime_failure(self, message: QueueMessage, integration: str) -> None:
+        """Tell the live edge that a realtime output message failed for good, if it is still connected."""
+        adapter = self._realtime_edge(message)
+        if adapter is None:
+            self._log.warning(f"Could not find live edge connection for session_id={message.group_id}")
+            return
+        run_async_sync(adapter.deliver_error(adapter.ERROR_MESSAGE, IntegrationDelivery.reply_context(message.attributes)))
+        self._log.info(f"Delivered permanent-failure message to {integration}: session_id={message.group_id}")
 
     def _store_response(self, message: QueueMessage) -> None:
         request_id = message.attributes.get(ATTR_REQUEST_ID)

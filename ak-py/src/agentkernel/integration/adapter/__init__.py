@@ -25,6 +25,8 @@ _LAZY_EXPORTS = {
     "PollerRunner": ".poller",
     "StatefulEdgeRegistry": ".registry",
     "WebhookRESTRequestHandler": ".webhook",
+    "WebhookRoute": ".routes",
+    "WebhookRouteMatcher": ".route_matcher",
 }
 
 __all__ = sorted(_LAZY_EXPORTS)
@@ -36,6 +38,8 @@ if TYPE_CHECKING:  # pragma: no cover: static resolution only, preserves lazines
     from .poller import PollerRunner
     from .producer import IntegrationProducer
     from .registry import StatefulEdgeRegistry
+    from .route_matcher import WebhookRouteMatcher
+    from .routes import WebhookRoute
     from .webhook import WebhookRESTRequestHandler
 
 

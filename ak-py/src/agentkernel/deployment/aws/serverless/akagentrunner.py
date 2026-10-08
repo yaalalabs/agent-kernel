@@ -6,6 +6,7 @@ from ....core.chat_service import ChatService
 from ....core.config import AKConfig
 from ....core.model import BaseRunRequest, ExecutionMode, StreamChunk
 from ....pipeline.envelope import ATTR_STATUS_CODE
+from ....pipeline.integration_delivery import IntegrationDelivery
 from ..core.sqs_handler import SQSHandler
 from .core import LambdaSQSConsumer
 
@@ -63,6 +64,10 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
         metadata there because EventBridge Scheduler cannot set SQS message attributes. Message
         attributes keep precedence.
 
+        ``routing_attributes`` is a messaging integration's return address (``integration`` plus
+        every ``reply_*`` attribute), forwarded so the response handler can deliver the reply to
+        its platform; it is ``{}`` for other traffic.
+
         :param raw_queue_message: Original SQS message (``dict``) received by the Lambda function
         :param body: Already-validated body to use for the fallback; when omitted it is parsed
             best-effort from the record
@@ -95,6 +100,7 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
 
         if endpoint_url:
             record_attributes["endpoint_url"] = endpoint_url
+        record_attributes["routing_attributes"] = IntegrationDelivery.routing_attributes(message_attributes)
 
         cls._log.info(f"Extracted record attributes: {record_attributes}")
         return record_attributes
@@ -133,6 +139,9 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
             custom_attributes.append(
                 SQSHandler.CustomAttribute(name=ATTR_STATUS_CODE, value=str(status_code), datatype=SQSHandler.AttributeDataType.STRING)
             )
+        # A messaging integration's return address; .get keeps record dicts built by subclasses working.
+        for name, value in record_attributes.get("routing_attributes", {}).items():
+            custom_attributes.append(SQSHandler.CustomAttribute(name=name, value=value, datatype=SQSHandler.AttributeDataType.STRING))
 
         cls._log.debug(f"Custom attributes: {custom_attributes}")
 
@@ -169,7 +178,7 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
         # ChatService(rest_api_mode=False) returns (status_code, response_dict). The status travels
         # to the output message as an attribute so the deferred-schedule 202 and the validation 4xx
         # survive the queue round trip instead of collapsing to 200 at the REST surface.
-        status_code, agent_response = cls._get_chat_service().process_chat_request(req=body)
+        status_code, agent_response = cls._get_chat_service().process_chat_request(req=body, requests=body.requests)
         cls._log.info(f"Chat service response: '{agent_response}' with status_code: {status_code}")
         record_attributes = cls._get_record_attributes(raw_queue_message=record, body=body)
         cls._send_to_output_queue(message_body=agent_response, record_attributes=record_attributes, status_code=status_code)
@@ -329,6 +338,9 @@ class ServerlessStreamAgentRunner(LambdaSQSConsumer):
         :param record: SQS record (``dict``) containing the chat request payload
         :return: None
         """
+        if IntegrationDelivery.integration_of(SQSHandler.get_message_custom_attributes(record)):
+            # A platform has no streaming consumer: one reply (pipeline parity, pipeline/agent_runner.py).
+            return ServerlessAgentRunner.process_message(record)
         cls._log.info(f"Processing stream message: {record}")
         body = cls._parse_body(record)
         record_attributes = cls._get_record_attributes(raw_queue_message=record, body=body)
@@ -336,7 +348,7 @@ class ServerlessStreamAgentRunner(LambdaSQSConsumer):
         receive_count = record.get("attributes", {}).get("ApproximateReceiveCount", "1")
 
         chunk_count = 0
-        for raw_chunk in cls._get_chat_service().process_stream_chat_sync(req=body):
+        for raw_chunk in cls._get_chat_service().process_stream_chat_sync(req=body, requests=body.requests):
             chunk_dict = json.loads(raw_chunk)
             cls._send_chunk_to_output_queue(
                 chunk_body=chunk_dict,
@@ -354,6 +366,9 @@ class ServerlessStreamAgentRunner(LambdaSQSConsumer):
         :param record: SQS record (``dict``) that failed processing after all retries
         :return: None
         """
+        if IntegrationDelivery.integration_of(SQSHandler.get_message_custom_attributes(record)):
+            # Before this class's own _get_record_attributes, which requires an endpoint_url.
+            return ServerlessAgentRunner.on_permanent_failure(record)
         cls._log.info(f"Permanent failure: {record}: Retried message {cls._get_max_receive_count()} times. Sending error chunk to Output Queue")
         try:
             record_attributes = cls._get_record_attributes(raw_queue_message=record)

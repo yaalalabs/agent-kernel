@@ -1091,6 +1091,61 @@ class TestRealtimePermanentFailure:
         assert reply_context == {"session_id": "s1"}
 
 
+class TestResponseHandlerRealtimeRouting:
+    """Realtime output goes to the live edge registered in this process, never to IntegrationDelivery's
+    webhook adapters, which a stateful edge has none of."""
+
+    class _Edge:
+        ERROR_MESSAGE = "sorry"
+
+        def __init__(self):
+            self.errors = []
+
+        async def deliver_error(self, message, reply_context):
+            self.errors.append((message, reply_context))
+
+    @staticmethod
+    def _message():
+        from agentkernel.pipeline.envelope import QueueMessage
+
+        body = json.dumps(StreamChunk(done=True).model_dump(exclude_none=True))
+        attributes = {"request_id": "r1", ATTR_INTEGRATION: "livekit", ATTR_REALTIME: "true", "reply_session_id": "s1"}
+        return QueueMessage(body=body, attributes=attributes, group_id="s1", dedup_id="d1")
+
+    def test_a_chunk_for_an_edge_that_is_gone_raises_for_retry(self, monkeypatch):
+        from agentkernel.integration.adapter.registry import StatefulEdgeRegistry
+        from agentkernel.pipeline.response_handler import ResponseHandler
+
+        monkeypatch.setattr(StatefulEdgeRegistry, "get", classmethod(lambda cls, session_id: None))
+        handler = ResponseHandler(transport=InMemoryTransport())
+        handler._integration_delivery = None  # the webhook path must not be reached
+
+        with pytest.raises(ValueError, match="No active realtime edge"):
+            handler.process(self._message())
+
+    def test_a_permanent_failure_tells_the_live_edge(self, monkeypatch):
+        from agentkernel.integration.adapter.registry import StatefulEdgeRegistry
+        from agentkernel.pipeline.response_handler import ResponseHandler
+
+        class _Cfg:
+            class execution:
+                mode = ExecutionMode.REALTIME
+
+                class queues:
+                    class output:
+                        max_receive_count = 3
+
+        monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _Cfg))
+        edge = self._Edge()
+        monkeypatch.setattr(StatefulEdgeRegistry, "get", classmethod(lambda cls, session_id: edge if session_id == "s1" else None))
+        handler = ResponseHandler(transport=InMemoryTransport())
+        handler._integration_delivery = None  # the webhook path must not be reached
+
+        handler.on_permanent_failure(self._message())
+
+        assert edge.errors == [("sorry", {"session_id": "s1"})]
+
+
 class TestBrokerRealtimeUserGate:
     def test_realtime_chunk_without_user_id_is_not_rejected_on_a_broker(self, monkeypatch):
         """Realtime delivers through the integration adapter, not WebSocket, so the broker

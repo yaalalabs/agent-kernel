@@ -143,6 +143,15 @@ the context variables, so `Session.current()` resolves inside a step callback.
 Reserved (raise `ValueError` at declaration): `task`, `reset`, `additional_args`, `stream` and
 `return_full_result` (the last two change the return type the adapter maps).
 
+## Human in the loop
+
+This adapter **cannot pause**, and reports it rather than pretending: its runner leaves
+`supports_pause` at `False`, and `resume()` raises if called directly. A request that tries to resume
+a run on this framework is refused by `Runtime` with a message naming the runner.
+
+The framework's own human-in-the-loop facility does not intersect what Agent Kernel wraps — see
+[Human in the Loop](../advanced/human-in-the-loop.md) for the four adapters that do pause.
+
 ## Features
 
 - ✅ ToolCalling and CodeAgent support

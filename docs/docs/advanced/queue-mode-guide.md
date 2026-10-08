@@ -396,6 +396,15 @@ graph TB
 
 In `stream` mode the Agent Runner Lambda (`ServerlessStreamAgentRunner`) sends **one output-queue message per token chunk**, and the Response Handler broadcasts each as a `STREAM_CHUNK` WebSocket message.
 
+- **Messaging-integration dispatch.** A message with an `integration` attribute keeps its return
+  address (`integration` plus the `reply_*` context) through both queues. The Response Handler
+  delivers it to the platform before looking at the execution mode, so it never reaches the response
+  store or the WebSocket, and `stream` mode runs it as one reply.
+- **Webhooks in.** A `LambdaWebhookHost(WebhookRESTRequestHandler(...))`, registered with
+  `Lambda.register`, serves a platform's webhook route on the Request Handler Lambda, in
+  `rest_sync`/`rest_async` with the `sqs` transport. See
+  [Messaging integrations on AWS Lambda](../deployment/aws-serverless.md#messaging-integrations).
+
 ### SQS Queue Design
 
 Both queues are **FIFO** with:
