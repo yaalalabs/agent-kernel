@@ -12,6 +12,7 @@ Agent Kernel provides powerful execution hooks that let you customize agent beha
 
 - **Langfuse** - Open-source LLM engineering platform for tracing, evaluating, and monitoring AI applications. See [Traceability and Observability](../advanced/traceability) for detailed setup and usage.
 - **OpenLLMetry (Traceloop)** - OpenTelemetry-based observability for LLM applications with support for multiple backends including Traceloop, Datadog, New Relic, and Honeycomb. See [Traceability and Observability](../advanced/traceability) for detailed setup and usage.
+- **AWS CloudWatch** - OpenTelemetry traces exported to AWS X-Ray and searchable in CloudWatch Transaction Search. See [Traceability and Observability](../advanced/traceability) for detailed setup and usage.
 
 ## Social media
 These are built on REST APIs and you can install custom integrations as well.
@@ -77,6 +78,11 @@ flowchart LR
 Mount an integration with `IOHandler.run(...)`, which starts the queue topology alongside the
 webhook routes. `RESTAPI.run([...])` builds a bare API with no runner behind it, so it rejects an
 integration handler rather than silently accepting messages nothing will answer.
+
+On AWS Lambda, wrap the same handler in a `LambdaWebhookHost` and register its `handle` with
+`Lambda.register` in the request-handler Lambda; the serverless agent runner and response handler carry the reply back to the platform. See
+[Messaging integrations on AWS Lambda](../deployment/aws-serverless.md#messaging-integrations) for the
+Terraform routes, the authorizer bypass and the REST-modes-only limit.
 
 Bring your own delivery for any platform by pointing its `outbound_adapter` setting at a dotted
 path to your own `OutboundAdapter` subclass; bring your own parsing by passing your own

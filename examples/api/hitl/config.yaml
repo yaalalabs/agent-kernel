@@ -1,0 +1,26 @@
+# The session store is the one setting human-in-the-loop actually depends on.
+#
+# A pause is written into the session, and the human answers minutes or hours later — by which time
+# the process may have restarted, or the request may reach a different replica entirely. `in_memory`
+# keeps the session in one process's memory, so it is fine for this demo and wrong for production.
+#
+# Agent Kernel logs a WARNING the first time a pause is written while `type: in_memory`, naming this
+# exact problem. On any multi-replica deployment, switch to a shared backend:
+#
+#   session:
+#     type: redis          # or valkey, dynamodb, cosmosdb, firestore
+#     redis:
+#       url: "redis://localhost:6379"
+session:
+  type: in_memory
+
+execution:
+  mode: rest_sync
+
+# Mounting AGUIRequestHandler in app.py is what turns AG-UI on; this block only parameterizes it.
+# AG-UI always delivers a run as a stream of events, so it does not consult `execution.mode`.
+agui:
+  default_agent: support # also serves POST /agui, in addition to POST /agui/support
+
+api:
+  custom_router_prefix: "" # the approval console at GET / instead of GET /custom/

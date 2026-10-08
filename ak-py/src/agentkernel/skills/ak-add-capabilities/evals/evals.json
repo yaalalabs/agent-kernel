@@ -1,7 +1,7 @@
 {
   "skill": "ak-add-capabilities",
   "description": "Evaluations for the ak-add-capabilities (guardrails, tracing, sessions, knowledge base, MCP, A2A, AG-UI, hooks, multimodal, conversation threads, scheduled tasks, sandbox) skill",
-  "version": "0.9.3",
+  "version": "0.9.4",
   "evals": [
     {
       "id": "cap-guardrail-openai",
@@ -85,6 +85,24 @@
       "must_not_contain": [
         "type: langfuse",
         "type: openllmetry"
+      ]
+    },
+    {
+      "id": "cap-tracing-cloudwatch",
+      "name": "Add AWS CloudWatch tracing",
+      "input": "Add AWS CloudWatch tracing to my project",
+      "expected_outputs": [
+        "trace:",
+        "type: cloudwatch",
+        "enabled: true",
+        "AWS_REGION",
+        "AWSXrayWriteOnlyAccess",
+        "agentkernel[",
+        "cloudwatch"
+      ],
+      "must_not_contain": [
+        "type: langfuse",
+        "type: logfire"
       ]
     },
     {
@@ -435,6 +453,39 @@
         "store:",
         "type: in_memory",
         "create_schedule"
+      ]
+    },
+    {
+      "id": "cap-hitl-basic",
+      "name": "Add human-in-the-loop approval",
+      "input": "I want a person to approve the refund tool before my OpenAI agent runs it",
+      "expected_outputs": [
+        "needs_approval=True",
+        "resume",
+        "status",
+        "approved",
+        "PAUSED"
+      ]
+    },
+    {
+      "id": "cap-hitl-pydantic-output-type",
+      "name": "Human in the loop on Pydantic AI needs DeferredToolRequests",
+      "input": "Make my Pydantic AI agent pause to ask the customer a question before it finishes",
+      "expected_outputs": [
+        "DeferredToolRequests",
+        "output_type",
+        "CallDeferred"
+      ]
+    },
+    {
+      "id": "cap-hitl-durability",
+      "name": "A durable pause needs a shared session backend",
+      "input": "My agent pauses for approval but the decision never finds the run on my second replica",
+      "expected_outputs": [
+        "session:",
+        "type:",
+        "redis",
+        "in_memory"
       ]
     },
     {

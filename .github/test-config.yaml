@@ -104,6 +104,8 @@ e2e:
     - type: api
       path: examples/api/openai_structured
     - type: api
+      path: examples/api/hitl
+    - type: api
       path: examples/api/adk
     - type: api
       path: examples/api/multimodal/openai

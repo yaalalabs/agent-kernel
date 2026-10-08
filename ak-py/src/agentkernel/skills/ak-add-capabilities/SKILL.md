@@ -13,7 +13,7 @@ description: >
 license: Apache-2.0
 metadata:
   author: yaalalabs
-  version: "0.9.3"
+  version: "0.9.4"
   category: user
 ---
 
@@ -34,7 +34,7 @@ Check for an existing Agent Kernel project with `pyproject.toml` and agent defin
 Which capability would you like to add?
 
 1. **Guardrails** — Content safety filters for input and/or output
-2. **Tracing** — Observability and monitoring (Langfuse, OpenLLMetry, or Pydantic Logfire)
+2. **Tracing** — Observability and monitoring (Langfuse, OpenLLMetry, Pydantic Logfire, or AWS CloudWatch)
 3. **Session Persistence** — Durable conversation state (Redis, DynamoDB, Cosmos DB, Firestore)
 4. **Knowledge Base** — Durable cross-session knowledge tools (ChromaDB, Neo4j, Starburst, Open Knowledge Format markdown bundle, or custom backend)
 5. **MCP Server** — Expose agents as Model Context Protocol tools
@@ -46,6 +46,7 @@ Which capability would you like to add?
 11. **AG-UI Server** — Stream any agent to an AG-UI-compliant frontend (text, tool calls, reasoning, shared state)
 12. **Scheduled Tasks** — Deferred and recurring chat execution (a `schedule` block on a chat request, management routes, agent tools)
 13. **Secret Resolution** — Read API keys through `SecretManager` (environment first, then AWS SSM Parameter Store or a custom provider)
+14. **Human in the Loop** — Pause a run for a person's approval or answer and resume from their decision (a gated tool or an interrupt, a `resume` block on the next request)
 
 ### Step 3: Generate Changes
 
@@ -60,7 +61,7 @@ Which capability would you like to add?
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api]>=0.9.3",
+    "agentkernel[openai,api]>=0.9.4",
     # OpenAI guardrails use the openai extra — already included if using OpenAI framework
 ]
 ```
@@ -114,7 +115,7 @@ guardrail:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,aws]>=0.9.3",
+    "agentkernel[openai,api,aws]>=0.9.4",
 ]
 ```
 
@@ -140,7 +141,7 @@ guardrail:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,walledai]>=0.9.3",
+    "agentkernel[openai,api,walledai]>=0.9.4",
 ]
 ```
 
@@ -170,14 +171,14 @@ export WALLED_API_KEY="your-walledai-api-key"
 
 #### Tracing (Observability)
 
-**Ask:** Which tracing backend — Langfuse, OpenLLMetry (Traceloop), or Pydantic Logfire?
+**Ask:** Which tracing backend — Langfuse, OpenLLMetry (Traceloop), Pydantic Logfire, or AWS CloudWatch?
 
 **For Langfuse:**
 
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,langfuse]>=0.9.3",
+    "agentkernel[openai,api,langfuse]>=0.9.4",
 ]
 ```
 
@@ -202,7 +203,7 @@ export LANGFUSE_HOST="https://cloud.langfuse.com"   # or self-hosted URL
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,openllmetry]>=0.9.3",
+    "agentkernel[openai,api,openllmetry]>=0.9.4",
 ]
 ```
 
@@ -220,7 +221,7 @@ trace:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,logfire]>=0.9.3",
+    "agentkernel[openai,api,logfire]>=0.9.4",
 ]
 ```
 
@@ -238,6 +239,34 @@ export LOGFIRE_TOKEN="your-write-token"
 
 4. No code changes needed — tracing is automatically applied to all agent executions.
 
+**For AWS CloudWatch:**
+
+1. Update `pyproject.toml`:
+```toml
+dependencies = [
+    "agentkernel[openai,api,cloudwatch]>=0.9.4",
+]
+```
+
+2. Update `config.yaml`:
+```yaml
+trace:
+  enabled: true
+  type: cloudwatch
+```
+
+3. Set the region; credentials come from the standard AWS chain (env, profile, SSO, or instance/task role):
+```bash
+export AWS_REGION="us-east-1"
+# Optional: export through the CloudWatch agent or an OpenTelemetry collector instead of straight to X-Ray
+# export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT="http://localhost:4318/v1/traces"
+```
+
+4. One-time AWS setup: enable CloudWatch Transaction Search in the account, and attach the
+`AWSXrayWriteOnlyAccess` managed policy to the role that runs the agent.
+
+5. No code changes needed — tracing is automatically applied to all agent executions.
+
 ---
 
 #### Session Persistence
@@ -249,7 +278,7 @@ export LOGFIRE_TOKEN="your-write-token"
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,redis]>=0.9.3",
+    "agentkernel[openai,api,redis]>=0.9.4",
 ]
 ```
 
@@ -269,7 +298,7 @@ session:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,aws]>=0.9.3",
+    "agentkernel[openai,api,aws]>=0.9.4",
 ]
 ```
 
@@ -291,7 +320,7 @@ session:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,azure]>=0.9.3",
+    "agentkernel[openai,api,azure]>=0.9.4",
 ]
 ```
 
@@ -313,7 +342,7 @@ session:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,gcp]>=0.9.3",
+    "agentkernel[openai,api,gcp]>=0.9.4",
 ]
 ```
 
@@ -347,13 +376,13 @@ Add durable knowledge tools that your agents can query and update across session
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,chromadb]>=0.9.3",  # for Chroma
-  # or "agentkernel[openai,api,neo4j]>=0.9.3"
-  # or "agentkernel[openai,api,trino]>=0.9.3"
+  "agentkernel[openai,api,chromadb]>=0.9.4",  # for Chroma
+  # or "agentkernel[openai,api,neo4j]>=0.9.4"
+  # or "agentkernel[openai,api,trino]>=0.9.4"
   # OKF needs NO extra - pyyaml is a core dependency:
-  #    "agentkernel[openai,api]>=0.9.3"
+  #    "agentkernel[openai,api]>=0.9.4"
   # ...unless the bundle is served from S3, which uses the aws extra:
-  #    "agentkernel[openai,api,aws]>=0.9.3"
+  #    "agentkernel[openai,api,aws]>=0.9.4"
 ]
 ```
 
@@ -478,7 +507,7 @@ Expose your agents as MCP (Model Context Protocol) tools so other AI systems can
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,mcp]>=0.9.3",
+    "agentkernel[openai,api,mcp]>=0.9.4",
 ]
 ```
 
@@ -504,7 +533,7 @@ Enable Agent-to-Agent communication via Google's A2A protocol.
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,a2a]>=0.9.3",
+    "agentkernel[openai,api,a2a]>=0.9.4",
 ]
 ```
 
@@ -530,7 +559,7 @@ text, tool calls, reasoning, and an optional shared JSON state, all as one typed
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,agui]>=0.9.3",
+    "agentkernel[openai,api,agui]>=0.9.4",
 ]
 ```
 
@@ -683,7 +712,7 @@ module.run_options(agent, options_for, max_turns=25, hooks=ProgressHooks())
 |-----------|------------------------------|------------|---------------|---------------------------------|
 | OpenAI Agents SDK | `Runner.run` / `run_streamed` | `max_turns` | `hooks=RunHooks()` | `starting_agent`, `input`, `session`, `context`, `conversation_id`, `previous_response_id`, `auto_previous_response_id` |
 | LangGraph | `ainvoke` / `astream_events` (`config` is deep-merged: `configurable.thread_id` stays the session id, `callbacks` lists concatenate) | `config["recursion_limit"]` | `config["callbacks"]` | `input`, `version`, `stream_mode`, `output_keys`, `print_mode`, `config.configurable.thread_id`, and any `RunnableConfig` key at the top level |
-| Google ADK | the per-run `Runner(...)` constructor (`plugins`, services) and `run_async` (`run_config`; copied with `streaming_mode=SSE` in stream mode) | `RunConfig(max_llm_calls=...)` | `plugins=[BasePlugin()]` | `agent`, `app`, `app_name`, `node`, `session_service`, `auto_create_session`, `user_id`, `session_id`, `new_message`, `state_delta`, `invocation_id`, `yield_user_message` |
+| Google ADK | the per-run `App` (`plugins`), the per-run `Runner(...)` constructor (services) and `run_async` (`run_config`; copied with `streaming_mode=SSE` in stream mode) | `RunConfig(max_llm_calls=...)` | `plugins=[BasePlugin()]` | `agent`, `app`, `app_name`, `node`, `session_service`, `auto_create_session`, `user_id`, `session_id`, `new_message`, `state_delta`, `invocation_id`, `yield_user_message` |
 | Pydantic AI | `agent.run` / `run_stream_events` (`event_stream_handler` is dropped in stream mode with one warning) | `UsageLimits(request_limit=...)` | `event_stream_handler` | `user_prompt`, `message_history`, `deps` |
 | CrewAI | the per-run `Crew(...)` constructor (`verbose=False` is an overridable default; agents resolve by `role`; `max_rpm` is a forwarded rate limit) | `max_iter` on the native `Agent` (needs nothing from Agent Kernel) | `step_callback` / `task_callback` | `agents`, `tasks`, `memory` |
 | smolagents | `agent.run` | `max_steps` | `step_callbacks` on the agent constructor (needs nothing from Agent Kernel) | `task`, `reset`, `additional_args`, `stream`, `return_full_result` |
@@ -776,7 +805,7 @@ Enable image and file processing in your agents.
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,multimodal]>=0.9.3",
+    "agentkernel[openai,api,multimodal]>=0.9.4",
 ]
 ```
 
@@ -801,7 +830,7 @@ multimodal:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,redis,multimodal]>=0.9.3",
+    "agentkernel[openai,api,redis,multimodal]>=0.9.4",
 ]
 ```
 
@@ -824,7 +853,7 @@ multimodal:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,aws,multimodal]>=0.9.3",
+    "agentkernel[openai,api,aws,multimodal]>=0.9.4",
 ]
 ```
 
@@ -908,7 +937,7 @@ Enable persistent, named conversation threads keyed by `session_id`.
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api]>=0.9.3",
+    "agentkernel[openai,api]>=0.9.4",
 ]
 ```
 
@@ -938,7 +967,7 @@ thread:
 **For LLM-based thread naming**, add the `thread` extra:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,thread]>=0.9.3",
+    "agentkernel[openai,api,thread]>=0.9.4",
 ]
 ```
 ```yaml
@@ -953,7 +982,7 @@ thread:
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,redis,thread]>=0.9.3",
+    "agentkernel[openai,api,redis,thread]>=0.9.4",
 ]
 ```
 ```yaml
@@ -969,7 +998,7 @@ thread:
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,valkey,thread]>=0.9.3",
+    "agentkernel[openai,api,valkey,thread]>=0.9.4",
 ]
 ```
 ```yaml
@@ -985,7 +1014,7 @@ thread:
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,aws,thread]>=0.9.3",
+    "agentkernel[openai,api,aws,thread]>=0.9.4",
 ]
 ```
 ```yaml
@@ -1074,7 +1103,7 @@ means deploying in queue mode.
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,cron]>=0.9.3",
+    "agentkernel[openai,api,cron]>=0.9.4",
 ]
 ```
 The `cron` extra brings `croniter`, needed for cron parsing.
@@ -1153,7 +1182,7 @@ curl -X DELETE http://localhost:8000/api/v1/schedules/{task_id}
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,aws,cron]>=0.9.3",
+    "agentkernel[openai,api,aws,cron]>=0.9.4",
 ]
 ```
 ```yaml
@@ -1175,7 +1204,7 @@ them. See the `ak-cloud-deploy` skill.
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,redis,cron]>=0.9.3",   # or valkey
+    "agentkernel[openai,api,redis,cron]>=0.9.4",   # or valkey
 ]
 ```
 ```yaml
@@ -1221,6 +1250,69 @@ another user's schedule is rejected (403). Without one, the routes are open.
 See `examples/api/schedule-openai`.
 
 ---
+
+#### Human in the Loop
+
+**What it does:** Lets a run stop mid-way to ask a person something — approve this gated tool, answer
+this question — and resume from their decision minutes or hours later, possibly on another replica.
+There is **no `enabled` flag and no config block**: a pause happens when the framework decides one is
+needed, so it is declared where the framework declares it. Agent Kernel answers **HTTP 202** with
+`status: "PAUSED"` and the pending interruptions; the next request carries a `resume` block instead
+of a prompt.
+
+**Ask:** Which framework is the agent on? Only four can pause — OpenAI Agents SDK, LangGraph, Pydantic
+AI and Google ADK. CrewAI and smolagents report `supports_pause = False` rather than pretending.
+
+**Important:** the pause is written into the **session**, so a durable one needs a shared session
+backend. With `session.type: in_memory` the record lives in one process and the replica receiving the
+decision has never heard of the pause — Agent Kernel logs a warning the first time that happens.
+
+**Declaring it, per framework:**
+
+```python
+# OpenAI Agents SDK — a gated tool
+@function_tool(needs_approval=True)
+def issue_refund(order_id: str) -> str: ...
+
+# LangGraph — an interrupt returns whatever the resume supplies
+def ask(state):
+    choice = interrupt({"question": "Which method?", "options": ["Card", "Credit"]})
+
+# Pydantic AI — needs DeferredToolRequests among its output types, or neither axis can pause
+agent = Agent(model="openai:gpt-4.1-mini", output_type=[str, DeferredToolRequests])
+
+@agent.tool(name="ask_size")
+def ask_size(ctx: RunContext, q: str) -> str:
+    raise CallDeferred            # a value; `requires_approval=True` asks for a verdict instead
+
+# Google ADK — a result, or a verdict
+LongRunningFunctionTool(func=ask_address)
+FunctionTool(func=issue_refund, require_confirmation=True)
+```
+
+**Answering it:**
+
+```bash
+# The pause: HTTP 202
+# {"status": "PAUSED", "run_id": "9f2c...", "agent": "support",
+#  "interruptions": [{"id": "call_abc123", "kind": "tool_call", "tool_name": "issue_refund"}]}
+
+curl -X POST http://localhost:8000/api/v1/chat -H "Content-Type: application/json" -d '{
+  "agent": "support", "session_id": "user-123",
+  "resume": {"decisions": [{"id": "call_abc123", "status": "approved"}]}
+}'
+```
+
+A decision takes `status` (`approved` | `denied` | `cancelled` — "nobody decided", which never reaches
+the model as a refusal), an optional `message` for the human's own words, and an optional `payload`
+for a structured answer. `run_id` is optional: the run resolves from the interruption ids.
+
+**What each framework can carry back differs, and Agent Kernel refuses rather than silently dropping.**
+OpenAI takes no `payload` at all (an approval is a boolean); Pydantic AI takes one only as a JSON
+object on an approval, since it becomes the call's `override_args`; ADK refuses one on a confirmation
+and cannot tell `cancelled` from `denied` there. Point the user at the
+[Human in the Loop](https://kernel.yaala.ai/docs/advanced/human-in-the-loop) page for the full table
+before they design the question.
 
 #### Sandbox
 

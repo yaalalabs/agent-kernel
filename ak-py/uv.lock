@@ -88,7 +88,7 @@ wheels = [
 
 [[package]]
 name = "agentkernel"
-version = "0.9.3"
+version = "0.9.4"
 source = { editable = "." }
 dependencies = [
     { name = "deprecated" },
@@ -133,6 +133,12 @@ chromadb = [
     { name = "chromadb", version = "1.1.1", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-11-agentkernel-crewai'" },
     { name = "chromadb", version = "1.5.9", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-11-agentkernel-test' or extra != 'extra-11-agentkernel-crewai'" },
 ]
+cloudwatch = [
+    { name = "botocore" },
+    { name = "opentelemetry-exporter-otlp-proto-http" },
+    { name = "opentelemetry-sdk" },
+    { name = "requests" },
+]
 crewai = [
     { name = "crewai" },
     { name = "openinference-instrumentation-crewai" },
@@ -157,6 +163,7 @@ gmail = [
     { name = "google-auth-oauthlib" },
 ]
 instagram = [
+    { name = "fastapi" },
     { name = "httpx" },
 ]
 jev = [
@@ -190,6 +197,7 @@ mcp = [
     { name = "fastmcp" },
 ]
 messenger = [
+    { name = "fastapi" },
     { name = "httpx" },
 ]
 multimodal = [
@@ -224,6 +232,8 @@ sandbox-docker = [
     { name = "docker" },
 ]
 slack = [
+    { name = "aiohttp" },
+    { name = "fastapi" },
     { name = "httpx" },
     { name = "slack-bolt" },
 ]
@@ -234,10 +244,12 @@ teams = [
     { name = "aiohttp" },
     { name = "botbuilder-core" },
     { name = "botbuilder-schema" },
+    { name = "fastapi" },
     { name = "httpx" },
     { name = "msal" },
 ]
 telegram = [
+    { name = "fastapi" },
     { name = "httpx" },
 ]
 test = [
@@ -262,6 +274,7 @@ walledai = [
     { name = "walledai" },
 ]
 whatsapp = [
+    { name = "fastapi" },
     { name = "httpx" },
 ]
 
@@ -278,6 +291,7 @@ requires-dist = [
     { name = "ag-ui-protocol", marker = "extra == 'agui'", specifier = ">=0.1.16" },
     { name = "agent-framework-core", marker = "extra == 'maf'", specifier = ">=1.19.0,<2" },
     { name = "agent-framework-openai", marker = "extra == 'maf'", specifier = ">=1.14.4,<2" },
+    { name = "aiohttp", marker = "extra == 'slack'", specifier = ">=3.9.0" },
     { name = "aiohttp", marker = "extra == 'teams'", specifier = ">=3.9.0" },
     { name = "azure-core", marker = "extra == 'azure'", specifier = ">=1.26.0" },
     { name = "azure-data-tables", marker = "extra == 'azure'", specifier = ">=12.4.0" },
@@ -285,6 +299,7 @@ requires-dist = [
     { name = "botbuilder-core", marker = "extra == 'teams'", specifier = ">=4.17.0" },
     { name = "botbuilder-schema", marker = "extra == 'teams'", specifier = ">=4.17.0" },
     { name = "boto3", marker = "extra == 'aws'", specifier = ">=1.41.4" },
+    { name = "botocore", marker = "extra == 'cloudwatch'", specifier = ">=1.41.4" },
     { name = "chromadb", marker = "extra == 'chromadb'", specifier = ">=0.4.0" },
     { name = "confluent-kafka", marker = "extra == 'kafka'", specifier = ">=2.15.0" },
     { name = "crewai", marker = "extra == 'crewai'", specifier = ">=1.15.0" },
@@ -295,6 +310,12 @@ requires-dist = [
     { name = "docker", marker = "extra == 'sandbox-docker'", specifier = ">=7.0.0" },
     { name = "e2b-code-interpreter", marker = "extra == 'e2b'", specifier = ">=2.8.0" },
     { name = "fastapi", marker = "extra == 'api'", specifier = ">=0.118.0" },
+    { name = "fastapi", marker = "extra == 'instagram'", specifier = ">=0.118.0" },
+    { name = "fastapi", marker = "extra == 'messenger'", specifier = ">=0.118.0" },
+    { name = "fastapi", marker = "extra == 'slack'", specifier = ">=0.118.0" },
+    { name = "fastapi", marker = "extra == 'teams'", specifier = ">=0.118.0" },
+    { name = "fastapi", marker = "extra == 'telegram'", specifier = ">=0.118.0" },
+    { name = "fastapi", marker = "extra == 'whatsapp'", specifier = ">=0.118.0" },
     { name = "fastmcp", marker = "extra == 'mcp'", specifier = ">=3.2.0,<4.0.0" },
     { name = "google-adk", marker = "extra == 'adk'", specifier = ">=1.14.1" },
     { name = "google-api-python-client", marker = "extra == 'gmail'", specifier = ">=2.0.0" },
@@ -333,6 +354,8 @@ requires-dist = [
     { name = "openinference-instrumentation-litellm", marker = "extra == 'crewai'", specifier = ">=0.1.28" },
     { name = "openinference-instrumentation-openai-agents", marker = "extra == 'openai'", specifier = ">=1.4.0" },
     { name = "openinference-instrumentation-pydantic-ai", marker = "extra == 'pydanticai'", specifier = ">=0.1.17" },
+    { name = "opentelemetry-exporter-otlp-proto-http", marker = "extra == 'cloudwatch'", specifier = ">=1.30.0" },
+    { name = "opentelemetry-sdk", marker = "extra == 'cloudwatch'", specifier = ">=1.30.0" },
     { name = "opik", marker = "extra == 'opik'", specifier = ">=1.7.0" },
     { name = "pydantic", specifier = ">=2.11.7" },
     { name = "pydantic-ai-slim", marker = "extra == 'pydanticai'", specifier = "~=2.13.0" },
@@ -346,6 +369,7 @@ requires-dist = [
     { name = "python-multipart", marker = "extra == 'multimodal'", specifier = ">=0.0.12" },
     { name = "pyyaml", specifier = ">=6.0.2" },
     { name = "redis", marker = "extra == 'redis'", specifier = ">=7.1.0" },
+    { name = "requests", marker = "extra == 'cloudwatch'", specifier = ">=2.32.0" },
     { name = "singleton-type", specifier = ">=0.0.5" },
     { name = "slack-bolt", marker = "extra == 'slack'", specifier = "==1.22.0" },
     { name = "smolagents", marker = "extra == 'smolagents'", specifier = ">=1.0.0" },
@@ -356,7 +380,7 @@ requires-dist = [
     { name = "valkey", marker = "extra == 'valkey'", specifier = ">=6.0.0" },
     { name = "walledai", marker = "extra == 'walledai'", specifier = ">=4.9.3" },
 ]
-provides-extras = ["auth", "langfuse", "openllmetry", "logfire", "crewai", "langgraph", "smolagents", "pydanticai", "maf", "cli", "aws", "azure", "redis", "valkey", "kafka", "nats", "thread", "agui", "cron", "neo4j", "chromadb", "trino", "openai", "adk", "walledai", "api", "slack", "whatsapp", "messenger", "instagram", "telegram", "teams", "gmail", "gcp", "test", "a2a", "mcp", "multimodal", "sandbox-docker", "e2b", "daytona", "kubernetes", "opik", "jev"]
+provides-extras = ["auth", "langfuse", "openllmetry", "logfire", "cloudwatch", "crewai", "langgraph", "smolagents", "pydanticai", "maf", "cli", "aws", "azure", "redis", "valkey", "kafka", "nats", "thread", "agui", "cron", "neo4j", "chromadb", "trino", "openai", "adk", "walledai", "api", "slack", "whatsapp", "messenger", "instagram", "telegram", "teams", "gmail", "gcp", "test", "a2a", "mcp", "multimodal", "sandbox-docker", "e2b", "daytona", "kubernetes", "opik", "jev"]
 
 [package.metadata.requires-dev]
 dev = [

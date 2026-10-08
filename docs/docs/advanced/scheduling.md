@@ -125,6 +125,11 @@ Streaming surfaces yield the
 acknowledgement as a single terminal chunk — deliberately not an error chunk, since deferring was the
 requested outcome.
 
+**202 also means "paused for a human"** since [Human in the Loop](human-in-the-loop.md) — a run that
+stopped to ask a person something. The `status` key tells them apart: a deferred request carries
+`"SCHEDULED"`, a paused one `"PAUSED"`. A request carrying both `schedule` and `resume` is rejected
+with a 400.
+
 ### Deferring a recurring chat
 
 ```bash

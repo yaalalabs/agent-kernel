@@ -234,6 +234,64 @@ stream events carry the same information; `usage_limits` applies in both modes.
 Reserved (raise `ValueError` at declaration): `user_prompt`, `message_history` (the
 `PydanticAISession`) and `deps` (the framework context above).
 
+## Human in the loop
+
+This adapter pauses on **both** of the framework's axes, and they mean different things:
+
+| Raised by | The model is waiting for | `kind` |
+|---|---|---|
+| `CallDeferred` | a **value** — the tool's return | `input_required` |
+| `requires_approval` | a **verdict** | `tool_call` |
+
+**The agent must declare `DeferredToolRequests` as an output type**, or neither axis can pause:
+
+```python
+from pydantic_ai import Agent, DeferredToolRequests, RunContext
+from pydantic_ai.exceptions import CallDeferred
+
+agent = Agent(model="openai:gpt-4.1-mini", output_type=[str, DeferredToolRequests])
+
+@agent.tool(name="ask_reason")
+def ask_reason(ctx: RunContext, order_id: str) -> str:
+    raise CallDeferred
+```
+
+This is the framework's requirement, not Agent Kernel's: a pause *is* a run whose output is a
+`DeferredToolRequests`, so an agent that cannot return one has nowhere to put it. Leave it out and
+the run fails with *"A deferred tool call was present, but `DeferredToolRequests` is not among
+output types"* however the tools are declared.
+
+The tools themselves go on the agent natively, as above, or through the tool builder, which forwards
+its keyword options to `Tool` and leaves them plain functions. The options apply to every function in
+the call, so tools wanting different ones are bound separately:
+
+```python
+def issue_refund(order_id: str) -> str: ...
+
+tools = PydanticAIToolBuilder.bind([issue_refund], requires_approval=True)
+```
+
+A deferred call's answer is supplied as the tool's result, passed through exactly as given: send a
+list and the model receives a list, send a string and it receives a string.
+
+**A partial resume is refused.** The framework requires every deferred call resolved together, and
+Agent Kernel pre-empts it — naming the ids you missed — so the error reaches you instead of being
+flattened into a generic reply by the adapter's error handling.
+
+**On an approval, a payload must be a JSON object.** There it becomes `ToolApproved(override_args=...)`,
+which replaces the gated call's arguments, so `{"amount": 25}` works and `"large"` has nowhere to go.
+Any other shape is refused rather than dropped — silently ignoring it would run the tool with its
+original arguments while the human believed their answer was used. A **deferred** call is unaffected:
+there the payload is the tool's return value and any shape passes through.
+
+A prompt sent alongside a decision is **native** here: supplying the deferred results is precisely
+what lifts the framework's own guard against a new prompt while tool calls are outstanding.
+
+Of the four, this is the adapter that **detects a stale resume** itself, refusing a new question
+while a decision is outstanding.
+
+See [Human in the Loop](../advanced/human-in-the-loop.md).
+
 ## Features
 
 - ✅ Function calling

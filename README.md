@@ -42,7 +42,7 @@ Most agent frameworks help you build a *prototype*. **Agent Kernel is the platfo
 | 🛡️ **Compliant by Default** | Built-in guardrails (OpenAI, AWS Bedrock), PII detection, full audit traces, jailbreak prevention. |
 | 🧠 **Stateful & Knowledge-Aware** | Pluggable session stores (Redis, Valkey, DynamoDB, Cosmos DB) + knowledge bases (ChromaDB, Neo4j, Starburst, Open Knowledge Format bundles). |
 | 💬 **Channels Built-In** | Slack, WhatsApp, Teams, Telegram, Gmail, Messenger, Instagram — out of the box. |
-| 🔍 **Production Observability** | LangFuse, OpenLLMetry, and Pydantic Logfire tracing wired in. Every agent, tool, and LLM call — visible. |
+| 🔍 **Production Observability** | LangFuse, OpenLLMetry, Pydantic Logfire, and AWS CloudWatch tracing wired in. Every agent run — visible, with LLM and tool calls where the framework supports it. |
 | 🤝 **Open Standards** | Native **MCP** (Model Context Protocol), **A2A** (Agent-to-Agent), and **AG-UI** (streamed event protocol for agent-facing frontends) support. |
 | 🆓 **Apache 2.0** | No licensing fees. No vendor lock-in. Production-ready open source. |
 
@@ -111,7 +111,7 @@ Enterprises can't ship agents they can't audit. Agent Kernel makes compliance th
 - **Pre/Post Execution Hooks** — Inject policy checks, RAG context, redaction, or moderation around every agent call.
 - **Framework-Native Run Options**: Pass each framework's own run arguments and lifecycle hooks (OpenAI `RunHooks` and `RunConfig`, LangGraph callbacks, ADK plugins, Pydantic AI usage limits) per agent through `Module.run_options`, statically or computed per run by a factory, with the keys Agent Kernel owns kept safe.
 - **Full Traceability** — Every agent action, tool call, and LLM invocation logged with configurable verbosity.
-- **Observability** — LangFuse, OpenLLMetry, and Pydantic Logfire tracing with a single config line.
+- **Observability** — LangFuse, OpenLLMetry, Pydantic Logfire, and AWS CloudWatch tracing with a single config line.
 - **Secret Resolution** — Resolve API keys from the environment locally and from AWS SSM Parameter Store in production via `SecretManager`, with only `config.yaml` changing.
 - **Data Residency** — Pick your cloud, your region, your storage backend. Your data stays where you need it.
 
@@ -136,6 +136,17 @@ Let a chat run later, or on a schedule — the platform owns the timers, the per
 - **Managed over REST** — list, read, amend, pause and cancel via `/api/v1/schedules`, scoped to the owning user by a pluggable `Authoriser`.
 
 [Learn more →](https://kernel.yaala.ai/docs/advanced/scheduling)
+
+### 🙋 Human in the Loop
+
+Let a run stop to ask a person something — approve this tool, answer this question — and resume from their decision minutes or hours later, on any replica.
+
+- **Nothing to enable** — declare a gated tool or an interrupt the way your framework already does; Agent Kernel returns HTTP 202 with `status: "PAUSED"` and the pending interruptions.
+- **Answer instead of prompting** — send a `resume` block with `approved`, `denied`, or `cancelled` per interruption, plus the human's own words or a structured value.
+- **Four frameworks pause** — OpenAI Agents SDK, LangGraph, Pydantic AI, and Google ADK; the others say they can't rather than pretending.
+- **Every surface** — REST, streaming, WebSocket, and AG-UI's interrupt outcome; durable across restarts on any shared session backend.
+
+[Learn more →](https://kernel.yaala.ai/docs/advanced/human-in-the-loop)
 
 ### 🧠 Memory, Sessions & Knowledge Bases
 
@@ -188,8 +199,8 @@ The chart is published as an OCI artifact at
 Install it with Helm (the `docker pull` command GitHub shows on the package page does not apply to charts):
 
 ```bash
-helm pull oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.9.3 --untar   # unpacks the flavor values files
-helm install ak oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.9.3 \
+helm pull oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.9.4 --untar   # unpacks the flavor values files
+helm install ak oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.9.4 \
   -f agent-kernel/values-dev.yaml \
   --set ioHandler.image.repository=<io image> \
   --set agentRunner.image.repository=<runner image> --set image.tag=<tag>

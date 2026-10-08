@@ -31,6 +31,13 @@ class MockRunner(Runner):
         yield
 
 
+def _turn(text="", pending=None, invocation_id=None):
+    """A drained ADK turn with no pending calls: what get_response returns for a completed run."""
+    from agentkernel.framework.adk.adk import _AdkTurn
+
+    return _AdkTurn(text=text, pending=pending or [], invocation_id=invocation_id)
+
+
 class MockAgent(Agent):
     def __init__(self, name: str = "mock-agent"):
         super().__init__(name, MockRunner())
@@ -127,6 +134,42 @@ class TestGoogleADKToolBuilderBind:
         assert tools[0].name == "get_weather"
         assert tools[1].name == "add"
         assert tools[2].name == "no_params"
+
+
+# bind – keyword options forwarded to FunctionTool
+class TestGoogleADKToolBuilderOptions:
+    """
+    Without forwarding, a gated tool could not be declared through the builder at all.
+
+    `require_confirmation` is ADK's human-in-the-loop gate, so it stands in here for the rest.
+    Asserted on the private attribute because ADK keeps no plain accessor for it — the public
+    `check_require_confirmation` is a coroutine needing a live `ToolContext`, which proves the
+    runner's behaviour rather than that the builder passed the flag along, and the runner tests
+    already cover that.
+    """
+
+    def test_an_option_reaches_the_tool(self):
+        tools = GoogleADKToolBuilder.bind([get_weather], require_confirmation=True)
+        assert tools[0]._require_confirmation is True
+
+    def test_the_adk_default_is_untouched_when_no_option_is_given(self):
+        tools = GoogleADKToolBuilder.bind([get_weather])
+        assert tools[0]._require_confirmation is False
+
+    def test_an_option_applies_to_every_function_in_the_call(self):
+        """Why tools wanting different options are bound in separate calls."""
+        tools = GoogleADKToolBuilder.bind([get_weather, add], require_confirmation=True)
+        assert [t._require_confirmation for t in tools] == [True, True]
+
+    def test_the_wrapping_still_happens_with_an_option(self):
+        """The option must not displace `_wrap`, which is what activates the AK ToolContext."""
+        tools = GoogleADKToolBuilder.bind([get_weather], require_confirmation=True)
+        assert tools[0].name == "get_weather"
+        assert "tool_context" in inspect.signature(tools[0].func).parameters
+
+    def test_an_option_adk_does_not_take_raises(self):
+        with pytest.raises(TypeError):
+            GoogleADKToolBuilder.bind([get_weather], not_an_option=True)
 
 
 # Tool metadata – name, description
@@ -429,9 +472,15 @@ class TestMixedBinding:
 
 # GoogleADKRunner – ToolContext initialization in run()
 def _mock_agent():
-    """A mock AK agent over a mock native agent, carrying the members GoogleADKRunner reads before its native call."""
+    """A mock AK agent over a real native agent, carrying the members GoogleADKRunner reads before its native call.
+
+    The native agent is real because the runner now wraps it in an `App`, which validates its root_agent.
+    """
+    from google.adk.agents import BaseAgent
+
     mock_agent = MagicMock()
-    mock_agent.agent = MagicMock()
+    mock_agent.name = "test-agent"
+    mock_agent.agent = BaseAgent(name="test_agent")
     mock_agent.run_options = {}
     mock_agent.resolve_run_options = AsyncMock(side_effect=lambda session, requests: dict(mock_agent.run_options))
     return mock_agent
@@ -463,7 +512,7 @@ class TestGoogleADKRunnerToolContext:
 
         with (
             patch.object(GoogleADKRunner, "_session", return_value=mock_adk_session),
-            patch.object(GoogleADKRunner, "get_response", new_callable=AsyncMock, return_value="reply text"),
+            patch.object(GoogleADKRunner, "get_response", new_callable=AsyncMock, return_value=_turn("reply text")),
             patch.object(Runtime, "current", return_value=MagicMock(spec=Runtime)),
         ):
             await runner.run(mock_agent, session, requests)
@@ -496,7 +545,7 @@ class TestGoogleADKRunnerToolContext:
             nonlocal fetched_ctx
             # This should succeed if the context is in the cache
             fetched_ctx = AKToolContext.fetch(context_id)
-            return "done"
+            return _turn("done")
 
         mock_adk_session = MagicMock()
         mock_adk_session.create_session = AsyncMock(return_value=MagicMock())
@@ -538,7 +587,7 @@ class TestGoogleADKRunnerToolContext:
 
         with (
             patch.object(GoogleADKRunner, "_session", return_value=mock_adk_session),
-            patch.object(GoogleADKRunner, "get_response", new_callable=AsyncMock, return_value="reply"),
+            patch.object(GoogleADKRunner, "get_response", new_callable=AsyncMock, return_value=_turn("reply")),
             patch.object(Runtime, "current", return_value=MagicMock(spec=Runtime)),
         ):
             await runner.run(mock_agent, session, requests)
@@ -566,7 +615,7 @@ class TestGoogleADKRunnerToolContext:
 
         with (
             patch.object(GoogleADKRunner, "_session", return_value=mock_adk_session),
-            patch.object(GoogleADKRunner, "get_response", new_callable=AsyncMock, return_value="reply"),
+            patch.object(GoogleADKRunner, "get_response", new_callable=AsyncMock, return_value=_turn("reply")),
             patch.object(Runtime, "current", return_value=MagicMock(spec=Runtime)),
         ):
             await runner.run(mock_agent, session, requests)
@@ -604,7 +653,7 @@ class TestGoogleADKRunnerToolContext:
 
         with (
             patch.object(GoogleADKRunner, "_session", return_value=mock_adk_session),
-            patch.object(GoogleADKRunner, "get_response", new_callable=AsyncMock, return_value="reply"),
+            patch.object(GoogleADKRunner, "get_response", new_callable=AsyncMock, return_value=_turn("reply")),
             patch.object(Runtime, "current", return_value=MagicMock(spec=Runtime)),
         ):
             await runner.run(mock_agent, session, requests)
@@ -630,7 +679,7 @@ class TestGoogleADKRunnerToolContext:
 
         with (
             patch.object(GoogleADKRunner, "_session", return_value=mock_adk_session),
-            patch.object(GoogleADKRunner, "get_response", new_callable=AsyncMock, return_value="reply"),
+            patch.object(GoogleADKRunner, "get_response", new_callable=AsyncMock, return_value=_turn("reply")),
             patch.object(Runtime, "current", return_value=MagicMock(spec=Runtime)),
         ):
             await runner.run(mock_agent, session, requests)

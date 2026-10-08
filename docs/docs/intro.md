@@ -8,6 +8,8 @@ slug: /
 **The Operating System for Scalable & Compliant Enterprise AI Agents.**
 
 :::tip What's New
+🙋 **Human in the Loop** - Let a run pause for a person's approval or answer, and resume from their decision minutes or hours later, on any replica. Works on OpenAI, LangGraph, Pydantic AI and Google ADK, over REST, streaming and AG-UI. [Learn more →](./advanced/human-in-the-loop.md)
+
 🪟 **Microsoft Agent Framework** - Run agents built with Microsoft Agent Framework (the successor to AutoGen and Semantic Kernel) through `MAFModule`, with token streaming, sessions, portable tools, structured output, and framework context round-trips. [Learn more →](./frameworks/microsoft-agents.md)
 
 🎛️ **Per-agent native run options** - Pass each framework's own run arguments (OpenAI `RunHooks`, `RunConfig` and `max_turns`, LangGraph `config`, ADK `plugins`, Pydantic AI `usage_limits`, CrewAI `step_callback`, smolagents `max_steps`) through `Module.run_options`, statically or computed per run by a factory, with the keys Agent Kernel owns kept safe. [Learn more →](./core-concepts/runner.md#native-run-options)
@@ -138,6 +140,7 @@ Easily extend Agent Kernel with custom framework adapters, memory back-ends, and
   - LangFuse
   - OpenLLMetry
   - Pydantic Logfire
+  - AWS CloudWatch
 - **Multi-Agent Collaboration**: Leverage multi-agent hierarchies of supported agentic frameworks
 - **Multimodal Attachments**: Image and file support with pluggable attachment storage and on-demand vision analysis
 - **Sandbox**: Execute agent-generated code and shell commands in an isolated, permission-bounded environment, with pluggable providers (`local_subprocess`, `docker`, `e2b`, `daytona`, `ec2_ssm`), workload profiles, policy enforcement, and per-user identity. [Learn more →](/docs/advanced/sandbox)

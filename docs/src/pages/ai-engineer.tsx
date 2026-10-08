@@ -93,7 +93,7 @@ export default function AIEngineerPage() {
     {
       num: "06",
       label: "Observability",
-      items: ["Langfuse", "OpenLLMetry", "Pydantic Logfire"],
+      items: ["Langfuse", "OpenLLMetry", "Pydantic Logfire", "AWS CloudWatch"],
     },
     {
       num: "07",
@@ -373,7 +373,7 @@ export default function AIEngineerPage() {
         {
           icon: MdVisibility,
           title: "Observability",
-          body: "Langfuse, OpenLLMetry, and Pydantic Logfire tracing with one config line. No manual instrumentation. Trace requests, latency, tool calls, and token behavior.",
+          body: "Langfuse, OpenLLMetry, Pydantic Logfire, and AWS CloudWatch tracing with one config line. No manual instrumentation. Trace requests, latency, tool calls, and token behavior.",
         },
       ],
     },

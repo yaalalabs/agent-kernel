@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "agentkernel"
-version = "0.9.3"
+version = "0.9.4"
 description = "Agent Kernel - Unified AI Agents Runtime"
 readme = "README.md"
 requires-python = ">=3.12,<3.14"
@@ -33,6 +33,12 @@ openllmetry = [
 ]
 logfire = [
     "logfire>=3.0",
+]
+cloudwatch = [
+    "opentelemetry-sdk>=1.30.0",
+    "opentelemetry-exporter-otlp-proto-http>=1.30.0",
+    "botocore>=1.41.4",
+    "requests>=2.32.0",
 ]
 crewai = [
     "crewai>=1.15.0",
@@ -129,19 +135,25 @@ api = [
 ]
 slack = [
     "slack-bolt==1.22.0",
-    "httpx>=0.27.0"
+    "httpx>=0.27.0",
+    "fastapi>=0.118.0",
+    "aiohttp>=3.9.0",
 ]
 whatsapp = [
-    "httpx>=0.27.0"
+    "httpx>=0.27.0",
+    "fastapi>=0.118.0",
 ]
 messenger = [
-    "httpx>=0.27.0"
+    "httpx>=0.27.0",
+    "fastapi>=0.118.0",
 ]
 instagram = [
-    "httpx>=0.27.0"
+    "httpx>=0.27.0",
+    "fastapi>=0.118.0",
 ]
 telegram = [
-    "httpx>=0.27.0"
+    "httpx>=0.27.0",
+    "fastapi>=0.118.0",
 ]
 teams = [
     "botbuilder-core>=4.17.0",
@@ -149,6 +161,7 @@ teams = [
     "aiohttp>=3.9.0",
     "msal>=1.31.1",
     "httpx>=0.27.0",
+    "fastapi>=0.118.0",
 ]
 gmail = [
     "google-auth>=2.0.0",

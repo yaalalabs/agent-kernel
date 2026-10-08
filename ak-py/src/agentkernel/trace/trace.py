@@ -5,7 +5,7 @@ from ..core.config import AKConfig
 from ..core.util.factory import AKConfigError, require_extra, resolve_dotted
 from .base import BaseTrace
 
-_BUILTIN_TRACERS = ["langfuse", "openllmetry", "logfire"]
+_BUILTIN_TRACERS = ["langfuse", "openllmetry", "logfire", "cloudwatch"]
 
 
 class Trace(BaseTrace):
@@ -53,6 +53,11 @@ class Trace(BaseTrace):
                 from .logfire.logfire import Logfire
 
             return Logfire()
+        if trace_type == "cloudwatch":
+            with require_extra("cloudwatch", "trace.type: cloudwatch"):
+                from .cloudwatch.cloudwatch import CloudWatch
+
+            return CloudWatch()
         if "." not in trace_type:
             raise AKConfigError(f"unknown trace type '{trace_type}'; expected one of {_BUILTIN_TRACERS} or a dotted path to a BaseTrace subclass")
         return resolve_dotted(trace_type, base=BaseTrace)()

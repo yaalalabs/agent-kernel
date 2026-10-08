@@ -275,8 +275,8 @@ class Runtime:
 
         Runs here rather than in the adapter because every adapter wraps its body in one `except
         Exception` that returns a text reply, so a failure raised inside would surface as a generic
-        error instead of naming what went wrong. These five checks also need no framework knowledge,
-        so an adapter-side implementation would be written five times.
+        error instead of naming what went wrong. These six checks also need no framework knowledge,
+        so an adapter-side implementation would be written four times.
 
         :param agent: The agent this run will execute, checked against the record rather than
             replaced by it, so the agent Runtime activated stays the agent the runner receives.
@@ -284,8 +284,10 @@ class Runtime:
         :param resume: The decisions to validate.
         :return: The record the decisions answer.
         :raises ValueError: If no run matches, a decision names an unknown interruption, an approval
-            interruption is answered without a status, the named agent disagrees with the record, or
-            the record's agent is no longer registered.
+            interruption is answered without a status, the named agent disagrees with the record,
+            the record's agent is no longer registered, or that agent now runs on a different
+            framework than the one that paused it — a name survives a redeploy that rebinds it,
+            and the adapter it reaches would answer from a fresh run rather than the stored state.
         """
         decision_ids = [decision.id for decision in resume.decisions]
         record = PausedRunState.get(session, resume.run_id) if resume.run_id else PausedRunState.find_by_interruption(session, decision_ids)
@@ -317,6 +319,13 @@ class Runtime:
 
         if self.agents().get(record.agent) is None:
             raise ValueError(f"Paused run '{record.id}' belongs to agent '{record.agent}', which is no longer registered.")
+
+        if record.runner is not None and record.runner != agent.runner.name:
+            raise ValueError(
+                f"Paused run '{record.id}' was created by runner '{record.runner}' but agent "
+                f"'{agent.name}' now runs on '{agent.runner.name}'. Its state cannot be resumed here."
+            )
+
         if not agent.runner.supports_pause:
             raise ValueError(f"Runner '{agent.runner.name}' for agent '{agent.name}' does not support resuming a paused run.")
         return record
