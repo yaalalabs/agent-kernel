@@ -341,6 +341,17 @@ class TestWebSocketModeGuards:
         assert response.status_code == 400
         assert "/ws" in response.json()["detail"]["error"]
 
+    def test_realtime_mode_rejects_rest_chat(self, monkeypatch):
+        """Realtime replies go to the stateful edge that sent the request; a REST request has none,
+        so it must be refused before it is enqueued and opens a model socket."""
+        _configure(monkeypatch, mode="realtime")
+        response = _client().post(CHAT, json={"prompt": "hi", "session_id": "s1"})
+        assert response.status_code == 400
+        assert "realtime gateway" in response.json()["detail"]["error"]
+
+        # Nothing was enqueued: the input queue stays empty.
+        assert InMemoryTransport().create_consumer(QueueName.INPUT).fetch(1, 0.05) == []
+
     def test_stream_without_a_chunk_streaming_store_rejects_rest_chat(self, monkeypatch):
         """Broker STREAM topologies pair a shared store with WS delivery: the SSE route has
         nothing to drain, so the request must be refused before it is enqueued."""

@@ -1,12 +1,15 @@
+import asyncio
 import json
 import logging
+import threading
 from typing import Optional
 
 from ..core.config import AKConfig
 from ..core.model import ExecutionMode, StreamChunk
+from ..core.util.async_bridge import run_async_sync
 from ..core.util.factory import AKConfigError
 from .consumer import ConsumerLoop
-from .envelope import ATTR_REQUEST_ID, ATTR_STATUS_CODE, ATTR_USER_ID, QueueMessage, QueueName
+from .envelope import ATTR_REALTIME, ATTR_REQUEST_ID, ATTR_STATUS_CODE, ATTR_USER_ID, QueueMessage, QueueName
 from .integration_delivery import IntegrationDelivery
 from .response_store.base import ResponseStore
 from .response_store.factory import ResponseStoreFactory
@@ -37,6 +40,9 @@ class ResponseHandler:
         self._response_store = response_store
         self._ws_handler = ws_handler
         self._integration_delivery = IntegrationDelivery(self._log)
+        # Per-thread event loop reused for realtime chunk delivery: a turn delivers tens of
+        # chunks a second, and run_async_sync would build and tear one down per chunk.
+        self._delivery_local = threading.local()
 
     def _get_store(self) -> ResponseStore:
         if self._response_store is None:
@@ -53,6 +59,9 @@ class ResponseHandler:
     def process(self, message: QueueMessage) -> None:
         """Deliver one output message: to its messaging platform, or per the execution mode."""
         integration = IntegrationDelivery.integration_of(message.attributes)
+        if integration and message.attributes.get(ATTR_REALTIME):
+            self._deliver_realtime(message, integration)
+            return
         if integration:
             body = json.loads(message.body) if message.body else {}
             status_code = int(message.attributes.get(ATTR_STATUS_CODE, "200"))
@@ -82,7 +91,10 @@ class ResponseHandler:
         try:
             integration = IntegrationDelivery.integration_of(message.attributes)
             if integration:
-                self._integration_delivery.deliver_permanent_failure(integration, message.attributes, session_id=message.group_id)
+                if message.attributes.get(ATTR_REALTIME):
+                    self._deliver_realtime_failure(message, integration)
+                else:
+                    self._integration_delivery.deliver_permanent_failure(integration, message.attributes, session_id=message.group_id)
                 return
 
             request_id = message.attributes.get(ATTR_REQUEST_ID)
@@ -144,6 +156,63 @@ class ResponseHandler:
         ).run()
 
     # -- delivery paths ----------------------------------------------------------------------
+
+    @staticmethod
+    def _realtime_edge(message: QueueMessage):
+        """The live edge (e.g. a LiveKit room) a realtime output message belongs to, or None.
+
+        A stateful edge registers itself in this process when its gateway starts, keyed by session
+        id, which is the output message's group id. Imported lazily, as ``IntegrationDelivery``
+        imports the adapter factory, so a process without integrations never loads that package.
+        """
+        from ..integration.adapter.registry import StatefulEdgeRegistry
+
+        return StatefulEdgeRegistry.get(message.group_id)
+
+    def _deliver_realtime(self, message: QueueMessage, integration: str) -> None:
+        """Deliver one realtime output message to the live edge that sent the request.
+
+        Realtime traffic is integration traffic, but its outbound side is a live connection in this
+        process rather than a webhook adapter, so it is resolved from the edge registry instead of
+        going through ``IntegrationDelivery``. The body is the serialised ``StreamChunk`` the realtime
+        pool emitted, re-parsed so the edge receives the typed chunk, and it is delivered on this
+        thread's persistent loop because ``run_async_sync`` would create and destroy one per chunk
+        at realtime rates. Raising when the edge is gone is deliberate, as for every delivery: the
+        ConsumerLoop retries, then hands the message to ``on_permanent_failure``.
+        """
+        adapter = self._realtime_edge(message)
+        if adapter is None:
+            raise ValueError(f"No active realtime edge connection found for session {message.group_id}")
+
+        reply_context = IntegrationDelivery.reply_context(message.attributes)
+        body = json.loads(message.body) if message.body else {}
+        if not isinstance(body, dict):
+            body = {"result": body}
+        status_code = int(message.attributes.get(ATTR_STATUS_CODE, "200"))
+        if status_code >= 400:
+            self._log.error(
+                f"[OUTPUT ERROR] integration={integration}, session_id={message.group_id}, "
+                f"request_id={message.attributes.get(ATTR_REQUEST_ID)}, status_code={status_code}, error={body.get('error')}"
+            )
+            run_async_sync(adapter.deliver_error(adapter.ERROR_MESSAGE, reply_context))
+            return
+
+        chunk = StreamChunk.model_validate(body)
+        loop = getattr(self._delivery_local, "loop", None)
+        if loop is None or loop.is_closed():
+            loop = asyncio.new_event_loop()
+            self._delivery_local.loop = loop
+        loop.run_until_complete(adapter.deliver_chunk(chunk, reply_context))
+        self._log.debug(f"[OUTPUT DONE] Delivered chunk to {integration}: session_id={message.group_id}")
+
+    def _deliver_realtime_failure(self, message: QueueMessage, integration: str) -> None:
+        """Tell the live edge that a realtime output message failed for good, if it is still connected."""
+        adapter = self._realtime_edge(message)
+        if adapter is None:
+            self._log.warning(f"Could not find live edge connection for session_id={message.group_id}")
+            return
+        run_async_sync(adapter.deliver_error(adapter.ERROR_MESSAGE, IntegrationDelivery.reply_context(message.attributes)))
+        self._log.info(f"Delivered permanent-failure message to {integration}: session_id={message.group_id}")
 
     def _store_response(self, message: QueueMessage) -> None:
         request_id = message.attributes.get(ATTR_REQUEST_ID)

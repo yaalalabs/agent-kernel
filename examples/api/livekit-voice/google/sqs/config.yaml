@@ -1,0 +1,8 @@
+execution:
+  mode: realtime
+  queues:
+    type: sqs
+
+  realtime:
+    playback_lead_ms: 250
+    input_batch_ms: 50

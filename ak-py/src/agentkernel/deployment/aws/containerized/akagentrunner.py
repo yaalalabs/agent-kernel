@@ -6,6 +6,9 @@ import logging
 from ....core.chat_service import ChatService
 from ....core.config import AKConfig, ExecutionMode
 from ....core.model import BaseRunRequest, StreamChunk
+from ....pipeline.realtime_pool import RealtimeConnectionPool
+from ....pipeline.thread_runner import ThreadRunner
+from ....pipeline.transport.base import QueueTransportFactory
 from ..core.sqs_handler import SQSHandler
 from .core import ECSSQSConsumer
 
@@ -163,10 +166,13 @@ class ECSAgentRunner(ECSSQSConsumer):
 
     @classmethod
     def run(cls) -> None:
-        """Dispatch to ECSStreamAgentRunner when execution.mode is STREAM."""
+        """Dispatch to ECSStreamAgentRunner or ECSRealtimeAgentRunner based on execution.mode."""
         # cls check avoids redirect loops when a subclass (e.g. ECSStreamAgentRunner) calls this via inheritance.
-        if cls is ECSAgentRunner and cls._config.execution.mode == ExecutionMode.STREAM:
-            return ECSStreamAgentRunner.run()
+        if cls is ECSAgentRunner:
+            if cls._config.execution.mode == ExecutionMode.STREAM:
+                return ECSStreamAgentRunner.run()
+            elif cls._config.execution.mode == ExecutionMode.REALTIME:
+                return ECSRealtimeAgentRunner.run()
         return super().run()
 
 
@@ -277,3 +283,50 @@ class ECSStreamAgentRunner(ECSAgentRunner):
             )
         except Exception:
             cls._log.exception("Failed to send permanent-failure stream chunk to output queue")
+
+
+class ECSRealtimeAgentRunner(ECSAgentRunner):
+    """
+    ECS Agent Runner for REALTIME execution mode — polls the Input Queue and forwards
+    audio/text chunks to the RealtimeConnectionPool.
+
+    The ECS equivalent of pipeline.agent_runner.RealtimeAgentRunner.
+    """
+
+    _log = logging.getLogger("ak.ecs.realtimeagentrunner")
+
+    @classmethod
+    def _get_extra_tasks(cls) -> list[ThreadRunner.Task]:
+        pool = RealtimeConnectionPool.initialize()
+        return [pool.get_task()]
+
+    @classmethod
+    def on_permanent_failure(cls, record: dict) -> None:
+        """Tell the room its input failed, as a marked error chunk its edge can deliver. Catches own exceptions."""
+        cls._log.error(f"Permanent failure for message {record.get('MessageId')}")
+        try:
+            record_attributes = cls._get_record_attributes(raw_queue_message=record)
+            attributes = {**SQSHandler.get_message_custom_attributes(record), "request_id": record_attributes["request_id"]}
+            if record_attributes.get("user_id"):
+                attributes["user_id"] = record_attributes["user_id"]
+            dedup_id = record_attributes.get("message_deduplication_id")
+            RealtimeConnectionPool.send_permanent_failure(
+                QueueTransportFactory.create(),
+                attributes,
+                record_attributes["message_group_id"],
+                f"{dedup_id}-error" if dedup_id else None,
+                f"Failed to process message after {cls._config.execution.queues.input.max_receive_count} retries",
+            )
+        except Exception:
+            cls._log.exception("Failed to send permanent-failure error chunk to output queue")
+
+    @classmethod
+    def process_message(cls, record: dict) -> None:
+        receive_count = record.get("Attributes", {}).get("ApproximateReceiveCount", "1")
+        body = BaseRunRequest.model_validate(json.loads(record["Body"]))
+        record_attributes = cls._get_record_attributes(raw_queue_message=record, body=body)
+        request_id = record_attributes["request_id"]
+        RealtimeConnectionPool.initialize().dispatch(
+            body, request_id, record_attributes.get("user_id"), SQSHandler.get_message_custom_attributes(record), cls._get_chat_service()
+        )
+        cls._log.debug(f"[REALTIME CHUNK] request_id={request_id} (receive_count={receive_count})")

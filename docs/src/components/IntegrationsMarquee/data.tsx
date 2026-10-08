@@ -92,7 +92,8 @@ export const INTEGRATION_ROWS: IntegrationRow[] = [
       { name: "Instagram", role: "Channel", href: "/docs/integrations/instagram", logo: "/img/integrations/instagram-logo.png" },
       { name: "Telegram", role: "Channel", href: "/docs/integrations/telegram", logo: "/img/integrations/telegram-logo.png" },
       { name: "Gmail", role: "Channel", href: "/docs/integrations/gmail", logo: "/img/integrations/gmail-logo.png" },
-      { name: "LiveKit", role: "Voice & video", href: "https://docs.livekit.io/", logo: "/img/integrations/livekit-mark.svg", soon: true },
+      // Drop /next after the LiveKit integration is released.
+      { name: "LiveKit", role: "Voice integration", href: "/docs/next/integrations/livekit", logo: "/img/integrations/livekit-mark.svg" },
       { name: "MCP", role: "Protocol", href: "/docs/api/mcp-server", icon: <SiModelcontextprotocol /> },
       { name: "A2A", role: "Protocol", href: "/docs/api/a2a-server", logo: "/img/integrations/a2a-white.svg" },
       { name: "AG-UI", role: "Protocol", href: "/docs/api/agui-server", logo: "/img/integrations/agui.svg", mono: true },

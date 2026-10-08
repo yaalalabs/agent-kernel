@@ -12,14 +12,19 @@ Between them sits the pipeline's input queue, so a slow agent run can no longer 
 turn open past the platform's delivery timeout.
 """
 
+import base64
+import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
-from ...core.model import AgentReply, AgentRequestUnion
+from ...core.model import AgentReply, AgentRequestUnion, AgentRequestVoice, StreamChunk
+
+if TYPE_CHECKING:  # typing only; producer.py imports this module
+    from .producer import IntegrationProducer
 
 ATTACHMENTS_DISABLED_ERROR = (
     "Attachments from messaging integrations require multimodal support — " "set multimodal.enabled: true in config.yaml to accept images and files"
@@ -36,10 +41,11 @@ SESSION_CACHE_ERROR = (
 
 
 class Source(StrEnum):
-    """How an inbound adapter is hosted."""
+    """How an adapter that feeds the input queue is hosted."""
 
     WEBHOOK = "webhook"
     POLLER = "poller"
+    REALTIME = "realtime"
 
 
 class InboundRequest(BaseModel):
@@ -196,6 +202,19 @@ class OutboundAdapter(ABC):
         :param reply_context: The delivery coordinates resolved at the edge.
         """
 
+    async def deliver_chunk(self, chunk: StreamChunk, reply_context: Dict[str, str]) -> None:
+        """Send a real-time streaming chunk to the platform.
+
+        A realtime run emits the same typed chunks as text streaming: audio as an ``AudioDelta``
+        event, transcript as ``TextDelta``, barge-in as ``Interrupt``, and a final ``done``
+        chunk. Platforms that support streaming (e.g., LiveKit for voice) override this to play
+        chunks in real-time; the default is a no-op.
+
+        :param chunk: The streamed chunk, carrying a ``StreamEvent`` (or ``done``).
+        :param reply_context: The delivery coordinates resolved at the edge.
+        """
+        pass
+
     @abstractmethod
     async def deliver_error(self, message: str, reply_context: Dict[str, str]) -> None:
         """Send a user-facing failure message, so a user is never left silent.
@@ -227,3 +246,85 @@ class OutboundAdapter(ABC):
         if self.MAX_CHUNKS is not None and len(chunks) > self.MAX_CHUNKS:
             chunks = chunks[: self.MAX_CHUNKS] + [self.TRUNCATION_NOTICE]
         return chunks
+
+
+class StatefulEdgeAdapter(ABC):
+    """A stateful, bidirectional edge that owns a long-lived platform connection.
+
+    Unlike the stateless InboundAdapter/OutboundAdapter pair (designed for one-shot webhook
+    deliveries), a StatefulEdgeAdapter owns a persistent connection to a platform — a LiveKit
+    WebRTC room, a Twilio voice call, a WhatsApp call session — because only it can read the
+    live input *and* play the live output.
+
+    Hosted by GatewayRunner, which registers it so the ResponseHandler can route replies back
+    to the same live connection.
+    """
+
+    name: str = ""
+    source: Source = Source.REALTIME
+    ERROR_MESSAGE: str = "Sorry, there was an error processing your request."
+    session_id: str = ""
+    # Agent this edge's session is bound to; None selects the runner's default agent. A realtime
+    # session binds its agent once, when its connection is created from the first request.
+    agent: Optional[str] = None
+
+    def __init__(self):
+        self._producer: Optional["IntegrationProducer"] = None
+
+    # ── Lifecycle ──
+
+    @abstractmethod
+    async def start(self) -> None:
+        """Connect and run the edge's loop until the process shuts down."""
+
+    @abstractmethod
+    async def stop(self) -> None:
+        """Gracefully disconnect and release resources.
+
+        Called by GatewayRunner when the process is shutting down.
+        Must cause start() to return cleanly.
+        """
+
+    # ── Inbound: Platform -> Agent Kernel ──
+
+    def _init_producer(self) -> None:
+        """Call once in start() to set up the input queue producer."""
+        # Imported here: producer.py imports InboundRequest from this module.
+        from .producer import IntegrationProducer
+
+        self._producer = IntegrationProducer()
+
+    def _enqueue(self, request: AgentRequestUnion) -> InboundRequest:
+        """Build the normalized inbound request for one platform message.
+
+        The caller hands it to :meth:`IntegrationProducer.enqueue`, which stamps the integration
+        and reply-context attributes, so every integration shares one producer.
+
+        :return: The request, carrying this edge's session and (if set) its configured agent.
+        """
+        return InboundRequest(
+            session_id=self.session_id,
+            request_id=str(uuid.uuid4()),
+            requests=[request],
+            agent=self.agent,
+            reply_context={"session_id": self.session_id},
+        )
+
+    def _enqueue_audio(self, raw_bytes: bytes) -> AgentRequestVoice:
+        """Base64-encode a PCM frame/batch into a voice request."""
+        b64_audio = base64.b64encode(raw_bytes).decode("utf-8")
+        return AgentRequestVoice(prompt="", audio_data=b64_audio, name="mic")
+
+    # ── Outbound: Agent Kernel -> Platform ──
+
+    @abstractmethod
+    async def deliver_chunk(self, chunk: StreamChunk, reply_context: Dict[str, str]) -> None:
+        """Play one streamed chunk (audio, transcript, interrupt) back to the platform."""
+
+    @abstractmethod
+    async def deliver(self, reply: AgentReply, reply_context: Dict[str, str]) -> None:
+        """Deliver a completed reply (non-streamed fallback)."""
+
+    @abstractmethod
+    async def deliver_error(self, message: str, reply_context: Dict[str, str]) -> None:
+        """Surface a failure so the user is never left silent."""
