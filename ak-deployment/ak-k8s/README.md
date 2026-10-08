@@ -325,7 +325,7 @@ Then set `serviceMonitor.enabled: true` here if your image exposes an app metric
   via your own values overlay, and deploy Strimzi's Kafka Exporter for consumer-lag metrics
   (`spec.kafkaExporter: {}` on the Kafka CR).
 
-**Tracing**: Agent Kernel's tracing providers (Langfuse, OpenLLMetry, Logfire) are app-level
+**Tracing**: Agent Kernel's tracing providers (Langfuse, OpenLLMetry, Logfire, CloudWatch) are app-level
 and configured through `config.yaml`/`AK_TRACE__*` in your image; on-cluster, run one
 OpenTelemetry Collector as the single funnel and point OTLP-capable providers at it:
 
