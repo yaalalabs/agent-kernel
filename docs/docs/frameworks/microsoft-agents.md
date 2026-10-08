@@ -10,13 +10,13 @@ MAF is the unified successor to AutoGen and Semantic Kernel, providing a modern,
 
 ## Setup
 
-Install Agent Kernel with the `maf` extra. It includes the MAF core and the OpenAI provider (`agent-framework-openai`):
+Install Agent Kernel with the `maf` extra, plus the MAF package for your model provider. The `maf` extra installs only the provider-neutral MAF core (`agent-framework-core`):
 
 ```bash
-pip install "agentkernel[maf]"
+pip install "agentkernel[maf]" agent-framework-openai
 ```
 
-To use another model provider, install its MAF package as well. See [Model providers](#model-providers).
+`agent-framework-openai` covers OpenAI, Azure OpenAI, and any OpenAI-compatible endpoint. For other providers, see [Model providers](#model-providers).
 
 ## Basic Usage
 
@@ -54,7 +54,7 @@ if __name__ == "__main__":
 
 ## Model providers
 
-The adapter works with any MAF chat client: it only uses MAF core types, so switching models changes the client you pass to `Agent`, never the Agent Kernel code. The `maf` extra ships the OpenAI provider, which also covers Azure OpenAI and any OpenAI-compatible endpoint:
+The adapter works with any MAF chat client: it only uses MAF core types, so switching models changes the client you pass to `Agent`, never the Agent Kernel code. The OpenAI provider package (`agent-framework-openai`) covers OpenAI, Azure OpenAI, and any OpenAI-compatible endpoint:
 
 ```python
 from agent_framework.openai import OpenAIChatClient

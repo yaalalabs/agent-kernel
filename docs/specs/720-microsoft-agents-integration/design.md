@@ -72,4 +72,4 @@ The existing Pydantic AI and OpenAI adapters (`framework/pydanticai/pydanticai.p
 
 ### Packaging (`ak-py/pyproject.toml`)
 
-- Must add a `maf` optional-dependency group depending on `agent-framework-core` plus `agent-framework-openai` as the default provider (not the `agent-framework` meta-package, which installs every MAF integration), mirroring how the `adk` extra bundles `litellm`; other providers are installed by the application.
+- Must add a `maf` optional-dependency group depending on `agent-framework-core` only (not the `agent-framework` meta-package, which installs every MAF integration): the adapter imports MAF core only. The application installs its model provider package (e.g. `agent-framework-openai`), mirroring the `pydanticai` extra.

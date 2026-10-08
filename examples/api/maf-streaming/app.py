@@ -3,7 +3,7 @@ from agent_framework.openai import OpenAIChatClient
 from agentkernel.api import RESTAPI
 from agentkernel.maf import MAFModule
 
-client = OpenAIChatClient(model="gpt-4o-mini")
+client = OpenAIChatClient(model="gpt-4.1-mini")
 
 storyteller_agent = Agent(
     client,

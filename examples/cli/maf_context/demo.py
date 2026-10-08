@@ -81,7 +81,7 @@ class AppendCartPostHook(PostHook):
         return "append_cart"
 
 
-client = OpenAIChatClient(model="gpt-4o-mini")
+client = OpenAIChatClient(model="gpt-4.1-mini")
 
 shopping_agent = Agent(
     client,

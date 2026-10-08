@@ -61,7 +61,6 @@ pydanticai = [
 ]
 maf = [
     "agent-framework-core>=1.19.0,<2",
-    "agent-framework-openai>=1.14.4,<2",
 ]
 cli = [
     

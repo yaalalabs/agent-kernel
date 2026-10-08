@@ -9,7 +9,7 @@ def get_weather(location: str) -> str:
     return f"The weather in {location} is 72 degrees and sunny."
 
 
-client = OpenAIChatClient(model="gpt-4o-mini")
+client = OpenAIChatClient(model="gpt-4.1-mini")
 
 maf_agent = Agent(
     client,

@@ -5,6 +5,9 @@ description = "Agent Kernel - MAF CLI Demo"
 requires-python = ">=3.12"
 dependencies = [
     "agentkernel[cli,maf]>=0.9.4",
+    # agentkernel[maf] installs the provider-agnostic agent-framework-core only — pick a
+    # model provider explicitly. This demo uses OpenAI; swap for agent-framework-anthropic, etc.
+    "agent-framework-openai>=1.14.4",
 ]
 
 [dependency-groups]
