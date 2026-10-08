@@ -181,7 +181,7 @@ jobs:
 
       - name: Start brokers
         run: |
-          docker compose -f examples/transport/nats/docker-compose.yaml up -d --wait nats
+          docker compose -f examples/transport/nats/docker-compose.yaml up -d --wait nats valkey
           docker compose -f examples/transport/kafka/docker-compose.yaml up -d --wait kafka
 
       - name: Run transport contract against live brokers
@@ -192,6 +192,12 @@ jobs:
         run: |
           ./build.sh
           uv run pytest tests/test_transport_contract_live.py --no-cov -v
+
+      - name: Run response store contract against a live server
+        working-directory: ak-py
+        env:
+          AK_TEST_VALKEY_URL: valkey://localhost:6379
+        run: uv run pytest tests/test_response_store_contract_live.py --no-cov -v
 
       - name: Stop brokers
         if: always()

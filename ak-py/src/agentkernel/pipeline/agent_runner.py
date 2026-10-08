@@ -8,6 +8,7 @@ from ..core.model import BaseRunRequest, ExecutionMode, StreamChunk
 from ..core.util.factory import AKConfigError
 from .consumer import ConsumerLoop
 from .envelope import (
+    ATTR_AGUI,
     ATTR_ENDPOINT_URL,
     ATTR_INTEGRATION,
     ATTR_REQUEST_ID,
@@ -24,7 +25,9 @@ from .transport.base import QueueTransport, QueueTransportFactory
 # Attributes forwarded from an input message to its output message(s). ENDPOINT_URL is part of
 # the SQS/ECS wire format only (the pipeline neither stamps nor reads it, spec #495 §2): it is
 # forwarded so ECS-entered messages keep their return address through a pipeline runner.
-_FORWARDED_ATTRIBUTES = (ATTR_REQUEST_ID, ATTR_USER_ID, ATTR_ENDPOINT_URL, ATTR_INTEGRATION)
+# INTEGRATION and AGUI are here because the Response Handler branches on them off the *output*
+# message;
+_FORWARDED_ATTRIBUTES = (ATTR_REQUEST_ID, ATTR_USER_ID, ATTR_ENDPOINT_URL, ATTR_INTEGRATION, ATTR_AGUI)
 
 
 def _is_forwarded(key: str) -> bool:
@@ -48,7 +51,20 @@ class AgentRunner:
         self._chat_service = chat_service or ChatService()
 
     def process(self, message: QueueMessage) -> None:
-        """Handle one input message: run the agent and forward the reply (with its status)."""
+        """Dispatch one input message on its markers. **Not an override point.**
+
+        Marker dispatch belongs above the runner class, not inside one: ``IOHandler`` picks
+        ``AgentRunner`` or ``StreamAgentRunner`` from the configured execution mode, and an AG-UI
+        message must take the AG-UI branch either way. A subclass that needs different run
+        behaviour overrides :meth:`_process_run`; overriding this method would silently drop
+        every marker branch for that mode.
+        """
+        if message.attributes.get(ATTR_AGUI):
+            return self._process_agui(message)
+        return self._process_run(message)
+
+    def _process_run(self, message: QueueMessage) -> None:
+        """Run one unmarked request and forward the reply to the output queue with its status."""
         body = BaseRunRequest.model_validate(json.loads(message.body))
         request_id = self._resolve_request_metadata(message, body)
 
@@ -62,13 +78,82 @@ class AgentRunner:
 
         self._log.info(f"[AGENT DONE] request_id={request_id}, status_code={status_code}")
 
+    def _process_agui(self, message: QueueMessage) -> None:
+        """Run one AG-UI request, fanning each event out as its own output message.
+
+        Streams because of the marker, not because of ``execution.mode``: IOHandler picks the
+        runner class once from the configured mode, so an app on the default ``rest_sync`` would
+        otherwise produce a single non-streamed reply for a surface that is always a stream.
+
+        The ``user_id`` guard ``StreamAgentRunner._process_run`` applies does not belong here — that is
+        the WebSocket-entered marker, and AG-UI chunks go to the response store, never to a socket
+        the gateway owns. Thread recording is likewise absent: ``ATTR_AGUI`` is not ``ATTR_THREAD``.
+
+        The run goes through the handler prepared here rather than a ``ChatService`` wrapper, which
+        would resolve its own and leave the applied envelope on a session the run never sees. The
+        state comparison is the runner's for the reason the edge cannot make it: a cached session
+        store returns the caller's own copy, so an edge-side before/after finds no change.
+
+        Output order is content chunks, then the state snapshot, then the terminator — ``stream()``
+        returns at the first chunk carrying ``done``, so anything sent after it is never read.
+        """
+        from ..integration.agui.run_input import AGUIRunEnvelope, AGUIRunRequest
+        from ..integration.agui.state import AGUIState
+
+        body = AGUIRunRequest.model_validate(json.loads(message.body))
+        request_id = self._resolve_request_metadata(message, body)
+        self._log.info(f"[AGUI AGENT START] request_id={request_id}, session_id={body.session_id} (receive_count={message.receive_count})")
+
+        handler = self._chat_service.prepare_agent_handler(body.session_id, body.agent)
+        session = handler.service.session if handler.service is not None else None
+        if session is None:
+            # The edge already resolved this agent, so the two resolution paths disagree.
+            self._log.error(f"Agent '{body.agent}' could not be selected in the runner for request_id={request_id}")
+            self._send_to_output(message, {"error": f"Agent '{body.agent}' could not be selected for this run", "done": True}, status_code=None)
+            return
+
+        AGUIRunEnvelope.apply(session, body.agui)
+        state_before = AGUIState.snapshot_state(session)
+
+        chunk_count = 0
+        terminal: Optional[dict] = None
+        for chunk in handler.run_stream_sync(body.requests or [], acting_user_id=body.user_id):
+            payload = json.loads(chunk.model_dump_json())
+            if payload.get("done"):
+                terminal = payload  # withheld until after the snapshot; see the ordering note above
+                continue
+            # Retry attempts get distinct chunk dedup ids so a redelivery's chunks never collide.
+            self._send_to_output(message, payload, status_code=None, dedup_suffix=f"{message.receive_count}-{chunk_count}")
+            chunk_count += 1
+
+        state_after = AGUIState.read_state(session)
+        if state_after != state_before:
+            # The edge maps this chunk to StateSnapshotEvent.
+            self._send_to_output(message, {"agui_state": state_after}, status_code=None, dedup_suffix=f"{message.receive_count}-{chunk_count}")
+            chunk_count += 1
+
+        if terminal is not None:
+            self._send_to_output(message, terminal, status_code=None, dedup_suffix=f"{message.receive_count}-{chunk_count}")
+            chunk_count += 1
+
+        self._log.info(f"[AGUI AGENT DONE] request_id={request_id}, chunks={chunk_count}")
+
     def on_permanent_failure(self, message: QueueMessage) -> None:
-        """Surface an input message that exhausted its retries as an error reply. Catches own exceptions."""
+        """Surface an input message that exhausted its retries as an error reply. Catches own exceptions.
+
+        An AG-UI message gets a terminal stream chunk instead of a plain error body: a reader stops
+        at the first chunk carrying ``done``, so an error without it leaves the edge waiting out its
+        whole budget and then reporting a generic timeout, and the real reason never arrives.
+        """
         self._log.error(f"Permanent failure for message {message.message_id}")
         try:
             max_receive_count = AKConfig.get().execution.queues.input.max_receive_count
-            error_body = {"error": f"Failed to process message after {max_receive_count} retries"}
-            self._send_to_output(message, error_body, 500)
+            reason = f"Failed to process message after {max_receive_count} retries"
+            if message.attributes.get(ATTR_AGUI):
+                error_chunk = StreamChunk(error=reason, done=True).model_dump(exclude_none=True)
+                self._send_to_output(message, error_chunk, status_code=None, dedup_suffix=f"{message.receive_count}-error")
+                return
+            self._send_to_output(message, {"error": reason}, 500)
         except Exception:
             self._log.exception("Failed to send permanent-failure error to output queue")
 
@@ -209,9 +294,9 @@ class StreamAgentRunner(AgentRunner):
 
     _log = logging.getLogger("ak.pipeline.stream_agent_runner")
 
-    def process(self, message: QueueMessage) -> None:
+    def _process_run(self, message: QueueMessage) -> None:
         if message.attributes.get(ATTR_INTEGRATION):
-            return super().process(message)
+            return super()._process_run(message)
 
         body = BaseRunRequest.model_validate(json.loads(message.body))
         request_id = self._resolve_request_metadata(message, body)
@@ -239,7 +324,7 @@ class StreamAgentRunner(AgentRunner):
         self._log.info(f"[STREAM AGENT DONE] request_id={request_id}, chunks={chunk_count}")
 
     def on_permanent_failure(self, message: QueueMessage) -> None:
-        if message.attributes.get(ATTR_INTEGRATION):
+        if message.attributes.get(ATTR_INTEGRATION) or message.attributes.get(ATTR_AGUI):
             return super().on_permanent_failure(message)
 
         self._log.error(f"Permanent failure for message {message.message_id}")

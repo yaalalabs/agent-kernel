@@ -1,0 +1,30 @@
+# Local stack for the two-process run only (README: "Two ways to run it"). The default
+# single-process run needs none of this.
+#
+# NATS carries the work, Valkey carries the reply chunks and the session. Not a production
+# topology: a real deployment runs a NATS cluster with replicated streams and a managed Valkey.
+
+services:
+  nats:
+    image: nats:2.14-alpine
+    container_name: ak-agui-nats
+    command: ["-js", "-sd", "/data", "-m", "8222"]
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:8222/healthz || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  valkey:
+    image: valkey/valkey:8-alpine
+    container_name: ak-agui-valkey
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10

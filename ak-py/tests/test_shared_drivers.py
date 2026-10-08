@@ -212,6 +212,46 @@ class TestRedisCommandSurface:
         driver.expire("k")
         driver._client.expire.assert_not_called()
 
+    def test_expire_in_overrides_the_configured_ttl(self):
+        """For state with a lifetime of its own — the response store's chunk close-marker.
+
+        A configured ttl of 0 is the case that matters: "keep forever" must not mean forever here.
+        """
+        driver = _driver(ttl=0)
+        driver.expire_in("k", 60)
+        driver._client.expire.assert_called_once_with(name="k", time=60)
+
+    def test_expire_in_is_noop_for_a_non_positive_ttl(self):
+        driver = _driver(ttl=604800)
+        driver.expire_in("k", 0)
+        driver._client.expire.assert_not_called()
+
+    def test_rpush_with_expiry_sends_both_commands_in_one_pipeline(self):
+        """RPUSH creates a missing key with no expiry, so the pair must be indivisible.
+
+        Anything that interrupts two separate round trips — a dropped connection, a failover, a
+        killed process — would otherwise leave a key that was only ever meant to be short-lived
+        alive forever.
+        """
+        driver = _driver(ttl=0)
+        pipeline = driver._client.pipeline.return_value
+
+        driver.rpush_with_expiry("k", "v", 60)
+
+        driver._client.pipeline.assert_called_once_with()
+        pipeline.rpush.assert_called_once_with("k", "v")
+        pipeline.expire.assert_called_once_with(name="k", time=60)
+        pipeline.execute.assert_called_once_with()
+        driver._client.rpush.assert_not_called()
+
+    def test_rpush_with_expiry_falls_back_to_a_plain_append_without_a_ttl(self):
+        """A raw EXPIRE key 0 would delete the key the append just created."""
+        driver = _driver(ttl=604800)
+        driver.rpush_with_expiry("k", "v", 0)
+
+        driver._client.rpush.assert_called_once_with("k", "v")
+        driver._client.pipeline.assert_not_called()
+
     def test_key_applies_prefix(self):
         driver = _driver(prefix="ak:test:")
         assert driver.key("s1:meta") == "ak:test:s1:meta"
@@ -237,6 +277,26 @@ class TestRedisCommandSurface:
         assert driver.lpop("k") == "a1"
         driver._client.lpop.return_value = None
         assert driver.lpop("k") is None
+
+    def test_blpop_returns_the_value_and_decodes_bytes(self):
+        """The client answers (key, value); callers want the value."""
+        driver = _driver()
+        driver._client.blpop.return_value = (b"k", b"a1")
+        assert driver.blpop("k", timeout=5) == "a1"
+        driver._client.blpop.return_value = ("k", "a1")
+        assert driver.blpop("k", timeout=5) == "a1"
+
+    def test_blpop_returns_none_on_timeout(self):
+        driver = _driver()
+        driver._client.blpop.return_value = None
+        assert driver.blpop("k", timeout=0.5) is None
+
+    def test_blpop_never_passes_a_zero_timeout(self):
+        """Redis reads 0 as 'block forever', which would hang a worker past any budget."""
+        driver = _driver()
+        driver._client.blpop.return_value = None
+        driver.blpop("k", timeout=0)
+        assert driver._client.blpop.call_args.kwargs["timeout"] > 0
 
 
 class TestDynamoDBDriver:

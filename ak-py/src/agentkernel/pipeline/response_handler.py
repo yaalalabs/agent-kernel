@@ -7,7 +7,7 @@ from ..core.model import AgentReplyText, ExecutionMode, StreamChunk
 from ..core.util.async_bridge import run_async_sync
 from ..core.util.factory import AKConfigError
 from .consumer import ConsumerLoop
-from .envelope import ATTR_INTEGRATION, ATTR_REQUEST_ID, ATTR_STATUS_CODE, ATTR_USER_ID, REPLY_CONTEXT_PREFIX, QueueMessage, QueueName
+from .envelope import ATTR_AGUI, ATTR_INTEGRATION, ATTR_REQUEST_ID, ATTR_STATUS_CODE, ATTR_USER_ID, REPLY_CONTEXT_PREFIX, QueueMessage, QueueName
 from .response_store.base import ResponseStore
 from .response_store.factory import ResponseStoreFactory
 from .transport.base import QueueTransport, QueueTransportFactory
@@ -56,6 +56,12 @@ class ResponseHandler:
             self._deliver_integration(message, integration)
             return
 
+        # AG-UI chunks always go to the response store, whatever the app's execution mode is: the
+        # caller is holding an SSE socket in the edge process, which drains the store.
+        if message.attributes.get(ATTR_AGUI):
+            self._store_chunk(message)
+            return
+
         mode = AKConfig.get().execution.mode
         if mode == ExecutionMode.STREAM:
             # No USER_ID attribute means the request entered over REST (spec §2 invariant): its
@@ -86,6 +92,16 @@ class ResponseHandler:
 
             request_id = message.attributes.get(ATTR_REQUEST_ID)
             error_text = f"Failed to process message after {max_receive_count} retries"
+
+            if message.attributes.get(ATTR_AGUI):
+                if request_id:
+                    store = self._get_store()
+                    if store.supports_chunk_streaming():
+                        store.add_chunk(request_id, StreamChunk(error=error_text, done=True).model_dump(exclude_none=True))
+                    else:
+                        self._log.warning("Cannot deliver permanent-failure AG-UI chunk: response store does not support chunk streaming")
+                return
+
             mode = AKConfig.get().execution.mode
 
             if mode == ExecutionMode.STREAM:

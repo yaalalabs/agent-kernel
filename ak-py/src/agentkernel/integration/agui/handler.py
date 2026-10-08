@@ -174,6 +174,31 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
 
         return router
 
+    async def _resolve_run_inputs(self, agent_name: str, request: Request) -> tuple[Optional[str], Agent, Any, list]:
+        """Everything that can still be reported as an HTTP status, before any state is written.
+
+        Shared verbatim with the queue-mode handler (spec #710 §7) so the two execution models
+        cannot drift on the 404/400 contract. `to_requests` runs here, before anything is stored,
+        so a rejected part (audio, video) leaves nothing behind.
+
+        :param agent_name: Agent to run.
+        :param request: Incoming request carrying the RunAgentInput body.
+        :return: The resolved user, agent, parsed run input, and mapped requests.
+        :raises HTTPException: 400 for an unparsable or unusable body, 404/400 from agent resolution.
+        """
+        user_id = self._resolve_user(request)
+        agent = self._resolve_agent(agent_name)
+
+        try:
+            body = await request.json()
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Request body is not valid JSON: {e}")
+        if not isinstance(body, dict):
+            raise HTTPException(status_code=400, detail="Request body must be a RunAgentInput object")
+
+        run_input = AGUIRunInput.parse(body)
+        return user_id, agent, run_input, AGUIRunInput.to_requests(run_input)
+
     async def _run(self, agent_name: str, request: Request) -> StreamingResponse:
         """Validate a run request and hand back the event stream.
 
@@ -191,18 +216,8 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
         """
         from ag_ui.encoder import EventEncoder
 
-        user_id = self._resolve_user(request)
-        agent = self._resolve_agent(agent_name)
+        user_id, agent, run_input, requests = await self._resolve_run_inputs(agent_name, request)
 
-        try:
-            body = await request.json()
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Request body is not valid JSON: {e}")
-        if not isinstance(body, dict):
-            raise HTTPException(status_code=400, detail="Request body must be a RunAgentInput object")
-
-        run_input = AGUIRunInput.parse(body)
-        requests = AGUIRunInput.to_requests(run_input)
         handler = self._chat_service.prepare_agent_handler(run_input.thread_id, agent_name)
         session = handler.service.session if handler.service is not None else None
         if session is None:

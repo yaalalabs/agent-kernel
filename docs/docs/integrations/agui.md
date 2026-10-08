@@ -53,6 +53,39 @@ Under `agui.prefix` (default `/agui`):
 A run takes a `RunAgentInput` body and returns `text/event-stream`: `RunStarted` first, then the run's
 events, then exactly one of `RunFinished` or `RunError`.
 
+## Running the agent off the web tier
+
+`AGUIRequestHandler` executes the agent **inside** the SSE request, so a slow model holds a web
+connection for the whole run, and a run that fails cannot be retried. That is fine for a demo and for
+modest traffic, and it stays the default.
+
+Mount `AGUIPipelineRequestHandler` instead to run the agent on the
+[queue pipeline](../advanced/queue-mode-guide.md). The handler keeps the caller's connection,
+enqueues the run, and streams the reply back as a separate process produces it. **Your frontend does
+not change** — same routes, same events, same order:
+
+```python
+from agentkernel.agui import AGUIPipelineRequestHandler
+from agentkernel.pipeline import IOHandler
+
+IOHandler.run(handlers=[AGUIPipelineRequestHandler(authoriser=MyAuthoriser())])
+```
+
+It needs a response store that can carry a chunk stream — everywhere, not only on a broker — and on
+a broker transport a session store and an attachment store the agent runner can read:
+
+| Setting | Local (`in_memory` transport) | On a broker (sqs, kafka, nats) |
+|---|---|---|
+| `execution.response_store.type` | `in_memory`, `redis` or `valkey` — `dynamodb` has no blocking read | `redis` or `valkey` |
+| `session.type` | anything, or unset | `redis`, `valkey`, `dynamodb`, `cosmosdb` or `firestore` |
+| `multimodal.storage_type` (when `multimodal.enabled`) | anything, or unset | `redis` or `dynamodb` |
+
+The handler checks all of these at startup and refuses to boot with a message naming the setting to
+change, rather than accepting a request whose answer could never come back.
+
+Mounting, authorization and the `agui` config block are the same either way — see
+[AG-UI Server](../api/agui-server.md).
+
 Discovery publishes **names only** — deliberately not each agent's description, because several
 framework adapters return the agent's *instructions* from `get_description()`, which would publish
 your system prompt to every authorised caller.
