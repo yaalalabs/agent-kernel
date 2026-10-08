@@ -453,3 +453,33 @@ class TestCrewAIRunOptions:
             module.pre_hook(native, [hook]).post_hook(native, [hook])  # resolved by role through the base class
             assert module.get_agent("Researcher").pre_hooks == [hook]
             assert module.get_agent("Researcher").post_hooks == [hook]
+
+
+class TestCrewAIRunnerCannotPause:
+    """
+    The docs tell users this framework cannot pause; that claim is only true if the runner says so.
+
+    It declares nothing — `supports_pause` is inherited `False` — which is the point: a framework
+    without a durable, programmatic pause needs no declaration, and `resume` keeps its raising
+    default rather than pretending.
+    """
+
+    def test_supports_pause_is_false(self):
+        assert CrewAIRunner().supports_pause is False
+
+    def test_it_declares_nothing_itself(self):
+        """Inherited, not overridden: adding `supports_pause = False` here would be noise."""
+        assert "supports_pause" not in CrewAIRunner.__dict__
+
+    @pytest.mark.asyncio
+    async def test_resume_raises_and_names_the_runner(self):
+        runner = CrewAIRunner()
+        with pytest.raises(NotImplementedError, match=runner.name):
+            await runner.resume(None, Session("s"), [], [], None)
+
+    @pytest.mark.asyncio
+    async def test_resume_stream_raises_and_names_the_runner(self):
+        runner = CrewAIRunner()
+        with pytest.raises(NotImplementedError, match=runner.name):
+            async for _ in runner.resume_stream(None, Session("s"), [], [], None):
+                pass

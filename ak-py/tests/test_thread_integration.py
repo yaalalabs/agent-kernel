@@ -283,3 +283,86 @@ class TestEndToEnd:
         listing = client.get("/api/v1/threads", params={"user_id": "alice"})
         assert listing.status_code == 200
         assert [t["session_id"] for t in listing.json()["threads"]] == ["s-e2e"]
+
+
+class TestThreadPauseAndResume:
+    """
+    The thread routes carry a pause like every other surface (issue #606).
+
+    Both defects here came from the same widening: `prompt` became optional so a decision can stand
+    alone, and this file held a second promptless guard and a hard-coded 200 that no one revisited.
+    """
+
+    @pytest.mark.asyncio
+    async def test_a_paused_reply_is_acknowledged_with_202(self, thread_enabled, registered_agent):
+        from agentkernel.core.event import PausedInterruption
+        from agentkernel.core.model import AgentPausedReplyAny
+
+        handler = AgentThreadRequestHandler()
+        handler.chat_service = FakeChatService(
+            reply=AgentPausedReplyAny(
+                run_id="run-1",
+                session_id="s1",
+                agent=registered_agent.name,
+                interruptions=[PausedInterruption(id="i1", kind="tool_call", tool_name="refund")],
+            )
+        )
+        req = BaseRunRequest(prompt="refund it", session_id="s1", user_id="u1", agent=registered_agent.name)
+
+        response = await handler._run_with_recording(req)
+
+        assert isinstance(response, JSONResponse)
+        assert response.status_code == 202
+
+    @pytest.mark.asyncio
+    async def test_a_resume_only_request_is_not_rejected_for_having_no_prompt(self, thread_enabled, registered_agent):
+        from agentkernel.core.model import ResumeDecision, ResumeSpec
+
+        handler = AgentThreadRequestHandler()
+        handler.chat_service = FakeChatService()
+        req = BaseRunRequest(
+            session_id="s1",
+            user_id="u1",
+            agent=registered_agent.name,
+            resume=ResumeSpec(decisions=[ResumeDecision(id="i1", status="approved")]),
+        )
+
+        body = await handler._run_with_recording(req)
+
+        assert body["result"] == "agent says hi"
+
+    @pytest.mark.asyncio
+    async def test_the_queue_route_accepts_a_resume_without_a_prompt(self, thread_enabled, registered_agent):
+        """The second guard, in the queue-mode handler — the one the first fix missed."""
+        from unittest.mock import AsyncMock, patch
+
+        from agentkernel.core.model import ResumeDecision, ResumeSpec
+        from agentkernel.integration.thread.thread_chat import ThreadRequestHandler
+        from agentkernel.pipeline.request_handler import RequestHandler
+
+        handler = ThreadRequestHandler()
+        req = BaseRunRequest(
+            session_id="s1",
+            user_id="u1",
+            agent=registered_agent.name,
+            resume=ResumeSpec(decisions=[ResumeDecision(id="i1", status="approved")]),
+        )
+
+        with (
+            patch.object(ThreadRequestHandler, "_reject_unroutable"),
+            patch.object(ThreadRequestHandler, "_record_user_message", AsyncMock()),
+            patch.object(RequestHandler, "run_chat", AsyncMock(return_value={"accepted": True})),
+        ):
+            assert await handler.run_chat(req) == {"accepted": True}
+
+    @pytest.mark.asyncio
+    async def test_the_queue_route_still_rejects_a_request_carrying_neither(self, thread_enabled, registered_agent):
+        from agentkernel.integration.thread.thread_chat import ThreadRequestHandler
+
+        handler = ThreadRequestHandler()
+
+        with pytest.raises(HTTPException) as exc:
+            await handler.run_chat(BaseRunRequest(session_id="s1", user_id="u1", agent=registered_agent.name, prompt=""))
+
+        assert exc.value.status_code == 400
+        assert "No prompt provided" in exc.value.detail["error"]
