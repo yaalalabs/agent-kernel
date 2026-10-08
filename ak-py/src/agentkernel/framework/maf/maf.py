@@ -73,12 +73,6 @@ class MAFRunner(Runner):
     MAFRunner class provides a runner for Microsoft Agent Framework-based agents.
     """
 
-    # Native content type -> (start, delta, end) AK events for the text and reasoning streams.
-    _DELTA_EVENTS: ClassVar[Mapping[str, tuple[type, type, type]]] = {
-        "text_reasoning": (ReasoningStart, ReasoningDelta, ReasoningEnd),
-        "text": (MessageStart, TextDelta, MessageEnd),
-    }
-
     def __init__(self) -> None:
         # Must match the session key: Session.get_framework_session() resolves it via the runner name.
         super().__init__(FRAMEWORK)
@@ -283,7 +277,7 @@ class MAFRunner(Runner):
         events: list[StreamEvent] = []
         for item in getattr(update, "contents", None) or []:
             item_type = getattr(item, "type", "")
-            if item_type in self._DELTA_EVENTS:
+            if item_type in ("text", "text_reasoning"):
                 events.extend(self._delta_events(item_type, item, native_id, fallback_id, streams))
             elif item_type == "function_call":
                 events.extend(self._function_call_events(item, open_calls, call_ids))
@@ -305,16 +299,16 @@ class MAFRunner(Runner):
         text = getattr(item, "text", None)
         if not text:
             return []
-        start, delta, end = self._DELTA_EVENTS[item_type]
+        is_text = item_type == "text"
         current = streams.get(item_type)
         stream_id = native_id or current or fallback_id
         events: list[StreamEvent] = []
         if stream_id != current:
             if current is not None:
-                events.append(end(message_id=current))
-            events.append(start(message_id=stream_id))
+                events.append(MessageEnd(message_id=current) if is_text else ReasoningEnd(message_id=current))
+            events.append(MessageStart(message_id=stream_id) if is_text else ReasoningStart(message_id=stream_id))
             streams[item_type] = stream_id
-        events.append(delta(message_id=stream_id, content=text))
+        events.append(TextDelta(message_id=stream_id, content=text) if is_text else ReasoningDelta(message_id=stream_id, content=text))
         return events
 
     def _function_call_events(self, item: Content, open_calls: dict[str, None], call_ids: dict[Any, str]) -> list[StreamEvent]:
@@ -372,8 +366,8 @@ class MAFRunner(Runner):
             return call_id
         return call_ids.get(index) or call_ids.get(None)
 
-    @classmethod
-    def _close_streams(cls, streams: dict[str, str], open_calls: dict[str, None]) -> list[StreamEvent]:
+    @staticmethod
+    def _close_streams(streams: dict[str, str], open_calls: dict[str, None]) -> list[StreamEvent]:
         """
         Closes every stream still open once the native stream is drained.
         :param streams: Native content type -> id of the open text/reasoning stream.
@@ -381,9 +375,10 @@ class MAFRunner(Runner):
         :return: The closing events: tool calls without a result, then reasoning, then text.
         """
         events: list[StreamEvent] = [ToolCallEnd(tool_call_id=call_id) for call_id in open_calls]
-        for item_type, (_, _, end) in cls._DELTA_EVENTS.items():
-            if item_type in streams:
-                events.append(end(message_id=streams[item_type]))
+        if "text_reasoning" in streams:
+            events.append(ReasoningEnd(message_id=streams["text_reasoning"]))
+        if "text" in streams:
+            events.append(MessageEnd(message_id=streams["text"]))
         return events
 
     @staticmethod
