@@ -9,7 +9,7 @@ resolution-markers = [
 
 [[package]]
 name = "agentkernel"
-version = "0.9.3"
+version = "0.9.4"
 source = { registry = "../../../../../ak-py/dist" }
 dependencies = [
     { name = "deprecated" },
@@ -18,9 +18,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "singleton-type" },
 ]
-sdist = { path = "agentkernel-0.9.3.tar.gz" }
+sdist = { path = "agentkernel-0.9.4.tar.gz" }
 wheels = [
-    { path = "agentkernel-0.9.3-py3-none-any.whl" },
+    { path = "agentkernel-0.9.4-py3-none-any.whl" },
 ]
 
 [package.optional-dependencies]
@@ -34,7 +34,6 @@ kafka = [
     { name = "confluent-kafka" },
 ]
 livekit = [
-    { name = "litellm" },
     { name = "livekit" },
     { name = "livekit-api" },
 ]
@@ -1749,11 +1748,11 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "agentkernel", extras = ["livekit", "openai", "api", "kafka"], specifier = ">=0.9.2" }]
+requires-dist = [{ name = "agentkernel", extras = ["livekit", "openai", "api", "kafka"], specifier = ">=0.9.4" }]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "agentkernel", extras = ["test"], specifier = ">=0.9.2" },
+    { name = "agentkernel", extras = ["test"], specifier = ">=0.9.4" },
     { name = "black", specifier = "==26.5.1" },
     { name = "isort", specifier = ">=5.0.0" },
     { name = "mypy", specifier = ">=1.0.0" },
