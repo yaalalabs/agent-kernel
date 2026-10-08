@@ -1,9 +1,8 @@
 from agent_framework import Agent
-from agent_framework_openai import OpenAIChatClient
+from agent_framework.openai import OpenAIChatClient
 from agentkernel.api import RESTAPI
 from agentkernel.maf import MAFModule
 
-# Requires OPENAI_API_KEY
 client = OpenAIChatClient(model="gpt-4o-mini")
 
 storyteller_agent = Agent(
@@ -15,8 +14,5 @@ storyteller_agent = Agent(
 
 MAFModule([storyteller_agent])
 
-# REST API entry point.
-runner = RESTAPI.run
-
 if __name__ == "__main__":
-    runner()
+    RESTAPI.run()

@@ -38,6 +38,7 @@ import {
   FaInstagram,
   FaTelegram,
   FaGithub,
+  FaMicrosoft,
 } from "react-icons/fa";
 import {
   SiGmail,
@@ -1287,15 +1288,7 @@ function FrameworkSupport() {
       description:
         "Microsoft Agent Framework (MAF), the unified successor to AutoGen and Semantic Kernel.",
       link: "/docs/next/frameworks/microsoft-agents",
-      logo: (
-        <img
-          src="https://upload.wikimedia.org/wikipedia/commons/4/44/Microsoft_logo.svg"
-          alt=""
-          className={styles.frameworkLogoImg}
-          width={150}
-          height={50}
-        />
-      ),
+      logo: <FaMicrosoft className={styles.frameworkLogoIcon} aria-hidden="true" />,
     },
   ];
 

@@ -1,9 +1,7 @@
 import logging
-from collections.abc import AsyncGenerator
 from typing import Any
 
 from ...core import Session
-from ...core.event import StreamEvent
 from ...core.model import AgentReply, AgentRequest
 from ...framework.maf.maf import MAFRunner
 from .openllmetry import TraceloopContext

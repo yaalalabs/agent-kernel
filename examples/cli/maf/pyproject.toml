@@ -9,7 +9,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "agentkernel[test]",
+    "agentkernel[test]>=0.9.3",
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
     "black==26.5.1",
@@ -19,9 +19,6 @@ dev = [
 
 [tool.uv]
 package = false
-
-[tool.uv.sources]
-agentkernel = { path = "../../../ak-py" }
 
 [tool.isort]
 profile = "black"

@@ -1,7 +1,7 @@
 import logging
 
 from agent_framework import Agent
-from agent_framework_openai import OpenAIChatClient
+from agent_framework.openai import OpenAIChatClient
 from agentkernel.cli import CLI
 from agentkernel.core import ToolContext
 from agentkernel.maf import MAFModule, MAFToolBuilder

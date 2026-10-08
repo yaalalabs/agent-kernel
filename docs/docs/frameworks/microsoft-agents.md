@@ -10,12 +10,13 @@ MAF is the unified successor to AutoGen and Semantic Kernel, providing a modern,
 
 ## Setup
 
-First, install Agent Kernel with the `maf` extra, and the MAF provider package of your choice (e.g., `agent-framework-openai`):
+Install Agent Kernel with the `maf` extra. It includes the MAF core and the OpenAI provider (`agent-framework-openai`):
 
 ```bash
 pip install "agentkernel[maf]"
-pip install agent-framework-openai
 ```
+
+To use another model provider, install its MAF package as well. See [Model providers](#model-providers).
 
 ## Basic Usage
 
@@ -25,7 +26,7 @@ Following AK's "wrap, don't abstract" principle, you construct and pass the `cha
 
 ```python
 from agent_framework import Agent
-from agent_framework_openai import OpenAIChatClient
+from agent_framework.openai import OpenAIChatClient
 from agentkernel.maf import MAFModule, MAFToolBuilder
 from agentkernel.cli import CLI
 
@@ -50,6 +51,37 @@ module = MAFModule([agent])
 if __name__ == "__main__":
     CLI.main()
 ```
+
+## Model providers
+
+The adapter works with any MAF chat client: it only uses MAF core types, so switching models changes the client you pass to `Agent`, never the Agent Kernel code. The `maf` extra ships the OpenAI provider, which also covers Azure OpenAI and any OpenAI-compatible endpoint:
+
+```python
+from agent_framework.openai import OpenAIChatClient
+
+# OpenAI (reads OPENAI_API_KEY)
+client = OpenAIChatClient(model="gpt-4o")
+
+# Azure OpenAI
+client = OpenAIChatClient(model="gpt-4o", azure_endpoint="https://<resource>.openai.azure.com", api_key="...")
+
+# Any OpenAI-compatible endpoint: vLLM, LM Studio, Ollama's /v1 API, or a LiteLLM proxy for 100+ providers
+client = OpenAIChatClient(model="llama3.1", base_url="http://localhost:11434/v1", api_key="unused")
+```
+
+For a native provider integration, install that provider's MAF package and import its client from the matching `agent_framework` namespace:
+
+```bash
+pip install agent-framework-anthropic   # also: agent-framework-gemini, -bedrock, -mistral, -ollama, -foundry
+```
+
+```python
+from agent_framework.anthropic import AnthropicClient
+
+client = AnthropicClient(model="claude-sonnet-5-5")  # reads ANTHROPIC_API_KEY
+```
+
+If the provider package is missing, MAF raises an error naming the package to install.
 
 ## Streaming
 
@@ -82,27 +114,37 @@ The adapter stores an `AgentSession.to_dict()` snapshot in `MAFSession` and rest
 
 ## Framework Context
 
-If you need to pass additional application context natively down to MAF's tool contexts, you can seed the session's framework context before the run:
+To pass application state to MAF tools, seed the session's framework context from a pre-hook. Tools read and write it through MAF's native `FunctionInvocationContext`:
 
 ```python
-from agentkernel.core import Session
-from agentkernel.core.model import AgentRequestText
-from agentkernel.framework.maf.maf import MAFAgent, MAFRunner
+from agent_framework import Agent, FunctionInvocationContext
+from agentkernel.core import PreHook
+from agentkernel.maf import MAFModule, MAFToolBuilder
 
-runner = MAFRunner()
-ak_agent = MAFAgent("assistant", runner, agent)
 
-session = Session("session-123")
-session.set_framework_context({
-    "user_id": "user-123",
-    "theme": "dark"
-})
+def add_to_cart(ctx: FunctionInvocationContext, item: str) -> str:
+    """Add an item to the cart carried in the per-run context."""
+    ctx.session.state["ak_context"].setdefault("cart", []).append(item)
+    return f"Added {item}."
 
-# This dictionary is injected into native_session.state["ak_context"]
-await runner.run(ak_agent, session, [AgentRequestText(prompt="Hello")])
+
+class SeedContextPreHook(PreHook):
+    async def on_run(self, session, agent, requests):
+        if session.get_framework_context() is None:
+            session.set_framework_context({"user_id": "user-123", "cart": []})
+        return requests
+
+    def name(self) -> str:
+        return "seed_context"
+
+
+agent = Agent(client, name="shopping", instructions="...", tools=MAFToolBuilder.bind([add_to_cart]))
+MAFModule([agent]).pre_hook(agent, [SeedContextPreHook()])
 ```
 
-The MAF adapter loads the framework context from the `Session` and injects it into a dedicated namespace (`FunctionInvocationContext.session.state["ak_context"]`). Tools can read and write to this dictionary natively, and after the run, the modified context is saved back to the AK session state.
+The adapter injects a copy of the framework context into the native session state under `ak_context` before each run. After a successful run, it merges the tool-modified dictionary back into the AK session, so tool-added keys survive across turns. A failed or interrupted run leaves the stored context unchanged.
+
+The native session state is shared with every MAF context provider configured on the agent, so do not put secrets in the framework context. See `examples/cli/maf_context` for a complete example.
 
 ## Run Options
 

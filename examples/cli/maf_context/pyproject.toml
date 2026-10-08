@@ -16,9 +16,6 @@ dev = [
     "mypy>=1.0.0",
 ]
 
-[tool.uv.sources]
-agentkernel = { path = "../../../ak-py" }
-
 [tool.uv]
 package = false
 

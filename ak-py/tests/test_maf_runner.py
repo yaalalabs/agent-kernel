@@ -262,10 +262,10 @@ async def test_history_preservation_and_clearing(runner, session, maf_agent, nat
 
     async def native_run(messages, *, session):
         history = session.state.setdefault("messages", [])
-        if messages == ["Hello again"]:
+        if messages.text == "Hello again":
             # A new empty session with the same ID must not pass this test.
             assert [(message.role, message.text) for message in history] == [("user", "Hi"), ("assistant", "Hello")]
-        history.extend([Message(role="user", contents=[Content.from_text(messages[0])]), assistant_message])
+        history.extend([Message(role="user", contents=[Content.from_text(messages.text)]), assistant_message])
         return AgentResponse(messages=[assistant_message])
 
     native_agent.run.side_effect = native_run
@@ -423,8 +423,9 @@ async def test_framework_context_round_trips_with_new_keys(runner, session, maf_
     expected = {"cart": ["milk", "eggs"], "user_id": "customer-123", "delivery_note": "front door"}
     assert session.get_framework_context() == expected
     assert initial_context == {"cart": ["milk"], "user_id": "customer-123"}
+    # AK persists the context as the framework context; the MAF snapshot must not carry a second copy.
     restored = AgentSession.from_dict(runner._session(session).get_state())
-    assert restored.state["ak_context"] == expected
+    assert "ak_context" not in restored.state
 
 
 @pytest.mark.asyncio
@@ -506,3 +507,89 @@ async def test_snapshot_validation_preserves_old_state(runner, session, maf_agen
     assert session.get("maf").get_state() == old_state
     assert session.get_framework_context() == {"safe": 1}
     assert native_agent.run.called
+
+
+@pytest.mark.asyncio
+async def test_run_sends_text_and_attachments_as_one_user_message(runner, session, maf_agent, native_agent):
+    native_agent.run.return_value = AgentResponse(messages=[Message(role="assistant", contents=[Content.from_text("A cat")])])
+    valid_b64 = base64.b64encode(b"test_data").decode("utf-8")
+    requests = [
+        AgentRequestText(prompt="What is in this image?"),
+        AgentRequestImage(image_data=valid_b64, name="cat.png", mime_type="image/png"),
+    ]
+
+    await runner.run(maf_agent, session, requests)
+
+    (message,), _ = native_agent.run.call_args
+    assert isinstance(message, Message)
+    assert message.role == "user"
+    assert [content.type for content in message.contents] == ["text", "data"]
+
+
+@pytest.mark.asyncio
+async def test_process_requests_prompt_has_no_leading_newline_and_requires_mime_type(runner):
+    valid_b64 = base64.b64encode(b"test_data").decode("utf-8")
+    prompt, _ = runner._process_requests([AgentRequestImage(image_data=valid_b64, name="a.png", mime_type="image/png")])
+    assert prompt == "[Image attached: a.png]"
+
+    with pytest.raises(ValueError, match="MIME type is required for raw file data"):
+        runner._process_requests([AgentRequestFile(file_data=valid_b64, name="a.bin")])
+
+
+@pytest.mark.asyncio
+async def test_stream_correlates_chunked_tool_calls_without_ids(runner, session, maf_agent, native_agent):
+    # Chat Completions-style clients send the call id and name on the first chunk only; later argument chunks
+    # carry an empty id and the tool_call_index, and parallel calls interleave.
+    def chunk(call_id, name, arguments, index):
+        content = Content.from_function_call(call_id=call_id, name=name, arguments=arguments)
+        content.additional_properties["tool_call_index"] = index
+        return AgentResponseUpdate(contents=[content])
+
+    async def mock_stream():
+        yield chunk("call_a", "get_weather", '{"ci', 0)
+        yield chunk("call_b", "get_time", '{"tz', 1)
+        yield chunk("", "", 'ty": "NYC"}', 0)
+        yield chunk("", "", '": "UTC"}', 1)
+        yield AgentResponseUpdate(contents=[Content.from_function_result(call_id="call_a", result={"temp": 72})])
+        yield AgentResponseUpdate(contents=[Content.from_function_result(call_id="call_b", result="12:00")])
+
+    native_agent.run.return_value = mock_stream()
+    events = [e async for e in runner.stream(maf_agent, session, [AgentRequestText(prompt="Hello")])]
+
+    starts = [e for e in events if isinstance(e, ToolCallStart)]
+    assert [(e.tool_call_id, e.name) for e in starts] == [("call_a", "get_weather"), ("call_b", "get_time")]
+    args = {}
+    for e in events:
+        if isinstance(e, ToolCallArgs):
+            args[e.tool_call_id] = args.get(e.tool_call_id, "") + e.delta
+    assert args == {"call_a": '{"city": "NYC"}', "call_b": '{"tz": "UTC"}'}
+    assert [e.tool_call_id for e in events if isinstance(e, ToolCallEnd)] == ["call_a", "call_b"]
+    results = {e.tool_call_id: e.content for e in events if isinstance(e, ToolCallResult)}
+    assert results == {"call_a": '{"temp": 72}', "call_b": "12:00"}
+
+
+def test_override_system_prompt_is_idempotent(maf_agent):
+    maf_agent.override_system_prompt("Extra guidance")
+    maf_agent.override_system_prompt("Extra guidance")
+    assert maf_agent.agent.default_options["instructions"] == "Test system message\nExtra guidance"
+
+
+def test_attach_tool_skips_duplicate_names(maf_agent, caplog):
+    def lookup(city: str) -> str:
+        """Look up a city."""
+        return city
+
+    maf_agent.attach_tool(lookup)
+    maf_agent.attach_tool(lookup)  # same function again: skipped silently
+    assert [t.name for t in maf_agent.agent.default_options["tools"]] == ["lookup"]
+    assert "already has a tool named" not in caplog.text
+
+    def other_lookup(city: str) -> str:
+        """A different function under the same name."""
+        return city
+
+    other_lookup.__name__ = "lookup"
+    with caplog.at_level("WARNING", logger="ak.maf.runner"):
+        maf_agent.attach_tool(other_lookup)
+    assert [t.name for t in maf_agent.agent.default_options["tools"]] == ["lookup"]
+    assert "already has a tool named 'lookup'" in caplog.text

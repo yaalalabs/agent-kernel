@@ -5,9 +5,8 @@ Recommends integrating Microsoft Agent Framework (MAF) as a seventh AK framework
 ## Motivation
 
 - Microsoft Agent Framework 1.0 (GA) consolidates AutoGen and Semantic Kernel into a single unified platform.
-- Integrating MAF makes Agent Kernel the first multi-framework orchestrator to support all seven major agent SDKs.
+- Adds MAF as a seventh supported agent SDK alongside the existing six adapters.
 - Like Pydantic AI and OpenAI, MAF supports native streaming (via async iterators) and strongly-typed objects for memory management and payload formatting.
-- See the full supporting landscape survey at [`research/maf-framework-survey.md`](file:///home/pulindu/yaala/agent-kernel/docs/specs/720-microsoft-agents-integration/research/maf-framework-survey.md).
 
 ## Requirements
 
@@ -28,11 +27,17 @@ The existing Pydantic AI and OpenAI adapters (`framework/pydanticai/pydanticai.p
   - Microsoft SDK strictly requires its own `AgentSession` class.
   - Requirement: The runner must construct an `AgentSession.from_dict()` before execution, and extract the state back out into a dictionary via `kwargs["session"].to_dict()` afterwards to persist across serverless boundaries.
 
+### Framework context
+
+- Inject a deep copy of the AK framework context into the native session state under `ak_context` before each run; tools reach it via `FunctionInvocationContext.session.state["ak_context"]`.
+- After a successful run only, pop `ak_context` from the native state and merge it back via `_store_framework_context()`; the MAF snapshot must not keep a second copy.
+- Declared fidelity: full round-trip, including tool-added keys.
+
 ### `MAFRunner.run()`
 
 - Must build and `set()` a `ToolContext(Runtime.current(), agent, session, requests)` in a `try`/`finally` block.
 - Must convert every `AgentRequest` variant to MAF's native multi-modal shape (`agent_framework.Content.from_data()` or `Content.from_uri()`).
-- Must supply a fallback to a raw string payload (`payload = inputs if inputs else prompt`) to prevent crashes on empty content arrays.
+- Must send text and attachments as one user `Message`, so they reach the model as a single turn; a request list with no usable content returns a "no valid content" text reply without calling MAF.
 - Must extract the text result from MAF's complex `Result` object via `getattr(result, "text", str(result))`.
 - Must route structured output through `AgentReplyAny.from_output()` before falling back to `AgentReplyText`.
 
@@ -40,6 +45,7 @@ The existing Pydantic AI and OpenAI adapters (`framework/pydanticai/pydanticai.p
 
 - Must implement `supports_streaming = True`.
 - Must implement real token streaming natively yielding AK's `StreamEvent` objects (`MessageStart`, `TextDelta`, `ReasoningDelta`, `ToolCallStart`, `ToolCallArgs`, `ToolCallEnd`, `ToolCallResult`, `MessageEnd`).
+- Must correlate tool events by MAF's own `call_id`, never a generated id; argument chunks that arrive without an id (Chat Completions-style clients) are tied to their call through `tool_call_index`.
 
 ### Tool binding
 
@@ -49,7 +55,7 @@ The existing Pydantic AI and OpenAI adapters (`framework/pydanticai/pydanticai.p
 ### `MAFAgent` wrapper
 
 - Must implement all four abstract methods on `Agent`:
-  - `get_description()` — via `agent.system_message` or `agent.instructions`.
+  - `get_description()` — via the native `description`, falling back to `default_options["instructions"]`.
   - `override_system_prompt()` — required to append system prompts.
   - `attach_tool()` — required for tools to register via `MAFToolBuilder.bind()`.
   - `get_a2a_card()` — via `A2ACardBuilder.build(...)`.
@@ -61,8 +67,9 @@ The existing Pydantic AI and OpenAI adapters (`framework/pydanticai/pydanticai.p
 ### Tracing
 
 - Must add `maf()` tracing provider implementation to `BaseTrace`.
-- Must add `trace/langfuse/maf.py` and `trace/openllmetry/maf.py` following the established instrumentation pattern.
+- Must add `trace/langfuse/maf.py`, `trace/openllmetry/maf.py`, and `trace/logfire/maf.py` following the established instrumentation pattern.
+- MAF emits OpenTelemetry spans by default (`ENABLE_INSTRUMENTATION`), so the traced runners add the outer AK span only and must not force-enable MAF instrumentation over a user's opt-out.
 
 ### Packaging (`ak-py/pyproject.toml`)
 
-- Must add a `maf` optional-dependency group depending on `agent-framework>=1.0.0`.
+- Must add a `maf` optional-dependency group depending on `agent-framework-core` plus `agent-framework-openai` as the default provider (not the `agent-framework` meta-package, which installs every MAF integration), mirroring how the `adk` extra bundles `litellm`; other providers are installed by the application.

@@ -54,7 +54,8 @@ pydanticai = [
     "openinference-instrumentation-pydantic-ai>=0.1.17",
 ]
 maf = [
-    "agent-framework>=1.0.0",
+    "agent-framework-core>=1.19.0,<2",
+    "agent-framework-openai>=1.14.4,<2",
 ]
 cli = [
     

@@ -6,7 +6,6 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "agentkernel[maf,api]>=0.9.3",
-    "agent-framework-openai>=1.0.0",
 ]
 
 [dependency-groups]
@@ -22,9 +21,6 @@ dev = [
 
 [tool.uv]
 package = false
-
-[tool.uv.sources]
-agentkernel = { path = "../../../ak-py" }
 
 [tool.isort]
 profile = "black"

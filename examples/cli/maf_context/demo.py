@@ -1,7 +1,7 @@
 import logging
 
 from agent_framework import Agent, FunctionInvocationContext
-from agent_framework_openai import OpenAIChatClient
+from agent_framework.openai import OpenAIChatClient
 from agentkernel.cli import CLI
 from agentkernel.core import AgentReplyText, PostHook, PreHook
 from agentkernel.maf import MAFModule, MAFToolBuilder

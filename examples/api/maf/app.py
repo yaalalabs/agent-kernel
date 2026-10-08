@@ -1,5 +1,5 @@
 from agent_framework import Agent
-from agent_framework_openai import OpenAIChatClient
+from agent_framework.openai import OpenAIChatClient
 from agentkernel.api import RESTAPI
 from agentkernel.maf import MAFModule, MAFToolBuilder
 
