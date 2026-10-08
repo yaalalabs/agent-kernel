@@ -456,6 +456,39 @@
       ]
     },
     {
+      "id": "cap-hitl-basic",
+      "name": "Add human-in-the-loop approval",
+      "input": "I want a person to approve the refund tool before my OpenAI agent runs it",
+      "expected_outputs": [
+        "needs_approval=True",
+        "resume",
+        "status",
+        "approved",
+        "PAUSED"
+      ]
+    },
+    {
+      "id": "cap-hitl-pydantic-output-type",
+      "name": "Human in the loop on Pydantic AI needs DeferredToolRequests",
+      "input": "Make my Pydantic AI agent pause to ask the customer a question before it finishes",
+      "expected_outputs": [
+        "DeferredToolRequests",
+        "output_type",
+        "CallDeferred"
+      ]
+    },
+    {
+      "id": "cap-hitl-durability",
+      "name": "A durable pause needs a shared session backend",
+      "input": "My agent pauses for approval but the decision never finds the run on my second replica",
+      "expected_outputs": [
+        "session:",
+        "type:",
+        "redis",
+        "in_memory"
+      ]
+    },
+    {
       "id": "cap-schedule-management-api",
       "name": "Enable schedule management REST API",
       "input": "Add the scheduling management REST API to my project so I can list, amend, and cancel scheduled tasks",

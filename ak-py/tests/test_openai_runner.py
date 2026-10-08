@@ -17,6 +17,7 @@ from agentkernel.core.event import (
     ReasoningDelta,
     ReasoningEnd,
     ReasoningStart,
+    RunPaused,
     TextDelta,
     ToolCallArgs,
     ToolCallEnd,
@@ -24,11 +25,15 @@ from agentkernel.core.event import (
     ToolCallStart,
 )
 from agentkernel.core.model import (
+    AgentPausedReplyAny,
     AgentReplyAny,
     AgentReplyText,
     AgentRequestImage,
     AgentRequestText,
+    AgentResumeRequestAny,
+    ResumeDecision,
 )
+from agentkernel.core.paused_run import PausedRunState
 from agentkernel.core.runtime import Runtime
 from agentkernel.core.util.error_util import user_facing_error_message
 from agentkernel.framework.openai.openai import OpenAIAgent, OpenAIModule, OpenAIRunner, OpenAISession
@@ -40,6 +45,7 @@ def _mock_agent():
     """A mock AK agent over a mock native agent, carrying the members the runner reads before its native call."""
     mock_agent = MagicMock()
     mock_agent.agent = MagicMock()
+    mock_agent.name = "test-agent"  # a real str: the paused-run record stores the agent name
     mock_agent.run_options = {}
     mock_agent.resolve_run_options = AsyncMock(side_effect=lambda session, requests: dict(mock_agent.run_options))
     return mock_agent
@@ -80,6 +86,7 @@ class TestOpenAIRunnerFrameworkContext:
 
         with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
             result = MagicMock()
+            result.interruptions = []  # a completed run; the adapter reads this before final_output
             result.final_output = "done"
             MockRunner.run = AsyncMock(return_value=result)
             mock_agent = _mock_agent()
@@ -101,6 +108,7 @@ class TestOpenAIRunnerFrameworkContext:
             if context is not None:
                 context["touched"] = True
             result = MagicMock()
+            result.interruptions = []  # a completed run; the adapter reads this before final_output
             result.final_output = "done"
             return result
 
@@ -136,6 +144,7 @@ class TestOpenAIRunnerFrameworkContext:
 
         with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
             result = MagicMock()
+            result.interruptions = []  # a completed run; the adapter reads this before final_output
             result.final_output = "done"
             MockRunner.run = AsyncMock(return_value=result)
             mock_agent = _mock_agent()
@@ -156,6 +165,7 @@ class TestOpenAIRunnerFrameworkContext:
 
         def fake_run_streamed(agent, input_data, session=None, context=None):
             result = MagicMock()
+            result.interruptions = []  # a completed run; the adapter reads this before final_output
 
             async def stream_events():
                 if context is not None:
@@ -184,6 +194,7 @@ class TestOpenAIRunnerFrameworkContext:
 
         def fake_run_streamed(agent, input_data, session=None, context=None):
             result = MagicMock()
+            result.interruptions = []  # a completed run; the adapter reads this before final_output
 
             async def stream_events():
                 if context is not None:
@@ -215,6 +226,7 @@ class TestOpenAIRunnerFrameworkContext:
 
         def fake_run_streamed(agent, input_data, session=None, context=None):
             result = MagicMock()
+            result.interruptions = []  # a completed run; the adapter reads this before final_output
 
             async def stream_events():
                 context["bad"] = lambda: 1  # tool stored a non-picklable value
@@ -321,6 +333,7 @@ async def _collect(runner, events):
 
     def fake_run_streamed(agent, input_data, session=None, context=None):
         result = MagicMock()
+        result.interruptions = []  # a completed run; the adapter reads this before final_output
 
         async def stream_events():
             for event in events:
@@ -478,6 +491,7 @@ class TestOpenAIRunnerErrorHandling:
         # Patch at the module level where it's imported
         with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
             mock_run_result = MagicMock()
+            mock_run_result.interruptions = []  # a completed run; the adapter reads this before final_output
             mock_run_result.final_output = None
 
             # Create an async function for Runner.run
@@ -503,6 +517,7 @@ class TestOpenAIRunnerErrorHandling:
 
         with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
             mock_run_result = MagicMock()
+            mock_run_result.interruptions = []  # a completed run; the adapter reads this before final_output
             mock_run_result.final_output = expected_reply
 
             MockRunner.run = AsyncMock(return_value=mock_run_result)
@@ -591,6 +606,7 @@ class TestOpenAIRunnerErrorHandling:
 
         with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
             mock_run_result = MagicMock()
+            mock_run_result.interruptions = []  # a completed run; the adapter reads this before final_output
             mock_run_result.final_output = 42  # numeric output
 
             MockRunner.run = AsyncMock(return_value=mock_run_result)
@@ -615,6 +631,7 @@ class TestOpenAIRunnerStructuredOutput:
 
         with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
             mock_run_result = MagicMock()
+            mock_run_result.interruptions = []  # a completed run; the adapter reads this before final_output
             mock_run_result.final_output = CalendarEvent(name="Launch", date="2026-07-08")
             MockRunner.run = AsyncMock(return_value=mock_run_result)
 
@@ -634,6 +651,7 @@ class TestOpenAIRunnerStructuredOutput:
 
         with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
             mock_run_result = MagicMock()
+            mock_run_result.interruptions = []  # a completed run; the adapter reads this before final_output
             mock_run_result.final_output = {"name": "Launch", "date": "2026-07-08"}
             MockRunner.run = AsyncMock(return_value=mock_run_result)
 
@@ -662,6 +680,7 @@ class TestOpenAIRunnerSessionMemory:
         async def fake_run(agent, input_data, session=None, context=None):
             captured["session"] = session
             result = MagicMock()
+            result.interruptions = []  # a completed run; the adapter reads this before final_output
             result.final_output = "done"
             return result
 
@@ -680,6 +699,7 @@ class TestOpenAIRunnerSessionMemory:
         def fake_run_streamed(agent, input_data, session=None, context=None):
             captured["session"] = session
             result = MagicMock()
+            result.interruptions = []  # a completed run; the adapter reads this before final_output
 
             async def events():
                 yield MagicMock(type="raw_response_event", data=MagicMock())
@@ -757,6 +777,7 @@ class TestOpenAISessionGetItems:
 
 def _run_result(output="done"):
     result = MagicMock()
+    result.interruptions = []  # a completed run; the adapter reads this before final_output
     result.final_output = output
     return result
 
@@ -794,6 +815,7 @@ class TestOpenAIRunnerRunOptions:
         def fake_run_streamed(agent, input_data, **kwargs):
             captured.update(kwargs)
             result = MagicMock()
+            result.interruptions = []  # a completed run; the adapter reads this before final_output
 
             async def stream_events():
                 for event in ():
@@ -894,6 +916,7 @@ class TestOpenAIRunnerRunOptions:
         def fake_run_streamed(agent, input_data, **kwargs):
             captured.update(kwargs)
             result = MagicMock()
+            result.interruptions = []  # a completed run; the adapter reads this before final_output
 
             async def stream_events():
                 for event in ():
@@ -1035,6 +1058,7 @@ class TestOpenAIHooksSeeTheAKSession:
 
         def fake_run_streamed(native_agent, input_data, **kwargs):
             result = MagicMock()
+            result.interruptions = []  # a completed run; the adapter reads this before final_output
 
             async def stream_events():
                 # run_streamed drives the SDK loop from tasks it creates; a task inherits a copy of the contextvars.
@@ -1050,3 +1074,595 @@ class TestOpenAIHooksSeeTheAKSession:
             _ = [chunk async for chunk in runtime.stream(agent, session, [AgentRequestText(prompt="hi")])]
 
         assert hooks.seen == [(session, agent)]
+
+
+# --- Human in the loop (spec `docs/specs/606-human-in-the-loop/`, iteration 5) ------------------
+
+
+def _approval_item(call_id: str = "call-1", name: str = "refund", arguments: str = '{"amount": 100}'):
+    """A ToolApprovalItem stand-in. `call_id`/`name`/`arguments` are properties on the real one."""
+    item = MagicMock()
+    item.call_id = call_id
+    item.name = name
+    item.arguments = arguments
+    return item
+
+
+def _paused_result(*items, payload=None):
+    """A run result carrying interruptions, whose final_output is the pre-gate text."""
+    result = MagicMock()
+    result.interruptions = list(items)
+    result.final_output = "I'll issue that refund for you."
+    result.to_state.return_value.to_json.return_value = payload or {"_schema_version": "1.0", "gated": [i.call_id for i in items]}
+    return result
+
+
+def _done_result(text: str = "refund issued"):
+    result = MagicMock()
+    result.interruptions = []
+    result.final_output = text
+    return result
+
+
+class _FakeState:
+    """Stands in for the SDK's RunState, recording what each decision rendered as."""
+
+    def __init__(self, items):
+        self._items = list(items)
+        self.approved: list[str] = []
+        self.rejected: list[tuple[str, str | None]] = []
+
+    def get_interruptions(self):
+        return list(self._items)
+
+    def approve(self, item, always_approve: bool = False) -> None:
+        self.approved.append(item.call_id)
+
+    def reject(self, item, always_reject: bool = False, *, rejection_message=None) -> None:
+        self.rejected.append((item.call_id, rejection_message))
+
+
+class TestOpenAIPauseDetection:
+    """
+    A gated tool must surface as a pause, not as the text produced before the gate.
+
+    `final_output` is populated on a gated run — it holds whatever the model said on its way to the
+    tool call. Reading it first is exactly how the adapter used to lose a pause silently, so the
+    ordering is the thing under test, not just the reply type.
+    """
+
+    def test_the_runner_declares_the_capability(self):
+        assert OpenAIRunner().supports_pause is True
+
+    @pytest.mark.asyncio
+    async def test_a_gated_tool_returns_a_paused_reply(self):
+        runner, session = OpenAIRunner(), Session("s")
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
+            MockRunner.run = AsyncMock(return_value=_paused_result(_approval_item()))
+
+            reply = await runner.run(_mock_agent(), session, [AgentRequestText(prompt="refund it")])
+
+        assert isinstance(reply, AgentPausedReplyAny)
+        assert [i.id for i in reply.interruptions] == ["call-1"]
+        assert reply.interruptions[0].tool_name == "refund"
+        assert reply.interruptions[0].kind == "tool_call"
+
+    @pytest.mark.asyncio
+    async def test_the_pre_gate_text_is_not_returned_as_the_answer(self):
+        """The regression this ordering exists to prevent."""
+        runner, session = OpenAIRunner(), Session("s")
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
+            MockRunner.run = AsyncMock(return_value=_paused_result(_approval_item()))
+
+            reply = await runner.run(_mock_agent(), session, [AgentRequestText(prompt="refund it")])
+
+        assert not isinstance(reply, AgentReplyText)
+
+    @pytest.mark.asyncio
+    async def test_the_arguments_ride_along_so_a_human_can_judge_the_call(self):
+        runner, session = OpenAIRunner(), Session("s")
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
+            MockRunner.run = AsyncMock(return_value=_paused_result(_approval_item(arguments='{"amount": 500}')))
+
+            reply = await runner.run(_mock_agent(), session, [AgentRequestText(prompt="refund it")])
+
+        assert reply.interruptions[0].arguments == '{"amount": 500}'
+
+    @pytest.mark.asyncio
+    async def test_several_gated_calls_become_one_record(self):
+        runner, session = OpenAIRunner(), Session("s")
+        items = (_approval_item("call-1", "refund"), _approval_item("call-2", "notify"))
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
+            MockRunner.run = AsyncMock(return_value=_paused_result(*items))
+
+            reply = await runner.run(_mock_agent(), session, [AgentRequestText(prompt="refund and tell them")])
+
+        assert [i.id for i in reply.interruptions] == ["call-1", "call-2"]
+        assert len(PausedRunState.list(session)) == 1
+
+
+class TestOpenAIRecordDurability:
+    @pytest.mark.asyncio
+    async def test_the_record_survives_a_session_pickle_round_trip(self):
+        """The whole point of the payload: the decision may arrive an hour later, on another replica."""
+        import pickle
+
+        runner, session = OpenAIRunner(), Session("s")
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
+            MockRunner.run = AsyncMock(return_value=_paused_result(_approval_item()))
+            reply = await runner.run(_mock_agent(), session, [AgentRequestText(prompt="refund it")])
+
+        restored = pickle.loads(pickle.dumps(session))
+        record = PausedRunState.get(restored, reply.run_id)
+
+        assert record is not None
+        assert record.payload == {"_schema_version": "1.0", "gated": ["call-1"]}
+        assert record.agent == "test-agent"
+        assert record.runner == "openai"
+
+    @pytest.mark.asyncio
+    async def test_the_state_json_is_what_gets_stored(self):
+        runner, session = OpenAIRunner(), Session("s")
+        result = _paused_result(_approval_item(), payload={"_schema_version": "1.0", "turn": 3})
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
+            MockRunner.run = AsyncMock(return_value=result)
+            reply = await runner.run(_mock_agent(), session, [AgentRequestText(prompt="refund it")])
+
+        result.to_state.assert_called_once()
+        assert PausedRunState.get(session, reply.run_id).payload == {"_schema_version": "1.0", "turn": 3}
+
+
+async def _pause_once(runner, session, agent, *items, payload=None):
+    """Drive one paused run through the adapter, returning the paused reply."""
+    with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
+        MockRunner.run = AsyncMock(return_value=_paused_result(*(items or (_approval_item(),)), payload=payload))
+        return await runner.run(agent, session, [AgentRequestText(prompt="refund it")])
+
+
+def _resume_requests(*ids, status="approved", message=None, payload=None, prompt=None):
+    """The hook-processed list Runtime hands the adapter on a resume."""
+    decisions = [ResumeDecision(id=i, status=status, message=message, payload=payload) for i in ids]
+    requests = [AgentRequestText(prompt=prompt)] if prompt else []
+    return requests + [AgentResumeRequestAny(decisions=decisions)], decisions
+
+
+class TestOpenAIResume:
+    @pytest.mark.asyncio
+    async def test_a_decision_continues_the_run_and_clears_the_record(self):
+        runner, session, agent = OpenAIRunner(), Session("s"), _mock_agent()
+        paused = await _pause_once(runner, session, agent)
+        record = PausedRunState.get(session, paused.run_id)
+        requests, decisions = _resume_requests("call-1")
+        state = _FakeState([_approval_item()])
+
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner, patch("agentkernel.framework.openai.openai.RunState") as MockState:
+            MockState.from_json = AsyncMock(return_value=state)
+            MockRunner.run = AsyncMock(return_value=_done_result("refund issued"))
+
+            reply = await runner.resume(agent, session, requests, decisions, record)
+
+        assert isinstance(reply, AgentReplyText)
+        assert reply.response == "refund issued"
+        assert PausedRunState.list(session) == []
+
+    @pytest.mark.asyncio
+    async def test_the_restored_state_is_what_the_sdk_is_re_run_with(self):
+        """Not a fresh input — the whole point is continuing the paused run, not starting a new one."""
+        runner, session, agent = OpenAIRunner(), Session("s"), _mock_agent()
+        paused = await _pause_once(runner, session, agent)
+        record = PausedRunState.get(session, paused.run_id)
+        requests, decisions = _resume_requests("call-1")
+        state = _FakeState([_approval_item()])
+
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner, patch("agentkernel.framework.openai.openai.RunState") as MockState:
+            MockState.from_json = AsyncMock(return_value=state)
+            MockRunner.run = AsyncMock(return_value=_done_result())
+
+            await runner.resume(agent, session, requests, decisions, record)
+
+        assert MockState.from_json.call_args.args[1] == record.payload
+        assert MockRunner.run.call_args.args[1] is state
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "status,expect_approved,expect_message",
+        [("approved", True, None), ("denied", False, "too expensive"), ("cancelled", False, None)],
+    )
+    async def test_the_three_verbs_reach_the_model_differently(self, status, expect_approved, expect_message):
+        """`denied` and `cancelled` must be distinguishable in what the model receives.
+
+        The SDK has only approve and reject, so a bool would collapse them — and the model would
+        report a refusal nobody made. AK's own wording is what keeps them apart.
+        """
+        runner, session, agent = OpenAIRunner(), Session("s"), _mock_agent()
+        paused = await _pause_once(runner, session, agent)
+        record = PausedRunState.get(session, paused.run_id)
+        requests, decisions = _resume_requests("call-1", status=status, message="too expensive")
+        state = _FakeState([_approval_item()])
+
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner, patch("agentkernel.framework.openai.openai.RunState") as MockState:
+            MockState.from_json = AsyncMock(return_value=state)
+            MockRunner.run = AsyncMock(return_value=_done_result())
+
+            await runner.resume(agent, session, requests, decisions, record)
+
+        if expect_approved:
+            assert state.approved == ["call-1"] and state.rejected == []
+        else:
+            assert state.approved == []
+            sent = state.rejected[0][1]
+            assert (sent == expect_message) if expect_message else ("not a refusal" in sent)
+
+    @pytest.mark.asyncio
+    async def test_cancelled_does_not_read_as_a_refusal(self):
+        runner, session, agent = OpenAIRunner(), Session("s"), _mock_agent()
+        paused = await _pause_once(runner, session, agent)
+        record = PausedRunState.get(session, paused.run_id)
+        requests, decisions = _resume_requests("call-1", status="cancelled")
+        state = _FakeState([_approval_item()])
+
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner, patch("agentkernel.framework.openai.openai.RunState") as MockState:
+            MockState.from_json = AsyncMock(return_value=state)
+            MockRunner.run = AsyncMock(return_value=_done_result())
+
+            await runner.resume(agent, session, requests, decisions, record)
+
+        assert state.rejected[0][1] == OpenAIRunner.CANCELLED_DECISION_MESSAGE
+
+    @pytest.mark.asyncio
+    async def test_answering_one_of_two_returns_the_remainder_as_a_fresh_pause(self):
+        runner, session, agent = OpenAIRunner(), Session("s"), _mock_agent()
+        items = (_approval_item("call-1", "refund"), _approval_item("call-2", "notify"))
+        paused = await _pause_once(runner, session, agent, *items)
+        record = PausedRunState.get(session, paused.run_id)
+        requests, decisions = _resume_requests("call-1")
+        state = _FakeState(items)
+
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner, patch("agentkernel.framework.openai.openai.RunState") as MockState:
+            MockState.from_json = AsyncMock(return_value=state)
+            MockRunner.run = AsyncMock(return_value=_paused_result(items[1]))
+
+            again = await runner.resume(agent, session, requests, decisions, record)
+
+        assert isinstance(again, AgentPausedReplyAny)
+        assert [i.id for i in again.interruptions] == ["call-2"]
+        assert again.run_id != paused.run_id
+        assert [r.id for r in PausedRunState.list(session)] == [again.run_id]
+
+    @pytest.mark.asyncio
+    async def test_framework_context_survives_a_resume(self):
+        runner, session, agent = OpenAIRunner(), Session("s"), _mock_agent()
+        session.set(FRAMEWORK_CONTEXT, {"user_id": "42"})
+        paused = await _pause_once(runner, session, agent)
+        record = PausedRunState.get(session, paused.run_id)
+        requests, decisions = _resume_requests("call-1")
+
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner, patch("agentkernel.framework.openai.openai.RunState") as MockState:
+            MockState.from_json = AsyncMock(return_value=_FakeState([_approval_item()]))
+            MockRunner.run = AsyncMock(return_value=_done_result())
+
+            await runner.resume(agent, session, requests, decisions, record)
+
+        assert MockRunner.run.call_args.kwargs["context"] == {"user_id": "42"}
+        assert session.get_framework_context() == {"user_id": "42"}
+
+    @pytest.mark.asyncio
+    async def test_a_declared_run_option_reaches_the_resumed_call(self):
+        runner, session, agent = OpenAIRunner(), Session("s"), _mock_agent()
+        agent.run_options = {"max_turns": 7}
+        paused = await _pause_once(runner, session, agent)
+        record = PausedRunState.get(session, paused.run_id)
+        requests, decisions = _resume_requests("call-1")
+
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner, patch("agentkernel.framework.openai.openai.RunState") as MockState:
+            MockState.from_json = AsyncMock(return_value=_FakeState([_approval_item()]))
+            MockRunner.run = AsyncMock(return_value=_done_result())
+
+            await runner.resume(agent, session, requests, decisions, record)
+
+        assert MockRunner.run.call_args.kwargs["max_turns"] == 7
+        assert "session" in MockRunner.run.call_args.kwargs  # the AK-owned key still wins
+
+    @pytest.mark.asyncio
+    async def test_a_tool_on_the_resumed_turn_sees_the_resume_request(self):
+        """Nothing else proves the hook-processed list was threaded into the ToolContext."""
+        runner, session, agent = OpenAIRunner(), Session("s"), _mock_agent()
+        paused = await _pause_once(runner, session, agent)
+        record = PausedRunState.get(session, paused.run_id)
+        requests, decisions = _resume_requests("call-1")
+        seen = {}
+
+        async def _capture(*args, **kwargs):
+            from agentkernel.core import ToolContext as TC
+
+            seen["requests"] = TC.get().requests
+            return _done_result()
+
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner, patch("agentkernel.framework.openai.openai.RunState") as MockState:
+            MockState.from_json = AsyncMock(return_value=_FakeState([_approval_item()]))
+            MockRunner.run = AsyncMock(side_effect=_capture)
+
+            await runner.resume(agent, session, requests, decisions, record)
+
+        assert any(isinstance(r, AgentResumeRequestAny) for r in seen["requests"])
+
+
+class TestOpenAIRejectsWhatItCannotDeliver:
+    """
+    These raise instead of returning a reply, and that is the assertion that matters.
+
+    Every adapter method wraps its body in one `except Exception` returning
+    `AgentReplyText(user_facing_error_message(e))`. A check placed inside it becomes "Sorry,
+    something went wrong" — so `pytest.raises` here is really testing *placement*, not the message.
+    """
+
+    @pytest.mark.asyncio
+    async def test_a_structured_payload_is_refused_before_the_sdk_is_touched(self):
+        runner, session, agent = OpenAIRunner(), Session("s"), _mock_agent()
+        paused = await _pause_once(runner, session, agent)
+        record = PausedRunState.get(session, paused.run_id)
+        requests, decisions = _resume_requests("call-1", payload={"choice": "partial"})
+
+        with pytest.raises(ValueError, match="cannot deliver a structured answer"):
+            await runner.resume(agent, session, requests, decisions, record)
+
+    @pytest.mark.asyncio
+    async def test_a_prompt_alongside_a_decision_is_refused(self):
+        runner, session, agent = OpenAIRunner(), Session("s"), _mock_agent()
+        paused = await _pause_once(runner, session, agent)
+        record = PausedRunState.get(session, paused.run_id)
+        requests, decisions = _resume_requests("call-1", prompt="and what is the weather?")
+
+        with pytest.raises(ValueError, match="cannot carry a prompt alongside a decision"):
+            await runner.resume(agent, session, requests, decisions, record)
+
+    @pytest.mark.asyncio
+    async def test_the_record_is_left_intact_when_a_resume_is_refused(self):
+        """The human can correct the request and answer again; the pause is not spent."""
+        runner, session, agent = OpenAIRunner(), Session("s"), _mock_agent()
+        paused = await _pause_once(runner, session, agent)
+        record = PausedRunState.get(session, paused.run_id)
+        requests, decisions = _resume_requests("call-1", payload={"choice": "partial"})
+
+        with pytest.raises(ValueError):
+            await runner.resume(agent, session, requests, decisions, record)
+
+        assert PausedRunState.get(session, paused.run_id) is not None
+
+    @pytest.mark.asyncio
+    async def test_a_payload_that_no_longer_deserialises_names_the_runner(self):
+        runner, session, agent = OpenAIRunner(), Session("s"), _mock_agent()
+        paused = await _pause_once(runner, session, agent)
+        record = PausedRunState.get(session, paused.run_id)
+        requests, decisions = _resume_requests("call-1")
+
+        with patch("agentkernel.framework.openai.openai.RunState") as MockState:
+            MockState.from_json = AsyncMock(side_effect=TypeError("unsupported _schema_version"))
+
+            with pytest.raises(ValueError, match="no longer deserialises"):
+                await runner.resume(agent, session, requests, decisions, record)
+
+    @pytest.mark.asyncio
+    async def test_a_decision_the_restored_state_does_not_hold_is_named(self):
+        runner, session, agent = OpenAIRunner(), Session("s"), _mock_agent()
+        paused = await _pause_once(runner, session, agent)
+        record = PausedRunState.get(session, paused.run_id)
+        requests, decisions = _resume_requests("call-1")
+
+        with patch("agentkernel.framework.openai.openai.RunState") as MockState:
+            MockState.from_json = AsyncMock(return_value=_FakeState([_approval_item("call-9")]))
+            reply = await runner.resume(agent, session, requests, decisions, record)
+
+        # Inside the try, so it surfaces as the adapter's reply rather than raising: the record and
+        # the restored state disagreeing is a framework-level inconsistency, not a caller error.
+        assert reply.response == "Error: Decision 'call-1' matches no interruption in the restored OpenAI state, which is waiting on: ['call-9']."
+
+
+class TestOpenAIHoldsTwoPausesAtOnce:
+    """
+    The one adapter where the list can genuinely grow.
+
+    A `RunState` is a self-contained snapshot, and two were verified to resume independently
+    (`research/verification.md`), so this adapter appends. The single-thread adapters replace.
+    """
+
+    @pytest.mark.asyncio
+    async def test_two_runs_pause_and_resume_independently(self):
+        runner, session, agent = OpenAIRunner(), Session("s"), _mock_agent()
+        first = await _pause_once(runner, session, agent, _approval_item("call-1"), payload={"run": 1})
+        second = await _pause_once(runner, session, agent, _approval_item("call-2"), payload={"run": 2})
+
+        assert len({first.run_id, second.run_id}) == 2
+        assert len(PausedRunState.list(session)) == 2
+
+        requests, decisions = _resume_requests("call-1")
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner, patch("agentkernel.framework.openai.openai.RunState") as MockState:
+            MockState.from_json = AsyncMock(return_value=_FakeState([_approval_item("call-1")]))
+            MockRunner.run = AsyncMock(return_value=_done_result("first done"))
+            reply = await runner.resume(agent, session, requests, decisions, PausedRunState.get(session, first.run_id))
+
+        assert reply.response == "first done"
+        assert [r.id for r in PausedRunState.list(session)] == [second.run_id]
+
+    @pytest.mark.asyncio
+    async def test_a_stale_resume_is_accepted_behaviour_not_an_error(self):
+        """Pinned deliberately: AK does not detect an overtaken pause, and OpenAI reports nothing.
+
+        Pause, run an ordinary turn, then resume the old snapshot. The answer is computed as though
+        the intervening turn never happened. Recorded here so the gap lives in the suite rather than
+        being discovered in production; the OpenAI adapter docs say so too (PR 3).
+        """
+        runner, session, agent = OpenAIRunner(), Session("s"), _mock_agent()
+        paused = await _pause_once(runner, session, agent)
+        record = PausedRunState.get(session, paused.run_id)
+
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
+            MockRunner.run = AsyncMock(return_value=_done_result("unrelated answer"))
+            await runner.run(agent, session, [AgentRequestText(prompt="something else")])
+
+        requests, decisions = _resume_requests("call-1")
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner, patch("agentkernel.framework.openai.openai.RunState") as MockState:
+            MockState.from_json = AsyncMock(return_value=_FakeState([_approval_item()]))
+            MockRunner.run = AsyncMock(return_value=_done_result("refund issued"))
+            reply = await runner.resume(agent, session, requests, decisions, record)
+
+        assert isinstance(reply, AgentReplyText)
+        assert reply.response == "refund issued"
+        assert not reply.response.startswith("Error")
+
+
+def _streamed(*items, events=(), payload=None):
+    """A run_streamed stand-in: yields the given events, then reports interruptions once drained."""
+
+    def _factory(agent, input_data, session=None, context=None, **kwargs):
+        result = _paused_result(*items, payload=payload) if items else _done_result()
+
+        async def stream_events():
+            for event in events:
+                yield event
+
+        result.stream_events = stream_events
+        return result
+
+    return _factory
+
+
+class TestOpenAIStreamingPause:
+    """
+    `RunResultStreaming` fills `interruptions` as the run completes, not as events arrive.
+
+    So a streamed pause is only knowable after the drain — which is also where the adapter already
+    writes framework context, so the check costs no new structure.
+    """
+
+    @pytest.mark.asyncio
+    async def test_a_streamed_gated_run_ends_with_run_paused(self):
+        runner, session, agent = OpenAIRunner(), Session("s"), _mock_agent()
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
+            MockRunner.run_streamed = MagicMock(side_effect=_streamed(_approval_item()))
+
+            events = [e async for e in runner.stream(agent, session, [AgentRequestText(prompt="refund it")])]
+
+        assert isinstance(events[-1], RunPaused)
+        assert [i.id for i in events[-1].interruptions] == ["call-1"]
+        assert events[-1].agent == "test-agent"
+
+    @pytest.mark.asyncio
+    async def test_the_streamed_pause_writes_the_same_record(self):
+        runner, session, agent = OpenAIRunner(), Session("s"), _mock_agent()
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
+            MockRunner.run_streamed = MagicMock(side_effect=_streamed(_approval_item(), payload={"run": "streamed"}))
+
+            events = [e async for e in runner.stream(agent, session, [AgentRequestText(prompt="refund it")])]
+
+        record = PausedRunState.get(session, events[-1].run_id)
+        assert record.payload == {"run": "streamed"}
+
+    @pytest.mark.asyncio
+    async def test_an_ordinary_stream_emits_no_run_paused(self):
+        runner, session, agent = OpenAIRunner(), Session("s"), _mock_agent()
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
+            MockRunner.run_streamed = MagicMock(side_effect=_streamed())
+
+            events = [e async for e in runner.stream(agent, session, [AgentRequestText(prompt="hi")])]
+
+        assert not any(isinstance(e, RunPaused) for e in events)
+        assert PausedRunState.list(session) == []
+
+    @pytest.mark.asyncio
+    async def test_resume_stream_continues_the_run_and_clears_the_record(self):
+        runner, session, agent = OpenAIRunner(), Session("s"), _mock_agent()
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
+            MockRunner.run_streamed = MagicMock(side_effect=_streamed(_approval_item()))
+            events = [e async for e in runner.stream(agent, session, [AgentRequestText(prompt="refund it")])]
+
+        record = PausedRunState.get(session, events[-1].run_id)
+        requests, decisions = _resume_requests("call-1")
+        state = _FakeState([_approval_item()])
+
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner, patch("agentkernel.framework.openai.openai.RunState") as MockState:
+            MockState.from_json = AsyncMock(return_value=state)
+            MockRunner.run_streamed = MagicMock(side_effect=_streamed())
+
+            resumed = [e async for e in runner.resume_stream(agent, session, requests, decisions, record)]
+
+        assert state.approved == ["call-1"]
+        assert not any(isinstance(e, RunPaused) for e in resumed)
+        assert PausedRunState.list(session) == []
+
+    @pytest.mark.asyncio
+    async def test_a_streamed_resume_maps_events_and_can_pause_again(self):
+        """Answer one question, get asked the next — the flow the feature exists for, streamed."""
+        runner, session, agent = OpenAIRunner(), Session("s"), _mock_agent()
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
+            MockRunner.run_streamed = MagicMock(side_effect=_streamed(_approval_item()))
+            events = [e async for e in runner.stream(agent, session, [AgentRequestText(prompt="refund it")])]
+
+        first = events[-1]
+        record = PausedRunState.get(session, first.run_id)
+        requests, decisions = _resume_requests("call-1")
+
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner, patch("agentkernel.framework.openai.openai.RunState") as MockState:
+            MockState.from_json = AsyncMock(return_value=_FakeState([_approval_item()]))
+            MockRunner.run_streamed = MagicMock(
+                side_effect=_streamed(_approval_item("call-2"), events=[_delta_event("checking"), _delta_event(" that")])
+            )
+
+            resumed = [e async for e in runner.resume_stream(agent, session, requests, decisions, record)]
+
+        assert [e.content for e in resumed if isinstance(e, TextDelta)] == ["checking", " that"]
+        again = resumed[-1]
+        assert isinstance(again, RunPaused)
+        assert again.run_id != first.run_id
+        assert [i.id for i in again.interruptions] == ["call-2"]
+        assert [r.id for r in PausedRunState.list(session)] == [again.run_id]
+
+    @pytest.mark.asyncio
+    async def test_resume_stream_refuses_a_payload_before_streaming_anything(self):
+        runner, session, agent = OpenAIRunner(), Session("s"), _mock_agent()
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
+            MockRunner.run_streamed = MagicMock(side_effect=_streamed(_approval_item()))
+            events = [e async for e in runner.stream(agent, session, [AgentRequestText(prompt="refund it")])]
+
+        record = PausedRunState.get(session, events[-1].run_id)
+        requests, decisions = _resume_requests("call-1", payload={"choice": "partial"})
+
+        with pytest.raises(ValueError, match="cannot deliver a structured answer"):
+            _ = [e async for e in runner.resume_stream(agent, session, requests, decisions, record)]
+
+
+class TestAnOrdinaryTurnWhileAPauseIsPending:
+    """
+    `design.md` pins this per adapter. OpenAI simply answers: a `RunState` is a self-contained
+    snapshot, so the pending one is untouched by a turn that does not mention it.
+
+    This is also why the docs warn that a stale resume is undetected here — answering the old pause
+    afterwards computes as though these turns never happened.
+    """
+
+    @pytest.mark.asyncio
+    async def test_it_answers_normally(self):
+        runner, session, agent = OpenAIRunner(), Session("s"), _mock_agent()
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
+            MockRunner.run = AsyncMock(return_value=_paused_result(_approval_item()))
+            await runner.run(agent, session, [AgentRequestText(prompt="refund it")])
+
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
+            MockRunner.run = AsyncMock(return_value=_done_result("the weather is fine"))
+            reply = await runner.run(agent, session, [AgentRequestText(prompt="and the weather?")])
+
+        assert isinstance(reply, AgentReplyText)
+        assert reply.response == "the weather is fine"
+
+    @pytest.mark.asyncio
+    async def test_the_pending_pause_is_left_alone(self):
+        runner, session, agent = OpenAIRunner(), Session("s"), _mock_agent()
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
+            MockRunner.run = AsyncMock(return_value=_paused_result(_approval_item()))
+            paused = await runner.run(agent, session, [AgentRequestText(prompt="refund it")])
+
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
+            MockRunner.run = AsyncMock(return_value=_done_result())
+            await runner.run(agent, session, [AgentRequestText(prompt="and the weather?")])
+
+        assert PausedRunState.get(session, paused.run_id) is not None

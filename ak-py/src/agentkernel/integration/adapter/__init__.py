@@ -22,6 +22,8 @@ _LAZY_EXPORTS = {
     "IntegrationProducer": ".producer",
     "PollerRunner": ".poller",
     "WebhookRESTRequestHandler": ".webhook",
+    "WebhookRoute": ".routes",
+    "WebhookRouteMatcher": ".route_matcher",
 }
 
 __all__ = sorted(_LAZY_EXPORTS)
@@ -31,6 +33,8 @@ if TYPE_CHECKING:  # pragma: no cover: static resolution only, preserves lazines
     from .factory import IntegrationAdapterFactory
     from .poller import PollerRunner
     from .producer import IntegrationProducer
+    from .route_matcher import WebhookRouteMatcher
+    from .routes import WebhookRoute
     from .webhook import WebhookRESTRequestHandler
 
 

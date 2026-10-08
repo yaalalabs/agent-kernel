@@ -14,6 +14,7 @@ Agent Kernel is a lightweight **AI agent runtime** and adapter layer for buildin
 - **Sandbox**: Execute agent-generated code and shell commands in an isolated, permission-bounded environment with pluggable providers (`local_subprocess`, `docker`, `kubernetes`, `e2b`, `daytona`, `ec2_ssm`), workload profiles, policy enforcement, per-user identity, and a queue-decoupled broker for long-running executions
 - **Secret Resolution**: `SecretManager` resolves API keys and passwords environment-first, falling back to a pluggable provider (`env`, `aws_ssm` for AWS SSM Parameter Store, or your own) with a TTL'd process cache
 - **Scheduled Tasks**: Deferred and recurring chat execution (`schedule.at`/`schedule.cron`) with a management REST API, five agent-facing tools, and pluggable provider (`local`, `eventbridge`) and store (`in_memory`, `redis`, `valkey`, `dynamodb`) backends
+- **Human in the Loop**: Pause a run for a person's approval or answer and resume from their decision — `status: "PAUSED"` with HTTP 202, a `resume` block carrying `approved`/`denied`/`cancelled` decisions, supported on OpenAI Agents SDK, LangGraph, Pydantic AI and Google ADK over REST, streaming and AG-UI
 - **Flexible Deployment**: Interactive CLI, REST API, serverless, or containerized deployment — see the "Multi-Cloud Deployment" section below
 - **Pluggable Architecture**: Easy to extend with custom framework adapters
 - **MCP Server**: Built-in Model Context Protocol server for exposing agents as MCP tools and exposing any custom tool

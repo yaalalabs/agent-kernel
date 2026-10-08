@@ -137,6 +137,17 @@ Let a chat run later, or on a schedule — the platform owns the timers, the per
 
 [Learn more →](https://kernel.yaala.ai/docs/advanced/scheduling)
 
+### 🙋 Human in the Loop
+
+Let a run stop to ask a person something — approve this tool, answer this question — and resume from their decision minutes or hours later, on any replica.
+
+- **Nothing to enable** — declare a gated tool or an interrupt the way your framework already does; Agent Kernel returns HTTP 202 with `status: "PAUSED"` and the pending interruptions.
+- **Answer instead of prompting** — send a `resume` block with `approved`, `denied`, or `cancelled` per interruption, plus the human's own words or a structured value.
+- **Four frameworks pause** — OpenAI Agents SDK, LangGraph, Pydantic AI, and Google ADK; the others say they can't rather than pretending.
+- **Every surface** — REST, streaming, WebSocket, and AG-UI's interrupt outcome; durable across restarts on any shared session backend.
+
+[Learn more →](https://kernel.yaala.ai/docs/advanced/human-in-the-loop)
+
 ### 🧠 Memory, Sessions & Knowledge Bases
 
 | Layer | Backends |

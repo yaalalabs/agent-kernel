@@ -54,6 +54,7 @@ module "request_handler" {
 | `source_bucket` | S3 bucket used for S3 ZIP deployment |
 | `input_queue_arn` | Input queue ARN used for SQS permissions |
 | `input_queue_url` | Input queue URL injected into the environment |
+| `output_queue_url` | Output queue URL injected into the environment (read by a `WebhookRESTRequestHandler`'s SQS transport; no IAM grant) |
 | `security_group_id` | Shared Lambda security group ID used for VPC networking |
 | `redis_url` | Redis URL injected into the environment |
 | `valkey_url` | Valkey URL injected into the environment |
@@ -87,6 +88,9 @@ The module adds these environment variables when the corresponding inputs are pr
 - `AK_EXECUTION__RESPONSE_STORE__VALKEY__URL`
 - `AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TABLE_NAME`
 - `AK_EXECUTION__QUEUES__INPUT__URL`
+- `AK_EXECUTION__QUEUES__OUTPUT__URL`: set when `output_queue_url` is given. The request handler never
+  sends to the output queue, so no IAM grant comes with it; a `WebhookRESTRequestHandler` needs it
+  because the pipeline SQS transport it builds requires both queue URLs.
 
 ## Outputs
 

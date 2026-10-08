@@ -46,6 +46,49 @@ Execute an agent with a message.
 }
 ```
 
+#### Pausing for a human
+
+An agent can stop mid-run to ask a person something — a gated tool awaiting approval, or a question
+needing an answer. The request then answers **HTTP 202** with a top-level discriminator, so a client
+branches on the outcome without parsing `result`:
+
+```json
+{
+  "status": "PAUSED",
+  "run_id": "9f2c…",
+  "agent": "support",
+  "interruptions": [
+    { "id": "call_abc123", "kind": "tool_call", "tool_name": "issue_refund",
+      "arguments": "{\"order_id\": \"ORD-1001\"}" }
+  ],
+  "session_id": "user-123"
+}
+```
+
+`202` now means two things — a deferred request and a paused one — and the `status` key is what
+separates them: a scheduled acknowledgement carries `"SCHEDULED"`, a pause carries `"PAUSED"`.
+
+Answer it by sending `resume` **instead of** a prompt; `prompt` is optional and a decision can stand
+alone:
+
+```json
+{
+  "agent": "support",
+  "session_id": "user-123",
+  "resume": { "decisions": [ { "id": "call_abc123", "status": "approved" } ] }
+}
+```
+
+A decision takes `status` (`approved` | `denied` | `cancelled`), an optional `message` carrying the
+human's own words, and an optional `payload` for a structured answer. `run_id` on the `resume` block
+is optional — the run is resolved from the interruption ids when it is absent.
+
+A request carrying **both** `schedule` and `resume` is rejected with a 400: a decision deferred to a
+later occurrence is no longer a decision.
+
+See [Human in the Loop](../advanced/human-in-the-loop.md) for what each framework can carry back,
+and for the session-store setting this depends on.
+
 ### GET /api/v1/agents
 
 List all available agents.

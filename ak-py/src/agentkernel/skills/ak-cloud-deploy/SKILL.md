@@ -781,6 +781,81 @@ authorizer = {
 }
 ```
 
+### F) Messaging Integrations (Slack, Teams, WhatsApp, Messenger, Instagram, Telegram)
+
+Webhooks run on Lambda in queue mode with `execution_mode = "rest_sync"` or `"rest_async"` (not the
+WebSocket modes). Wrap the handler in a `LambdaWebhookHost` in the request-handler Lambda and
+register its `handle` on the adapter's webhook path:
+
+```python
+from agentkernel.aws import Lambda, LambdaWebhookHost
+from agentkernel.integration.adapter import WebhookRESTRequestHandler
+from agentkernel.slack import SlackInboundAdapter
+
+slack = LambdaWebhookHost(WebhookRESTRequestHandler(SlackInboundAdapter()))
+
+
+@Lambda.register("/slack/events", method="POST")
+def slack_events(event, context):
+    return slack.handle(event, context)
+
+
+handler = Lambda.handler
+```
+
+WhatsApp, Messenger and Instagram also register the host's `challenge` for GET on the same path
+(`/<platform>/webhook`). Building the host checks the deployment on cold start (REST mode, `sqs`
+transport, base-path variables, the adapter's verification secret) and fails the init if any is off.
+
+Terraform:
+
+```hcl
+queue_mode                     = true
+execution_mode                 = "rest_async"
+create_dynamodb_response_store = true   # still required by the chat route
+
+gateway_endpoints = [
+  { path = "/slack/events", method = "POST" },   # Meta platforms: GET and POST on their path
+]
+
+request_handler = {
+  # ...
+  environment_variables = { SLACK_BOT_TOKEN = var.slack_bot_token, SLACK_SIGNING_SECRET = var.slack_signing_secret }
+}
+response_handler = {
+  # ...
+  environment_variables = { SLACK_BOT_TOKEN = var.slack_bot_token, SLACK_SIGNING_SECRET = var.slack_signing_secret }
+}
+```
+
+- Package the request handler and the response handler with `agentkernel[aws,<platform>]`; keep the
+  request-handler package slim (no agent frameworks) so a cold start stays inside Slack's 3 seconds.
+- `config.yaml` must declare `execution.queues.type: sqs`.
+- **Behind an authorizer**, platforms send no bearer token. Let their routes through with a bypass, and
+  turn authorizer caching off, or API Gateway answers 401 before the authorizer runs:
+
+  ```python
+  from agentkernel.aws import APIGatewayAuthorizer
+  from agentkernel.integration.adapter import WebhookRouteMatcher
+
+  handler = APIGatewayAuthorizer(validator=MyValidator(), bypass=WebhookRouteMatcher.for_integrations("slack")).handle
+  ```
+
+  ```hcl
+  authorizer = {
+    # ...
+    result_ttl_in_seconds = 0
+  }
+  ```
+
+- The route must be declared in all three places (the bypass, `Lambda.register`, `gateway_endpoints`).
+  Not registered gives a 500; missing from the bypass gives a 403 (the authorizer logs
+  `Event validation failed` for a request with no `Authorization` header); a nonzero TTL gives a 401
+  that Agent Kernel never logs.
+- Attachments need `multimodal.enabled` with `create_dynamodb_multimodal_memory_table = true` (or a
+  Redis/Valkey store the request handler can reach).
+- Full example: `examples/aws-serverless/slack-openai`.
+
 ## AWS Containerized (ECS/Fargate)
 
 ### A) Basic Mode (single container, direct execution)

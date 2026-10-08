@@ -65,6 +65,33 @@ class TestOpenAIToolBuilderBind:
         assert tools[2].name == "no_params"
 
 
+# bind – keyword options forwarded to function_tool
+class TestOpenAIToolBuilderOptions:
+    """
+    Without forwarding, a gated tool could not be declared through the builder at all.
+
+    `needs_approval` is keyword-only on `function_tool`, and for this SDK that flag is the whole of
+    the human-in-the-loop pause — so it stands in here for the seventeen other options beside it.
+    """
+
+    def test_an_option_reaches_the_tool(self):
+        tools = OpenAIToolBuilder.bind([get_weather], needs_approval=True)
+        assert tools[0].needs_approval is True
+
+    def test_the_sdk_default_is_untouched_when_no_option_is_given(self):
+        tools = OpenAIToolBuilder.bind([get_weather])
+        assert tools[0].needs_approval is False
+
+    def test_an_option_applies_to_every_function_in_the_call(self):
+        """Why tools wanting different options are bound in separate calls."""
+        tools = OpenAIToolBuilder.bind([get_weather, add], needs_approval=True)
+        assert [t.needs_approval for t in tools] == [True, True]
+
+    def test_an_option_the_sdk_does_not_take_raises(self):
+        with pytest.raises(TypeError, match="not_an_option"):
+            OpenAIToolBuilder.bind([get_weather], not_an_option=True)
+
+
 # Tool metadata – name, description, schema
 class TestToolMetadata:
 

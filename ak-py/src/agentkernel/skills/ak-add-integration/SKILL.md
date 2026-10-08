@@ -42,6 +42,44 @@ Which messaging platform would you like to integrate?
 
 ### Step 3: Generate Changes
 
+The snippets below mount each integration with `IOHandler.run(...)`, the local/containerized
+pipeline. **If the project deploys on AWS Lambda** (the `ak-serverless` Terraform module), host the
+same handler in the request-handler Lambda instead, and add the platform extra to both the
+request-handler and the response-handler packages (`agentkernel[aws,<platform>]`, not the `api` extra):
+
+```python
+# lambda_request_handler.py
+from agentkernel.aws import Lambda, LambdaWebhookHost
+from agentkernel.integration.adapter import WebhookRESTRequestHandler
+from agentkernel.slack import SlackInboundAdapter  # or the platform's inbound adapter
+
+slack = LambdaWebhookHost(WebhookRESTRequestHandler(SlackInboundAdapter()))
+
+
+@Lambda.register("/slack/events", method="POST")  # the adapter's webhook_path
+def slack_events(event, context):
+    return slack.handle(event, context)
+
+
+handler = Lambda.handler
+```
+
+- WhatsApp, Messenger and Instagram also register the handshake:
+  `Lambda.register("/<platform>/webhook", method="GET")(host.challenge)`.
+
+- It needs `queue_mode = true`, `execution_mode = "rest_sync"` or `"rest_async"`,
+  `execution.queues.type: sqs` in `config.yaml`, and a response store
+  (`create_dynamodb_response_store = true`).
+- Declare the webhook route in Terraform: `gateway_endpoints = [{ path = "/slack/events", method = "POST" }]`
+  (WhatsApp, Messenger and Instagram also need `GET` on their path for the handshake).
+- Put the platform credentials in both `request_handler.environment_variables` and
+  `response_handler.environment_variables`. WhatsApp, Messenger and Instagram need their `app_secret`
+  and Telegram its `webhook_secret`: `LambdaWebhookHost` refuses to start without them.
+- Behind an API Gateway authorizer, pass
+  `bypass=WebhookRouteMatcher.for_integrations("<platform>")` to `APIGatewayAuthorizer` and set
+  `result_ttl_in_seconds = 0` (see the `ak-cloud-deploy` skill, AWS Serverless).
+- Gmail (polling) is not supported on Lambda.
+
 #### For Slack
 
 **1. Update pyproject.toml dependencies:**
