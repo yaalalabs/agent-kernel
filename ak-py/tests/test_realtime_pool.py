@@ -172,6 +172,94 @@ class TestRealtimeConnectionPool:
             thread.join(timeout=5)
 
 
+class TestRealtimePoolShutdown:
+    """Shutdown closes every connection once, opens none, and never leaves a caller waiting on a dead loop."""
+
+    class _HangingAdapter(_Adapter):
+        """Never finishes connecting, like a socket handshake still in flight at shutdown."""
+
+        entered = threading.Event()
+
+        async def connect(self, session, agent, callback):
+            type(self).entered.set()
+            await asyncio.Event().wait()
+
+    class _CountingAdapter(_Adapter):
+        def __init__(self):
+            super().__init__()
+            self.disconnects = 0
+
+        async def disconnect(self):
+            self.disconnects += 1
+            await asyncio.sleep(0)
+
+    def test_no_connection_is_opened_once_shutdown_starts(self):
+        pool = RealtimeConnectionPool.initialize()
+        pool._loop_ready.set()
+        ThreadRunner.shutdown_event.set()
+
+        with pytest.raises(RuntimeError, match="shutting down"):
+            pool.get_or_create("s1", _Agent(), Runtime(InMemorySessionStore()), Session("s1"))
+
+    def test_a_connect_in_flight_at_shutdown_fails_fast(self, monkeypatch):
+        """A consumer waiting on a connect gets an error when the loop stops, not the 15 s timeout."""
+        import concurrent.futures
+
+        monkeypatch.setattr(QueueTransportFactory, "create", staticmethod(lambda *a, **k: InMemoryTransport()))
+        monkeypatch.setattr("agentkernel.pipeline.realtime_pool._SHUTDOWN_GRACE_SECONDS", 0.1)
+        self._HangingAdapter.entered.clear()
+
+        pool = RealtimeConnectionPool.initialize()
+        pool_thread = threading.Thread(target=pool.start, daemon=True)
+        pool_thread.start()
+
+        outcome = {}
+
+        def connect():
+            try:
+                pool.get_or_create("s1", _Agent(realtime_runner_cls=self._HangingAdapter), Runtime(InMemorySessionStore()), Session("s1"))
+            except BaseException as e:
+                outcome["error"] = e
+
+        caller = threading.Thread(target=connect, daemon=True)
+        caller.start()
+        assert self._HangingAdapter.entered.wait(timeout=5)
+
+        ThreadRunner.shutdown_event.set()
+        caller.join(timeout=5)
+        pool_thread.join(timeout=5)
+
+        assert not caller.is_alive()
+        assert not pool_thread.is_alive()
+        assert isinstance(outcome.get("error"), concurrent.futures.CancelledError)
+
+    @pytest.mark.asyncio
+    async def test_closing_twice_disconnects_once(self, monkeypatch):
+        monkeypatch.setattr(QueueTransportFactory, "create", staticmethod(lambda *a, **k: InMemoryTransport()))
+        conn = _connection(agent=_Agent(realtime_runner_cls=self._CountingAdapter), loop=asyncio.get_running_loop())
+
+        await asyncio.gather(conn.close(), conn.close())
+
+        assert conn.adapter.disconnects == 1
+
+    def test_the_runner_drops_input_during_shutdown(self, monkeypatch):
+        from unittest.mock import MagicMock
+
+        from agentkernel.pipeline.agent_runner import RealtimeAgentRunner
+        from agentkernel.pipeline.envelope import QueueMessage
+
+        transport = InMemoryTransport()
+        chat_service = MagicMock()
+        runner = RealtimeAgentRunner(transport=transport, chat_service=chat_service)
+        ThreadRunner.shutdown_event.set()
+
+        body = json.dumps({"prompt": "", "session_id": "s1", "requests": [{"type": "text", "prompt": "hi"}]})
+        runner.process(QueueMessage(body=body, attributes={"request_id": "r1", "integration": "livekit"}, group_id="s1", dedup_id="d1"))
+
+        chat_service.prepare_agent_handler.assert_not_called()
+        assert RealtimeConnectionPool.get() is None
+
+
 class TestRealtimeRunnerReuse:
     def test_audio_chunks_reuse_connection_without_re_resolving(self, monkeypatch):
         from unittest.mock import MagicMock

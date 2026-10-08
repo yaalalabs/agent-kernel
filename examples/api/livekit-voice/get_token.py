@@ -1,3 +1,12 @@
+# /// script
+# requires-python = ">=3.12"
+# dependencies = ["livekit-api>=0.4.0"]
+# ///
+"""Print a LiveKit access token for a human participant joining ``room_01``.
+
+Run with ``uv run get_token.py``: uv reads the dependency block above and installs it.
+"""
+
 import os
 
 from livekit import api

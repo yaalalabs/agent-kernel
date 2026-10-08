@@ -325,6 +325,11 @@ class ECSRealtimeAgentRunner(ECSAgentRunner):
     def process_message(cls, record: dict) -> None:
         message_id = record.get("MessageId")
         receive_count = record.get("Attributes", {}).get("ApproximateReceiveCount", "1")
+        if ThreadRunner.shutdown_event.is_set():
+            # The model sockets are closing: input arriving now is dropped rather than retried, since
+            # replaying it to a new connection after a restart would feed the model stale audio.
+            cls._log.debug(f"Shutting down: dropping realtime input {message_id}")
+            return
 
         body = BaseRunRequest.model_validate(json.loads(record["Body"]))
         record_attributes = cls._get_record_attributes(raw_queue_message=record, body=body)

@@ -285,6 +285,12 @@ class RealtimeAgentRunner(AgentRunner):
         return [pool.get_task()]
 
     def process(self, message: QueueMessage) -> None:
+        if ThreadRunner.shutdown_event.is_set():
+            # The model sockets are closing: input arriving now is dropped rather than retried, since
+            # replaying it to a new connection after a restart would feed the model stale audio.
+            self._log.debug(f"Shutting down: dropping realtime input {message.message_id}")
+            return
+
         body = BaseRunRequest.model_validate(json.loads(message.body))
         request_id = self._resolve_request_metadata(message, body)
 

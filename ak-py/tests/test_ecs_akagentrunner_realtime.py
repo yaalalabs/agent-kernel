@@ -104,6 +104,18 @@ def test_process_message_reuses_existing_connection_without_loading_agent():
     chat_service.prepare_agent_handler.assert_not_called()
 
 
+def test_process_message_drops_input_during_shutdown():
+    """Input arriving while the model sockets close is dropped: no pool lookup, no new connection."""
+    ThreadRunner.shutdown_event.set()
+    try:
+        pool, conn = _process(_make_record([{"type": "text", "prompt": "hi"}]))
+    finally:
+        ThreadRunner.shutdown_event.clear()
+
+    pool.get_connection.assert_not_called()
+    conn.send_text.assert_not_called()
+
+
 class _RecordingRealtimeRunner(RealtimeRunner):
     """Model socket double; the ECS consumer and realtime pool remain real."""
 

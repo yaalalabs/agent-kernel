@@ -78,8 +78,11 @@ To join as a human participant from the command line, mint a room token with the
 [LiveKit Agents Playground](https://agents-playground.livekit.io/) or any LiveKit client:
 
 ```bash
-python get_token.py
+uv run get_token.py
 ```
+
+The script declares its own dependency (`livekit-api`) inline, so `uv run` installs it; no virtual
+environment or `pyproject.toml` is needed in this directory.
 
 ## How it works
 

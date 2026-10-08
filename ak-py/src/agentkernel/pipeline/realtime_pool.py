@@ -26,6 +26,9 @@ _log = logging.getLogger("ak.pipeline.realtime_pool")
 _SEND_TIMEOUT_SECONDS = 10.0
 # Connections idle for this long are evicted and closed by the pool's background thread.
 _IDLE_TIMEOUT_SECONDS = 300.0
+# At shutdown, how long work still running on the pool loop (a socket close, a tool call) may
+# finish before it is cancelled.
+_SHUTDOWN_GRACE_SECONDS = 2.0
 
 
 def send_permanent_failure(transport: QueueTransport, source_attributes: dict, group_id: Optional[str], dedup_id: Optional[str], error: str) -> None:
@@ -85,6 +88,10 @@ class RealtimeConnection:
         # hear, which is what makes a user starting to speak a barge-in.
         self._queued_audio = 0
         self._pacing_task: Optional[asyncio.Task] = None
+        # Set by the first close(): a failed socket (``closed``) is closed later by the pool, and
+        # shutdown and eviction may both reach the same connection, so the adapter is disconnected
+        # once.
+        self._disconnecting = False
         self.last_activity_at: float = time.time()
 
         if not getattr(self.agent, "realtime_runner_cls", None):
@@ -298,7 +305,11 @@ class RealtimeConnection:
             _log.error(f"Realtime session {self.session_id}: failed to {action}: {task.exception()}")
 
     async def close(self) -> None:
+        """Stop pacing and disconnect the adapter; a second call returns at once."""
         self.closed = True
+        if self._disconnecting:
+            return
+        self._disconnecting = True
         if self._pacing_task:
             self._pacing_task.cancel()
             self._pacing_task = None
@@ -344,6 +355,9 @@ class RealtimeConnectionPool:
         self._conn_lock = threading.Lock()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._loop_ready = threading.Event()
+        # Set once shutdown starts: no connection is created after it, since the loop it would run
+        # on is about to close.
+        self._stopping = threading.Event()
 
     def get_task(self) -> ThreadRunner.Task:
         """Returns the ThreadRunner.Task that runs this pool's event loop."""
@@ -367,7 +381,10 @@ class RealtimeConnectionPool:
         try:
             self._loop.run_until_complete(self._wait_for_shutdown())
         finally:
+            self._stopping.set()
             self._loop.run_until_complete(self._close_all())
+            self._loop.run_until_complete(self._finish_remaining_tasks())
+            self._loop.run_until_complete(self._loop.shutdown_asyncgens())
             self._loop.close()
 
     async def _wait_for_shutdown(self) -> None:
@@ -392,12 +409,32 @@ class RealtimeConnectionPool:
             await asyncio.sleep(0.5)
 
     async def _close_all(self) -> None:
-        for session_id, conn in list(self._connections.items()):
+        """Close every connection, including one a consumer thread registered while this ran."""
+        while True:
+            with self._conn_lock:
+                if not self._connections:
+                    return
+                session_id, conn = self._connections.popitem()
             try:
                 await conn.close()
             except Exception:
                 _log.exception(f"Failed to close connection for session {session_id}")
-        self._connections.clear()
+
+    async def _finish_remaining_tasks(self) -> None:
+        """Let work still on the loop finish briefly, then cancel it, before the loop closes.
+
+        Closing the loop with tasks pending destroys them mid-flight (an SDK client's own close, a
+        tool call), and a consumer thread waiting on a connect that never ran would block until its
+        timeout. Cancelling hands that waiter an immediate error instead.
+        """
+        current = asyncio.current_task()
+        tasks = [task for task in asyncio.all_tasks() if task is not current]
+        if not tasks:
+            return
+        _, pending = await asyncio.wait(tasks, timeout=_SHUTDOWN_GRACE_SECONDS)
+        for task in pending:
+            task.cancel()
+        await asyncio.gather(*pending, return_exceptions=True)
 
     def get_connection(self, session_id: str) -> Optional["RealtimeConnection"]:
         """Return the session's existing connection, or None.
@@ -415,7 +452,8 @@ class RealtimeConnectionPool:
                 del self._connections[session_id]
                 stale = conn
                 conn = None
-        if stale is not None and self._loop and not self._loop.is_closed():
+        # During shutdown the pool closes every connection itself.
+        if stale is not None and self._loop and not self._loop.is_closed() and not self._stopping.is_set():
             asyncio.run_coroutine_threadsafe(stale.close(), self._loop)
         return conn
 
@@ -432,6 +470,8 @@ class RealtimeConnectionPool:
         """
         if not self._loop_ready.wait(timeout=10):
             raise RuntimeError("RealtimeConnectionPool event loop not ready")
+        if self._stopping.is_set() or ThreadRunner.shutdown_event.is_set():
+            raise RuntimeError("RealtimeConnectionPool is shutting down: no new connection is opened")
 
         # Fast path: a live connection already exists.
         with self._conn_lock:
