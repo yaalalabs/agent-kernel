@@ -13,7 +13,7 @@ const FAQ_ITEMS: FAQItem[] = [
     id: "what-is",
     question: "What is Agent Kernel?",
     answer:
-      "Agent Kernel is an open-source operating system that makes it straightforward to build, test, and deploy AI agents at scale. It works with the AI frameworks you already know (OpenAI Agents, LangGraph, CrewAI, Google ADK, Smolagents, Pydantic AI) and gives you a single runtime with messaging, memory, knowledge bases, guardrails, and observability baked in. LiveKit is available as a realtime voice integration. Write your agent code once and deploy it to AWS, Google Cloud, Azure, or on-prem without any rewrites.",
+      "Agent Kernel is an open-source operating system that makes it straightforward to build, test, and deploy AI agents at scale. It works with the AI frameworks you already know (OpenAI Agents, LangGraph, CrewAI, Google ADK, Smolagents, Pydantic AI, Microsoft Agents) and gives you a single runtime with messaging, memory, knowledge bases, guardrails, and observability baked in. LiveKit is available as a realtime voice integration. Write your agent code once and deploy it to AWS, Google Cloud, Azure, or on-prem without any rewrites.",
   },
   {
     id: "do-i-need-team",
@@ -49,7 +49,7 @@ const FAQ_ITEMS: FAQItem[] = [
     id: "frameworks-support",
     question: "Does Agent Kernel work with my favorite AI framework?",
     answer:
-      "Yes. Agent Kernel works with OpenAI Agents, LangGraph, CrewAI, Google ADK, Smolagents, and Pydantic AI out of the box. You can even mix frameworks in a single runtime. LiveKit connects OpenAI Agents SDK and Google ADK agents to realtime voice rooms as an integration. Our docs have setup guides and examples for the supported frameworks and channels.",
+      "Yes. Agent Kernel works with OpenAI Agents, LangGraph, CrewAI, Google ADK, Smolagents, Pydantic AI, and Microsoft Agents out of the box. You can even mix frameworks in a single runtime. LiveKit connects OpenAI Agents SDK and Google ADK agents to realtime voice rooms as an integration. Our docs have setup guides and examples for the supported frameworks and channels.",
   },
   {
     id: "how-long-deploy",

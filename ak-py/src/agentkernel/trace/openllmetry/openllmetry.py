@@ -147,3 +147,11 @@ class OpenLLMetry(BaseTrace):
         from .pydanticai import OpenLLMetryPydanticAIRunner
 
         return OpenLLMetryPydanticAIRunner()
+
+    def maf(self) -> Runner:
+        """
+        Returns the OpenLLMetry MAF runner instance.
+        """
+        from .maf import OpenLLMetryMAFRunner
+
+        return OpenLLMetryMAFRunner()

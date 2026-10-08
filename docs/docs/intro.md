@@ -12,6 +12,8 @@ slug: /
 
 🎙️ **LiveKit Voice Integration** - Connect OpenAI Agents SDK and Google ADK agents to LiveKit WebRTC rooms through the realtime execution pipeline. [Learn more →](./integrations/livekit.md)
 
+🪟 **Microsoft Agent Framework** - Run agents built with Microsoft Agent Framework (the successor to AutoGen and Semantic Kernel) through `MAFModule`, with token streaming, sessions, portable tools, structured output, and framework context round-trips. [Learn more →](./frameworks/microsoft-agents.md)
+
 🎛️ **Per-agent native run options** - Pass each framework's own run arguments (OpenAI `RunHooks`, `RunConfig` and `max_turns`, LangGraph `config`, ADK `plugins`, Pydantic AI `usage_limits`, CrewAI `step_callback`, smolagents `max_steps`) through `Module.run_options`, statically or computed per run by a factory, with the keys Agent Kernel owns kept safe. [Learn more →](./core-concepts/runner.md#native-run-options)
 
 ☸️ **On-Prem Kubernetes** - Official Helm chart that runs the queue pipeline on any cluster (bare metal, EKS, or a laptop k3d), with NATS, Kafka, or SQS as the broker, KEDA autoscaling, a sandbox worker tier, and air-gapped installs. [Learn more →](/docs/deployment/onprem-kubernetes)
@@ -209,6 +211,7 @@ Agent Kernel currently supports:
 - **LangGraph** - Graph-based agent orchestration
 - **Google ADK** - Google's Agent Development Kit
 - **Smolagents** - Hugging Face's lightweight agentic framework
+- **Microsoft Agents** - Microsoft Agent Framework (MAF)
 
 ### Flexible Deployment
 

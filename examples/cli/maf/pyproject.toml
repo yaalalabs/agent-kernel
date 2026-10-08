@@ -1,0 +1,39 @@
+[project]
+name = "maf-demo"
+version = "0.1.0"
+description = "Agent Kernel - MAF CLI Demo"
+requires-python = ">=3.12"
+dependencies = [
+    "agentkernel[cli,maf]>=0.9.4",
+    # agentkernel[maf] installs the provider-agnostic agent-framework-core only — pick a
+    # model provider explicitly. This demo uses OpenAI; swap for agent-framework-anthropic, etc.
+    "agent-framework-openai>=1.14.4",
+]
+
+[dependency-groups]
+dev = [
+    "agentkernel[test]>=0.9.4",
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "black==26.5.1",
+    "isort>=5.0.0",
+    "mypy>=1.0.0",
+]
+
+[tool.uv]
+package = false
+
+[tool.isort]
+profile = "black"
+line_length = 120
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+
+[tool.black]
+line-length = 120
+target-version = ["py312"]

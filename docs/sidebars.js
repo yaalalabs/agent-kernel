@@ -55,6 +55,7 @@ const sidebars = {
         'frameworks/google-adk',
         'frameworks/smolagents',
         'frameworks/pydantic-ai',
+        'frameworks/microsoft-agents',
         'frameworks/multi-framework',
       ],
     },

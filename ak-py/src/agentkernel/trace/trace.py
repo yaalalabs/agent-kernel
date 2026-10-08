@@ -116,3 +116,11 @@ class Trace(BaseTrace):
         if self._instance is not None:
             return self._instance.pydanticai()
         return None
+
+    def maf(self) -> Runner | None:
+        """
+        Returns the Microsoft Agent Framework trace runner instance.
+        """
+        if self._instance is not None:
+            return self._instance.maf()
+        return None

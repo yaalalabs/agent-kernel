@@ -38,6 +38,7 @@ import {
   FaInstagram,
   FaTelegram,
   FaGithub,
+  FaMicrosoft,
 } from "react-icons/fa";
 import {
   SiGmail,
@@ -790,7 +791,7 @@ function CoreFeatures() {
         "Agent, Runner, Session, Module, Runtime, and Tools, a unified API across all frameworks. Build once, run on any supported framework.",
       highlights: [
         "Unified Python API",
-        "Framework adapters for 4 SDKs",
+        "Framework adapters for 7 SDKs",
         "Portable tool functions via ToolBuilder",
         "Framework-agnostic hooks",
       ],
@@ -800,7 +801,7 @@ function CoreFeatures() {
       icon: <MdSwapHoriz />,
       title: "Framework-Neutral Runtime",
       description:
-        "OpenAI Agents, LangGraph, CrewAI, Google ADK, Smolagents, and Pydantic AI, run them all simultaneously in one runtime. Switch frameworks by changing 2 import lines.",
+        "OpenAI Agents, LangGraph, CrewAI, Google ADK, Smolagents, Pydantic AI, and Microsoft Agent Framework, run them all simultaneously in one runtime. Switch frameworks by changing 2 import lines.",
       highlights: [
         "OpenAI Agents SDK",
         "LangGraph",
@@ -808,6 +809,7 @@ function CoreFeatures() {
         "Google ADK",
         "Smolagents",
         "Pydantic AI",
+        "Microsoft Agent Framework",
       ],
       link: "/docs/frameworks/overview",
     },
@@ -1263,6 +1265,14 @@ function FrameworkSupport() {
           height={50}
         />
       ),
+    },
+    {
+      key: "maf",
+      name: "Microsoft Agents",
+      description:
+        "Microsoft Agent Framework (MAF), the unified successor to AutoGen and Semantic Kernel.",
+      link: "/docs/next/frameworks/microsoft-agents",
+      logo: <FaMicrosoft className={styles.frameworkLogoIcon} aria-hidden="true" />,
     },
   ];
 

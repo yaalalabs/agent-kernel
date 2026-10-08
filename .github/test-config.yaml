@@ -45,6 +45,10 @@ e2e:
     - type: cli
       path: examples/cli/pydanticai_context
     - type: cli
+      path: examples/cli/maf
+    - type: cli
+      path: examples/cli/maf_context
+    - type: cli
       path: examples/cli/openai-run-options
     - type: cli
       path: examples/cli/openai-dynamic-run-options
@@ -138,6 +142,10 @@ e2e:
       path: examples/api/pydanticai
     - type: api
       path: examples/api/pydanticai-streaming
+    - type: api
+      path: examples/api/maf
+    - type: api
+      path: examples/api/maf-streaming
     - type: api
       path: examples/api/agui
     - type: api

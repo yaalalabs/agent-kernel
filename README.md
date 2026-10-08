@@ -36,7 +36,7 @@ Most agent frameworks help you build a *prototype*. **Agent Kernel is the platfo
 
 |  | Agent Kernel |
 |---|---|
-| 🔌 **Framework-Agnostic** | Run OpenAI Agents SDK, LangGraph, CrewAI, and Google ADK side by side. Swap with 2 import lines. |
+| 🔌 **Framework-Agnostic** | Run OpenAI Agents SDK, LangGraph, CrewAI, Google ADK, Smolagents, Pydantic AI, and Microsoft Agent Framework side by side. Swap with 2 import lines. |
 | ☁️ **Cloud-Agnostic** | The same agent code ships to AWS Lambda/ECS, Azure Functions/Container Apps, GCP Cloud Run, or on-prem. |
 | 🔁 **Queue-Pipeline Execution** | Every chat request runs through a queued pipeline: in-process by default (zero services, full retry/FIFO/dedup semantics locally), SQS, Kafka, and NATS JetStream transports for distributed deployments; a Helm chart ships the topology to any Kubernetes cluster. |
 | 🛡️ **Compliant by Default** | Built-in guardrails (OpenAI, AWS Bedrock), PII detection, full audit traces, jailbreak prevention. |
@@ -98,7 +98,7 @@ That's it. Same code deploys to AWS Lambda, ECS, Azure Functions, or Container A
 ### 🧩 Works with the Frameworks You Already Use
 
 <p align="center">
-  <b>OpenAI Agents SDK</b> &nbsp;•&nbsp; <b>LangGraph</b> &nbsp;•&nbsp; <b>CrewAI</b> &nbsp;•&nbsp; <b>Google ADK</b> &nbsp;•&nbsp; <b>Smolagents</b> &nbsp;•&nbsp; <b>Pydantic AI</b>
+  <b>OpenAI Agents SDK</b> &nbsp;•&nbsp; <b>LangGraph</b> &nbsp;•&nbsp; <b>CrewAI</b> &nbsp;•&nbsp; <b>Google ADK</b> &nbsp;•&nbsp; <b>Smolagents</b> &nbsp;•&nbsp; <b>Pydantic AI</b> &nbsp;•&nbsp; <b>Microsoft Agent Framework</b>
 </p>
 
 No rewrites. No re-learning. Bring your agents — Agent Kernel handles the platform layer.

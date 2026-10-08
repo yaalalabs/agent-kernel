@@ -52,3 +52,9 @@ class BaseTrace(ABC):
         Initialize Pydantic AI instrumentation
         """
         raise NotImplementedError
+
+    def maf(self) -> Runner:
+        """
+        Initialize Microsoft Agent Framework instrumentation
+        """
+        raise NotImplementedError
