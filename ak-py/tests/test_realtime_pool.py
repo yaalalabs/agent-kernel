@@ -257,7 +257,7 @@ class TestRealtimePoolShutdown:
         runner.process(QueueMessage(body=body, attributes={"request_id": "r1", "integration": "livekit"}, group_id="s1", dedup_id="d1"))
 
         chat_service.prepare_agent_handler.assert_not_called()
-        assert RealtimeConnectionPool.get() is None
+        assert RealtimeConnectionPool.get()._connections == {}
 
 
 class TestRealtimeRunnerReuse:

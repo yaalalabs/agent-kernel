@@ -7,7 +7,7 @@ from ..core.config import AKConfig
 from ..core.model import BaseRunRequest, ExecutionMode, StreamChunk
 from ..core.util.factory import AKConfigError
 from .consumer import ConsumerLoop
-from .envelope import ATTR_ENDPOINT_URL, ATTR_REALTIME, ATTR_REQUEST_ID, ATTR_STATUS_CODE, ATTR_THREAD, ATTR_USER_ID, QueueMessage, QueueName
+from .envelope import ATTR_ENDPOINT_URL, ATTR_REQUEST_ID, ATTR_STATUS_CODE, ATTR_THREAD, ATTR_USER_ID, QueueMessage, QueueName
 from .integration_delivery import IntegrationDelivery
 from .realtime_pool import RealtimeConnectionPool
 from .thread_runner import ThreadRunner
@@ -184,17 +184,8 @@ class AgentRunner:
             message.attributes.setdefault(ATTR_USER_ID, body.user_id)
         return request_id
 
-    def _send_to_output(
-        self,
-        source: QueueMessage,
-        response_body,
-        status_code: Optional[int] = None,
-        dedup_suffix: Optional[str] = None,
-        extra_attributes: Optional[dict] = None,
-    ) -> None:
+    def _send_to_output(self, source: QueueMessage, response_body, status_code: Optional[int] = None, dedup_suffix: Optional[str] = None) -> None:
         attributes = {key: value for key, value in source.attributes.items() if _is_forwarded(key)}
-        if extra_attributes:
-            attributes.update(extra_attributes)
         if status_code is not None:
             attributes[ATTR_STATUS_CODE] = str(status_code)
 
@@ -277,38 +268,9 @@ class RealtimeAgentRunner(AgentRunner):
         return [pool.get_task()]
 
     def process(self, message: QueueMessage) -> None:
-        if ThreadRunner.shutdown_event.is_set():
-            # The model sockets are closing: input arriving now is dropped rather than retried, since
-            # replaying it to a new connection after a restart would feed the model stale audio.
-            self._log.debug(f"Shutting down: dropping realtime input {message.message_id}")
-            return
-
         body = BaseRunRequest.model_validate(json.loads(message.body))
         request_id = self._resolve_request_metadata(message, body)
-
-        pool = RealtimeConnectionPool.initialize()
-
-        # Resolve the agent/session only when the session's connection is first created;
-        # every later audio chunk reuses it (resolving here would load the session and log
-        # the selection on each chunk).
-        conn = pool.get_connection(body.session_id)
-        if conn is None:
-            handler = self._chat_service.prepare_agent_handler(body.session_id, body.agent)
-            conn = pool.get_or_create(body.session_id, handler.service.agent, handler.service.runtime, handler.service.session)
-
-        conn.update_delivery_context(
-            request_id=request_id,
-            user_id=message.attributes.get(ATTR_USER_ID),
-            integration=IntegrationDelivery.integration_of(message.attributes),
-            reply_context=IntegrationDelivery.reply_context(message.attributes),
-        )
-
-        for request in body.requests:
-            if getattr(request, "type", None) == "voice":
-                conn.append_audio(request.audio_data)
-            elif getattr(request, "type", None) == "text":
-                conn.send_text(request.prompt)
-
+        RealtimeConnectionPool.initialize().dispatch(body, request_id, message.attributes.get(ATTR_USER_ID), message.attributes, self._chat_service)
         self._log.debug(f"[REALTIME CHUNK] request_id={request_id} (receive_count={message.receive_count})")
 
     def on_permanent_failure(self, message: QueueMessage) -> None:
@@ -316,11 +278,9 @@ class RealtimeAgentRunner(AgentRunner):
         self._log.error(f"Permanent failure for message {message.message_id}")
         try:
             max_receive_count = AKConfig.get().execution.queues.input.max_receive_count
-            error_chunk = StreamChunk(error=f"Failed to process message after {max_receive_count} retries", done=True).model_dump(exclude_none=True)
-            # The input message carries no realtime marker (the pool stamps it on output), so it is added here;
-            # without it the Response Handler routes the failure to a webhook outbound adapter this edge lacks.
-            self._send_to_output(
-                message, error_chunk, status_code=None, dedup_suffix=f"{message.receive_count}-error", extra_attributes={ATTR_REALTIME: "true"}
+            dedup_id = f"{message.dedup_id}-{message.receive_count}-error" if message.dedup_id else None
+            RealtimeConnectionPool.send_permanent_failure(
+                self._transport, message.attributes, message.group_id, dedup_id, f"Failed to process message after {max_receive_count} retries"
             )
         except Exception:
             self._log.exception("Failed to send permanent-failure error chunk to output queue")

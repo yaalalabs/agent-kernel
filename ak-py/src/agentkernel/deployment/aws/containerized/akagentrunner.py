@@ -6,8 +6,7 @@ import logging
 from ....core.chat_service import ChatService
 from ....core.config import AKConfig, ExecutionMode
 from ....core.model import BaseRunRequest, StreamChunk
-from ....pipeline.envelope import ATTR_INTEGRATION, REPLY_CONTEXT_PREFIX
-from ....pipeline.realtime_pool import RealtimeConnectionPool, send_permanent_failure
+from ....pipeline.realtime_pool import RealtimeConnectionPool
 from ....pipeline.thread_runner import ThreadRunner
 from ....pipeline.transport.base import QueueTransportFactory
 from ..core.sqs_handler import SQSHandler
@@ -311,7 +310,7 @@ class ECSRealtimeAgentRunner(ECSAgentRunner):
             if record_attributes.get("user_id"):
                 attributes["user_id"] = record_attributes["user_id"]
             dedup_id = record_attributes.get("message_deduplication_id")
-            send_permanent_failure(
+            RealtimeConnectionPool.send_permanent_failure(
                 QueueTransportFactory.create(),
                 attributes,
                 record_attributes["message_group_id"],
@@ -323,42 +322,11 @@ class ECSRealtimeAgentRunner(ECSAgentRunner):
 
     @classmethod
     def process_message(cls, record: dict) -> None:
-        message_id = record.get("MessageId")
         receive_count = record.get("Attributes", {}).get("ApproximateReceiveCount", "1")
-        if ThreadRunner.shutdown_event.is_set():
-            # The model sockets are closing: input arriving now is dropped rather than retried, since
-            # replaying it to a new connection after a restart would feed the model stale audio.
-            cls._log.debug(f"Shutting down: dropping realtime input {message_id}")
-            return
-
         body = BaseRunRequest.model_validate(json.loads(record["Body"]))
         record_attributes = cls._get_record_attributes(raw_queue_message=record, body=body)
         request_id = record_attributes["request_id"]
-        user_id = record_attributes.get("user_id")
-
-        pool = RealtimeConnectionPool.initialize()
-
-        conn = pool.get_connection(body.session_id)
-        if conn is None:
-            handler = cls._get_chat_service().prepare_agent_handler(body.session_id, body.agent)
-            conn = pool.get_or_create(body.session_id, handler.service.agent, handler.service.runtime, handler.service.session)
-            conn.session = handler.service.session
-
-        custom_attrs = SQSHandler.get_message_custom_attributes(record)
-        integration = custom_attrs.get(ATTR_INTEGRATION)
-        reply_context = {k[len(REPLY_CONTEXT_PREFIX) :]: v for k, v in custom_attrs.items() if k.startswith(REPLY_CONTEXT_PREFIX)}
-
-        conn.update_delivery_context(
-            request_id=request_id,
-            user_id=user_id,
-            integration=integration,
-            reply_context=reply_context,
+        RealtimeConnectionPool.initialize().dispatch(
+            body, request_id, record_attributes.get("user_id"), SQSHandler.get_message_custom_attributes(record), cls._get_chat_service()
         )
-
-        for request in body.requests:
-            if getattr(request, "type", None) == "voice":
-                conn.append_audio(request.audio_data)
-            elif getattr(request, "type", None) == "text":
-                conn.send_text(request.prompt)
-
         cls._log.debug(f"[REALTIME CHUNK] request_id={request_id} (receive_count={receive_count})")

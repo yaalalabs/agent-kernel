@@ -5,7 +5,7 @@ import logging
 import threading
 import time
 import uuid
-from typing import Optional
+from typing import TYPE_CHECKING, Any, Mapping, Optional
 
 from ..core.base import Agent as BaseAgent
 from ..core.base import Session
@@ -17,8 +17,13 @@ from ..core.realtime import RealtimeRunner as BaseRealtimeRunner
 from ..core.runtime import Runtime
 from ..core.tool import ToolContext
 from .envelope import ATTR_INTEGRATION, ATTR_REALTIME, ATTR_REQUEST_ID, ATTR_USER_ID, REPLY_CONTEXT_PREFIX, QueueMessage, QueueName
+from .integration_delivery import IntegrationDelivery
 from .thread_runner import ThreadRunner
 from .transport.base import QueueTransport, QueueTransportFactory
+
+if TYPE_CHECKING:  # typing only; the runners pass these in
+    from ..core.chat_service import ChatService
+    from ..core.model import BaseRunRequest
 
 _log = logging.getLogger("ak.pipeline.realtime_pool")
 
@@ -29,28 +34,6 @@ _IDLE_TIMEOUT_SECONDS = 300.0
 # At shutdown, how long work still running on the pool loop (a socket close, a tool call) may
 # finish before it is cancelled.
 _SHUTDOWN_GRACE_SECONDS = 2.0
-
-
-def send_permanent_failure(transport: QueueTransport, source_attributes: dict, group_id: Optional[str], dedup_id: Optional[str], error: str) -> None:
-    """Send a terminal error chunk for an input message that exhausted its retries.
-
-    The runner's generic failure reply is a status-500 body without ``ATTR_REALTIME``, which the
-    Response Handler would route to a webhook outbound adapter that a stateful edge does not have.
-    Emitting the same marked ``StreamChunk`` shape the pool uses sends it to the registered edge's
-    ``deliver_chunk`` error path, so the room is told instead of left silent.
-
-    :param transport: The transport to send the output message on.
-    :param source_attributes: The failed input message's attributes (its routing is forwarded).
-    :param group_id: The session id, which is the output queue group.
-    :param dedup_id: Unique id for this output message.
-    :param error: The user-facing error text.
-    """
-    attributes = {ATTR_REALTIME: "true", ATTR_REQUEST_ID: source_attributes.get(ATTR_REQUEST_ID) or "unknown"}
-    for key, value in source_attributes.items():
-        if key in (ATTR_USER_ID, ATTR_INTEGRATION) or key.startswith(REPLY_CONTEXT_PREFIX):
-            attributes[key] = value
-    body = json.dumps(StreamChunk(error=error, done=True).model_dump(exclude_none=True, mode="json"))
-    transport.send(QueueName.OUTPUT, QueueMessage(body=body, attributes=attributes, group_id=group_id, dedup_id=dedup_id))
 
 
 class RealtimeConnection:
@@ -492,6 +475,70 @@ class RealtimeConnectionPool:
             with self._conn_lock:
                 self._connections.pop(session_id, None)
             raise
+
+    def dispatch(
+        self, body: "BaseRunRequest", request_id: str, user_id: Optional[str], attributes: Mapping[str, Any], chat_service: "ChatService"
+    ) -> None:
+        """Forward one realtime input message's requests to its session's model connection.
+
+        The single path every realtime runner (the pipeline's and ECS's) takes, so they cannot drift.
+        During shutdown the input is dropped: the sockets are closing, and replaying it to a new
+        connection after a restart would feed the model stale audio. Otherwise the session's
+        connection is reused, or created on its first message (resolving the agent and session only
+        then, not per audio chunk); its delivery context is refreshed so the output routes back to
+        the edge that sent this input; and each voice or text request is sent to the model.
+
+        :param body: The input message's run request.
+        :param request_id: The resolved request id, stamped on the output.
+        :param user_id: The input's user id, if any.
+        :param attributes: The input message's attributes, carrying the integration return address.
+        :param chat_service: Resolves the agent and session when the connection is created.
+        """
+        if ThreadRunner.shutdown_event.is_set():
+            _log.debug(f"Shutting down: dropping realtime input for session {body.session_id}")
+            return
+
+        conn = self.get_connection(body.session_id)
+        if conn is None:
+            handler = chat_service.prepare_agent_handler(body.session_id, body.agent)
+            conn = self.get_or_create(body.session_id, handler.service.agent, handler.service.runtime, handler.service.session)
+
+        conn.update_delivery_context(
+            request_id=request_id,
+            user_id=user_id,
+            integration=IntegrationDelivery.integration_of(attributes),
+            reply_context=IntegrationDelivery.reply_context(attributes),
+        )
+        for request in body.requests:
+            if getattr(request, "type", None) == "voice":
+                conn.append_audio(request.audio_data)
+            elif getattr(request, "type", None) == "text":
+                conn.send_text(request.prompt)
+
+    @staticmethod
+    def send_permanent_failure(
+        transport: QueueTransport, source_attributes: Mapping[str, Any], group_id: Optional[str], dedup_id: Optional[str], error: str
+    ) -> None:
+        """Send a terminal error chunk for a realtime input message that exhausted its retries.
+
+        A runner's generic failure reply carries no ``ATTR_REALTIME``, so the Response Handler would
+        route it to a webhook outbound adapter, which a stateful edge does not have. Emitting the
+        same marked ``StreamChunk`` shape the connections emit sends it to the live edge's
+        ``deliver_chunk`` error path instead, so the room is told rather than left silent.
+
+        :param transport: The transport to send the output message on.
+        :param source_attributes: The failed input message's attributes; its user id and integration
+            return address are forwarded.
+        :param group_id: The session id, which is the output queue group.
+        :param dedup_id: Unique id for this output message.
+        :param error: The user-facing error text.
+        """
+        attributes = {ATTR_REALTIME: "true", ATTR_REQUEST_ID: source_attributes.get(ATTR_REQUEST_ID) or "unknown"}
+        for key, value in source_attributes.items():
+            if key == ATTR_USER_ID or IntegrationDelivery.is_routing_attribute(key):
+                attributes[key] = value
+        body = json.dumps(StreamChunk(error=error, done=True).model_dump(exclude_none=True, mode="json"))
+        transport.send(QueueName.OUTPUT, QueueMessage(body=body, attributes=attributes, group_id=group_id, dedup_id=dedup_id))
 
     def shutdown(self) -> None:
         if self._loop and not self._loop.is_closed():

@@ -32,10 +32,17 @@ def _make_record(requests, session_id: str = "room_01"):
     }
 
 
+def _pool_with(conn):
+    """A real pool, so the runner exercises the shared ``dispatch`` path, with the socket side mocked."""
+    pool = RealtimeConnectionPool()
+    pool.get_connection = MagicMock(return_value=conn)
+    pool.get_or_create = MagicMock(return_value=conn)
+    return pool
+
+
 def _process(record):
     conn = MagicMock()
-    pool = MagicMock()
-    pool.get_connection.return_value = conn
+    pool = _pool_with(conn)
     with patch.object(RealtimeConnectionPool, "initialize", return_value=pool):
         ECSRealtimeAgentRunner.process_message(record)
     return pool, conn
@@ -92,8 +99,7 @@ def test_process_message_routes_text_and_audio_requests():
 
 def test_process_message_reuses_existing_connection_without_loading_agent():
     conn = MagicMock()
-    pool = MagicMock()
-    pool.get_connection.return_value = conn
+    pool = _pool_with(conn)
     chat_service = MagicMock()
     with (
         patch.object(RealtimeConnectionPool, "initialize", return_value=pool),
