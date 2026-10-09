@@ -135,6 +135,21 @@ def test_import_does_not_load_testing_module(tmp_path):
     assert result.returncode == 0, result.stderr
 
 
+def test_kubernetes_needs_no_sdk(tmp_path):
+    # Fresh interpreter: the eager export and the factory branch must not pull in any SDK.
+    code = (
+        "import sys\n"
+        "import agentkernel.secret\n"
+        "from agentkernel.core.config import _SecretConfig\n"
+        "from agentkernel.secret.factory import SecretProviderFactory\n"
+        "SecretProviderFactory.get(_SecretConfig.model_validate({'provider': {'type': 'kubernetes'}}))\n"
+        "assert 'kubernetes' not in sys.modules, 'kubernetes SDK imported'\n"
+        "assert 'boto3' not in sys.modules, 'boto3 imported'\n"
+    )
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, cwd=tmp_path)
+    assert result.returncode == 0, result.stderr
+
+
 # -- AWSSMSecretProvider -------------------------------------------------------------------
 
 
