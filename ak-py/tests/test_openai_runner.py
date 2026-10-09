@@ -6,6 +6,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from agents import Agent as SDKAgent
 from agents import RunHooks
+from agents.usage import Usage
+from openai.types.responses.response_usage import InputTokensDetails, OutputTokensDetails
 from pydantic import BaseModel
 
 from agentkernel.core import Session
@@ -1686,3 +1688,31 @@ class TestAnOrdinaryTurnWhileAPauseIsPending:
             await runner.run(agent, session, [AgentRequestText(prompt="and the weather?")])
 
         assert PausedRunState.get(session, paused.run_id) is not None
+
+
+class TestOpenAISDKCompatibility:
+    """The installed openai-agents must build the usage records the installed openai SDK requires (#804).
+
+    openai 2.54 made ``InputTokensDetails.cache_write_tokens`` required; openai-agents before 0.18.1
+    builds ``InputTokensDetails(cached_tokens=0)`` for every run, so every run fails validation.
+    """
+
+    def test_an_empty_usage_record_builds(self):
+        usage = Usage()
+
+        assert usage.input_tokens_details.cached_tokens == 0
+
+    def test_cache_write_tokens_carry_through_usage_accumulation(self):
+        usage = Usage()
+        usage.add(
+            Usage(
+                requests=1,
+                input_tokens=10,
+                output_tokens=5,
+                total_tokens=15,
+                input_tokens_details=InputTokensDetails(cached_tokens=2, cache_write_tokens=3),
+                output_tokens_details=OutputTokensDetails(reasoning_tokens=0),
+            )
+        )
+
+        assert usage.input_tokens_details.cache_write_tokens == 3
