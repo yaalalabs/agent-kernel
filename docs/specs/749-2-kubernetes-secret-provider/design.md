@@ -143,6 +143,8 @@ secretStore:
   - An empty list fails `helm template` / `helm install` with `fail "secretStore.secrets must list at least one Secret when secretStore.enabled"`.
   - Each entry needs a `name`; a missing one fails with `required "secretStore.secrets[].name is required"`. This is the chart's existing `required` pattern (`templates/configmap-env.yaml:48`, `templates/gateway.yaml:40`).
   - A name listed twice fails with `fail`, because two volumes cannot share a mount path.
+  - With both `agentRunner.enabled` and `ioHandler.enabled` false (the standalone sandbox-worker install), no tier would mount the Secrets, so `secretStore.enabled` fails with `fail "secretStore.enabled needs an agent-executing tier: agentRunner.enabled or ioHandler.enabled"`.
+  - The checks run in every release, not only when an agent-executing Deployment renders.
   - Entries are objects, not bare strings, so a later per-Secret option can be added without breaking existing values.
   - Names are not defaulted or derived from the fullname: the user creates each Secret and must be able to read its name straight from their values.
   - Any existing Secret works, including one created by the External Secrets Operator.
