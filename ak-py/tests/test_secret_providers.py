@@ -1,3 +1,4 @@
+import os
 import subprocess
 import sys
 
@@ -9,6 +10,7 @@ import agentkernel.secret
 from agentkernel.core.util.factory import AKConfigError
 from agentkernel.secret import EnvSecretProvider, SecretError
 from agentkernel.secret.providers.aws_ssm import AWSSMSecretProvider
+from agentkernel.secret.providers.kubernetes import KubernetesSecretProvider
 from agentkernel.secret.testing import SecretProviderContract
 
 _PREFIX = "myproduct-dev-agents"
@@ -91,6 +93,24 @@ class TestAWSSMProviderContract(SecretProviderContract):
 
     def seed(self, provider, key, value):
         self._client.parameters[f"/ak/{_PREFIX}/{key.lower()}"] = value
+
+
+class TestKubernetesProviderContract(SecretProviderContract):
+    @pytest.fixture(autouse=True)
+    def _keep_root(self, tmp_path):
+        self._root = tmp_path
+        self._seeds = 0
+
+    @pytest.fixture
+    def provider(self, tmp_path):
+        return KubernetesSecretProvider(str(tmp_path))
+
+    def seed(self, provider, key, value):
+        # Alternate Secret directories so the contract runs against the multi-Secret layout.
+        directory = self._root / ("openai-credentials", "slack-credentials")[self._seeds % 2]
+        self._seeds += 1
+        directory.mkdir(exist_ok=True)
+        (directory / key).write_bytes(value.encode("utf-8"))
 
 
 def test_env_provider_treats_empty_variable_as_absent(monkeypatch):
@@ -193,3 +213,161 @@ def test_aws_ssm_client_is_created_lazily_and_once(ssm_client):
     provider.get_secret("OPENAI_API_KEY")
     provider.get_secret("OTHER_KEY")
     assert ssm_client.created == ["ssm"]
+
+
+# -- KubernetesSecretProvider --------------------------------------------------------------
+
+
+def _write(path, value="v"):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(value.encode("utf-8"))
+
+
+def _kubelet_secret(directory, revision, files):
+    """Lay out a Secret directory the way the kubelet does: ..<rev>/KEY, ..data -> ..<rev>, KEY -> ..data/KEY."""
+    directory.mkdir(parents=True, exist_ok=True)
+    for name, value in files.items():
+        _write(directory / revision / name, value)
+    data = directory / "..data"
+    if data.is_symlink():
+        data.unlink()
+    data.symlink_to(revision)
+    for name in files:
+        link = directory / name
+        if not link.is_symlink():
+            link.symlink_to(f"..data/{name}")
+
+
+def test_kubernetes_resolves_kubelet_layout_and_repointed_data(tmp_path):
+    secret = tmp_path / "creds"
+    _kubelet_secret(secret, "..2026_10_08_00_00_00.1", {"KEY": "old"})
+    provider = KubernetesSecretProvider(str(tmp_path))
+    assert provider.get_secret("KEY") == "old"
+
+    _kubelet_secret(secret, "..2026_10_08_00_00_01.2", {"KEY": "new", "ADDED": "added"})
+    assert provider.get_secret("KEY") == "new"
+    assert provider.get_secret("ADDED") == "added"
+
+
+def test_kubernetes_reads_top_level_key(tmp_path):
+    _write(tmp_path / "KEY", "top")
+    assert KubernetesSecretProvider(str(tmp_path)).get_secret("KEY") == "top"
+
+
+@pytest.mark.parametrize(
+    "layout",
+    [
+        {"a/KEY": "one-secret", "b/KEY": "two-secret"},
+        {"KEY": "one-secret", "b/KEY": "two-secret"},
+        {"a/KEY": "", "b/KEY": "two-secret"},
+    ],
+)
+def test_kubernetes_duplicates_raise_without_leaking_values(tmp_path, layout):
+    for rel, value in layout.items():
+        _write(tmp_path / rel, value)
+    with pytest.raises(SecretError) as info:
+        KubernetesSecretProvider(str(tmp_path)).get_secret("KEY")
+    message = str(info.value)
+    assert "one-secret" not in message and "two-secret" not in message
+    assert all(str(tmp_path / rel) in message for rel in layout)
+
+
+def test_kubernetes_skips_dot_entries_when_secret_is_mounted_directly(tmp_path):
+    _kubelet_secret(tmp_path, "..ts", {"KEY": "direct"})
+    assert KubernetesSecretProvider(str(tmp_path)).get_secret("KEY") == "direct"
+
+
+def test_kubernetes_hidden_directory_is_not_searched(tmp_path):
+    _write(tmp_path / ".hidden" / "KEY")
+    assert KubernetesSecretProvider(str(tmp_path)).get_secret("KEY") is None
+
+
+def test_kubernetes_does_not_search_deeper_than_one_level(tmp_path):
+    _write(tmp_path / "a" / "b" / "KEY")
+    assert KubernetesSecretProvider(str(tmp_path)).get_secret("KEY") is None
+
+
+def test_kubernetes_directory_named_like_key_is_not_a_candidate(tmp_path):
+    (tmp_path / "a" / "KEY").mkdir(parents=True)
+    assert KubernetesSecretProvider(str(tmp_path)).get_secret("KEY") is None
+
+
+def test_kubernetes_empty_file_is_a_miss(tmp_path):
+    _write(tmp_path / "a" / "KEY", "")
+    assert KubernetesSecretProvider(str(tmp_path)).get_secret("KEY") is None
+
+
+def test_kubernetes_missing_mount_path_names_path_and_secret_store(tmp_path):
+    missing = tmp_path / "absent"
+    with pytest.raises(SecretError) as info:
+        KubernetesSecretProvider(str(missing)).get_secret("KEY")
+    assert str(missing) in str(info.value) and "secretStore" in str(info.value)
+
+
+def test_kubernetes_mount_path_that_is_a_file_raises(tmp_path):
+    target = tmp_path / "file"
+    target.write_text("x")
+    with pytest.raises(SecretError) as info:
+        KubernetesSecretProvider(str(target)).get_secret("KEY")
+    assert str(target) in str(info.value) and "secretStore" in str(info.value)
+
+
+@pytest.mark.skipif(hasattr(os, "geteuid") and os.geteuid() == 0, reason="root ignores directory permissions")
+def test_kubernetes_unreadable_directory_raises(tmp_path):
+    mount = tmp_path / "mount"
+    mount.mkdir()
+    mount.chmod(0)
+    try:
+        with pytest.raises(SecretError, match="PermissionError"):
+            KubernetesSecretProvider(str(mount)).get_secret("KEY")
+    finally:
+        mount.chmod(0o700)
+
+
+def test_kubernetes_invalid_utf8_raises_without_chaining_or_leaking(tmp_path):
+    path = tmp_path / "a" / "KEY"
+    path.parent.mkdir()
+    path.write_bytes(b"\xffSECRETBYTES\xfe")
+    with pytest.raises(SecretError) as info:
+        KubernetesSecretProvider(str(tmp_path)).get_secret("KEY")
+    assert info.value.__cause__ is None and info.value.__suppress_context__
+    assert "SECRETBYTES" not in str(info.value) and str(path) in str(info.value)
+
+
+def test_kubernetes_file_vanishing_before_read_is_a_miss(tmp_path, monkeypatch):
+    _write(tmp_path / "a" / "KEY")
+
+    def _gone(*args, **kwargs):
+        raise FileNotFoundError
+
+    monkeypatch.setattr("agentkernel.secret.providers.kubernetes.open", _gone, raising=False)
+    assert KubernetesSecretProvider(str(tmp_path)).get_secret("KEY") is None
+
+
+@pytest.mark.parametrize("key", ["..", ".env", "a/b", ""])
+def test_kubernetes_rejects_keys_that_could_leave_mount_path(tmp_path, key):
+    with pytest.raises(ValueError):
+        KubernetesSecretProvider(str(tmp_path)).get_secret(key)
+
+
+@pytest.mark.parametrize("mount_path", ["", "relative/path"])
+def test_kubernetes_rejects_empty_or_relative_mount_path(mount_path):
+    with pytest.raises(AKConfigError, match="secret.provider.kubernetes.mount_path"):
+        KubernetesSecretProvider(mount_path)
+
+
+def test_kubernetes_construction_touches_no_file(monkeypatch):
+    def _boom(*args, **kwargs):
+        raise AssertionError("filesystem touched at construction")
+
+    monkeypatch.setattr(os, "scandir", _boom)
+    KubernetesSecretProvider("/nonexistent/mount")
+
+
+def test_kubernetes_rediscovers_a_key_moved_between_secrets(tmp_path):
+    provider = KubernetesSecretProvider(str(tmp_path))
+    _write(tmp_path / "a" / "KEY", "first")
+    assert provider.get_secret("KEY") == "first"
+    (tmp_path / "a" / "KEY").unlink()
+    _write(tmp_path / "b" / "KEY", "second")
+    assert provider.get_secret("KEY") == "second"
