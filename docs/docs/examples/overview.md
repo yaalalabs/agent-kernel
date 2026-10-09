@@ -20,6 +20,9 @@ Examples demonstrating Agent Kernel's API capabilities and integrations:
   - `multi/` - Multi-agent runtime with agents exposed as MCP tools
 - **`agui/`** - AG-UI protocol example: an OpenAI Agents SDK agent driven by a React/Vite frontend
   over a streamed AG-UI event surface, with shared state and client-context tools
+- **`hitl/`** - Human-in-the-loop example: an OpenAI Agents SDK agent with a gated tool and a
+  LangGraph agent asking multiple-choice and free-text questions, both paused and resumed from a
+  minimal React AG-UI frontend
 - **`slack/`** - Slack integration example
 - **`whatsapp/`** - WhatsApp integration example
 - **`instagram/`** - Instagram integration example
@@ -36,6 +39,7 @@ Command-line interface examples for local development and testing:
   - `openai/` - OpenAI Guardrails integration with LangGraph agents
 - **`langgraph/`** - LangGraph framework integration examples
 - **`logfire/`** - Pydantic Logfire tracing over the OpenAI Agents SDK example
+- **`cloudwatch/`** - AWS CloudWatch tracing (OpenTelemetry to X-Ray) over the OpenAI Agents SDK example
 - **`multi/`** - Multi-agent examples combining different frameworks
 - **`openai/`** - OpenAI Agent SDK integration examples
 - **`openai-dynamic/`** - OpenAI Agent SDK agents registered dynamically at runtime
@@ -107,6 +111,7 @@ AWS Lambda serverless deployment examples:
 - **`websocket-openai/`** - OpenAI agents with WebSocket API for real-time bidirectional communication
 - **`streaming-openai/`** - OpenAI agents with WebSocket event streaming (`execution.mode: stream`)
 - **`schedule-openai/`** - Deferred and recurring chats on AWS Lambda: EventBridge Scheduler delivers each occurrence into the Input Queue for the agent-runner Lambda, backed by a DynamoDB schedule store
+- **`slack-openai/`** - Slack messaging integration on AWS Lambda: webhooks are served by the request-handler Lambda and replies are delivered by the response-handler Lambda
 
 ### 📁 Azure Containerized Examples (`/examples/azure-containerized`)
 

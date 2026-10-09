@@ -4,16 +4,35 @@
 # webhooks:
 #   POST {invoke_url}/api/v1/slack/events      -> /slack/events      (Slack Events API request URL)
 #   POST {invoke_url}/api/v1/telegram/webhook  -> /telegram/webhook  (Telegram setWebhook URL)
+#
+# Networking is reused from the weekly integration base deployment (examples/aws-serverless/openai),
+# the same VPC/private subnets (and so the same NAT gateway) every weekly-matrix example runs in,
+# instead of provisioning a dedicated VPC + NAT here. Set vpc_id/private_subnet_ids to override.
+data "terraform_remote_state" "base" {
+  backend = "s3"
+  config = {
+    bucket = "agent-kernel-terraform-state-bucket-dev"
+    key    = "examples/aws-serverless/openai/terraform.tfstate"
+    region = "ap-southeast-2"
+  }
+}
+
+locals {
+  vpc_id             = coalesce(var.vpc_id, data.terraform_remote_state.base.outputs.vpc_id)
+  private_subnet_ids = var.private_subnet_ids != null ? var.private_subnet_ids : data.terraform_remote_state.base.outputs.private_subnet_ids
+}
+
 module "e2e_agents" {
   source  = "yaalalabs/ak-containerized/aws"
-  version = "0.9.1"
+  version = "0.9.5"
 
+  providers = { aws = aws, docker = docker }
   # Basic ECS configuration
   prefix               = var.prefix
   container_type       = "ecs"
   region               = var.region
-  vpc_id               = var.vpc_id
-  private_subnet_ids   = var.private_subnet_ids
+  vpc_id               = local.vpc_id
+  private_subnet_ids   = local.private_subnet_ids
   product_display_name = "AK Messaging Integrations E2E"
 
   gateway_endpoints = [

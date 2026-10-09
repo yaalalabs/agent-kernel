@@ -14,7 +14,7 @@ description: >
 license: Apache-2.0
 metadata:
   author: yaalalabs
-  version: "0.9.3"
+  version: "0.9.5"
   category: user
 ---
 
@@ -61,7 +61,7 @@ Use official modules:
 - GCP serverless: `yaalalabs/ak-serverless/google`
 - GCP containerized: `yaalalabs/ak-containerized/google`
 
-Use current module version (`0.9.3`) unless user requests another.
+Use current module version (`0.9.5`) unless user requests another.
 
 Kubernetes does not use Terraform: the Helm chart lives at `ak-deployment/ak-k8s/chart` in the
 Agent Kernel repository and is published as an OCI artifact
@@ -90,7 +90,7 @@ When the user selects a session store, always update both app dependencies and `
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,redis]>=0.9.3"
+  "agentkernel[openai,api,redis]>=0.9.5"
 ]
 ```
 
@@ -117,7 +117,7 @@ OSS engine. Agent Kernel treats it as a first-class session and response store b
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws,valkey]>=0.9.3"
+  "agentkernel[openai,api,aws,valkey]>=0.9.5"
 ]
 ```
 
@@ -145,7 +145,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws]>=0.9.3"
+  "agentkernel[openai,api,aws]>=0.9.5"
 ]
 ```
 
@@ -166,7 +166,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,azure]>=0.9.3"
+  "agentkernel[openai,api,azure]>=0.9.5"
 ]
 ```
 
@@ -188,7 +188,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,gcp]>=0.9.3"
+  "agentkernel[openai,api,gcp]>=0.9.5"
 ]
 ```
 
@@ -366,7 +366,7 @@ This is the single-Lambda pattern: use `request_handler` plus any `gateway_endpo
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.9.3"
+  version = "0.9.5"
 
   prefix               = var.prefix
   product_display_name = "AK Serverless"
@@ -417,7 +417,7 @@ Each Lambda can use one of three `package_type` values:
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.9.3"
+  version = "0.9.5"
 
   prefix             = var.prefix
   region             = var.region
@@ -552,7 +552,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws]>=0.9.3"  # include 'redis' if using Redis, or 'valkey' if using Valkey session/response store
+  "agentkernel[openai,api,aws]>=0.9.5"  # include 'redis' if using Redis, or 'valkey' if using Valkey session/response store
 ]
 ```
 
@@ -565,7 +565,7 @@ This follows the current websocket example shape: the request handler stays on t
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.9.3"
+  version = "0.9.5"
 
   prefix               = var.prefix
   region               = var.region
@@ -703,7 +703,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws,redis,auth]>=0.9.3"
+  "agentkernel[openai,api,aws,redis,auth]>=0.9.5"
 ]
 ```
 
@@ -716,7 +716,7 @@ Same Terraform shape as WebSocket Async (`request_handler`, `agent_runner`, `res
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.9.3"
+  version = "0.9.5"
 
   prefix               = var.prefix
   region               = var.region
@@ -781,6 +781,81 @@ authorizer = {
 }
 ```
 
+### F) Messaging Integrations (Slack, Teams, WhatsApp, Messenger, Instagram, Telegram)
+
+Webhooks run on Lambda in queue mode with `execution_mode = "rest_sync"` or `"rest_async"` (not the
+WebSocket modes). Wrap the handler in a `LambdaWebhookHost` in the request-handler Lambda and
+register its `handle` on the adapter's webhook path:
+
+```python
+from agentkernel.aws import Lambda, LambdaWebhookHost
+from agentkernel.integration.adapter import WebhookRESTRequestHandler
+from agentkernel.slack import SlackInboundAdapter
+
+slack = LambdaWebhookHost(WebhookRESTRequestHandler(SlackInboundAdapter()))
+
+
+@Lambda.register("/slack/events", method="POST")
+def slack_events(event, context):
+    return slack.handle(event, context)
+
+
+handler = Lambda.handler
+```
+
+WhatsApp, Messenger and Instagram also register the host's `challenge` for GET on the same path
+(`/<platform>/webhook`). Building the host checks the deployment on cold start (REST mode, `sqs`
+transport, base-path variables, the adapter's verification secret) and fails the init if any is off.
+
+Terraform:
+
+```hcl
+queue_mode                     = true
+execution_mode                 = "rest_async"
+create_dynamodb_response_store = true   # still required by the chat route
+
+gateway_endpoints = [
+  { path = "/slack/events", method = "POST" },   # Meta platforms: GET and POST on their path
+]
+
+request_handler = {
+  # ...
+  environment_variables = { SLACK_BOT_TOKEN = var.slack_bot_token, SLACK_SIGNING_SECRET = var.slack_signing_secret }
+}
+response_handler = {
+  # ...
+  environment_variables = { SLACK_BOT_TOKEN = var.slack_bot_token, SLACK_SIGNING_SECRET = var.slack_signing_secret }
+}
+```
+
+- Package the request handler and the response handler with `agentkernel[aws,<platform>]`; keep the
+  request-handler package slim (no agent frameworks) so a cold start stays inside Slack's 3 seconds.
+- `config.yaml` must declare `execution.queues.type: sqs`.
+- **Behind an authorizer**, platforms send no bearer token. Let their routes through with a bypass, and
+  turn authorizer caching off, or API Gateway answers 401 before the authorizer runs:
+
+  ```python
+  from agentkernel.aws import APIGatewayAuthorizer
+  from agentkernel.integration.adapter import WebhookRouteMatcher
+
+  handler = APIGatewayAuthorizer(validator=MyValidator(), bypass=WebhookRouteMatcher.for_integrations("slack")).handle
+  ```
+
+  ```hcl
+  authorizer = {
+    # ...
+    result_ttl_in_seconds = 0
+  }
+  ```
+
+- The route must be declared in all three places (the bypass, `Lambda.register`, `gateway_endpoints`).
+  Not registered gives a 500; missing from the bypass gives a 403 (the authorizer logs
+  `Event validation failed` for a request with no `Authorization` header); a nonzero TTL gives a 401
+  that Agent Kernel never logs.
+- Attachments need `multimodal.enabled` with `create_dynamodb_multimodal_memory_table = true` (or a
+  Redis/Valkey store the request handler can reach).
+- Full example: `examples/aws-serverless/slack-openai`.
+
 ## AWS Containerized (ECS/Fargate)
 
 ### A) Basic Mode (single container, direct execution)
@@ -798,7 +873,7 @@ if __name__ == "__main__":
 ```hcl
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/aws"
-  version = "0.9.3"
+  version = "0.9.5"
 
   prefix               = var.prefix
   region               = var.region
@@ -876,7 +951,7 @@ session:
 ```hcl
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/aws"
-  version = "0.9.3"
+  version = "0.9.5"
 
   prefix        = var.prefix
   region        = var.region
@@ -936,7 +1011,7 @@ module "containerized_agents" {
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws]>=0.9.3"
+  "agentkernel[openai,api,aws]>=0.9.5"
 ]
 ```
 
@@ -997,7 +1072,7 @@ registered here, no agent definitions) and `app_agent_runner.py` (`ECSAgentRunne
 ```hcl
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/aws"
-  version = "0.9.3"
+  version = "0.9.5"
 
   providers = { aws = aws, docker = docker }
 
@@ -1057,7 +1132,7 @@ handler = AzureFunctions.handler
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/azurerm"
-  version = "0.9.3"
+  version = "0.9.5"
 
   prefix               = var.prefix
   region               = var.region
@@ -1099,7 +1174,7 @@ module "serverless_agents" {
 ```hcl
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/azurerm"
-  version = "0.9.3"
+  version = "0.9.5"
 
   prefix               = var.prefix
   region               = var.region
@@ -1141,7 +1216,7 @@ def main() -> None:
 ```hcl
 module "serverless_agent" {
   source  = "yaalalabs/ak-serverless/google"
-  version = "0.9.3"
+  version = "0.9.5"
 
   providers = { google = google, google-beta = google-beta, docker = docker }
 
@@ -1170,7 +1245,7 @@ module "serverless_agent" {
 ```hcl
 module "serverless_agent" {
   source  = "yaalalabs/ak-serverless/google"
-  version = "0.9.3"
+  version = "0.9.5"
 
   providers = { google = google, google-beta = google-beta, docker = docker }
 
@@ -1195,8 +1270,8 @@ The module injects `AK_SESSION__TYPE=firestore` and `AK_SESSION__FIRESTORE__COLL
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,gcp]>=0.9.3"      # for Firestore sessions
-  # or: "agentkernel[openai,api,redis]>=0.9.3"  # for Redis sessions
+  "agentkernel[openai,api,gcp]>=0.9.5"      # for Firestore sessions
+  # or: "agentkernel[openai,api,redis]>=0.9.5"  # for Redis sessions
 ]
 ```
 
@@ -1221,7 +1296,7 @@ def main() -> None:
 ```hcl
 module "containerized_agent" {
   source  = "yaalalabs/ak-containerized/google"
-  version = "0.9.3"
+  version = "0.9.5"
 
   providers = { google = google, google-beta = google-beta, docker = docker }
 
@@ -1307,8 +1382,8 @@ also cross-installs Linux wheels so builds work from macOS).
 **Install:**
 
 ```bash
-helm pull oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.9.3 --untar   # unpacks the flavor values files
-helm install ak oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.9.3 \
+helm pull oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.9.5 --untar   # unpacks the flavor values files
+helm install ak oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.9.5 \
   -f agent-kernel/values-dev.yaml \
   --set ioHandler.image.repository=<io image> \
   --set agentRunner.image.repository=<runner image> --set image.tag=<tag> \

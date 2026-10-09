@@ -372,3 +372,33 @@ class TestSmolagentsRunOptions:
             module.pre_hook(native, [hook]).post_hook(native, [hook])  # resolved by the smolagents name rule
             assert module.get_agent("smol_reserved").pre_hooks == [hook]
             assert module.get_agent("smol_reserved").post_hooks == [hook]
+
+
+class TestSmolagentsRunnerCannotPause:
+    """
+    The docs tell users this framework cannot pause; that claim is only true if the runner says so.
+
+    It declares nothing — `supports_pause` is inherited `False` — which is the point: a framework
+    without a durable, programmatic pause needs no declaration, and `resume` keeps its raising
+    default rather than pretending.
+    """
+
+    def test_supports_pause_is_false(self):
+        assert SmolagentsRunner().supports_pause is False
+
+    def test_it_declares_nothing_itself(self):
+        """Inherited, not overridden: adding `supports_pause = False` here would be noise."""
+        assert "supports_pause" not in SmolagentsRunner.__dict__
+
+    @pytest.mark.asyncio
+    async def test_resume_raises_and_names_the_runner(self):
+        runner = SmolagentsRunner()
+        with pytest.raises(NotImplementedError, match=runner.name):
+            await runner.resume(None, Session("s"), [], [], None)
+
+    @pytest.mark.asyncio
+    async def test_resume_stream_raises_and_names_the_runner(self):
+        runner = SmolagentsRunner()
+        with pytest.raises(NotImplementedError, match=runner.name):
+            async for _ in runner.resume_stream(None, Session("s"), [], [], None):
+                pass

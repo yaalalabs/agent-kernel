@@ -1,35 +1,29 @@
 import json
 import logging
-from typing import Optional
+from typing import List, Optional
 
 from ..core.chat_service import ChatService
 from ..core.config import AKConfig
 from ..core.model import BaseRunRequest, ExecutionMode, StreamChunk
 from ..core.util.factory import AKConfigError
 from .consumer import ConsumerLoop
-from .envelope import (
-    ATTR_ENDPOINT_URL,
-    ATTR_INTEGRATION,
-    ATTR_REQUEST_ID,
-    ATTR_STATUS_CODE,
-    ATTR_THREAD,
-    ATTR_USER_ID,
-    REPLY_CONTEXT_PREFIX,
-    QueueMessage,
-    QueueName,
-)
+from .envelope import ATTR_ENDPOINT_URL, ATTR_REQUEST_ID, ATTR_STATUS_CODE, ATTR_THREAD, ATTR_USER_ID, QueueMessage, QueueName
+from .integration_delivery import IntegrationDelivery
+from .realtime_pool import RealtimeConnectionPool
 from .thread_runner import ThreadRunner
 from .transport.base import QueueTransport, QueueTransportFactory
 
 # Attributes forwarded from an input message to its output message(s). ENDPOINT_URL is part of
 # the SQS/ECS wire format only (the pipeline neither stamps nor reads it, spec #495 §2): it is
 # forwarded so ECS-entered messages keep their return address through a pipeline runner.
-_FORWARDED_ATTRIBUTES = (ATTR_REQUEST_ID, ATTR_USER_ID, ATTR_ENDPOINT_URL, ATTR_INTEGRATION)
+# The integration return address (``integration`` plus every ``reply_*``) is the rule shared with
+# the serverless runner, so it comes from IntegrationDelivery.
+_FORWARDED_ATTRIBUTES = (ATTR_REQUEST_ID, ATTR_USER_ID, ATTR_ENDPOINT_URL)
 
 
 def _is_forwarded(key: str) -> bool:
     """Whether an input attribute travels on to the output message."""
-    return key in _FORWARDED_ATTRIBUTES or key.startswith(REPLY_CONTEXT_PREFIX)
+    return key in _FORWARDED_ATTRIBUTES or IntegrationDelivery.is_routing_attribute(key)
 
 
 class AgentRunner:
@@ -92,7 +86,12 @@ class AgentRunner:
             queue=QueueName.INPUT,
             logger=self._log,
             exit_on_shutdown=exit_on_shutdown,
+            extra_tasks=self._get_extra_tasks(),
         ).run()
+
+    def _get_extra_tasks(self) -> List[ThreadRunner.Task]:
+        """Override in subclasses to run additional background tasks alongside the consumer loop."""
+        return []
 
     @classmethod
     def run(cls) -> None:
@@ -100,11 +99,16 @@ class AgentRunner:
         if QueueTransportFactory.resolve_type() == "in_memory":
             raise AKConfigError("the in_memory transport runs in-process: start IOHandler (single-process topology) instead of AgentRunner")
         # cls check avoids redirect loops when StreamAgentRunner.run() is reached via inheritance.
-        if cls is AgentRunner and AKConfig.get().execution.mode == ExecutionMode.STREAM:
-            return StreamAgentRunner.run()
+        if cls is AgentRunner:
+            mode = AKConfig.get().execution.mode
+            if mode == ExecutionMode.REALTIME:
+                return RealtimeAgentRunner.run()
+            if mode == ExecutionMode.STREAM:
+                return StreamAgentRunner.run()
         # A standalone runner container is usually PID 1: without these handlers SIGTERM never
         # arrives and pod/task stop hangs until SIGKILL instead of draining in-flight runs.
         ThreadRunner.install_shutdown_signal_handlers(cls._log)
+
         cls().start()
 
     # -- shared plumbing --------------------------------------------------------------------
@@ -125,7 +129,7 @@ class AgentRunner:
         safer direction (the caller still got its answer).
 
         Imported lazily and locally for the same reason as
-        ``ResponseHandler._outbound_adapter``: threads are an ``integration`` capability, and a
+        ``IntegrationDelivery._outbound_adapter``: threads are an ``integration`` capability, and a
         module-scope import would make every runner process — including ones with no thread
         block configured — pay for the thread stores.
 
@@ -210,10 +214,11 @@ class StreamAgentRunner(AgentRunner):
     _log = logging.getLogger("ak.pipeline.stream_agent_runner")
 
     def process(self, message: QueueMessage) -> None:
-        if message.attributes.get(ATTR_INTEGRATION):
+        if IntegrationDelivery.integration_of(message.attributes):
             return super().process(message)
 
         body = BaseRunRequest.model_validate(json.loads(message.body))
+
         request_id = self._resolve_request_metadata(message, body)
         if not message.attributes.get(ATTR_USER_ID) and QueueTransportFactory.resolve_type() != "in_memory":
             raise ValueError("user_id is required in queue message attributes for STREAM mode over a broker transport")
@@ -239,7 +244,7 @@ class StreamAgentRunner(AgentRunner):
         self._log.info(f"[STREAM AGENT DONE] request_id={request_id}, chunks={chunk_count}")
 
     def on_permanent_failure(self, message: QueueMessage) -> None:
-        if message.attributes.get(ATTR_INTEGRATION):
+        if IntegrationDelivery.integration_of(message.attributes):
             return super().on_permanent_failure(message)
 
         self._log.error(f"Permanent failure for message {message.message_id}")
@@ -251,3 +256,31 @@ class StreamAgentRunner(AgentRunner):
             self._send_to_output(message, error_chunk, status_code=None, dedup_suffix=f"{message.receive_count}-error")
         except Exception:
             self._log.exception("Failed to send permanent-failure stream chunk to output queue")
+
+
+class RealtimeAgentRunner(AgentRunner):
+    """REALTIME-mode sibling: dedicated consumer for WebRTC/audio streaming."""
+
+    _log = logging.getLogger("ak.pipeline.realtime_agent_runner")
+
+    def _get_extra_tasks(self) -> List[ThreadRunner.Task]:
+        pool = RealtimeConnectionPool.initialize()
+        return [pool.get_task()]
+
+    def process(self, message: QueueMessage) -> None:
+        body = BaseRunRequest.model_validate(json.loads(message.body))
+        request_id = self._resolve_request_metadata(message, body)
+        RealtimeConnectionPool.initialize().dispatch(body, request_id, message.attributes.get(ATTR_USER_ID), message.attributes, self._chat_service)
+        self._log.debug(f"[REALTIME CHUNK] request_id={request_id} (receive_count={message.receive_count})")
+
+    def on_permanent_failure(self, message: QueueMessage) -> None:
+        """Tell the room its input failed, as a marked error chunk its edge can deliver. Catches own exceptions."""
+        self._log.error(f"Permanent failure for message {message.message_id}")
+        try:
+            max_receive_count = AKConfig.get().execution.queues.input.max_receive_count
+            dedup_id = f"{message.dedup_id}-{message.receive_count}-error" if message.dedup_id else None
+            RealtimeConnectionPool.send_permanent_failure(
+                self._transport, message.attributes, message.group_id, dedup_id, f"Failed to process message after {max_receive_count} retries"
+            )
+        except Exception:
+            self._log.exception("Failed to send permanent-failure error chunk to output queue")

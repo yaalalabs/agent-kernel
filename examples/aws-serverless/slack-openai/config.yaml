@@ -1,0 +1,50 @@
+logging:
+  ak:
+    level: INFO
+
+session:
+  type: dynamodb
+  dynamodb:
+    table_name: ""   # injected by Terraform via AK_SESSION__DYNAMODB__TABLE_NAME
+
+# The agent that answers Slack messages.
+slack:
+  agent: assistant
+  # SLACK_BOT_TOKEN and SLACK_SIGNING_SECRET come from the environment (see deploy/main.tf).
+
+# Webhooks on Lambda are served in the REST modes, on the sqs transport: the Slack message is
+# enqueued at the edge and the agent runs behind the Input Queue.
+execution:
+  mode: rest_async
+  queues:
+    # The transport every component of this deployment runs on. Mandatory: the queue URLs
+    # below are injected per component, so only this declaration tells each process which
+    # transport it is on.
+    type: sqs
+    input:
+      # url injected via AK_EXECUTION__QUEUES__INPUT__URL
+      max_receive_count: 3
+    output:
+      # url injected via AK_EXECUTION__QUEUES__OUTPUT__URL (the request handler needs it too:
+      # the webhook handler builds the SQS transport, which requires both URLs)
+      max_receive_count: 3
+  # Still required although Slack replies never touch it: the chat route on the same Lambda
+  # polls it.
+  response_store:
+    type: dynamodb
+    retry_count: 10
+    delay: 3
+    dynamodb:
+      table_name: ""   # injected via AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TABLE_NAME
+      ttl: 300
+
+# Attachments: the Slack adapter downloads files at the edge and stores them, so they need a store
+# every Lambda can reach. Uncomment this block and set create_dynamodb_multimodal_memory_table = true
+# in deploy/main.tf; the table then reaches the request handler as well as the agent runner.
+# The agent runner also needs the `multimodal` extra (LiteLLM) for MultimodalPreHook; both
+# pyproject.toml and `deploy.sh local` already install it for that Lambda.
+# multimodal:
+#   enabled: true
+#   storage_type: dynamodb
+#   dynamodb:
+#     table_name: ""   # injected via AK_MULTIMODAL__DYNAMODB__TABLE_NAME

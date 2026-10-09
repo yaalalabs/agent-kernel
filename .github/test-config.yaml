@@ -64,6 +64,8 @@ e2e:
       path: examples/cli/custom-evaluator
     - type: cli
       path: examples/cli/opik-evaluator
+    - type: cli
+      path: examples/cli/jev-evaluator
     # - type: cli
     #   path: examples/cli/guardrail/walledai
 
@@ -97,6 +99,8 @@ e2e:
       path: examples/api/thread-openai
     - type: api
       path: examples/api/openai_structured
+    - type: api
+      path: examples/api/hitl
     - type: api
       path: examples/api/adk
     - type: api

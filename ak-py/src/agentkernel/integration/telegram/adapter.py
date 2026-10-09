@@ -16,6 +16,7 @@ from ...core.config import AKConfig
 from ...core.model import AgentReply, AgentRequest, AgentRequestFile, AgentRequestImage, AgentRequestText
 from ...core.multimodal.storage import AttachmentStorageManager
 from ..adapter.base import ATTACHMENTS_DISABLED_ERROR, SESSION_CACHE_ERROR, InboundAdapter, InboundParseResult, InboundRequest, OutboundAdapter
+from ..adapter.routes import BUILTIN_WEBHOOK_ROUTES
 
 NAME = "telegram"
 HTTP_TIMEOUT = 30.0
@@ -101,7 +102,7 @@ class TelegramInboundAdapter(InboundAdapter):
     """Telegram updates -> normalized requests."""
 
     name = NAME
-    webhook_path = "/telegram/webhook"
+    webhook_path = BUILTIN_WEBHOOK_ROUTES[NAME].webhook_path
 
     _log = _log
 
@@ -114,6 +115,10 @@ class TelegramInboundAdapter(InboundAdapter):
     def success_response(self) -> Any:
         """Telegram expects its own acknowledgement shape."""
         return {"ok": True}
+
+    def missing_verification_settings(self) -> List[str]:
+        """Without a webhook secret the secret-token header is never checked (``verify``)."""
+        return [] if self._client.webhook_secret else ["telegram.webhook_secret"]
 
     async def verify(self, raw: Request) -> None:
         """Check the secret token Telegram was configured to send, when one is set."""

@@ -14,6 +14,7 @@ Agent Kernel is a lightweight **AI agent runtime** and adapter layer for buildin
 - **Sandbox**: Execute agent-generated code and shell commands in an isolated, permission-bounded environment with pluggable providers (`local_subprocess`, `docker`, `kubernetes`, `e2b`, `daytona`, `ec2_ssm`), workload profiles, policy enforcement, per-user identity, and a queue-decoupled broker for long-running executions
 - **Secret Resolution**: `SecretManager` resolves API keys and passwords environment-first, falling back to a pluggable provider (`env`, `aws_ssm` for AWS SSM Parameter Store, or your own) with a TTL'd process cache
 - **Scheduled Tasks**: Deferred and recurring chat execution (`schedule.at`/`schedule.cron`) with a management REST API, five agent-facing tools, and pluggable provider (`local`, `eventbridge`) and store (`in_memory`, `redis`, `valkey`, `dynamodb`) backends
+- **Human in the Loop**: Pause a run for a person's approval or answer and resume from their decision — `status: "PAUSED"` with HTTP 202, a `resume` block carrying `approved`/`denied`/`cancelled` decisions, supported on OpenAI Agents SDK, LangGraph, Pydantic AI and Google ADK over REST, streaming and AG-UI
 - **Flexible Deployment**: Interactive CLI, REST API, serverless, or containerized deployment — see the "Multi-Cloud Deployment" section below
 - **Pluggable Architecture**: Easy to extend with custom framework adapters
 - **MCP Server**: Built-in Model Context Protocol server for exposing agents as MCP tools and exposing any custom tool
@@ -1089,7 +1090,7 @@ Configure tracing and observability for monitoring agent execution.
 
 - **Type**
   - **Field**: `trace.type`
-  - **Options**: `langfuse`, `openllmetry`, `logfire`
+  - **Options**: `langfuse`, `openllmetry`, `logfire`, `cloudwatch`
   - **Default**: `langfuse`
   - **Description**: Type of tracing provider to use
   - **Environment Variable**: `AK_TRACE__TYPE`
@@ -1164,6 +1165,32 @@ trace:
   type: logfire
 ```
 
+**AWS CloudWatch Setup:**
+
+To send traces to Amazon CloudWatch (via AWS X-Ray, searchable in Transaction Search), install the cloudwatch extra:
+
+```bash
+pip install agentkernel[cloudwatch]
+```
+
+Spans are exported over OTLP to the X-Ray endpoint of your region, signed with the standard AWS credential
+chain (environment, profile, SSO, or instance/task role). Enable CloudWatch Transaction Search once in the
+account, and give the agent's role the `AWSXrayWriteOnlyAccess` managed policy:
+
+```bash
+export AWS_REGION=us-east-1
+# Optional: export through the CloudWatch agent or an OpenTelemetry collector instead
+# export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://localhost:4318/v1/traces
+```
+
+Enable tracing in your configuration:
+
+```yaml
+trace:
+  enabled: true
+  type: cloudwatch
+```
+
 #### Test Configuration
 
 Configure test comparison modes for automated testing. Test configuration is separate from the application configuration: it is **not** part of `config.yaml`. It lives in its own `test-config.yaml` file and is only loaded when the testing utilities (`agentkernel.test`) are used — see the [Test Configuration (test-config.yaml)](#test-configuration-test-configyaml) section for file resolution, environment variables, and migration notes.
@@ -1178,7 +1205,7 @@ Configure test comparison modes for automated testing. Test configuration is sep
 - **Evaluator**
   - **Field**: `evaluator`
   - **Default**: `deepeval`
-  - **Description**: Built-in evaluator short name (`deepeval` or `opik`), or a dotted path to your own `AKEvaluator` subclass
+  - **Description**: Built-in evaluator short name (`deepeval`, `opik` or `jev`), or a dotted path to your own `AKEvaluator` subclass
   - **Environment Variable**: `AK_TEST__EVALUATOR`
 
 - **Llm Model**
@@ -1200,8 +1227,8 @@ Configure test comparison modes for automated testing. Test configuration is sep
   - **Environment Variable**: `AK_TEST__LLM__EMBEDDING_MODEL`
 
 **Test Modes:**
-- `score`: Deterministic, offline string-match scoring via the configured evaluator (built-in `deepeval`: `Scorer.quasi_exact_match_score`; built-in `opik`: `LevenshteinRatio`, requires `pip install "agentkernel[opik]"`)
-- `llm`: LLM-as-judge evaluation via the configured evaluator (built-in `deepeval` or `opik`: `GEval`) for semantic similarity
+- `score`: Deterministic, offline string-match scoring via the configured evaluator (built-in `deepeval`: `Scorer.quasi_exact_match_score`; built-in `opik`: `LevenshteinRatio`, requires `pip install "agentkernel[opik]"`; built-in `jev` has no score mode)
+- `llm`: LLM-as-judge evaluation via the configured evaluator (built-in `deepeval` or `opik`: `GEval`; built-in `jev`: a TypeSafe JEV yes/no Noul question) for semantic similarity
 - `fallback`: Tries score first, falls back to llm if score fails
 
 ```yaml
@@ -1552,7 +1579,7 @@ export AK_API__PORT=8000
 export AK_A2A__ENABLED=true
 export AK_MCP__ENABLED=false
 export AK_TRACE__ENABLED=true
-export AK_TRACE__TYPE=langfuse  # or openllmetry, logfire
+export AK_TRACE__TYPE=langfuse  # or openllmetry, logfire, cloudwatch
 # For Langfuse:
 # export LANGFUSE_PUBLIC_KEY=pk-lf-...
 # export LANGFUSE_SECRET_KEY=sk-lf-...
@@ -1561,9 +1588,11 @@ export AK_TRACE__TYPE=langfuse  # or openllmetry, logfire
 # export TRACELOOP_API_KEY=your-api-key
 # For Logfire:
 # export LOGFIRE_TOKEN=your-write-token
+# For CloudWatch:
+# export AWS_REGION=us-east-1
 # Test harness (loaded from the separate test-config.yaml — see Test Configuration)
 export AK_TEST__MODE=fallback  # Options: score, llm, fallback
-export AK_TEST__EVALUATOR=deepeval  # Built-in short name (deepeval or opik), or a dotted path to your own AKEvaluator subclass
+export AK_TEST__EVALUATOR=deepeval  # Built-in short name (deepeval, opik or jev), or a dotted path to your own AKEvaluator subclass
 export AK_TEST__LLM__MODEL=gpt-4o-mini
 export AK_TEST__LLM__PROVIDER=openai
 export AK_TEST__LLM__EMBEDDING_MODEL=text-embedding-3-small
@@ -1607,7 +1636,7 @@ AK_API__PORT=8080
 AK_A2A__ENABLED=true
 AK_A2A__URL=http://localhost:8080/a2a
 AK_TRACE__ENABLED=true
-AK_TRACE__TYPE=langfuse  # or openllmetry, logfire
+AK_TRACE__TYPE=langfuse  # or openllmetry, logfire, cloudwatch
 # Langfuse credentials (if using langfuse):
 # LANGFUSE_PUBLIC_KEY=pk-lf-...
 # LANGFUSE_SECRET_KEY=sk-lf-...
@@ -1616,6 +1645,8 @@ AK_TRACE__TYPE=langfuse  # or openllmetry, logfire
 # TRACELOOP_API_KEY=your-api-key
 # Logfire credentials (if using logfire):
 # LOGFIRE_TOKEN=your-write-token
+# CloudWatch region (if using cloudwatch; credentials come from the AWS credential chain):
+# AWS_REGION=us-east-1
 ```
 
 #### config.yaml
@@ -1833,7 +1864,7 @@ gmail:
 
 Test harness configuration (comparison mode, evaluator backend, llm models) is separate from the application configuration. It is not part of `config.yaml` — it lives in its own `test-config.yaml` file, resolved from the current working directory, and is only loaded when the testing utilities (`agentkernel.test`) are used. A legacy `test:` section in `config.yaml` is ignored. See [Test Configuration](#test-configuration) under Configuration Options for the full list of fields and defaults.
 
-The `evaluator` field accepts two built-in short names — `deepeval` (default, `pip install "agentkernel[test]"`) or `opik` (`pip install "agentkernel[opik]"`, [Opik](https://www.comet.com/docs/opik/) by Comet, runs entirely locally with `OPIK_TRACK_DISABLE` set so no Opik Cloud account or API key is needed) — or a dotted path to your own `AKEvaluator` subclass.
+The `evaluator` field accepts three built-in short names — `deepeval` (default, `pip install "agentkernel[test]"`) or `opik` (`pip install "agentkernel[opik]"`, [Opik](https://www.comet.com/docs/opik/) by Comet, runs entirely locally with `OPIK_TRACK_DISABLE` set so no Opik Cloud account or API key is needed) or `jev` (`pip install "agentkernel[jev]"`, hosted [TypeSafe JEV](https://docs.typesafe.ai) judge; `mode: llm` only, needs `TYPESAFE_API_KEY`, and sends the comparison text to `api.typesafe.ai`) — or a dotted path to your own `AKEvaluator` subclass.
 
 **test-config.yaml:**
 

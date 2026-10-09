@@ -249,6 +249,19 @@ class _GmailConfig(BaseModel):
     )
 
 
+class _LiveKitConfig(BaseModel):
+    """LiveKit realtime voice gateway settings.
+
+    Bound like every other block, from YAML or ``AK_LIVEKIT__<FIELD>`` env vars (e.g.
+    ``AK_LIVEKIT__URL``, ``AK_LIVEKIT__API_KEY``, ``AK_LIVEKIT__API_SECRET``).
+    """
+
+    agent: str = Field(default="", description="Default agent to use for LiveKit interactions")
+    url: str = Field(default="", description="LiveKit server WebSocket URL")
+    api_key: str = Field(default="", description="LiveKit API Key")
+    api_secret: str = Field(default="", description="LiveKit API Secret")
+
+
 class _MultimodalStorageRedisConfig(_RedisConfig):
     ttl: int = Field(default=604800, description="Attachment TTL in seconds")
     prefix: str = Field(default="ak:attachments:", description="Key prefix for attachment keys")
@@ -456,7 +469,7 @@ class _TraceConfig(BaseModel):
     enabled: bool = Field(default=False, description="Enable tracing")
     type: str = Field(
         default="langfuse",
-        description="Tracing backend: a built-in short name (langfuse, openllmetry, logfire) or a dotted path to a BaseTrace subclass",
+        description="Tracing backend: a built-in short name (langfuse, openllmetry, logfire, cloudwatch) or a dotted path to a BaseTrace subclass",
     )
 
 
@@ -652,10 +665,36 @@ class _LoggingConfig(BaseModel):
     system: _LogLevelConfig = Field(description="System logging configuration", default_factory=_LogLevelConfig)
 
 
+class _RealtimeConfig(BaseModel):
+    """Realtime-mode playback pacing.
+
+    Outbound model audio is paced so the edge holds ``playback_lead_ms`` of audio ahead of
+    wall-clock. A larger lead absorbs the per-chunk latency and jitter of a store-and-forward
+    broker (SQS adds more than Kafka/NATS), trading a little added latency for smoother playback;
+    a small lead is right for a low-latency transport. Only read when ``execution.mode`` is
+    ``realtime``.
+    """
+
+    playback_lead_ms: int = Field(
+        default=50,
+        ge=0,
+        description="Audio buffered ahead of playback at the edge, in milliseconds (higher = smoother over higher-latency transports)",
+    )
+    input_batch_ms: int = Field(
+        default=100,
+        ge=0,
+        description="Mic audio batched into this many milliseconds per input-queue message; 0 passes every frame through (lowest input latency, many more messages)",
+    )
+
+
 class _ExecutionConfig(BaseModel):
     mode: Optional[ExecutionMode] = Field(
         default=None,
-        description="Execution mode: rest_sync for synchronous REST, rest_async for asynchronous REST, stream for token streaming (WebSocket serverless or containerized direct streaming)",
+        description=(
+            "Execution mode: rest_sync for synchronous REST, rest_async for asynchronous REST, "
+            "stream for token streaming over WebSocket, async for whole-reply WebSocket delivery, "
+            "realtime for persistent realtime sockets (e.g. the LiveKit voice gateway)"
+        ),
     )
     # The default carries the transport type explicitly: `type` is mandatory inside a declared
     # queues block, and a config that declares no block at all still runs single-process on the
@@ -667,6 +706,10 @@ class _ExecutionConfig(BaseModel):
     response_store: Optional[_ResponseStoreConfig] = Field(
         default=None,
         description="Response storage configuration for async execution mode",
+    )
+    realtime: _RealtimeConfig = Field(
+        default_factory=_RealtimeConfig,
+        description="Realtime execution playback pacing (used only when execution.mode is realtime)",
     )
 
 
@@ -980,6 +1023,7 @@ class AKConfig(YamlBaseSettingsModified):
         default_factory=_MCPConfig,
     )
     slack: _SlackConfig = Field(description="Slack related configurations", default_factory=_SlackConfig)
+    livekit: _LiveKitConfig = Field(description="LiveKit related configurations", default_factory=_LiveKitConfig)
     whatsapp: _WhatsAppConfig = Field(description="WhatsApp related configurations", default_factory=_WhatsAppConfig)
     messenger: _MessengerConfig = Field(description="Facebook Messenger related configurations", default_factory=_MessengerConfig)
     instagram: _InstagramConfig = Field(description="Instagram Business API related configurations", default_factory=_InstagramConfig)

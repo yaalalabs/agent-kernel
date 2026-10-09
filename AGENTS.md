@@ -105,10 +105,12 @@ reviews against them (full detail in the "House Patterns for New Features" secti
   Module-level functions are reserved for small stateless shared utilities and the tool functions the
   tool builders bind.
 
-When documentation changes, the React landing and features pages (`docs/src/pages/index.tsx`,
-`docs/src/pages/features.tsx`) hold hard-coded inventories of frameworks, integrations, providers,
-deployment targets, and capabilities; update them alongside `docs/docs/` (see
-`ak-dev-sync-docs-from-branch`).
+When documentation changes, the React landing and features pages hold hard-coded inventories of
+frameworks, integrations, providers, deployment targets, and capabilities; update them alongside
+`docs/docs/`. On the landing page they live in `docs/src/components/IntegrationsMarquee/data.tsx`,
+`ArchitectureOverview/data.tsx`, and `FeatureExplorer/data.tsx`; on the features page in
+`docs/src/pages/features.tsx` (see `ak-dev-sync-docs-from-branch`, *Docs-Site Landing and Features
+Pages*, for the change-type to entry mapping).
 
 ## Setup, build, lint, test
 

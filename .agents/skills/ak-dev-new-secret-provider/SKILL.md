@@ -162,6 +162,13 @@ can't drift. Never create secret values in Terraform.
 - `ak-py/README.md`: the extra, if new.
 - The bundled `ak-cloud-deploy` skill (`ak-py/src/agentkernel/skills/ak-cloud-deploy/SKILL.md`), if
   you added a deployment flag.
+- Landing page inventories (`docs/src/components/*/data.tsx`): a tile in the **Cloud &
+  infrastructure** row of `IntegrationsMarquee/data.tsx` (role `Secrets`, `href` to the secrets
+  docs page, logo or `react-icons/si` glyph; a vendor already on the marquee for another role,
+  such as AWS Systems Manager, gets the new role appended to its `title` instead of a second tile),
+  and the store in the **Secret Resolution** card's `tags` and `description` under the Guard tab
+  in `FeatureExplorer/data.tsx`. Logo sourcing and the build check are in
+  `ak-dev-sync-docs-from-branch`, *Docs-Site Landing and Features Pages*.
 
 ## Checklist
 
@@ -174,4 +181,5 @@ can't drift. Never create secret values in Terraform.
 - [ ] Factory tests (`tests/test_secret_factory.py`)
 - [ ] Terraform grant flag, if a cloud store (`ak-deployment/`)
 - [ ] Docs: `docs/docs/advanced/secrets.md`, architecture skill, `ak-py/README.md`
+- [ ] Landing page inventories: marquee tile or role (`IntegrationsMarquee/data.tsx`), Secret Resolution card tags (`FeatureExplorer/data.tsx`)
 - [ ] `cd ak-py && uv run pytest tests/test_secret_*.py` and `make lint-check-all` clean

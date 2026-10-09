@@ -101,6 +101,61 @@ Which event types a given streaming-capable agent actually emits (tool calls, st
 still depends on how much of its native event stream that framework's adapter surfaces — see each
 framework's page under [Agent Frameworks](../frameworks/overview.md) for details.
 
+## Pausing for a human
+
+A run that stops to ask a person something ends with the protocol's **interrupt outcome** — a third
+terminal shape beside `RunFinished` and `RunError`:
+
+```json
+{ "type": "RUN_FINISHED",
+  "outcome": { "type": "interrupt",
+               "interrupts": [ { "id": "call_abc123", "reason": "tool_call",
+                                 "metadata": { "tool_name": "issue_refund",
+                                               "arguments": "{\"order_id\": \"ORD-1001\"}" } } ] } }
+```
+
+A pause is an **outcome of the run**, not an event during it — the stream still closes cleanly, and a
+client branches on `outcome` rather than watching for a failure. Any `StateSnapshot` is emitted
+*before* it, so a client resuming from the snapshot has it in hand.
+
+Agent Kernel's interruption `kind` passes through as `reason` untranslated, because `reason` is a
+free-form string rather than a closed enum. What the protocol has no field for — the tool name, its
+arguments, and the question a node posed — rides in `metadata`, not in `response_schema`, which means
+a JSON Schema.
+
+### Resuming
+
+Send the decisions on the next run:
+
+```json
+{ "threadId": "…", "runId": "…", "messages": [ … ],
+  "resume": [ { "interruptId": "call_abc123", "status": "resolved", "payload": true } ] }
+```
+
+- **No run id is sent**, because the protocol has none pointing at a paused run. It is resolved from
+  the interruption ids instead.
+- **The agent comes from the route** (`POST {prefix}/{agent_name}`), not the body.
+- **`status` carries two values where Agent Kernel carries three.** `cancelled` is its own status, so
+  "nobody decided" never reaches the model as a refusal; approve and deny are both `resolved`, told
+  apart by a boolean `payload` — which is simply the answer to "may I?". Any other payload is treated
+  as the answer the agent asked for and passed through untouched.
+
+Three things this protocol cannot express, which Agent Kernel does **not** invent an encoding for:
+
+- **The wording of a refusal.** There is no field for it, and reserving keys inside `payload` would
+  contradict the SDK, which describes `payload` as "the answer the agent asked for and will act on".
+- **A prompt sent beside a decision.** On a resume the replayed `messages` are history — a run that
+  pauses emits no assistant reply, so the conversation still ends with the prompt that caused the
+  pause, and deriving a "new" prompt from it would re-send that turn.
+- **A boolean *answer*.** The boolean is already spent on the verdict, so it cannot also be the
+  reply to a question: a LangGraph node written `proceed = interrupt("Proceed?")` is resumed with
+  the status verb `"approved"`, not `True`. Either have the node read the verb, or send that
+  decision over REST, where the verdict and the answer are separate fields. Any non-boolean payload
+  is unaffected and reaches the node untouched.
+
+All three are available on the [REST API](rest-api.md), where `prompt`, `message` and `payload` are
+separate fields. See [Human in the Loop](../advanced/human-in-the-loop.md) for the full picture.
+
 ## Client-supplied context
 
 A run may include `state`, `forwardedProps`, and `context` on the `RunAgentInput` body; all three

@@ -527,7 +527,7 @@ function ProblemTable() {
     {
       problem: "Observability",
       without: "Manual instrumentation",
-      with: "Langfuse/OpenLLMetry/Pydantic Logfire with one config line",
+      with: "Langfuse/OpenLLMetry/Pydantic Logfire/AWS CloudWatch with one config line",
     },
     {
       problem: "Guardrails & Safety",
@@ -904,6 +904,7 @@ function CoreFeatures() {
         "Langfuse integration",
         "OpenLLMetry (OpenTelemetry-based)",
         "Pydantic Logfire integration",
+        "AWS CloudWatch (X-Ray) integration",
         "Multi-level verbosity",
         "Cost and latency tracking",
       ],
@@ -1263,23 +1264,6 @@ function FrameworkSupport() {
         />
       ),
     },
-    {
-      key: "livekit",
-      name: "LiveKit",
-      description:
-        "LiveKit provides the complete stack for voice-based AI agents.",
-      link: "https://docs.livekit.io/",
-      external: true,
-      logo: (
-        <img
-          src="/img/integrations/livekit.png"
-          alt=""
-          className={styles.frameworkLogoImg}
-          width={38}
-          height={38}
-        />
-      ),
-    },
   ];
 
   const multiFramework = {
@@ -1509,9 +1493,9 @@ function TestingSection() {
       icon: <MdFactCheck />,
       title: "Pluggable Evaluators",
       description:
-        "Every comparison runs through an AKEvaluator. DeepEval ships built in; swap in your own backend with one line of test-config.yaml.",
+        "Every comparison runs through an AKEvaluator. DeepEval, Opik and JEV ship built in; swap in your own backend with one line of test-config.yaml.",
       highlights: [
-        "DeepEval built in: quasi-exact match and GEval",
+        "DeepEval, Opik and JEV built in: exact match, fuzzy match, GEval and a hosted judge",
         "Bring your own AKEvaluator subclass",
         "Selected by short name or dotted path",
         "Backend failures raise, never read as a failing agent",
@@ -1744,6 +1728,13 @@ const MESSAGING_PLATFORMS = [
     color: "#FF7B6E",
     link: "/docs/integrations/gmail",
   },
+  {
+    name: "LiveKit",
+    icon: <img src="/img/integrations/livekit-mark.svg" alt="" width={28} height={28} />,
+    color: "#00DDFF",
+    // Drop /next after the LiveKit integration is released.
+    link: "/docs/next/integrations/livekit",
+  },
 ] as const;
 
 /* ─── Messaging Section ─────────────────────────────────────────────────── */
@@ -1810,7 +1801,7 @@ function MessagingSection() {
       <div className="container">
         <div className={styles.sectionHeader}>
           <p className={styles.sectionLabel}>06: Messaging</p>
-          <h2 className={styles.sectionTitle}>Messaging Integrations</h2>
+          <h2 className={styles.sectionTitle}>Messaging & Voice Integrations</h2>
           <p className={styles.sectionSubtitle}>
             Your agents meet users on the channels they already use. Every
             integration routes through the same Agent Kernel runtime. Pick a

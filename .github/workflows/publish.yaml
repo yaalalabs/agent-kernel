@@ -164,11 +164,11 @@ jobs:
           python scripts/update_terraform_versions.py --version "${TAG_VERSION}"
           
           # Check if there are any changes
-          if git diff --quiet ak-deployment/ examples/; then
+          if git diff --quiet ak-deployment/ examples/ e2e/; then
             echo "No Terraform module version changes"
           else
             echo "Terraform module versions updated"
-            git add ak-deployment/ examples/
+            git add ak-deployment/ examples/ e2e/
             git commit -m "chore: update terraform module versions to ${TAG_VERSION}"
             git push origin ${{ github.ref_name }}
           fi

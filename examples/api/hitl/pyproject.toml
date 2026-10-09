@@ -1,0 +1,36 @@
+[project]
+name = "api-hitl"
+version = "0.1.0"
+description = "Demo of human-in-the-loop: an agent pauses for approval before running a gated tool, and resumes from the decision"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "agentkernel[openai,langgraph,agui,api]>=0.9.5",
+    "langchain-openai>=1.6.6",
+]
+
+[dependency-groups]
+dev = [
+    "agentkernel[test]>=0.9.5",
+    "black==26.5.1",
+    "isort>=5.0.0",
+    "mypy>=1.0.0",
+]
+
+[tool.uv]
+package = false
+
+[tool.isort]
+profile = "black"
+line_length = 120
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+
+[tool.black]
+line-length = 120
+target-version = ["py312"]

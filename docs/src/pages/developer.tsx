@@ -50,7 +50,7 @@ const DEV_FEATURE_GROUPS = [
       {
         icon: MdAutoAwesome,
         title: "Multi-Framework Support",
-        body: "Run OpenAI Agents, LangGraph, CrewAI, Google ADK, Smolagents, Pydantic AI, LiveKit side-by-side. Keep one runtime across teams while using the best framework per use case.",
+        body: "Run OpenAI Agents, LangGraph, CrewAI, Google ADK, Smolagents and Pydantic AI side-by-side. Keep one runtime across teams while using the best framework per use case.",
       },
     ],
   },
@@ -71,7 +71,7 @@ const DEV_FEATURE_GROUPS = [
       {
         icon: MdPermMedia,
         title: "Multimodal Support",
-        body: "In-built framework-neutral multimodal support across all integration channels. Handle files/images cleanly and keep sessions lightweight. Additional voice and video support via LiveKit.",
+        body: "In-built framework-neutral multimodal support across integration channels. Handle files/images cleanly and keep sessions lightweight. Realtime voice is available through the LiveKit integration for OpenAI Agents SDK and Google ADK agents.",
       },
     ],
   },
@@ -103,7 +103,7 @@ const DEV_FEATURE_GROUPS = [
       {
         icon: MdMessage,
         title: "Messaging Integrations",
-        body: "Slack, WhatsApp, Instagram, Telegram, Gmail, Teams, Messenger plug and play.",
+        body: "Slack, WhatsApp, Instagram, Telegram, Gmail, Teams and Messenger integrations, plus realtime voice through LiveKit for OpenAI Agents SDK and Google ADK agents.",
       },
       {
         icon: MdScience,
@@ -113,7 +113,7 @@ const DEV_FEATURE_GROUPS = [
       {
         icon: MdVisibility,
         title: "Observability",
-        body: "Langfuse, OpenLLMetry, and Pydantic Logfire tracing with one config line. No manual instrumentation. Trace requests, latency, tool calls, and token behavior.",
+        body: "Langfuse, OpenLLMetry, Pydantic Logfire, and AWS CloudWatch tracing with one config line. No manual instrumentation. Trace requests, latency, tool calls, and token behavior.",
       },
     ],
   },
@@ -461,7 +461,7 @@ export default function DeveloperPage() {
                   {
                     num: "05",
                     label: "Observability",
-                    items: ["Langfuse", "OpenLLMetry", "Pydantic Logfire"],
+                    items: ["Langfuse", "OpenLLMetry", "Pydantic Logfire", "AWS CloudWatch"],
                   },
                   {
                     num: "06",

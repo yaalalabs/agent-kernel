@@ -3,13 +3,13 @@ slug: /scheduled-tasks
 title: "Scheduled Tasks in Agent Kernel: Work That Runs Without Anyone Asking"
 authors: [induwara]
 tags: [agent-kernel, scheduling, automation, ai-agents, productivity, enterprise-ai]
-image: /img/blog/scheduling-day-in-the-life.svg
+image: /img/blog/scheduling-day-in-the-life.png
 description: Your agent can now work on a clock. Ask it in plain English to check back on Monday, and it books the job itself, then runs it on time whether or not anyone is around.
 ---
 
 # Scheduled Tasks in Agent Kernel: Work That Runs Without Anyone Asking
 
-![A day in the life of a scheduled agent: at 06:00 the overnight alerts are digested, at 08:00 the weekday nudge the user asked for in plain English arrives, at 12:30 a follow-up on the Acme lead booked three days earlier, at 17:00 Friday's weekly report, and at 23:00 the nightly data-quality sweep — all while the user was asleep, in a meeting, or on leave](/img/blog/scheduling-day-in-the-life.svg)
+![A day in the life of a scheduled agent: at 06:00 the overnight alerts are digested, at 08:00 the weekday nudge the user asked for in plain English arrives, at 12:30 a follow-up on the Acme lead booked three days earlier, at 17:00 Friday's weekly report, and at 23:00 the nightly data-quality sweep — all while the user was asleep, in a meeting, or on leave](/img/blog/scheduling-day-in-the-life.png)
 
 **Imagine hiring a brilliant assistant who never speaks unless spoken to.**
 

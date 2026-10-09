@@ -30,6 +30,7 @@ from ..adapter.base import (
     InboundRequest,
     OutboundAdapter,
 )
+from ..adapter.routes import BUILTIN_WEBHOOK_ROUTES
 
 NAME = "slack"
 _events: contextvars.ContextVar[List[dict]] = contextvars.ContextVar("ak_slack_events")
@@ -39,7 +40,7 @@ class SlackInboundAdapter(InboundAdapter):
     """Slack events -> normalized requests."""
 
     name = NAME
-    webhook_path = "/slack/events"
+    webhook_path = BUILTIN_WEBHOOK_ROUTES[NAME].webhook_path
 
     _log = logging.getLogger("ak.integration.slack")
 

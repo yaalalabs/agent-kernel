@@ -47,8 +47,8 @@ Build your application images (the
 example walks this end to end on k3d, microk8s, and k3s), load them into your cluster, then:
 
 ```bash
-helm pull oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.9.3 --untar   # unpacks the flavor values files
-helm install ak oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.9.3 \
+helm pull oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.9.5 --untar   # unpacks the flavor values files
+helm install ak oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.9.5 \
   -f agent-kernel/values-dev.yaml \
   --set ioHandler.image.repository=<io image> \
   --set agentRunner.image.repository=<runner image> --set image.tag=<tag>
@@ -160,7 +160,7 @@ SIGTERM: consumers stop claiming work and finish in-flight turns within
 ## Observability and Air-Gap
 
 Observability ships as documented recipes (kube-prometheus-stack, per-broker exporters, an
-OpenTelemetry Collector funnel for the Langfuse/OpenLLMetry/Logfire tracing providers), not as
+OpenTelemetry Collector funnel for the Langfuse/OpenLLMetry/Logfire/CloudWatch tracing providers), not as
 chart dependencies. Air-gapped installs set `global.imageRegistry` (application images and
 Valkey) plus `global.image.registry` (the NATS subchart) and mirror the per-release
 `images.txt` manifest. Both are covered in the

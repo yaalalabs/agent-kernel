@@ -287,7 +287,7 @@ Two adapters share an object with the caller rather than a key, and merge deeper
 |-----------|---------------|---------------|------------|---------------|
 | OpenAI | `Runner.run` / `run_streamed` | `starting_agent`, `input`, `session`, `context`, `conversation_id`, `previous_response_id`, `auto_previous_response_id` (the SDK rejects the last three alongside the session the runner passes) | `max_turns` | `hooks=RunHooks()` |
 | LangGraph | `ainvoke` / `astream_events` | `input`, `version`, `stream_mode`, `output_keys`, `print_mode`, `config.configurable.thread_id`, and any `RunnableConfig` key at the top level | `config["recursion_limit"]` | `config["callbacks"]` |
-| Google ADK | the per-run `Runner(...)` constructor (`plugins`, `memory_service`, `artifact_service`, `credential_service`, `plugin_close_timeout`) and `run_async` (`run_config`) | `agent`, `app`, `app_name`, `node`, `session_service`, `auto_create_session`, `user_id`, `session_id`, `new_message`, `state_delta`, `invocation_id`, `yield_user_message` | `RunConfig(max_llm_calls=...)` | `plugins=[BasePlugin()]` |
+| Google ADK | the per-run `App` (`plugins`), the per-run `Runner(...)` constructor (`memory_service`, `artifact_service`, `credential_service`, `plugin_close_timeout`) and `run_async` (`run_config`) | `agent`, `app`, `app_name`, `node`, `session_service`, `auto_create_session`, `user_id`, `session_id`, `new_message`, `state_delta`, `invocation_id`, `yield_user_message` | `RunConfig(max_llm_calls=...)` | `plugins=[BasePlugin()]` |
 | Pydantic AI | `agent.run` / `run_stream_events` | `user_prompt`, `message_history`, `deps` | `UsageLimits(request_limit=...)` | `event_stream_handler` (run mode; dropped with one warning in stream mode) |
 | CrewAI | the per-run `Crew(...)` constructor (`verbose=False` is an overridable default; `max_rpm` is a forwarded rate limit) | `agents`, `tasks`, `memory` | `max_iter` on the native `Agent` (needs nothing from Agent Kernel) | `step_callback` / `task_callback` |
 | Smolagents | `agent.run` | `task`, `reset`, `additional_args`, `stream`, `return_full_result` | `max_steps` | `step_callbacks` on the agent constructor (needs nothing from Agent Kernel) |
@@ -329,7 +329,7 @@ load time therefore needs no per-request plumbing. It is shared by every concurr
 agent, so keep per-run state in the session (its volatile cache is cleared after each run), never on
 the hook.
 
-Run options compose with tracing: the Langfuse, Logfire and OpenLLMetry runners delegate to the base
+Run options compose with tracing: the Langfuse, Logfire, OpenLLMetry and CloudWatch runners delegate to the base
 runner, so a declared `hooks=` still reaches the SDK when `trace.enabled` is on. The
 [custom-runner path](../advanced/traceability.md#how-to-add-your-own-platform) remains for behaviour
 that is not a keyword argument of the native call.
