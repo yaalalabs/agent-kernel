@@ -8,9 +8,9 @@ then provider. The provider never calls the API server. The config gains one per
 `secret.provider.kubernetes.mount_path`. The Helm chart gains one opt-in `secretStore` value that
 mounts each listed Secret, read-only and whole, into the one tier that executes agents.
 
-[`design.md`](design.md) is the requirements source. One edge case the design did not cover (a
-`secretStore` with no agent-executing tier enabled) is decided here and added to `design.md` for
-re-review; see [Changes from design.md](#changes-from-designmd).
+[`design.md`](design.md) is the requirements source. This spec holds the implementation detail
+(helper names, exact error strings, volume naming, tests and CI steps) that the design leaves out;
+see [Changes from design.md](#changes-from-designmd) for the refinements made here.
 
 ## Design
 
@@ -215,8 +215,11 @@ other credential plumbing:
 # Kubernetes Secrets the agent-executing tier reads through the application's
 # `secret.provider.type: kubernetes`. Each listed Secret (created by you, in the release namespace)
 # is mounted read-only and whole at /var/run/secrets/agentkernel/<name>, so keys added to it, and
-# rotated values, appear without a restart. Mounted into agent-runner, or into io when
-# agentRunner.enabled is false; never into ws-gateway or sandbox-worker. No RBAC is created.
+# rotated values, appear without a restart. Mounted into agent-runner, or into io in the
+# single-process profile (agentRunner.enabled false, transport.type in_memory); never into
+# ws-gateway or sandbox-worker. Any other combination fails the render. No RBAC is created.
+# Every key of every listed Secret is readable by code in that tier: list only what agents need.
+# Data keys must be the AK key name (e.g. OPENAI_API_KEY); other keys are never read.
 secretStore:
   enabled: false
   # Required (at least one) when enabled.
@@ -231,17 +234,27 @@ the per-Secret path and the volume names, so `volumes` and `volumeMounts` cannot
 ```
 {{- define "agent-kernel.secretStoreMountPath" -}}/var/run/secrets/agentkernel{{- end }}
 
+{{/* "runner" | "io" | "": the one tier that executes agents in this release. */}}
+{{- define "agent-kernel.secretStoreTier" -}}
+{{- if .Values.agentRunner.enabled }}runner
+{{- else if and .Values.ioHandler.enabled (eq .Values.transport.type "in_memory") }}io
+{{- end }}
+{{- end }}
+
 {{/* Fails the render on an unusable secretStore; renders nothing. Included from configmap-env.yaml. */}}
 {{- define "agent-kernel.secretStoreValidate" -}}
 {{- if .Values.secretStore.enabled }}
-{{- if not (or .Values.agentRunner.enabled .Values.ioHandler.enabled) }}
-{{- fail "secretStore.enabled needs an agent-executing tier: agentRunner.enabled or ioHandler.enabled" }}
+{{- if not (include "agent-kernel.secretStoreTier" .) }}
+{{- fail "secretStore.enabled needs an agent-executing tier: agentRunner.enabled, or ioHandler.enabled with transport.type in_memory" }}
 {{- end }}
 {{- if empty .Values.secretStore.secrets }}
 {{- fail "secretStore.secrets must list at least one Secret when secretStore.enabled" }}
 {{- end }}
 {{- $seen := dict }}
 {{- range .Values.secretStore.secrets }}
+{{- if not (kindIs "map" .) }}
+{{- fail (printf "secretStore.secrets entries must be objects with a name, e.g. '- name: %v'" .) }}
+{{- end }}
 {{- $name := required "secretStore.secrets[].name is required" .name }}
 {{- if hasKey $seen $name }}
 {{- fail (printf "secretStore.secrets lists '%s' more than once" $name) }}
@@ -272,7 +285,11 @@ the per-Secret path and the volume names, so `volumes` and `volumeMounts` cannot
 - No `items`, no `subPath` and no `defaultMode`: whole-Secret mounts are what make rotation and
   new keys visible, and the default `0644` keeps non-root images working.
 - `ak-secret-<index>` keeps volume names inside the 63-character DNS-1123 label limit whatever the
-  Secret's name.
+  Secret's name (Secret names may contain `.` and run to 253 characters).
+- `agent-kernel.secretStoreTier` is the single owner of the placement rule: the validate helper
+  and both Deployments ask it, so the rule cannot drift between them.
+- The map check runs before `.name` is read: on a bare string (`secrets: [openai-credentials]`),
+  `.name` would otherwise fail with Go's "can't evaluate field name in type interface {}".
 
 **Where validation runs.** `templates/configmap-env.yaml` includes
 `agent-kernel.secretStoreValidate` once, at the top of the template, rendering nothing. That
@@ -280,7 +297,8 @@ ConfigMap renders in every release, so every misconfiguration fails `helm templa
 including a release where neither agent-executing Deployment renders. If validation lived in the
 Deployments, that release would silently skip it.
 
-**`templates/deployment-agent-runner.yaml`** (already gated on `agentRunner.enabled`):
+**`templates/deployment-agent-runner.yaml`** (already gated on `agentRunner.enabled`, so
+`secretStoreTier` is `runner` whenever it renders):
 - pod `spec`, after `terminationGracePeriodSeconds` (`:33`):
   `{{- if .Values.secretStore.enabled }} volumes: {{- include "agent-kernel.secretStoreVolumes" . | nindent 8 }} {{- end }}`;
 - container, after `resources` (`:63-66`): the same gate around `volumeMounts:` with
@@ -288,8 +306,12 @@ Deployments, that release would silently skip it.
 
 **`templates/deployment-io.yaml`**: the same two insertions, after `imagePullSecrets` (`:33-36`)
 and after `resources` (`:84-87`), gated on
-`{{- if and .Values.secretStore.enabled (not .Values.agentRunner.enabled) }}`. This is the
-single-process profile (`values-dev.yaml:48-49`), where agents run in the io pod.
+`{{- if and .Values.secretStore.enabled (eq (include "agent-kernel.secretStoreTier" .) "io") }}`.
+That is the single-process profile (`values-dev.yaml:41-55`): `agentRunner.enabled: false` and
+`transport.type: in_memory`, the only case where the io pod runs agents
+(`templates/deployment-io.yaml:3-6`). With `agentRunner.enabled: false` on a broker transport the
+agents run outside the release, so the io pod gets no mounts and the validate helper fails the
+render instead.
 
 - `deployment-ws-gateway.yaml` and `deployment-sandbox-worker.yaml` are not touched.
 - No ServiceAccount, Role, RoleBinding or `serviceAccountName` is added.
@@ -300,7 +322,7 @@ single-process profile (`values-dev.yaml:48-49`), where agents run in the io pod
 
 **Rendering identity.** Every insertion is gated on `secretStore.enabled`, and the validate helper
 renders nothing. With default values, `helm template` therefore produces byte-identical output for
-every flavor file. The CI diff below asserts this.
+every flavor file. [Testing → Verify](#verify-one-off-for-this-change) checks this once.
 
 ### Examples and docs
 
@@ -337,6 +359,11 @@ every flavor file. The CI diff below asserts this.
     - that a set `OPENAI_API_KEY` env var still wins;
     - adding a second Secret to `secretStore.secrets` (a values edit and a rollout);
     - adding a key to an existing Secret (no edit);
+    - that a data key must be named `OPENAI_API_KEY` exactly; the old `openai` Secret's `api-key`
+      is never read;
+    - running the agent runner locally: export `OPENAI_API_KEY` (the env var wins), or point
+      `AK_SECRET__PROVIDER__KUBERNETES__MOUNT_PATH` at a directory holding
+      `openai-credentials/OPENAI_API_KEY`;
     - rotation.
   - **Rotation is stated honestly for this example.** The key is handed to the SDK once, at import,
     so rotating `openai-credentials` here needs `kubectl rollout restart deployment/ak-agent-kernel-agent-runner`.
@@ -385,37 +412,43 @@ therefore CI, uses this checkout for both.
   # `! grep` is exempt from `set -e`, so absence is asserted with an explicit exit.
   if grep -q '/var/run/secrets/agentkernel' <<<"$io"; then echo "io must not mount"; exit 1; fi
   echo "--- secretStore: single-process profile mounts on io"
-  # same with --set agentRunner.enabled=false: the io output has both mounts
+  SINGLE=(--set agentRunner.enabled=false --set transport.type=in_memory)
+  io=$(helm template smoke "$CHART_DIR" "${STORE[@]}" "${SINGLE[@]}" --show-only templates/deployment-io.yaml)
+  grep -q 'mountPath: /var/run/secrets/agentkernel/openai-credentials' <<<"$io"
+  grep -q 'mountPath: /var/run/secrets/agentkernel/slack-credentials' <<<"$io"
   echo "--- secretStore: websocket tier never mounts"
-  # baremetal + wsGateway.enabled: --show-only templates/deployment-ws-gateway.yaml has no '/var/run/secrets/agentkernel'
+  ws=$(helm template smoke "$CHART_DIR" -f "$CHART_DIR/values-baremetal.yaml" "${STORE[@]}" \
+    --set execution.mode=stream --set wsGateway.enabled=true --set wsGateway.auth.token=render \
+    --show-only templates/deployment-ws-gateway.yaml)
+  if grep -q '/var/run/secrets/agentkernel' <<<"$ws"; then echo "ws-gateway must not mount"; exit 1; fi
   echo "--- secretStore: expected failures"
   expect_fail() {  # <expected message> <helm args...>
     if helm template smoke "$CHART_DIR" "${@:2}" >/dev/null 2>err.txt; then echo "rendered: $*"; exit 1; fi
     grep -qF "$1" err.txt
   }
   expect_fail "must list at least one Secret" --set secretStore.enabled=true
+  expect_fail "must be objects with a name" --set secretStore.enabled=true --set 'secretStore.secrets[0]=a'
   expect_fail "secretStore.secrets[].name is required" --set secretStore.enabled=true --set 'secretStore.secrets[0].other=x'
   expect_fail "more than once" --set secretStore.enabled=true \
     --set 'secretStore.secrets[0].name=a' --set 'secretStore.secrets[1].name=a'
   expect_fail "needs an agent-executing tier" --set secretStore.enabled=true \
     --set 'secretStore.secrets[0].name=a' --set agentRunner.enabled=false --set ioHandler.enabled=false
+  expect_fail "needs an agent-executing tier" --set secretStore.enabled=true \
+    --set 'secretStore.secrets[0].name=a' --set agentRunner.enabled=false   # broker transport, runner elsewhere
   ```
-  The plan places these; the elided cases follow the same shape.
 - **Default renders carry no mount** (permanent): the existing per-flavor loop (`:69-72`) also
   asserts that no flavor file's default render contains `/var/run/secrets/agentkernel`.
-- **Default render is byte-identical** (one-off, for this PR, in plan.md's Verify rather than
-  CI): render every flavor file on `develop` and on the branch, and `diff`. This is the analog of
-  phase 1's empty `terraform plan`. It is not a permanent CI step: `actions/checkout` fetches depth
-  1, and a later PR that legitimately changes default renders would fail it.
+- **Default render is byte-identical**: a one-off check for this change, not a CI step; see
+  [Testing → Verify](#verify-one-off-for-this-change).
 
 **Docs surfaces.** Each gains `kubernetes` alongside `env`/`aws_ssm` and, where the surface
 documents config, the new field.
 
 | Surface | Change |
 |---|---|
-| `docs/docs/advanced/secrets.md` | `kubernetes` in the provider table (`:27`) and config sketch (`:45`); a new `### kubernetes` subsection after `### aws_ssm` (`:91`) covering the layout, lookup across Secrets, the duplicate-key error, `mount_path` and other file-per-key mounts (CSI driver, Docker / Compose), the chart's `secretStore` and the exact volumes it renders, creating/adding/rotating Secrets with the kubelet delay and the no-`subPath` rule, and that env still wins |
+| `docs/docs/advanced/secrets.md` | `kubernetes` in the provider table (`:27`) and config sketch (`:45`); a new `### kubernetes` subsection after `### aws_ssm` (`:91`) covering: the layout, lookup across Secrets and the duplicate-key error; **key compatibility** (data keys must match `^[A-Z][A-Z0-9_]*$`, non-matching keys are silently unreachable, no remapping, and how to create compatible keys with `kubectl create secret generic … --from-literal=OPENAI_API_KEY=…` / `--from-env-file=.env`, or an External Secrets Operator `target.template.data` that renames remote keys); `mount_path` and other file-per-key mounts (CSI driver, Docker / Compose); the chart's `secretStore`, the tier placement rule and the exact volumes it renders; creating/adding/rotating Secrets with the kubelet delay and the no-`subPath` rule; **security** (every key of every listed Secret is readable by any code in the agent-executing container, including `local_subprocess` sandbox code; list only what agents need, keep unrelated keys out of those Secrets, use an isolated sandbox provider for untrusted code); **local development** (export the key, which wins, or set `mount_path` to a local directory laid out as `<dir>/<secret-name>/<KEY>` or flat `<dir>/<KEY>`; a missing directory is a `SecretError` even with `default=`, so keep `env` in a local config when neither applies); and that env still wins |
 | `docs/docs/core-concepts/configuration.md` | `:187-189` sketch and `:520-521` env list: `kubernetes` and `AK_SECRET__PROVIDER__KUBERNETES__MOUNT_PATH` |
-| `ak-deployment/ak-k8s/README.md` | `:112-113` points at a new *Secrets* section: `secretStore` values, the tier placement rule, no RBAC, rotation |
+| `ak-deployment/ak-k8s/README.md` | `:112-113` points at a new *Secrets* section: `secretStore` values, the tier placement rule (and the render failure when no tier executes agents), no RBAC, key compatibility, the security note, rotation; links to `secrets.md` for the rest |
 | `ak-py/README.md` | `:15` feature line and `:701-711` config reference |
 | `.agents/skills/ak-dev-architecture/SKILL.md` | `:12` description, `:660` factory mapping, `:676-678` config sketch, `:1044` tree |
 | `.agents/skills/ak-dev-new-secret-provider/SKILL.md` | `:5` "beyond env, aws_ssm and kubernetes", *Existing Providers* table (`:29`), and a note in step 6 (`:146`) that the Helm analog is a volume mount, not an IAM grant |
@@ -547,8 +580,21 @@ re-raises `SecretError`.
 
 No existing patch target moves.
 
-**Chart**: the `chart-test.yaml` renders and the `kind-smoke` `dev` run above. For the manual
-`ct install` gate, see [Open decision](#open-decision).
+**Chart**: the `chart-test.yaml` renders (both mount placements, the ws-gateway exclusion and
+every expected failure) and the `kind-smoke` `dev` run above. For the manual `ct install` gate,
+see [Open decision](#open-decision).
+
+### Verify (one-off, for this change)
+
+Run once before merge; not added to CI. A permanent step would fail every later PR that
+legitimately changes default renders, and `actions/checkout` fetches depth 1.
+
+- **Default render is byte-identical**, the analog of phase 1's empty `terraform plan`: for each of
+  `values.yaml`, `values-dev.yaml`, `values-baremetal.yaml` and `values-eks.yaml`, render with
+  `helm template smoke <chart> -f <flavor>` on `develop` and on the branch, and `diff`; every diff
+  is empty.
+- The `kind-smoke` `dev` job passes on the PR (file resolution end to end), and the `baremetal` /
+  `eks` jobs pass (environment-first path with the provider configured but no mount).
 
 **Run:**
 
@@ -582,15 +628,15 @@ not run in any workflow (`.github/workflows/` has no `ct install`), so CI is una
 
 ## Changes from design.md
 
-1. **`secretStore` with no agent-executing tier fails the render.** With `secretStore.enabled:
-   true` and both `agentRunner.enabled` and `ioHandler.enabled` false (the standalone
-   sandbox-worker install), the design did not say what happens: no Deployment would mount the
-   Secrets, and nothing would tell the user. The spec makes it a `fail`. Validation also moves to a
-   helper included from `configmap-env.yaml` so that it runs in every release. Added to design.md
-   under *Deployment* for re-review.
-2. **Refinements within the design's wording**, not requirement changes:
-   - the provider re-checks the key (rule 2) so the traversal claim holds for direct callers;
-   - a UTF-8 decode failure is raised `from None` rather than chained, because chaining would put
-     a secret byte in the traceback;
-   - a candidate that vanishes between listing and reading is a miss;
-   - `KubernetesSecretProvider` is exported from `agentkernel.secret`.
+No requirement changes. Earlier spec-level decisions (the render failure when no tier executes
+agents, the in_memory condition on the io placement, the bare-string entry check) are now
+requirements in `design.md` under *Deployment*.
+
+**Refinements within the design's wording**:
+- the provider re-checks the key (rule 2) so the traversal claim holds for direct callers;
+- a UTF-8 decode failure is raised `from None` rather than chained, because chaining would put
+  a secret byte in the traceback;
+- a candidate that vanishes between listing and reading is a miss;
+- `KubernetesSecretProvider` is exported from `agentkernel.secret`;
+- validation runs from a helper included in `configmap-env.yaml`, so it fails every release, not
+  only those that render an agent-executing Deployment.
