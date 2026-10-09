@@ -24,7 +24,7 @@ locals {
 
 module "e2e_agents" {
   source  = "yaalalabs/ak-containerized/aws"
-  version = "0.9.3"
+  version = "0.9.5"
 
   providers = { aws = aws, docker = docker }
   # Basic ECS configuration
