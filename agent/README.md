@@ -97,6 +97,11 @@ The RAG system indexes:
 
 ## Deployment Steps
 
+The assistant deploys to `us-east-2` and runs in the VPC, private subnets and NAT gateway of the
+weekly integration base deployment (`examples/aws-serverless/openai`), read from its remote
+state, so that base must be deployed first. Set `vpc_id` and `private_subnet_ids` to use a
+different VPC.
+
 1. Build the deployment package:
     ```bash
     cd deploy && ./deploy.sh

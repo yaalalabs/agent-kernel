@@ -269,8 +269,14 @@ Terraform state is remote (`backend.tf` → the shared dev state bucket), so loc
 with `deploy/deploy.sh` (+ `app/.env`, see `.env.example`) operate on the same deployment
 — but only use that from a Linux machine, for the wheel reason above.
 
-Adjust `terraform.tfvars` (region, aliases) before the first apply if needed. To use an
-existing VPC, set `vpc_id` and `private_subnet_ids`; otherwise the module creates one.
+Adjust `terraform.tfvars` (region, prefix) before the first apply if needed.
+
+Networking is not provisioned here: the deployment runs in the VPC, private subnets and NAT
+gateway of the weekly integration base deployment (`examples/aws-serverless/openai`), read
+from its remote state. That base must be deployed first (the `deploy-openai` job; the
+`e2e-messaging-deploy` job waits for it), and must not be destroyed while this deployment
+exists — its VPC can't be deleted with the e2e ECS tasks still attached. To use a different
+VPC, set `vpc_id` and `private_subnet_ids`.
 
 ### 4. Register the webhooks
 

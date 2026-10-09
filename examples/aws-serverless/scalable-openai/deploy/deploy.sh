@@ -1,11 +1,18 @@
 #!/bin/bash
 set -eo pipefail # exit if any command in this script fails
 
-S3_BUCKET=lambda-s3-packages-329597159169-ap-southeast-2-an
+function read_tfvar() {
+	awk -F'=' -v k="$1" '$1 ~ "^[[:space:]]*"k"[[:space:]]*$" {gsub(/[" ]/, "", $2); print $2; exit}' terraform.tfvars
+}
+
+# Region comes from terraform.tfvars; the Lambda package bucket must live in the same region.
+AWS_REGION=$(read_tfvar region)
+AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+S3_BUCKET="lambda-s3-packages-${AWS_ACCOUNT_ID}-${AWS_REGION}-an"
 
 upload_to_s3() {
 	# $1 = local file, $2 = bucket, $3 = object key
-	aws s3api put-object --bucket "$2" --key "$3" --body "$1" --query VersionId --output text
+	aws s3api put-object --region "$AWS_REGION" --bucket "$2" --key "$3" --body "$1" --query VersionId --output text
 }
 
 has_version() { [[ -n "$1" && "$1" != "null" && "$1" != "None" ]]; }
@@ -18,8 +25,6 @@ pkg_var() {
 }
 
 push_to_ecr() {
-	AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-	AWS_REGION="ap-southeast-2"
 	local image_name="$1"
 	local dockerfile="$2"
 	local ecr_uri="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${image_name}:latest"

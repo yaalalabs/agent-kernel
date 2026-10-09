@@ -104,8 +104,8 @@ def main():
     parser.add_argument(
         "--directories",
         nargs="+",
-        default=["ak-deployment", "examples"],
-        help="Directories to search for .tf files (default: ak-deployment examples)"
+        default=["ak-deployment", "examples", "e2e"],
+        help="Directories to search for .tf files (default: ak-deployment examples e2e)"
     )
     parser.add_argument(
         "--exclude",

@@ -261,7 +261,7 @@ python scripts/update_terraform_versions.py --version 0.2.0-b5
 python scripts/update_terraform_versions.py --version 0.2.0-b5 --dry-run
 
 # Specify custom directories to search
-python scripts/update_terraform_versions.py --version 0.2.0-b5 --directories ak-deployment examples
+python scripts/update_terraform_versions.py --version 0.2.0-b5 --directories ak-deployment examples e2e
 
 # Add custom exclusion patterns
 python scripts/update_terraform_versions.py --version 0.2.0-b5 --exclude .terraform .backup
@@ -269,7 +269,7 @@ python scripts/update_terraform_versions.py --version 0.2.0-b5 --exclude .terraf
 
 **Options:**
 - `--version`: New version to set for all yaalalabs/ak-* modules (required)
-- `--directories`: Directories to search for .tf files (default: ak-deployment examples)
+- `--directories`: Directories to search for .tf files (default: ak-deployment examples e2e)
 - `--exclude`: Patterns to exclude from search (default: .terraform)
 - `--dry-run`: Show what would be changed without making modifications
 

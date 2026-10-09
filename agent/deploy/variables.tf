@@ -14,6 +14,18 @@ variable "is_production" {
   default     = false
 }
 
+variable "vpc_id" {
+  description = "VPC ID for ECS deployment. If null, the weekly integration base deployment's VPC is reused"
+  type        = string
+  default     = null
+}
+
+variable "private_subnet_ids" {
+  description = "Private subnet IDs for ECS deployment. If null, the base deployment's private subnets are reused"
+  type        = list(string)
+  default     = null
+}
+
 variable "openai_api_key" {
   description = "OpenAI API Key"
   type        = string
