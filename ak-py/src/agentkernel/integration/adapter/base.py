@@ -207,8 +207,11 @@ class OutboundAdapter(ABC):
 
         A realtime run emits the same typed chunks as text streaming: audio as an ``AudioDelta``
         event, transcript as ``TextDelta``, barge-in as ``Interrupt``, and a final ``done``
-        chunk. Platforms that support streaming (e.g., LiveKit for voice) override this to play
-        chunks in real-time; the default is a no-op.
+        chunk. ``AgentChanged`` names the agent speaking from that point on, once when the
+        conversation starts and again on every handoff; an edge that shows agents separately
+        switches speaker on it, and one with a single voice line can ignore it. Platforms that
+        support streaming (e.g., LiveKit for voice) override this to play chunks in real-time; the
+        default is a no-op.
 
         :param chunk: The streamed chunk, carrying a ``StreamEvent`` (or ``done``).
         :param reply_context: The delivery coordinates resolved at the edge.

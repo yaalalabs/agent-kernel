@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from abc import abstractmethod
 from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING, Any, Callable
@@ -38,6 +39,30 @@ class RealtimeRunner(Runner):
         """Not supported for realtime runners."""
         raise NotImplementedError("Realtime runners do not support unary run().")
 
+    @staticmethod
+    async def _cancel_and_wait(task: asyncio.Task | None) -> None:
+        """Cancel a background task of the adapter (its socket listener) and wait for it to end.
+
+        Waiting means nothing the task was doing outlives the call that stopped it. A no-op for
+        None, and for the calling task itself, which cannot wait for its own end.
+        """
+        if task is None or task is asyncio.current_task():
+            return
+        task.cancel()
+        await asyncio.wait({task})
+
+    def team(self, agent: "Agent") -> list[str]:
+        """The names of every agent a conversation with ``agent`` can hand off to, ``agent`` first.
+
+        Read before connecting and announced with the starting agent, so an edge can show the whole
+        team before any of it speaks. An adapter with framework-native handoffs walks its agent graph;
+        this default, for one without, is the agent alone. It must not raise: a graph that cannot run
+        is reported by :meth:`connect`.
+
+        :param agent: The agent the conversation starts with.
+        """
+        return [agent.name]
+
     async def stream(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[StreamEvent, None]:
         """Not supported for realtime runners."""
         raise NotImplementedError("Realtime runners do not support unary stream().")
@@ -72,6 +97,11 @@ class RealtimeRunner(Runner):
             - ``interrupt``: ``{}``, the user spoke while the model was responding
             - ``speech_started``: ``{}``, the user spoke outside a response; the pool treats it as a
               barge-in only while it still holds audio the user has not heard
+            - ``agent_changed``: ``{"agent": str, "previous_agent": str}``, a framework-native
+              handoff moved the conversation to another agent; report it after the previous
+              agent's last output and before the new agent's first. The pool announces the agent
+              a connection starts with (and its :meth:`team`) itself, so an adapter reports only
+              the changes
         """
         raise NotImplementedError()
 

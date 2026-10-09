@@ -120,7 +120,7 @@ openai = [
     "openai-guardrails>=0.2.1",
 ]
 adk = [
-    "google-adk>=1.14.1",
+    "google-adk>=1.16.0",
     "litellm~=1.89.2",
     "openinference-instrumentation-google-adk>=0.1.6",
 ]

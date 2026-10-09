@@ -145,6 +145,24 @@ class Interrupt(StreamEventBase):
     type: Literal["interrupt"] = "interrupt"
 
 
+class AgentChanged(StreamEventBase):
+    """
+    The agent speaking in a realtime conversation changed.
+
+    Ordered with the output it divides: what came before it was said by `previous_agent`, what
+    follows by `agent`. Sent once when a realtime connection opens, with no `previous_agent` and
+    with `agents`, every agent the conversation can hand off to (the starting one first), so an edge
+    can show the whole team before any of it speaks; and again on every framework-native handoff.
+    An edge that shows each agent separately switches speaker on it; an edge with a single voice
+    line can ignore it.
+    """
+
+    type: Literal["agent_changed"] = "agent_changed"
+    agent: str
+    previous_agent: str | None = None
+    agents: list[str] | None = None
+
+
 class PausedInterruption(BaseModel):
     """
     One thing a human must decide before a paused run can continue.
@@ -206,6 +224,7 @@ type StreamEvent = Annotated[
         ReasoningEnd,
         AudioDelta,
         Interrupt,
+        AgentChanged,
         RunPaused,
     ],
     Field(discriminator="type"),

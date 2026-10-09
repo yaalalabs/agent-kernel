@@ -27,6 +27,7 @@ from ag_ui.core import (
 )
 
 from agentkernel.core.event import (
+    AgentChanged,
     AudioDelta,
     Interrupt,
     MessageEnd,
@@ -64,10 +65,11 @@ EXPECTED_MAPPING = [
     (ReasoningEnd(message_id="r1"), ReasoningMessageEndEvent),
 ]
 
-DELIBERATELY_UNMAPPED: list[type] = [AudioDelta, Interrupt, RunPaused]
+DELIBERATELY_UNMAPPED: list[type] = [AudioDelta, Interrupt, AgentChanged, RunPaused]
 """RunPaused has no mapping because AG-UI models a pause as a terminal outcome — the run ends with
 RunFinishedEvent(outcome=RunFinishedInterruptOutcome(...)), carried by AGUIRequestHandler._events.
-See docs/specs/606-human-in-the-loop/spec.md, section integration/agui."""
+See docs/specs/606-human-in-the-loop/spec.md, section integration/agui. AgentChanged, like AudioDelta
+and Interrupt, belongs to realtime voice, which AG-UI does not carry."""
 
 
 def test_every_union_member_has_an_explicit_decision():

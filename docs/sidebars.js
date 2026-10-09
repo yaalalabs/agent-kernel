@@ -42,6 +42,7 @@ const sidebars = {
         'architecture/execution-flow',
         'architecture/memory-management',
         'architecture/sandbox-internals',
+        'architecture/realtime-internals',
       ],
     },
     {

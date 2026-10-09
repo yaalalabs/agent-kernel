@@ -282,7 +282,7 @@ requires-dist = [
     { name = "fastapi", marker = "extra == 'telegram'", specifier = ">=0.118.0" },
     { name = "fastapi", marker = "extra == 'whatsapp'", specifier = ">=0.118.0" },
     { name = "fastmcp", marker = "extra == 'mcp'", specifier = ">=3.2.0,<4.0.0" },
-    { name = "google-adk", marker = "extra == 'adk'", specifier = ">=1.14.1" },
+    { name = "google-adk", marker = "extra == 'adk'", specifier = ">=1.16.0" },
     { name = "google-api-python-client", marker = "extra == 'gmail'", specifier = ">=2.0.0" },
     { name = "google-auth", marker = "extra == 'gmail'", specifier = ">=2.0.0" },
     { name = "google-auth-httplib2", marker = "extra == 'gmail'", specifier = ">=0.2.0" },

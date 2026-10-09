@@ -19,6 +19,8 @@ Only OpenAI Agents SDK and Google ADK agents can run in realtime mode. They are 
 4. The model's audio and transcript are paced at playback speed and put on the output queue.
 5. The Response Handler passes each chunk to the gateway, which plays the audio into the room and publishes the transcript as a chat message when the turn ends.
 
+For the architecture behind these steps, including multi-agent handoffs, see [Realtime Voice Internals](../architecture/realtime-internals.md).
+
 ## Features
 
 - **Realtime voice**: two-way streaming audio between the room and the model.

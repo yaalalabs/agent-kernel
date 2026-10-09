@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any, Mapping, Optional
 from ..core.base import Agent as BaseAgent
 from ..core.base import Session
 from ..core.config import AKConfig
-from ..core.event import AudioDelta, Interrupt, TextDelta
+from ..core.event import AgentChanged, AudioDelta, Interrupt, TextDelta
 from ..core.model import StreamChunk
 from ..core.realtime import EDGE_SAMPLE_RATE, PCM16Resampler
 from ..core.realtime import RealtimeRunner as BaseRealtimeRunner
@@ -90,17 +90,26 @@ class RealtimeConnection:
         self.reply_context = reply_context
 
     async def connect(self) -> None:
-        """Connect the framework adapter, bind its callback, and start pacing its output."""
+        """Connect the framework adapter, bind its callback, and start pacing its output.
+
+        The agent the conversation starts with is queued ahead of everything else, with the adapter's
+        team (every agent it can hand off to), so an edge knows who is speaking before the first
+        output and can show the whole team; it is told again after a reconnect, which starts the
+        native conversation over at this agent.
+        """
+        await self._audio_queue.put(("agent_changed", {"agent": self.agent.name, "agents": self.adapter.team(self.agent)}))
         await self.adapter.connect(self.session, self.agent, self.handle_framework_event)
         self._pacing_task = asyncio.create_task(self._pacing_loop())
 
     async def handle_framework_event(self, event_type: str, data: dict) -> None:
         """Queue one adapter event for emission.
 
-        Audio deltas and the terminal/control events (``done``, ``interrupt``) go through
-        ``_audio_queue`` so the pacing loop emits them in order at playback rate. The transcript
-        streams immediately; a tool call runs on the loop. The adapters only report events in
-        order — pacing is shared here for every framework.
+        Audio, its transcript and the control events (``done``, ``interrupt``, ``agent_changed``)
+        go through ``_audio_queue`` so the pacing loop emits them in the order the model produced
+        them, at playback rate. The transcript rides with its audio rather than ahead of it: after
+        a handoff the new agent's words would otherwise reach the edge while the previous agent's
+        audio is still playing, and be attributed to that agent. A tool call runs on the loop. The
+        adapters only report events in order — pacing is shared here for every framework.
 
         ``interrupt`` is a barge-in the adapter saw while the model was responding. ``speech_started``
         is the user starting to speak outside a response: the model has finished generating, but
@@ -116,23 +125,23 @@ class RealtimeConnection:
         elif event_type == "speech_started":
             if self._queued_audio > 0:
                 await self._interrupt(data)
-        elif event_type == "done":
-            await self._audio_queue.put(("done", data))
-        elif event_type == "transcript_delta":
-            message_id = data.get("message_id") or ""
-            await self._emit(StreamChunk(event=TextDelta(message_id=message_id, content=data["delta"]), delta=data["delta"]))
+        elif event_type in ("done", "transcript_delta", "agent_changed"):
+            await self._audio_queue.put((event_type, data))
         elif event_type == "tool_call":
             self.loop.create_task(self._execute_tool_and_reply(data["call_id"], data["name"], data["arguments"]))
         elif event_type == "error":
             await self._fail(data.get("message") or "realtime model socket error")
 
     async def _interrupt(self, data: dict) -> None:
-        """Drop the audio not yet emitted and queue the interrupt ahead of the kept control events.
+        """Drop the output not yet emitted and queue the interrupt ahead of the kept control events.
 
-        Only audio is dropped: a queued ``done`` still has to reach the edge, which resets its
-        interrupted state on it — dropping one would leave that state set into the next turn and
-        swallow that turn's transcript. The interrupt goes before the kept events so the edge sees
-        it before the ``done`` of the turn it cuts off, and it cannot overtake audio already emitted.
+        Audio and its transcript are dropped: the user will not hear them. The control events are
+        kept: a queued ``done`` still has to reach the edge, which resets its interrupted state on
+        it — dropping one would leave that state set into the next turn and swallow that turn's
+        transcript — and an ``agent_changed`` still holds, since a handoff is not undone by talking
+        over the agent that announced it. The interrupt goes before the kept events so the edge
+        sees it before the ``done`` of the turn it cuts off, and it cannot overtake audio already
+        emitted.
         """
         kept = []
         while True:
@@ -140,7 +149,7 @@ class RealtimeConnection:
                 item = self._audio_queue.get_nowait()
             except asyncio.QueueEmpty:
                 break
-            if item[0] != "audio_delta":
+            if item[0] not in ("audio_delta", "transcript_delta"):
                 kept.append(item)
         self._queued_audio = 0
         await self._audio_queue.put(("interrupt", data))
@@ -166,21 +175,31 @@ class RealtimeConnection:
 
         The model generates audio faster than it is spoken, so emitting every delta immediately
         would grow the edge's playback queue without bound. This drains ``_audio_queue`` on a
-        real-time schedule; ``done``/``interrupt`` ride the same queue so they cannot overtake the
-        audio they belong to (the output queue is FIFO per session).
+        real-time schedule; the transcript and ``done``/``interrupt``/``agent_changed`` ride the
+        same queue so they cannot overtake the audio they belong to (the output queue is FIFO per
+        session).
         """
         item_start_time = 0.0
         audio_played_ms = 0.0
         while True:
             try:
                 event_type, data = await self._audio_queue.get()
+                if event_type == "transcript_delta":
+                    message_id = data.get("message_id") or ""
+                    await self._emit(StreamChunk(event=TextDelta(message_id=message_id, content=data["delta"]), delta=data["delta"]))
+                    continue
                 if event_type != "audio_delta":
                     if event_type == "done":
                         await self._emit(StreamChunk(done=True))
                     elif event_type == "interrupt":
                         await self._emit(StreamChunk(event=Interrupt()))
-                    if event_type in ("done", "interrupt"):
-                        audio_played_ms = 0.0
+                    elif event_type == "agent_changed":
+                        await self._emit(
+                            StreamChunk(event=AgentChanged(agent=data["agent"], previous_agent=data.get("previous_agent"), agents=data.get("agents")))
+                        )
+                    # A turn ended or the speaker changed: the next audio starts a new pacing window,
+                    # so a gap before it (a handoff's reconnect) is not paid back as a burst.
+                    audio_played_ms = 0.0
                     continue
 
                 self._queued_audio = max(0, self._queued_audio - 1)
@@ -440,7 +459,18 @@ class RealtimeConnectionPool:
             asyncio.run_coroutine_threadsafe(stale.close(), self._loop)
         return conn
 
-    def get_or_create(self, session_id: str, agent: BaseAgent, runtime: Runtime, session: Session) -> RealtimeConnection:
+    def get_or_create(
+        self,
+        session_id: str,
+        agent: BaseAgent,
+        runtime: Runtime,
+        session: Session,
+        *,
+        request_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        integration: Optional[str] = None,
+        reply_context: Optional[dict] = None,
+    ) -> RealtimeConnection:
         """Get or create a persistent realtime connection for a session.
 
         Thread-safe.  Called from any ConsumerLoop thread.  The global lock is held only
@@ -450,6 +480,16 @@ class RealtimeConnectionPool:
         On SQS FIFO queues, messages with the same group_id (session_id) are delivered
         to one consumer thread at a time, so concurrent creates for the same session are
         structurally prevented by the transport.
+
+        A new connection gets its delivery context before it connects: it emits output (the agent
+        it starts with, anything the adapter reports while connecting) as soon as it is connected,
+        and output emitted with no context has no edge to route back to.
+
+        :param request_id: The delivery context, as :meth:`RealtimeConnection.update_delivery_context`
+            takes it; applied only to a connection created here.
+        :param user_id: See ``request_id``.
+        :param integration: See ``request_id``.
+        :param reply_context: See ``request_id``.
         """
         if not self._loop_ready.wait(timeout=10):
             raise RuntimeError("RealtimeConnectionPool event loop not ready")
@@ -464,6 +504,7 @@ class RealtimeConnectionPool:
             # Reserve the slot so a concurrent caller for a different session proceeds
             # without waiting for this session's connect.
             conn = RealtimeConnection(session_id, agent, runtime, session, self._loop)
+            conn.update_delivery_context(request_id, user_id, integration, reply_context or {})
             self._connections[session_id] = conn
 
         # Connect outside the global lock.
@@ -498,17 +539,18 @@ class RealtimeConnectionPool:
             _log.debug(f"Shutting down: dropping realtime input for session {body.session_id}")
             return
 
+        delivery = {
+            "request_id": request_id,
+            "user_id": user_id,
+            "integration": IntegrationDelivery.integration_of(attributes),
+            "reply_context": IntegrationDelivery.reply_context(attributes),
+        }
         conn = self.get_connection(body.session_id)
         if conn is None:
             handler = chat_service.prepare_agent_handler(body.session_id, body.agent)
-            conn = self.get_or_create(body.session_id, handler.service.agent, handler.service.runtime, handler.service.session)
+            conn = self.get_or_create(body.session_id, handler.service.agent, handler.service.runtime, handler.service.session, **delivery)
 
-        conn.update_delivery_context(
-            request_id=request_id,
-            user_id=user_id,
-            integration=IntegrationDelivery.integration_of(attributes),
-            reply_context=IntegrationDelivery.reply_context(attributes),
-        )
+        conn.update_delivery_context(**delivery)
         for request in body.requests:
             if getattr(request, "type", None) == "voice":
                 conn.append_audio(request.audio_data)

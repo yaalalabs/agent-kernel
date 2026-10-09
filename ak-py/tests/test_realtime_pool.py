@@ -6,6 +6,7 @@ import types
 import pytest
 
 from agentkernel import Agent, Runner, Session
+from agentkernel.core.event import TextDelta
 from agentkernel.core.model import AgentReplyText, ExecutionMode, StreamChunk
 from agentkernel.core.realtime import RealtimeRunner
 from agentkernel.core.runtime import Runtime
@@ -95,6 +96,24 @@ def _connection(session_id="s1", agent=None, loop=None):
     return RealtimeConnection(session_id, agent or _Agent(), Runtime(InMemorySessionStore()), Session(session_id), loop or asyncio.new_event_loop())
 
 
+def _drain_output(transport):
+    """Every output message, in order. The in-memory queue delivers one message per group until it
+    is acked, so this drains with acks."""
+    consumer = transport.create_consumer(QueueName.OUTPUT)
+    drained = []
+    while True:
+        messages = consumer.fetch(10, 0.2)
+        if not messages:
+            return drained
+        for message in messages:
+            drained.append(message)
+            consumer.ack(message)
+
+
+def _kinds(messages):
+    return ["done" if json.loads(m.body).get("done") else json.loads(m.body)["event"]["type"] for m in messages]
+
+
 class TestRealtimeConnection:
     def test_requires_realtime_runner_cls(self):
         with pytest.raises(ValueError, match="no realtime_runner_cls"):
@@ -120,8 +139,7 @@ class TestRealtimeConnection:
 
         conn = _connection(loop=asyncio.get_running_loop())
         conn.update_delivery_context(request_id="r1", user_id="u1", integration="livekit", reply_context={"session_id": "s1"})
-        # The transcript streams immediately (audio is paced), so it exercises _emit directly.
-        await conn.handle_framework_event("transcript_delta", {"delta": "QUFB", "message_id": "m1"})
+        await conn._emit(StreamChunk(event=TextDelta(message_id="m1", content="QUFB"), delta="QUFB"))
 
         [message] = transport.create_consumer(QueueName.OUTPUT).fetch(10, 0.5)
         assert message.attributes[ATTR_REALTIME] == "true"
@@ -323,6 +341,8 @@ class TestFrameworkToolExecution:
 
         runner = GoogleADKRealtimeRunner()
         runner._agent = agent
+
+        runner._active = agent.agent
         await runner._open_tool_session(session.id)
 
         result = await runner.execute_tool("get_weather", '{"location": "Paris"}', ToolContext(runtime, agent, session, []), "call-1")
@@ -353,6 +373,8 @@ class TestFrameworkToolExecution:
 
         runner = GoogleADKRealtimeRunner()
         runner._agent = agent
+
+        runner._active = agent.agent
         await runner._open_tool_session(session.id)
 
         await runner.execute_tool("remember", '{"value": "blue"}', ToolContext(runtime, agent, session, []), "call-1")
@@ -455,17 +477,7 @@ class TestRealtimePacing:
         await asyncio.sleep(0.2)
         conn._pacing_task.cancel()
 
-        # The in-memory queue delivers one message per group until it is acked, so drain with acks.
-        consumer = transport.create_consumer(QueueName.OUTPUT)
-        kinds = []
-        while True:
-            messages = consumer.fetch(10, 0.2)
-            if not messages:
-                break
-            for message in messages:
-                body = json.loads(message.body)
-                kinds.append("done" if body.get("done") else body["event"]["type"])
-                consumer.ack(message)
+        kinds = _kinds(_drain_output(transport))
 
         # All three audio deltas are emitted, and the terminal event is always the done chunk
         # (it never overtakes its audio).
@@ -535,18 +547,113 @@ class TestRealtimeBargeIn:
         await asyncio.sleep(0.1)
         conn._pacing_task.cancel()
 
-        consumer = transport.create_consumer(QueueName.OUTPUT)
-        kinds = []
-        while True:
-            messages = consumer.fetch(10, 0.2)
-            if not messages:
-                break
-            for message in messages:
-                body = json.loads(message.body)
-                kinds.append("done" if body.get("done") else body["event"]["type"])
-                consumer.ack(message)
+        assert _kinds(_drain_output(transport)) == ["agent_changed", "audio_delta", "done"]
 
-        assert kinds == ["audio_delta", "done"]
+
+class TestRealtimeAgentChanged:
+    """The agent speaking is announced in order with the output it divides, so an edge never credits
+    one agent's words to another."""
+
+    @staticmethod
+    def _queued(conn):
+        return [item[0] for item in list(conn._audio_queue._queue)]
+
+    @pytest.mark.asyncio
+    async def test_the_starting_agent_is_announced_before_any_output(self, monkeypatch):
+        transport = InMemoryTransport()
+        monkeypatch.setattr(QueueTransportFactory, "create", staticmethod(lambda *a, **k: transport))
+        conn = _connection(agent=_Agent(name="supervisor"), loop=asyncio.get_running_loop())
+        await conn.connect()
+
+        await conn.handle_framework_event("audio_delta", {"delta": "QUFB", "message_id": "m1"})
+        await conn.handle_framework_event("done", {"status": "completed"})
+        await asyncio.sleep(0.1)
+        conn._pacing_task.cancel()
+
+        messages = _drain_output(transport)
+        assert _kinds(messages) == ["agent_changed", "audio_delta", "done"]
+        assert json.loads(messages[0].body)["event"] == {"type": "agent_changed", "agent": "supervisor", "agents": ["supervisor"]}
+
+    @pytest.mark.asyncio
+    async def test_the_transcript_and_a_handoff_stay_in_order_with_the_audio(self, monkeypatch):
+        """Regression: the transcript used to bypass the paced queue, so the new agent's words could
+        reach the edge while the previous agent's audio was still queued, ahead of the handoff."""
+        monkeypatch.setattr(QueueTransportFactory, "create", staticmethod(lambda *a, **k: InMemoryTransport()))
+        conn = _connection(loop=asyncio.get_running_loop())
+
+        await conn.handle_framework_event("audio_delta", {"delta": "QUFB", "message_id": "m1"})
+        await conn.handle_framework_event("transcript_delta", {"delta": "Transferring you.", "message_id": "m1"})
+        await conn.handle_framework_event("done", {"status": "completed"})
+        await conn.handle_framework_event("agent_changed", {"agent": "billing", "previous_agent": "supervisor"})
+        await conn.handle_framework_event("transcript_delta", {"delta": "Billing here.", "message_id": "m2"})
+        await conn.handle_framework_event("audio_delta", {"delta": "QUFB", "message_id": "m2"})
+
+        assert self._queued(conn) == ["audio_delta", "transcript_delta", "done", "agent_changed", "transcript_delta", "audio_delta"]
+
+    @pytest.mark.asyncio
+    async def test_a_handoff_is_emitted_between_the_agents_output(self, monkeypatch):
+        transport = InMemoryTransport()
+        monkeypatch.setattr(QueueTransportFactory, "create", staticmethod(lambda *a, **k: transport))
+        conn = _connection(agent=_Agent(name="supervisor"), loop=asyncio.get_running_loop())
+        await conn.connect()
+
+        await conn.handle_framework_event("audio_delta", {"delta": "QUFB", "message_id": "m1"})
+        await conn.handle_framework_event("done", {"status": "completed"})
+        await conn.handle_framework_event("agent_changed", {"agent": "billing", "previous_agent": "supervisor"})
+        await conn.handle_framework_event("transcript_delta", {"delta": "Billing here.", "message_id": "m2"})
+        await conn.handle_framework_event("audio_delta", {"delta": "QUFB", "message_id": "m2"})
+        await conn.handle_framework_event("done", {"status": "completed"})
+        await asyncio.sleep(0.1)
+        conn._pacing_task.cancel()
+
+        messages = _drain_output(transport)
+        assert _kinds(messages) == ["agent_changed", "audio_delta", "done", "agent_changed", "text_delta", "audio_delta", "done"]
+        handoff, transcript = json.loads(messages[3].body), json.loads(messages[4].body)
+        assert handoff["event"] == {"type": "agent_changed", "agent": "billing", "previous_agent": "supervisor"}
+        assert transcript["delta"] == "Billing here."
+
+    @pytest.mark.asyncio
+    async def test_an_interrupt_drops_the_unheard_transcript_but_keeps_the_handoff(self, monkeypatch):
+        """The user will not hear the dropped audio, so its words are dropped with it; talking over
+        an agent does not undo the handoff that made it the speaker."""
+        monkeypatch.setattr(QueueTransportFactory, "create", staticmethod(lambda *a, **k: InMemoryTransport()))
+        conn = _connection(loop=asyncio.get_running_loop())
+
+        await conn.handle_framework_event("agent_changed", {"agent": "billing", "previous_agent": "supervisor"})
+        await conn.handle_framework_event("transcript_delta", {"delta": "Your invoice", "message_id": "m2"})
+        await conn.handle_framework_event("audio_delta", {"delta": "QUFB", "message_id": "m2"})
+        await conn.handle_framework_event("interrupt", {})
+
+        assert self._queued(conn) == ["interrupt", "agent_changed"]
+
+    def test_a_new_connection_is_routed_before_it_connects(self, monkeypatch):
+        """Its first output (the starting agent) is emitted as soon as it connects, before the caller
+        could set a delivery context afterwards, so get_or_create must apply one first."""
+        transport = InMemoryTransport()
+        monkeypatch.setattr(QueueTransportFactory, "create", staticmethod(lambda *a, **k: transport))
+
+        pool = RealtimeConnectionPool.initialize()
+        thread = threading.Thread(target=pool.start, daemon=True)
+        thread.start()
+        try:
+            pool.get_or_create(
+                "s1",
+                _Agent(),
+                Runtime(InMemorySessionStore()),
+                Session("s1"),
+                request_id="r1",
+                integration="livekit",
+                reply_context={"session_id": "s1"},
+            )
+            [message] = _drain_output(transport)
+        finally:
+            ThreadRunner.shutdown_event.set()
+            thread.join(timeout=5)
+
+        assert json.loads(message.body)["event"] == {"type": "agent_changed", "agent": "general", "agents": ["general"]}
+        assert message.attributes[ATTR_INTEGRATION] == "livekit"
+        assert message.attributes["request_id"] == "r1"
+        assert message.attributes["reply_session_id"] == "s1"
 
 
 class TestOpenAIBargeIn:
@@ -607,11 +714,10 @@ class TestOpenAIRealtimeSession:
         async def send(self, payload):
             self.sent.append(payload)
 
-        def __aiter__(self):
-            return self
-
-        async def __anext__(self):
-            raise StopAsyncIteration
+        async def __aiter__(self):
+            # An async generator, as the SDK's connection iterates.
+            return
+            yield
 
     @classmethod
     def _runner(cls):
@@ -855,6 +961,401 @@ class TestOpenAIRealtimeToolGuards:
         assert "timed out" in result
 
 
+class _ScriptedRealtimeSocket:
+    """A realtime socket that replays scripted server events in order.
+
+    A callable in the script is a wait: replay pauses until it returns True over the client events
+    sent so far, the way a real model answers only after the runner has. Once the script is spent the
+    socket stays open. Iterated through an async generator, as the SDK's connection is."""
+
+    def __init__(self, script):
+        self.script = list(script)
+        self.sent = []
+        self._sent = asyncio.Event()
+
+    async def send(self, payload):
+        self.sent.append(payload)
+        self._sent.set()
+
+    async def __aiter__(self):
+        while self.script:
+            item = self.script.pop(0)
+            if not callable(item):
+                yield item
+                continue
+            while not item(self.sent):
+                self._sent.clear()
+                await self._sent.wait()
+        await asyncio.Event().wait()
+
+
+class TestOpenAIRealtimeHandoffs:
+    """Native handoffs run over the one socket and through the tool path, as the SDK's own realtime
+    session runs them: the session moves to the agent the handoff returned when its result is sent,
+    and the change is reported in order."""
+
+    @staticmethod
+    def _graph(**billing_options):
+        from agents import Agent as SDKAgent
+
+        supervisor = SDKAgent(name="supervisor", model="gpt-realtime", instructions="Route the caller.")
+        billing = SDKAgent(name="billing", instructions="Answer billing questions.", handoffs=[supervisor], **billing_options)
+        supervisor.handoffs = [billing]
+        return supervisor, billing
+
+    @staticmethod
+    async def _runner(active):
+        from agents import RunContextWrapper
+
+        from agentkernel.framework.openai.openai import OpenAIRealtimeRunner
+
+        runner = OpenAIRealtimeRunner()
+        runner._connection = TestOpenAIRealtimeSession._Connection()
+        runner._model = "gpt-realtime"
+        runner._run_context = RunContextWrapper(context=None)
+        runner.events = []
+        runner.answered = set()
+
+        async def callback(event_type, data):
+            runner.events.append((event_type, data))
+
+        runner._callback = callback
+        await runner._activate(active)
+        return runner
+
+    @staticmethod
+    def _context():
+        return ToolContext(Runtime(InMemorySessionStore()), _Agent(), Session("s1"), [])
+
+    @classmethod
+    async def _answer(cls, runner):
+        """Do what the pool does with each reported call: run it, then send its result."""
+        for kind, data in list(runner.events):
+            if kind != "tool_call" or data["call_id"] in runner.answered:
+                continue
+            runner.answered.add(data["call_id"])
+            try:
+                result = await runner.execute_tool(data["name"], data["arguments"], cls._context(), data["call_id"])
+            except Exception as e:
+                result = f"Error: {e}"
+            await runner.send_tool_result(data["call_id"], result)
+
+    @staticmethod
+    def _done(*calls, status="completed"):
+        return TestOpenAIRealtimeSession._response_done(status, *calls)
+
+    @staticmethod
+    def _reported(runner):
+        return [event for event in runner.events if event[0] != "tool_call"]
+
+    @pytest.mark.asyncio
+    async def test_enabled_handoffs_are_offered_beside_the_tools(self, monkeypatch):
+        supervisor, _ = self._graph()
+        connection = TestOpenAIRealtimeSession._patch_socket(monkeypatch)
+
+        await TestOpenAIRealtimeSession._connect(supervisor)
+
+        [offered] = connection.sent[0]["session"]["tools"]
+        assert offered["name"] == "transfer_to_billing"
+        assert offered["description"].startswith("Handoff to the billing agent")
+
+    def test_the_team_is_every_agent_reachable_through_handoffs(self):
+        """Followed through handoff() wrappers too, nearest first: the room shows exactly these agents."""
+        from agents import Agent as SDKAgent
+        from agents import handoff
+
+        from agentkernel.framework.openai.openai import OpenAIRealtimeRunner
+
+        supervisor, billing = self._graph()
+        supervisor.handoffs = [billing, handoff(SDKAgent(name="tech_support", handoffs=[supervisor]))]
+
+        team = OpenAIRealtimeRunner().team(types.SimpleNamespace(name="supervisor", agent=supervisor))
+
+        assert team == ["supervisor", "billing", "tech_support"]
+
+    @pytest.mark.asyncio
+    async def test_a_handoff_call_is_dispatched_like_a_tool_call(self):
+        supervisor, _ = self._graph()
+        runner = await self._runner(supervisor)
+
+        await runner._handle_message(self._done(("c1", "transfer_to_billing", "{}")))
+
+        assert runner.events == [
+            ("tool_call", {"call_id": "c1", "name": "transfer_to_billing", "arguments": "{}"}),
+            ("done", {"status": "completed"}),
+        ]
+        assert runner._active is supervisor
+        assert runner._connection.sent == []
+
+    @pytest.mark.asyncio
+    async def test_a_handoff_points_the_session_at_the_new_agent(self):
+        supervisor, billing = self._graph()
+        runner = await self._runner(supervisor)
+
+        await runner._handle_message(self._done(("c1", "transfer_to_billing", "{}")))
+        await self._answer(runner)
+
+        assert runner._active is billing
+        assert self._reported(runner) == [("done", {"status": "completed"}), ("agent_changed", {"agent": "billing", "previous_agent": "supervisor"})]
+        update, output, follow_up = runner._connection.sent
+        assert update["type"] == "session.update"
+        assert update["session"]["instructions"] == "Answer billing questions."
+        assert [tool["name"] for tool in update["session"]["tools"]] == ["transfer_to_supervisor"]
+        assert output["item"] == {"type": "function_call_output", "call_id": "c1", "output": '{"assistant": "billing"}'}
+        assert follow_up == {"type": "response.create"}
+
+    @pytest.mark.asyncio
+    async def test_the_handoff_callback_runs_once(self):
+        from agents import handoff
+
+        calls = []
+        supervisor, billing = self._graph()
+        supervisor.handoffs = [handoff(billing, on_handoff=lambda ctx: calls.append(ctx))]
+        runner = await self._runner(supervisor)
+
+        await runner._handle_message(self._done(("c1", "transfer_to_billing", "{}")))
+        await self._answer(runner)
+
+        assert len(calls) == 1
+        assert runner._active is billing
+
+    @pytest.mark.asyncio
+    async def test_an_agent_with_no_instructions_does_not_keep_the_previous_ones(self):
+        supervisor, billing = self._graph()
+        billing.instructions = None
+        runner = await self._runner(supervisor)
+
+        await runner._handle_message(self._done(("c1", "transfer_to_billing", "{}")))
+        await self._answer(runner)
+
+        assert runner._connection.sent[0]["session"]["instructions"] == ""
+
+    @pytest.mark.asyncio
+    async def test_a_tool_called_beside_a_handoff_runs_as_the_agent_that_called_it(self):
+        from agents import function_tool
+        from agents.tool_context import ToolContext as SDKToolContext
+
+        @function_tool
+        def whoami(ctx: SDKToolContext) -> str:
+            """Name the agent running this tool."""
+            return ctx.agent.name
+
+        supervisor, billing = self._graph()
+        supervisor.tools = [whoami]
+        runner = await self._runner(supervisor)
+        await runner._handle_message(self._done(("c1", "whoami", "{}"), ("c2", "transfer_to_billing", "{}")))
+
+        # The pool may finish the handoff first; billing has no whoami tool.
+        await runner.send_tool_result("c2", await runner.execute_tool("transfer_to_billing", "{}", self._context(), "c2"))
+        assert runner._active is billing
+        # The follow-up response waits for the tool's output too.
+        assert {"type": "response.create"} not in runner._connection.sent
+
+        result = await runner.execute_tool("whoami", "{}", self._context(), "c1")
+        await runner.send_tool_result("c1", result)
+
+        assert result == "supervisor"
+        assert runner._connection.sent[-1] == {"type": "response.create"}
+
+    @pytest.mark.asyncio
+    async def test_a_specialist_hands_back_to_the_supervisor(self):
+        supervisor, billing = self._graph()
+        runner = await self._runner(supervisor)
+
+        await runner._handle_message(self._done(("c1", "transfer_to_billing", "{}")))
+        await self._answer(runner)
+        await runner._handle_message(self._done(("c2", "transfer_to_supervisor", "{}")))
+        await self._answer(runner)
+
+        assert runner._active is supervisor
+        assert runner.events[-1] == ("agent_changed", {"agent": "supervisor", "previous_agent": "billing"})
+
+    @pytest.mark.asyncio
+    async def test_a_failed_handoff_keeps_the_agent(self):
+        from agents import handoff
+
+        def refuse(ctx):
+            raise RuntimeError("billing is closed")
+
+        supervisor, billing = self._graph()
+        supervisor.handoffs = [handoff(billing, on_handoff=refuse)]
+        runner = await self._runner(supervisor)
+
+        await runner._handle_message(self._done(("c1", "transfer_to_billing", "{}")))
+        await self._answer(runner)
+
+        assert runner._active is supervisor
+        assert self._reported(runner) == [("done", {"status": "completed"})]
+        output, follow_up = runner._connection.sent
+        assert output["item"]["output"] == "Error: billing is closed"
+        assert follow_up == {"type": "response.create"}
+
+    @pytest.mark.asyncio
+    async def test_only_the_first_handoff_of_a_response_is_performed(self):
+        from agents import Agent as SDKAgent
+        from agents import handoff
+
+        invoked = []
+        supervisor, billing = self._graph()
+        supervisor.handoffs = [billing, handoff(SDKAgent(name="tech_support"), on_handoff=lambda ctx: invoked.append(ctx))]
+        runner = await self._runner(supervisor)
+
+        await runner._handle_message(self._done(("c1", "transfer_to_billing", "{}"), ("c2", "transfer_to_tech_support", "{}")))
+        await self._answer(runner)
+
+        assert runner._active is billing
+        assert invoked == []
+        outputs = {p["item"]["call_id"]: p["item"]["output"] for p in runner._connection.sent if p["type"] == "conversation.item.create"}
+        assert outputs["c2"] == "Error: only one handoff is performed per turn; this one, to tech_support, was not"
+        assert runner._connection.sent[-1] == {"type": "response.create"}
+
+    @pytest.mark.asyncio
+    async def test_a_cancelled_response_performs_no_handoff(self):
+        supervisor, _ = self._graph()
+        runner = await self._runner(supervisor)
+
+        await runner._handle_message(self._done(("c1", "transfer_to_billing", "{}"), status="cancelled"))
+
+        assert runner._active is supervisor
+        assert runner.events == [("done", {"status": "cancelled"})]
+
+    @pytest.mark.asyncio
+    async def test_a_disabled_handoff_is_not_offered(self):
+        from agents import Agent as SDKAgent
+        from agents import handoff
+
+        supervisor, billing = self._graph()
+        supervisor.handoffs = [billing, handoff(SDKAgent(name="sales"), is_enabled=False)]
+
+        runner = await self._runner(supervisor)
+
+        assert list(runner._handoffs) == ["transfer_to_billing"]
+
+    @pytest.mark.asyncio
+    async def test_a_handoff_that_filters_the_history_fails_before_connecting(self, monkeypatch):
+        """Checked across the whole graph, through handoff() wrappers, before any socket opens."""
+        from agents import handoff
+
+        supervisor, billing = self._graph()
+        supervisor.handoffs = [handoff(billing)]
+        billing.handoffs = [handoff(supervisor, input_filter=lambda data: data)]
+        connection = TestOpenAIRealtimeSession._patch_socket(monkeypatch)
+
+        with pytest.raises(ValueError, match="filters or nests the history"):
+            await TestOpenAIRealtimeSession._connect(supervisor)
+
+        assert connection.sent == []
+
+    @pytest.mark.asyncio
+    async def test_a_specialist_declaring_another_model_is_reported_at_connect(self, monkeypatch, caplog):
+        supervisor, _ = self._graph(model="gpt-4o")
+        TestOpenAIRealtimeSession._patch_socket(monkeypatch)
+
+        with caplog.at_level("WARNING"):
+            await TestOpenAIRealtimeSession._connect(supervisor)
+
+        assert "Agent 'billing' declares model gpt-4o" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_a_conversation_moves_to_a_specialist_and_back(self, monkeypatch):
+        """End to end through the pool: the specialist's own tool runs once, the handoff's callback runs
+        in Agent Kernel's session scope as a tool does, and every speaker change reaches the output in
+        order with the speech around it."""
+        from agents import handoff
+
+        from agentkernel.framework.openai.openai import OpenAIRealtimeRunner, OpenAIToolBuilder
+
+        transport = InMemoryTransport()
+        monkeypatch.setattr(QueueTransportFactory, "create", staticmethod(lambda *a, **k: transport))
+
+        looked_up = []
+        handed_off_in = []
+
+        def get_invoice(account_id: str) -> str:
+            """Look up the caller's latest invoice."""
+            looked_up.append(account_id)
+            return f"{account_id} owes $42"
+
+        supervisor, billing = self._graph(tools=OpenAIToolBuilder.bind([get_invoice]))
+        supervisor.handoffs = [handoff(billing, on_handoff=lambda ctx: handed_off_in.append(Session.current().id))]
+
+        def answered(call_id):
+            return lambda sent: any(p.get("item", {}).get("call_id") == call_id for p in sent)
+
+        def event(event_type, **fields):
+            return types.SimpleNamespace(type=event_type, **fields)
+
+        socket = _ScriptedRealtimeSocket(
+            [
+                event("response.created"),
+                event("response.output_audio_transcript.delta", delta="Connecting you to billing.", item_id="m1"),
+                event("response.output_audio.delta", delta="QUFB", item_id="m1"),
+                self._done(("c1", "transfer_to_billing", "{}")),
+                answered("c1"),
+                event("response.created"),
+                event("response.output_audio_transcript.delta", delta="Billing here.", item_id="m2"),
+                event("response.output_audio.delta", delta="QUFB", item_id="m2"),
+                self._done(("c2", "get_invoice", '{"account_id": "A1"}')),
+                answered("c2"),
+                event("response.created"),
+                self._done(("c3", "transfer_to_supervisor", "{}")),
+                answered("c3"),
+            ]
+        )
+
+        class _ConnectManager:
+            async def __aenter__(self):
+                return socket
+
+            async def __aexit__(self, *exc):
+                return False
+
+        class _Client:
+            realtime = types.SimpleNamespace(connect=lambda model: _ConnectManager())
+
+            async def close(self):
+                pass
+
+        monkeypatch.setattr("openai.AsyncOpenAI", lambda *a, **k: _Client())
+
+        agent = _Agent(name="supervisor", realtime_runner_cls=OpenAIRealtimeRunner)
+        agent.agent = supervisor
+        conn = _connection(agent=agent, loop=asyncio.get_running_loop())
+        await conn.connect()
+        for _ in range(100):
+            if not socket.script:
+                break
+            await asyncio.sleep(0.02)
+        await asyncio.sleep(0.2)
+        await conn.close()
+
+        assert looked_up == ["A1"]
+        assert handed_off_in == ["s1"]
+        tool_output = next(p for p in socket.sent if p.get("item", {}).get("call_id") == "c2")
+        assert tool_output["item"]["output"] == "A1 owes $42"
+        assert [p["session"].get("instructions") for p in socket.sent if p["type"] == "session.update"] == [
+            "Route the caller.",
+            "Answer billing questions.",
+            "Route the caller.",
+        ]
+
+        bodies = [json.loads(m.body) for m in _drain_output(transport)]
+        # The conversation opens by naming its whole team, for the edge to show.
+        assert bodies[0]["event"]["agents"] == ["supervisor", "billing"]
+        speech = [
+            (body["event"]["type"], body["event"].get("agent") or body.get("delta"))
+            for body in bodies
+            if body.get("event", {}).get("type") in ("agent_changed", "text_delta")
+        ]
+        assert speech == [
+            ("agent_changed", "supervisor"),
+            ("text_delta", "Connecting you to billing."),
+            ("agent_changed", "billing"),
+            ("text_delta", "Billing here."),
+            ("agent_changed", "supervisor"),
+        ]
+
+
 class TestADKRealtimeTools:
     """Plain functions work as they do on a normal ADK run; toolsets are skipped; results are wrapped as ADK wraps them."""
 
@@ -871,7 +1372,7 @@ class TestADKRealtimeTools:
     def test_a_plain_function_is_declared(self):
         from agentkernel.framework.adk.adk import GoogleADKRealtimeRunner
 
-        config = GoogleADKRealtimeRunner()._connect_config(self._agent(self.get_weather))
+        config = GoogleADKRealtimeRunner()._connect_config(self._agent(self.get_weather).agent)
 
         assert [d.name for d in config.tools[0].function_declarations] == ["get_weather"]
 
@@ -882,6 +1383,7 @@ class TestADKRealtimeTools:
         agent = self._agent(self.get_weather)
         runner = GoogleADKRealtimeRunner()
         runner._agent = agent
+        runner._active = agent.agent
         await runner._open_tool_session("s1")
 
         result = await runner.execute_tool(
@@ -903,7 +1405,7 @@ class TestADKRealtimeTools:
                 pass
 
         with caplog.at_level("WARNING"):
-            config = GoogleADKRealtimeRunner()._connect_config(self._agent(self.get_weather, _Toolset()))
+            config = GoogleADKRealtimeRunner()._connect_config(self._agent(self.get_weather, _Toolset()).agent)
 
         assert [d.name for d in config.tools[0].function_declarations] == ["get_weather"]
         assert "is a toolset" in caplog.text
@@ -918,14 +1420,47 @@ class TestADKRealtimeTools:
             async def send_tool_response(self, function_responses):
                 sent.append(function_responses)
 
+        async def callback(event_type, data):
+            pass
+
         runner = GoogleADKRealtimeRunner()
         runner._connection = _Connection()
-        runner._tool_names["call-1"] = "get_weather"
+        runner._callback = callback
+        await runner._handle_message(_live_tool_call("call-1", "get_weather", location="Paris"))
 
         await runner.send_tool_result("call-1", "sunny")
 
-        assert sent[0].name == "get_weather"
-        assert sent[0].response == {"result": "sunny"}
+        [[response]] = sent
+        assert response.name == "get_weather"
+        assert response.response == {"result": "sunny"}
+
+    @pytest.mark.asyncio
+    async def test_the_results_of_one_tool_call_message_go_back_together(self):
+        """As ADK answers a model's parallel calls: once every call has its result, in call order."""
+        from agentkernel.framework.adk.adk import GoogleADKRealtimeRunner
+
+        sent = []
+
+        class _Connection:
+            async def send_tool_response(self, function_responses):
+                sent.append(function_responses)
+
+        async def callback(event_type, data):
+            pass
+
+        runner = GoogleADKRealtimeRunner()
+        runner._connection = _Connection()
+        runner._callback = callback
+        message = _live_tool_call("c1", "get_weather", location="Paris")
+        message.tool_call.function_calls.append(types.SimpleNamespace(id="c2", name="get_weather", args={"location": "Rome"}))
+        await runner._handle_message(message)
+
+        await runner.send_tool_result("c2", "rainy")
+        assert sent == []
+        await runner.send_tool_result("c1", "sunny")
+
+        [responses] = sent
+        assert [(response.id, response.response) for response in responses] == [("c1", {"result": "sunny"}), ("c2", {"result": "rainy"})]
 
 
 class TestADKConnectConfig:
@@ -940,21 +1475,21 @@ class TestADKConnectConfig:
     def test_string_instruction_is_the_system_instruction(self):
         from agentkernel.framework.adk.adk import GoogleADKRealtimeRunner
 
-        config = GoogleADKRealtimeRunner()._connect_config(self._agent(instruction="Be brief."))
+        config = GoogleADKRealtimeRunner()._connect_config(self._agent(instruction="Be brief.").agent)
 
         assert config.system_instruction.parts[0].text == "Be brief."
 
     def test_description_is_not_used_as_an_instruction(self):
         from agentkernel.framework.adk.adk import GoogleADKRealtimeRunner
 
-        config = GoogleADKRealtimeRunner()._connect_config(self._agent(description="Routes billing questions."))
+        config = GoogleADKRealtimeRunner()._connect_config(self._agent(description="Routes billing questions.").agent)
 
         assert config.system_instruction is None
 
     def test_turn_detection_and_thinking_are_left_to_the_live_api(self):
         from agentkernel.framework.adk.adk import GoogleADKRealtimeRunner
 
-        config = GoogleADKRealtimeRunner()._connect_config(self._agent(instruction="x"))
+        config = GoogleADKRealtimeRunner()._connect_config(self._agent(instruction="x").agent)
 
         assert config.realtime_input_config is None
         assert config.thinking_config is None
@@ -963,7 +1498,531 @@ class TestADKConnectConfig:
         from agentkernel.framework.adk.adk import GoogleADKRealtimeRunner
 
         with pytest.raises(ValueError, match="instruction as a string"):
-            GoogleADKRealtimeRunner()._connect_config(self._agent(instruction=lambda ctx: "dynamic"))
+            GoogleADKRealtimeRunner()._connect_config(self._agent(instruction=lambda ctx: "dynamic").agent)
+
+
+class _FakeLiveSession:
+    """A Gemini Live session replaying scripted turns: each receive() yields one turn's messages, and
+    waits once they are spent, as an open socket does. A callable in the script is a wait: the next
+    turn comes once it returns True for the session, as a model answers only after its tool calls are."""
+
+    def __init__(self, turns):
+        self.turns = list(turns)
+        self.client_content = []
+        self.realtime_text = []
+        self.tool_responses = []
+        self.closed = False
+        self._answered = asyncio.Event()
+
+    async def receive(self):
+        while self.turns and callable(self.turns[0]):
+            ready = self.turns.pop(0)
+            while not ready(self):
+                self._answered.clear()
+                await self._answered.wait()
+        if not self.turns:
+            await asyncio.Event().wait()
+        for message in self.turns.pop(0):
+            yield message
+
+    async def send_client_content(self, turns, turn_complete):
+        self.client_content.append((turns, turn_complete))
+
+    async def send_realtime_input(self, **kwargs):
+        if "text" in kwargs:
+            self.realtime_text.append(kwargs["text"])
+
+    async def send_tool_response(self, function_responses):
+        self.tool_responses.append(function_responses)
+        self._answered.set()
+
+
+class _FakeLiveClient:
+    """Stands in for ``genai.Client``: each live connect opens a session with the next script."""
+
+    def __init__(self, *scripts, fail_on=None):
+        self.scripts = list(scripts)
+        self.sessions = []
+        self.configs = []
+        self.fail_on = fail_on
+        self.aio = types.SimpleNamespace(live=types.SimpleNamespace(connect=self._connect), aclose=self._aclose)
+
+    def _connect(self, model, config):
+        client = self
+        session = _FakeLiveSession(self.scripts.pop(0) if self.scripts else [])
+
+        class _ConnectManager:
+            async def __aenter__(self):
+                if client.fail_on == len(client.configs) + 1:
+                    raise ConnectionError("Live connect refused")
+                client.sessions.append(session)
+                client.configs.append((model, config))
+                return session
+
+            async def __aexit__(self, *exc):
+                session.closed = True
+
+        return _ConnectManager()
+
+    async def _aclose(self):
+        pass
+
+
+def _live_message(**server_content):
+    return types.SimpleNamespace(server_content=types.SimpleNamespace(**server_content), tool_call=None)
+
+
+def _live_transcript(attribute, text):
+    return _live_message(**{attribute: types.SimpleNamespace(text=text)})
+
+
+def _live_tool_call(call_id, name, **args):
+    return types.SimpleNamespace(
+        server_content=None, tool_call=types.SimpleNamespace(function_calls=[types.SimpleNamespace(id=call_id, name=name, args=args)])
+    )
+
+
+class TestADKRealtimeTransfers:
+    """Native transfers follow ADK's rules: ADK's own transfer_to_agent runs like any tool, and the
+    conversation moves to a socket configured for the target, seeded with what was said."""
+
+    MODEL = "gemini-3.1-flash-live-preview"
+
+    @classmethod
+    def _graph(cls, supervisor_tools=(), **billing_options):
+        from google.adk.agents import Agent as GoogleAgent
+
+        billing = GoogleAgent(
+            **{
+                "name": "billing",
+                "model": cls.MODEL,
+                "description": "Invoices and charges.",
+                "instruction": "Answer billing questions.",
+                **billing_options,
+            }
+        )
+        tech = GoogleAgent(name="tech_support", model=cls.MODEL, description="Connection problems.", instruction="Fix connections.")
+        supervisor = GoogleAgent(
+            name="supervisor",
+            model=cls.MODEL,
+            description="Routes callers.",
+            instruction="Route the caller.",
+            sub_agents=[billing, tech],
+            tools=list(supervisor_tools),
+        )
+        return supervisor, billing, tech
+
+    @staticmethod
+    async def _runner(active):
+        from agentkernel.framework.adk.adk import GoogleADKRealtimeRunner
+
+        runner = GoogleADKRealtimeRunner()
+        runner._active = active
+        await runner._open_tool_session("s1")
+        return runner
+
+    @staticmethod
+    def _context():
+        return ToolContext(Runtime(InMemorySessionStore()), _Agent(), Session("s1"), [])
+
+    @staticmethod
+    def _declared(config):
+        return [declaration.name for declaration in config.tools[0].function_declarations]
+
+    def test_an_agent_with_sub_agents_gets_adks_transfer_tool_and_instructions(self):
+        from agentkernel.framework.adk.adk import GoogleADKRealtimeRunner
+
+        supervisor, _, _ = self._graph()
+
+        config = GoogleADKRealtimeRunner()._connect_config(supervisor)
+
+        assert self._declared(config) == ["transfer_to_agent"]
+        instruction = config.system_instruction.parts[0].text
+        assert instruction.startswith("Route the caller.")
+        assert "`billing`, `tech_support`" in instruction
+
+    def test_the_team_is_every_agent_reachable_through_transfers(self):
+        from agentkernel.framework.adk.adk import GoogleADKRealtimeRunner
+
+        supervisor, _, _ = self._graph()
+
+        team = GoogleADKRealtimeRunner().team(types.SimpleNamespace(name="supervisor", agent=supervisor))
+
+        assert team == ["supervisor", "billing", "tech_support"]
+
+    def test_a_sub_agent_transfers_to_its_parent_and_peers_unless_disallowed(self):
+        from agentkernel.framework.adk.adk import GoogleADKRealtimeRunner
+
+        supervisor, billing, tech = self._graph()
+        assert GoogleADKRealtimeRunner._transfer_targets(billing) == [supervisor, tech]
+        assert "transfer to your parent agent supervisor" in GoogleADKRealtimeRunner()._connect_config(billing).system_instruction.parts[0].text
+
+        _, closed_billing, _ = self._graph(disallow_transfer_to_parent=True, disallow_transfer_to_peers=True)
+        config = GoogleADKRealtimeRunner()._connect_config(closed_billing)
+        assert GoogleADKRealtimeRunner._transfer_targets(closed_billing) == []
+        assert config.tools is None
+        assert config.system_instruction.parts[0].text == "Answer billing questions."
+
+    def test_a_specialist_without_a_model_uses_its_parents(self):
+        from agentkernel.framework.adk.adk import GoogleADKRealtimeRunner
+
+        _, billing, _ = self._graph()
+        billing.model = ""
+
+        assert GoogleADKRealtimeRunner._live_model(billing) == self.MODEL
+
+    def test_each_agent_speaks_with_its_own_voice(self):
+        from google.genai import types as genai_types
+
+        from agentkernel.framework.adk.adk import GoogleADKRealtimeRunner
+
+        voice = genai_types.SpeechConfig(
+            voice_config=genai_types.VoiceConfig(prebuilt_voice_config=genai_types.PrebuiltVoiceConfig(voice_name="Kore"))
+        )
+        supervisor, billing, _ = self._graph(generate_content_config=genai_types.GenerateContentConfig(speech_config=voice))
+
+        assert GoogleADKRealtimeRunner()._connect_config(billing).speech_config.voice_config.prebuilt_voice_config.voice_name == "Kore"
+        assert GoogleADKRealtimeRunner()._connect_config(supervisor).speech_config is None
+
+    def test_a_workflow_agent_cannot_be_transferred_to(self):
+        from google.adk.agents import Agent as GoogleAgent
+        from google.adk.agents import SequentialAgent
+
+        from agentkernel.framework.adk.adk import GoogleADKRealtimeRunner
+
+        step = GoogleAgent(name="step", model=self.MODEL, instruction="x")
+        supervisor = GoogleAgent(
+            name="supervisor", model=self.MODEL, instruction="x", sub_agents=[SequentialAgent(name="pipeline", sub_agents=[step])]
+        )
+
+        with pytest.raises(ValueError, match="LLM agents only"):
+            GoogleADKRealtimeRunner()._validate_transfers(supervisor)
+
+    def test_a_specialist_with_an_instruction_provider_fails_at_connect(self):
+        from agentkernel.framework.adk.adk import GoogleADKRealtimeRunner
+
+        supervisor, _, _ = self._graph(instruction=lambda ctx: "dynamic")
+
+        with pytest.raises(ValueError, match="instruction as a string"):
+            GoogleADKRealtimeRunner()._validate_transfers(supervisor)
+
+    @pytest.mark.asyncio
+    async def test_adks_transfer_tool_asks_for_a_transfer(self):
+        supervisor, billing, _ = self._graph()
+        runner = await self._runner(supervisor)
+
+        result = await runner.execute_tool("transfer_to_agent", '{"agent_name": "billing"}', self._context(), "c1")
+
+        assert result == ""
+        assert runner._transfers["c1"] is billing
+
+    @pytest.mark.asyncio
+    async def test_a_transfer_to_an_unknown_agent_is_refused(self):
+        supervisor, _, _ = self._graph()
+        runner = await self._runner(supervisor)
+
+        result = await runner.execute_tool("transfer_to_agent", '{"agent_name": "sales"}', self._context(), "c1")
+
+        assert result == "Error: there is no agent named sales to transfer to"
+        assert runner._transfers == {}
+
+    @pytest.mark.asyncio
+    async def test_any_tool_that_sets_the_transfer_action_transfers(self):
+        from google.adk.tools import ToolContext as ADKToolContext
+
+        def escalate(tool_context: ADKToolContext) -> str:
+            """Escalate to billing."""
+            tool_context.actions.transfer_to_agent = "billing"
+            return "escalated"
+
+        supervisor, billing, _ = self._graph()
+        supervisor.tools = [escalate]
+        runner = await self._runner(supervisor)
+
+        assert await runner.execute_tool("escalate", "{}", self._context(), "c1") == "escalated"
+        assert runner._transfers["c1"] is billing
+
+    async def _converse(self, monkeypatch, client, supervisor_tools=()):
+        from agentkernel.framework.adk.adk import GoogleADKRealtimeRunner
+
+        transport = InMemoryTransport()
+        monkeypatch.setattr(QueueTransportFactory, "create", staticmethod(lambda *a, **k: transport))
+        monkeypatch.setattr("google.genai.Client", lambda *a, **k: client)
+
+        supervisor, _, _ = self._graph(supervisor_tools=supervisor_tools)
+        agent = _Agent(name="supervisor", realtime_runner_cls=GoogleADKRealtimeRunner)
+        agent.agent = supervisor
+        conn = _connection(agent=agent, loop=asyncio.get_running_loop())
+        await conn.connect()
+        return conn, transport
+
+    @pytest.mark.asyncio
+    async def test_a_conversation_moves_to_a_specialist_and_back(self, monkeypatch):
+        client = _FakeLiveClient(
+            [[_live_transcript("input_transcription", "My bill is too high."), _live_tool_call("c1", "transfer_to_agent", agent_name="billing")]],
+            [
+                [
+                    _live_message(
+                        output_transcription=types.SimpleNamespace(text="Billing here."),
+                        model_turn=types.SimpleNamespace(parts=[types.SimpleNamespace(inline_data=types.SimpleNamespace(data=b"\x00\x00"))]),
+                    ),
+                    _live_message(turn_complete=True),
+                ],
+                [
+                    _live_transcript("input_transcription", "And my internet is down."),
+                    _live_tool_call("c2", "transfer_to_agent", agent_name="supervisor"),
+                ],
+            ],
+        )
+        conn, transport = await self._converse(monkeypatch, client)
+        for _ in range(100):
+            if len(client.sessions) == 3:
+                break
+            await asyncio.sleep(0.02)
+        await asyncio.sleep(0.2)
+        first, billing, last = client.sessions
+        assert first.closed and billing.closed and not last.closed
+        await conn.close()
+
+        # Each socket is configured for its agent; the transferred-to ones are seeded and told so.
+        instructions = [config.system_instruction.parts[0].text.split("\n")[0] for _, config in client.configs]
+        assert instructions == ["Route the caller.", "Answer billing questions.", "Route the caller."]
+        assert client.configs[0][1].history_config is None
+        assert client.configs[1][1].history_config.initial_history_in_client_content is True
+
+        [(seeded, turn_complete)] = billing.client_content
+        assert turn_complete is True
+        assert [content.role for content in seeded] == ["user", "model", "user"]
+        assert seeded[0].parts[0].text == "My bill is too high."
+        assert seeded[1].parts[0].function_call.args == {"agent_name": "billing"}
+        assert seeded[2].parts[0].function_response.name == "transfer_to_agent"
+        # Gemini 3.x waits for fresh input after replayed history; the placeholder ADK sends prompts it.
+        assert billing.realtime_text == ["."]
+
+        [(reseeded, _)] = last.client_content
+        assert [part.text for content in reseeded for part in content.parts if part.text] == [
+            "My bill is too high.",
+            "Billing here.",
+            "And my internet is down.",
+        ]
+
+        kinds = _kinds(_drain_output(transport))
+        assert kinds == ["agent_changed", "done", "agent_changed", "text_delta", "audio_delta", "done", "done", "agent_changed"]
+
+    @pytest.mark.asyncio
+    async def _seeded_after_first_transfer(self, monkeypatch, client, **options):
+        conn, _ = await self._converse(monkeypatch, client, **options)
+        for _ in range(100):
+            if len(client.sessions) >= 2 and client.sessions[1].client_content:
+                break
+            await asyncio.sleep(0.02)
+        await conn.close()
+        [(seeded, _)] = client.sessions[1].client_content
+        return seeded
+
+    @pytest.mark.asyncio
+    async def test_a_transfer_keeps_the_other_results_of_its_turn(self, monkeypatch):
+        """ADK answers a turn's parallel calls together before it transfers, so the new agent sees them all."""
+
+        def lookup_account(account_id: str) -> str:
+            """Look up a caller's account."""
+            return f"{account_id}: fibre 500, paid up"
+
+        message = _live_tool_call("c1", "lookup_account", account_id="A-1042")
+        message.tool_call.function_calls.append(types.SimpleNamespace(id="c2", name="transfer_to_agent", args={"agent_name": "billing"}))
+        client = _FakeLiveClient([[message]])
+
+        seeded = await self._seeded_after_first_transfer(monkeypatch, client, supervisor_tools=[lookup_account])
+
+        calls, responses = seeded[-2], seeded[-1]
+        assert [(part.function_call.id, part.function_call.name) for part in calls.parts] == [("c1", "lookup_account"), ("c2", "transfer_to_agent")]
+        assert [part.function_response.response for part in responses.parts] == [{"result": "A-1042: fibre 500, paid up"}, {"result": ""}]
+        assert len(client.sessions) == 2
+
+    @pytest.mark.asyncio
+    async def test_a_later_transfer_replays_the_earlier_tool_calls_too(self, monkeypatch):
+        """The history keeps every tool call with its result, as ADK's session does, in the order it
+        happened: not only what was said about them."""
+
+        def lookup_account(account_id: str) -> str:
+            """Look up a caller's account."""
+            return f"{account_id}: fibre 500, paid up"
+
+        client = _FakeLiveClient(
+            [
+                [
+                    _live_transcript("input_transcription", "My account is A-1042."),
+                    _live_transcript("output_transcription", "Let me check."),
+                    _live_tool_call("c1", "lookup_account", account_id="A-1042"),
+                ],
+                lambda session: session.tool_responses,
+                [_live_transcript("output_transcription", "You are on fibre 500."), _live_message(turn_complete=True)],
+                [_live_transcript("input_transcription", "Why is my bill higher?"), _live_tool_call("c2", "transfer_to_agent", agent_name="billing")],
+            ]
+        )
+
+        seeded = await self._seeded_after_first_transfer(monkeypatch, client, supervisor_tools=[lookup_account])
+
+        def describe(content):
+            part = content.parts[0]
+            if part.text:
+                return part.text
+            if part.function_call:
+                return f"call {part.function_call.name}"
+            return f"result {part.function_response.name}: {part.function_response.response['result']}"
+
+        assert [(content.role, describe(content)) for content in seeded] == [
+            ("user", "My account is A-1042."),
+            ("model", "Let me check."),
+            ("model", "call lookup_account"),
+            ("user", "result lookup_account: A-1042: fibre 500, paid up"),
+            ("model", "You are on fibre 500."),
+            ("user", "Why is my bill higher?"),
+            ("model", "call transfer_to_agent"),
+            ("user", "result transfer_to_agent: "),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_only_the_first_transfer_of_a_turn_is_performed(self, monkeypatch):
+        message = _live_tool_call("c1", "transfer_to_agent", agent_name="billing")
+        message.tool_call.function_calls.append(types.SimpleNamespace(id="c2", name="transfer_to_agent", args={"agent_name": "tech_support"}))
+        client = _FakeLiveClient([[message]])
+
+        seeded = await self._seeded_after_first_transfer(monkeypatch, client)
+
+        assert client.configs[1][1].system_instruction.parts[0].text.startswith("Answer billing questions.")
+        assert [part.function_response.response["result"] for part in seeded[-1].parts] == [
+            "",
+            "Error: only one handoff is performed per turn; this one, to tech_support, was not",
+        ]
+
+    @pytest.mark.asyncio
+    async def test_a_transfer_that_cannot_connect_fails_the_connection(self, monkeypatch, caplog):
+        client = _FakeLiveClient([[_live_tool_call("c1", "transfer_to_agent", agent_name="billing")]], fail_on=2)
+        with caplog.at_level("ERROR"):
+            conn, transport = await self._converse(monkeypatch, client)
+            for _ in range(100):
+                if conn.closed:
+                    break
+                await asyncio.sleep(0.02)
+
+        assert conn.closed is True
+        assert client.sessions[0].closed
+        assert conn.adapter._cm is None
+        body = json.loads(_drain_output(transport)[-1].body)
+        assert "transfer to 'billing' failed" in body["error"]
+        await conn.close()
+
+
+class TestRealtimeRunnerCleanup:
+    """Both framework runners release what they opened the same way."""
+
+    @staticmethod
+    def _runners():
+        from agentkernel.framework.adk.adk import GoogleADKRealtimeRunner
+        from agentkernel.framework.openai.openai import OpenAIRealtimeRunner
+
+        return [OpenAIRealtimeRunner, GoogleADKRealtimeRunner]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("index", [0, 1], ids=["openai", "adk"])
+    async def test_disconnect_waits_for_the_listener_to_end(self, index):
+        runner = self._runners()[index]()
+        listener = asyncio.create_task(asyncio.Event().wait())
+        runner._listen_task = listener
+
+        await runner.disconnect()
+
+        assert listener.done()
+        assert runner._listen_task is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("index", [0, 1], ids=["openai", "adk"])
+    async def test_stopping_the_listener_closes_the_sockets_event_stream(self, index):
+        """Regression: stopped while handling an event, the listener left the SDK's event generator
+        half-run for the loop's finalizer to close from another task, which raced the loop's shutdown
+        ("aclose(): asynchronous generator is already running"). The listener must close it itself."""
+        closed_by = []
+
+        class _Socket:
+            async def _events(self):
+                try:
+                    yield types.SimpleNamespace(type="unhandled", server_content=None, tool_call=None)
+                    await asyncio.Event().wait()
+                finally:
+                    closed_by.append(asyncio.current_task())
+
+            def __aiter__(self):
+                return self._events()
+
+            def receive(self):
+                return self._events()
+
+        runner = self._runners()[index]()
+        runner._connection = _Socket()
+        handling = asyncio.Event()
+
+        async def handle(message):
+            handling.set()
+            await asyncio.Event().wait()
+
+        runner._handle_message = handle
+        listener = asyncio.create_task(runner._listen())
+        runner._listen_task = listener
+        await asyncio.wait_for(handling.wait(), timeout=1)
+
+        await runner.disconnect()
+        for _ in range(3):  # let a finalizer-scheduled close run, were the stream left to one
+            await asyncio.sleep(0)
+
+        assert closed_by == [listener]
+
+    @pytest.mark.asyncio
+    async def test_a_socket_that_fails_to_open_closes_everything_it_opened(self, monkeypatch):
+        from agents import Agent as SDKAgent
+
+        from agentkernel.framework.adk.adk import GoogleADKRealtimeRunner
+        from agentkernel.framework.openai.openai import OpenAIRealtimeRunner
+
+        closed = []
+
+        class _RefusedSocket:
+            async def __aenter__(self):
+                raise ConnectionError("socket refused")
+
+            async def __aexit__(self, *exc):
+                closed.append("socket")
+
+        class _OpenAIClient:
+            realtime = types.SimpleNamespace(connect=lambda model: _RefusedSocket())
+
+            async def close(self):
+                closed.append("openai client")
+
+        async def _aclose():
+            closed.append("genai client")
+
+        genai_client = types.SimpleNamespace(
+            aio=types.SimpleNamespace(live=types.SimpleNamespace(connect=lambda model, config: _RefusedSocket()), aclose=_aclose)
+        )
+        monkeypatch.setattr("openai.AsyncOpenAI", lambda *a, **k: _OpenAIClient())
+        monkeypatch.setattr("google.genai.Client", lambda *a, **k: genai_client)
+
+        async def callback(event_type, data):
+            pass
+
+        openai_agent = types.SimpleNamespace(name="general", agent=SDKAgent(name="general", model="gpt-realtime"))
+        adk_agent = TestADKRealtimeTransfers._graph()[0]
+        for runner, agent in (
+            (OpenAIRealtimeRunner(), openai_agent),
+            (GoogleADKRealtimeRunner(), types.SimpleNamespace(name="supervisor", agent=adk_agent)),
+        ):
+            with pytest.raises(ConnectionError):
+                await runner.connect(Session("s1"), agent, callback)
+            assert runner._cm is None
+
+        # Each client is closed; a socket that never opened is not.
+        assert closed == ["openai client", "genai client"]
 
 
 class TestRealtimeFailureHandling:
@@ -979,8 +2038,8 @@ class TestRealtimeFailureHandling:
         await conn.handle_framework_event("error", {"message": "socket boom"})
 
         assert conn.closed is True
-        [message] = transport.create_consumer(QueueName.OUTPUT).fetch(10, 0.5)
-        body = json.loads(message.body)
+        # The starting agent may or may not have been announced before the failure; the error is last.
+        body = json.loads(_drain_output(transport)[-1].body)
         assert body["error"] == "socket boom"
         assert body["done"] is True
 
