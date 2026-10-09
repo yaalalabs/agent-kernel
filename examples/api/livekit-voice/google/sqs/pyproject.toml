@@ -4,12 +4,12 @@ version = "0.1.0"
 description = "Agent Kernel LiveKit Realtime Voice Example"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[livekit,adk,api,aws]>=0.9.4"
+    "agentkernel[livekit,adk,api,aws]>=0.9.5"
 ]
 
 [dependency-groups]
 dev = [
-    "agentkernel[test]>=0.9.4",
+    "agentkernel[test]>=0.9.5",
     "black==26.5.1",
     "isort>=5.0.0",
     "mypy>=1.0.0",
