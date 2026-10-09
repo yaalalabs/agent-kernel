@@ -6,10 +6,12 @@ from .cache import SecretCache
 from .errors import SecretError, SecretNotFoundError
 from .manager import SecretManager
 from .providers.env import EnvSecretProvider
+from .providers.kubernetes import KubernetesSecretProvider
 
 __all__ = [
     "errors",
     "EnvSecretProvider",
+    "KubernetesSecretProvider",
     "SecretCache",
     "SecretError",
     "SecretManager",

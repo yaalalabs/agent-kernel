@@ -317,6 +317,7 @@ def test_secret_defaults(monkeypatch):
     assert secret.prefix == ""
     assert secret.provider.type == "env"
     assert secret.cache_ttl == 300
+    assert secret.provider.kubernetes.mount_path == "/var/run/secrets/agentkernel"
     # Resolution order is fixed, so there is no manager selector.
     assert "type" not in _SecretConfig.model_fields
 
@@ -326,11 +327,20 @@ def test_secret_env_vars(monkeypatch):
     monkeypatch.setenv("AK_SECRET__PREFIX", "myproduct-dev-agents")
     monkeypatch.setenv("AK_SECRET__PROVIDER__TYPE", "aws_ssm")
     monkeypatch.setenv("AK_SECRET__CACHE_TTL", "0")
+    monkeypatch.setenv("AK_SECRET__PROVIDER__KUBERNETES__MOUNT_PATH", "/run/secrets")
 
     secret = AKConfig.get().secret
     assert secret.prefix == "myproduct-dev-agents"
     assert secret.provider.type == "aws_ssm"
     assert secret.cache_ttl == 0
+    assert secret.provider.kubernetes.mount_path == "/run/secrets"
+
+
+def test_secret_kubernetes_empty_mount_path_keeps_default(monkeypatch):
+    monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+    monkeypatch.setenv("AK_SECRET__PROVIDER__KUBERNETES__MOUNT_PATH", "")
+
+    assert AKConfig.get().secret.provider.kubernetes.mount_path == "/var/run/secrets/agentkernel"
 
 
 def test_secret_negative_cache_ttl_rejected(monkeypatch):
