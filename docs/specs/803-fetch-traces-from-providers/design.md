@@ -78,7 +78,9 @@ The example is `examples/aws-serverless/langfuse-trace-evaluation/`.
   - Passing both `query` and keyword filters raises `ValueError`, so filters are never silently ignored.
   - When tracing is disabled (`Trace._instance is None`), raise `AKConfigError` naming `trace.enabled`.
   - Delegates to the configured tracer's `fetch(query)`.
-- `agentkernel.trace` exports `TraceQuery`, `FetchedSpan`, `SpanUsage`, `SpanKind`.
+- `agentkernel.trace` exports `TraceQuery`, `FetchedSpan`, `SpanUsage`, `SpanKind` and
+  `OTelSpanClassifier`. The classifier is public so that bring-your-own fetchers and consumers (the
+  Phase 2 example) can classify OTel attributes the way the built-in fetchers do.
 - Synchronous only.
 
 ### Query model: `TraceQuery` (Pydantic)
@@ -152,7 +154,7 @@ The example is `examples/aws-serverless/langfuse-trace-evaluation/`.
     its backend.
   - It checks the shared result contract: oldest first, unique span ids, the window on span start
     (start inclusive, end exclusive), `limit` keeps the most recent, and the kind, session, trace-id and
-    name filters.
+    name filters, including that a span missing the filtered value is excluded.
   - Run against: a bring-your-own in-memory tracer (also the documentation example), and the Langfuse and
     Traceloop fetchers over fakes of their APIs.
   - Not run against Logfire or CloudWatch: a faithful fake would re-implement their query languages (SQL,
@@ -160,6 +162,10 @@ The example is `examples/aws-serverless/langfuse-trace-evaluation/`.
 - `TraceQuery.matches(span)`: one local check of every filter (window, kinds, session, trace ids, name),
   for fetchers whose server-side filters are approximate. Langfuse and Traceloop apply it to every span,
   so their results honour the contract whatever the API's own boundary rules are.
+  - Strict: for each active filter, the span must report a value that satisfies it. A span with no
+    start time, or with no session id (or name) when that filter is set, is rejected.
+  - Langfuse requests the `basic` field group, which carries `sessionId`, and Traceloop puts the session
+    on every span, so strict matching drops nothing they return correctly.
 - Each built-in tracer delegates to one fetcher class in `trace/<provider>/fetch.py`, imported lazily
   inside `fetch`:
   - `LangfuseTraceFetcher`, `LogfireTraceFetcher`, `TraceloopTraceFetcher`, `CloudWatchTraceFetcher`.
@@ -210,6 +216,13 @@ graph LR
   attributes.
 - **Scrubbing fix:** `Logfire.init()` passes `logfire.ScrubbingOptions(callback=...)`, and the callback
   keeps exactly `("attributes", "session_id")`. Every other match is still redacted.
+  - Privacy: AK does not make session ids opaque. `session_id` is any client string
+    (`core/model.py:403`), and the session guide suggests building it from a user id
+    (`docs/docs/core-concepts/session.md:109`). This change only brings Logfire in line with the other
+    three tracers, which already export the session id unscrubbed (§Motivation). It adds no new exposure
+    class, so it is not opt-in.
+  - The fetch docs say this, and tell users who need privacy to use non-identifying session ids
+    (e.g. a hash or a random id).
 
 ### Traceloop fetcher
 
@@ -318,8 +331,9 @@ graph LR
   bring-your-own tracer, Langfuse (fake `observations.get_many`) and Traceloop (fake warehouse over
   `httpx.MockTransport`). The fakes treat both window bounds as inclusive, so the exclusive end has to
   come from the fetcher.
-- `ak-py/tests/test_trace_langfuse_langgraph.py`: the runner flushes on Lambda after a successful and a
-  failed run, doesn't flush off Lambda, and logs a failing flush.
+- New `ak-py/tests/test_trace_langfuse_flush.py`, parametrized over all six Langfuse runners (each has its
+  own `finally`): every runner flushes on Lambda after a successful and a failed run. Plus, once:
+  `flush_on_lambda` doesn't flush off Lambda and logs a failing flush.
 
 ### Docs
 
@@ -327,6 +341,7 @@ graph LR
   - the filters
   - `usage`, how to total it over a trace, and which providers report cost
   - credentials per provider
+  - session ids reach every provider unscrubbed, so they shouldn't contain personal data
   - provider limits (ingestion delay, Logfire row cap, Traceloop free-plan retention, CloudWatch's
     Transaction Search requirement, row cap and scan cost)
   - the extra IAM read permissions CloudWatch needs
@@ -405,11 +420,16 @@ graph LR
     `evaluator`, `score`, `threshold`, `passed`, `reason`, `higher_is_better`), plus `session_id` and
     `evaluated_at`.
   - `trace_id = "#job"`, `sk = "WATERMARK"`: the job's progress marker (§Job flow).
-- Size: an item is limited to 400 KB.
-  - `input`, `output` and each tool call's input/output are cut to 4 KB each.
+- Size: an item is limited to 400 KB, and the limit is enforced on the whole serialised item, not
+  field by field.
+  - `input`, `output` and each tool call's input/output are cut to 4,096 characters each. At most 25 tool
+    calls are stored (`tool_calls_truncated` marks a cut); the counts still cover every call.
+  - The item is then measured as a whole. If it's still over a 380 KB budget, it drops tool calls and
+    shortens `input`/`output` until it fits.
   - The trace's full spans (`FetchedSpan` dumps, including `raw`) are stored gzip-compressed in
-    `spans_gz` when the compressed size is ≤ 300 KB; otherwise they're left out and `spans_truncated` is
-    set.
+    `spans_gz` only when they fit in the remaining budget. Otherwise they're left out and
+    `spans_truncated` is set.
+  - So no trace can make `PutItem` fail on size and block the job.
 - Indexes:
   - `session_id-index` (partition `session_id`, sort `sk`): every trace and score of a session.
   - `evaluated_date-index` (partition `evaluated_date` = `YYYY-MM-DD`, sort `evaluated_at`): everything
@@ -451,12 +471,19 @@ graph LR
     schedule doesn't trigger one huge fetch.
   - A manual event `{"start": "<ISO>", "end": "<ISO>"}` overrides the window and never reads or moves the
     watermark (used by the integration test and for backfills).
-- Fetch: **one** `Trace.get().fetch(start=start, end=now, limit=5000)`.
+- Fetch: `Trace.get().fetch(start=start, end=now, limit=5000)`, paged **backwards** until the window
+  start is covered.
+  - `fetch` keeps the newest `limit` spans. So when a page is full, the job fetches again with `end` set
+    to just past that page's oldest span start. It drops span ids it has already seen, and stops on a
+    page that isn't full.
+  - If a full page brings no new spans (more than 5000 spans start at the same instant), the run logs an
+    error and fails before the watermark moves.
+  - The 24-hour catch-up clamp bounds how many pages one run can need.
   - Spans are grouped by `trace_id`. A trace belongs to this window when its root started in
     `[start, end)`.
   - The fetch runs to `now`, not `end`, so the later spans of a trace that started before `end` are
     included without a second `fetch(trace_ids=...)` call. This replaces the two-step "agent spans, then
-    `fetch(trace_ids=...)`" flow agreed earlier: it is one call instead of two and gives the same traces.
+    `fetch(trace_ids=...)`" flow agreed earlier: it gives the same traces with fewer calls.
 - Skip traces that already have a `TRACE` item.
 - Evaluate oldest first, at most `MAX_TRACES_PER_RUN` (default 50) traces per run, then save each one
   (§Writes).
@@ -465,9 +492,9 @@ graph LR
   - the root start of the oldest trace left out by the per-run cap;
   - the root start of the oldest incomplete trace (no root end or output yet) that started less than one
     hour before `end`. An older one is treated as abandoned (the agent crashed mid-run): it is logged and
-    skipped, so it can't pin the watermark;
-  - the start of the oldest fetched span, when the fetch hit its `limit` (`fetch` keeps the most recent
-    spans, so older traces may be missing).
+    skipped, so it can't pin the watermark.
+  - A capped fetch needs no rule here: backward paging has already covered the whole window, so every
+    root in it was seen.
 - Returns a summary: the window, traces seen, evaluated, skipped as already done, incomplete, left for the
   next run, and metric errors. It is also logged.
 - Failure handling:
@@ -549,10 +576,11 @@ graph LR
     incomplete traces, no root.
   - `OpikTraceEvaluator` with the Opik metrics monkeypatched: case mapping, the tool-correctness skip,
     the hallucination pass rule, retry then error result.
-  - `EvaluationStore` on `moto`: item shapes, the `TRACE`-last order, `evaluated()`, gzip and the size
-    guard, `Decimal`s, the watermark.
+  - `EvaluationStore` on `moto`: item shapes, the `TRACE`-last order, `evaluated()`, gzip, the
+    whole-item size budget (many long multi-byte tool calls), `Decimal`s, the watermark.
   - `TraceEvaluationJob` with fetch, evaluator and store faked: window and clamp, ownership by root start,
-    skipping evaluated traces, the per-run cap, every watermark rule, the manual window.
+    skipping evaluated traces, the per-run cap, backward paging past a full page, every watermark rule,
+    the manual window.
 - **Weekly integration test** (`lambda_test.py`), added to the weekly tier of
   `.github/integration-test-config.yaml`:
   1. Run `TrafficSimulator.send()`: the 5 questions against `AK_TEST_ENDPOINT` under one new session id.

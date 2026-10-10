@@ -20,7 +20,7 @@ default, and says so inline.
 
 ```
 ak-py/src/agentkernel/trace/
-├── __init__.py          # + exports FetchedSpan, SpanKind, SpanUsage, TraceQuery
+├── __init__.py          # + exports FetchedSpan, OTelSpanClassifier, SpanKind, SpanUsage, TraceQuery
 ├── base.py              # + BaseTrace.fetch (non-abstract)
 ├── trace.py             # + Trace.fetch facade
 ├── fetch.py             # NEW: SpanKind, TraceQuery, SpanUsage, FetchedSpan, OTelSpanClassifier
@@ -67,7 +67,8 @@ The provider packages' `__init__.py` files are empty today and stay empty. So
 5. **Filters are checked again locally** wherever the server-side filter could be approximate. Langfuse
    and Traceloop run every span through `TraceQuery.matches` (window, kinds, session, trace ids, name);
    Logfire re-checks kinds, and CloudWatch window, session and kind (`_matches`). A span whose computed
-   `kind` is not in `query.kinds` is never returned.
+   `kind` is not in `query.kinds` is never returned. Both checks are strict: a span that doesn't report
+   a value for an active filter (start time, session id, name) is rejected, never assumed to match.
 6. **Every fetch implementation passes `TraceFetchContract`** where its backend can be faked faithfully
    (§`trace/testing.py`).
 
@@ -90,7 +91,8 @@ class TraceQuery(BaseModel):
     def window(self) -> tuple[datetime, datetime]: ...   # UTC-aware; ValueError if start >= end
     def accepts(self, kind: SpanKind) -> bool: ...       # kinds is None or kind in kinds
     def matches(self, span: FetchedSpan) -> bool: ...    # start <= start_time < end, session, trace ids, name, kind;
-                                                          # a field the span doesn't report (None) never rejects it
+                                                          # an active filter needs a matching reported value:
+                                                          # a None start_time, session_id or name is rejected
 
 class SpanUsage(BaseModel):                   # one model call's usage, never a roll-up
     input_tokens: Optional[int] = None
@@ -490,9 +492,9 @@ class TraceFetchContract:                          # not prefixed Test: pytest c
     def test_contract_window_is_start_inclusive_end_exclusive(self, tracer): ...
     def test_contract_limit_keeps_the_most_recent(self, tracer): ...
     def test_contract_kind_filter(self, tracer): ...           # tool; llm + agent; span = everything else
-    def test_contract_session_filter(self, tracer): ...
+    def test_contract_session_filter(self, tracer): ...        # incl. a span with no session id: excluded
     def test_contract_trace_id_filter(self, tracer): ...
-    def test_contract_name_filter(self, tracer): ...
+    def test_contract_name_filter(self, tracer): ...           # incl. a span with no name: excluded
     def test_contract_empty_backend_returns_nothing(self, tracer): ...
 ```
 
@@ -575,7 +577,14 @@ async def run(self, agent, session, requests):
      `"[Scrubbed due to 'session']"`.
    - After: it carries the real session id.
    - Intentional: without it, Logfire traces can't be filtered by session in Fetch or in the Logfire
-     UI. Session ids are opaque identifiers, not credentials.
+     UI.
+   - Privacy: session ids are **not** guaranteed to be opaque. `BaseChatRequest.session_id` is any client
+     string (`core/model.py:403`), and the session guide suggests deriving it from a user id
+     (`docs/docs/core-concepts/session.md:109`). Langfuse, Traceloop and CloudWatch already export it
+     unscrubbed. So this change makes Logfire match them and adds no new kind of exposure. It is not
+     opt-in, because a config flag for one tracer would leave the other three as they are.
+     §Fetching Traces Back says the session id reaches every tracing provider as given, and tells users
+     to keep personal data out of it (e.g. use a hash or a random id).
    - Every other scrub match is still redacted.
 2. **`pip install agentkernel[openllmetry]` / `[logfire]` now install `httpx`.** Intentional, because
    the fetchers need it. In practice it is usually already present transitively, through
@@ -689,16 +698,28 @@ async def run(self, agent, session, requests):
     `AccessDeniedException` propagates as `ClientError`
   - literal escaping, `traceId in [...]`, and no kind filter when `span` is requested
 - `FetchedSpan.oldest_first` with a missing `start_time`.
-- `TraceQuery.matches`: each filter rejects, start inclusive, end exclusive; unreported fields don't
-  reject.
+- `TraceQuery.matches`: each filter rejects, start inclusive, end exclusive; a span with no
+  `start_time` is rejected; with `session_id`/`name` set, a span reporting `None` for that field is
+  rejected; with the filter unset, `None` is accepted.
 - Langfuse: `expand_metadata="attributes"` is sent; a repeated cursor ends paging (a fake that always
   returns the same cursor with out-of-window observations makes exactly two calls).
 
 **New `ak-py/tests/test_trace_fetch_contract.py`:** the three `TraceFetchContract` subclasses
 (§`trace/testing.py`).
 
-**Changed `ak-py/tests/test_trace_langfuse_langgraph.py`:** `TestLangFuseLambdaFlush`: flush on Lambda
-after a run and after a failing run, no flush off Lambda, a failing flush is logged and not raised.
+**New `ak-py/tests/test_trace_langfuse_flush.py`:** `TestLangFuseLambdaFlush`, parametrized over all six
+Langfuse runners (OpenAI, LangGraph, CrewAI, ADK, Smolagents, Pydantic AI), because each one carries its
+own `finally`:
+
+- For each runner: `propagate_attributes` patched in that runner's module (the existing patch target),
+  the parent runner's `run` patched to return a result or to raise, and `LangFuse.flush_on_lambda`
+  spied on.
+  - Success and failure paths both call `flush_on_lambda(client)` exactly once. On failure, the original
+    exception still propagates.
+- A runner whose framework extra is missing is skipped with `pytest.importorskip`, so the suite runs in
+  any environment.
+- `flush_on_lambda` itself, tested once: it flushes when `AWS_LAMBDA_FUNCTION_NAME` is set, doesn't
+  flush when it isn't, and logs a failing flush instead of raising it.
 
 **Changed `ak-py/tests/test_trace_logfire.py`:**
 
@@ -712,7 +733,7 @@ after a run and after a failing run, no flush off Lambda, a failing flush is log
 **Run:**
 
 ```bash
-cd ak-py && uv run pytest tests/test_trace_fetch.py tests/test_trace_fetch_contract.py tests/test_trace_logfire.py tests/test_trace.py tests/test_trace_langfuse_langgraph.py tests/test_trace_cloudwatch.py
+cd ak-py && uv run pytest tests/test_trace_fetch.py tests/test_trace_fetch_contract.py tests/test_trace_logfire.py tests/test_trace.py tests/test_trace_langfuse_langgraph.py tests/test_trace_langfuse_flush.py tests/test_trace_cloudwatch.py
 make lint-check-all   # from the repo root
 ```
 
@@ -953,7 +974,8 @@ class EvaluationStore:
     TRACE_SK = "TRACE"
     JOB_KEY = {"trace_id": "#job", "sk": "WATERMARK"}
     FIELD_LIMIT = 4_096          # characters per input/output field
-    SPANS_LIMIT = 300_000        # bytes of gzip-compressed spans
+    TOOL_CALLS_LIMIT = 25        # tool calls stored on the TRACE item
+    ITEM_LIMIT = 380_000         # bytes: DynamoDB's 400 KB item cap minus headroom
     TTL = timedelta(days=90)
 
     def __init__(self, table: Any): ...                             # a boto3 dynamodb Table resource
@@ -967,6 +989,8 @@ class EvaluationStore:
     def _number(value: float | int | None) -> Decimal | None: ...  # Decimal(str(value))
     @classmethod
     def _cut(cls, text: str | None) -> str | None: ...
+    @staticmethod
+    def _item_size(item: dict) -> int: ...                          # DynamoDB-sized bytes of a whole item
 ```
 
 - `evaluated`: `table.meta.client.batch_get_item` in chunks of 100 keys `{"trace_id": id, "sk": "TRACE"}`,
@@ -987,8 +1011,23 @@ class EvaluationStore:
     `agents`, `span_count`, `input_tokens`, `output_tokens`, `total_tokens`, `cost`, `passed`
     (`True` when every scored result passed, `False` when one failed, omitted when none scored),
     `metric_errors` (count of `score=None` results), and `spans_gz` or `spans_truncated`.
-  - `spans_gz`: `gzip.compress(json.dumps([span.model_dump(mode="json") for span in case.spans]))`, stored as
-    Binary when ≤ `SPANS_LIMIT`; otherwise omitted and `spans_truncated=True`.
+  - Size budget for the `TRACE` item. A per-field limit alone can't keep an item under 400 KB: strings
+    are cut by characters (up to 4 bytes each in UTF-8), and the number of tool calls has no bound.
+    1. Text fields are cut with `_cut`. `tool_calls` keeps the first `TOOL_CALLS_LIMIT` calls; when it
+       drops any, it sets `tool_calls_truncated=True`. `tool_call_count` and `tool_error_count` still
+       count every call.
+    2. `_item_size(item)` measures the whole item without spans: the UTF-8 bytes of each attribute name
+       and string value, binary lengths, and 21 bytes per number (DynamoDB's documented upper bound),
+       recursing into lists and maps.
+    3. If it is still over `ITEM_LIMIT` (many long tool calls), tool calls are dropped from the end, then
+       `input` and `output` are cut by halves, until it fits.
+    4. `spans_gz` = `gzip.compress(json.dumps([span.model_dump(mode="json") for span in case.spans]))`.
+       It is attached as Binary only when the item size plus `len("spans_gz") + len(spans_gz)` is ≤
+       `ITEM_LIMIT`. Otherwise it is omitted and `spans_truncated=True`.
+  - `EVAL#…` items hold only a metric's fields; `reason` is cut with `_cut`, so they stay far below the
+    cap.
+  - Without the budget, an oversized trace would make `put_item` raise `ValidationException` on every run
+    and block the job.
   - `_cut`: the first `FIELD_LIMIT` characters plus `"…[truncated]"` when longer.
 - `watermark` / `set_watermark`: `get_item` / `put_item` on `JOB_KEY` with attribute `at` (ISO 8601 UTC).
 
@@ -1005,6 +1044,7 @@ class RunSummary(BaseModel):
     window_end: datetime
     manual: bool
     spans_fetched: int
+    fetch_pages: int
     traces_seen: int
     evaluated: int
     already_evaluated: int
@@ -1028,9 +1068,10 @@ class TraceEvaluationJob:
     def from_env(cls) -> "TraceEvaluationJob": ...
     def run(self, event: dict) -> RunSummary: ...
     def _window(self, event: dict, now: datetime) -> EvaluationWindow: ...
+    def _fetch(self, window: EvaluationWindow, now: datetime) -> tuple[list[FetchedSpan], int]: ...  # (spans, pages)
     def _cases(self, spans: list[FetchedSpan], window: EvaluationWindow) -> list[TraceCase]: ...
     def _evaluate(self, case: TraceCase) -> list[AKEvaluationResult]: ...
-    def _next_watermark(self, window, deferred, incomplete, spans, hit_limit) -> datetime: ...
+    def _next_watermark(self, window, deferred, incomplete) -> datetime: ...
 ```
 
 - `from_env()`: `Trace.get()` (reads `AK_TRACE__*`; `LangFuse.init()` checks the Langfuse keys),
@@ -1052,7 +1093,7 @@ class TraceEvaluationJob:
     warning.
 - `run(event)`:
   1. `now = clock()`; `window = _window(event, now)`.
-  2. `spans = trace.fetch(start=window.start, end=now, limit=FETCH_LIMIT)`; `hit_limit = len(spans) == FETCH_LIMIT`.
+  2. `spans, pages = _fetch(window, now)`.
   3. `_cases`: group by `trace_id`; `TraceCase.from_spans`; keep cases with
      `window.start <= started_at < window.end`, oldest first.
   4. Split: incomplete and `started_at >= window.end − ABANDON_AFTER` → `incomplete`; incomplete and older →
@@ -1062,10 +1103,24 @@ class TraceEvaluationJob:
   7. For each: `results = _evaluate(case)`; `store.save(case, results, clock())`.
   8. Scheduled windows only: `store.set_watermark(_next_watermark(...))`.
   9. Log and return the `RunSummary`.
+- `_fetch(window, now)`: pages backwards, because `fetch` keeps the newest `limit` spans.
+  1. `end = now`; `seen = {}` (span id → span).
+  2. `page = trace.fetch(start=window.start, end=end, limit=FETCH_LIMIT)`; add each span to `seen`,
+     keyed by `span_id`.
+  3. If `len(page) < FETCH_LIMIT`: done. Otherwise
+     `end = min(span.start_time for span in page) + timedelta(microseconds=1)`. The extra microsecond
+     re-reads the boundary instant, because `end` is exclusive and the cap may have cut spans that start
+     at that same instant. Then go back to step 2.
+  4. If a full page adds no new span id, more than `FETCH_LIMIT` spans start at one instant. Raise
+     `RuntimeError` naming the instant. This is an infrastructure-class error (rule 5): the watermark
+     doesn't move.
+  - Returns `list(seen.values())` and the number of pages fetched.
+  - No hard page cap: `MAX_CATCH_UP` bounds the window, so a run fetches at most 24 hours of spans.
 - `_evaluate(case)`: `evaluation_case = case.to_evaluation_case(OpikTraceEvaluator.THRESHOLD)`; one
   `evaluate_by_llm` per evaluator that `applies_to` it.
-- `_next_watermark`: `min` of `window.end`; the `started_at` of the first deferred case; the oldest
-  `incomplete` case's `started_at`; and, when `hit_limit`, the oldest fetched span's `start_time`.
+- `_next_watermark`: `min` of `window.end`; the `started_at` of the first deferred case; and the oldest
+  `incomplete` case's `started_at`. A capped fetch needs no rule here, because `_fetch` has already
+  covered `[window.start, now)` in full.
 
 ### Deployment (`deploy/`)
 
@@ -1275,6 +1330,7 @@ dev = ["agentkernel[test]>=0.9.4", "boto3>=1.40.0", "httpx>=0.27.0", "moto[dynam
 |---|---|
 | Langfuse keys missing or wrong | `LangFuse.init()` raises on the first invoke (`trace/langfuse/langfuse.py:25-28`); the invocation fails; nothing is written |
 | Langfuse fetch fails (HTTP error, rate limit) | Propagates (Phase 1 does no retries); the invocation fails before the watermark moves, so the next run covers the window again |
+| More than `FETCH_LIMIT` spans start at one instant (a full page adds no new span) | `RuntimeError` from `_fetch`; the invocation fails before the watermark moves |
 | A trace has no root, or several | Skipped and logged; not counted as incomplete; never written |
 | Root still running | `incomplete`: not written; holds the watermark back so the next run sees it again |
 | Root still running after `ABANDON_AFTER` | `abandoned`: logged, not written, no longer holds the watermark |
@@ -1286,7 +1342,8 @@ dev = ["agentkernel[test]>=0.9.4", "boto3>=1.40.0", "httpx>=0.27.0", "moto[dynam
 
 - Concurrency: one run at a time (reserved concurrency 1), and each run is single-threaded, so the job,
   store and evaluators hold no locks.
-- Cost per run: one Langfuse fetch of ~`ceil(spans / 100)` requests; one `BatchGetItem` per 100 candidates;
+- Cost per run: one Langfuse fetch of ~`ceil(spans / 100)` requests (one more `fetch` per extra
+  5,000-span page); one `BatchGetItem` per 100 candidates;
   per evaluated trace three or four judge calls (one more per failed attempt) and one batch write plus one
   put.
 
@@ -1316,19 +1373,25 @@ dev = ["agentkernel[test]>=0.9.4", "boto3>=1.40.0", "httpx>=0.27.0", "moto[dynam
     numbers, omitted `None`s, `expires_at`;
   - the `TRACE` item is written after the `EVAL#…` items (a store whose `put_item` raises leaves only
     `EVAL#…` items, and `evaluated()` doesn't report the trace);
-  - `_cut` on long fields; `spans_gz` round-trips; over `SPANS_LIMIT` → `spans_truncated`;
+  - `_cut` on long fields; `spans_gz` round-trips; spans that would push the item past `ITEM_LIMIT` →
+    `spans_truncated`;
+  - size budget: 100 tool calls with 4,096-char multi-byte (4-byte UTF-8) inputs/outputs → the item is
+    written (moto enforces 400 KB), `tool_calls_truncated` is set, and `tool_call_count` is 100;
+    `_item_size` against a hand-computed item;
   - `evaluated()` across more than 100 ids; watermark round-trip; no watermark → `None`.
 - `TestTraceEvaluationJob` (fake `Trace` returning fixed spans, fake evaluators, the moto store, a fixed
   clock):
   - first-run window, watermark − overlap, the 24-hour clamp, the manual window (watermark neither read
     nor written), a bad manual window;
   - the fetch call (`start`, `end=now`, `limit`);
+  - backward paging with a patched `FETCH_LIMIT = 2`: a full page triggers a second `fetch` whose `end`
+    is the page's oldest start + 1 µs; boundary spans are deduped; a trace rooted in the older page is
+    evaluated; a full page with no new span ids raises and leaves the watermark unchanged;
   - ownership: a root before `start` or at/after `end` isn't evaluated; later spans of an owned trace are
     included;
   - already-evaluated traces skipped; the per-run cap defers the rest and the watermark stops at the
     first deferred root;
-  - an incomplete trace holds the watermark; an abandoned one doesn't; `hit_limit` holds it at the oldest
-    span;
+  - an incomplete trace holds the watermark; an abandoned one doesn't;
   - a fetch error propagates and the watermark is unchanged;
   - the `RunSummary` counts.
 

@@ -18,7 +18,8 @@ Phase 1 (iterations 1–7) lands first: the example in Phases 2–3 (iterations 
   1. Add `SpanKind`, `TraceQuery`, `SpanUsage`, `FetchedSpan` and `OTelSpanClassifier`, including
      `OTelSpanClassifier.usage` (spec §`trace/fetch.py`).
   2. Add the non-abstract `BaseTrace.fetch` and `Trace.fetch` (spec §`BaseTrace.fetch` and `Trace.fetch`).
-  3. Export the four public names from `agentkernel.trace`.
+  3. Export the five public names (`TraceQuery`, `FetchedSpan`, `SpanUsage`, `SpanKind`,
+     `OTelSpanClassifier`) from `agentkernel.trace`.
   4. Add `TraceQuery.matches` (spec §`trace/fetch.py`).
   5. Add `TraceFetchContract` in `trace/testing.py`, with the in-memory bring-your-own subclass in
      `tests/test_trace_fetch_contract.py` (spec §`trace/testing.py`).
@@ -36,8 +37,9 @@ Phase 1 (iterations 1–7) lands first: the example in Phases 2–3 (iterations 
   2. Add `LangFuse.fetch`, which delegates to it.
   3. Add `LangFuse.flush_on_lambda` and call it from a `finally` in the six runners (spec §Langfuse
      flush on AWS Lambda).
-  4. Add `TestLangfuseFetcher`, `TestLangfuseFetchContract` and `TestLangFuseLambdaFlush`.
-- **Verify:** `uv run pytest tests/test_trace_fetch.py -k Langfuse tests/test_trace_langfuse_langgraph.py`
+  4. Add `TestLangfuseFetcher`, `TestLangfuseFetchContract`, and `TestLangFuseLambdaFlush` parametrized
+     over all six runners (`tests/test_trace_langfuse_flush.py`).
+- **Verify:** `uv run pytest tests/test_trace_fetch.py -k Langfuse tests/test_trace_langfuse_langgraph.py tests/test_trace_langfuse_flush.py`
 
 ### Iteration 3: Logfire fetcher and scrubbing fix
 
@@ -92,7 +94,7 @@ Phase 1 (iterations 1–7) lands first: the example in Phases 2–3 (iterations 
      goes back to design.md.
 - **Verify:** each file on its own, `cd ak-py && uv run pytest -o addopts="" tests/<file>.py`, for
   `test_trace_fetch`, `test_trace_fetch_contract`, `test_trace_logfire`, `test_trace`,
-  `test_trace_langfuse_langgraph` and `test_trace_cloudwatch`; `make lint-check-all` before raising the PR.
+  `test_trace_langfuse_langgraph`, `test_trace_langfuse_flush` and `test_trace_cloudwatch`; `make lint-check-all` before raising the PR.
 
 ### Iteration 7: Sync docs and skills
 
@@ -100,7 +102,8 @@ Phase 1 (iterations 1–7) lands first: the example in Phases 2–3 (iterations 
   - `docs/docs/advanced/traceability.md`: add a "Fetching Traces Back" section between
     "Viewing Traces in CloudWatch" (`:570`) and "Integrate with Your Own Traceability Platform" (`:576`).
     It covers the filters, `FetchedSpan` and `usage` (totalling it over a trace, which providers report
-    cost), Traceloop fetching as best effort, bring-your-own `fetch` tested with `TraceFetchContract`,
+    cost), Traceloop fetching as best effort, session ids reaching every provider unscrubbed (keep personal data
+    out of them), bring-your-own `fetch` tested with `TraceFetchContract`,
     the Langfuse flush on Lambda, credentials per provider (including CloudWatch's IAM read
     permissions), provider limits, and bring-your-own `fetch`.
 - **Dev skills:**
@@ -161,7 +164,7 @@ All files are under `examples/aws-serverless/langfuse-trace-evaluation/` unless 
 
 ### Iteration 10: Phase 3: the DynamoDB store
 
-- **Goal:** results and traces are written idempotently, `TRACE` last, with the size guards.
+- **Goal:** results and traces are written idempotently, `TRACE` last, within the whole-item size budget.
 - **Files:** `evaluator/store.py`, `tests/test_evaluator.py`.
 - **Steps:**
   1. `EvaluationStore` (spec §`evaluator/store.py`).
@@ -173,7 +176,8 @@ All files are under `examples/aws-serverless/langfuse-trace-evaluation/` unless 
 - **Goal:** one `run(event)` fetches, owns, skips, evaluates, stores and moves the watermark.
 - **Files:** `evaluator/{job,handler}.py`, `tests/test_evaluator.py`.
 - **Steps:**
-  1. `EvaluationWindow`, `RunSummary`, `TraceEvaluationJob` (spec §`evaluator/job.py`).
+  1. `EvaluationWindow`, `RunSummary`, `TraceEvaluationJob`, including the backward-paging `_fetch`
+     (spec §`evaluator/job.py`).
   2. `handler` with the per-sandbox job holder.
   3. `TestTraceEvaluationJob`.
   4. `TrafficSimulator.evaluate()` and `report()`, the CLI, and `TestTrafficSimulator`.
