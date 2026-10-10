@@ -69,7 +69,6 @@ class CloudWatchTraceFetcher:
             seen.update(span.span_id for _, span in fresh)
             for _, span in fresh:
                 if self._matches(query, span, start, end):
-                    span.session_id = span.session_id or query.session_id
                     spans[span.span_id] = span
             # rows in the boundary second are re-read on the next page and skipped by span id
             stamps = [stamp for stamp, _ in fresh if stamp is not None]
@@ -146,9 +145,10 @@ class CloudWatchTraceFetcher:
 
     @staticmethod
     def _matches(query: TraceQuery, span: FetchedSpan, start: datetime, end: datetime) -> bool:
-        if span.start_time is not None and not start <= span.start_time < end:
+        # strict, like TraceQuery.matches: a span missing the filtered value is rejected
+        if span.start_time is None or not start <= span.start_time < end:
             return False
-        if query.session_id and span.session_id not in (None, query.session_id):
+        if query.session_id is not None and span.session_id != query.session_id:
             return False
         return query.accepts(span.kind)
 

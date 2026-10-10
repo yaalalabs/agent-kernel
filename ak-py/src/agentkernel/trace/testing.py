@@ -17,7 +17,7 @@ class TraceFetchContract:
     Built-in fetchers and bring-your-own tracers that override ``fetch`` subclass it, so every one of them
     honours the same result contract: spans oldest first, unique span ids, the window applied to span start
     time (start inclusive, end exclusive), the most recent spans kept when more than ``limit`` match, and the
-    kind, session, trace-id and name filters.
+    kind, session, trace-id and name filters, including that a span missing the filtered value is excluded.
 
     Not prefixed ``Test`` so pytest does not collect it on its own.
     """
@@ -38,7 +38,7 @@ class TraceFetchContract:
 
     @staticmethod
     def contract_span(
-        span_id: str, minute: float, kind: SpanKind = SpanKind.SPAN, trace_id: str = "t1", session_id: str = "s1", name: str | None = None
+        span_id: str, minute: float, kind: SpanKind = SpanKind.SPAN, trace_id: str = "t1", session_id: str | None = "s1", name: str | None = None
     ) -> FetchedSpan:
         """A span starting ``minute`` minutes after the contract window's start, lasting 30 seconds."""
         start = _START + timedelta(minutes=minute)
@@ -104,7 +104,14 @@ class TraceFetchContract:
         assert [span.span_id for span in tracer.fetch(self.window(kinds=[SpanKind.SPAN]))] == ["plain"]
 
     def test_contract_session_filter(self, tracer):
-        self.seed(tracer, [self.contract_span("mine", 10, session_id="s1"), self.contract_span("other", 11, trace_id="t2", session_id="s2")])
+        self.seed(
+            tracer,
+            [
+                self.contract_span("mine", 10, session_id="s1"),
+                self.contract_span("other", 11, trace_id="t2", session_id="s2"),
+                self.contract_span("no-session", 12, trace_id="t3", session_id=None),
+            ],
+        )
 
         spans = tracer.fetch(self.window(session_id="s1"))
 
@@ -126,7 +133,14 @@ class TraceFetchContract:
         assert [span.span_id for span in spans] == ["one", "three"]
 
     def test_contract_name_filter(self, tracer):
-        self.seed(tracer, [self.contract_span("wanted", 10, name="get_weather"), self.contract_span("other", 11, name="get_time")])
+        self.seed(
+            tracer,
+            [
+                self.contract_span("wanted", 10, name="get_weather"),
+                self.contract_span("other", 11, name="get_time"),
+                self.contract_span("unnamed", 12).model_copy(update={"name": None}),
+            ],
+        )
 
         spans = tracer.fetch(self.window(name="get_weather"))
 

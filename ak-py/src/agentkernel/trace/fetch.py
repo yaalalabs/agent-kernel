@@ -51,13 +51,13 @@ class TraceQuery(BaseModel):
     def matches(self, span: FetchedSpan) -> bool:
         """Whether a fetched span satisfies every filter, for fetchers whose server-side filters are approximate.
 
-        A span without a start time or session id is not rejected on that field, since the provider didn't
-        report it.
+        Strict: for each active filter the span must report a value that satisfies it. A span without a start
+        time, or without a session id (or name) when that filter is set, is rejected, never assumed to match.
         """
         start, end = self.window()
-        if span.start_time is not None and not start <= span.start_time < end:
+        if span.start_time is None or not start <= span.start_time < end:
             return False
-        if self.session_id and span.session_id not in (None, self.session_id):
+        if self.session_id is not None and span.session_id != self.session_id:
             return False
         if self.trace_ids is not None and span.trace_id not in self.trace_ids:
             return False

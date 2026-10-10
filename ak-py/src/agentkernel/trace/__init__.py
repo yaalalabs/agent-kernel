@@ -5,5 +5,5 @@ try:
 except importlib.metadata.PackageNotFoundError:
     __version__ = "0.1.0"
 
-from .fetch import FetchedSpan, SpanKind, SpanUsage, TraceQuery
+from .fetch import FetchedSpan, OTelSpanClassifier, SpanKind, SpanUsage, TraceQuery
 from .trace import Trace

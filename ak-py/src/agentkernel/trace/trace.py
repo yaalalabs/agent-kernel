@@ -128,7 +128,10 @@ class Trace(BaseTrace):
         :param query: The provider-neutral filter.
         :param filters: ``TraceQuery`` fields, used when ``query`` is not given.
         :return: The matching spans.
+        :raises ValueError: When both ``query`` and keyword filters are given, so filters are never silently ignored.
         """
         if self._instance is None:
             raise AKConfigError("cannot fetch traces: tracing is disabled (set trace.enabled: true)")
-        return self._instance.fetch(query or TraceQuery(**filters))
+        if query is not None and filters:
+            raise ValueError("pass either a TraceQuery or keyword filters, not both")
+        return self._instance.fetch(query if query is not None else TraceQuery(**filters))

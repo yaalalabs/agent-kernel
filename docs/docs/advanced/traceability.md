@@ -635,6 +635,11 @@ With OpenLLMetry and Pydantic AI, each LLM call is recorded twice (an `openai.ch
 | OpenLLMetry (Traceloop) | Warehouse spans REST API | Same `TRACELOOP_API_KEY` (and `TRACELOOP_BASE_URL`) |
 | AWS CloudWatch | CloudWatch Logs Insights over the `aws/spans` log group | The standard AWS chain and region; the identity needs `logs:StartQuery`, `logs:GetQueryResults` and `logs:StopQuery` on `aws/spans` (`AWSXrayWriteOnlyAccess` does not grant them) |
 
+Session ids reach every tracing provider exactly as you pass them: Langfuse, OpenLLMetry and CloudWatch record
+them on spans, and Logfire keeps them out of its default scrubbing so traces can be filtered by session. Agent
+Kernel doesn't make them opaque, so keep personal data out of them. If you derive session ids from user ids,
+use a hash or a random id instead.
+
 Provider limits to keep in mind:
 
 - **Langfuse:** spans are readable ~15–30 seconds after ingestion; API rate limits depend on your plan.

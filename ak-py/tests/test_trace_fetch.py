@@ -60,9 +60,16 @@ class TestTraceQuery:
         assert not query.matches(span.model_copy(update={"trace_id": "t2"}))
         assert not query.matches(span.model_copy(update={"name": "other"}))
 
-    def test_matches_does_not_reject_unreported_fields(self):
-        query = TraceQuery(start=START, end=END, session_id="s-1")
-        assert query.matches(FetchedSpan(provider="x", trace_id="t1", span_id="a"))
+    def test_matches_rejects_a_span_missing_a_filtered_value(self):
+        span = FetchedSpan(provider="x", trace_id="t1", span_id="a", start_time=_ts(5))
+
+        assert not TraceQuery(start=START, end=END).matches(span.model_copy(update={"start_time": None}))
+        assert not TraceQuery(start=START, end=END, session_id="s-1").matches(span)  # no session id reported
+        assert not TraceQuery(start=START, end=END, name="get_weather").matches(span)  # no name reported
+
+    def test_matches_accepts_missing_values_when_their_filter_is_unset(self):
+        span = FetchedSpan(provider="x", trace_id="t1", span_id="a", start_time=_ts(5))
+        assert TraceQuery(start=START, end=END).matches(span)  # no session id or name, neither filtered
 
     def test_kinds_accept_strings(self):
         query = TraceQuery(kinds=["tool"])
@@ -164,6 +171,12 @@ class TestTraceFetch:
         query = TraceQuery(limit=5)
         Trace(tracer).fetch(query)
         assert tracer.queries == [query]
+
+    def test_query_with_keyword_filters_raises(self):
+        tracer = _FetchingTrace()
+        with pytest.raises(ValueError, match="not both"):
+            Trace(tracer).fetch(TraceQuery(limit=5), session_id="s-1")
+        assert tracer.queries == []
 
     def test_base_trace_without_fetch_raises_not_implemented(self):
         class SendOnly(_FetchingTrace):
