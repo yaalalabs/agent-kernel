@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 
 from langfuse import Langfuse, get_client
 
@@ -17,6 +18,22 @@ class LangFuse(BaseTrace):
         """
         self._client: Langfuse | None = None
         self._log = logging.getLogger("ak.trace.langfuse")
+
+    @staticmethod
+    def flush_on_lambda(client: Langfuse) -> None:
+        """
+        Exports the spans the Langfuse client still holds when running on AWS Lambda. Lambda freezes the
+        sandbox as soon as an invocation returns, so the client's background exporter would otherwise hold
+        the spans until the next invocation, or lose them when the sandbox is recycled. A failed flush is
+        logged, never raised, so tracing can't fail the agent's reply.
+        :param client: The Langfuse client the runner sent its spans with.
+        """
+        if "AWS_LAMBDA_FUNCTION_NAME" not in os.environ:
+            return
+        try:
+            client.flush()
+        except Exception:  # any exporter error: the reply must still be returned
+            logging.getLogger("ak.trace.langfuse").warning("Flushing Langfuse spans after the run failed", exc_info=True)
 
     def init(self):
         """

@@ -101,6 +101,10 @@ LANGFUSE_SECRET_KEY=sk-lf-...
 LANGFUSE_HOST=https://cloud.langfuse.com
 ```
 
+On AWS Lambda (when `AWS_LAMBDA_FUNCTION_NAME` is set), Agent Kernel flushes the Langfuse client at the end of
+every agent run, including failed runs, because Lambda freezes the sandbox as soon as an invocation returns and
+pending spans would otherwise wait for the next invocation. The cost is one export round trip per run.
+
 ### Getting Langfuse Credentials
 
 1. Sign up for a free account at [https://cloud.langfuse.com](https://cloud.langfuse.com)
@@ -636,13 +640,43 @@ Provider limits to keep in mind:
 - **Langfuse:** spans are readable ~15–30 seconds after ingestion; API rate limits depend on your plan.
 - **Logfire:** spans are readable ~5 minutes after ingestion; queries return at most 10,000 rows, so larger
   fetches are paged automatically.
-- **Traceloop:** the free plan keeps spans for 24 hours only.
+- **Traceloop:** fetching is best effort. The free plan keeps spans for 24 hours only, and the warehouse
+  API's filter ids haven't been verified against a live account, so Agent Kernel re-checks every filter
+  on the spans it gets back.
 - **CloudWatch:** only spans ingested through Transaction Search are readable, since they are what lands in
-  `aws/spans`. Logs Insights returns at most 10,000 rows per query, so larger fetches are paged automatically,
+  `aws/spans`. Transaction Search must be on, and the spans must reach X-Ray: the default export does, but if
+  you point `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` at a collector, it has to forward to X-Ray. Without
+  `aws/spans`, `fetch` raises an `AKConfigError` telling you to enable Transaction Search. Logs Insights returns at most 10,000 rows per query, so larger fetches are paged automatically,
   and each query is billed by the data it scans.
 
 A bring-your-own tracer can support fetching by overriding `BaseTrace.fetch(query)`; tracers that don't raise
-`NotImplementedError`.
+`NotImplementedError`. `TraceQuery.matches(span)` applies every filter to a span, and
+`agentkernel.trace.testing.TraceFetchContract` is the pytest suite the built-in fetchers pass; subclass it to check
+yours:
+
+```python
+import pytest
+
+from agentkernel.trace import FetchedSpan, TraceQuery
+from agentkernel.trace.testing import TraceFetchContract
+
+
+class MyTrace(BaseTrace):  # your bring-your-own tracer
+    ...
+
+    def fetch(self, query: TraceQuery) -> list[FetchedSpan]:
+        spans = [span for span in self._backend_spans() if query.matches(span)]
+        return FetchedSpan.oldest_first(spans)[-query.limit :]  # newest `limit` kept, returned oldest first
+
+
+class TestMyTraceFetch(TraceFetchContract):
+    @pytest.fixture
+    def tracer(self):
+        return MyTrace()
+
+    def seed(self, tracer, spans):
+        ...  # write these spans to the backend your tracer reads
+```
 
 ## Integrate with Your Own Traceability Platform
 

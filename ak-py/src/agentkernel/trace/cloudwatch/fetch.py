@@ -95,12 +95,24 @@ class CloudWatchTraceFetcher:
         """
         Runs one Logs Insights query and waits for its rows, each as a {field: value} dict.
         """
-        query_id = client.start_query(
-            logGroupName=self._log_group,
-            startTime=math.floor(start.timestamp()),
-            endTime=math.ceil(end.timestamp()),
-            queryString=query_string,
-        )["queryId"]
+        from botocore.exceptions import ClientError
+
+        try:
+            query_id = client.start_query(
+                logGroupName=self._log_group,
+                startTime=math.floor(start.timestamp()),
+                endTime=math.ceil(end.timestamp()),
+                queryString=query_string,
+            )["queryId"]
+        except ClientError as exc:
+            # aws/spans exists only once Transaction Search is on and spans have reached X-Ray
+            if exc.response.get("Error", {}).get("Code") == "ResourceNotFoundException":
+                raise AKConfigError(
+                    f"CloudWatch log group {self._log_group!r} not found in this account and region; enable CloudWatch "
+                    "Transaction Search so spans sent to X-Ray are stored there, and make sure the spans reach X-Ray "
+                    "(the default trace.type: cloudwatch export does; a collector must forward to X-Ray)"
+                ) from exc
+            raise
         deadline = time.monotonic() + self._timeout
         while True:
             result = client.get_query_results(queryId=query_id)

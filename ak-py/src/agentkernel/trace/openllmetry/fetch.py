@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Any, Iterator, Optional
@@ -57,7 +58,7 @@ class TraceloopTraceFetcher:
             for item in self._pages(client, self._params(query, start, end)):
                 span = self._to_span(item)
                 # server-side filters are best effort (attribute ids may be renamed by the backend), so re-check here
-                if not query.accepts(span.kind) or (query.session_id and span.session_id != query.session_id):
+                if not query.matches(span):
                     continue
                 spans.setdefault(span.span_id, span)
                 if len(spans) >= query.limit:
@@ -75,7 +76,7 @@ class TraceloopTraceFetcher:
             filters.append({"id": "trace_id", "operator": "in", "value": query.trace_ids})
         params: dict[str, Any] = {
             "from_timestamp_sec": int(start.timestamp()),
-            "to_timestamp_sec": int(end.timestamp()),
+            "to_timestamp_sec": math.ceil(end.timestamp()),  # whole seconds; the exact end is applied locally
             "limit": min(self._PAGE_SIZE, query.limit),
             "sort_by": "timestamp",
             "sort_order": "desc",
@@ -94,7 +95,8 @@ class TraceloopTraceFetcher:
             page = body.get("spans", body)
             yield from page.get("data") or []
             cursor = page.get("next_cursor")
-            if not cursor or not page.get("data"):
+            # a repeated cursor would page forever when local filtering keeps the limit from being reached
+            if not cursor or not page.get("data") or cursor == params.get("cursor"):
                 return
             params = {**params, "cursor": cursor}
 

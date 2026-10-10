@@ -18,6 +18,8 @@ class LangfuseTraceFetcher:
 
     _PAGE_SIZE = 100  # Langfuse caps a response at 5 MB, and io fields can be large
     _FIELDS = "core,basic,time,io,metadata,model,usage,metrics"
+    # metadata values over 200 characters come back truncated unless their key is listed here
+    _EXPAND_METADATA = "attributes"
     _TYPES = {SpanKind.AGENT: "AGENT", SpanKind.LLM: "GENERATION", SpanKind.TOOL: "TOOL"}
     _KINDS = {langfuse_type: kind for kind, langfuse_type in _TYPES.items()}
 
@@ -43,7 +45,7 @@ class LangfuseTraceFetcher:
                 matched = 0
                 for observation in self._pages(query, start, end, langfuse_type, trace_id):
                     span = self._to_span(observation)
-                    if not query.accepts(span.kind):
+                    if not query.matches(span):
                         continue
                     spans.setdefault(span.span_id, span)
                     matched += 1
@@ -62,6 +64,7 @@ class LangfuseTraceFetcher:
         while True:
             response = self._client.api.observations.get_many(
                 fields=self._FIELDS,
+                expand_metadata=self._EXPAND_METADATA,
                 limit=min(self._PAGE_SIZE, query.limit),
                 cursor=cursor,
                 type=langfuse_type,
@@ -72,8 +75,9 @@ class LangfuseTraceFetcher:
                 to_start_time=end,
             )
             yield from response.data
-            cursor = response.meta.cursor
-            if not cursor or not response.data:
+            previous, cursor = cursor, response.meta.cursor
+            # a repeated cursor would page forever when local filtering keeps the limit from being reached
+            if not cursor or not response.data or cursor == previous:
                 return
 
     @staticmethod
