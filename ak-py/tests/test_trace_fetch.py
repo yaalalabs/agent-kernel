@@ -48,6 +48,22 @@ class TestTraceQuery:
         with pytest.raises(ValueError):
             TraceQuery(start=END, end=START).window()
 
+    def test_matches_applies_every_filter(self):
+        query = TraceQuery(start=START, end=END, kinds=[SpanKind.TOOL], session_id="s-1", trace_ids=["t1"], name="get_weather")
+        span = FetchedSpan(provider="x", trace_id="t1", span_id="a", name="get_weather", kind=SpanKind.TOOL, start_time=_ts(5), session_id="s-1")
+
+        assert query.matches(span)
+        assert not query.matches(span.model_copy(update={"start_time": END}))  # end is exclusive
+        assert query.matches(span.model_copy(update={"start_time": START}))  # start is inclusive
+        assert not query.matches(span.model_copy(update={"kind": SpanKind.LLM}))
+        assert not query.matches(span.model_copy(update={"session_id": "s-2"}))
+        assert not query.matches(span.model_copy(update={"trace_id": "t2"}))
+        assert not query.matches(span.model_copy(update={"name": "other"}))
+
+    def test_matches_does_not_reject_unreported_fields(self):
+        query = TraceQuery(start=START, end=END, session_id="s-1")
+        assert query.matches(FetchedSpan(provider="x", trace_id="t1", span_id="a"))
+
     def test_kinds_accept_strings(self):
         query = TraceQuery(kinds=["tool"])
         assert query.accepts(SpanKind.TOOL) and not query.accepts(SpanKind.LLM)
@@ -197,6 +213,14 @@ class TestLangfuseFetcher:
         assert calls[0].kwargs["from_start_time"] == START and calls[0].kwargs["to_start_time"] == END
         assert calls[1].kwargs["cursor"] == "c1"
 
+    def test_requests_full_attribute_metadata(self):
+        client = MagicMock()
+        client.api.observations.get_many.return_value = _page([])
+
+        LangfuseTraceFetcher(client).fetch(TraceQuery(start=START, end=END))
+
+        assert client.api.observations.get_many.call_args.kwargs["expand_metadata"] == "attributes"
+
     def test_maps_langfuse_usage_and_cost(self):
         observation = _observation("g", type_="GENERATION", usage_details={"input": 42, "output": 7, "total": 49}, total_cost=1.05e-05)
         client = MagicMock()
@@ -221,7 +245,7 @@ class TestLangfuseFetcher:
         client = MagicMock()
         client.api.observations.get_many.return_value = _page([_observation("tool"), _observation("chain", type_="CHAIN")])
 
-        spans = LangfuseTraceFetcher(client).fetch(TraceQuery(kinds=[SpanKind.SPAN]))
+        spans = LangfuseTraceFetcher(client).fetch(TraceQuery(start=START, end=END, kinds=[SpanKind.SPAN]))
 
         assert client.api.observations.get_many.call_args.kwargs["type"] is None
         assert [span.span_id for span in spans] == ["chain"]
@@ -230,10 +254,18 @@ class TestLangfuseFetcher:
         client = MagicMock()
         client.api.observations.get_many.return_value = _page([_observation("new", minute=9), _observation("old", minute=1)], cursor="more")
 
-        spans = LangfuseTraceFetcher(client).fetch(TraceQuery(limit=1))
+        spans = LangfuseTraceFetcher(client).fetch(TraceQuery(start=START, end=END, limit=1))
 
         assert [span.span_id for span in spans] == ["new"]
         assert client.api.observations.get_many.call_count == 1
+
+    def test_stops_when_the_cursor_repeats(self):
+        # every observation is outside the window, so limit is never reached; a repeated cursor must end the loop
+        client = MagicMock()
+        client.api.observations.get_many.return_value = _page([_observation("old", minute=-30)], cursor="same")
+
+        assert LangfuseTraceFetcher(client).fetch(TraceQuery(start=START, end=END)) == []
+        assert client.api.observations.get_many.call_count == 2
 
 
 # --- Logfire ----------------------------------------------------------------------------------------------
@@ -432,6 +464,22 @@ class TestCloudWatchFetcher:
 
         assert [span.span_id for span in spans] == ["b", "c", "d"]
         assert client.start_query.call_args_list[1].kwargs["endTime"] == int(_ts(3).timestamp())
+
+    def test_missing_log_group_raises_a_config_error(self):
+        from botocore.exceptions import ClientError
+
+        client = MagicMock()
+        client.start_query.side_effect = ClientError({"Error": {"Code": "ResourceNotFoundException", "Message": "nope"}}, "StartQuery")
+        with pytest.raises(AKConfigError, match="Transaction Search"):
+            CloudWatchTraceFetcher(client=client).fetch(TraceQuery())
+
+    def test_other_client_errors_propagate(self):
+        from botocore.exceptions import ClientError
+
+        client = MagicMock()
+        client.start_query.side_effect = ClientError({"Error": {"Code": "AccessDeniedException", "Message": "no"}}, "StartQuery")
+        with pytest.raises(ClientError):
+            CloudWatchTraceFetcher(client=client).fetch(TraceQuery())
 
     def test_failed_query_raises(self):
         client = MagicMock()
