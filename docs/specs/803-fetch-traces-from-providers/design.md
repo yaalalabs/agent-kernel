@@ -75,6 +75,7 @@ The example is `examples/aws-serverless/langfuse-trace-evaluation/`.
 
 - `Trace.fetch(query: TraceQuery | None = None, **filters) -> list[FetchedSpan]` on the `Trace` facade.
   - Keyword filters build a `TraceQuery`; an explicit `query` is passed through unchanged.
+  - Passing both `query` and keyword filters raises `ValueError`, so filters are never silently ignored.
   - When tracing is disabled (`Trace._instance is None`), raise `AKConfigError` naming `trace.enabled`.
   - Delegates to the configured tracer's `fetch(query)`.
 - `agentkernel.trace` exports `TraceQuery`, `FetchedSpan`, `SpanUsage`, `SpanKind`.
