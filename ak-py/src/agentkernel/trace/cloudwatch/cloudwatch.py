@@ -19,6 +19,7 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from ...core import Runner, Session
 from ...core.util.factory import AKConfigError
 from ..base import BaseTrace
+from ..fetch import FetchedSpan, TraceQuery
 from .sigv4 import SigV4Session
 
 """
@@ -120,6 +121,14 @@ class CloudWatch(BaseTrace):
         return detected.merge(Resource(defaults))
 
     @staticmethod
+    def region(botocore_session: BotocoreSession) -> str | None:
+        """
+        The AWS region from AWS_REGION, then the botocore chain (AWS_DEFAULT_REGION, the active profile).
+        :param botocore_session: The botocore session whose configuration is consulted.
+        """
+        return os.environ.get("AWS_REGION") or botocore_session.get_config_variable("region")
+
+    @staticmethod
     def _exporter() -> OTLPSpanExporter:
         """
         Exports to the endpoint OTEL_EXPORTER_OTLP_TRACES_ENDPOINT or OTEL_EXPORTER_OTLP_ENDPOINT names, defaulting
@@ -134,7 +143,7 @@ class CloudWatch(BaseTrace):
             return OTLPSpanExporter(session=SigV4Session(match["region"]))
 
         botocore_session = BotocoreSession()
-        region = os.environ.get("AWS_REGION") or botocore_session.get_config_variable("region")
+        region = CloudWatch.region(botocore_session)
         if not region:
             raise AKConfigError(
                 "trace.type: cloudwatch needs an AWS region to reach the X-Ray OTLP endpoint; set AWS_REGION, "
@@ -195,3 +204,11 @@ class CloudWatch(BaseTrace):
         from .pydanticai import CloudWatchPydanticAIRunner
 
         return CloudWatchPydanticAIRunner(self)
+
+    def fetch(self, query: TraceQuery) -> list[FetchedSpan]:
+        """
+        Fetches spans back from the aws/spans log group through CloudWatch Logs Insights (needs Transaction Search).
+        """
+        from .fetch import CloudWatchTraceFetcher
+
+        return CloudWatchTraceFetcher().fetch(query)

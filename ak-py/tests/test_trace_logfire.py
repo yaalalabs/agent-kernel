@@ -28,6 +28,7 @@ def fake_logfire(monkeypatch):
 
     fake = types.ModuleType("logfire")
     fake.configure = MagicMock()
+    fake.ScrubbingOptions = MagicMock(side_effect=lambda **kwargs: kwargs)
     fake.instrument_openai_agents = MagicMock()
     fake.span = MagicMock(return_value=span)
     fake.span_cm = span  # expose for assertions
@@ -54,6 +55,16 @@ def test_factory_builds_logfire(fake_logfire):
 
     assert isinstance(trace._instance, Logfire)
     fake_logfire.configure.assert_called_once()
+
+
+def test_init_keeps_session_id_from_scrubbing(fake_logfire):
+    from agentkernel.trace.logfire.logfire import Logfire
+
+    Logfire().init()
+
+    callback = fake_logfire.configure.call_args.kwargs["scrubbing"]["callback"]
+    assert callback(types.SimpleNamespace(path=("attributes", "session_id"), value="s-1")) == "s-1"
+    assert callback(types.SimpleNamespace(path=("attributes", "session_token"), value="x")) is None
 
 
 def test_init_configures_once(fake_logfire):

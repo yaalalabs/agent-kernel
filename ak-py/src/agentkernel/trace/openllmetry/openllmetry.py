@@ -9,6 +9,7 @@ from traceloop.sdk import Traceloop
 
 from ...core import Runner
 from ..base import BaseTrace
+from ..fetch import FetchedSpan, TraceQuery
 
 """
 Thread-safe context variable to store association properties per request.
@@ -147,3 +148,11 @@ class OpenLLMetry(BaseTrace):
         from .pydanticai import OpenLLMetryPydanticAIRunner
 
         return OpenLLMetryPydanticAIRunner()
+
+    def fetch(self, query: TraceQuery) -> list[FetchedSpan]:
+        """
+        Fetches spans back from Traceloop through the warehouse REST API (same ``TRACELOOP_API_KEY``).
+        """
+        from .fetch import TraceloopTraceFetcher
+
+        return TraceloopTraceFetcher().fetch(query)

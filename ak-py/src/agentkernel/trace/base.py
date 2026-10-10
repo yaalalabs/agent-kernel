@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 
 from ..core import Runner
+from .fetch import FetchedSpan, TraceQuery
 
 
 class BaseTrace(ABC):
@@ -52,3 +53,13 @@ class BaseTrace(ABC):
         Initialize Pydantic AI instrumentation
         """
         raise NotImplementedError
+
+    def fetch(self, query: TraceQuery) -> list[FetchedSpan]:
+        """
+        Fetch spans back from the tracing provider's cloud, oldest first.
+
+        Not abstract, so bring-your-own tracers that only send traces keep working.
+
+        :param query: The provider-neutral filter (time window, span kinds, session, ...).
+        """
+        raise NotImplementedError(f"{type(self).__name__} does not support fetching traces")

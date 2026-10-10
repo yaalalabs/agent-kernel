@@ -6,6 +6,7 @@ from langfuse import Langfuse, get_client
 
 from ... import Runner
 from ..base import BaseTrace
+from ..fetch import FetchedSpan, TraceQuery
 
 
 class LangFuse(BaseTrace):
@@ -74,3 +75,11 @@ class LangFuse(BaseTrace):
         from .pydanticai import LangFusePydanticAIRunner
 
         return LangFusePydanticAIRunner(self._client)
+
+    def fetch(self, query: TraceQuery) -> list[FetchedSpan]:
+        """
+        Fetches observations back from Langfuse with the same client used for sending.
+        """
+        from .fetch import LangfuseTraceFetcher
+
+        return LangfuseTraceFetcher(self._client).fetch(query)

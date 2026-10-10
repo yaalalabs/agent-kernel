@@ -4,6 +4,7 @@ from ..core import Runner
 from ..core.config import AKConfig
 from ..core.util.factory import AKConfigError, require_extra, resolve_dotted
 from .base import BaseTrace
+from .fetch import FetchedSpan, TraceQuery
 
 _BUILTIN_TRACERS = ["langfuse", "openllmetry", "logfire", "cloudwatch"]
 
@@ -116,3 +117,18 @@ class Trace(BaseTrace):
         if self._instance is not None:
             return self._instance.pydanticai()
         return None
+
+    def fetch(self, query: TraceQuery | None = None, **filters) -> list[FetchedSpan]:
+        """
+        Fetches spans back from the configured tracing provider's cloud, oldest first.
+
+        Pass either a ``TraceQuery`` or its fields as keyword arguments, e.g.
+        ``Trace.get().fetch(last=timedelta(hours=6), kinds=[SpanKind.TOOL])``.
+
+        :param query: The provider-neutral filter.
+        :param filters: ``TraceQuery`` fields, used when ``query`` is not given.
+        :return: The matching spans.
+        """
+        if self._instance is None:
+            raise AKConfigError("cannot fetch traces: tracing is disabled (set trace.enabled: true)")
+        return self._instance.fetch(query or TraceQuery(**filters))

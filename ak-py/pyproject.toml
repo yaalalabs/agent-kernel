@@ -30,9 +30,11 @@ langfuse = [
 ]
 openllmetry = [
     "traceloop-sdk>=0.61.0",
+    "httpx>=0.27.0",
 ]
 logfire = [
     "logfire>=3.0",
+    "httpx>=0.27.0",
 ]
 cloudwatch = [
     "opentelemetry-sdk>=1.30.0",

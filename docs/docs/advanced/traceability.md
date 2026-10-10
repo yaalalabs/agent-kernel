@@ -573,6 +573,77 @@ The batch span processor normally exports in the background, but Lambda freezes 
 2. Go to **Application Signals → Transaction Search** and filter spans by `session.id` or by service `AgentKernel`. Open a trace to see the run span with its agent, LLM, and tool spans nested under it.
 3. Optionally, check **GenAI Observability**. Agent Kernel sets the `aws.service.type=gen_ai_agent` resource attribute and `session.id` that the AWS Distro for OpenTelemetry sets, but AWS does not document whether its agent and session views list agents that export without the distro, so treat Transaction Search as the supported view.
 
+## Fetching Traces Back
+
+Traces stay in your provider's cloud, but you can read them back into Python (for example, to run evaluations
+over recent tool calls) with `Trace.fetch()`. It takes one provider-neutral filter and translates it into
+each provider's query API:
+
+```python
+from datetime import timedelta
+
+from agentkernel.trace import SpanKind, Trace
+
+trace = Trace.get()  # uses the configured trace.type
+
+# Tool calls from the last 6 hours
+tool_calls = trace.fetch(last=timedelta(hours=6), kinds=[SpanKind.TOOL])
+
+# Every span of one AK session in an explicit window
+spans = trace.fetch(start=start, end=end, session_id="session-123")
+
+for span in tool_calls:
+    print(span.trace_id, span.name, span.input, span.output)
+```
+
+| Filter | Meaning |
+|--------|---------|
+| `start` / `end` | Span start time window (`end` defaults to now, `start` to `end - last`) |
+| `last` | Look-back window when `start` is not given (default 1 hour) |
+| `kinds` | `SpanKind.AGENT`, `LLM`, `TOOL` or `SPAN` (everything else); `None` returns all |
+| `session_id` | Only spans of this AK session |
+| `trace_ids` | Only spans of these traces (fetch tool calls first, then their whole traces) |
+| `name` | Exact span name |
+| `limit` | Maximum spans returned (default 1000); the most recent are kept |
+
+Each result is a `FetchedSpan` (trace/span/parent ids, name, kind, start/end time, session id, input, output,
+usage, attributes) plus `raw`, the provider's full record. Spans are returned oldest first.
+
+`usage` is a `SpanUsage` (`input_tokens`, `output_tokens`, `total_tokens`, `cost` in USD) for spans that record a
+model call, and `None` otherwise. It covers only that span's own call, never its children, so the cost of a whole
+run (including LLM calls made inside tools and sub-agents) is the sum over the trace's spans:
+
+```python
+spans = trace.fetch(trace_ids=["4bf92f3577b34da6a3ce929d0e0e4736"])
+tokens = sum(span.usage.total_tokens or 0 for span in spans if span.usage)
+```
+
+Token counts come from every provider. Cost is filled in by Langfuse (which prices model calls itself) and, on the
+other providers, only for Pydantic AI, whose instrumentation reports a per-call cost.
+
+With OpenLLMetry and Pydantic AI, each LLM call is recorded twice (an `openai.chat` span and a Pydantic AI
+`chat` span), so a plain sum counts its tokens twice.
+
+| Provider | Read API | Credentials |
+|----------|----------|-------------|
+| Langfuse | v2 observations API | Same `LANGFUSE_*` keys used for sending |
+| Logfire | SQL Query API | A separate **read token** in `LOGFIRE_READ_TOKEN` (`logfire read-tokens --project <org>/<project> create`) |
+| OpenLLMetry (Traceloop) | Warehouse spans REST API | Same `TRACELOOP_API_KEY` (and `TRACELOOP_BASE_URL`) |
+| AWS CloudWatch | CloudWatch Logs Insights over the `aws/spans` log group | The standard AWS chain and region; the identity needs `logs:StartQuery`, `logs:GetQueryResults` and `logs:StopQuery` on `aws/spans` (`AWSXrayWriteOnlyAccess` does not grant them) |
+
+Provider limits to keep in mind:
+
+- **Langfuse:** spans are readable ~15–30 seconds after ingestion; API rate limits depend on your plan.
+- **Logfire:** spans are readable ~5 minutes after ingestion; queries return at most 10,000 rows, so larger
+  fetches are paged automatically.
+- **Traceloop:** the free plan keeps spans for 24 hours only.
+- **CloudWatch:** only spans ingested through Transaction Search are readable, since they are what lands in
+  `aws/spans`. Logs Insights returns at most 10,000 rows per query, so larger fetches are paged automatically,
+  and each query is billed by the data it scans.
+
+A bring-your-own tracer can support fetching by overriding `BaseTrace.fetch(query)`; tracers that don't raise
+`NotImplementedError`.
+
 ## Integrate with Your Own Traceability Platform
 
 Agent Kernel's plugin architecture makes it easy to integrate your own observability platform. If you're already using a different monitoring solution or have specific requirements, you can add support in just a few steps.
