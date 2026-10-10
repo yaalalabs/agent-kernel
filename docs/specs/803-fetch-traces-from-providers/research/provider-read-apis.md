@@ -118,8 +118,9 @@ Sources: [API limits](https://langfuse.com/faq/all/api-limits) · [pricing](http
 project-scoped **read token** (create it in the UI or with `logfire read-tokens --project org/proj create`).
 The region is taken from the token prefix.
 
-- **SDK** (`logfire/experimental/query_client.py`): `LogfireQueryClient(read_token, ...)` /
-  `AsyncLogfireQueryClient`
+- **SDK** (`logfire.query_client`, verified in 4.41.0): `LogfireQueryClient(read_token, ...)` /
+  `AsyncLogfireQueryClient`. `logfire.experimental.query_client` still exists as a backwards-compatible
+  path (the code lives there in 4.41.0 and `logfire.query_client` re-exports it).
   - `query_json_rows(sql, min_timestamp, max_timestamp, limit, *, timezone, environment)` → `{columns, rows}`
   - `query_arrow(...)` → `pyarrow.Table`; `query_csv(...)` → str; `query_json` (deprecated)
   - `logfire.db_api.connect(...)`: PEP 249, works with pandas `read_sql`
