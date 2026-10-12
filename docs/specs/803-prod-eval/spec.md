@@ -770,10 +770,10 @@ examples/aws-serverless/langfuse-trace-evaluation/
 ├── evaluator/
 │   ├── __init__.py
 │   ├── api.py               # EvaluationAPI: /eval, /check and the entry point
-│   ├── job.py               # TraceEvaluationJob, RunSummary
+│   ├── job.py               # TraceEvaluationJob, PrepareSummary, GradeSummary
 │   ├── case.py              # ToolCall, TraceCase, TraceEvaluationCase
 │   ├── opik_evaluator.py    # OpikTraceEvaluator (not opik.py, which would shadow the SDK)
-│   └── store.py             # EvaluationStore, RunStatus
+│   └── store.py             # EvaluationStore, Progress, TraceProgress
 ├── tests/
 │   └── test_evaluator.py    # unit tests, no cloud access
 ├── lambda_test.py           # weekly integration test, with its EvaluationClient helper
@@ -794,9 +794,10 @@ examples/aws-serverless/langfuse-trace-evaluation/
 3. **Configuration from the environment only.** `EvaluationAPI.from_env()` and
    `TraceEvaluationJob.from_env()` are the only places that read environment variables; the other
    classes take constructor parameters, so the unit tests build them directly.
-4. **Every write is idempotent**, and the `TRACE` item is written last (§`evaluator/store.py`).
+4. **Every write is idempotent**, and a trace's `graded` row is written in one `PutItem`, after all its
+   metrics are judged (§`evaluator/store.py`).
 5. **One bad trace or metric never fails the run; any other error fails it** and is reported through the
-   session's `STATUS` item (§Phases 2–3 error handling).
+   `/eval` response or the Lambda logs (§Phases 2–3 error handling).
 
 ### The agent and the wiring (`lambda.py`, `config.yaml`)
 
@@ -879,10 +880,12 @@ class TraceCase(BaseModel):
     agents: list[str] = []
     usage: SpanUsage = SpanUsage()            # summed over the trace's spans
     span_count: int
+    missing_parents: int = 0                  # spans whose parent_span_id is not in the trace
     spans: list[FetchedSpan] = []             # kept for EvaluationStore's spans_gz
 
     @property
     def finished(self) -> bool: ...           # ended_at is not None and output != "" (the run ended)
+    def ready(self, now: datetime, settle: timedelta) -> bool: ...
     @property
     def latency_ms(self) -> int | None: ...
     @classmethod
@@ -900,6 +903,8 @@ class TraceEvaluationCase(AKEvaluationCase):
     `None` result means "not a request": the job never counts it (design.md §Trace case).
   - Tool spans: `span.kind == SpanKind.TOOL`, or `OTelSpanClassifier.classify(span.attributes) == TOOL`
     (the fallback design.md §Trace case explains). `failed` = `span.raw.get("level") == "ERROR"`.
+  - `missing_parents`: spans whose `parent_span_id` is not `None` and not the `span_id` of any span in
+    `spans`.
   - Agent spans: `span.kind == SpanKind.AGENT` (or the same fallback), their `name`s, de-duplicated in order.
   - `usage`: each field is the sum of the non-`None` values across spans, or `None` when no span has
     one.
@@ -969,31 +974,36 @@ class OpikTraceEvaluator(AKEvaluator):
 ### `evaluator/store.py`
 
 ```python
-class RunStatus(StrEnum):
-    NOT_STARTED = "not_started"      # returned by /check only; never written
-    RUNNING = "running"
-    DONE = "done"
-    FAILED = "failed"
+class Progress(StrEnum):
+    PENDING = "pending"          # finished, not ready yet
+    GRADING = "grading"          # ready and queued for the judges
+    GRADED = "graded"            # every metric judged and stored; final
+    FAILED = "failed"            # grading raised; error recorded; retried by the next /eval
+    UNFINISHED = "unfinished"    # root span has no output; final, never graded
+
+class TraceProgress(BaseModel):
+    progress: Progress
+    updated_at: datetime
+
+class SessionProgress(BaseModel):
+    counts: dict[Progress, int] = {}
+    errors: list[dict[str, str]] = []    # {"trace_id", "error"} per failed row
 
 class EvaluationStore:
-    TRACE_SK = "TRACE"
-    STATUS_SK = "STATUS"
-    FIELD_LIMIT = 4_096          # characters per input/output field
-    TOOL_CALLS_LIMIT = 25        # tool calls stored on the TRACE item
+    FIELD_LIMIT = 4_096          # characters per input/output/reason field
+    TOOL_CALLS_LIMIT = 25        # tool calls stored on the trace row
     ITEM_LIMIT = 380_000         # bytes: DynamoDB's 400 KB item cap minus headroom
     TTL = timedelta(days=90)
 
     def __init__(self, table: Any): ...                             # a boto3 dynamodb Table resource
     @classmethod
     def for_table(cls, table_name: str) -> "EvaluationStore": ...  # boto3.resource("dynamodb").Table(name)
-    def evaluated(self, trace_ids: list[str]) -> set[str]: ...
-    def save(self, case: TraceCase, results: list[AKEvaluationResult], evaluated_at: datetime) -> None: ...
-    def graded(self, session_id: str) -> int: ...
-    def set_status(self, session_id: str, status: RunStatus, summary: "RunSummary | None" = None,
-                   error: str | None = None) -> None: ...
-    def status(self, session_id: str) -> dict | None: ...           # the STATUS item, or None
-    @staticmethod
-    def _status_key(session_id: str) -> dict: ...                   # {"trace_id": f"#run#{session_id}", "sk": "STATUS"}
+    def progress(self, trace_ids: list[str]) -> dict[str, TraceProgress]: ...
+    def mark(self, case: TraceCase, progress: Progress, now: datetime) -> None: ...
+    def save(self, case: TraceCase, results: list[AKEvaluationResult], now: datetime) -> None: ...
+    def fail(self, trace_ids: list[str], error: str, now: datetime) -> None: ...
+    def session(self, session_id: str) -> SessionProgress: ...
+    def _summary(self, case: TraceCase, progress: Progress, now: datetime) -> dict: ...
     @staticmethod
     def _number(value: float | int | None) -> Decimal | None: ...  # Decimal(str(value))
     @classmethod
@@ -1002,113 +1012,141 @@ class EvaluationStore:
     def _item_size(item: dict) -> int: ...                          # DynamoDB-sized bytes of a whole item
 ```
 
-- `evaluated`: `table.meta.client.batch_get_item` in chunks of 100 keys `{"trace_id": id, "sk": "TRACE"}`,
-  projecting only `trace_id`. `UnprocessedKeys` are retried up to 3 times with 0.5 s, 1 s, 2 s waits, then
-  raise `RuntimeError` (an infrastructure error under rule 5).
-- `save`:
-  1. `EVAL#<metric>#<evaluator>` items through `table.batch_writer(overwrite_by_pkeys=["trace_id", "sk"])`
-     (boto3 retries unprocessed items itself).
-  2. Then `table.put_item` of the `TRACE` item.
-  - Shared attributes on every item: `trace_id`, `sk`, `session_id` (omitted when `None`, so the sparse
-    `session_id-index` skips it), `evaluated_at` (ISO 8601 UTC), `expires_at` (epoch seconds,
-    `evaluated_at + TTL`).
-  - `EVAL#…` attributes: `metric`, `evaluator`, `score`, `threshold`, `passed`, `reason`,
-    `higher_is_better`, `attempts`. `None` values are omitted rather than written (boto3 would store them
-    as DynamoDB `NULL`), so a missing `score` reads the same as an unscored one.
-  - `TRACE` attributes: `provider="langfuse"`, `root_name`, `started_at`, `latency_ms`, `input`,
+- `progress`: `table.meta.client.batch_get_item` with `ConsistentRead=True`, in chunks of 100 keys
+  `{"trace_id": id}`, projecting
+  `trace_id`, `progress` and `updated_at`; traces with no row are absent from the result.
+  `UnprocessedKeys` are retried up to 3 times with 0.5 s, 1 s, 2 s waits, then raise `RuntimeError` (an
+  infrastructure error under rule 5).
+- `_summary(case, progress, now)`: the attributes every row has: `trace_id`, `session_id`, `progress`,
+  `updated_at` (ISO 8601 UTC), `expires_at` (epoch seconds, `updated_at + TTL`), and the trace summary
+  listed under `save`, without metrics or spans.
+- `mark`: `table.put_item` of `_summary(case, progress, now)` with
+  `ConditionExpression="attribute_not_exists(trace_id) OR progress <> :graded"`. A
+  `ConditionalCheckFailedException` (the row turned `graded` meanwhile) is swallowed: a graded trace is
+  never downgraded.
+- `save`: one `table.put_item` of the whole row with `progress = graded`, unconditional. A single
+  `PutItem` is atomic, so the row turns `graded` with every metric column in it at once.
+  - Attributes: everything in `_summary` (`session_id` is omitted when `None`, so the sparse
+    `session_id-index` skips it), plus `evaluated_at` (= `updated_at`).
+  - The summary (on every row): `provider="langfuse"`, `root_name`, `started_at`, `latency_ms`, `input`,
     `output`, `tool_calls` (list of maps, each field cut), `tool_call_count`, `tool_error_count`,
-    `agents`, `span_count`, `input_tokens`, `output_tokens`, `total_tokens`, `cost`, `passed`
-    (`True` when every scored result passed, `False` when one failed, omitted when none scored),
-    `metric_errors` (count of `score=None` results), and `spans_gz` or `spans_truncated`.
-  - Size budget for the `TRACE` item. A per-field limit alone can't keep an item under 400 KB: strings
+    `agents`, `span_count`, `input_tokens`, `output_tokens`, `total_tokens`, `cost`.
+  - Only on `graded` rows: `passed` (`True` when every scored result passed, `False` when one failed,
+    omitted when none scored), `metric_errors` (count of `score=None` results), and `spans_gz` or
+    `spans_truncated`.
+  - One attribute per result, named by `result.metric` (`task_completion`, `tool_correctness`,
+    `answer_relevance`, `hallucination`). Its value is a map: `evaluator`, `score`, `threshold`, `passed`,
+    `reason` (cut with `_cut`), `higher_is_better`, `attempts`.
+  - `None` values are omitted rather than written (boto3 would store them as DynamoDB `NULL`), so a
+    missing `score` reads the same as an unscored one.
+  - Size budget for the trace row. A per-field limit alone can't keep an item under 400 KB: strings
     are cut by characters (up to 4 bytes each in UTF-8), and the number of tool calls has no bound.
-    1. Text fields are cut with `_cut`. `tool_calls` keeps the first `TOOL_CALLS_LIMIT` calls; when it
-       drops any, it sets `tool_calls_truncated=True`. `tool_call_count` and `tool_error_count` still
-       count every call.
+    1. Text fields, including each metric's `reason`, are cut with `_cut`. `tool_calls` keeps the first
+       `TOOL_CALLS_LIMIT` calls; when it drops any, it sets `tool_calls_truncated=True`.
+       `tool_call_count` and `tool_error_count` still count every call.
     2. `_item_size(item)` measures the whole item without spans: the UTF-8 bytes of each attribute name
        and string value, binary lengths, and 21 bytes per number (DynamoDB's documented upper bound),
        recursing into lists and maps.
     3. If it is still over `ITEM_LIMIT` (many long tool calls), tool calls are dropped from the end, then
-       `input` and `output` are cut by halves, until it fits.
+       `input` and `output` are cut by halves, until it fits. Metric attributes are never dropped: four
+       cut reasons stay under 70 KB even at 4 bytes per character.
     4. `spans_gz` = `gzip.compress(json.dumps([span.model_dump(mode="json") for span in case.spans]))`.
        It is attached as Binary only when the item size plus `len("spans_gz") + len(spans_gz)` is ≤
        `ITEM_LIMIT`. Otherwise it is omitted and `spans_truncated=True`.
-  - `EVAL#…` items hold only a metric's fields; `reason` is cut with `_cut`, so they stay far below the
-    cap.
   - Without the budget, an oversized trace would make `put_item` raise `ValidationException` and fail the
     run.
   - `_cut`: the first `FIELD_LIMIT` characters plus `"…[truncated]"` when longer.
-- `graded(session_id)`: `table.query` on `session_id-index` with `session_id = :s AND sk = :trace`,
-  `Select="COUNT"`, following `LastEvaluatedKey`. The `STATUS` item carries no `session_id` attribute, so
-  the index never holds it.
-- `set_status`: `put_item` of `_status_key(session_id)` with `status`, `updated_at` (ISO 8601 UTC),
-  `expires_at`, plus, when given, the summary's counts (`requests`, `graded`, `already_graded`,
-  `unfinished`, `no_root`, `metric_errors`) and `error` (cut with `_cut`).
-- `status(session_id)`: `get_item` of `_status_key(session_id)` with `ConsistentRead=True`, so `/check`
-  never reads a stale status after the run's final write.
+- `fail(trace_ids, error, now)`: per id, `table.update_item` setting `progress = failed`, `error` (cut
+  with `_cut`) and `updated_at`, with `ConditionExpression="progress = :grading"`; a
+  `ConditionalCheckFailedException` is swallowed (the row moved on meanwhile).
+- `session(session_id)`: `table.query` on `session_id-index` with `session_id = :s`, projecting `trace_id`,
+  `progress` and `error`, following `LastEvaluatedKey`: counts per `Progress` and the errors of `failed`
+  rows. Index reads are eventually consistent, so only `/check` uses it. A row with an unknown `progress` is
+  logged and skipped.
 
 ### `evaluator/job.py`
 
 ```python
-class RunSummary(BaseModel):
+class PrepareSummary(BaseModel):
     session_id: str
     spans_fetched: int = 0
-    requests: int = 0            # traces with one root span
-    graded: int = 0              # graded in this run
-    already_graded: int = 0      # skipped: TRACE item already present
-    unfinished: int = 0          # root span without end time or output: not graded
-    no_root: int = 0             # traces with no root span (or several): not requests, not graded
+    found: int = 0               # traces with exactly one root span
+    no_root: int = 0             # traces with no root span (or several): no row
+    already_graded: int = 0      # row already graded
+    grading: int = 0             # marked grading now
+    pending: int = 0
+    unfinished: int = 0
+    grading_ids: list[str] = []  # sent to grade in the invoke payload
+
+class GradeSummary(BaseModel):
+    session_id: str
+    graded: int = 0
+    failed: int = 0
     metric_errors: int = 0
 
 class TraceEvaluationJob:
     FETCH_WINDOW = timedelta(hours=24)
     FETCH_LIMIT = 5_000
+    SETTLE = timedelta(minutes=2)
 
-    def __init__(self, trace: Trace, evaluators: list[OpikTraceEvaluator], store: EvaluationStore,
-                 clock: Callable[[], datetime] = ...): ...
+    def __init__(self, trace: Trace, store: EvaluationStore,
+                 evaluators: Callable[[], list[OpikTraceEvaluator]],
+                 clock: Callable[[], datetime] = ...): ...         # evaluators: built on first grade
     @classmethod
     def from_env(cls) -> "TraceEvaluationJob": ...
-    def run(self, session_id: str) -> RunSummary: ...
+    def prepare(self, session_id: str) -> PrepareSummary: ...
+    def grade(self, session_id: str, trace_ids: list[str]) -> GradeSummary: ...
     def _fetch(self, session_id: str) -> list[FetchedSpan]: ...
-    def _cases(self, spans: list[FetchedSpan], summary: RunSummary) -> list[TraceCase]: ...
+    def _cases(self, spans: list[FetchedSpan]) -> tuple[list[TraceCase], int]: ...   # cases, no_root count
+    def _next(self, case: TraceCase, current: TraceProgress | None, now: datetime) -> Progress | None: ...
     def _evaluate(self, case: TraceCase) -> list[AKEvaluationResult]: ...
 ```
 
 - `from_env()`: `Trace.get()` (reads `AK_TRACE__*`; `LangFuse.init()` checks the Langfuse keys),
-  `OpikTraceEvaluator.all(AKTestConfig.get())` (reads `AK_TEST__LLM__*`),
-  `EvaluationStore.for_table(os.environ["RESULTS_TABLE"])`.
-- `run(session_id)`:
-  1. `store.set_status(session_id, RUNNING)`.
-  2. Inside one `try`:
-     1. `spans = _fetch(session_id)`.
-     2. `cases = _cases(spans, summary)`: group by `trace_id`; `TraceCase.from_spans`; a `None` →
-        `no_root`; otherwise `requests += 1`; oldest first by `started_at`.
-     3. Unfinished cases → `unfinished`, not graded.
-     4. Drop finished cases in `store.evaluated(...)` → `already_graded`.
-     5. For each remaining case: `results = _evaluate(case)`; `store.save(case, results, clock())`;
-        `graded += 1`; `metric_errors += ` the results with `score is None`.
-     6. `store.set_status(session_id, DONE, summary)`; log the summary; return it.
-  3. `except Exception as e`: log it with the session id, `store.set_status(session_id, FAILED, summary,
-     error=f"{type(e).__name__}: {e}")`, return the summary. Not re-raised: the status already carries the
-     failure, and a re-raise would make AWS retry the asynchronous invocation. If that
-     final `set_status` itself raises, the exception propagates and the status stays `running` (the
-     caller's timeout reports it).
+  `EvaluationStore.for_table(os.environ["RESULTS_TABLE"])`, and as `evaluators` a factory calling
+  `OpikTraceEvaluator.all(AKTestConfig.get())` (reads `AK_TEST__LLM__*`). The job calls the factory once,
+  on the first `grade`, and keeps the list; `prepare` never calls it, so `/eval` doesn't load Opik or
+  litellm.
+- `_cases(spans)`: group by `trace_id`; `TraceCase.from_spans`; a `None` counts as `no_root`; the rest
+  oldest first by `started_at`.
+- `_next(case, current, now)`: the design's `prepare` table (design.md §Evaluation run). `None` means
+  "leave the row as it is":
+  - `current` is `graded` or `unfinished` → `None`;
+  - otherwise (no row, `pending`, `failed` or `grading`): not `case.finished` →
+    `UNFINISHED`; not `case.ready(now, SETTLE)` → `PENDING`; else `GRADING`.
+- `prepare(session_id)`: `now = clock()`; `cases, no_root = _cases(_fetch(session_id))`;
+  `current = store.progress([c.trace_id for c in cases])`; for each case, `new = _next(...)`, and
+  `store.mark(case, new, now)` when `new` is not `None`. Counts each case under its resulting
+  `progress` (`already_graded` for `graded`) and lists the `grading` ones in `grading_ids`, logs the
+  summary and returns it. Exceptions propagate.
+- `grade(session_id, trace_ids)`:
+  1. `ids` = the `trace_ids` whose row `store.progress(trace_ids)` reports as `grading` (a consistent
+     read: the rows were written moments ago); none → return an empty summary.
+  2. `cases, _ = _cases(_fetch(session_id))`. An exception here → `store.fail(ids, error, clock())`,
+     where `error = f"{type(e).__name__}: {e}"`; return the summary with `failed = len(ids)`.
+  3. An id with no case in the fetch → `store.fail([id], "trace not found in the fetch", clock())`.
+  4. For each remaining case, oldest first, inside its own `try`: `results = _evaluate(case)`;
+     `store.save(case, results, clock())`; `graded += 1`; `metric_errors +=` the results with
+     `score is None`. An exception → logged with the trace id, `store.fail([case.trace_id], error,
+     clock())`, `failed += 1`, and the loop goes on.
+  5. Logs the summary and returns it.
+  - Nothing is re-raised except an exception from `store.fail` itself, which leaves those rows
+    `grading` for the next `/eval` (AWS's automatic retry is off, §Deployment).
 - `_fetch(session_id)`: `trace.fetch(session_id=session_id, last=FETCH_WINDOW, limit=FETCH_LIMIT)`.
   `len(spans) == FETCH_LIMIT` → `RuntimeError("session <id> has at least 5000 spans; refusing to grade a
   truncated session")`, because `fetch` keeps the newest `limit` spans and older requests would be silently
   missing.
 - `_evaluate(case)`: `evaluation_case = case.to_evaluation_case(OpikTraceEvaluator.THRESHOLD)`; one
   `evaluate_by_llm` per evaluator that `applies_to` it.
-- Calling `run` twice for one session re-fetches, skips every trace already committed, and grades only
-  the rest. Two overlapping runs for one session may both judge the same trace; their writes go to the
-  same keys, so the table stays consistent and only judge cost is duplicated. The example accepts this
-  rather than adding a run lock.
+- Overlap: `/eval` called while a `grade` invocation is still running queues its `grading` rows again,
+  so those traces are judged twice. Writes go to the same keys, `save` is a whole-row put and `fail` only
+  touches rows still `grading`, so the table stays consistent; only judge cost is duplicated.
 
 ### `evaluator/api.py`
 
 ```python
 class EvaluationAPI:
-    EVALUATE_ACTION = "evaluate"
+    GRADE_ACTION = "grade"
 
     def __init__(self, store: EvaluationStore, lambda_client: Any,
                  job_factory: Callable[[], TraceEvaluationJob],
@@ -1123,25 +1161,29 @@ class EvaluationAPI:
 
 - `from_env()`: `EvaluationStore.for_table(os.environ["RESULTS_TABLE"])`, `boto3.client("lambda")`, and
   `TraceEvaluationJob.from_env` as the factory. Nothing heavy is built at import: `Trace.get()` and the
-  Opik metrics are created by the first evaluation run, so `/chat` cold starts don't pay for them.
+  Opik metrics are created on first use, so `/chat` cold starts don't pay for them.
 - `start(event, context)`:
   1. `body = json.loads(event.get("body") or "{}")`, as `schedule-openai/lambda_request_handler.py:93` reads
      it; invalid JSON or a missing/empty `session_id` string → `(400, {"error": ...})`.
-  2. `store.set_status(session_id, RUNNING)`.
-  3. `lambda_client.invoke(FunctionName=context.function_name, InvocationType="Event",
-     Payload=json.dumps({"action": "evaluate", "session_id": session_id}))`.
-  4. `(202, {"session_id": session_id, "status": "running"})`.
-  - An exception in 2 or 3 propagates; `Lambda.handler` turns it into a `500` (`deployment/aws/serverless/aklambda.py:84-90`).
+  2. `summary = self._job().prepare(session_id)`.
+  3. When `summary.grading_ids`: `lambda_client.invoke(FunctionName=context.function_name,
+     InvocationType="Event", Payload=json.dumps({"action": "grade", "session_id": session_id,
+     "trace_ids": summary.grading_ids}))`.
+  4. `(202, summary.model_dump(mode="json"))`.
+  - An exception in 2 or 3 propagates; `Lambda.handler` turns it into
+    `500 {"error": "Custom handler error: <message>"}` (`deployment/aws/serverless/aklambda.py:84-90`).
+  - Building the job on the first `/eval` (Opik metrics, `Trace.get()`) adds a few seconds to that
+    request's cold path, still well inside API Gateway's 29 s.
 - `check(event, context)`:
   1. `params = event.get("queryStringParameters") or {}`; missing `session_id`, or `expected` that isn't
      a positive integer → `(400, {"error": ...})`.
-  2. `item = store.status(session_id)`; `graded = store.graded(session_id)`.
-  3. `(200, {"session_id", "status": item["status"] if item else "not_started", "expected", "graded",
-     "complete": status == "done" and graded == expected, "error": item.get("error") if item else None})`.
-  - `graded` is counted from the `TRACE` items, not read from the status item, so traces graded by an
-    earlier run of the same session still count.
+  2. `progress = store.session(session_id)`.
+  3. `(200, {"session_id", "expected", "graded", "grading", "pending", "failed", "unfinished",
+     "errors": progress.errors[:10], "complete": graded >= expected})`, each count `0` when absent.
+     `>=`, not `==`: a retried chat request can leave one trace more than the requests counted.
 - `handler(event, context)`:
-  - `event.get("action") == EVALUATE_ACTION` → `self._job().run(event["session_id"]).model_dump(mode="json")`.
+  - `event.get("action") == GRADE_ACTION` →
+    `self._job().grade(event["session_id"], event["trace_ids"]).model_dump(mode="json")`.
   - Anything else → `lambda_handler(event, context)`, which serves `/chat`, `/eval` and `/check`.
 
 ### Deployment (`deploy/`)
@@ -1166,7 +1208,7 @@ module "serverless_agents" {                       # same shape as aws-serverles
     handler_path      = "lambda.handler"
     package_path      = "../dist"
     package_type      = "Image"
-    timeout           = 300                        # default 45 s: too short for the judges
+    timeout           = 600                        # 10 minutes; default 45 s: too short for the judges
     memory_size       = 1024                       # default 128 MB
     security_group_id = var.request_handler_security_group_id
     environment_variables = {
@@ -1186,13 +1228,8 @@ resource "aws_dynamodb_table" "results" {
   name         = "${var.prefix}-trace-evaluations"
   billing_mode = "PAY_PER_REQUEST"
   hash_key     = "trace_id"
-  range_key    = "sk"
   attribute {
     name = "trace_id"
-    type = "S"
-  }
-  attribute {
-    name = "sk"
     type = "S"
   }
   attribute {
@@ -1202,7 +1239,6 @@ resource "aws_dynamodb_table" "results" {
   global_secondary_index {
     name            = "session_id-index"
     hash_key        = "session_id"
-    range_key       = "sk"
     projection_type = "ALL"
   }
   ttl {
@@ -1219,11 +1255,16 @@ resource "aws_iam_role_policy" "evaluation" {
     Statement = [
       {
         Effect   = "Allow"
-        Action   = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:BatchGetItem", "dynamodb:BatchWriteItem", "dynamodb:Query"]
+        Action   = ["dynamodb:PutItem", "dynamodb:UpdateItem", "dynamodb:BatchGetItem", "dynamodb:Query"]
         Resource = [aws_dynamodb_table.results.arn, "${aws_dynamodb_table.results.arn}/index/*"]
       },
     ]
   })
+}
+
+resource "aws_lambda_function_event_invoke_config" "grading" {
+  function_name          = module.serverless_agents.request_handler_lambda_function_name
+  maximum_retry_attempts = 0                       # the next /eval re-queues a killed grading
 }
 ```
 
@@ -1232,8 +1273,10 @@ resource "aws_iam_role_policy" "evaluation" {
   depend on the module, the module reads only the table name, and the policy depends on both.
 - The self-invoke needs no statement here: the module attaches the AWS-managed `AWSLambdaRole` policy
   (`lambda:InvokeFunction` on `*`) to the request handler's role (`modules/request-handler/main.tf:17-20`).
-- Asynchronous invocations keep AWS's default of two retries. Only a timeout or crash triggers one (the
-  run never raises), and a retry resumes the run, skipping the traces already graded.
+- `aws_lambda_function_event_invoke_config.grading`: `function_name =
+  module.serverless_agents.request_handler_lambda_function_name`, `maximum_retry_attempts = 0`. AWS
+  would otherwise retry a killed grading invocation up to twice, overlapping with the next `/eval`, which
+  already re-queues leftover `grading` rows (design.md §`grade`).
 - Network: the Lambda runs in the base VPC like the siblings, and reaches Langfuse, OpenAI, DynamoDB and
   the Lambda API through the same egress path the sibling agents use for OpenAI.
 - `variables.tf`: `region`, `prefix`, `is_production` (default `false`), `openai_api_key`,
@@ -1254,7 +1297,7 @@ resource "aws_iam_role_policy" "evaluation" {
 
 ```toml
 [project]
-dependencies = ["agentkernel[aws,openai,langfuse,opik]>=0.9.4", "boto3>=1.40.0"]
+dependencies = ["agentkernel[aws,openai,langfuse,opik]>=0.9.4", "boto3>=1.40.0", "langfuse>=4.7.0"]
 
 [dependency-groups]
 dev = ["agentkernel[test]>=0.9.4", "httpx>=0.27.0", "moto[dynamodb]>=5.0.0", "black==26.5.1", "isort>=5.0.0"]
@@ -1262,6 +1305,9 @@ dev = ["agentkernel[test]>=0.9.4", "httpx>=0.27.0", "moto[dynamodb]>=5.0.0", "bl
 
 - One dependency set: the agent and the evaluator ship in one image. `boto3` is pinned because container
   images don't include the Lambda runtime's copy.
+- `langfuse>=4.7.0` raises the `langfuse` extra's `>=4.2.0` floor: older SDKs use Langfuse's slow
+  ingestion path (up to 15 minutes), which the job's 2-minute `SETTLE` assumes away (design.md
+  §Evaluation run).
 - The minimum `agentkernel` version is the first release that contains Phase 1 (`fetch` and `usage`),
   set when that release is cut; until then CI uses the local wheel (`./deploy.sh local`, `./build.sh local`).
 
@@ -1298,23 +1344,27 @@ dev = ["agentkernel[test]>=0.9.4", "httpx>=0.27.0", "moto[dynamodb]>=5.0.0", "bl
 |---|---|
 | `/eval` with a missing or empty `session_id`, or invalid JSON | `400`; nothing written or invoked |
 | `/check` with a missing `session_id`, or `expected` not a positive integer | `400` |
-| `/check` before any `/eval` for the session | `200`, `status = "not_started"`, `complete = false` |
-| `/eval` can't write the status or invoke itself (DynamoDB or IAM error) | `500` from `Lambda.handler`; no run starts |
-| Langfuse keys missing or wrong | `LangFuse.init()` raises in the run (`trace/langfuse/langfuse.py:25-28`) → `failed`, error recorded |
-| Langfuse fetch fails (HTTP error, rate limit) | Propagates from `fetch` (Phase 1 does no retries) → `failed` |
-| The session has `FETCH_LIMIT` spans or more | `RuntimeError` from `_fetch` → `failed` |
-| A trace has no root span, or several | `no_root`: logged, not a request, never written |
-| A root span without end time or output | `unfinished`: counted, not written; `/check` then reports `graded < expected` |
-| A judge call fails twice | That metric's item is stored with `score`/`passed` omitted and the error in `reason`; `metric_errors` counts it; the trace is still committed |
-| DynamoDB error during the run (throttling after boto3's retries, access denied, unprocessed keys after 3 tries) | `failed`. Traces committed before it stay committed and are skipped by the next run |
-| The `failed` status write itself fails | Propagates; the status stays `running`; the caller's poll deadline reports a timeout |
-| Lambda timeout (300 s) mid-run | No status write; the status stays `running`. AWS retries the invocation (up to twice), which resumes the run and skips committed traces. A test still polling at its 360 s deadline reports a timeout |
+| `/check` before any `/eval` for the session | `200`, every count `0`, `complete = false` |
+| Langfuse keys missing or wrong | `LangFuse.init()` raises in `prepare` (`trace/langfuse/langfuse.py:25-28`) → `/eval` returns `500` with the error |
+| Langfuse fetch fails (HTTP error, rate limit) in `prepare` | Propagates from `fetch` (Phase 1 does no retries) → `/eval` returns `500` with the error |
+| The session has `FETCH_LIMIT` spans or more | `RuntimeError` from `_fetch` → `/eval` returns `500` with the error |
+| DynamoDB or IAM error in `prepare` (`progress`, `mark`, or the self-invoke) | `/eval` returns `500` with the error; rows marked before it stay, and the next `/eval` continues from them |
+| A trace has no root span, or several | `no_root`: logged, not a request, no row |
+| A root span without output | `unfinished` row: never graded; `/check` reports it and `graded < expected` |
+| A finished trace whose root span ended less than `SETTLE` ago, or with `missing_parents > 0` | `pending` row; a later `/eval` moves it to `grading` |
+| A trace not readable at all yet | No row; a later `/eval` finds it |
+| A judge call fails twice | That metric's column is stored with `score`/`passed` omitted and the error in `reason`; `metric_errors` counts it; the row still turns `graded` |
+| Fetch error in `grade` | Every `grading` row of the session → `failed` with the error; the next `/eval` retries them |
+| Any other error while grading one trace (DynamoDB, unexpected exception) | That row → `failed` with the error; the other traces are still graded; the next `/eval` retries it |
+| `failed` rows at the end of the weekly test | The test fails with the counts and the rows' `errors` from `/check` |
+| The Lambda times out (10 minutes) or runs out of memory, or the `failed` write itself fails | Rows stay `grading` (no automatic retry); the next `/eval` (the test's next round) queues them again |
 
-- Concurrency: each run is single-threaded, so the job, store and evaluators hold no locks. Runs for
-  different sessions are independent. Two runs for the same session may overlap (§`evaluator/job.py`).
-- Cost per run: one Langfuse fetch of ~`ceil(spans / 100)` requests; one `BatchGetItem` per 100 requests;
-  per graded trace three or four judge calls (one more per failed attempt), one batch write and one put;
-  two status writes. `/check`: one `GetItem` and one `Query` per call.
+- Concurrency: each invocation is single-threaded, so the job, store and evaluators hold no locks.
+  Sessions are independent. Overlap within a session is covered in §`evaluator/job.py`.
+- Cost per `/eval`: one Langfuse fetch of ~`ceil(spans / 100)` requests, one `BatchGetItem` per 100
+  traces and one put per trace whose `progress` changes. Per `grade`: the same fetch and `BatchGetItem`,
+  then per graded trace three or four judge calls (one more per failed attempt) and one put. `/check`: one
+  `Query` per call.
 
 ## Phases 2–3 testing
 
@@ -1328,6 +1378,8 @@ dev = ["agentkernel[test]>=0.9.4", "httpx>=0.27.0", "moto[dynamodb]>=5.0.0", "bl
     summed usage (and `None` when no span has usage), latency;
   - the tool fallback through `OTelSpanClassifier` for a span typed `span`;
   - no root span and two root spans → `None`; root span without `end_time` → not `finished`;
+  - `missing_parents` counts a span whose parent is absent; `ready` false just before `settle` has passed,
+    true just after, and false with `missing_parents > 0`;
   - the transcript with and without tool calls.
 - `TestOpikTraceEvaluator` (each Opik class monkeypatched in `evaluator.opik_evaluator` with a fake whose
   `score` records its kwargs and returns a `ScoreResult`):
@@ -1338,37 +1390,46 @@ dev = ["agentkernel[test]>=0.9.4", "httpx>=0.27.0", "moto[dynamodb]>=5.0.0", "bl
     names the error; `scoring_failed` counts as a failure;
   - `evaluate_by_score` raises `AKMetricNotSupported`; an unknown metric name raises `ValueError`.
 - `TestEvaluationStore` (`moto.mock_aws`, table created with the `main.tf` schema):
-  - `save` writes the `EVAL#…` items and the `TRACE` item with the documented attributes, `Decimal`
-    numbers, omitted `None`s, `expires_at`;
-  - the `TRACE` item is written after the `EVAL#…` items (a store whose `put_item` raises leaves only
-    `EVAL#…` items, and `evaluated()` doesn't report the trace);
+  - `save` writes one trace row with the documented attributes and one map column per metric (no
+    `tool_correctness` column for a trace without tool calls), `Decimal` numbers, omitted `None`s,
+    `expires_at`;
+  - `mark` writes the summary with the given `progress` and no metric columns, updates a `pending` row
+    to `grading`, and never overwrites a `graded` row;
+  - a store whose `put_item` raises in `save` leaves the row as it was (still `grading`);
   - `_cut` on long fields; `spans_gz` round-trips; spans that would push the item past `ITEM_LIMIT` →
     `spans_truncated`;
   - size budget: 100 tool calls with 4,096-char multi-byte (4-byte UTF-8) inputs/outputs → the item is
     written (moto enforces 400 KB), `tool_calls_truncated` is set, and `tool_call_count` is 100;
     `_item_size` against a hand-computed item;
-  - `evaluated()` across more than 100 ids;
-  - `graded()` counts only the session's `TRACE` items (not `EVAL#…`, not `STATUS`, not other sessions);
-  - `set_status` / `status` round-trip with counts and error; no item → `None`.
+  - `progress()` across more than 100 ids, absent for a trace with no row;
+  - `session()` counts per `progress` for one session only, lists `failed` errors and `grading` ids, and
+    is empty for a session with no rows;
+  - `fail` sets `failed` and `error` on a `grading` row and leaves a `graded` row untouched.
 - `TestTraceEvaluationJob` (fake `Trace` returning fixed spans, fake evaluators, the moto store, a fixed
   clock):
   - the fetch call (`session_id`, `last=24h`, `limit=5000`);
-  - status `running` while the run is in progress (checked from a fake evaluator), then `done` with the
-    summary's counts;
-  - a trace with no root span → `no_root`, not counted in `requests`, nothing written;
-  - an unfinished trace → `unfinished`, not written;
-  - an already-graded trace → `already_graded`, its evaluator not called;
+  - `prepare`, one case per row of the design's table: no row + ready → `grading`; no row + inside `SETTLE`
+    → `pending`; no row + no output → `unfinished`; `pending` + now ready → `grading`; leftover `grading` →
+    `grading` again with a new `updated_at`; `failed` + ready → `grading`; `graded` and `unfinished` → left
+    as is; with the matching `PrepareSummary` counts;
+  - a trace with no root span → `no_root`, no row;
+  - `grade` judges only the payload's traces whose row is still `grading`, turns them `graded`, and
+    leaves other rows alone; `prepare` never calls the evaluators factory, and `grade` calls it once
+    across two calls;
   - `metric_errors` counts `score=None` results;
-  - a fetch error, a `FETCH_LIMIT`-sized result and a store error each → `failed` with the error, not
-    raised; traces committed before a store error stay committed.
+  - `prepare` raises on a fetch error and on a `FETCH_LIMIT`-sized result;
+  - `grade`: a fetch error marks every `grading` row `failed` with the error; an exception on one trace
+    marks only that row `failed` and the next trace is still graded; a `grading` id missing from the
+    fetch → `failed`; nothing is raised; an exception from `fail` itself is re-raised.
 - `TestEvaluationAPI` (moto store, a fake Lambda client recording `invoke` calls, a fake job factory, a
   fake `lambda_handler`):
-  - `start`: `202`, status `running` written, one `invoke` with `FunctionName=context.function_name`,
-    `InvocationType="Event"` and the evaluate payload; invalid JSON and a missing `session_id` → `400`, no
-    invoke;
-  - `check`: `not_started`, `running`, `failed` (with `error`), `done` with `graded < expected`
-    (`complete` false) and `done` with `graded == expected` (`complete` true); bad `expected` → `400`;
-  - `handler`: the evaluate action → the job's `run`, built once across two calls; any other event → the
+  - `start`: `202` with the `prepare` counts; one `invoke` with `FunctionName=context.function_name`,
+    `InvocationType="Event"` and the grade payload (with `trace_ids`) when a trace is `grading`, none
+    otherwise; invalid JSON
+    and a missing `session_id` → `400`, no `prepare`, no invoke; an exception from `prepare` propagates;
+  - `check`: a session with no rows (all `0`, `complete` false), a mixed one with the right counts and
+    the `failed` rows' `errors`, and `complete` true exactly when `graded >= expected`; bad `expected` → `400`;
+  - `handler`: the grade action → the job's `grade`, built once across two calls; any other event → the
     fake `lambda_handler`, untouched.
 - `TestTrafficSimulator` (`httpx.MockTransport`):
   - `send` posts the 3 questions in order, all with the given `session_id`;
@@ -1381,35 +1442,41 @@ dev = ["agentkernel[test]>=0.9.4", "httpx>=0.27.0", "moto[dynamodb]>=5.0.0", "bl
 `.github/scripts/run_single_test.py:350-370`). Only HTTP calls, so it needs no AWS credentials:
 
 ```python
+INITIAL_WAIT = 150     # s: the job's SETTLE (2 minutes) plus 30 s
+ROUNDS = 3             # /eval calls, the first one included
+ROUND_INTERVAL = 30    # s between rounds
+POLL_INTERVAL = 10     # s between /check calls
+POLL_TIMEOUT = 180     # s per round
+
 class EvaluationClient:                      # test helper, like APITestClient in openai-auth/lambda_test.py:15
     def __init__(self, chat_url: str): ...   # eval_url / check_url: the trailing "/chat" replaced
-    async def evaluate(self, session_id: str) -> None: ...          # POST /eval; asserts 202
-    async def wait(self, session_id: str, expected: int, timeout: float = 360,
-                   every: float = 10) -> dict: ...                  # polls /check until done/failed or timeout
+    async def evaluate(self, session_id: str) -> tuple[int, dict]: ...   # POST /eval; status code and body
+    async def wait(self, session_id: str, expected: int, timeout: float = POLL_TIMEOUT,
+                   every: float = POLL_INTERVAL) -> dict: ...   # polls GET /check (see below)
 ```
 
 - Session-scoped fixtures: `chat_url = os.getenv("AK_TEST_ENDPOINT")` (as
   `openai-auth/lambda_test.py:82-84`), `simulator = TrafficSimulator(chat_url, session_id=str(uuid4()))`,
   `client = EvaluationClient(chat_url)`.
 - `EvaluationClient.__init__` raises `ValueError` when `chat_url` doesn't end in `/chat`.
+- `wait` returns as soon as `complete` is true or `grading == 0`; at the timeout it returns the last
+  response.
 - `test_every_request_is_graded`:
   1. `replies = simulator.send()` (run in a thread, since `send` is synchronous); 3 non-empty replies.
-  2. `await asyncio.sleep(60)` for Langfuse ingestion (design.md open question).
-  3. Up to `ROUNDS = 3` grading rounds:
+  2. `await asyncio.sleep(INITIAL_WAIT)` (design.md §Evaluation run).
+  3. Up to `ROUNDS` grading rounds:
      ```python
      for _ in range(ROUNDS):
-         await client.evaluate(simulator.session_id)
+         code, body = await client.evaluate(simulator.session_id)
+         assert code == 202, f"/eval failed: {body.get('error')}"
          result = await client.wait(simulator.session_id, expected=3)
-         # stop on success, or on failed/running: another round wouldn't help
-         if result["complete"] or result["status"] != "done":
+         if result["complete"]:
              break
-         # some traces weren't readable yet; the next run grades only those
-         await asyncio.sleep(30)
+         # not all graded: the next /eval queues pending, failed and leftover grading traces
+         await asyncio.sleep(ROUND_INTERVAL)
      ```
-  4. Assert `result["complete"]`. The failure message depends on the result:
-     - `status == "failed"` → `"evaluation failed: <error>"`;
-     - `status == "done"` → `"<graded> of 3 requests graded after 3 rounds"`;
-     - `status == "running"` → `"timed out after 360 s"`.
+  4. Assert `result["complete"]`, with the message `"<graded> of 3 requests graded after <ROUNDS> rounds
+     (<pending> pending, <failed> failed, <grading> still grading, <unfinished> unfinished): <errors>"`.
   - Judge outcomes are not asserted, only that every request was graded and stored.
 
 **Run:**

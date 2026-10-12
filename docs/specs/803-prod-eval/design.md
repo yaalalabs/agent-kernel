@@ -18,6 +18,20 @@ graded. The weekly integration test drives the whole loop over HTTP.
 
 The example is `examples/aws-serverless/langfuse-trace-evaluation/`.
 
+## Terminology
+
+- **Span:** one unit of work with a start and an end time (an LLM call, a tool call, a whole agent run).
+  It can have a parent span, so the spans of a run form a tree. Langfuse calls spans "observations".
+- **Trace:** every span that shares one `trace_id`, i.e. the whole tree for one AK request (one message
+  in, one reply out). No provider stores a trace as its own record: it is always a group of spans.
+- **Root span:** the trace's top span, the one with no parent. On Langfuse, Logfire and CloudWatch it is
+  the AK wrapper span `Agent Kernel <Framework>`; Traceloop runners add none, so it is the framework's own.
+- **Session:** the traces that share one AK `session_id` (a conversation). Every provider stores the
+  session id on spans, not on a trace record.
+- **Finished run:** the root span has ended with an output. Says nothing about the other spans.
+- **Complete trace:** every span of the trace is readable from the provider. A finished run's trace can
+  still be incomplete for a while, because providers ingest spans asynchronously (§Open questions).
+
 ## Motivation
 
 ### Phase 1
@@ -378,8 +392,9 @@ graph LR
   - A request is counted by its trace's **parentless root span**, never by span name, so a stray trace
     with no root is never counted as a request. On Traceloop the root is the framework's `Agent Workflow`,
     since its runners add no AK span (`research/span-formats.md` §5.2).
-  - A trace says nothing about completeness: the provider can hold only part of a trace at any moment
-    (§Open questions).
+  - A trace says nothing about completeness: the provider can hold only part of a trace at any moment,
+    and no provider exposes a "trace complete" signal. The job grades a trace only when it is ready
+    (§Evaluation run).
 - `TraceCase.from_spans(trace_id, spans)` builds the case from that trace's `FetchedSpan`s:
   - `root`: the span with no parent (the AK wrapper `Agent Kernel <Framework>`, which holds the run's
     input and output). No root → no case.
@@ -393,8 +408,12 @@ graph LR
   - `usage`: the sum of every span's `usage` (input, output, total tokens; cost when Langfuse priced it).
   - `latency_ms`: root end − root start.
   - `finished`: the root span has an `end_time` and an output, so the run itself finished. This does not
-    prove every span of the trace is readable yet (§Open questions). Unfinished cases are not evaluated;
-    the run reports them in its status (§Evaluation run).
+    prove every span of the trace is readable yet. Unfinished cases are never graded; their row says so
+    (§Table).
+  - `missing_parents`: the number of spans whose `parent_span_id` is not a span of the trace, i.e. a span
+    in the middle of the tree is not readable yet.
+  - `ready(now, settle)`: `finished`, the root span ended at least `settle` before `now`, and
+    `missing_parents == 0`.
 - `transcript()`: one text block with the request, each tool call (name, arguments, result) and the final
   answer. The agent judges read it.
 
@@ -432,43 +451,62 @@ graph LR
 ### Table
 
 - One DynamoDB table, `<prefix>-trace-evaluations`, on-demand billing, created by the example's `main.tf`.
-- Keys: partition key `trace_id` (S), sort key `sk` (S).
-- Item types:
-  - `sk = "TRACE"`: the trace summary. `session_id`, `started_at`, `latency_ms`, `input`, `output`,
-    `tool_calls`, `agents`, `span_count`, token and cost totals, `tool_error_count`, `passed` (every
-    scored metric passed), `evaluated_at`, `provider`.
-  - `sk = "EVAL#<metric>#<evaluator>"`: one score. The `AKEvaluationResult` fields (`metric`,
-    `evaluator`, `score`, `threshold`, `passed`, `reason`, `higher_is_better`), plus `session_id` and
-    `evaluated_at`.
-  - `trace_id = "#run#<session_id>"`, `sk = "STATUS"`: the evaluation run's status for one session
-    (§Evaluation run). `status` (`running` / `done` / `failed`), `started_at`, `finished_at`, the run's
-    counts (requests found, graded, unfinished, metric errors) and `error` when it failed.
+- Key: partition key `trace_id` (S), no sort key.
+- One row per trace that `/eval` has found, holding everything about it:
+  - `progress`: where the trace is in grading (table below), with `updated_at` (ISO 8601 UTC) for when
+    it was set, and `error` on `failed` rows.
+  - The trace summary: `session_id`, `started_at`, `latency_ms`, `input`, `output`, `tool_calls`,
+    `agents`, `span_count`, token and cost totals, `tool_error_count`, `provider`.
+  - Only on `graded` rows:
+    - One column per metric (`task_completion`, `tool_correctness`, `answer_relevance`,
+      `hallucination`), each a map of that metric's `AKEvaluationResult` fields (`score`, `threshold`,
+      `passed`, `reason`, `evaluator`, `higher_is_better`). `tool_correctness` is absent when the trace
+      has no tool call.
+    - `passed` (every scored metric passed), `evaluated_at`, and the gzipped spans (`spans_gz`).
+
+| `progress` | Meaning | Changes to |
+|---|---|---|
+| `pending` | found and finished, but not ready yet (§Evaluation run) | `grading`, on a later `/eval` |
+| `grading` | ready and queued; the judges are running | `graded`, or `failed` |
+| `graded` | every metric judged and stored | never changes |
+| `failed` | grading raised an error; the row's `error` column says which | `grading`, on a later `/eval` |
+| `unfinished` | the root span has no output (the agent run failed) | never changes; never graded |
+
+- The session's progress is read from its rows: `/check` counts them by `progress` (§Routes). Grading is
+  over for a session when `graded` equals the number of requests sent; a `/eval` round is over when no
+  row is `grading`.
 - Size: an item is limited to 400 KB, and the limit is enforced on the whole serialised item, not
   field by field.
-  - `input`, `output` and each tool call's input/output are cut to 4,096 characters each. At most 25 tool
-    calls are stored (`tool_calls_truncated` marks a cut); the counts still cover every call.
+  - `input`, `output`, each tool call's input/output and each metric's `reason` are cut to 4,096
+    characters each. At most 25 tool calls are stored (`tool_calls_truncated` marks a cut); the counts
+    still cover every call.
   - The item is then measured as a whole. If it's still over a 380 KB budget, it drops tool calls and
-    shortens `input`/`output` until it fits.
-  - The trace's full spans (`FetchedSpan` dumps, including `raw`) are stored gzip-compressed in
-    `spans_gz` only when they fit in the remaining budget. Otherwise they're left out and
+    shortens `input`/`output` until it fits. Metric columns are never dropped.
+  - On `graded` rows, the trace's full spans (`FetchedSpan` dumps, including `raw`) are stored
+    gzip-compressed in `spans_gz` only when they fit in the remaining budget. Otherwise they're left out and
     `spans_truncated` is set.
   - So no trace can make `PutItem` fail on size and fail the run.
 - Indexes:
-  - `session_id-index` (partition `session_id`, sort `sk`): every trace and score of a session.
+  - `session_id-index` (partition `session_id`): every row of a session.
 - Numbers are written as `Decimal` (boto3 rejects `float`).
-- TTL attribute `expires_at`, set 90 days after `evaluated_at`.
+- TTL attribute `expires_at`, set 90 days after `updated_at`.
 
 ### Writes: `EvaluationStore`
 
-- `evaluated(trace_ids) -> set[str]`: which of these traces already have a `TRACE` item
-  (`BatchGetItem`, 100 keys per call).
-- `save(case, results)`: writes the `EVAL#…` items first, then the `TRACE` item **last**. The `TRACE`
-  item is the commit marker: a run that dies half-way leaves no `TRACE` item, so the next run evaluates
-  the trace again and overwrites the partial `EVAL#…` items with the same keys.
-- Every write is a plain `PutItem` on a deterministic key, so re-running a session never creates duplicates.
-- `set_status(session_id, status, **counts)` / `status(session_id)`: write and read the `STATUS` item.
-- `graded(session_id) -> int`: the number of `TRACE` items in the session (`Query` on `session_id-index`
-  with `sk = "TRACE"`).
+- `mark(case, progress)`: one `PutItem` of the trace's row with the summary and the given `progress`
+  (`pending`, `grading` or `unfinished`). It never overwrites a `graded` row (a condition on the write).
+- `save(case, results)`: one `PutItem` of the whole row with `progress = graded`, after all its metrics are
+  judged.
+  - A single `PutItem` is atomic: the row turns `graded` with every metric column at once, or stays as it
+    was. An error mid-trace leaves the row for `fail` to mark (§`grade`).
+  - The key is the trace id, so re-grading overwrites instead of duplicating.
+- `progress(trace_ids) -> dict[str, TraceProgress]`: each trace's current `progress` and `updated_at`
+  (`BatchGetItem` with a strongly consistent read, 100 keys per call), so it always sees the latest write.
+- `fail(trace_ids, error)`: sets `progress = failed`, the `error` text and `updated_at` on each row
+  (`UpdateItem`, only where `progress` is still `grading`).
+- `session(session_id) -> SessionProgress`: one `Query` on `session_id-index` giving the session's rows
+  counted by `progress` and the `error` of each `failed` row. Only `/check` uses it: the index is updated
+  asynchronously (usually within a second), which a poller doesn't mind.
 
 ## Phases 2–3: the Lambda, deployment and tests (example)
 
@@ -479,8 +517,8 @@ graph LR
   - **One AK serverless Lambda** (`lambda.py`, `config.yaml`, `evaluator/`), with `trace.enabled: true`
     and `trace.type: langfuse`. It serves three routes:
     - `POST /api/v1/chat`: the agent under evaluation, which produces the traces.
-    - `POST /api/v1/eval`: starts grading one session's traces (§Routes).
-    - `GET /api/v1/check`: reports whether every request of that session has been graded (§Routes).
+    - `POST /api/v1/eval`: finds one session's traces and starts grading the ready ones (§Routes).
+    - `GET /api/v1/check`: counts that session's traces by `progress` (§Routes).
   - It imports AK for the agent, `Trace.fetch`, `Lambda` and the `AKEvaluator` ABC.
 - No scheduled evaluation: grading runs only when `/eval` is called.
 - Example code follows the house rule "classes, not scripts": `EvaluationAPI`, `TraceEvaluationJob`,
@@ -492,8 +530,8 @@ graph LR
 ### Lambda entry point
 
 - `EvaluationAPI.handler(event, context)`, exposed as `lambda.handler`:
-  - `event["action"] == "evaluate"` (the asynchronous self-invoke from `/eval`) →
-    `TraceEvaluationJob.run(event["session_id"])`.
+  - `event["action"] == "grade"` (the asynchronous self-invoke from `/eval`) →
+    `TraceEvaluationJob.grade(event["session_id"], event["trace_ids"])`.
   - Every other event → `Lambda.handler(event, context)`, which serves `/chat`, `/eval` and `/check`.
   - Needed because `Lambda.handler` sends every event to the REST router, which fails on an event with
     no path (§Motivation).
@@ -505,43 +543,101 @@ graph LR
   body or the query string, never in the path.
 - `POST /eval`, body `{"session_id": "..."}`:
   - Missing `session_id` → `400`.
-  - Writes the session's `STATUS` item as `running`, so `/check` never reads a session that was
-    accepted but has no status yet.
-  - Invokes the same function asynchronously (`lambda.invoke`, `InvocationType="Event"`,
-    `FunctionName=context.function_name`, payload `{"action": "evaluate", "session_id": ...}`) and
-    returns `202 {"session_id": ..., "status": "running"}` without waiting.
-  - Grading runs in that second invocation, bound by the Lambda timeout instead of API Gateway's 29 s.
+  - Runs `TraceEvaluationJob.prepare(session_id)` (§Evaluation run) inside the request: one Langfuse fetch
+    and a few DynamoDB writes, well within API Gateway's 29 s. `prepare` never builds the judges (Opik
+    and litellm are slow to load); they are built on the first `grade`, so a cold first `/eval` stays
+    fast. Every found trace has its row and
+    `progress` before the response, so a `/check` right after `/eval` already sees the `grading` rows.
+  - When any trace is `grading`, invokes the same function asynchronously (`lambda.invoke`,
+    `InvocationType="Event"`, `FunctionName=context.function_name`, payload
+    `{"action": "grade", "session_id": ..., "trace_ids": [...]}`, the traces just marked `grading`).
+    The judges run in that second invocation, bound by the Lambda timeout instead of API Gateway's 29 s.
+  - The trace ids travel in the payload because the grading can't find them through the session index:
+    the index may not show rows written a moment ago.
+  - Returns `202` with the prepare counts (`found`, `grading`, `pending`, `unfinished`,
+    `already_graded`).
+  - Any error in `prepare` (wrong Langfuse keys, a fetch or DynamoDB error, a full fetch result)
+    propagates, and `Lambda.handler` returns it as `500 {"error": "Custom handler error: <message>"}`
+    (`deployment/aws/serverless/aklambda.py:84-90`), so the caller sees the cause directly.
 - `GET /check?session_id=...&expected=N`:
   - Missing or non-integer parameters → `400`.
-  - Returns `{"status", "expected", "graded", "complete", "error"}`:
-    - `status`: the `STATUS` item's value, or `not_started` when there is none.
-    - `graded`: `EvaluationStore.graded(session_id)`.
-    - `complete`: `status == "done"` and `graded == expected`.
+  - Returns `{"expected", "graded", "grading", "pending", "failed", "unfinished", "errors", "complete"}`:
+    - the five counts: `EvaluationStore.session(session_id)`, `0` for a missing `progress`;
+    - `errors`: up to 10 `{"trace_id", "error"}` from the `failed` rows;
+    - `complete`: `graded >= expected`. More traces than requests can happen: the traffic simulator
+      retries a request that got a 5xx, and the agent may already have run (and traced) the first try.
   - `expected` comes from the caller because only the caller knows how many requests it sent. Without
-    it, a run that found 2 of 3 traces would report success.
+    it, a session where only 2 of 3 traces were found would look complete.
 
-### Evaluation run: `TraceEvaluationJob.run(session_id)`
+### Evaluation run: `TraceEvaluationJob`
 
-- Writes `STATUS = running`.
-- Fetch: `Trace.get().fetch(session_id=session_id, last=timedelta(hours=24), limit=5000)`.
+- Two steps: `prepare(session_id)` in the `/eval` request decides each trace's `progress`, and
+  `grade(session_id)` in the asynchronous invocation judges the `grading` ones.
+- Both fetch the session the same way: `Trace.get().fetch(session_id=session_id, last=timedelta(hours=24),
+  limit=5000)`.
   - Langfuse sets the session id on every span (§Motivation), so one call returns the whole session.
-  - A full result (5,000 spans) fails the run: one session in this example never comes close, and
+  - A full result (5,000 spans) is an error: one session in this example never comes close, and
     silently grading a truncated session would be worse.
-- Spans are grouped by `trace_id`. Each trace with a parentless root span is one request (§Trace case).
-  A trace with no root span is logged and skipped, and not counted as a request.
-- Traces that already have a `TRACE` item are skipped (`EvaluationStore.evaluated`), so calling `/eval`
-  twice for a session doesn't pay for the judges twice.
-- Unfinished traces (root span without end time or output) are counted and not graded.
-- Every other trace is graded with every metric and saved (§Writes), oldest first.
-- Ends with `STATUS = done` and the run's counts (requests found, graded, skipped as already graded,
-  unfinished, metric errors), which are also logged.
+  - Spans are grouped by `trace_id`. Each trace with exactly one parentless root span is one request
+    (§Trace case). A trace with no root span, or several, is logged and gets no row.
+
+#### `prepare(session_id)`
+
+- Reads the found traces' current rows (`EvaluationStore.progress`), then for each trace:
+
+  | Current row | Trace | New `progress` |
+  |---|---|---|
+  | `graded` | any | unchanged (counted as already graded) |
+  | none, `pending`, `failed` or `grading` | root span has no output | `unfinished` |
+  | none, `pending`, `failed` or `grading` | finished, not `ready(now, SETTLE)` | `pending` |
+  | none, `pending`, `failed` or `grading` | `ready(now, SETTLE)` | `grading` |
+  | `unfinished` | any | unchanged |
+
+- `failed` rows are retried: the next `/eval` marks them `grading` again, so a passing error (a rate
+  limit, a DynamoDB throttle) doesn't lose the trace.
+- `grading` rows are queued again too. `/eval` can't see whether such a row is being graded right now or
+  was left behind by an invocation that was killed before it could mark it `failed` (§`grade`), so it
+  treats both the same and starts a new grading.
+  - Cost: calling `/eval` while a grading is still running judges those traces twice. Both write the
+    same row, so the data stays right; only judge calls are wasted. In the weekly test this happens only
+    when grading takes longer than a round's 3-minute poll (§Testing).
+- **Readiness:** `SETTLE` is 2 minutes.
+  - Why a settle time: OTel exports a span only once it ends and the root span ends last, so a finished
+    root span means every span has been sent. What remains is the provider's asynchronous ingestion.
+    No provider exposes a "trace complete" signal, and each one's own online evaluation waits a fixed
+    time instead (Langfuse's trace evaluators 10 s after the first event, AWS AgentCore 15 minutes of
+    inactivity).
+  - Why 2 minutes: Langfuse makes data readable within seconds usually, and up to about 1–2 minutes in
+    normal operation (Langfuse FAQ "How long until traces appear", support handbook). The Langfuse flush
+    on Lambda (§Langfuse flush) removes the export delay on the agent's side.
+    - Python SDKs before 4.7.0 use a slower ingestion path (up to 15 minutes), and AK's `langfuse` extra
+      allows `>=4.2.0` (`ak-py/pyproject.toml:28`), so the example requires `langfuse>=4.7.0`. Whether
+      the OpenInference spans also take the fast path is checked in live verification.
+  - The parent check catches a missing span in the middle of the tree whatever its delay. A missing
+    leaf span (an LLM or tool call with no children) that arrives more than `SETTLE` late is not
+    detected; no provider offers a way to, and it affects only that trace's scores.
+- A trace not readable at all yet has no row; a later `/eval` finds it.
+
+#### `grade(session_id)`
+
+- Takes the trace ids from the payload, keeps those still `grading` (`EvaluationStore.progress`), fetches
+  the session again, and grades each of those traces, oldest first: every metric, then `save` (§Writes).
+  Re-fetching picks up any span that arrived since `prepare`. A `grading` trace missing from the fetch is
+  marked `failed`.
+- Logs a summary (graded, failed, metric errors).
 - Failure handling:
-  - Any exception → `STATUS = failed` with the error, logged, not re-raised, so AWS never retries a run
-    that has already reported its failure.
-  - A judge error is stored on its metric (§Evaluator) and doesn't fail the run.
-  - The Lambda being killed at its timeout leaves `STATUS = running`. AWS retries a timed-out
-    asynchronous invocation up to twice by default; the retry resumes the run, skipping the traces
-    already graded. Callers treat `running` at their deadline as a failure.
+  - A judge error is stored on its metric (§Evaluator) and doesn't stop the trace or the run.
+  - Any other error while grading one trace (a DynamoDB error, an unexpected exception) is caught: that
+    trace's row becomes `failed` with the error, and grading moves on to the next trace.
+  - An error before any trace is graded (the fetch fails) marks every `grading` row of the session
+    `failed` with that error.
+  - Nothing is re-raised; the next `/eval` retries the `failed` rows.
+  - What can't be caught: the Lambda killed at its timeout or out of memory, or the `failed` write itself
+    failing. Those rows stay `grading`, and the next `/eval` queues them again.
+  - AWS's automatic retry of failed asynchronous invocations is turned off (§Deployment), so recovery has
+    one rule: the next `/eval`. A retry would also overlap with that `/eval` and pay for the judges twice.
+    A user who calls `/eval` by hand sees a killed grading as `grading` in `/check` until they call
+    `/eval` again; the README says so.
 
 ### Simulated traffic: `TrafficSimulator`
 
@@ -577,15 +673,16 @@ graph LR
   sibling examples pin).
   - `execution_mode = "rest_sync"`.
   - `gateway_endpoints = [{ path = "eval", method = "POST" }, { path = "check", method = "GET" }]`.
-  - `request_handler`: `package_type = "Image"`, `timeout = 300`, `memory_size = 1024` (the defaults,
-    45 s and 128 MB, are too small for the judges).
+  - `request_handler`: `package_type = "Image"`, `timeout = 600` (10 minutes), `memory_size = 1024`
+    (the defaults, 45 s and 128 MB, are too small for the judges).
   - Environment: `AK_TRACE__ENABLED=true`, `AK_TRACE__TYPE=langfuse`, the three `LANGFUSE_*` variables,
     `OPENAI_API_KEY`, `AK_TEST__LLM__PROVIDER=openai`, `AK_TEST__LLM__MODEL=gpt-4.1-mini`,
     `OPIK_TRACK_DISABLE=true`, `RESULTS_TABLE`. Plain environment variables, as the sibling examples use.
 - `aws_dynamodb_table`: the results table (§Table), created by the example, not by the AK module.
 - `aws_iam_role_policy` on `module.serverless_agents.request_handler_lambda_role_name`, granting
-  `dynamodb:GetItem`, `PutItem`, `BatchGetItem`, `BatchWriteItem`, `Query` on the table and
-  `<table arn>/index/*`.
+  `dynamodb:PutItem`, `UpdateItem`, `BatchGetItem` and `Query` on the table and `<table arn>/index/*`.
+- `aws_lambda_function_event_invoke_config` on the request handler with `maximum_retry_attempts = 0`:
+  no automatic retry of the grading invocation (§`grade`).
 - The self-invoke needs no extra permission: the module already attaches the AWS-managed `AWSLambdaRole`
   policy (`lambda:InvokeFunction` on `*`) to the request handler's role
   (`ak-deployment/ak-aws/serverless/modules/request-handler/main.tf:17-20`).
@@ -606,20 +703,23 @@ graph LR
 
 - **Unit tests** (`tests/test_evaluator.py`, no cloud access):
   - `TraceCase.from_spans` on hand-built `FetchedSpan`s: root, tool calls, failed tools, usage totals,
-    unfinished traces, no root span.
+    unfinished traces, no root span, `missing_parents`, `ready` on each side of the settle time.
   - `OpikTraceEvaluator` with the Opik metrics monkeypatched: case mapping, the tool-correctness skip,
     the hallucination pass rule, retry then error result.
-  - `EvaluationStore` on `moto`: item shapes, the `TRACE`-last order, `evaluated()`, `graded()`, the
-    `STATUS` item, gzip, the whole-item size budget (many long multi-byte tool calls), `Decimal`s.
-  - `TraceEvaluationJob` with fetch, evaluator and store faked: a trace with no root span is not
-    counted, already-graded traces are skipped, unfinished traces are counted and not graded, `done` with
-    its counts, `failed` on a fetch error and on a full fetch result.
+  - `EvaluationStore` on `moto`: the row shape per `progress` and the metric columns, `mark` never
+    overwriting a `graded` row, `progress()`, `session()`, gzip, the whole-item size budget (many long
+    multi-byte tool calls), `Decimal`s.
+  - `TraceEvaluationJob` with fetch, evaluator and store faked: every row of the `prepare` table (including
+    a leftover `grading` row), no row for a trace with no root span, `grade` grading only the payload's
+    traces that are still `grading`, an error on a full fetch result, and `grade` marking rows `failed` on
+    errors.
   - `TrafficSimulator` over `httpx.MockTransport`: every request carries the given session id, or one
     generated id when none is given.
-  - Routes and entry point, with a fake Lambda client: `/eval` writes `running`, invokes with
-    `InvocationType="Event"` and returns `202`; `400`s on bad input; `/check` for `not_started`,
-    `running`, `failed`, `done` with `graded < expected` and `done` with `graded == expected`; `handler`
-    sends the `evaluate` action to the job and every other event to `Lambda.handler`.
+  - Routes and entry point, with a fake Lambda client: `/eval` runs `prepare`, invokes with
+    `InvocationType="Event"` only when a trace is `grading`, and returns `202` with the counts; `500` with
+    the error when `prepare` raises; `400`s on bad input; `/check` counts for a session with no rows and
+    a mixed one, and `complete` only at `graded >= expected`; `handler` sends the `grade` action to the
+    job and every other event to `Lambda.handler`.
 - **Weekly integration test** (`lambda_test.py`), added to the weekly tier of
   `.github/integration-test-config.yaml`. Only HTTP calls; it needs no AWS credentials at test time.
   - Session-scoped fixtures read the chat URL from `os.getenv("AK_TEST_ENDPOINT")`, as
@@ -627,22 +727,23 @@ graph LR
     - a `TrafficSimulator(chat_url, session_id=str(uuid4()))`;
     - an `EvaluationClient(chat_url)`, a test helper class in `lambda_test.py` (like `APITestClient` in
       `openai-auth/lambda_test.py:15`). It derives the `/eval` and `/check` URLs by replacing the trailing
-      `/chat`, and has `evaluate(session_id)` (`POST /eval`, expects `202`) and
-      `wait(session_id, expected, timeout=360)` (polls `GET /check` every 10 s until `status` is `done`
-      or `failed`, or the timeout passes; returns the last response).
+      `/chat`, and has `evaluate(session_id)` (`POST /eval`; returns the status code and body) and
+      `wait(session_id, expected, timeout=180)` (polls `GET /check` every 10 s until `complete` is true
+      or no row is `grading`, or the timeout passes; returns the last response).
   1. `simulator.send()`: the 3 questions to the chat URL, all under `simulator.session_id`.
-  2. Wait 60 s for Langfuse ingestion (§Open questions).
+  2. Wait 150 s: the job's 2-minute `SETTLE` plus 30 s (§Evaluation run).
   3. Up to 3 grading rounds:
-     1. `client.evaluate(simulator.session_id)`: `/eval` returns `202`.
-     2. `client.wait(simulator.session_id, expected=3)`, polling for 6 minutes, longer than the 300 s
-        Lambda timeout.
-     3. `complete` → stop. `done` with `graded < 3` → wait 30 s and start the next round: a trace that
-        reached Langfuse late is graded then, and the ones already graded are skipped. `failed` or
-        `running` → stop.
-  4. Pass only when `complete` is `true`. Otherwise fail with the reason:
-     - `failed` → the run's `error`;
-     - `done` but `graded < 3` after the last round → "N of 3 requests graded";
-     - still `running` at the deadline → timed out.
+     1. `client.evaluate(simulator.session_id)`. Anything but `202` → fail with the response's `error`.
+     2. `client.wait(simulator.session_id, expected=3)`, polling for up to 3 minutes. Grading 3 traces
+        (12 judge calls) takes well under that; a `grading` row still there after 3 minutes is treated
+        as stuck, even though the Lambda timeout (10 minutes) would let it go on.
+     3. `complete` → stop. Otherwise wait 30 s and start the next round, whose `/eval` queues every
+        trace that isn't `graded` yet: one that reached Langfuse late, was `pending` or `failed`, or was
+        left `grading` by a killed invocation. `graded` ones are left alone.
+  4. Pass only when `complete` is `true`. Otherwise, after the last round, fail with
+     "G of 3 requests graded (P pending, F failed, R still grading, U unfinished)", plus the `errors`.
+  - The round count, the waits and the poll timeout are named constants at the top of `lambda_test.py`
+    (`INITIAL_WAIT`, `ROUNDS`, `ROUND_INTERVAL`, `POLL_INTERVAL`, `POLL_TIMEOUT`).
   - `AK_TEST_ENDPOINT` is set by `.github/scripts/run_single_test.py:350-370` from the
     `agent_invoke_url` Terraform output.
 - Weekly pipeline wiring: `integration-test-weekly.yaml` passes `TF_VAR_langfuse_public_key`,
@@ -709,17 +810,12 @@ Resolved:
   (`ak-deployment/ak-aws/serverless/state.tf:335`, used by `slack-openai` and `schedule-openai`) and an
   inline role policy (`state.tf:434`, used by `schedule-openai`). The test step makes only HTTP calls,
   so it needs no AWS permissions.
+- **When is a trace complete (every span readable)?** No provider says. The job grades a trace only when
+  its root span finished at least 2 minutes ago and every span's parent is present; otherwise it is
+  `pending` and a later `/eval` grades it (§Evaluation run). Remaining risk: a leaf span arriving more
+  than 2 minutes late, which affects only that trace's scores.
 
 Open:
-- **When is a trace complete (every span readable)?** The test waits a fixed 60 s after the last reply,
-  then grades what Langfuse returns.
-  - A trace that isn't readable yet is caught: `/check` reports `graded < expected`, and the test's next
-    grading round picks it up (§Testing).
-  - Not caught: a trace whose root span is readable but some child spans aren't yet. It is graded on
-    partial data and still counts as graded. Langfuse doesn't document that it makes spans readable in the
-    order they arrive, so a visible root span doesn't prove its children are visible. This affects only the
-    scores, which the test doesn't assert. Candidate rule: the root span is present and the trace's span
-    count is the same on two fetches in a row.
 - **One request = one trace beyond this example:**
   - Langfuse, Logfire and CloudWatch: every framework runner wraps the whole run in one AK span (e.g.
     `trace/langfuse/adk.py:36`, and the same in all 15 runners), so every inner span nests under one

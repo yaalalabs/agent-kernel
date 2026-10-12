@@ -161,22 +161,23 @@ All files are under `examples/aws-serverless/langfuse-trace-evaluation/` unless 
 
 ### Iteration 10: Phase 3: the DynamoDB store
 
-- **Goal:** results and traces are written idempotently, `TRACE` last, within the whole-item size budget;
-  the session's status and graded count can be read back.
+- **Goal:** each found trace has one row with its `progress`; a graded trace's row gets a column per
+  metric in one atomic write, within the whole-item size budget; a session's rows can be counted by
+  `progress`.
 - **Files:** `evaluator/store.py`, `tests/test_evaluator.py`.
 - **Steps:**
-  1. `RunStatus` and `EvaluationStore`, including `graded`, `set_status` and `status` (spec
-     §`evaluator/store.py`).
+  1. `Progress`, `TraceProgress` and `EvaluationStore`, including `progress`, `mark`, `save` and
+     `counts` (spec §`evaluator/store.py`).
   2. `TestEvaluationStore` on `moto`, with the table schema from spec §Deployment.
 - **Verify:** `uv run pytest tests/ -k EvaluationStore`
 
 ### Iteration 11: The evaluation run and the API
 
-- **Goal:** `/eval` starts a run asynchronously, the run grades one session and records its status, and
-  `/check` reports it.
+- **Goal:** `/eval` sets every found trace's `progress` and starts grading the ready ones asynchronously,
+  `grade` judges them, and `/check` counts the session's traces by `progress`.
 - **Files:** `evaluator/{job,api}.py`, `lambda.py`, `tests/test_evaluator.py`.
 - **Steps:**
-  1. `RunSummary` and `TraceEvaluationJob` (spec §`evaluator/job.py`).
+  1. `PrepareSummary`, `GradeSummary` and `TraceEvaluationJob` (spec §`evaluator/job.py`).
   2. `EvaluationAPI` with `start`, `check` and `handler` (spec §`evaluator/api.py`).
   3. `lambda.py`: register `api.start` / `api.check` and set `handler = api.handler` (spec §The agent and
      the wiring).
@@ -195,10 +196,11 @@ All files are under `examples/aws-serverless/langfuse-trace-evaluation/` unless 
   3. `deploy.sh` also copies `evaluator/` into the package.
 - **Verify:**
   - `terraform validate`; `./deploy.sh local`.
-  - `uv run python simulate_traffic.py`, wait a minute, then `curl -X POST .../eval` with the printed session
-    id → `202`; poll `curl ".../check?session_id=...&expected=3"` until `status` is `done` and `complete` is
-    `true`; the `TRACE`, `EVAL#…` and `STATUS` items are in the table.
-  - `/check` for an unknown session id → `not_started`.
+  - `uv run python simulate_traffic.py`, wait 2.5 minutes (the job's settle time), then
+    `curl -X POST .../eval` with the printed session id → `202` with `grading: 3`; poll
+    `curl ".../check?session_id=...&expected=3"` until `complete` is `true`; the table holds 3 `graded`
+    rows with their metric columns.
+  - `/check` for an unknown session id → every count `0`, `complete` false.
 
 ### Iteration 13: Weekly integration test and CI wiring
 
