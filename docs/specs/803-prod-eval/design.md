@@ -1,13 +1,13 @@
 # #803: Agent evaluation on production traffic
 
-Evaluates an agent on its real production traffic in three phases: **fetch traces → evaluate each trace →
-store the results**. Phase 1 is an Agent Kernel core capability: the configured tracer reads its spans back
-from the provider's cloud (Langfuse, Logfire, Traceloop, AWS CloudWatch) through one provider-neutral
-call, `Trace.get().fetch(...)`. Phases 2 and 3 are **not** AK core: they are user code, shown in one AWS
-example. One AK serverless Lambda serves the agent (`/chat`) and two custom routes: `POST /eval` grades
-every trace of a session with an Opik-based `AKEvaluator` subclass and writes the results to the example's
-own DynamoDB table, and `GET /check` reports whether every request of that session has been graded. The
-weekly integration test drives the whole loop over HTTP.
+Evaluates an agent on its real production traffic in three phases: **fetch spans → group them into traces
+and evaluate each trace → store the results**. Phase 1 is an Agent Kernel core capability: the configured
+tracer reads its spans back from the provider's cloud (Langfuse, Logfire, Traceloop, AWS CloudWatch) through
+one provider-neutral call, `Trace.get().fetch(...)`. Phases 2 and 3 are **not** AK core: they are user code,
+shown in one AWS example. One AK serverless Lambda serves the agent (`/chat`) and two custom routes:
+`POST /eval` grades every trace of a session with an Opik-based `AKEvaluator` subclass and writes the results
+to the example's own DynamoDB table, and `GET /check` reports whether every request of that session has been
+graded. The weekly integration test drives the whole loop over HTTP.
 
 | Phase | What | Where it lives |
 |---|---|---|
@@ -80,7 +80,7 @@ The example is `examples/aws-serverless/langfuse-trace-evaluation/`.
   Without a flush, an agent on Lambda can hold its spans until its next invocation or lose them when the
   sandbox is recycled, so the evaluator would see no traces. Phase 1 fixes this in core.
 
-## Phase 1: Fetch traces (Agent Kernel core)
+## Phase 1: Fetch spans (Agent Kernel core)
 
 ### Public API
 
@@ -348,7 +348,7 @@ graph LR
 
 ### Docs
 
-- A "Fetching Traces Back" section in `docs/docs/advanced/traceability.md` covering:
+- A "Fetching Spans Back" section in `docs/docs/advanced/traceability.md` covering:
   - the filters
   - `usage`, how to total it over a trace, and which providers report cost
   - credentials per provider
@@ -392,8 +392,9 @@ graph LR
   - `agents`: the names of the `agent` spans (the triage agent and any sub-agent it handed off to).
   - `usage`: the sum of every span's `usage` (input, output, total tokens; cost when Langfuse priced it).
   - `latency_ms`: root end − root start.
-  - `complete`: the root has an `end_time` and an output. Incomplete cases are not evaluated; the run
-    reports them in its status (§Evaluation run).
+  - `finished`: the root span has an `end_time` and an output, so the run itself finished. This does not
+    prove every span of the trace is readable yet (§Open questions). Unfinished cases are not evaluated;
+    the run reports them in its status (§Evaluation run).
 - `transcript()`: one text block with the request, each tool call (name, arguments, result) and the final
   answer. The agent judges read it.
 
@@ -441,7 +442,7 @@ graph LR
     `evaluated_at`.
   - `trace_id = "#run#<session_id>"`, `sk = "STATUS"`: the evaluation run's status for one session
     (§Evaluation run). `status` (`running` / `done` / `failed`), `started_at`, `finished_at`, the run's
-    counts (requests found, graded, incomplete, metric errors) and `error` when it failed.
+    counts (requests found, graded, unfinished, metric errors) and `error` when it failed.
 - Size: an item is limited to 400 KB, and the limit is enforced on the whole serialised item, not
   field by field.
   - `input`, `output` and each tool call's input/output are cut to 4,096 characters each. At most 25 tool
@@ -527,13 +528,13 @@ graph LR
   - A full result (5,000 spans) fails the run: one session in this example never comes close, and
     silently grading a truncated session would be worse.
 - Spans are grouped by `trace_id`. Each trace with a parentless root span is one request (§Trace case).
-  A trace with no root is logged and skipped, and not counted as a request.
+  A trace with no root span is logged and skipped, and not counted as a request.
 - Traces that already have a `TRACE` item are skipped (`EvaluationStore.evaluated`), so calling `/eval`
   twice for a session doesn't pay for the judges twice.
-- Incomplete traces are counted and not graded.
+- Unfinished traces (root span without end time or output) are counted and not graded.
 - Every other trace is graded with every metric and saved (§Writes), oldest first.
 - Ends with `STATUS = done` and the run's counts (requests found, graded, skipped as already graded,
-  incomplete, metric errors), which are also logged.
+  unfinished, metric errors), which are also logged.
 - Failure handling:
   - Any exception → `STATUS = failed` with the error, logged, not re-raised, so AWS never retries a run
     that has already reported its failure.
@@ -605,14 +606,14 @@ graph LR
 
 - **Unit tests** (`tests/test_evaluator.py`, no cloud access):
   - `TraceCase.from_spans` on hand-built `FetchedSpan`s: root, tool calls, failed tools, usage totals,
-    incomplete traces, no root.
+    unfinished traces, no root span.
   - `OpikTraceEvaluator` with the Opik metrics monkeypatched: case mapping, the tool-correctness skip,
     the hallucination pass rule, retry then error result.
   - `EvaluationStore` on `moto`: item shapes, the `TRACE`-last order, `evaluated()`, `graded()`, the
     `STATUS` item, gzip, the whole-item size budget (many long multi-byte tool calls), `Decimal`s.
-  - `TraceEvaluationJob` with fetch, evaluator and store faked: a trace with no root is not counted,
-    already-graded traces are skipped, incomplete traces are counted and not graded, `done` with its
-    counts, `failed` on a fetch error and on a full fetch result.
+  - `TraceEvaluationJob` with fetch, evaluator and store faked: a trace with no root span is not
+    counted, already-graded traces are skipped, unfinished traces are counted and not graded, `done` with
+    its counts, `failed` on a fetch error and on a full fetch result.
   - `TrafficSimulator` over `httpx.MockTransport`: every request carries the given session id, or one
     generated id when none is given.
   - Routes and entry point, with a fake Lambda client: `/eval` writes `running`, invokes with
@@ -653,7 +654,7 @@ graph LR
 - The example's `README.md`: architecture, the routes and the evaluation run, the table schema, how to
   change metrics or the store, deploy, run `simulate_traffic.py`, and test.
 - `docs/docs/examples/overview.md`: list the example.
-- `docs/docs/advanced/traceability.md` §Fetching Traces Back: link to the example as the end-to-end use.
+- `docs/docs/advanced/traceability.md` §Fetching Spans Back: link to the example as the end-to-end use.
 
 ## Non-goals
 
@@ -710,19 +711,19 @@ Resolved:
   so it needs no AWS permissions.
 
 Open:
-- **When is a trace complete?** The test waits a fixed 60 s after the last reply, then grades what
-  Langfuse returns.
+- **When is a trace complete (every span readable)?** The test waits a fixed 60 s after the last reply,
+  then grades what Langfuse returns.
   - A trace that isn't readable yet is caught: `/check` reports `graded < expected`, and the test's next
     grading round picks it up (§Testing).
-  - Not caught: a trace whose root is readable but some child spans aren't yet. It is graded on partial
-    data and still counts as graded. Langfuse doesn't document that it makes spans readable in the order
-    they arrive, so a visible root doesn't prove its children are visible. This affects only the scores,
-    which the test doesn't assert. Candidate rule: the root is present and the trace's span count is the
-    same on two fetches in a row.
+  - Not caught: a trace whose root span is readable but some child spans aren't yet. It is graded on
+    partial data and still counts as graded. Langfuse doesn't document that it makes spans readable in the
+    order they arrive, so a visible root span doesn't prove its children are visible. This affects only the
+    scores, which the test doesn't assert. Candidate rule: the root span is present and the trace's span
+    count is the same on two fetches in a row.
 - **One request = one trace beyond this example:**
   - Langfuse, Logfire and CloudWatch: every framework runner wraps the whole run in one AK span (e.g.
     `trace/langfuse/adk.py:36`, and the same in all 15 runners), so every inner span nests under one
-    root. Verified from the code; captured live only for OpenAI Agents (`research/span-formats.md` §3).
+    root span. Verified from the code; captured live only for OpenAI Agents (`research/span-formats.md` §3).
   - Thread hops: Smolagents runs through `asyncio.to_thread` (`framework/smolagents/smolagents.py:170`),
     which copies the trace context. CrewAI runs through `crew.kickoff_async`
     (`framework/crewai/crewai.py:384`); whether CrewAI's own internal threads keep the context is

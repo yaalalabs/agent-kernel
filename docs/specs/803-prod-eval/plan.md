@@ -6,7 +6,7 @@ passes, and so do the tests named in its **Verify** line.
 Phase 1 (iterations 1–7) lands first: the example in Phases 2–3 (iterations 8–14) imports `fetch` and
 `SpanUsage`, and builds against the local `ak-py` wheel until a release contains them.
 
-## Phase 1: Fetch traces (Agent Kernel core)
+## Phase 1: Fetch spans (Agent Kernel core)
 
 ### Iteration 1: Neutral model and facade
 
@@ -99,7 +99,7 @@ Phase 1 (iterations 1–7) lands first: the example in Phases 2–3 (iterations 
 ### Iteration 7: Sync docs and skills
 
 - **User docs:**
-  - `docs/docs/advanced/traceability.md`: add a "Fetching Traces Back" section between
+  - `docs/docs/advanced/traceability.md`: add a "Fetching Spans Back" section between
     "Viewing Traces in CloudWatch" (`:570`) and "Integrate with Your Own Traceability Platform" (`:576`).
     It covers the filters, `FetchedSpan` and `usage` (totalling it over a trace, which providers report
     cost), Traceloop fetching as best effort, session ids reaching every provider unscrubbed (keep personal data
@@ -115,7 +115,7 @@ Phase 1 (iterations 1–7) lands first: the example in Phases 2–3 (iterations 
     note the per-provider `fetch.py` on the four adapters.
 - **Bundled skill:**
   - `ak-py/src/agentkernel/skills/ak-add-capabilities/SKILL.md`, §Tracing (`:172-271`): add a short
-    "read traces back" note with `Trace.get().fetch(...)`, `span.usage`, `LOGFIRE_READ_TOKEN`, and the CloudWatch
+    "fetch spans back" note with `Trace.get().fetch(...)`, `span.usage`, `LOGFIRE_READ_TOKEN`, and the CloudWatch
     `logs:StartQuery` / `logs:GetQueryResults` / `logs:StopQuery` permissions.
 - **No update needed** (verified): `ak-dev-new-framework-integration` only refers to the per-framework
   `BaseTrace` methods (`:384`, `:399`, `:439-440`), which are unchanged. Config docs are unaffected, because there
@@ -224,7 +224,7 @@ All files are under `examples/aws-serverless/langfuse-trace-evaluation/` unless 
   required variables, deploy, `simulate_traffic.py` plus the `curl` calls to `/eval` and `/check`, and test.
 - **User docs:**
   - `docs/docs/examples/overview.md` §AWS Serverless Examples: list the example.
-  - `docs/docs/advanced/traceability.md` §Fetching Traces Back: one line linking the example as the
+  - `docs/docs/advanced/traceability.md` §Fetching Spans Back: one line linking the example as the
     end-to-end use of `fetch` and `usage`.
 - **Skills:**
   - Bundled `ak-py/src/agentkernel/skills/ak-add-capabilities/SKILL.md` §Tracing: point the "read traces

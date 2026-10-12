@@ -187,13 +187,13 @@ class OTelSpanClassifier:
 # trace/base.py
 class BaseTrace(ABC):
     def fetch(self, query: TraceQuery) -> list[FetchedSpan]:
-        raise NotImplementedError(f"{type(self).__name__} does not support fetching traces")
+        raise NotImplementedError(f"{type(self).__name__} does not support fetching spans")
 
 # trace/trace.py
 class Trace(BaseTrace):
     def fetch(self, query: TraceQuery | None = None, **filters) -> list[FetchedSpan]:
         if self._instance is None:
-            raise AKConfigError("cannot fetch traces: tracing is disabled (set trace.enabled: true)")
+            raise AKConfigError("cannot fetch spans: tracing is disabled (set trace.enabled: true)")
         if query is not None and filters:
             raise ValueError("pass either a TraceQuery or keyword filters, not both")
         return self._instance.fetch(query if query is not None else TraceQuery(**filters))
@@ -583,7 +583,7 @@ async def run(self, agent, session, requests):
      (`docs/docs/core-concepts/session.md:109`). Langfuse, Traceloop and CloudWatch already export it
      unscrubbed. So this change makes Logfire match them and adds no new kind of exposure. It is not
      opt-in, because a config flag for one tracer would leave the other three as they are.
-     §Fetching Traces Back says the session id reaches every tracing provider as given, and tells users
+     §Fetching Spans Back says the session id reaches every tracing provider as given, and tells users
      to keep personal data out of it (e.g. use a hash or a random id).
    - Every other scrub match is still redacted.
 2. **`pip install agentkernel[openllmetry]` / `[logfire]` now install `httpx`.** Intentional, because
@@ -609,8 +609,8 @@ async def run(self, agent, session, requests):
 
 | Situation | Surfaces as |
 |---|---|
-| `Trace.fetch` with `trace.enabled: false` | `AKConfigError("cannot fetch traces: tracing is disabled …")` |
-| Bring-your-own tracer without `fetch` | `NotImplementedError("<Class> does not support fetching traces")` |
+| `Trace.fetch` with `trace.enabled: false` | `AKConfigError("cannot fetch spans: tracing is disabled …")` |
+| Bring-your-own tracer without `fetch` | `NotImplementedError("<Class> does not support fetching spans")` |
 | Bad filter value (`limit=0`, unknown kind, unknown kwarg) | Pydantic `ValidationError` from `TraceQuery` |
 | `start >= end` | `ValueError` from `TraceQuery.window()`, raised before any network call |
 | Logfire with no read token | `AKConfigError` naming `LOGFIRE_READ_TOKEN`, raised before the SDK import |
@@ -882,7 +882,7 @@ class TraceCase(BaseModel):
     spans: list[FetchedSpan] = []             # kept for EvaluationStore's spans_gz
 
     @property
-    def complete(self) -> bool: ...           # ended_at is not None and output != ""
+    def finished(self) -> bool: ...           # ended_at is not None and output != "" (the run ended)
     @property
     def latency_ms(self) -> int | None: ...
     @classmethod
@@ -1043,7 +1043,7 @@ class EvaluationStore:
   the index never holds it.
 - `set_status`: `put_item` of `_status_key(session_id)` with `status`, `updated_at` (ISO 8601 UTC),
   `expires_at`, plus, when given, the summary's counts (`requests`, `graded`, `already_graded`,
-  `incomplete`, `no_root`, `metric_errors`) and `error` (cut with `_cut`).
+  `unfinished`, `no_root`, `metric_errors`) and `error` (cut with `_cut`).
 - `status(session_id)`: `get_item` of `_status_key(session_id)` with `ConsistentRead=True`, so `/check`
   never reads a stale status after the run's final write.
 
@@ -1053,11 +1053,11 @@ class EvaluationStore:
 class RunSummary(BaseModel):
     session_id: str
     spans_fetched: int = 0
-    requests: int = 0            # traces with a root span
+    requests: int = 0            # traces with one root span
     graded: int = 0              # graded in this run
     already_graded: int = 0      # skipped: TRACE item already present
-    incomplete: int = 0          # root without end time or output: not graded
-    no_root: int = 0             # traces with no root (or several): not requests, not graded
+    unfinished: int = 0          # root span without end time or output: not graded
+    no_root: int = 0             # traces with no root span (or several): not requests, not graded
     metric_errors: int = 0
 
 class TraceEvaluationJob:
@@ -1083,8 +1083,8 @@ class TraceEvaluationJob:
      1. `spans = _fetch(session_id)`.
      2. `cases = _cases(spans, summary)`: group by `trace_id`; `TraceCase.from_spans`; a `None` →
         `no_root`; otherwise `requests += 1`; oldest first by `started_at`.
-     3. Incomplete cases → `incomplete`, not graded.
-     4. Drop complete cases in `store.evaluated(...)` → `already_graded`.
+     3. Unfinished cases → `unfinished`, not graded.
+     4. Drop finished cases in `store.evaluated(...)` → `already_graded`.
      5. For each remaining case: `results = _evaluate(case)`; `store.save(case, results, clock())`;
         `graded += 1`; `metric_errors += ` the results with `score is None`.
      6. `store.set_status(session_id, DONE, summary)`; log the summary; return it.
@@ -1303,8 +1303,8 @@ dev = ["agentkernel[test]>=0.9.4", "httpx>=0.27.0", "moto[dynamodb]>=5.0.0", "bl
 | Langfuse keys missing or wrong | `LangFuse.init()` raises in the run (`trace/langfuse/langfuse.py:25-28`) → `failed`, error recorded |
 | Langfuse fetch fails (HTTP error, rate limit) | Propagates from `fetch` (Phase 1 does no retries) → `failed` |
 | The session has `FETCH_LIMIT` spans or more | `RuntimeError` from `_fetch` → `failed` |
-| A trace has no root, or several | `no_root`: logged, not a request, never written |
-| A root without end time or output | `incomplete`: counted, not written; `/check` then reports `graded < expected` |
+| A trace has no root span, or several | `no_root`: logged, not a request, never written |
+| A root span without end time or output | `unfinished`: counted, not written; `/check` then reports `graded < expected` |
 | A judge call fails twice | That metric's item is stored with `score`/`passed` omitted and the error in `reason`; `metric_errors` counts it; the trace is still committed |
 | DynamoDB error during the run (throttling after boto3's retries, access denied, unprocessed keys after 3 tries) | `failed`. Traces committed before it stay committed and are skipped by the next run |
 | The `failed` status write itself fails | Propagates; the status stays `running`; the caller's poll deadline reports a timeout |
@@ -1327,7 +1327,7 @@ dev = ["agentkernel[test]>=0.9.4", "httpx>=0.27.0", "moto[dynamodb]>=5.0.0", "bl
   - root input/output, JSON-string unwrapping, tool calls in order, `failed` from `raw.level`, agents,
     summed usage (and `None` when no span has usage), latency;
   - the tool fallback through `OTelSpanClassifier` for a span typed `span`;
-  - no root and two roots → `None`; root without `end_time` → not `complete`;
+  - no root span and two root spans → `None`; root span without `end_time` → not `finished`;
   - the transcript with and without tool calls.
 - `TestOpikTraceEvaluator` (each Opik class monkeypatched in `evaluator.opik_evaluator` with a fake whose
   `score` records its kwargs and returns a `ScoreResult`):
@@ -1355,8 +1355,8 @@ dev = ["agentkernel[test]>=0.9.4", "httpx>=0.27.0", "moto[dynamodb]>=5.0.0", "bl
   - the fetch call (`session_id`, `last=24h`, `limit=5000`);
   - status `running` while the run is in progress (checked from a fake evaluator), then `done` with the
     summary's counts;
-  - a trace with no root → `no_root`, not counted in `requests`, nothing written;
-  - an incomplete trace → `incomplete`, not written;
+  - a trace with no root span → `no_root`, not counted in `requests`, nothing written;
+  - an unfinished trace → `unfinished`, not written;
   - an already-graded trace → `already_graded`, its evaluator not called;
   - `metric_errors` counts `score=None` results;
   - a fetch error, a `FETCH_LIMIT`-sized result and a store error each → `failed` with the error, not
