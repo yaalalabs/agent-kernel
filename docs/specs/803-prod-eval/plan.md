@@ -130,26 +130,23 @@ All files are under `examples/aws-serverless/langfuse-trace-evaluation/` unless 
 
 - [ ] Create a Langfuse Cloud project for CI; add repository secrets `LANGFUSE_PUBLIC_KEY`,
       `LANGFUSE_SECRET_KEY` and variable `LANGFUSE_BASE_URL`.
-- [ ] Extend the weekly CI AWS role (`vars.AWS_ROLE_NAME`, managed outside this repo) with the
-      permissions in design.md §Open questions → Phases 2 and 3.
 - [ ] Run the Phase 1 live checks against real accounts (iteration 6).
 
-### Iteration 8: Example scaffold and the agent
+### Iteration 8: Example scaffold, the agent and the traffic
 
 - **Goal:** the agent deploys on its own, answers, and its traces appear in Langfuse.
-- **Files:** `pyproject.toml`, `uv.lock`, `config.yaml`, `test-config.yaml`, `lambda.py`, `build.sh`,
-  `deploy/{main.tf,variables.tf,outputs.tf,providers.tf,backend.tf,terraform.tfvars,deploy.sh,Dockerfile.agent}`.
+- **Files:** `pyproject.toml`, `uv.lock`, `config.yaml`, `lambda.py`, `simulate_traffic.py`, `build.sh`,
+  `deploy/{main.tf,variables.tf,outputs.tf,providers.tf,backend.tf,terraform.tfvars,deploy.sh,Dockerfile}`.
 - **Steps:**
-  1. `pyproject.toml` with the `agent` and `evaluator` extras and the `dev` group (spec §`pyproject.toml`);
-     `uv lock`.
-  2. The agent, with `handler = Lambda.handler` (spec §The agent).
-  3. `simulate_traffic.py` with `TrafficSimulator.send()` only (spec §`simulate_traffic.py`).
-  4. `main.tf` with `module "serverless_agents"` only, plus variables, outputs (`agent_invoke_url`),
-     providers and backend (spec §Deployment).
-  5. `deploy.sh` building `dist_agent`.
-- **Verify:** `cd deploy && ./deploy.sh local`; `uv run python simulate_traffic.py --no-evaluate`; the 5
-  traces (root, agents, tool, generations) show in the Langfuse UI within a minute, without waiting for
-  another request (the Lambda flush); `terraform destroy`.
+  1. `pyproject.toml` with the runtime dependencies and the `dev` group (spec §`pyproject.toml`); `uv lock`.
+  2. `lambda.py` with the agent and `handler = Lambda.handler` for now (spec §The agent and the wiring).
+  3. `TrafficSimulator` and its CLI (spec §`simulate_traffic.py`).
+  4. `main.tf` with `module "serverless_agents"` (no `gateway_endpoints` yet), plus variables, outputs
+     (`agent_invoke_url`), providers and backend (spec §Deployment).
+  5. `deploy.sh` building `dist`.
+- **Verify:** `cd deploy && ./deploy.sh local`; `uv run python simulate_traffic.py`; the 3 traces (root,
+  agents, tool, generations) show in the Langfuse UI under the printed session id within a minute, without
+  waiting for another request (the Lambda flush); `terraform destroy`.
 
 ### Iteration 9: Phase 2: trace cases and the Opik evaluator
 
@@ -164,39 +161,44 @@ All files are under `examples/aws-serverless/langfuse-trace-evaluation/` unless 
 
 ### Iteration 10: Phase 3: the DynamoDB store
 
-- **Goal:** results and traces are written idempotently, `TRACE` last, within the whole-item size budget.
+- **Goal:** results and traces are written idempotently, `TRACE` last, within the whole-item size budget;
+  the session's status and graded count can be read back.
 - **Files:** `evaluator/store.py`, `tests/test_evaluator.py`.
 - **Steps:**
-  1. `EvaluationStore` (spec §`evaluator/store.py`).
+  1. `RunStatus` and `EvaluationStore`, including `graded`, `set_status` and `status` (spec
+     §`evaluator/store.py`).
   2. `TestEvaluationStore` on `moto`, with the table schema from spec §Deployment.
 - **Verify:** `uv run pytest tests/ -k EvaluationStore`
 
-### Iteration 11: The job and the Lambda entry point
+### Iteration 11: The evaluation run and the API
 
-- **Goal:** one `run(event)` fetches, owns, skips, evaluates, stores and moves the watermark.
-- **Files:** `evaluator/{job,handler}.py`, `tests/test_evaluator.py`.
+- **Goal:** `/eval` starts a run asynchronously, the run grades one session and records its status, and
+  `/check` reports it.
+- **Files:** `evaluator/{job,api}.py`, `lambda.py`, `tests/test_evaluator.py`.
 - **Steps:**
-  1. `EvaluationWindow`, `RunSummary`, `TraceEvaluationJob`, including the backward-paging `_fetch`
-     (spec §`evaluator/job.py`).
-  2. `handler` with the per-sandbox job holder.
-  3. `TestTraceEvaluationJob`.
-  4. `TrafficSimulator.evaluate()` and `report()`, the CLI, and `TestTrafficSimulator`.
+  1. `RunSummary` and `TraceEvaluationJob` (spec §`evaluator/job.py`).
+  2. `EvaluationAPI` with `start`, `check` and `handler` (spec §`evaluator/api.py`).
+  3. `lambda.py`: register `api.start` / `api.check` and set `handler = api.handler` (spec §The agent and
+     the wiring).
+  4. `TestTraceEvaluationJob`, `TestEvaluationAPI`, `TestTrafficSimulator`.
 - **Verify:** `uv run pytest -o addopts="" tests/test_evaluator.py`
 
-### Iteration 12: Evaluator infrastructure
+### Iteration 12: Evaluation infrastructure
 
-- **Goal:** `./deploy.sh local` deploys the agent and the scheduled evaluator together.
-- **Files:** `deploy/{main.tf,variables.tf,outputs.tf,providers.tf,deploy.sh,Dockerfile.evaluator}`.
+- **Goal:** `./deploy.sh local` deploys the agent with `/eval` and `/check`, the results table and the
+  Lambda's DynamoDB permissions.
+- **Files:** `deploy/{main.tf,outputs.tf,deploy.sh}`.
 - **Steps:**
-  1. `module "evaluator_image"`, `module "evaluator"`, `aws_dynamodb_table.results`, the EventBridge
-     rule and target (spec §Deployment).
-  2. The new variables and the `evaluator_function_name` / `results_table_name` outputs.
-  3. `deploy.sh` also builds `dist_evaluator`.
+  1. `gateway_endpoints`, the request handler's `timeout`, `memory_size` and evaluation environment
+     variables on `module "serverless_agents"` (spec §Deployment).
+  2. `aws_dynamodb_table.results`, `aws_iam_role_policy.evaluation` and the `results_table_name` output.
+  3. `deploy.sh` also copies `evaluator/` into the package.
 - **Verify:**
   - `terraform validate`; `./deploy.sh local`.
-  - `uv run python simulate_traffic.py`: 5 replies, then a table of 5 traces with their scores; the
-    `TRACE` and `EVAL#…` items are in the table.
-  - After 30 minutes, the scheduled run's log shows a summary and the `#job` watermark exists.
+  - `uv run python simulate_traffic.py`, wait a minute, then `curl -X POST .../eval` with the printed session
+    id → `202`; poll `curl ".../check?session_id=...&expected=3"` until `status` is `done` and `complete` is
+    `true`; the `TRACE`, `EVAL#…` and `STATUS` items are in the table.
+  - `/check` for an unknown session id → `not_started`.
 
 ### Iteration 13: Weekly integration test and CI wiring
 
@@ -204,10 +206,11 @@ All files are under `examples/aws-serverless/langfuse-trace-evaluation/` unless 
 - **Files:** `lambda_test.py`, `.github/integration-test-config.yaml`,
   `.github/workflows/integration-test-weekly.yaml`.
 - **Steps:**
-  1. `lambda_test.py`, driving `TrafficSimulator` (spec §Phases 2–3 testing → weekly integration test).
+  1. `lambda_test.py` with the `EvaluationClient` helper and `test_every_request_is_graded`, including the
+     grading rounds (spec §Phases 2–3 testing → weekly integration test).
   2. The weekly config entry and the three `TF_VAR_langfuse_*` env entries on Deploy, Test and Destroy
      (spec §Consumer changes).
-  3. Needs the owner tasks above (CI Langfuse project, role permissions).
+  3. Needs the owner task above (CI Langfuse project and secrets).
 - **Verify:**
   - `python3 .github/scripts/validate_integration_config.py`.
   - Locally: `AK_TEST_ENDPOINT=... uv run pytest lambda_test.py` against iteration 12's deployment.
@@ -216,9 +219,9 @@ All files are under `examples/aws-serverless/langfuse-trace-evaluation/` unless 
 
 ### Iteration 14: Docs and skills for Phases 2–3
 
-- **Example docs:** `README.md`: architecture (agent → Langfuse → scheduled evaluator → DynamoDB), the
-  job flow and its fault handling, the metrics, the table schema and the two indexes, how to swap
-  metrics or the store, required variables, deploy and test.
+- **Example docs:** `README.md`: architecture (agent → Langfuse → `/eval` → DynamoDB → `/check`), the
+  evaluation run and its fault handling, the metrics, the table schema, how to swap metrics or the store,
+  required variables, deploy, `simulate_traffic.py` plus the `curl` calls to `/eval` and `/check`, and test.
 - **User docs:**
   - `docs/docs/examples/overview.md` §AWS Serverless Examples: list the example.
   - `docs/docs/advanced/traceability.md` §Fetching Traces Back: one line linking the example as the
@@ -228,4 +231,3 @@ All files are under `examples/aws-serverless/langfuse-trace-evaluation/` unless 
     back" note (iteration 7) at the example.
   - Dev skills: none expected; confirm with `ak-dev-sync-skills-from-branch`. Run
     `ak-dev-sync-docs-from-branch` too.
-

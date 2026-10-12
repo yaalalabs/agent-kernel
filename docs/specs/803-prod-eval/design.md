@@ -4,15 +4,17 @@ Evaluates an agent on its real production traffic in three phases: **fetch trace
 store the results**. Phase 1 is an Agent Kernel core capability: the configured tracer reads its spans back
 from the provider's cloud (Langfuse, Logfire, Traceloop, AWS CloudWatch) through one provider-neutral
 call, `Trace.get().fetch(...)`. Phases 2 and 3 are **not** AK core: they are user code, shown in one AWS
-example where a scheduled Lambda (every 30 minutes) fetches the last window's traces from Langfuse, scores
-each one with an Opik-based `AKEvaluator` subclass, and writes the trace and its scores to DynamoDB.
+example. One AK serverless Lambda serves the agent (`/chat`) and two custom routes: `POST /eval` grades
+every trace of a session with an Opik-based `AKEvaluator` subclass and writes the results to the example's
+own DynamoDB table, and `GET /check` reports whether every request of that session has been graded. The
+weekly integration test drives the whole loop over HTTP.
 
 | Phase | What | Where it lives |
 |---|---|---|
 | 1. Fetch | `Trace.get().fetch(...)`, `TraceQuery`, `FetchedSpan`, one fetcher per tracer | `ak-py/src/agentkernel/trace/` |
 | 2. Evaluate | `TraceCase` built from a trace's spans; `OpikTraceEvaluator(AKEvaluator)` | example `evaluator/` |
 | 3. Store | `EvaluationStore` over one DynamoDB table | example `evaluator/` |
-| 2–3 runtime | `TraceEvaluationJob` Lambda, EventBridge schedule, DynamoDB table, the AK agent it evaluates | example `deploy/main.tf` |
+| 2–3 runtime | one AK serverless Lambda (`/chat`, `/eval`, `/check`), the DynamoDB table, its IAM policy | example `lambda.py`, `deploy/main.tf` |
 
 The example is `examples/aws-serverless/langfuse-trace-evaluation/`.
 
@@ -56,12 +58,21 @@ The example is `examples/aws-serverless/langfuse-trace-evaluation/`.
   expected answer and raises `AKMissingInput` without one (`test/core/evaluator/deepeval.py:44,55`,
   `opik.py:48,61`, `jev.py:62`). Production traffic has no expected answer. The `AKEvaluator` ABC itself
   (`test/core/evaluator/base.py:49-66`) is generic, so a reference-free subclass fits it.
-- The AK Terraform modules can't run a custom job on a schedule: the serverless module's EventBridge
-  Scheduler group exists only for AK's chat schedules (`ak-deployment/ak-aws/serverless/state.tf:403`).
-  The example's own `main.tf` owns the schedule and the evaluator Lambda.
+- The AK serverless module can host the evaluator next to the agent, with limits the example works around:
+  - It creates one request-handler Lambda and always routes the chat endpoint to it, followed by any
+    `gateway_endpoints` (`ak-deployment/ak-aws/serverless/state.tf:75-79`). Custom routes are matched
+    exactly in Python through `Lambda.register`, as `examples/aws-serverless/schedule-openai/lambda_request_handler.py:43-129` does.
+  - It takes no extra IAM policies, but outputs the request handler's role name and function ARN
+    (`ak-deployment/ak-aws/serverless/outputs.tf:5,18`), so the example attaches its own policy.
+  - Its API Gateway sets no integration timeout, so AWS's 29-second default applies. Grading a session
+    (a Langfuse fetch plus up to four LLM judges per trace) can exceed that.
+  - `Lambda.handler` hands every event to the REST router (`deployment/aws/serverless/aklambda.py:70-82`),
+    which reads `event["path"]` and raises when no route matches (`core/router/rest_lambda.py:391,411`).
+    A non-HTTP event (an asynchronous self-invoke) therefore fails unless the entry point handles it first.
+  - The request handler defaults to a 45 s timeout and 128 MB (`ak-deployment/ak-aws/serverless/variables.tf:344-345`).
 - The evaluator's dependencies don't fit a zip Lambda. Installing `agentkernel[langfuse,opik]` plus
   `boto3` for Lambda's Linux/Python 3.12 platform measured 283 MB unpacked (86 MB zipped); `litellm`,
-  which `opik` depends on, is 117 MB of it. Lambda's zip limit is 250 MB unpacked, so the evaluator ships
+  which `opik` depends on, is 117 MB of it. Lambda's zip limit is 250 MB unpacked, so the Lambda ships
   as a container image (10 GB limit), as the sibling `aws-serverless` examples already do.
 - At `develop` HEAD the AK Langfuse runners never flush the Langfuse client (`trace/langfuse/openai.py:34-40` and 5 siblings),
   unlike the CloudWatch tracer, which flushes after each run on Lambda because "a frozen Lambda sandbox
@@ -359,7 +370,16 @@ graph LR
   instead of searching spans.
 - Example: the spans of one run become
   `TraceCase(user_input="Where is order A-1001?", tool_calls=[ToolCall(name="get_order_status", input='{"order_id": "A-1001"}', output="Shipped, arriving Friday")], agents=["triage", "support"], output="Your order A-1001 has shipped and arrives Friday.", usage=SpanUsage(total_tokens=812), latency_ms=2350)`.
-- The unit of evaluation is one **trace**: one agent run, i.e. one AK request.
+- The unit of evaluation is one **trace**: every span that shares one `trace_id`.
+  - One AK request is one trace. `OpenAIRunner.run` makes one `Runner.run` call per request
+    (`framework/openai/openai.py:247`), and the Langfuse, Logfire and CloudWatch runners wrap it in one AK
+    span that every other span nests under. The captured Langfuse, Logfire and Traceloop runs each produced
+    one trace (`research/span-formats.md` §3).
+  - A request is counted by its trace's **parentless root span**, never by span name, so a stray trace
+    with no root is never counted as a request. On Traceloop the root is the framework's `Agent Workflow`,
+    since its runners add no AK span (`research/span-formats.md` §5.2).
+  - A trace says nothing about completeness: the provider can hold only part of a trace at any moment
+    (§Open questions).
 - `TraceCase.from_spans(trace_id, spans)` builds the case from that trace's `FetchedSpan`s:
   - `root`: the span with no parent (the AK wrapper `Agent Kernel <Framework>`, which holds the run's
     input and output). No root → no case.
@@ -372,8 +392,8 @@ graph LR
   - `agents`: the names of the `agent` spans (the triage agent and any sub-agent it handed off to).
   - `usage`: the sum of every span's `usage` (input, output, total tokens; cost when Langfuse priced it).
   - `latency_ms`: root end − root start.
-  - `complete`: the root has an `end_time` and an output. Incomplete cases are not evaluated (see
-    §Job flow).
+  - `complete`: the root has an `end_time` and an output. Incomplete cases are not evaluated; the run
+    reports them in its status (§Evaluation run).
 - `transcript()`: one text block with the request, each tool call (name, arguments, result) and the final
   answer. The agent judges read it.
 
@@ -387,7 +407,7 @@ graph LR
   `tool_call_count`. `user_input` and `actual` come from the trace, `context` holds the tool results (the
   field the ABC carries but no built-in reads), and `expected` stays empty.
 - Judge model: `AKTestConfig.llm` (`provider/model`), set to `openai/gpt-4.1-mini` by
-  `AK_TEST__LLM__MODEL=gpt-4.1-mini` on the evaluator Lambda. `OPIK_TRACK_DISABLE` and `track=False`, as
+  `AK_TEST__LLM__MODEL=gpt-4.1-mini` on the Lambda. `OPIK_TRACK_DISABLE` and `track=False`, as
   AK's own Opik evaluator does, so nothing is sent to Opik's cloud.
 - Each judge call is tried twice; a second failure (exception, or Opik `scoring_failed`) becomes a result
   with `score=None`, `passed=None` and the error in `reason`. One bad metric never fails the trace or the
@@ -419,7 +439,9 @@ graph LR
   - `sk = "EVAL#<metric>#<evaluator>"`: one score. The `AKEvaluationResult` fields (`metric`,
     `evaluator`, `score`, `threshold`, `passed`, `reason`, `higher_is_better`), plus `session_id` and
     `evaluated_at`.
-  - `trace_id = "#job"`, `sk = "WATERMARK"`: the job's progress marker (§Job flow).
+  - `trace_id = "#run#<session_id>"`, `sk = "STATUS"`: the evaluation run's status for one session
+    (§Evaluation run). `status` (`running` / `done` / `failed`), `started_at`, `finished_at`, the run's
+    counts (requests found, graded, incomplete, metric errors) and `error` when it failed.
 - Size: an item is limited to 400 KB, and the limit is enforced on the whole serialised item, not
   field by field.
   - `input`, `output` and each tool call's input/output are cut to 4,096 characters each. At most 25 tool
@@ -429,11 +451,9 @@ graph LR
   - The trace's full spans (`FetchedSpan` dumps, including `raw`) are stored gzip-compressed in
     `spans_gz` only when they fit in the remaining budget. Otherwise they're left out and
     `spans_truncated` is set.
-  - So no trace can make `PutItem` fail on size and block the job.
+  - So no trace can make `PutItem` fail on size and fail the run.
 - Indexes:
   - `session_id-index` (partition `session_id`, sort `sk`): every trace and score of a session.
-  - `evaluated_date-index` (partition `evaluated_date` = `YYYY-MM-DD`, sort `evaluated_at`): everything
-    evaluated on a day.
 - Numbers are written as `Decimal` (boto3 rejects `float`).
 - TTL attribute `expires_at`, set 90 days after `evaluated_at`.
 
@@ -444,85 +464,102 @@ graph LR
 - `save(case, results)`: writes the `EVAL#…` items first, then the `TRACE` item **last**. The `TRACE`
   item is the commit marker: a run that dies half-way leaves no `TRACE` item, so the next run evaluates
   the trace again and overwrites the partial `EVAL#…` items with the same keys.
-- Every write is a plain `PutItem` on a deterministic key, so re-running a window never creates duplicates.
-- `watermark()` / `set_watermark(at)`: read and write the `#job` item.
+- Every write is a plain `PutItem` on a deterministic key, so re-running a session never creates duplicates.
+- `set_status(session_id, status, **counts)` / `status(session_id)`: write and read the `STATUS` item.
+- `graded(session_id) -> int`: the number of `TRACE` items in the session (`Query` on `session_id-index`
+  with `sk = "TRACE"`).
 
-## Phases 2–3: the evaluation job, deployment and tests (example)
+## Phases 2–3: the Lambda, deployment and tests (example)
 
 ### Example layout
 
-- `examples/aws-serverless/langfuse-trace-evaluation/`, with two deployables in one `deploy/main.tf`
-  and one script, `simulate_traffic.py` (§Simulated production traffic):
-  - **The agent** (`lambda.py`, `config.yaml`): an AK agent on the AK serverless module, with
-    `trace.enabled: true` and `trace.type: langfuse`. It is what produces the traces.
-  - **The evaluator** (`evaluator/`): the user-written Lambda, deployed with
-    `terraform-aws-modules/lambda/aws`. It imports AK only for `Trace.fetch` and the `AKEvaluator` ABC.
-- Example code follows the house rule "classes, not scripts": `TraceEvaluationJob`, `TraceCase`,
-  `OpikTraceEvaluator`, `EvaluationStore`. The only module-level function is the Lambda entry point
-  `handler(event, context)`, which builds the job once per sandbox and calls `run`.
+- `examples/aws-serverless/langfuse-trace-evaluation/`, with one deployable in `deploy/main.tf` and one
+  script, `simulate_traffic.py` (§Simulated traffic):
+  - **One AK serverless Lambda** (`lambda.py`, `config.yaml`, `evaluator/`), with `trace.enabled: true`
+    and `trace.type: langfuse`. It serves three routes:
+    - `POST /api/v1/chat`: the agent under evaluation, which produces the traces.
+    - `POST /api/v1/eval`: starts grading one session's traces (§Routes).
+    - `GET /api/v1/check`: reports whether every request of that session has been graded (§Routes).
+  - It imports AK for the agent, `Trace.fetch`, `Lambda` and the `AKEvaluator` ABC.
+- No scheduled evaluation: grading runs only when `/eval` is called.
+- Example code follows the house rule "classes, not scripts": `EvaluationAPI`, `TraceEvaluationJob`,
+  `TraceCase`, `OpikTraceEvaluator`, `EvaluationStore`, `TrafficSimulator`.
+  - The routes and the entry point are `EvaluationAPI` methods. `lambda.py` registers the bound methods
+    with `Lambda.register`, whose router stores any callable
+    (`deployment/aws/serverless/core/router/rest_lambda.py:368-377`), and sets `handler = api.handler`.
 
-### Job flow: `TraceEvaluationJob.run(event)`
+### Lambda entry point
 
-- Window:
-  - `end = now − 5 minutes`, leaving time for Langfuse ingestion (~15–30 s,
-    `research/provider-read-apis.md` §1).
-  - `start = watermark − 5 minutes` of overlap. No watermark yet (first run) → `end − 30 minutes`.
-  - A watermark older than 24 hours is clamped to `end − 24 hours`, with a warning, so a long-disabled
-    schedule doesn't trigger one huge fetch.
-  - A manual event `{"start": "<ISO>", "end": "<ISO>"}` overrides the window and never reads or moves the
-    watermark (used by the integration test and for backfills).
-- Fetch: `Trace.get().fetch(start=start, end=now, limit=5000)`, paged **backwards** until the window
-  start is covered.
-  - `fetch` keeps the newest `limit` spans. So when a page is full, the job fetches again with `end` set
-    to just past that page's oldest span start. It drops span ids it has already seen, and stops on a
-    page that isn't full.
-  - If a full page brings no new spans (more than 5000 spans start at the same instant), the run logs an
-    error and fails before the watermark moves.
-  - The 24-hour catch-up clamp bounds how many pages one run can need.
-  - Spans are grouped by `trace_id`. A trace belongs to this window when its root started in
-    `[start, end)`.
-  - The fetch runs to `now`, not `end`, so the later spans of a trace that started before `end` are
-    included without a second `fetch(trace_ids=...)` call. This replaces the two-step "agent spans, then
-    `fetch(trace_ids=...)`" flow agreed earlier: it gives the same traces with fewer calls.
-- Skip traces that already have a `TRACE` item.
-- Evaluate oldest first, at most `MAX_TRACES_PER_RUN` (default 50) traces per run, then save each one
-  (§Writes).
-- Advance the watermark only to what is safe. The new watermark is the earliest of:
-  - `end`;
-  - the root start of the oldest trace left out by the per-run cap;
-  - the root start of the oldest incomplete trace (no root end or output yet) that started less than one
-    hour before `end`. An older one is treated as abandoned (the agent crashed mid-run): it is logged and
-    skipped, so it can't pin the watermark.
-  - A capped fetch needs no rule here: backward paging has already covered the whole window, so every
-    root in it was seen.
-- Returns a summary: the window, traces seen, evaluated, skipped as already done, incomplete, left for the
-  next run, and metric errors. It is also logged.
+- `EvaluationAPI.handler(event, context)`, exposed as `lambda.handler`:
+  - `event["action"] == "evaluate"` (the asynchronous self-invoke from `/eval`) →
+    `TraceEvaluationJob.run(event["session_id"])`.
+  - Every other event → `Lambda.handler(event, context)`, which serves `/chat`, `/eval` and `/check`.
+  - Needed because `Lambda.handler` sends every event to the REST router, which fails on an event with
+    no path (§Motivation).
+
+### Routes
+
+- Both paths are declared in `gateway_endpoints` (`deploy/main.tf`) and registered with
+  `Lambda.register` in `lambda.py`. The router matches paths exactly, so the session id travels in the
+  body or the query string, never in the path.
+- `POST /eval`, body `{"session_id": "..."}`:
+  - Missing `session_id` → `400`.
+  - Writes the session's `STATUS` item as `running`, so `/check` never reads a session that was
+    accepted but has no status yet.
+  - Invokes the same function asynchronously (`lambda.invoke`, `InvocationType="Event"`,
+    `FunctionName=context.function_name`, payload `{"action": "evaluate", "session_id": ...}`) and
+    returns `202 {"session_id": ..., "status": "running"}` without waiting.
+  - Grading runs in that second invocation, bound by the Lambda timeout instead of API Gateway's 29 s.
+- `GET /check?session_id=...&expected=N`:
+  - Missing or non-integer parameters → `400`.
+  - Returns `{"status", "expected", "graded", "complete", "error"}`:
+    - `status`: the `STATUS` item's value, or `not_started` when there is none.
+    - `graded`: `EvaluationStore.graded(session_id)`.
+    - `complete`: `status == "done"` and `graded == expected`.
+  - `expected` comes from the caller because only the caller knows how many requests it sent. Without
+    it, a run that found 2 of 3 traces would report success.
+
+### Evaluation run: `TraceEvaluationJob.run(session_id)`
+
+- Writes `STATUS = running`.
+- Fetch: `Trace.get().fetch(session_id=session_id, last=timedelta(hours=24), limit=5000)`.
+  - Langfuse sets the session id on every span (§Motivation), so one call returns the whole session.
+  - A full result (5,000 spans) fails the run: one session in this example never comes close, and
+    silently grading a truncated session would be worse.
+- Spans are grouped by `trace_id`. Each trace with a parentless root span is one request (§Trace case).
+  A trace with no root is logged and skipped, and not counted as a request.
+- Traces that already have a `TRACE` item are skipped (`EvaluationStore.evaluated`), so calling `/eval`
+  twice for a session doesn't pay for the judges twice.
+- Incomplete traces are counted and not graded.
+- Every other trace is graded with every metric and saved (§Writes), oldest first.
+- Ends with `STATUS = done` and the run's counts (requests found, graded, skipped as already graded,
+  incomplete, metric errors), which are also logged.
 - Failure handling:
-  - A fetch or DynamoDB error fails the invocation before the watermark moves, so the next run covers the
-    same window again.
-  - A judge error is stored on its metric (§Evaluator) and doesn't stop the run.
-  - Reserved concurrency 1: two runs never overlap, even if a manual invoke meets a scheduled one.
+  - Any exception → `STATUS = failed` with the error, logged, not re-raised, so AWS never retries a run
+    that has already reported its failure.
+  - A judge error is stored on its metric (§Evaluator) and doesn't fail the run.
+  - The Lambda being killed at its timeout leaves `STATUS = running`. AWS retries a timed-out
+    asynchronous invocation up to twice by default; the retry resumes the run, skipping the traces
+    already graded. Callers treat `running` at their deadline as a failure.
 
-### Simulated production traffic: `TrafficSimulator`
+### Simulated traffic: `TrafficSimulator`
 
-- The example ships its own traffic, so a user can see the whole loop without real users:
-  `simulate_traffic.py` sends **5 questions** to the deployed agent, then has the evaluator score those
-  runs and prints the results.
-- The 5 questions cover what the metrics look at:
+- The example ships its own traffic, so a user can produce traces without real users.
+- `TrafficSimulator(chat_url, session_id=None)` only sends traffic. It knows nothing about `/eval` or
+  `/check`. `simulate_traffic.py` and the weekly integration test both use it, each in its own process.
+  - `chat_url`: the agent's `/chat` URL.
+  - `session_id`: the session every request uses. When omitted, a new `uuid4` is generated once in the
+    constructor. Exposed as `simulator.session_id`, so the caller can grade and check the same session.
+  - `send()`: sends **3 questions** to `chat_url`, one request each, all under `session_id`.
+- The 3 questions cover what the metrics look at:
   1. an order-status question the `support` agent answers with `get_order_status` (hand-off + tool call);
-  2. a second order-status question for an order the tool doesn't know (the tool returns "not found");
-  3. a general question the triage agent answers itself (no tool);
-  4. a question needing two facts from the tool in one answer;
-  5. an off-topic request the agent should decline.
-- All 5 go out under one new session id, one request each, through the agent's `agent_invoke_url`.
-- `--evaluate` (default on): after the 5 replies, it invokes the evaluator Lambda with a manual window
-  around them, waits until the session's 5 `TRACE` items are in DynamoDB (polling up to 5 minutes, for
-  Langfuse ingestion), then prints per trace: the question, the tool calls, tokens and cost, and each
-  metric's score, pass/fail and reason.
-- `--no-evaluate`: only sends the traffic and leaves it to the next scheduled run.
-- Endpoint, function and table names come from `terraform output` in `deploy/`, overridable with flags.
-- One class, `TrafficSimulator`, with `send()`, `evaluate(window)` and `report(session_id)`; the weekly
-  integration test reuses it, so the script and the test exercise the same path.
+  2. an order-status question for an order the tool doesn't know (the tool returns "not found");
+  3. an off-topic request the agent should decline (no tool).
+- `simulate_traffic.py`: builds a `TrafficSimulator`, calls `send()` and prints the session id. Grading
+  is left to the caller: the README shows the `curl` calls to `/eval` and `/check` for that session id.
+- The chat URL comes from the `AK_TEST_ENDPOINT` environment variable in both callers, the variable the
+  weekly pipeline already sets (§Testing). `simulate_traffic.py` falls back to
+  `terraform output agent_invoke_url` in `deploy/` when the variable is unset, for runs outside CI.
 
 ### Agent under evaluation
 
@@ -530,44 +567,39 @@ graph LR
   so traces contain an agent hand-off, a tool call and LLM calls.
 - Deployed with the AK serverless module like `aws-serverless/openai-auth` (one request-handler Lambda,
   container image, `rest_sync`).
-- `OPENAI_API_KEY`, `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_BASE_URL` are Lambda
-  environment variables.
-- Its handler is plain `Lambda.handler`: the Langfuse runners now flush on Lambda themselves (Phase 1
-  §Langfuse flush on AWS Lambda).
+- Its runner needs no handler changes for tracing: the Langfuse runners now flush on Lambda themselves
+  (Phase 1 §Langfuse flush on AWS Lambda).
 
 ### Deployment (`deploy/main.tf`)
 
 - `module "serverless_agents"`: the AK serverless module (`yaalalabs/ak-serverless/aws`, the version the
-  sibling examples pin), for the agent.
-- `module "evaluator_image"`: `terraform-aws-modules/lambda/aws//modules/docker-build`, building
-  `../dist_evaluator` and pushing it to a new ECR repository.
-- `module "evaluator"`: `terraform-aws-modules/lambda/aws`, version `8.9.0`. `package_type = "Image"`,
-  timeout 900 s, 1024 MB, reserved concurrency 1, no VPC (it only calls Langfuse, OpenAI and DynamoDB).
+  sibling examples pin).
+  - `execution_mode = "rest_sync"`.
+  - `gateway_endpoints = [{ path = "eval", method = "POST" }, { path = "check", method = "GET" }]`.
+  - `request_handler`: `package_type = "Image"`, `timeout = 300`, `memory_size = 1024` (the defaults,
+    45 s and 128 MB, are too small for the judges).
   - Environment: `AK_TRACE__ENABLED=true`, `AK_TRACE__TYPE=langfuse`, the three `LANGFUSE_*` variables,
     `OPENAI_API_KEY`, `AK_TEST__LLM__PROVIDER=openai`, `AK_TEST__LLM__MODEL=gpt-4.1-mini`,
-    `OPIK_TRACK_DISABLE=true`, `RESULTS_TABLE`, `MAX_TRACES_PER_RUN`.
-  - IAM: `GetItem`, `PutItem`, `BatchGetItem`, `BatchWriteItem` and `Query` on the table and its indexes.
-  - Plain environment variables, no secret store, as agreed: the evaluator is not built on the AK modules.
-- `aws_dynamodb_table`: the results table (§Table).
-- `aws_cloudwatch_event_rule` (`schedule_expression = var.evaluation_schedule`, default
-  `"rate(30 minutes)"`) plus `aws_cloudwatch_event_target`, with the module's `allowed_triggers`
-  granting EventBridge permission to invoke.
+    `OPIK_TRACK_DISABLE=true`, `RESULTS_TABLE`. Plain environment variables, as the sibling examples use.
+- `aws_dynamodb_table`: the results table (§Table), created by the example, not by the AK module.
+- `aws_iam_role_policy` on `module.serverless_agents.request_handler_lambda_role_name`, granting
+  `dynamodb:GetItem`, `PutItem`, `BatchGetItem`, `BatchWriteItem`, `Query` on the table and
+  `<table arn>/index/*`.
+- The self-invoke needs no extra permission: the module already attaches the AWS-managed `AWSLambdaRole`
+  policy (`lambda:InvokeFunction` on `*`) to the request handler's role
+  (`ak-deployment/ak-aws/serverless/modules/request-handler/main.tf:17-20`).
 - Variables: `region`, `prefix`, `openai_api_key`, `langfuse_public_key`, `langfuse_secret_key`,
-  `langfuse_base_url` (default `https://cloud.langfuse.com`), `evaluation_schedule`, plus the base-VPC
-  variables the weekly pipeline injects (`vpc_id`, `private_subnet_ids`,
-  `request_handler_security_group_id`).
-- Outputs: `agent_invoke_url` (the weekly pipeline needs this name), `evaluator_function_name`,
-  `results_table_name`.
-- `deploy/deploy.sh [local]` builds both packages (from PyPI, or from `../../../ak-py/dist` with `local`)
-  and runs `terraform apply`, like the siblings.
+  `langfuse_base_url` (default `https://cloud.langfuse.com`), plus the base-VPC variables the weekly
+  pipeline injects (`vpc_id`, `private_subnet_ids`, `request_handler_security_group_id`).
+- Outputs: `agent_invoke_url` (the weekly pipeline needs this name), `results_table_name`.
+- `deploy/deploy.sh [local]` builds the image (from PyPI, or from `../../../ak-py/dist` with `local`) and
+  runs `terraform apply`, like the siblings.
 
 ### Dependencies (`pyproject.toml`)
 
-- `agent` extra: `agentkernel[aws,openai,langfuse]`.
-- `evaluator` extra: `agentkernel[langfuse,opik]` (the Langfuse SDK the Phase 1 fetcher calls, plus Opik)
-  and `boto3` for DynamoDB. `boto3` is pinned rather than relying on the Lambda runtime's copy, which
-  container images don't include anyway.
-- `dev` group: `agentkernel[test]`, `moto[dynamodb]` for the unit tests.
+- Runtime: `agentkernel[aws,openai,langfuse,opik]` and `boto3` for DynamoDB and the self-invoke. `boto3`
+  is pinned rather than relying on the Lambda runtime's copy, which container images don't include anyway.
+- `dev` group: `agentkernel[test]`, `moto[dynamodb]` for the unit tests, `httpx` for `TrafficSimulator`.
 
 ### Testing
 
@@ -576,27 +608,49 @@ graph LR
     incomplete traces, no root.
   - `OpikTraceEvaluator` with the Opik metrics monkeypatched: case mapping, the tool-correctness skip,
     the hallucination pass rule, retry then error result.
-  - `EvaluationStore` on `moto`: item shapes, the `TRACE`-last order, `evaluated()`, gzip, the
-    whole-item size budget (many long multi-byte tool calls), `Decimal`s, the watermark.
-  - `TraceEvaluationJob` with fetch, evaluator and store faked: window and clamp, ownership by root start,
-    skipping evaluated traces, the per-run cap, backward paging past a full page, every watermark rule,
-    the manual window.
+  - `EvaluationStore` on `moto`: item shapes, the `TRACE`-last order, `evaluated()`, `graded()`, the
+    `STATUS` item, gzip, the whole-item size budget (many long multi-byte tool calls), `Decimal`s.
+  - `TraceEvaluationJob` with fetch, evaluator and store faked: a trace with no root is not counted,
+    already-graded traces are skipped, incomplete traces are counted and not graded, `done` with its
+    counts, `failed` on a fetch error and on a full fetch result.
+  - `TrafficSimulator` over `httpx.MockTransport`: every request carries the given session id, or one
+    generated id when none is given.
+  - Routes and entry point, with a fake Lambda client: `/eval` writes `running`, invokes with
+    `InvocationType="Event"` and returns `202`; `400`s on bad input; `/check` for `not_started`,
+    `running`, `failed`, `done` with `graded < expected` and `done` with `graded == expected`; `handler`
+    sends the `evaluate` action to the job and every other event to `Lambda.handler`.
 - **Weekly integration test** (`lambda_test.py`), added to the weekly tier of
-  `.github/integration-test-config.yaml`:
-  1. Run `TrafficSimulator.send()`: the 5 questions against `AK_TEST_ENDPOINT` under one new session id.
-  2. Run `TrafficSimulator.evaluate(...)`: invoke the evaluator Lambda with a manual window around them,
-     polling (up to 5 minutes) until the session's 5 `TRACE` items appear in `session_id-index`.
-  3. Assert 5 `TRACE` items with their questions as input, a tool call on the order-status traces, token
-     totals > 0, and every expected `EVAL#…` item with a score in [0, 1] and a reason.
-  4. Invoke again with the same window and assert nothing new was written (same `evaluated_at`).
-  - It reads the function and table names from `terraform output` in `deploy/`.
+  `.github/integration-test-config.yaml`. Only HTTP calls; it needs no AWS credentials at test time.
+  - Session-scoped fixtures read the chat URL from `os.getenv("AK_TEST_ENDPOINT")`, as
+    `examples/aws-serverless/openai-auth/lambda_test.py:82-84` does, and build:
+    - a `TrafficSimulator(chat_url, session_id=str(uuid4()))`;
+    - an `EvaluationClient(chat_url)`, a test helper class in `lambda_test.py` (like `APITestClient` in
+      `openai-auth/lambda_test.py:15`). It derives the `/eval` and `/check` URLs by replacing the trailing
+      `/chat`, and has `evaluate(session_id)` (`POST /eval`, expects `202`) and
+      `wait(session_id, expected, timeout=360)` (polls `GET /check` every 10 s until `status` is `done`
+      or `failed`, or the timeout passes; returns the last response).
+  1. `simulator.send()`: the 3 questions to the chat URL, all under `simulator.session_id`.
+  2. Wait 60 s for Langfuse ingestion (§Open questions).
+  3. Up to 3 grading rounds:
+     1. `client.evaluate(simulator.session_id)`: `/eval` returns `202`.
+     2. `client.wait(simulator.session_id, expected=3)`, polling for 6 minutes, longer than the 300 s
+        Lambda timeout.
+     3. `complete` → stop. `done` with `graded < 3` → wait 30 s and start the next round: a trace that
+        reached Langfuse late is graded then, and the ones already graded are skipped. `failed` or
+        `running` → stop.
+  4. Pass only when `complete` is `true`. Otherwise fail with the reason:
+     - `failed` → the run's `error`;
+     - `done` but `graded < 3` after the last round → "N of 3 requests graded";
+     - still `running` at the deadline → timed out.
+  - `AK_TEST_ENDPOINT` is set by `.github/scripts/run_single_test.py:350-370` from the
+    `agent_invoke_url` Terraform output.
 - Weekly pipeline wiring: `integration-test-weekly.yaml` passes `TF_VAR_langfuse_public_key`,
   `TF_VAR_langfuse_secret_key` and `TF_VAR_langfuse_base_url` (from new repository secrets) to the
   deploy, test and destroy steps of `run-tests`. Nothing else in the pipeline changes.
 
 ### Docs
 
-- The example's `README.md`: architecture, the job flow and fault handling, the table schema, how to
+- The example's `README.md`: architecture, the routes and the evaluation run, the table schema, how to
   change metrics or the store, deploy, run `simulate_traffic.py`, and test.
 - `docs/docs/examples/overview.md`: list the example.
 - `docs/docs/advanced/traceability.md` §Fetching Traces Back: link to the example as the end-to-end use.
@@ -608,6 +662,9 @@ graph LR
 - Making the built-in evaluators reference-free. The example subclasses `AKEvaluator` instead.
 - Evaluating per span (each LLM or tool call) rather than per trace, conversation-level (session)
   metrics, dashboards over the results, and alerting.
+- Scheduled or continuous evaluation of live traffic (time windows, progress tracking, catch-up after
+  downtime). The example grades one session when asked; a user who needs a schedule adds one around
+  `TraceEvaluationJob`.
 - Normalising spans into an AK trace model:
   - JSON-parsing `input`/`output`
   - deduplicating Traceloop + Pydantic AI LLM spans (both carry `usage`, so a plain sum double-counts;
@@ -641,18 +698,38 @@ Resolved (kept here so reviewers see the decisions):
 
 Resolved:
 - **Langfuse flush in AK core:** yes, done in Phase 1.
-- **Judge cost:** `MAX_TRACES_PER_RUN = 50`, no sampling.
 - **Results retention:** 90-day TTL.
+- **Where grading runs:** in the agent's own AK serverless Lambda, behind `/eval` and `/check`, with no
+  scheduled job.
+- **`TraceCase` vs `AKEvaluationCase`:** kept separate. `TraceCase` groups a trace's spans and holds the
+  stored, unjudged facts; `TraceEvaluationCase` is what the judges read.
+- **CI role permissions:** none new. Terraform, running as the weekly job's role, creates only resource
+  types the weekly run already creates through the AK module: a DynamoDB table with TTL
+  (`ak-deployment/ak-aws/serverless/state.tf:335`, used by `slack-openai` and `schedule-openai`) and an
+  inline role policy (`state.tf:434`, used by `schedule-openai`). The test step makes only HTTP calls,
+  so it needs no AWS permissions.
+
+Open:
+- **When is a trace complete?** The test waits a fixed 60 s after the last reply, then grades what
+  Langfuse returns.
+  - A trace that isn't readable yet is caught: `/check` reports `graded < expected`, and the test's next
+    grading round picks it up (§Testing).
+  - Not caught: a trace whose root is readable but some child spans aren't yet. It is graded on partial
+    data and still counts as graded. Langfuse doesn't document that it makes spans readable in the order
+    they arrive, so a visible root doesn't prove its children are visible. This affects only the scores,
+    which the test doesn't assert. Candidate rule: the root is present and the trace's span count is the
+    same on two fetches in a row.
+- **One request = one trace beyond this example:**
+  - Langfuse, Logfire and CloudWatch: every framework runner wraps the whole run in one AK span (e.g.
+    `trace/langfuse/adk.py:36`, and the same in all 15 runners), so every inner span nests under one
+    root. Verified from the code; captured live only for OpenAI Agents (`research/span-formats.md` §3).
+  - Thread hops: Smolagents runs through `asyncio.to_thread` (`framework/smolagents/smolagents.py:170`),
+    which copies the trace context. CrewAI runs through `crew.kickoff_async`
+    (`framework/crewai/crewai.py:384`); whether CrewAI's own internal threads keep the context is
+    unverified.
+  - Traceloop: no runner adds an AK root span, so each framework's own instrumentation sets the trace
+    boundary. Unverified for every framework.
 
 To do before the weekly test can pass (owners: the maintainers):
 - **CI Langfuse project:** create a Langfuse Cloud project for CI, then add repository secrets
   `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` and variable `LANGFUSE_BASE_URL`.
-- **CI role permissions:** the weekly job's AWS role (`vars.AWS_ROLE_NAME`, managed outside this repo)
-  must be allowed to:
-  - deploy: `ecr:CreateRepository` / `DeleteRepository` and image push, `lambda:CreateFunction` /
-    `UpdateFunctionCode` / `PutFunctionConcurrency` / `AddPermission`, `iam:CreateRole` /
-    `PutRolePolicy` / `PassRole`, `dynamodb:CreateTable` / `UpdateTimeToLive` / `DeleteTable`,
-    `events:PutRule` / `PutTargets` / `DeleteRule`, `logs:CreateLogGroup` / `PutRetentionPolicy`;
-  - test: `lambda:InvokeFunction` on the evaluator and `dynamodb:Query` on the results table.
-  - The sibling examples already create Lambdas, ECR repositories, DynamoDB tables and IAM roles, so
-    only EventBridge rules, `PutFunctionConcurrency` and the test-time invoke/query may be new.
