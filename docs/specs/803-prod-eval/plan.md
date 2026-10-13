@@ -17,14 +17,16 @@ Phase 1 (iterations 1–7) lands first: the example in Phases 2–3 (iterations 
 - **Steps:**
   1. Add `SpanKind`, `TraceQuery`, `SpanUsage`, `FetchedSpan` and `OTelSpanClassifier`, including
      `OTelSpanClassifier.usage` (spec §`trace/fetch.py`).
-  2. Add the non-abstract `BaseTrace.fetch` and `Trace.fetch` (spec §`BaseTrace.fetch` and `Trace.fetch`).
-  3. Export the five public names (`TraceQuery`, `FetchedSpan`, `SpanUsage`, `SpanKind`,
-     `OTelSpanClassifier`) from `agentkernel.trace`.
-  4. Add `TraceQuery.matches` (spec §`trace/fetch.py`).
-  5. Add `TraceFetchContract` in `trace/testing.py`, with the in-memory bring-your-own subclass in
+  2. Add the `TraceFetcher` base: the pinned window, the merge, `_follow_cursor` and `_page_backward`
+     (spec §`trace/fetch.py`).
+  3. Add the non-abstract `BaseTrace.fetch` and `Trace.fetch` (spec §`BaseTrace.fetch` and `Trace.fetch`).
+  4. Export the five public names (`TraceQuery`, `FetchedSpan`, `SpanUsage`, `SpanKind`,
+     `OTelSpanClassifier`) from `agentkernel.trace`. `TraceFetcher` stays internal.
+  5. Add `TraceQuery.matches` (spec §`trace/fetch.py`).
+  6. Add `TraceFetchContract` in `trace/testing.py`, with the in-memory bring-your-own subclass in
      `tests/test_trace_fetch_contract.py` (spec §`trace/testing.py`).
-  6. Write the `TestTraceQuery` (including `matches`), `TestOTelSpanClassifier` (including the `usage`
-     cases) and `TestTraceFetch` tests, plus the `oldest_first` test.
+  7. Write the `TestTraceQuery` (including `matches`), `TestOTelSpanClassifier` (including the `usage`
+     cases), `TestTraceFetch` and `TestTraceFetcher` tests, plus the `oldest_first` test.
 - **Verify:** `uv run pytest tests/test_trace_fetch.py tests/test_trace_fetch_contract.py tests/test_trace.py`
 
 ### Iteration 2: Langfuse fetcher
@@ -32,8 +34,8 @@ Phase 1 (iterations 1–7) lands first: the example in Phases 2–3 (iterations 
 - **Goal:** `trace.type: langfuse` fetches observations through the v2 API.
 - **Files:** `trace/langfuse/fetch.py` (new), `trace/langfuse/langfuse.py`, `tests/test_trace_fetch.py`.
 - **Steps:**
-  1. Add `LangfuseTraceFetcher` (spec §`LangFuse.fetch`), including the `_usage` mapping,
-     `expand_metadata`, the `matches` re-check and the repeated-cursor stop.
+  1. Add `LangfuseTraceFetcher(TraceFetcher)` (spec §`LangFuse.fetch`), including the `_usage` mapping,
+     `expand_metadata` and one `_follow_cursor` per request-matrix cell.
   2. Add `LangFuse.fetch`, which delegates to it.
   3. Add `LangFuse.flush_on_lambda` and call it from a `finally` in the six runners (spec §Langfuse
      flush on AWS Lambda).
@@ -48,8 +50,8 @@ Phase 1 (iterations 1–7) lands first: the example in Phases 2–3 (iterations 
 - **Files:** `trace/logfire/fetch.py` (new), `trace/logfire/logfire.py`, `tests/test_trace_fetch.py`,
   `tests/test_trace_logfire.py`.
 - **Steps:**
-  1. Add `LogfireTraceFetcher` (spec §`Logfire.fetch`).
-  2. Add `Logfire.fetch`.
+  1. Add `LogfireTraceFetcher(TraceFetcher)` (spec §`Logfire.fetch`), paging through `_page_backward`.
+  2. Add `Logfire.fetch`, which resolves `LOGFIRE_READ_TOKEN` through `SecretManager`.
   3. Add the `ScrubbingOptions` callback to `init()` (spec §Scrubbing fix).
   4. Add `ScrubbingOptions` to the `fake_logfire` fixture, plus the scrubbing test.
   5. Add `TestLogfireFetcher`.
@@ -62,11 +64,12 @@ Phase 1 (iterations 1–7) lands first: the example in Phases 2–3 (iterations 
 - **Files:** `trace/openllmetry/fetch.py` (new), `trace/openllmetry/openllmetry.py`,
   `ak-py/pyproject.toml`, `ak-py/uv.lock`, `tests/test_trace_fetch.py`.
 - **Steps:**
-  1. Add `TraceloopTraceFetcher` (spec §`OpenLLMetry.fetch`), with the `matches` re-check, the
-     `ceil(end)` bound and the repeated-cursor stop.
-  2. Add `OpenLLMetry.fetch`.
+  1. Add `TraceloopTraceFetcher(TraceFetcher)` (spec §`OpenLLMetry.fetch`), with the `ceil(end)` bound,
+     one `_follow_cursor`, and no server-side kind filter.
+  2. Add `OpenLLMetry.fetch`, which resolves `TRACELOOP_API_KEY` through `SecretManager`.
   3. Add `httpx>=0.27.0` to the `openllmetry` and `logfire` extras, then run `uv lock`.
-  4. Add `TestTraceloopFetcher` and `TestTraceloopFetchContract`.
+  4. Add `TestTraceloopFetcher` (including the `traceloop.span.kind`-only tool span) and
+     `TestTraceloopFetchContract`.
 - **Verify:** `uv run pytest tests/test_trace_fetch.py -k Traceloop`
 
 ### Iteration 5: CloudWatch fetcher
@@ -76,7 +79,8 @@ Phase 1 (iterations 1–7) lands first: the example in Phases 2–3 (iterations 
 - **Steps:**
   1. Lift the region lookup in `CloudWatch._exporter()` (`trace/cloudwatch/cloudwatch.py:137`) into the
      static `CloudWatch.region()`, with no change to the exporter's behaviour or errors.
-  2. Add `CloudWatchTraceFetcher` (spec §`CloudWatch.fetch`).
+  2. Add `CloudWatchTraceFetcher(TraceFetcher)` (spec §`CloudWatch.fetch`), paging through
+     `_page_backward`.
   3. Add `CloudWatch.fetch`.
   4. Add `TestCloudWatchFetcher`.
 - **Verify:** `uv run pytest tests/test_trace_fetch.py -k CloudWatch tests/test_trace_cloudwatch.py`
@@ -104,12 +108,20 @@ Phase 1 (iterations 1–7) lands first: the example in Phases 2–3 (iterations 
     It covers the filters, `FetchedSpan` and `usage` (totalling it over a trace, which providers report
     cost), Traceloop fetching as best effort, session ids reaching every provider unscrubbed (keep personal data
     out of them), bring-your-own `fetch` tested with `TraceFetchContract`,
-    the Langfuse flush on Lambda, credentials per provider (including CloudWatch's IAM read
-    permissions), provider limits, and bring-your-own `fetch`.
+    credentials per provider (including CloudWatch's IAM read permissions, and the two keys AK resolves
+    through `SecretManager`), and provider limits.
+  - `docs/docs/advanced/traceability.md`, Langfuse section: a "Running on AWS Lambda" note, worded like
+    the CloudWatch one (`:566`). The Langfuse runners now flush after every `run()` on Lambda; streamed
+    runs don't. This is a send-side change, so it doesn't go in "Fetching Spans Back".
+  - `docs/src/pages/features.tsx`, Observability card highlights (`:903-910`): add "Fetch spans back
+    for evaluation".
+  - `docs/docs/intro.md`, What's New tip (`:10`): one entry for fetching spans back, linking
+    "Fetching Spans Back".
 - **Dev skills:**
   - `.agents/skills/ak-dev-new-tracing-provider/SKILL.md`:
     - §Architecture Overview (`:18`): mention the optional `fetch`.
-    - New step after §5 (`:174`): implement `trace/<provider>/fetch.py` (rules 1–5 of spec §Rules).
+    - New step after §5 (`:174`): implement `trace/<provider>/fetch.py` on `TraceFetcher` (rules 1–7 of
+      spec §Rules).
     - §Checklist (`:299`): add a fetcher item.
   - `.agents/skills/ak-dev-architecture/SKILL.md`, directory tree (`:1053-1059`): add `fetch.py`, and
     note the per-provider `fetch.py` on the four adapters.
@@ -192,7 +204,9 @@ All files are under `examples/aws-serverless/langfuse-trace-evaluation/` unless 
 - **Steps:**
   1. `gateway_endpoints`, the request handler's `timeout`, `memory_size` and evaluation environment
      variables on `module "serverless_agents"` (spec §Deployment).
-  2. `aws_dynamodb_table.results`, `aws_iam_role_policy.evaluation` and the `results_table_name` output.
+  2. `aws_dynamodb_table.results` (with the `INCLUDE`-projected `session_id-index`),
+     `aws_iam_role_policy.evaluation`, `aws_lambda_function_event_invoke_config.grading`
+     (`maximum_retry_attempts = 0`) and the `results_table_name` output.
   3. `deploy.sh` also copies `evaluator/` into the package.
 - **Verify:**
   - `terraform validate`; `./deploy.sh local`.
@@ -228,6 +242,9 @@ All files are under `examples/aws-serverless/langfuse-trace-evaluation/` unless 
   - `docs/docs/examples/overview.md` §AWS Serverless Examples: list the example.
   - `docs/docs/advanced/traceability.md` §Fetching Spans Back: one line linking the example as the
     end-to-end use of `fetch` and `usage`.
+  - `docs/src/pages/features.tsx`: no change. The "Pluggable Evaluators" card (`:1494`) covers the test
+    framework's built-in evaluators; the example only subclasses `AKEvaluator`, and the Observability
+    card (iteration 7) already covers fetching.
 - **Skills:**
   - Bundled `ak-py/src/agentkernel/skills/ak-add-capabilities/SKILL.md` §Tracing: point the "read traces
     back" note (iteration 7) at the example.

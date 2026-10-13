@@ -23,7 +23,7 @@ ak-py/src/agentkernel/trace/
 ├── __init__.py          # + exports FetchedSpan, OTelSpanClassifier, SpanKind, SpanUsage, TraceQuery
 ├── base.py              # + BaseTrace.fetch (non-abstract)
 ├── trace.py             # + Trace.fetch facade
-├── fetch.py             # NEW: SpanKind, TraceQuery, SpanUsage, FetchedSpan, OTelSpanClassifier
+├── fetch.py             # NEW: SpanKind, TraceQuery, SpanUsage, FetchedSpan, OTelSpanClassifier, TraceFetcher
 ├── testing.py           # NEW: TraceFetchContract (imports pytest; test code only)
 ├── langfuse/
 │   ├── langfuse.py      # + LangFuse.fetch → LangfuseTraceFetcher; + LangFuse.flush_on_lambda
@@ -46,11 +46,13 @@ The provider packages' `__init__.py` files are empty today and stay empty. So
 ### Rules
 
 1. **Fetchers never read `AKConfig`.** Each fetcher takes explicit constructor parameters: a client,
-   a token, a base URL, an optional transport. The tracer class builds its fetcher. This is the same
-   rule as the shared DB drivers and transports.
+   a token, a base URL, an optional transport. The tracer class builds its fetcher and resolves the
+   credentials AK reads itself (`LOGFIRE_READ_TOKEN`, `TRACELOOP_API_KEY`) through
+   `SecretManager.current().get(key, None)`, which reads `AKConfig.secret`. This is the same rule as
+   the shared DB drivers and transports.
 2. **Fetcher modules import no provider SDK at module scope.**
    - `langfuse/fetch.py` imports `Langfuse` under `TYPE_CHECKING` only.
-   - `logfire/fetch.py` imports `LogfireQueryClient` inside `fetch()`.
+   - `logfire/fetch.py` imports `LogfireQueryClient` inside `_collect()`.
    - `openllmetry/fetch.py` imports only `httpx`, which the core test environment already has.
    - `cloudwatch/fetch.py` imports `botocore` and the `CloudWatch` tracer module (which pulls in the
      OpenTelemetry SDK) inside `_create_client()`, used only when no client is injected.
@@ -64,12 +66,14 @@ The provider packages' `__init__.py` files are empty today and stay empty. So
    - Span ids are unique.
    - `raw` holds the provider record.
    - `fetch` itself never parses or rewrites `input`/`output`.
-5. **Filters are checked again locally** wherever the server-side filter could be approximate. Langfuse
-   and Traceloop run every span through `TraceQuery.matches` (window, kinds, session, trace ids, name);
-   Logfire re-checks kinds, and CloudWatch window, session and kind (`_matches`). A span whose computed
-   `kind` is not in `query.kinds` is never returned. Both checks are strict: a span that doesn't report
-   a value for an active filter (start time, session id, name) is rejected, never assumed to match.
-6. **Every fetch implementation passes `TraceFetchContract`** where its backend can be faked faithfully
+5. **Every fetcher applies `TraceQuery.matches` to every span**, whatever its server-side filters
+   already did (window, kinds, session, trace ids, name). The check is strict: a span that doesn't
+   report a value for an active filter (start time, session id, name) is rejected, never assumed to
+   match. So a provider's undocumented boundary rule (Logfire's `max_timestamp`, Traceloop's whole
+   seconds, CloudWatch's `@timestamp`) can't leak into the result.
+6. **Paging, dedupe and limit accounting live once, in `TraceFetcher`** (§`trace/fetch.py`). The four
+   fetchers subclass it and implement only their requests and their `_to_span` mapping.
+7. **Every fetch implementation passes `TraceFetchContract`** where its backend can be faked faithfully
    (§`trace/testing.py`).
 
 ### `trace/fetch.py`
@@ -133,6 +137,19 @@ class OTelSpanClassifier:
     def session_id(cls, attributes: dict) -> str | None: ...
     @classmethod
     def usage(cls, attributes: dict) -> SpanUsage | None: ...
+
+class TraceFetcher(ABC):                      # base of the four built-in fetchers
+    provider: ClassVar[str]                   # written to every FetchedSpan.provider
+
+    def fetch(self, query: TraceQuery) -> list[FetchedSpan]: ...
+        # pins the window, runs _collect, keeps the first span per span_id, returns oldest_first(...)[-limit:]
+    @abstractmethod
+    def _collect(self, query: TraceQuery) -> Iterable[FetchedSpan]: ...   # the provider's requests
+    def _follow_cursor(self, query: TraceQuery,
+                       page: Callable[[str | None], tuple[list[Any], str | None]],
+                       to_span: Callable[[Any], FetchedSpan]) -> list[FetchedSpan]: ...
+    def _page_backward(self, query: TraceQuery, before: datetime, max_rows: int,
+                       page: Callable[[int, datetime], list[tuple[datetime | None, FetchedSpan]]]) -> list[FetchedSpan]: ...
 ```
 
 - Every field gets a `Field(description=...)`. `kinds` accepts plain strings (`["tool"]`) through
@@ -179,7 +196,35 @@ class OTelSpanClassifier:
     workflow spans, which also carry it on each chat span).
   - Attributes arrive flattened for CloudWatch (`CloudWatchTraceFetcher._flatten`), so nested
     `llm.token_count` objects resolve to the same keys.
-- Module-level functions: none. All logic is on these five classes.
+- `TraceQuery.matches` resolves `window()` on every call, so a defaulted `end` (now) would move between
+  calls. `TraceFetcher.fetch` therefore pins it first: `query = query.model_copy(update={"start": start,
+  "end": end})`, and every later step uses that copy.
+- `FetchedSpan.provider` is the tracer's `trace.type` short name, so it round-trips with config:
+  `langfuse`, `logfire`, `openllmetry` (not `traceloop`) and `cloudwatch`. Each fetcher sets it from its
+  `provider` class variable.
+- `TraceFetcher` (house pattern 3: shared logic is lifted, not copied):
+  - `_follow_cursor(query, page, to_span)`: the cursor loop Langfuse and Traceloop share. Calls
+    `page(cursor)` for `(items, next_cursor)`, maps each item with `to_span`, keeps it when
+    `query.matches`. Stops when `next_cursor` is empty, `items` is empty, `next_cursor` equals the
+    cursor just sent, or `query.limit` spans are kept. Both APIs page newest first, so the kept spans
+    are the most recent.
+    - The repeated-cursor stop matters because local filtering can keep `limit` from ever being
+      reached; a backend that returned the same cursor would otherwise page forever.
+  - `_page_backward(query, before, max_rows, page)`: the backward time paging Logfire and CloudWatch
+    share, for APIs with a row cap and no cursor. `page(size, before)` returns `(cursor timestamp,
+    span)` rows, newest first, at or before `before`. Per page, with `size = min(max_rows, limit -
+    kept)`:
+    1. Drop rows whose span id was already seen.
+    2. Set `span.session_id = span.session_id or query.session_id` (both callers filter by session
+       server-side), then keep the fresh spans that `query.matches`.
+    3. Set `before` to the oldest cursor timestamp among the fresh rows. Rows at that boundary are
+       re-read by the next page and dropped in step 1.
+    4. Stop when `len(rows) < size`, when no fresh row has a cursor timestamp, or when `limit` spans are
+       kept. A full page with no fresh rows (more than `size` rows at one timestamp) logs a warning and
+       stops, so it can't spin on a block of identical timestamps.
+  - Not exported from `agentkernel.trace`: it is the built-ins' shared implementation. Bring-your-own
+    tracers override `BaseTrace.fetch` and only have to pass `TraceFetchContract`.
+- Module-level functions: none. All logic is on these six classes.
 
 ### `BaseTrace.fetch` and `Trace.fetch`
 
@@ -207,31 +252,30 @@ class Trace(BaseTrace):
 ### `LangFuse.fetch` → `LangfuseTraceFetcher`
 
 ```python
-class LangfuseTraceFetcher:
+class LangfuseTraceFetcher(TraceFetcher):
+    provider = "langfuse"
     _PAGE_SIZE = 100
     _FIELDS = "core,basic,time,io,metadata,model,usage,metrics"
-    _EXPAND_METADATA = "attributes"           # metadata values over 200 chars are truncated unless listed"
+    _EXPAND_METADATA = "attributes"           # metadata values over 200 chars are truncated unless listed
     _TYPES = {SpanKind.AGENT: "AGENT", SpanKind.LLM: "GENERATION", SpanKind.TOOL: "TOOL"}
 
     def __init__(self, client: "Langfuse"): ...
-    def fetch(self, query: TraceQuery) -> list[FetchedSpan]: ...
+    def _collect(self, query: TraceQuery) -> Iterable[FetchedSpan]: ...
     def _types(self, query) -> list[str | None]: ...      # [None] when kinds is None or contains SPAN
-    def _pages(self, query, start, end, langfuse_type, trace_id) -> Iterator[Any]: ...
+    def _page(self, query, langfuse_type, trace_id, cursor) -> tuple[list[Any], str | None]: ...
     def _to_span(self, observation) -> FetchedSpan: ...
 ```
 
 - `LangFuse.fetch(query)` returns `LangfuseTraceFetcher(self._client).fetch(query)`. `self._client` is
   the client `init()` builds with `get_client()` (`trace/langfuse/langfuse.py:24`).
 - Request matrix: `for type in _types(query)` × `for trace_id in query.trace_ids or [None]`. Each cell
-  runs one cursor loop over `client.api.observations.get_many(...)` with these parameters:
+  runs one `_follow_cursor` over `_page`, which calls `client.api.observations.get_many(...)` with these
+  parameters:
   - `fields=_FIELDS`, `expand_metadata=_EXPAND_METADATA`, `limit=min(100, query.limit)`, `cursor`
   - `type`, `trace_id`, `session_id=query.session_id`, `name=query.name`
   - `from_start_time=start`, `to_start_time=end`
-- Each observation is dropped unless `query.matches(span)`. Each loop stops when the cursor is empty, the
-  page is empty, the cursor repeats the previous one, or that cell has accepted `query.limit` spans.
-  - The repeated-cursor stop matters because local filtering can keep `limit` from ever being reached; a
-    backend that returned the same cursor would otherwise page forever. Langfuse pages newest first, so the newest spans are seen first.
-- Merge: `dict.setdefault(span_id, span)`, then `FetchedSpan.oldest_first(...)[-limit:]`.
+- Each cell keeps up to `query.limit` spans; `TraceFetcher.fetch` merges the cells, keeping the first
+  span per id, and returns the newest `limit`.
 - `_to_span` field mapping:
 
   | `FetchedSpan` | from the observation |
@@ -247,22 +291,25 @@ class LangfuseTraceFetcher:
 ### `Logfire.fetch` → `LogfireTraceFetcher`
 
 ```python
-class LogfireTraceFetcher:
+class LogfireTraceFetcher(TraceFetcher):
+    provider = "logfire"
     READ_TOKEN_ENV = "LOGFIRE_READ_TOKEN"
     _MAX_ROWS = 10_000
     _COLUMNS = "trace_id, span_id, parent_span_id, span_name, message, start_timestamp, end_timestamp, attributes, tags, otel_scope_name"
     _KIND_SQL: dict[SpanKind, str]            # SQL equivalents of OTelSpanClassifier rows 1–5
 
-    def __init__(self, read_token: str | None = None, base_url: str | None = None): ...
-    def fetch(self, query: TraceQuery) -> list[FetchedSpan]: ...
-    def _sql(self, query, limit: int, before: datetime | None) -> str: ...
+    def __init__(self, read_token: str | None, base_url: str | None = None): ...   # None → AKConfigError
+    def _collect(self, query: TraceQuery) -> Iterable[FetchedSpan]: ...
+    def _sql(self, query, limit: int, before: datetime) -> str: ...
     @staticmethod
     def _literal(value: str) -> str: ...      # "'" + value.replace("'", "''") + "'"
     def _to_span(self, row: dict) -> FetchedSpan: ...
 ```
 
-- Token: the constructor argument, else `os.getenv("LOGFIRE_READ_TOKEN")`, per design.md
-  §Configuration (credentials come from the environment, as on the send side).
+- Token: `Logfire.fetch` passes `SecretManager.current().get("LOGFIRE_READ_TOKEN", None)` (design.md
+  §Configuration). The secret manager reads the environment first, so an `env` deployment behaves as
+  a plain `os.getenv`, and an `aws_ssm` deployment reads the token from SSM without exporting it. A
+  `None` token raises `AKConfigError` naming `LOGFIRE_READ_TOKEN` in the constructor.
 - Client: `from logfire.experimental.query_client import LogfireQueryClient`. That path exists in
   every `logfire>=3.0`; `logfire.query_client` is a later alias. Used as a context manager, with
   `base_url=None` letting the SDK take the region from the token.
@@ -274,7 +321,7 @@ class LogfireTraceFetcher:
   |---|---|
   | `kinds` without `span` | `(_KIND_SQL[k1] OR _KIND_SQL[k2] …)` |
   | `kinds` with `span` | `(NOT COALESCE(<all three _KIND_SQL OR'd>, false) OR <requested non-span kinds>)` |
-  | `name` | `(span_name = 'x' OR message = 'x')` |
+  | `name` | `COALESCE(message, span_name) = 'x'`, the same value `_to_span` writes to `name`, so `matches` keeps every row it selects |
   | `trace_ids` | `trace_id IN ('a', 'b')` |
   | `session_id` | `trace_id IN (SELECT trace_id FROM records WHERE attributes->>'session_id' = 's')` |
   | page cursor | `start_timestamp <= '<iso>'` |
@@ -286,15 +333,11 @@ class LogfireTraceFetcher:
   - `_KIND_SQL[AGENT]`: `gen_ai.operation.name IN ('invoke_agent','create_agent')` OR
     `openinference.span.kind = 'AGENT'` OR `span_name LIKE 'Agent run:%'`.
   - The window is passed as `min_timestamp=start, max_timestamp=end`, never in SQL, so Logfire's
-    timestamp index is used.
-- Paging loop: `page = min(_MAX_ROWS, limit - accepted)`. After each page:
-  1. Drop rows whose span id was already seen.
-  2. Accept the fresh spans that `query.accepts`, setting `span.session_id = span.session_id or query.session_id`.
-  3. Set `before = min(start_time of fresh rows)`.
-  4. Stop when `len(rows) < page`, when no fresh row has a start time, or when `limit` is reached.
-
-  Rows at the boundary timestamp are re-read and skipped. A page made only of already-seen rows ends
-  the loop, so it can't spin forever on a block of identical timestamps.
+    timestamp index is used. Whether `max_timestamp` is inclusive is undocumented; `matches` applies
+    the exclusive end either way.
+- Paging: `_page_backward(query, before=end, max_rows=_MAX_ROWS, page=...)`, where each page runs
+  `_sql(query, size, before)` and returns `(start_time, span)` rows. The first page's `before = end`
+  repeats the `max_timestamp` bound, so every page has the same SQL shape.
 - `_to_span`:
   - `attributes` = `row["attributes"]`, JSON-decoded if it arrives as a string.
   - Classification uses `{**attributes, "logfire.msg_template": span_name, "logfire.tags": tags or []}`.
@@ -323,28 +366,28 @@ def _keep_session_id(match):            # logfire.ScrubMatch
 ### `OpenLLMetry.fetch` → `TraceloopTraceFetcher`
 
 ```python
-class TraceloopTraceFetcher:
+class TraceloopTraceFetcher(TraceFetcher):
+    provider = "openllmetry"
     DEFAULT_BASE_URL = "https://api.traceloop.com"
     _PATH = "/v2/warehouse/spans"
     _PAGE_SIZE = 500
     _TIMEOUT = 60.0
     _SESSION_ATTRIBUTE = "traceloop.association.properties.session_id"
-    _OPERATIONS = {SpanKind.AGENT: ["invoke_agent", "create_agent"],
-                   SpanKind.LLM: ["chat", "text_completion", "generate_content"],
-                   SpanKind.TOOL: ["execute_tool"]}
 
-    def __init__(self, api_key=None, base_url=None, transport: httpx.BaseTransport | None = None): ...
-    def fetch(self, query: TraceQuery) -> list[FetchedSpan]: ...
-    def _params(self, query, start, end) -> dict: ...
-    def _pages(self, client: httpx.Client, params: dict) -> Iterator[dict]: ...
+    def __init__(self, api_key: str | None, base_url: str | None = None,
+                 transport: httpx.BaseTransport | None = None): ...   # None key → AKConfigError
+    def _collect(self, query: TraceQuery) -> Iterable[FetchedSpan]: ...
+    def _params(self, query) -> dict: ...
+    def _page(self, client: httpx.Client, params: dict, cursor: str | None) -> tuple[list[dict], str | None]: ...
     def _to_span(self, item: dict) -> FetchedSpan: ...
     @staticmethod
     def _timestamp(value) -> datetime | None: ...
 ```
 
-- Credentials:
-  - API key: the argument, else `TRACELOOP_API_KEY`.
-  - Base URL: the argument, else `TRACELOOP_BASE_URL`, else `DEFAULT_BASE_URL`.
+- Credentials, resolved by `OpenLLMetry.fetch` and passed in:
+  - API key: `SecretManager.current().get("TRACELOOP_API_KEY", None)`, as for Logfire's read token. A
+    `None` key raises `AKConfigError` naming `TRACELOOP_API_KEY` in the constructor.
+  - Base URL: `os.environ.get("TRACELOOP_BASE_URL")` (not a secret), else `DEFAULT_BASE_URL`.
   - These are the variables the SDK itself reads (`traceloop/sdk/__init__.py:120-121` in traceloop-sdk
     0.62.3).
   - `transport` exists only so tests can inject an `httpx.MockTransport`.
@@ -356,14 +399,21 @@ class TraceloopTraceFetcher:
   - `sort_by=timestamp`, `sort_order=desc`
   - `span_name`: when `name` is set
   - `filters`: a JSON list of `{id, operator, value}`:
-    - `kinds` without `span` → `gen_ai.operation.name in [ops…]`
     - `session_id` → `_SESSION_ATTRIBUTE equals …`
     - `trace_ids` → `trace_id in […]`
-- Pagination: response body `{"spans": {"data": [...], "next_cursor": ...}}`. A body without `spans`
-  is read as the page itself. The loop stops on a missing cursor, empty data, or a cursor equal to the
-  one just sent, and otherwise re-sends the same params with `cursor=...`.
-- Local re-check: drop a span unless `query.matches(span)`. Stop once `limit` spans are accepted; with
-  descending order these are the most recent.
+    - No kind filter: `kinds` is applied only locally, by `matches`.
+      - A span's kind can come from either `gen_ai.operation.name` or `traceloop.span.kind`
+        (`OTelSpanClassifier` rows 2 and 3). The SDK's own `@tool` / `@agent` decorators set only
+        `traceloop.span.kind`, and the LangGraph / CrewAI / ADK / smolagents instrumentations are
+        uncaptured (`research/span-formats.md` §2). A server-side filter on either attribute alone would
+        drop spans `matches` can't rescue.
+      - The `filters` operators all act on one id, and the API documents no OR across ids
+        (`research/provider-read-apis.md` §3), so the two attributes can't be sent as one condition.
+      - Cost: a kind-filtered fetch pages through every span of the window. Traceloop's free-plan
+        retention is 24 hours, so a window stays small.
+- Pagination: one `_follow_cursor` over `_page`. Response body `{"spans": {"data": [...], "next_cursor":
+  ...}}`; a body without `spans` is read as the page itself. Each page re-sends the same params with
+  `cursor=...`.
 - `_to_span`:
   - `attributes` = `span_attributes`, JSON-decoded if it arrives as a string.
   - `parent_span_id` = `parent_span_id or None` (the API may return `""` for a root span).
@@ -378,7 +428,8 @@ class TraceloopTraceFetcher:
 ### `CloudWatch.fetch` → `CloudWatchTraceFetcher`
 
 ```python
-class CloudWatchTraceFetcher:
+class CloudWatchTraceFetcher(TraceFetcher):
+    provider = "cloudwatch"
     LOG_GROUP = "aws/spans"
     _MAX_ROWS = 10_000
     _POLL_INTERVAL = 1.0
@@ -387,14 +438,12 @@ class CloudWatchTraceFetcher:
     _KIND_FILTERS: dict[SpanKind, str]        # Logs Insights equivalents of OTelSpanClassifier rows 1 and 3
 
     def __init__(self, client=None, region: str | None = None, log_group: str = LOG_GROUP, timeout: float = 120.0): ...
-    def fetch(self, query: TraceQuery) -> list[FetchedSpan]: ...
+    def _collect(self, query: TraceQuery) -> Iterable[FetchedSpan]: ...
     def _create_client(self): ...                      # botocore "logs" client, region via CloudWatch.region()
     def _run(self, client, query_string: str, start: datetime, end: datetime) -> list[dict[str, str]]: ...
     def _insights(self, query: TraceQuery, limit: int) -> str: ...
     @staticmethod
     def _literal(value: str) -> str: ...               # json.dumps(value)
-    @staticmethod
-    def _matches(query, span, start, end) -> bool: ...  # window on start_time, session, kind
     def _to_span(self, row: dict) -> tuple[datetime | None, FetchedSpan]: ...  # (@timestamp, span)
     @classmethod
     def _flatten(cls, attributes: dict, prefix: str = "") -> dict: ...
@@ -452,17 +501,13 @@ class CloudWatch(BaseTrace):
   - Literals are `json.dumps(str(value))`: double-quoted, with `"` and `\` backslash-escaped.
   - The session filter needs no trace subquery (Logs Insights has none anyway), because
     `SessionSpanProcessor` stamps `session.id` onto every span of a run (`trace/cloudwatch/cloudwatch.py:35-44`).
-- Window and paging (`fetch`):
-  - The first query's range is `[start, before]` with `before = max(end, min(end + _END_PADDING, now))`.
+- Window and paging (`_collect`):
+  - `_page_backward(query, before=max(end, min(end + _END_PADDING, now)), max_rows=_MAX_ROWS, page=...)`,
+    where each page runs one `_run` over `[start, before]` and returns `(@timestamp, span)` rows.
     `@timestamp`'s relation to the span start is not documented, so the range runs past `end`, and
-    `_matches` applies `start <= start_time < end` locally on `startTimeUnixNano`.
-  - `page = min(_MAX_ROWS, limit - accepted)`. After each page:
-    1. Drop rows whose span id was already seen.
-    2. Accept the fresh spans that `_matches`, setting `span.session_id = span.session_id or query.session_id`.
-    3. Set `before = min(@timestamp of fresh rows)`. The next query's `endTime` is `ceil(before)`, so rows
-       in the boundary second are re-read and skipped by span id.
-    4. Stop when `len(rows) < page`, when no fresh row has a `@timestamp`, or when `limit` is reached.
-       A full page with no fresh rows (more than `page` spans in one second) logs a warning and stops.
+    `matches` applies `start <= start_time < end` locally on `startTimeUnixNano`.
+  - Each query's `endTime` is `ceil(before)`, so rows in the boundary second are re-read and dropped
+    by span id. More than a page of spans in one second hits the base's warn-and-stop rule.
   - 10,000-row pages: `StartQuery` now accepts `limit` up to 100,000, but `GetQueryResults` returns at
     most 10,000 rows per call and needs `nextToken` beyond that, which botocore releases inside the
     `cloudwatch` extra's `>=1.41.4` range may not model (`research/provider-read-apis.md` §6).
@@ -558,11 +603,14 @@ async def run(self, agent, session, requests):
 
 - No `AKConfig` changes. `_TraceConfig` (`core/config.py:468-473`) keeps its `enabled` and `type`
   fields, defaults and descriptions.
-- New environment variable `LOGFIRE_READ_TOKEN`, read only by `LogfireTraceFetcher`.
+- New secret `LOGFIRE_READ_TOKEN`, resolved by `Logfire.fetch` through `SecretManager`.
   - It is not an `AK_*` variable, because it is the provider's own credential, like `LOGFIRE_TOKEN` and
     `TRACELOOP_API_KEY`.
   - It can't be derived from `LOGFIRE_TOKEN` (a write token cannot read).
-- `TRACELOOP_API_KEY` and `TRACELOOP_BASE_URL` are reused. Langfuse's `LANGFUSE_*` are reused through
+- `TRACELOOP_API_KEY` (through `SecretManager`) and `TRACELOOP_BASE_URL` are reused.
+- Credentials AK reads itself go through `SecretManager`; the ones the provider SDKs read themselves
+  (`LANGFUSE_*`, `LOGFIRE_TOKEN`, the SDK's own `TRACELOOP_API_KEY` read on the send side) stay
+  environment variables, as today. With the default `env` provider the two are the same. Langfuse's `LANGFUSE_*` are reused through
   its client. CloudWatch reuses the standard AWS chain and `AWS_REGION`, as its exporter does.
 - `ak-py/pyproject.toml`: `openllmetry` and `logfire` extras gain `"httpx>=0.27.0"`, the same bound the
   `api` and messaging extras (`slack`, `whatsapp`, `messenger`, …) already use. `uv.lock` is regenerated.
@@ -589,7 +637,7 @@ async def run(self, agent, session, requests):
 2. **`pip install agentkernel[openllmetry]` / `[logfire]` now install `httpx`.** Intentional, because
    the fetchers need it. In practice it is usually already present transitively, through
    `langfuse`/`openai`.
-3. **Langfuse runners on AWS Lambda flush after every run.** Before: spans waited for the background
+3. **Langfuse runners on AWS Lambda flush after every `run()`.** Before: spans waited for the background
    exporter, which a frozen Lambda sandbox never runs, so they arrived on the next invocation or were lost.
    After: each run ends with one export round trip on Lambda. Intentional (design.md §Langfuse flush).
    Off Lambda nothing changes.
@@ -604,6 +652,10 @@ async def run(self, agent, session, requests):
 - The `Trace.get()`/`Trace._build()` selection logic and `_BUILTIN_TRACERS` are unchanged.
 - No data written before this change is altered. Spans already in Logfire keep their scrubbed session
   value, so a session filter does not match runs recorded before the upgrade.
+- Streamed runs (`stream()`) get no Langfuse flush. No tracer wraps `stream()` today: the Langfuse,
+  Logfire, Traceloop and CloudWatch runners override only `run()` (checked on `develop`), so a streamed
+  run already gets no AK wrapper span, and CloudWatch's Lambda flush is `run()`-only too. Wrapping
+  `stream()` is a separate change for all four tracers.
 
 ## Phase 1 error handling
 
@@ -615,6 +667,7 @@ async def run(self, agent, session, requests):
 | `start >= end` | `ValueError` from `TraceQuery.window()`, raised before any network call |
 | Logfire with no read token | `AKConfigError` naming `LOGFIRE_READ_TOKEN`, raised before the SDK import |
 | Traceloop with no API key | `AKConfigError` naming `TRACELOOP_API_KEY`, raised before any request |
+| The secret provider fails while resolving either key (e.g. SSM access denied) | `SecretError` from `SecretManager.get`, propagated unchanged |
 | CloudWatch with no AWS region | `AKConfigError` naming `AWS_REGION`, raised before any request |
 | CloudWatch log group missing (`StartQuery` raises `ClientError` code `ResourceNotFoundException`) | `AKConfigError` naming the log group and saying to enable Transaction Search and make the spans reach X-Ray; chained from the `ClientError`. Any other `ClientError` propagates unchanged |
 | CloudWatch query ends `Failed`/`Cancelled`/`Timeout`/`Unknown` | `RuntimeError` naming the status and log group |
@@ -674,12 +727,16 @@ async def run(self, agent, session, requests):
     cursor
   - literal escaping
   - `NOT COALESCE` for `span`
+  - the `name` condition is `COALESCE(message, span_name)`
+  - a row at exactly `end` (as an inclusive `max_timestamp` would return it) is dropped by `matches`
   - `gen_ai.usage.*` attributes mapped to `usage`
 - `TestTraceloopFetcher` (`httpx.MockTransport`):
   - missing key raises
-  - Bearer header, timestamp params and `filters` JSON
+  - Bearer header, timestamp params and `filters` JSON, with no kind filter even when `kinds` is set
   - cursor followed
   - LLM and other-session spans dropped locally
+  - with `kinds=["tool"]`, a span carrying only `traceloop.span.kind=tool` (no `gen_ai.operation.name`)
+    is returned; the contract fake seeds `gen_ai.operation.name`, so it wouldn't catch this
   - `end_time` from `duration_ms`
   - empty parent → `None`
   - `_timestamp` over ISO / s / ms / µs / ns
@@ -698,6 +755,16 @@ async def run(self, agent, session, requests):
     `AccessDeniedException` propagates as `ClientError`
   - literal escaping, `traceId in [...]`, and no kind filter when `span` is requested
 - `FetchedSpan.oldest_first` with a missing `start_time`.
+- `TestTraceFetcher` (a minimal in-test subclass with scripted pages):
+  - `fetch` pins a defaulted `end` once (a clock that advances between calls doesn't move the window),
+    keeps the first span per id, returns the newest `limit` oldest first, and sets `provider`;
+  - `_follow_cursor`: each of the four stop rules;
+  - `_page_backward`: boundary dedupe, the session backfill, each stop rule, and the warning on a full
+    page with no fresh rows.
+- Credentials: `Logfire.fetch` and `OpenLLMetry.fetch` read their key through `SecretManager` (a stub
+  manager returning the value with the variable unset in the environment), and a missing one raises
+  `AKConfigError` naming the variable.
+- Each fetcher's `provider` value: `langfuse`, `logfire`, `openllmetry`, `cloudwatch`.
 - `TraceQuery.matches`: each filter rejects, start inclusive, end exclusive; a span with no
   `start_time` is rejected; with `session_id`/`name` set, a span reporting `None` for that field is
   rejected; with the filter unset, `None` is accepted.
@@ -741,7 +808,7 @@ make lint-check-all   # from the repo root
 against each provider after a real agent run, and tick off `research/provider-read-apis.md` §5 and §6:
 - Langfuse maps our spans to type `TOOL`.
 - Logfire `attributes->>` access works and the session subquery matches.
-- Traceloop accepts the `gen_ai.operation.name` / association-property / `trace_id` filter ids.
+- Traceloop accepts the association-property and `trace_id` filter ids.
 - CloudWatch: the `@message` shape, that the dotted `attributes.*` filters match, and what `@timestamp`
   is for a span.
 
@@ -1062,7 +1129,8 @@ class EvaluationStore:
 - `session(session_id)`: `table.query` on `session_id-index` with `session_id = :s`, projecting `trace_id`,
   `progress` and `error`, following `LastEvaluatedKey`: counts per `Progress` and the errors of `failed`
   rows. Index reads are eventually consistent, so only `/check` uses it. A row with an unknown `progress` is
-  logged and skipped.
+  logged and skipped. The index projects only `progress`, `error` and `updated_at` (plus the keys), so
+  it doesn't hold a second copy of every row's `spans_gz` (§Deployment).
 
 ### `evaluator/job.py`
 
@@ -1237,9 +1305,10 @@ resource "aws_dynamodb_table" "results" {
     type = "S"
   }
   global_secondary_index {
-    name            = "session_id-index"
-    hash_key        = "session_id"
-    projection_type = "ALL"
+    name               = "session_id-index"
+    hash_key           = "session_id"
+    projection_type    = "INCLUDE"                  # /check reads only these; ALL would copy spans_gz
+    non_key_attributes = ["progress", "error", "updated_at"]
   }
   ttl {
     attribute_name = "expires_at"
@@ -1276,7 +1345,7 @@ resource "aws_lambda_function_event_invoke_config" "grading" {
 - `aws_lambda_function_event_invoke_config.grading`: `function_name =
   module.serverless_agents.request_handler_lambda_function_name`, `maximum_retry_attempts = 0`. AWS
   would otherwise retry a killed grading invocation up to twice, overlapping with the next `/eval`, which
-  already re-queues leftover `grading` rows (design.md §`grade`).
+  already re-queues leftover `grading` rows (design.md §Evaluation run).
 - Network: the Lambda runs in the base VPC like the siblings, and reaches Langfuse, OpenAI, DynamoDB and
   the Lambda API through the same egress path the sibling agents use for OpenAI.
 - `variables.tf`: `region`, `prefix`, `is_production` (default `false`), `openai_api_key`,
