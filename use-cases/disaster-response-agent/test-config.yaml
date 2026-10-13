@@ -1,0 +1,11 @@
+# Agent Kernel test harness configuration (loaded only when running tests, from
+# tests/test_agent_e2e.py via agentkernel.test.Test).
+#
+# fuzzy   - string similarity matching (rapidfuzz); fast, deterministic, no extra LLM calls.
+# judge   - an LLM evaluates whether the response is semantically correct; better for
+#           open-ended replies, but needs its own model/provider configured.
+# fallback - tries fuzzy first, falls back to judge if fuzzy fails.
+#
+# This project's agent replies are short and fairly predictable (see tests/test_agent_e2e.py's
+# expect() lists), so fuzzy is enough and avoids needing a second LLM provider just for tests.
+mode: fuzzy
