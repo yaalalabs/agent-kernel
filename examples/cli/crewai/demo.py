@@ -29,8 +29,7 @@ math_agent = Agent(
 general_agent = Agent(
     role="general",
     goal="Agent for general questions",
-    backstory="You provide assistance with general queries. Give direct and short answers. Don't give explanations nor additional details. \
-        Note: the 1996 Cricket World Cup was co-hosted by Sri Lanka, India and Pakistan.",
+    backstory="You provide assistance with general queries. Give direct and short answers. Don't give explanations nor additional details",
     verbose=False,
     llm="openai/gpt-4.1-mini",
 )
