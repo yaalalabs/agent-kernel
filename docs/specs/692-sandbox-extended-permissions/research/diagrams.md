@@ -26,8 +26,8 @@ flowchart TD
   P1 --> P2["_enforce_policy"]
   P2 --> GQ{"Gated operation?"}
   GQ -->|"execute_command, upload_file, download_file"| L
-  GQ -->|"execute_code, install_packages, browse"| G["SandboxPermissionGuard"]
-  G -->|"denied"| DEN["One WARNING on ak.sandbox.broker<br/>raise SandboxPermissionDeniedError<br/>process() skips its generic warning for this subclass only"]
+  GQ -->|"execute_code, install_packages"| G["SandboxPermissionGuard"]
+  G -->|"denied"| DEN["One WARNING on ak.sandbox.broker<br/>raise SandboxPermissionDeniedError<br/>process() and the thread flavor skip<br/>their generic warning for this subclass only"]
   G -->|"permitted"| L["Per-session lock"]
   L --> AQ["Attach or create sandbox, self-heal"]
   AQ --> EX["Provider call under effective timeout"]
@@ -38,7 +38,8 @@ flowchart TD
   class DEN,CE deny
 ```
 
-- The guard reads only `request.policy`. It never reads `AKConfig` or provider capabilities. The existing
+- The guard reads only the request (`policy`, `operation`, `payload`). It never reads `AKConfig` or provider
+  capabilities. The existing
   `_check_principal` still reads `AKConfig`.
 - Because the authoritative check sits in the worker core, it covers the embedded, thread and queue flavors and
   bring-your-own `ExecutionManager` callers.
@@ -46,10 +47,11 @@ flowchart TD
 ## 2. Guard deny rules
 
 Every deny exit logs exactly one `WARNING` on `ak.sandbox.broker` and raises `SandboxPermissionDeniedError`. The log line names
-the operation, profile, agent, AK session id, sandbox session id and reason. It never includes code bodies, package
-lists or page content.
+the operation, profile, agent, AK session id, sandbox session id and reason. It never includes code bodies or package
+lists.
 
-Package-spec validation is not a guard rule. `PackageInstaller` does it and raises `ValueError` without an audit line.
+Package-spec validation is not a guard rule. `PackageInstaller` does it, with one rule set per ecosystem, and raises
+`ValueError` without an audit line.
 
 ```mermaid
 flowchart TD
@@ -66,14 +68,6 @@ flowchart TD
   P1 -->|"yes"| P2{"ecosystem in package_install.ecosystems?"}
   P2 -->|"no"| DENY
   P2 -->|"yes"| OK
-
-  OPS -->|"browse"| B1{"browser block declared?"}
-  B1 -->|"no"| DENY
-  B1 -->|"yes"| B2{"Every navigate URL is http or https<br/>with no userinfo?"}
-  B2 -->|"no"| DENY
-  B2 -->|"yes"| B3{"allowed_domains empty,<br/>or host equals or is a subdomain of an entry?<br/>lowercased, IDNA, port ignored"}
-  B3 -->|"no"| DENY
-  B3 -->|"yes"| OK
 
   DENY["Denied<br/>WARNING + SandboxPermissionDeniedError"]
   OK(["Permitted: continue to lock and acquire"])
@@ -106,8 +100,7 @@ flowchart LR
 ## 4. Configuration and model
 
 The policy envelope is extended in place. `_SandboxPolicyConfig` is the config-side mirror of `SandboxPolicy` and gains
-the same fields. `package_install` and `browser` are presence-enabled: a declared block permits the capability, and
-`None` denies it.
+the same fields. `package_install` is presence-enabled: a declared block permits installing, and `None` denies it.
 
 ```mermaid
 classDiagram
@@ -128,25 +121,18 @@ classDiagram
     +strict
     +Optional~list~ languages
     +Optional~PackageInstallPolicy~ package_install
-    +Optional~BrowserPolicy~ browser
   }
   class PackageInstallPolicy {
     <<new>>
     +list~str~ ecosystems
   }
-  class BrowserPolicy {
-    <<new>>
-    +list~str~ allowed_domains
-  }
   class ProviderRuntimeConfig {
     <<new>>
     +dict language_runtimes
   }
-  class ProviderExtensionsConfig {
+  class ProviderPackageConfig {
     <<new>>
     +dict package_installers
-    +bool browser
-    +str browse_runner
   }
   class DockerConfig
   class KubernetesConfig
@@ -157,7 +143,6 @@ classDiagram
     +list~str~ languages
     +bool package_install
     +list~str~ package_ecosystems
-    +bool browser
   }
   class SandboxPermissionGuard {
     <<new>>
@@ -165,50 +150,25 @@ classDiagram
   }
   class Sandbox {
     +execute_code(code, language)
-    +install_packages(packages, ecosystem)
-    +browse(steps, timeout)
+    +install_packages(packages, ecosystem, timeout)
   }
   class PackageInstaller {
     <<new>>
     +build argv from package_installers
-    +validate package specs
-  }
-  class BrowseRunner {
-    <<abstract>>
-    +run(sandbox, steps, timeout)
-  }
-  class BrowseRunnerFactory {
-    <<new>>
-    +playwright or dotted path
-  }
-  class PlaywrightBrowseRunner {
-    <<new>>
-    +upload steps JSON, run fixed driver
-  }
-  class BrowserStep {
-    <<new>>
-    +action
-    +url
-    +selector
-    +value
+    +validate package specs per ecosystem
   }
   ExecutionRequest *-- SandboxPolicy
   SandboxPolicy *-- PackageInstallPolicy
-  SandboxPolicy *-- BrowserPolicy
   ProviderRuntimeConfig <|-- DockerConfig
   ProviderRuntimeConfig <|-- KubernetesConfig
-  ProviderExtensionsConfig <|-- DockerConfig
-  ProviderExtensionsConfig <|-- KubernetesConfig
-  ProviderExtensionsConfig <|-- E2BConfig
-  ProviderExtensionsConfig <|-- DaytonaConfig
+  ProviderPackageConfig <|-- DockerConfig
+  ProviderPackageConfig <|-- KubernetesConfig
+  ProviderPackageConfig <|-- E2BConfig
+  ProviderPackageConfig <|-- DaytonaConfig
   ProviderRuntimeConfig ..> SandboxCapabilities : keys become languages
-  ProviderExtensionsConfig ..> SandboxCapabilities : keys become package_ecosystems
+  ProviderPackageConfig ..> SandboxCapabilities : keys become package_ecosystems
   SandboxPermissionGuard ..> SandboxPolicy : reads
   Sandbox ..> PackageInstaller : uses
-  Sandbox ..> BrowseRunner : uses
-  BrowseRunnerFactory ..> BrowseRunner : builds
-  BrowseRunner <|-- PlaywrightBrowseRunner
-  PlaywrightBrowseRunner ..> BrowserStep : runs
 ```
 
 | Field | Side | Default | Meaning |
@@ -216,14 +176,10 @@ classDiagram
 | `languages` | policy (may) | `None` | Allowlist for `run_code`. `None` means whatever the provider declares, which is today's behaviour. |
 | `package_install` | policy (may) | `None` | Presence permits installing. Absent means denied. |
 | `package_install.ecosystems` | policy (may) | `["python"]` | Open question: default to everything the provider declares instead? |
-| `browser` | policy (may) | `None` | Presence permits the `browse` operation. Absent means denied. |
-| `browser.allowed_domains` | policy (may) | `[]` | Empty means any domain, still subject to `network_egress`. An entry matches the host and its subdomains. |
 | `language_runtimes` | provider (can), `docker`/`kubernetes` | `{python: [python, -c]}` | Language to interpreter argv prefix. Keys become the instance's `languages`. A `python` key is required. |
-| `package_installers` | provider (can) | `{python: [pip, install]}` | Ecosystem to installer argv prefix. Keys become `package_ecosystems`. |
-| `browser` | provider (can) | `false` | Operator asserts the image has headless Chromium and Playwright. |
-| `browse_runner` | provider (can) | `playwright` | Built-in runner name, or a dotted path to a bring-your-own `BrowseRunner`. |
+| `package_installers` | provider (can) | `{python: [pip, install]}` | Ecosystem to installer argv prefix. Keys become `package_ecosystems`. Each key needs a `PackageInstaller` rule set. |
 
-Example profile using all three capabilities (illustrative):
+Example profile using both capabilities (illustrative):
 
 ```yaml
 sandbox:
@@ -232,36 +188,33 @@ sandbox:
     default:
       type: docker
       docker:
-        image: my-org/sandbox-node-playwright:1.4
+        image: my-org/sandbox-node:1.4
         language_runtimes:              # can: what the image contains
           python: [python, -c]
           node: [node, -e]
         package_installers:
           python: [pip, install]
-          node: [npm, install]
-        browser: true
+          node: [npm, install]        # needs a node rule set before it can be configured
       policy:                          # may: what agents are allowed to do
         network_egress: allowlist
-        network_allow: [pypi.org, files.pythonhosted.org, registry.npmjs.org, docs.example.com]
+        network_allow: [pypi.org, files.pythonhosted.org, registry.npmjs.org]
         languages: [python, node]
         package_install:               # present = permitted
           ecosystems: [python]          # node can install, but this profile may not
-        browser:                       # present = permitted
-          allowed_domains: [docs.example.com]
 ```
 
 ## 5. Provider matrix after #692
 
 What each built-in provider can declare (the *can* side). The profile policy still has to permit each one.
 
-| Provider | Languages | Package install | Browser | Config mixins |
-|---|---|---|---|---|
-| `docker` | Keys of `language_runtimes`, run as argv (replaces hard-coded `python -c`) | Yes: `PackageInstaller` argv, run directly | When `browser: true` | Runtime + Extensions |
-| `kubernetes` | Keys of `language_runtimes`, run as argv (replaces hard-coded `python -c`) | Yes: `PackageInstaller` argv, run directly | When `browser: true` | Runtime + Extensions |
-| `e2b` | `python` (unchanged; the template decides its kernel) | Yes: `PackageInstaller` argv joined with `shlex.join` (the SDK takes a string) | When `browser: true` | Extensions |
-| `daytona` | `python` only (the SDK fixes the language per sandbox) | Yes: `PackageInstaller` argv joined with `shlex.join` (the SDK takes a string) | When `browser: true` | Extensions |
-| `local_subprocess` | `python`, `bash` (unchanged) | No | No | None |
-| `ec2_ssm` | `python` (unchanged) | No | No | None |
+| Provider | Languages | Package install | Config mixins |
+|---|---|---|---|
+| `docker` | Keys of `language_runtimes`, run as argv (replaces hard-coded `python -c`) | Yes: `PackageInstaller` argv, run directly | Runtime + Package |
+| `kubernetes` | Keys of `language_runtimes`, run as argv (replaces hard-coded `python -c`) | Yes: `PackageInstaller` argv, run directly | Runtime + Package |
+| `e2b` | `python` (unchanged; the template decides its kernel) | Yes: `PackageInstaller` argv joined with `shlex.join` (the SDK takes a string) | Package |
+| `daytona` | `python` only (the SDK fixes the language per sandbox) | Yes: `PackageInstaller` argv joined with `shlex.join` (the SDK takes a string) | Package |
+| `local_subprocess` | `python`, `bash` (unchanged) | No | None |
+| `ec2_ssm` | `python` (unchanged) | No | None |
 
 ## 6. Capability 1: code in additional languages
 
@@ -313,7 +266,7 @@ sequenceDiagram
     Tool-->>Agent: error JSON
   else permitted
     W->>W: per-session lock, attach or create sandbox
-    W->>H: install_packages(packages, ecosystem=...)
+    W->>H: install_packages(packages, ecosystem=..., timeout=...)
     alt ecosystem not declared by this instance
       H-->>W: raise SandboxCapabilityError
       W-->>EM: SandboxCapabilityError
@@ -321,7 +274,7 @@ sequenceDiagram
       Tool-->>Agent: error JSON
     else declared
       H->>PI: validate specs, build argv for ecosystem
-      alt invalid spec (URL, VCS, path, leading dash, ...)
+      alt invalid spec for the ecosystem (URL, VCS, path, archive, leading dash, ...)
         PI-->>H: raise ValueError, no audit line
         H-->>W: ValueError
         W-->>EM: ValueError
@@ -330,7 +283,7 @@ sequenceDiagram
       else valid
         PI-->>H: argv, e.g. pip install pkg-a pkg-b
         H->>SB: run argv (docker, kubernetes) or shlex.join string (e2b, daytona)
-        SB-->>H: exit_code, stdout, stderr
+        SB-->>H: exit_code, stdout, stderr (killed on timeout)
         H-->>W: SandboxResult, non-zero exit_code on installer failure
         W-->>EM: SandboxResult
         EM-->>Tool: SandboxResult or promoted SandboxTask
@@ -343,8 +296,8 @@ sequenceDiagram
 ## 8. Queue flavor: the policy travels with the request
 
 The agent side resolves the profile policy and the worker enforces exactly that, so a worker with a different
-`AKConfig` cannot widen it. The codec code does not change, but the schema gains the `browse` operation and the new
-policy fields.
+`AKConfig` cannot widen it. The codec code and `BrokerOperation` do not change, but the schema gains the new policy
+fields and the `ecosystem` payload key.
 
 ```mermaid
 sequenceDiagram
@@ -371,46 +324,5 @@ sequenceDiagram
   QW->>Q: publish completion
   Q-->>EM: completion, tool returns result or error JSON
   Note over EM,G: Old agent to new worker: new fields decode as absent, so gated operations are denied
-  Note over EM,G: New agent to old worker: old worker drops the new fields and rejects browse. The agent-side guard prevents unchecked installs. Upgrade workers first.
-```
-
-## 9. Capability 3: `browse_web`, stateless step list
-
-One call runs one headless Chromium process inside the sandbox. No browser state survives between calls. A provider
-without `browser: true` keeps the default `Sandbox.browse`, which raises `SandboxCapabilityError`.
-
-```mermaid
-sequenceDiagram
-  autonumber
-  actor Agent
-  participant Tool as browse_web tool
-  participant EM as ExecutionManager
-  participant W as BrokerWorkerCore
-  participant G as SandboxPermissionGuard
-  participant H as Provider handle
-  participant PR as PlaywrightBrowseRunner
-  participant CH as Headless Chromium
-  Agent->>Tool: browse_web(steps, sandbox_session_id, profile)
-  Tool->>EM: browse op with a list of BrowserStep
-  EM->>G: agent-side check
-  EM->>W: ExecutionRequest op=browse
-  W->>G: browser block, http or https, no userinfo, allowed_domains
-  G-->>W: permitted
-  W->>W: acquire the profile's sandbox session
-  Note over W: Open question - reuse the session (draft) or always a fresh per_call sandbox
-  W->>H: browse(steps, timeout)
-  H->>PR: run(sandbox, steps, timeout), selected by BrowseRunnerFactory
-  PR->>H: upload_file(fixed driver script, steps JSON)
-  PR->>H: execute_command(python driver steps.json), its own process
-  H->>CH: launch one Chromium process
-  Note over CH: context.route aborts navigation requests to hosts outside a non-empty allowed_domains, service workers blocked
-  loop each BrowserStep
-    CH->>CH: navigate, click, fill, wait_for, extract_text, extract_html, screenshot
-  end
-  CH-->>H: extracted text or HTML, screenshot files, aborted hosts
-  Note over CH: Process exits, nothing persists to the next call
-  H-->>W: SandboxResult, output plus output_files
-  W-->>EM: SandboxResult
-  EM-->>Tool: SandboxResult
-  Tool-->>Agent: JSON with extracted data and screenshots
+  Note over EM,G: New agent to old worker: old worker drops the new fields and ignores ecosystem (runs pip). The agent-side guard prevents unchecked installs. Upgrade workers first.
 ```
