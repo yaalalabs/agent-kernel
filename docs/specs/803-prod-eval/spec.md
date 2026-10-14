@@ -4,7 +4,7 @@ This spec details how to build the three phases [design.md](design.md) requires:
 Kernel core, and Phases 2 (evaluate) and 3 (store) in the `aws-serverless/langfuse-trace-evaluation`
 example.
 
-**Phase 1** adds a `fetch(query)` method to `BaseTrace` and a `Trace.fetch(...)` facade.
+**Phase 1** adds a `fetch_spans(query)` method to `BaseTrace` and `Trace.fetch_spans(...)` / `Trace.fetch_traces(...)` facades.
 It also adds a provider-neutral query/result model in `trace/fetch.py`, plus one fetcher class per
 built-in tracer in `trace/<provider>/fetch.py`. Each fetcher translates the generic `TraceQuery` into
 its provider's read API and returns `FetchedSpan`s. Three small changes complete it: a Logfire scrubbing
@@ -20,23 +20,23 @@ default, and says so inline.
 
 ```
 ak-py/src/agentkernel/trace/
-├── __init__.py          # + exports FetchedSpan, OTelSpanClassifier, SpanKind, SpanUsage, TraceQuery
-├── base.py              # + BaseTrace.fetch (non-abstract)
-├── trace.py             # + Trace.fetch facade
-├── fetch.py             # NEW: SpanKind, TraceQuery, SpanUsage, FetchedSpan, OTelSpanClassifier, TraceFetcher
+├── __init__.py          # + exports FetchedSpan, FetchedTrace, OTelSpanClassifier, SpanKind, SpanStatus, SpanUsage, TraceQuery
+├── base.py              # + BaseTrace.fetch_spans (non-abstract)
+├── trace.py             # + Trace.fetch_spans and fetch_traces facades
+├── fetch.py             # NEW: SpanKind, SpanStatus, TraceQuery, SpanUsage, FetchedSpan, FetchedTrace, OTelSpanClassifier, TraceFetcher
 ├── testing.py           # NEW: TraceFetchContract (imports pytest; test code only)
 ├── langfuse/
-│   ├── langfuse.py      # + LangFuse.fetch → LangfuseTraceFetcher; + LangFuse.flush_on_lambda
+│   ├── langfuse.py      # + LangFuse.fetch_spans → LangfuseTraceFetcher; + LangFuse.flush_on_lambda
 │   ├── <6 runners>.py   # each run() flushes through LangFuse.flush_on_lambda in a finally
 │   └── fetch.py         # NEW: LangfuseTraceFetcher
 ├── logfire/
-│   ├── logfire.py       # + Logfire.fetch → LogfireTraceFetcher; scrubbing callback in init()
+│   ├── logfire.py       # + Logfire.fetch_spans → LogfireTraceFetcher; scrubbing callback in init()
 │   └── fetch.py         # NEW: LogfireTraceFetcher
 ├── openllmetry/
-│   ├── openllmetry.py   # + OpenLLMetry.fetch → TraceloopTraceFetcher
+│   ├── openllmetry.py   # + OpenLLMetry.fetch_spans → TraceloopTraceFetcher
 │   └── fetch.py         # NEW: TraceloopTraceFetcher
 └── cloudwatch/
-    ├── cloudwatch.py    # + CloudWatch.fetch → CloudWatchTraceFetcher; + CloudWatch.region()
+    ├── cloudwatch.py    # + CloudWatch.fetch_spans → CloudWatchTraceFetcher; + CloudWatch.region()
     └── fetch.py         # NEW: CloudWatchTraceFetcher
 ```
 
@@ -59,7 +59,8 @@ The provider packages' `__init__.py` files are empty today and stay empty. So
    - This keeps the fetchers testable without the extras.
 3. **Classification is per span, never per provider.** Every OTel-shaped result (Logfire, Traceloop and CloudWatch)
    goes through `OTelSpanClassifier`. Langfuse already types its observations server-side, so its
-   types are mapped directly.
+   types are mapped directly. Fetchers map each provider's fields onto the neutral ones but don't patch over a
+   provider's own mistakes: Langfuse's `SPAN` type is not re-classified, and callers trust `kind` and `status`.
 4. **Same result contract for every tracer.**
    - Spans come back oldest first, with at most `limit` of them; when more match, the most recent are
      kept.
@@ -81,6 +82,13 @@ The provider packages' `__init__.py` files are empty today and stay empty. So
 ```python
 class SpanKind(str, Enum):
     AGENT = "agent"; LLM = "llm"; TOOL = "tool"; SPAN = "span"
+
+class SpanStatus(str, Enum):                  # the OpenTelemetry span status
+    UNSET = "unset"; OK = "ok"; ERROR = "error"
+
+    @classmethod
+    def of(cls, value: Any) -> "SpanStatus": ...   # "ERROR" / "STATUS_CODE_ERROR" / OTLP 2 -> ERROR; "OK" / 1 -> OK;
+                                                    # None, bool or anything unknown -> UNSET
 
 class TraceQuery(BaseModel):
     start: Optional[datetime] = None          # inclusive, on span start time
@@ -115,6 +123,7 @@ class FetchedSpan(BaseModel):
     parent_span_id: Optional[str] = None
     name: Optional[str] = None
     kind: SpanKind = SpanKind.SPAN
+    status: SpanStatus = SpanStatus.UNSET     # mapped from the provider's own field (see each fetcher)
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
     session_id: Optional[str] = None
@@ -127,6 +136,32 @@ class FetchedSpan(BaseModel):
     @staticmethod
     def oldest_first(spans: Iterable["FetchedSpan"]) -> list["FetchedSpan"]: ...
         # sort key: start_time, with None sorting first (datetime.min UTC)
+
+class FetchedTrace(BaseModel):                # the spans of one trace id
+    trace_id: str
+    session_id: Optional[str] = None          # the first session id found on its spans
+    spans: list[FetchedSpan] = []             # oldest first
+
+    @property
+    def root(self) -> Optional[FetchedSpan]: ...      # the single span with parent_span_id None, else None
+    @property
+    def user_input(self) -> Any: ...                  # root.input; None without a root
+    @property
+    def output(self) -> Any: ...                      # root.output; None without a root
+    @property
+    def started_at(self) -> Optional[datetime]: ...   # root.start_time
+    @property
+    def ended_at(self) -> Optional[datetime]: ...     # root.end_time
+    @property
+    def tool_spans(self) -> list[FetchedSpan]: ...    # kind == TOOL
+    @property
+    def agent_names(self) -> list[str]: ...           # kind == AGENT names, de-duplicated, in order
+    @property
+    def usage(self) -> SpanUsage: ...                 # summed over the spans; a field stays None when none reports it
+
+    @classmethod
+    def group(cls, spans: Iterable[FetchedSpan]) -> list["FetchedTrace"]: ...
+        # groups by trace_id in input order; traces ordered by their first span
 
 class OTelSpanClassifier:
     @classmethod
@@ -141,7 +176,7 @@ class OTelSpanClassifier:
 class TraceFetcher(ABC):                      # base of the four built-in fetchers
     provider: ClassVar[str]                   # written to every FetchedSpan.provider
 
-    def fetch(self, query: TraceQuery) -> list[FetchedSpan]: ...
+    def fetch_spans(self, query: TraceQuery) -> list[FetchedSpan]: ...
         # pins the window, runs _collect, keeps the first span per span_id, returns oldest_first(...)[-limit:]
     @abstractmethod
     def _collect(self, query: TraceQuery) -> Iterable[FetchedSpan]: ...   # the provider's requests
@@ -197,7 +232,7 @@ class TraceFetcher(ABC):                      # base of the four built-in fetche
   - Attributes arrive flattened for CloudWatch (`CloudWatchTraceFetcher._flatten`), so nested
     `llm.token_count` objects resolve to the same keys.
 - `TraceQuery.matches` resolves `window()` on every call, so a defaulted `end` (now) would move between
-  calls. `TraceFetcher.fetch` therefore pins it first: `query = query.model_copy(update={"start": start,
+  calls. `TraceFetcher.fetch_spans` therefore pins it first: `query = query.model_copy(update={"start": start,
   "end": end})`, and every later step uses that copy.
 - `FetchedSpan.provider` is the tracer's `trace.type` short name, so it round-trips with config:
   `langfuse`, `logfire`, `openllmetry` (not `traceloop`) and `cloudwatch`. Each fetcher sets it from its
@@ -223,33 +258,45 @@ class TraceFetcher(ABC):                      # base of the four built-in fetche
        kept. A full page with no fresh rows (more than `size` rows at one timestamp) logs a warning and
        stops, so it can't spin on a block of identical timestamps.
   - Not exported from `agentkernel.trace`: it is the built-ins' shared implementation. Bring-your-own
-    tracers override `BaseTrace.fetch` and only have to pass `TraceFetchContract`.
-- Module-level functions: none. All logic is on these six classes.
+    tracers override `BaseTrace.fetch_spans` and only have to pass `TraceFetchContract`.
+- Module-level functions: none. All logic is on these classes.
+- `FetchedTrace.root` is `None` for no parentless span **and** for several; `fetch_traces` still returns the trace
+  (design.md §Result model: `FetchedTrace`). `fetch_traces` is one pass over `fetch_spans`, so a trace at the window
+  edge can be partial, and AK doesn't wait for late spans.
 
-### `BaseTrace.fetch` and `Trace.fetch`
+### `BaseTrace.fetch_spans`, `Trace.fetch_spans` and `Trace.fetch_traces`
 
 ```python
 # trace/base.py
 class BaseTrace(ABC):
-    def fetch(self, query: TraceQuery) -> list[FetchedSpan]:
+    def fetch_spans(self, query: TraceQuery) -> list[FetchedSpan]:
         raise NotImplementedError(f"{type(self).__name__} does not support fetching spans")
 
 # trace/trace.py
 class Trace(BaseTrace):
-    def fetch(self, query: TraceQuery | None = None, **filters) -> list[FetchedSpan]:
+    def fetch_spans(self, query: TraceQuery | None = None, **filters) -> list[FetchedSpan]:
         if self._instance is None:
             raise AKConfigError("cannot fetch spans: tracing is disabled (set trace.enabled: true)")
         if query is not None and filters:
             raise ValueError("pass either a TraceQuery or keyword filters, not both")
-        return self._instance.fetch(query if query is not None else TraceQuery(**filters))
+        return self._instance.fetch_spans(query if query is not None else TraceQuery(**filters))
+
+    def fetch_traces(self, query: TraceQuery | None = None, **filters) -> list[FetchedTrace]:
+        query = query if query is not None else TraceQuery(**filters)
+        if query.kinds is not None or query.name is not None:
+            raise ValueError("fetch_traces does not take kinds or name; filter the returned trace's spans instead")
+        return FetchedTrace.group(self.fetch_spans(query))
 ```
 
 - `base.py` imports `FetchedSpan`/`TraceQuery` from `.fetch`. There is no import cycle: `fetch.py`
   imports only stdlib and pydantic.
 - Unknown keyword filters raise Pydantic's `ValidationError`, because `TraceQuery` is built from them.
 - `query` combined with keyword filters raises `ValueError` (design.md §Public API).
+- `fetch_traces` is built once on `fetch_spans`, so a bring-your-own tracer that overrides only `fetch_spans` gets it.
+  `kinds` and `name` raise `ValueError` because they select single spans, not traces. Tracing disabled raises the
+  same `AKConfigError`, through `fetch_spans`.
 
-### `LangFuse.fetch` → `LangfuseTraceFetcher`
+### `LangFuse.fetch_spans` → `LangfuseTraceFetcher`
 
 ```python
 class LangfuseTraceFetcher(TraceFetcher):
@@ -266,7 +313,7 @@ class LangfuseTraceFetcher(TraceFetcher):
     def _to_span(self, observation) -> FetchedSpan: ...
 ```
 
-- `LangFuse.fetch(query)` returns `LangfuseTraceFetcher(self._client).fetch(query)`. `self._client` is
+- `LangFuse.fetch_spans(query)` returns `LangfuseTraceFetcher(self._client).fetch_spans(query)`. `self._client` is
   the client `init()` builds with `get_client()` (`trace/langfuse/langfuse.py:24`).
 - Request matrix: `for type in _types(query)` × `for trace_id in query.trace_ids or [None]`. Each cell
   runs one `_follow_cursor` over `_page`, which calls `client.api.observations.get_many(...)` with these
@@ -274,7 +321,7 @@ class LangfuseTraceFetcher(TraceFetcher):
   - `fields=_FIELDS`, `expand_metadata=_EXPAND_METADATA`, `limit=min(100, query.limit)`, `cursor`
   - `type`, `trace_id`, `session_id=query.session_id`, `name=query.name`
   - `from_start_time=start`, `to_start_time=end`
-- Each cell keeps up to `query.limit` spans; `TraceFetcher.fetch` merges the cells, keeping the first
+- Each cell keeps up to `query.limit` spans; `TraceFetcher.fetch_spans` merges the cells, keeping the first
   span per id, and returns the newest `limit`.
 - `_to_span` field mapping:
 
@@ -282,13 +329,14 @@ class LangfuseTraceFetcher(TraceFetcher):
   |---|---|
   | `trace_id`, `span_id` | `trace_id`, `id` |
   | `parent_span_id` | `parent_observation_id` |
-  | `kind` | `_TYPES` reversed, default `span` |
+  | `kind` | `_TYPES` reversed, default `span`. Not re-classified from attributes: a span Langfuse types `SPAN` stays `span` (design.md §Span kinds) |
+  | `status` | `ERROR` when `level` is `ERROR`, else `UNSET`. `level` is in the `basic` field group, which `_FIELDS` already requests |
   | `session_id`, `input`, `output` | same-named fields, read with `getattr`, default `None` |
   | `usage` | `_usage`: `SpanUsage.of(usage_details["input"], ["output"], ["total"], cost=total_cost, else cost_details["total"])` |
   | `attributes` | `metadata["attributes"]` if `metadata` is a dict holding that key, else `metadata`, else `{}` |
   | `raw` | `observation.model_dump(mode="json", exclude_none=True)` |
 
-### `Logfire.fetch` → `LogfireTraceFetcher`
+### `Logfire.fetch_spans` → `LogfireTraceFetcher`
 
 ```python
 class LogfireTraceFetcher(TraceFetcher):
@@ -306,7 +354,7 @@ class LogfireTraceFetcher(TraceFetcher):
     def _to_span(self, row: dict) -> FetchedSpan: ...
 ```
 
-- Token: `Logfire.fetch` passes `SecretManager.current().get("LOGFIRE_READ_TOKEN", None)` (design.md
+- Token: `Logfire.fetch_spans` passes `SecretManager.current().get("LOGFIRE_READ_TOKEN", None)` (design.md
   §Configuration). The secret manager reads the environment first, so an `env` deployment behaves as
   a plain `os.getenv`, and an `aws_ssm` deployment reads the token from SSM without exporting it. A
   `None` token raises `AKConfigError` naming `LOGFIRE_READ_TOKEN` in the constructor.
@@ -343,6 +391,8 @@ class LogfireTraceFetcher(TraceFetcher):
   - Classification uses `{**attributes, "logfire.msg_template": span_name, "logfire.tags": tags or []}`.
     Logfire stores the template as `span_name` and tags in their own column.
   - `name` = `message` (the formatted message), else `span_name`.
+  - `status` = `SpanStatus.of(row["otel_status_code"])`; `otel_status_code` is added to `_COLUMNS`. **Unverified against a
+    live account**: a wrong column name would fail every query, so confirm it before merge.
   - `usage` = `OTelSpanClassifier.usage(attributes)`.
   - `raw` = the row as returned.
 
@@ -363,7 +413,7 @@ def _keep_session_id(match):            # logfire.ScrubMatch
 - Returning `None` keeps Logfire's redaction for every other match (the `ScrubbingOptions.callback`
   contract). The once-guard (`trace/logfire/logfire.py:29-31`) is unchanged.
 
-### `OpenLLMetry.fetch` → `TraceloopTraceFetcher`
+### `OpenLLMetry.fetch_spans` → `TraceloopTraceFetcher`
 
 ```python
 class TraceloopTraceFetcher(TraceFetcher):
@@ -384,7 +434,7 @@ class TraceloopTraceFetcher(TraceFetcher):
     def _timestamp(value) -> datetime | None: ...
 ```
 
-- Credentials, resolved by `OpenLLMetry.fetch` and passed in:
+- Credentials, resolved by `OpenLLMetry.fetch_spans` and passed in:
   - API key: `SecretManager.current().get("TRACELOOP_API_KEY", None)`, as for Logfire's read token. A
     `None` key raises `AKConfigError` naming `TRACELOOP_API_KEY` in the constructor.
   - Base URL: `os.environ.get("TRACELOOP_BASE_URL")` (not a secret), else `DEFAULT_BASE_URL`.
@@ -419,13 +469,15 @@ class TraceloopTraceFetcher(TraceFetcher):
   - `parent_span_id` = `parent_span_id or None` (the API may return `""` for a root span).
   - `input`/`output` = the item's top-level `input`/`output` when not `None`, else `OTelSpanClassifier.io`.
   - `end_time` = `start_time + timedelta(milliseconds=duration_ms)` when both are known.
+  - `status` = `SpanStatus.of(item["status_code"] or item["status"])`; the warehouse's status field name is
+    undocumented and unverified against a live account.
   - `usage` = `OTelSpanClassifier.usage(attributes)`. Top-level warehouse columns (the API sorts by
     `total_tokens`) are not read: their names are undocumented.
 - `_timestamp`, because the warehouse format is undocumented:
   - A non-numeric string → `datetime.fromisoformat` (with `Z` → `+00:00`).
   - A number → epoch ns if `> 1e17`, µs if `> 1e14`, ms if `> 1e11`, otherwise seconds; always UTC.
 
-### `CloudWatch.fetch` → `CloudWatchTraceFetcher`
+### `CloudWatch.fetch_spans` → `CloudWatchTraceFetcher`
 
 ```python
 class CloudWatchTraceFetcher(TraceFetcher):
@@ -460,9 +512,9 @@ class CloudWatch(BaseTrace):
     def region(botocore_session: BotocoreSession) -> str | None:
         return os.environ.get("AWS_REGION") or botocore_session.get_config_variable("region")
 
-    def fetch(self, query: TraceQuery) -> list[FetchedSpan]:
+    def fetch_spans(self, query: TraceQuery) -> list[FetchedSpan]:
         from .fetch import CloudWatchTraceFetcher
-        return CloudWatchTraceFetcher().fetch(query)
+        return CloudWatchTraceFetcher().fetch_spans(query)
 ```
 
 - `CloudWatch.region()` is the expression `_exporter()` used inline (`trace/cloudwatch/cloudwatch.py:137`),
@@ -518,6 +570,7 @@ class CloudWatch(BaseTrace):
   - `trace_id`, `span_id`, `name` = `traceId`, `spanId`, `name`; `parent_span_id` = `parentSpanId or None`.
   - `start_time` / `end_time` = `startTimeUnixNano` / `endTimeUnixNano` (int or numeric string), as UTC.
   - `kind`, `input`, `output`, `session_id`, `usage` from `OTelSpanClassifier`.
+  - `status` = `SpanStatus.of(raw["status"]["code"])` (`OK` / `UNSET` / `ERROR`; verified on a live `aws/spans` log group).
   - The `@timestamp` cell (`"YYYY-MM-DD HH:MM:SS.mmm"`, UTC) is parsed with `datetime.fromisoformat` and
     used only for paging.
 
@@ -547,10 +600,10 @@ class TraceFetchContract:                          # not prefixed Test: pytest c
   from test code only; the subclass supplies the fixture and the seeding hook.
 - `seed` gets `FetchedSpan`s with ids, name, kind, times and session; a backend with its own vocabulary
   maps them on the way in (Langfuse types, Traceloop `gen_ai.operation.name`), as the instrumentation would.
-- `tracer` may be any object with `fetch(query)`; the Traceloop subclass passes the fetcher itself,
-  because `OpenLLMetry.fetch` builds its fetcher without a transport.
+- `tracer` may be any object with `fetch_spans(query)`; the Traceloop subclass passes the fetcher itself,
+  because `OpenLLMetry.fetch_spans` builds its fetcher without a transport.
 - Subclasses (`tests/test_trace_fetch_contract.py`):
-  - `TestInMemoryTraceContract`: `InMemoryTrace(BaseTrace)`, whose `fetch` is
+  - `TestInMemoryTraceContract`: `InMemoryTrace(BaseTrace)`, whose `fetch_spans` is
     `FetchedSpan.oldest_first(s for s in spans if query.matches(s))[-query.limit:]`. This is also the
     bring-your-own example in the docs.
   - `TestLangfuseFetchContract`: a `LangFuse` with `_client` replaced by a fake `api.observations.get_many`
@@ -603,7 +656,7 @@ async def run(self, agent, session, requests):
 
 - No `AKConfig` changes. `_TraceConfig` (`core/config.py:468-473`) keeps its `enabled` and `type`
   fields, defaults and descriptions.
-- New secret `LOGFIRE_READ_TOKEN`, resolved by `Logfire.fetch` through `SecretManager`.
+- New secret `LOGFIRE_READ_TOKEN`, resolved by `Logfire.fetch_spans` through `SecretManager`.
   - It is not an `AK_*` variable, because it is the provider's own credential, like `LOGFIRE_TOKEN` and
     `TRACELOOP_API_KEY`.
   - It can't be derived from `LOGFIRE_TOKEN` (a write token cannot read).
@@ -661,7 +714,7 @@ async def run(self, agent, session, requests):
 
 | Situation | Surfaces as |
 |---|---|
-| `Trace.fetch` with `trace.enabled: false` | `AKConfigError("cannot fetch spans: tracing is disabled …")` |
+| `Trace.fetch_spans` with `trace.enabled: false` | `AKConfigError("cannot fetch spans: tracing is disabled …")` |
 | Bring-your-own tracer without `fetch` | `NotImplementedError("<Class> does not support fetching spans")` |
 | Bad filter value (`limit=0`, unknown kind, unknown kwarg) | Pydantic `ValidationError` from `TraceQuery` |
 | `start >= end` | `ValueError` from `TraceQuery.window()`, raised before any network call |
@@ -710,7 +763,14 @@ async def run(self, agent, session, requests):
   - kwargs build a `TraceQuery`
   - an explicit query is passed through
   - `query` plus keyword filters raises `ValueError`
-  - the default `BaseTrace.fetch` raises `NotImplementedError`
+  - the default `BaseTrace.fetch_spans` raises `NotImplementedError`
+- `TestSpanStatus`: `SpanStatus.of` over `ERROR`, `STATUS_CODE_ERROR`, OTLP `2`, `OK`, `1`, `UNSET`, `0`, `None`, a bool and
+  an unknown string.
+- `TestFetchedTrace`: `group` keeps span order and orders traces by their first span; `root`, `user_input`, `output`,
+  `started_at`, `ended_at`; no root when every span has a parent; no root when two spans have none; `tool_spans` and
+  `agent_names` (de-duplicated, in order); `usage` sums and leaves unreported fields `None`.
+- `TestTraceFetchTraces`: groups the spans `fetch_spans` returned; `kinds` and `name` raise `ValueError`; disabled
+  tracing raises `AKConfigError`.
 - `TestLangfuseFetcher` (a `MagicMock` client):
   - cursor followed
   - parameter translation
@@ -718,6 +778,7 @@ async def run(self, agent, session, requests):
   - `span` kind → `type=None` plus local filtering
   - `limit=1` keeps the newest span and stops after one page
   - `usage_details` + `total_cost` mapped to `SpanUsage`; an observation without them → `None`
+  - `level` `ERROR` → `status` `ERROR`, any other level → `UNSET`
 - `TestLogfireFetcher` (fake `logfire`, `logfire.experimental` and `logfire.experimental.query_client`
   modules in `sys.modules`):
   - missing token raises
@@ -730,6 +791,7 @@ async def run(self, agent, session, requests):
   - the `name` condition is `COALESCE(message, span_name)`
   - a row at exactly `end` (as an inclusive `max_timestamp` would return it) is dropped by `matches`
   - `gen_ai.usage.*` attributes mapped to `usage`
+  - `otel_status_code` mapped to `status`
 - `TestTraceloopFetcher` (`httpx.MockTransport`):
   - missing key raises
   - Bearer header, timestamp params and `filters` JSON, with no kind filter even when `kinds` is set
@@ -761,7 +823,7 @@ async def run(self, agent, session, requests):
   - `_follow_cursor`: each of the four stop rules;
   - `_page_backward`: boundary dedupe, the session backfill, each stop rule, and the warning on a full
     page with no fresh rows.
-- Credentials: `Logfire.fetch` and `OpenLLMetry.fetch` read their key through `SecretManager` (a stub
+- Credentials: `Logfire.fetch_spans` and `OpenLLMetry.fetch_spans` read their key through `SecretManager` (a stub
   manager returning the value with the variable unset in the environment), and a missing one raises
   `AKConfigError` naming the variable.
 - Each fetcher's `provider` value: `langfuse`, `logfire`, `openllmetry`, `cloudwatch`.
@@ -804,9 +866,10 @@ cd ak-py && uv run pytest tests/test_trace_fetch.py tests/test_trace_fetch_contr
 make lint-check-all   # from the repo root
 ```
 
-**Before merge, manual live checks** (not CI; they need accounts): run `Trace.get().fetch(kinds=["tool"])`
+**Before merge, manual live checks** (not CI; they need accounts): run `Trace.get().fetch_spans(kinds=["tool"])`
 against each provider after a real agent run, and tick off `research/provider-read-apis.md` §5 and §6:
-- Langfuse maps our spans to type `TOOL`.
+- Langfuse maps our spans to type `TOOL`: the example trusts `span.kind` and no longer re-classifies.
+- Logfire has the `otel_status_code` column, and Traceloop returns a `status_code` or `status` field.
 - Logfire `attributes->>` access works and the session subquery matches.
 - Traceloop accepts the association-property and `trace_id` filter ids.
 - CloudWatch: the `@message` shape, that the dotted `attributes.*` filters match, and what `@timestamp`
@@ -815,8 +878,8 @@ against each provider after a real agent run, and tick off `research/provider-re
 ## Phases 2–3 design (example)
 
 Phases 2 and 3 add no Agent Kernel core code. Everything below lives in
-`examples/aws-serverless/langfuse-trace-evaluation/` and uses only public AK API: `Trace.get().fetch(...)`,
-`FetchedSpan`, `SpanKind`, `SpanUsage`, `OTelSpanClassifier`, `AKEvaluator`, `AKEvaluationCase`,
+`examples/aws-serverless/langfuse-trace-evaluation/` and uses only public AK API: `Trace.get().fetch_spans(...)`,
+`Trace.get().fetch_traces(...)`, `FetchedTrace`, `FetchedSpan`, `SpanStatus`, `SpanUsage`, `AKEvaluator`, `AKEvaluationCase`,
 `AKEvaluationResult`, `AKMetricNotSupported`, `AKTestConfig` and `Lambda`.
 
 One AK serverless Lambda serves the agent (`POST /api/v1/chat`) and two custom routes: `POST /api/v1/eval`
@@ -947,7 +1010,6 @@ class TraceCase(BaseModel):
     agents: list[str] = []
     usage: SpanUsage = SpanUsage()            # summed over the trace's spans
     span_count: int
-    missing_parents: int = 0                  # spans whose parent_span_id is not in the trace
     spans: list[FetchedSpan] = []             # kept for EvaluationStore's spans_gz
 
     @property
@@ -956,7 +1018,7 @@ class TraceCase(BaseModel):
     @property
     def latency_ms(self) -> int | None: ...
     @classmethod
-    def from_spans(cls, trace_id: str, spans: list[FetchedSpan]) -> "TraceCase | None": ...
+    def from_trace(cls, trace: FetchedTrace) -> "TraceCase": ...   # needs trace.root; ValueError otherwise
     def transcript(self) -> str: ...
     def to_evaluation_case(self, threshold: float) -> "TraceEvaluationCase": ...
 
@@ -965,16 +1027,15 @@ class TraceEvaluationCase(AKEvaluationCase):
     tool_call_count: int = 0
 ```
 
-- `from_spans`:
-  - Root: the single span whose `parent_span_id` is `None`. None, or more than one → `None`, logged. A
-    `None` result means "not a request": the job never counts it (design.md §Trace case).
-  - Tool spans: `span.kind == SpanKind.TOOL`, or `OTelSpanClassifier.classify(span.attributes) == TOOL`
-    (the fallback design.md §Trace case explains). `failed` = `span.raw.get("level") == "ERROR"`.
-  - `missing_parents`: spans whose `parent_span_id` is not `None` and not the `span_id` of any span in
-    `spans`.
-  - Agent spans: `span.kind == SpanKind.AGENT` (or the same fallback), their `name`s, de-duplicated in order.
-  - `usage`: each field is the sum of the non-`None` values across spans, or `None` when no span has
-    one.
+- `from_trace` reads a `FetchedTrace` that has a root; the job skips the others (`root is None`), so grouping spans,
+  finding the single parentless root and summing usage are AK's (`fetch_traces`), not the example's:
+  - `user_input`, `output`, `session_id`, `started_at`, `ended_at`: from the trace (its root span), through `_text`.
+  - Tool calls: `trace.tool_spans`, oldest first. `failed` = `span.status == SpanStatus.ERROR`. The example trusts
+    `span.kind`: it doesn't re-classify spans, so a tool span a provider labels as a plain span is missing from
+    the transcript (design.md §Trace case).
+  - `agents`: `trace.agent_names`. `usage`: `trace.usage`. `span_count`: `len(trace.spans)`. `spans`: `trace.spans`.
+  - There is no `missing_parents`: the settle time is what waits for late spans.
+- `ready(now, settle)`: `finished` and the root ended at least `settle` ago.
 - Text fields (`_text`): Langfuse returns `input`/`output` as strings that are often JSON. A string that
   decodes to a JSON string is unwrapped; any other string is kept; anything else is `json.dumps`-ed.
 - `transcript()`:
@@ -1138,8 +1199,8 @@ class EvaluationStore:
 class PrepareSummary(BaseModel):
     session_id: str
     spans_fetched: int = 0
-    found: int = 0               # traces with exactly one root span
-    no_root: int = 0             # traces with no root span (or several): no row
+    found: int = 0               # traces with a root span
+    no_root: int = 0             # traces with no single root span: no row
     already_graded: int = 0      # row already graded
     grading: int = 0             # marked grading now
     pending: int = 0
@@ -1154,7 +1215,6 @@ class GradeSummary(BaseModel):
 
 class TraceEvaluationJob:
     FETCH_WINDOW = timedelta(hours=24)
-    FETCH_LIMIT = 5_000
     SETTLE = timedelta(minutes=2)
 
     def __init__(self, trace: Trace, store: EvaluationStore,
@@ -1164,8 +1224,8 @@ class TraceEvaluationJob:
     def from_env(cls) -> "TraceEvaluationJob": ...
     def prepare(self, session_id: str) -> PrepareSummary: ...
     def grade(self, session_id: str, trace_ids: list[str]) -> GradeSummary: ...
-    def _fetch(self, session_id: str) -> list[FetchedSpan]: ...
-    def _cases(self, spans: list[FetchedSpan]) -> tuple[list[TraceCase], int]: ...   # cases, no_root count
+    def _fetch(self, session_id: str) -> list[FetchedTrace]: ...
+    def _cases(self, traces: list[FetchedTrace]) -> tuple[list[TraceCase], int]: ...   # cases, no_root count
     def _next(self, case: TraceCase, current: TraceProgress | None, now: datetime) -> Progress | None: ...
     def _evaluate(self, case: TraceCase) -> list[AKEvaluationResult]: ...
 ```
@@ -1175,13 +1235,13 @@ class TraceEvaluationJob:
   `OpikTraceEvaluator.all(AKTestConfig.get())` (reads `AK_TEST__LLM__*`). The job calls the factory once,
   on the first `grade`, and keeps the list; `prepare` never calls it, so `/eval` doesn't load Opik or
   litellm.
-- `_cases(spans)`: group by `trace_id`; `TraceCase.from_spans`; a `None` counts as `no_root`; the rest
-  oldest first by `started_at`.
+- `_cases(traces)`: `TraceCase.from_trace` for each trace with a root; a trace with `root is None` counts as
+  `no_root` (no row; the next `/eval` fetches it again); the cases are oldest first by `started_at`.
 - `_next(case, current, now)`: the design's `prepare` table (design.md §Evaluation run). `None` means
   "leave the row as it is":
   - `current` is `graded` or `unfinished` → `None`;
   - otherwise (no row, `pending`, `failed` or `grading`): not `case.finished` →
-    `UNFINISHED`; not `case.ready(now, SETTLE)` → `PENDING`; else `GRADING`.
+    `UNFINISHED`; not `case.ready(now, SETTLE)` → `PENDING`; else `GRADING`. A span that lands after `SETTLE` is not detected.
 - `prepare(session_id)`: `now = clock()`; `cases, no_root = _cases(_fetch(session_id))`;
   `current = store.progress([c.trace_id for c in cases])`; for each case, `new = _next(...)`, and
   `store.mark(case, new, now)` when `new` is not `None`. Counts each case under its resulting
@@ -1200,10 +1260,9 @@ class TraceEvaluationJob:
   5. Logs the summary and returns it.
   - Nothing is re-raised except an exception from `store.fail` itself, which leaves those rows
     `grading` for the next `/eval` (AWS's automatic retry is off, §Deployment).
-- `_fetch(session_id)`: `trace.fetch(session_id=session_id, last=FETCH_WINDOW, limit=FETCH_LIMIT)`.
-  `len(spans) == FETCH_LIMIT` → `RuntimeError("session <id> has at least 5000 spans; refusing to grade a
-  truncated session")`, because `fetch` keeps the newest `limit` spans and older requests would be silently
-  missing.
+- `_fetch(session_id)`: `trace.fetch_traces(session_id=session_id, last=FETCH_WINDOW)`. The fetch keeps at most the newest
+  1000 spans (the default `limit`), which a demo session never reaches, so there is no truncation check; a
+  provider or HTTP error propagates.
 - `_evaluate(case)`: `evaluation_case = case.to_evaluation_case(OpikTraceEvaluator.THRESHOLD)`; one
   `evaluate_by_llm` per evaluator that `applies_to` it.
 - Overlap: `/eval` called while a `grade` invocation is still running queues its `grading` rows again,
@@ -1415,12 +1474,11 @@ dev = ["agentkernel[test]>=0.9.4", "httpx>=0.27.0", "moto[dynamodb]>=5.0.0", "bl
 | `/check` with a missing `session_id`, or `expected` not a positive integer | `400` |
 | `/check` before any `/eval` for the session | `200`, every count `0`, `complete = false` |
 | Langfuse keys missing or wrong | `LangFuse.init()` raises in `prepare` (`trace/langfuse/langfuse.py:25-28`) → `/eval` returns `500` with the error |
-| Langfuse fetch fails (HTTP error, rate limit) in `prepare` | Propagates from `fetch` (Phase 1 does no retries) → `/eval` returns `500` with the error |
-| The session has `FETCH_LIMIT` spans or more | `RuntimeError` from `_fetch` → `/eval` returns `500` with the error |
+| Langfuse fetch fails (HTTP error, rate limit) in `prepare` | Propagates from `fetch_traces` (Phase 1 does no retries) → `/eval` returns `500` with the error |
 | DynamoDB or IAM error in `prepare` (`progress`, `mark`, or the self-invoke) | `/eval` returns `500` with the error; rows marked before it stay, and the next `/eval` continues from them |
-| A trace has no root span, or several | `no_root`: logged, not a request, no row |
+| A trace has no single root span (`root is None`) | `no_root`: not a request, no row; the next `/eval` fetches it again |
 | A root span without output | `unfinished` row: never graded; `/check` reports it and `graded < expected` |
-| A finished trace whose root span ended less than `SETTLE` ago, or with `missing_parents > 0` | `pending` row; a later `/eval` moves it to `grading` |
+| A finished trace whose root span ended less than `SETTLE` ago | `pending` row; a later `/eval` moves it to `grading` |
 | A trace not readable at all yet | No row; a later `/eval` finds it |
 | A judge call fails twice | That metric's column is stored with `score`/`passed` omitted and the error in `reason`; `metric_errors` counts it; the row still turns `graded` |
 | Fetch error in `grade` | Every `grading` row of the session → `failed` with the error; the next `/eval` retries them |
@@ -1443,12 +1501,10 @@ dev = ["agentkernel[test]>=0.9.4", "httpx>=0.27.0", "moto[dynamodb]>=5.0.0", "bl
   `research/span-formats.md` §3 (root `Agent Kernel OpenAI`, `triage` and `support` agents, a
   `get_order_status` tool, two generations with `usage`).
 - `TestTraceCase`:
-  - root input/output, JSON-string unwrapping, tool calls in order, `failed` from `raw.level`, agents,
+  - root input/output, JSON-string unwrapping, tool calls in order, `failed` from `span.status == ERROR`, agents,
     summed usage (and `None` when no span has usage), latency;
-  - the tool fallback through `OTelSpanClassifier` for a span typed `span`;
-  - no root span and two root spans → `None`; root span without `end_time` → not `finished`;
-  - `missing_parents` counts a span whose parent is absent; `ready` false just before `settle` has passed,
-    true just after, and false with `missing_parents > 0`;
+  - `from_trace` raises for a trace without a root; root span without `end_time` → not `finished`;
+  - `ready` false just before `settle` has passed and true just after;
   - the transcript with and without tool calls.
 - `TestOpikTraceEvaluator` (each Opik class monkeypatched in `evaluator.opik_evaluator` with a fake whose
   `score` records its kwargs and returns a `ScoreResult`):
@@ -1476,7 +1532,7 @@ dev = ["agentkernel[test]>=0.9.4", "httpx>=0.27.0", "moto[dynamodb]>=5.0.0", "bl
   - `fail` sets `failed` and `error` on a `grading` row and leaves a `graded` row untouched.
 - `TestTraceEvaluationJob` (fake `Trace` returning fixed spans, fake evaluators, the moto store, a fixed
   clock):
-  - the fetch call (`session_id`, `last=24h`, `limit=5000`);
+  - the `fetch_traces` call (`session_id`, `last=24h`);
   - `prepare`, one case per row of the design's table: no row + ready → `grading`; no row + inside `SETTLE`
     → `pending`; no row + no output → `unfinished`; `pending` + now ready → `grading`; leftover `grading` →
     `grading` again with a new `updated_at`; `failed` + ready → `grading`; `graded` and `unfinished` → left
@@ -1486,7 +1542,7 @@ dev = ["agentkernel[test]>=0.9.4", "httpx>=0.27.0", "moto[dynamodb]>=5.0.0", "bl
     leaves other rows alone; `prepare` never calls the evaluators factory, and `grade` calls it once
     across two calls;
   - `metric_errors` counts `score=None` results;
-  - `prepare` raises on a fetch error and on a `FETCH_LIMIT`-sized result;
+  - `prepare` raises on a fetch error;
   - `grade`: a fetch error marks every `grading` row `failed` with the error; an exception on one trace
     marks only that row `failed` and the next trace is still graded; a `grading` id missing from the
     fetch → `failed`; nothing is raised; an exception from `fail` itself is re-raised.

@@ -3,7 +3,7 @@
 Evaluates an agent on its real production traffic in three phases: **fetch spans → group them into traces
 and evaluate each trace → store the results**. Phase 1 is an Agent Kernel core capability: the configured
 tracer reads its spans back from the provider's cloud (Langfuse, Logfire, Traceloop, AWS CloudWatch) through
-one provider-neutral call, `Trace.get().fetch(...)`. Phases 2 and 3 are **not** AK core: they are user code,
+one provider-neutral call, `Trace.get().fetch_traces(...)` (or `fetch_spans(...)` for single spans). Phases 2 and 3 are **not** AK core: they are user code,
 shown in one AWS example. One AK serverless Lambda serves the agent (`/chat`) and two custom routes:
 `POST /eval` grades every trace of a session with an Opik-based `AKEvaluator` subclass and writes the results
 to the example's own DynamoDB table, and `GET /check` reports whether every request of that session has been
@@ -11,8 +11,8 @@ graded. The weekly integration test drives the whole loop over HTTP.
 
 | Phase | What | Where it lives |
 |---|---|---|
-| 1. Fetch | `Trace.get().fetch(...)`, `TraceQuery`, `FetchedSpan`, one fetcher per tracer | `ak-py/src/agentkernel/trace/` |
-| 2. Evaluate | `TraceCase` built from a trace's spans; `OpikTraceEvaluator(AKEvaluator)` | example `evaluator/` |
+| 1. Fetch | `Trace.get().fetch_spans(...)` / `fetch_traces(...)`, `TraceQuery`, `FetchedSpan`, `FetchedTrace`, one fetcher per tracer | `ak-py/src/agentkernel/trace/` |
+| 2. Evaluate | `TraceCase` built from a `FetchedTrace`; `OpikTraceEvaluator(AKEvaluator)` | example `evaluator/` |
 | 3. Store | `EvaluationStore` over one DynamoDB table | example `evaluator/` |
 | 2–3 runtime | one AK serverless Lambda (`/chat`, `/eval`, `/check`), the DynamoDB table, its IAM policy | example `lambda.py`, `deploy/main.tf` |
 
@@ -84,13 +84,19 @@ The example is `examples/aws-serverless/langfuse-trace-evaluation/`. Implementat
 
 ### Public API
 
-- `Trace.fetch(query: TraceQuery | None = None, **filters) -> list[FetchedSpan]` on the `Trace` facade.
+- `Trace.fetch_spans(query: TraceQuery | None = None, **filters) -> list[FetchedSpan]` on the `Trace` facade.
   - Keyword filters build a `TraceQuery`; an explicit `query` is passed through unchanged.
   - Both together raise `ValueError`.
   - Tracing disabled → `AKConfigError` naming `trace.enabled`.
-  - Delegates to the configured tracer's `fetch(query)`.
-- `agentkernel.trace` exports `TraceQuery`, `FetchedSpan`, `SpanUsage`, `SpanKind` and
-  `OTelSpanClassifier` (public so bring-your-own fetchers and the example classify spans the same way).
+  - Delegates to the configured tracer's `fetch_spans(query)`.
+- `Trace.fetch_traces(query: TraceQuery | None = None, **filters) -> list[FetchedTrace]`: the same spans,
+  grouped by trace id.
+  - Implemented once on top of `fetch_spans`, so bring-your-own tracers get it without extra work.
+  - Takes the same filters except `kinds` and `name`, which select single spans, not traces: passing
+    either raises `ValueError`. Users filter `trace.spans` instead.
+  - Traces are ordered by their first span.
+- `agentkernel.trace` exports `TraceQuery`, `FetchedSpan`, `FetchedTrace`, `SpanUsage`, `SpanKind`,
+  `SpanStatus` and `OTelSpanClassifier` (public so bring-your-own fetchers classify spans the same way).
 - Synchronous only.
 
 ### Query model: `TraceQuery`
@@ -106,17 +112,47 @@ The example is `examples/aws-serverless/langfuse-trace-evaluation/`. Implementat
 
 ### Result model: `FetchedSpan`
 
-- Fields: `provider`, `trace_id`, `span_id`, `parent_span_id`, `name`, `kind`, `start_time`, `end_time`,
-  `session_id`, `input`, `output`, `usage`, `attributes`, `raw`.
+- Fields: `provider`, `trace_id`, `span_id`, `parent_span_id`, `name`, `kind`, `status`, `start_time`,
+  `end_time`, `session_id`, `input`, `output`, `usage`, `attributes`, `raw`.
 - `provider` is the tracer's `trace.type` short name (`langfuse`, `logfire`, `openllmetry`, `cloudwatch`),
   so it round-trips with config.
 - `usage: SpanUsage | None`: input, output and total tokens and cost (USD), each optional.
   - The span's own model call only, never a roll-up, so summing over a trace gives the trace's total.
   - `None` when the span records no model call.
   - Cost is whatever the provider or instrumentation reports; AK never computes it.
+- `status: SpanStatus` (`UNSET`, `OK`, `ERROR`), following the OpenTelemetry span status. Each fetcher maps its
+  provider's own field onto it:
+  - Langfuse: `level == "ERROR"` → `ERROR`, else `UNSET` (`level` is in the `basic` field group the fetcher
+    already requests).
+  - CloudWatch: `status.code` of the stored OTel record (`OK` / `UNSET` / `ERROR`; confirmed on a live
+    `aws/spans` log group).
+  - Logfire: the `otel_status_code` column. Traceloop: `status_code` or `status` on the warehouse row, whose
+    field name is undocumented. Neither is verified against a live account.
 - `input`/`output` are returned as the provider stores them, never parsed.
 - `raw` holds the provider's full record.
 - Each `span_id` appears at most once.
+
+### Result model: `FetchedTrace`
+
+- Built from the spans of one trace id: `trace_id`, `session_id` (the first one found on its spans) and
+  `spans`, oldest first.
+- Properties:
+  - `root`: the single span with no parent; `None` when there is none or more than one.
+  - `user_input` / `output` / `started_at` / `ended_at`: the root's input, output, start and end time
+    (`None` without a root).
+  - `tool_spans`: the spans with `kind == TOOL`. `agent_names`: the agent spans' names, de-duplicated, in order.
+  - `usage`: a `SpanUsage` summed over the spans; a field stays `None` when no span reports it.
+- **Partial traces are expected.** `fetch_traces` is one pass over the window's spans (the window filters on
+  span start time), so a trace at the window's edge can be partial, as a provider's own UI shows a trace
+  whose spans are still arriving. A second pass that fetches each found trace whole was rejected: it costs a
+  second call, and on Langfuse one request per trace id.
+- **A trace with no root is returned with `root=None`**, not dropped: dropping hides data silently, and other
+  uses (summing cost over a window) still want its spans.
+- **AK doesn't decide when a trace is complete.** It returns what the tracer has stored; waiting for late
+  spans is the caller's logic (Phase 2).
+- **Traceloop:** AK's Traceloop runners add no `Agent Kernel <Framework>` wrapper span, so the root is the
+  framework's own span (e.g. `Agent Workflow` for the OpenAI Agents SDK), which carries no input or output:
+  `user_input` and `output` are empty there. Documented; no wrapper is added.
 
 ### Span kinds
 
@@ -127,15 +163,19 @@ The example is `examples/aws-serverless/langfuse-trace-evaluation/`. Implementat
   - Must label every span in the captured dumps as `research/span-formats.md` §3–§4 does.
   - Also extracts `input`/`output`, the session id and per-call `usage`, ignoring roll-ups.
 - Langfuse maps its own types: `GENERATION` → llm, `TOOL` → tool, `AGENT` → agent, else span.
+- **Fetchers map each provider's fields onto the neutral ones but don't patch over a provider's own mistakes.**
+  A span Langfuse labels as a plain `SPAN` stays `span`; user code trusts `span.kind` and `span.status`.
+  Re-classifying in the Langfuse fetcher was rejected: a `kinds=[TOOL]` query could no longer filter server
+  side by `type=TOOL`, and would have to page through every span in the window.
 - Detail: spec.md §`trace/fetch.py`.
 
 ### Tracer interface (`BaseTrace`)
 
-- Add `fetch(self, query: TraceQuery) -> list[FetchedSpan]`.
+- Add `fetch_spans(self, query: TraceQuery) -> list[FetchedSpan]`.
   - **Not abstract**: the default raises `NotImplementedError`. A deliberate departure from the
     all-abstract `BaseTrace` (`trace/base.py:7-54`), so existing bring-your-own tracers still instantiate.
 - No new factory or config selector: the tracer that sends (`trace.type`) is the one that fetches.
-  Bring-your-own tracers (dotted `trace.type`, `trace/trace.py:64`) opt in by overriding `fetch`.
+  Bring-your-own tracers (dotted `trace.type`, `trace/trace.py:64`) opt in by overriding `fetch_spans`.
 - Each built-in tracer delegates to one fetcher class in `trace/<provider>/fetch.py`, imported lazily;
   fetcher modules import no provider SDK at module scope.
 - **`TraceFetcher`** (in `trace/fetch.py`, not exported): the base of the four built-in fetchers, holding
@@ -156,13 +196,14 @@ The example is `examples/aws-serverless/langfuse-trace-evaluation/`. Implementat
 
 ```mermaid
 graph LR
-    U["Trace.get().fetch(...)"] --> Q[TraceQuery]
-    Q --> B["BaseTrace.fetch (configured tracer)"]
+    U["Trace.get().fetch_traces(...) / fetch_spans(...)"] --> Q[TraceQuery]
+    Q --> B["BaseTrace.fetch_spans (configured tracer)"]
     B --> L["LangfuseTraceFetcher<br/>v2 observations API"]
     B --> F["LogfireTraceFetcher<br/>SQL Query API"]
     B --> T["TraceloopTraceFetcher<br/>warehouse REST API"]
     B --> C["CloudWatchTraceFetcher<br/>Logs Insights on aws/spans"]
     L & F & T & C --> R["list[FetchedSpan]"]
+    R --> G["FetchedTrace.group (fetch_traces)"]
 ```
 
 ### Langfuse fetcher
@@ -232,7 +273,8 @@ graph LR
   to enable Transaction Search.
 - A failed or timed-out CloudWatch query → `RuntimeError` / `TimeoutError`.
 - Provider, HTTP and secret-provider errors propagate unchanged. No retries.
-- A tracer without `fetch` → `NotImplementedError`.
+- A tracer without `fetch_spans` → `NotImplementedError`.
+- `fetch_traces` with `kinds` or `name` → `ValueError`.
 - Detail: spec.md §Phase 1 error handling.
 
 ### Configuration
@@ -251,9 +293,10 @@ graph LR
 ### Testing
 
 - `tests/test_trace_fetch.py`, no provider SDK needed: the query model, the classifier, the facade,
-  `TraceFetcher`, and each fetcher over a fake client or transport.
-- `tests/test_trace_fetch_contract.py`: `TraceFetchContract` against the in-memory tracer, Langfuse and
-  Traceloop.
+  `TraceFetcher`, `SpanStatus` mapping and `FetchedTrace` grouping (root, no root, two roots, usage sum,
+  ordering), and each fetcher over a fake client or transport.
+- `tests/test_trace_fetch_contract.py`: `TraceFetchContract` (including a `fetch_traces` grouping case)
+  against the in-memory tracer, Langfuse and Traceloop.
 - `tests/test_trace_langfuse_flush.py`: every one of the six runners flushes on Lambda after a successful
   and a failed run.
 - `tests/test_trace_logfire.py`: the scrubbing callback keeps `session_id` and redacts the rest.
@@ -265,7 +308,8 @@ graph LR
 - `docs/docs/advanced/traceability.md`:
   - A "Fetching Spans Back" section: the filters, `usage` and which providers report cost, credentials per
     provider (including CloudWatch's IAM read permissions), that session ids reach every provider as
-    given, provider limits, and bring-your-own `fetch`.
+    given, provider limits, and bring-your-own `fetch_spans`, `fetch_traces` and `FetchedTrace`, `status`, the Traceloop root note and
+    partial traces at window edges.
   - In the Langfuse section, a "Running on AWS Lambda" note for the flush, like the CloudWatch one
     (`:566`): it is a send-side change.
 - `docs/src/pages/features.tsx`: a fetch highlight on the Observability card (`:900`).
@@ -275,24 +319,24 @@ graph LR
 
 ### Trace case: `TraceCase`
 
-- **Why:** `fetch` returns a flat list of spans, and the facts a judge needs are spread across them (the
-  wrapper span holds the question and answer, tool spans the calls, generation spans the tokens).
-  `TraceCase` gathers one trace into one object.
+- **Why:** a trace's facts a judge needs are spread across its spans (the wrapper span holds the question
+  and answer, tool spans the calls, generation spans the tokens). `TraceCase` gathers one `FetchedTrace` into
+  one object. Grouping spans, finding the root and summing usage live in AK (`fetch_traces`), not here.
 - The unit of evaluation is one **trace**: one AK request is one trace, since the Langfuse, Logfire and
   CloudWatch runners wrap the run in one AK span (`framework/openai/openai.py:247`;
   `research/span-formats.md` §3).
 - A request is counted by its trace's **parentless root span**, never by span name.
-- `TraceCase.from_spans(trace_id, spans)`:
-  - `user_input` / `output` / `session_id`: from the root span. No root, or several → no case.
-  - `tool_calls`: every tool span, oldest first, with name, input, output and whether it failed.
-    - A span Langfuse typed as a plain span still counts when `OTelSpanClassifier` reads its
-      OpenInference attributes as a tool: whether Langfuse maps OpenInference kinds to its own types is
-      unverified (`research/provider-read-apis.md` §5).
-  - `agents`: the agent spans' names.
-  - `usage`: the sum over the trace's spans; `latency_ms`: the root's duration.
+- `TraceCase.from_trace(trace)`, for a `FetchedTrace` that has a root (the job skips the others):
+  - `user_input` / `output` / `session_id`: from the trace (its root span).
+  - `tool_calls`: every `trace.tool_spans`, oldest first, with name, input, output and whether it failed
+    (`span.status == ERROR`).
+    - The example trusts `span.kind`. Whether Langfuse types OpenInference tool spans as `TOOL` is
+      unverified (`research/provider-read-apis.md` §5); if it doesn't, that call is missing from the
+      transcript. Check with one live run.
+  - `agents`: `trace.agent_names`.
+  - `usage`: `trace.usage`; `latency_ms`: the root's duration.
   - `finished`: the root has ended with an output.
-  - `missing_parents`: spans whose parent is not in the trace.
-  - `ready(now, settle)`: finished, the root ended at least `settle` ago, and no missing parent.
+  - `ready(now, settle)`: finished and the root ended at least `settle` ago.
 - `transcript()`: the request, each tool call and the final answer, for the agent judges.
 - Detail: spec.md §`evaluator/case.py`.
 
@@ -384,8 +428,9 @@ graph LR
 
 ### Evaluation run: `TraceEvaluationJob`
 
-- Both steps fetch the session the same way: `fetch(session_id=..., last=24h, limit=5000)`; a full result
-  is an error, never a silently truncated session.
+- Both steps fetch the session the same way: `fetch_traces(session_id=..., last=24h)`. A trace with no root
+  (`root is None`) gets no row and is counted as `no_root`; the next `/eval` fetches it again. The fetch
+  keeps at most the newest 1000 spans, which a demo session never reaches, so there is no truncation check.
 - `prepare(session_id)` sets each found trace's `progress`:
 
   | Current row | Trace | New `progress` |
@@ -402,7 +447,7 @@ graph LR
     Langfuse makes data readable within about 1–2 minutes (Langfuse FAQ).
   - The example requires `langfuse>=4.7.0`: older SDKs use a slower ingestion path (up to 15 minutes),
     and AK's extra allows `>=4.2.0` (`ak-py/pyproject.toml:28`).
-  - The parent check catches a missing middle span; a leaf span later than `SETTLE` is not detected.
+  - A span that lands later than `SETTLE` is not detected.
 - `grade(session_id, trace_ids)`: re-fetches, judges the payload's traces that are still `grading`,
   oldest first, and saves each.
   - A judge error stays on its metric; any other per-trace error marks that row `failed`; a fetch error
@@ -467,11 +512,14 @@ graph LR
 - Making the built-in evaluators reference-free.
 - Per-span or per-session metrics, dashboards and alerting.
 - Scheduled or continuous evaluation of live traffic.
-- Normalising spans into an AK trace model (parsing `input`/`output`, deduplicating Traceloop +
+- Normalising spans beyond grouping them into traces (parsing `input`/`output`, deduplicating Traceloop +
   Pydantic AI LLM spans, rebuilding trees).
+- Working around a provider's own mistakes (e.g. Langfuse labelling a tool span `SPAN`), and deciding when a
+  trace is complete: the fetchers return what the provider stored.
 - Async fetching, caching, retries or rate-limit handling.
 - Whole-trace fetch through Traceloop's undocumented endpoints.
-- Other tracing gaps: the Traceloop runners' missing wrapper span, missing inner spans for some
+- Other tracing gaps: the Traceloop runners' missing wrapper span (so `trace.user_input` / `trace.output` are
+  empty on Traceloop), missing inner spans for some
   provider × framework pairs (`research/span-formats.md` §5.2, §5.4), and tracing streamed runs.
 
 ## Open questions

@@ -3,14 +3,14 @@
 Builds [spec.md](spec.md) in order. Every iteration leaves the branch green: `make lint-check-all`
 passes, and so do the tests named in its **Verify** line.
 
-Phase 1 (iterations 1–7) lands first: the example in Phases 2–3 (iterations 8–14) imports `fetch` and
-`SpanUsage`, and builds against the local `ak-py` wheel until a release contains them.
+Phase 1 (iterations 1–7) lands first: the example in Phases 2–3 (iterations 8–14) imports `fetch_spans` /
+`fetch_traces` and `SpanUsage`, and builds against the local `ak-py` wheel until a release contains them.
 
 ## Phase 1: Fetch spans (Agent Kernel core)
 
 ### Iteration 1: Neutral model and facade
 
-- **Goal:** `Trace.get().fetch(...)` exists. It raises `NotImplementedError` for every tracer and
+- **Goal:** `Trace.get().fetch_spans(...)` exists. It raises `NotImplementedError` for every tracer and
   `AKConfigError` when tracing is disabled.
 - **Files:** `trace/fetch.py` (new), `trace/base.py`, `trace/trace.py`, `trace/__init__.py`,
   `tests/test_trace_fetch.py` (new).
@@ -19,7 +19,7 @@ Phase 1 (iterations 1–7) lands first: the example in Phases 2–3 (iterations 
      `OTelSpanClassifier.usage` (spec §`trace/fetch.py`).
   2. Add the `TraceFetcher` base: the pinned window, the merge, `_follow_cursor` and `_page_backward`
      (spec §`trace/fetch.py`).
-  3. Add the non-abstract `BaseTrace.fetch` and `Trace.fetch` (spec §`BaseTrace.fetch` and `Trace.fetch`).
+  3. Add the non-abstract `BaseTrace.fetch_spans` and `Trace.fetch_spans` (spec §`BaseTrace.fetch_spans` and `Trace.fetch_spans`).
   4. Export the five public names (`TraceQuery`, `FetchedSpan`, `SpanUsage`, `SpanKind`,
      `OTelSpanClassifier`) from `agentkernel.trace`. `TraceFetcher` stays internal.
   5. Add `TraceQuery.matches` (spec §`trace/fetch.py`).
@@ -34,9 +34,9 @@ Phase 1 (iterations 1–7) lands first: the example in Phases 2–3 (iterations 
 - **Goal:** `trace.type: langfuse` fetches observations through the v2 API.
 - **Files:** `trace/langfuse/fetch.py` (new), `trace/langfuse/langfuse.py`, `tests/test_trace_fetch.py`.
 - **Steps:**
-  1. Add `LangfuseTraceFetcher(TraceFetcher)` (spec §`LangFuse.fetch`), including the `_usage` mapping,
+  1. Add `LangfuseTraceFetcher(TraceFetcher)` (spec §`LangFuse.fetch_spans`), including the `_usage` mapping,
      `expand_metadata` and one `_follow_cursor` per request-matrix cell.
-  2. Add `LangFuse.fetch`, which delegates to it.
+  2. Add `LangFuse.fetch_spans`, which delegates to it.
   3. Add `LangFuse.flush_on_lambda` and call it from a `finally` in the six runners (spec §Langfuse
      flush on AWS Lambda).
   4. Add `TestLangfuseFetcher`, `TestLangfuseFetchContract`, and `TestLangFuseLambdaFlush` parametrized
@@ -50,8 +50,8 @@ Phase 1 (iterations 1–7) lands first: the example in Phases 2–3 (iterations 
 - **Files:** `trace/logfire/fetch.py` (new), `trace/logfire/logfire.py`, `tests/test_trace_fetch.py`,
   `tests/test_trace_logfire.py`.
 - **Steps:**
-  1. Add `LogfireTraceFetcher(TraceFetcher)` (spec §`Logfire.fetch`), paging through `_page_backward`.
-  2. Add `Logfire.fetch`, which resolves `LOGFIRE_READ_TOKEN` through `SecretManager`.
+  1. Add `LogfireTraceFetcher(TraceFetcher)` (spec §`Logfire.fetch_spans`), paging through `_page_backward`.
+  2. Add `Logfire.fetch_spans`, which resolves `LOGFIRE_READ_TOKEN` through `SecretManager`.
   3. Add the `ScrubbingOptions` callback to `init()` (spec §Scrubbing fix).
   4. Add `ScrubbingOptions` to the `fake_logfire` fixture, plus the scrubbing test.
   5. Add `TestLogfireFetcher`.
@@ -64,9 +64,9 @@ Phase 1 (iterations 1–7) lands first: the example in Phases 2–3 (iterations 
 - **Files:** `trace/openllmetry/fetch.py` (new), `trace/openllmetry/openllmetry.py`,
   `ak-py/pyproject.toml`, `ak-py/uv.lock`, `tests/test_trace_fetch.py`.
 - **Steps:**
-  1. Add `TraceloopTraceFetcher(TraceFetcher)` (spec §`OpenLLMetry.fetch`), with the `ceil(end)` bound,
+  1. Add `TraceloopTraceFetcher(TraceFetcher)` (spec §`OpenLLMetry.fetch_spans`), with the `ceil(end)` bound,
      one `_follow_cursor`, and no server-side kind filter.
-  2. Add `OpenLLMetry.fetch`, which resolves `TRACELOOP_API_KEY` through `SecretManager`.
+  2. Add `OpenLLMetry.fetch_spans`, which resolves `TRACELOOP_API_KEY` through `SecretManager`.
   3. Add `httpx>=0.27.0` to the `openllmetry` and `logfire` extras, then run `uv lock`.
   4. Add `TestTraceloopFetcher` (including the `traceloop.span.kind`-only tool span) and
      `TestTraceloopFetchContract`.
@@ -79,9 +79,9 @@ Phase 1 (iterations 1–7) lands first: the example in Phases 2–3 (iterations 
 - **Steps:**
   1. Lift the region lookup in `CloudWatch._exporter()` (`trace/cloudwatch/cloudwatch.py:137`) into the
      static `CloudWatch.region()`, with no change to the exporter's behaviour or errors.
-  2. Add `CloudWatchTraceFetcher(TraceFetcher)` (spec §`CloudWatch.fetch`), paging through
+  2. Add `CloudWatchTraceFetcher(TraceFetcher)` (spec §`CloudWatch.fetch_spans`), paging through
      `_page_backward`.
-  3. Add `CloudWatch.fetch`.
+  3. Add `CloudWatch.fetch_spans`.
   4. Add `TestCloudWatchFetcher`.
 - **Verify:** `uv run pytest tests/test_trace_fetch.py -k CloudWatch tests/test_trace_cloudwatch.py`
 
@@ -107,7 +107,7 @@ Phase 1 (iterations 1–7) lands first: the example in Phases 2–3 (iterations 
     "Viewing Traces in CloudWatch" (`:570`) and "Integrate with Your Own Traceability Platform" (`:576`).
     It covers the filters, `FetchedSpan` and `usage` (totalling it over a trace, which providers report
     cost), Traceloop fetching as best effort, session ids reaching every provider unscrubbed (keep personal data
-    out of them), bring-your-own `fetch` tested with `TraceFetchContract`,
+    out of them), bring-your-own `fetch_spans` tested with `TraceFetchContract`,
     credentials per provider (including CloudWatch's IAM read permissions, and the two keys AK resolves
     through `SecretManager`), and provider limits.
   - `docs/docs/advanced/traceability.md`, Langfuse section: a "Running on AWS Lambda" note, worded like
@@ -119,7 +119,7 @@ Phase 1 (iterations 1–7) lands first: the example in Phases 2–3 (iterations 
     "Fetching Spans Back".
 - **Dev skills:**
   - `.agents/skills/ak-dev-new-tracing-provider/SKILL.md`:
-    - §Architecture Overview (`:18`): mention the optional `fetch`.
+    - §Architecture Overview (`:18`): mention the optional `fetch_spans`.
     - New step after §5 (`:174`): implement `trace/<provider>/fetch.py` on `TraceFetcher` (rules 1–7 of
       spec §Rules).
     - §Checklist (`:299`): add a fetcher item.
@@ -127,7 +127,7 @@ Phase 1 (iterations 1–7) lands first: the example in Phases 2–3 (iterations 
     note the per-provider `fetch.py` on the four adapters.
 - **Bundled skill:**
   - `ak-py/src/agentkernel/skills/ak-add-capabilities/SKILL.md`, §Tracing (`:172-271`): add a short
-    "fetch spans back" note with `Trace.get().fetch(...)`, `span.usage`, `LOGFIRE_READ_TOKEN`, and the CloudWatch
+    "fetch spans back" note with `Trace.get().fetch_spans(...)`, `span.usage`, `LOGFIRE_READ_TOKEN`, and the CloudWatch
     `logs:StartQuery` / `logs:GetQueryResults` / `logs:StopQuery` permissions.
 - **No update needed** (verified): `ak-dev-new-framework-integration` only refers to the per-framework
   `BaseTrace` methods (`:384`, `:399`, `:439-440`), which are unchanged. Config docs are unaffected, because there
@@ -241,7 +241,7 @@ All files are under `examples/aws-serverless/langfuse-trace-evaluation/` unless 
 - **User docs:**
   - `docs/docs/examples/overview.md` §AWS Serverless Examples: list the example.
   - `docs/docs/advanced/traceability.md` §Fetching Spans Back: one line linking the example as the
-    end-to-end use of `fetch` and `usage`.
+    end-to-end use of `fetch_traces` and `usage`.
   - `docs/src/pages/features.tsx`: no change. The "Pluggable Evaluators" card (`:1494`) covers the test
     framework's built-in evaluators; the example only subclasses `AKEvaluator`, and the Observability
     card (iteration 7) already covers fetching.
@@ -250,3 +250,51 @@ All files are under `examples/aws-serverless/langfuse-trace-evaluation/` unless 
     back" note (iteration 7) at the example.
   - Dev skills: none expected; confirm with `ak-dev-sync-skills-from-branch`. Run
     `ak-dev-sync-docs-from-branch` too.
+
+## Follow-up: whole traces and span status
+
+Done after iterations 1–14, to take trace assembly out of the example. The rule behind it: AK maps each
+provider's fields onto neutral ones but doesn't patch over a provider's own mistakes, and user code trusts what
+the fetcher returns. Branch `feature/803-prod-eval-implementation` is unpublished, so renames are free.
+
+### Iteration 15: `fetch_spans`, `fetch_traces` and `FetchedSpan.status` (library)
+
+- **Goal:** `Trace.get().fetch_traces(...)` returns `FetchedTrace`s, and every `FetchedSpan` has a `status`.
+- **Files:** `trace/fetch.py`, `trace/trace.py`, `trace/base.py`, `trace/testing.py`, `trace/__init__.py`,
+  `trace/{langfuse,logfire,openllmetry,cloudwatch}/fetch.py` and their tracer classes,
+  `tests/test_trace_fetch.py`, `tests/test_trace_fetch_contract.py`, `tests/test_trace_logfire.py`.
+- **Steps:**
+  1. Rename `Trace.fetch`, `BaseTrace.fetch` and `TraceFetcher.fetch` to `fetch_spans` (spec §`BaseTrace.fetch_spans`
+     and `Trace.fetch_spans`).
+  2. Add `FetchedTrace` and `Trace.fetch_traces`, built once on `fetch_spans` (spec §`FetchedTrace`).
+  3. Add `SpanStatus` and `FetchedSpan.status`, mapped per fetcher (spec §`SpanStatus`).
+  4. Export `FetchedTrace` and `SpanStatus`; add the `fetch_traces` case to `TraceFetchContract`.
+  5. Tests: `SpanStatus.of`, `FetchedTrace` grouping, root / no root / two roots, usage sum, ordering,
+     `fetch_traces` filter rejection, and a status test per fetcher.
+- **Verify:** `uv run pytest tests/test_trace_fetch.py tests/test_trace_fetch_contract.py tests/test_trace_logfire.py tests/test_trace.py`
+
+### Iteration 16: Example cleanup
+
+- **Goal:** each evaluation example builds its `TraceCase` from a `FetchedTrace` and holds no trace-assembly code.
+- **Files:** `evaluator/{case,job}.py`, `README.md` and `tests/test_evaluator.py` of
+  `openai-langfuse-trace-evaluation`, `adk-cloudwatch-trace-evaluation` and `pydanticai-logfire-trace-evaluation`;
+  `fetch_api.py` and its README in `langgraph-traceloop-trace-fetch` (rename only).
+- **Steps:**
+  1. `case.py`: remove `_span_kind`, `_sum_usage`, `spans_missing_parent` and the root finding; add
+     `TraceCase.from_trace`; a tool call is failed when `status == ERROR`. Keep the provider-specific name and
+     result readers.
+  2. `job.py`: call `fetch_traces(session_id=..., last=FETCH_WINDOW)`; skip `root is None` and count it in
+     `no_root`; remove `FETCH_LIMIT` and its check. Keep `SETTLE_TIME`, the progress states and the "not found"
+     handling in `/grade`.
+  3. Update the tests and the READMEs ("The evaluation run", the "public AK API" line).
+- **Verify:** `uv run pytest tests/` in each example.
+
+### Iteration 17: Docs and skills
+
+- `docs/docs/advanced/traceability.md` §Fetching Spans Back: the rename, `fetch_traces` and `FetchedTrace`,
+  `status`, the Traceloop root note and partial traces at window edges. `docs/docs/intro.md` and
+  `docs/docs/examples/overview.md`: the renamed call.
+- Dev skills: `ak-dev-new-tracing-provider`, `ak-dev-architecture`, `ak-dev-testing-conventions`.
+- Bundled skill: `ak-py/src/agentkernel/skills/ak-add-capabilities/SKILL.md` and its `evals/evals.json`.
+- **Open:** one live run of the Langfuse example to confirm tool spans come back as `TOOL`; the Logfire
+  `otel_status_code` column and Traceloop's status field name are unverified against live accounts.
