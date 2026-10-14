@@ -17,7 +17,7 @@ graded. The weekly integration test drives the whole loop over HTTP.
 | 2–3 runtime | one AK serverless Lambda (`/chat`, `/eval`, `/check`), the DynamoDB table, its IAM policy | example `lambda.py`, `deploy/main.tf` |
 
 The example is `examples/aws-serverless/langfuse-trace-evaluation/`. Implementation detail is in
-[spec.md](spec.md); decisions taken in review are in [research/decisions.md](research/decisions.md).
+[spec.md](spec.md).
 
 ## Terminology
 
