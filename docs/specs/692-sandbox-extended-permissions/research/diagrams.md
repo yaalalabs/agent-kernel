@@ -27,7 +27,7 @@ flowchart TD
   P2 --> GQ{"Gated operation?"}
   GQ -->|"execute_command, upload_file, download_file"| L
   GQ -->|"execute_code, install_packages"| G["SandboxPermissionGuard"]
-  G -->|"denied"| DEN["One WARNING on ak.sandbox.broker<br/>raise SandboxPermissionDeniedError<br/>process() and the thread flavor skip<br/>their generic warning for this subclass only"]
+  G -->|"denied"| DEN["Guard logs one WARNING on ak.sandbox.broker<br/>and raises SandboxPermissionDeniedError<br/>process() and the thread flavor skip<br/>their generic warning for this subclass only"]
   G -->|"permitted"| L["Per-session lock"]
   L --> AQ["Attach or create sandbox, self-heal"]
   AQ --> EX["Provider call under effective timeout"]
@@ -46,7 +46,7 @@ flowchart TD
 
 ## 2. Guard deny rules
 
-Every deny exit logs exactly one `WARNING` on `ak.sandbox.broker` and raises `SandboxPermissionDeniedError`. The log line names
+Every deny exit makes the guard itself log exactly one `WARNING` on `ak.sandbox.broker` and raises `SandboxPermissionDeniedError`. The log line names
 the operation, profile, agent, AK session id, sandbox session id and reason. It never includes code bodies or package
 lists.
 
@@ -176,8 +176,8 @@ classDiagram
 | `languages` | policy (may) | `None` | Allowlist for `run_code`. `None` means whatever the provider declares, which is today's behaviour. |
 | `package_install` | policy (may) | `None` | Presence permits installing. Absent means denied. |
 | `package_install.ecosystems` | policy (may) | `["python"]` | Open question: default to everything the provider declares instead? |
-| `language_runtimes` | provider (can), `docker`/`kubernetes` | `{python: [python, -c]}` | Language to interpreter argv prefix. Keys become the instance's `languages`. A `python` key is required. |
-| `package_installers` | provider (can) | `{python: [pip, install]}` | Ecosystem to installer argv prefix. Keys become `package_ecosystems`. Each key needs a `PackageInstaller` rule set. |
+| `language_runtimes` | provider (can), `docker`/`kubernetes` | `{python: [python, -c]}` | Language to interpreter argv prefix. Keys become the instance's `languages`. A `python` key is required; every prefix must be non-empty with no empty token. |
+| `package_installers` | provider (can) | `{python: [pip, install]}` | Ecosystem to installer argv prefix. Keys become `package_ecosystems`. Each key needs a `PackageInstaller` rule set (`python` and `node` ship); every prefix must be non-empty with no empty token. |
 
 Example profile using both capabilities (illustrative):
 
@@ -194,7 +194,7 @@ sandbox:
           node: [node, -e]
         package_installers:
           python: [pip, install]
-          node: [npm, install]        # needs a node rule set before it can be configured
+          node: [npm, install]        # operator-declared: only the image knows npm exists
       policy:                          # may: what agents are allowed to do
         network_egress: allowlist
         network_allow: [pypi.org, files.pythonhosted.org, registry.npmjs.org]
@@ -254,19 +254,23 @@ sequenceDiagram
   Tool->>EM: install_packages(...)
   Note over EM: Warns once per profile if package_install is declared with network_egress deny
   EM->>G: agent-side check(request)
-  Note over EM,G: A denial here returns error JSON before submit
+  opt not permitted (agent side)
+    G->>G: one WARNING on ak.sandbox.broker, no package list
+    G-->>EM: raise SandboxPermissionDeniedError
+    Note over EM,G: The tool returns error JSON before submit
+  end
   EM->>W: ExecutionRequest op=install_packages with resolved policy
   W->>W: _check_principal, then _enforce_policy
   W->>G: check(request)
   alt not permitted
-    G-->>W: deny with reason
-    W->>W: one WARNING on ak.sandbox.broker, no package list
-    W-->>EM: raise SandboxPermissionDeniedError
+    G->>G: one WARNING on ak.sandbox.broker, no package list
+    G-->>W: raise SandboxPermissionDeniedError
+    W-->>EM: SandboxPermissionDeniedError (generic failure warning skipped)
     EM-->>Tool: SandboxPermissionDeniedError
     Tool-->>Agent: error JSON
   else permitted
     W->>W: per-session lock, attach or create sandbox
-    W->>H: install_packages(packages, ecosystem=..., timeout=...)
+    W->>H: install_packages(packages, ecosystem=..., timeout=...), backstop = timeout + grace
     alt ecosystem not declared by this instance
       H-->>W: raise SandboxCapabilityError
       W-->>EM: SandboxCapabilityError
@@ -283,7 +287,7 @@ sequenceDiagram
       else valid
         PI-->>H: argv, e.g. pip install pkg-a pkg-b
         H->>SB: run argv (docker, kubernetes) or shlex.join string (e2b, daytona)
-        SB-->>H: exit_code, stdout, stderr (killed on timeout)
+        SB-->>H: exit_code, stdout, stderr (handle kills it on its own timeout, before the backstop)
         H-->>W: SandboxResult, non-zero exit_code on installer failure
         W-->>EM: SandboxResult
         EM-->>Tool: SandboxResult or promoted SandboxTask
@@ -314,9 +318,9 @@ sequenceDiagram
   W->>G: check using request.policy only
   Note over G: Never reads the worker's AKConfig
   alt denied
-    G-->>W: deny
-    W->>W: one WARNING on ak.sandbox.broker (generic failure warning skipped)
-    W-->>QW: ExecutionCompletion status=failed, error_type=SandboxPermissionDeniedError
+    G->>G: one WARNING on ak.sandbox.broker
+    G-->>W: raise SandboxPermissionDeniedError
+    W-->>QW: generic failure warning skipped, ExecutionCompletion status=failed, error_type=SandboxPermissionDeniedError
   else permitted
     W->>W: lock, acquire, provider call
     W-->>QW: ExecutionCompletion status=succeeded with result

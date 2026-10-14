@@ -31,8 +31,11 @@ check also runs agent-side before a request is submitted.
   - Installers are pip only: `docker.py:64` and `kubernetes.py:85` use argv, `e2b.py:66` and `daytona.py:67` use a
     shell string (their SDKs accept only a command string).
   - `docker` and `kubernetes` run the installer with no timeout (`_exec(..., None)`). When the worker's outer
-    `asyncio.wait_for` expires (`worker.py:230`), the installer keeps running in the sandbox and the per-session lock
+    `asyncio.wait_for` expires (`worker.py:233`), the installer keeps running in the sandbox and the per-session lock
     is released under it.
+  - `execute_code` has the same gap today. The worker passes the same timeout to its outer `asyncio.wait_for` and to
+    the handle. The outer timer starts first, so it expires first and cancels the handle. The handle then sees
+    `CancelledError`, not `TimeoutError`, so `_best_effort_kill` (`docker.py:76`) never runs.
 - **No configuration decides *what* an agent may do, only how it is contained.**
   - `_SandboxPolicyConfig` (`ak-py/src/agentkernel/core/config.py:724-736`) and its wire mirror `SandboxPolicy`
     (`sandbox/model.py:123`) cover network, filesystem, resources, timeout and strictness.
@@ -54,7 +57,8 @@ check also runs agent-side before a request is submitted.
   - **Blocked:** the guard raises `SandboxPermissionDeniedError`, a new subclass of `SandboxPolicyError`. Agent tools
     return their existing `{"error": ...}` JSON.
     - It lives in `sandbox/errors.py`, so the queue flavor re-raises it by name (`broker/queue.py:162`).
-  - **Logged:** exactly one `WARNING` per denial on `ak.sandbox.broker`, wherever the guard runs (worker or agent side).
+  - **Logged:** the guard itself writes exactly one `WARNING` per denial on `ak.sandbox.broker`, wherever it runs
+    (worker or agent side). Callers never log the denial again.
     - It names the operation, profile, agent, AK session id, sandbox session id and reason.
     - It never logs code bodies or package lists.
     - The broker's generic failure warnings skip `SandboxPermissionDeniedError` only, since the guard has already
@@ -69,9 +73,13 @@ check also runs agent-side before a request is submitted.
   - "Not permitted" comes from the profile policy. It raises `SandboxPermissionDeniedError` and is logged.
   - "Permitted but the provider cannot do it" comes from provider capabilities. It raises `SandboxCapabilityError`
     under the existing honesty contract and is not audit-logged.
-  - `ExecutionManager` warns once per profile when the policy permits something the provider instance does not
-    declare. Examples are `package_install` on `local_subprocess` or `ec2_ssm`, or a `languages` entry the provider
-    does not declare. Such a request would only ever fail with `SandboxCapabilityError`.
+  - `BrokerWorkerCore` warns once per (provider, profile) when the policy permits something the provider instance
+    does not declare. Examples are `package_install` on `local_subprocess` or `ec2_ssm`, or a `languages` entry the
+    provider does not declare. Such a request would only ever fail with `SandboxCapabilityError`.
+    - It runs after provider resolution, because only the worker holds the provider instance (`worker.py:62`).
+      `ExecutionManager` holds only config, broker and principal resolver (`manager.py:38-43`), and a queue agent pod
+      never loads provider extras.
+    - It reuses the worker's existing per-(provider, profile) warning memo (`_policy_warned`, `worker.py:43`).
 - **Permissions gate AK sandbox operations, not the environment.**
   - `run_command`, or `subprocess` inside `run_code`, can still reach any interpreter or installer present in the
     image. The docs say so explicitly.
@@ -128,11 +136,15 @@ check also runs agent-side before a request is submitted.
     - Its keys become the instance's declared `languages`.
     - A validator requires a `python` key, because Python execution is mandatory under the provider contract
       (`sandbox/testing.py:162`).
+    - A validator requires every argv prefix to hold at least one token and no empty token, so the interpreter is
+      always the first argv element, never the submitted code.
   - `ProviderPackageConfig`, used by `docker`, `kubernetes`, `e2b` and `daytona`:
     - `package_installers: dict[str, list[str]] = {"python": ["pip", "install"]}` maps an ecosystem to an installer
       argv prefix. Its keys become the instance's declared package ecosystems.
     - A validator rejects an ecosystem that `PackageInstaller` has no validation rules for (see Capability 2), so
       no installer runs unvalidated specs.
+    - A validator requires every argv prefix to hold at least one token and no empty token, so the installer is
+      always the first argv element, never a package name.
   - SDK-native providers do not use `ProviderRuntimeConfig`, and keep declaring `["python"]`:
     - `e2b` runs code in a kernel chosen by the configured `template`. Other languages need the operator to say what
       the template contains, which is out of scope here;
@@ -165,19 +177,28 @@ check also runs agent-side before a request is submitted.
 - `Sandbox.install_packages(packages, ecosystem="python", timeout=None)`.
   - An ecosystem the instance has not declared raises `SandboxCapabilityError`.
   - An installer failure is a `SandboxResult` with a non-zero `exit_code`, not an exception.
-  - The worker passes the effective timeout. The handle applies it to the installer process itself, as
-    `execute_code` does, so a timed-out install is killed (`_best_effort_kill`) before the session lock is released.
+  - **The handle owns the timeout.** The worker passes the effective timeout, and the handle applies it to the
+    installer process and kills it (`_best_effort_kill`) on expiry.
+    - The worker's outer `asyncio.wait_for` becomes a backstop: effective timeout plus a fixed grace period. It cannot
+      fire before the handle's own timer, so the kill finishes before the session lock is released.
+    - `execute_code` moves to the same rule, which fixes its existing gap (see Motivation).
+    - If the backstop does fire, the handle kills on cancellation too, not only on `TimeoutError`.
 - New class `PackageInstaller`, shared by the four implementing providers. Its single responsibility is turning a
   package request into a safe installer invocation.
   - **Validation is per ecosystem.** Each ecosystem has its own rule set, and an ecosystem without one cannot be
     configured (see Configuration).
     - Every rule set rejects an empty list, empty entries, entries starting with `-` (so no smuggled `--index-url`),
       whitespace, NUL, URLs (`://`) and local paths (a leading `.`, `/` or `~`).
-    - `python` (ships first) accepts registry package names, including version specifiers and extras. It also
+    - `python` accepts registry package names, including version specifiers and extras. It also
       rejects VCS specs (`git+`), any `/`, and archive filenames (`.whl`, `.tar.gz`, `.zip`), so a relative path
       such as `dist/x.whl` or `sub/pkg` cannot install local code.
-    - Other ecosystems (e.g. `node`, which must allow `@scope/name` but reject `user/repo`, `github:` and `file:`)
-      each need their own rule set before they can be configured.
+    - `node` accepts registry names, `@scope/name`, and either with an `@version` or range. It rejects any other `/`
+      (so no `user/repo` GitHub shorthand), protocol prefixes (`github:`, `git+`, `file:`, `link:`, `npm:` aliases)
+      and tarballs (`.tgz`, `.tar.gz`).
+      - It is not in the `package_installers` default. The operator declares it, e.g. `node: [npm, install]`,
+        because only the image decides whether `npm` exists.
+      - It applies to `docker`, `kubernetes`, `e2b` and `daytona` alike, through the same `PackageInstaller` path.
+    - Further ecosystems (e.g. `apt`/`apk`) each need their own rule set before they can be configured.
     - A rejected spec raises `ValueError`, which reaches the agent as error JSON. It is input validation, not a
       permission denial, so it is not audit-logged.
     - `ExecutionManager.install_packages` calls the validation before submitting, so a bad spec fails before any
@@ -203,9 +224,18 @@ check also runs agent-side before a request is submitted.
   declares `package_install`.
 - `Sandbox.install_packages` gains two parameters, `ecosystem: str = "python"` and `timeout: float | None = None`,
   which the worker passes by keyword.
-  - Bring-your-own `Sandbox` subclasses that override the current one-argument signature must add them.
+  - **Compatibility for bring-your-own `Sandbox` subclasses.** A subclass that overrides the current one-argument
+    signature keeps working for one minor release.
+    - The worker checks the override's signature. If it does not accept the new keywords, the worker calls it with
+      `packages` only and logs a once-per-class deprecation warning.
+    - On such an override, an `ecosystem` other than `python` raises `SandboxCapabilityError`, and the install runs
+      under the worker's outer timeout only, as today.
+    - The release notes and `docs/docs/advanced/sandbox.md` give the new signature as the migration step. The shim is
+      removed in the following minor release, which is then a documented breaking change.
 - A timed-out install on `docker` and `kubernetes` is now killed in the sandbox instead of running on after the
-  worker gives up.
+  worker gives up. The same holds for a timed-out `execute_code`.
+- The worker's outer timeout gains a grace period on top of the effective timeout, so a hung handle is reported a
+  little later than today.
 - `e2b` and `daytona` build install commands with `PackageInstaller` (`shlex.join`) instead of their own `shlex.quote`
   strings. The quoting is equivalent, but URL, VCS, path and archive specs are now rejected.
 - On the async flavors and the thread flavor, guard denials (`SandboxPermissionDeniedError`) log the guard's warning
@@ -224,16 +254,20 @@ check also runs agent-side before a request is submitted.
   - an agent-side denial before submit;
   - one warning per denial on the `process()` path and on the thread flavor, while `_enforce_policy` and
     `_check_principal` denials still log the generic warning.
-- `PackageInstaller` tests cover every accept and reject rule of the `python` rule set, and the config-load rejection
-  of an ecosystem without a rule set.
-- Handle tests: a timed-out install on `docker` and `kubernetes` kills the installer process.
-- `ExecutionManager` tests: the permission/capability mismatch warning and the `package_install` + `deny` warning each
-  fire once per profile.
+- `PackageInstaller` tests cover every accept and reject rule of the `python` and `node` rule sets, and the
+  config-load rejection of an ecosystem without a rule set or with an empty argv prefix.
+- Config tests: an empty `language_runtimes` argv prefix is rejected at load.
+- Handle tests: a timed-out install and a timed-out `execute_code` on `docker` and `kubernetes` kill the process, and
+  so does a cancellation by the worker's backstop.
+- Worker tests: the permission/capability mismatch warning fires once per (provider, profile); a legacy one-argument
+  `install_packages` override still runs `python` installs and logs one deprecation warning.
+- `ExecutionManager` tests: the `package_install` + `deny` warning fires once per profile.
 
 ### Delivery
 
 - One design, shipped as phased PRs against it:
-  1. the guard (worker and agent side), the policy fields and package installation;
+  1. the guard (worker and agent side), the policy fields and package installation with the `python` and `node`
+     ecosystems on `docker`, `kubernetes`, `e2b` and `daytona`. This closes #692;
   2. language runtimes.
 - Each policy and provider field is added in the phase that first reads it. The `python`-key validator ships with
   `language_runtimes` in phase 2.
@@ -245,7 +279,7 @@ graph LR
     T["Sandbox system tools<br/>run_code · install_packages (new)"] --> M["ExecutionManager<br/>+ install_packages · agent-side guard check"]
     M -->|"ExecutionRequest<br/>carries resolved policy"| W["BrokerWorkerCore<br/>_check_principal → _enforce_policy"]
     W --> G["SandboxPermissionGuard (new)<br/>reads the request only"]
-    G -->|denied| E["SandboxPermissionDeniedError<br/>one WARNING on ak.sandbox.broker"]
+    G -->|denied| E["guard logs one WARNING on ak.sandbox.broker<br/>raises SandboxPermissionDeniedError"]
     G -->|permitted| H["Provider handle<br/>docker · kubernetes · e2b · daytona"]
     H --> RT["language_runtimes argv"]
     H --> PI["PackageInstaller (new)<br/>per-ecosystem validation"]
@@ -278,3 +312,4 @@ Worker pipeline, guard deny rules, the class model and per-capability sequence d
 - `install_packages` runs under `policy.timeout` (default 120s), which real installs can exceed. Should it get its own
   timeout, e.g. `package_install.timeout`?
 - Is the delivery order right (packages first, which closes #692), or should languages land first?
+- How long should the worker's backstop grace period be, and should it be configurable?
