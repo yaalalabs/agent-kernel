@@ -1,4 +1,5 @@
 import asyncio
+import logging
 
 import pytest
 
@@ -72,6 +73,17 @@ def test_session_clear():
     assert session.get_volatile_cache().get("vkey1") is None
     assert len(session.get_non_volatile_cache().keys()) == 0
     assert session.get_non_volatile_cache().get("nvkey1") is None
+
+
+def test_session_data_access_does_not_log(caplog):
+    session = Session("test-session")
+    caplog.set_level(logging.DEBUG, logger="ak.core.session [test-session]")
+    session.set("key1", "value1")
+    session.get("key1")
+    session.delete("key1")
+    session.delete("missing")
+    session.clear()
+    assert [record for record in caplog.records if record.name == "ak.core.session [test-session]"] == []
 
 
 @pytest.mark.asyncio

@@ -144,9 +144,7 @@ class Session:
         :return: The matching session object associated with the key, or None
         if there is no data object with the specified key.
         """
-        result = self._data.get(key)
-        self._log.debug(f"Retrieved session data object for key {key}: {result}")
-        return result
+        return self._data.get(key)
 
     def get_all(self, durable: bool = True, volatile: bool = True) -> Iterator[tuple[str, Any]]:
         """
@@ -227,7 +225,6 @@ class Session:
         :param key: The key of the session data object.
         :param value: The session data object.
         """
-        self._log.debug(f"Setting session data object for key {key}: {value}")
         self._data[key] = value
         return value
 
@@ -237,14 +234,12 @@ class Session:
         :param key: The key of the session data object to be deleted.
         """
         if key in self._data:
-            self._log.debug(f"Deleting session data object for key {key}")
             del self._data[key]
 
     def clear(self) -> None:
         """
         Clears all session data objects.
         """
-        self._log.debug(f"Clearing all session data objects")
         self._data = {
             Session.Keys.VOLATILE_CACHE.value: self.get_volatile_cache(),
             Session.Keys.NON_VOLATILE_CACHE.value: self.get_non_volatile_cache(),
@@ -312,6 +307,7 @@ class Runner(ABC):
                 f"{type(stored).__name__}. The reserved framework_context key carries a "
                 f"per-run context/state dict; wrap the value in a dict before setting it."
             )
+        _log.debug(f"Adding framework context to runner '{self._name}' for session '{session.id}': {stored}")
         return copy.deepcopy(stored)
 
     def _store_framework_context(self, session: Session | None, incoming: dict | None, produced: Mapping[str, Any] | None) -> None:
@@ -329,6 +325,7 @@ class Runner(ABC):
             merged.update(produced)
         self._ensure_framework_context_picklable(session, merged)
         session.set_framework_context(merged)
+        _log.debug(f"Stored framework context from runner '{self._name}' for session '{session.id}': {merged}")
 
     @classmethod
     def _ensure_framework_context_picklable(cls, session: Session, ctx: Mapping[str, Any]) -> None:

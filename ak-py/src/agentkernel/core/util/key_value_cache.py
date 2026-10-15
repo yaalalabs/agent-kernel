@@ -1,8 +1,11 @@
 """Key-value store for storing serializable data."""
 
+import logging
 from typing import Any, Dict, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
+
+_log = logging.getLogger("ak.core.key_value_cache")
 
 
 class KeyValueCache(BaseModel):
@@ -36,6 +39,7 @@ class KeyValueCache(BaseModel):
         if not key:
             raise ValueError("Key cannot be empty or None")
         self.data[key] = value
+        _log.debug(f"Set key {key}: {value}")
 
     def get(self, key: str, default: Optional[Any] = None) -> Any:
         """Retrieve a value by key.
@@ -44,7 +48,9 @@ class KeyValueCache(BaseModel):
         :param default: The default value to return if key is not found
         :return: The stored value, or the default if the key doesn't exist
         """
-        return self.data.get(key, default)
+        value = self.data.get(key, default)
+        _log.debug(f"Get key {key}: {value}")
+        return value
 
     def delete(self, key: str) -> bool:
         """Delete a key-value pair.
@@ -54,7 +60,9 @@ class KeyValueCache(BaseModel):
         """
         if key in self.data:
             del self.data[key]
+            _log.debug(f"Deleted key {key}")
             return True
+        _log.debug(f"Delete skipped, key {key} not found")
         return False
 
     def has(self, key: str) -> bool:
@@ -68,6 +76,7 @@ class KeyValueCache(BaseModel):
     def clear(self) -> None:
         """Clear all data from the store."""
         self.data.clear()
+        _log.debug("Cleared all keys")
 
     def keys(self) -> list[str]:
         """Get all keys in the store.
@@ -96,6 +105,7 @@ class KeyValueCache(BaseModel):
         :param other: A dictionary of key-value pairs to add/update
         """
         self.data.update(other)
+        _log.debug(f"Updated keys: {other}")
 
     def __len__(self) -> int:
         """Return the number of items in the store."""
@@ -107,7 +117,9 @@ class KeyValueCache(BaseModel):
 
     def __getitem__(self, key: str) -> Any:
         """Get a value using dictionary-style access."""
-        return self.data[key]
+        value = self.data[key]
+        _log.debug(f"Get key {key}: {value}")
+        return value
 
     def __setitem__(self, key: str, value: Any) -> None:
         """Set a value using dictionary-style access."""
@@ -118,3 +130,4 @@ class KeyValueCache(BaseModel):
         if key not in self.data:
             raise KeyError(key)
         del self.data[key]
+        _log.debug(f"Deleted key {key}")

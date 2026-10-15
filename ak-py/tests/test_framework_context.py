@@ -130,6 +130,15 @@ class TestSessionFrameworkContextAccessors:
 
         assert session.get_framework_context() is None
 
+    def test_get_does_not_log(self, caplog):
+        session = Session("s")
+        session.set_framework_context({"a": 1})
+
+        with caplog.at_level(logging.DEBUG, logger="ak.core.session [s]"):
+            session.get_framework_context()
+
+        assert [record for record in caplog.records if record.name == "ak.core.session [s]"] == []
+
     @pytest.mark.asyncio
     async def test_pre_hook_seed_reaches_the_runner_and_post_hook_sees_the_write_back(self):
         """Hooks are the accessors' scope: the pre-hook's seed is injected, the post-hook sees the result."""
@@ -188,6 +197,27 @@ class TestFrameworkContextLoad:
 
         assert session.get(FRAMEWORK_CONTEXT) == {"a": {"n": 1}}
 
+    def test_load_logs_the_added_context(self, caplog):
+        runner = DummyRunner()
+        session = Session("s")
+        session.set(FRAMEWORK_CONTEXT, {"a": 1})
+
+        with caplog.at_level(logging.DEBUG, logger="ak.core.runner"):
+            runner._load_framework_context(session)
+
+        records = [record for record in caplog.records if record.name == "ak.core.runner"]
+        assert [record.getMessage() for record in records] == ["Adding framework context to runner 'dummy' for session 's': {'a': 1}"]
+        assert records[0].levelno == logging.DEBUG
+
+    def test_load_without_context_does_not_log(self, caplog):
+        runner = DummyRunner()
+
+        with caplog.at_level(logging.DEBUG, logger="ak.core.runner"):
+            runner._load_framework_context(Session("s"))
+            runner._load_framework_context(None)
+
+        assert [record for record in caplog.records if record.name == "ak.core.runner"] == []
+
 
 class TestFrameworkContextStore:
     def test_absent_key_never_written(self):
@@ -226,6 +256,26 @@ class TestFrameworkContextStore:
         session = Session("s")
         runner._store_framework_context(session, {"seeded": "keep"}, {})
         assert session.get(FRAMEWORK_CONTEXT) == {"seeded": "keep"}
+
+    def test_store_logs_the_merged_context(self, caplog):
+        runner = DummyRunner()
+        session = Session("s")
+
+        with caplog.at_level(logging.DEBUG, logger="ak.core.runner"):
+            runner._store_framework_context(session, {"a": 1, "b": 2}, {"b": 9})
+
+        records = [record for record in caplog.records if record.name == "ak.core.runner"]
+        assert [record.getMessage() for record in records] == ["Stored framework context from runner 'dummy' for session 's': {'a': 1, 'b': 9}"]
+        assert records[0].levelno == logging.DEBUG
+
+    def test_store_noop_does_not_log(self, caplog):
+        runner = DummyRunner()
+
+        with caplog.at_level(logging.DEBUG, logger="ak.core.runner"):
+            runner._store_framework_context(Session("s"), None, {"a": 1})
+            runner._store_framework_context(None, {"a": 1}, {"b": 2})
+
+        assert [record for record in caplog.records if record.name == "ak.core.runner"] == []
 
 
 class TestFrameworkContextRoundTrip:
