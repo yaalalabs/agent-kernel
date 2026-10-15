@@ -34,6 +34,10 @@ class RealtimeRunner(Runner):
 
     input_sample_rate: int = EDGE_SAMPLE_RATE
     output_sample_rate: int = EDGE_SAMPLE_RATE
+    # True when the adapter reports ``speech_stopped`` after every ``speech_started`` and
+    # ``interrupt`` (a model with server voice activity detection that signals the end of speech).
+    # The pool then counts the user as speaking until it arrives.
+    reports_speech_stopped: bool = False
 
     async def run(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AgentReply:
         """Not supported for realtime runners."""
@@ -91,12 +95,26 @@ class RealtimeRunner(Runner):
             - ``transcript_delta``: ``{"delta": <text>, "message_id": str}``
             - ``tool_call``: ``{"call_id": str, "name": str, "arguments": <JSON string>}``; the pool
               then calls :meth:`execute_tool` and :meth:`send_tool_result`
-            - ``done``: ``{"status": ...}``, the end of a model turn
+            - ``done``: ``{"status": ...}``, the end of a model turn; status ``reconnecting`` when the
+              turn ended because the adapter lost its socket and is replacing it, after which the
+              pool posts nothing into the call until ``reconnected`` or ``error``
+            - ``reconnected``: ``{"agent": str, "seconds": int, "seeded": bool}``, optional, for an
+              adapter that recovers a lost socket itself: the socket was replaced and ``agent`` still
+              has the call; ``seeded`` when the new socket was given the conversation to answer. The
+              pool passes it to the agent's realtime hooks
             - ``error``: ``{"message": str}``, the socket failed; the pool tells the user and
               replaces the connection
             - ``interrupt``: ``{}``, the user spoke while the model was responding
             - ``speech_started``: ``{}``, the user spoke outside a response; the pool treats it as a
               barge-in only while it still holds audio the user has not heard
+            - ``speech_heard``: ``{}``, the user is still speaking (for example, more of their words
+              were transcribed); report it as often as the model says so, so the pool knows a long
+              answer is still going on
+            - ``speech_stopped``: ``{}``, the user stopped speaking; report it only with
+              :attr:`reports_speech_stopped` set
+            - ``caller_transcript``: ``{"text": str}``, the user's words in a turn, once the model has
+              transcribed the whole turn; optional, for an adapter whose model transcribes the user.
+              The pool passes it to the agent's realtime hooks as ``caller_said``
             - ``agent_changed``: ``{"agent": str, "previous_agent": str}``, a framework-native
               handoff moved the conversation to another agent; report it after the previous
               agent's last output and before the new agent's first. The pool announces the agent

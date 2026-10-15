@@ -20,6 +20,7 @@ _LAZY_EXPORTS = {
     "QueueName": ".envelope",
     "RequestProducer": ".producer",
     "IOHandler": ".io_handler",
+    "RealtimeCall": ".realtime_pool",
     "RequestHandler": ".request_handler",
     "RestHandler": ".request_handler",
     "ResponseHandler": ".response_handler",
@@ -43,6 +44,7 @@ if TYPE_CHECKING:  # pragma: no cover: static resolution only, preserves lazines
     from .envelope import QueueMessage, QueueName
     from .io_handler import IOHandler
     from .producer import RequestProducer
+    from .realtime_pool import RealtimeCall
     from .request_handler import RequestHandler, RestHandler
     from .response_handler import ResponseHandler
     from .thread_runner import ThreadRunner

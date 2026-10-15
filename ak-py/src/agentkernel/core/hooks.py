@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import time
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal, Optional
+
+from pydantic import BaseModel, Field
 
 if TYPE_CHECKING:
     from .base import Agent, Session
@@ -128,5 +131,60 @@ class PostHook(ABC):
     def name(self) -> str:
         """
         :return: the name of the posthook.
+        """
+        raise NotImplementedError
+
+
+class RealtimeEvent(BaseModel):
+    """
+    Something that happened in a live realtime call (``execution.mode: realtime``), as a `RealtimeHook` sees it.
+
+    - ``connected``: the session's model connection opened, on the caller's first input.
+    - ``caller_said``: the caller's words in one turn, as the model transcribed them. Only from an adapter that
+      transcribes the caller, which today is Gemini Live (the OpenAI adapter does not enable input transcription).
+    - ``edge_text``: text the edge sent into the call: what the caller typed, or a prompt the edge sends on their
+      behalf (such as the LiveKit gateway's greeting when a microphone connects). Not text an application posts.
+    - ``agent_said``: an agent's words in one turn, as they reached the edge. ``interrupted`` when the caller
+      talked over the agent; ``text`` is then only what was played before they did.
+    - ``agent_changed``: the call moved to ``agent``. Also sent for the agent the call starts with.
+    - ``reconnected``: the model connection dropped or stalled and was replaced, with ``agent`` still on the call.
+      What the caller said while it was down may be lost (an adapter that recovers this way tells the agent).
+    - ``disconnected``: the session's model connection closed: idle, failed, or shut down.
+    """
+
+    type: Literal["connected", "caller_said", "edge_text", "agent_said", "agent_changed", "reconnected", "disconnected"]
+    session_id: str
+    agent: Optional[str] = None
+    text: str = ""
+    interrupted: bool = False
+    at: float = Field(default_factory=time.time)
+
+
+class RealtimeHook(ABC):
+    """
+    Observes the live realtime calls an agent serves: what the caller and the agents said, and when the call's
+    model connection opened and closed. Attached with `Module.realtime_hook(agent, hooks)` to the agent a call
+    starts with; the agents it hands off to are reported to the same hooks, named in `RealtimeEvent.agent`.
+
+    A hook observes; it cannot change what is said. Hooks run in order, one event at a time, on the realtime
+    pool's event loop but off the audio path, so a slow hook delays only the events behind it: keep `on_event`
+    short, and hand long work to another thread. An exception is logged and the next hook still runs.
+    """
+
+    @abstractmethod
+    async def on_event(self, session: "Session", agent: "Agent", event: RealtimeEvent) -> None:
+        """
+        Called for every event of a live call the agent serves.
+
+        :param session: The call's session.
+        :param agent: The agent the call started with, the one the hook is attached to.
+        :param event: What happened.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def name(self) -> str:
+        """
+        :return: the name of the realtime hook.
         """
         raise NotImplementedError

@@ -3,7 +3,7 @@ import base64
 import json
 import logging
 import uuid
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 from livekit import api, rtc
 
@@ -43,6 +43,8 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
     name = INTEGRATION_NAME
     # Set on every agent participant: "true" on the one speaking, so a client UI can show who has the call.
     ACTIVE_ATTRIBUTE = "ak.active"
+    # Every agent participant's identity starts with this; a client UI tells the agents from the people by it.
+    AGENT_IDENTITY_PREFIX = "agent-"
     # On a change of speaker, how long the previous agent's queued audio may play out before the next
     # agent is heard. Bounds how long a change can hold up the chunks behind it, an interrupt among them.
     PLAYOUT_WAIT_SECONDS: float = 2.0
@@ -155,12 +157,43 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
             raise ValueError("Either 'token' or both 'api_key' and 'api_secret' must be provided in code or config")
         # The name the agent appears under in the room; cosmetic, unlike ``self.agent``.
         name = self.agent or "general"
-        return self._AgentParticipant(self.agent, f"agent-{name}", self._mint_token(name))
+        return self._AgentParticipant(self.agent, f"{self.AGENT_IDENTITY_PREFIX}{name}", self._mint_token(name))
 
     def _mint_token(self, name: str) -> str:
         # can_update_own_metadata lets the participant set its ACTIVE_ATTRIBUTE.
-        grants = api.VideoGrants(room_join=True, room=self.session_id, can_update_own_metadata=True)
-        return api.AccessToken(self._api_key, self._api_secret).with_identity(f"agent-{name}").with_name(f"{name} Agent").with_grants(grants).to_jwt()
+        return self._sign(f"{self.AGENT_IDENTITY_PREFIX}{name}", f"{name} Agent", can_update_own_metadata=True)
+
+    def participant_token(self, identity: str, name: Optional[str] = None, **grants: Any) -> str:
+        """A token for another participant to join this gateway's room, such as the person the agents talk to.
+
+        Signed with the API key and secret the gateway already uses (from code or config), so an
+        application serving its users a page does not read the LiveKit settings itself. ``grants`` are
+        LiveKit ``VideoGrants`` fields (``can_publish``, ``can_subscribe``, ``can_publish_data``, ...),
+        each LiveKit's own default when not given; the token always joins this gateway's room.
+
+        :param identity: The participant's identity in the room. Identities starting with
+            ``AGENT_IDENTITY_PREFIX`` are the gateway's own agents and are refused.
+        :param name: The participant's display name, if any.
+        :raises ValueError: The identity is an agent's, ``grants`` names the room, or no API key and secret are set.
+        """
+        if identity.startswith(self.AGENT_IDENTITY_PREFIX):
+            raise ValueError(f"Identities starting with '{self.AGENT_IDENTITY_PREFIX}' are the gateway's own agents: '{identity}'")
+        fixed = {"room", "room_join"} & set(grants)
+        if fixed:
+            raise ValueError(f"A participant token always joins this gateway's room; do not set {', '.join(sorted(fixed))}")
+        return self._sign(identity, name, **grants)
+
+    def _sign(self, identity: str, name: Optional[str], **grants: Any) -> str:
+        """Sign a token for ``identity`` to join this room with ``grants``.
+
+        :raises ValueError: No API key and secret are set.
+        """
+        if not (self._api_key and self._api_secret):
+            raise ValueError("Signing a LiveKit token needs both 'api_key' and 'api_secret', in code or config")
+        token = api.AccessToken(self._api_key, self._api_secret).with_identity(identity)
+        if name:
+            token = token.with_name(name)
+        return token.with_grants(api.VideoGrants(room_join=True, room=self.session_id, **grants)).to_jwt()
 
     async def start(self) -> None:
         """Join the room as the participant that hears the human, and bridge audio until the pipeline shuts down.
@@ -492,7 +525,7 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
         # joining participant marks itself once it is in.
         self._in_background(self._update_attribute(self._active))
         for name in names:
-            participant = self._AgentParticipant(name, f"agent-{name}", self._mint_token(name))
+            participant = self._AgentParticipant(name, f"{self.AGENT_IDENTITY_PREFIX}{name}", self._mint_token(name))
             self._own_identities.add(participant.identity)
             # Listed before it joins, so a release while it is joining takes it out too.
             self._participants.append(participant)

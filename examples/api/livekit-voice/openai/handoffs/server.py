@@ -2,9 +2,9 @@ import logging
 
 from agents import Agent as OpenAIAgent
 
-from agentkernel.framework.openai import OpenAIModule, OpenAIToolBuilder
+from agentkernel.openai import OpenAIModule, OpenAIToolBuilder
 from agentkernel.integration.adapter import GatewayRunner
-from agentkernel.integration.livekit import LiveKitEdgeGateway
+from agentkernel.livekit import LiveKitEdgeGateway
 from agentkernel.pipeline import IOHandler
 
 logging.basicConfig(level=logging.INFO)

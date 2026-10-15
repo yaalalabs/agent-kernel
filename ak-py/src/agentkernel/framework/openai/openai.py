@@ -638,6 +638,9 @@ class OpenAIRealtimeRunner(BaseRealtimeRunner):
     agent's model and voice.
     """
 
+    # Server voice activity detection signals the end of the user's speech (``speech_stopped``).
+    reports_speech_stopped = True
+
     def __init__(self):
         super().__init__(FRAMEWORK)
         self._connection = None
@@ -881,6 +884,8 @@ class OpenAIRealtimeRunner(BaseRealtimeRunner):
                 await self._callback("interrupt", {})
             else:
                 await self._callback("speech_started", {})
+        elif event_type == "input_audio_buffer.speech_stopped":
+            await self._callback("speech_stopped", {})
         elif event_type == "response.done":
             self._response_in_flight = False
             response = getattr(event, "response", None)

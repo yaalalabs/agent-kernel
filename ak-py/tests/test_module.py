@@ -470,6 +470,18 @@ class TestModuleHooksResolveThroughNativeAgentName:
             assert mod.get_agent("researcher").pre_hooks == [hook]
             assert mod.get_agent("researcher").post_hooks == [hook]
 
+    def test_realtime_hooks_attach_to_the_wrapped_agent_and_chain(self):
+        with Runtime(SessionStoreBuilder.build()):
+            a1 = FrameworkAgent("agent1")
+            mod = BareModule([a1])
+            first, second = object(), object()
+
+            result = mod.realtime_hook(a1, [first]).pre_hook(a1, []).realtime_hook(a1, [second])
+
+            assert result is mod
+            assert mod.get_agent("agent1").realtime_hooks == [first, second]
+            assert mod.get_agent("agent1").pre_hooks == []
+
     def test_an_agent_not_loaded_in_the_module_raises_naming_it(self):
         with Runtime(SessionStoreBuilder.build()):
             mod = BareModule([FrameworkAgent("agent1")])

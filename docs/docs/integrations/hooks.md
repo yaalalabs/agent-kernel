@@ -323,6 +323,27 @@ A hook that still defines `on_stream_chunk` will not raise — the method is sim
 
 **Use Cases:** redacting tool arguments and results, PII masking over assembled text, profanity filtering, hiding reasoning traces from clients, refusing a response outright, streaming analytics.
 
+### Realtime Hooks (RealtimeHook)
+
+In realtime mode (`execution.mode: realtime`, a live voice call) there is no run for pre- and post-hooks to
+wrap. A `RealtimeHook` observes the call instead: when its model connection opens and closes, what the caller
+and each agent said, and who has the call. It cannot change what is said.
+
+```python
+from agentkernel import RealtimeEvent, RealtimeHook
+
+class CallLog(RealtimeHook):
+    async def on_event(self, session, agent, event: RealtimeEvent) -> None:
+        print(event.type, event.agent, event.text)
+
+    def name(self) -> str:
+        return "call_log"
+
+module.realtime_hook(entry_agent, [CallLog()])
+```
+
+See [Watching a live call](./livekit.md#watching-a-live-call) for the events.
+
 ## Implementing Hooks
 
 ### Pre-Execution Hook
@@ -414,7 +435,7 @@ OpenAIModule([agent]).pre_hook(agent, [
 ])
 ```
 
-The `pre_hook()` and `post_hook()` methods can be chained for convenience, and work with any Agent Kernel module (OpenAI, LangGraph, CrewAI, etc.).
+The `pre_hook()` and `post_hook()` methods can be chained for convenience, and work with any Agent Kernel module (OpenAI, LangGraph, CrewAI, etc.). `realtime_hook()` chains the same way, for the agents a realtime call starts with.
 
 ### Framework-native hooks {#framework-native-hooks}
 

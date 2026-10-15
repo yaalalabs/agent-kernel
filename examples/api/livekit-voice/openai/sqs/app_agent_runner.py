@@ -1,7 +1,7 @@
 import logging
 
 from agentkernel.aws import ECSAgentRunner
-from agentkernel.framework.openai import (
+from agentkernel.openai import (
     OpenAIModule,
     OpenAIToolBuilder,
 )

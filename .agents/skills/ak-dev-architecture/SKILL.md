@@ -10,7 +10,9 @@ description: >
   and which layer each surface calls), AKConfig, tools, hooks, multimodal, conversation
   threads (the integration/thread package), secret resolution (agentkernel.secret: SecretManager,
   SecretProvider, env/aws_ssm), messaging integrations (the integration/adapter
-  seam: InboundAdapter/OutboundAdapter, WebhookRESTRequestHandler, PollerRunner), the adapter pattern, the queue execution pipeline
+  seam: InboundAdapter/OutboundAdapter, WebhookRESTRequestHandler, PollerRunner), realtime voice
+  (RealtimeConnectionPool, the RealtimeRunner adapters, RealtimeCall, RealtimeHook, the LiveKit gateway),
+  the adapter pattern, the queue execution pipeline
   (agentkernel.pipeline: QueueMessage/QueueTransport/ConsumerLoop, the in_memory transport,
   AgentRunner/ResponseHandler/RequestHandler/IOHandler, the RESTAPI.run delegation rule, and the
   relocation shims), the WebSocket gateway tier (pipeline/ws: WebSocketGateway, the shared
@@ -591,6 +593,63 @@ Platform --poll-----> PollerRunner ---------------> (same adapter surface) -----
   (the `QueueTransportContract` pattern), subclassed once per built-in in
   `tests/test_integration_adapter_contract.py`; `tests/test_integration_roundtrip.py` drives a
   platform event through the whole `in_memory` topology to a recording outbound adapter.
+
+## Realtime Voice (`pipeline/realtime_pool.py`, `core/realtime/`, `integration/livekit/`)
+
+Live voice calls (`execution.mode: realtime`), specs #405, #809 and #810, internals in
+`docs/docs/architecture/realtime-internals.md`. A call does **not** go through `Runtime.run()`: no
+guardrails, pre/post hooks or session store writes on realtime turns.
+
+```
+Caller <-> LiveKitEdgeGateway (StatefulEdgeAdapter, hosted by GatewayRunner via IOHandler.run(gateways=...))
+  -> input queue (voice / text requests) -> RealtimeAgentRunner -> RealtimeConnectionPool.dispatch
+  -> RealtimeConnection (one per session) <-> RealtimeRunner adapter <-> model socket
+  -> paced output queue -> Response Handler -> StatefulEdgeRegistry -> the gateway
+```
+
+- **`RealtimeConnectionPool`**: process-wide singleton (`initialize()` / `get()` / `reset()`) running one
+  asyncio loop on its own `ThreadRunner` thread. One `RealtimeConnection` per session; consumer threads
+  hand it input thread-safely. The loop evicts connections idle for 300 s and connections whose socket
+  failed (every 5 s), paces model audio at playback speed (`execution.realtime.playback_lead_ms`), and
+  warns when it was blocked for over a second. Tools run inside `async with session` and
+  `Agent._activate()`, so they hold the session lock; long work belongs in a background agent with a
+  session of its own. The realtime path loads the AK session once per connection and never stores it.
+- **Adapter contract** (`core/realtime/runner.py`, `RealtimeRunner`): `connect(session, agent, callback)`,
+  `append_audio`, `send_text`, `execute_tool`, `send_tool_result`, `disconnect`, `team(agent)`. Callback
+  events: `audio_delta`, `transcript_delta`, `tool_call`, `done` (status `reconnecting` when a lost socket
+  is being replaced), `interrupt`, `speech_started`, `speech_heard`, `speech_stopped` (only with
+  `reports_speech_stopped`), `agent_changed`, `caller_transcript`, `reconnected`, `error`. Built-ins:
+  `OpenAIRealtimeRunner` (one socket; a handoff is `session.update`) and `GoogleADKRealtimeRunner`
+  (a transfer opens a new Gemini socket for the new agent).
+- **Ordering**: output, `done` and `AgentChanged` share one paced queue, so an edge never credits one
+  agent's words to another; a barge-in drops queued audio and transcript but keeps `done` and
+  `agent_changed`. The pool emits the first `AgentChanged` (starting agent + team) itself.
+- **Turn state** (#810): `RealtimeConnection` tracks responding, caller speech, model output, tool
+  results, edge text, reconnects and readiness. It is internal (the class is not exported).
+- **`RealtimeCall(session_id)`** (`agentkernel.pipeline`, #810): the public face for application code:
+  `post_when_idle(text, key=, expires_after=)` says text into the call at its next quiet moment through
+  the session's `RealtimeOutbox` (nobody talking, no reply owed, quiet for `QUIET_SECONDS`); `withdraw`,
+  `connected`, `quiet_for()`, `agent_has_spoken`, `close()`. In-process only: it reaches a call only in
+  the process running the pool.
+- **`RealtimeHook` / `RealtimeEvent`** (`core/hooks.py`, #810): observe a call (`connected`, `caller_said`,
+  `edge_text`, `agent_said`, `agent_changed`, `reconnected`, `disconnected`); attached with
+  `Module.realtime_hook(agent, hooks)` to the agent a call starts with; one queue and task per
+  connection, off the audio path; a failing hook is logged.
+- **Google ADK specifics** (`framework/adk/adk.py`): every tool call runs between the calling agent's
+  `before/on_error/after_tool_callback`, mirroring ADK's order, so a callback can refuse
+  `transfer_to_agent`; plugins do not run. A transfer seeds the new socket with the call's history,
+  each agent's turn presented through ADK's `_present_other_agent_message`. The starting agent's static
+  `run_config` run option sets `realtime_input_config` and transcription on every socket (a run-options
+  factory is not called). A dropped, closed or stalled socket is replaced with the same agent by
+  replaying the history plus a one-time note (never kept in the history); input is held while no
+  socket is open; repeated quick drops give up as `error`. Gemini's native session resumption is not
+  used (a follow-up).
+- **LiveKit** (`integration/livekit/adapter.py`, alias `agentkernel.livekit`): each agent of the team is
+  its own room participant, `ak.active` marks the speaker; `participant_token(identity, ...)` signs
+  tokens for the application's users with the gateway's own key.
+- **Testing**: `tests/test_realtime_pool.py` drives the pool and both adapters against scripted sockets
+  (`_FakeLiveClient` / `_FakeLiveSession` for Gemini); `tests/test_livekit_gateway.py` covers the edge;
+  `examples/api/livekit-voice/google/handoffs/server_test.py` runs offline in the e2e matrix.
 
 ## Scheduling (`ak-py/src/agentkernel/schedule/`)
 

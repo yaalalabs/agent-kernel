@@ -11,7 +11,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any, ClassVar, Self, Type, cast
 
 from .event import StreamEvent
-from .hooks import PostHook, PreHook
+from .hooks import PostHook, PreHook, RealtimeHook
 from .model import AgentReply, AgentRequest, ResumeDecision
 from .util.key_value_cache import KeyValueCache
 from .util.picklable import first_unpicklable_entry
@@ -532,6 +532,7 @@ class Agent(ABC):
         self._realtime_runner_cls: "Type[RealtimeRunner] | None" = realtime_runner_cls
         self._pre_hooks: list[PreHook] = []
         self._post_hooks: list[PostHook] = []
+        self._realtime_hooks: list[RealtimeHook] = []
         self._run_options: dict[str, Any] = {}
         self._run_options_factory: RunOptionsFactory | None = None
 
@@ -576,6 +577,13 @@ class Agent(ABC):
         Returns the list of post-execution hooks registered for the agent.
         """
         return self._post_hooks
+
+    @property
+    def realtime_hooks(self) -> list[RealtimeHook]:
+        """
+        Returns the list of realtime hooks registered for the agent: they observe the live calls it serves.
+        """
+        return self._realtime_hooks
 
     @property
     def run_options(self) -> dict[str, Any]:

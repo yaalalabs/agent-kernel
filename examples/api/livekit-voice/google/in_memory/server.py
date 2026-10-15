@@ -2,9 +2,9 @@ import logging
 
 from google.adk.agents import Agent as GoogleAgent
 
-from agentkernel.framework.adk import GoogleADKModule, GoogleADKToolBuilder
+from agentkernel.adk import GoogleADKModule, GoogleADKToolBuilder
 from agentkernel.integration.adapter import GatewayRunner
-from agentkernel.integration.livekit import LiveKitEdgeGateway
+from agentkernel.livekit import LiveKitEdgeGateway
 from agentkernel.pipeline import IOHandler
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s.%(msecs)03d %(levelname)s %(name)s: %(message)s", datefmt="%H:%M:%S")

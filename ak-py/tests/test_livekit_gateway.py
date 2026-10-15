@@ -210,6 +210,49 @@ class TestToken:
         # Lets the participant set its ak.active attribute.
         assert claims["video"]["canUpdateOwnMetadata"] is True
 
+    def test_a_participant_token_joins_the_gateways_room_signed_with_its_key(self, monkeypatch):
+        """An application gives its users a token from the gateway, without reading the LiveKit settings itself."""
+        from livekit import api
+
+        _config(monkeypatch)
+        gateway = LiveKitEdgeGateway(agent_name="supervisor", session_id="room-1")
+
+        token = gateway.participant_token("Pulindu", "Pulindu")
+        claims = api.TokenVerifier("key", "secret" * 8).verify(token)  # the key and secret _config sets
+
+        assert claims.identity == "Pulindu" and claims.name == "Pulindu"
+        assert claims.video.room == "room-1" and claims.video.room_join is True
+        assert claims.video.can_publish is True  # LiveKit's own defaults, as nothing else was asked
+
+    def test_a_participant_token_carries_the_grants_asked_for(self, monkeypatch):
+        _config(monkeypatch)
+        gateway = LiveKitEdgeGateway(agent_name="supervisor", session_id="room-1")
+
+        claims = self._claims(gateway.participant_token("viewer", can_publish=False, can_subscribe=False))
+
+        assert claims["sub"] == "viewer" and "name" not in claims
+        assert claims["video"]["canPublish"] is False and claims["video"]["canSubscribe"] is False
+        assert claims["video"]["room"] == "room-1"
+
+    @pytest.mark.parametrize(
+        "identity, grants",
+        [("agent-billing", {}), ("visitor", {"room": "another-room"}), ("visitor", {"room_join": False})],
+    )
+    def test_a_participant_token_never_poses_as_an_agent_or_leaves_the_room(self, monkeypatch, identity, grants):
+        _config(monkeypatch)
+        gateway = LiveKitEdgeGateway(agent_name="supervisor", session_id="room-1")
+
+        with pytest.raises(ValueError):
+            gateway.participant_token(identity, **grants)
+
+    def test_a_participant_token_needs_the_api_key_and_secret(self, monkeypatch):
+        _config(monkeypatch)
+        gateway = LiveKitEdgeGateway(agent_name="supervisor", session_id="room-1", token="agent-token")
+        gateway._api_key = None
+
+        with pytest.raises(ValueError, match="api_key"):
+            gateway.participant_token("visitor")
+
 
 class TestInboundStaging:
     @pytest.mark.asyncio
@@ -837,3 +880,10 @@ class TestMultiAgentOutbound:
         assert len(gateway._active.audio_source.frames) == 1
         assert gateway._active.room.local_participant.attributes == {}
         assert gateway._active.track.muted is False
+
+
+def test_the_public_alias_exports_the_gateway():
+    """``agentkernel.livekit`` is the integration's public name, as ``agentkernel.slack`` is Slack's."""
+    from agentkernel.livekit import LiveKitEdgeGateway as aliased
+
+    assert aliased is LiveKitEdgeGateway

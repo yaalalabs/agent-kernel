@@ -1,7 +1,7 @@
 import logging
 
 from agentkernel.integration.adapter import GatewayRunner
-from agentkernel.integration.livekit import LiveKitEdgeGateway
+from agentkernel.livekit import LiveKitEdgeGateway
 from agentkernel.pipeline import IOHandler
 
 logging.basicConfig(level=logging.INFO)
@@ -10,8 +10,6 @@ gateway = LiveKitEdgeGateway(session_id="room_01")
 
 from fastapi import APIRouter
 from agentkernel.api.handler import RESTRequestHandler
-from agentkernel.core.config import AKConfig
-from livekit import api
 
 class LiveKitTokenHandler(RESTRequestHandler):
     def get_router(self) -> APIRouter:
@@ -20,14 +18,8 @@ class LiveKitTokenHandler(RESTRequestHandler):
         return router
 
     def get_token(self, participant_name: str = "user"):
-        config = AKConfig.get()
-        token = (
-            api.AccessToken(config.livekit.api_key, config.livekit.api_secret)
-            .with_identity(f"user-{participant_name}")
-            .with_name(participant_name)
-            .with_grants(api.VideoGrants(room_join=True, room="room_01"))
-            .to_jwt()
-        )
+        # The gateway signs it with the LiveKit settings it already reads, for the room it serves.
+        token = gateway.participant_token(f"user-{participant_name}", participant_name)
         return {"token": token}
 
 if __name__ == "__main__":
