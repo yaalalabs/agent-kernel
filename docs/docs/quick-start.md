@@ -330,6 +330,57 @@ python my_agent.py
 ```
 
 </TabItem>
+<TabItem value="maf" label="Microsoft Agent Framework">
+
+## Microsoft Agent Framework Quick Start
+
+### 1. Install
+
+```bash
+pip install agentkernel[maf] agent-framework-openai
+```
+
+`agentkernel[maf]` installs the provider-agnostic `agent-framework-core` only. Install the MAF package for
+the model provider you intend to use, e.g. `agent-framework-openai`.
+
+### 2. Create Your Agent
+
+Create a file called `my_agent.py`:
+
+```python
+from agent_framework import Agent
+from agent_framework.openai import OpenAIChatClient
+from agentkernel.cli import CLI
+from agentkernel.maf import MAFModule
+
+# Define your agent
+assistant = Agent(
+    OpenAIChatClient(model="gpt-4.1-mini"),
+    name="assistant",              # required — AK registers agents by name eagerly
+    description="A helpful AI assistant.",
+    instructions="You are a helpful AI assistant. Provide concise and accurate answers.",
+)
+
+# Register with Agent Kernel
+MAFModule([assistant])
+
+if __name__ == "__main__":
+    CLI.main()
+```
+
+### 3. Set API Key
+
+```bash
+export OPENAI_API_KEY=your-api-key-here
+```
+
+### 4. Run Your Agent
+
+```bash
+python my_agent.py
+```
+
+</TabItem>
 </Tabs>
 
 ## Testing Your Agent

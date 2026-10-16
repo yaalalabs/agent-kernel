@@ -139,6 +139,7 @@ thinking block.
 | LangGraph | ✅ | ✅ | ✅ | ✅ | ❌ |
 | Google ADK | ✅ | ✅ | ✅ | ✅ | ❌ |
 | Pydantic AI | ✅ | ✅ | ✅ | ✅ | ❌ |
+| Microsoft Agent Framework | ✅ | ✅ | ✅ | ✅ | ❌ |
 | CrewAI | ❌ | — | — | — | — |
 | smolagents | ❌ | — | — | — | — |
 
@@ -149,7 +150,7 @@ Reading the table:
   routes exclude them: a `POST` to one returns a 400 naming the framework rather than a generic
   error. Both SDKs support streaming; AK simply has not wired those APIs yet. That is a pending
   adapter capability, not a permanent SDK limit.
-- **Reasoning is available on all four streaming adapters**, and only when the model actually produces
+- **Reasoning is available on all five streaming adapters**, and only when the model actually produces
   it. AK maps the model's reasoning *summary*, so a reasoning-capable model still emits nothing unless
   the summary is requested — on LangGraph that means `ChatOpenAI(..., reasoning={"effort": ...,
   "summary": "auto"})`, and the equivalent on other providers. An empty thinking block is far more
