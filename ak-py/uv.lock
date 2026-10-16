@@ -158,6 +158,7 @@ livekit = [
     { name = "livekit-api" },
 ]
 logfire = [
+    { name = "httpx" },
     { name = "logfire" },
 ]
 mcp = [
@@ -183,6 +184,7 @@ openai = [
     { name = "openinference-instrumentation-openai-agents" },
 ]
 openllmetry = [
+    { name = "httpx" },
     { name = "traceloop-sdk" },
 ]
 opik = [
@@ -291,7 +293,9 @@ requires-dist = [
     { name = "gunicorn", marker = "extra == 'api'", specifier = ">=23.0.0" },
     { name = "httpx", marker = "extra == 'api'", specifier = ">=0.27.0" },
     { name = "httpx", marker = "extra == 'instagram'", specifier = ">=0.27.0" },
+    { name = "httpx", marker = "extra == 'logfire'", specifier = ">=0.27.0" },
     { name = "httpx", marker = "extra == 'messenger'", specifier = ">=0.27.0" },
+    { name = "httpx", marker = "extra == 'openllmetry'", specifier = ">=0.27.0" },
     { name = "httpx", marker = "extra == 'slack'", specifier = ">=0.27.0" },
     { name = "httpx", marker = "extra == 'teams'", specifier = ">=0.27.0" },
     { name = "httpx", marker = "extra == 'telegram'", specifier = ">=0.27.0" },

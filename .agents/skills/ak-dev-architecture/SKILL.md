@@ -1056,12 +1056,14 @@ ak-py/src/agentkernel/
 │   ├── bedrock.py           # AWS Bedrock guardrails
 │   └── walledai.py          # Walled AI guardrails (safety + PII redaction)
 ├── trace/                   # Observability
-│   ├── base.py              # BaseTrace
-│   ├── trace.py             # Trace factory
-│   ├── langfuse/            # Langfuse adapter
-│   ├── openllmetry/         # OpenLLMetry adapter
-│   ├── logfire/             # Pydantic Logfire adapter
-│   └── cloudwatch/          # AWS CloudWatch adapter (OpenTelemetry → X-Ray OTLP, SigV4-signed)
+│   ├── base.py              # BaseTrace (+ optional, non-abstract fetch_spans(query))
+│   ├── trace.py             # Trace factory (+ Trace.fetch_spans + fetch_traces facade: TraceQuery or keyword filters)
+│   ├── fetch.py             # SpanKind, SpanStatus, TraceQuery, SpanUsage, FetchedSpan, FetchedTrace, OTelSpanClassifier (provider-neutral read model); TraceFetcher (internal base of the built-in fetchers)
+│   ├── testing.py           # TraceFetchContract conformance suite (imports pytest; test code only)
+│   ├── langfuse/            # Langfuse adapter (+ fetch.py: v2 observations API; runners flush on AWS Lambda)
+│   ├── openllmetry/         # OpenLLMetry adapter (+ fetch.py: Traceloop warehouse REST API)
+│   ├── logfire/             # Pydantic Logfire adapter (+ fetch.py: SQL Query API, needs LOGFIRE_READ_TOKEN)
+│   └── cloudwatch/          # AWS CloudWatch adapter (OpenTelemetry → X-Ray OTLP, SigV4-signed; + fetch.py: Logs Insights on aws/spans)
 ├── sandbox/                 # Sandbox capability (execute code/commands in an isolated env)
 │   ├── base.py              # Sandbox, SandboxProvider ABCs
 │   ├── model.py             # SandboxCapabilities, SandboxResult, SandboxSession, policy/principal

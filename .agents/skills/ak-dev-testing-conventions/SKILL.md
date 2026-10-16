@@ -33,12 +33,13 @@ addopts = "--cov=src --cov-report=term --cov-report=html --html=report.html"
 
 Tests live in `ak-py/tests/` and follow the naming convention `test_<module>.py`.
 
-Three subsystems ship a **reusable contract suite** a new backend must be run against, rather than
+Four subsystems ship a **reusable contract suite** a new backend must be run against, rather than
 per-backend assertions written from scratch: `QueueTransportContract` (`pipeline/testing.py`),
-`SandboxProviderContract` (`sandbox/testing.py`), and `KnowledgeBaseContract` /
-`DocumentStoreContract` (`knowledgebase/testing.py`). All three ship next to the ABC they constrain,
+`SandboxProviderContract` (`sandbox/testing.py`), `KnowledgeBaseContract` /
+`DocumentStoreContract` (`knowledgebase/testing.py`), and `TraceFetchContract` (`trace/testing.py`,
+for tracers that implement `BaseTrace.fetch_spans`). All four ship next to the ABC they constrain,
 so a bring-your-own backend author can import and subclass them out of tree; each module imports
-`pytest` and is therefore kept out of its package's exports. In all three cases the contract classes
+`pytest` and is therefore kept out of its package's exports. In all four cases the contract classes
 are deliberately not named `Test*`, so pytest collects them only through the subclasses that supply a
 fixture.
 
@@ -192,6 +193,9 @@ fixture.
 | `test_store_builders.py` | Session/thread/multimodal store builders: fail-loud on unknown type, BYO dotted-path subclass resolution |
 | `test_trace.py` | Trace factory built-in resolution, BYO dotted path, unknown-type error |
 | `test_trace_cloudwatch.py` | CloudWatch trace provider: provider installed once or an existing SDK provider reused, X-Ray endpoint and SigV4 selection from `AWS_REGION` / `OTEL_EXPORTER_OTLP_*`, resource defaults, SigV4 request signing, the run span's `session.id` / `input.value` / `output.value`, `session.id` stamped onto instrumentor child spans, and the per-run flush on Lambda. Records spans with a real SDK `TracerProvider` + `InMemorySpanExporter` and patches `trace.get_tracer_provider` / `set_tracer_provider`, never installing a global provider |
+| `test_trace_fetch.py` | `Trace.fetch_spans` / `fetch_traces` models and fetchers: `FetchedTrace` grouping (root, usage), `SpanStatus` mapping per provider, `TraceQuery` window defaults/validation, strict `matches` and empty-filter rejection, `OTelSpanClassifier` kind/IO/session/usage reads, keyword-vs-`query` arguments, the shared `TraceFetcher` paging (span identity is `(trace_id, span_id)`, newest `limit` kept, cursor stop rules, time-window pages sized past the re-read boundary), and the Langfuse, Logfire, Traceloop and CloudWatch request translation and span mapping against fake clients |
+| `test_trace_fetch_contract.py` | The reusable `TraceFetchContract` (`trace/testing.py`) run against an in-memory tracer and the Langfuse and Traceloop fetchers behind fake APIs |
+| `test_trace_langfuse_flush.py` | Every Langfuse traced runner flushes after a successful and a failed run, only on Lambda, and a failing flush is logged rather than raised |
 
 ## Test Patterns
 
@@ -399,13 +403,13 @@ llm:
 ```
 
 - **score**: Deterministic, offline scoring via the configured `AKEvaluator`'s `evaluate_by_score` — the built-in `DeepevalAKEvaluator` uses `Scorer.quasi_exact_match_score` (normalised whole-string equality, no LLM call); the built-in `OpikAKEvaluator` uses Opik's `LevenshteinRatio` instead (graded fuzzy-similarity, not exact-match); the built-in `JevAKEvaluator` has no score mode (`AKMetricNotSupported`), so `evaluator: jev` needs `mode: llm`
-- **llm**: LLM-as-judge scoring via `evaluate_by_llm` — `deepeval` and `opik` use a `GEval` metric against the expected answer(s) (ground truth), while `jev` asks one TypeSafe Noul yes/no question (its probability is the score; comparison text is sent to `api.typesafe.ai`): `DeepevalAKEvaluator` via DeepEval's `GEval` and an `LLMTestCase`, `OpikAKEvaluator` via Opik's `GEval` and a single packed `output` string. Evaluation backends are pluggable (`agentkernel.test.core.evaluator.AKEvaluator`); see `ak-py/src/agentkernel/test/test.py`
+- **llm**: LLM-as-judge scoring via `evaluate_by_llm` — `deepeval` and `opik` use a `GEval` metric against the expected answer(s) (ground truth), while `jev` asks one TypeSafe Noul yes/no question (its probability is the score; comparison text is sent to `api.typesafe.ai`): `DeepevalAKEvaluator` via DeepEval's `GEval` and an `LLMTestCase`, `OpikAKEvaluator` via Opik's `GEval` and a single packed `output` string. Evaluation backends are pluggable (`agentkernel.test.AKEvaluator`, defined in `agentkernel.test.core.evaluator`); see `ak-py/src/agentkernel/test/test.py`
 - **fallback**: Tries score first, falls back to llm if score fails
 
 `evaluator` is resolved by `Test._resolve_evaluator` (`agentkernel/test/test.py`), the same
 bring-your-own-dotted-path pattern `resolve_dotted`/`require_extra` (`core/util/factory.py`) use
 for session stores, sandbox providers, and trace backends — a custom evaluator subclasses
-`AKEvaluator` (`agentkernel.test.core.evaluator`) and implements `evaluate_by_score`/
+`AKEvaluator` (imported from `agentkernel.test`) and implements `evaluate_by_score`/
 `evaluate_by_llm`, each returning an `AKEvaluationResult`. See
 `examples/cli/custom-evaluator/` for a full worked example, and
 `docs/specs/555-pluggable-test-evaluators/` for the design/spec behind this interface.

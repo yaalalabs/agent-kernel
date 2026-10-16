@@ -9,12 +9,12 @@ from typing import ClassVar
 
 import pytest
 
-from agentkernel.test.config import AKTestConfig
-from agentkernel.test.core.evaluator import (
+from agentkernel.test import (
     AKEvaluationCase,
     AKEvaluationError,
     AKMissingInput,
 )
+from agentkernel.test.config import AKTestConfig
 from agentkernel.test.core.evaluator.opik import (
     _DEFAULT_EVALUATION_CRITERIA,
     OpikAKEvaluator,

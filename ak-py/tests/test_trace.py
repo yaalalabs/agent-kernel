@@ -12,6 +12,17 @@ from agentkernel.trace.base import BaseTrace
 from agentkernel.trace.trace import Trace
 
 
+def _evict_tracer_package(monkeypatch, package):
+    """Drop agentkernel.trace.<package>* from sys.modules so the next import re-runs, restoring both the
+    modules and the parent package attribute afterwards; a failed re-import otherwise leaves a half-built
+    package bound on agentkernel.trace that breaks later dotted-path patches."""
+    import agentkernel.trace as trace_package
+
+    monkeypatch.setattr(trace_package, package, getattr(trace_package, package, None), raising=False)
+    for name in [n for n in list(sys.modules) if n.startswith(f"agentkernel.trace.{package}")]:
+        monkeypatch.delitem(sys.modules, name, raising=False)
+
+
 class _FakeTrace(BaseTrace):
     """Minimal BYO tracer implementing the full BaseTrace surface."""
 
@@ -85,6 +96,7 @@ def test_trace_langfuse_missing_extra_raises_friendly_import_error(monkeypatch):
     """The langfuse built-in routes its import through require_extra: a missing SDK yields the
     friendly `agentkernel[langfuse]` message, not a bare ImportError."""
     monkeypatch.setitem(sys.modules, "langfuse", None)  # simulate the SDK not installed
+    _evict_tracer_package(monkeypatch, "langfuse")
     with patch.object(AKConfig, "get", return_value=_config(True, "langfuse")):
         with pytest.raises(ImportError) as exc_info:
             Trace.get()
@@ -94,6 +106,7 @@ def test_trace_langfuse_missing_extra_raises_friendly_import_error(monkeypatch):
 def test_trace_openllmetry_missing_extra_raises_friendly_import_error(monkeypatch):
     monkeypatch.setitem(sys.modules, "traceloop", None)
     monkeypatch.setitem(sys.modules, "traceloop.sdk", None)
+    _evict_tracer_package(monkeypatch, "openllmetry")
     with patch.object(AKConfig, "get", return_value=_config(True, "openllmetry")):
         with pytest.raises(ImportError) as exc_info:
             Trace.get()
@@ -102,8 +115,7 @@ def test_trace_openllmetry_missing_extra_raises_friendly_import_error(monkeypatc
 
 def test_trace_logfire_missing_extra_raises_friendly_import_error(monkeypatch):
     monkeypatch.setitem(sys.modules, "logfire", None)  # simulate the SDK not installed
-    for name in [n for n in list(sys.modules) if n.startswith("agentkernel.trace.logfire")]:
-        monkeypatch.delitem(sys.modules, name, raising=False)
+    _evict_tracer_package(monkeypatch, "logfire")
     with patch.object(AKConfig, "get", return_value=_config(True, "logfire")):
         with pytest.raises(ImportError) as exc_info:
             Trace.get()
@@ -112,8 +124,7 @@ def test_trace_logfire_missing_extra_raises_friendly_import_error(monkeypatch):
 
 def test_trace_cloudwatch_missing_extra_raises_friendly_import_error(monkeypatch):
     monkeypatch.setitem(sys.modules, "opentelemetry.exporter.otlp.proto.http.trace_exporter", None)  # simulate the exporter not installed
-    for name in [n for n in list(sys.modules) if n.startswith("agentkernel.trace.cloudwatch")]:
-        monkeypatch.delitem(sys.modules, name, raising=False)
+    _evict_tracer_package(monkeypatch, "cloudwatch")
     with patch.object(AKConfig, "get", return_value=_config(True, "cloudwatch")):
         with pytest.raises(ImportError) as exc_info:
             Trace.get()

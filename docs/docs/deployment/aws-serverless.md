@@ -1683,5 +1683,6 @@ CloudWatch metrics automatically available:
 | [streaming-openai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/streaming-openai) | `stream` | Yes | Event streaming over WebSocket with `ServerlessStreamAgentRunner` |
 | [openai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/openai) | `rest_sync` | Yes | REST API with SQS-backed queue processing, with the OpenAI key read from SSM Parameter Store (`ssm_enabled`); also the base deployment the weekly integration test pipeline's other `aws-serverless` examples reuse the VPC/subnets/security groups of |
 | [schedule-openai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/schedule-openai) | `rest_sync` | Yes | Deferred and recurring chats on EventBridge Scheduler with a DynamoDB schedule store |
+| [openai-langfuse-trace-evaluation](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/openai-langfuse-trace-evaluation) | `rest_sync` | Yes | Grades the agent's Langfuse traces with Opik LLM judges behind custom `/eval` and `/check` routes (an asynchronous self-invocation runs the judges) and stores the results in DynamoDB |
 
 See [examples/aws-serverless](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless) for all available examples.
