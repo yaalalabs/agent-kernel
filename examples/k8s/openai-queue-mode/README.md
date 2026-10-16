@@ -16,7 +16,7 @@ config.kafka.yaml       the Kafka variant
 deploy/Dockerfile.*     one image per component, python:3.12-slim + staged dependencies
 deploy/package.sh       stages dependencies and builds the three images
 deploy/deploy.sh        installs the chart release: the published chart, or "local" for this checkout's chart
-ak-values.yaml          chart overlay: the example images + the OpenAI key secret reference
+ak-values.yaml          chart overlay: the example images + the OpenAI credentials Secret mount
 ```
 
 The same wire behavior can be exercised without Kubernetes:
@@ -52,11 +52,11 @@ k3d cluster create ak
 k3d image import -c ak ak-example-io-handler:dev ak-example-agent-runner:dev
 ```
 
-Give the pods the OpenAI key, then install the chart release with the dev flavor
-(`ak-values.yaml` layers the example images and the secret reference on top of it):
+Give the pods the OpenAI key as a Secret, then install the chart release with the dev flavor
+(`ak-values.yaml` layers the example images and the Secret mount on top of it):
 
 ```bash
-kubectl create secret generic openai --from-literal=api-key="$OPENAI_API_KEY"
+kubectl create secret generic openai-credentials --from-literal=OPENAI_API_KEY="$OPENAI_API_KEY"
 
 deploy/deploy.sh            # or deploy/deploy.sh local to install this checkout's chart
 kubectl rollout status deployment/ak-agent-kernel-io deployment/ak-agent-kernel-agent-runner
@@ -145,6 +145,33 @@ curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable=traefik --disable=ser
 The chart install is identical to the baremetal instructions in
 [ak-deployment/ak-k8s/README.md](../../../ak-deployment/ak-k8s/README.md); the dev-flavor
 walkthrough above also works on k3s unchanged (k3s ships a local-path StorageClass).
+
+## Secrets
+
+The agent runner reads `OPENAI_API_KEY` through Agent Kernel's secret resolution
+(`secret.provider.type: kubernetes` in `config.*.yaml`), not from an environment variable. The
+chart's `secretStore` in `ak-values.yaml` mounts each listed Secret read-only at
+`/var/run/secrets/agentkernel/<secret-name>/`, one file per data key, so the key is the file
+`/var/run/secrets/agentkernel/openai-credentials/OPENAI_API_KEY`.
+
+- **An environment variable wins.** If `OPENAI_API_KEY` is set and non-empty in the container, it is used and the
+  mount is not read.
+- **Key naming.** The data key must be named `OPENAI_API_KEY` exactly. The old `openai` Secret's `api-key` key is
+  never read.
+- **A second Secret** (for example `slack-credentials`): add it to `secretStore.secrets` in `ak-values.yaml`
+  (or with `--set`) and roll out. **A new key in an existing Secret** needs no values edit: it appears in the mount
+  after the kubelet's refresh delay.
+- **Running the runner locally:** export `OPENAI_API_KEY` (the environment wins), or point
+  `AK_SECRET__PROVIDER__KUBERNETES__MOUNT_PATH` at a directory holding `openai-credentials/OPENAI_API_KEY`.
+- **Rotation.** This example hands the key to the OpenAI SDK once, at import, so after rotating
+  `openai-credentials` run `kubectl rollout restart deployment/ak-agent-kernel-agent-runner`. Code that calls
+  `SecretManager.current().get(...)` on each use picks the new value up after the kubelet refresh plus
+  `secret.cache_ttl`.
+- **Upgrading from the `extraEnv` version of this example:** create `openai-credentials` as above; the old `openai`
+  Secret is no longer referenced.
+- **Published flow.** `deploy/deploy.sh` without `local` works only once a release publishes a chart and an
+  `agentkernel` version that carry the Kubernetes provider and `secretStore`; `deploy/deploy.sh local` uses this
+  checkout for both.
 
 ## The Kafka variant
 
