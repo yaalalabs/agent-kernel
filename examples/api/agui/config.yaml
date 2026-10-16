@@ -32,3 +32,8 @@ multimodal:
 
 api:
   custom_router_prefix: "" # demo UI at GET / instead of GET /custom/
+logging:
+  # Nested per logger tree: `logging.level` on its own is silently ignored. `ak` is Agent Kernel's
+  # own loggers (ak.integration.agui.pipeline, ak.pipeline.agent_runner, ...).
+  ak:
+    level: INFO
