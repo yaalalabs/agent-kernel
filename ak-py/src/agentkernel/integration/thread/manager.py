@@ -8,7 +8,7 @@ agent runs. A single shared instance is used by ChatService and ThreadRouter.
 
 import logging
 from threading import RLock
-from typing import List, Optional
+from typing import List, Optional, Union
 
 from ...core.config import AKConfig
 from ...core.model import AgentRequest
@@ -126,18 +126,20 @@ class ConversationThreadManager:
         self,
         session_id: str,
         role: str,
-        content: str,
+        content: Union[str, dict, list],
         attachments: Optional[List[ThreadAttachment]] = None,
+        media_type: Optional[str] = None,
     ) -> ThreadMessage:
         """
         Append a message to the thread for a session_id.
         :param session_id: Unique identifier for the thread.
         :param role: Message role — "user" or "assistant".
-        :param content: Message text content.
+        :param content: Message text content, or the payload object when media_type is set.
         :param attachments: Optional attachment references for the message.
+        :param media_type: The payload's format when the reply carried one; None for text.
         :return: The appended message.
         """
-        message = ThreadMessage(role=role, content=content, attachments=attachments or [])
+        message = ThreadMessage(role=role, content=content, media_type=media_type, attachments=attachments or [])
         self._store.append_message(session_id, message)
         return message
 

@@ -52,7 +52,9 @@ class AgentRunner:
         # the status travels to the output message as the STATUS_CODE attribute (spec §12.6).
         status_code, agent_response = self._chat_service.process_chat_request(req=body, requests=body.requests)
         self._send_to_output(message, agent_response, status_code)
-        self._record_thread_reply(message, body, status_code, agent_response.get("result") if isinstance(agent_response, dict) else agent_response)
+        body_is_dict = isinstance(agent_response, dict)
+        result = agent_response.get("result") if body_is_dict else agent_response
+        self._record_thread_reply(message, body, status_code, result, agent_response.get("media_type") if body_is_dict else None)
 
         self._log.info(f"[AGENT DONE] request_id={request_id}, status_code={status_code}")
 
@@ -114,7 +116,7 @@ class AgentRunner:
     # -- shared plumbing --------------------------------------------------------------------
 
     @classmethod
-    def _record_thread_reply(cls, message: QueueMessage, body: BaseRunRequest, status_code: int, result) -> None:
+    def _record_thread_reply(cls, message: QueueMessage, body: BaseRunRequest, status_code: int, result, media_type: Optional[str] = None) -> None:
         """Append the assistant message to the conversation thread this request belongs to.
 
         The other half of the split: ``ThreadRecorder.pre_run`` ran at the edge (the thread
@@ -136,7 +138,10 @@ class AgentRunner:
         :param message: The input message, carrying the ``thread`` marker.
         :param body: The validated request body; supplies the session the thread is keyed by.
         :param status_code: The status the run produced; a failure records nothing.
-        :param result: The agent's reply, recorded via ``str()``.
+        :param result: The agent's reply — the response body's ``result``, an object for a labelled
+            reply and text for every other.
+        :param media_type: The reply's label, which the response body carries beside ``result``
+            rather than on it. Dropping it here is what left replayed history unlabelled (#763).
         """
         if not message.attributes.get(ATTR_THREAD) or status_code >= 400 or result in (None, ""):
             return
@@ -152,7 +157,7 @@ class AgentRunner:
                     "Give the agent-runner process the same thread configuration as the API process."
                 )
                 return
-            ThreadRecorder(manager).post_run(body, result)
+            ThreadRecorder(manager).post_run(body, result, media_type)
         except Exception:
             cls._log.exception(f"Failed to record the assistant message for session_id={body.session_id}")
 

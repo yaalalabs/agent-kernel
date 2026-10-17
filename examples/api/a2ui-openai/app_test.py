@@ -14,15 +14,23 @@ class APITestClient:
     def __init__(self, url):
         self.url = url
         self.session_id = str(uuid.uuid4())
+        self.user_id = "demo-user"
 
-    async def send(self, prompt):
+    async def send(self, prompt, session_id=None):
         payload = {
             "prompt": prompt,
-            "session_id": self.session_id,
+            "session_id": session_id or self.session_id,
+            "user_id": self.user_id,
             "agent": "expenses",
         }
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.post(f"{self.url}/api/v1/chat", json=payload)
+            resp.raise_for_status()
+            return resp.json()
+
+    async def thread(self, session_id):
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(f"{self.url}/api/v1/threads/{session_id}")
             resp.raise_for_status()
             return resp.json()
 
@@ -61,3 +69,39 @@ async def test_a_prose_turn_is_untouched(http_client):
 
     assert "media_type" not in body
     assert isinstance(body["result"], str)
+
+
+@pytest.mark.asyncio
+async def test_a_ui_turn_replays_from_thread_history(http_client):
+    """Reload is the claim worth testing: what rendered as a form must come back as one.
+
+    The recorded message carries the same pair the live reply did — the payload as an object, and
+    the label beside it — so the frontend replays history through the renderer it already has
+    instead of parsing a string back into a document.
+    """
+    session_id = str(uuid.uuid4())
+    live = await http_client.send("I need to file an expense", session_id=session_id)
+    assert live["media_type"] == "application/a2ui+json"
+
+    messages = (await http_client.thread(session_id))["messages"]
+    recorded = [m for m in messages if m["role"] == "assistant"][-1]
+
+    assert recorded["media_type"] == "application/a2ui+json"
+    assert recorded["content"] == live["result"]
+
+
+@pytest.mark.asyncio
+async def test_a_prose_turn_replays_as_a_plain_string(http_client):
+    """The other half: an unlabelled reply is recorded with no label at all, not a null one.
+
+    This is what an application that never turned A2UI on reads back, and it has to be exactly
+    what it read back before the feature existed.
+    """
+    session_id = str(uuid.uuid4())
+    await http_client.send("hi", session_id=session_id)
+
+    messages = (await http_client.thread(session_id))["messages"]
+    recorded = [m for m in messages if m["role"] == "assistant"][-1]
+
+    assert isinstance(recorded["content"], str)
+    assert "media_type" not in recorded

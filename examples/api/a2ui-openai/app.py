@@ -1,18 +1,26 @@
-"""An agent that answers with an interface, over plain REST.
+"""An agent that answers with an interface, over plain REST, with history that replays as one.
 
-Two things make this work, and only the first is A2UI-specific:
+Three things make this work, and only the first is A2UI-specific:
 
 1. The agent is told the format, with a catalog of the components *this* application's frontend can
    draw. Agent Kernel ships no catalog, because one listing components a frontend cannot draw is
    worse than useless — the model emits them confidently and nothing renders.
 2. The ``a2ui`` block in config.yaml is turned on. From there the framework labels the reply, and
    the REST response carries the payload as an object rather than a string.
+3. ``AgentThreadRequestHandler`` is mounted instead of the default chat handler. It serves the same
+   chat routes with recording wrapped around them, plus the two read routes the frontend's thread
+   list uses. A recorded reply keeps its label, so a form that rendered live renders again on
+   reload rather than coming back as a wall of JSON text.
+
+Mounting is what enables threads; the ``thread`` block only picks the store. Note the one cost:
+``user_id`` becomes **required** on this handler's chat routes, since a thread belongs to someone.
 
 There is no post-hook here. That is the point: handling what comes back is two config keys.
 """
 
 from agentkernel.api import RESTAPI
 from agentkernel.openai import OpenAIModule
+from agentkernel.thread import AgentThreadRequestHandler
 from agents import Agent
 
 CATALOG = """
@@ -38,6 +46,7 @@ One component MUST have "id": "root". The components this client can draw, and n
   Card        {"children": [ids]}
   Text        {"text": "..."}
   Heading     {"text": "..."}
+  Field       {"label": "...", "value": "..."}      read-only: shows a value already recorded
   TextField   {"label": "...", "name": "..."}
   NumberField {"label": "...", "name": "..."}
   DateField   {"label": "...", "name": "..."}
@@ -48,13 +57,16 @@ For anything that does not need an interface — a greeting, a question, an expl
 ordinary prose. Most turns are prose.
 
 When the user's message is a list of "field: value" pairs, that is a form you already showed coming
-back submitted. Do NOT show the form again. Reply with ordinary prose instead:
+back submitted. Never show the editable form again — that reads as if the submission was lost.
 
-  - everything needed is present -> confirm it in one short sentence, naming the values recorded
-  - something required is missing -> say which field, and ask only for that
+  - everything needed is present -> confirm it with a surface: a Card holding a Heading and one
+    Field per value you recorded. Use Field, never TextField; nothing here is being collected.
+  - something required is missing -> reply with ordinary prose, naming only the field that is
+    missing and asking for that one thing.
 
-Showing the same form twice reads as if the submission was lost, so prefer prose here even when the
-answer is short.
+The confirmation is a surface rather than prose on purpose. A Field carries its value inside the
+payload, so the values are part of what gets stored and come back on reload; a sentence of prose
+reads the same today and is just a sentence tomorrow.
 """
 
 expenses_agent = Agent(
@@ -66,4 +78,4 @@ expenses_agent = Agent(
 OpenAIModule([expenses_agent])
 
 if __name__ == "__main__":
-    RESTAPI.run()
+    RESTAPI.run(handlers=[AgentThreadRequestHandler()])
