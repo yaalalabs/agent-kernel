@@ -357,7 +357,9 @@ So the #692 non-goal matches industry practice if read as "no browser API in the
 
 Design idea (not an existing feature): when an adapter sees a hosted web tool, map `network_allow` domains onto the vendor's allowlist where one exists and warn where none does. **AK has no web or browser tool of its own** (8 sandbox system tools, `sandbox/tools.py:350-357`).
 
-### 7e. Open questions in `design.md` that this research informs (no decisions)
+### 7e. Questions in `design.md` that this research informed
+
+All of them have since been decided in `design.md`; the notes below are the evidence considered.
 
 - **Default `ecosystems`.** Each ecosystem adds its own host set (python: two PyPI hosts; node: `registry.npmjs.org`; conda: Cloudflare-hosted hosts most presets omit), so defaulting to everything the provider declares widens the egress an allowlist must admit; install-script and slopsquatting risk are per ecosystem too (4.1, 4.3).
 - **`attached` and `per_runtime` sandboxes.** Install-time code runs with whatever the sandbox holds and has network, so an install into a shared or externally owned environment widens the blast radius across sessions (our analysis). Products separate installs into a snapshotted setup phase (3.5).

@@ -131,9 +131,20 @@ check also runs agent-side before a request is submitted.
   - `languages: Optional[list[str]] = None`: the allowlist for `run_code`.
     - `None` means whatever the provider declares, which keeps today's behaviour.
     - `[]` is valid and denies every `run_code` call, for a command-only profile. The tool guidance says so.
-  - `package_install: Optional[PackageInstallPolicy] = None`, with `ecosystems: list[str] = ["python"]`.
+  - `package_install: Optional[PackageInstallPolicy] = None`, with `ecosystems: list[str] = ["python"]` and
+    `timeout: Optional[float] = None`.
+    - An omitted `ecosystems` permits only `python`, not everything the provider declares. Each further ecosystem is
+      an explicit opt-in, because each one widens the registry hosts egress must admit and brings its own
+      install-script risk (`research/agent-web-access.md` §4.1, §4.3).
     - `ecosystems: []` is rejected at config load. Omitting the block is the one way to deny installs, so a declared
       block always permits something and tool registration can test for presence.
+    - `timeout` is the install's own wall-clock limit, because real installs can exceed the `policy.timeout` sized
+      for `run_code` (default 120s, `config.py:735`). `None` falls back to `policy.timeout`.
+  - A `package_install` block on a profile with `environment: attached` is rejected at config load
+    (`_SandboxProfileConfig`, `config.py:845`). An install would change an environment the framework explicitly does
+    not own.
+  - A `package_install` block on a profile with `scope: per_runtime` is allowed. `ExecutionManager` warns once per
+    profile, because an install there changes a sandbox every AK session on the runtime shares.
   - `PackageInstallPolicy` is the wire model, and `_SandboxPackageInstallConfig` is its config mirror.
   - `ExecutionManager._policy_from` (`manager.py:331`) copies the new fields onto the wire policy.
 - **New provider-side fields** (the *can* side: what the image contains).
@@ -175,6 +186,7 @@ check also runs agent-side before a request is submitted.
     - The agent-side guard keeps installs from running unchecked.
     - The old worker passes only `payload["packages"]` (`worker.py:220`) and ignores `ecosystem`, so a permitted
       non-`python` install would run as `pip install`.
+    - It also ignores `package_install.timeout`, so an install runs under `policy.timeout`, as today.
   - **New worker to old agent:** a `SandboxPermissionDeniedError` completion degrades to `ExecutionBrokerError` on the
     old agent (`queue.py:162-165`). The request is still denied.
   - **Rollout rule:** upgrade queue workers before agent pods. The docs say so.
@@ -196,8 +208,11 @@ check also runs agent-side before a request is submitted.
   - An installer failure is a `SandboxResult` with a non-zero `exit_code`, not an exception.
   - **The handle owns the timeout.** The worker passes the effective timeout, and the handle applies it to the
     installer process and kills it (`_best_effort_kill`) on expiry.
+    - For `install_packages` the effective timeout is `package_install.timeout`, or `policy.timeout` when it is unset.
     - The worker's outer `asyncio.wait_for` becomes a backstop: effective timeout plus a fixed grace period. It cannot
       fire before the handle's own timer, so the kill finishes before the session lock is released.
+    - The grace period is an internal constant of 5-10 seconds (the exact value is set in `spec.md`), long enough for a
+      kill to complete. It is not configurable; a config field is added only if a deployment later needs one.
     - `execute_code` moves to the same rule, which fixes its existing gap (see Motivation).
     - If the backstop does fire, the handle kills on cancellation too, not only on `TimeoutError`.
 - New class `PackageInstaller`, shared by the four implementing providers. Its single responsibility is turning a
@@ -299,14 +314,17 @@ check also runs agent-side before a request is submitted.
 - `PackageSpecRule` tests: a bring-your-own rule resolves from `package_rules`; a class that is not a
   `PackageSpecRule` or a bad dotted path raises `SandboxConfigError`; the baseline still rejects a spec that a
   permissive bring-your-own rule accepts.
-- Config tests: an empty `language_runtimes` argv prefix and `package_install.ecosystems: []` are rejected at load;
-  `languages: []` loads and the guard denies every `run_code` on that profile.
+- Config tests: an empty `language_runtimes` argv prefix, `package_install.ecosystems: []` and a `package_install`
+  block on an `environment: attached` profile are rejected at load; `languages: []` loads and the guard denies every
+  `run_code` on that profile; an omitted `ecosystems` permits only `python`.
+- Timeout tests: an install runs under `package_install.timeout` when set and under `policy.timeout` otherwise, and the
+  worker's backstop is that timeout plus the grace constant.
 - Handle tests: a timed-out install and a timed-out `execute_code` on `docker` and `kubernetes` kill the process, and
   so does a cancellation by the worker's backstop.
 - Worker tests: the permission/capability mismatch warning fires once per (provider, profile); a legacy one-argument
   `install_packages` override still runs `python` installs and logs one deprecation warning.
-- `ExecutionManager` tests: the `package_install` + `deny` warning and the `package_install` + filesystem-policy
-  warning each fire once per profile.
+- `ExecutionManager` tests: the `package_install` + `deny`, `package_install` + filesystem-policy and
+  `package_install` + `scope: per_runtime` warnings each fire once per profile.
 - Live provider test (research §7f item 1), a prerequisite for documenting `allowlist` as a hard limit on `e2b` and
   `daytona`: with `network_egress: allowlist`, a sandbox reaches a listed registry host and cannot reach an unlisted
   host.
@@ -318,6 +336,8 @@ check also runs agent-side before a request is submitted.
      extension point and the built-in `python` and `node` rules on `docker`, `kubernetes`, `e2b` and `daytona`. This
      closes #692;
   2. language runtimes.
+- Packages ship first because #692 asks for them and because a raw `install_packages` request runs unchecked today.
+  Language runtimes are new capability that nothing is blocked on.
 - Each policy and provider field is added in the phase that first reads it. The `python`-key validator ships with
   `language_runtimes` in phase 2.
 
@@ -353,14 +373,6 @@ Worker pipeline, guard deny rules, the class model and per-capability sequence d
 
 ## Open questions
 
-- When a `package_install` block is declared without `ecosystems`, should it default to everything the provider
-  declares rather than `["python"]`? This draft picks `["python"]`, so each ecosystem is an explicit opt-in.
-- How should package installation interact with sandboxes the AK session does not own alone?
-  - `environment: attached` (e.g. docker `attach_to`): an install changes an environment the framework explicitly
-    does not own. Draft: reject a `package_install` block on such a profile at config load.
-  - `scope: per_runtime`: an install changes a sandbox every AK session shares. Draft: allow it, with a once-per-profile
-    warning.
-- `install_packages` runs under `policy.timeout` (default 120s), which real installs can exceed. Should it get its own
-  timeout, e.g. `package_install.timeout`?
-- Is the delivery order right (packages first, which closes #692), or should languages land first?
-- How long should the worker's backstop grace period be, and should it be configurable?
+None. The questions raised in earlier drafts are decided above: the default `ecosystems`, `attached` and
+`per_runtime` profiles, and `package_install.timeout` under Configuration; the backstop grace period under
+Capability 2; the delivery order under Delivery.

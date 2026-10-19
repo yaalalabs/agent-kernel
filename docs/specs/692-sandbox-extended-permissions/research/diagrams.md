@@ -125,6 +125,7 @@ classDiagram
   class PackageInstallPolicy {
     <<new>>
     +list~str~ ecosystems
+    +Optional~float~ timeout
   }
   class ProviderRuntimeConfig {
     <<new>>
@@ -188,7 +189,8 @@ classDiagram
 |---|---|---|---|
 | `languages` | policy (may) | `None` | Allowlist for `run_code`. `None` means whatever the provider declares, which is today's behaviour. `[]` denies every `run_code` call. |
 | `package_install` | policy (may) | `None` | Presence permits installing. Absent means denied. |
-| `package_install.ecosystems` | policy (may) | `["python"]` | `[]` is rejected at load. Open question: default to everything the provider declares instead? |
+| `package_install.ecosystems` | policy (may) | `["python"]` | An omitted list permits only `python`; other ecosystems are an explicit opt-in. `[]` is rejected at load. |
+| `package_install.timeout` | policy (may) | `None` | The install's own timeout. `None` falls back to `policy.timeout`. |
 | `language_runtimes` | provider (can), `docker`/`kubernetes` | `{python: [python, -c]}` | Language to interpreter argv prefix. Keys become the instance's `languages`. A `python` key is required; every prefix must be non-empty with no empty token. |
 | `package_installers` | provider (can) | `{python: [pip, install]}` | Ecosystem to installer argv prefix. Keys become `package_ecosystems`. Each key must resolve to a `PackageSpecRule` (`python` and `node` ship, others come from `package_rules`); every prefix must be non-empty with no empty token. |
 | `package_rules` | provider (can) | `{}` | Ecosystem to the dotted path of a bring-your-own `PackageSpecRule`, e.g. `apk: my_org.rules.ApkRule`. |
@@ -267,7 +269,7 @@ sequenceDiagram
   participant SB as Sandbox
   Agent->>Tool: install_packages(packages, ecosystem, sandbox_session_id, profile)
   Tool->>EM: install_packages(...)
-  Note over EM: Warns once per profile if package_install is declared with network_egress deny,<br/>or with an fs policy on docker or kubernetes (read-only root filesystem)
+  Note over EM: Warns once per profile if package_install is declared with network_egress deny,<br/>with an fs policy on docker or kubernetes (read-only root filesystem), or with scope per_runtime
   EM->>G: agent-side check(request)
   opt not permitted (agent side)
     G->>G: one WARNING on ak.sandbox.broker, no package list
@@ -285,7 +287,7 @@ sequenceDiagram
     Tool-->>Agent: error JSON
   else permitted
     W->>W: per-session lock, attach or create sandbox
-    W->>H: install_packages(packages, ecosystem=..., timeout=...), backstop = timeout + grace
+    W->>H: install_packages(packages, ecosystem=..., timeout=package_install.timeout or policy.timeout), backstop = timeout + grace
     alt ecosystem not declared by this instance
       H-->>W: raise SandboxCapabilityError
       W-->>EM: SandboxCapabilityError
