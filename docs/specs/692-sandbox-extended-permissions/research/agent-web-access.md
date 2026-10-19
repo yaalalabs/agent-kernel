@@ -322,13 +322,13 @@ AK policy: `network_egress: Literal["allow","deny","allowlist"] = "allow"`, `net
 2. **daytona puts domains into the CIDR-only `network_allow_list`** while a separate `domain_allow_list` exists. What Daytona does with a domain in the CIDR field is unverified; a mixed domain+CIDR list cannot be expressed on Daytona at all.
 3. **kubernetes emits no DNS egress rule** (above).
 
-Docs already describe these mappings (`docs/docs/advanced/sandbox.md:298-299, 389-392`). `design.md` lines 91-95 say `e2b` and `daytona` "enforce `deny` and `allowlist`"; this research qualifies that for the allowlist case until bugs 1 and 2 are tested. Daytona's essential services are reachable under its default tier policy but **not** under a custom allow list or block-all [57].
+Docs already describe these mappings (`docs/docs/advanced/sandbox.md:298-299, 389-392`). `design.md` (Permission semantics) now carries this qualification: `e2b` and `daytona` enforce `deny`, and their `allowlist` mapping counts as unverified until bugs 1 and 2 are tested. Daytona's essential services are reachable under its default tier policy but **not** under a custom allow list or block-all [57].
 
 AK's default `network_egress: allow` is the outlier among coding-agent products: Codex cloud's agent phase is off by default, Claude Code `/sandbox` starts with an empty allowlist and Copilot's firewall is on by default [37][29][36]. It is not the outlier among the sandbox providers AK wraps: E2B defaults to internet on [63] and Daytona tiers 3-4 default to full internet [57]. If the default stays `allow`, enabling package install widens an already open posture (our analysis).
 
 ### 7b. The `package_install` + `network_egress: deny` warning, and an egress-dependent install path
 
-- **The warning is well founded.** Under `deny` an install cannot reach a registry; `design.md` lines 218-219 note that an in-image mirror makes the combination legitimate. Products treat the *install* as the broad phase and the *run* as the narrow one (3.5).
+- **The warning is well founded.** Under `deny` an install cannot reach a registry; `design.md` (Capability 2) notes that an in-image mirror makes the combination legitimate. Products treat the *install* as the broad phase and the *run* as the narrow one (3.5).
 - **Under `allowlist`, an install needs hostnames, and most AK providers cannot express them honestly.** Needed: `pypi.org` **and** `files.pythonhosted.org` for pip, `registry.npmjs.org` for npm (4.1); CIDRs fail because registries sit on shared Fastly/Cloudflare ranges (3.2).
   `docker` cannot enforce any allowlist; `kubernetes` is CIDR-only with no DNS rule; `e2b` and `daytona` can express hostnames natively but AK's mapping does so for neither (`e2b` needs `deny_out`, `daytona` needs `domain_allow_list`).
 - The design's `PackageInstaller` rejects URL, VCS, path and archive specs, so the GitHub host set is not needed by AK's own installs; a registry-only preset is smaller than the vendor presets (our analysis).
@@ -338,7 +338,7 @@ AK's default `network_egress: allow` is the outlier among coding-agent products:
   3. **Setup versus run phase:** install under a registry policy, then drop to `deny`; live updates are documented for E2B and Daytona, with constraints on Modal and Cloudflare (3.5); otherwise the install phase lives in image build.
   4. **Registry preset** expanded to hostnames inside `network_allow`: hostname-exact, both PyPI hosts, an explicit `conda.anaconda.org` decision, no storage wildcards; Daytona caps at 100 domains / 10 CIDRs (4.4).
 - **Hardening flags and the validator.** `design.md` rejects agent-supplied entries starting with `-`, so `--only-binary :all:` or `--ignore-scripts` cannot come from the agent; they could only sit in the operator-set `package_installers` argv prefix (our analysis; 4.3).
-- **Package-name allowlists are a non-goal (`design.md` line 295).** The slopsquatting evidence argues per-package gating is a separate control from per-ecosystem permission (4.3); recorded for information only.
+- **Package-name allowlists are a non-goal (`design.md`, Non-goals).** The slopsquatting evidence argues per-package gating is a separate control from per-ecosystem permission (4.3); recorded for information only.
 
 ### 7c. Is "contained only by `network_egress` and the image" the industry norm?
 
@@ -359,10 +359,10 @@ Design idea (not an existing feature): when an adapter sees a hosted web tool, m
 
 ### 7e. Open questions in `design.md` that this research informs (no decisions)
 
-- **Default `ecosystems` (line 305).** Each ecosystem adds its own host set (python: two PyPI hosts; node: `registry.npmjs.org`; conda: Cloudflare-hosted hosts most presets omit), so defaulting to everything the provider declares widens the egress an allowlist must admit; install-script and slopsquatting risk are per ecosystem too (4.1, 4.3).
-- **`attached` and `per_runtime` sandboxes (lines 307-311).** Install-time code runs with whatever the sandbox holds and has network, so an install into a shared or externally owned environment widens the blast radius across sessions (our analysis). Products separate installs into a snapshotted setup phase (3.5).
-- **Install timeout (lines 312-313).** No install-duration data was found; the nearest evidence is the two-phase pattern. With an allowlist that cannot resolve DNS (kubernetes today) an install would likely fail or hang at the registry lookup (our inference).
-- **Delivery order (line 314).** Not decided by this research. It shows the guard gates only typed operations (with open egress an agent can still install via `run_command`, as `design.md` says) and that egress mapping (7a) is what bounds installs under `allowlist`. **Backstop grace period (line 315):** not informed.
+- **Default `ecosystems`.** Each ecosystem adds its own host set (python: two PyPI hosts; node: `registry.npmjs.org`; conda: Cloudflare-hosted hosts most presets omit), so defaulting to everything the provider declares widens the egress an allowlist must admit; install-script and slopsquatting risk are per ecosystem too (4.1, 4.3).
+- **`attached` and `per_runtime` sandboxes.** Install-time code runs with whatever the sandbox holds and has network, so an install into a shared or externally owned environment widens the blast radius across sessions (our analysis). Products separate installs into a snapshotted setup phase (3.5).
+- **Install timeout.** No install-duration data was found; the nearest evidence is the two-phase pattern. With an allowlist that cannot resolve DNS (kubernetes today) an install would likely fail or hang at the registry lookup (our inference).
+- **Delivery order.** Not decided by this research. It shows the guard gates only typed operations (with open egress an agent can still install via `run_command`, as `design.md` says) and that egress mapping (7a) is what bounds installs under `allowlist`. **Backstop grace period:** not informed.
 
 ### 7f. Suggested follow-ups (suggestions only)
 

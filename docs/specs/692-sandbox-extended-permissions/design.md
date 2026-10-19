@@ -31,7 +31,7 @@ check also runs agent-side before a request is submitted.
   - Installers are pip only: `docker.py:64` and `kubernetes.py:85` use argv, `e2b.py:66` and `daytona.py:67` use a
     shell string (their SDKs accept only a command string).
   - `docker` and `kubernetes` run the installer with no timeout (`_exec(..., None)`). When the worker's outer
-    `asyncio.wait_for` expires (`worker.py:233`), the installer keeps running in the sandbox and the per-session lock
+    `asyncio.wait_for` expires (`worker.py:230`), the installer keeps running in the sandbox and the per-session lock
     is released under it.
   - `execute_code` has the same gap today. The worker passes the same timeout to its outer `asyncio.wait_for` and to
     the handle. The outer timer starts first, so it expires first and cancels the handle. The handle then sees
@@ -88,12 +88,18 @@ check also runs agent-side before a request is submitted.
     `run_command`. Browser automation is not an AK capability (see Non-goals), so no AK permission limits it.
   - Hard containment remains the provider isolation tier plus `network_egress`, filesystem policy and image choice:
     a non-root image with a read-only root filesystem and no installer binaries.
+    - A read-only root filesystem also stops permitted installs from writing to system paths (see Capability 2).
     - Provider enforcement of `network_egress` differs:
       - `docker` enforces only `deny`; `allowlist` is unenforceable there and fails closed under `strict`
         (`docker.py:136`);
-      - `e2b` and `daytona` enforce `deny` and `allowlist`;
+      - `e2b` and `daytona` enforce `deny`. Their `allowlist` mapping is unverified for the domain entries an install
+        needs (`pypi.org`, `registry.npmjs.org`): `e2b` is sent `allow_out` with no `deny_out`, and `daytona` receives
+        domains in its CIDR-only `network_allow_list` (`research/agent-web-access.md` §7a);
       - `kubernetes` enforces it only with an operator-asserted network policy (`kubernetes.py:206`).
-    - The docs give this as the hardening recipe for admins who want hard limits.
+    - The docs give `deny` plus a mirror or pre-baked image as the hardening recipe for admins who want hard limits.
+      `allowlist` on `e2b` and `daytona` joins the recipe only once the live test in Testing passes.
+  - The docs state, per posture (`deny` egress, read-only root filesystem, non-root or PSA-restricted image), which
+    ecosystems can install and which installer argv prefix to configure. #692 asks for this.
 - **Trust model.** The worker enforces the policy the agent side resolved, as `_enforce_policy` does today.
   - These permissions constrain what the agent's LLM can do. They are not a boundary against a compromised agent pod;
     that boundary is provider isolation. Re-resolving the policy from the worker's own `AKConfig` would therefore add
@@ -124,7 +130,10 @@ check also runs agent-side before a request is submitted.
 - **New per-profile policy fields** (the *may* side). The guard and tool registration read each one:
   - `languages: Optional[list[str]] = None`: the allowlist for `run_code`.
     - `None` means whatever the provider declares, which keeps today's behaviour.
+    - `[]` is valid and denies every `run_code` call, for a command-only profile. The tool guidance says so.
   - `package_install: Optional[PackageInstallPolicy] = None`, with `ecosystems: list[str] = ["python"]`.
+    - `ecosystems: []` is rejected at config load. Omitting the block is the one way to deny installs, so a declared
+      block always permits something and tool registration can test for presence.
   - `PackageInstallPolicy` is the wire model, and `_SandboxPackageInstallConfig` is its config mirror.
   - `ExecutionManager._policy_from` (`manager.py:331`) copies the new fields onto the wire policy.
 - **New provider-side fields** (the *can* side: what the image contains).
@@ -141,15 +150,23 @@ check also runs agent-side before a request is submitted.
   - `ProviderPackageConfig`, used by `docker`, `kubernetes`, `e2b` and `daytona`:
     - `package_installers: dict[str, list[str]] = {"python": ["pip", "install"]}` maps an ecosystem to an installer
       argv prefix. Its keys become the instance's declared package ecosystems.
-    - A validator rejects an ecosystem that `PackageInstaller` has no validation rules for (see Capability 2), so
-      no installer runs unvalidated specs.
+    - `package_rules: dict[str, str] = {}` maps an ecosystem to the dotted path of a bring-your-own `PackageSpecRule`
+      (see Capability 2).
+    - A validator requires every `package_installers` key to resolve to a rule, built-in or from `package_rules`,
+      so no installer runs unvalidated specs.
     - A validator requires every argv prefix to hold at least one token and no empty token, so the installer is
       always the first argv element, never a package name.
   - SDK-native providers do not use `ProviderRuntimeConfig`, and keep declaring `["python"]`:
     - `e2b` runs code in a kernel chosen by the configured `template`. Other languages need the operator to say what
       the template contains, which is out of scope here;
     - `daytona`'s SDK fixes the code language per sandbox, not per call.
-- **New capability field.** `SandboxCapabilities` gains `package_ecosystems: list[str] = []`.
+- **New capability field.** `SandboxCapabilities` gains `package_ecosystems: list[str] = []`, which becomes the
+  source of truth for package installation. A model validator keeps the existing `package_install` flag derived from it:
+  - a non-empty `package_ecosystems` sets `package_install=True`;
+  - `package_install=True` with no ecosystems, as a bring-your-own provider written before #692 declares it, sets
+    `package_ecosystems=["python"]`, today's pip-only meaning.
+  - An explicit `package_install=False` with a non-empty `package_ecosystems` is rejected with `ValueError`.
+  - Existing providers keep working unchanged, and neither inconsistent state can be represented.
 - **Wire compatibility.** The codec code and `BrokerOperation` do not change. The schema does: `SandboxPolicy` gains
   fields, and the `install_packages` payload gains an `ecosystem` key.
   - **Old agent to new worker:** the new fields decode as absent, so package installation is denied.
@@ -185,10 +202,26 @@ check also runs agent-side before a request is submitted.
     - If the backstop does fire, the handle kills on cancellation too, not only on `TimeoutError`.
 - New class `PackageInstaller`, shared by the four implementing providers. Its single responsibility is turning a
   package request into a safe installer invocation.
-  - **Validation is per ecosystem.** Each ecosystem has its own rule set, and an ecosystem without one cannot be
-    configured (see Configuration).
-    - Every rule set rejects an empty list, empty entries, entries starting with `-` (so no smuggled `--index-url`),
-      whitespace, NUL, URLs (`://`) and local paths (a leading `.`, `/` or `~`).
+  - **What an ecosystem key names.** The key names a package registry and its spec grammar (`python` for PyPI specs,
+    `node` for npm-registry specs), not the installer tool.
+    - Validation is per grammar, and the installer is the operator's argv prefix, so `pip install` and
+      `uv pip install` are both `python`, and `npm install` and `yarn add` are both `node`.
+    - This is why the key is `node` where #692 says `npm`. OS ecosystems are named by package format the same way
+      (e.g. `deb`, `apk`).
+  - **Validation is per ecosystem, and pluggable.** A new ABC `PackageSpecRule` has one method,
+    `validate(packages)`, which raises `ValueError`.
+    - `python` and `node` ship as built-ins, resolved by short name.
+    - Any other ecosystem names a bring-your-own rule in `package_rules`, resolved with `resolve_dotted` and checked
+      against the `PackageSpecRule` base, as `SandboxProviderFactory` resolves a bring-your-own provider
+      (`sandbox/factory.py:161`). An operator can therefore add `deb` or `apk` without a change to Agent Kernel.
+    - The rule class must be importable both agent-side (`ExecutionManager` validates before submitting) and in the
+      worker, as `principal_resolver` already must be. Config load resolves every rule on each side, so an
+      unresolvable rule fails at startup, not on a request.
+    - Agent-side validation uses the agent's own copy of the profile's provider block. The handle's validation in the
+      worker is authoritative, so if the two configs differ, the worker's rules decide.
+    - `PackageInstaller` runs a baseline before any rule. It rejects an empty list, empty entries, entries starting with
+      `-` (so no smuggled `--index-url`), whitespace, NUL, URLs (`://`) and local paths (a leading `.`, `/` or `~`).
+      A bring-your-own rule can narrow the baseline, never loosen it.
     - `python` accepts registry package names, including version specifiers and extras. It also
       rejects VCS specs (`git+`), any `/`, and archive filenames (`.whl`, `.tar.gz`, `.zip`), so a relative path
       such as `dist/x.whl` or `sub/pkg` cannot install local code.
@@ -198,7 +231,6 @@ check also runs agent-side before a request is submitted.
       - It is not in the `package_installers` default. The operator declares it, e.g. `node: [npm, install]`,
         because only the image decides whether `npm` exists.
       - It applies to `docker`, `kubernetes`, `e2b` and `daytona` alike, through the same `PackageInstaller` path.
-    - Further ecosystems (e.g. `apt`/`apk`) each need their own rule set before they can be configured.
     - A rejected spec raises `ValueError`, which reaches the agent as error JSON. It is input validation, not a
       permission denial, so it is not audit-logged.
     - `ExecutionManager.install_packages` calls the validation before submitting, so a bad spec fails before any
@@ -217,6 +249,14 @@ check also runs agent-side before a request is submitted.
     the other sandbox tools (async, returns a JSON string, can be promoted to a pending task).
 - `ExecutionManager` warns once per profile when it combines a `package_install` block with `network_egress: deny`.
   - It warns rather than errors, because an offline mirror in the image makes the combination legitimate.
+- `ExecutionManager` also warns once per profile when a `docker` or `kubernetes` profile combines a `package_install`
+  block with a filesystem policy (`fs_allow_read` or `fs_allow_write`).
+  - That policy makes the root filesystem read-only, with only the workdir writable (`docker.py:176-178`,
+    `kubernetes.py:308-311`). A bare `pip install` or `npm install -g` then writes to system paths and exits non-zero.
+  - It warns rather than errors, because the operator can point the installer prefix at the writable workdir, e.g.
+    `python: [pip, install, --target, <workdir>/site]` with that path on the image's `PYTHONPATH`.
+  - The default `python` prefix stays `pip install` on these providers. The provider cannot know a writable target
+    that the image's interpreter imports from, so the warning names the fix instead of guessing one.
 
 ### Behaviour changes
 
@@ -245,29 +285,38 @@ check also runs agent-side before a request is submitted.
 ### Testing and contract
 
 - `SandboxProviderContract` already asserts that an undeclared language raises `SandboxCapabilityError`
-  (`sandbox/testing.py:173`). It gains these checks:
-  - an undeclared ecosystem raises `SandboxCapabilityError`;
-  - declared `package_install` implies a non-empty `package_ecosystems`.
+  (`sandbox/testing.py:173`). It gains one check: an undeclared ecosystem raises `SandboxCapabilityError`.
+- `SandboxCapabilities` tests: the validator derives `package_install` from `package_ecosystems`, maps a legacy
+  `package_install=True` with no ecosystems to `["python"]`, and rejects `package_install=False` with ecosystems.
 - Guard tests:
   - one for every deny rule above, each asserting the single audit log line;
   - allowed-path tests for each capability;
   - an agent-side denial before submit;
   - one warning per denial on the `process()` path and on the thread flavor, while `_enforce_policy` and
     `_check_principal` denials still log the generic warning.
-- `PackageInstaller` tests cover every accept and reject rule of the `python` and `node` rule sets, and the
-  config-load rejection of an ecosystem without a rule set or with an empty argv prefix.
-- Config tests: an empty `language_runtimes` argv prefix is rejected at load.
+- `PackageInstaller` tests cover the baseline, every accept and reject rule of the `python` and `node` rules, and the
+  config-load rejection of an ecosystem without a rule or with an empty argv prefix.
+- `PackageSpecRule` tests: a bring-your-own rule resolves from `package_rules`; a class that is not a
+  `PackageSpecRule` or a bad dotted path raises `SandboxConfigError`; the baseline still rejects a spec that a
+  permissive bring-your-own rule accepts.
+- Config tests: an empty `language_runtimes` argv prefix and `package_install.ecosystems: []` are rejected at load;
+  `languages: []` loads and the guard denies every `run_code` on that profile.
 - Handle tests: a timed-out install and a timed-out `execute_code` on `docker` and `kubernetes` kill the process, and
   so does a cancellation by the worker's backstop.
 - Worker tests: the permission/capability mismatch warning fires once per (provider, profile); a legacy one-argument
   `install_packages` override still runs `python` installs and logs one deprecation warning.
-- `ExecutionManager` tests: the `package_install` + `deny` warning fires once per profile.
+- `ExecutionManager` tests: the `package_install` + `deny` warning and the `package_install` + filesystem-policy
+  warning each fire once per profile.
+- Live provider test (research §7f item 1), a prerequisite for documenting `allowlist` as a hard limit on `e2b` and
+  `daytona`: with `network_egress: allowlist`, a sandbox reaches a listed registry host and cannot reach an unlisted
+  host.
 
 ### Delivery
 
 - One design, shipped as phased PRs against it:
-  1. the guard (worker and agent side), the policy fields and package installation with the `python` and `node`
-     ecosystems on `docker`, `kubernetes`, `e2b` and `daytona`. This closes #692;
+  1. the guard (worker and agent side), the policy fields and package installation with the `PackageSpecRule`
+     extension point and the built-in `python` and `node` rules on `docker`, `kubernetes`, `e2b` and `daytona`. This
+     closes #692;
   2. language runtimes.
 - Each policy and provider field is added in the phase that first reads it. The `python`-key validator ships with
   `language_runtimes` in phase 2.
@@ -282,7 +331,8 @@ graph LR
     G -->|denied| E["guard logs one WARNING on ak.sandbox.broker<br/>raises SandboxPermissionDeniedError"]
     G -->|permitted| H["Provider handle<br/>docker · kubernetes · e2b · daytona"]
     H --> RT["language_runtimes argv"]
-    H --> PI["PackageInstaller (new)<br/>per-ecosystem validation"]
+    H --> PI["PackageInstaller (new)<br/>baseline validation"]
+    PI --> PR["PackageSpecRule (new)<br/>python · node · bring-your-own"]
 ```
 
 Worker pipeline, guard deny rules, the class model and per-capability sequence diagrams:
@@ -292,7 +342,8 @@ Worker pipeline, guard deny rules, the class model and per-capability sequence d
 
 - An audit-only (log-and-allow) mode.
 - Parsing `run_command` or code contents to detect installers or interpreters. Permissions gate typed operations only.
-- Package-name allowlists and denylists. Granularity is per ecosystem.
+- Package-name allowlists and denylists in AK config. Granularity is per ecosystem; an operator who needs one can
+  write a bring-your-own `PackageSpecRule`.
 - Installing from URLs, VCS repositories, local paths or archive files.
 - Turning `install_packages` into a general shell runner (#692 non-goal).
 - Browser automation. It remains a #494 non-goal (`docs/specs/494-sandbox-capability/design.md:381`). An agent that

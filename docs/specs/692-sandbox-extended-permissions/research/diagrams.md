@@ -50,8 +50,8 @@ Every deny exit makes the guard itself log exactly one `WARNING` on `ak.sandbox.
 the operation, profile, agent, AK session id, sandbox session id and reason. It never includes code bodies or package
 lists.
 
-Package-spec validation is not a guard rule. `PackageInstaller` does it, with one rule set per ecosystem, and raises
-`ValueError` without an audit line.
+Package-spec validation is not a guard rule. `PackageInstaller` does it, with a shared baseline and then the
+ecosystem's `PackageSpecRule` (built-in or bring-your-own), and raises `ValueError` without an audit line.
 
 ```mermaid
 flowchart TD
@@ -133,6 +133,7 @@ classDiagram
   class ProviderPackageConfig {
     <<new>>
     +dict package_installers
+    +dict package_rules
   }
   class DockerConfig
   class KubernetesConfig
@@ -141,8 +142,8 @@ classDiagram
   class SandboxCapabilities {
     <<changed>>
     +list~str~ languages
-    +bool package_install
     +list~str~ package_ecosystems
+    +bool package_install derived
   }
   class SandboxPermissionGuard {
     <<new>>
@@ -155,8 +156,14 @@ classDiagram
   class PackageInstaller {
     <<new>>
     +build argv from package_installers
-    +validate package specs per ecosystem
+    +baseline spec validation
   }
+  class PackageSpecRule {
+    <<new>>
+    +validate(packages)*
+  }
+  class PythonSpecRule
+  class NodeSpecRule
   ExecutionRequest *-- SandboxPolicy
   SandboxPolicy *-- PackageInstallPolicy
   ProviderRuntimeConfig <|-- DockerConfig
@@ -169,15 +176,22 @@ classDiagram
   ProviderPackageConfig ..> SandboxCapabilities : keys become package_ecosystems
   SandboxPermissionGuard ..> SandboxPolicy : reads
   Sandbox ..> PackageInstaller : uses
+  PackageSpecRule <|-- PythonSpecRule
+  PackageSpecRule <|-- NodeSpecRule
+  PackageInstaller ..> PackageSpecRule : runs rule for ecosystem
+  ProviderPackageConfig ..> PackageSpecRule : package_rules resolves BYO
 ```
+
+`PythonSpecRule`\* and `NodeSpecRule`\* are illustrative names for the built-in `python` and `node` rules.
 
 | Field | Side | Default | Meaning |
 |---|---|---|---|
-| `languages` | policy (may) | `None` | Allowlist for `run_code`. `None` means whatever the provider declares, which is today's behaviour. |
+| `languages` | policy (may) | `None` | Allowlist for `run_code`. `None` means whatever the provider declares, which is today's behaviour. `[]` denies every `run_code` call. |
 | `package_install` | policy (may) | `None` | Presence permits installing. Absent means denied. |
-| `package_install.ecosystems` | policy (may) | `["python"]` | Open question: default to everything the provider declares instead? |
+| `package_install.ecosystems` | policy (may) | `["python"]` | `[]` is rejected at load. Open question: default to everything the provider declares instead? |
 | `language_runtimes` | provider (can), `docker`/`kubernetes` | `{python: [python, -c]}` | Language to interpreter argv prefix. Keys become the instance's `languages`. A `python` key is required; every prefix must be non-empty with no empty token. |
-| `package_installers` | provider (can) | `{python: [pip, install]}` | Ecosystem to installer argv prefix. Keys become `package_ecosystems`. Each key needs a `PackageInstaller` rule set (`python` and `node` ship); every prefix must be non-empty with no empty token. |
+| `package_installers` | provider (can) | `{python: [pip, install]}` | Ecosystem to installer argv prefix. Keys become `package_ecosystems`. Each key must resolve to a `PackageSpecRule` (`python` and `node` ship, others come from `package_rules`); every prefix must be non-empty with no empty token. |
+| `package_rules` | provider (can) | `{}` | Ecosystem to the dotted path of a bring-your-own `PackageSpecRule`, e.g. `apk: my_org.rules.ApkRule`. |
 
 Example profile using both capabilities (illustrative):
 
@@ -196,8 +210,9 @@ sandbox:
           python: [pip, install]
           node: [npm, install]        # operator-declared: only the image knows npm exists
       policy:                          # may: what agents are allowed to do
-        network_egress: allowlist
-        network_allow: [pypi.org, files.pythonhosted.org, registry.npmjs.org]
+        # docker cannot enforce an allowlist (it fails closed under strict). For hard egress
+        # limits use network_egress: deny with a mirror or pre-baked image instead.
+        network_egress: allow
         languages: [python, node]
         package_install:               # present = permitted
           ecosystems: [python]          # node can install, but this profile may not
@@ -252,7 +267,7 @@ sequenceDiagram
   participant SB as Sandbox
   Agent->>Tool: install_packages(packages, ecosystem, sandbox_session_id, profile)
   Tool->>EM: install_packages(...)
-  Note over EM: Warns once per profile if package_install is declared with network_egress deny
+  Note over EM: Warns once per profile if package_install is declared with network_egress deny,<br/>or with an fs policy on docker or kubernetes (read-only root filesystem)
   EM->>G: agent-side check(request)
   opt not permitted (agent side)
     G->>G: one WARNING on ak.sandbox.broker, no package list
