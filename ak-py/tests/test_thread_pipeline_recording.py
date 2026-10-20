@@ -261,7 +261,9 @@ def _open_thread(manager, session_id="s1"):
 class TestRunnerRecording:
     def _runner(self, status_code=200, result="ok:hello", media_type=None):
         chat_service = MagicMock()
-        body = {"result": result, "session_id": "s1", **({"media_type": media_type} if media_type else {})}
+        body = {"result": result, "session_id": "s1"}
+        if media_type:
+            body["media_type"] = media_type
         chat_service.process_chat_request.return_value = (status_code, body)
         return AgentRunner(transport=InMemoryTransport(), chat_service=chat_service)
 

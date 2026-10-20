@@ -8,7 +8,7 @@ a reference (attachment_id) into the existing multimodal AttachmentStore.
 
 import datetime
 import uuid
-from typing import List, Literal, Optional
+from typing import List, Literal, Optional, Union
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -44,7 +44,7 @@ class ThreadMessage(BaseModel):
 
     message_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     role: Literal["user", "assistant"]
-    content: str | JSONPayload
+    content: Union[str, JSONPayload]
     media_type: Optional[str] = None
     timestamp: datetime.datetime = Field(default_factory=_utc_now)
     attachments: List[ThreadAttachment] = Field(default_factory=list)

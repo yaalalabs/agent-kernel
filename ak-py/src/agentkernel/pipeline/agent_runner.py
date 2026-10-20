@@ -54,7 +54,8 @@ class AgentRunner:
         self._send_to_output(message, agent_response, status_code)
         body_is_dict = isinstance(agent_response, dict)
         result = agent_response.get("result") if body_is_dict else agent_response
-        self._record_thread_reply(message, body, status_code, result, agent_response.get("media_type") if body_is_dict else None)
+        media_type = agent_response.get("media_type") if body_is_dict else None
+        self._record_thread_reply(message, body, status_code, result, media_type)
 
         self._log.info(f"[AGENT DONE] request_id={request_id}, status_code={status_code}")
 

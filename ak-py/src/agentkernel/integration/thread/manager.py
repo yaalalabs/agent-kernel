@@ -14,6 +14,7 @@ from ...core.config import AKConfig
 from ...core.model import AgentRequest
 from ...core.multimodal.storage import AttachmentStorageManager
 from ...core.util.pagination import clamp_limit, decode_cursor, encode_cursor
+from ...core.util.payload import JSONPayload
 from .model import MessagePage, Thread, ThreadAttachment, ThreadMessage, ThreadPage
 from .naming import ThreadNamingStrategy
 from .store import ThreadStore, ThreadStoreBuilder
@@ -126,7 +127,7 @@ class ConversationThreadManager:
         self,
         session_id: str,
         role: str,
-        content: Union[str, dict, list],
+        content: Union[str, JSONPayload],
         attachments: Optional[List[ThreadAttachment]] = None,
         media_type: Optional[str] = None,
     ) -> ThreadMessage:
