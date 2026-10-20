@@ -13,7 +13,7 @@ import base64
 from enum import Enum
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_serializer, field_validator
+from pydantic import BaseModel, Field, field_serializer, field_validator, model_validator
 
 
 class IsolationTier(str, Enum):
@@ -38,7 +38,8 @@ class SandboxCapabilities(BaseModel):
     shell: bool = False  # execute_command supported
     languages: list[str] = Field(default_factory=lambda: ["python"])  # languages accepted by execute_code
     files: bool = False  # upload_file / download_file supported
-    package_install: bool = False  # install_packages supported
+    package_install: bool = False  # install_packages supported; derived from package_ecosystems
+    package_ecosystems: list[str] = Field(default_factory=list)  # ecosystems install_packages accepts
     stateful: bool = False  # variables persist across execute_code calls in one sandbox
     attach: bool = False  # reconnect to a live sandbox by id supported (session continuity)
     provisions: bool = True  # can create new environments (False = attach-only, e.g. ec2_ssm)
@@ -47,6 +48,27 @@ class SandboxCapabilities(BaseModel):
     policy_network: bool = False  # network egress policy enforceable
     policy_filesystem: bool = False  # filesystem policy enforceable
     policy_resources: bool = False  # cpu/memory limits enforceable
+
+    @model_validator(mode="after")
+    def _derive_package_install(self) -> "SandboxCapabilities":
+        """Keep package_install consistent with package_ecosystems (the source of truth):
+        - non-empty ecosystems -> package_install=True; an explicit package_install=False raises;
+        - package_install=True with no ecosystems (a pre-#692 BYO declaration) -> ["python"]."""
+        if self.package_ecosystems:
+            if not self.package_install and "package_install" in self.model_fields_set:
+                raise ValueError("package_install=False contradicts a non-empty package_ecosystems")
+            self.package_install = True
+        elif self.package_install:
+            self.package_ecosystems = ["python"]
+        return self
+
+    def derive(self, **update: Any) -> "SandboxCapabilities":
+        """A re-validated copy with ``update`` applied: the instance-override helper.
+
+        ``model_copy(update=...)`` skips validators, so overrides go through here instead. An override that
+        changes ecosystems sets both fields: ``derive(package_ecosystems=eco, package_install=bool(eco))``.
+        """
+        return type(self).model_validate({**self.model_dump(), **update})
 
 
 class SandboxFile(BaseModel):
@@ -120,6 +142,13 @@ class SandboxPrincipal(BaseModel):
     groups: list[str] = Field(default_factory=list)
 
 
+class PackageInstallPolicy(BaseModel):
+    """Permission to install packages, carried on the wire inside SandboxPolicy."""
+
+    ecosystems: list[str] = Field(default_factory=lambda: ["python"], min_length=1)  # permitted ecosystem keys
+    timeout: float | None = Field(default=None, gt=0)  # install wall clock; None = policy.timeout
+
+
 class SandboxPolicy(BaseModel):
     """The permission/resource envelope enforced on an execution."""
 
@@ -131,3 +160,11 @@ class SandboxPolicy(BaseModel):
     memory_mb: int | None = None
     timeout: float = 120.0  # per-execution wall clock, seconds
     strict: bool = True  # fail closed on unenforceable dimensions
+    languages: list[str] | None = None  # run_code allowlist; None = provider-declared; [] = deny every run_code
+    package_install: PackageInstallPolicy | None = None  # None = installs denied
+
+    def effective_timeout(self, operation: str) -> float:
+        """The operation's own wall-clock limit: package_install.timeout for installs when set, else timeout."""
+        if operation == "install_packages" and self.package_install is not None and self.package_install.timeout is not None:
+            return self.package_install.timeout
+        return self.timeout
