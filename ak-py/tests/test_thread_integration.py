@@ -4,12 +4,14 @@ import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 from agentkernel.core.base import Agent, Runner
 from agentkernel.core.config import AKConfig, _ThreadStoreConfig
 from agentkernel.core.model import AgentReplyAny, AgentReplyText, AgentRequestText, BaseRunRequest, ScheduleSpec, StreamChunk
 from agentkernel.core.runtime import Runtime
 from agentkernel.integration.thread import AgentThreadRequestHandler, ConversationThreadManager, ThreadNamingStrategy, ThreadRecorder
+from agentkernel.integration.thread.model import HITL_MEDIA_TYPE, ThreadAttachment, ThreadMessage
 from agentkernel.integration.thread.store.in_memory import InMemoryThreadStore
 
 
@@ -334,6 +336,82 @@ class TestThreadContentEncoding:
 
         assert direct == queue
         assert json.loads(direct) == content
+
+
+class TestThreadMessageModel:
+    """The payload-or-text pair on ThreadMessage (issue #607).
+
+    The label is the switch everywhere else in the codebase — `build_response` puts a payload in
+    `result` as an object only when one is set — so the model enforces the pair rather than
+    documenting it, and the wire rendering keeps an unlabelled message byte-identical to what it
+    was before the field existed.
+    """
+
+    def test_text_needs_no_label(self):
+        message = ThreadMessage(role="user", content="hello")
+
+        assert message.content == "hello"
+        assert message.media_type is None
+
+    def test_a_payload_is_stored_as_an_object(self):
+        message = ThreadMessage(role="assistant", content={"interruptions": []}, media_type=HITL_MEDIA_TYPE)
+
+        assert message.content == {"interruptions": []}
+        assert message.media_type == "application/json"
+
+    def test_a_label_over_text_is_refused(self):
+        with pytest.raises(ValidationError, match="carries its payload as an object"):
+            ThreadMessage(role="user", content="hello", media_type=HITL_MEDIA_TYPE)
+
+    def test_an_object_without_a_label_is_refused(self):
+        with pytest.raises(ValidationError, match="an unlabelled message carries text"):
+            ThreadMessage(role="user", content={"decisions": []})
+
+    def test_a_payload_is_normalised_on_construction(self):
+        """The same JSONPayload annotation AgentReplyAny.content uses, so both normalise once."""
+        import datetime
+
+        when = datetime.datetime(2026, 10, 20, 9, 30, tzinfo=datetime.timezone.utc)
+        message = ThreadMessage(role="user", content={"at": when}, media_type=HITL_MEDIA_TYPE)
+
+        assert message.content == {"at": "2026-10-20T09:30:00Z"}
+
+    def test_a_payload_with_no_json_form_is_refused(self):
+        with pytest.raises(ValidationError, match="NaN"):
+            ThreadMessage(role="user", content={"ratio": float("nan")}, media_type=HITL_MEDIA_TYPE)
+
+    def test_to_wire_omits_an_unset_label(self):
+        """A message written before this field existed reads back exactly as it did."""
+        wire = ThreadMessage(role="user", content="hello").to_wire()
+
+        assert "media_type" not in wire
+        assert list(wire) == ["message_id", "role", "content", "timestamp", "attachments"]
+
+    def test_to_wire_keeps_a_set_label_beside_its_payload(self):
+        wire = ThreadMessage(role="assistant", content={"a": 1}, media_type=HITL_MEDIA_TYPE).to_wire()
+
+        assert wire["content"] == {"a": 1}
+        assert wire["media_type"] == "application/json"
+
+    def test_to_wire_keeps_an_attachment_s_unset_fields(self):
+        """exclude_none would recurse and drop these; the exclusion names one field instead."""
+        message = ThreadMessage(role="user", content="see this", attachments=[ThreadAttachment(attachment_id="a1")])
+
+        assert message.to_wire()["attachments"] == [{"attachment_id": "a1", "name": None, "mime_type": None}]
+
+    def test_the_label_sits_between_content_and_timestamp(self):
+        """Field order is key order in model_dump_json, and all four recording paths must agree."""
+        message = ThreadMessage(role="assistant", content={"a": 1}, media_type=HITL_MEDIA_TYPE)
+
+        assert list(message.model_dump()) == ["message_id", "role", "content", "media_type", "timestamp", "attachments"]
+
+    def test_a_pre_change_message_round_trips(self):
+        """Stored JSON written before this change still loads: the new key is simply absent."""
+        stored = '{"message_id": "m1", "role": "user", "content": "hi", "timestamp": "2026-01-01T00:00:00Z", "attachments": []}'
+
+        message = ThreadMessage.model_validate_json(stored)
+
+        assert (message.content, message.media_type) == ("hi", None)
 
 
 class TestThreadPauseAndResume:
