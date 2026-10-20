@@ -210,6 +210,50 @@ class TestAgentThreadRequestHandler:
         assert [(m.role,) for m in messages] == [("user",)]
 
     @pytest.mark.asyncio
+    async def test_a_streamed_run_that_pauses_records_the_pause(self, thread_enabled, registered_agent):
+        """astream carries no reply, so the pause is rebuilt from the terminal RunPaused event."""
+        from agentkernel.core.event import PausedInterruption, RunPaused
+
+        event = RunPaused(
+            run_id="run-1",
+            agent=registered_agent.name,
+            interruptions=[PausedInterruption(id="i1", kind="input_required", payload={"question": "which card?"})],
+        )
+        handler = AgentThreadRequestHandler()
+        handler.chat_service = FakeChatService(chunks=[StreamChunk(event=event), StreamChunk(done=True)])
+
+        gen = await handler._stream_with_recording(BaseRunRequest(prompt="refund it", session_id="s1", user_id="u1", agent=registered_agent.name))
+        _ = [frame async for frame in gen]
+
+        pause = thread_enabled.get_messages("s1").messages[1]
+        assert (pause.role, pause.media_type) == ("assistant", HITL_MEDIA_TYPE)
+        assert pause.content == {
+            "run_id": "run-1",
+            "session_id": "s1",
+            "agent": registered_agent.name,
+            "interruptions": [
+                {"id": "i1", "kind": "input_required", "tool_name": None, "arguments": None, "message": None, "payload": {"question": "which card?"}}
+            ],
+        }
+
+    @pytest.mark.asyncio
+    async def test_text_streamed_before_a_pause_is_not_recorded_beside_it(self, thread_enabled, registered_agent):
+        """Parity: the non-streaming path returns the pause, never the partial message before it."""
+        from agentkernel.core.event import PausedInterruption, RunPaused
+
+        event = RunPaused(run_id="run-1", agent=registered_agent.name, interruptions=[PausedInterruption(id="i1", kind="tool_call")])
+        handler = AgentThreadRequestHandler()
+        handler.chat_service = FakeChatService(chunks=[StreamChunk(delta="Let me check"), StreamChunk(event=event), StreamChunk(done=True)])
+
+        gen = await handler._stream_with_recording(BaseRunRequest(prompt="refund it", session_id="s1", user_id="u1", agent=registered_agent.name))
+        _ = [frame async for frame in gen]
+
+        messages = thread_enabled.get_messages("s1").messages
+        assert [m.role for m in messages] == ["user", "assistant"]
+        assert messages[1].media_type == HITL_MEDIA_TYPE
+        assert "Let me check" not in str(messages[1].content)
+
+    @pytest.mark.asyncio
     async def test_scheduled_request_is_acknowledged_without_recording(self, thread_enabled, registered_agent):
         # A deferred request is not a conversation turn: the thread and its messages belong to the
         # occurrence that eventually runs, so nothing is recorded at creation time.
