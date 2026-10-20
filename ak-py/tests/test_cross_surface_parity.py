@@ -140,8 +140,8 @@ def test_thread_history_records_the_same_bytes_from_either_path(labelled_reply):
     """The queue runner holds the response body's `result`; the direct handler holds the reply."""
     from agentkernel.integration.thread.recorder import ThreadRecorder
 
-    direct = ThreadRecorder._as_thread_content(labelled_reply)
-    queued = ThreadRecorder._as_thread_content(labelled_reply.content)
+    direct, _ = ThreadRecorder._as_thread_message(labelled_reply)
+    queued, _ = ThreadRecorder._as_thread_message(labelled_reply.content)
 
     assert direct == queued
     assert json.loads(direct) == EXPECTED_CONTENT
