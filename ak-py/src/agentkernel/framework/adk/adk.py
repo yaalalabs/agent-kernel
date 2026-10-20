@@ -938,8 +938,9 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
     # quota, failing) would otherwise be reconnected forever.
     QUICK_DROP_SECONDS: float = 20.0
     # A live run that answers nothing this long after it was given something to answer is taken for dead, checked
-    # this often. Not while a tool runs: ADK reads nothing from the socket until its tools have returned.
-    STALL_SECONDS: float = 15.0
+    # this often. Not while a tool runs: ADK reads nothing from the socket until its tools have returned. Live,
+    # Gemini took 15 s or more to answer a tool's result and was restarted just before it spoke.
+    STALL_SECONDS: float = 25.0
     STALL_CHECK_SECONDS: float = 1.0
     # Said into a restarted run, so the agent can tell the caller; "" says nothing. The first when the caller spoke
     # while the line was down, the second when they did not, so they are not asked to repeat what they never said.
@@ -1212,8 +1213,10 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
                 await self._callback("audio_delta", {"delta": base64.b64encode(inline.data).decode("utf-8"), "message_id": ""})
 
         if event.get_function_calls():
-            # The model answered with calls; it owes a reply again once ADK sends their results.
+            # The model answered with calls, acting on the caller's words; it owes a reply again once ADK sends their
+            # results. Live, a run that stalled after recording what the caller said asked them to say it again.
             self._owed_since = None
+            self._model_said_at = time.monotonic()
 
         target = event.actions.transfer_to_agent if event.get_function_responses() else None
         if target and target != self._active:

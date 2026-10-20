@@ -725,18 +725,28 @@ class TestADKNativeRecovery:
         assert len(client.of("supervisor")) == 1
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("answered", [True, False], ids=["caller-answered", "caller-waiting"])
+    @pytest.mark.parametrize("answered", ["said", "acted", None], ids=["caller-answered", "caller-acted-on", "caller-waiting"])
     async def test_the_caller_is_asked_to_repeat_only_when_their_words_were_unanswered(self, monkeypatch, answered):
-        """Live: a run that stalled after the agent had answered asked the caller to repeat words they never said."""
-        turn = [_hears("What does it cost?"), _says("Ten dollars."), _done()] if answered else [_hears("What does it cost?")]
-        client = _GeminiClient(supervisor=[turn, ConnectionError("dropped")])
-        call = await _Call(monkeypatch, client, [_agent("supervisor")]).start()
+        """Live: a run that stalled after the agent had answered asked the caller to repeat words they never said; and
+        one that stalled after a tool had recorded their words asked them to say those again."""
+
+        def price(item: str) -> str:
+            """Look up a price."""
+            return "ten dollars"
+
+        turns = {
+            "said": [[_hears("What does it cost?"), _says("Ten dollars."), _done()]],
+            "acted": [[_hears("What does it cost?"), _calls("c1", "price", item="plan")], _answered],
+            None: [[_hears("What does it cost?")]],
+        }[answered]
+        client = _GeminiClient(supervisor=[*turns, ConnectionError("dropped")])
+        call = await _Call(monkeypatch, client, [_agent("supervisor", tools=[price])]).start()
 
         await call.until(lambda: len(client.sockets) == 2 and client.sockets[1].text)
         await call.close()
 
         note = client.sockets[1].text[-1]
-        assert ("ask them to repeat" in note) is not answered and ("did not speak" in note) is answered
+        assert ("ask them to repeat" in note) is (answered is None) and ("did not speak" in note) is (answered is not None)
 
     @pytest.mark.asyncio
     async def test_a_tool_that_finished_before_the_drop_is_not_run_again(self, monkeypatch):

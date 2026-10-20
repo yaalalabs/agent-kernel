@@ -176,7 +176,7 @@ No `tool_call` is reported.
 |---|---|---|
 | `RESTART_DELAYS_SECONDS` | (1, 2, 4) | Wait before each restart; their number is also the quick drops in a row that give up |
 | `QUICK_DROP_SECONDS` | 20 | A run lost this soon after a restart is a quick drop |
-| `STALL_SECONDS` / `STALL_CHECK_SECONDS` | 15 / 1 | No model progress this long, while it owes an answer and no tool runs, is a stall; checked this often |
+| `STALL_SECONDS` / `STALL_CHECK_SECONDS` | 25 / 1 | No model progress this long, while it owes an answer and no tool runs, is a stall; checked this often |
 | `SPEECH_LEVEL` | 500 | RMS of 16-bit samples above which caller audio sent while the line is down is speech |
 | `RECONNECTED_NOTE` / `RECONNECTED_QUIET_NOTE` | text | The note when the caller spoke / did not; `""` adds none |
 
