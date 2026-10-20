@@ -71,7 +71,9 @@ class ThreadMessage(BaseModel):
 
         :return: The message as a JSON-safe dict.
         """
-        return self.model_dump(mode="json", exclude={"media_type"} if self.media_type is None else None)
+        if self.media_type is None:
+            return self.model_dump(mode="json", exclude={"media_type"})
+        return self.model_dump(mode="json")
 
 
 class Thread(BaseModel):

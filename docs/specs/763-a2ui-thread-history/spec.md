@@ -60,7 +60,9 @@ class ThreadMessage(BaseModel):
         it would also drop an attachment's unset ``name`` and ``mime_type``, changing a shape no
         part of this work is about.
         """
-        return self.model_dump(mode="json", exclude={"media_type"} if self.media_type is None else None)
+        if self.media_type is None:
+            return self.model_dump(mode="json", exclude={"media_type"})
+        return self.model_dump(mode="json")
 ```
 
 Rules this fixes in place:

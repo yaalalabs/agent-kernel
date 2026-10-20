@@ -108,9 +108,10 @@ graph LR
 
 - `GET /api/v1/threads/{session_id}` returns both fields. `message.model_dump(mode="json")` already
   does this once the model carries them (`thread_chat.py:380`).
-- The dump gains `exclude_none=True` so an unlabelled message omits `media_type` entirely rather than
-  returning `null` — matching the live surface, where `build_response` adds the key only when the
-  label is set (`chat_service.py:367-368`). No other message field is ever `None`.
+- The dump omits `media_type` on an unlabelled message rather than returning `null` — matching the
+  live surface, where `build_response` adds the key only when the label is set
+  (`chat_service.py:367-368`). The exclusion names that one field; `exclude_none=True` would recurse
+  and also drop an attachment's unset `name` and `mime_type`, a shape this change owes nothing to.
 - `GET /api/v1/threads` is unchanged: listings exclude messages.
 
 ### Configuration
