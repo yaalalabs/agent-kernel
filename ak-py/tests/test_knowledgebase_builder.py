@@ -15,7 +15,7 @@ Backends are declared inline; the reusable FakeKnowledgeBase lands with Knowledg
 
 import json
 import logging
-from typing import Iterable, List
+from collections.abc import Iterable
 
 import pytest
 
@@ -49,19 +49,19 @@ class MinimalStub(KnowledgeBase):
 class StubBackend(MinimalStub):
     """Records which operation was reached and with what, so routing is observable."""
 
-    def search(self, query: str, limit: int = 3, **kwargs) -> List[Record]:
+    def search(self, query: str, limit: int = 3, **kwargs) -> list[Record]:
         self.calls.append(("search", (query, limit), kwargs))
         return [{"text": f"search:{query}", "metadata": {"source": self.name}}]
 
-    def query(self, statement: str, limit: int = 3, **kwargs) -> List[Record]:
+    def query(self, statement: str, limit: int = 3, **kwargs) -> list[Record]:
         self.calls.append(("query", (statement, limit), kwargs))
         return [{"text": f"query:{statement}", "metadata": {"source": self.name}}]
 
-    def fetch(self, ids: List[str], **kwargs) -> List[Record]:
+    def fetch(self, ids: list[str], **kwargs) -> list[Record]:
         self.calls.append(("fetch", (list(ids),), kwargs))
         return [{"text": f"fetch:{identity}", "metadata": {"source": self.name}} for identity in ids]
 
-    def browse(self, path: str = "", limit: int = 50, **kwargs) -> List[Record]:
+    def browse(self, path: str = "", limit: int = 50, **kwargs) -> list[Record]:
         self.calls.append(("browse", (path, limit), kwargs))
         return [{"text": f"browse:{path}", "metadata": {"source": self.name}}]
 
@@ -101,7 +101,7 @@ def _documents(name: str = "okf") -> StubBackend:
     return StubBackend(KnowledgeCapabilities(kinds=["document"], search=True, fetch=True, browse=True, writable=True), name=name)
 
 
-def _tool_names(builder: KnowledgeBuilder) -> List[str]:
+def _tool_names(builder: KnowledgeBuilder) -> list[str]:
     return [tool.__name__ for tool in builder.build()]
 
 

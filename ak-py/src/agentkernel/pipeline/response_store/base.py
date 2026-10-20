@@ -1,7 +1,7 @@
 import logging
 import time
 from abc import ABC, abstractmethod
-from typing import Dict, Iterator, List, Optional
+from collections.abc import Iterator
 
 from ...core.config import AKConfig
 
@@ -14,7 +14,7 @@ class ResponseStore(ABC):
     _log = logging.getLogger("ak.pipeline.response_store")
 
     @abstractmethod
-    def add_message(self, message: Dict) -> None:
+    def add_message(self, message: dict) -> None:
         """
         Store a response message.
 
@@ -24,7 +24,7 @@ class ResponseStore(ABC):
         pass
 
     @abstractmethod
-    def get_message(self, request_id: str, get_and_delete: bool = False) -> Dict | None:
+    def get_message(self, request_id: str, get_and_delete: bool = False) -> dict | None:
         """
         Retrieve a specific message's body by its request ID.
 
@@ -35,7 +35,7 @@ class ResponseStore(ABC):
         pass
 
     @abstractmethod
-    def get_record(self, request_id: str, get_and_delete: bool = False) -> Dict | None:
+    def get_record(self, request_id: str, get_and_delete: bool = False) -> dict | None:
         """
         Retrieve the full stored record by its request ID.
 
@@ -60,11 +60,11 @@ class ResponseStore(ABC):
         """
         return False
 
-    def add_chunk(self, request_id: str, chunk: Dict) -> None:
+    def add_chunk(self, request_id: str, chunk: dict) -> None:
         """Append one streaming chunk for a request. Chunk-streaming stores only."""
         raise NotImplementedError(f"{type(self).__name__} does not support chunk streaming")
 
-    def stream(self, request_id: str, chunk_timeout: Optional[float] = None) -> Iterator[Dict]:
+    def stream(self, request_id: str, chunk_timeout: float | None = None) -> Iterator[dict]:
         """Yield a request's chunks in order until its done chunk. Chunk-streaming stores only."""
         raise NotImplementedError(f"{type(self).__name__} does not support chunk streaming")
 
@@ -84,11 +84,11 @@ class ResponseStore(ABC):
         """
         return False
 
-    def scan_records(self, prefix: str) -> List[Dict]:
+    def scan_records(self, prefix: str) -> list[dict]:
         """Return every stored record whose request_id starts with ``prefix``. Scan-capable stores only."""
         raise NotImplementedError(f"{type(self).__name__} does not support key scans")
 
-    def get_record_with_retry(self, request_id: str, get_and_delete: bool = False) -> Dict | None:
+    def get_record_with_retry(self, request_id: str, get_and_delete: bool = False) -> dict | None:
         """
         Wait until a record exists for a request ID and retrieve the whole record.
 

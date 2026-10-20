@@ -462,10 +462,9 @@ Create a custom auth validator by extending `AuthValidator`:
 ```python
 from agentkernel.api import RESTAPI
 from agentkernel.auth import AuthValidator, ValidationContext, ValidationResult
-from typing import Optional
 
 class CustomAuthValidator(AuthValidator):
-    def validate(self, token: str, context: Optional[ValidationContext] = None) -> ValidationResult:
+    def validate(self, token: str, context: ValidationContext | None = None) -> ValidationResult:
         """Validate authentication token and return result."""
         if token == "your-secret-token":
             return ValidationResult(is_valid=True, subject="api_user")

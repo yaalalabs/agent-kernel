@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import APIRouter, Request
 
@@ -28,7 +28,7 @@ class WebhookRESTRequestHandler(RESTRequestHandler):
 
     _log = logging.getLogger("ak.integration.webhook")
 
-    def __init__(self, adapter: InboundAdapter, producer: Optional[IntegrationProducer] = None):
+    def __init__(self, adapter: InboundAdapter, producer: IntegrationProducer | None = None):
         """
         :param adapter: The platform's inbound adapter. The application constructs it, so
             bringing your own is just passing a different instance.

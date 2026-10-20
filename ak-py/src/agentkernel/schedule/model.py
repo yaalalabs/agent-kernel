@@ -10,7 +10,6 @@ serialized with ``json.dumps`` before they enter a queue.
 
 import datetime
 from enum import Enum
-from typing import List, Optional
 
 from pydantic import BaseModel
 
@@ -61,18 +60,18 @@ class ScheduledTask(BaseModel):
     task_id: str
     user_id: str
     prompt: str
-    agent: Optional[str] = None
+    agent: str | None = None
     session_id: str
     spec: ScheduleSpec
     status: ScheduleStatus = ScheduleStatus.ACTIVE
-    provider_ref: Optional[str] = None
+    provider_ref: str | None = None
     created_at: str
     updated_at: str
-    last_triggered_at: Optional[str] = None
+    last_triggered_at: str | None = None
     trigger_count: int = 0
-    last_request_id: Optional[str] = None
+    last_request_id: str | None = None
 
-    def apply_trigger(self, request_id: Optional[str], occurred_at: str, completed: bool) -> "ScheduledTask":
+    def apply_trigger(self, request_id: str | None, occurred_at: str, completed: bool) -> "ScheduledTask":
         """Advance the occurrence bookkeeping after one of this task's triggers fired.
 
         What an occurrence records, and when it closes the task, is the same on every backend —
@@ -97,5 +96,5 @@ class ScheduledTask(BaseModel):
 class ScheduledTaskPage(BaseModel):
     """A page of scheduled tasks and the cursor for the next one (None on the last page)."""
 
-    tasks: List[ScheduledTask]
-    next_cursor: Optional[str] = None
+    tasks: list[ScheduledTask]
+    next_cursor: str | None = None

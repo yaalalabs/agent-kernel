@@ -11,7 +11,7 @@ import contextvars
 import logging
 import os
 import traceback
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import httpx
 from fastapi import Request
@@ -33,7 +33,7 @@ from ..adapter.base import (
 from ..adapter.routes import BUILTIN_WEBHOOK_ROUTES
 
 NAME = "slack"
-_events: contextvars.ContextVar[List[dict]] = contextvars.ContextVar("ak_slack_events")
+_events: contextvars.ContextVar[list[dict]] = contextvars.ContextVar("ak_slack_events")
 
 
 class SlackInboundAdapter(InboundAdapter):
@@ -48,7 +48,7 @@ class SlackInboundAdapter(InboundAdapter):
         config = AKConfig.get()
         self._agent = config.slack.agent or None
         self._max_file_size = config.api.max_file_size
-        self._bot_id: Optional[str] = None
+        self._bot_id: str | None = None
 
         self._app = AsyncApp(
             process_before_response=True,
@@ -93,7 +93,7 @@ class SlackInboundAdapter(InboundAdapter):
                 requests.append(inbound)
         return InboundParseResult(requests=requests, response=response)
 
-    async def _to_request(self, body: dict) -> Optional[InboundRequest]:
+    async def _to_request(self, body: dict) -> InboundRequest | None:
         """Normalize one Slack message event, or None when it is not for us."""
         user = body.get("user")
         channel = body.get("channel")
@@ -133,7 +133,7 @@ class SlackInboundAdapter(InboundAdapter):
             )
             return None
 
-        requests: List[AgentRequest] = []
+        requests: list[AgentRequest] = []
         if question:
             requests.append(AgentRequestText(prompt=question))
 
@@ -165,25 +165,25 @@ class SlackInboundAdapter(InboundAdapter):
             reply_context={"channel": channel, "thread_ts": thread_ts, "user": user},
         )
 
-    async def _bot_user_id(self) -> Optional[str]:
+    async def _bot_user_id(self) -> str | None:
         """The bot's own user id, so its own messages are ignored. Resolved once."""
         if self._bot_id is None:
             self._bot_id = (await self._app.client.auth_test())["user_id"]
         return self._bot_id
 
-    async def _say(self, channel: str, thread_ts: Optional[str], text: str) -> None:
+    async def _say(self, channel: str, thread_ts: str | None, text: str) -> None:
         """Post a rejection notice from the edge, where the user is still waiting."""
         try:
             await self._app.client.chat_postMessage(channel=channel, thread_ts=thread_ts, text=text)
         except Exception as e:
             self._log.error(f"Could not post a Slack message: {e}")
 
-    async def _process_files(self, files: list, requests: List[AgentRequest]) -> List[str]:
+    async def _process_files(self, files: list, requests: list[AgentRequest]) -> list[str]:
         """Download each file and append it to ``requests``.
 
         :return: Names of the files that could not be downloaded.
         """
-        failed: List[str] = []
+        failed: list[str] = []
         for file in files:
             file_name = file.get("name", "unknown")
             try:
@@ -209,7 +209,7 @@ class SlackInboundAdapter(InboundAdapter):
                 failed.append(file_name)
         return failed
 
-    async def _download(self, url: str) -> Optional[bytes]:
+    async def _download(self, url: str) -> bytes | None:
         """Download a private Slack file with the bot token."""
         try:
             async with httpx.AsyncClient() as client:
@@ -234,7 +234,7 @@ class SlackOutboundAdapter(OutboundAdapter):
     def __init__(self):
         self._acknowledgement = AKConfig.get().slack.agent_acknowledgement or None
 
-    async def acknowledge(self, reply_context: Dict[str, str]) -> Dict[str, str]:
+    async def acknowledge(self, reply_context: dict[str, str]) -> dict[str, str]:
         """Post the "thinking" message, if one is configured, and remember where it went."""
         if not self._acknowledgement:
             return {}
@@ -249,7 +249,7 @@ class SlackOutboundAdapter(OutboundAdapter):
             self._log.warning(f"Could not post the Slack acknowledgement: {e}")
             return {}
 
-    async def deliver(self, reply: AgentReply, reply_context: Dict[str, str]) -> None:
+    async def deliver(self, reply: AgentReply, reply_context: dict[str, str]) -> None:
         """Clear the loading indicator, then post the reply in the originating thread."""
         client = self._client()
         channel = reply_context.get("ack_channel") or reply_context["channel"]
@@ -266,7 +266,7 @@ class SlackOutboundAdapter(OutboundAdapter):
             metadata={"event_type": "first_pass", "event_payload": {"id": thread_ts}},
         )
 
-    async def deliver_error(self, message: str, reply_context: Dict[str, str]) -> None:
+    async def deliver_error(self, message: str, reply_context: dict[str, str]) -> None:
         try:
             await self._client().chat_postMessage(channel=reply_context["channel"], text=message)
         except Exception as e:

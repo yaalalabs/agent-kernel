@@ -1,6 +1,5 @@
 import os
 from pathlib import Path
-from typing import Optional
 
 from agentkernel.agui import AGUIRequestHandler, AGUIState
 from agentkernel.api import RESTAPI
@@ -61,7 +60,7 @@ class DemoAuthoriser(Authoriser):
 
     _TOKENS = {"demo-token": "demo-user"}
 
-    def authorise(self, token: str) -> Optional[str]:
+    def authorise(self, token: str) -> str | None:
         """Resolve a bearer token to a user id.
 
         :param token: Bearer token from the Authorization header.

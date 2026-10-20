@@ -14,8 +14,6 @@ identity rather than one shared agent identity:
   ``SandboxPrincipal`` (falling back to the agent identity when no user is present).
 """
 
-from typing import Optional
-
 from agentkernel import Agent, PreHook, Session
 from agentkernel.core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestAny
 from agentkernel.sandbox import PrincipalResolver, SandboxPrincipal
@@ -75,7 +73,7 @@ class IdentitySeedPreHook(PreHook):
 class SessionUserPrincipalResolver(PrincipalResolver):
     """Maps the session-recorded user identity to a user-mode ``SandboxPrincipal``."""
 
-    async def resolve(self, session: Session, agent: Optional[Agent]) -> SandboxPrincipal:
+    async def resolve(self, session: Session, agent: Agent | None) -> SandboxPrincipal:
         identity = session.get_non_volatile_cache().get(USER_IDENTITY_KEY) if session is not None else None
         if identity:
             return SandboxPrincipal(

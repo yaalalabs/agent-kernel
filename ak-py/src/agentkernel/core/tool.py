@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import contextvars
 import uuid
-from typing import TYPE_CHECKING, Any, Callable, ClassVar, List, Self
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, ClassVar, Self
 
 from .base import Agent, AgentRequest, Session
 from .config import AKConfig
@@ -267,7 +268,7 @@ class SystemToolFactory:
                  capability contributes anything.
         """
 
-        tools: List[SystemTool] = SystemToolFactory.get_all(agent_name)
+        tools: list[SystemTool] = SystemToolFactory.get_all(agent_name)
 
         # A capability may carry its whole prompt section on one tool and leave the
         # others' descriptions empty (the sandbox pattern) — skip the empties.

@@ -14,7 +14,6 @@ never lose a message and no message is ever rewritten.
 
 import datetime
 import logging
-from typing import List, Optional, Tuple
 
 from ....core.util.driver.redis_like import _RedisLikeDriver
 from ..model import Thread, ThreadMessage, _utc_now
@@ -96,7 +95,7 @@ class _RedisLikeThreadStore(ThreadStore):
         self._expire(self._meta_key(session_id))
         return self.load_metadata(session_id)
 
-    def load_metadata(self, session_id: str) -> Optional[Thread]:
+    def load_metadata(self, session_id: str) -> Thread | None:
         """
         Load a thread's metadata by its session id.
         :param session_id: Unique identifier for the thread.
@@ -137,7 +136,7 @@ class _RedisLikeThreadStore(ThreadStore):
                 expire_keys.append(self._group_index_key(thread.group_id))
             self._expire(*expire_keys)
 
-    def get_messages(self, session_id: str, limit: int, offset: int = 0) -> Tuple[List[ThreadMessage], Optional[int]]:
+    def get_messages(self, session_id: str, limit: int, offset: int = 0) -> tuple[list[ThreadMessage], int | None]:
         """
         Return a page of a thread's messages using LRANGE.
         :param session_id: Unique identifier for the thread.
@@ -156,11 +155,11 @@ class _RedisLikeThreadStore(ThreadStore):
 
     def list_threads(
         self,
-        user_id: Optional[str] = None,
-        group_id: Optional[str] = None,
+        user_id: str | None = None,
+        group_id: str | None = None,
         limit: int = 50,
         offset: int = 0,
-    ) -> Tuple[List[Thread], Optional[int]]:
+    ) -> tuple[list[Thread], int | None]:
         """
         List thread metadata filtered by user_id and/or group_id, most-recently updated first.
         :param user_id: Filter by owning user id.

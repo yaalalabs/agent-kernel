@@ -30,7 +30,7 @@ import logging
 import threading
 import time
 from collections import deque
-from typing import Any, Deque, Dict, List, Optional, Tuple
+from typing import Any
 
 from confluent_kafka import Consumer, KafkaError, KafkaException, Producer, TopicPartition
 
@@ -73,7 +73,7 @@ class KafkaTransportConsumer(TransportConsumer):
         self,
         topic: str,
         dlq_topic: str,
-        consumer_config: Dict[str, Any],
+        consumer_config: dict[str, Any],
         bookkeeping: BookkeepingStore,
         producer: Producer,
         retry_backoff: float,
@@ -85,15 +85,15 @@ class KafkaTransportConsumer(TransportConsumer):
         self._retry_backoff = retry_backoff
         self._consumer = Consumer(consumer_config)
         # Records fetched from the broker but not yet handed to the loop, per partition.
-        self._pending: Dict[int, Deque[Any]] = {}
+        self._pending: dict[int, deque[Any]] = {}
         # Partitions with a record currently in flight (one at a time: see the module docstring).
-        self._in_flight: Dict[int, Any] = {}
+        self._in_flight: dict[int, Any] = {}
         # Rebalance callbacks run on this thread inside consume(), so they need no locking. They
         # deliberately do not commit anything: work whose offset has not been committed is meant
         # to be redelivered to the partition's new owner, which is the at-least-once contract.
         self._consumer.subscribe([topic], on_revoke=self._on_partitions_gone, on_lost=self._on_partitions_gone)
 
-    def fetch(self, batch_size: int, wait_seconds: float) -> List[QueueMessage]:
+    def fetch(self, batch_size: int, wait_seconds: float) -> list[QueueMessage]:
         if not any(self._pending.values()):
             self._buffer(self._consume(batch_size, wait_seconds))
         return self._serve(batch_size)
@@ -147,7 +147,7 @@ class KafkaTransportConsumer(TransportConsumer):
             _log.exception(f"Failed to route message {message.message_id} to dead-letter topic {self._dlq_topic}")
         self.ack(message)
 
-    def _produce_to_dead_letter_topic(self, message: QueueMessage, record: Any, headers: List[tuple]) -> None:
+    def _produce_to_dead_letter_topic(self, message: QueueMessage, record: Any, headers: list[tuple]) -> None:
         """Produce the DLQ copy and wait briefly for the broker to confirm it.
 
         The delivery callback owns the logging, so an asynchronous failure (most plausibly a
@@ -192,7 +192,7 @@ class KafkaTransportConsumer(TransportConsumer):
 
     # -- internals ---------------------------------------------------------------------------
 
-    def _on_partitions_gone(self, consumer: Consumer, partitions: List[TopicPartition]) -> None:
+    def _on_partitions_gone(self, consumer: Consumer, partitions: list[TopicPartition]) -> None:
         """Drop buffered and in-flight work for partitions this consumer no longer owns.
 
         Bound to both ``on_revoke`` (a cooperative rebalance) and ``on_lost`` (partitions taken
@@ -206,7 +206,7 @@ class KafkaTransportConsumer(TransportConsumer):
             if dropped:
                 _log.info(f"Partition {topic_partition.partition} of {self._topic} revoked: dropped {dropped} buffered record(s)")
 
-    def _consume(self, batch_size: int, wait_seconds: float) -> List[Any]:
+    def _consume(self, batch_size: int, wait_seconds: float) -> list[Any]:
         """One broker fetch, with Kafka's error records filtered out."""
         records = []
         for record in self._consumer.consume(num_messages=max(batch_size, 1), timeout=wait_seconds):
@@ -219,13 +219,13 @@ class KafkaTransportConsumer(TransportConsumer):
             raise KafkaException(error)
         return records
 
-    def _buffer(self, records: List[Any]) -> None:
+    def _buffer(self, records: list[Any]) -> None:
         for record in records:
             self._pending.setdefault(record.partition(), deque()).append(record)
 
-    def _serve(self, batch_size: int) -> List[QueueMessage]:
+    def _serve(self, batch_size: int) -> list[QueueMessage]:
         """Hand out up to ``batch_size`` records, at most one per partition, skipping duplicates."""
-        batch: List[QueueMessage] = []
+        batch: list[QueueMessage] = []
         for partition, pending in self._pending.items():
             if len(batch) >= batch_size:
                 break
@@ -263,8 +263,8 @@ class KafkaTransportConsumer(TransportConsumer):
 
     @classmethod
     def _to_envelope(cls, record: Any) -> QueueMessage:
-        attributes: Dict[str, str] = {}
-        dedup_id: Optional[str] = None
+        attributes: dict[str, str] = {}
+        dedup_id: str | None = None
         for name, value in record.headers() or []:
             decoded = value.decode() if isinstance(value, (bytes, bytearray)) else str(value)
             if name == DEDUP_HEADER:
@@ -290,7 +290,7 @@ class KafkaTransport(QueueTransport):
     background I/O threads and batching state; consumers are per-thread per the contract.
     """
 
-    _producers: Dict[Tuple, Producer] = {}
+    _producers: dict[tuple, Producer] = {}
     _producers_lock = threading.Lock()
     # Topics whose partition capacity has already been reported (once per process per topic).
     _capacity_checked: set = set()
@@ -306,8 +306,8 @@ class KafkaTransport(QueueTransport):
         retry_backoff: float = 2.0,
         delivery_timeout: float = 30.0,
         metadata_timeout: float = 5.0,
-        client_config: Optional[Dict[str, Any]] = None,
-        bookkeeping: Optional[BookkeepingStore] = None,
+        client_config: dict[str, Any] | None = None,
+        bookkeeping: BookkeepingStore | None = None,
         config_path: str = "execution.queues",
     ):
         # config_path names the queues block this transport was built from (#503 seam:
@@ -334,7 +334,7 @@ class KafkaTransport(QueueTransport):
         if message.dedup_id:
             headers.append((DEDUP_HEADER, message.dedup_id.encode()))
 
-        delivery: Dict[str, Any] = {}
+        delivery: dict[str, Any] = {}
 
         def _on_delivery(error, record) -> None:
             delivery["error"], delivery["record"] = error, record
@@ -422,7 +422,7 @@ class KafkaTransport(QueueTransport):
 
     # -- internals ---------------------------------------------------------------------------
 
-    def _consumer_config(self, queue: QueueName) -> Dict[str, Any]:
+    def _consumer_config(self, queue: QueueName) -> dict[str, Any]:
         """Consumer settings: manual commits, incremental rebalances, agent-turn-sized poll interval."""
         return {
             "bootstrap.servers": self._bootstrap_servers,
@@ -436,7 +436,7 @@ class KafkaTransport(QueueTransport):
             **self._client_config,
         }
 
-    def _producer_config(self) -> Dict[str, Any]:
+    def _producer_config(self) -> dict[str, Any]:
         """Producer settings: idempotence keeps per-partition order across internal retries."""
         return {"bootstrap.servers": self._bootstrap_servers, "enable.idempotence": True, **self._client_config}
 

@@ -22,7 +22,7 @@ import json
 import logging
 from contextlib import contextmanager
 from copy import deepcopy
-from typing import Any, Optional
+from typing import Any
 
 import pytest
 from fastapi import FastAPI
@@ -48,7 +48,7 @@ AUTH = {"Authorization": f"Bearer {GOOD_TOKEN}"}
 class StaticAuthoriser(Authoriser):
     """Resolves exactly one token, so 401 has a live path in every test below."""
 
-    def authorise(self, token: str) -> Optional[str]:
+    def authorise(self, token: str) -> str | None:
         return "u1" if token == GOOD_TOKEN else None
 
 

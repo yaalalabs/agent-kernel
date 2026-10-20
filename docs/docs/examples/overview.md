@@ -54,7 +54,7 @@ Command-line interface examples for local development and testing:
 Per-run framework context/state demos — a grocery assistant that carries a cart across turns through the reserved `framework_context` session key, one per framework, using each framework's native context mechanism (see the [Session](../core-concepts/session.md) guide):
 
 - **`openai_context/`** - OpenAI Agents SDK, via `RunContextWrapper.context`
-- **`langgraph_context/`** - LangGraph, via a declared state channel on a custom graph
+- **`langgraph_context/`** - LangGraph, via a declared state channel on a custom state schema
 - **`adk_context/`** - Google ADK, via `ToolContext.state`
 - **`pydanticai_context/`** - Pydantic AI, via `RunContext.deps`
 

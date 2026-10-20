@@ -3,27 +3,35 @@
 This demo shows how to carry a **framework-agnostic context/state object across turns** using Agent
 Kernel's reserved `framework_context` session key, with an agent built on LangGraph.
 
-A grocery shopping assistant keeps a **cart** in `framework_context`. A custom LangGraph
-`StateGraph` declares a `cart` channel in its state schema; a single node reads the cart, applies the
-user's request, and writes the updated cart back onto that channel. The cart survives across turns
-even though each turn is a separate run — that persistence is the feature.
+A grocery shopping assistant keeps a **cart** in `framework_context`. A prebuilt LangGraph
+`create_react_agent` is given a custom state schema that declares a `cart` channel; an `add_to_cart`
+tool writes the updated cart onto that channel, and a `view_cart` tool reads it back. The cart
+survives across turns even though each turn is a separate run — that persistence is the feature.
 
-## Why a *custom* graph (and not `create_react_agent`)
+## Why a custom state schema
 
 LangGraph is the one framework where round-trip fidelity depends on **your graph's state schema**.
 Agent Kernel spreads the `framework_context` dict's top-level keys into the graph input, but only
 reads back the keys the graph **declares as state channels**:
 
 ```python
-class ShoppingState(TypedDict):
-    messages: Annotated[Sequence[BaseMessage], add_messages]
+class ShoppingState(AgentState):
     cart: list[str]          # <-- declared channel → round-trips
+
+
+shopping_graph = create_react_agent(
+    model,
+    tools=[add_to_cart, *LangGraphToolBuilder.bind([view_cart])],
+    state_schema=ShoppingState,
+    prompt=SYSTEM_PROMPT,
+    name="shopping",
+)
 ```
 
-A prebuilt `create_react_agent` uses a fixed `AgentState` (`messages`, `remaining_steps`,
-`structured_response`) and **silently drops unknown keys**. If you seeded `cart` there, it would be
-injected on the way in but never come back on the way out — so it would not persist. Declaring the
-`cart` channel, as this demo does, is what makes the round-trip real.
+The default `AgentState` of `create_react_agent` (`messages`, `remaining_steps`, `structured_response`)
+has no `cart` channel, so LangGraph **silently drops** the key: a seeded `cart` would be injected on the
+way in but never come back on the way out, so it would not persist. Extending `AgentState` with a
+`cart` channel and passing it as `state_schema`, as this demo does, is what makes the round-trip real.
 
 > `framework_context` is also **distinct from LangGraph's own checkpointed state**. This demo reads
 > and writes the cart through `session.get_framework_context()` — the framework-agnostic, caller-facing
@@ -42,8 +50,11 @@ injected on the way in but never come back on the way out — so it would not pe
    top-level keys into the graph input alongside `messages` (`input={"messages": …, "cart": …}`).
    `messages` is written last, so a caller key can never overwrite the conversation.
 
-3. **The graph reads/writes it.** The `shopping` node reads `state["cart"]`, appends the requested
-   items, and returns an updated `cart` on the declared channel.
+3. **The tools read/write it.** `add_to_cart` is a native LangGraph `@tool`: it reads `cart` through
+   `InjectedState`, appends the requested items, and returns a `Command` that updates the declared
+   channel. `view_cart` is a plain, framework-agnostic function bound with `LangGraphToolBuilder.bind`;
+   it reads the cart from the session through `ToolContext`, so it sees the cart as of the start of the
+   turn (items added earlier in the same turn show up on the state channel, not here).
 
 4. **Write-back.** After a **successful** run, Agent Kernel reads back the keys the schema declared
    (`cart`) and writes them to the same session key. On a framework error or a client disconnect

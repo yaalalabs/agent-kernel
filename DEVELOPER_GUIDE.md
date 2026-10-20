@@ -76,6 +76,7 @@ Agent Kernel uses the following tools to maintain code quality:
 
 - **[black](https://github.com/psf/black)**: Opinionated code formatter
 - **[isort](https://pycqa.github.io/isort/)**: Import statement organizer
+- **[ruff](https://docs.astral.sh/ruff/)**: Enforces modern type annotations only (`list[str]`, `X | None`, `collections.abc` imports) via its pyupgrade rules `UP006`, `UP007`, `UP035` and `UP045`
 
 ### Pre-commit Workflow
 

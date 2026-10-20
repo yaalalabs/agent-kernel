@@ -9,7 +9,7 @@ cluster-internal (NetworkPolicy) and every request must carry the shared
 
 import hmac
 import logging
-from typing import Any, Dict, Optional
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
@@ -25,9 +25,9 @@ class PushEndpointHandler(RESTRequestHandler):
 
     class PushRequest(BaseModel):
         connection_id: str
-        message: Dict[str, Any]
+        message: dict[str, Any]
 
-    def __init__(self, registry: Optional[LocalConnectionRegistry] = None):
+    def __init__(self, registry: LocalConnectionRegistry | None = None):
         self._registry = registry or LocalConnectionRegistry.instance()
         self._config = AKConfig.get()
         self._log = logging.getLogger("ak.pipeline.ws.push_endpoint")

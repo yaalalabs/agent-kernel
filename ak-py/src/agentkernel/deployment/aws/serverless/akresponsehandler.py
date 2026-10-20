@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import Any, Dict, Optional
+from typing import Any
 
 from ....core.config import AKConfig
 from ....core.model import ExecutionMode, StreamChunk
@@ -20,7 +20,7 @@ class ResponseHandler(LambdaSQSConsumer):
     _log = logging.getLogger("ak.aws.responsehandler")
     _response_store = None
     _base_ws_handler = None
-    _integration_delivery: Optional[IntegrationDelivery] = None
+    _integration_delivery: IntegrationDelivery | None = None
     # A reply sent without a status predates the runner forwarding one, so it keeps its old meaning.
     _DEFAULT_STATUS_CODE = 200
     _PERMANENT_FAILURE_STATUS_CODE = 500
@@ -53,7 +53,7 @@ class ResponseHandler(LambdaSQSConsumer):
         return json.loads(value) if isinstance(value, str) else value
 
     @classmethod
-    def _construct_message_for_store(cls, record: Dict[str, Any], body: Optional[Any] = None, status_code: Optional[int] = None) -> Dict[str, Any]:
+    def _construct_message_for_store(cls, record: dict[str, Any], body: Any | None = None, status_code: int | None = None) -> dict[str, Any]:
         """
         Construct the message object to be stored in the response store.
 
@@ -79,7 +79,7 @@ class ResponseHandler(LambdaSQSConsumer):
         }
 
     @classmethod
-    def _resolve_status_code(cls, message_attributes: Dict[str, Any]) -> int:
+    def _resolve_status_code(cls, message_attributes: dict[str, Any]) -> int:
         """
         Resolve the status the agent runner forwarded on the output message.
 
@@ -96,7 +96,7 @@ class ResponseHandler(LambdaSQSConsumer):
             return cls._DEFAULT_STATUS_CODE
 
     @classmethod
-    def _broadcast_via_websocket(cls, record: Dict[str, Any], message_type: Optional[LambdaWSHandler.MessageType] = None) -> None:
+    def _broadcast_via_websocket(cls, record: dict[str, Any], message_type: LambdaWSHandler.MessageType | None = None) -> None:
         """
         Broadcast a message via WebSocket; wraps the body in a typed envelope when message_type is given, else sends it raw.
 
@@ -125,7 +125,7 @@ class ResponseHandler(LambdaSQSConsumer):
         cls._log.info(f"Successfully broadcasted message for user_id: {user_id}")
 
     @classmethod
-    def process_message(cls, record: Dict[str, Any]) -> None:
+    def process_message(cls, record: dict[str, Any]) -> None:
         """
         Process a single SQS record: deliver it to its messaging platform, or per the execution mode.
 
@@ -161,7 +161,7 @@ class ResponseHandler(LambdaSQSConsumer):
             cls._log.info(f"Stored message for session_id: {message['session_id']}, request_id: {message['request_id']}")
 
     @classmethod
-    def on_permanent_failure(cls, record: Dict[str, Any]) -> None:
+    def on_permanent_failure(cls, record: dict[str, Any]) -> None:
         """
         Handle messages that have reached their maximum retry count based on execution mode.
 

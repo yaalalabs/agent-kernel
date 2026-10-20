@@ -284,7 +284,7 @@ Pydantic-based configuration:
   - `AgentPausedReplyAny` (#606): a **subclass of `AgentReplyAny`**, not a new union member, so the `AgentReply` union and every `isinstance` tuple over it are untouched. Carries `run_id`, `session_id`, `agent`, `interruptions: list[PausedInterruption]`; `content` is derived from those by a validator and never set independently. The opaque per-framework resume state is **never** on it — a reply crosses the queue transport and reaches clients
   - `AgentReplyAny`: `content: dict | list` + `media_type: str | None`: returned when the agent is configured for structured output (OpenAI `output_type`, LangGraph `response_format`, ADK `output_schema`, CrewAI module-level `output_pydantic`/`output_json`, Smolagents dict/Pydantic `final_answer`, Pydantic AI `output_type`); `str(reply)` returns the JSON-serialized content. Non-streaming only. `content` is a `JSONPayload` (`core/util/payload.py`), so it is normalised to plain JSON types on validation and a value with no JSON form — including `NaN` — raises at construction; `from_output` still returns `None` for a bare list, so no adapter's behaviour changed. `media_type` is unset by default and never set by an adapter: a post-hook applies it, and `ResponseBuilder.build_response` puts `content` in `result` as an object only when it is set. Without it every surface serialises exactly as it did before the field existed.
   - `StreamChunk`: `delta: str | None`, `event: StreamEvent | None`, `done: bool`, `error: str | None`, `session_id: str | None`: yielded by `Runtime.stream()` / `AgentService.stream_multi()` for streaming; `delta` is populated only for `TextDelta` events (back-compat for plain-text consumers), `event` carries the full `StreamEvent` (including tool calls and reasoning)
-- Type aliases: `AgentRequest = Union[...]`, `AgentReply = Union[...]`
+- Type aliases (`type` statements over `|` unions): `type AgentRequest = AgentRequestText | ...`, `type AgentReply = AgentReplyText | ...`
 
 ## Tools (`ak-py/src/agentkernel/core/tool.py`)
 
@@ -397,7 +397,7 @@ threads (their platforms own the history), and neither do scheduled occurrences.
 - **`ThreadStoreBuilder`** (`store/base.py`): Factory that constructs the configured `ThreadStore` from `AKConfig`'s `thread.type`
 - **`Thread` / `ThreadMessage` / `ThreadAttachment` / `ThreadPage` / `MessagePage`** (`model.py`): Pydantic models for thread metadata, individual messages, attachment references, and cursor-paginated listings, using the shared `core/util/pagination.py` cursor helpers (`encode_cursor`/`decode_cursor`/`clamp_limit`, `MAX_PAGE_SIZE`)
 - **`ThreadNamingStrategy`** (`naming.py`): Overridable strategy that names auto-created threads: default implementation makes a single LiteLLM call (`thread.naming.model`, requires the `thread` extra) to derive a concise title from the first prompt, falling back to a truncated prompt prefix when `litellm`/an API key is unavailable. Explicit `thread_name` on a chat request always wins and locks the thread against further automatic naming
-- **`Authoriser`** (`auth/authoriser.py`, the single import path — `agentkernel.auth`, alongside `AuthValidator`): Pluggable base class (`authorise(token) -> Optional[user_id]`) that `ThreadRESTRequestHandler` calls, through the shared `AuthorisedRESTRequestHandler` base (`api/handler.py`), to protect the read routes; routes are open when no `Authoriser` is configured. `AuthValidatorAuthoriser` (same module) adapts an existing `AuthValidator` into an `Authoriser`
+- **`Authoriser`** (`auth/authoriser.py`, the single import path — `agentkernel.auth`, alongside `AuthValidator`): Pluggable base class (`authorise(token) -> user_id | None`) that `ThreadRESTRequestHandler` calls, through the shared `AuthorisedRESTRequestHandler` base (`api/handler.py`), to protect the read routes; routes are open when no `Authoriser` is configured. `AuthValidatorAuthoriser` (same module) adapts an existing `AuthValidator` into an `Authoriser`
 - **`ThreadRESTRequestHandler`** (`thread_chat.py`): Serves `GET /api/v1/threads` (list, filterable by `user_id`/`group_id`, cursor-paginated) and `GET /api/v1/threads/{session_id}` (thread + paginated message history); raises 404 when thread support is disabled and 403 when a resolved `user_id` doesn't own the requested thread. Composed into `AgentThreadRequestHandler`'s router; also mountable standalone for read-only access
 
 ### Store Backends
@@ -691,7 +691,7 @@ ever writes `os.environ` — callers hand the value to the SDK explicitly
   `default`, and propagates `SecretError` from the provider (never masked by `default`).
   `invalidate(key)` / `clear()` drop cache entries. Resolution takes no manager lock; the provider is
   called outside any lock.
-- **`SecretProvider`** (`base.py`): the ABC — `get_secret(key) -> Optional[str]` (`None` = miss;
+- **`SecretProvider`** (`base.py`): the ABC — `get_secret(key) -> str | None` (`None` = miss;
   raise `SecretError` only on backend failure) plus a `create(_SecretConfig)` classmethod that
   receives the **whole** `secret` block (so `secret.prefix` is shared across backends). Providers own
   their addressing, never cache, never fall back, and must tolerate concurrent calls.

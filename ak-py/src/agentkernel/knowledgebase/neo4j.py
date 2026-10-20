@@ -2,7 +2,8 @@ import hashlib
 import json
 import logging
 import os
-from typing import Any, Iterable, List, Mapping
+from collections.abc import Iterable, Mapping
+from typing import Any
 
 from neo4j import GraphDatabase
 
@@ -149,7 +150,7 @@ class Neo4jManager(KnowledgeBase):
                 f"({stored} stored). A Neo4j write needs the statement in metadata['query']."
             )
 
-    def query(self, statement: str, limit: int = 3, **kwargs) -> List[Mapping[str, Any]]:
+    def query(self, statement: str, limit: int = 3, **kwargs) -> list[Mapping[str, Any]]:
         """
         Execute a Cypher read query and return normalized records.
 

@@ -1,7 +1,6 @@
 import base64
 import hashlib
 import hmac
-from typing import Optional
 from unittest.mock import patch
 
 import jwt
@@ -17,7 +16,7 @@ from agentkernel.auth.handler import (
 class CustomAuthTokenValidator(AuthValidator):
     """Custom JWT token validator for testing."""
 
-    def validate(self, token: str, context: Optional[ValidationContext] = None) -> ValidationResult:
+    def validate(self, token: str, context: ValidationContext | None = None) -> ValidationResult:
         """Validate JWT token and return validation result."""
         try:
             payload = jwt.decode(token, options={"verify_signature": False})

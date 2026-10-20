@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from collections import OrderedDict
 from threading import RLock
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from ..base import Session
 from ..util.factory import AKConfigError
@@ -29,22 +29,22 @@ class WSConnectionStore(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def get_connections(self, user_id: str) -> List[str]:
+    def get_connections(self, user_id: str) -> list[str]:
         """The user's live connection ids."""
         raise NotImplementedError
 
     @abstractmethod
-    def get_endpoints(self, user_id: str) -> Dict[str, str]:
+    def get_endpoints(self, user_id: str) -> dict[str, str]:
         """The user's live connections as ``{connection_id: gateway push endpoint}``."""
         raise NotImplementedError
 
     @abstractmethod
-    def get_endpoint(self, connection_id: str) -> Optional[str]:
+    def get_endpoint(self, connection_id: str) -> str | None:
         """The push endpoint of the gateway pod holding ``connection_id``, or None."""
         raise NotImplementedError
 
     @abstractmethod
-    def get_user_id(self, connection_id: str) -> Optional[str]:
+    def get_user_id(self, connection_id: str) -> str | None:
         """The user holding ``connection_id``, or None."""
         raise NotImplementedError
 

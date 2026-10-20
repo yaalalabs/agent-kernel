@@ -1,5 +1,4 @@
 import logging
-from typing import Optional
 
 from ..base import Session
 from ..config import AKConfig
@@ -23,7 +22,7 @@ class FirestoreSessionStore(SessionStore):
     ``gcloud firestore fields ttls update``.
     """
 
-    def __init__(self, cache: Optional[SessionCache] = None) -> None:
+    def __init__(self, cache: SessionCache | None = None) -> None:
         """
         Initialize the Firestore-backed SessionStore.
 

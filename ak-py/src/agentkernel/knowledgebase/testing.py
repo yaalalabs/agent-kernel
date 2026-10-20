@@ -20,7 +20,8 @@ agentkernel.knowledgebase`` stays free of a pytest dependency.
 
 import re
 import uuid
-from typing import Any, Iterable, List, Mapping, Optional
+from collections.abc import Iterable, Mapping
+from typing import Any
 
 import pytest
 
@@ -219,7 +220,7 @@ class FakeKnowledgeBase(KnowledgeBase):
     has to decide which operations raise.
     """
 
-    def __init__(self, capabilities: KnowledgeCapabilities, name: str = "fake-kb", records: Optional[Mapping[str, Record]] = None) -> None:
+    def __init__(self, capabilities: KnowledgeCapabilities, name: str = "fake-kb", records: Mapping[str, Record] | None = None) -> None:
         """
         Build a fake backend in the given capability shape.
 
@@ -249,7 +250,7 @@ class FakeKnowledgeBase(KnowledgeBase):
         """Describe the backend in the ``<name>: <description>`` shape the tools expect."""
         return f"{self.backend_name}: an in-memory reference knowledge base ({len(self._records)} record(s))"
 
-    def search(self, query: str, limit: int = 3, **kwargs) -> List[Record]:
+    def search(self, query: str, limit: int = 3, **kwargs) -> list[Record]:
         """Rank records by how many of the query's tokens they contain."""
         if not self.capabilities.search:
             return super().search(query, limit=limit, **kwargs)
@@ -258,7 +259,7 @@ class FakeKnowledgeBase(KnowledgeBase):
         ranked = sorted(((score, key) for score, key in scored if score > 0), key=lambda pair: (-pair[0], pair[1]))
         return [dict(self._records[key]) for _, key in ranked[: max(limit, 0)]]
 
-    def query(self, statement: str, limit: int = 3, **kwargs) -> List[Record]:
+    def query(self, statement: str, limit: int = 3, **kwargs) -> list[Record]:
         """Run the toy ``fake-ql`` language: ``MATCH <substring>``, or everything."""
         if not self.capabilities.query:
             return super().query(statement, limit=limit, **kwargs)
@@ -266,11 +267,11 @@ class FakeKnowledgeBase(KnowledgeBase):
         matched = [dict(record) for key, record in sorted(self._records.items()) if needle in f"{record.get('text', '')}{key}".lower()]
         return matched[: max(limit, 0)]
 
-    def fetch(self, ids: List[str], **kwargs) -> List[Record]:
+    def fetch(self, ids: list[str], **kwargs) -> list[Record]:
         """Return records by id, in the order asked for, dropping unknown and duplicate ids."""
         if not self.capabilities.fetch:
             return super().fetch(ids, **kwargs)
-        found: List[Record] = []
+        found: list[Record] = []
         seen: set[str] = set()
         for identity in ids or []:
             record = self._records.get(identity)
@@ -282,13 +283,13 @@ class FakeKnowledgeBase(KnowledgeBase):
             found.append(dict(record))
         return found
 
-    def browse(self, path: str = "", limit: int = 50, **kwargs) -> List[Record]:
+    def browse(self, path: str = "", limit: int = 50, **kwargs) -> list[Record]:
         """List the immediate children of a namespace, directories first."""
         if not self.capabilities.browse:
             return super().browse(path, limit=limit, **kwargs)
         prefix = f"{path.strip('/')}/" if path.strip("/") else ""
         directories: set[str] = set()
-        concepts: List[Record] = []
+        concepts: list[Record] = []
         for key, record in self._records.items():
             if not key.startswith(prefix):
                 continue
@@ -429,7 +430,7 @@ class KnowledgeBaseContract:
         """A namespace that exists when ``browse`` is declared; ``""`` is the top level."""
         return ""
 
-    def write_probe(self) -> tuple[Optional[str], Record]:
+    def write_probe(self) -> tuple[str | None, Record]:
         """Return ``(id the record is retrievable under, the record to write)``.
 
         The id is ``None`` for a backend that synthesises one or stores something other than a
@@ -437,14 +438,14 @@ class KnowledgeBaseContract:
         """
         return ("contract-probe", {"text": "contract probe record", "metadata": {"id": "contract-probe", "source": "contract"}})
 
-    def declared_ids(self, knowledge_base: KnowledgeBase) -> List[str]:
+    def declared_ids(self, knowledge_base: KnowledgeBase) -> list[str]:
         """Ids the backend actually hands out, from ``search`` first and ``browse`` second.
 
         search before browse deliberately: a derived browse listing legitimately includes
         directory records whose ids name a namespace rather than a document, and those are
         not expected to fetch.
         """
-        records: List[Record] = []
+        records: list[Record] = []
         if knowledge_base.capabilities.search:
             records = knowledge_base.search(self.search_query(), limit=5)
         if not records and knowledge_base.capabilities.browse:

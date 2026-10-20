@@ -1,6 +1,5 @@
 import json
 import logging
-from typing import List, Optional
 
 from ..core.chat_service import ChatService
 from ..core.config import AKConfig
@@ -37,7 +36,7 @@ class AgentRunner:
 
     _log = logging.getLogger("ak.pipeline.agent_runner")
 
-    def __init__(self, transport: Optional[QueueTransport] = None, chat_service: Optional[ChatService] = None):
+    def __init__(self, transport: QueueTransport | None = None, chat_service: ChatService | None = None):
         self._transport = transport or QueueTransportFactory.create()
         self._chat_service = chat_service or ChatService()
 
@@ -89,7 +88,7 @@ class AgentRunner:
             extra_tasks=self._get_extra_tasks(),
         ).run()
 
-    def _get_extra_tasks(self) -> List[ThreadRunner.Task]:
+    def _get_extra_tasks(self) -> list[ThreadRunner.Task]:
         """Override in subclasses to run additional background tasks alongside the consumer loop."""
         return []
 
@@ -184,7 +183,7 @@ class AgentRunner:
             message.attributes.setdefault(ATTR_USER_ID, body.user_id)
         return request_id
 
-    def _send_to_output(self, source: QueueMessage, response_body, status_code: Optional[int] = None, dedup_suffix: Optional[str] = None) -> None:
+    def _send_to_output(self, source: QueueMessage, response_body, status_code: int | None = None, dedup_suffix: str | None = None) -> None:
         attributes = {key: value for key, value in source.attributes.items() if _is_forwarded(key)}
         if status_code is not None:
             attributes[ATTR_STATUS_CODE] = str(status_code)
@@ -263,7 +262,7 @@ class RealtimeAgentRunner(AgentRunner):
 
     _log = logging.getLogger("ak.pipeline.realtime_agent_runner")
 
-    def _get_extra_tasks(self) -> List[ThreadRunner.Task]:
+    def _get_extra_tasks(self) -> list[ThreadRunner.Task]:
         pool = RealtimeConnectionPool.initialize()
         return [pool.get_task()]
 

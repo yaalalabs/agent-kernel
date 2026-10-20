@@ -19,7 +19,7 @@ TTL owns cleanup), so ``result()`` serves ``ExecutionManager.task_status`` from 
 import asyncio
 import logging
 import time
-from typing import Any, Optional, Union
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -67,8 +67,8 @@ class QueueExecutionBroker(ExecutionBroker):
             raise SandboxConfigError("sandbox.broker.flavor 'queue' requires the sandbox.broker.response_store block")
         check_store_pairing(config.queue, config.response_store)
         self._config = config
-        self._transport: Optional[QueueTransport] = None
-        self._store: Optional[ResponseStore] = None
+        self._transport: QueueTransport | None = None
+        self._store: ResponseStore | None = None
 
     # -- lazy wiring --------------------------------------------------------- #
 
@@ -89,7 +89,7 @@ class QueueExecutionBroker(ExecutionBroker):
 
     # -- request path -------------------------------------------------------- #
 
-    async def submit(self, request: ExecutionRequest, wait: Optional[float] = None) -> Union[SandboxResult, SandboxTask]:
+    async def submit(self, request: ExecutionRequest, wait: float | None = None) -> SandboxResult | SandboxTask:
         """Send the request to the input queue and poll the store within the effective wait.
 
         Returns the ``SandboxResult`` when the completion lands in time, re-raises the typed
@@ -133,7 +133,7 @@ class QueueExecutionBroker(ExecutionBroker):
             submitted_at=time.time(),
         )
 
-    async def _poll(self, task_id: str, deadline: float) -> Optional[ExecutionCompletion]:
+    async def _poll(self, task_id: str, deadline: float) -> ExecutionCompletion | None:
         """Poll the store every ``wait_poll_interval`` seconds until the completion record
         lands or ``deadline`` passes. Store read failures are treated as transient: log and
         keep polling: a store blip must not fail an execution that is still running."""
@@ -164,7 +164,7 @@ class QueueExecutionBroker(ExecutionBroker):
             raise exc_cls(completion.error or "sandbox execution failed")
         raise ExecutionBrokerError(completion.error or "sandbox execution failed")
 
-    async def result(self, task_id: str) -> Optional[ExecutionCompletion]:
+    async def result(self, task_id: str) -> ExecutionCompletion | None:
         """Return the stored completion for ``task_id``, or ``None`` while it is pending.
 
         Serves ``ExecutionManager.task_status`` — the ``check_sandbox_task`` recovery path —

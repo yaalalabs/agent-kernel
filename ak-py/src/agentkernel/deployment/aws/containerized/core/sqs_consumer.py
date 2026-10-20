@@ -6,7 +6,7 @@ import logging
 # module object shared with agentkernel.pipeline.consumer, where the poll back-off now lives.
 import time  # noqa: F401
 from abc import abstractmethod
-from typing import Any, Dict, List
+from typing import Any
 
 import boto3
 
@@ -29,7 +29,7 @@ class _ECSRecordConsumer(TransportConsumer):
     def __init__(self, consumer_cls: "type[ECSSQSConsumer]"):
         self._consumer_cls = consumer_cls
 
-    def fetch(self, batch_size: int, wait_seconds: float) -> List[QueueMessage]:
+    def fetch(self, batch_size: int, wait_seconds: float) -> list[QueueMessage]:
         # batch size and wait time are governed by cls.poll() itself (execution.queues.batch_size).
         return [self._consumer_cls._to_envelope(record) for record in self._consumer_cls.poll()]
 
@@ -104,7 +104,7 @@ class ECSSQSConsumer(RawQueueConsumer):
 
     @classmethod
     @abstractmethod
-    def process_message(cls, record: Dict[str, Any]) -> None:
+    def process_message(cls, record: dict[str, Any]) -> None:
         """
         Process one SQS message.
 
@@ -115,7 +115,7 @@ class ECSSQSConsumer(RawQueueConsumer):
 
     @classmethod
     @abstractmethod
-    def on_permanent_failure(cls, record: Dict[str, Any]) -> None:
+    def on_permanent_failure(cls, record: dict[str, Any]) -> None:
         """
         Called when a message's ApproximateReceiveCount exceeds max_receive_count.
         The message is deleted from the queue immediately after this returns.
@@ -135,7 +135,7 @@ class ECSSQSConsumer(RawQueueConsumer):
         )
 
     @classmethod
-    def _to_envelope(cls, record: Dict[str, Any]) -> QueueMessage:
+    def _to_envelope(cls, record: dict[str, Any]) -> QueueMessage:
         """Wrap a raw boto3 record into the pipeline envelope (native keeps the raw record)."""
         attributes = record.get("Attributes") or {}
         return QueueMessage(
@@ -157,7 +157,7 @@ class ECSSQSConsumer(RawQueueConsumer):
             cls.process_message(record)
 
     @classmethod
-    def _get_extra_tasks(cls) -> List[ThreadRunner.Task]:
+    def _get_extra_tasks(cls) -> list[ThreadRunner.Task]:
         """Additional background tasks to run alongside the queue consumers."""
         return []
 

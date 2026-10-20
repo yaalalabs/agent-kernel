@@ -1049,13 +1049,12 @@ thread:
 **Protecting the read endpoints with an Authoriser:**
 
 ```python
-from typing import Optional
 from agentkernel.api import RESTAPI
 from agentkernel.auth import Authoriser
 from agentkernel.thread import AgentThreadRequestHandler
 
 class DemoAuthoriser(Authoriser):
-    def authorise(self, token: str) -> Optional[str]:
+    def authorise(self, token: str) -> str | None:
         # Validate the ****** against your own auth provider, return the user_id or None.
         return {"alice-token": "alice", "bob-token": "bob"}.get(token)
 
@@ -1231,13 +1230,12 @@ schedule:
 so pass the `Authoriser` to the `ScheduleRESTRequestHandler` constructor:
 
 ```python
-from typing import Optional
 from agentkernel.auth import Authoriser
 from agentkernel.pipeline import IOHandler
 from agentkernel.schedule import ScheduleRESTRequestHandler
 
 class DemoAuthoriser(Authoriser):
-    def authorise(self, token: str) -> Optional[str]:
+    def authorise(self, token: str) -> str | None:
         # Validate the ****** against your own auth provider, return the user_id or None.
         return {"alice-token": "alice", "bob-token": "bob"}.get(token)
 
@@ -1450,7 +1448,7 @@ def get_weather(city: str) -> str:
 Errors: `SecretNotFoundError` (no layer has the key and no `default`), `SecretError` (the provider
 failed — credentials, network, IAM; never masked by `default`), `ValueError` (malformed key). Use
 `SecretManager.current().invalidate(key)` / `.clear()` to drop cached values. A custom provider
-subclasses `agentkernel.secret.SecretProvider`, implements `get_secret(key) -> Optional[str]`
+subclasses `agentkernel.secret.SecretProvider`, implements `get_secret(key) -> str | None`
 (return `None` on a miss), and can be checked with the `agentkernel.secret.testing.SecretProviderContract`
 pytest suite. See `examples/cli/openai-secret` (env), `examples/aws-serverless/openai` (aws_ssm) and
 `examples/k8s/openai-queue-mode` (kubernetes).

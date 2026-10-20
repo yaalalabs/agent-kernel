@@ -15,7 +15,7 @@ import json
 import logging
 import mimetypes
 import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 from urllib.parse import urlparse
 
 import httpx
@@ -65,8 +65,8 @@ class _TeamsCredentials:
             raise ValueError("Incomplete Teams configuration.")
 
         self._settings = BotFrameworkAdapterSettings(self._app_id, self._app_password, channel_auth_tenant=self._tenant_id or None)
-        self._msal_apps: Dict[str, msal.ConfidentialClientApplication] = {}
-        self._bot_credentials: Optional[MicrosoftAppCredentials] = None
+        self._msal_apps: dict[str, msal.ConfidentialClientApplication] = {}
+        self._bot_credentials: MicrosoftAppCredentials | None = None
 
     def new_adapter(self) -> BotFrameworkAdapter:
         """Build a fresh ``BotFrameworkAdapter``; it must never outlive the loop it is used on.
@@ -94,7 +94,7 @@ class _TeamsCredentials:
             self._msal_apps[tenant_id] = app
         return app.acquire_token_for_client(scopes=[scope])
 
-    async def bot_framework_token(self) -> Optional[str]:
+    async def bot_framework_token(self) -> str | None:
         """The bot's own Bot Framework token, used for Bot Connector attachment URLs."""
         if self._bot_credentials is None:
             # channel_auth_tenant matters for a single-tenant app registration: without it the token
@@ -106,7 +106,7 @@ class _TeamsCredentials:
             self._log.error(f"Could not acquire a Bot Framework token: {e}")
             return None
 
-    def resolve_tenant(self, activity: Activity) -> Optional[str]:
+    def resolve_tenant(self, activity: Activity) -> str | None:
         """Resolve the Entra ID tenant that owns this conversation.
 
         The adapter copies the Teams tenant from channelData onto conversation.tenant_id; the
@@ -154,7 +154,7 @@ class TeamsInboundAdapter(InboundAdapter):
             self._log.warning(f"Teams activity body is not valid JSON: {e}")
             raise HTTPException(status_code=400, detail="Invalid request body")
 
-        parsed: List[InboundRequest] = []
+        parsed: list[InboundRequest] = []
 
         async def _on_turn(turn_context: TurnContext) -> None:
             request = await self._to_request(turn_context)
@@ -175,7 +175,7 @@ class TeamsInboundAdapter(InboundAdapter):
         response = JSONResponse(status_code=invoke_response.status, content=invoke_response.body) if invoke_response is not None else None
         return InboundParseResult(requests=parsed, response=response)
 
-    async def _to_request(self, turn_context: TurnContext) -> Optional[InboundRequest]:
+    async def _to_request(self, turn_context: TurnContext) -> InboundRequest | None:
         """Normalize one Teams activity, or None when it carries nothing to run."""
         activity: Activity = turn_context.activity
         if activity.type != ActivityTypes.message:
@@ -199,7 +199,7 @@ class TeamsInboundAdapter(InboundAdapter):
             )
             return None
 
-        requests: List[AgentRequest] = []
+        requests: list[AgentRequest] = []
         if text:
             requests.append(AgentRequestText(prompt=text))
 
@@ -308,7 +308,7 @@ class TeamsInboundAdapter(InboundAdapter):
         return re.sub(r"(?<=\S)[ \t]{2,}", " ", text).strip()
 
     @staticmethod
-    def _resolve_group(activity: Activity) -> Optional[str]:
+    def _resolve_group(activity: Activity) -> str | None:
         """Return the Teams channel or team the message came from, if any."""
         channel_data = activity.channel_data or {}
         channel = channel_data.get("channel") or {}
@@ -347,19 +347,19 @@ class TeamsInboundAdapter(InboundAdapter):
 
     async def _process_attachments(
         self,
-        attachments: List[Attachment],
-        requests: List[AgentRequest],
-        tenant_id: Optional[str],
-    ) -> Tuple[List[str], List[str], List[str], List[str]]:
+        attachments: list[Attachment],
+        requests: list[AgentRequest],
+        tenant_id: str | None,
+    ) -> tuple[list[str], list[str], list[str], list[str]]:
         """Download Teams attachments (images and files) and append them to ``requests``.
 
         :return: (rejected, oversized, failed, unauthorised) file name lists. Each is reported
                  to the user with its own message, since they need different remedies.
         """
-        rejected: List[str] = []
-        oversized: List[str] = []
-        failed: List[str] = []
-        unauthorised: List[str] = []
+        rejected: list[str] = []
+        oversized: list[str] = []
+        failed: list[str] = []
+        unauthorised: list[str] = []
 
         for attachment in attachments:
             name = self._attachment_name(attachment)
@@ -417,7 +417,7 @@ class TeamsInboundAdapter(InboundAdapter):
 
         return rejected, oversized, failed, unauthorised
 
-    async def _download_headers(self, content_url: str, tenant_id: Optional[str]) -> Dict[str, str]:
+    async def _download_headers(self, content_url: str, tenant_id: str | None) -> dict[str, str]:
         """Build the Authorization header for an attachment URL.
 
         A bearer is only ever sent to a host whose audience it was minted for; an
@@ -457,7 +457,7 @@ class TeamsInboundAdapter(InboundAdapter):
             )
         return {"Authorization": f"Bearer {result['access_token']}"}
 
-    async def _download(self, content_url: str, headers: Dict[str, str]) -> Tuple[Optional[bytes], Optional[str]]:
+    async def _download(self, content_url: str, headers: dict[str, str]) -> tuple[bytes | None, str | None]:
         """Stream an attachment, aborting as soon as it exceeds api.max_file_size.
 
         :return: (content, response content type); content is None when the server refused.
@@ -496,23 +496,23 @@ class TeamsOutboundAdapter(OutboundAdapter):
         self._acknowledgement = AKConfig.get().teams.agent_acknowledgement or None
         self._credentials = _TeamsCredentials()
 
-    async def acknowledge(self, reply_context: Dict[str, str]) -> Dict[str, str]:
+    async def acknowledge(self, reply_context: dict[str, str]) -> dict[str, str]:
         if self._acknowledgement:
             await self._send(reply_context, f"Hi {reply_context.get('user_name', 'there')}, {self._acknowledgement}")
         return {}
 
-    async def deliver(self, reply: AgentReply, reply_context: Dict[str, str]) -> None:
+    async def deliver(self, reply: AgentReply, reply_context: dict[str, str]) -> None:
         text = str(reply)
         if not text.strip():
             text = "The agent returned an empty response."
         for chunk in self.split_reply(text):
             await self._send(reply_context, chunk, raise_on_failure=True)
 
-    async def deliver_error(self, message: str, reply_context: Dict[str, str]) -> None:
+    async def deliver_error(self, message: str, reply_context: dict[str, str]) -> None:
         user_name = reply_context.get("user_name")
         await self._send(reply_context, f"Sorry {user_name}, {message[0].lower()}{message[1:]}" if user_name else message)
 
-    async def _send(self, reply_context: Dict[str, str], text: str, raise_on_failure: bool = False) -> None:
+    async def _send(self, reply_context: dict[str, str], text: str, raise_on_failure: bool = False) -> None:
         """Send one activity into the conversation the request came from.
 
         Proactive delivery is the only option from here: this process never held the turn that

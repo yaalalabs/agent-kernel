@@ -208,7 +208,7 @@ class _Sandbox<Provider>Config(BaseModel):
     ...
 
 # on _SandboxProfileConfig AND _SandboxConfig:
-<provider>: Optional[_Sandbox<Provider>Config] = Field(default=None, description="Configuration for the '<provider>' provider")
+<provider>: _Sandbox<Provider>Config | None = Field(default=None, description="Configuration for the '<provider>' provider")
 ```
 
 The factory's `_require_block` raises `SandboxConfigError` when a built-in's config block is

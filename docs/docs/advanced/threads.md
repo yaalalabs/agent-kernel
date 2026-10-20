@@ -182,14 +182,13 @@ Thread routes are **open** until you supply an `Authoriser`, a small base class 
 Bearer token against your own authentication provider and resolve the caller's `user_id`:
 
 ```python
-from typing import Optional
 from agentkernel.api import RESTAPI
 from agentkernel.auth import Authoriser
 from agentkernel.thread import AgentThreadRequestHandler
 
 
 class MyAuthoriser(Authoriser):
-    def authorise(self, token: str) -> Optional[str]:
+    def authorise(self, token: str) -> str | None:
         # Validate the token with your auth provider (JWT, introspection, API key lookup, ...)
         # Return the resolved user_id, or None to reject.
         return my_auth_provider.resolve(token)

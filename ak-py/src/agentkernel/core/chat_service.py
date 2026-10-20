@@ -3,7 +3,7 @@ import contextlib
 import json
 import logging
 from collections.abc import AsyncGenerator, Generator, Iterator
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 from .config import AKConfig
 from .model import (
@@ -38,7 +38,7 @@ class RequestBuilder:
         return AKConfig.get().api.max_file_size
 
     @staticmethod
-    def from_base_request_sync(req: BaseRunRequest) -> List[Any]:
+    def from_base_request_sync(req: BaseRunRequest) -> list[Any]:
         """Build agent request list from BaseRunRequest synchronously.
 
         :param req: Base run request containing prompt, images, files, and additional context
@@ -52,7 +52,7 @@ class RequestBuilder:
         return requests
 
     @staticmethod
-    async def from_base_request_async(req: BaseChatRequest) -> List[Any]:
+    async def from_base_request_async(req: BaseChatRequest) -> list[Any]:
         """Build agent request list from a BaseChatRequest asynchronously.
 
         :param req: Base chat request (may be a BaseRunRequest with FileData/ImageData
@@ -79,7 +79,7 @@ class RequestBuilder:
         return requests
 
     @staticmethod
-    def _add_images(requests: List[Any], images):
+    def _add_images(requests: list[Any], images):
         """Add image requests to the request list.
 
         :param requests: List to append image requests to
@@ -101,7 +101,7 @@ class RequestBuilder:
             )
 
     @staticmethod
-    def _add_files(requests: List[Any], files):
+    def _add_files(requests: list[Any], files):
         """Add file requests to the request list.
 
         :param requests: List to append file requests to
@@ -123,7 +123,7 @@ class RequestBuilder:
             )
 
     @staticmethod
-    def _add_resume(requests: List[Any], req: BaseChatRequest) -> None:
+    def _add_resume(requests: list[Any], req: BaseChatRequest) -> None:
         """Add the human's decisions when the request carries a resume block.
 
         Appended after any text and attachments, so a prompt sent alongside a decision stays first.
@@ -138,7 +138,7 @@ class RequestBuilder:
         requests.append(AgentResumeRequestAny(run_id=req.resume.run_id, decisions=req.resume.decisions))
 
     @staticmethod
-    def _attach_additional_context(req: BaseRunRequest, requests: List[Any]):
+    def _attach_additional_context(req: BaseRunRequest, requests: list[Any]):
         """Attach additional context fields from request as AgentRequestAny objects.
 
         :param req: Base run request containing additional context fields
@@ -172,7 +172,7 @@ class RequestBuilder:
             requests.append(AgentRequestAny(name=key, content=value))
 
     @staticmethod
-    async def _add_multipart_files(requests: List[Any], files: Optional[List[Any]]):
+    async def _add_multipart_files(requests: list[Any], files: list[Any] | None):
         """Process and add multipart uploaded files to request list.
 
         :param requests: List to append file requests to
@@ -195,7 +195,7 @@ class RequestBuilder:
             )
 
     @staticmethod
-    async def _add_multipart_images(requests: List[Any], images: Optional[List[Any]]):
+    async def _add_multipart_images(requests: list[Any], images: list[Any] | None):
         """Process and add multipart uploaded images to request list.
 
         :param requests: List to append image requests to
@@ -230,9 +230,9 @@ class AgentHandler:
 
         :return: None
         """
-        self.service: Optional[AgentService] = None
+        self.service: AgentService | None = None
 
-    def initialize(self, session_id: Optional[str], agent: Optional[str]):
+    def initialize(self, session_id: str | None, agent: str | None):
         """Initialize AgentService with session and agent selection.
 
         The availability rule is checked before selecting, so an unservable request fails
@@ -271,7 +271,7 @@ class AgentHandler:
         """
         return iterate_async_sync(agen)
 
-    def run_sync(self, requests: List[Any], acting_user_id: Optional[str] = None) -> Any:
+    def run_sync(self, requests: list[Any], acting_user_id: str | None = None) -> Any:
         """Run agent requests synchronously.
 
         :param requests: List of AgentRequest objects to process
@@ -280,7 +280,7 @@ class AgentHandler:
         """
         return AgentHandler._run_async_sync(self.service.run_multi(requests=requests, acting_user_id=acting_user_id))
 
-    async def run_async(self, requests: List[Any], acting_user_id: Optional[str] = None) -> Any:
+    async def run_async(self, requests: list[Any], acting_user_id: str | None = None) -> Any:
         """Run agent requests asynchronously.
 
         :param requests: List of AgentRequest objects to process
@@ -289,7 +289,7 @@ class AgentHandler:
         """
         return await self.service.run_multi(requests=requests, acting_user_id=acting_user_id)
 
-    def run_stream_sync(self, requests: List[Any], acting_user_id: Optional[str] = None) -> Iterator[Any]:
+    def run_stream_sync(self, requests: list[Any], acting_user_id: str | None = None) -> Iterator[Any]:
         """Run agent streaming requests synchronously.
 
         Manages event loop lifecycle internally and hands over each chunk as the run produces
@@ -301,7 +301,7 @@ class AgentHandler:
         """
         return AgentHandler._iterate_async_sync(self.service.stream_multi(requests=requests, acting_user_id=acting_user_id))
 
-    async def run_stream_async(self, requests: List[Any], acting_user_id: Optional[str] = None) -> AsyncGenerator[Any, None]:
+    async def run_stream_async(self, requests: list[Any], acting_user_id: str | None = None) -> AsyncGenerator[Any, None]:
         """Run agent streaming requests asynchronously.
 
         :param requests: List of AgentRequest objects to process
@@ -311,7 +311,7 @@ class AgentHandler:
         async for chunk in self.service.stream_multi(requests=requests, acting_user_id=acting_user_id):
             yield chunk
 
-    def get_response_session_id(self, session_id: Optional[str]) -> Optional[str]:
+    def get_response_session_id(self, session_id: str | None) -> str | None:
         """Get the session ID for the response.
 
         :param session_id: Original session ID from request
@@ -324,7 +324,7 @@ class ResponseBuilder:
     """Formats agent results and errors into response dicts."""
 
     @staticmethod
-    def build_response(status_code: int, session_id: Optional[str], rest_api_mode: bool, result: Any = None, error: Optional[Exception] = None):
+    def build_response(status_code: int, session_id: str | None, rest_api_mode: bool, result: Any = None, error: Exception | None = None):
         """Build response from agent result or error.
 
         A structured reply whose ``media_type`` is set puts its content in ``result`` as an object
@@ -361,7 +361,7 @@ class ResponseBuilder:
         :param error: Exception that occurred (mutually exclusive with result)
         :return: Response dict or (status_code, response_dict) tuple; raises HTTPException if error in rest_api_mode
         """
-        response_dict: Dict[str, Any]
+        response_dict: dict[str, Any]
         if error:
             response_dict = {"error": str(error)}
         elif isinstance(result, AgentReplyAny) and result.media_type:
@@ -426,7 +426,7 @@ class ChatService:
         self._log = logging.getLogger("ak.chatservice")
         self.rest_api_mode = rest_api_mode
 
-    def prepare_agent_handler(self, session_id: Optional[str], agent: Optional[str]) -> AgentHandler:
+    def prepare_agent_handler(self, session_id: str | None, agent: str | None) -> AgentHandler:
         """Select the agent and load the session, without running.
 
         Surfaces that need the session object between load and run — AG-UI writes
@@ -442,7 +442,7 @@ class ChatService:
         handler.initialize(session_id, agent)
         return handler
 
-    async def execute(self, req: BaseChatRequest, requests: Optional[List[AgentRequest]] = None) -> tuple[AgentReply, Optional[str]]:
+    async def execute(self, req: BaseChatRequest, requests: list[AgentRequest] | None = None) -> tuple[AgentReply, str | None]:
         """Validate, build (unless prebuilt), select the agent, and run the request.
 
         Transport-neutral execution core: returns the typed reply and lets exceptions
@@ -464,7 +464,7 @@ class ChatService:
         result = await handler.run_async(requests, acting_user_id=req.user_id)
         return result, handler.get_response_session_id(req.session_id)
 
-    def execute_sync(self, req: BaseRunRequest, requests: Optional[List[AgentRequest]] = None) -> tuple[AgentReply, Optional[str]]:
+    def execute_sync(self, req: BaseRunRequest, requests: list[AgentRequest] | None = None) -> tuple[AgentReply, str | None]:
         """Synchronous counterpart of execute().
 
         :param req: Run request carrying prompt, agent, and session_id
@@ -482,7 +482,7 @@ class ChatService:
         result = handler.run_sync(requests, acting_user_id=req.user_id)
         return result, handler.get_response_session_id(req.session_id)
 
-    async def execute_stream(self, req: BaseChatRequest, requests: Optional[List[AgentRequest]] = None) -> AsyncGenerator[StreamChunk, None]:
+    async def execute_stream(self, req: BaseChatRequest, requests: list[AgentRequest] | None = None) -> AsyncGenerator[StreamChunk, None]:
         """Streaming counterpart of execute(): yields raw StreamChunk objects, no framing.
 
         Validates and selects the agent eagerly, so invalid input raises at call time,
@@ -511,7 +511,7 @@ class ChatService:
 
         return _stream()
 
-    def execute_stream_sync(self, req: BaseRunRequest, requests: Optional[List[AgentRequest]] = None) -> Generator[StreamChunk, None, None]:
+    def execute_stream_sync(self, req: BaseRunRequest, requests: list[AgentRequest] | None = None) -> Generator[StreamChunk, None, None]:
         """Synchronous counterpart of execute_stream().
 
         Chunks arrive as the run produces them: AgentHandler.run_stream_sync pumps the async
@@ -541,7 +541,7 @@ class ChatService:
 
         return _stream()
 
-    def _maybe_schedule(self, req: BaseChatRequest) -> Optional[AgentReplyAny]:
+    def _maybe_schedule(self, req: BaseChatRequest) -> AgentReplyAny | None:
         """Register a request that carries a schedule block instead of running it.
 
         The interception point for every chat surface: whatever transport delivered the request,
@@ -633,7 +633,7 @@ class ChatService:
             raise ValueError("A request cannot carry both 'schedule' and 'resume': a decision deferred to a later occurrence is no longer a decision")
 
     @staticmethod
-    def success_status(req: BaseChatRequest, reply: Optional[AgentReply] = None) -> int:
+    def success_status(req: BaseChatRequest, reply: AgentReply | None = None) -> int:
         """Return the status a successful response carries: 202 when deferred, or when paused.
 
         Two sources, deliberately not collapsed into one condition: a deferred request is knowable
@@ -649,7 +649,7 @@ class ChatService:
             return 202
         return 200
 
-    async def _prepare_async(self, req: BaseChatRequest, requests: Optional[List[AgentRequest]]) -> List[AgentRequest]:
+    async def _prepare_async(self, req: BaseChatRequest, requests: list[AgentRequest] | None) -> list[AgentRequest]:
         """Validate the request and return the effective request list (built or prebuilt).
 
         :param req: Chat request to validate
@@ -660,7 +660,7 @@ class ChatService:
         self._validate(req, requests)
         return await RequestBuilder.from_base_request_async(req) if requests is None else requests
 
-    def _prepare_sync(self, req: BaseRunRequest, requests: Optional[List[AgentRequest]]) -> List[AgentRequest]:
+    def _prepare_sync(self, req: BaseRunRequest, requests: list[AgentRequest] | None) -> list[AgentRequest]:
         """Synchronous counterpart of _prepare_async().
 
         :param req: Run request to validate
@@ -671,9 +671,7 @@ class ChatService:
         self._validate(req, requests)
         return RequestBuilder.from_base_request_sync(req) if requests is None else requests
 
-    def process_chat_request(
-        self, req: BaseRunRequest, requests: Optional[List[AgentRequest]] = None
-    ) -> Union[tuple[int, Dict[str, Any]], Dict[str, Any]]:
+    def process_chat_request(self, req: BaseRunRequest, requests: list[AgentRequest] | None = None) -> tuple[int, dict[str, Any]] | dict[str, Any]:
         """Process a chat request synchronously.
 
         :param req: Base run request with prompt, session_id, agent, and attachments
@@ -691,7 +689,7 @@ class ChatService:
             self._log.error(f"Error processing request: {e}")
             return ResponseBuilder.build_response(500, req.session_id, self.rest_api_mode, error=e)
 
-    async def process_async_chat_request(self, req: BaseChatRequest) -> Union[tuple[int, Dict[str, Any]], Dict[str, Any]]:
+    async def process_async_chat_request(self, req: BaseChatRequest) -> tuple[int, dict[str, Any]] | dict[str, Any]:
         """Process a chat request asynchronously.
 
         :param req: Base chat request (could be a BaseRunRequest or another subclass
@@ -741,7 +739,7 @@ class ChatService:
         self,
         req: BaseRunRequest,
         sse_format: bool = False,
-        requests: Optional[List[AgentRequest]] = None,
+        requests: list[AgentRequest] | None = None,
     ) -> Generator[str, None, None]:
         """Process a streaming chat request synchronously.
 
@@ -771,7 +769,7 @@ class ChatService:
         return _stream()
 
     @staticmethod
-    def _validate(req: BaseChatRequest, requests: Optional[List[AgentRequest]]) -> None:
+    def _validate(req: BaseChatRequest, requests: list[AgentRequest] | None) -> None:
         """Validate that required fields are present in the request.
 
         :param req: Chat request to validate

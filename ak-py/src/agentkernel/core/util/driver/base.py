@@ -4,9 +4,10 @@ import logging
 import threading
 import time
 from abc import ABC, abstractmethod
-from typing import Any, Callable, Optional, Tuple, Type, Union
+from collections.abc import Callable
+from typing import Any
 
-ExceptionScope = Union[Type[BaseException], Tuple[Type[BaseException], ...]]
+ExceptionScope = type[BaseException] | tuple[type[BaseException], ...]
 
 
 class BaseDriver(ABC):
@@ -53,7 +54,7 @@ class BaseDriver(ABC):
         :param delay: Seconds to sleep between attempts.
         :return: The value returned by ``connect()``.
         """
-        last_err: Optional[BaseException] = None
+        last_err: BaseException | None = None
         for attempt in range(retries):
             try:
                 return connect()

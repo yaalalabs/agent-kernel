@@ -15,7 +15,7 @@ import logging
 import time
 import uuid
 from threading import RLock
-from typing import Any, ClassVar, Optional, Union
+from typing import Any, ClassVar, Optional
 
 from ..core.base import Session
 from ..core.config import AKConfig
@@ -74,13 +74,13 @@ class ExecutionManager:
     async def execute(
         self,
         *,
-        code: Optional[str] = None,
-        command: Optional[str] = None,
+        code: str | None = None,
+        command: str | None = None,
         language: str = "python",
-        profile: Optional[str] = None,
-        sandbox_session_id: Optional[str] = None,
-        wait: Optional[float] = None,
-    ) -> Union[SandboxResult, SandboxTask]:
+        profile: str | None = None,
+        sandbox_session_id: str | None = None,
+        wait: float | None = None,
+    ) -> SandboxResult | SandboxTask:
         """Execute ``code`` (in ``language``) or a shell ``command`` in a sandbox.
 
         Exactly one of ``code``/``command`` must be given. Returns a ``SandboxResult`` when
@@ -95,18 +95,18 @@ class ExecutionManager:
             raise ValueError("execute() requires either code or command")
         return await self._submit_op(operation, payload, profile=profile, sandbox_session_id=sandbox_session_id, wait=wait)
 
-    async def upload(self, path: str, content: bytes, *, profile: Optional[str] = None, sandbox_session_id: Optional[str] = None) -> None:
+    async def upload(self, path: str, content: bytes, *, profile: str | None = None, sandbox_session_id: str | None = None) -> None:
         """Write ``content`` to ``path`` inside the resolved sandbox session's workspace."""
         await self._submit_op("upload_file", {"path": path, "content": content}, profile=profile, sandbox_session_id=sandbox_session_id)
 
-    async def download(self, path: str, *, profile: Optional[str] = None, sandbox_session_id: Optional[str] = None) -> bytes:
+    async def download(self, path: str, *, profile: str | None = None, sandbox_session_id: str | None = None) -> bytes:
         """Read and return the bytes at ``path`` from the resolved sandbox session's workspace."""
         result = await self._submit_op("download_file", {"path": path}, profile=profile, sandbox_session_id=sandbox_session_id)
         if isinstance(result, SandboxResult) and result.output_files:
             return result.output_files[0].content
         return b""
 
-    async def task_status(self, task_id: str) -> Optional[SandboxTask]:
+    async def task_status(self, task_id: str) -> SandboxTask | None:
         """Return the current state of a promoted task, or ``None`` when unknown.
 
         Registry first; a still-pending entry (or a task missing from this session's
@@ -166,7 +166,7 @@ class ExecutionManager:
                 summary["notice"] = result.notice
         return summary
 
-    def ingest_completion(self, completion: ExecutionCompletion) -> Optional[SandboxTask]:
+    def ingest_completion(self, completion: ExecutionCompletion) -> SandboxTask | None:
         """Consume a task-completion event (called by ``SandboxPreHook`` under the session lock).
 
         Returns the updated task after marking it consumed and terminal and refreshing the
@@ -184,7 +184,7 @@ class ExecutionManager:
         self._write_session(completion.sandbox_session)
         return task
 
-    def new_session(self, profile: Optional[str] = None, name: Optional[str] = None) -> SandboxSession:
+    def new_session(self, profile: str | None = None, name: str | None = None) -> SandboxSession:
         """Mint and register a fresh sandbox session for ``profile`` (default profile when
         omitted) and return it — the only way an explicit ``sandbox_session_id`` comes into
         existence. ``name`` is an optional human-friendly label surfaced by
@@ -230,10 +230,10 @@ class ExecutionManager:
         operation: str,
         payload: dict[str, Any],
         *,
-        profile: Optional[str] = None,
-        sandbox_session_id: Optional[str] = None,
-        wait: Optional[float] = None,
-    ) -> Union[SandboxResult, SandboxTask]:
+        profile: str | None = None,
+        sandbox_session_id: str | None = None,
+        wait: float | None = None,
+    ) -> SandboxResult | SandboxTask:
         """Resolve profile, session, principal, and policy into a ``ExecutionRequest``
         and submit it. Persists the (updated) session handle on success; ``per_call``
         sessions are ephemeral and their backend is torn down in ``finally``.
@@ -278,7 +278,7 @@ class ExecutionManager:
                 # per_call: dispose the ephemeral sandbox regardless of success/failure.
                 await self._destroy_backend(request.sandbox_session)
 
-    def _resolve_profile_name(self, profile: Optional[str], sandbox_session_id: Optional[str]) -> str:
+    def _resolve_profile_name(self, profile: str | None, sandbox_session_id: str | None) -> str:
         """Pick the profile for this operation. An explicit ``sandbox_session_id`` binds the
         profile to the one the session was minted under (found across both registries); a
         caller ``profile`` that contradicts it is a config error, and omitting it is fine. No
@@ -343,7 +343,7 @@ class ExecutionManager:
         )
 
     @staticmethod
-    def _deadline(wait: Optional[float]) -> Optional[float]:
+    def _deadline(wait: float | None) -> float | None:
         """Turn a relative ``wait`` in seconds into an absolute epoch deadline (``None`` passes through)."""
         return None if wait is None else time.time() + wait
 
@@ -355,9 +355,7 @@ class ExecutionManager:
 
     # -- session resolution / registry ------------------------------------- #
 
-    async def _resolve_session(
-        self, profile_name: str, sandbox_session_id: Optional[str], profile_cfg: Any
-    ) -> tuple[SandboxSession, bool, Optional[str]]:
+    async def _resolve_session(self, profile_name: str, sandbox_session_id: str | None, profile_cfg: Any) -> tuple[SandboxSession, bool, str | None]:
         """Resolve the target sandbox session; returns ``(session, ephemeral, notice)``.
 
         ``per_call`` scope always returns a fresh ephemeral session. An explicit id must
@@ -414,7 +412,7 @@ class ExecutionManager:
         profile_cfg = self._config.profiles.get(profile_name)
         return profile_cfg.scope if profile_cfg is not None else "per_session"
 
-    def _read_session(self, sandbox_session_id: str, scope: str) -> Optional[SandboxSession]:
+    def _read_session(self, sandbox_session_id: str, scope: str) -> SandboxSession | None:
         """Look up a session in the registry the given scope addresses, or ``None``."""
         if scope == "per_runtime":
             return self._runtime_registry.get(sandbox_session_id)
@@ -440,7 +438,7 @@ class ExecutionManager:
         reg["sessions"].pop(session.sandbox_session_id, None)
         self._save_nv_registry(reg)
 
-    def _find_session(self, sandbox_session_id: str) -> Optional[SandboxSession]:
+    def _find_session(self, sandbox_session_id: str) -> SandboxSession | None:
         """Look up a session id across both registries (per_runtime first), or ``None``."""
         if sandbox_session_id in self._runtime_registry:
             return self._runtime_registry[sandbox_session_id]

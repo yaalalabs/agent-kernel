@@ -15,7 +15,6 @@ import datetime
 import logging
 import time
 import uuid
-from typing import List, Optional, Tuple
 
 from azure.core.exceptions import ResourceExistsError, ResourceNotFoundError
 
@@ -108,7 +107,7 @@ class CosmosDBThreadStore(ThreadStore):
             raise KeyError(f"Thread {session_id} not found")
         return thread.model_copy(update={"messages": []})
 
-    def load_metadata(self, session_id: str) -> Optional[Thread]:
+    def load_metadata(self, session_id: str) -> Thread | None:
         """
         Load a thread's metadata entity by its session id.
         :param session_id: Unique identifier for the thread.
@@ -152,7 +151,7 @@ class CosmosDBThreadStore(ThreadStore):
             mode=UpdateMode.MERGE,
         )
 
-    def get_messages(self, session_id: str, limit: int, offset: int = 0) -> Tuple[List[ThreadMessage], Optional[int]]:
+    def get_messages(self, session_id: str, limit: int, offset: int = 0) -> tuple[list[ThreadMessage], int | None]:
         """
         Return a page of a thread's messages ordered by RowKey (chronological).
         :param session_id: Unique identifier for the thread.
@@ -180,11 +179,11 @@ class CosmosDBThreadStore(ThreadStore):
 
     def list_threads(
         self,
-        user_id: Optional[str] = None,
-        group_id: Optional[str] = None,
+        user_id: str | None = None,
+        group_id: str | None = None,
         limit: int = 50,
         offset: int = 0,
-    ) -> Tuple[List[Thread], Optional[int]]:
+    ) -> tuple[list[Thread], int | None]:
         """
         List thread metadata filtered by user_id and/or group_id, most-recently updated first.
         :param user_id: Filter by owning user id.

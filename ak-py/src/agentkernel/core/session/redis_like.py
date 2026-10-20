@@ -7,7 +7,7 @@ database operation is encapsulated here.
 
 import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from .base import WSConnectionStore
 
@@ -42,17 +42,17 @@ class RedisLikeWSConnectionStore(WSConnectionStore):
         self._driver.expire(user_key)  # HSET has no ex argument; refresh the hash's TTL explicitly
         self._driver.set(self._driver.key(self._connection_key(connection_id)), json.dumps({"user_id": user_id, "endpoint": endpoint}))
 
-    def get_connections(self, user_id: str) -> List[str]:
+    def get_connections(self, user_id: str) -> list[str]:
         return list(self.get_endpoints(user_id))
 
-    def get_endpoints(self, user_id: str) -> Dict[str, str]:
+    def get_endpoints(self, user_id: str) -> dict[str, str]:
         return self._driver.hgetall(self._driver.key(self._user_key(user_id)))
 
-    def get_endpoint(self, connection_id: str) -> Optional[str]:
+    def get_endpoint(self, connection_id: str) -> str | None:
         record = self._record(connection_id)
         return record["endpoint"] if record else None
 
-    def get_user_id(self, connection_id: str) -> Optional[str]:
+    def get_user_id(self, connection_id: str) -> str | None:
         record = self._record(connection_id)
         return record["user_id"] if record else None
 
@@ -60,7 +60,7 @@ class RedisLikeWSConnectionStore(WSConnectionStore):
         self._driver.hdel(self._driver.key(self._user_key(user_id)), connection_id)
         self._driver.delete(self._driver.key(self._connection_key(connection_id)))
 
-    def _record(self, connection_id: str) -> Optional[dict]:
+    def _record(self, connection_id: str) -> dict | None:
         raw = self._driver.get(self._driver.key(self._connection_key(connection_id)))
         if isinstance(raw, (bytes, bytearray)):
             raw = raw.decode("utf-8")

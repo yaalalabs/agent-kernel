@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Callable, Dict, Optional
+from collections.abc import Callable
+from typing import Any
 
 from ....core.config import AKConfig, ExecutionMode
 from .core import BaseLambdaRouter, RESTLambdaRouter, WSLambdaRouter
@@ -16,8 +17,8 @@ class Lambda:
     """
 
     _log = logging.getLogger("ak.aws.lambda")
-    _router: Optional[BaseLambdaRouter] = None
-    _config: Optional[AKConfig] = None
+    _router: BaseLambdaRouter | None = None
+    _config: AKConfig | None = None
 
     @classmethod
     def _get_config(cls) -> AKConfig:
@@ -37,7 +38,7 @@ class Lambda:
         return mode in (ExecutionMode.ASYNC, ExecutionMode.STREAM)
 
     @classmethod
-    def register(cls, route: str, method: Optional[str] = None) -> Callable[[Callable], Callable]:
+    def register(cls, route: str, method: str | None = None) -> Callable[[Callable], Callable]:
         """
         Class method decorator that delegates route registration to the internal LambdaRouter.
 
@@ -48,7 +49,7 @@ class Lambda:
         return cls._get_router().register(route, method)
 
     @staticmethod
-    def _wrap_response(result: Any) -> Dict[str, Any]:
+    def _wrap_response(result: Any) -> dict[str, Any]:
         """
         Normalize various handler return types into API Gateway compatible responses.
 
@@ -67,7 +68,7 @@ class Lambda:
         return {"statusCode": 200, "body": str(result)}
 
     @classmethod
-    def handler(cls, event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+    def handler(cls, event: dict[str, Any], context: Any) -> dict[str, Any]:
         """
         AWS Lambda handler function to process incoming requests.
 

@@ -5,7 +5,6 @@ import logging
 from collections.abc import AsyncGenerator
 from threading import RLock
 from types import ModuleType
-from typing import Optional
 
 from singleton_type import Singleton
 
@@ -111,12 +110,12 @@ class Runtime:
     Runtime class provides the environment for hosting and running agents.
     """
 
-    _current: Optional[Runtime] = None
+    _current: Runtime | None = None
     _lock: RLock = RLock()
     # System hooks are built on first use, not at import time, because the
     # factories read AKConfig and importing agentkernel must not load it.
-    _system_pre_hooks: Optional[list] = None
-    _system_post_hooks: Optional[list] = None
+    _system_pre_hooks: list | None = None
+    _system_post_hooks: list | None = None
 
     @classmethod
     def _get_system_pre_hooks(cls) -> list:
@@ -262,7 +261,7 @@ class Runtime:
         return requests
 
     @staticmethod
-    def _extract_resume(requests: list[AgentRequest]) -> Optional[AgentResumeRequestAny]:
+    def _extract_resume(requests: list[AgentRequest]) -> AgentResumeRequestAny | None:
         """
         Returns the resume request in a request list, or None when it carries no decisions.
         :param requests: The request list to inspect.
@@ -375,7 +374,7 @@ class Runtime:
             f"but never delivered. The paused run is untouched and can be answered again."
         )
 
-    async def run(self, agent: Agent, session: Session, requests: list[AgentRequest], acting_user_id: Optional[str] = None) -> AgentReply:
+    async def run(self, agent: Agent, session: Session, requests: list[AgentRequest], acting_user_id: str | None = None) -> AgentReply:
         """
         Runs the specified agent with the multi-modal requests.
 
@@ -430,7 +429,7 @@ class Runtime:
                 session.get_volatile_cache().clear()
 
     async def stream(
-        self, agent: Agent, session: Session, requests: list[AgentRequest], acting_user_id: Optional[str] = None
+        self, agent: Agent, session: Session, requests: list[AgentRequest], acting_user_id: str | None = None
     ) -> AsyncGenerator[StreamChunk, None]:
         """
         Streams the specified agent response as StreamChunks carrying typed stream events.

@@ -1,5 +1,5 @@
 from enum import StrEnum
-from typing import Any, Dict, Optional
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -41,11 +41,11 @@ class QueueMessage(BaseModel):
     """
 
     body: JSONText = ""
-    attributes: Dict[str, str] = Field(default_factory=dict)
-    group_id: Optional[str] = None
-    dedup_id: Optional[str] = None
+    attributes: dict[str, str] = Field(default_factory=dict)
+    group_id: str | None = None
+    dedup_id: str | None = None
     receive_count: int = 1
-    message_id: Optional[str] = None
+    message_id: str | None = None
     native: Any = Field(default=None, exclude=True)
 
     model_config = ConfigDict(arbitrary_types_allowed=True)

@@ -9,7 +9,6 @@ this module.
 """
 
 import datetime
-from typing import Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from ..core.model import ScheduleSpec
@@ -44,7 +43,7 @@ class OccurrenceCalculator:
             raise ValueError(f"schedule 'at' must be in the future: '{spec.at}' has already passed in {spec.timezone}")
 
     @classmethod
-    def next_fire_time(cls, spec: ScheduleSpec, after: Optional[datetime.datetime] = None) -> Optional[datetime.datetime]:
+    def next_fire_time(cls, spec: ScheduleSpec, after: datetime.datetime | None = None) -> datetime.datetime | None:
         """Return the first occurrence strictly after ``after``, as an aware datetime.
 
         :param spec: The occurrence rule to evaluate.
@@ -69,7 +68,7 @@ class OccurrenceCalculator:
             raise ValueError(f"unknown schedule timezone '{name}': expected an IANA name such as 'Asia/Colombo'") from exc
 
     @staticmethod
-    def _parse_at(at: Optional[str]) -> datetime.datetime:
+    def _parse_at(at: str | None) -> datetime.datetime:
         """Parse a one-time ``at`` timestamp into a naive local wall-clock datetime."""
         try:
             occurrence = datetime.datetime.fromisoformat(at or "")

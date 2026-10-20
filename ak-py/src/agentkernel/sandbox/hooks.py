@@ -13,7 +13,7 @@ capability is disabled, and no-op-on-failure so the hook chain never breaks the 
 
 import json
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from ..core.base import Agent, Session
 from ..core.config import AKConfig
@@ -92,7 +92,7 @@ class SandboxPreHook(PreHook):
         return filtered
 
     @staticmethod
-    def _parse_completion(content: Any) -> Optional[ExecutionCompletion]:
+    def _parse_completion(content: Any) -> ExecutionCompletion | None:
         """Coerce the request content (model instance, dict, or JSON string) into a
         ``ExecutionCompletion``; ``None`` when malformed (dropped, never raised)."""
         try:

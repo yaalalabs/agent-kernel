@@ -1,6 +1,5 @@
 import logging
 import threading
-from typing import Dict, List, Optional
 
 from ..base import Session
 from .base import SessionStore, WSConnectionStore
@@ -16,8 +15,8 @@ class InMemoryWSConnectionStore(WSConnectionStore):
     """
 
     _lock = threading.Lock()
-    _endpoints: Dict[str, Dict[str, str]] = {}  # user_id -> {connection_id: endpoint}
-    _users: Dict[str, str] = {}  # connection_id -> user_id
+    _endpoints: dict[str, dict[str, str]] = {}  # user_id -> {connection_id: endpoint}
+    _users: dict[str, str] = {}  # connection_id -> user_id
 
     @property
     def shared(self) -> bool:
@@ -28,22 +27,22 @@ class InMemoryWSConnectionStore(WSConnectionStore):
             self._endpoints.setdefault(user_id, {})[connection_id] = endpoint
             self._users[connection_id] = user_id
 
-    def get_connections(self, user_id: str) -> List[str]:
+    def get_connections(self, user_id: str) -> list[str]:
         with self._lock:
             return list(self._endpoints.get(user_id, {}))
 
-    def get_endpoints(self, user_id: str) -> Dict[str, str]:
+    def get_endpoints(self, user_id: str) -> dict[str, str]:
         with self._lock:
             return dict(self._endpoints.get(user_id, {}))
 
-    def get_endpoint(self, connection_id: str) -> Optional[str]:
+    def get_endpoint(self, connection_id: str) -> str | None:
         with self._lock:
             user_id = self._users.get(connection_id)
             if user_id is None:
                 return None
             return self._endpoints.get(user_id, {}).get(connection_id)
 
-    def get_user_id(self, connection_id: str) -> Optional[str]:
+    def get_user_id(self, connection_id: str) -> str | None:
         with self._lock:
             return self._users.get(connection_id)
 

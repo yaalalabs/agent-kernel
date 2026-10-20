@@ -4,7 +4,6 @@ drivers, the shared-driver test style)."""
 
 import json
 import types
-from typing import Dict
 
 import pytest
 
@@ -17,13 +16,13 @@ from agentkernel.pipeline.response_store.redis import RedisResponseStore
 class _MinimalStore(ResponseStore):
     """Bare concrete store: exercises the ABC's default (opted-out) scan capability."""
 
-    def add_message(self, message: Dict) -> None:  # pragma: no cover - unused
+    def add_message(self, message: dict) -> None:  # pragma: no cover - unused
         pass
 
-    def get_message(self, request_id: str, get_and_delete: bool = False) -> Dict | None:  # pragma: no cover - unused
+    def get_message(self, request_id: str, get_and_delete: bool = False) -> dict | None:  # pragma: no cover - unused
         return None
 
-    def get_record(self, request_id: str, get_and_delete: bool = False) -> Dict | None:  # pragma: no cover - unused
+    def get_record(self, request_id: str, get_and_delete: bool = False) -> dict | None:  # pragma: no cover - unused
         return None
 
     def delete_message(self, request_id: str) -> None:  # pragma: no cover - unused

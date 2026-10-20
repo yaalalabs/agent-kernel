@@ -43,7 +43,7 @@ tested IAM wiring and docs. Otherwise, document the dotted-path route in
 
 `SecretProvider` (`secret/base.py`) is small. The rules around it are what matter:
 
-- **`get_secret(key) -> Optional[str]`**: return the stored value, or `None` when the backend
+- **`get_secret(key) -> str | None`**: return the stored value, or `None` when the backend
   does not hold it. A **miss is not an error**. Raise `SecretError` (`secret/errors.py`) only
   when the backend *failed* (credentials, network, throttling, authorization), and never put the
   value in the message.
@@ -79,14 +79,14 @@ class VaultSecretProvider(SecretProvider):
     def __init__(self, prefix: str) -> None:
         """:raises AKConfigError: If prefix is empty."""
         ...
-        self._client: Optional[Any] = None
+        self._client: Any | None = None
         self._client_lock = Lock()
 
     @classmethod
     def create(cls, config: _SecretConfig) -> "VaultSecretProvider":
         return cls(prefix=config.prefix)
 
-    def get_secret(self, key: str) -> Optional[str]:
+    def get_secret(self, key: str) -> str | None:
         """:raises SecretError: If Vault failed for any reason other than not-found."""
         ...
 ```

@@ -16,7 +16,7 @@ import hashlib
 import hmac
 import json
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -49,7 +49,7 @@ class _EdgeOutboundAdapter(OutboundAdapter):
     async def deliver_error(self, message, reply_context) -> None:  # pragma: no cover - never reached at the edge
         raise AssertionError("the edge must never deliver")
 
-    async def acknowledge(self, reply_context: Dict[str, str]) -> Dict[str, str]:
+    async def acknowledge(self, reply_context: dict[str, str]) -> dict[str, str]:
         return {"ack_ts": "ack-1"}
 
 
@@ -75,14 +75,14 @@ def _environment(monkeypatch):
     AKConfig._reset()
 
 
-def _configure(monkeypatch, env: Dict[str, str]) -> None:
+def _configure(monkeypatch, env: dict[str, str]) -> None:
     for key, value in env.items():
         monkeypatch.setenv(key, value)
     AKConfig._reset()
 
 
-Delivery = Tuple[bytes, Dict[str, str], Optional[Dict[str, str]]]
-Answer = Tuple[int, bytes, List[Tuple[str, Dict[str, str], Optional[str], Optional[str]]]]
+Delivery = tuple[bytes, dict[str, str], dict[str, str] | None]
+Answer = tuple[int, bytes, list[tuple[str, dict[str, str], str | None, str | None]]]
 
 
 def _drain() -> list:

@@ -8,7 +8,6 @@ token their API layer stored in ``session.nv_cache``) into a principal.
 """
 
 from abc import ABC, abstractmethod
-from typing import Optional
 
 from ..core.base import Agent, Session
 from .model import SandboxPrincipal
@@ -22,7 +21,7 @@ class PrincipalResolver(ABC):
     """
 
     @abstractmethod
-    async def resolve(self, session: Session, agent: Optional[Agent]) -> SandboxPrincipal:
+    async def resolve(self, session: Session, agent: Agent | None) -> SandboxPrincipal:
         """Return the ``SandboxPrincipal`` for this session/agent."""
 
 
@@ -34,6 +33,6 @@ class AgentPrincipalResolver(PrincipalResolver):
     (API key, ServiceAccount, IAM role).
     """
 
-    async def resolve(self, session: Session, agent: Optional[Agent]) -> SandboxPrincipal:
+    async def resolve(self, session: Session, agent: Agent | None) -> SandboxPrincipal:
         """Return an agent-mode principal named after the current agent (or ``"agent"``)."""
         return SandboxPrincipal(mode="agent", subject=agent.name if agent is not None else "agent")

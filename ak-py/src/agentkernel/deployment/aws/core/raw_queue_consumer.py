@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List
+from typing import Any
 
 
 class RawQueueConsumer(ABC):
@@ -23,7 +23,7 @@ class RawQueueConsumer(ABC):
 
     @classmethod
     @abstractmethod
-    def poll(cls) -> List[Dict[str, Any]]:
+    def poll(cls) -> list[dict[str, Any]]:
         """
         Retrieve the next batch of messages to process.
 
@@ -33,7 +33,7 @@ class RawQueueConsumer(ABC):
 
     @classmethod
     @abstractmethod
-    def process_message(cls, record: Dict[str, Any]) -> None:
+    def process_message(cls, record: dict[str, Any]) -> None:
         """
         Process a single queue message.
         :param record: Single message record, as returned by poll().
@@ -43,7 +43,7 @@ class RawQueueConsumer(ABC):
 
     @classmethod
     @abstractmethod
-    def on_permanent_failure(cls, record: Dict[str, Any]) -> None:
+    def on_permanent_failure(cls, record: dict[str, Any]) -> None:
         """
         Called when a message is treated as permanently failed (retry limit reached).
         :param record: The message record that exceeded the retry threshold.
@@ -53,7 +53,7 @@ class RawQueueConsumer(ABC):
 
     @classmethod
     @abstractmethod
-    def delete_message(cls, record: Dict[str, Any]) -> None:
+    def delete_message(cls, record: dict[str, Any]) -> None:
         """
         Acknowledge/remove a message from the queue after it has been handled.
         :param record: The message record to acknowledge.

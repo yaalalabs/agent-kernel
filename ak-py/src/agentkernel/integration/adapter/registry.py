@@ -1,5 +1,4 @@
 import threading
-from typing import Dict, Optional
 
 from .base import StatefulEdgeAdapter
 
@@ -13,11 +12,11 @@ class StatefulEdgeRegistry:
     replies back to the same long-lived connection.
     """
 
-    _cache: Dict[str, StatefulEdgeAdapter] = {}
+    _cache: dict[str, StatefulEdgeAdapter] = {}
     _lock = threading.Lock()
 
     @classmethod
-    def register(cls, adapter: StatefulEdgeAdapter, session_id: Optional[str] = None) -> None:
+    def register(cls, adapter: StatefulEdgeAdapter, session_id: str | None = None) -> None:
         """Register a live stateful edge adapter instance.
 
         :param adapter: The adapter instance.
@@ -39,7 +38,7 @@ class StatefulEdgeRegistry:
             cls._cache.pop(session_id, None)
 
     @classmethod
-    def get(cls, session_id: str) -> Optional[StatefulEdgeAdapter]:
+    def get(cls, session_id: str) -> StatefulEdgeAdapter | None:
         """Retrieve a live stateful edge adapter instance by session_id."""
         with cls._lock:
             return cls._cache.get(session_id)

@@ -51,7 +51,6 @@ ak-py/src/agentkernel/integration/<platform>/
 ```python
 # ak-py/src/agentkernel/integration/<platform>/adapter.py
 import logging
-from typing import Any, Dict, List, Optional
 
 from fastapi import HTTPException, Request
 
@@ -100,13 +99,13 @@ class <Platform>InboundAdapter(InboundAdapter):
         requests = [r for r in [await self._to_request(m) for m in body.get("messages", [])] if r is not None]
         return InboundParseResult(requests=requests)
 
-    async def _to_request(self, message: dict) -> Optional[InboundRequest]:
+    async def _to_request(self, message: dict) -> InboundRequest | None:
         text = message.get("text", "")
         sender = message["from"]
         if not text:
             return None   # legitimately ignored: an empty list is not an error
 
-        requests: List[AgentRequest] = [AgentRequestText(prompt=text)]
+        requests: list[AgentRequest] = [AgentRequestText(prompt=text)]
         # ... download attachments into `requests` here (see step 5) ...
 
         requests, _ = AttachmentStorageManager.offload(
@@ -153,7 +152,7 @@ class <Platform>OutboundAdapter(OutboundAdapter):
     def __init__(self):
         self._client = <Platform>Client()
 
-    async def acknowledge(self, reply_context: Dict[str, str]) -> Dict[str, str]:
+    async def acknowledge(self, reply_context: dict[str, str]) -> dict[str, str]:
         """Edge-side feedback: a typing indicator, a read receipt, a "thinking" message.
 
         The returned dict is merged into reply_context, which is how Slack carries the id of
@@ -162,11 +161,11 @@ class <Platform>OutboundAdapter(OutboundAdapter):
         await self._client.typing(reply_context["to"])
         return {}
 
-    async def deliver(self, reply: AgentReply, reply_context: Dict[str, str]) -> None:
+    async def deliver(self, reply: AgentReply, reply_context: dict[str, str]) -> None:
         """Raising hands the message back for retry, then deliver_error."""
         await self._client.send(reply_context["to"], self.split_reply(str(reply)))
 
-    async def deliver_error(self, message: str, reply_context: Dict[str, str]) -> None:
+    async def deliver_error(self, message: str, reply_context: dict[str, str]) -> None:
         try:
             await self._client.send(reply_context["to"], [message])
         except Exception as e:
@@ -257,7 +256,7 @@ class <Platform>InboundAdapter(PollingInboundAdapter):
     name = NAME
     poll_interval = 30.0   # read it from your config block in __init__
 
-    async def poll(self) -> List[Any]:
+    async def poll(self) -> list[Any]:
         """Return the raw events to parse this iteration. Must not run the agent."""
 
     def mark_handled(self, raw: Any) -> None:

@@ -12,7 +12,7 @@ mutations are checked against, so an agent can never reach another user's schedu
 
 import json
 import logging
-from typing import Any, Dict, Optional
+from typing import Any
 
 from ..core.base import Session
 from ..core.config import AKConfig
@@ -70,7 +70,7 @@ class ScheduleToolUtil:
         return _CRON_STANDARD_DOC
 
     @staticmethod
-    def acting_user() -> Optional[str]:
+    def acting_user() -> str | None:
         """The user the current run acts for, published in the session's volatile cache by ``Runtime``.
 
         :return: The acting user id, or None when the run carries no user identity.
@@ -81,7 +81,7 @@ class ScheduleToolUtil:
         return session.get_volatile_cache().get(ACTING_USER_CACHE_KEY)
 
     @staticmethod
-    def current_session_id() -> Optional[str]:
+    def current_session_id() -> str | None:
         """The session a task created in this run belongs to.
 
         It is the session each occurrence runs in under ``session_mode`` reuse, and the base the
@@ -102,7 +102,7 @@ class ScheduleToolUtil:
         return json.dumps({"error": str(error)})
 
     @staticmethod
-    def task_json(task: ScheduledTask) -> Dict[str, Any]:
+    def task_json(task: ScheduledTask) -> dict[str, Any]:
         """Agent-facing view of a task: the fields an agent can act on or report to the user.
 
         Flattened out of the stored record (whose provider reference and owner are machinery the
@@ -148,11 +148,11 @@ class ScheduleToolUtil:
 
 async def create_schedule(
     prompt: str,
-    cron: Optional[str] = None,
-    at: Optional[str] = None,
+    cron: str | None = None,
+    at: str | None = None,
     timezone: str = "UTC",
     session_mode: str = "reuse",
-    agent: Optional[str] = None,
+    agent: str | None = None,
 ) -> str:
     """
     Schedule a prompt to run later, once or repeatedly, and return the scheduled task as JSON.
@@ -240,8 +240,8 @@ async def get_schedule(task_id: str) -> str:
 async def update_schedule(
     task_id: str,
     prompt: str,
-    cron: Optional[str] = None,
-    at: Optional[str] = None,
+    cron: str | None = None,
+    at: str | None = None,
     timezone: str = "UTC",
     session_mode: str = "reuse",
     status: str = "active",

@@ -1,6 +1,7 @@
 import base64
 import logging
-from typing import Any, Dict, List, Mapping, Optional, Tuple
+from collections.abc import Mapping
+from typing import Any
 from urllib.parse import urlencode
 
 from fastapi.encoders import jsonable_encoder
@@ -56,7 +57,7 @@ class LambdaEventTranslator:
         body = self._body(event)
         delivered = False
 
-        async def receive() -> Dict[str, Any]:
+        async def receive() -> dict[str, Any]:
             nonlocal delivered
             if delivered:
                 return {"type": "http.disconnect"}
@@ -65,7 +66,7 @@ class LambdaEventTranslator:
 
         return Request(scope, receive)
 
-    async def to_proxy_response(self, request: Optional[Request], result: Any) -> Dict[str, Any]:
+    async def to_proxy_response(self, request: Request | None, result: Any) -> dict[str, Any]:
         """Turn an endpoint's return value into the proxy response FastAPI would have sent.
 
         A Starlette ``Response`` (an SDK's own, such as Bolt's) passes through as it is. Any other
@@ -80,7 +81,7 @@ class LambdaEventTranslator:
         response = result if isinstance(result, Response) else JSONResponse(jsonable_encoder(result))
         return self._proxy_response(response)
 
-    async def error_to_proxy_response(self, exc: Exception, request: Optional[Request] = None) -> Dict[str, Any]:
+    async def error_to_proxy_response(self, exc: Exception, request: Request | None = None) -> dict[str, Any]:
         """Turn an exception into the proxy response FastAPI would have sent.
 
         An ``HTTPException`` goes through FastAPI's own handler: its status, its headers, and
@@ -120,7 +121,7 @@ class LambdaEventTranslator:
         return body.encode("utf-8")
 
     @staticmethod
-    def _headers(event: Mapping[str, Any]) -> List[Tuple[bytes, bytes]]:
+    def _headers(event: Mapping[str, Any]) -> list[tuple[bytes, bytes]]:
         """ASGI headers from ``multiValueHeaders``, falling back to ``headers``.
 
         Names are lower-cased, the ASGI rule that makes Starlette's lookup case-insensitive.
@@ -153,7 +154,7 @@ class LambdaEventTranslator:
         return urlencode(list((event.get("queryStringParameters") or {}).items())).encode("ascii")
 
     @staticmethod
-    def _proxy_response(response: Response) -> Dict[str, Any]:
+    def _proxy_response(response: Response) -> dict[str, Any]:
         """An API Gateway proxy response carrying a Starlette response's status, headers and bytes.
 
         ``multiValueHeaders`` keeps repeated headers such as ``set-cookie``. A body that is not
@@ -161,7 +162,7 @@ class LambdaEventTranslator:
         """
         if not hasattr(response, "body"):
             raise TypeError("streaming responses are not supported on Lambda")
-        headers: Dict[str, List[str]] = {}
+        headers: dict[str, list[str]] = {}
         for name, value in response.raw_headers:
             headers.setdefault(name.decode("latin-1"), []).append(value.decode("latin-1"))
         body = bytes(response.body)

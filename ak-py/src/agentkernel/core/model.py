@@ -1,7 +1,8 @@
 import json
 import uuid
+from collections.abc import Callable
 from enum import Enum
-from typing import Annotated, Any, Callable, List, Literal, Optional, Union
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
@@ -154,8 +155,8 @@ class ResumeDecision(BaseModel):
     """
 
     id: str
-    status: Optional[Literal["approved", "denied", "cancelled"]] = None
-    message: Optional[str] = None
+    status: Literal["approved", "denied", "cancelled"] | None = None
+    message: str | None = None
     payload: JsonValue = None
 
 
@@ -167,8 +168,8 @@ class _ResumeDecisions(BaseModel):
     session and is a Runtime check with its own error.
     """
 
-    run_id: Optional[str] = None
-    decisions: List[ResumeDecision]
+    run_id: str | None = None
+    decisions: list[ResumeDecision]
 
     @model_validator(mode="after")
     def _validate_decisions(self) -> "_ResumeDecisions":
@@ -203,15 +204,11 @@ class AgentResumeRequestAny(_ResumeDecisions):
     type: Literal["resume"] = "resume"
 
 
-type AgentRequest = Union[
-    AgentRequestText, AgentRequestFile, AgentRequestImage, AgentRequestVoice, AgentRequestAny, AgentRequestAttachmentRef, AgentResumeRequestAny
-]
-type AgentReply = Union[AgentReplyText, AgentReplyImage, AgentReplyAny]
+type AgentRequest = AgentRequestText | AgentRequestFile | AgentRequestImage | AgentRequestVoice | AgentRequestAny | AgentRequestAttachmentRef | AgentResumeRequestAny
+type AgentReply = AgentReplyText | AgentReplyImage | AgentReplyAny
 
 AgentRequestUnion = Annotated[
-    Union[
-        AgentRequestText, AgentRequestFile, AgentRequestImage, AgentRequestVoice, AgentRequestAny, AgentRequestAttachmentRef, AgentResumeRequestAny
-    ],
+    AgentRequestText | AgentRequestFile | AgentRequestImage | AgentRequestVoice | AgentRequestAny | AgentRequestAttachmentRef | AgentResumeRequestAny,
     Field(discriminator="type"),
 ]
 
@@ -236,7 +233,7 @@ class AgentReplyAny(BaseModel):
     """
 
     content: JSONPayload
-    media_type: Optional[str] = None
+    media_type: str | None = None
     prompt: str = ""
     type: Literal["other"] = "other"
 
@@ -292,7 +289,7 @@ class AgentPausedReplyAny(AgentReplyAny):
     run_id: str
     session_id: str
     agent: str
-    interruptions: List[PausedInterruption]
+    interruptions: list[PausedInterruption]
 
     @model_validator(mode="after")
     def _derive_content(self) -> "AgentPausedReplyAny":
@@ -360,7 +357,7 @@ class FileData(BaseModel):
 
     file_data: str  # base64 encoded string or URL
     name: str
-    mime_type: Optional[str] = None
+    mime_type: str | None = None
 
 
 class ImageData(BaseModel):
@@ -368,7 +365,7 @@ class ImageData(BaseModel):
 
     image_data: str  # base64 encoded string
     name: str
-    mime_type: Optional[str] = None
+    mime_type: str | None = None
 
 
 class ScheduleSpec(BaseModel):
@@ -386,8 +383,8 @@ class ScheduleSpec(BaseModel):
     must import without it.
     """
 
-    at: Optional[str] = None
-    cron: Optional[str] = None
+    at: str | None = None
+    cron: str | None = None
     timezone: str = "UTC"
     session_mode: Literal["reuse", "new"] = "reuse"
 
@@ -417,13 +414,13 @@ class BaseChatRequest(BaseModel):
     """
 
     prompt: str = ""
-    agent: Optional[str] = None
-    session_id: Optional[str] = None
-    user_id: Optional[str] = None
-    group_id: Optional[str] = None
-    thread_name: Optional[str] = None
-    schedule: Optional[ScheduleSpec] = None
-    resume: Optional[ResumeSpec] = None
+    agent: str | None = None
+    session_id: str | None = None
+    user_id: str | None = None
+    group_id: str | None = None
+    thread_name: str | None = None
+    schedule: ScheduleSpec | None = None
+    resume: ResumeSpec | None = None
 
     @model_validator(mode="after")
     def _require_a_prompt_or_a_resume(self) -> "BaseChatRequest":
@@ -465,18 +462,18 @@ class BaseRunRequest(BaseChatRequest):
     AgentRequestAny context.
     """
 
-    files: Optional[List[FileData]] = None
-    images: Optional[List[ImageData]] = None
-    requests: Optional[List[AgentRequestUnion]] = None
-    scheduled_task_id: Optional[str] = None
-    scheduled_time: Optional[str] = None
+    files: list[FileData] | None = None
+    images: list[ImageData] | None = None
+    requests: list[AgentRequestUnion] | None = None
+    scheduled_task_id: str | None = None
+    scheduled_time: str | None = None
     model_config = ConfigDict(extra="allow")
 
 
 class BaseRequest(BaseModel):
-    request_id: Optional[str] = None
-    route: Optional[str] = None  # RouteKey of the Websocket, needed for WS implementation
-    body: Optional[BaseRunRequest] = None
+    request_id: str | None = None
+    route: str | None = None  # RouteKey of the Websocket, needed for WS implementation
+    body: BaseRunRequest | None = None
     model_config = ConfigDict(extra="allow")
 
     @classmethod

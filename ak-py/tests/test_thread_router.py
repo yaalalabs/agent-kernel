@@ -1,5 +1,3 @@
-from typing import Optional
-
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -35,11 +33,11 @@ def thread_enabled():
 class StaticAuthoriser(Authoriser):
     """Test authoriser: token 'good-token' resolves to user 'u1', anything else is rejected."""
 
-    def authorise(self, token: str) -> Optional[str]:
+    def authorise(self, token: str) -> str | None:
         return "u1" if token == "good-token" else None
 
 
-def _client(authoriser: Optional[Authoriser] = None) -> TestClient:
+def _client(authoriser: Authoriser | None = None) -> TestClient:
     app = FastAPI()
     app.include_router(ThreadRESTRequestHandler(authoriser=authoriser).get_router())
     return TestClient(app)

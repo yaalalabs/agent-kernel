@@ -26,7 +26,7 @@ import shlex
 import tarfile
 import time
 import uuid
-from typing import Any, Optional
+from typing import Any
 
 import kubernetes
 import kubernetes.client
@@ -115,7 +115,7 @@ class KubernetesSandbox(Sandbox):
         """Leave the pod running so a later ``attach`` can reconnect. Idempotent."""
         return None
 
-    async def _exec(self, argv: list[str], timeout: float | None, stdin_data: Optional[str] = None) -> SandboxResult:
+    async def _exec(self, argv: list[str], timeout: float | None, stdin_data: str | None = None) -> SandboxResult:
         """Run one exec through the stream API in a thread under ``asyncio.wait_for``; on
         expiry make a best-effort kill of the exec'd process and raise ``SandboxTimeoutError``."""
 
@@ -195,8 +195,8 @@ class KubernetesSandboxProvider(SandboxProvider):
         (the profile's) sizes the pod's ``activeDeadlineSeconds`` orphan ceiling."""
         super().__init__(config)
         self._idle_timeout = idle_timeout
-        self._core_api: Optional[Any] = None
-        self._networking_api: Optional[Any] = None
+        self._core_api: Any | None = None
+        self._networking_api: Any | None = None
         # Impersonating client pairs cached per (user, groups) subject (the ec2_ssm pattern).
         self._subject_apis: dict[tuple[str, tuple[str, ...]], tuple[Any, Any]] = {}
         if config.network_policy:
@@ -320,7 +320,7 @@ class KubernetesSandboxProvider(SandboxProvider):
         labels = {**_MANAGED_LABELS, **self._config.labels, _NAME_LABEL: name}
         return {"apiVersion": "v1", "kind": "Pod", "metadata": {"name": name, "namespace": namespace, "labels": labels}, "spec": spec}
 
-    def _network_policy_manifest(self, name: str, namespace: str, policy: SandboxPolicy) -> Optional[dict]:
+    def _network_policy_manifest(self, name: str, namespace: str, policy: SandboxPolicy) -> dict | None:
         """Build the per-pod egress NetworkPolicy, or None when nothing is to be mapped.
         Domain names are unenforceable at L3/L4: ``strict`` rejects them, otherwise they are
         dropped with a WARNING and only CIDR entries are enforced."""
@@ -367,7 +367,7 @@ class KubernetesSandboxProvider(SandboxProvider):
             await asyncio.sleep(0.25)
 
     @staticmethod
-    def _pod_detail(pod: Any, phase: Optional[str]) -> str:
+    def _pod_detail(pod: Any, phase: str | None) -> str:
         """The pod's last condition message, falling back to its phase."""
         conditions = getattr(pod.status, "conditions", None) or []
         message = getattr(conditions[-1], "message", None) if conditions else None

@@ -220,6 +220,7 @@ dev = [
     "black==26.5.1",
     "isort>=5.0.0",
     "mypy>=1.0.0",
+    "ruff==0.17.1",
 ]
 
 
@@ -247,6 +248,15 @@ disallow_incomplete_defs = true
 [tool.black]
 line-length = 150
 target-version = ["py312"]
+
+[tool.ruff]
+line-length = 150
+target-version = "py312"
+
+[tool.ruff.lint]
+# Only the pyupgrade typing rules (PEP 585/604 annotations, collections.abc imports): black and isort own
+# formatting and import order. Keep in sync with RUFF_RULES in the root Makefile, which lints examples.
+select = ["UP006", "UP007", "UP035", "UP045"]
 
 [tool.pytest.ini_options]
 addopts = "--cov=src --cov-report=term --cov-report=html --html=report.html"

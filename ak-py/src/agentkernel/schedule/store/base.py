@@ -2,7 +2,6 @@
 
 import logging
 from abc import ABC, abstractmethod
-from typing import List, Optional, Tuple
 
 from ...core.config import AKConfig
 from ...core.util.factory import AKConfigError, require_extra, resolve_dotted
@@ -32,7 +31,7 @@ class ScheduleStore(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def get(self, task_id: str) -> Optional[ScheduledTask]:
+    def get(self, task_id: str) -> ScheduledTask | None:
         """Load a task by id.
 
         :param task_id: Identifier of the task.
@@ -62,7 +61,7 @@ class ScheduleStore(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def list(self, user_id: Optional[str] = None, limit: int = DEFAULT_PAGE_SIZE, offset: int = 0) -> Tuple[List[ScheduledTask], Optional[int]]:
+    def list(self, user_id: str | None = None, limit: int = DEFAULT_PAGE_SIZE, offset: int = 0) -> tuple[list[ScheduledTask], int | None]:
         """List task records, most-recently updated first.
 
         :param user_id: Filter by owning user id; unfiltered when omitted.
@@ -73,7 +72,7 @@ class ScheduleStore(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def record_trigger(self, task_id: str, request_id: Optional[str], occurred_at: str, completed: bool) -> None:
+    def record_trigger(self, task_id: str, request_id: str | None, occurred_at: str, completed: bool) -> None:
         """Record that an occurrence of a task fired.
 
         Advances ``last_triggered_at``, ``trigger_count`` and ``last_request_id``, and moves the

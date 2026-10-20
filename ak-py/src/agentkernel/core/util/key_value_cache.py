@@ -1,6 +1,6 @@
 """Key-value store for storing serializable data."""
 
-from typing import Any, Dict, Optional
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -24,7 +24,7 @@ class KeyValueCache(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    data: Dict[str, Any] = Field(default_factory=dict, description="Internal storage dictionary")
+    data: dict[str, Any] = Field(default_factory=dict, description="Internal storage dictionary")
 
     def set(self, key: str, value: Any) -> None:
         """Store a value with the given key.
@@ -37,7 +37,7 @@ class KeyValueCache(BaseModel):
             raise ValueError("Key cannot be empty or None")
         self.data[key] = value
 
-    def get(self, key: str, default: Optional[Any] = None) -> Any:
+    def get(self, key: str, default: Any | None = None) -> Any:
         """Retrieve a value by key.
 
         :param key: The key to retrieve the value for
@@ -90,7 +90,7 @@ class KeyValueCache(BaseModel):
         """
         return list(self.data.items())
 
-    def update(self, other: Dict[str, Any]) -> None:
+    def update(self, other: dict[str, Any]) -> None:
         """Update the store with key-value pairs from a dictionary.
 
         :param other: A dictionary of key-value pairs to add/update

@@ -1,7 +1,7 @@
 """WebhookRESTRequestHandler: the generic host for a push-based inbound adapter."""
 
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import pytest
 from fastapi import FastAPI, HTTPException, Request
@@ -25,15 +25,15 @@ class FakeOutboundAdapter(OutboundAdapter):
     """Records what the edge asked it to do."""
 
     name = ADAPTER_NAME
-    acknowledged: List[Dict[str, str]] = []
+    acknowledged: list[dict[str, str]] = []
 
-    async def deliver(self, reply: AgentReply, reply_context: Dict[str, str]) -> None:  # pragma: no cover - not exercised here
+    async def deliver(self, reply: AgentReply, reply_context: dict[str, str]) -> None:  # pragma: no cover - not exercised here
         raise AssertionError("the edge must never deliver")
 
-    async def deliver_error(self, message: str, reply_context: Dict[str, str]) -> None:  # pragma: no cover - not exercised here
+    async def deliver_error(self, message: str, reply_context: dict[str, str]) -> None:  # pragma: no cover - not exercised here
         raise AssertionError("the edge must never deliver")
 
-    async def acknowledge(self, reply_context: Dict[str, str]) -> Dict[str, str]:
+    async def acknowledge(self, reply_context: dict[str, str]) -> dict[str, str]:
         FakeOutboundAdapter.acknowledged.append(dict(reply_context))
         return {"ack_ts": "ack-1"}
 
@@ -43,7 +43,7 @@ class FakeInboundAdapter(InboundAdapter):
     source = Source.WEBHOOK
     webhook_path = "/fake/webhook"
 
-    def __init__(self, requests: Optional[List[InboundRequest]] = None, response: Any = None, secret: Optional[str] = None):
+    def __init__(self, requests: list[InboundRequest] | None = None, response: Any = None, secret: str | None = None):
         self._requests = requests if requests is not None else [_inbound()]
         self._response = response
         self._secret = secret
@@ -89,7 +89,7 @@ def _environment(monkeypatch):
     AKConfig._reset()
 
 
-def _client(adapter: InboundAdapter, transport: Optional[InMemoryTransport] = None) -> TestClient:
+def _client(adapter: InboundAdapter, transport: InMemoryTransport | None = None) -> TestClient:
     handler = WebhookRESTRequestHandler(adapter, producer=IntegrationProducer(transport or InMemoryTransport()))
     app = FastAPI()
     app.include_router(handler.get_router())

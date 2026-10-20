@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Dict, Optional
+from typing import Any
 
 from ...core.config import AKConfig
 from ...core.model import BaseRunRequest
@@ -23,7 +23,7 @@ class IntegrationProducer:
 
     _log = logging.getLogger("ak.integration.producer")
 
-    def __init__(self, transport: Optional[QueueTransport] = None):
+    def __init__(self, transport: QueueTransport | None = None):
         """
         :param transport: Transport to send on; defaults to the configured one.
         :raises AKConfigError: If attachments would be offloaded into a store the runner cannot read.
@@ -58,7 +58,7 @@ class IntegrationProducer:
             "single-process in_memory transport"
         )
 
-    def enqueue(self, adapter_name: str, request: InboundRequest) -> Dict[str, Any]:
+    def enqueue(self, adapter_name: str, request: InboundRequest) -> dict[str, Any]:
         """Enqueue one parsed platform message.
 
         ``user_id`` is deliberately not stamped as a message attribute: that attribute is the
@@ -91,7 +91,7 @@ class IntegrationProducer:
         return result
 
     @classmethod
-    def _reply_attributes(cls, adapter_name: str, reply_context: Dict[str, str]) -> Dict[str, str]:
+    def _reply_attributes(cls, adapter_name: str, reply_context: dict[str, str]) -> dict[str, str]:
         """Prefix the reply context and check it against the budget."""
         attributes = {f"{REPLY_CONTEXT_PREFIX}{key}": value for key, value in reply_context.items()}
         size = sum(len(key.encode()) + len(value.encode()) for key, value in attributes.items())

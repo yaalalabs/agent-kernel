@@ -5,7 +5,7 @@ around a ChatService execution-core run.
 
 import json
 import logging
-from typing import Any, List
+from typing import Any
 
 from ...core.model import AgentRequest, BaseChatRequest
 from .manager import ConversationThreadManager
@@ -29,7 +29,7 @@ class ThreadRecorder:
         """
         self._manager = manager
 
-    def pre_run(self, req: BaseChatRequest, requests: List[AgentRequest]) -> tuple[List[AgentRequest], List[ThreadAttachment]]:
+    def pre_run(self, req: BaseChatRequest, requests: list[AgentRequest]) -> tuple[list[AgentRequest], list[ThreadAttachment]]:
         """Thread work done before the agent runs: enforce user_id, store attachment
         bytes, create/load the thread, append the user message, and return the rebuilt
         request list in which stored attachments are replaced by in-band

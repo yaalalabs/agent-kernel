@@ -1,5 +1,4 @@
 import threading
-from typing import Dict
 
 from ...core.config import AKConfig
 from ...core.util.factory import AKConfigError, require_extra, resolve_dotted
@@ -20,7 +19,7 @@ class IntegrationAdapterFactory:
     """
 
     _BUILTIN_NAMES = ("slack", "whatsapp", "messenger", "instagram", "telegram", "teams", "gmail")
-    _cache: Dict[str, OutboundAdapter] = {}
+    _cache: dict[str, OutboundAdapter] = {}
     _lock = threading.Lock()
 
     @classmethod

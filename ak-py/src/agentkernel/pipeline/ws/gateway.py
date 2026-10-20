@@ -12,7 +12,6 @@ API, runner, and Response Handler for local testing.
 """
 
 import logging
-from typing import Optional
 
 import uvicorn
 from fastapi import FastAPI
@@ -76,7 +75,7 @@ class WebSocketGateway:
         return app
 
     @classmethod
-    def _validate(cls, auth_validator: Optional[AuthValidator], transport_type: str, config) -> None:
+    def _validate(cls, auth_validator: AuthValidator | None, transport_type: str, config) -> None:
         """Fail fast on an unusable gateway configuration (spec §9)."""
         if auth_validator is None:
             raise ValueError(

@@ -1,4 +1,4 @@
-from typing import Any, List
+from typing import Any
 
 import pytest
 
@@ -69,7 +69,7 @@ class SimpleModule(Module):
         super().__init__()
         self.load(agents)
 
-    def _wrap(self, agent: FrameworkAgent, agents: List[FrameworkAgent]) -> Agent:
+    def _wrap(self, agent: FrameworkAgent, agents: list[FrameworkAgent]) -> Agent:
         return KernelWrappedAgent(agent.name, agent)
 
     def load(self, agents: list[FrameworkAgent]):
@@ -183,7 +183,7 @@ class ReservingWrappedAgent(KernelWrappedAgent):
 
 
 class ReservingModule(SimpleModule):
-    def _wrap(self, agent: FrameworkAgent, agents: List[FrameworkAgent]) -> Agent:
+    def _wrap(self, agent: FrameworkAgent, agents: list[FrameworkAgent]) -> Agent:
         return ReservingWrappedAgent(agent.name, agent)
 
 
@@ -195,7 +195,7 @@ class RoleNamedFrameworkAgent:
 class RoleNamedModule(SimpleModule):
     """A module whose native agents are named by `role`, the CrewAI shape."""
 
-    def _wrap(self, agent: RoleNamedFrameworkAgent, agents: List[RoleNamedFrameworkAgent]) -> Agent:
+    def _wrap(self, agent: RoleNamedFrameworkAgent, agents: list[RoleNamedFrameworkAgent]) -> Agent:
         return KernelWrappedAgent(agent.role, agent)
 
     def _native_agent_name(self, agent: Any) -> str:
@@ -426,7 +426,7 @@ class BareModule(Module):
         super().__init__()
         self.load(agents)
 
-    def _wrap(self, agent: Any, agents: List[Any]) -> Agent:
+    def _wrap(self, agent: Any, agents: list[Any]) -> Agent:
         return KernelWrappedAgent(self._native_agent_name(agent), agent)
 
     def load(self, agents: list[Any]):

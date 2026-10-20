@@ -18,7 +18,6 @@ explicitly on every SDK call.
 import logging
 import os
 import shlex
-from typing import Optional
 
 from e2b.exceptions import NotFoundException
 from e2b.sandbox.commands.command_handle import CommandExitException
@@ -97,7 +96,7 @@ class E2BSandboxProvider(SandboxProvider):
         policy_resources=False,  # cpu/memory are fixed by the E2B tier
     )
 
-    def __init__(self, config, idle_timeout: Optional[float] = None) -> None:
+    def __init__(self, config, idle_timeout: float | None = None) -> None:
         """Store the config and the profile's idle_timeout (passed as the native sandbox timeout)."""
         super().__init__(config)
         self._idle_timeout = idle_timeout

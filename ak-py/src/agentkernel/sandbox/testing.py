@@ -14,7 +14,6 @@ agentkernel.sandbox`` stays free of a pytest dependency.
 """
 
 import uuid
-from typing import Optional
 
 import pytest
 from pydantic import BaseModel
@@ -97,7 +96,7 @@ class FakeSandboxProvider(SandboxProvider):
         policy_resources=False,
     )
 
-    def __init__(self, config: Optional[BaseModel] = None) -> None:
+    def __init__(self, config: BaseModel | None = None) -> None:
         """Create the provider; ``config`` is optional because the fake reads no configuration."""
         super().__init__(config if config is not None else _EmptyConfig())
         self._sandboxes: dict[str, FakeSandbox] = {}

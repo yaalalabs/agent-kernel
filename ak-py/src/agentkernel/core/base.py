@@ -8,7 +8,7 @@ import pickle
 from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator, Awaitable, Callable, Iterable, Iterator, Mapping
 from enum import Enum
-from typing import TYPE_CHECKING, Any, ClassVar, Self, Type, cast
+from typing import TYPE_CHECKING, Any, ClassVar, Self, cast
 
 from .event import StreamEvent
 from .hooks import PostHook, PreHook
@@ -520,7 +520,7 @@ class Agent(ABC):
         """
         return cls.current_agent.get()
 
-    def __init__(self, name: str, runner: Runner, realtime_runner_cls: "Type[RealtimeRunner] | None" = None):
+    def __init__(self, name: str, runner: Runner, realtime_runner_cls: "type[RealtimeRunner] | None" = None):
         """
         Initializes an Agent instance.
         :param name: Name of the agent.
@@ -529,7 +529,7 @@ class Agent(ABC):
         """
         self._name: str = name
         self._runner: Runner = runner
-        self._realtime_runner_cls: "Type[RealtimeRunner] | None" = realtime_runner_cls
+        self._realtime_runner_cls: "type[RealtimeRunner] | None" = realtime_runner_cls
         self._pre_hooks: list[PreHook] = []
         self._post_hooks: list[PostHook] = []
         self._run_options: dict[str, Any] = {}
@@ -557,7 +557,7 @@ class Agent(ABC):
         return self._runner
 
     @property
-    def realtime_runner_cls(self) -> "Type[RealtimeRunner] | None":
+    def realtime_runner_cls(self) -> "type[RealtimeRunner] | None":
         """
         Returns the realtime runner class associated with the agent, if any.
         """

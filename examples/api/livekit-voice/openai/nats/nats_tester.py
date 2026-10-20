@@ -26,7 +26,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from agentkernel.pipeline.envelope import QueueName
 from agentkernel.pipeline.transport.nats import _NatsLoop
@@ -58,7 +58,7 @@ class NatsTester:
     def __init__(self, url: str = URL):
         self.url = url
         self._request_timeout = 10.0
-        self._client: Optional[Any] = None
+        self._client: Any | None = None
 
     # -- infrastructure ------------------------------------------------------------------
 
@@ -82,7 +82,7 @@ class NatsTester:
         health status, because the server accepts connections slightly before JetStream is ready.
         """
         deadline = time.monotonic() + timeout
-        last_error: Optional[Exception] = None
+        last_error: Exception | None = None
         while time.monotonic() < deadline:
             try:
                 _NatsLoop.run(self._jetstream().account_info(), self._request_timeout)
@@ -108,10 +108,10 @@ class NatsTester:
             transport._ensure_provisioned(queue)
         print(f"provisioned {', '.join(STREAMS)}")
 
-    def describe(self) -> Dict[str, Dict[str, Any]]:
+    def describe(self) -> dict[str, dict[str, Any]]:
         """Message counts and consumer names per stream."""
         jetstream = self._jetstream()
-        described: Dict[str, Dict[str, Any]] = {}
+        described: dict[str, dict[str, Any]] = {}
         for name in STREAMS:
             try:
                 info = _NatsLoop.run(jetstream.stream_info(name), self._request_timeout)
@@ -140,7 +140,7 @@ class NatsTester:
 
     # -- messages ------------------------------------------------------------------------
 
-    def tail(self, stream: str, limit: int = 50) -> List[dict]:
+    def tail(self, stream: str, limit: int = 50) -> list[dict]:
         """Read what a stream is holding, by sequence, without consuming anything.
 
         A direct get delivers nothing to any consumer, which is the only safe way to look inside a
@@ -152,7 +152,7 @@ class NatsTester:
         except NotFoundError:
             return []
 
-        messages: List[dict] = []
+        messages: list[dict] = []
         sequence = info.state.first_seq
         while sequence <= info.state.last_seq and len(messages) < limit:
             try:
@@ -171,7 +171,7 @@ class NatsTester:
         return messages
 
     def publish(
-        self, session: str, data: str, headers: Optional[Dict[str, str]] = None, queue: QueueName = QueueName.INPUT
+        self, session: str, data: str, headers: dict[str, str] | None = None, queue: QueueName = QueueName.INPUT
     ) -> str:
         """Publish a raw message onto a queue's partition subject.
 
@@ -211,7 +211,7 @@ class NatsTester:
             self._client = None
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("command", choices=["up", "down", "streams", "tail", "publish", "provision", "purge"])
     parser.add_argument("stream", nargs="?", help="stream name, for tail")

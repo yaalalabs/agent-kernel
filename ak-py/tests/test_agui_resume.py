@@ -14,7 +14,6 @@ session's records.
 
 import json
 from contextlib import contextmanager
-from typing import Optional
 
 import pytest
 from fastapi import FastAPI
@@ -36,7 +35,7 @@ AUTH = {"Authorization": f"Bearer {GOOD_TOKEN}"}
 
 
 class StaticAuthoriser(Authoriser):
-    def authorise(self, token: str) -> Optional[str]:
+    def authorise(self, token: str) -> str | None:
         return "u1" if token == GOOD_TOKEN else None
 
 

@@ -6,8 +6,6 @@ is returned as a :class:`agentkernel.sandbox.model.SandboxResult`. These excepti
 signal failures of the sandbox *machinery* only.
 """
 
-from typing import Optional
-
 
 class SandboxError(Exception):
     """Base class for all sandbox capability errors."""
@@ -26,7 +24,7 @@ class SandboxCapabilityError(SandboxError):
 
     def __init__(self, *args: str) -> None:
         """Accept ``(subject, capability)`` or ``(capability,)`` and build the message."""
-        self.subject: Optional[str] = None
+        self.subject: str | None = None
         self.capability: str = ""
         if len(args) == 2:
             self.subject, self.capability = args[0], args[1]

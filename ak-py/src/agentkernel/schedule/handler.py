@@ -15,7 +15,7 @@ validates the configured provider and store, so a broken pairing fails the app b
 """
 
 import logging
-from typing import Literal, Optional
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
@@ -43,8 +43,8 @@ class ScheduleAmendment(BaseModel):
     """
 
     prompt: str
-    at: Optional[str] = None
-    cron: Optional[str] = None
+    at: str | None = None
+    cron: str | None = None
     timezone: str = "UTC"
     session_mode: Literal["reuse", "new"] = "reuse"
     status: Literal["active", "paused"] = "active"
@@ -67,7 +67,7 @@ class ScheduleRESTRequestHandler(AuthorisedRESTRequestHandler):
     the single-task routes enforce ownership. Without an Authoriser, the routes are open.
     """
 
-    def __init__(self, authoriser: Optional[Authoriser] = None):
+    def __init__(self, authoriser: Authoriser | None = None):
         """Initializes a ScheduleRESTRequestHandler instance.
 
         :param authoriser: Optional user-supplied Authoriser protecting the schedule routes.
@@ -90,9 +90,9 @@ class ScheduleRESTRequestHandler(AuthorisedRESTRequestHandler):
         @router.get("/api/v1/schedules")
         def list_schedules(
             request: Request,
-            user_id: Optional[str] = None,
-            limit: Optional[int] = None,
-            cursor: Optional[str] = None,
+            user_id: str | None = None,
+            limit: int | None = None,
+            cursor: str | None = None,
         ):
             manager = self._require_manager()
             resolved_user_id = self._resolve_user(request)
@@ -157,7 +157,7 @@ class ScheduleRESTRequestHandler(AuthorisedRESTRequestHandler):
         return manager
 
     @staticmethod
-    def _as_http_error(error: Exception, task_id: Optional[str] = None) -> HTTPException:
+    def _as_http_error(error: Exception, task_id: str | None = None) -> HTTPException:
         """Map a manager error onto the HTTP status its surface reports.
 
         The manager's typed errors are the contract, so every route shares one mapping instead of
