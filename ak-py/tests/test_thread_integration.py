@@ -325,7 +325,7 @@ class TestEndToEnd:
 class TestThreadMessageShape:
     """What ``ThreadMessage`` accepts, refuses, and puts on the wire (#763).
 
-    The union is the part worth pinning rather than trusting: ``str | JSONPayload`` leans on
+    The union is the part worth pinning rather than trusting: ``Union[str, JSONPayload]`` leans on
     pydantic's smart union to keep a string a string, and a reply whose text happens to look like
     JSON is exactly the value that would be wrong to promote to an object.
     """
@@ -359,6 +359,20 @@ class TestThreadMessageShape:
     def test_a_label_over_text_is_refused(self):
         with pytest.raises(ValidationError, match="content is text"):
             ThreadMessage(role="assistant", content="hello", media_type=MEDIA_TYPE)
+
+    def test_a_blank_label_over_text_is_no_label(self):
+        """Every other layer reads a blank label as unlabelled; the wire form must not disagree."""
+        message = ThreadMessage(role="assistant", content="plain text", media_type="")
+
+        assert message.media_type is None
+        assert "media_type" not in message.to_wire()
+
+    def test_a_whitespace_only_label_is_no_label(self):
+        assert ThreadMessage(role="assistant", content="plain text", media_type="   ").media_type is None
+
+    def test_an_object_with_a_blank_label_is_refused(self):
+        with pytest.raises(ValidationError, match="media_type is unset"):
+            ThreadMessage(role="assistant", content={"a": 1}, media_type="")
 
     def test_a_row_written_before_the_field_existed_still_reads(self):
         message = ThreadMessage.model_validate_json('{"message_id": "m1", "role": "assistant", "content": "hi"}')

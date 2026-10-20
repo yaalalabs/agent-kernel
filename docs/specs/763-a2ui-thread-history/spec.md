@@ -41,6 +41,20 @@ class ThreadMessage(BaseModel):
     timestamp: datetime.datetime = Field(default_factory=_utc_now)
     attachments: List[ThreadAttachment] = Field(default_factory=list)
 
+    @field_validator("media_type", mode="before")
+    @classmethod
+    def _blank_label_is_no_label(cls, value: Any) -> Any:
+        """Normalise a blank label to ``None`` before the pairing validator reads it.
+
+        ``build_response`` and ``ThreadRecorder._as_thread_message`` both test the label for
+        truthiness, so ``""`` already means unlabelled everywhere else; without this the wire form,
+        which tests ``is None``, would be the one layer disagreeing. ``mode="before"`` means an
+        object carrying a blank label raises the pairing validator's existing message.
+        """
+        if isinstance(value, str):
+            return value.strip() or None
+        return value
+
     @model_validator(mode="after")
     def _label_and_payload_agree(self) -> "ThreadMessage":
         if self.media_type and isinstance(self.content, str):
@@ -85,8 +99,8 @@ Rules this fixes in place:
    Both forms work (`str | JSONPayload` evaluates to the same `typing.Union`); the file already
    spells `Optional` and `List` the `typing` way, so `Union` is what the module reads like.
 
-New imports in this module: `Union` added to the `typing` import, `model_validator` to the `pydantic`
-import, and `from ...core.util.payload import JSONPayload`.
+New imports in this module: `Any` and `Union` added to the `typing` import, `field_validator` and
+`model_validator` to the `pydantic` import, and `from ...core.util.payload import JSONPayload`.
 
 ### `ThreadRecorder` (`src/agentkernel/integration/thread/recorder.py`)
 
@@ -278,6 +292,7 @@ state.
 |---|---|
 | Labelled reply whose content bypassed validation (`model_copy` over `content`, in-place mutation) | `ThreadMessage` construction raises `ValueError`. Direct path: `thread_chat.py:143-145` → 500, nothing recorded. Queue path: `agent_runner.py:156-157` logs `"Failed to record the assistant message for session_id=..."`, reply already delivered. |
 | A caller constructing a half state (object without a label, or a label with text) | The model validator raises `ValueError` naming which half is wrong. Reachable only from code calling the manager directly; `_as_thread_message` cannot produce one. |
+| A blank or whitespace-only `media_type` | No error. `_blank_label_is_no_label` normalises it to `None` before the pairing validator runs, so text records as text and an object is refused as unlabelled. |
 | Thread row written before this change | No error. `media_type` defaults to `None`, `content` validates as `str`. |
 | A BYO `ThreadStore` that cannot hold an object | Its own exception, through the two routes above. Documented, not caught. |
 | Missing `thread` config block, missing `user_id`, unavailable agent | Unchanged — all of it happens in `pre_run` or the handler, before any of this. |

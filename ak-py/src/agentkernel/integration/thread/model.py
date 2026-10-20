@@ -8,9 +8,9 @@ a reference (attachment_id) into the existing multimodal AttachmentStore.
 
 import datetime
 import uuid
-from typing import List, Literal, Optional, Union
+from typing import Any, List, Literal, Optional, Union
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from ...core.util.payload import JSONPayload
 
@@ -37,9 +37,11 @@ class ThreadMessage(BaseModel):
     and a value with no JSON form raises here rather than inside a store's ``model_dump_json``.
 
     The two fields are one decision, enforced rather than documented: an object with no label, or a
-    label over text, would reach a client as a payload it cannot branch on. ``media_type`` is
-    declared between ``content`` and ``timestamp`` because field order is key order in
-    ``model_dump_json``, and both recording paths must produce the same bytes for the same reply.
+    label over text, would reach a client as a payload it cannot branch on. A blank label counts as
+    no label, which is what ``build_response`` and ``ThreadRecorder`` already mean by it.
+    ``media_type`` is declared between ``content`` and ``timestamp`` because field order is key
+    order in ``model_dump_json``, and both recording paths must produce the same bytes for the
+    same reply.
     """
 
     message_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -48,6 +50,25 @@ class ThreadMessage(BaseModel):
     media_type: Optional[str] = None
     timestamp: datetime.datetime = Field(default_factory=_utc_now)
     attachments: List[ThreadAttachment] = Field(default_factory=list)
+
+    @field_validator("media_type", mode="before")
+    @classmethod
+    def _blank_label_is_no_label(cls, value: Any) -> Any:
+        """Normalise a blank label to ``None`` before the pairing validator reads it.
+
+        Every other layer tests the label for truthiness — ``ResponseBuilder.build_response`` and
+        ``ThreadRecorder._as_thread_message`` both treat ``""`` as unlabelled — so a blank reaching
+        the wire as a present ``media_type`` key would be this model alone disagreeing. Running
+        ``mode="before"`` means an object carrying a blank label raises the pairing validator's
+        existing "media_type is unset" rather than needing a message of its own.
+
+        :param value: The label as supplied by the caller or a stored row.
+        :return: The stripped label, or None when it was blank; any non-string unchanged, so
+            pydantic still reports the type error.
+        """
+        if isinstance(value, str):
+            return value.strip() or None
+        return value
 
     @model_validator(mode="after")
     def _label_and_payload_agree(self) -> "ThreadMessage":
