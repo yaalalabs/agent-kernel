@@ -109,8 +109,44 @@ uses):
 | `AK_WEBSOCKET_API__PUSH_AUTH_TOKEN` | the push-token Secret (io-handler and ws-gateway pods) |
 | `AK_POD_IP` | downward API, `status.podIP` (ws-gateway pods) |
 
-Model provider credentials (e.g. `OPENAI_API_KEY`) are yours to inject through `extraEnv`,
-ideally from a Secret.
+Model provider credentials (e.g. `OPENAI_API_KEY`) are yours to provide, either as an environment
+variable through `extraEnv` (ideally from a Secret) or as mounted files through `secretStore`
+(see [Secrets](#secrets)).
+
+## Secrets
+
+`secretStore` mounts Kubernetes Secrets you created into the pod, for the application's
+`secret.provider.type: kubernetes`:
+
+```yaml
+secretStore:
+  enabled: true
+  secrets:
+    - name: openai-credentials
+    - name: slack-credentials
+```
+
+- Each listed Secret becomes a non-optional `secret` volume (`ak-secret-<index>`) mounted read-only and whole at
+  `/var/run/secrets/agentkernel/<name>`, one file per data key. The Secrets must exist in the release
+  namespace, or the pod stays `ContainerCreating` (`FailedMount`).
+- **Placement.** Only the tier that executes agents mounts them: `agentRunner` or, in the
+  single-process profile (`agentRunner.enabled: false`, `transport.type: in_memory`), `ioHandler`.
+  `wsGateway` and `sandboxWorker` never do. `secretStore.enabled` with no such tier, an empty list, a
+  duplicate name, or an entry without a string `name` fails `helm template` / `install`.
+- **Mount path.** Leave the application's `secret.provider.kubernetes.mount_path` at its default
+  (`/var/run/secrets/agentkernel`); the chart always mounts there and has no value to move it.
+- **No RBAC.** The app reads files; it never calls the Kubernetes API. The chart creates no Role,
+  RoleBinding or ServiceAccount for this.
+- **Key names.** Data keys must be the AK key name (`OPENAI_API_KEY`); other keys are never read.
+- **Security.** Every key of every listed Secret is readable by any code in that tier, including code
+  run by a `local_subprocess` sandbox. List only what agents need, keep unrelated keys out of those
+  Secrets, and run untrusted code in an isolated sandbox provider.
+- **Rotation.** Kubelet refreshes the files after a short delay; no checksum annotation is added, so
+  a Secret change does not roll the pods. Values the app reads once at startup need a rollout restart.
+
+The environment still wins: a set, non-empty `OPENAI_API_KEY` in the container (for example from
+an `extraEnv` `secretKeyRef`) is used before any mounted file. See [Secret Resolution](https://github.com/yaalalabs/agent-kernel/tree/develop/docs/docs/advanced/secrets.md) for the
+provider side.
 
 ## Transports
 
@@ -345,11 +381,14 @@ subcharts are smoke-test conveniences, not production settings.
 
 ```bash
 ct lint --config ak-deployment/ak-k8s/ci/ct.yaml
-ct install --config ak-deployment/ak-k8s/ci/ct.yaml    # against a kind cluster
+ct install --config ak-deployment/ak-k8s/ci/ct.yaml \
+  --helm-extra-set-args "--set extraEnv[0].name=OPENAI_API_KEY --set extraEnv[0].value=placeholder"   # against a kind cluster
 ```
 
 `chart/ci/kind-smoke-values.yaml` is the values file ct installs with: the dev flavor sized
-for a CI node, expecting the example image preloaded via `kind load docker-image`.
+for a CI node, expecting the example image preloaded via `kind load docker-image`. The placeholder
+`OPENAI_API_KEY` keeps the example's agent runner (which reads the key at import) from crash-looping, since
+`ct install` provides neither the key nor the Secret mount; the gate checks that pods start, not that chat works.
 
 ## Publishing
 

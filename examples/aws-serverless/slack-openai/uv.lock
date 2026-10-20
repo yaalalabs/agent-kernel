@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.12"
 resolution-markers = [
     "python_full_version >= '3.15'",
@@ -9,7 +9,7 @@ resolution-markers = [
 
 [[package]]
 name = "agentkernel"
-version = "0.9.3"
+version = "0.9.5"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "deprecated" },
@@ -18,9 +18,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "singleton-type" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/4c/c8/7da082f4d1840c4490282e8d9c0cfe3e6ec4eddca46a93c7dd800f99bf31/agentkernel-0.9.3.tar.gz", hash = "sha256:83d3e3e6f7e67e7889a77b49d4a16a7b76fae4232eabf5d24c914c4bf046889f", size = 577718, upload-time = "2026-09-25T06:55:25.045Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/78/23/04a97afd1bfce8f69640c7052036eda1e324114538aa519d04308d5a4de3/agentkernel-0.9.5.tar.gz", hash = "sha256:43df6229bd23e2d43db5905ee75ff93564b3c5bd5645924de97217a77a237a9f", size = 673951, upload-time = "2026-10-09T06:37:29.487Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ff/66/161a87a05e9f77d7ab73fc37559badef7d5b189fd27fbef6ebd297dedb1e/agentkernel-0.9.3-py3-none-any.whl", hash = "sha256:3306be629e2879c27726b8f4213bf8702924604948a6f58a3fcb1b10ac912437", size = 764573, upload-time = "2026-09-25T06:55:23.113Z" },
+    { url = "https://files.pythonhosted.org/packages/32/26/64bdbf4bedb1a0844ff8769d8aa91b237eaff9182a1656145aab789cb906/agentkernel-0.9.5-py3-none-any.whl", hash = "sha256:78a545e8d9652c8b2ade16003fb75ad5be5e1f2221df60a24320358956151ecc", size = 872753, upload-time = "2026-10-09T06:37:27.346Z" },
 ]
 
 [package.optional-dependencies]
@@ -37,6 +37,8 @@ openai = [
     { name = "openinference-instrumentation-openai-agents" },
 ]
 slack = [
+    { name = "aiohttp" },
+    { name = "fastapi" },
     { name = "httpx" },
     { name = "slack-bolt" },
 ]
@@ -305,16 +307,16 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "agentkernel", extras = ["aws"], marker = "extra == 'authorizer'", specifier = ">=0.9.3" },
-    { name = "agentkernel", extras = ["aws", "openai", "multimodal"], marker = "extra == 'agent-runner'", specifier = ">=0.9.3" },
-    { name = "agentkernel", extras = ["aws", "slack"], marker = "extra == 'request-handler'", specifier = ">=0.9.3" },
-    { name = "agentkernel", extras = ["aws", "slack"], marker = "extra == 'response-handler'", specifier = ">=0.9.3" },
+    { name = "agentkernel", extras = ["aws"], marker = "extra == 'authorizer'", specifier = ">=0.9.5" },
+    { name = "agentkernel", extras = ["aws", "openai", "multimodal"], marker = "extra == 'agent-runner'", specifier = ">=0.9.5" },
+    { name = "agentkernel", extras = ["aws", "slack"], marker = "extra == 'request-handler'", specifier = ">=0.9.5" },
+    { name = "agentkernel", extras = ["aws", "slack"], marker = "extra == 'response-handler'", specifier = ">=0.9.5" },
 ]
 provides-extras = ["request-handler", "response-handler", "agent-runner", "authorizer"]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "agentkernel", extras = ["test"], specifier = ">=0.9.3" },
+    { name = "agentkernel", extras = ["test"], specifier = ">=0.9.5" },
     { name = "black", specifier = "==26.5.1" },
     { name = "isort", specifier = ">=5.0.0" },
     { name = "mypy", specifier = ">=1.0.0" },
@@ -958,6 +960,23 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/bf/89/780e11f9588d9e7128a3f87788354c7946a9cbb1401ad38a48c4db9a4f07/execnet-2.1.2.tar.gz", hash = "sha256:63d83bfdd9a23e35b9c6a3261412324f964c2ec8dcd8d3c6916ee9373e0befcd", size = 166622, upload-time = "2025-11-12T09:56:37.75Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/ab/84/02fc1827e8cdded4aa65baef11296a9bbe595c474f0d6d758af082d849fd/execnet-2.1.2-py3-none-any.whl", hash = "sha256:67fba928dd5a544b783f6056f449e5e3931a5c378b128bc18501f7ea79e296ec", size = 40708, upload-time = "2025-11-12T09:56:36.333Z" },
+]
+
+[[package]]
+name = "fastapi"
+version = "0.143.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "annotated-doc" },
+    { name = "opentelemetry-api" },
+    { name = "pydantic" },
+    { name = "starlette" },
+    { name = "typing-extensions" },
+    { name = "typing-inspection" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/96/16/52ca959230f9820660fd822f488f883d7dc42310716b4cc6d2a944835dcd/fastapi-0.143.1.tar.gz", hash = "sha256:4cafaab64df8534758bf0fce61947f5e27e6cd512798ccbbaad5425086c3b664", size = 469025, upload-time = "2026-10-14T12:53:09.448Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ca/73/30ee3dd8f26fd385e451bbded9e1b54766a277db588e70154dd894f4b698/fastapi-0.143.1-py3-none-any.whl", hash = "sha256:687beb445804e4c4dbe2a76fd83c25e9b973ac48c267defb86f791e099baecc4", size = 144682, upload-time = "2026-10-14T12:53:07.69Z" },
 ]
 
 [[package]]

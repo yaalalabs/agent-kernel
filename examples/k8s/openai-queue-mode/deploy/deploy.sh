@@ -12,8 +12,8 @@
 #
 # Same contract as ../build.sh local and ./package.sh local: users start Agent Kernel from the
 # published versions, the pipeline from local dependencies. Layers the chart's dev flavor
-# (values-dev.yaml) and this example's ak-values.yaml (the two images + the OpenAI secret
-# reference); the WebSocket and Kafka walkthroughs add their overrides as --set flags.
+# (values-dev.yaml) and this example's ak-values.yaml (the two images + the OpenAI
+# credentials Secret mount); the WebSocket and Kafka walkthroughs add their overrides as --set flags.
 #
 # Environment overrides: HELM (the helm command, e.g. "microk8s helm"), RELEASE (default ak),
 # FLAVOR (the chart's values-<flavor>.yaml, default dev).
