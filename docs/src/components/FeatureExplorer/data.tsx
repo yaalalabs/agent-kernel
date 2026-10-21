@@ -207,8 +207,8 @@ export const FEATURE_TABS: FeatureTab[] = [
       {
         title: "Secret Resolution",
         description:
-          "Resolve API keys and tokens from the environment with fallback to a managed store such as AWS Systems Manager Parameter Store, cached with a TTL and never written back to the environment.",
-        tags: ["env", "AWS SSM", "TTL cache"],
+          "Resolve API keys and tokens from the environment with fallback to a managed store such as AWS Systems Manager Parameter Store or Kubernetes Secrets mounted into the pod, cached with a TTL and never written back to the environment.",
+        tags: ["env", "AWS SSM", "Kubernetes Secrets", "TTL cache"],
         docs: "/docs/next/advanced/secrets",
         example: "cli/openai-secret",
       },
