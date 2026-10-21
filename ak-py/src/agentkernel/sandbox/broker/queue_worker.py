@@ -34,6 +34,7 @@ from ...pipeline.transport.base import QueueTransport, QueueTransportFactory
 from ..errors import SandboxConfigError
 from ..factory import SandboxProviderFactory
 from ..model import SandboxSession
+from ..packages import PackageSpecRuleFactory
 from .base import ExecutionCompletion
 from .queue import check_store_pairing
 from .wire import BrokerWireCodec
@@ -71,8 +72,8 @@ class QueueBrokerWorker:
 
     @staticmethod
     def _validated_broker(config: Any) -> Any:
-        """The startup fail-fasts: enabled, the right flavor, both blocks, and the
-        in_memory pairing rule (shared with the client via ``check_store_pairing``)."""
+        """The startup fail-fasts: enabled, the right flavor, both blocks, the in_memory
+        pairing rule (shared with the client via ``check_store_pairing``), and every package rule."""
         if not config.enabled:
             raise SandboxConfigError("QueueBrokerWorker requires sandbox.enabled: true")
         broker = config.broker
@@ -83,6 +84,8 @@ class QueueBrokerWorker:
         if broker.response_store is None:
             raise SandboxConfigError("the 'queue' broker flavor requires the sandbox.broker.response_store block")
         check_store_pairing(broker.queue, broker.response_store)
+        # Resolve every package rule now, so an unresolvable one kills the worker at startup.
+        PackageSpecRuleFactory.validate_config(config)
         return broker
 
     # -- lifecycle ------------------------------------------------------------ #

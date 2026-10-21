@@ -21,6 +21,7 @@ from agentkernel.core.config import (
     _QueuesConfig,
     _ResponseStoreConfig,
     _SandboxConfig,
+    _SandboxDockerConfig,
     _SandboxProfileConfig,
 )
 from agentkernel.core.runtime import Runtime
@@ -460,6 +461,13 @@ class TestQueueBrokerWorker:
             QueueBrokerWorker(_worker_cfg(queue=_QueuesConfig(type="kafka")))
         with pytest.raises(SandboxConfigError, match="only valid together"):
             QueueBrokerWorker(_worker_cfg(response_store=_ResponseStoreConfig(type="redis")))
+
+    def test_startup_rejects_an_unresolvable_package_rule(self):
+        cfg = _worker_cfg()
+        docker = _SandboxDockerConfig(package_installers={"deb": ["apt-get", "install", "-y"]}, package_rules={"deb": "zzq_missing.Rule"})
+        cfg.profiles["apt"] = _SandboxProfileConfig(type="docker", docker=docker)
+        with pytest.raises(SandboxConfigError, match="apt"):
+            QueueBrokerWorker(cfg)
 
     @pytest.mark.asyncio
     async def test_request_loop_queues_the_ready_to_store_record(self, monkeypatch):

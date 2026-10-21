@@ -1,10 +1,14 @@
 """Tests for profile permissions (#692): ``SandboxPermissionGuard`` and its wiring into
 ``BrokerWorkerCore`` and ``ThreadBroker`` — one audit line per denial, the capability-mismatch
-warning, the legacy ``install_packages`` shim, and the effective timeout with its backstop.
+warning, the legacy ``install_packages`` shim, and the effective timeout with its backstop —
+plus the agent side: ``ExecutionManager``'s pre-submit checks and config warnings, the
+``install_packages`` tool, and installs end to end over the embedded, thread and queue flavors.
 """
 
 import asyncio
+import json
 import logging
+import threading
 
 import pytest
 
@@ -12,12 +16,22 @@ from agentkernel.core.config import (
     AKConfig,
     _ExecutionBrokerConfig,
     _GuardrailConfig,
+    _QueuesConfig,
+    _ResponseStoreConfig,
     _SandboxConfig,
+    _SandboxDockerConfig,
     _SandboxIdentityConfig,
+    _SandboxPackageInstallConfig,
+    _SandboxPolicyConfig,
     _SandboxProfileConfig,
 )
 from agentkernel.core.runtime import Runtime
+from agentkernel.core.session.in_memory import InMemorySessionStore
+from agentkernel.pipeline.response_store.in_memory import InMemoryResponseStore
+from agentkernel.pipeline.thread_runner import ThreadRunner
+from agentkernel.pipeline.transport.in_memory import InMemoryTransport
 from agentkernel.sandbox.broker.base import ExecutionRequest
+from agentkernel.sandbox.broker.queue_worker import QueueBrokerWorker
 from agentkernel.sandbox.broker.thread import ThreadBroker
 from agentkernel.sandbox.broker.worker import BrokerWorkerCore
 from agentkernel.sandbox.errors import SandboxCapabilityError, SandboxPermissionDeniedError, SandboxPolicyError
@@ -26,6 +40,8 @@ from agentkernel.sandbox.manager import ExecutionManager
 from agentkernel.sandbox.model import PackageInstallPolicy, SandboxPolicy, SandboxPrincipal, SandboxResult, SandboxSession
 from agentkernel.sandbox.permission import PermissionAuditContext, SandboxPermissionGuard
 from agentkernel.sandbox.testing import FakeSandbox, FakeSandboxProvider
+from agentkernel.sandbox.tools import install_packages as install_packages_tool
+from agentkernel.sandbox.tools import run_code as run_code_tool
 
 BROKER_LOGGER = "ak.sandbox.broker"
 FAKE_DOTTED = "agentkernel.sandbox.testing.FakeSandboxProvider"
@@ -87,21 +103,37 @@ HANGING_DOTTED = f"{__name__}._HangingProvider"
 INSTALL_ALL = PackageInstallPolicy(ecosystems=["python", "node"])
 
 
-@pytest.fixture(autouse=True)
-def reset_singletons():
+def _stop_leaked_thread_broker():
+    """Stop the current manager's thread broker so its daemon thread doesn't leak across tests
+    (the tests/test_sandbox_broker.py shape)."""
+    mgr = ExecutionManager._instance
+    broker = getattr(mgr, "_broker", None) if mgr is not None else None
+    thread = getattr(broker, "_thread", None)
+    if thread is not None and thread.is_alive():
+        broker._closed = True
+        broker._loop.call_soon_threadsafe(broker._queue.put_nowait, None)
+        thread.join(5.0)
+
+
+def _reset_all():
     AKConfig._reset()
     ExecutionManager._reset()
     SandboxProviderFactory._reset()
+    InMemoryTransport.reset()
+    InMemoryResponseStore.reset()
+    ThreadRunner.shutdown_event.clear()
     Runtime._system_pre_hooks = None
     Runtime._system_post_hooks = None
+
+
+@pytest.fixture(autouse=True)
+def reset_singletons():
+    _reset_all()
     _PkgSandbox.calls = []
     _LegacySandbox.calls = []
     yield
-    AKConfig._reset()
-    ExecutionManager._reset()
-    SandboxProviderFactory._reset()
-    Runtime._system_pre_hooks = None
-    Runtime._system_post_hooks = None
+    _stop_leaked_thread_broker()
+    _reset_all()
 
 
 def _install_cfg(monkeypatch, sandbox_cfg):
@@ -420,3 +452,225 @@ async def test_backstop_fires_after_the_grace(monkeypatch):
     completion = await asyncio.wait_for(BrokerWorkerCore().process(_install(policy=policy)), timeout=5)
     assert completion.status == "timed_out"
     assert "(backstop)" in completion.error and "0.05s" in completion.error
+
+
+# --------------------------------------------------------------------------- #
+# ExecutionManager (agent side)
+# --------------------------------------------------------------------------- #
+
+
+def _permits(ecosystems=None, timeout=None, **policy_kwargs):
+    install = _SandboxPackageInstallConfig(**({"ecosystems": ecosystems} if ecosystems else {}), timeout=timeout)
+    return _SandboxPolicyConfig(package_install=install, **policy_kwargs)
+
+
+def _use_profiles(monkeypatch, profiles, flavor="embedded", **broker_kwargs):
+    cfg = _SandboxConfig(enabled=True, broker=_ExecutionBrokerConfig(flavor=flavor, **broker_kwargs), profiles=profiles)
+    _install_cfg(monkeypatch, cfg)
+    return cfg
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("case", ["denied-ecosystem", "denied-language", "rejected-spec"])
+async def test_agent_side_rejection_has_no_side_effects(monkeypatch, caplog, case):
+    profile = _SandboxProfileConfig(type=PKG_DOTTED, policy=_permits(languages=["python"]))
+    _use_profiles(monkeypatch, {"default": profile})
+    mgr = ExecutionManager.get()
+    session = InMemorySessionStore().new("ak-1")
+    async with session:
+        await mgr.execute(code="print(1)")  # gives the default session a live sandbox
+        cache = session.get_non_volatile_cache()
+        registry = cache.get("sandbox")
+        registry["sessions"]["default:default"]["last_used_at"] = 0.0  # idle-expired: the next touch would tear it down
+        cache.set("sandbox", registry)
+
+        submitted = []
+
+        async def record(request, wait=None):
+            submitted.append(request.operation)
+
+        monkeypatch.setattr(mgr._broker, "submit", record)
+        with caplog.at_level("WARNING", logger=BROKER_LOGGER):
+            if case == "denied-ecosystem":
+                with pytest.raises(SandboxPermissionDeniedError):
+                    await mgr.install_packages(["lodash"], ecosystem="node")
+            elif case == "denied-language":
+                with pytest.raises(SandboxPermissionDeniedError):
+                    await mgr.execute(code="echo hi", language="bash")
+            else:
+                with pytest.raises(ValueError):
+                    await mgr.install_packages(["-r"])
+        sandbox_id = cache.get("sandbox")["sessions"]["default:default"]["sandbox_id"]
+    assert submitted == []  # no submit, and no idle-teardown destroy (that goes through submit too)
+    assert sandbox_id  # the idle-expired sandbox was not torn down
+    assert len(_denials(caplog)) == (0 if case == "rejected-spec" else 1)
+
+
+def test_policy_from_copies_the_permission_fields():
+    profile = _SandboxProfileConfig(type=PKG_DOTTED, policy=_permits(["python", "node"], timeout=300, languages=["python"]))
+    policy = ExecutionManager._policy_from(profile)
+    assert policy.languages == ["python"]
+    assert policy.package_install == PackageInstallPolicy(ecosystems=["python", "node"], timeout=300)
+    plain = ExecutionManager._policy_from(_SandboxProfileConfig(type=PKG_DOTTED))
+    assert plain.languages is None and plain.package_install is None
+
+
+def test_permission_config_warnings_fire_once_per_profile(monkeypatch, caplog):
+    profiles = {
+        "shared": _SandboxProfileConfig(type=PKG_DOTTED, scope="per_runtime", policy=_permits()),
+        "offline": _SandboxProfileConfig(type=PKG_DOTTED, policy=_permits(network_egress="deny")),
+        "locked": _SandboxProfileConfig(type="docker", docker=_SandboxDockerConfig(), policy=_permits(fs_allow_write=["/workspace"])),
+        # Every risky setting, but no package_install block: no warning.
+        "quiet": _SandboxProfileConfig(
+            type="docker",
+            scope="per_runtime",
+            docker=_SandboxDockerConfig(),
+            policy=_SandboxPolicyConfig(network_egress="deny", fs_allow_write=["/workspace"]),
+        ),
+    }
+    _use_profiles(monkeypatch, profiles)
+    with caplog.at_level("WARNING", logger="ak.sandbox"):
+        ExecutionManager.get()
+        ExecutionManager.get()  # the singleton: no second round of warnings
+    messages = [r.getMessage() for r in caplog.records if r.name == "ak.sandbox"]
+    assert len(messages) == 3
+    assert any("shared" in m and "per_runtime" in m for m in messages)
+    assert any("offline" in m and "mirror" in m for m in messages)
+    assert any("locked" in m and "--target" in m and "PYTHONPATH" in m for m in messages)
+    assert not any("quiet" in m for m in messages)
+
+
+@pytest.mark.asyncio
+async def test_agent_side_validation_uses_the_profiles_provider_block(monkeypatch):
+    docker = _SandboxDockerConfig(package_installers={"python": ["pip", "install"], "node": ["npm", "install"]})
+    profiles = {
+        "docker": _SandboxProfileConfig(type="docker", docker=docker, policy=_permits(["python", "node"])),
+        "fake": _SandboxProfileConfig(type=PKG_DOTTED, policy=_permits()),
+    }
+    _use_profiles(monkeypatch, profiles)
+    mgr = ExecutionManager.get()
+
+    # The docker block's node rule applies agent-side, before anything reaches the provider.
+    with pytest.raises(ValueError):
+        await mgr.install_packages(["zzq/zzrepo"], ecosystem="node", profile="docker")
+    installer = mgr._installer_for("docker", profiles["docker"])
+    assert installer.ecosystems == ["python", "node"]
+    assert mgr._installer_for("docker", profiles["docker"]) is installer  # cached per profile
+
+    # A provider without a package block: the baseline only; the worker's handle decides the rest.
+    baseline = mgr._installer_for("fake", profiles["fake"])
+    assert baseline.ecosystems == []
+    baseline.validate(["sub/pkg"], "python")
+    with pytest.raises(ValueError):
+        baseline.validate(["-r"], "python")
+
+
+# --------------------------------------------------------------------------- #
+# End to end: ExecutionManager.install_packages over every flavor
+# --------------------------------------------------------------------------- #
+
+
+def _installing_profile():
+    """A default profile on the package-capable fake that permits python installs with their own timeout."""
+    return {"default": _SandboxProfileConfig(type=PKG_DOTTED, policy=_permits(timeout=300))}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("flavor", ["embedded", "thread"])
+async def test_install_end_to_end_in_process(monkeypatch, flavor):
+    _use_profiles(monkeypatch, _installing_profile(), flavor=flavor)
+    session = InMemorySessionStore().new("ak-1")
+    async with session:
+        result = await ExecutionManager.get().install_packages(["requests"], wait=10)
+    assert result.stdout == "installed" and result.sandbox_session_id == "default:default"
+    assert _PkgSandbox.calls == [(["requests"], "python", 300)]  # the install's own effective timeout
+
+
+@pytest.mark.asyncio
+async def test_install_end_to_end_over_the_queue_flavor(monkeypatch):
+    cfg = _use_profiles(
+        monkeypatch,
+        _installing_profile(),
+        flavor="queue",
+        queue=_QueuesConfig(type="in_memory"),
+        response_store=_ResponseStoreConfig(type="in_memory"),
+        wait_poll_interval=0.01,
+    )
+    worker = QueueBrokerWorker(cfg)
+    runner = threading.Thread(target=lambda: worker.start(exit_on_shutdown=False), daemon=True)
+    runner.start()
+    try:
+        session = InMemorySessionStore().new("ak-1")
+        async with session:
+            result = await ExecutionManager.get().install_packages(["requests"], wait=10)
+        assert result.stdout == "installed"
+        assert _PkgSandbox.calls == [(["requests"], "python", 300)]  # the permission survived the wire
+    finally:
+        ThreadRunner.shutdown_event.set()
+        runner.join(timeout=10)
+    assert not runner.is_alive()
+
+
+# --------------------------------------------------------------------------- #
+# The install_packages tool
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.asyncio
+async def test_install_packages_tool_json_contract(monkeypatch, caplog):
+    _use_profiles(monkeypatch, _installing_profile())
+    session = InMemorySessionStore().new("ak-1")
+    async with session:
+        ok = json.loads(await install_packages_tool(["requests"]))
+        with caplog.at_level("WARNING", logger="ak.sandbox.tools"):
+            denied = json.loads(await install_packages_tool(["lodash"], ecosystem="node"))
+    assert ok == {"stdout": "installed", "stderr": "", "exit_code": 0, "sandbox_session_id": "default:default"}
+    assert "does not permit install_packages" in denied["error"]
+    assert any(r.name == "ak.sandbox.tools" for r in caplog.records)
+
+
+_TOOL_BUILDERS = [
+    ("agentkernel.framework.openai.openai", "OpenAIToolBuilder"),
+    ("agentkernel.framework.langgraph.langgraph", "LangGraphToolBuilder"),
+    ("agentkernel.framework.crewai.crewai", "CrewAIToolBuilder"),
+    ("agentkernel.framework.pydanticai.pydanticai", "PydanticAIToolBuilder"),
+    ("agentkernel.framework.smolagents.smolagents", "SmolagentsToolBuilder"),
+    ("agentkernel.framework.adk.adk", "GoogleADKToolBuilder"),
+]
+
+
+def _packages_schema(tool):
+    """The bound tool's JSON schema for ``packages``, where the adapter exposes one; else None."""
+    if hasattr(tool, "params_json_schema"):  # openai
+        return tool.params_json_schema["properties"]["packages"]
+    if hasattr(tool, "function_schema"):  # pydanticai
+        return tool.function_schema.json_schema["properties"]["packages"]
+    if hasattr(tool, "inputs"):  # smolagents
+        return tool.inputs["packages"]
+    args_schema = getattr(tool, "args_schema", None)  # langgraph, crewai
+    if args_schema is not None:
+        schema = args_schema if isinstance(args_schema, dict) else args_schema.model_json_schema()
+        return schema["properties"]["packages"]
+    return None
+
+
+@pytest.mark.parametrize("module_name, builder_name", _TOOL_BUILDERS, ids=[name for name, _ in _TOOL_BUILDERS])
+def test_install_packages_tool_binds_on_every_adapter(module_name, builder_name):
+    # install_packages is the first system tool with a non-scalar parameter (list[str]); it must
+    # bind wherever the existing sandbox tools do. (smolagents cannot bind any async sandbox tool
+    # today, run_code included, so there it only has to fail the same way.)
+    module = pytest.importorskip(module_name)
+    builder = getattr(module, builder_name)
+    try:
+        builder.bind([run_code_tool])
+    except Exception as exc:  # noqa: BLE001 — a pre-existing adapter limitation, not this tool's
+        with pytest.raises(type(exc)):
+            builder.bind([install_packages_tool])
+        return
+    [tool] = builder.bind([install_packages_tool])
+    assert tool.name == "install_packages"
+    schema = _packages_schema(tool)
+    if schema is not None:
+        assert schema["type"] == "array"
+        if "items" in schema:
+            assert schema["items"]["type"] == "string"
