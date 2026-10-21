@@ -53,49 +53,17 @@ def run_command(command: list[str], cwd: str = None, description: str = "", env:
         return False
 
 
-def wait_for_endpoint(url: str, timeout: int = 300, interval: int = 10) -> bool:
-    """Poll an endpoint until it responds with a non-5xx status.
-
-    Containerized deployments return 5xx from the load balancer until the
-    tasks are running and registered as healthy targets. A non-5xx response
-    (including 4xx, since the invoke endpoint may reject GET) means traffic
-    is reaching the application.
-    """
-    print(f"\n{'='*80}")
-    print(f"Waiting for endpoint to become ready: {url}")
-    print(f"{'='*80}\n")
-
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        try:
-            with urllib.request.urlopen(url, timeout=10) as resp:
-                print(f"✅ Endpoint ready (HTTP {resp.status})")
-                return True
-        except urllib.error.HTTPError as e:
-            if e.code < 500:
-                print(f"✅ Endpoint ready (HTTP {e.code})")
-                return True
-            print(f"⏳ Endpoint returned HTTP {e.code}, retrying in {interval}s...")
-        except Exception as e:
-            print(f"⏳ Endpoint not reachable ({e}), retrying in {interval}s...")
-        time.sleep(interval)
-
-    print(f"❌ Endpoint did not become ready within {timeout}s")
-    return False
-
-
 def wait_for_backend(url: str, timeout: int = 600, interval: int = 10, required_answers: int = 2) -> bool:
     """Poll a POST-only agent invoke URL until the application behind the gateway answers.
 
-    For aws-containerized deployments wait_for_endpoint's GET is vacuous: agent_invoke_url is a
-    POST-only API Gateway HTTP API route, so the gateway answers a GET with its own 404 without
-    contacting the ALB, while `aws ecs wait services-stable` (deploy.sh) only means the task is
-    RUNNING, not that uvicorn is listening. Until it is, the ALB fails open to the target, the
-    connection is refused and the gateway returns 502. So POST a body that is not valid JSON: the
-    gateway forwards it, FastAPI rejects it with 422 before any handler or agent runs (an auth
-    layer may answer 401/403 instead). Only 502/503/504 or no answer count as not ready; any
-    other status means something behind the gateway answered. Two consecutive answers are
-    required.
+    agent_invoke_url is a POST-only API Gateway route, so a GET is vacuous: the gateway answers it
+    with its own 404 without contacting the backend. For containerized deployments `aws ecs wait
+    services-stable` (deploy.sh) only means the task is RUNNING, not that uvicorn is listening;
+    until it is, the ALB fails open to the target, the connection is refused and the gateway
+    returns 502. So POST a body that is not valid JSON: the gateway forwards it and the backend
+    rejects it before any agent runs (FastAPI 422, the Lambda router 500, or an auth layer
+    401/403). Only 502/503/504 or no answer count as not ready; any other status means something
+    behind the gateway answered. Two consecutive answers are required.
     """
     print(f"\n{'='*80}")
     print(f"Waiting for the backend behind {url} to answer")
@@ -958,7 +926,7 @@ def deploy_aws_resources(path: str, deploy_dir: str = 'deploy', vpc_id: str = No
     )
 
 
-def test_aws_deployment(path: str, deploy_dir: str = 'deploy', containerized: bool = False) -> bool:
+def test_aws_deployment(path: str, deploy_dir: str = 'deploy') -> bool:
     """Test an already deployed AWS resource."""
     deploy_path = Path(path) / deploy_dir
     
@@ -993,10 +961,7 @@ def test_aws_deployment(path: str, deploy_dir: str = 'deploy', containerized: bo
 
     # Containerized deployments need time for tasks to come up and pass
     # load balancer health checks before the endpoint serves traffic.
-    # agent_invoke_url is a POST-only route, so for ECS probe it with a POST
-    # that actually reaches the container (see wait_for_backend).
-    ready = wait_for_backend(agent_invoke_url) if containerized else wait_for_endpoint(agent_invoke_url)
-    if not ready:
+    if not wait_for_backend(agent_invoke_url):
         return False
 
     # Install the LOCAL agentkernel wheel into the test client's venv before
@@ -1080,7 +1045,7 @@ def main():
         elif args.type == 'containerized':
             success = run_containerized_test(args.path)
         elif args.type in ['aws-containerized', 'aws-serverless']:
-            success = test_aws_deployment(args.path, args.deploy_dir, containerized=args.type == 'aws-containerized')
+            success = test_aws_deployment(args.path, args.deploy_dir)
         elif args.type in ['azure-containerized', 'azure-serverless']:
             success = test_azure_deployment(args.path, args.deploy_dir)
         elif args.type in ['gcp-containerized', 'gcp-serverless']:
