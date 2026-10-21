@@ -125,6 +125,22 @@ comes back as another paused reply with a fresh `run_id`. Pydantic AI is the exc
 every deferred call resolved together, and Agent Kernel refuses a partial resume **before** calling
 it, naming the ids you missed.
 
+## In conversation threads
+
+With [conversation threads](threads.md) enabled, a pause and the decision answering it are recorded
+as messages of their own, so reopening a thread shows what the agent asked and what the human
+decided — not just the turns either side of it. Both carry their payload as an object with a
+`media_type` of `application/json`: the pause is an `assistant` message holding `run_id`, `agent`
+and `interruptions`, and the decision is a `user` message holding the `resume` block that was sent,
+with the prompt beside it when the turn carried both. See
+[Message Content](threads.md#message-content) for the stored shape.
+
+Every recording surface stores the same message — the direct chat route, SSE, and both queue
+runners. Two details worth knowing: a streamed run that emits text and *then* pauses records only
+the pause, because the non-streaming path never had that text either; and a decision the runtime
+rejects (a stale interruption id, say) is still recorded, since the thread is written before the
+run, so it appears as a `user` message with no assistant message after it.
+
 ## Durability: the one thing to get right
 
 A pause is written into the **session**, and the answer arrives later — after a restart, often on a
