@@ -165,7 +165,7 @@ The example runs **two**, and the difference between them is the most useful thi
 |---|---|---|
 | Pauses on | a tool declared `needs_approval=True` | a node calling `interrupt()` |
 | Interruption kind | `tool_call` | `input_required` |
-| The human can | approve or deny | **choose an option, or type an answer** |
+| The human can | approve or deny | **choose an option, or type an answer — both asked at once** |
 
 ### Why OpenAI cannot ask a question
 
@@ -183,23 +183,27 @@ and the human to approve or deny it — deny, and the model proposes another.
 `interrupt()` returns whatever the resume supplies, so the answer *is* the value:
 
 ```bash
-# a choice
+# both questions, answered together
 curl -s localhost:8000/api/v1/chat -H 'content-type: application/json' -d '{
   "session_id": "demo-2", "agent": "planner",
-  "resume": { "decisions": [ { "id": "<interrupt id>", "payload": "Store credit" } ] } }'
-
-# free text, the very next turn
-... "payload": "Apologise for the delay." ...
+  "resume": { "decisions": [ { "id": "<choice id>", "payload": "Store credit" },
+                             { "id": "<free-text id>", "payload": "Apologise for the delay." } ] } }'
 ```
 
-The `planner` node asks **two** questions in a row. The second is reached only once the first has an
-answer, so the run pauses twice and you answer one at a time — which is also the case that exercises
-Agent Kernel's checkpointer, since the pause has to survive between turns.
+The `planner` asks **both** questions in one pause: `ask_method` and `ask_note` are separate nodes
+fanning out from `START`, so they interrupt in the same superstep and the paused reply carries two
+interruptions. Two `interrupt()` calls in a *single* node cannot do that — the first raises, so the
+second is not reached until the first is answered, and the human pays a round trip to find out what
+else is wanted.
+
+Answer both and the graph runs on. Answer one and the other comes back as a fresh pause **under a
+new id**, which is also the case that exercises Agent Kernel's checkpointer, since the pause has to
+survive between turns.
 
 Two things worth knowing, both LangGraph's behaviour rather than Agent Kernel's:
 
-- **The node re-runs from the top** on resume. The first `interrupt()` then returns the stored
-  answer instead of pausing again — so anything with a side effect belongs *after* the questions.
+- **A node re-runs from the top** on resume, its `interrupt()` returning the stored answer instead
+  of pausing again — so anything with a side effect belongs *after* the question.
 - **A node that returns a message without calling a model streams nothing.** `astream_events`
   streams model tokens, so the graph ends with a small model call to write the confirmation. Over
   REST the text would come back either way, which makes this an easy asymmetry to miss.
