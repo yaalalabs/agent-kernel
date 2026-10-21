@@ -62,8 +62,12 @@ flowchart LR
     - `PipelineTimeoutError`: no record within the retry budget.
     - `PipelineRunError`: record has `status_code >= 400` (carries status and body).
   - Transport and store stay injectable (today's `get_transport()` / `get_response_store()` override seams).
-- `RestHandler` / `RequestHandler` use `PipelineRequestClient` and map its exceptions to today's HTTP
-  responses (504 on timeout, stored status on error).
+- `RestHandler` / `RequestHandler` delegate enqueueing and record polling to `PipelineRequestClient` and keep
+  their own HTTP mapping (504 on timeout, stored status on error).
+  - They keep the `_enqueue_request` / `get_transport()` / `get_response_store()` seams, because
+    `ThreadRequestHandler` overrides `_enqueue_request` to stamp its `thread` attribute
+    (`integration/thread/thread_chat.py:258-267`). So REST uses the client's enqueue and poll primitives,
+    not its exception-raising `send_and_wait`. *(Amended while writing spec.md.)*
   - Public behaviour of the REST routes does not change; existing pipeline REST tests pass unmodified
     except for moved patch targets.
 
@@ -76,7 +80,11 @@ flowchart LR
     - `media_type` present → `AgentReplyAny(content=body["result"], media_type=...)`.
     - otherwise → `AgentReplyText(body["result"])`.
     - A record body with no `result` is treated as a runner error (`PipelineRunError`).
-  - Each surface keeps its own mapping from `AgentReply` to its wire shape, so replies look the same as today.
+  - Each surface keeps its own mapping from `AgentReply` to its wire shape, so text and structured replies
+    look the same as today.
+  - Exception: an image reply. The record carries only its `str()` text (`core/model.py:139-140`), so it
+    arrives as that text. Today it arrives as `"Non-text reply given"` (`core/service.py:157-158`, `akmcp.py:77`).
+    *(Amended while writing spec.md.)*
   - No `AgentInvoker` ABC / direct variant: there is only one path.
 - Where A2A/MCP can be served:
   - `IOHandler.run()` (directly, or through plain `RESTAPI.run()` on the `in_memory` transport,
@@ -85,6 +93,10 @@ flowchart LR
     `AKConfigError`, telling the user to serve them with `IOHandler.run(handlers=[...])`. Same rule and place
     as today's `requires_pipeline` handlers (`RESTAPI._reject_pipeline_only_handlers`, `http.py:117-132`), for
     the same reason: there is no runner to drain what they enqueue.
+    - "Same place" means every `RESTAPI.run` that does not delegate to `IOHandler`. That also covers a plain
+      `RESTAPI.run()` on a broker transport, and the subclasses `AWSRestAPI` / `AWSWebsocketAPI`, which
+      `ECSIOHandler` runs (`deployment/aws/containerized/ecs_io_handler.py:61,72`). See Open questions.
+      *(Amended while writing spec.md.)*
   - No `pipeline` flag on `build_app()`; nothing to choose.
 - Execution modes:
   - `rest_sync` / unset and `rest_async`: supported. The runner writes one whole record to the response store
@@ -122,7 +134,11 @@ flowchart LR
 
 ### 5. Tests
 
-- `PipelineRequestClient`: success, timeout, error status, using the `in_memory` transport and `pipeline/testing.py` helpers.
+- `PipelineRequestClient`: success, timeout, error status, using the `in_memory` transport and the worker-thread
+  pattern of `tests/test_pipeline_request_handler.py` (`pipeline/testing.py` holds only `QueueTransportContract`).
+- A2A tests import `agentkernel.api.a2a`, which fails against the a2a-sdk 1.x that `ak-py/uv.lock` pins (#762).
+  They skip on that import until #762 lands. The `examples/api/a2a/multi` test (0.3.6 lock) covers the
+  A2A path meanwhile. *(Amended while writing spec.md.)*
 - A2A: `message:send` through `IOHandler` with `in_memory` runs on the runner, not `AgentService` on the IO side.
   Same for an MCP tool call.
 - Plain `RESTAPI.run()` with A2A/MCP enabled starts the pipeline and serves them.
@@ -138,7 +154,11 @@ flowchart LR
 
 - `ak-dev-architecture` pipeline section: A2A/MCP are pipeline-only; name `PipelineRequestClient` /
   `PipelineAgentInvoker`.
-- A2A and MCP docs, deployment READMEs: IO pods no longer need framework/model credentials for A2A/MCP.
+- A2A and MCP docs, deployment READMEs: IO pods no longer *run* agents for A2A/MCP, so model calls, tool
+  execution and session writes move to the runner.
+  - They still *load* the agents: the A2A cards and MCP tool descriptions come from the registered agents
+    (`a2a.py:65-79`, `akmcp.py:89-108`). So IO pods keep the framework packages, plus any credential a
+    framework needs at construction (Pydantic AI resolves its provider then). *(Amended while writing spec.md.)*
 - Breaking change note: `RESTAPI.run([...])` with A2A/MCP enabled now fails at startup; move to
   `IOHandler.run(handlers=[...])`. The A2A/MCP examples use plain `RESTAPI.run()` and need no change.
 
@@ -147,10 +167,24 @@ flowchart LR
 - Streaming over A2A (`message:stream`) or MCP progress notifications through the pipeline. Card keeps `streaming=False`.
 - A2A task polling backed by the response store for long-running tasks.
 - Attachments / multimodal over A2A or MCP.
-- A2A and MCP on AWS serverless (`AWSRestAPI`). Not mounted there today; stays that way.
+- A2A and MCP on AWS. Serverless (`Lambda`) never mounts them, and that stays. Containerized
+  (`AWSRestAPI` / `AWSWebsocketAPI` under `ECSIOHandler`) mounts them in-process today, and refuses them
+  after this change (§2, Open questions). *(Corrected while writing spec.md: this read "serverless
+  (`AWSRestAPI`)", but `AWSRestAPI` is the ECS class.)*
 - Direct (in-process) mode for A2A or MCP.
 
 ## Open questions
 
-None. Resolved in review: A2A/MCP pipeline-only, `RESTAPI.run([...])` refuses them (§2), reply rebuilt as an
+Resolved in review: A2A/MCP pipeline-only, `RESTAPI.run([...])` refuses them (§2), reply rebuilt as an
 `AgentReply` (§2), `stream` / `async` / `realtime` refused at startup (§2), explicit MCP `session_id` kept (§4).
+
+Raised while writing spec.md:
+
+- **ECS containerized with A2A/MCP enabled.** Today `ECSIOHandler` → `AWSRestAPI.run(handlers=[...])` mounts
+  A2A/MCP and runs them in-process on the IO container. Under §2's rule that call refuses to start.
+  - Default in spec.md: refuse, with an error naming the class. This is the literal §2 rule and fails loudly.
+    No example or test runs ECS queue mode with A2A/MCP. `examples/aws-containerized/mcp/multi` uses plain
+    `RESTAPI.run()`, so it gets the `in_memory` pipeline.
+  - Alternative: allow it in ECS queue mode. There the invoker would enqueue to SQS, and `ECSAgentRunner` /
+    `ECSOutputConsumer` already write status-bearing records. It would still need a refusal in ECS direct
+    mode, and it widens this change into `deployment/`.
