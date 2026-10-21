@@ -15,12 +15,14 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from agentkernel.core.base import Agent, Runner
+from agentkernel.core.chat_service import ResponseBuilder
 from agentkernel.core.config import AKConfig, _ThreadStoreConfig
 from agentkernel.core.event import MessageEnd, MessageStart, TextDelta
 from agentkernel.core.model import AgentReplyText, AgentRequestText, ScheduleSpec
 from agentkernel.core.runtime import Runtime
 from agentkernel.core.util.factory import AKConfigError
 from agentkernel.integration.thread import AgentThreadRequestHandler, ConversationThreadManager, ThreadNamingStrategy, ThreadRequestHandler
+from agentkernel.integration.thread.model import HITL_MEDIA_TYPE
 from agentkernel.integration.thread.store.in_memory import InMemoryThreadStore
 from agentkernel.pipeline.agent_runner import AgentRunner, StreamAgentRunner
 from agentkernel.pipeline.consumer import ConsumerLoop
@@ -287,6 +289,47 @@ class TestRunnerRecording:
         assert json.loads(recorded) == content
         assert "'" not in recorded
 
+    def test_a_paused_body_is_recorded_as_the_pause(self, monkeypatch):
+        """The runner holds the response body, not the reply — but the body carries the pause keys."""
+        manager = _configure(monkeypatch)
+        _open_thread(manager)
+        body = {
+            "result": '{"run_id": "run-1"}',
+            "status": "PAUSED",
+            "run_id": "run-1",
+            "agent": AGENT_NAME,
+            "interruptions": [{"id": "i1", "kind": "tool_call", "tool_name": "issue_refund", "arguments": None, "message": None, "payload": None}],
+            "session_id": "s1",
+        }
+        chat_service = MagicMock()
+        chat_service.process_chat_request.return_value = (202, body)
+
+        AgentRunner(transport=InMemoryTransport(), chat_service=chat_service).process(_marked_message())
+
+        pause = manager.get_messages("s1").messages[-1]
+        assert (pause.role, pause.media_type) == ("assistant", HITL_MEDIA_TYPE)
+        assert pause.content["run_id"] == "run-1"
+        assert pause.content["interruptions"][0]["tool_name"] == "issue_refund"
+
+    def test_a_paused_body_records_the_same_bytes_as_the_direct_handler(self, monkeypatch):
+        """Same pause, two surfaces: the content comes from the reply model either way."""
+        from agentkernel.core.event import PausedInterruption
+        from agentkernel.core.model import AgentPausedReplyAny
+        from agentkernel.integration.thread.recorder import ThreadRecorder
+
+        manager = _configure(monkeypatch)
+        _open_thread(manager)
+        reply = AgentPausedReplyAny(
+            run_id="run-1", session_id="s1", agent=AGENT_NAME, interruptions=[PausedInterruption(id="i1", kind="tool_call", tool_name="issue_refund")]
+        )
+        chat_service = MagicMock()
+        chat_service.process_chat_request.return_value = (202, ResponseBuilder.build_response(202, "s1", False, result=reply)[1])
+
+        AgentRunner(transport=InMemoryTransport(), chat_service=chat_service).process(_marked_message())
+
+        queued = manager.get_messages("s1").messages[-1]
+        assert (queued.content, queued.media_type) == ThreadRecorder._as_thread_message(reply)
+
     def test_an_unmarked_message_records_nothing(self, monkeypatch):
         manager = _configure(monkeypatch)
         _open_thread(manager)
@@ -355,6 +398,19 @@ class TestStreamRunnerRecording:
         # The chunks fan out as separate output messages, so this is the only place the reply
         # exists as one thing.
         assert [(m.role, m.content) for m in manager.get_messages("s1").messages][-1] == ("assistant", "hello")
+
+    def test_a_streamed_pause_is_recorded(self, monkeypatch):
+        manager = _configure(monkeypatch, mode="stream")
+        _open_thread(manager)
+        event = {"type": "run_paused", "run_id": "run-1", "agent": AGENT_NAME, "interruptions": [{"id": "i1", "kind": "input_required"}]}
+
+        self._stream_runner([{"delta": "Let me check"}, {"event": event}, {"done": True}]).process(_marked_message())
+
+        messages = manager.get_messages("s1").messages
+        assert [m.role for m in messages] == ["user", "assistant"]
+        assert messages[-1].media_type == HITL_MEDIA_TYPE
+        assert messages[-1].content["run_id"] == "run-1"
+        assert "Let me check" not in str(messages[-1].content)
 
     def test_a_halted_stream_records_nothing(self, monkeypatch):
         manager = _configure(monkeypatch, mode="stream")

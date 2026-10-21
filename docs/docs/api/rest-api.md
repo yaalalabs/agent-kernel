@@ -154,7 +154,7 @@ When [conversation threads](../advanced/threads.md) are enabled by mounting `Age
 }
 ```
 
-**`GET /api/v1/threads/{session_id}`** returns a single thread with its paginated message history (`limit`, `cursor`).
+**`GET /api/v1/threads/{session_id}`** returns a single thread with its paginated message history (`limit`, `cursor`). A message's `content` is text and carries no other key; one recording a [paused run](../advanced/human-in-the-loop.md) or the decision answering it carries the object itself plus a `media_type` naming its format (see [Message Content](../advanced/threads.md#message-content)).
 
 On the thread handler's chat routes, `user_id` is **required**; the default handler's routes are unaffected. An optional `Authoriser` can protect the read routes by resolving the Bearer token to a `user_id`; requests for another user's thread then return 403. Without an `Authoriser`, the routes are open.
 

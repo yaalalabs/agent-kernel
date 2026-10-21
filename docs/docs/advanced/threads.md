@@ -163,6 +163,19 @@ curl "http://localhost:8000/api/v1/threads/ses-1"
 Both endpoints paginate: pass `limit` (default 50, max 200) and the opaque `cursor` returned as `next_cursor`
 in the previous page (`null` on the last page).
 
+### Message Content
+
+A message's `content` is normally the text of the turn, and carries no other key. A turn whose content
+is structured — a [paused run](human-in-the-loop.md) and the decision answering it — stores the object
+itself with a sibling `media_type` naming its format. The pause is an `assistant` message holding
+`run_id`, `agent` and `interruptions`; the decision is a `user` message holding the `resume` block that
+was sent, with the prompt beside it when the turn carried both.
+
+The two fields always agree: `media_type` present means `content` is an object, absent means it is text. A
+human's decision is a `user` message because a person sent it, so the `user`/`assistant` roles are
+unchanged — a client tells the two structured kinds apart by `role`, or by `interruptions` versus
+`decisions` inside the payload.
+
 ## Renaming Threads
 
 There is no dedicated rename endpoint. Send `thread_name` on any later chat request for the same
