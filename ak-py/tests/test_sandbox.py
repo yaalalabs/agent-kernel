@@ -471,6 +471,8 @@ async def test_capability_abc_defaults_raise_for_optional_ops():
         await sandbox.download_file("p")
     with pytest.raises(SandboxCapabilityError):
         await sandbox.install_packages(["p"])
+    with pytest.raises(SandboxCapabilityError):
+        await sandbox.install_packages(["p"], ecosystem="node", timeout=1)
 
 
 def test_capability_error_message_forms():

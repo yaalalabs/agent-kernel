@@ -11,22 +11,25 @@ Every broker flavor (embedded, thread, ECS, Lambda) drives the same engine to tu
 """
 
 import asyncio
+import inspect
 import logging
 import time
-from typing import Optional
+from typing import Any, ClassVar, Optional
 
 from ...core.config import AKConfig
-from ..base import SandboxProvider
+from ..base import Sandbox, SandboxProvider
 from ..errors import (
     SandboxCapabilityError,
     SandboxConfigError,
     SandboxError,
     SandboxGoneError,
+    SandboxPermissionDeniedError,
     SandboxPolicyError,
     SandboxTimeoutError,
 )
 from ..factory import SandboxProviderFactory
 from ..model import SandboxFile, SandboxResult, SandboxSession
+from ..permission import SandboxPermissionGuard
 from .base import ExecutionCompletion, ExecutionRequest
 
 logger = logging.getLogger("ak.sandbox.broker")
@@ -35,12 +38,19 @@ logger = logging.getLogger("ak.sandbox.broker")
 class BrokerWorkerCore:
     """Processes one request against the resolved provider, serialized per sandbox session."""
 
+    # The handle owns the operation's timeout; the worker's own timer fires this much later as a backstop.
+    BACKSTOP_GRACE_SECONDS: ClassVar[float] = 10.0
+
     def __init__(self, *, inline_payload_max_bytes: Optional[int] = None) -> None:
         """Create an engine instance. ``inline_payload_max_bytes`` is the offload threshold
         for flavors that support it (``None`` for in-process flavors, which never offload)."""
         self._inline_max = inline_payload_max_bytes
         self._locks: dict[str, asyncio.Lock] = {}  # per sandbox_session_id
-        self._policy_warned: set[tuple[str, str]] = set()  # process-lifetime memo per (provider, profile)
+        # Process-lifetime warning memo: (provider, profile) for _enforce_policy,
+        # (provider, profile, "permission") for _warn_capability_mismatch.
+        self._policy_warned: set[tuple[str, ...]] = set()
+        self._guard = SandboxPermissionGuard()
+        self._install_shim: dict[type, bool] = {}  # Sandbox subclass -> True when its install_packages is legacy
 
     def _lock_for(self, sandbox_session_id: str) -> asyncio.Lock:
         """Return (creating on first use) the lock serializing operations per sandbox session."""
@@ -75,9 +85,11 @@ class BrokerWorkerCore:
             session.sandbox_id = None
             return SandboxResult(sandbox_session_id=session.sandbox_session_id), session
 
-        # 2. Fail-closed checks: principal, then policy (before any provider call).
+        # 2. Fail-closed checks: principal, policy, then permission (before any provider call).
+        self._warn_capability_mismatch(provider, request)
         self._check_principal(provider, request)
         self._enforce_policy(provider, request)
+        self._guard.check(request)
 
         async with self._lock_for(session.sandbox_session_id):
             # 3. Attach-or-create with self-heal.
@@ -106,6 +118,15 @@ class BrokerWorkerCore:
             return ExecutionCompletion(
                 task_id=request.task_id,
                 status="timed_out",
+                error=str(exc),
+                error_type=type(exc).__name__,
+                sandbox_session=request.sandbox_session,
+            )
+        except SandboxPermissionDeniedError as exc:
+            # The guard already logged this denial; no generic warning.
+            return ExecutionCompletion(
+                task_id=request.task_id,
+                status="failed",
                 error=str(exc),
                 error_type=type(exc).__name__,
                 sandbox_session=request.sandbox_session,
@@ -170,6 +191,32 @@ class BrokerWorkerCore:
                 unenforceable,
             )
 
+    def _warn_capability_mismatch(self, provider: SandboxProvider, request: ExecutionRequest) -> None:
+        """One WARNING per (provider, profile) when the policy permits what the instance does not declare.
+
+        Such requests pass the guard and then fail in the handle with ``SandboxCapabilityError``;
+        this surfaces the misconfiguration once instead of only per request.
+        """
+        caps = provider.capabilities
+        policy = request.policy
+        undeclared: list[str] = []
+        if policy.package_install is not None:
+            undeclared += [f"package ecosystem '{e}'" for e in policy.package_install.ecosystems if e not in caps.package_ecosystems]
+        if policy.languages is not None:
+            undeclared += [f"language '{lang}'" for lang in policy.languages if lang not in caps.languages]
+        if not undeclared:
+            return
+        memo = (type(provider).__name__, request.profile, "permission")
+        if memo in self._policy_warned:
+            return
+        self._policy_warned.add(memo)
+        logger.warning(
+            "Sandbox profile %s permits %s, but provider %s does not declare it; such requests will fail with SandboxCapabilityError",
+            request.profile,
+            ", ".join(undeclared),
+            type(provider).__name__,
+        )
+
     async def _acquire(self, provider: SandboxProvider, request: ExecutionRequest, attached: bool):
         """Attach to the session's existing sandbox, self-healing a stale handle
         (``SandboxGoneError`` recreates under the same session id), or create a new one.
@@ -204,11 +251,12 @@ class BrokerWorkerCore:
         return getattr(profile_cfg, "environment", "managed") if profile_cfg is not None else "managed"
 
     async def _execute(self, sandbox, request: ExecutionRequest) -> SandboxResult:
-        """Dispatch the request's operation to the sandbox handle under
-        ``asyncio.wait_for(policy.timeout)``; expiry raises ``SandboxTimeoutError``."""
+        """Dispatch the request's operation to the sandbox handle with the operation's
+        effective timeout, under a backstop ``asyncio.wait_for`` that fires
+        ``BACKSTOP_GRACE_SECONDS`` later; backstop expiry raises ``SandboxTimeoutError``."""
         op = request.operation
         payload = request.payload
-        timeout = request.policy.timeout
+        timeout = request.policy.effective_timeout(op)
 
         async def call() -> SandboxResult:
             """Map the operation name to the corresponding sandbox method call."""
@@ -217,7 +265,7 @@ class BrokerWorkerCore:
             if op == "execute_command":
                 return await sandbox.execute_command(payload["command"], timeout=timeout)
             if op == "install_packages":
-                return await sandbox.install_packages(payload["packages"])
+                return await self._call_install(sandbox, payload, timeout)
             if op == "upload_file":
                 await sandbox.upload_file(payload["path"], payload["content"])
                 return SandboxResult(exit_code=0)
@@ -227,8 +275,38 @@ class BrokerWorkerCore:
             raise SandboxConfigError(f"unknown sandbox operation: {op}")
 
         try:
-            return await asyncio.wait_for(call(), timeout=timeout)
+            return await asyncio.wait_for(call(), timeout=timeout + self.BACKSTOP_GRACE_SECONDS)
         except asyncio.TimeoutError as exc:
-            raise SandboxTimeoutError(f"sandbox operation '{op}' exceeded timeout {timeout}s") from exc
+            raise SandboxTimeoutError(f"sandbox operation '{op}' exceeded timeout {timeout}s (backstop)") from exc
         except SandboxError:
             raise
+
+    async def _call_install(self, sandbox: Sandbox, payload: dict[str, Any], timeout: float) -> SandboxResult:
+        """Dispatch install_packages, routing a pre-#692 one-argument override through the deprecation shim."""
+        ecosystem = payload.get("ecosystem", "python")
+        sandbox_cls = type(sandbox)
+        if not self._is_legacy_install(sandbox_cls):
+            return await sandbox.install_packages(payload["packages"], ecosystem=ecosystem, timeout=timeout)
+        # A legacy override can only mean pip; the backstop is its only timer.
+        if ecosystem != "python":
+            raise SandboxCapabilityError(sandbox_cls.__name__, f"package_ecosystem:{ecosystem}")
+        return await sandbox.install_packages(payload["packages"])
+
+    def _is_legacy_install(self, sandbox_cls: type) -> bool:
+        """Whether ``sandbox_cls.install_packages`` predates the ecosystem/timeout signature.
+
+        Decided once per class; the deprecation WARNING is logged when a class is first found legacy.
+        """
+        legacy = self._install_shim.get(sandbox_cls)
+        if legacy is None:
+            params = inspect.signature(sandbox_cls.install_packages).parameters
+            takes_kwargs = any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values())
+            legacy = not (takes_kwargs or ("ecosystem" in params and "timeout" in params))
+            self._install_shim[sandbox_cls] = legacy
+            if legacy:
+                logger.warning(
+                    "Sandbox %s overrides install_packages(packages) without ecosystem/timeout; "
+                    "this form is deprecated and will stop working in the next minor release",
+                    sandbox_cls.__name__,
+                )
+        return legacy

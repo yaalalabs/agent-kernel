@@ -34,10 +34,24 @@ from agentkernel.sandbox.broker.queue import QueueExecutionBroker
 from agentkernel.sandbox.broker.queue_worker import QueueBrokerWorker
 from agentkernel.sandbox.broker.wire import BrokerWireCodec
 from agentkernel.sandbox.broker.worker import BrokerWorkerCore
-from agentkernel.sandbox.errors import ExecutionBrokerError, SandboxConfigError, SandboxPolicyError, SandboxTimeoutError
+from agentkernel.sandbox.errors import (
+    ExecutionBrokerError,
+    SandboxConfigError,
+    SandboxPermissionDeniedError,
+    SandboxPolicyError,
+    SandboxTimeoutError,
+)
 from agentkernel.sandbox.factory import ExecutionBrokerFactory, SandboxProviderFactory
 from agentkernel.sandbox.manager import ExecutionManager
-from agentkernel.sandbox.model import SandboxFile, SandboxPolicy, SandboxPrincipal, SandboxResult, SandboxSession, SandboxTask
+from agentkernel.sandbox.model import (
+    PackageInstallPolicy,
+    SandboxFile,
+    SandboxPolicy,
+    SandboxPrincipal,
+    SandboxResult,
+    SandboxSession,
+    SandboxTask,
+)
 from agentkernel.sandbox.testing import FakeSandbox, FakeSandboxProvider
 from agentkernel.sandbox.tools import check_sandbox_task
 
@@ -336,6 +350,26 @@ class TestQueueBrokerClient:
         assert "30" in str(exc_info.value) and "10" in str(exc_info.value)
         consumer = InMemoryTransport().create_consumer(QueueName.INPUT)
         assert consumer.fetch(1, 0.01) == []  # nothing was sent
+
+    @pytest.mark.asyncio
+    async def test_worker_timeout_ceiling_checks_the_install_timeout(self):
+        # An install is checked against its own package_install.timeout, not policy.timeout.
+        broker = _queue_broker(worker_timeout_ceiling=10.0)
+        policy = SandboxPolicy(timeout=5.0, package_install=PackageInstallPolicy(timeout=30.0))
+        with pytest.raises(SandboxPolicyError, match="install_packages timeout 30.0s"):
+            await broker.submit(_request("install_packages", {"packages": ["requests"]}, policy=policy), wait=0)
+        consumer = InMemoryTransport().create_consumer(QueueName.INPUT)
+        assert consumer.fetch(1, 0.01) == []  # nothing was sent
+        # The same policy on execute_code uses policy.timeout and passes the ceiling.
+        task = await broker.submit(_request(policy=policy), wait=0)
+        assert isinstance(task, SandboxTask)
+
+    @pytest.mark.asyncio
+    async def test_permission_denied_round_trips_by_name(self):
+        broker = _queue_broker()
+        _store_completion(_completion("failed", error="profile 'default' does not permit", error_type="SandboxPermissionDeniedError"))
+        with pytest.raises(SandboxPermissionDeniedError, match="does not permit"):
+            await broker.submit(_request(), wait=5)
 
     @pytest.mark.asyncio
     async def test_oversized_request_rejected_at_submit(self):
