@@ -76,15 +76,17 @@ class EC2SSMEnvironment(AttachedEnvironment):
     An ``AttachedEnvironment``, not a sandbox: the instance exists and keeps running independently
     of the framework, so ``close()`` (inherited) releases nothing."""
 
-    def __init__(self, instance_id: str, ssm_client: Any, run_as: Optional[str] = None) -> None:
-        """Bind the handle to the instance id (the sandbox id) and the resolved SSM client."""
+    def __init__(self, instance_id: str, ssm_client: Any, run_as: Optional[str] = None, *, capabilities: SandboxCapabilities) -> None:
+        """Bind the handle to the instance id (the sandbox id) and the resolved SSM client;
+        ``capabilities`` are the provider instance's."""
         self.id = instance_id
         self._ssm = ssm_client
         self._run_as = run_as
+        self._capabilities = capabilities
 
     async def execute_code(self, code: str, language: str = "python", timeout: float | None = None) -> SandboxResult:
         """Wrap the code in a ``python3 - <<'EOF'`` heredoc and run it as a shell command."""
-        if language not in EC2SSMSandboxProvider.capabilities.languages:
+        if language not in self._capabilities.languages:
             raise SandboxCapabilityError(self.__class__.__name__, f"language:{language}")
         delimiter = _heredoc_delimiter(code)  # collision-safe: never a line already in `code`
         script = f"python3 - <<'{delimiter}'\n{code}\n{delimiter}"
@@ -202,7 +204,7 @@ class EC2SSMSandboxProvider(AttachedEnvironmentProvider):
             raise
         except Exception as exc:  # noqa: BLE001 — mapped to the typed hierarchy
             raise _map_instance_error(exc, sandbox_id)
-        return EC2SSMEnvironment(sandbox_id, ssm_client, run_as)
+        return EC2SSMEnvironment(sandbox_id, ssm_client, run_as, capabilities=self.capabilities)
 
     def _resolve_client(self, principal: SandboxPrincipal) -> tuple[Any, Optional[str]]:
         """Map the principal onto an SSM client (spec §PrincipalResolver): agent mode uses the

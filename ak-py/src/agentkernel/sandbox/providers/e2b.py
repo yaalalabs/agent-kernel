@@ -2,8 +2,9 @@
 
 Uses the native async SDK (``e2b-code-interpreter``): ``AsyncSandbox.create`` /
 ``AsyncSandbox.connect(id)``; ``run_code`` executes in a persistent Jupyter kernel
-(``stateful=True`` — variables survive across calls), ``commands.run`` covers shell and
-``pip install``, and the sandbox filesystem backs the file operations.
+(``stateful=True`` — variables survive across calls), ``commands.run`` covers shell and the
+validated installer command from ``package_installers``, and the sandbox filesystem backs the
+file operations.
 
 The profile's ``idle_timeout`` is passed as the sandbox ``timeout`` at create, so E2B
 auto-kills idle sandboxes natively (spec §Idle timeout). Policy mapping: ``deny`` egress
@@ -17,7 +18,6 @@ explicitly on every SDK call.
 
 import logging
 import os
-import shlex
 from typing import Optional
 
 from e2b.exceptions import NotFoundException
@@ -27,6 +27,7 @@ from e2b_code_interpreter import AsyncSandbox
 from ..base import Sandbox, SandboxProvider
 from ..errors import SandboxCapabilityError, SandboxConfigError, SandboxGoneError
 from ..model import IsolationTier, SandboxCapabilities, SandboxPolicy, SandboxPrincipal, SandboxResult
+from ..packages import PackageInstaller
 
 logger = logging.getLogger("ak.sandbox.provider")
 
@@ -34,14 +35,17 @@ logger = logging.getLogger("ak.sandbox.provider")
 class E2BSandbox(Sandbox):
     """Handle to one running E2B sandbox; executions run in its persistent kernel."""
 
-    def __init__(self, sandbox: AsyncSandbox) -> None:
-        """Bind the handle to the SDK sandbox object; the E2B sandbox id is the sandbox id."""
+    def __init__(self, sandbox: AsyncSandbox, *, capabilities: SandboxCapabilities, installer: PackageInstaller) -> None:
+        """Bind the handle to the SDK sandbox object; the E2B sandbox id is the sandbox id.
+        ``capabilities`` are the provider instance's."""
         self.id = sandbox.sandbox_id
         self._sandbox = sandbox
+        self._capabilities = capabilities
+        self._installer = installer
 
     async def execute_code(self, code: str, language: str = "python", timeout: float | None = None) -> SandboxResult:
         """Run the code in the sandbox's Jupyter kernel; an execution error is a non-zero result."""
-        if language not in E2BSandboxProvider.capabilities.languages:
+        if language not in self._capabilities.languages:
             raise SandboxCapabilityError(self.__class__.__name__, f"language:{language}")
         execution = await self._sandbox.run_code(code, timeout=timeout)
         stderr = "".join(execution.logs.stderr)
@@ -61,9 +65,11 @@ class E2BSandbox(Sandbox):
             return SandboxResult(stdout=exc.stdout, stderr=exc.stderr, exit_code=exc.exit_code)
         return SandboxResult(stdout=result.stdout, stderr=result.stderr, exit_code=result.exit_code)
 
-    async def install_packages(self, packages: list[str]) -> SandboxResult:
-        """Install packages with pip via a shell command."""
-        return await self.execute_command("pip install " + " ".join(shlex.quote(p) for p in packages))
+    async def install_packages(self, packages: list[str], ecosystem: str = "python", timeout: float | None = None) -> SandboxResult:
+        """Run the ecosystem's validated installer command, under the SDK's native command timeout."""
+        if ecosystem not in self._capabilities.package_ecosystems:
+            raise SandboxCapabilityError(self.__class__.__name__, f"package_ecosystem:{ecosystem}")
+        return await self.execute_command(self._installer.command(packages, ecosystem), timeout)
 
     async def upload_file(self, path: str, content: bytes) -> None:
         """Write the bytes to the sandbox filesystem."""
@@ -88,7 +94,7 @@ class E2BSandboxProvider(SandboxProvider):
         shell=True,
         languages=["python"],
         files=True,
-        package_install=True,
+        package_ecosystems=["python"],  # the default; each instance declares its package_installers keys
         stateful=True,  # Jupyter-kernel model — variables persist across execute_code calls
         attach=True,
         principal_user=False,
@@ -98,9 +104,17 @@ class E2BSandboxProvider(SandboxProvider):
     )
 
     def __init__(self, config, idle_timeout: Optional[float] = None) -> None:
-        """Store the config and the profile's idle_timeout (passed as the native sandbox timeout)."""
+        """Store the config and the profile's idle_timeout (passed as the native sandbox timeout),
+        and build the installer that sets this instance's package ecosystems."""
         super().__init__(config)
         self._idle_timeout = idle_timeout
+        self._installer = PackageInstaller.from_config(config)
+        ecosystems = self._installer.ecosystems
+        self.capabilities = type(self).capabilities.derive(package_ecosystems=ecosystems, package_install=bool(ecosystems))
+
+    def _handle(self, sandbox: AsyncSandbox) -> E2BSandbox:
+        """Wrap an SDK sandbox in a handle carrying this instance's capabilities and installer."""
+        return E2BSandbox(sandbox, capabilities=self.capabilities, installer=self._installer)
 
     def _api_key(self) -> str:
         """Read the API key from the configured environment variable; missing fails loud."""
@@ -120,7 +134,7 @@ class E2BSandboxProvider(SandboxProvider):
         elif policy.network_egress == "allowlist":
             kwargs["network"] = {"allow_out": list(policy.network_allow)}
         sandbox = await AsyncSandbox.create(**kwargs)
-        return E2BSandbox(sandbox)
+        return self._handle(sandbox)
 
     async def attach(self, sandbox_id: str, *, principal: SandboxPrincipal, policy: SandboxPolicy) -> Sandbox:
         """Reconnect to a running sandbox by id; a missing sandbox raises ``SandboxGoneError``."""
@@ -128,7 +142,7 @@ class E2BSandboxProvider(SandboxProvider):
             sandbox = await AsyncSandbox.connect(sandbox_id, api_key=self._api_key())
         except NotFoundException as exc:
             raise SandboxGoneError(f"e2b sandbox '{sandbox_id}' no longer exists") from exc
-        return E2BSandbox(sandbox)
+        return self._handle(sandbox)
 
     async def destroy(self, sandbox_id: str) -> None:
         """Kill the sandbox. Idempotent; an already-gone sandbox is a no-op."""
