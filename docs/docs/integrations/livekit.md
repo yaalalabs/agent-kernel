@@ -9,7 +9,7 @@ The gateway runs in `realtime` execution mode. It works on every queue transport
 - **`in_memory` (single process)**: the gateway, the Agent Runner and the Response Handler run in one process. This is the simplest setup and the recommended first run.
 - **A broker (`kafka`, `nats`, `sqs`)**: the gateway (IOHandler process) and the Agent Runner run as two processes that share the queues.
 
-Only OpenAI Agents SDK and Google ADK agents can run in realtime mode. They are the only adapters with a realtime runner (`OpenAIRealtimeRunner`, `GoogleADKRealtimeRunner`). The agent must name a realtime model, for example `gpt-realtime` or a Gemini Live model.
+Only OpenAI Agents SDK and Google ADK agents can run in realtime mode. They are the only adapters with a realtime runner (`OpenAIRealtimeRunner`, `GoogleADKRealtimeRunner`). OpenAI voice agents use native `agents.realtime.RealtimeAgent`; their model is configured on the realtime session. Google ADK agents name a Gemini Live model.
 
 ## How It Works
 
@@ -57,7 +57,7 @@ execution:
 ```
 
 ```python
-from agents import Agent as OpenAIAgent
+from agents.realtime import RealtimeAgent as OpenAIAgent
 
 from agentkernel.framework.openai import OpenAIModule
 from agentkernel.integration.adapter import GatewayRunner
@@ -66,14 +66,30 @@ from agentkernel.pipeline import IOHandler
 
 agent = OpenAIAgent(
     name="voice_assistant",
-    model="gpt-realtime",
     instructions="You are a helpful voice assistant.",
 )
-OpenAIModule([agent])
+OpenAIModule([agent]).run_options(agent, config={"model_settings": {"model_name": "gpt-realtime"}})
 
 if __name__ == "__main__":
     IOHandler.run(gateways=[GatewayRunner(LiveKitEdgeGateway(session_id="room_01"))])
 ```
+
+### OpenAI native realtime configuration and migration
+
+Use `agents.realtime.RealtimeAgent` for voice; ordinary `agents.Agent` remains for text runs.
+The adapter does not convert text agents into voice agents. Move the model from `Agent(model=...)`
+to `Module.run_options(voice, config={"model_settings": {"model_name": ...}})`.
+Native `config` and `model` go to `RealtimeRunner`; `model_config` goes to its session `run()`.
+Only static run options are used for a call. For example, add
+`"input_audio_transcription": {"model": "gpt-4o-mini-transcribe"}` to `config.model_settings`
+when caller transcripts are needed. Do not override session tools/handoffs in model settings;
+declare them on `RealtimeAgent` so AK can supply their execution context.
+
+AK supports PCM16 mono at 24 kHz and the SDK’s default `async_tool_calls=True`.
+The ordinary lifecycle `hooks` field is not executed by this version of the native realtime SDK.
+Agent output guardrails can interrupt streaming output; they cannot retract audio already heard.
+The adapter’s playback tracker follows paced queue emission, which estimates playback rather than
+acknowledging what reached the caller. OpenAI automatic resumption is not added by this migration.
 
 ### Two processes (broker transport)
 
@@ -247,25 +263,25 @@ persisted.
 
 ## Multi-agent handoffs
 
-One call can move between several agents. Write the agents as you would for a text run, and register only the entry agent:
+One call can move between several native voice agents. Register only the entry agent:
 
-- **OpenAI Agents SDK**: `Agent(handoffs=[...])`. Each agent's handoffs are offered to the model as functions (`transfer_to_billing`, ...).
+- **OpenAI Agents SDK**: `RealtimeAgent(handoffs=[...])`, run by the SDK’s native `RealtimeRunner`. Each agent's handoffs are offered to the model as functions (`transfer_to_billing`, ...).
 - **Google ADK**: `LlmAgent(sub_agents=[...])`. ADK's own rules decide who can transfer to whom: an agent to its sub-agents, and back to its parent or across to its peers unless `disallow_transfer_to_parent` / `disallow_transfer_to_peers` is set.
 
 ```python
-from agents import Agent as OpenAIAgent
+from agents.realtime import RealtimeAgent as OpenAIAgent
 
 from agentkernel.framework.openai import OpenAIModule
 from agentkernel.integration.adapter import GatewayRunner
 from agentkernel.livekit import LiveKitEdgeGateway
 from agentkernel.pipeline import IOHandler
 
-supervisor = OpenAIAgent(name="supervisor", model="gpt-realtime", instructions="Route the caller to billing or tech support.")
-billing = OpenAIAgent(name="billing", model="gpt-realtime", instructions="Answer billing questions.", handoffs=[supervisor])
-tech_support = OpenAIAgent(name="tech_support", model="gpt-realtime", instructions="Fix connection problems.", handoffs=[supervisor])
+supervisor = OpenAIAgent(name="supervisor", instructions="Route the caller to billing or tech support.")
+billing = OpenAIAgent(name="billing", instructions="Answer billing questions.", handoffs=[supervisor])
+tech_support = OpenAIAgent(name="tech_support", instructions="Fix connection problems.", handoffs=[supervisor])
 supervisor.handoffs = [billing, tech_support]
 
-OpenAIModule([supervisor])
+OpenAIModule([supervisor]).run_options(supervisor, config={"model_settings": {"model_name": "gpt-realtime"}})
 
 if __name__ == "__main__":
     IOHandler.run(gateways=[GatewayRunner(LiveKitEdgeGateway(session_id="room_01", agent_name="supervisor"))])
@@ -291,16 +307,16 @@ Each agent participant needs a token of its own, so the gateway needs `AK_LIVEKI
 |---|---|---|
 | Handoff | Same model socket; the session is switched to the new agent's instructions and tools | ADK's own transfer: a new Gemini Live socket for the new agent, given the conversation so far |
 | Gap the caller hears | None | About 1 to 2 seconds. ADK keeps the old socket for about a second after the transfer: what the caller says then goes to the agent handing over and is not heard by the new one; after that, it waits for the new agent |
-| Voice and model | Every agent speaks with the entry agent's model and voice | Each agent its own model and voice (`Gemini(model=..., speech_config=...)`) |
+| Voice and model | Every agent uses the realtime session’s model and voice | Each agent its own model and voice (`Gemini(model=..., speech_config=...)`) |
 | Rejected when the call connects | A handoff with `input_filter` or `nest_handoff_history`, which realtime cannot apply | Nothing by Agent Kernel: ADK's live run decides when an agent's socket opens |
 
 For how handoffs flow through the pipeline, see [Realtime Voice Internals](../architecture/realtime-internals.md).
 
 ### Refusing a handoff
 
-Agents that can hand off to each other can also do so without the caller, back and forth. Each framework's own hook can refuse a handoff, and the refused agent keeps the call:
+Use each framework’s native controls to decide which transfers are allowed:
 
-- **OpenAI Agents SDK**: wrap the target in `handoff(agent, on_handoff=...)` and raise from the hook. The model gets the exception's message as the handoff's result.
+- **OpenAI Agents SDK**: use `handoff(agent, is_enabled=...)` to control whether the SDK offers a transfer. `on_handoff` follows native SDK error handling; raising can fail the call and is not a recoverable refusal mechanism.
 - **Google ADK**: give the agent a `before_tool_callback` that returns a result for `transfer_to_agent`. ADK runs its plugins and the agent's `before_tool_callback`, `on_tool_error_callback` and `after_tool_callback` around every tool call, as on any ADK run.
 
 ```python
@@ -425,7 +441,7 @@ RealtimeCall.observe(Transcript())
 | Event | When |
 |---|---|
 | `connected` / `disconnected` | The session's model connection opened (on the caller's first input) or closed (idle, failed, shut down). A new connection starts at the entry agent and remembers nothing |
-| `caller_said` | The caller's words in one turn, as the model transcribed them. Gemini Live only: the OpenAI adapter does not enable input transcription |
+| `caller_said` | The caller's words in one turn, as the model transcribed them. Gemini Live, or OpenAI when `input_audio_transcription` is configured in native session model settings |
 | `edge_text` | Text the edge sent into the call: what the caller typed, or a prompt the edge sends for them (the gateway's greeting) |
 | `agent_said` | An agent's words in one turn, as they reached the edge; `interrupted` when the caller talked over it |
 | `agent_changed` | The call moved to `event.agent`, and once for the agent it starts with |
@@ -448,7 +464,7 @@ Complete working examples (with In-Memory, Kafka, NATS, and AWS SQS architecture
 ## Limitations
 
 - **No guardrails or pre/post hooks on realtime turns**: voice and chat turns go to the model socket directly, not through `Runtime.run()`, so input/output guardrails, pre/post hooks and the multimodal pre-hook do not run. [Realtime observers](#watching-a-live-call) see the call, and cannot change what is said.
-- **Tool limits**: OpenAI tools that need approval or have tool guardrails are not offered in realtime mode (a warning is logged). On Google ADK, ADK's live runner resolves an agent's tools as on any run; toolsets such as MCP have not been tested in a live call. Plain function tools work on both frameworks.
+- **Tool limits**: OpenAI runs function tool input guardrails and agent output guardrails natively. Tool output guardrails are not applied by the installed realtime SDK, and AK has no realtime approval decision surface: either configuration raises before connect. MCP/toolset scoping and non-function tools also raise explicitly. On Google ADK, ADK's live runner resolves an agent's tools as on any run; toolsets such as MCP have not been tested in a live call. Plain function tools work on both frameworks.
 - **One room per gateway**: each `LiveKitEdgeGateway` joins one room, and all audio in that room goes to one session; an application that gives each meeting a room hosts one runner per room.
 - **History is held by the call**: on OpenAI, in the model's own session; on Google ADK, in the call's ADK session, which ADK gives each new socket.
   - **Google ADK**: ADK resumes a dropped socket itself when it holds a session resumption handle. A socket that still drops, stalls or reaches the Live API's connection time limit (about 10 minutes) is replaced by starting ADK's run again with the same agent, the conversation and a short note that the line dropped (see [Connection recovery](../architecture/realtime-internals.md#connection-recovery-google-adk)); what the caller says meanwhile waits for the new socket. Only when the restarted runs keep dropping is the call failed.

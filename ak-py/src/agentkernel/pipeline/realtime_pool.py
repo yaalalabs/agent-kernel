@@ -306,6 +306,7 @@ class RealtimeConnection:
                 pcm16 = PCM16Resampler.resample(base64.b64decode(data["delta"]), self.adapter.output_sample_rate, EDGE_SAMPLE_RATE)
                 message_id = data.get("message_id") or ""
                 await self._emit(StreamChunk(event=AudioDelta(message_id=message_id, content=base64.b64encode(pcm16).decode("utf-8"))))
+                self.adapter.audio_emitted(message_id, pcm16, data.get("content_index", 0))
 
                 duration_ms = (len(pcm16) / 2) / (EDGE_SAMPLE_RATE / 1000.0)
                 audio_played_ms += duration_ms

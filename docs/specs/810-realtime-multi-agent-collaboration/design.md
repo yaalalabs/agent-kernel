@@ -176,6 +176,17 @@ flowchart TB
 - `.agents/skills/ak-dev-architecture/SKILL.md` (a realtime section), `.agents/skills/ak-dev-testing-conventions/SKILL.md`
 - `docs/versioned_docs/` is never edited
 
+## OpenAI native realtime extension
+
+The earlier “OpenAI unchanged” scope is superseded by the native-engine migration.
+OpenAI voice agents now use `agents.realtime.RealtimeAgent` and its `RealtimeRunner`;
+regular text `Agent` objects are not silently converted. Both built-in adapters set
+`runs_tools=True`. The shared pool retains its generic tool path for custom adapters
+and adds only a vendor-neutral paced-audio notification for playback tracking.
+The existing task-lifetime tool-scope contract is retained; decoupling that lifetime
+is separate work. See [research and verified limits](research/openai-native-realtime.md)
+for compatibility, public callback integration, actual guardrail support and tests.
+
 ## Non-goals
 
 - `RealtimeCall` across processes: it reaches a call only in the process running the realtime pool

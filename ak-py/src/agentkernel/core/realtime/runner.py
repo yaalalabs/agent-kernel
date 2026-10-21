@@ -60,13 +60,20 @@ class RealtimeRunner(Runner):
 
     @abstractmethod
     async def connect(self, session: Session, agent: "Agent", callback: Callable) -> None:
-        """Establishes the persistent model socket and reports model events through ``callback`` in the order the model sent them."""
+        """Establish the native realtime session; await ``callback(kind, data)`` in output order"""
         raise NotImplementedError()
 
     @abstractmethod
     async def append_audio(self, base64_audio: str) -> None:
         """Appends audio to the model's input buffer, at :attr:`input_sample_rate`."""
         raise NotImplementedError()
+
+    def audio_emitted(self, message_id: str, pcm16: bytes, content_index: int = 0) -> None:
+        """Observe PCM16 released by the paced output queue, for adapters that track playback.
+
+        This is a delivery estimate, not confirmation that the caller heard the audio.
+        ``pcm16`` uses the shared edge sample rate. The default needs no playback tracking.
+        """
 
     @abstractmethod
     async def send_text(self, text: str) -> None:

@@ -625,14 +625,14 @@ Caller <-> LiveKitEdgeGateway (StatefulEdgeAdapter, hosted by GatewayRunner via 
   `append_audio`, `send_text`, `execute_tool`, `send_tool_result` (required unless `runs_tools`), `disconnect`,
   `team(agent)`. **`runs_tools`**: an adapter whose framework runs the model's tool calls itself (ADK) reports no
   `tool_call`, so the pool never runs a tool twice; before `connect()` the pool calls `use_tool_scope(open_tool_scope)`,
-  and the adapter awaits it from the framework's task running each call. `RealtimeConnection.open_tool_scope()` holds the
+  and the adapter awaits it from the framework's task running each call. Both built-in adapters now use this path. `RealtimeConnection.open_tool_scope()` holds the
   session lock in a holder task of its own (a lock and its context token live in one task), sets `Session.current()`,
   `Agent.current()` and a `ToolContext` in the tool task's own context, and counts the call as running until that task
   ends; `close()` cancels the task, and a holder still waiting for the lock is cancelled with it. Callback
   events: `audio_delta`, `transcript_delta`, `tool_call`, `done` (status `reconnecting` when a lost socket
   is being replaced), `interrupt`, `speech_started`, `speech_heard`, `speech_stopped` (only with
   `reports_speech_stopped`), `agent_changed`, `caller_transcript`, `reconnected`, `error`. Built-ins:
-  `OpenAIRealtimeRunner` (one socket; a handoff is `session.update`) and `GoogleADKRealtimeRunner`
+  `OpenAIRealtimeRunner` (native SDK realtime engine; a handoff keeps the socket) and `GoogleADKRealtimeRunner`
   (a transfer opens a new Gemini socket for the new agent).
 - **Ordering**: output, `done` and `AgentChanged` share one paced queue, so an edge never credits one
   agent's words to another; a barge-in drops queued audio and transcript but keeps `done` and
@@ -662,9 +662,18 @@ Caller <-> LiveKitEdgeGateway (StatefulEdgeAdapter, hosted by GatewayRunner via 
   new connection takes the list as it is then. One queue and task per connection, off the audio path; a failing
   observer is logged. No quiet-call event: an application polls `RealtimeCall.quiet_for()` from a task it starts on
   `connected`.
-- **OpenAI specifics** (`framework/openai/openai.py`): tools needing approval or carrying tool guardrails (input or
-  output) are not offered, since this runner calls the tool directly and would skip them. A handoff is refused by
-  `on_handoff` raising.
+- **OpenAI specifics** (`framework/openai/openai.py`): native `RealtimeAgent` / `RealtimeRunner` / `RealtimeSession`,
+  with `runs_tools=True`; regular `Agent` declarations remain for text runs. Pass native static `model`, `config`
+  and `model_config` through `Module.run_options(voice, ...)`; the model is `config.model_settings.model_name`.
+  Per-call native graph clones wrap public function, tool-input-guardrail and handoff callbacks to enter AK scope.
+  A ContextVar prevents guard/tool/timeout-child callbacks from acquiring that scope twice. The SDK owns execution,
+  enabled checks, history and transfers; no private Handoff references. Opaque handoffs reveal additional agents
+  when invoked, announced with `AgentChanged`. Input tool guardrails and agent response output guardrails run
+  natively; tool output guardrails are not applied by SDK realtime, so AK rejects them. Approval decisions,
+  MCP/toolset scoping, non-function tools and `async_tool_calls=False` are also explicitly unsupported. Native
+  `on_handoff` exceptions can fail the call; use `is_enabled` to control transfer availability. The pool's generic
+  `audio_emitted` notification updates the SDK playback tracker after paced output emission (an estimate, not a
+  receiver acknowledgement). No OpenAI reconnect/retry policy is added. The existing task-lifetime scope remains.
 - **Google ADK specifics** (`framework/adk/adk.py`): each call runs on ADK's own live engine,
   `Runner.run_live`, with a `LiveRequestQueue` and an in-memory ADK session of the connection's own (needs
   `google-adk>=2.7.0`: earlier 2.x releases end the run on a refused `transfer_to_agent`). ADK runs the tools with their

@@ -1,5 +1,11 @@
 # #810: Realtime multi-agent collaboration — Implementation Plan
 
+> OpenAI native-engine extension: earlier statements that OpenAI is unchanged are
+> superseded by [the migration research](research/openai-native-realtime.md) and the
+> “OpenAI native realtime extension” in design.md. Voice declarations use RealtimeAgent;
+> the SDK owns execution, and the shared pool receives paced-audio tracking notifications.
+
+
 This plan builds [`spec.md`](spec.md) in order: the core contracts first, then the Gemini adapter, the pool, recovery,
 the LiveKit gateway, the example, the tests, and the docs and skills sync. Each iteration leaves the branch importable,
 lint-clean and its suite green. Work happens on `feature/realtime-multi-agent-collaboration` off `develop`; the PR is

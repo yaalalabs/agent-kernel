@@ -1,5 +1,11 @@
 # #810: Realtime multi-agent collaboration — Implementation Spec
 
+> OpenAI native-engine extension: earlier statements that OpenAI is unchanged are
+> superseded by [the migration research](research/openai-native-realtime.md) and the
+> “OpenAI native realtime extension” in design.md. Voice declarations use RealtimeAgent;
+> the SDK owns execution, and the shared pool receives paced-audio tracking notifications.
+
+
 Implements the requirements in [`design.md`](design.md). The realtime pool keeps each call's turn state, says
 application text only into a quiet call (`RealtimeCall.send_if_quiet`, the application keeping what waits), and feeds
 `RealtimeObserver`s. The Gemini

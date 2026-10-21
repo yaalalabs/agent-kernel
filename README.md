@@ -165,7 +165,7 @@ Let a run stop to ask a person something — approve this tool, answer this ques
 
 Slack • WhatsApp • Microsoft Teams • Telegram • Gmail • Messenger • Instagram
 
-**[LiveKit](https://kernel.yaala.ai/docs/next/integrations/livekit)** connects OpenAI Agents SDK and Google ADK agents to WebRTC rooms through the realtime execution pipeline.
+**[LiveKit](https://kernel.yaala.ai/docs/next/integrations/livekit)** connects OpenAI Agents SDK and Google ADK agents to WebRTC rooms through the realtime execution pipeline. OpenAI voice agents use native `RealtimeAgent` / `RealtimeRunner`; Google voice agents use ADK’s `Runner.run_live`.
 
 Build once. Ship to every channel your users live on. No bespoke bot code.
 

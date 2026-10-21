@@ -76,14 +76,14 @@ A `RealtimeRunner` adapter talks to the model and reports what it does through t
 | `interrupt` / `speech_started` | The caller started speaking: over the model (`interrupt`), or while it is silent (`speech_started`, reported once per caller turn by both adapters) | An `interrupt`, or a `speech_started` while paced audio is still queued, drops unheard audio and text and keeps `done` and `agent_changed`. Either one marks when the caller last spoke (see [Turn state](#turn-state)) |
 | `speech_heard` / `speech_stopped` | The caller is still speaking (`speech_heard`: Gemini, on each later transcription of their words), or has stopped (`speech_stopped`: OpenAI's server VAD, from an adapter with `reports_speech_stopped`) | Nothing reaches the edge; both mark when the caller last spoke, and `speech_stopped` ends `is_caller_speaking` |
 | `agent_changed` | A handoff moved the call to another agent | In order: after the old agent's output, before the new agent's |
-| `caller_transcript` | Optional: the caller's words in a turn, once the model has transcribed the whole turn (Gemini) | Nothing reaches the edge; the [realtime observers](#realtime-observers) get it as `caller_said` |
+| `caller_transcript` | Optional: the caller's words in a turn, once the model has transcribed the whole turn (Gemini, or OpenAI with native input transcription enabled) | Nothing reaches the edge; the [realtime observers](#realtime-observers) get it as `caller_said` |
 | `error` | The socket failed | Tells the caller, then replaces the connection |
 
 More members of the contract:
 
-- **`team(agent)`** returns every agent the conversation can hand off to, the starting agent first. The default is the agent alone; the OpenAI and ADK adapters walk their agent graph. It is read before connecting.
+- **`team(agent)`** returns every agent the conversation can hand off to, the starting agent first. The default is the agent alone; the OpenAI and ADK adapters inspect their native graphs. OpenAI opaque Handoff objects reveal only their public target name; additional targets discovered during a transfer are announced with AgentChanged. It is read before connecting.
 - When a connection opens, the pool itself emits the first `AgentChanged`, naming the starting agent and the team. An adapter reports only the changes after that.
-- **`runs_tools`**: who runs the model's tool calls. By default (the OpenAI adapter) the pool runs each one from a `tool_call` event, through `execute_tool()` and `send_tool_result()`. An adapter whose framework runs its tools itself (the Google ADK adapter, on ADK's own live engine) sets `runs_tools = True`, reports no `tool_call`, so no tool runs twice, and leaves `execute_tool()` / `send_tool_result()` unimplemented. Before `connect()` the pool hands it `open_tool_scope` (`use_tool_scope()`): awaited from the framework's task running one tool call, it gives that task what a tool the pool runs has (below).
+- **`runs_tools`**: both built-in adapters run their native SDK engines with `runs_tools = True`, report no `tool_call`, and leave `execute_tool()` / `send_tool_result()` unimplemented. Custom adapters may keep `runs_tools = False` and use the pool’s generic execution path. Before `connect()` the pool hands it `open_tool_scope` (`use_tool_scope()`): awaited from the framework's task running one tool call, it gives that task what a tool the pool runs has (below).
 
 ### The tool scope for an adapter that runs its own tools
 
@@ -148,7 +148,7 @@ On `close()` the observers get up to `_OBSERVER_DRAIN_SECONDS` to take the event
 
 ## Tool calls that wait
 
-The pool runs each tool call as a task of its connection (`RealtimeConnection._tool_tasks`), inside the call's AK session and `Agent._activate()`, so the tool holds the session lock until it returns. A tool may await long work, such as another agent's run through `AgentService.run_multi` in a session of its own; the await yields the pool's loop, so other calls' audio keeps its pace. While the task runs it counts toward `is_responding`, so the call is not quiet: `send_if_quiet` declines and `quiet_for()` is `None`. On Google ADK the tool is ADK's task, in the [tool scope](#the-tool-scope-for-an-adapter-that-runs-its-own-tools), and the adapter's stall wait is suspended until it ends. ADK reads nothing from the socket while its tools run, so the caller's words and interruptions during the wait reach the pool after it, and a socket lost meanwhile is noticed once the tool returns.
+The pool runs each tool call as a task of its connection (`RealtimeConnection._tool_tasks`), inside the call's AK session and `Agent._activate()`, so the tool holds the session lock until it returns. A tool may await long work, such as another agent's run through `AgentService.run_multi` in a session of its own; the await yields the pool's loop, so other calls' audio keeps its pace. While the task runs it counts toward `is_responding`, so the call is not quiet: `send_if_quiet` declines and `quiet_for()` is `None`. Both built-in adapters execute tools in native SDK tasks, in the [tool scope](#the-tool-scope-for-an-adapter-that-runs-its-own-tools), and Google ADK’s stall wait is suspended until it ends. ADK reads nothing from the socket while its tools run, so the caller's words and interruptions during the wait reach the pool after it, and a socket lost meanwhile is noticed once the tool returns.
 
 `RealtimeConnection.close()` (called by `RealtimeCall.close()`, an idle or failed-socket eviction, and pool shutdown) marks the connection closed, cancels its tool tasks and waits for them up to `_TOOL_CANCEL_SECONDS` (2 s) before disconnecting the adapter. A cancelled tool sends no result, and `_execute_tool_and_reply` sends none for a tool that finishes once the connection is closed or its socket failed (`closed`), even one that ignored its cancellation, so a late result never reaches a dead socket or the session's next connection, which has an adapter of its own. A socket the adapter recovers itself (Google ADK) keeps the connection open: see [Connection recovery](#connection-recovery-google-adk).
 
@@ -185,37 +185,42 @@ A reconnect announces the team again, and only the agents not in the room yet jo
 
 ## Handoff flow: OpenAI (same socket)
 
-The OpenAI Realtime API can change a session's instructions and tools while the socket is open, with `session.update`. A handoff therefore keeps the socket, and the conversation, which lives in the OpenAI session, stays where it is. This is how the OpenAI Agents SDK's own realtime session runs a handoff. Each handoff is offered to the model as a function (`transfer_to_billing`) and runs through the same path as a tool.
+`OpenAIRealtimeRunner` uses `agents.realtime.RealtimeRunner` and `RealtimeSession`.
+Voice declarations use `RealtimeAgent`; ordinary `Agent` objects remain for text runs.
+The native engine owns tool dispatch, enabled checks, history, guardrails and transfers.
+AK clones the graph per connection and wraps public tool, input-guardrail and handoff
+callbacks to enter the shared tool scope. It does not read private SDK handoff references.
 
 ```mermaid
 sequenceDiagram
-    autonumber
-    participant C as Caller
-    participant GW as LiveKitEdgeGateway
     participant Pool as RealtimeConnection
     participant Adp as OpenAIRealtimeRunner
-    participant SDK as Agents SDK Handoff
+    participant SDK as Agents SDK RealtimeSession
     participant M as OpenAI Realtime
-
-    C->>M: "Why is my bill higher?" (through the pipeline)
-    M-->>Adp: response.done with a call to transfer_to_billing
-    Adp-->>Pool: tool_call, then done
-    Pool->>Adp: execute_tool(transfer_to_billing)
-    Adp->>SDK: on_invoke_handoff()
-    SDK-->>Adp: billing agent
-    Pool->>Adp: send_tool_result()
-    Adp->>M: session.update with billing's instructions and tools
-    Adp-->>Pool: agent_changed(billing, previous: supervisor)
-    Adp->>M: function_call_output, then response.create
-    M-->>Adp: billing's answer (audio)
-    Pool-->>GW: AgentChanged, then billing's audio, in order
-    GW->>GW: supervisor's audio plays out, mute supervisor, unmute billing
-    GW-->>C: billing speaks through agent-billing
+    M-->>SDK: Native tool / handoff request
+    SDK->>Adp: Scoped public callback
+    Adp->>Pool: Open AK tool scope
+    SDK->>SDK: Validate, run guards, execute tool or transfer
+    SDK->>M: Tool output / session update
+    SDK-->>Adp: Typed audio, turn and handoff events
+    Adp-->>Pool: Normalized AK events
 ```
 
-- A tool called in the same response as a handoff still runs as the agent that called it.
-- Only the first handoff of a response is performed; any other is answered as not performed.
-- The socket's model and voice cannot change, so every agent speaks with the entry agent's model and voice.
+The SDK determines concurrent tool/handoff ordering. AK no longer imposes its own
+one-handoff-per-turn policy. Configure transfers with native `is_enabled`; an exception
+from `on_handoff` follows SDK failure behavior rather than becoming an AK refusal reply.
+The model and voice belong to the session, not each agent.
+
+Tool input guardrails and agent response output guardrails run natively. The installed
+SDK does not apply function tool output guardrails; AK rejects those configurations.
+Realtime approvals, MCP/toolset scoping and non-function tools are not exposed by this
+adapter. The SDK’s default asynchronous tool dispatch is required by the current scope
+contract; `async_tool_calls=False` raises explicitly.
+
+After paced audio is emitted, the pool calls the generic `audio_emitted` notification.
+The OpenAI adapter updates the public SDK playback tracker from this notification,
+including the item content index. This is a delivery estimate: the lead, broker latency
+and edge buffering are not receiver playback acknowledgements.
 
 ## Handoff flow: Google ADK (new socket)
 
@@ -280,10 +285,10 @@ A Gemini socket can be lost in the middle of a call: the network drops, the Live
 | Model socket on a handoff | Kept; `session.update` | Replaced by ADK; new socket + the conversation |
 | Conversation memory | In the OpenAI session | In the call's ADK session; ADK gives it to each new socket |
 | Gap on a handoff | None | About 1 to 2 seconds |
-| Voice | One voice for every agent | Each agent's own voice |
+| Voice | One session voice for every agent | Each agent's own voice |
 | Checked at connect | Handoffs that filter or nest the history are rejected | Nothing by Agent Kernel: ADK's live run decides when an agent's socket opens |
-| Who runs the tools | The pool (`tool_call`, `execute_tool()`) | ADK, in the pool's tool scope (`runs_tools`) |
-| Refusing a handoff | An `on_handoff` that raises; the agent stays and the model gets the error | A `before_tool_callback` that answers for `transfer_to_agent` |
+| Who runs the tools | Native Agents SDK, in AK tool scope (`runs_tools`) | ADK, in AK tool scope (`runs_tools`) |
+| Controlling a handoff | Native `is_enabled`; raising from `on_handoff` can fail the call | A `before_tool_callback` that answers for `transfer_to_agent` |
 | Lost model socket | The call fails; the next input starts at the entry agent | Resumed by ADK, or the run started again with the same agent and the conversation (see [Connection recovery](#connection-recovery-google-adk)) |
 
 ## Where each piece lives
@@ -296,7 +301,7 @@ A Gemini socket can be lost in the middle of a call: the network drops, the Live
 | `RealtimeCall` | `agentkernel.pipeline` (`realtime_pool`) | What the call is doing, and sending into it at a quiet moment, for application code |
 | `RealtimeObserver`, `RealtimeEvent` | `agentkernel.core.realtime.observer` | Observing calls (`RealtimeCall.observe`): connection, transcripts, speaker changes |
 | `GatewayRunner` | `agentkernel.integration.adapter` | Hosting one gateway until shutdown or `stop()`; an application with a room per meeting keeps one runner per room |
-| `OpenAIRealtimeRunner` | `agentkernel.framework.openai` | OpenAI socket, handoffs by `session.update` |
+| `OpenAIRealtimeRunner` | `agentkernel.framework.openai` | Native SDK realtime session, scoped callbacks, event translation and playback estimates |
 | `GoogleADKRealtimeRunner` | `agentkernel.framework.adk` | One ADK `Runner.run_live` per call: ADK's events reported to the pool, the tool scope plugin, restarting a failed run |
 | `LiveKitEdgeGateway` | `agentkernel.integration.livekit` | Room, one participant per agent, who is heard and unmuted |
 | `StatefulEdgeAdapter` | `agentkernel.integration.adapter` | The interface a new voice channel (for example WhatsApp calling or SIP) implements; it can ignore `AgentChanged` |
