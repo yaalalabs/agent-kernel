@@ -2,8 +2,10 @@
 
 Each sandbox is a detached container running ``sleep infinity``; executions are
 ``exec_run`` calls of the language interpreter, files travel via ``put_archive`` /
-``get_archive`` under the ``/workspace`` working directory, and ``install_packages`` is a
-``pip install`` exec. The SDK is synchronous, so every call runs in ``asyncio.to_thread``.
+``get_archive`` under the ``/workspace`` working directory, and ``install_packages`` execs the
+validated installer argv from ``package_installers``. The SDK is synchronous, so every call
+runs in ``asyncio.to_thread``. A timed-out or cancelled exec is killed by name
+(``ProcessKiller``), except in an ``attach_to`` container the framework does not own.
 
 ``close()`` leaves the container running (that is what makes reattach work);
 ``destroy()`` is ``remove(force=True)``. Policy mapping: ``deny`` egress becomes
@@ -24,6 +26,8 @@ import docker
 from ..base import Sandbox, SandboxProvider
 from ..errors import SandboxCapabilityError, SandboxGoneError, SandboxPolicyError, SandboxTimeoutError
 from ..model import IsolationTier, SandboxCapabilities, SandboxPolicy, SandboxPrincipal, SandboxResult
+from ..packages import PackageInstaller
+from .process import ProcessKiller
 
 logger = logging.getLogger("ak.sandbox.provider")
 
@@ -44,14 +48,19 @@ def _safe_rel(path: str) -> str:
 class DockerSandbox(Sandbox):
     """Handle to one running container; executions are ``exec_run`` calls inside it."""
 
-    def __init__(self, container) -> None:
-        """Bind the handle to a Docker SDK container object; the container id is the sandbox id."""
+    def __init__(self, container, *, capabilities: SandboxCapabilities, installer: PackageInstaller, kill_enabled: bool) -> None:
+        """Bind the handle to a Docker SDK container object; the container id is the sandbox id.
+        ``capabilities`` are the provider instance's; ``kill_enabled`` is False for an
+        ``attach_to`` container, where a name-based kill could hit the operator's own processes."""
         self.id = container.id
         self._container = container
+        self._capabilities = capabilities
+        self._installer = installer
+        self._kill_enabled = kill_enabled
 
     async def execute_code(self, code: str, language: str = "python", timeout: float | None = None) -> SandboxResult:
         """Exec the language interpreter with the code (``python -c`` in v1)."""
-        if language not in DockerSandboxProvider.capabilities.languages:
+        if language not in self._capabilities.languages:
             raise SandboxCapabilityError(self.__class__.__name__, f"language:{language}")
         return await self._exec(["python", "-c", code], timeout)
 
@@ -59,13 +68,15 @@ class DockerSandbox(Sandbox):
         """Exec a shell command via ``/bin/sh -c``."""
         return await self._exec(["/bin/sh", "-c", command], timeout)
 
-    async def install_packages(self, packages: list[str]) -> SandboxResult:
-        """Exec ``pip install`` for the given packages."""
-        return await self._exec(["pip", "install", *packages], None)
+    async def install_packages(self, packages: list[str], ecosystem: str = "python", timeout: float | None = None) -> SandboxResult:
+        """Exec the ecosystem's validated installer argv (e.g. ``pip install <packages>``)."""
+        if ecosystem not in self._capabilities.package_ecosystems:
+            raise SandboxCapabilityError(self.__class__.__name__, f"package_ecosystem:{ecosystem}")
+        return await self._exec(self._installer.argv(packages, ecosystem), timeout)
 
     async def _exec(self, argv: list[str], timeout: float | None) -> SandboxResult:
-        """Run ``exec_run`` in a thread under ``asyncio.wait_for``; on expiry make a
-        best-effort kill of the exec'd process and raise ``SandboxTimeoutError``."""
+        """Run ``exec_run`` in a thread under ``asyncio.wait_for``. On expiry kill the exec'd
+        process and raise ``SandboxTimeoutError``; on cancellation kill it and re-raise."""
 
         def run():
             return self._container.exec_run(argv, workdir=WORKDIR, demux=True)
@@ -73,8 +84,11 @@ class DockerSandbox(Sandbox):
         try:
             exec_result = await asyncio.wait_for(asyncio.to_thread(run), timeout=timeout)
         except asyncio.TimeoutError as exc:
-            await self._best_effort_kill(argv[0])
+            await self._kill(argv[0])
             raise SandboxTimeoutError(f"docker exec exceeded timeout {timeout}s") from exc
+        except asyncio.CancelledError:
+            await self._kill(argv[0])
+            raise
         stdout, stderr = exec_result.output if exec_result.output is not None else (b"", b"")
         return SandboxResult(
             stdout=(stdout or b"").decode(errors="replace"),
@@ -82,11 +96,16 @@ class DockerSandbox(Sandbox):
             exit_code=exec_result.exit_code if exec_result.exit_code is not None else -1,
         )
 
-    async def _best_effort_kill(self, interpreter: str) -> None:
-        """Kill the timed-out exec'd process by interpreter name. Safe because the
+    async def _kill(self, executable: str) -> None:
+        """Best-effort, time-bounded kill of the exec'd process by name. Safe because the
         concurrency contract allows at most one in-flight execution per sandbox."""
+        if not self._kill_enabled:
+            return
         try:
-            await asyncio.to_thread(self._container.exec_run, ["pkill", "-9", posixpath.basename(interpreter)])
+            await asyncio.wait_for(
+                asyncio.to_thread(self._container.exec_run, ProcessKiller.argv(executable)),
+                timeout=ProcessKiller.KILL_TIMEOUT_SECONDS,
+            )
         except Exception as exc:  # noqa: BLE001 — the kill is best-effort by contract
             logger.warning("Best-effort kill in container %s failed: %s", self.id, exc)
 
@@ -128,7 +147,7 @@ class DockerSandboxProvider(SandboxProvider):
         shell=True,
         languages=["python"],
         files=True,
-        package_install=True,
+        package_ecosystems=["python"],  # the default; each instance declares its package_installers keys
         stateful=False,
         attach=True,
         attaches_external=True,  # attach_to binds to a container the framework did not create
@@ -139,9 +158,17 @@ class DockerSandboxProvider(SandboxProvider):
     )
 
     def __init__(self, config) -> None:
-        """Store the config; the Docker client is created lazily on first use."""
+        """Store the config and build the installer; the Docker client is created lazily on first use."""
         super().__init__(config)
         self._client_instance: Optional["docker.DockerClient"] = None
+        self._installer = PackageInstaller.from_config(config)
+        ecosystems = self._installer.ecosystems
+        self.capabilities = type(self).capabilities.derive(package_ecosystems=ecosystems, package_install=bool(ecosystems))
+        self._kill_enabled = not config.attach_to
+
+    def _handle(self, container) -> "DockerSandbox":
+        """Wrap a container in a handle carrying this instance's capabilities and installer."""
+        return DockerSandbox(container, capabilities=self.capabilities, installer=self._installer, kill_enabled=self._kill_enabled)
 
     def _client(self):
         """Return the lazily created Docker client (``docker.from_env()``)."""
@@ -156,7 +183,7 @@ class DockerSandboxProvider(SandboxProvider):
             return await self.attach(self._config.attach_to, principal=principal, policy=policy)
         kwargs = self._container_kwargs(policy)
         container = await asyncio.to_thread(self._client().containers.run, self._config.image, **kwargs)
-        return DockerSandbox(container)
+        return self._handle(container)
 
     def _container_kwargs(self, policy: SandboxPolicy) -> dict:
         """Map the ``SandboxPolicy`` onto ``containers.run`` keyword arguments."""
@@ -191,7 +218,7 @@ class DockerSandboxProvider(SandboxProvider):
                 container.start()
             return container
 
-        return DockerSandbox(await asyncio.to_thread(fetch))
+        return self._handle(await asyncio.to_thread(fetch))
 
     async def destroy(self, sandbox_id: str) -> None:
         """``remove(force=True)`` the container. Idempotent; unknown ids are a no-op."""

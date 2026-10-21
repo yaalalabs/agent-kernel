@@ -11,11 +11,14 @@ import base64
 import importlib
 import io
 import shlex
+import shutil
+import subprocess
 import sys
 import tarfile
 import threading
 import time
 import types
+import uuid
 from pathlib import Path
 
 import pytest
@@ -38,6 +41,7 @@ from agentkernel.sandbox.factory import SandboxProviderFactory
 from agentkernel.sandbox.manager import ExecutionManager
 from agentkernel.sandbox.model import SandboxPolicy, SandboxPrincipal, SandboxSession
 from agentkernel.sandbox.providers.local_subprocess import LocalSubprocessSandboxProvider
+from agentkernel.sandbox.providers.process import ProcessKiller
 from agentkernel.sandbox.testing import FAIL_MARKER, SandboxProviderContract
 
 
@@ -343,7 +347,84 @@ async def test_docker_timeout_raises_and_best_effort_kills(docker_env):
         await sandbox.execute_code("while True: pass", timeout=0.05)
     container.exec_delay = 0.0
     await asyncio.sleep(0.6)  # let the abandoned exec thread finish recording
-    assert any(call[0][0] == "pkill" for call in container.exec_calls)
+    assert ProcessKiller.argv("python") in [call[0] for call in container.exec_calls]
+
+
+@pytest.mark.asyncio
+async def test_docker_install_uses_installer_timeout_and_kill(docker_env):
+    module, _client = docker_env
+    provider = _docker_provider(module)
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    container = sandbox._container
+    container.exec_delay = 0.3
+    with pytest.raises(SandboxTimeoutError):
+        await sandbox.install_packages(["requests"], timeout=0.05)
+    assert container.exec_calls[0][0] == ["pip", "install", "requests"]
+    assert container.exec_calls[-1][0] == ProcessKiller.argv("pip")
+
+
+@pytest.mark.asyncio
+async def test_docker_cancellation_kills_and_reraises(docker_env):
+    module, _client = docker_env
+    provider = _docker_provider(module)
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    container = sandbox._container
+    container.exec_delay = 0.3
+    task = asyncio.create_task(sandbox.execute_code("while True: pass"))
+    await asyncio.sleep(0.05)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert [call[0] for call in container.exec_calls].count(ProcessKiller.argv("python")) == 1
+
+
+@pytest.mark.asyncio
+async def test_docker_attach_to_timeout_sends_no_kill(docker_env):
+    # The framework does not own an attach_to container: a name-based kill could hit the operator's processes.
+    module, client = docker_env
+    existing = FakeContainer("pre-existing")
+    client.containers.by_id["pre-existing"] = existing
+    provider = _docker_provider(module, _SandboxDockerConfig(attach_to="pre-existing"))
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    existing.exec_delay = 0.3
+    with pytest.raises(SandboxTimeoutError):
+        await sandbox.execute_code("while True: pass", timeout=0.05)
+    assert [call[0][0] for call in existing.exec_calls] == ["python"]  # no kill exec
+
+
+@pytest.mark.asyncio
+async def test_docker_package_installers_declare_instance_ecosystems(docker_env):
+    module, _client = docker_env
+    config = _SandboxDockerConfig(package_installers={"python": ["pip", "install"], "node": ["npm", "install"]})
+    provider = _docker_provider(module, config)
+    assert provider.capabilities.package_ecosystems == ["python", "node"]
+    assert module.DockerSandboxProvider.capabilities.package_ecosystems == ["python"]  # the class stays the default
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    container = sandbox._container
+
+    await sandbox.install_packages(["lodash"], ecosystem="node")
+    assert container.exec_calls[-1][0] == ["npm", "install", "lodash"]
+    with pytest.raises(SandboxCapabilityError, match="package_ecosystem:deb"):
+        await sandbox.install_packages(["curl"], ecosystem="deb")
+    with pytest.raises(ValueError):
+        await sandbox.install_packages(["-r"])  # rejected by the installer before any exec
+    assert len(container.exec_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_docker_empty_package_installers_declare_no_installs(docker_env):
+    module, _client = docker_env
+    provider = _docker_provider(module, _SandboxDockerConfig(package_installers={}))
+    assert provider.capabilities.package_install is False
+    assert provider.capabilities.package_ecosystems == []
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    with pytest.raises(SandboxCapabilityError):
+        await sandbox.install_packages(["requests"])
 
 
 @pytest.mark.asyncio
@@ -594,6 +675,17 @@ async def test_ssm_waits_out_unregistered_invocation(ssm_env):
         assert len(fake.ssm.send_calls) == 1  # waited rather than re-sending
     finally:
         module._POLL_INTERVAL = module_interval
+
+
+@pytest.mark.asyncio
+async def test_ssm_language_check_reads_instance_capabilities(ssm_env):
+    module, _fake = ssm_env
+    provider = _ssm_provider(module)
+    provider.capabilities = provider.capabilities.derive(languages=[])  # an instance override
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    with pytest.raises(SandboxCapabilityError, match="language:python"):
+        await sandbox.execute_code("print(1)")
 
 
 @pytest.mark.asyncio
@@ -949,6 +1041,18 @@ async def test_e2b_command_nonzero_exit_is_result_not_exception(e2b_env):
 
     await sandbox.install_packages(["requests", "httpx"])
     assert sandbox._sandbox.command_calls[-1][0] == "pip install requests httpx"
+
+
+@pytest.mark.asyncio
+async def test_e2b_install_passes_timeout_and_checks_ecosystem(e2b_env):
+    module, _fake_cls = e2b_env
+    provider = _e2b_provider(module)
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    await sandbox.install_packages(["numpy>=1"], timeout=30)
+    assert sandbox._sandbox.command_calls[-1] == ("pip install 'numpy>=1'", 30)  # shlex.join, native SDK timeout
+    with pytest.raises(SandboxCapabilityError, match="package_ecosystem:node"):
+        await sandbox.install_packages(["lodash"], ecosystem="node")
 
 
 @pytest.mark.asyncio
@@ -1348,6 +1452,22 @@ def test_factory_passes_profile_idle_timeout_to_daytona(daytona_env):
     assert provider._idle_timeout == 90
 
 
+@pytest.mark.asyncio
+async def test_daytona_install_passes_timeout_and_checks_ecosystem(daytona_env):
+    from agentkernel.core.config import _SandboxDaytonaConfig
+
+    module, _client_cls = daytona_env
+    config = _SandboxDaytonaConfig(target="us", package_installers={"python": ["pip", "install"], "node": ["npm", "install"]})
+    provider = _daytona_provider(module, config)
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    await sandbox.install_packages(["@types/node"], ecosystem="node", timeout=30)
+    command, _cwd, _env, timeout = sandbox._sandbox.exec_calls[-1]
+    assert command == "npm install @types/node" and timeout == 30
+    with pytest.raises(SandboxCapabilityError, match="package_ecosystem:deb"):
+        await sandbox.install_packages(["curl"], ecosystem="deb")
+
+
 # --------------------------------------------------------------------------- #
 # kubernetes — mocked Kubernetes client (no cluster)
 # --------------------------------------------------------------------------- #
@@ -1419,7 +1539,7 @@ class FakeK8sCluster:
                     info.size = len(pod.files[rel])
                     tar.addfile(info, io.BytesIO(pod.files[rel]))
                 return base64.b64encode(buf.getvalue()).decode(), "", 0
-            if shell_cmd.startswith("pkill"):
+            if shell_cmd.startswith("for p in /proc/"):  # the ProcessKiller scan
                 return "", "", 0
             return ("", "simulated failure", 1) if FAIL_MARKER in shell_cmd else (shell_cmd, "", 0)
         return "", f"unknown command {command}", 127
@@ -1614,7 +1734,7 @@ async def test_k8s_pod_manifest_shape(k8s_env):
     assert spec["securityContext"] == {"fsGroup": 2000}
     assert spec["volumes"] == [{"name": "workspace", "emptyDir": {}}]
     container = spec["containers"][0]
-    # sleep must be PID 1 directly: under `sh -c` the timeout path's `pkill sh` could kill PID 1.
+    # sleep must be PID 1 directly, so PID 1 is never `sh` (ProcessKiller also skips PID 1).
     assert container["image"] == "hardened:1" and container["command"] == ["sleep", "infinity"]
     assert container["workingDir"] == "/workspace"
     assert container["env"] == [{"name": "PYTHONUNBUFFERED", "value": "1"}]
@@ -1672,7 +1792,73 @@ async def test_k8s_exec_timeout_kills_and_raises(k8s_env):
     cluster.exec_handler = slow_handler
     with pytest.raises(SandboxTimeoutError):
         await sandbox.execute_code("while True: pass", timeout=0.05)
-    assert cluster.exec_calls[-1][1] == ["sh", "-c", "pkill -9 python"]  # the best-effort kill
+    assert cluster.exec_calls[-1][1] == ProcessKiller.argv("python")  # the best-effort kill
+
+
+def _slow_python(cluster, seconds=1.0):
+    """Make python execs block, so a timeout or cancellation hits them mid-flight."""
+    default_handler = cluster.exec_handler
+
+    def slow_handler(pod, command, stdin_data):
+        if command[0] in ("python", "pip"):
+            time.sleep(seconds)
+        return default_handler(pod, command, stdin_data)
+
+    cluster.exec_handler = slow_handler
+
+
+def _kill_calls(cluster, executable):
+    return [call for call in cluster.exec_calls if call[1] == ProcessKiller.argv(executable)]
+
+
+@pytest.mark.asyncio
+async def test_k8s_install_timeout_kills_the_installer(k8s_env):
+    module, cluster = k8s_env
+    provider = _k8s_provider(module)
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    _slow_python(cluster)
+    with pytest.raises(SandboxTimeoutError):
+        await sandbox.install_packages(["requests"], timeout=0.05)
+    assert len(_kill_calls(cluster, "pip")) == 1
+
+
+@pytest.mark.asyncio
+async def test_k8s_cancellation_kills_once_and_reraises(k8s_env):
+    module, cluster = k8s_env
+    provider = _k8s_provider(module)
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    _slow_python(cluster)
+    task = asyncio.create_task(sandbox.execute_code("while True: pass"))
+    await asyncio.sleep(0.05)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert len(_kill_calls(cluster, "python")) == 1  # the kill's own exec never triggers another kill
+
+
+@pytest.mark.asyncio
+async def test_k8s_attach_to_timeout_sends_no_kill(k8s_env):
+    module, cluster = k8s_env
+    cluster.pods[("default", "app-pod")] = _FakeK8sPod("app-pod", "default", {})
+    provider = _k8s_provider(module, _SandboxKubernetesConfig(attach_to="default/app-pod"))
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    _slow_python(cluster)
+    with pytest.raises(SandboxTimeoutError):
+        await sandbox.execute_code("while True: pass", timeout=0.05)
+    assert _kill_calls(cluster, "python") == []
+
+
+def test_k8s_instance_capabilities_compose_in_one_derive(k8s_env):
+    module, _cluster = k8s_env
+    config = _SandboxKubernetesConfig(network_policy=True, package_installers={"python": ["pip", "install"], "node": ["npm", "install"]})
+    caps = _k8s_provider(module, config).capabilities
+    assert caps.policy_network is True
+    assert caps.package_ecosystems == ["python", "node"] and caps.package_install is True
+    class_caps = module.KubernetesSandboxProvider.capabilities
+    assert class_caps.policy_network is False and class_caps.package_ecosystems == ["python"]
 
 
 @pytest.mark.asyncio
@@ -1878,3 +2064,45 @@ async def test_k8s_worker_admits_user_mode_and_fails_closed_without_one(k8s_env,
     core._check_principal(provider, _request(_user_principal()))  # admitted
     with pytest.raises(SandboxPolicyError, match="requires user identity"):
         core._check_principal(provider, _request(SandboxPrincipal(mode="agent", subject="agent")))
+
+
+# --------------------------------------------------------------------------- #
+# ProcessKiller — the procps-free kill shared by docker and kubernetes
+# --------------------------------------------------------------------------- #
+
+
+def test_process_killer_argv_shape():
+    argv = ProcessKiller.argv("/usr/local/bin/a-very-long-interpreter-name")
+    assert argv[:2] == ["/bin/sh", "-c"]
+    script = argv[2]
+    assert '[ "$comm" = a-very-long-int ]' in script  # basename truncated to the kernel's 15-char comm
+    assert '[ "$pid" = 1 ]' in script and '[ "$pid" = "$$" ]' in script  # PID 1 and the scanner are skipped
+    assert "pkill" not in script and "ps " not in script  # procps-free
+
+
+def test_process_killer_timeout_fits_inside_the_backstop():
+    # The kill must finish while the worker's per-session lock is still held.
+    assert ProcessKiller.KILL_TIMEOUT_SECONDS < BrokerWorkerCore.BACKSTOP_GRACE_SECONDS
+
+
+@pytest.mark.skipif(not Path("/proc/self/comm").exists(), reason="needs a Linux /proc")
+def test_process_killer_kills_the_target_and_skips_its_own_shell(tmp_path):
+    # A uniquely named copy of /bin/sh plays both the target and the scanner, so the scan can
+    # only match these two processes on the host (even across parallel runs), and the
+    # scanner's own `comm` matches too. The name stays within the kernel's 15-char comm.
+    shell = tmp_path / f"akzq{uuid.uuid4().hex[:8]}"
+    shutil.copy("/bin/sh", shell)
+    shell.chmod(0o755)
+    try:
+        target = subprocess.Popen([str(shell), "-c", "while :; do sleep 1; done"])
+    except OSError:
+        pytest.skip("cannot exec from tmp_path (noexec mount)")
+    try:
+        argv = ProcessKiller.argv(str(shell))
+        scanner = subprocess.run([str(shell), *argv[1:]], timeout=10)
+        assert scanner.returncode == 0  # its own $$ was skipped
+        assert target.wait(timeout=5) == -9
+    finally:
+        if target.poll() is None:
+            target.kill()
+            target.wait()
