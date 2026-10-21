@@ -1035,6 +1035,47 @@ def test_tool_guidance_flags_attached_and_no_persistent_shell(monkeypatch):
     assert "cd /app && ./run.sh" in guidance
 
 
+def test_install_packages_tool_absent_without_a_permitting_profile(monkeypatch):
+    _install_sandbox_cfg(monkeypatch, _sandbox_cfg())
+    tools = get_sandbox_tools()
+    assert [t.name for t in tools] == SANDBOX_TOOL_NAMES
+    guidance = tools[0].description
+    assert "install_packages(" not in guidance
+    assert "package installs not permitted" in guidance
+    assert "not permitted by the profile, report it to the user" in guidance  # always present
+
+
+def test_install_packages_tool_registered_with_permission_guidance(monkeypatch):
+    profiles = {
+        "default": _SandboxProfileConfig(
+            type=FAKE_DOTTED,
+            policy=_SandboxPolicyConfig(languages=["python", "bash"], package_install=_SandboxPackageInstallConfig(ecosystems=["python", "node"])),
+        ),
+        "shell": _SandboxProfileConfig(type=FAKE_DOTTED, policy=_SandboxPolicyConfig(languages=[])),
+    }
+    _install_sandbox_cfg(monkeypatch, _sandbox_cfg(profiles=profiles))
+    tools = get_sandbox_tools()
+    assert [t.name for t in tools] == [*SANDBOX_TOOL_NAMES, "install_packages"]
+    assert tools[-1].func.__name__ == "install_packages"  # tool builders bind by func.__name__
+    guidance = tools[0].description
+    assert "install_packages(packages, ecosystem, sandbox_session_id, profile)" in guidance
+    assert "languages: python, bash" in guidance and "package installs: python, node" in guidance
+    assert "run_code disabled (command-only profile)" in guidance
+    assert "package installs not permitted" in guidance  # the 'shell' profile
+    assert "" not in guidance.splitlines()
+
+
+def test_get_sandbox_tools_fails_on_an_unresolvable_package_rule(monkeypatch):
+    docker = _SandboxDockerConfig(package_installers={"deb": ["apt-get", "install", "-y"]})  # no rule for deb
+    profiles = {"default": _SandboxProfileConfig(type="docker", docker=docker)}
+    _install_sandbox_cfg(monkeypatch, _sandbox_cfg(profiles=profiles))
+    with pytest.raises(SandboxConfigError, match="deb"):
+        get_sandbox_tools()
+    # The same failure surfaces through the agent-construction path (Agent._attach_system_tools).
+    with pytest.raises(SandboxConfigError, match="deb"):
+        SystemToolFactory.get_all("any-agent")
+
+
 def test_system_prompt_suffix_carries_sandbox_guidance(monkeypatch):
     """The capability is self-describing: the whole sandbox section lands in the system-prompt
     suffix (rendered coherently — the empty per-tool descriptions leave no blank lines)."""
