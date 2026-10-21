@@ -170,3 +170,56 @@ def test_an_unlabelled_reply_still_leaves_as_a_string_everywhere():
     assert async_body["result"] == json.dumps(EXPECTED_CONTENT)
     assert "media_type" not in rest
     assert "media_type" not in async_body
+
+
+@pytest.fixture
+def paused_reply():
+    from agentkernel.core.event import PausedInterruption
+    from agentkernel.core.model import AgentPausedReplyAny
+
+    return AgentPausedReplyAny(
+        run_id="run-1",
+        session_id="s1",
+        agent="assistant",
+        interruptions=[PausedInterruption(id="i1", kind="tool_call", tool_name="send_summary_email", arguments='{"recipient": "anne@example.com"}')],
+    )
+
+
+def test_every_thread_recording_site_stores_the_same_pause(paused_reply):
+    """The four sites hold four different things; only one of them is the reply itself.
+
+    Each is translated here exactly as its own surface translates it — the SSE handler and both
+    queue runners rebuild `AgentPausedReplyAny` from what they hold, so the stored content always
+    comes from that model's own validator rather than four hand-assembled dicts.
+    """
+    from agentkernel.core.event import RunPaused
+    from agentkernel.core.model import AgentPausedReplyAny
+    from agentkernel.integration.thread.recorder import ThreadRecorder
+    from agentkernel.pipeline.agent_runner import AgentRunner
+
+    event = RunPaused(run_id=paused_reply.run_id, agent=paused_reply.agent, interruptions=paused_reply.interruptions)
+    _status, body = ResponseBuilder.build_response(202, "s1", rest_api_mode=False, result=paused_reply)
+    streamed_event = json.loads(ResponseBuilder.stream_chunk(StreamChunk(event=event), "s1"))["event"]
+
+    direct = ThreadRecorder._as_thread_message(paused_reply)
+    sse = ThreadRecorder._as_thread_message(
+        AgentPausedReplyAny(run_id=event.run_id, session_id="s1", agent=event.agent, interruptions=event.interruptions)
+    )
+    queued = ThreadRecorder._as_thread_message(AgentRunner._reply_to_record(body, "s1"))
+    queued_stream = ThreadRecorder._as_thread_message(AgentRunner._paused_reply(streamed_event, "s1"))
+
+    assert direct == sse == queued == queued_stream
+    assert direct[0]["interruptions"][0]["tool_name"] == "send_summary_email"
+    assert direct[1] == "application/json"
+
+
+def test_the_pause_survives_the_stream_chunk_round_trip(paused_reply):
+    """The queue-streaming runner reads a serialised event, where `exclude_none` has dropped keys."""
+    from agentkernel.core.event import RunPaused
+    from agentkernel.pipeline.agent_runner import AgentRunner
+
+    event = RunPaused(run_id="run-1", agent="assistant", interruptions=paused_reply.interruptions)
+    streamed_event = json.loads(ResponseBuilder.stream_chunk(StreamChunk(event=event), "s1"))["event"]
+
+    assert "message" not in streamed_event["interruptions"][0]
+    assert AgentRunner._paused_reply(streamed_event, "s1").content == paused_reply.content
