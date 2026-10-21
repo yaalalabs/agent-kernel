@@ -26,6 +26,7 @@ from .model import (
     SandboxSession,
     SandboxTask,
 )
+from .packages import PackageSpecRule
 from .principal import AgentPrincipalResolver, PrincipalResolver
 
 __all__ = [
@@ -44,6 +45,7 @@ __all__ = [
     "SandboxFile",
     "SandboxPolicy",
     "PackageInstallPolicy",
+    "PackageSpecRule",
     "SandboxPrincipal",
     "SandboxResult",
     "SandboxSession",
