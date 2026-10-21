@@ -5,7 +5,7 @@
 
 | | |
 |---|---|
-| **Status** | Design, waiting for review |
+| **Status** | Approved, including the five amendments made on 2026-10-21 while writing `spec.md` (see its [Design amendments](spec.md#design-amendments)). |
 | **Read time** | About 5 minutes. Code evidence is folded away under ▸ **Evidence**. |
 | **Breaking?** | Yes, for apps that serve A2A or MCP without the queue. See [Where A2A and MCP can run](#5-startup-checks-where-a2a-and-mcp-can-run). |
 | **Decisions** | All 5 resolved: [Decisions](#decisions-all-resolved) |
@@ -220,7 +220,8 @@ send it through the client, and turn the reply into their protocol's shape. Neit
 
 **Rules**
 - Error details go to the **logs only**, never to the caller.
-- A2A `message:stream` returns the one whole reply; there is no token streaming. `cancel` is unchanged.
+- There is no token streaming. A2A `message:stream` stays refused by the SDK, as it is today,
+  because AK's cards declare `streaming=False` (`core/builder.py:46`). `cancel` is unchanged.
 - MCP's `ctx.info` and `ctx.debug` notifications are unchanged.
 
 <details><summary>▸ Evidence</summary>
@@ -243,8 +244,11 @@ send it through the client, and turn the reply into their protocol's shape. Neit
 | Lambda | Not available | Not available |
 
 **Rules**
+- "A2A or MCP" here means `a2a.enabled`, or `mcp.enabled` **with** `mcp.expose_agents`. An MCP
+  server that serves only the app's own tools runs no agent, so it needs no queue and is not refused.
 - Every ❌ row raises `AKConfigError` from `RESTAPI.run`. Subclasses are included. The message
-  says to use `IOHandler.run(handlers=[...])`.
+  says to use `IOHandler.run(handlers=[...])`. `ECSIOHandler.run` also runs the check first, so
+  it fails before it starts any thread.
 - `IOHandler` gains two more checks:
   - A broker queue with A2A or MCP enabled **needs a shared response store in every mode**. Today
     only the REST modes need one. This one is an error.
@@ -295,7 +299,7 @@ SSE and REST-async request ids mean nothing to an A2A or MCP caller.
 | 💥 Startup error on the ❌ rows above | Apps serving A2A or MCP without the queue, and ECS | **Breaking** |
 | The agent must be registered in the IO process too. If it isn't, the result is a startup warning and empty catalogs. | Split deployments (k8s) | Setup step, easy to miss |
 | Empty prompts, a missing session or an unknown agent now fail as protocol errors | Callers sending bad requests | Minor |
-| An MCP image reply's text changes from "Non-text reply given" to "… Image X is attached." | MCP clients receiving images | Minor |
+| An A2A or MCP image reply's text changes from "Non-text reply given" to "… Image X is attached." | A2A and MCP clients receiving images | Minor |
 | MCP tool errors show a fixed message instead of the raw exception | MCP clients | Minor, and safer |
 
 **Stays the same**
@@ -350,12 +354,14 @@ SSE and REST-async request ids mean nothing to an A2A or MCP caller.
 
 - `ak-dev-architecture` skill. Five spots say "A2A/MCP use AgentService directly": `.agents/skills/ak-dev-architecture/SKILL.md:159`, `:214`, `:257`, `:889`, `:1328`.
 - `docs/docs/api/a2a-server.md`, `docs/docs/api/mcp-server.md` and `docs/docs/architecture/execution-flow.md`.
-- Example READMEs (`examples/api/a2a/multi`, `examples/api/mcp/multi`): mention the slower replies. The examples themselves run unchanged.
+- Example READMEs (`examples/api/a2a/multi`, `examples/api/mcp/multi`, `examples/aws-containerized/mcp/multi`): mention the slower replies. The examples themselves run unchanged.
+  - `examples/aws-containerized/mcp/multi` is ECS in direct mode: it starts with `RESTAPI.run()` and no queue, so it lands on the first ✅ row (the in-memory queue). It is in the weekly integration suite.
 - `examples/k8s/openai-queue-mode` (decision 5):
-  - Move the agent definitions into one shared module that both `app_io_handler.py` and `app_agent_runner.py` load.
-  - Add the `a2a` and `mcp` extras to `pyproject.toml`.
-  - Add `a2a` and `mcp` blocks to `config.kafka.yaml` and `config.nats.yaml`.
+  - Move the agent definitions into one shared module that both `app_io_handler.py` and `app_agent_runner.py` load, and have `deploy/package.sh` copy it into both images.
+  - Add the `a2a` and `mcp` extras to `pyproject.toml`, plus a direct `a2a-sdk[http-server]>=0.3.6,<1` pin. The example's `uv.lock` is gitignored and the published `agentkernel` has no cap, so without the pin the images resolve a2a-sdk 1.x.
+  - Add `a2a` and `mcp` blocks to `config.kafka.yaml` and `config.nats.yaml`, with `mcp.stateless_http: true`, because the chart runs more than one io-handler replica outside the dev flavor.
   - Update the README and the "no modules are registered here" docstring.
+- `.github/workflows/chart-test.yaml`: add `ak-py/src/agentkernel/api/**` to the path filters, since the A2A and MCP code now lives on the path the chart smoke tests.
 
 ---
 
