@@ -648,12 +648,13 @@ effective timeout. The built-in providers delegate validation to `PackageInstall
 bring-your-own provider can reuse it the same way.
 
 :::note Migrating a bring-your-own `Sandbox` subclass
-`install_packages` used to take only `packages`. A subclass that still overrides
-`install_packages(self, packages)` keeps working for `python` installs for one more release: the
-broker worker calls it through a compatibility shim and logs a one-time deprecation warning, with
-the backstop as the install's only timer. Requests for any other ecosystem fail with
-`SandboxCapabilityError`. Update the override to the new signature. The
-`SandboxProviderContract` suite already requires it.
+`install_packages` used to take only `packages`. A subclass whose override lacks `ecosystem`
+and/or `timeout` keeps working for one more release: the broker worker calls it through a
+compatibility shim with only the keywords it accepts, and logs a one-time deprecation warning
+naming the missing ones. Without `timeout`, the backstop is the install's only timer; without
+`ecosystem`, the override only gets `python` installs, and requests for any other ecosystem fail
+with `SandboxCapabilityError`. Update the override to
+`install_packages(self, packages, ecosystem="python", timeout=None)`.
 :::
 
 ## Broker flavors

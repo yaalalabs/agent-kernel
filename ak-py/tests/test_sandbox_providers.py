@@ -1630,6 +1630,8 @@ class FakeK8sCluster:
         self.netpol_deletes: list[tuple[str, str]] = []
         self.exec_calls: list[tuple[str, list, int]] = []  # (pod, command, thread ident); command unwrapped
         self.exec_markers: list = []  # the ProcessKiller marker each exec was wrapped with (None = unwrapped)
+        self.shell_probes: list[str] = []  # pod of each ProcessKiller.SHELL_PROBE exec (kept out of exec_calls)
+        self.has_shell = True  # False = a shell-less image: the probe fails
         self.headers_log: list[tuple[str, dict]] = []  # (operation, request headers) for impersonation asserts
         self.api_clients: list = []  # every FakeApiClient the provider constructed
         self.default_phase = "Running"
@@ -1641,14 +1643,18 @@ class FakeK8sCluster:
         pod = self.pods.get((namespace, name))
         if pod is None:
             raise FakeApiException(404)
+        if tuple(kwargs["command"]) == ProcessKiller.SHELL_PROBE:
+            self.shell_probes.append(name)
+            return _FakeExecClient(pod, kwargs["command"], False, self)
         command, marker = _unwrap_marker(kwargs["command"])
         self.exec_calls.append((name, command, threading.get_ident()))
         self.exec_markers.append(marker)
         self.headers_log.append(("exec", dict(headers or {})))
         return _FakeExecClient(pod, command, kwargs.get("stdin", False), self)
 
-    @staticmethod
-    def _default_exec(pod, command, stdin_data):
+    def _default_exec(self, pod, command, stdin_data):
+        if tuple(command) == ProcessKiller.SHELL_PROBE:
+            return ("", "", 0) if self.has_shell else ("", "/bin/sh: not found", 127)
         if command[0] == "python" and command[1] == "-c":
             code = command[2]
             return ("", "simulated failure", 1) if FAIL_MARKER in code else (code, "", 0)
@@ -1697,9 +1703,16 @@ class _FakeExecClient:
         self._stdin: list[str] = []
         self._stdout = ""
         self._stderr = ""
-        self.returncode = None
+        self._returncode = None
         self._open = True
         self._ran = False
+
+    @property
+    def returncode(self):
+        # An exception stands in for the real client's KeyError on a failure status with no exit code.
+        if isinstance(self._returncode, Exception):
+            raise self._returncode
+        return self._returncode
 
     def write_stdin(self, data):
         self._stdin.append(data)
@@ -1710,7 +1723,7 @@ class _FakeExecClient:
     def update(self, timeout=None):
         if not self._ran and (not self._needs_stdin or self._stdin):
             stdin_data = "".join(self._stdin) if self._needs_stdin else None
-            self._stdout, self._stderr, self.returncode = self._cluster.exec_handler(self._pod, self._command, stdin_data)
+            self._stdout, self._stderr, self._returncode = self._cluster.exec_handler(self._pod, self._command, stdin_data)
             self._ran = True
             self._open = False
 
@@ -1995,6 +2008,72 @@ async def test_k8s_attach_to_timeout_sends_no_kill(k8s_env):
         await sandbox.execute_code("while True: pass", timeout=0.05)
     assert _kill_calls(cluster, "python") == []
     assert set(cluster.exec_markers) == {None}  # attach_to execs are never tagged
+
+
+@pytest.mark.asyncio
+async def test_k8s_shell_probe_runs_once_per_pod(k8s_env):
+    module, cluster = k8s_env
+    provider = _k8s_provider(module)
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    await sandbox.execute_code("print(1)")
+    await sandbox.execute_command("echo hi")
+    reattached = await provider.attach(sandbox.id, principal=principal, policy=policy)
+    await reattached.execute_code("print(2)")
+    pod = sandbox.id.split("/")[1]
+    assert cluster.shell_probes == [pod]  # cached on the provider, shared by every handle to the pod
+    assert all(cluster.exec_markers)  # a pod with a shell tags every exec
+
+    await provider.destroy(sandbox.id)
+    assert sandbox.id not in provider._shell_pods  # a destroyed pod's answer is dropped
+
+
+@pytest.mark.asyncio
+async def test_k8s_shell_less_pod_runs_unwrapped_without_kill(k8s_env):
+    module, cluster = k8s_env
+    cluster.has_shell = False
+    provider = _k8s_provider(module)
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    assert (await sandbox.execute_code("print(1)")).exit_code == 0
+    assert cluster.exec_calls[-1][1] == ["python", "-c", "print(1)"]
+    _slow_python(cluster)
+    with pytest.raises(SandboxTimeoutError):
+        await sandbox.execute_code("while True: pass", timeout=0.05)
+    assert set(cluster.exec_markers) == {None}  # never wrapped in the /bin/sh launcher
+    assert _kill_calls(cluster, "python") == []
+    assert len(cluster.shell_probes) == 1  # the negative answer is cached too
+
+
+@pytest.mark.asyncio
+async def test_k8s_attach_to_never_probes_for_a_shell(k8s_env):
+    module, cluster = k8s_env
+    cluster.pods[("default", "app-pod")] = _FakeK8sPod("app-pod", "default", {})
+    provider = _k8s_provider(module, _SandboxKubernetesConfig(attach_to="default/app-pod"))
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    await sandbox.execute_code("print(1)")
+    assert cluster.shell_probes == []
+
+
+@pytest.mark.asyncio
+async def test_k8s_exec_without_an_exit_code_is_a_failed_result(k8s_env):
+    # A missing executable comes back as a failure status the client cannot parse into an exit code.
+    module, cluster = k8s_env
+    provider = _k8s_provider(module)
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    default_handler = cluster.exec_handler
+
+    def missing_interpreter(pod, command, stdin_data):
+        if command[0] == "python":
+            return "", "", KeyError("details")
+        return default_handler(pod, command, stdin_data)
+
+    cluster.exec_handler = missing_interpreter
+    result = await sandbox.execute_code("print(1)")
+    assert result.exit_code == -1
+    assert "is the executable present in the image?" in result.stderr
 
 
 def test_k8s_instance_capabilities_compose_in_one_derive(k8s_env):

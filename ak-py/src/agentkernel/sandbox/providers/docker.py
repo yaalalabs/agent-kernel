@@ -171,10 +171,7 @@ class DockerSandboxProvider(SandboxProvider):
         self._client_instance: Optional["docker.DockerClient"] = None
         self._installer = PackageInstaller.from_config(config)
         self._runtimes = dict(config.language_runtimes)
-        ecosystems = self._installer.ecosystems
-        self.capabilities = type(self).capabilities.derive(
-            languages=list(self._runtimes), package_ecosystems=ecosystems, package_install=bool(ecosystems)
-        )
+        self.capabilities = type(self).capabilities.derive(languages=list(self._runtimes), package_ecosystems=self._installer.ecosystems)
         self._kill_enabled = not config.attach_to
 
     def _handle(self, container) -> "DockerSandbox":

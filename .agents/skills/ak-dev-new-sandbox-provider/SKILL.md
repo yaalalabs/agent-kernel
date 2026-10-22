@@ -92,7 +92,9 @@ Use `derive()`, never `model_copy(update=...)`: `model_copy` skips the validator
 `derive()` call. The reference is the `kubernetes` provider: its `network_policy: true` (the
 operator asserts the cluster CNI enforces NetworkPolicy), its `language_runtimes` keys and its
 `package_installers` keys go into the same
-`derive(languages=list(runtimes), package_ecosystems=eco, package_install=bool(eco), policy_network=True)`.
+`derive(languages=list(runtimes), package_ecosystems=eco, policy_network=True)`. `derive()` keeps the two
+package fields consistent: updating `package_ecosystems` re-derives `package_install` (so `[]` means no installs),
+and `package_install=False` clears the ecosystems.
 Consumers read `provider.capabilities` on the instance, so attribute shadowing is sufficient.
 
 ## Step-by-Step
@@ -183,13 +185,12 @@ class <Provider>SandboxProvider(SandboxProvider):
         # A provider that installs packages builds its installer from its own config block and
         # declares the configured ecosystems on the instance:
         #   self._installer = PackageInstaller.from_config(config)
-        #   eco = self._installer.ecosystems
-        #   self.capabilities = type(self).capabilities.derive(package_ecosystems=eco, package_install=bool(eco))
+        #   self.capabilities = type(self).capabilities.derive(package_ecosystems=self._installer.ecosystems)
         # and passes capabilities=self.capabilities, installer=self._installer to every handle.
         # A provider that execs an interpreter argv also declares its language_runtimes keys, in
         # the same derive() call, and passes runtimes=self._runtimes to every handle:
         #   self._runtimes = dict(config.language_runtimes)
-        #   self.capabilities = type(self).capabilities.derive(languages=list(self._runtimes), package_ecosystems=eco, ...)
+        #   self.capabilities = type(self).capabilities.derive(languages=list(self._runtimes), package_ecosystems=..., ...)
 
     async def create(self, *, principal: SandboxPrincipal, policy: SandboxPolicy) -> Sandbox:
         # Provision a new sandbox. Map `policy` onto the backend's real controls here; if a

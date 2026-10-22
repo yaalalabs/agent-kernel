@@ -249,15 +249,23 @@ def test_model_capabilities_derive_revalidates():
     assert base.derive(package_install=True).package_ecosystems == ["python"]
 
 
-def test_model_capabilities_derive_requires_both_fields_for_ecosystem_changes():
-    # model_dump() marks package_install as explicitly set on the copy, so an override that changes
-    # ecosystems must set both fields together.
+def test_model_capabilities_derive_keeps_package_fields_consistent():
+    # Updating one package field re-derives the other instead of keeping its stale value.
     off = SandboxCapabilities(isolation=IsolationTier.CONTAINER)
-    with pytest.raises(ValidationError):
-        off.derive(package_ecosystems=["node"])
+    node = off.derive(package_ecosystems=["node"])
+    assert node.package_install is True and node.package_ecosystems == ["node"]
 
     on = SandboxCapabilities(isolation=IsolationTier.CONTAINER, package_ecosystems=["node"])
-    assert on.derive(package_ecosystems=[]).package_ecosystems == ["python"]  # the legacy branch, not "no installs"
+    cleared = on.derive(package_ecosystems=[])
+    assert cleared.package_install is False and cleared.package_ecosystems == []  # "no installs", not the legacy ["python"]
+
+    disabled = on.derive(package_install=False)
+    assert disabled.package_install is False and disabled.package_ecosystems == []
+
+    assert on.derive(package_install=True).package_ecosystems == ["node"]  # the existing ecosystems are kept
+
+    with pytest.raises(ValidationError):  # an explicit contradiction still raises
+        off.derive(package_ecosystems=["node"], package_install=False)
 
 
 def test_model_package_install_policy():

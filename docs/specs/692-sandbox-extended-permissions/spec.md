@@ -168,8 +168,14 @@ class SandboxPolicy(BaseModel):
         - package_install=True with no ecosystems (a pre-#692 BYO declaration) -> ["python"]."""
 
     def derive(self, **update: Any) -> "SandboxCapabilities":
-        """A re-validated copy with ``update`` applied: the instance-override helper."""
-        return type(self).model_validate({**self.model_dump(), **update})
+        """A re-validated copy with ``update`` applied: the instance-override helper. Updating one
+        package field re-derives the other instead of keeping its stale value."""
+        data = self.model_dump()
+        if "package_ecosystems" in update and "package_install" not in update:
+            del data["package_install"]  # the validator derives it from the new ecosystems
+        elif "package_install" in update and "package_ecosystems" not in update and not update["package_install"]:
+            data["package_ecosystems"] = []
+        return type(self).model_validate({**data, **update})
 ```
 
 - **Why `derive` exists.** Pydantic's `model_copy(update=...)` skips validators. If the instance overrides used it,
@@ -177,9 +183,9 @@ class SandboxPolicy(BaseModel):
   `package_install=True` with no ecosystems.
 - **Rule for every instance override.** Each override goes through `derive`, including the existing kubernetes
   `policy_network` flip.
-  - An override that changes ecosystems sets both fields together: `derive(package_ecosystems=eco,
-    package_install=bool(eco))`. This means a provider configured with `package_installers: {}` honestly declares
-    no installs.
+  - An override that changes ecosystems passes only `package_ecosystems`; `derive` re-derives `package_install`
+    from it. So a provider configured with `package_installers: {}` honestly declares no installs, rather than
+    falling back to the legacy `["python"]` branch through the copied `package_install=True`.
 
 ### SandboxPermissionGuard (`sandbox/permission.py`) — phase 1
 
@@ -248,14 +254,18 @@ class BrokerWorkerCore:
 
     # __init__ adds:
     #   self._guard = SandboxPermissionGuard()
-    #   self._install_shim: dict[type, bool] = {}  # Sandbox subclass -> True when its install_packages is legacy
+    #   self._install_params: dict[type, frozenset[str]] = {}  # Sandbox subclass -> install keywords it accepts
     #   self._policy_warned: set[tuple[str, ...]]  # was set[tuple[str, str]]; widened for the tagged mismatch key
 
     def _warn_capability_mismatch(self, provider: SandboxProvider, request: ExecutionRequest) -> None:
         """One WARNING per (provider, profile) when the policy permits what the instance does not declare."""
 
     async def _call_install(self, sandbox: Sandbox, payload: dict, timeout: float) -> SandboxResult:
-        """Dispatch install_packages, routing a pre-#692 one-argument override through the deprecation shim."""
+        """Dispatch install_packages with the keywords the override accepts (the deprecation shim)."""
+
+    @classmethod
+    def install_parameters(cls, sandbox_cls: type) -> frozenset[str]:
+        """Which of ecosystem / timeout the override accepts (**kwargs = both); shared with the contract suite."""
 ```
 
 - **Mismatch warning.**
@@ -283,17 +293,20 @@ class BrokerWorkerCore:
   - `upload_file` and `download_file` pass no timeout to their handles, as today, so the backstop is their only
     timer.
 - **Install dispatch and the legacy shim.**
-  - `_call_install` decides once per `Sandbox` subclass whether its override is legacy. It inspects
-    `inspect.signature(type(sandbox).install_packages)`. The override counts as **modern** when it names both
-    `ecosystem` and `timeout`, or when it takes `**kwargs`.
-  - **Modern overrides** are called as `install_packages(packages, ecosystem=..., timeout=...)`.
-  - **Legacy overrides:**
-    - An `ecosystem` other than `python` raises `SandboxCapabilityError(<class>, "package_ecosystem:<e>")`.
-    - Otherwise the call is `install_packages(packages)`, and the first such call per class logs one `WARNING` on
-      `ak.sandbox.broker`: `Sandbox %s overrides install_packages(packages) without ecosystem/timeout; this form is
-      deprecated and will stop working in the next minor release`.
-    - The backstop is the install's only timer.
-  - The memo `_install_shim` is per `BrokerWorkerCore` instance, so a worker warns at most once per class.
+  - `_call_install` decides once per `Sandbox` subclass which of `ecosystem` and `timeout` its override accepts,
+    via `install_parameters`, which inspects `inspect.signature(type(sandbox).install_packages)`. `**kwargs`
+    counts as both.
+  - **Modern overrides** (both accepted) are called as `install_packages(packages, ecosystem=..., timeout=...)`.
+  - **Pre-#692 overrides** (either one missing, including the one-argument form):
+    - Without `ecosystem`, an `ecosystem` other than `python` raises
+      `SandboxCapabilityError(<class>, "package_ecosystem:<e>")`. An override with `ecosystem` gets every
+      ecosystem and decides for itself.
+    - The call passes only the accepted keywords, and the first such call per class logs one `WARNING` on
+      `ak.sandbox.broker`: `Sandbox %s overrides install_packages without <missing>; this form is deprecated and
+      will stop working in the next minor release`, where `<missing>` is `ecosystem`, `timeout`, or
+      `ecosystem and timeout`.
+    - Without `timeout`, the backstop is the install's only timer.
+  - The memo `_install_params` is per `BrokerWorkerCore` instance, so a worker warns at most once per class.
 
 ### Thread and queue flavors — phase 1
 
@@ -785,7 +798,7 @@ All of these are intentional.
 | Install exceeds its effective timeout | `SandboxTimeoutError` from the handle, after a best-effort kill | Tool error; `timed_out` completion | `process()`'s existing timed-out warning |
 | Handle hangs past the backstop | `SandboxTimeoutError` (backstop) | The same | The same |
 | Installer exits non-zero | No exception: `SandboxResult(exit_code != 0)` | Tool result JSON | None |
-| Legacy one-argument override asked for a non-`python` ecosystem | `SandboxCapabilityError` | Tool error | The generic warning |
+| Pre-#692 override without an `ecosystem` parameter asked for a non-`python` ecosystem | `SandboxCapabilityError` | Tool error | The generic warning |
 
 ## Testing
 
@@ -865,9 +878,10 @@ Existing test files that change:
 - **`sandbox/testing.py` (`SandboxProviderContract`):** `test_contract_capability_honesty` gains a check that, when
   `package_install` is declared, `install_packages(["pip-noop"], ecosystem="definitely-not-an-ecosystem")` raises
   `SandboxCapabilityError`.
-  - The contract requires the new signature immediately. A bring-your-own provider whose handle keeps the
-    one-argument override fails this check with `TypeError`. The worker's shim covers runtime only, not
-    conformance.
+  - The check runs only when the handle's override accepts `ecosystem`
+    (`"ecosystem" in BrokerWorkerCore.install_parameters(type(sandbox))`). A pre-#692 override without it would
+    otherwise fail with `TypeError`, so it still passes the contract during the deprecation window, and the
+    worker's shim rejects its non-`python` installs at runtime instead.
 
 Run the suite with `cd ak-py && uv run pytest tests/test_sandbox*.py`, then run the full `uv run pytest`.
 
