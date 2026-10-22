@@ -3,8 +3,8 @@
 A paused run currently reaches a messaging platform as the string form of its pause — there is
 nothing to press, and no way back. This change gives the outbound half of the adapter seam a way to
 render a pause as the platform's own interactive UI, and routes the press back through the inbound
-half as an ordinary request carrying a decision. Scoped to Slack and Telegram; the seam is shared, so
-the remaining platforms are per-adapter work afterwards (see
+half as an ordinary request carrying a decision. Scoped to Slack and Telegram; the seam is shared,
+so the rest are per-adapter work afterwards (see
 [`research/platform-interactive-ui-survey.md`](research/platform-interactive-ui-survey.md)).
 
 ## Motivation
@@ -70,10 +70,12 @@ graph LR
 - Rendering is scoped to the **approval** interruption kinds, `tool_call` and `confirmation`. An
   `input_required` pause has nothing a button can express and must fall through to the default text
   rendering (see Non-goals).
-- Collecting a reason on a denial is **per-adapter, and not smoothed over**: an adapter declares it
-  can do it, or does not offer it. A platform that cannot must not hold the capability back from
-  one that can, and must not fake it with a worse mechanism — the standing no-feature-forcing rule
-  for adapters.
+- Once a decision is accepted, the pause message is rewritten to drop its buttons and state what
+  was decided — **what, not who**. Naming the presser is a disclosure a deployment adds by
+  subclassing, not one this change assumes.
+- Collecting a reason on a denial is **per-adapter**: an adapter declares it can, or does not offer
+  it. A platform that cannot must neither hold the capability back from one that can nor fake it
+  with a worse mechanism — the standing no-feature-forcing rule.
 
 ### A press is an ordinary inbound request
 
@@ -104,9 +106,8 @@ graph LR
   - **No second route.** Bolt serves events, shortcuts and interactivity on one endpoint, so the
     app's Interactivity Request URL is the same URL as its Event Subscriptions one, and
     `BUILTIN_WEBHOOK_ROUTES["slack"]` is unchanged.
-  - An action listener must acknowledge within Slack's 3-second window. The press itself downloads
-    nothing, so the existing `process_before_response=True` wiring is within budget — but the
-    listener must not grow work that is not.
+  - An action listener must acknowledge within Slack's 3-second window; the press downloads
+    nothing, so the existing `process_before_response=True` wiring stays within it.
 - The existing `x-slack-retry-reason: http_timeout` drop (`integration/slack/adapter.py:74`) must
   continue to apply to interactive deliveries.
 - Slack declares `DENY_COLLECTS_REASON = True`: a denial opens a modal (`views.open` on the press's
@@ -115,7 +116,7 @@ graph LR
     nothing has to be correlated by hand.
   - A modal the user dismisses records no decision: the pause stays open and its buttons stay live.
 - Once a decision is accepted, the pause message is edited to drop its `actions` block and state
-  what was decided (and by whom), so the outcome is visible and a second press is not invited.
+  what was decided, so the outcome is visible and a second press is not invited.
 
 ### Telegram
 
@@ -124,43 +125,37 @@ graph LR
   for an ordinary reply.
 - Inbound: `_from_callback_query` (`:174`) must produce a decision rather than text when the callback
   data is one of ours, and keep today's text behaviour for any other callback data.
-- **`callback_data` is 1–64 bytes** (research). The interruption id is the framework's own
+- **`callback_data` is 1–64 bytes** (research), and the interruption id is the framework's own
   (`call_id`, `tool_call_id`, LangGraph's interrupt id), so its length is not Agent Kernel's to
-  bound.
-  - An interruption whose id plus the prefix and verb fits the budget gets buttons.
-  - One that does not must fall back to the default text rendering for that interruption, with a
-    logged warning. No truncation, no raise, no silently broken button.
+  bound. An id that fits the budget with the prefix and verb gets buttons; one that does not falls
+  back to text for that interruption, with a logged warning — no truncation, no raise, no silently
+  broken button.
 - `answer_callback_query` (`:63`) keeps clearing the spinner. Once the decision is accepted the
   keyboard is removed and the message edited to state what was decided, via
   `editMessageReplyMarkup` / `editMessageText` on the `message_id` the press carried.
-- Telegram leaves `DENY_COLLECTS_REASON` at its `False` default, and denies with no reason. It has
-  no modal, and a `force_reply` answer arrives as an ordinary message the adapter would have to
-  correlate back to an interruption using state it does not hold — the correlation problem
-  `input_required` is scoped out for. Faking it with that mechanism would be worse than not
-  offering it, and Slack's support is not held back by its absence here.
+- Telegram leaves `DENY_COLLECTS_REASON` at `False` and denies with no reason: it has no modal, and
+  a `force_reply` answer arrives as an ordinary message the adapter would have to correlate back to
+  an interruption using state it does not hold — the problem `input_required` is scoped out for.
 
 ### Configuration
 
-- **No new configuration.** Neither the verb set nor the reason prompt selects a backend or carries
-  a credential, which is what every messaging block in `AKConfig` holds. They are user-facing
-  presentation choices, and a field added to `AKConfig` for flexibility nothing needs is a defect.
-- Both are **class attributes on the outbound adapter** — the shape `OutboundAdapter` already uses
-  for this exact kind of tunable: `MESSAGE_LIMIT`, `MAX_CHUNKS`, `TRUNCATION_NOTICE` and, closest of
-  all, `ERROR_MESSAGE`, user-visible wording declared in code and changed by subclassing
-  (`integration/adapter/base.py:185-188`).
-  - `DECISIONS: tuple[str, ...] = ("approved", "denied")` on the base — which verbs get a button.
-    A deployment wanting `cancelled` surfaced, so that "nobody decided" does not read as a refusal
+- **No new configuration, and no `enabled` flag.** Neither knob selects a backend nor carries a
+  credential, which is what every messaging block in `AKConfig` holds.
+- Both are **class attributes on the outbound adapter**, the shape `OutboundAdapter` already uses
+  for a user-facing tunable changed by subclassing — `MESSAGE_LIMIT`, `TRUNCATION_NOTICE`,
+  `ERROR_MESSAGE` (`integration/adapter/base.py:185-188`).
+  - `DECISIONS: tuple[str, ...] = ("approved", "denied")` — which verbs get a button. A deployment
+    wanting `cancelled` surfaced, so "nobody decided" does not read as a refusal
     (`Runner.CANCELLED_DECISION_MESSAGE`), adds it in a two-line subclass.
-  - `DENY_COLLECTS_REASON: bool = False` on the base — whether a denial collects a reason into
-    `ResumeDecision.message`. It is a statement of what the platform can do, which is per-adapter
-    by nature: Slack overrides it to `True`, Telegram does not.
-- An application changes either by subclassing its adapter and pointing `slack.outbound_adapter` /
-  `telegram.outbound_adapter` at the subclass — the bring-your-own path that already exists, and
-  that covers approval UX no pair of config knobs could express.
+    - Only LangGraph carries a three-valued decision natively; the others map a cancel onto their
+      framework's reject. `DECISIONS` is fixed at class definition and the serving framework is
+      chosen per request, so this is **documented, not enforced**.
+  - `DENY_COLLECTS_REASON: bool = False` — whether a denial collects a reason into
+    `ResumeDecision.message`. A statement of what the platform can do: Slack overrides it to `True`.
+- An application changes either by subclassing and pointing `slack.outbound_adapter` /
+  `telegram.outbound_adapter` at the subclass.
 - **The inbound half reads neither.** A plain deny button and a deny-with-reason button carry
-  different action identifiers, so the press handler reacts to the button that arrived rather than
-  re-deriving the policy that produced it.
-- **No `enabled` flag.** A pause either reaches an adapter that renders it or it does not.
+  different action identifiers, so the press handler reacts to the button that arrived.
 
 ### Testing
 
@@ -176,7 +171,8 @@ graph LR
 ### Documentation and examples
 
 - `docs/docs/advanced/human-in-the-loop.md` gains a section on approving from a messaging platform,
-  naming what Slack and Telegram support and what the other platforms do instead.
+  naming what Slack and Telegram support and what the other platforms do instead, and stating the
+  `cancelled` caveat: adding that button is only fully meaningful on LangGraph.
 - `docs/docs/integrations/slack.md` and `telegram.md` each gain the pause rendering and its limits.
 - One example demonstrating the round trip, extending an existing integration example rather than
   adding a new one.
@@ -186,10 +182,9 @@ graph LR
 - **Teams, WhatsApp, Messenger, Instagram, Gmail, LiveKit.** No adapter outside Slack and Telegram
   is changed; all of them keep today's text delivery through the default `deliver_paused`.
 - **`input_required` pauses.** A free-text answer has no button form, and correlating a later plain
-  message back to a specific interruption is a correlation problem this change does not solve.
-  Such a pause renders as text and is answered from a non-platform surface. Slack's denial modal is
-  not an exception to this: its `private_metadata` carries the interruption id, so nothing is
-  correlated.
+  message back to an interruption is a problem this change does not solve; such a pause renders as
+  text. Slack's denial modal is not an exception — its `private_metadata` carries the interruption
+  id, so nothing is correlated.
 - **Cross-session approval.** A decision still comes from the session that paused; #610 owns the
   case where another user approves.
 - **Conversation initiation.** Reaching out to a second approver is #608.
@@ -200,11 +195,6 @@ graph LR
 
 ## Open questions
 
-- **Where the edited pause message says who decided.** Both platforms give the presser's identity,
-  but Slack's `user.id` is a workspace id and Telegram's is a numeric account id. Show the raw id,
-  resolve it to a display name with an extra API call, or say only what was decided?
-- **A `cancelled` button on a framework that has no third verb.** Only LangGraph carries
-  three-valued decisions natively — `Runner.CANCELLED_DECISION_MESSAGE` exists because the others
-  collapse cancel onto a denial. An adapter declaring `DECISIONS` cannot know which framework will
-  serve the pause, since the agent is chosen per request. Render the button and accept that it
-  reads as a refusal downstream, or say so in the button's own wording?
+None outstanding. Settled in review: Slack needs no second route; a denial reason ships on Slack
+and not on Telegram; neither knob is configuration; the pause message says what was decided, not
+who.
