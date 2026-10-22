@@ -81,6 +81,33 @@ def test_baseline_rejects_entry(entry):
     _assert_rejected(lambda packages: installer.validate(packages, "python"), ["requests", entry], entry, index=1)
 
 
+@pytest.mark.parametrize(
+    "entry, reason",
+    [
+        ("", "must not be empty"),
+        (7, "must be a string"),
+        ("-zzq", "must not start with '-'"),
+        ("zzq zzr", "whitespace"),
+        ("zzq\tzzr", "whitespace"),
+        ("zzq\x00zzr", "NUL"),
+        ("zzqscheme://zzqhost", "URLs are not allowed"),
+        (".zzqdir", "local paths"),
+        ("/zzqdir", "local paths"),
+        ("~zzqdir", "local paths"),
+    ],
+)
+def test_baseline_alone_rejects_entry(entry, reason):
+    # The baseline-only installer has no rule chain, so each rejection here is the baseline's own
+    # (behind the python rule most of these would be rejected by the grammar anyway).
+    installer = PackageInstaller({}, {})
+    with pytest.raises(ValueError) as excinfo:
+        installer.validate(["requests", entry], "python")
+    message = str(excinfo.value)
+    assert message.startswith("package 1: ") and reason in message
+    if isinstance(entry, str) and entry:
+        assert entry not in message
+
+
 @pytest.mark.parametrize("packages", [[], "requests", ("requests",)])
 def test_baseline_rejects_non_list_or_empty(packages):
     # A bare string would otherwise iterate as one-letter package names.
@@ -115,7 +142,7 @@ def test_python_rule_accepts(entry):
 
 @pytest.mark.parametrize(
     "entry",
-    ["git+zzq", "dist/zzq.whl", "sub/zzq", "zzq.whl", "zzq.tar.gz", "zzq.ZIP", "zzq@zzqurl", 'zzq;python_version>"3"', "zzq[", "_zzq"]
+    ["git+zzq", "dist/zzq.whl", "sub/zzq", "zzq.whl", "zzq.tar.gz", "zzq.zip", "zzq.ZIP", "zzq@zzqurl", 'zzq;python_version>"3"', "zzq[", "_zzq"]
     # Every other suffix pip installs as a local archive file.
     + ["zzq.tgz", "zzq.tar", "zzq.tar.bz2", "zzq.tbz", "zzq.tar.xz", "zzq.txz", "zzq.tlz", "zzq.tar.lz", "zzq.tar.lzma"],
 )
