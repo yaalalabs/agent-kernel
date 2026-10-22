@@ -144,5 +144,8 @@ k3d cluster delete ak
   (at-least-once semantics).
 - When upgrading, roll the sandbox worker before the agent pods: the worker enforces the
   sandbox permissions the agent side sends.
+- A custom `package_rules` class (a dotted path to your own `PackageSpecRule`) must be
+  importable in **both** the runner image and the sandbox-worker image: the runner resolves
+  it at agent construction and fails with `SandboxConfigError` when it is missing.
 - With KEDA installed, `keda.enabled: true` also scales the sandbox worker on the
   `SANDBOX_REQUESTS` backlog.

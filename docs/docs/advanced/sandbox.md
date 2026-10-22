@@ -404,7 +404,12 @@ class ApprovedPythonPackages(PackageSpecRule):
         python: myapp.sandbox.ApprovedPythonPackages
 ```
 
-The rule class must be importable both in the agent process and in the broker worker.
+The rule class must be importable both in the agent process and in the broker worker. Both
+sides resolve every `package_rules` path at startup: the agent when it builds its sandbox tools
+(it also validates package specs before submitting an install), and the worker at
+`QueueBrokerWorker` startup and when it creates the provider. On the `queue` flavor, ship the rule
+module in **both** images: if the agent image lacks it, agent construction fails with
+`SandboxConfigError`, even though installs only run on the worker.
 
 ### Installer prefixes per posture
 
@@ -714,6 +719,10 @@ e.g. Lambda or ECS, with the worker beside it) and `sandbox/broker-nats` (everyt
 in-cluster via the ak-k8s chart's `sandboxWorker` tier, including its standalone worker-only
 install); see the chart README's sandbox worker section for KEDA scaling and namespace
 hardening.
+
+**Custom package rules go in both images.** A `package_rules` module is imported by the agent as
+well as the worker, so a missing module fails the agent at startup (see
+[Package specs](#package-specs)).
 
 **Upgrade queue workers before agent pods.** The worker enforces the permissions the agent side
 sends. An older worker ignores `package_install` (and runs any install as `pip install`), while

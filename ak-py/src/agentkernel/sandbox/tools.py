@@ -315,9 +315,10 @@ async def destroy_sandbox_session(sandbox_session_id: str) -> str:
 _NO_PERSISTENT_SHELL_TYPES = {"ec2_ssm"}
 
 
-def _profiles_text(config: Any) -> str:
+def _profiles_text(config: Any, installs: bool) -> str:
     """Render the configured workload profiles for the tool guidance (config-derived only —
-    provider capabilities are not imported at registration time)."""
+    provider capabilities are not imported at registration time). ``installs`` is whether any
+    profile permits package installs (i.e. whether ``install_packages`` is registered)."""
     lines = []
     for name, prof in config.profiles.items():
         marker = " (default)" if name == config.default_profile else ""
@@ -333,23 +334,26 @@ def _profiles_text(config: Any) -> str:
                 "change or `sudo su` does NOT carry to the next command. Chain state-dependent steps in "
                 "one command (e.g. `cd /app && ./run.sh`)"
             )
-        detail += _permissions_text(prof.policy)
+        detail += _permissions_text(prof.policy, installs)
         lines.append(f"- '{name}'{marker}: {detail}")
     return "\n".join(lines) if lines else "- (none configured)"
 
 
-def _permissions_text(policy: Any) -> str:
-    """The profile's permissions for the guidance: run_code languages, then package installs."""
+def _permissions_text(policy: Any, installs: bool) -> str:
+    """The profile's permissions for the guidance: run_code languages, then package installs.
+    The install part appears only when ``installs`` (some profile permits them, so the tool exists);
+    otherwise it would describe a tool the agent does not have. Empty when there is nothing to say."""
     parts = []
     if policy.languages == []:
         parts.append("run_code disabled (command-only profile)")
     elif policy.languages:
         parts.append(f"languages: {', '.join(policy.languages)}")
-    if policy.package_install is not None:
-        parts.append(f"package installs: {', '.join(policy.package_install.ecosystems)}")
-    else:
-        parts.append("package installs not permitted")
-    return "; " + "; ".join(parts)
+    if installs:
+        if policy.package_install is not None:
+            parts.append(f"package installs: {', '.join(policy.package_install.ecosystems)}")
+        else:
+            parts.append("package installs not permitted")
+    return "; " + "; ".join(parts) if parts else ""
 
 
 def _installs_permitted(config: Any) -> bool:
@@ -408,7 +412,7 @@ def get_sandbox_tools() -> list[SystemTool]:
         "around it with run_command or run_code.\n"
         'If a result contains a "notice" field (e.g. the sandbox was reset after an idle timeout and its '
         "workspace was discarded), tell the user before continuing.\n"
-        f"Available workload profiles (pass as profile=):\n{_profiles_text(config)}\n"
+        f"Available workload profiles (pass as profile=):\n{_profiles_text(config, installs)}\n"
         f"stdout/stderr and file reads are truncated at {config.tool_output_max_chars} characters."
     )
     tools = [
