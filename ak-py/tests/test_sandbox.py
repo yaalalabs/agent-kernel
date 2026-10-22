@@ -1072,7 +1072,8 @@ def test_install_packages_tool_absent_without_a_permitting_profile(monkeypatch):
     assert [t.name for t in tools] == SANDBOX_TOOL_NAMES
     guidance = tools[0].description
     assert "install_packages(" not in guidance
-    assert "package installs not permitted" in guidance
+    assert "package installs" not in guidance  # no tool, so no per-profile install permissions either
+    assert not any(line.rstrip().endswith(";") for line in guidance.splitlines())  # no dangling separator
     assert "not permitted by the profile, report it to the user" in guidance  # always present
 
 

@@ -256,7 +256,8 @@ A provider that installs packages subclasses `_SandboxProviderPackageConfig` ins
 `package_installers` (ecosystem → installer argv prefix, default `{python: [pip, install]}`;
 declaring it replaces the default) and `package_rules` (ecosystem → dotted path of a
 `PackageSpecRule`), and `PackageSpecRuleFactory.validate_config` resolves its rules at agent and
-worker startup. Don't add your own installer fields.
+worker startup. So on the `queue` flavor, a custom rule module must be importable in the agent
+image as well as the worker image. Don't add your own installer fields.
 
 A provider that runs code by exec'ing an interpreter argv (as `docker` and `kubernetes` do) also
 subclasses `_SandboxProviderRuntimeConfig`. That mixin adds `language_runtimes` (language →
