@@ -9,6 +9,7 @@ import asyncio
 import json
 import logging
 import threading
+import time
 
 import pytest
 
@@ -303,38 +304,38 @@ async def test_thread_broker_denial_logs_once(monkeypatch, caplog):
         await broker.close()
 
 
-@pytest.mark.asyncio
-async def test_thread_broker_other_policy_failures_keep_the_generic_warning(monkeypatch, caplog):
-    _use_provider(monkeypatch)
-    broker = ThreadBroker()
-    try:
-        with caplog.at_level("WARNING", logger=BROKER_LOGGER):
-            with pytest.raises(SandboxPolicyError) as excinfo:
-                await broker.submit(_request(policy=SandboxPolicy(network_egress="deny")))
-        assert not isinstance(excinfo.value, SandboxPermissionDeniedError)
-        assert any("failed" in r.getMessage() for r in _broker_records(caplog))
-    finally:
-        await broker.close()
+def _generic_failures(caplog):
+    return [r for r in _broker_records(caplog) if r.getMessage().startswith("Sandbox task t-1 failed")]
 
 
 @pytest.mark.asyncio
-async def test_check_principal_failure_keeps_the_generic_warning(monkeypatch, caplog):
-    # A user-identity profile on a provider that does not declare principal_user.
-    _use_provider(monkeypatch, identity=_SandboxIdentityConfig(mode="user"))
+@pytest.mark.parametrize("site", ["process", "thread_broker"])
+@pytest.mark.parametrize("check", ["check_principal", "enforce_policy"])
+async def test_other_policy_failures_keep_the_generic_warning(monkeypatch, caplog, site, check):
+    # Only SandboxPermissionDeniedError skips the generic warning; the fail-closed identity and
+    # policy checks still log it, exactly once, on both process() and ThreadBroker._handle.
+    if check == "check_principal":
+        # A user-identity profile on a provider that does not declare principal_user.
+        _use_provider(monkeypatch, identity=_SandboxIdentityConfig(mode="user"))
+        request, error = _request(), SandboxCapabilityError
+    else:
+        # An unenforceable dimension under strict.
+        _use_provider(monkeypatch)
+        request, error = _request(policy=SandboxPolicy(network_egress="deny")), SandboxPolicyError
     with caplog.at_level("WARNING", logger=BROKER_LOGGER):
-        completion = await BrokerWorkerCore().process(_request())
-    assert completion.status == "failed"
-    assert any("failed" in r.getMessage() for r in _broker_records(caplog))
-
-
-@pytest.mark.asyncio
-async def test_enforce_policy_failure_keeps_the_generic_warning(monkeypatch, caplog):
-    # An unenforceable dimension under strict.
-    _use_provider(monkeypatch)
-    with caplog.at_level("WARNING", logger=BROKER_LOGGER):
-        completion = await BrokerWorkerCore().process(_request(policy=SandboxPolicy(network_egress="deny")))
-    assert completion.error_type == "SandboxPolicyError"
-    assert any("failed" in r.getMessage() for r in _broker_records(caplog))
+        if site == "process":
+            completion = await BrokerWorkerCore().process(request)
+            assert completion.status == "failed" and completion.error_type == error.__name__
+        else:
+            broker = ThreadBroker()
+            try:
+                with pytest.raises(error) as excinfo:
+                    await broker.submit(request)
+                assert not isinstance(excinfo.value, SandboxPermissionDeniedError)
+            finally:
+                await broker.close()
+    assert len(_generic_failures(caplog)) == 1
+    assert _denials(caplog) == []
 
 
 @pytest.mark.asyncio
@@ -367,6 +368,22 @@ async def test_mismatch_warning_once_per_provider_profile(monkeypatch, caplog):
     message = records[0].getMessage()
     assert "package ecosystem 'node'" in message and "language 'ruby'" in message
     assert "'python'" not in message  # declared, so not listed
+
+
+@pytest.mark.asyncio
+async def test_mismatch_warning_is_per_profile(monkeypatch, caplog):
+    # Two profiles on the same provider each get their own warning, still once each.
+    profiles = {name: _SandboxProfileConfig(type=PKG_DOTTED) for name in ("alpha", "beta")}
+    _install_cfg(monkeypatch, _SandboxConfig(enabled=True, broker=_ExecutionBrokerConfig(flavor="embedded"), profiles=profiles))
+    worker = BrokerWorkerCore()
+    policy = SandboxPolicy(package_install=INSTALL_ALL)
+    with caplog.at_level("WARNING", logger=BROKER_LOGGER):
+        for _ in range(2):
+            for name in profiles:
+                await worker.process(_request(policy=policy, profile=name))
+    messages = sorted(r.getMessage() for r in _mismatch_records(caplog))
+    assert len(messages) == 2
+    assert messages[0].startswith("Sandbox profile alpha ") and messages[1].startswith("Sandbox profile beta ")
 
 
 @pytest.mark.asyncio
@@ -493,6 +510,20 @@ async def test_backstop_fires_after_the_grace(monkeypatch):
     completion = await asyncio.wait_for(BrokerWorkerCore().process(_install(policy=policy)), timeout=5)
     assert completion.status == "timed_out"
     assert "(backstop)" in completion.error and "0.05s" in completion.error
+
+
+@pytest.mark.asyncio
+async def test_backstop_adds_the_grace_on_top_of_the_effective_timeout(monkeypatch):
+    # The worker's own timer is effective timeout + grace: it must not fire at the bare 0.05 s.
+    _use_provider(monkeypatch, dotted=HANGING_DOTTED)
+    monkeypatch.setattr("agentkernel.sandbox.broker.worker.BrokerWorkerCore.BACKSTOP_GRACE_SECONDS", 0.3)
+    policy = SandboxPolicy(timeout=30, package_install=PackageInstallPolicy(timeout=0.05))
+    started = time.monotonic()
+    completion = await asyncio.wait_for(BrokerWorkerCore().process(_install(policy=policy)), timeout=5)
+    elapsed = time.monotonic() - started
+    assert completion.status == "timed_out"
+    assert elapsed >= 0.3  # the grace was added (0.35 s backstop), not the bare install timeout
+    assert elapsed < 5  # and well short of policy.timeout = 30
 
 
 # --------------------------------------------------------------------------- #
@@ -625,6 +656,22 @@ async def test_install_end_to_end_in_process(monkeypatch, flavor):
         result = await ExecutionManager.get().install_packages(["requests"], wait=10)
     assert result.stdout == "installed" and result.sandbox_session_id == "default:default"
     assert _PkgSandbox.calls == [(["requests"], "python", 300)]  # the install's own effective timeout
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "languages, language",
+    [(None, "python"), (None, "bash"), (["python", "bash"], "bash")],
+    ids=["provider-declared-python", "provider-declared-bash", "listed-bash"],
+)
+async def test_permitted_run_code_end_to_end(monkeypatch, languages, language):
+    # languages=None leaves the provider's own list in force; a listed language passes both checks.
+    profile = _SandboxProfileConfig(type=PKG_DOTTED, policy=_SandboxPolicyConfig(languages=languages))
+    _use_profiles(monkeypatch, {"default": profile})
+    session = InMemorySessionStore().new("ak-1")
+    async with session:
+        result = await ExecutionManager.get().execute(code="echo zzq", language=language)
+    assert result.exit_code == 0 and result.stdout == "echo zzq"  # FakeSandbox echoes the code
 
 
 @pytest.mark.asyncio
