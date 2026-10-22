@@ -54,14 +54,22 @@ graph LR
   - The `>= 400` error branch stays first and unchanged: a failed run is never a pause.
   - Issue #607 adds an equivalent reconstruction on `AgentRunner` for thread recording; when both
     have landed the two must be one helper, not two copies.
-- A body that claims `PAUSED` but is missing a key must fall through to the ordinary text delivery
-  with a logged warning, never raise — raising here costs the platform user their reply entirely.
+- The body's `result` string is passed to the adapter **unchanged**, beside the reconstructed
+  reply: it is what the default rendering delivers, so the fallback cannot drift from today's bytes.
+- A body that claims `PAUSED` but does not reconstruct — a missing key, a value outside its type, a
+  malformed interruption, any validation failure — falls through to the ordinary text delivery with
+  a logged warning, never a raise: raising costs the platform user their reply entirely.
 
 ### `OutboundAdapter` contract
 
-- Add `deliver_paused(reply: AgentPausedReplyAny, reply_context) -> None` to `OutboundAdapter`.
-  - **Concrete, not abstract**, with a default that calls `self.deliver(AgentReplyText(...), ...)`
-    on the same string used today. Every existing adapter and every bring-your-own adapter keeps
+- Add `deliver_paused(reply: AgentPausedReplyAny, reply_context, text: str) -> None` to
+  `OutboundAdapter`.
+  - `text` is the body's `result` verbatim, and the default delivers it unchanged. An overriding
+    adapter gets the structured pause to render and the exact bytes for whatever it cannot.
+    Re-deriving that string from `reply` would round-trip today, but only while content derivation,
+    JSON key order and `session_id`'s source all hold; the default should not rest on three
+    invariants when the bytes are in hand.
+  - **Concrete, not abstract.** Every existing adapter and every bring-your-own adapter keeps
     working byte-for-byte without being touched — the `deliver_chunk` precedent.
   - Overriding it is how an adapter declares it can render a pause. No capability flag, no config.
 - Pluggability needs no new ABC or factory: `<platform>.outbound_adapter` already takes a dotted
@@ -73,6 +81,13 @@ graph LR
 - Once a decision is accepted, the pause message is rewritten to drop its buttons and state what
   was decided — **what, not who**. Naming the presser is a disclosure a deployment adds by
   subclassing, not one this change assumes.
+  - **The outbound half edits, not the inbound half.** The inbound adapter puts the pause message's
+    coordinates into the decision turn's `reply_context`, where they cross the queue like every
+    other delivery coordinate; the outbound adapter edits that message when it delivers the
+    **resumed reply**, which exists only because the resume succeeded. Editing at parse time would
+    clear the buttons for a decision the runtime then refused.
+  - A stale or rejected decision reaches `deliver_error` instead, leaving the buttons live so the
+    pause stays answerable.
 - Collecting a reason on a denial is **per-adapter**: an adapter declares it can, or does not offer
   it. A platform that cannot must neither hold the capability back from one that can nor fake it
   with a worse mechanism — the standing no-feature-forcing rule.
@@ -106,14 +121,21 @@ graph LR
   - **No second route.** Bolt serves events, shortcuts and interactivity on one endpoint, so the
     app's Interactivity Request URL is the same URL as its Event Subscriptions one, and
     `BUILTIN_WEBHOOK_ROUTES["slack"]` is unchanged.
-  - An action listener must acknowledge within Slack's 3-second window; the press downloads
-    nothing, so the existing `process_before_response=True` wiring stays within it.
+  - An action listener must acknowledge within Slack's 3-second window, and
+    `process_before_response=True` defers that acknowledgement until the listener returns. So it
+    acknowledges **first** and works after: the denial modal below is a network call to Slack, and
+    opening it before the ack spends the budget the ack needs.
 - The existing `x-slack-retry-reason: http_timeout` drop (`integration/slack/adapter.py:74`) must
   continue to apply to interactive deliveries.
-- Slack declares `DENY_COLLECTS_REASON = True`: a denial opens a modal (`views.open` on the press's
-  `trigger_id`) and the decision is built from the modal submission, not the press.
-  - The interruption id rides the modal's `private_metadata`, which round-trips arbitrary data, so
-    nothing has to be correlated by hand.
+- Slack declares `DENY_COLLECTS_REASON = True`: a denial acknowledges, then opens a modal
+  (`views.open` on the press's `trigger_id`), and the decision is built from the modal submission
+  rather than the press.
+  - A `view_submission` carries no channel or message context of its own, so `private_metadata`
+    carries the **whole return address** — interruption id, channel, and the pause message's
+    timestamp. That is what lets the submission resolve the same `session_id`, a deduplicating
+    `request_id` and the same reply context a press resolves, instead of only the interruption.
+  - A `views.open` that fails leaves the pause open with its buttons live, and is logged. It is not
+    retried onto the queue: nothing was decided, so there is nothing to deliver.
   - A modal the user dismisses records no decision: the pause stays open and its buttons stay live.
 - Once a decision is accepted, the pause message is edited to drop its `actions` block and state
   what was decided, so the outcome is visible and a second press is not invited.
@@ -165,6 +187,8 @@ graph LR
   intact, and a malformed `PAUSED` body falls through to text.
 - Per platform: a pause renders the expected buttons; a press parses to an `AgentResumeRequestAny`
   carrying the right id and status; a press deduplicates; Telegram's over-budget id degrades to text.
+- The message edit under all three outcomes: an accepted decision drops the buttons, a rejected or
+  stale one leaves them live, and a duplicate press changes nothing further.
 - A round trip through the `in_memory` topology — pause out, press in, resume — extending
   `tests/test_integration_roundtrip.py`.
 

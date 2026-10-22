@@ -18,7 +18,7 @@ offers for a yes/no decision, and how much of it Agent Kernel's adapter pair alr
 | Platform | Interactive UI | Inbound press already parsed? | Outbound buttons today? | Fit |
 |---|---|---|---|---|
 | **Slack** | Block Kit `actions` + buttons | No — only `message` events | Posts `blocks`, text only | **Strong — first target** |
-| **Telegram** | Inline keyboard | **Yes** — `callback_query` handled | No `reply_markup` | **Strong — cheap second** |
+| **Telegram** | Inline keyboard | **Yes** — `callback_query` data retyped as the prompt | No `reply_markup` | **Strong — cheap second** |
 | **WhatsApp** | Interactive reply buttons (max 3) | **Yes** — but reads the title, not the id | `type: text` only | **Good — follow-up** |
 | **Teams** | Adaptive Card `Action.Submit` | No — the activity is dropped | Text only | **Good, highest cost** |
 | **Messenger** | Quick replies / button template | **Yes** — `postback` handled | Text only | Workable |
@@ -26,10 +26,17 @@ offers for a yes/no decision, and how much of it Agent Kernel's adapter pair alr
 | **Gmail** | None usable | n/a (poller) | n/a | **Out of reach** — text reply only |
 | **LiveKit** | None (voice) | n/a | n/a | **Out of reach** — spoken confirmation |
 
-The recurring shape: **four adapters already parse a button press inbound and throw away the
-part that identifies it**, collapsing the press to its display text so the agent sees a normal
-turn. The missing half is outbound — no adapter sends anything but text — plus mapping a press
-onto a `ResumeSpec` rather than a prompt.
+The recurring shape: **four adapters already parse a button press inbound, and all four lose the
+structured decision** — the agent sees an ordinary turn. They lose it two different ways, which
+matters for how much each is worth fixing:
+
+- **The identifier is discarded.** WhatsApp and the two Meta platforms read the press's *display
+  title* and drop the id that says which option it was.
+- **The identifier survives but is retyped.** Telegram passes the callback data straight through as
+  the prompt text, so the value is intact and only its meaning is lost.
+
+The missing half is outbound — no adapter sends anything but text — plus routing a press to a
+decision rather than to a prompt.
 
 ---
 
