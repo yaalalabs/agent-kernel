@@ -12,14 +12,14 @@ replica**: its RealtimeConnectionPool is process-local, and one gateway instance
 import logging
 import sys
 
-from agentkernel.framework.openai import (
+from agentkernel.integration.adapter import GatewayRunner
+from agentkernel.livekit import LiveKitEdgeGateway
+from agentkernel.openai import (
     OpenAIModule,
     OpenAIToolBuilder,
 )
-from agentkernel.integration.adapter import GatewayRunner
-from agentkernel.integration.livekit import LiveKitEdgeGateway
 from agentkernel.pipeline import AgentRunner, IOHandler
-from agents import Agent as OpenAIAgent
+from agents.realtime import RealtimeAgent as OpenAIAgent
 
 logging.basicConfig(level=logging.INFO)
 _log = logging.getLogger(__name__)
@@ -32,13 +32,12 @@ def get_weather(location: str) -> str:
 
 general_agent = OpenAIAgent(
     name="general",
-    model="gpt-realtime",
     handoff_description="Agent for general questions",
     instructions="You provide assistance with general queries. Give short and direct answers.",
     tools=OpenAIToolBuilder.bind([get_weather]),
 )
 
-OpenAIModule([general_agent])
+OpenAIModule([general_agent]).run_options(general_agent, config={"model_settings": {"model_name": "gpt-realtime"}})
 
 gateway = LiveKitEdgeGateway(session_id="room_01")
 

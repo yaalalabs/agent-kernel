@@ -1,14 +1,21 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import contextlib
+import contextvars
 import copy
 import inspect
 import logging
 from collections.abc import AsyncGenerator
+from dataclasses import replace
+from functools import wraps
 from typing import Any, Callable, ClassVar, List, Mapping, Type
 
 from agents import Agent, FunctionTool, Handoff, RunContextWrapper, Runner, function_tool, handoff
+from agents.realtime import RealtimeAgent
+from agents.realtime import RealtimeRunner as NativeRealtimeRunner
+from agents.realtime.model import RealtimePlaybackTracker
 from agents.run_state import RunState
 from openai.types.responses.response_output_item_added_event import ResponseOutputItemAddedEvent
 from openai.types.responses.response_output_item_done_event import ResponseOutputItemDoneEvent
@@ -51,6 +58,7 @@ from ...core.model import (
     ResumeDecision,
 )
 from ...core.paused_run import PausedRun, PausedRunState
+from ...core.realtime import EDGE_SAMPLE_RATE
 from ...core.util.error_util import user_facing_error_message
 from ...trace import Trace
 
@@ -625,399 +633,211 @@ class OpenAIRunner(BaseRunner):
 
 
 class OpenAIRealtimeRunner(BaseRealtimeRunner):
-    """
-    OpenAIRealtimeRunner implements RealtimeRunner for the OpenAI Realtime WebSocket API.
+    """Bridge the Agents SDK's native realtime session to AK's audio pipeline.
 
-    The agent's native handoffs work over the one socket, as the SDK's own realtime session runs
-    them: each enabled handoff is offered as a function and, like a tool call, a handoff call runs
-    through the pool's tool path, so the SDK invokes it (and its ``on_handoff``) inside Agent
-    Kernel's execution scopes. When its result is sent, the session is pointed at the agent the
-    handoff returned (that agent's instructions and tools, by ``session.update``) and
-    ``agent_changed`` is reported. The conversation stays on OpenAI's side, so the new agent sees
-    all of it. The socket's model and voice cannot change, so every agent speaks with the connected
-    agent's model and voice.
+    Voice agents are native ``RealtimeAgent`` objects. The SDK owns tools, handoffs,
+    guardrails and conversation history; AK supplies the tool scope and reports events.
+    Native ``model``, ``config`` and ``model_config`` options come from Module.run_options.
     """
+
+    runs_tools = True
+    reports_speech_stopped = True
 
     def __init__(self):
         super().__init__(FRAMEWORK)
         self._connection = None
-        self._callback = None
-        self._agent = None
-        self._cm = None
-        self._client = None
         self._listen_task = None
-        # True once disconnect() runs; the listen loop suppresses its error callback then so a
-        # normal shutdown does not surface as a model-socket failure.
+        self._callback = None
         self._closing = False
-        # True from ``response.created`` until ``response.done``: while it is set, the user starting
-        # to speak cuts off a response the model is still generating.
         self._response_in_flight = False
-        # Function calls of the last completed response still awaiting their output; the follow-up
-        # response is requested once, when the last of them is answered.
-        self._pending_tool_calls: set[str] = set()
-        # The model the socket was opened with; a handoff cannot change it.
-        self._model: str | None = None
-        # The run context instructions, handoffs and is_enabled checks are evaluated with: the
-        # session's framework_context, as on the unary path.
-        self._run_context: RunContextWrapper | None = None
-        # The SDK agent answering: the connected agent, then whichever agent a handoff moved to.
-        self._active: Agent | None = None
-        # The active agent's offered tools and enabled handoffs, by the function name the model calls.
-        self._tools: dict[str, FunctionTool] = {}
-        self._handoffs: dict[str, Handoff] = {}
-        # Each dispatched call's agent and its tool or handoff, bound when its response completes: a
-        # handoff in the same response replaces the offered tools before the pool runs the call,
-        # which must still run as the agent that made it.
-        self._calls: dict[str, tuple[Agent, FunctionTool | Handoff | None]] = {}
-        # The answer of each handoff call that is not performed: only a response's first is.
-        self._refused: dict[str, str] = {}
-        # Performed handoffs by call id, (handoff, agent it returned): the session moves to the agent
-        # when the call's result is sent.
-        self._transfers: dict[str, tuple[Handoff, Agent]] = {}
-
-    @staticmethod
-    def _realtime_model(agent: BaseAgent) -> str:
-        """The realtime model named by the agent definition.
-
-        Deliberately no adapter-level default: the model is the agent's choice, and a silent
-        fallback would run a different model than the one the caller declared.
-        """
-        model = getattr(getattr(agent, "agent", None), "model", None)
-        if not isinstance(model, str) or not model:
-            raise ValueError(f"Agent '{getattr(agent, 'name', '?')}' must define a realtime model to run in REALTIME mode")
-        return model
-
-    async def connect(self, session: Session, agent: BaseAgent, callback: Callable) -> None:
-        from openai import AsyncOpenAI
-
-        self._callback = callback
-        self._agent = agent
-        self._model = self._realtime_model(agent)
-        # Checked before anything opens, so a graph that cannot run leaves nothing to clean up.
-        self._validate_handoffs(getattr(agent, "agent", None))
-        self._client = AsyncOpenAI()
-
-        try:
-            cm = self._client.realtime.connect(model=self._model)
-            self._connection = await cm.__aenter__()
-            # Set only once the socket is open, so a socket that never opened is never closed.
-            self._cm = cm
-            self._run_context = RunContextWrapper(context=self._load_framework_context(session))
-            session_config = await self._activate(getattr(agent, "agent", None))
-            session_config["audio"] = {"input": {"turn_detection": {"type": "server_vad", "interrupt_response": True, "create_response": True}}}
-            await self._connection.send({"type": "session.update", "session": session_config})
-
-        except Exception:
-            # The pool drops a connection that failed to connect without disconnecting it, so the
-            # client and any socket opened would otherwise stay up until the process exits.
-            await self.disconnect()
-            raise
-
-        self._listen_task = asyncio.create_task(self._listen())
+        self._interrupted = False
+        self._agents: dict[int, RealtimeAgent] = {}
+        self._playback = RealtimePlaybackTracker()
+        self._scope_active = contextvars.ContextVar("openai_realtime_tool_scope", default=False)
 
     def team(self, agent: BaseAgent) -> list[str]:
-        """Every agent the conversation can reach through handoffs, the starting agent first."""
+        """Read declared targets using public SDK fields; opaque handoffs expose only their name."""
         root = getattr(agent, "agent", None)
-        if not isinstance(root, Agent):
+        if not isinstance(root, RealtimeAgent):
             return [agent.name]
-        return [member.name for member in self._reachable(root)]
+        names, pending, seen = [], [root], set()
+        for member in pending:
+            if id(member) in seen:
+                continue
+            seen.add(id(member))
+            if member.name not in names:
+                names.append(member.name)
+            for target in member.handoffs:
+                if isinstance(target, RealtimeAgent):
+                    pending.append(target)
+                elif isinstance(target, Handoff) and target.is_enabled is not False and target.agent_name not in names:
+                    names.append(target.agent_name)
+        return names
 
-    @staticmethod
-    def _reachable(root: Agent) -> list[Agent]:
-        """Every agent reachable from ``root`` through handoffs, ``root`` first, nearest first.
-
-        A ``Handoff`` made by ``handoff()`` is followed to its agent; a hand-built one names its agent
-        only when invoked, so the agents beyond it are not reached. A handoff with ``is_enabled=False``
-        is never offered, so its agent is not reached through it; one with an ``is_enabled`` callable
-        is followed, since whether it is enabled is only known at run time.
-        """
-        reached: list[Agent] = [root]
-        seen = {id(root)}
-        for agent in reached:
-            for item in agent.handoffs or []:
-                if isinstance(item, Handoff) and item.is_enabled is False:
-                    continue
-                if isinstance(item, Handoff):
-                    # ``handoff()`` keeps its agent only as this private weak reference.
-                    reference = getattr(item, "_agent_ref", None)
-                    item = reference() if reference is not None else None
-                if isinstance(item, Agent) and id(item) not in seen:
-                    seen.add(id(item))
-                    reached.append(item)
-        return reached
-
-    def _validate_handoffs(self, root: Agent) -> None:
-        """Check, before connecting, that every handoff the conversation can take can be honoured.
-
-        Raised here rather than when the handoff is reached, so a call never fails half-way. The
-        handoffs of an agent reached only through a hand-built ``Handoff`` are checked when that
-        agent becomes active. A reachable agent that declares a model other than the socket's is
-        warned about: the socket's model cannot change.
-        """
-        for agent in self._reachable(root):
-            if agent is not root and isinstance(agent.model, str) and agent.model != self._model:
-                _log.warning(f"Agent '{agent.name}' declares model {agent.model}; REALTIME mode keeps the connection's model {self._model}")
-            for item in agent.handoffs or []:
-                self._check_handoff(item)
-
-    @staticmethod
-    def _check_handoff(item: Any) -> None:
-        """Raise for a handoff REALTIME mode cannot honour.
-
-        One that filters or nests the history the next agent sees cannot be applied: the history
-        lives on OpenAI's side of the socket.
-        """
-        if not isinstance(item, (Agent, Handoff)):
-            raise ValueError(f"Handoff {item!r} is neither an Agent nor a Handoff")
-        if isinstance(item, Handoff) and (item.input_filter is not None or item.nest_handoff_history):
-            raise ValueError(f"Handoff {item.tool_name} filters or nests the history the next agent sees, which REALTIME mode cannot apply")
-
-    async def _activate(self, sdk_agent: Agent) -> dict:
-        """Make ``sdk_agent`` the agent answering, and return the session settings that point the model at it.
-
-        The model may call the agent's offered tools and its enabled handoffs. Its instructions are
-        resolved the way the SDK resolves them for a run (a string, or a callable over the run
-        context); an agent with none leaves them out, so the caller decides what replaces them.
-        Everything is resolved before anything changes, so an agent whose instructions, tools or
-        handoffs cannot be resolved leaves the active agent as it was.
-
-        :param sdk_agent: The SDK agent to activate.
-        :return: The ``session`` payload of a ``session.update``.
-        """
-        tools = await self._offered_tools(sdk_agent, self._run_context)
-        handoffs = await self._offered_handoffs(sdk_agent, self._run_context)
-        instructions = await sdk_agent.get_system_prompt(self._run_context)
-        self._active, self._tools, self._handoffs = sdk_agent, tools, handoffs
-        settings = {
-            "type": "realtime",
-            "tools": [
-                *({"type": "function", "name": t.name, "description": t.description, "parameters": t.params_json_schema} for t in tools.values()),
-                *(
-                    {"type": "function", "name": h.tool_name, "description": h.tool_description, "parameters": h.input_json_schema}
-                    for h in handoffs.values()
-                ),
-            ],
-        }
-        if instructions:
-            settings["instructions"] = instructions
-        return settings
-
-    async def _offered_handoffs(self, sdk_agent: Agent, run_context: RunContextWrapper) -> dict[str, Handoff]:
-        """The agent's handoffs the Realtime session may call, by tool name.
-
-        Collected as the SDK's runner collects them: a ``Handoff`` as declared, an ``Agent`` wrapped
-        by ``handoff()``, and a disabled one (``is_enabled``) left out. Each is checked as
-        :meth:`_validate_handoffs` checks it, for the ones it could not reach before connecting.
-        """
-        handoffs = {}
-        for item in getattr(sdk_agent, "handoffs", None) or []:
-            self._check_handoff(item)
-            if isinstance(item, Agent):
-                item = handoff(item)
-            if await self._is_enabled(item, run_context, sdk_agent):
-                handoffs[item.tool_name] = item
-        return handoffs
-
-    async def _offered_tools(self, sdk_agent: Agent, run_context: RunContextWrapper) -> dict[str, FunctionTool]:
-        """The agent's tools the Realtime session may call, by name.
-
-        The Realtime API calls only function tools; any other tool type (hosted tools such as web
-        search) cannot run over the socket. A tool that needs approval or carries tool guardrails
-        is not offered either: the SDK's runner applies those around a call, and this runner calls
-        the tool directly, so offering it would skip a check its author asked for. Both are skipped
-        with a warning rather than silently. A disabled tool (``is_enabled``) is left out, as the
-        SDK's own runner leaves it out.
-        """
-        tools = {}
-        for tool in getattr(sdk_agent, "tools", None) or []:
-            name = getattr(tool, "name", type(tool).__name__)
+    def _scoped_agent(self, source: RealtimeAgent) -> RealtimeAgent:
+        """Clone the native graph per call, preserving SDK settings and public invocation callbacks."""
+        if id(source) in self._agents:
+            return self._agents[id(source)]
+        if not isinstance(source, RealtimeAgent):
+            raise TypeError("OpenAI realtime requires agents.realtime.RealtimeAgent, including handoff targets")
+        if source.mcp_servers:
+            raise NotImplementedError("OpenAI realtime MCP tool scoping is not implemented; use FunctionTool tools")
+        scoped = source.clone(tools=[], handoffs=[])
+        self._agents[id(source)] = scoped
+        for tool in source.tools:
             if not isinstance(tool, FunctionTool):
-                _log.warning(f"Tool {name} is not a function tool; the Realtime API cannot call it")
-            elif tool.needs_approval is not False or tool.tool_input_guardrails or tool.tool_output_guardrails:
-                _log.warning(f"Tool {name} needs approval or has tool guardrails, which REALTIME mode does not apply; it is not offered")
-            elif await self._is_enabled(tool, run_context, sdk_agent):
-                tools[name] = tool
-        return tools
-
-    @staticmethod
-    async def _is_enabled(item: FunctionTool | Handoff, run_context: RunContextWrapper, sdk_agent: Agent) -> bool:
-        """Evaluate a tool's or handoff's ``is_enabled``: a bool, or a (possibly async) callable over the run context."""
-        enabled = item.is_enabled
-        if callable(enabled):
-            enabled = enabled(run_context, sdk_agent)
-            if inspect.isawaitable(enabled):
-                enabled = await enabled
-        return bool(enabled)
-
-    async def _listen(self) -> None:
-        """Report model events to the pool, in order. The pool paces audio and emits chunks."""
-        try:
-            # The SDK's event stream is an async generator: closed here when listening stops (a
-            # cancel included), not left half-run for the loop's shutdown to close twice.
-            async with contextlib.aclosing(aiter(self._connection)) as events:
-                async for event in events:
-                    await self._handle_message(event)
-        except asyncio.CancelledError:
-            raise
-        except Exception as e:
-            _log.error(f"OpenAI Realtime socket error: {e}")
-            if not self._closing:
-                await self._callback("error", {"message": f"OpenAI Realtime socket error: {e}"})
-
-    async def _handle_message(self, event: Any) -> None:
-        event_type = event.type
-        if event_type == "response.output_audio.delta":
-            await self._callback("audio_delta", {"delta": event.delta, "message_id": getattr(event, "item_id", "")})
-        elif event_type == "response.output_audio_transcript.delta":
-            await self._callback("transcript_delta", {"delta": event.delta, "message_id": getattr(event, "item_id", "")})
-        elif event_type == "response.created":
-            self._response_in_flight = True
-        elif event_type == "input_audio_buffer.speech_started":
-            # During a response this is a barge-in (server VAD cancels the response itself). Outside
-            # one it is usually the start of the user's turn, but the pool may still be pacing the
-            # finished response's audio, so it is reported as speech_started and the pool decides.
-            if self._response_in_flight:
-                self._response_in_flight = False
-                await self._callback("interrupt", {})
+                raise NotImplementedError("OpenAI realtime currently scopes FunctionTool tools only")
+            if tool.needs_approval is not False:
+                raise NotImplementedError("Agent Kernel does not expose realtime tool approval decisions yet")
+            if tool.tool_output_guardrails:
+                raise NotImplementedError("The OpenAI realtime SDK does not apply tool_output_guardrails; this protected tool cannot be offered")
+            guards = [
+                replace(guard, guardrail_function=self._scoped_callback(guard.guardrail_function)) for guard in tool.tool_input_guardrails or []
+            ]
+            scoped.tools.append(replace(tool, on_invoke_tool=self._scoped_callback(tool.on_invoke_tool), tool_input_guardrails=guards))
+        for target in source.handoffs:
+            if isinstance(target, RealtimeAgent):
+                target = handoff(self._scoped_agent(target))
+            if isinstance(target, Handoff):
+                if target.input_filter is not None or target.nest_handoff_history:
+                    raise ValueError(f"Handoff {target.tool_name} filters history, which the native realtime SDK does not apply")
+                scoped.handoffs.append(replace(target, on_invoke_handoff=self._scoped_handoff(target.on_invoke_handoff)))
             else:
-                await self._callback("speech_started", {})
-        elif event_type == "response.done":
-            self._response_in_flight = False
-            response = getattr(event, "response", None)
-            status = getattr(response, "status", None)
-            if status == "completed":
-                # Function calls are read from the completed response, as the Realtime docs describe:
-                # the response is over, so the follow-up ``response.create`` cannot collide with it.
-                calls = [item for item in getattr(response, "output", None) or [] if getattr(item, "type", None) == "function_call"]
-                self._pending_tool_calls = {call.call_id for call in calls}
-                handing_off = False
-                for call in calls:
-                    item = self._handoffs.get(call.name) or self._tools.get(call.name)
-                    if isinstance(item, Handoff):
-                        if handing_off:
-                            self._refused[call.call_id] = f"Error: only one handoff is performed per turn; this one, to {item.agent_name}, was not"
-                        handing_off = True
-                    self._calls[call.call_id] = (self._active, item)
-                    await self._callback("tool_call", {"call_id": call.call_id, "name": call.name, "arguments": call.arguments or "{}"})
-            # The turn ends before the handoff it asked for, so the edge sees this agent's done ahead
-            # of the agent change.
-            await self._callback("done", {"status": status})
-        elif event_type == "error":
-            _log.error(f"OpenAI Realtime socket error: {getattr(event, 'error', 'unknown')}")
+                raise TypeError("OpenAI realtime handoffs must target RealtimeAgent objects or native Handoff objects")
+        return scoped
 
-    async def _switch_to(self, chosen: Handoff, target: Agent) -> None:
-        """Point the session at the agent a handoff returned, and report the change.
+    def _scoped_callback(self, invoke: Callable) -> Callable:
+        @wraps(invoke)
+        async def call(*args, **kwargs):
+            # Native timeout helpers inherit this context, so a guard and its tool do not acquire the lock twice.
+            if self._open_tool_scope is not None and not self._scope_active.get():
+                await self._open_tool_scope()
+                self._scope_active.set(True)
+            result = invoke(*args, **kwargs)
+            return await result if inspect.isawaitable(result) else result
 
-        Called before the handoff call's output is added, so the follow-up response (requested once
-        every call of the response is answered) is the new agent's and is announced ahead of its
-        audio.
-        """
-        previous = self._active
-        session_config = await self._activate(target)
-        # Unlike at connect, an agent with no instructions must not keep the previous agent's.
-        session_config.setdefault("instructions", "")
-        await self._connection.send({"type": "session.update", "session": session_config})
-        _log.info(f"Handed off from '{previous.name}' to '{target.name}' ({chosen.tool_name})")
-        await self._callback("agent_changed", {"agent": target.name, "previous_agent": previous.name})
+        return call
+
+    def _scoped_handoff(self, invoke: Callable) -> Callable:
+        scoped_invoke = self._scoped_callback(invoke)
+
+        @wraps(invoke)
+        async def call(context, arguments):
+            result = await scoped_invoke(context, arguments)
+            if any(result is agent for agent in self._agents.values()):
+                return result
+            return self._scoped_agent(result)
+
+        return call
+
+    async def connect(self, session: Session, agent: BaseAgent, callback: Callable) -> None:
+        self._callback = callback
+        self._closing = False
+        root = self._scoped_agent(agent.agent)
+        options = dict(getattr(agent, "run_options", None) or {})
+        if (options.get("config") or {}).get("async_tool_calls") is False:
+            raise NotImplementedError("AK realtime tool scoping requires the SDK's default async_tool_calls=True")
+        model_config = dict(options.pop("model_config", None) or {})
+        # The shared transport carries PCM16 mono at 24 kHz. Do not silently play a different codec as PCM.
+        settings = {**((options.get("config") or {}).get("model_settings") or {}), **(model_config.get("initial_model_settings") or {})}
+        audio = settings.get("audio") or {}
+        for direction in ("input", "output"):
+            audio_format = (audio.get(direction) or {}).get("format", settings.get(f"{direction}_audio_format", "pcm16"))
+            if audio_format != "pcm16" and audio_format != {"type": "audio/pcm", "rate": EDGE_SAMPLE_RATE}:
+                raise ValueError("Agent Kernel realtime audio requires PCM16 mono at 24000 Hz")
+        if "tools" in settings or "handoffs" in settings:
+            raise ValueError("Declare realtime tools and handoffs on RealtimeAgent so AK can supply their execution context")
+        if "playback_tracker" in model_config:
+            raise ValueError("AK supplies playback_tracker from its paced output")
+        model_config["playback_tracker"] = self._playback
+        self._playback.set_audio_format("pcm16")
+        try:
+            runner = NativeRealtimeRunner(root, **options)
+            self._connection = await runner.run(context=self._load_framework_context(session), model_config=model_config)
+            await self._connection.enter()
+        except BaseException:
+            await self.disconnect()
+            raise
+        self._listen_task = asyncio.create_task(self._listen())
 
     async def append_audio(self, base64_audio: str) -> None:
-        if self._connection:
-            await self._connection.send({"type": "input_audio_buffer.append", "audio": base64_audio})
+        await self._connection.send_audio(base64.b64decode(base64_audio))
 
     async def send_text(self, text: str) -> None:
-        if self._connection:
-            await self._connection.send(
-                {"type": "conversation.item.create", "item": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": text}]}}
-            )
-            await self._connection.send({"type": "response.create"})
+        await self._connection.send_message(text)
 
-    async def send_tool_result(self, call_id: str, result: str) -> None:
-        """Add one function call's output; request the follow-up response once every call is answered.
+    def audio_emitted(self, message_id: str, pcm16: bytes, content_index: int = 0) -> None:
+        """Track audio released by AK's pacing queue, rather than audio merely generated by the model."""
+        self._playback.on_play_bytes(message_id, content_index, pcm16)
 
-        A response may carry several function calls. Requesting a response per output would start
-        one before the rest are answered, so ``response.create`` is sent once, after the last. The
-        output of a performed handoff is added once the session has moved to its agent.
-        """
-        if self._connection:
-            transfer = self._transfers.pop(call_id, None)
-            if transfer is not None:
-                try:
-                    await self._switch_to(*transfer)
-                except Exception as e:
-                    # The new agent could not be activated (its instructions, tools or handoffs failed
-                    # to resolve): the call stays with the current agent, and the model is told, as
-                    # for a handoff whose on_handoff fails.
-                    _log.exception(f"Handoff {transfer[0].tool_name} could not activate agent '{transfer[1].name}'")
-                    result = f"Error: the handoff to {transfer[1].name} failed: {e}"
-            await self._connection.send(
-                {"type": "conversation.item.create", "item": {"type": "function_call_output", "call_id": call_id, "output": result}}
-            )
-            self._pending_tool_calls.discard(call_id)
-            if not self._pending_tool_calls:
-                await self._connection.send({"type": "response.create"})
-
-    async def execute_tool(self, name: str, arguments: str, context: ToolContext, call_id: str) -> str:
-        """Invoke a tool on the OpenAI SDK agent and return its result.
-
-        The SDK's ``on_invoke_tool`` wants its own ``ToolContext`` (built around the run
-        context), not the Agent Kernel one, so it is constructed here. Its run context is the
-        session's ``framework_context``, as on the unary path, so a tool reading
-        ``wrapper.context`` sees the same object in both modes. The Agent Kernel context is set as
-        the active contextvar for the call, which is what a tool function's ``ToolContext.get()``
-        reads.
-
-        Unlike a unary run, a realtime tool call never writes ``framework_context`` back: changes a
-        tool makes to ``wrapper.context`` do not persist.
-
-        Only a tool offered to the agent that made the call runs, even when a handoff has made
-        another agent active since, and it runs through the SDK's ``invoke_function_tool``, which
-        applies the tool's ``timeout_seconds``.
-
-        A handoff call runs here too, as the SDK's own realtime session runs it beside tools: the
-        SDK invokes the handoff (and its ``on_handoff``) and the agent it returns takes over when the
-        call's result is sent. A handoff that raises leaves the agent as it is. A response's second
-        handoff is not invoked; its answer says so.
-        """
-        from agents.tool import invoke_function_tool
-        from agents.tool_context import ToolContext as SDKToolContext
-        from agents.usage import Usage
-
-        if call_id in self._refused:
-            self._calls.pop(call_id, None)
-            return self._refused.pop(call_id)
-        caller, tool = self._calls.pop(call_id, None) or (self._active, self._handoffs.get(name) or self._tools.get(name))
-        if tool is None:
-            return f"Error: Tool {name} not found"
-        if isinstance(tool, Handoff):
-            target = await tool.on_invoke_handoff(self._run_context, arguments or "")
-            self._transfers[call_id] = (tool, target)
-            return tool.get_transfer_message(target)
-
-        sdk_context = SDKToolContext(
-            context=self._load_framework_context(context.session),
-            usage=Usage(),
-            tool_name=name,
-            tool_call_id=call_id,
-            tool_arguments=arguments,
-            agent=caller,
-        )
-        context.set()
+    async def _listen(self) -> None:
         try:
-            result = await invoke_function_tool(function_tool=tool, context=sdk_context, arguments=arguments)
-        finally:
-            context.reset()
-        return str(result) if result is not None else ""
+            async with contextlib.aclosing(self._connection.__aiter__()) as events:
+                async for event in events:
+                    await self._handle_message(event)
+            if not self._closing:
+                await self._callback("error", {"message": "OpenAI realtime session ended"})
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:
+            if not self._closing:
+                _log.exception("OpenAI native realtime session failed")
+                await self._callback("error", {"message": str(error)})
+
+    async def _interrupt(self) -> None:
+        if not self._interrupted:
+            self._interrupted = True
+            await self._callback("interrupt", {})
+
+    async def _handle_message(self, event) -> None:
+        if event.type == "audio":
+            await self._callback(
+                "audio_delta",
+                {"delta": base64.b64encode(event.audio.data).decode(), "message_id": event.item_id, "content_index": event.content_index},
+            )
+        elif event.type in ("audio_interrupted", "guardrail_tripped"):
+            await self._interrupt()
+        elif event.type == "handoff":
+            names = list(
+                dict.fromkeys(name for agent in self._agents.values() for name in [agent.name, *(target.agent_name for target in agent.handoffs)])
+            )
+            await self._callback("agent_changed", {"agent": event.to_agent.name, "previous_agent": event.from_agent.name, "agents": names})
+        elif event.type == "error":
+            # SDK error events can be recoverable (for example, a tool name not found).
+            # Fatal model exceptions are raised by the session iterator and fail the call below.
+            _log.error("OpenAI realtime event: %s", event.error)
+        elif event.type == "raw_model_event":
+            data = event.data
+            if data.type in ("transcript_delta", "output_text_delta"):
+                await self._callback("transcript_delta", {"delta": data.delta, "message_id": data.item_id})
+            elif data.type == "input_audio_transcription_completed":
+                await self._callback("caller_transcript", {"text": data.transcript})
+            elif data.type == "turn_started":
+                self._response_in_flight = True
+                self._interrupted = False
+            elif data.type == "turn_ended":
+                self._response_in_flight = False
+                await self._callback("done", {"status": "completed"})
+            elif data.type == "exception":
+                raise data.exception
+            elif data.type == "raw_server_event":
+                kind = data.data.get("type") if isinstance(data.data, dict) else getattr(data.data, "type", None)
+                if kind == "input_audio_buffer.speech_started":
+                    if self._response_in_flight:
+                        await self._interrupt()
+                    else:
+                        await self._callback("speech_started", {})
+                elif kind == "input_audio_buffer.speech_stopped":
+                    await self._callback("speech_stopped", {})
 
     async def disconnect(self) -> None:
         self._closing = True
         task, self._listen_task = self._listen_task, None
         await self._cancel_and_wait(task)
-        cm, self._cm, self._connection = self._cm, None, None
-        if cm is not None:
-            await cm.__aexit__(None, None, None)
-        if self._client is not None:
-            await self._client.close()
-            self._client = None
+        connection, self._connection = self._connection, None
+        if connection is not None:
+            await connection.close()
+        self._agents.clear()
 
 
 class OpenAIAgent(BaseAgent):
@@ -1035,7 +855,7 @@ class OpenAIAgent(BaseAgent):
         "auto_previous_response_id": "conversation state is the OpenAISession passed as session=; the SDK rejects combining them",
     }
 
-    def __init__(self, name: str, runner: OpenAIRunner, agent: Agent, realtime_runner_cls: Type[BaseRealtimeRunner] = None):
+    def __init__(self, name: str, runner: BaseRunner, agent: Agent | RealtimeAgent, realtime_runner_cls: Type[BaseRealtimeRunner] = None):
         """
         Initializes an OpenAIAgent instance.
         :param name: Name of the agent.
@@ -1049,7 +869,7 @@ class OpenAIAgent(BaseAgent):
         self._setup_system_prompt()
 
     @property
-    def agent(self) -> Agent:
+    def agent(self) -> Agent | RealtimeAgent:
         """
         Returns the OpenAI agent instance.
         """
@@ -1066,7 +886,19 @@ class OpenAIAgent(BaseAgent):
         Appends the given prompt text to the OpenAI agent's instructions.
         Called by the base Agent._setup_system_prompt() at init when multimodal is enabled.
         """
-        if hasattr(self._agent, "instructions") and self._agent.instructions:
+        if not prompt:
+            return
+        if callable(self._agent.instructions):
+            original = self._agent.instructions
+
+            async def instructions(context, agent):
+                text = original(context, agent)
+                if inspect.isawaitable(text):
+                    text = await text
+                return f"{text or ''}\n{prompt}"
+
+            self._agent.instructions = instructions
+        elif self._agent.instructions:
             if prompt not in self._agent.instructions:
                 self._agent.instructions += "\n" + prompt
 
@@ -1098,7 +930,7 @@ class OpenAIModule(Module):
 
     def __init__(
         self,
-        agents: list[Agent],
+        agents: list[Agent | RealtimeAgent],
         runner: OpenAIRunner = None,
         realtime_runner_cls: Type[BaseRealtimeRunner] = None,
     ):
@@ -1118,7 +950,7 @@ class OpenAIModule(Module):
             self.runner = OpenAIRunner()
         self.load(agents)
 
-    def _wrap(self, agent: Agent, agents: List[Agent]) -> BaseAgent:
+    def _wrap(self, agent: Agent | RealtimeAgent, agents: List[Agent | RealtimeAgent]) -> BaseAgent:
         """
         Wraps the provided agent in an OpenAIAgent instance.
         :param agent: Agent to wrap.
@@ -1127,9 +959,10 @@ class OpenAIModule(Module):
         """
         # The realtime runner class is attached unconditionally: only the pipeline (in REALTIME
         # mode) ever instantiates it, so the framework need not know the execution mode.
-        return OpenAIAgent(agent.name, self.runner, agent, realtime_runner_cls=self.realtime_runner_cls)
+        runner = self.realtime_runner_cls() if isinstance(agent, RealtimeAgent) else self.runner
+        return OpenAIAgent(agent.name, runner, agent, realtime_runner_cls=self.realtime_runner_cls)
 
-    def load(self, agents: list[Agent]) -> OpenAIModule:
+    def load(self, agents: list[Agent | RealtimeAgent]) -> OpenAIModule:
         """
         Loads the specified agents into the module. By replacing the current agents.
         :param agents: List of agents to load.

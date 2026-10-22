@@ -323,6 +323,12 @@ A hook that still defines `on_stream_chunk` will not raise — the method is sim
 
 **Use Cases:** redacting tool arguments and results, PII masking over assembled text, profanity filtering, hiding reasoning traces from clients, refusing a response outright, streaming analytics.
 
+### Realtime mode
+
+In realtime mode (`execution.mode: realtime`, a live voice call) there is no run for pre- and post-hooks to
+wrap, so none of them run. To see what happens in a call (transcripts, connections, who has the call), register a
+`RealtimeObserver`; see [Watching a live call](./livekit.md#watching-a-live-call).
+
 ## Implementing Hooks
 
 ### Pre-Execution Hook

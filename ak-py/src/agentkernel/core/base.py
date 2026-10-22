@@ -558,9 +558,7 @@ class Agent(ABC):
 
     @property
     def realtime_runner_cls(self) -> "Type[RealtimeRunner] | None":
-        """
-        Returns the realtime runner class associated with the agent, if any.
-        """
+        """Returns the realtime runner class associated with the agent, if any."""
         return self._realtime_runner_cls
 
     @property

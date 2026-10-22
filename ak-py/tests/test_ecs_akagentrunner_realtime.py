@@ -93,7 +93,7 @@ def test_process_message_routes_text_and_audio_requests():
         )
     )
 
-    conn.send_text.assert_called_once_with("hello")
+    conn.send_text.assert_called_once_with("hello", from_edge=True)
     conn.append_audio.assert_called_once_with("AAA=")
 
 

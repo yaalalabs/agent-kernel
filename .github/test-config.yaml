@@ -118,6 +118,8 @@ e2e:
     - type: api
       path: examples/api/hooks
     - type: api
+      path: examples/api/livekit-voice/google/handoffs
+    - type: api
       path: examples/api/slack
       requires_slack: true
     - type: api

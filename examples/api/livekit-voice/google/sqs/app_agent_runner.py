@@ -1,7 +1,7 @@
 import logging
 
 from agentkernel.aws import ECSAgentRunner
-from agentkernel.framework.adk import GoogleADKModule, GoogleADKToolBuilder
+from agentkernel.adk import GoogleADKModule, GoogleADKToolBuilder
 from google.adk.agents import Agent as GoogleAgent
 
 logging.basicConfig(level=logging.INFO)

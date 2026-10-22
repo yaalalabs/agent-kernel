@@ -10,15 +10,15 @@ The scenario is the support line of an internet provider:
 | `billing` | Invoices, charges, payments, refunds | `get_latest_invoice` | `supervisor` |
 | `tech_support` | Connection problems, outages, technician visits | `check_outage`, `book_technician` | `supervisor` |
 
-The agents are ordinary `agents.Agent` objects with `handoffs=[...]`, exactly as you would write them for a text run. Only the entry agent, `supervisor`, is registered with Agent Kernel; the specialists are reached through its handoffs.
+The voice agents are native `agents.realtime.RealtimeAgent` objects with `handoffs=[...]`. The session model is configured through `OpenAIModule.run_options(supervisor, config={"model_settings": {"model_name": "gpt-realtime"}})`. Only the entry agent, `supervisor`, is registered with Agent Kernel; the specialists are reached through its handoffs.
 
 It uses the `in_memory` queue transport, so the LiveKit gateway and the agent runner run as threads in a single Python process.
 
 ## How a handoff works in realtime mode
 
-One OpenAI Realtime socket serves the whole conversation. Each agent's handoffs are offered to the model as functions (`transfer_to_billing`, ...). When the model calls one, Agent Kernel invokes the handoff through the SDK, points the session at the new agent's instructions and tools, and the new agent answers. The conversation stays on OpenAI's side, so the new agent already knows everything the caller said.
+One OpenAI Realtime socket serves the whole conversation. Each agent's handoffs are offered to the model as functions (`transfer_to_billing`, ...). When the model calls one, the native Agents SDK realtime engine performs the transfer, updates the session instructions and tools, and the new agent answers. AK supplies its execution scope and reports the SDK events. The conversation stays on OpenAI's side, so the new agent already knows everything the caller said.
 
-Every handoff is logged (`Handed off from 'supervisor' to 'billing'`) and reaches the LiveKit gateway as an `agent_changed` event, in order with the audio around it.
+Every handoff reaches the LiveKit gateway as an `agent_changed` event, in order with the audio around it.
 
 ## What you see in the room
 
@@ -34,6 +34,8 @@ Each agent participant needs a token of its own, so the gateway needs `AK_LIVEKI
 ## Quickstart
 
 ### 1. Build and setup
+
+This example requires the native realtime migration. Until that release is published, use `./build.sh local` to install the branch build.
 ```bash
 ./build.sh
 
@@ -60,8 +62,8 @@ You can talk over an agent at any time, including while a handoff is happening.
 
 ## Limits
 
-- **One model and one voice.** The socket's model and voice cannot change once the conversation starts, so every agent speaks with the entry agent's model and voice, each through its own participant. A specialist declaring a different `model` logs a warning.
+- **One model and one voice.** Configure them on the native session through `run_options`; voice agents have no per-agent model field.
 - **One LiveKit connection per agent.** Every agent in the graph is a participant for the whole call, so LiveKit bills connection minutes for each.
 - **History filters cannot be applied.** The history lives on OpenAI's side of the socket, so a handoff anywhere in the agent graph with an `input_filter` or `nest_handoff_history` is rejected with a clear error when the call connects.
-- **One handoff per model turn.** If the model calls two handoffs in one turn, the first is performed and the second is answered as not performed.
-- **Function tools only.** As for a single realtime agent, hosted tools and tools that need approval or carry tool guardrails are not offered.
+- **Native handoff behavior.** The SDK owns ordering and errors. Use `Handoff.is_enabled` to control transfers; raising from `on_handoff` can fail the call.
+- **Function tools only.** Tool input guardrails and agent output guardrails run natively. Tool output guardrails, approval decisions, MCP scoping and non-function tools are unsupported and raise explicitly. Output guardrails cannot retract speech already heard.

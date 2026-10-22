@@ -5,24 +5,14 @@ from .base import StatefulEdgeAdapter
 
 
 class StatefulEdgeRegistry:
-    """A runtime registry for active, stateful edge connections (spec #524).
-
-    Unlike the IntegrationAdapterFactory which constructs stateless webhook adapters on demand,
-    stateful edges (like LiveKit or Twilio) are constructed and managed by a GatewayRunner.
-    The runner registers the live connection here so that the Response Handler can route
-    replies back to the same long-lived connection.
-    """
+    """A runtime registry of live stateful edge connections, so the Response Handler can route replies back to them."""
 
     _cache: Dict[str, StatefulEdgeAdapter] = {}
     _lock = threading.Lock()
 
     @classmethod
     def register(cls, adapter: StatefulEdgeAdapter, session_id: Optional[str] = None) -> None:
-        """Register a live stateful edge adapter instance.
-
-        :param adapter: The adapter instance.
-        :param session_id: Optional session id to register a unique stateful connection.
-        """
+        """Register a live stateful edge adapter instance, keyed by ``session_id`` or else the adapter's name."""
         # We index by session_id if provided; otherwise fallback to the integration name.
         # In a real deployed environment, session_id is always present for stateful connections.
         key = session_id if session_id else adapter.name
@@ -30,13 +20,11 @@ class StatefulEdgeRegistry:
             cls._cache[key] = adapter
 
     @classmethod
-    def unregister(cls, session_id: str) -> None:
-        """Remove a live stateful edge adapter instance from the cache.
-
-        Called when a stateful connection disconnects, preventing memory leaks.
-        """
+    def unregister(cls, session_id: str, adapter: Optional[StatefulEdgeAdapter] = None) -> None:
+        """Remove a live stateful edge adapter from the registry, only while it is ``adapter`` when one is given."""
         with cls._lock:
-            cls._cache.pop(session_id, None)
+            if adapter is None or cls._cache.get(session_id) is adapter:
+                cls._cache.pop(session_id, None)
 
     @classmethod
     def get(cls, session_id: str) -> Optional[StatefulEdgeAdapter]:

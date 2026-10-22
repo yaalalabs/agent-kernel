@@ -2,6 +2,11 @@
 
 This example shows how to run an Agent Kernel instance connected directly to a LiveKit Room using WebRTC. This enables ultra-low-latency real-time voice streaming with the OpenAI Realtime API (`gpt-realtime` by default).
 
+OpenAI voice variants use native `agents.realtime.RealtimeAgent` and the SDK realtime engine.
+They configure the model with `OpenAIModule.run_options(voice, config={"model_settings":
+{"model_name": "gpt-realtime"}})`. Ordinary `agents.Agent` declarations remain for text runs.
+Until a published release includes this migration, use the local build (`./build.sh local`).
+
 ## Setup
 
 You will need a LiveKit project (e.g. via [LiveKit Cloud](https://cloud.livekit.io/)). Obtain your WebSocket URL, API Key, and API Secret.

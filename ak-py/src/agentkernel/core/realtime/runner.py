@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from abc import abstractmethod
 from collections.abc import AsyncGenerator
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
 from ..base import Agent, Runner, Session
 from ..event import StreamEvent
@@ -15,25 +15,27 @@ if TYPE_CHECKING:  # typing only; ..tool imports ..base, so this avoids a cycle
 
 
 class RealtimeRunner(Runner):
-    """Base class for framework adapters handling realtime streaming via persistent
-    WebSocket/WebRTC connections (e.g. OpenAI Realtime API).
-
-    ``input_sample_rate`` and ``output_sample_rate`` are the PCM16 mono rates the model wants. The
-    pipeline converts between these and :data:`~agentkernel.core.realtime.pcm.EDGE_SAMPLE_RATE`, so
-    an adapter never resamples and no adapter hardcodes the edge's rate.
-
-    The realtime pool creates one instance per session connection, so an instance may keep that
-    connection's socket and state on ``self``. The pool owns everything around the model socket
-    (audio pacing, barge-in decisions, tool execution scopes, queue emission); an adapter only
-    talks to the model and reports what it does through the ``callback`` given to :meth:`connect`,
-    which is why an adapter never imports pipeline types.
-
-    Bring your own adapter by passing its class as ``realtime_runner_cls`` to the framework's
-    ``Module``.
-    """
+    """Base class for framework adapters that handle realtime streaming over a persistent model socket (e.g. the OpenAI Realtime API)."""
 
     input_sample_rate: int = EDGE_SAMPLE_RATE
     output_sample_rate: int = EDGE_SAMPLE_RATE
+    # True when the adapter reports ``speech_stopped`` after every ``speech_started`` and
+    # ``interrupt`` (a model with server voice activity detection that signals the end of speech).
+    # The pool then counts the user as speaking until it arrives.
+    reports_speech_stopped: bool = False
+    # True when the framework runs the model's tool calls itself, inside its own engine. Such an adapter reports no
+    # ``tool_call`` (the pool runs none), and opens the pool's tool scope from the task running each call (``use_tool_scope``).
+    runs_tools: bool = False
+    _open_tool_scope: Callable[[], Awaitable["ToolContext"]] | None = None
+
+    def use_tool_scope(self, open_scope: Callable[[], Awaitable["ToolContext"]]) -> None:
+        """Called by the pool before :meth:`connect` on an adapter that :attr:`runs_tools`.
+
+        ``await open_scope()``, from the task running one tool call, gives that task what a tool the pool runs has:
+        the session lock, ``Session.current()``, ``Agent.current()`` and a ``ToolContext``. They last until the task
+        ends, the call counts as running until then, and the pool cancels the task when the call closes.
+        """
+        self._open_tool_scope = open_scope
 
     async def run(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AgentReply:
         """Not supported for realtime runners."""
@@ -41,26 +43,14 @@ class RealtimeRunner(Runner):
 
     @staticmethod
     async def _cancel_and_wait(task: asyncio.Task | None) -> None:
-        """Cancel a background task of the adapter (its socket listener) and wait for it to end.
-
-        Waiting means nothing the task was doing outlives the call that stopped it. A no-op for
-        None, and for the calling task itself, which cannot wait for its own end.
-        """
+        """Cancel a background task of the adapter and wait for it to end; a no-op for None and for the calling task itself."""
         if task is None or task is asyncio.current_task():
             return
         task.cancel()
         await asyncio.wait({task})
 
     def team(self, agent: "Agent") -> list[str]:
-        """The names of every agent a conversation with ``agent`` can hand off to, ``agent`` first.
-
-        Read before connecting and announced with the starting agent, so an edge can show the whole
-        team before any of it speaks. An adapter with framework-native handoffs walks its agent graph;
-        this default, for one without, is the agent alone. It must not raise: a graph that cannot run
-        is reported by :meth:`connect`.
-
-        :param agent: The agent the conversation starts with.
-        """
+        """The names of every agent a conversation with ``agent`` can hand off to, ``agent`` first; it must not raise."""
         return [agent.name]
 
     async def stream(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[StreamEvent, None]:
@@ -70,39 +60,7 @@ class RealtimeRunner(Runner):
 
     @abstractmethod
     async def connect(self, session: Session, agent: "Agent", callback: Callable) -> None:
-        """
-        Establishes a persistent socket connection to the framework's Realtime API backend.
-
-        The pool relies on these rules:
-
-        - Report model events through ``callback`` **in the order the model sent them**: the pool
-          paces audio and orders ``done`` / ``interrupt`` behind it on that basis.
-        - ``callback`` is a coroutine function; await every call.
-        - If connecting fails, close anything already opened before raising: the pool drops a
-          connection that failed to connect without calling :meth:`disconnect`.
-        - Report a socket that fails while connected as ``error``, but not a close caused by
-          :meth:`disconnect`.
-
-        :param session: The session to bind this connection to.
-        :param agent: The agent instance.
-        :param callback: The event callback from the pool, awaited as ``callback(event_type, data)``:
-
-            - ``audio_delta``: ``{"delta": <base64 PCM16 at output_sample_rate>, "message_id": str}``
-            - ``transcript_delta``: ``{"delta": <text>, "message_id": str}``
-            - ``tool_call``: ``{"call_id": str, "name": str, "arguments": <JSON string>}``; the pool
-              then calls :meth:`execute_tool` and :meth:`send_tool_result`
-            - ``done``: ``{"status": ...}``, the end of a model turn
-            - ``error``: ``{"message": str}``, the socket failed; the pool tells the user and
-              replaces the connection
-            - ``interrupt``: ``{}``, the user spoke while the model was responding
-            - ``speech_started``: ``{}``, the user spoke outside a response; the pool treats it as a
-              barge-in only while it still holds audio the user has not heard
-            - ``agent_changed``: ``{"agent": str, "previous_agent": str}``, a framework-native
-              handoff moved the conversation to another agent; report it after the previous
-              agent's last output and before the new agent's first. The pool announces the agent
-              a connection starts with (and its :meth:`team`) itself, so an adapter reports only
-              the changes
-        """
+        """Establish the native realtime session; await ``callback(kind, data)`` in output order"""
         raise NotImplementedError()
 
     @abstractmethod
@@ -110,40 +68,28 @@ class RealtimeRunner(Runner):
         """Appends audio to the model's input buffer, at :attr:`input_sample_rate`."""
         raise NotImplementedError()
 
+    def audio_emitted(self, message_id: str, pcm16: bytes, content_index: int = 0) -> None:
+        """Observe PCM16 released by the paced output queue, for adapters that track playback.
+
+        This is a delivery estimate, not confirmation that the caller heard the audio.
+        ``pcm16`` uses the shared edge sample rate. The default needs no playback tracking.
+        """
+
     @abstractmethod
     async def send_text(self, text: str) -> None:
         """Sends a text message and requests a response."""
         raise NotImplementedError()
 
-    @abstractmethod
     async def send_tool_result(self, call_id: str, result: str) -> None:
-        """Sends a tool execution result back to the model."""
-        raise NotImplementedError()
+        """Sends a tool execution result back to the model; required unless the adapter :attr:`runs_tools`."""
+        raise NotImplementedError(f"{type(self).__name__} runs its tools itself")
 
-    @abstractmethod
     async def execute_tool(self, name: str, arguments: str, context: "ToolContext", call_id: str) -> str:
-        """Executes the named tool with JSON ``arguments`` and returns its string result.
-
-        Owned by the adapter because both the tool object and the context it needs are
-        framework-native: the OpenAI SDK expects its own ``ToolContext`` built around the run
-        context, and ADK injects a ``ToolContext`` (session state, actions) into tools that
-        declare one. The adapter activates ``context`` the way its framework expects; the
-        caller only constructs it.
-
-        :param name: Tool name, matching the model's function call.
-        :param arguments: Raw JSON argument string the model emitted.
-        :param context: The Agent Kernel tool context for this call.
-        :param call_id: The model's function-call id (frameworks correlate the response by it).
-        :return: The tool result as a string.
-        """
-        raise NotImplementedError()
+        """Executes the named tool with JSON ``arguments`` in the framework's own tool context and returns its string result;
+        required unless the adapter :attr:`runs_tools`."""
+        raise NotImplementedError(f"{type(self).__name__} runs its tools itself")
 
     @abstractmethod
     async def disconnect(self) -> None:
-        """
-        Closes the active persistent socket connection.
-
-        Must be safe to call more than once, and after a :meth:`connect` that failed or never ran:
-        the pool calls it on idle eviction, on a failed socket, and at shutdown.
-        """
+        """Closes the active model socket; safe to call more than once and after a :meth:`connect` that failed or never ran."""
         raise NotImplementedError()

@@ -385,6 +385,29 @@ export AK_TEAMS__TENANT_ID="<tenant-id>"   # Leave empty for a multi-tenant bot
 
 ---
 
+#### For LiveKit realtime voice
+
+Use the realtime execution pipeline with `execution.mode: realtime` and install the
+`livekit` extra with the selected framework extra. OpenAI voice declarations use
+native `agents.realtime.RealtimeAgent`, not ordinary text `agents.Agent`:
+
+```python
+from agents.realtime import RealtimeAgent
+from agentkernel.openai import OpenAIModule
+
+voice = RealtimeAgent(name="voice", instructions="Help the caller briefly.")
+OpenAIModule([voice]).run_options(voice, config={"model_settings": {"model_name": "gpt-realtime"}})
+```
+
+Host `LiveKitEdgeGateway` with `GatewayRunner` and `IOHandler.run(gateways=[...])`.
+Google ADK voice declarations use their normal ADK agents and `Runner.run_live`.
+Both native engines own their tools and handoffs; tools get AK execution scope.
+OpenAI tool input and agent response output guardrails are supported. Tool output
+guardrails, realtime approval decisions, MCP/toolset scoping and non-function tools
+are rejected explicitly by this adapter. Keep `async_tool_calls=True` and PCM16
+mono at 24 kHz. See `examples/api/livekit-voice/` and the LiveKit integration docs.
+Use a local branch build until a release contains these native realtime APIs.
+
 ### Step 4: Multiple Integrations
 
 Multiple integrations can run simultaneously:

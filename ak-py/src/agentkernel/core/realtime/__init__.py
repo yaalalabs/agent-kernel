@@ -4,5 +4,6 @@ The framework-agnostic contract every realtime adapter implements, plus the shar
 (the edge sample rate and a resampler) the pipeline and the edge both use.
 """
 
+from .observer import RealtimeEvent, RealtimeObserver
 from .pcm import EDGE_SAMPLE_RATE, PCM16Resampler
 from .runner import RealtimeRunner

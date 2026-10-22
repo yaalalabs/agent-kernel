@@ -4,6 +4,8 @@ Hosts the five-component chat execution pipeline: Request Handler, Input Queue, 
 Output Queue, Response Handler: and its supporting pieces (queue transports, response stores,
 WebSocket delivery, ThreadRunner). See docs/specs/495-onprem-kubernetes/ for the design.
 
+It also holds realtime orchestration: the realtime connection pool and ``RealtimeCall`` (``realtime_pool``).
+
 Exports are lazy (same pattern as agentkernel.deployment.aws) so that importing one pipeline
 submodule (e.g. the ThreadRunner shim used by Lambda-facing code) never drags in another
 component's dependencies (e.g. fastapi via the request handler).
@@ -20,6 +22,7 @@ _LAZY_EXPORTS = {
     "QueueName": ".envelope",
     "RequestProducer": ".producer",
     "IOHandler": ".io_handler",
+    "RealtimeCall": ".realtime_pool",
     "RequestHandler": ".request_handler",
     "RestHandler": ".request_handler",
     "ResponseHandler": ".response_handler",
@@ -43,6 +46,7 @@ if TYPE_CHECKING:  # pragma: no cover: static resolution only, preserves lazines
     from .envelope import QueueMessage, QueueName
     from .io_handler import IOHandler
     from .producer import RequestProducer
+    from .realtime_pool import RealtimeCall
     from .request_handler import RequestHandler, RestHandler
     from .response_handler import ResponseHandler
     from .thread_runner import ThreadRunner
