@@ -9,7 +9,7 @@ description: >
   Runner, Module, Runtime, AgentService, ChatService (execution core + presentation wrappers,
   and which layer each surface calls), AKConfig, tools, hooks, multimodal, conversation
   threads (the integration/thread package), secret resolution (agentkernel.secret: SecretManager,
-  SecretProvider, env/aws_ssm), messaging integrations (the integration/adapter
+  SecretProvider, env/aws_ssm/kubernetes), messaging integrations (the integration/adapter
   seam: InboundAdapter/OutboundAdapter, WebhookRESTRequestHandler, PollerRunner), the adapter pattern, the queue execution pipeline
   (agentkernel.pipeline: QueueMessage/QueueTransport/ConsumerLoop, the in_memory transport,
   AgentRunner/ResponseHandler/RequestHandler/IOHandler, the RESTAPI.run delegation rule, and the
@@ -697,11 +697,16 @@ ever writes `os.environ` — callers hand the value to the SDK explicitly
   their addressing, never cache, never fall back, and must tolerate concurrent calls.
 - **`SecretCache`** (`cache.py`): TTL'd dict of provider hits only; lock-free reads of immutable
   `(value, expires_at)` tuples, write lock for set/evict/clear. `cache_ttl: 0` disables it.
-- **`SecretProviderFactory`** (`factory.py`): `get(config)` maps `env` / `aws_ssm` (behind
-  `require_extra("aws", ...)`) or a dotted path via `resolve_dotted(..., base=SecretProvider)`;
+- **`SecretProviderFactory`** (`factory.py`): `get(config)` maps `env` / `kubernetes` / `aws_ssm`
+  (the last behind `require_extra("aws", ...)`; `kubernetes` is stdlib-only and needs no extra) or a dotted path via `resolve_dotted(..., base=SecretProvider)`;
   anything else is `AKConfigError`.
-- **Providers** (`providers/`): `EnvSecretProvider` (reads `os.environ` verbatim) and
-  `AWSSMSecretProvider` (`GetParameter(WithDecryption=True)` on `/ak/{prefix}/{key.lower()}`;
+- **Providers** (`providers/`): `EnvSecretProvider` (reads `os.environ` verbatim),
+  `KubernetesSecretProvider` (Kubernetes Secrets mounted into the pod as files,
+  `<mount_path>/<secret-name>/<KEY>`; stdlib only, exported from `agentkernel.secret`; lists the mount
+  on every call, so rotation and new Secrets need no memo; the same key in two Secrets, a missing
+  `mount_path`, a candidate whose realpath leaves `mount_path` (symlinks are followed, but never out of the
+  mount) or any other `OSError` on the mount or a Secret directory → `SecretError`, empty file → miss; no I/O at construction; never calls the API
+  server) and `AWSSMSecretProvider` (`GetParameter(WithDecryption=True)` on `/ak/{prefix}/{key.lower()}`;
   `ParameterNotFound` → `None`, other `ClientError`/`BotoCoreError` → `SecretError`; lazy boto3
   client; empty or nested prefix → `AKConfigError`). The provider is the only layer that transforms
   the key.
@@ -713,9 +718,11 @@ ever writes `os.environ` — callers hand the value to the SDK explicitly
 
 ```yaml
 secret:
-  prefix: myproduct-dev-agents  # deployment scope; required by aws_ssm, ignored by env
+  prefix: myproduct-dev-agents  # deployment scope; required by aws_ssm, ignored by env and kubernetes
   provider:
-    type: env                   # env | aws_ssm, or a dotted path to a SecretProvider
+    type: env                   # env | aws_ssm | kubernetes, or a dotted path to a SecretProvider
+    kubernetes:
+      mount_path: /var/run/secrets/agentkernel  # read only by the kubernetes provider
   cache_ttl: 300                # seconds; 0 disables caching (rotation-pickup window)
 ```
 
@@ -1090,7 +1097,7 @@ ak-py/src/agentkernel/
 │   ├── factory.py           # SecretProviderFactory
 │   ├── errors.py            # SecretError, SecretNotFoundError
 │   ├── testing.py           # SecretProviderContract (BYO test suite)
-│   └── providers/           # env, aws_ssm
+│   └── providers/           # env, aws_ssm, kubernetes
 ├── cli/                     # CLI interface
 │   └── cli.py               # Interactive CLI
 ├── auth/                    # Authentication

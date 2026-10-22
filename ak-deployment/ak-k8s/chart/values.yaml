@@ -34,9 +34,29 @@ fullnameOverride: ""
 #   - name: OPENAI_API_KEY
 #     valueFrom:
 #       secretKeyRef: {name: openai, key: api-key}
+# Or mount whole Secrets as files with `secretStore` below.
 extraEnv: []
 # Extra envFrom sources (ConfigMaps/Secrets) for every Agent Kernel container.
 extraEnvFrom: []
+
+# Kubernetes Secrets the agent-executing tier reads through the application's
+# `secret.provider.type: kubernetes`. Each listed Secret (created by you, in the release namespace)
+# is mounted read-only and whole at /var/run/secrets/agentkernel/<name>, so keys added to it, and
+# rotated values, reach the mount after the kubelet sync (about a minute) with no restart; code
+# that calls `get` sees them once its `secret.cache_ttl` entry expires, while a value read once at
+# startup still needs a rollout restart. Leave the application's
+# `secret.provider.kubernetes.mount_path` at its default, or it will not see these mounts.
+# Mounted into agent-runner, or into io in the single-process profile (agentRunner.enabled false,
+# transport.type in_memory); never into ws-gateway or sandbox-worker. Any other combination fails
+# the render. No RBAC is created.
+# Every key of every listed Secret is readable by code in that tier: list only what agents need.
+# Data keys must be the AK key name (e.g. OPENAI_API_KEY); other keys are never read.
+secretStore:
+  enabled: false
+  # Required (at least one) when enabled.
+  secrets: []
+  # - name: openai-credentials
+  # - name: slack-credentials
 
 execution:
   # rest_sync (wait for the reply) | rest_async (accept, then poll) | async | stream
