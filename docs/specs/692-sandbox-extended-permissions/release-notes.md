@@ -1,9 +1,9 @@
 # Release notes draft: #692 sandbox extended permissions
 
 Paste-ready material for the GitHub release that ships #692. The capability lands over two PRs
-(`plan.md` phases 1 and 2). **Shipped so far: phase 1**: the permission guard, per-profile language
-and package-install permissions, and the `install_packages` tool. Phase 2 (operator-declared language
-runtimes for `docker` and `kubernetes`) follows.
+(`plan.md` phases 1 and 2): phase 1 adds the permission guard, per-profile language and
+package-install permissions, and the `install_packages` tool; phase 2 adds operator-declared language
+runtimes for `docker` and `kubernetes`.
 
 ## New: per-profile language and package-install permissions
 
@@ -55,6 +55,28 @@ What ships with it:
 
 See [Sandbox → Package installation](https://kernel.yaala.ai/docs/advanced/sandbox#package-installation)
 for the posture table (offline installs, read-only root filesystems, non-root images).
+
+## New: language runtimes for `docker` and `kubernetes`
+
+`run_code` on `docker` and `kubernetes` is no longer Python-only. The provider block's
+`language_runtimes` maps each language the image provides to its interpreter argv; the code is
+appended as the last argument:
+
+```yaml
+    docker:
+      image: my-org/agent-runtime:1
+      language_runtimes:             # the keys are the languages run_code accepts on this provider
+        python: [python, -c]         # the default; required
+        node: [node, -e]
+```
+
+- `python` is required, and declaring `language_runtimes` replaces the default map rather than
+  merging with it.
+- `policy.languages` still narrows per profile; `[]` keeps a profile command-only.
+- `e2b` and `daytona` stay Python-only: their SDKs choose the interpreter.
+- No behaviour change for existing configs: the default map runs `python -c` as before.
+
+See [Sandbox → Language runtimes](https://kernel.yaala.ai/docs/advanced/sandbox#language-runtimes).
 
 ## Behaviour changes
 

@@ -90,8 +90,9 @@ operator-asserted infrastructure the provider cannot detect, keep the class decl
 Use `derive()`, never `model_copy(update=...)`: `model_copy` skips the validator that keeps
 `package_install` consistent with `package_ecosystems`. Compose every override into **one**
 `derive()` call. The reference is the `kubernetes` provider: its `network_policy: true` (the
-operator asserts the cluster CNI enforces NetworkPolicy) and its `package_installers` keys go into
-the same `derive(package_ecosystems=eco, package_install=bool(eco), policy_network=True)`.
+operator asserts the cluster CNI enforces NetworkPolicy), its `language_runtimes` keys and its
+`package_installers` keys go into the same
+`derive(languages=list(runtimes), package_ecosystems=eco, package_install=bool(eco), policy_network=True)`.
 Consumers read `provider.capabilities` on the instance, so attribute shadowing is sufficient.
 
 ## Step-by-Step
@@ -116,9 +117,11 @@ class <Provider>Sandbox(Sandbox):
     async def execute_code(self, code: str, language: str = "python", timeout: float | None = None) -> SandboxResult:
         # language="python" is MANDATORY. A failing program (non-zero exit) is a RESULT
         # (SandboxResult with exit_code != 0), NOT an exception. Raise only on machinery failure.
-        if language not in <declared languages>:
+        if language not in self._capabilities.languages:   # the instance's, not the class attribute
             raise SandboxCapabilityError(self.__class__.__name__, f"language:{language}")
         ...
+        # An argv-exec provider (docker, kubernetes) runs the configured interpreter prefix:
+        #   return await self._exec([*self._runtimes[language], code], timeout)
         return SandboxResult(stdout=..., stderr=..., exit_code=...)
 
     # Override ONLY the optional operations your capabilities declare. The base ABC raises
@@ -183,6 +186,10 @@ class <Provider>SandboxProvider(SandboxProvider):
         #   eco = self._installer.ecosystems
         #   self.capabilities = type(self).capabilities.derive(package_ecosystems=eco, package_install=bool(eco))
         # and passes capabilities=self.capabilities, installer=self._installer to every handle.
+        # A provider that execs an interpreter argv also declares its language_runtimes keys, in
+        # the same derive() call, and passes runtimes=self._runtimes to every handle:
+        #   self._runtimes = dict(config.language_runtimes)
+        #   self.capabilities = type(self).capabilities.derive(languages=list(self._runtimes), package_ecosystems=eco, ...)
 
     async def create(self, *, principal: SandboxPrincipal, policy: SandboxPolicy) -> Sandbox:
         # Provision a new sandbox. Map `policy` onto the backend's real controls here; if a
@@ -250,6 +257,14 @@ declaring it replaces the default) and `package_rules` (ecosystem → dotted pat
 `PackageSpecRule`), and `PackageSpecRuleFactory.validate_config` resolves its rules at agent and
 worker startup. Don't add your own installer fields.
 
+A provider that runs code by exec'ing an interpreter argv (as `docker` and `kubernetes` do) also
+subclasses `_SandboxProviderRuntimeConfig`. That mixin adds `language_runtimes` (language →
+interpreter argv prefix, default `{python: [python, -c]}`; declaring it replaces the default), with
+validators requiring a `python` key and non-empty argv prefixes. Its keys are the instance's
+`languages`, and `execute_code` runs `[*runtimes[language], code]`. A provider whose SDK picks the
+interpreter (`e2b`'s template kernel, `daytona`'s per-sandbox language) does not use it and keeps
+declaring `languages=["python"]`. Don't add your own runtime fields.
+
 ### 6. Add the Optional Dependency Extra
 
 If the provider needs an SDK, add an extra to `ak-py/pyproject.toml` (or reuse `aws` for boto3):
@@ -305,6 +320,7 @@ including a profile that demonstrates enforced policy and sentinel-based determi
 - [ ] `ak-py/src/agentkernel/sandbox/providers/<provider>.py` with `Sandbox` + `SandboxProvider` subclasses
 - [ ] `capabilities` declared honestly (only what the backend truly enforces); instance overrides via `derive()`
 - [ ] If it installs packages: config subclasses `_SandboxProviderPackageConfig`, handle uses `PackageInstaller` and raises for undeclared ecosystems
+- [ ] If it execs an interpreter argv: config subclasses `_SandboxProviderRuntimeConfig`; instance `languages` = `language_runtimes` keys
 - [ ] Factory `if/elif` real-import branch + name in `_BUILTIN_PROVIDER_NAMES` (`factory.py`)
 - [ ] `_Sandbox<Provider>Config` block on `_SandboxProfileConfig` and `_SandboxConfig` (`config.py`)
 - [ ] Optional dependency extra in `pyproject.toml` (if the SDK isn't stdlib/boto3)
