@@ -922,6 +922,10 @@ class FakeE2BNotFound(Exception):
     pass
 
 
+class FakeE2BTimeout(Exception):
+    pass
+
+
 class FakeCommandExit(Exception):
     def __init__(self, stdout, stderr, exit_code):
         super().__init__(f"exit {exit_code}")
@@ -946,6 +950,7 @@ def e2b_env(monkeypatch):
         kill_calls: list = []
         next_execution: FakeExecution = FakeExecution()
         next_command_error: Exception | None = None
+        next_code_error: Exception | None = None
 
         def __init__(self, sandbox_id):
             self.sandbox_id = sandbox_id
@@ -972,6 +977,8 @@ def e2b_env(monkeypatch):
 
         async def run_code(self, code, timeout=None):
             self.run_calls.append((code, timeout))
+            if FakeAsyncSandbox.next_code_error is not None:
+                raise FakeAsyncSandbox.next_code_error
             return FakeAsyncSandbox.next_execution
 
         @classmethod
@@ -996,7 +1003,7 @@ def e2b_env(monkeypatch):
             del cls.instances[sandbox_id]
             return True
 
-    exceptions_mod = types.SimpleNamespace(NotFoundException=FakeE2BNotFound)
+    exceptions_mod = types.SimpleNamespace(NotFoundException=FakeE2BNotFound, TimeoutException=FakeE2BTimeout)
     handle_mod = types.SimpleNamespace(CommandExitException=FakeCommandExit)
     for name, mod in {
         "e2b": types.SimpleNamespace(exceptions=exceptions_mod),
@@ -1010,6 +1017,7 @@ def e2b_env(monkeypatch):
     module = importlib.import_module("agentkernel.sandbox.providers.e2b")
     monkeypatch.setattr(module, "AsyncSandbox", FakeAsyncSandbox)
     monkeypatch.setattr(module, "NotFoundException", FakeE2BNotFound)
+    monkeypatch.setattr(module, "TimeoutException", FakeE2BTimeout)
     monkeypatch.setattr(module, "CommandExitException", FakeCommandExit)
     monkeypatch.setenv("E2B_API_KEY", "e2b-test-key")
     return module, FakeAsyncSandbox
@@ -1119,6 +1127,28 @@ async def test_e2b_install_passes_timeout_and_checks_ecosystem(e2b_env):
 
 
 @pytest.mark.asyncio
+async def test_e2b_native_timeout_raises_sandbox_timeout(e2b_env):
+    # The handle's native SDK timeout fires before the worker's backstop, so it must surface as
+    # SandboxTimeoutError (a timed_out completion), never as the SDK's own exception.
+    module, fake_cls = e2b_env
+    provider = _e2b_provider(module)
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    try:
+        fake_cls.next_code_error = FakeE2BTimeout("deadline exceeded")
+        with pytest.raises(SandboxTimeoutError):
+            await sandbox.execute_code("while True: pass", timeout=5)
+        fake_cls.next_command_error = FakeE2BTimeout("deadline exceeded")
+        with pytest.raises(SandboxTimeoutError):
+            await sandbox.execute_command("sleep 60", timeout=5)
+        with pytest.raises(SandboxTimeoutError):
+            await sandbox.install_packages(["numpy"], timeout=5)
+    finally:
+        fake_cls.next_code_error = None
+        fake_cls.next_command_error = None
+
+
+@pytest.mark.asyncio
 async def test_e2b_file_roundtrip(e2b_env):
     module, _fake_cls = e2b_env
     provider = _e2b_provider(module)
@@ -1170,6 +1200,10 @@ class FakeDaytonaError(Exception):
     pass
 
 
+class FakeDaytonaTimeoutError(FakeDaytonaError):
+    pass
+
+
 @pytest.fixture
 def daytona_env(monkeypatch):
     """Import the provider module against a fake daytona SDK and return (module, client)."""
@@ -1201,6 +1235,7 @@ def daytona_env(monkeypatch):
             self.files_store = {}
             self.next_exit_code = 0
             self.next_result = "daytona out"
+            self.next_error = None
 
             outer = self
 
@@ -1210,11 +1245,15 @@ def daytona_env(monkeypatch):
             def code_run(code, params=None, *, timeout=None):
                 outer.code_calls.append((code, params, timeout))
                 outer.exec_threads.append(threading.current_thread())
+                if outer.next_error is not None:
+                    raise outer.next_error
                 return types.SimpleNamespace(exit_code=outer.next_exit_code, result=outer.next_result)
 
             def exec_(command, *, cwd=None, env=None, timeout=None):
                 outer.exec_calls.append((command, cwd, env, timeout))
                 outer.exec_threads.append(threading.current_thread())
+                if outer.next_error is not None:
+                    raise outer.next_error
                 return types.SimpleNamespace(exit_code=outer.next_exit_code, result=outer.next_result)
 
             def upload_file(src, dst, timeout=1800):
@@ -1250,7 +1289,7 @@ def daytona_env(monkeypatch):
             FakeDaytonaClient.delete_calls.append(sandbox.id)
             FakeDaytonaClient.instances.pop(sandbox.id, None)
 
-    errors_mod = types.SimpleNamespace(DaytonaError=FakeDaytonaError)
+    errors_mod = types.SimpleNamespace(DaytonaError=FakeDaytonaError, DaytonaTimeoutError=FakeDaytonaTimeoutError)
     sdk_mod = types.SimpleNamespace(
         Daytona=FakeDaytonaClient,
         DaytonaConfig=FakeDaytonaConfig,
@@ -1273,6 +1312,7 @@ def daytona_env(monkeypatch):
         "CreateSandboxFromImageParams": FakeImageParams,
         "Resources": FakeResources,
         "DaytonaError": FakeDaytonaError,
+        "DaytonaTimeoutError": FakeDaytonaTimeoutError,
     }.items():
         monkeypatch.setattr(module, attr, value)
     monkeypatch.setenv("DAYTONA_API_KEY", "daytona-test-key")
@@ -1529,6 +1569,23 @@ async def test_daytona_install_passes_timeout_and_checks_ecosystem(daytona_env):
     assert command == "npm install @types/node" and timeout == 30
     with pytest.raises(SandboxCapabilityError, match="package_ecosystem:deb"):
         await sandbox.install_packages(["curl"], ecosystem="deb")
+
+
+@pytest.mark.asyncio
+async def test_daytona_native_timeout_raises_sandbox_timeout(daytona_env):
+    # The SDK's native timeout fires before the worker's backstop, so it must surface as
+    # SandboxTimeoutError (a timed_out completion), never as DaytonaTimeoutError.
+    module, _client_cls = daytona_env
+    provider = _daytona_provider(module)
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    sandbox._sandbox.next_error = FakeDaytonaTimeoutError("timed out")
+    with pytest.raises(SandboxTimeoutError):
+        await sandbox.execute_code("while True: pass", timeout=5)
+    with pytest.raises(SandboxTimeoutError):
+        await sandbox.execute_command("sleep 60", timeout=5)
+    with pytest.raises(SandboxTimeoutError):
+        await sandbox.install_packages(["numpy"], timeout=5)
 
 
 @pytest.mark.asyncio

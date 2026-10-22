@@ -304,8 +304,16 @@ class BrokerWorkerCore:
         """Whether ``sandbox_cls.install_packages`` predates the ecosystem/timeout signature; decided once per class."""
         legacy = self._install_shim.get(sandbox_cls)
         if legacy is None:
-            params = inspect.signature(sandbox_cls.install_packages).parameters
-            takes_kwargs = any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values())
-            legacy = not (takes_kwargs or ("ecosystem" in params and "timeout" in params))
+            legacy = self.has_legacy_install(sandbox_cls)
             self._install_shim[sandbox_cls] = legacy
         return legacy
+
+    @staticmethod
+    def has_legacy_install(sandbox_cls: type) -> bool:
+        """Whether ``sandbox_cls.install_packages`` is the pre-#692 one-argument form (no ecosystem/timeout).
+
+        Shared with ``SandboxProviderContract``, which must not call a legacy override with the new arguments.
+        """
+        params = inspect.signature(sandbox_cls.install_packages).parameters
+        takes_kwargs = any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values())
+        return not (takes_kwargs or ("ecosystem" in params and "timeout" in params))
