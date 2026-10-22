@@ -396,3 +396,12 @@ def test_crewai_runner_activates_crewai_and_litellm_instrumentation(recorder):
         assert isinstance(CloudWatch().crewai(), CrewAIRunner)
     crewai_instrumentor.return_value.instrument.assert_called_once_with(skip_dep_check=True)
     litellm.return_value.instrument.assert_called_once()
+
+
+def test_claude_runner_activates_the_openinference_instrumentor(recorder):
+    import agentkernel.trace.cloudwatch.claude as claude_mod
+    from agentkernel.framework.claude.claude import ClaudeRunner
+
+    with patch.object(claude_mod, "ClaudeAgentSDKInstrumentor") as instrumentor:
+        assert isinstance(CloudWatch().claude(), ClaudeRunner)
+    instrumentor.return_value.instrument.assert_called_once()

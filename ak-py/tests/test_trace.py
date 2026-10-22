@@ -118,3 +118,14 @@ def test_trace_cloudwatch_missing_extra_raises_friendly_import_error(monkeypatch
         with pytest.raises(ImportError) as exc_info:
             Trace.get()
     assert "agentkernel[cloudwatch]" in str(exc_info.value)
+
+
+def test_trace_disabled_claude_returns_none():
+    with patch.object(AKConfig, "get", return_value=_config(False)):
+        assert Trace.get().claude() is None
+
+
+def test_byo_tracer_without_claude_support_still_loads_and_raises_clearly():
+    tracer = _FakeTrace()  # written before the Claude adapter existed: no claude() override
+    with pytest.raises(NotImplementedError, match="_FakeTrace does not support Claude Agent SDK tracing"):
+        tracer.claude()

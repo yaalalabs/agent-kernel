@@ -78,3 +78,11 @@ class Logfire(BaseTrace):
         from .pydanticai import LogfirePydanticAIRunner
 
         return LogfirePydanticAIRunner()
+
+    def claude(self) -> Runner:
+        """
+        Returns the Logfire Claude Agent SDK runner instance.
+        """
+        from .claude import LogfireClaudeRunner
+
+        return LogfireClaudeRunner()

@@ -195,3 +195,11 @@ class CloudWatch(BaseTrace):
         from .pydanticai import CloudWatchPydanticAIRunner
 
         return CloudWatchPydanticAIRunner(self)
+
+    def claude(self) -> Runner:
+        """
+        Returns the CloudWatch Claude Agent SDK runner instance.
+        """
+        from .claude import CloudWatchClaudeRunner
+
+        return CloudWatchClaudeRunner(self)

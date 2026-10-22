@@ -68,6 +68,16 @@ pip install agentkernel[pydanticai]
 `agentkernel[pydanticai]` installs the provider-agnostic `pydantic-ai-slim` core only. Also install
 the provider you intend to use, e.g. `pip install "pydantic-ai-slim[openai]"`.
 
+### Claude Agent SDK
+
+```bash
+pip install agentkernel[claude]
+```
+
+The `claude-agent-sdk` wheel bundles the Claude Code CLI it drives (no Node.js needed). It runs Claude models only,
+authenticated with `ANTHROPIC_API_KEY` or a cloud provider (Bedrock, Vertex, Foundry). See
+[Claude Agent SDK](./frameworks/claude-agent-sdk.md).
+
 ### Multiple Frameworks
 
 You can install support for multiple frameworks at once:
@@ -148,7 +158,7 @@ pip install agentkernel[cli]
 Install everything (all frameworks and cloud providers):
 
 ```bash
-pip install agentkernel[openai,crewai,langgraph,adk,smolagents,pydanticai,api,aws,azure,gcp,cli]
+pip install agentkernel[openai,crewai,langgraph,adk,smolagents,pydanticai,claude,api,aws,azure,gcp,cli]
 ```
 
 ## Using UV Package Manager

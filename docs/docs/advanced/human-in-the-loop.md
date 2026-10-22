@@ -32,14 +32,24 @@ def ask(state):
     ...
 ```
 
-Four frameworks can pause: **OpenAI Agents SDK**, **LangGraph**, **Pydantic AI** and **Google ADK**.
-CrewAI and smolagents cannot, and say so rather than pretending — their runners report
-`supports_pause = False`.
+Five frameworks can pause: **OpenAI Agents SDK**, **LangGraph**, **Pydantic AI**, **Google ADK** and the
+**Claude Agent SDK**. CrewAI and smolagents cannot, and say so rather than pretending — their runners
+report `supports_pause = False`.
+
+```python
+tools = ClaudeToolBuilder.bind([issue_refund], needs_approval=True)   # Claude Agent SDK
+```
 
 Two of them need one more line of setup, because the pause is part of the agent's own declaration
 rather than something Agent Kernel can switch on: Pydantic AI needs `DeferredToolRequests` among its
 `output_type`s, and Google ADK enables resumability on every run as a consequence of wrapping your
 agent in an `App`. Both are covered on the framework pages linked below.
+
+**The Claude Agent SDK pauses only a single tool call.** It is built on the SDK's `defer` permission
+decision, which Anthropic's docs state is honored only when the model makes one tool call in that
+turn; several at once fall through to the ordinary permission flow instead of pausing. See the
+[framework page](../frameworks/claude-agent-sdk.md#human-in-the-loop) for how to make an un-deferrable
+call fail safely rather than execute silently.
 
 ## What a paused run looks like
 
@@ -159,13 +169,13 @@ Three limits worth knowing, none of them hidden:
 The frameworks genuinely differ, and Agent Kernel does not paper over it. A rejection is raised
 where it can still reach you, rather than being flattened into "something went wrong".
 
-| | OpenAI | LangGraph | Pydantic AI | Google ADK |
-|---|---|---|---|---|
-| A structured `payload` | **rejected** | yes | on an approval, an **object** only | on a confirmation, **rejected** |
-| A `prompt` beside a decision | **rejected** | yes | yes | **rejected** |
-| A second pause in one session | **appends** | replaces | replaces | replaces |
-| `cancelled` distinguishable from `denied` | yes | yes | yes | **no, on a confirmation** |
-| Detects a stale resume | **no** | n/a — re-pauses | yes, refuses | no |
+| | OpenAI | LangGraph | Pydantic AI | Google ADK | Claude Agent SDK |
+|---|---|---|---|---|---|
+| A structured `payload` | **rejected** | yes | on an approval, an **object** only | on a confirmation, **rejected** | on an approval, an **object** only |
+| A `prompt` beside a decision | **rejected** | yes | yes | **rejected** | yes |
+| A second pause in one session | **appends** | replaces | replaces | replaces | replaces |
+| `cancelled` distinguishable from `denied` | yes | yes | yes | **no, on a confirmation** | yes |
+| Detects a stale resume | **no** | n/a — re-pauses | yes, refuses | no | no |
 
 Replacement stops at the framework boundary. One session can be shared by agents on different
 frameworks — you send the session id and name the agent per request — so a LangGraph question never
@@ -200,6 +210,12 @@ a turn following a function response is routed back to the agent that made the c
 change which agent handles the next turn in a multi-agent app; and ADK sessions grow, because that
 setting also gates agent-state event emission. ADK's own note applies too — a tool may run more than
 once when resuming.
+
+**The Claude Agent SDK replaces, and a pause always holds exactly one pending call** — `defer`
+resolves a single tool call at a time, so there is nothing to answer partially. Resuming replays the
+pending call through `resume=<session_id>`, which fires the same `PreToolUse` hook that deferred it;
+an `approved` decision's object payload becomes the tool's updated input, exactly like Pydantic AI's
+approval channel.
 
 ## Streaming
 

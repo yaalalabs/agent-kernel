@@ -139,6 +139,7 @@ thinking block.
 | LangGraph | ✅ | ✅ | ✅ | ✅ | ❌ |
 | Google ADK | ✅ | ✅ | ✅ | ✅ | ❌ |
 | Pydantic AI | ✅ | ✅ | ✅ | ✅ | ❌ |
+| Claude Agent SDK | ✅ | ✅ | ✅ | ✅ | ❌ |
 | CrewAI | ❌ | — | — | — | — |
 | smolagents | ❌ | — | — | — | — |
 

@@ -463,7 +463,7 @@ The runner injects a **deep copy** of the stored dict into the framework and, on
 replaces the stored context wholesale with what the framework produced. A tool that reaches back through
 `ToolContext.get().session` is therefore reading and writing a *different* object than the run is
 carrying: its write is silently discarded on OpenAI, Pydantic AI, Google ADK, LangGraph and smolagents
-(it survives only on CrewAI, which never writes back), and it would break the atomic-per-turn guarantee,
+(it survives only on CrewAI and the Claude Agent SDK, which never write back), and it would break the atomic-per-turn guarantee,
 since the write would persist even when the run fails.
 
 Each framework's native handle:

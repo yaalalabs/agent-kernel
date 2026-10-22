@@ -59,6 +59,10 @@ pydanticai = [
     "pydantic-ai-slim~=2.13.0",
     "openinference-instrumentation-pydantic-ai>=0.1.17",
 ]
+claude = [
+    "claude-agent-sdk>=0.2.165,<0.3",
+    "openinference-instrumentation-claude-agent-sdk>=0.1.20",
+]
 cli = [
     
 ]

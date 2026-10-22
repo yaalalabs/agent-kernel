@@ -74,3 +74,11 @@ class LangFuse(BaseTrace):
         from .pydanticai import LangFusePydanticAIRunner
 
         return LangFusePydanticAIRunner(self._client)
+
+    def claude(self) -> Runner:
+        """
+        Returns the Langfuse Claude Agent SDK runner instance.
+        """
+        from .claude import LangFuseClaudeRunner
+
+        return LangFuseClaudeRunner(self._client)

@@ -52,3 +52,10 @@ class BaseTrace(ABC):
         Initialize Pydantic AI instrumentation
         """
         raise NotImplementedError
+
+    @abstractmethod
+    def claude(self) -> Runner:
+        """
+        Initialize Claude Agent SDK instrumentation.
+        """
+        raise NotImplementedError

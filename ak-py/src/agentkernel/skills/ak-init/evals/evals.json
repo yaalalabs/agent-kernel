@@ -129,6 +129,22 @@
       ]
     },
     {
+      "id": "init-claude-cli",
+      "name": "Scaffold Claude Agent SDK CLI project",
+      "input": "Create a new Agent Kernel project using the Claude Agent SDK with CLI mode",
+      "expected_outputs": [
+        "from agentkernel.claude import ClaudeAgentSpec",
+        "from claude_agent_sdk import ClaudeAgentOptions",
+        "ClaudeModule([",
+        "tools=[]",
+        "permission_mode="
+      ],
+      "must_not_contain": [
+        "OpenAIModule",
+        "PydanticAIModule"
+      ]
+    },
+    {
       "id": "init-openai-lambda",
       "name": "Scaffold OpenAI AWS Lambda project",
       "input": "Create a new Agent Kernel project using OpenAI with AWS Lambda deployment",

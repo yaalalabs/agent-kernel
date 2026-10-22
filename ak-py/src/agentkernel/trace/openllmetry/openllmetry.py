@@ -147,3 +147,11 @@ class OpenLLMetry(BaseTrace):
         from .pydanticai import OpenLLMetryPydanticAIRunner
 
         return OpenLLMetryPydanticAIRunner()
+
+    def claude(self) -> Runner:
+        """
+        Returns the OpenLLMetry Claude Agent SDK runner instance.
+        """
+        from .claude import OpenLLMetryClaudeRunner
+
+        return OpenLLMetryClaudeRunner()

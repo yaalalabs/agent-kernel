@@ -32,8 +32,8 @@ export const FEATURE_TABS: FeatureTab[] = [
       {
         title: "Framework Adapters",
         description:
-          "OpenAI Agents SDK, LangGraph, CrewAI, Google ADK, Smolagents and Pydantic AI run side by side in one runtime. Switch frameworks by changing two import lines.",
-        tags: ["OpenAI", "LangGraph", "CrewAI", "ADK", "Smolagents", "Pydantic AI"],
+          "OpenAI Agents SDK, LangGraph, CrewAI, Google ADK, Smolagents, Pydantic AI and the Claude Agent SDK run side by side in one runtime. Switch frameworks by changing two import lines.",
+        tags: ["OpenAI", "LangGraph", "CrewAI", "ADK", "Smolagents", "Pydantic AI", "Claude Agent SDK"],
         docs: "/docs/frameworks/overview",
         example: "cli/multi",
       },

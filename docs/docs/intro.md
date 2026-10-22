@@ -8,6 +8,8 @@ slug: /
 **The Operating System for Scalable & Compliant Enterprise AI Agents.**
 
 :::tip What's New
+🧠 **Claude Agent SDK** - Run agents built on Anthropic's Claude Code harness (built-in file, shell and web tools, subagents, hooks) in Agent Kernel, with conversations that continue on any replica. [Learn more →](./frameworks/claude-agent-sdk.md)
+
 🎨 **A2UI** - Turn two config keys on and an agent's JSON reply reaches the client as an [A2UI](https://a2ui.org/) document: `result` carries the object and `media_type` names the format, over REST, MCP and AG-UI alike. [Learn more →](./advanced/a2ui.md)
 
 🔀 **Realtime multi-agent handoffs** - A voice call moves between agents with the OpenAI Agents SDK's handoffs or Google ADK's transfers, and in LiveKit every agent appears as its own participant, with only the active one unmuted. [Learn more →](./integrations/livekit.md#multi-agent-handoffs)
@@ -28,7 +30,7 @@ slug: /
 
 ## What is Agent Kernel?
 
-Agent Kernel is an **open-source runtime** that lets you build, test and deploy AI agents to production in days instead of months. It works with any major AI framework (OpenAI Agents SDK, LangGraph, CrewAI, Google ADK, Smolagents) and can run agents from multiple frameworks together in a single runtime. It deploys to AWS, Azure, GCP, or your own servers with zero platform code, and scales from a single REST container to queue-backed, token-streaming production topologies. Built-in integrations for Slack, WhatsApp and more mean your agents can reach users instantly.
+Agent Kernel is an **open-source runtime** that lets you build, test and deploy AI agents to production in days instead of months. It works with any major AI framework (OpenAI Agents SDK, LangGraph, CrewAI, Google ADK, Smolagents, Pydantic AI, Claude Agent SDK) and can run agents from multiple frameworks together in a single runtime. It deploys to AWS, Azure, GCP, or your own servers with zero platform code, and scales from a single REST container to queue-backed, token-streaming production topologies. Built-in integrations for Slack, WhatsApp and more mean your agents can reach users instantly.
 
 **Think of it like Express.js for web servers, or Spring Boot for Java microservices**, but for AI agents. It gives you the scaffolding, execution environment, session management and deployment infrastructure so you can focus on writing the logic that matters.
 
@@ -53,6 +55,8 @@ flowchart LR
     E["LangGraph"] --> B
     F["Google ADK"] --> B
     SA["Smolagents"] --> B
+    PA["Pydantic AI"] --> B
+    CA["Claude Agent SDK"] --> B
     LK["LiveKit"] -->|Voice integration| B
     G["Test Framework"]
     B --> G
@@ -151,7 +155,7 @@ Easily extend Agent Kernel with custom framework adapters, memory back-ends, and
 - **Sandbox**: Execute agent-generated code and shell commands in an isolated, permission-bounded environment, with pluggable providers (`local_subprocess`, `docker`, `e2b`, `daytona`, `ec2_ssm`), workload profiles, policy enforcement, and per-user identity. [Learn more →](/docs/advanced/sandbox)
 - **Conversation Threads**: Persistent, named threads with auto-naming and REST read APIs
 - **Secret Resolution**: Resolve API keys and passwords through `SecretManager` — environment first, then a managed store (`env`, AWS SSM Parameter Store, Kubernetes Secrets mounted into the pod, or your own provider) — with only `config.yaml` changing between laptop and production. [Learn more →](./advanced/secrets.md)
-- **Structured Output**: Typed/JSON agent replies (`AgentReplyAny`) across OpenAI, LangGraph, ADK, CrewAI, Smolagents, and Pydantic AI
+- **Structured Output**: Typed/JSON agent replies (`AgentReplyAny`) across OpenAI, LangGraph, ADK, CrewAI, Smolagents, Pydantic AI, and the Claude Agent SDK
 - **Agent Testing Capability**: Built in Agent test framework so that you can write automated tests easily
 - **Governance**: Input/output guardrails with OpenAI Guardrails, AWS Bedrock Guardrails, and Walled AI (including PII redaction)
 
@@ -214,6 +218,8 @@ Agent Kernel currently supports:
 - **LangGraph** - Graph-based agent orchestration
 - **Google ADK** - Google's Agent Development Kit
 - **Smolagents** - Hugging Face's lightweight agentic framework
+- **Pydantic AI** - Pydantic-team framework with native multi-provider models
+- **Claude Agent SDK** - Anthropic's Claude Code agent harness
 
 ### Flexible Deployment
 

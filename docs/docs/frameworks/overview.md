@@ -16,6 +16,7 @@ graph LR
     A --> E[Google ADK]
     A --> F[Smolagents]
     A --> G[Pydantic AI]
+    A --> H[Claude Agent SDK]
     
     style A fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
 ```
@@ -30,19 +31,20 @@ graph LR
 | **Google ADK** | Google ecosystem | Low | Yes |
 | **Smolagents** | Lightweight tool-driven agents | Medium | Yes |
 | **Pydantic AI** | Multi-provider apps, provider failover, typed structured output | Low | Yes |
+| **Claude Agent SDK** | Agents that work a filesystem and shell with the Claude Code harness | Medium | Yes |
 
 ## Capability Matrix
 
 Not every Agent Kernel capability is available on every framework:
 
-| Capability | OpenAI Agents | CrewAI | LangGraph | Google ADK | Smolagents | Pydantic AI |
-|------------|:---:|:---:|:---:|:---:|:---:|:---:|
-| Token streaming (`execution.mode: stream`) | ✅ | ❌ | ✅ | ✅ | ❌ | ✅ |
-| Structured output (`AgentReplyAny`) | ✅ `output_type` | ✅ module-level `output_pydantic`/`output_json` | ✅ `response_format` | ✅ `output_schema` | ✅ dict/Pydantic `final_answer` | ✅ `output_type` |
-| Portable tools (`ToolBuilder`) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Multimodal attachments | ✅ | ✅* | ✅* | ✅ | ✅* | ✅* |
-| Hooks / guardrails / sessions / deployments | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Native multi-provider models | ⚠️ OpenAI-first | via LiteLLM | via LangChain | via LiteLLM | via LiteLLM | ✅ many providers + `FallbackModel` |
+| Capability | OpenAI Agents | CrewAI | LangGraph | Google ADK | Smolagents | Pydantic AI | Claude Agent SDK |
+|------------|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| Token streaming (`execution.mode: stream`) | ✅ | ❌ | ✅ | ✅ | ❌ | ✅ | ✅ |
+| Structured output (`AgentReplyAny`) | ✅ `output_type` | ✅ module-level `output_pydantic`/`output_json` | ✅ `response_format` | ✅ `output_schema` | ✅ dict/Pydantic `final_answer` | ✅ `output_type` | ✅ `output_format` |
+| Portable tools (`ToolBuilder`) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Multimodal attachments | ✅ | ✅* | ✅* | ✅ | ✅* | ✅* | ✅* |
+| Hooks / guardrails / sessions / deployments | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Native multi-provider models | ⚠️ OpenAI-first | via LiteLLM | via LangChain | via LiteLLM | via LiteLLM | ✅ many providers + `FallbackModel` | ❌ Claude only (Anthropic, Bedrock, Vertex, Foundry) |
 
 \* Multimodal preprocessing (the attachment pre-hook and `analyze_attachments` tool) is framework-agnostic; direct image/file input via the REST API is currently documented for OpenAI Agents SDK and Google ADK. CrewAI and Smolagents raise `NotImplementedError` for streaming; use the default synchronous mode (or `rest_sync` on AWS) with those frameworks.
 
@@ -95,6 +97,14 @@ Not every Agent Kernel capability is available on every framework:
 - Delegation-via-tool for multi-agent routing (no `handoffs=` primitive)
 
 [Learn more →](./pydantic-ai)
+
+### Claude Agent SDK
+- The Claude Code harness: built-in file, shell and web tools, subagents, skills, hooks
+- Claude models only (Anthropic API, Bedrock, Vertex, Foundry)
+- Runs a CLI subprocess per run; size containers accordingly
+- Lock the defaults down for server use
+
+[Learn more →](./claude-agent-sdk)
 
 ## Migration Between Frameworks
 

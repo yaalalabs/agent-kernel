@@ -1,0 +1,5 @@
+session:
+  type: in_memory
+
+execution:
+  mode: rest_sync

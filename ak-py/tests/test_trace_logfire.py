@@ -29,6 +29,7 @@ def fake_logfire(monkeypatch):
     fake = types.ModuleType("logfire")
     fake.configure = MagicMock()
     fake.instrument_openai_agents = MagicMock()
+    fake.instrument_claude_agent_sdk = MagicMock()
     fake.span = MagicMock(return_value=span)
     fake.span_cm = span  # expose for assertions
 
@@ -141,3 +142,11 @@ def test_all_runners_subclass_their_framework_base(fake_logfire):
 
     # openai activates instrumentation via the (mocked) logfire module, no extra patching needed
     assert isinstance(LogfireOpenAIRunner(), OpenAIRunner)
+
+
+def test_claude_runner_activates_logfire_instrumentation(fake_logfire):
+    from agentkernel.framework.claude.claude import ClaudeRunner
+    from agentkernel.trace.logfire.claude import LogfireClaudeRunner
+
+    assert isinstance(LogfireClaudeRunner(), ClaudeRunner)
+    fake_logfire.instrument_claude_agent_sdk.assert_called_once()
