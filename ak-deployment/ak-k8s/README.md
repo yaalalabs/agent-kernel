@@ -230,8 +230,11 @@ Strimzi KafkaTopic CRs for the `sandboxWorker.queue.<transport>` pair (plus Kafk
 dead-letter topics) whenever `sandboxWorker.enabled` is set. On NATS the dev alternative is
 `transport.nats.autoProvision: true`, which the chart mirrors into the sandbox broker's
 config; on SQS, bring your own queues and set `sandboxWorker.queue.sqs.*`. Keep
-`sandboxWorker.queue.nats.ackWait` (default 900) above your longest sandbox
-`policy.timeout`, or a still-running execution is redelivered and re-run.
+`sandboxWorker.queue.nats.ackWait` (default 900) above your longest sandbox effective
+timeout (`policy.timeout`, or `policy.package_install.timeout` for installs) plus the
+worker's 10-second backstop, or a still-running execution is redelivered and re-run.
+When upgrading, roll the sandbox worker before the agent tier: the worker enforces the
+sandbox permissions the agent side sends, and an older worker ignores them.
 
 This is the chart's first tier with its own identity:
 
@@ -262,7 +265,7 @@ dropped) already satisfy the rest.
 With `keda.enabled: true` the tier scales on the sandbox input queue's backlog, mirroring
 the agent-runner scaler; drain follows the same SIGTERM discipline, so keep
 `sandboxWorker.terminationGracePeriodSeconds` (default 600) above your longest sandbox
-`policy.timeout`.
+effective timeout (including `policy.package_install.timeout`).
 
 ### Standalone sandbox worker (agents in Lambda or ECS)
 

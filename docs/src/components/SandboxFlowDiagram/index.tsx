@@ -211,7 +211,7 @@ export default function SandboxFlowDiagram({
             <p className={styles.nodeTitle}>Sandbox Tools</p>
             {detailed ? (
               <p className={styles.nodeSub}>
-                run_code · run_command · files · sessions
+                run_code · run_command · files · sessions · packages
               </p>
             ) : null}
           </div>
@@ -239,7 +239,7 @@ export default function SandboxFlowDiagram({
               <p className={styles.nodeTitle}>Security Policy</p>
               {detailed ? (
                 <p className={styles.nodeSub}>
-                  network · filesystem · cpu · memory · timeout
+                  network · filesystem · cpu · memory · timeout · languages · packages
                 </p>
               ) : null}
             </div>

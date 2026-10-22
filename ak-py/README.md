@@ -1432,8 +1432,8 @@ guardrail:
 Enable the sandbox capability to let agents execute code and shell commands in an isolated,
 permission-bounded environment. When enabled, agents automatically gain sandbox tools
 (`run_code`, `run_command`, `write_sandbox_file`, `read_sandbox_file`, `check_sandbox_task`,
-`list_sandbox_sessions`, `new_sandbox_session`, `destroy_sandbox_session`) and the usage
-guidance is injected into their system prompt.
+`list_sandbox_sessions`, `new_sandbox_session`, `destroy_sandbox_session`, plus `install_packages`
+when a profile permits package installs) and the usage guidance is injected into their system prompt.
 
 Minimal single-backend form (a `default` profile is synthesized from `type` + its config block):
 
@@ -1471,6 +1471,9 @@ sandbox:
         memory_mb: 512
         timeout: 30.0           # per-execution wall-clock seconds (always enforced)
         strict: true            # fail closed when the provider can't enforce a policy dimension
+        languages: [python]     # run_code allowlist; omitted = provider-declared; [] = no run_code
+        package_install:        # omitted = installs denied; present = install_packages permitted
+          ecosystems: [python]
       docker:
         image: python:3.12-slim
 ```
@@ -1480,7 +1483,8 @@ Key fields:
 - **`enabled`** (`AK_SANDBOX__ENABLED`, default `false`) — master switch; inert when off.
 - **`agents`** — agent names the tools/prompt attach to; omit for all agents.
 - **`type`** (per profile) — `local_subprocess` (no isolation; dev/test), `docker`
-  (container isolation; `sandbox-docker` extra), `e2b` (managed micro-VMs; `e2b` extra),
+  (container isolation; `sandbox-docker` extra), `kubernetes` (pod per sandbox; `kubernetes`
+  extra), `e2b` (managed micro-VMs; `e2b` extra),
   `daytona` (cloud containers; `daytona` extra), `ec2_ssm` (attach to an existing EC2
   instance via SSM; `aws` extra), or a dotted path to your own `SandboxProvider`.
 - **`scope`** — `per_call` (fresh per execution), `per_session` (persists across turns),
@@ -1490,10 +1494,13 @@ Key fields:
   e.g. an EC2 instance via `ec2_ssm`; requires the provider's `attach_to` and is validated
   against the provider's lifecycle capabilities at startup).
 - **`policy`** — network egress, filesystem paths, cpu/memory, timeout; enforced per provider,
-  fail-closed under `strict`.
+  fail-closed under `strict`. Also the permissions: `languages` (which `run_code` languages are
+  allowed) and `package_install` (whether `install_packages` is allowed, and for which ecosystems).
+  A provider's `package_installers` sets the installer command per ecosystem (default `pip install`).
 - **`identity.mode`** + **`principal_resolver`** — run code under the agent's or the invoking
   user's identity.
-- **`broker.flavor`** — `thread` (default, for CLI/REST) or `embedded` (inline/synchronous).
+- **`broker.flavor`** — `thread` (default, for CLI/REST), `embedded` (inline/synchronous), or
+  `queue` (a separate `QueueBrokerWorker` fleet over a queue transport).
 
 See the [Sandbox guide](https://kernel.yaala.ai/docs/advanced/sandbox) for the full
 reference and the `examples/sandbox` and `examples/sandbox/identity` examples.
