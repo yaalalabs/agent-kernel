@@ -128,7 +128,7 @@ export const INTEGRATION_ROWS: IntegrationRow[] = [
       { name: "Azure API Management", role: "Gateway", href: "/docs/deployment/azure-serverless", icon: <VscAzure /> },
       { name: "Google Cloud Run", role: "Serverless & containers", href: "/docs/deployment/gcp-serverless", icon: <SiGooglecloud /> },
       { name: "GCP API Gateway", role: "Gateway", href: "/docs/deployment/gcp-serverless", icon: <SiGooglecloud /> },
-      { name: "Kubernetes", role: "On-prem", href: K8S, icon: <SiKubernetes /> },
+      { name: "Kubernetes", role: "On-prem", href: K8S, icon: <SiKubernetes />, title: "Kubernetes: on-prem deployment and mounted Secrets" },
       { name: "Helm", role: "Chart", href: K8S, icon: <SiHelm /> },
       { name: "KEDA", role: "Autoscaling", href: K8S, logo: "/img/integrations/keda.svg" },
       { name: "Terraform", role: "Infrastructure as code", href: "/docs/deployment/overview", icon: <SiTerraform /> },
