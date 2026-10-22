@@ -116,8 +116,7 @@ class E2BSandboxProvider(SandboxProvider):
         super().__init__(config)
         self._idle_timeout = idle_timeout
         self._installer = PackageInstaller.from_config(config)
-        ecosystems = self._installer.ecosystems
-        self.capabilities = type(self).capabilities.derive(package_ecosystems=ecosystems, package_install=bool(ecosystems))
+        self.capabilities = type(self).capabilities.derive(package_ecosystems=self._installer.ecosystems)
 
     def _handle(self, sandbox: AsyncSandbox) -> E2BSandbox:
         """Wrap an SDK sandbox in a handle carrying this instance's capabilities and installer."""

@@ -65,10 +65,16 @@ class SandboxCapabilities(BaseModel):
     def derive(self, **update: Any) -> "SandboxCapabilities":
         """A re-validated copy with ``update`` applied: the instance-override helper.
 
-        ``model_copy(update=...)`` skips validators, so overrides go through here instead. An override that
-        changes ecosystems sets both fields: ``derive(package_ecosystems=eco, package_install=bool(eco))``.
+        ``model_copy(update=...)`` skips validators, so overrides go through here instead. The two package
+        fields move together: updating one re-derives the other rather than keeping its stale value —
+        ``package_ecosystems=[]`` turns installs off, and ``package_install=False`` clears the ecosystems.
         """
-        return type(self).model_validate({**self.model_dump(), **update})
+        data = self.model_dump()
+        if "package_ecosystems" in update and "package_install" not in update:
+            del data["package_install"]  # the validator derives it from the new ecosystems
+        elif "package_install" in update and "package_ecosystems" not in update and not update["package_install"]:
+            data["package_ecosystems"] = []
+        return type(self).model_validate({**data, **update})
 
 
 class SandboxFile(BaseModel):

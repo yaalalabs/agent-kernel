@@ -205,9 +205,9 @@ class SandboxProviderContract:
 
             if caps.package_install:
                 assert isinstance(await sandbox.install_packages(["pip-noop"]), SandboxResult)
-                # An ecosystem the instance does not declare raises; it is never run as pip. A legacy
-                # one-argument override cannot take an ecosystem: the worker's shim rejects it instead.
-                if not BrokerWorkerCore.has_legacy_install(type(sandbox)):
+                # An ecosystem the instance does not declare raises; it is never run as pip. A pre-#692
+                # override without an ecosystem parameter cannot take one: the worker's shim rejects it instead.
+                if "ecosystem" in BrokerWorkerCore.install_parameters(type(sandbox)):
                     with pytest.raises(SandboxCapabilityError):
                         await sandbox.install_packages(["pip-noop"], ecosystem="definitely-not-an-ecosystem")
             else:

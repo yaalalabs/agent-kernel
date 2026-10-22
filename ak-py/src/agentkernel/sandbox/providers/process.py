@@ -36,6 +36,8 @@ class ProcessKiller:
 
     MARKER_ENV: ClassVar[str] = "AK_EXEC_ID"
     KILL_TIMEOUT_SECONDS: ClassVar[float] = 5.0  # must stay below BrokerWorkerCore.BACKSTOP_GRACE_SECONDS
+    # Exits 0 only where /bin/sh runs — which the launcher and the kill scan both need.
+    SHELL_PROBE: ClassVar[tuple[str, ...]] = ("/bin/sh", "-c", "exit 0")
 
     @staticmethod
     def new_marker() -> str:

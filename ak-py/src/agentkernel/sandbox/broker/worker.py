@@ -41,6 +41,8 @@ class BrokerWorkerCore:
 
     # The handle owns the operation's timeout; the worker's own timer fires this much later as a backstop.
     BACKSTOP_GRACE_SECONDS: ClassVar[float] = 10.0
+    # The keywords the worker passes to install_packages; a pre-#692 override may lack either.
+    INSTALL_KEYWORDS: ClassVar[frozenset[str]] = frozenset({"ecosystem", "timeout"})
 
     def __init__(self, *, inline_payload_max_bytes: Optional[int] = None) -> None:
         """Create an engine instance. ``inline_payload_max_bytes`` is the offload threshold
@@ -51,7 +53,7 @@ class BrokerWorkerCore:
         # (provider, profile, "permission") for _warn_capability_mismatch.
         self._policy_warned: set[tuple[str, ...]] = set()
         self._guard = SandboxPermissionGuard()
-        self._install_shim: dict[type, bool] = {}  # Sandbox subclass -> True when its install_packages is legacy
+        self._install_params: dict[type, frozenset[str]] = {}  # Sandbox subclass -> install keywords it accepts
         self._install_warned: set[type] = set()  # legacy Sandbox subclasses already given the deprecation warning
 
     def _lock_for(self, sandbox_session_id: str) -> asyncio.Lock:
@@ -284,39 +286,43 @@ class BrokerWorkerCore:
             raise
 
     async def _call_install(self, sandbox: Sandbox, payload: dict[str, Any], timeout: float) -> SandboxResult:
-        """Dispatch install_packages, routing a pre-#692 one-argument override through the deprecation shim.
-        The ecosystem-independent package baseline runs first, for every override (ValueError on rejection)."""
+        """Dispatch install_packages with the keywords the override accepts; a pre-#692 override missing
+        ``ecosystem`` and/or ``timeout`` goes through the deprecation shim. The ecosystem-independent
+        package baseline runs first, for every override (ValueError on rejection)."""
         PackageInstaller.check_baseline(payload["packages"])
         ecosystem = payload.get("ecosystem", "python")
         sandbox_cls = type(sandbox)
-        if not self._is_legacy_install(sandbox_cls):
+        accepted = self._install_params_for(sandbox_cls)
+        if accepted == self.INSTALL_KEYWORDS:
             return await sandbox.install_packages(payload["packages"], ecosystem=ecosystem, timeout=timeout)
-        # A legacy override can only mean pip; the backstop is its only timer.
-        if ecosystem != "python":
+        # An override without ``ecosystem`` can only mean pip; one without ``timeout`` has only the backstop.
+        if "ecosystem" not in accepted and ecosystem != "python":
             raise SandboxCapabilityError(sandbox_cls.__name__, f"package_ecosystem:{ecosystem}")
         if sandbox_cls not in self._install_warned:
             self._install_warned.add(sandbox_cls)
             logger.warning(
-                "Sandbox %s overrides install_packages(packages) without ecosystem/timeout; "
-                "this form is deprecated and will stop working in the next minor release",
+                "Sandbox %s overrides install_packages without %s; this form is deprecated and will stop working in the next minor release",
                 sandbox_cls.__name__,
+                " and ".join(sorted(self.INSTALL_KEYWORDS - accepted)),
             )
-        return await sandbox.install_packages(payload["packages"])
+        kwargs = {name: value for name, value in (("ecosystem", ecosystem), ("timeout", timeout)) if name in accepted}
+        return await sandbox.install_packages(payload["packages"], **kwargs)
 
-    def _is_legacy_install(self, sandbox_cls: type) -> bool:
-        """Whether ``sandbox_cls.install_packages`` predates the ecosystem/timeout signature; decided once per class."""
-        legacy = self._install_shim.get(sandbox_cls)
-        if legacy is None:
-            legacy = self.has_legacy_install(sandbox_cls)
-            self._install_shim[sandbox_cls] = legacy
-        return legacy
+    def _install_params_for(self, sandbox_cls: type) -> frozenset[str]:
+        """``install_parameters`` for ``sandbox_cls``, decided once per class."""
+        accepted = self._install_params.get(sandbox_cls)
+        if accepted is None:
+            accepted = self.install_parameters(sandbox_cls)
+            self._install_params[sandbox_cls] = accepted
+        return accepted
 
-    @staticmethod
-    def has_legacy_install(sandbox_cls: type) -> bool:
-        """Whether ``sandbox_cls.install_packages`` is the pre-#692 one-argument form (no ecosystem/timeout).
+    @classmethod
+    def install_parameters(cls, sandbox_cls: type) -> frozenset[str]:
+        """Which of ``ecosystem`` / ``timeout`` ``sandbox_cls.install_packages`` accepts (``**kwargs`` = both).
 
-        Shared with ``SandboxProviderContract``, which must not call a legacy override with the new arguments.
+        Shared with ``SandboxProviderContract``, which must not pass an override a keyword it lacks.
         """
         params = inspect.signature(sandbox_cls.install_packages).parameters
-        takes_kwargs = any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values())
-        return not (takes_kwargs or ("ecosystem" in params and "timeout" in params))
+        if any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values()):
+            return cls.INSTALL_KEYWORDS
+        return cls.INSTALL_KEYWORDS & frozenset(params)
