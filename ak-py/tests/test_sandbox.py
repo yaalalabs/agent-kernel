@@ -391,6 +391,29 @@ def test_config_provider_package_installers_replace_default():
     assert cfg.package_installers == {"node": ["npm", "install"]}  # not merged with the python default
 
 
+@pytest.mark.parametrize("model", [_SandboxDockerConfig, _SandboxKubernetesConfig])
+def test_config_provider_language_runtimes_defaults(model):
+    assert model().language_runtimes == {"python": ["python", "-c"]}
+
+
+@pytest.mark.parametrize("model", [_SandboxE2BConfig, _SandboxDaytonaConfig])
+def test_config_sdk_native_providers_have_no_language_runtimes(model):
+    assert "language_runtimes" not in model.model_fields  # their SDK picks the interpreter, not an argv
+
+
+def test_config_provider_language_runtimes_require_python():
+    with pytest.raises(ValidationError, match="'python' runtime"):
+        _SandboxDockerConfig(language_runtimes={"node": ["node", "-e"]})
+    with pytest.raises(ValidationError, match="'python' runtime"):
+        _SandboxKubernetesConfig(language_runtimes={"node": [""]})  # the python check runs first
+
+
+@pytest.mark.parametrize("runtimes", [{"python": []}, {"python": ["python", ""]}, {"python": ["python", "-c"], "node": [""]}])
+def test_config_provider_language_runtimes_reject_empty_argv(runtimes):
+    with pytest.raises(ValidationError, match="non-empty argv prefix"):
+        _SandboxDockerConfig(language_runtimes=runtimes)
+
+
 def test_config_attached_profile_rejects_package_install():
     with pytest.raises(ValidationError):
         _SandboxProfileConfig(

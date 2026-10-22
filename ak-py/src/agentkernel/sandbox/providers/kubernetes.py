@@ -1,7 +1,8 @@
 """``kubernetes`` provider — pod-per-sandbox via the Kubernetes Python client (``kubernetes`` extra).
 
 Each sandbox is a pod running ``sleep infinity`` as PID 1; executions are exec calls through the
-stream API (which inherit the container's ``/workspace`` working directory), and files
+stream API (which inherit the container's ``/workspace`` working directory; code runs through
+the language's interpreter argv from ``language_runtimes`` with the code appended), and files
 travel as single-member tars framed in base64 over the exec channels (``head -c N`` gives
 the remote pipeline its EOF, since a WebSocket exec cannot half-close stdin). The SDK is
 synchronous, so every call runs in ``asyncio.to_thread``.
@@ -66,24 +67,34 @@ class KubernetesSandbox(Sandbox):
     """Handle to one running sandbox pod; executions are stream-API exec calls inside it."""
 
     def __init__(
-        self, api: Any, namespace: str, pod_name: str, *, capabilities: SandboxCapabilities, installer: PackageInstaller, kill_enabled: bool
+        self,
+        api: Any,
+        namespace: str,
+        pod_name: str,
+        *,
+        capabilities: SandboxCapabilities,
+        installer: PackageInstaller,
+        runtimes: dict[str, list[str]],
+        kill_enabled: bool,
     ) -> None:
         """Bind the handle to a pod; the id is ``<namespace>/<pod>`` (the ``attach_to`` format).
-        ``capabilities`` are the provider instance's; ``kill_enabled`` is False for an
-        ``attach_to`` pod: the framework does not own it, so it neither tags nor kills its execs."""
+        ``capabilities`` are the provider instance's; ``runtimes`` is its ``language_runtimes``
+        map; ``kill_enabled`` is False for an ``attach_to`` pod: the framework does not own it,
+        so it neither tags nor kills its execs."""
         self.id = f"{namespace}/{pod_name}"
         self._api = api
         self._namespace = namespace
         self._pod = pod_name
         self._capabilities = capabilities
         self._installer = installer
+        self._runtimes = runtimes
         self._kill_enabled = kill_enabled
 
     async def execute_code(self, code: str, language: str = "python", timeout: float | None = None) -> SandboxResult:
-        """Exec the language interpreter with the code (``python -c`` in v1)."""
+        """Exec the language's configured interpreter argv with the code appended (default ``python -c``)."""
         if language not in self._capabilities.languages:
             raise SandboxCapabilityError(self.__class__.__name__, f"language:{language}")
-        return await self._exec(["python", "-c", code], timeout)
+        return await self._exec([*self._runtimes[language], code], timeout)
 
     async def execute_command(self, command: str, timeout: float | None = None) -> SandboxResult:
         """Exec a shell command via ``/bin/sh -c``."""
@@ -198,7 +209,7 @@ class KubernetesSandboxProvider(SandboxProvider):
     capabilities = SandboxCapabilities(
         isolation=IsolationTier.CONTAINER,
         shell=True,
-        languages=["python"],
+        languages=["python"],  # the default; each instance declares its language_runtimes keys
         files=True,
         package_ecosystems=["python"],  # the default; each instance declares its package_installers keys
         stateful=False,
@@ -221,8 +232,9 @@ class KubernetesSandboxProvider(SandboxProvider):
         # Impersonating client pairs cached per (user, groups) subject (the ec2_ssm pattern).
         self._subject_apis: dict[tuple[str, tuple[str, ...]], tuple[Any, Any]] = {}
         self._installer = PackageInstaller.from_config(config)
+        self._runtimes = dict(config.language_runtimes)
         ecosystems = self._installer.ecosystems
-        overrides: dict[str, Any] = {"package_ecosystems": ecosystems, "package_install": bool(ecosystems)}
+        overrides: dict[str, Any] = {"languages": list(self._runtimes), "package_ecosystems": ecosystems, "package_install": bool(ecosystems)}
         if config.network_policy:
             # Instance-level capability override (#503): whether NetworkPolicy is actually
             # enforced depends on the cluster CNI, which the provider cannot detect; the
@@ -232,8 +244,16 @@ class KubernetesSandboxProvider(SandboxProvider):
         self._kill_enabled = not config.attach_to
 
     def _handle(self, api: Any, namespace: str, pod_name: str) -> "KubernetesSandbox":
-        """Wrap a pod in a handle carrying this instance's capabilities and installer."""
-        return KubernetesSandbox(api, namespace, pod_name, capabilities=self.capabilities, installer=self._installer, kill_enabled=self._kill_enabled)
+        """Wrap a pod in a handle carrying this instance's capabilities, installer and runtimes."""
+        return KubernetesSandbox(
+            api,
+            namespace,
+            pod_name,
+            capabilities=self.capabilities,
+            installer=self._installer,
+            runtimes=self._runtimes,
+            kill_enabled=self._kill_enabled,
+        )
 
     def _apis(self) -> tuple[Any, Any]:
         """Return the lazily created ``(CoreV1Api, NetworkingV1Api)`` pair."""
