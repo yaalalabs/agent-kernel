@@ -9,7 +9,8 @@ See [../README.md](../README.md) for the full set of sandbox examples. This one 
 Each sandbox is its own container, created from the configured `image` (default
 `python:3.12-slim`) and kept alive with `sleep infinity`. Executions are `exec` calls
 inside it, files live under `/workspace`, and `install_packages` is a `pip install` run in
-the container. Closing a session leaves the container running so the sandbox can be
+the container on a profile whose policy permits it (`policy.package_install`; installs are
+denied by default). Closing a session leaves the container running so the sandbox can be
 reattached later; destroying the session force-removes it. An idle-expired sandbox
 (`idle_timeout`, 6 hours here) is removed and transparently recreated on next use with an
 empty workspace, and the agent is told via a result "notice" when that happens.
@@ -24,9 +25,9 @@ declared ([../policy/](../policy/) explores the policy envelope and the fail-clo
 | `cpu` / `memory_mb` | container cpu/memory limits |
 | `fs_allow_read` / `fs_allow_write` | read-only rootfs + writable tmpfs workdir |
 
-The `config.yaml` defines two profiles: `default` (a per-session container workspace) and
-`offline` (the same with `network_egress: deny`, so network access genuinely fails inside
-the container). An egress *allowlist* is the one network mode docker cannot enforce; under
+The `config.yaml` defines two profiles: `default` (a per-session container workspace that
+permits `python` package installs) and `offline` (`network_egress: deny`, so network access
+genuinely fails inside the container, and no package installs). An egress *allowlist* is the one network mode docker cannot enforce; under
 `strict: true` (the default) such a profile is rejected rather than silently downgraded.
 
 ## Prerequisites

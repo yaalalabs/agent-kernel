@@ -9,7 +9,8 @@ machine and with no local daemon.
 
 Each sandbox is a container created on the Daytona cloud. Executions run via
 `process.code_run` / `process.exec`, files travel through the sandbox filesystem, and
-`install_packages` is a `pip install` run in the sandbox. The synchronous Daytona SDK is
+`install_packages` is a `pip install` run in the sandbox on a profile whose policy permits
+it (`policy.package_install`; installs are denied by default). The synchronous Daytona SDK is
 driven off the event loop (every call in `asyncio.to_thread`). Closing a session leaves the
 sandbox running so it can be reattached later; destroying the session deletes it. The
 profile's `idle_timeout` maps onto Daytona's native `auto_stop_interval` (minutes, rounded
@@ -32,7 +33,7 @@ fail-closed `strict` model in depth):
 | `cpu` / `memory_mb` | container `Resources` (image-based sandbox) |
 
 The `config.yaml` defines three profiles: `default` (a per-session cloud workspace on an
-explicit image), `offline` (`network_egress: deny`, so outbound requests genuinely fail),
+explicit image that permits `python` package installs), `offline` (`network_egress: deny`, so outbound requests genuinely fail),
 and `small` (cpu/memory limits Daytona enforces on the container). This is a richer
 enforcement set than `docker`, which cannot map resource limits as cleanly. Note: resource
 limits require an image-based sandbox, so a `small`-style profile cannot also pin a
