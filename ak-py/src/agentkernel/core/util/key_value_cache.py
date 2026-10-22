@@ -39,7 +39,7 @@ class KeyValueCache(BaseModel):
         if not key:
             raise ValueError("Key cannot be empty or None")
         self.data[key] = value
-        _log.debug(f"Set key {key}: {value}")
+        _log.debug(f"Set key {key}: {type(value).__name__}")
 
     def get(self, key: str, default: Optional[Any] = None) -> Any:
         """Retrieve a value by key.
@@ -48,9 +48,8 @@ class KeyValueCache(BaseModel):
         :param default: The default value to return if key is not found
         :return: The stored value, or the default if the key doesn't exist
         """
-        value = self.data.get(key, default)
-        _log.debug(f"Get key {key}: {value}")
-        return value
+        _log.debug(f"Get key {key}: found={key in self.data}")
+        return self.data.get(key, default)
 
     def delete(self, key: str) -> bool:
         """Delete a key-value pair.
@@ -105,7 +104,7 @@ class KeyValueCache(BaseModel):
         :param other: A dictionary of key-value pairs to add/update
         """
         self.data.update(other)
-        _log.debug(f"Updated keys: {other}")
+        _log.debug(f"Updated keys: {list(other)}")
 
     def __len__(self) -> int:
         """Return the number of items in the store."""
@@ -118,7 +117,7 @@ class KeyValueCache(BaseModel):
     def __getitem__(self, key: str) -> Any:
         """Get a value using dictionary-style access."""
         value = self.data[key]
-        _log.debug(f"Get key {key}: {value}")
+        _log.debug(f"Get key {key}: found=True")
         return value
 
     def __setitem__(self, key: str, value: Any) -> None:

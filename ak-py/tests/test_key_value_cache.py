@@ -1,7 +1,8 @@
 """Tests for the debug logging in ``core/util/key_value_cache.py``.
 
-Every read and write on a KeyValueCache logs its key (and value, where there is one) on the
-``ak.core.key_value_cache`` logger at DEBUG, so session cache traffic can be traced.
+Every read and write on a KeyValueCache logs its key on the ``ak.core.key_value_cache`` logger at
+DEBUG, so session cache traffic can be traced. Values are never logged: caches hold PII mappings,
+attachment payloads and user identifiers (#814).
 """
 
 import logging
@@ -11,6 +12,7 @@ import pytest
 from agentkernel.core.util.key_value_cache import KeyValueCache
 
 LOGGER = "ak.core.key_value_cache"
+SECRET = "4111-1111-1111-1111"
 
 
 @pytest.fixture
@@ -24,16 +26,16 @@ def _messages(caplog) -> list[str]:
 
 
 class TestKeyValueCacheLogging:
-    def test_set_logs_key_and_value(self, cache_log):
+    def test_set_logs_key_and_value_type(self, cache_log):
         KeyValueCache().set("name", "John")
 
-        assert _messages(cache_log) == ["Set key name: John"]
+        assert _messages(cache_log) == ["Set key name: str"]
 
     def test_setitem_logs_through_set(self, cache_log):
         cache = KeyValueCache()
         cache["name"] = "John"
 
-        assert _messages(cache_log) == ["Set key name: John"]
+        assert _messages(cache_log) == ["Set key name: str"]
 
     def test_set_with_empty_key_raises_without_logging(self, cache_log):
         with pytest.raises(ValueError):
@@ -41,22 +43,22 @@ class TestKeyValueCacheLogging:
 
         assert _messages(cache_log) == []
 
-    def test_get_logs_key_and_stored_value(self, cache_log):
+    def test_get_logs_key_and_presence(self, cache_log):
         cache = KeyValueCache(data={"name": "John"})
 
         assert cache.get("name") == "John"
-        assert _messages(cache_log) == ["Get key name: John"]
+        assert _messages(cache_log) == ["Get key name: found=True"]
 
-    def test_get_of_missing_key_logs_the_default(self, cache_log):
+    def test_get_of_missing_key_logs_not_found(self, cache_log):
         assert KeyValueCache().get("missing", "fallback") == "fallback"
 
-        assert _messages(cache_log) == ["Get key missing: fallback"]
+        assert _messages(cache_log) == ["Get key missing: found=False"]
 
-    def test_getitem_logs_key_and_value(self, cache_log):
+    def test_getitem_logs_key_and_presence(self, cache_log):
         cache = KeyValueCache(data={"name": "John"})
 
         assert cache["name"] == "John"
-        assert _messages(cache_log) == ["Get key name: John"]
+        assert _messages(cache_log) == ["Get key name: found=True"]
 
     def test_delete_logs_deleted_key(self, cache_log):
         cache = KeyValueCache(data={"name": "John"})
@@ -81,10 +83,10 @@ class TestKeyValueCacheLogging:
 
         assert _messages(cache_log) == []
 
-    def test_update_logs_merged_pairs(self, cache_log):
+    def test_update_logs_merged_keys(self, cache_log):
         KeyValueCache().update({"debug": True, "timeout": 30})
 
-        assert _messages(cache_log) == ["Updated keys: {'debug': True, 'timeout': 30}"]
+        assert _messages(cache_log) == ["Updated keys: ['debug', 'timeout']"]
 
     def test_clear_logs(self, cache_log):
         KeyValueCache(data={"name": "John"}).clear()
@@ -110,3 +112,17 @@ class TestKeyValueCacheLogging:
         cache.get("name")
 
         assert _messages(caplog) == []
+
+    def test_values_are_never_logged(self, cache_log):
+        cache = KeyValueCache()
+        cache.set("pii", {"<CARD_1>": SECRET})
+        cache["pii2"] = SECRET
+        cache.get("pii")
+        cache["pii2"]
+        cache.update({"pii3": SECRET})
+        cache.delete("pii")
+        del cache["pii2"]
+
+        messages = _messages(cache_log)
+        assert len(messages) == 7
+        assert not any(SECRET in message for message in messages)

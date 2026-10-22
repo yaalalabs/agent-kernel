@@ -134,10 +134,10 @@ class TestSessionFrameworkContextAccessors:
         session = Session("s")
         session.set_framework_context({"a": 1})
 
-        with caplog.at_level(logging.DEBUG, logger="ak.core.session [s]"):
+        with caplog.at_level(logging.DEBUG):
             session.get_framework_context()
 
-        assert [record for record in caplog.records if record.name == "ak.core.session [s]"] == []
+        assert [record for record in caplog.records if record.name.startswith("ak.core.session")] == []
 
     @pytest.mark.asyncio
     async def test_pre_hook_seed_reaches_the_runner_and_post_hook_sees_the_write_back(self):
@@ -197,7 +197,7 @@ class TestFrameworkContextLoad:
 
         assert session.get(FRAMEWORK_CONTEXT) == {"a": {"n": 1}}
 
-    def test_load_logs_the_added_context(self, caplog):
+    def test_load_logs_the_added_context_keys(self, caplog):
         runner = DummyRunner()
         session = Session("s")
         session.set(FRAMEWORK_CONTEXT, {"a": 1})
@@ -206,7 +206,7 @@ class TestFrameworkContextLoad:
             runner._load_framework_context(session)
 
         records = [record for record in caplog.records if record.name == "ak.core.runner"]
-        assert [record.getMessage() for record in records] == ["Adding framework context to runner 'dummy' for session 's': {'a': 1}"]
+        assert [record.getMessage() for record in records] == ["Adding framework context to runner 'dummy' for session 's': keys=['a']"]
         assert records[0].levelno == logging.DEBUG
 
     def test_load_without_context_does_not_log(self, caplog):
@@ -257,7 +257,7 @@ class TestFrameworkContextStore:
         runner._store_framework_context(session, {"seeded": "keep"}, {})
         assert session.get(FRAMEWORK_CONTEXT) == {"seeded": "keep"}
 
-    def test_store_logs_the_merged_context(self, caplog):
+    def test_store_logs_the_merged_context_keys(self, caplog):
         runner = DummyRunner()
         session = Session("s")
 
@@ -265,7 +265,7 @@ class TestFrameworkContextStore:
             runner._store_framework_context(session, {"a": 1, "b": 2}, {"b": 9})
 
         records = [record for record in caplog.records if record.name == "ak.core.runner"]
-        assert [record.getMessage() for record in records] == ["Stored framework context from runner 'dummy' for session 's': {'a': 1, 'b': 9}"]
+        assert [record.getMessage() for record in records] == ["Stored framework context from runner 'dummy' for session 's': keys=['a', 'b']"]
         assert records[0].levelno == logging.DEBUG
 
     def test_store_noop_does_not_log(self, caplog):
