@@ -54,24 +54,31 @@ graph LR
   - The `>= 400` error branch stays first and unchanged: a failed run is never a pause.
   - Issue #607 adds an equivalent reconstruction on `AgentRunner` for thread recording; when both
     have landed the two must be one helper, not two copies.
-- The body's `result` string is passed to the adapter **unchanged**, beside the reconstructed
-  reply: it is what the default rendering delivers, so the fallback cannot drift from today's bytes.
 - A body that claims `PAUSED` but does not reconstruct — a missing key, a value outside its type, a
   malformed interruption, any validation failure — falls through to the ordinary text delivery with
   a logged warning, never a raise: raising costs the platform user their reply entirely.
 
 ### `OutboundAdapter` contract
 
-- Add `deliver_paused(reply: AgentPausedReplyAny, reply_context, text: str) -> None` to
-  `OutboundAdapter`.
-  - `text` is the body's `result` verbatim, and the default delivers it unchanged. An overriding
-    adapter gets the structured pause to render and the exact bytes for whatever it cannot.
-    Re-deriving that string from `reply` would round-trip today, but only while content derivation,
-    JSON key order and `session_id`'s source all hold; the default should not rest on three
-    invariants when the bytes are in hand.
-  - **Concrete, not abstract.** Every existing adapter and every bring-your-own adapter keeps
-    working byte-for-byte without being touched — the `deliver_chunk` precedent.
-  - Overriding it is how an adapter declares it can render a pause. No capability flag, no config.
+- Add `deliver_paused(reply: AgentPausedReplyAny, reply_context) -> None` to `OutboundAdapter`.
+  - **Concrete, not abstract.** Overriding it is how an adapter declares it can render a pause
+    interactively — no capability flag, no config. The `deliver_chunk` precedent.
+  - The default delivers `self.format_pause(reply)`.
+- Add `format_pause(reply: AgentPausedReplyAny) -> str`: the shared rendering of a pause as readable
+  text, in the shape `split_reply` already has — a text helper on the base that every adapter
+  inherits and any adapter may override.
+  - It names what is waiting (`tool_name`, its `arguments`, the interruption's `message`) and says
+    the run is paused until someone approves it.
+  - It states **no reply instruction**. "Reply APPROVE" would only work if a typed word resolved a
+    pause, and nothing maps text to a decision: the inbound adapter would build an ordinary
+    `AgentRequestText`, the run would stay paused, and on Pydantic AI a fresh turn during an
+    unanswered pause raises. A default that told people to do that would be instructing them to
+    fail silently.
+- **This is a deliberate behavioural change**, and the only one in this issue. The five adapters
+  that do not override `deliver_paused` — WhatsApp, Messenger, Instagram, Teams, Gmail — stop
+  delivering `str(reply)`, which is `json.dumps` of the derived content with its nulls, and start
+  delivering readable text. Today's output is the "useless flattened string" the issue names; it is
+  not a behaviour worth preserving byte-for-byte.
 - Pluggability needs no new ABC or factory: `<platform>.outbound_adapter` already takes a dotted
   path to a replacement (`core/config.py:164-167`, `:217-220`), so a bring-your-own adapter can
   render pauses its own way.
@@ -182,7 +189,8 @@ graph LR
 ### Testing
 
 - `IntegrationAdapterContract` (`integration/adapter/testing.py`) gains a case asserting that an
-  adapter which does not override `deliver_paused` delivers the same text it delivers today.
+  adapter which does not override `deliver_paused` delivers `format_pause`'s text — readable, and
+  carrying the tool name and arguments, rather than a serialised object.
 - A delivery-seam test asserting a `PAUSED` body reaches `deliver_paused` with the interruptions
   intact, and a malformed `PAUSED` body falls through to text.
 - Per platform: a pause renders the expected buttons; a press parses to an `AgentResumeRequestAny`
@@ -209,6 +217,11 @@ graph LR
   message back to an interruption is a problem this change does not solve; such a pause renders as
   text. Slack's denial modal is not an exception — its `private_metadata` carries the interruption
   id, so nothing is correlated.
+- **Answering a pause by typing.** `format_pause` deliberately gives no reply instruction, because
+  mapping a typed "approve" onto a decision needs the session's pending pauses at the moment the
+  text arrives. That belongs in a core pre-hook, applies to every surface rather than just
+  messaging, and carries its own ambiguity (a person writing "approve" mid-sentence); it is a
+  follow-up issue, not a fold-in here.
 - **Cross-session approval.** A decision still comes from the session that paused; #610 owns the
   case where another user approves.
 - **Conversation initiation.** Reaching out to a second approver is #608.
