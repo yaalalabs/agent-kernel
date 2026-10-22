@@ -93,8 +93,12 @@ graph LR
     other delivery coordinate; the outbound adapter edits that message when it delivers the
     **resumed reply**, which exists only because the resume succeeded. Editing at parse time would
     clear the buttons for a decision the runtime then refused.
-  - A stale or rejected decision reaches `deliver_error` instead, leaving the buttons live so the
-    pause stays answerable.
+  - **The coordinates' presence in `reply_context` is the signal**, and the only one. `deliver`
+    receives every reply the same way, so an adapter edits the pause message when the context
+    carries those keys and posts normally when it does not. Nothing else distinguishes a resumed
+    reply from an ordinary turn, and only the press path ever sets them.
+  - `deliver_error` receives the same context and must **not** edit: a stale or rejected decision
+    leaves the buttons live so the pause stays answerable.
 - Collecting a reason on a denial is **per-adapter**: an adapter declares it can, or does not offer
   it. A platform that cannot must neither hold the capability back from one that can nor fake it
   with a worse mechanism — the standing no-feature-forcing rule.
@@ -112,6 +116,11 @@ graph LR
 - The button payload carries the interruption id and the verb, and nothing else.
 - `request_id` must be synthesised so that a double-press deduplicates: the platform's own press
   identifier where one exists, otherwise `<platform>:<conversation>:<message id>:<verb>`.
+  - The verb is in the key deliberately. Pressing Approve twice is one `dedup_id` and the transport
+    discards the second. Pressing Approve then Deny is two, so both reach the runtime — the first
+    resumes, the second answers a pause that no longer exists and takes the 400 path above. That is
+    the intended outcome, not a hole: a decision already applied must not be revisable by a later
+    press.
 - `session_id` for a press must resolve to the same conversation key the original turn used, or the
   decision reaches a session holding no pause.
 - A press answering an already-resolved pause produces the runtime's `ValueError` → 400 → the
@@ -145,7 +154,17 @@ graph LR
     retried onto the queue: nothing was decided, so there is nothing to deliver.
   - A modal the user dismisses records no decision: the pause stays open and its buttons stay live.
 - Once a decision is accepted, the pause message is edited to drop its `actions` block and state
-  what was decided, so the outcome is visible and a second press is not invited.
+  what was decided, so the outcome is visible and a second press is not invited. This is Slack's own
+  pattern for a resolved interaction, not an invention.
+  - **`chat.update`, not `response_url`.** The press payload carries a `response_url` that would
+    replace the message with less ceremony, but it expires — roughly thirty minutes and a handful of
+    uses — and our edit happens after a queue hop and a full agent resume, which is unbounded. A
+    slow run, a retry or a backed-up queue would silently lose the edit and strand the buttons.
+  - `chat.update` takes the channel and the message `ts`, which is exactly what `reply_context`
+    already carries, needs only the bot token the adapter already holds, and has no window. It also
+    works here because the pause message was posted through the adapter's ordinary
+    `chat.postMessage` path; `chat.update` on a message created *via* `response_url` is reported to
+    fail with `cant_update_message`.
 
 ### Telegram
 
@@ -162,6 +181,17 @@ graph LR
 - `answer_callback_query` (`:63`) keeps clearing the spinner. Once the decision is accepted the
   keyboard is removed and the message edited to state what was decided, via
   `editMessageReplyMarkup` / `editMessageText` on the `message_id` the press carried.
+  - Telegram publishes an editing window for messages; whether it binds a bot editing its own
+    message is not established here and is confirmed while writing `spec.md`. **Telegram ships
+    either way**: the edit is attempted, a refusal is logged, and the decision stands — the run has
+    already resumed.
+  - When the edit cannot happen, the adapter posts a short confirmation instead, so the outcome is
+    visible in the chat even though the keyboard stays.
+- A keyboard left live is noisy, not dangerous, and mostly not even noisy. Pressing the same button
+  again produces the same `request_id`, so the transport's dedup discards it and the runtime never
+  sees it. Only a different verb, or a press after the dedup window has passed, reaches the 400 path
+  and costs one generic error message. A decision already applied can never be revised by a late
+  press, which is the property that actually matters.
 - Telegram leaves `DENY_COLLECTS_REASON` at `False` and denies with no reason: it has no modal, and
   a `force_reply` answer arrives as an ordinary message the adapter would have to correlate back to
   an interruption using state it does not hold — the problem `input_required` is scoped out for.
