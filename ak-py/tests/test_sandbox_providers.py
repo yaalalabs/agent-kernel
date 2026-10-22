@@ -435,6 +435,62 @@ async def test_docker_empty_package_installers_declare_no_installs(docker_env):
 
 
 @pytest.mark.asyncio
+async def test_docker_language_runtimes_drive_exec_argv_and_instance_languages(docker_env):
+    module, _client = docker_env
+    config = _SandboxDockerConfig(language_runtimes={"python": ["python3", "-c"], "node": ["node", "-e"]})
+    provider = _docker_provider(module, config)
+    assert provider.capabilities.languages == ["python", "node"]
+    assert module.DockerSandboxProvider.capabilities.languages == ["python"]  # the class stays the default
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    container = sandbox._container
+
+    await sandbox.execute_code("console.log(1)", "node")
+    await sandbox.execute_code("print(1)")
+    assert [call[0] for call in container.exec_calls] == [["node", "-e", "console.log(1)"], ["python3", "-c", "print(1)"]]
+    with pytest.raises(SandboxCapabilityError, match="language:bash"):
+        await sandbox.execute_code("echo hi", "bash")
+    assert len(container.exec_calls) == 2  # rejected before any exec
+
+
+@pytest.mark.asyncio
+async def test_docker_worker_mismatch_warning_reads_the_runtime_map(docker_env, monkeypatch, caplog):
+    # policy.languages permits a language the instance's language_runtimes lacks: the worker warns
+    # once per (provider, profile) naming only that language. 'node' is declared by the runtime map
+    # (not by the class), so a regression that read class capabilities would flag it too.
+    docker = _SandboxDockerConfig(language_runtimes={"python": ["python", "-c"], "node": ["node", "-e"]})
+    profile = _SandboxProfileConfig(type="docker", docker=docker)
+    sandbox_cfg = _SandboxConfig(enabled=True, broker=_ExecutionBrokerConfig(flavor="embedded"), profiles={"default": profile})
+
+    class _Cfg:
+        sandbox = sandbox_cfg
+        multimodal = None
+
+    monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _Cfg))
+    request = ExecutionRequest(
+        task_id="t",
+        operation="execute_code",
+        payload={"code": "print(1)"},
+        profile="default",
+        principal=SandboxPrincipal(subject="agent"),
+        policy=SandboxPolicy(languages=["python", "node", "ruby"]),
+        sandbox_session=SandboxSession(sandbox_session_id="s", profile="default", provider_type="docker", created_at=1.0, last_used_at=1.0),
+        ak_session_id="ak-1",
+        agent="a",
+    )
+    core = BrokerWorkerCore()
+    with caplog.at_level("WARNING", logger="ak.sandbox.broker"):
+        for _ in range(2):
+            completion = await core.process(request)
+            assert completion.error is None and completion.result.stdout == "fake stdout"
+    records = [r for r in caplog.records if r.name == "ak.sandbox.broker" and "does not declare it" in r.getMessage()]
+    assert len(records) == 1
+    message = records[0].getMessage()
+    assert "language 'ruby'" in message
+    assert "'node'" not in message and "language 'python'" not in message
+
+
+@pytest.mark.asyncio
 async def test_docker_file_roundtrip_via_archives(docker_env):
     module, _client = docker_env
     provider = _docker_provider(module)
@@ -1886,12 +1942,35 @@ async def test_k8s_attach_to_timeout_sends_no_kill(k8s_env):
 
 def test_k8s_instance_capabilities_compose_in_one_derive(k8s_env):
     module, _cluster = k8s_env
-    config = _SandboxKubernetesConfig(network_policy=True, package_installers={"python": ["pip", "install"], "node": ["npm", "install"]})
+    config = _SandboxKubernetesConfig(
+        network_policy=True,
+        package_installers={"python": ["pip", "install"], "node": ["npm", "install"]},
+        language_runtimes={"python": ["python", "-c"], "node": ["node", "-e"]},
+    )
     caps = _k8s_provider(module, config).capabilities
     assert caps.policy_network is True
     assert caps.package_ecosystems == ["python", "node"] and caps.package_install is True
+    assert caps.languages == ["python", "node"]
     class_caps = module.KubernetesSandboxProvider.capabilities
-    assert class_caps.policy_network is False and class_caps.package_ecosystems == ["python"]
+    assert class_caps.policy_network is False and class_caps.package_ecosystems == ["python"] and class_caps.languages == ["python"]
+
+
+@pytest.mark.asyncio
+async def test_k8s_language_runtimes_drive_exec_argv_and_instance_languages(k8s_env):
+    module, cluster = k8s_env
+    config = _SandboxKubernetesConfig(language_runtimes={"python": ["python3", "-c"], "node": ["node", "-e"]})
+    provider = _k8s_provider(module, config)
+    assert provider.capabilities.languages == ["python", "node"]
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    calls_before = len(cluster.exec_calls)
+
+    await sandbox.execute_code("console.log(1)", "node")
+    await sandbox.execute_code("print(1)")
+    assert [call[1] for call in cluster.exec_calls[calls_before:]] == [["node", "-e", "console.log(1)"], ["python3", "-c", "print(1)"]]
+    with pytest.raises(SandboxCapabilityError, match="language:bash"):
+        await sandbox.execute_code("echo hi", "bash")
+    assert len(cluster.exec_calls) == calls_before + 2  # rejected before any exec
 
 
 @pytest.mark.asyncio
