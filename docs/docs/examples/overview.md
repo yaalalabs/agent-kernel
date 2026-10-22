@@ -74,7 +74,7 @@ Sandbox capability examples (execute code/commands in an isolated, permission-bo
 
 - **`basic/`** - Enable the sandbox, run code, persist a workspace across turns, manage named sessions
 - **`profiles/`** - Multiple named workload profiles (provider + scope routing: a docker-backed workspace and a local throwaway sandbox)
-- **`policy/`** - Policy/permissions on the docker provider: an enforced envelope (network deny, resource limits) and the fail-closed `strict` model for what docker cannot enforce (egress allowlist)
+- **`policy/`** - Policy/permissions on the docker provider: an enforced envelope (network deny, resource limits), the fail-closed `strict` model for what docker cannot enforce (egress allowlist), and a profile that permits package installs
 - **`docker/`** - The docker provider: container-isolated execution, package installs, and enforced network policy (requires a Docker daemon)
 - **`daytona/`** - The daytona provider: cloud container sandboxes with enforced network and resource policy and native idle auto-stop (requires a Daytona API key)
 - **`e2b/`** - The e2b provider: Firecracker micro-VM sandboxes with a stateful Jupyter kernel (variables persist across executions) and enforced network policy (requires an E2B API key)

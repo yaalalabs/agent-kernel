@@ -1320,8 +1320,9 @@ before they design the question.
 **What it does:** Lets agents execute code and shell commands in an isolated, permission-bounded
 environment. When enabled, agents automatically gain sandbox tools (`run_code`, `run_command`,
 `write_sandbox_file`, `read_sandbox_file`, `check_sandbox_task`, `list_sandbox_sessions`,
-`new_sandbox_session`, `destroy_sandbox_session`) and the usage guidance is injected into their
-system prompt — the agent's own instructions need not mention the sandbox.
+`new_sandbox_session`, `destroy_sandbox_session`, plus `install_packages` when a profile's policy
+permits package installs) and the usage guidance is injected into their system prompt — the
+agent's own instructions need not mention the sandbox.
 
 **Ask:** Which provider — `local_subprocess` (no isolation; dev/test only), `docker`
 (container isolation; needs the `sandbox-docker` extra and a Docker daemon), or another
@@ -1370,11 +1371,20 @@ sandbox:
         memory_mb: 512
         timeout: 30.0
         strict: true           # fail closed when the provider can't enforce a dimension
+        languages: [python]    # optional: run_code allowlist (omit = provider-declared; [] = no run_code)
+        package_install:       # optional: permits install_packages (omit = installs denied)
+          ecosystems: [python]
+          timeout: 300         # an install's own wall clock; omit = policy.timeout
       docker:
         image: python:3.12-slim
+        # package_installers: {python: [pip, install]}   # default; declaring it replaces the map
   broker:
     flavor: thread
 ```
+
+Package installs are off unless a profile declares `package_install`, and are rejected on an
+`environment: attached` profile. With `network_egress: deny`, installs need a package mirror or
+packages baked into the image.
 
 **3. No agent code changes needed** — the tools and prompt guidance attach automatically. Keep
 the agent's instructions about *what* to do; the sandbox usage is injected.

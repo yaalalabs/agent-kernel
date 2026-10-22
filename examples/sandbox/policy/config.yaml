@@ -55,5 +55,20 @@ sandbox:
         strict: false
       docker:
         image: python:3.12-slim
+
+    # Permissions, not resources: this profile permits package installs (install_packages runs
+    # the docker block's default `pip install`) and only Python in run_code. Every other profile
+    # above declares no package_install block, so installs there are denied.
+    installs:
+      type: docker
+      scope: per_session
+      policy:
+        timeout: 30.0
+        languages: [python] # run_code allowlist: python only ([] would disable run_code)
+        package_install:
+          ecosystems: [python]
+          timeout: 300 # an install's own wall clock; executions keep the 30 s timeout
+      docker:
+        image: python:3.12-slim
   broker:
     flavor: thread

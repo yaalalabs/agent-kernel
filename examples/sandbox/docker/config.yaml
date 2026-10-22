@@ -19,7 +19,7 @@ sandbox:
       idle_timeout: 21600 # 6 hours; an idle-expired container is removed and the workspace resets
       policy:
         package_install:
-          ecosystems: [python] # -> install_packages runs `pip install` in the container
+          ecosystems: [python] # -> install_packages runs the default `pip install` (docker.package_installers) in the container
       docker:
         image: python:3.12-slim
     offline:

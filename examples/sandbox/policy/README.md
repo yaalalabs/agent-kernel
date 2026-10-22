@@ -12,6 +12,11 @@ A profile's `policy` block is the permission and resource envelope an execution 
 | `cpu` / `memory_mb` | Resource limits. |
 | `timeout` | Per-execution wall-clock limit (seconds); always enforced framework-side. |
 | `strict` | Fail closed when a dimension can't be enforced (default `true`). |
+| `languages` | Languages `run_code` may use; omitted = whatever the provider declares; `[]` = no `run_code`. |
+| `package_install` | Permits `install_packages` (`ecosystems`, default `[python]`; optional `timeout`); omitted = installs denied. |
+
+`languages` and `package_install` are **permissions**: a request a profile does not permit is
+denied with a "not permitted" error before it reaches the sandbox, whatever the provider could do.
 
 ## Enforcement is per-provider, and unenforceable ≠ ignored
 
@@ -34,6 +39,10 @@ This example is docker-backed, which shows **both sides** of that model:
   with a policy error.
 - The **`relaxed`** profile sets the same allowlist with `strict: false`, so executions
   proceed with a warning and egress is effectively unrestricted. The explicit opt-out.
+- The **`installs`** profile shows the permissions: it permits package installs
+  (`package_install`, so the agent also gets the `install_packages` tool) and only Python in
+  `run_code` (`languages: [python]`). The other profiles declare no `package_install`, so
+  installs there are denied.
 
 (On a provider that enforces nothing, like `local_subprocess`, the same `guarded` profile
 would fail closed too: the `strict` model is uniform, only each provider's enforceable set
@@ -56,6 +65,9 @@ Things to try:
     Fetch https://example.com and print the status code.      # guarded -> fails: egress denied
     Run print("hello") using the restricted profile.          # rejected: allowlist unenforceable (fail closed)
     Run print("hello") using the relaxed profile.             # proceeds, with a warning
+    Install the Python package six using the installs profile, then import it.   # permitted
+    Run `echo hi` as bash code using the installs profile.    # denied: languages is [python]
+    Install six using the guarded profile.                    # denied: no package_install
 
 For the docker provider itself (images, package installs, reattach behavior), see
 [../docker/](../docker/).
@@ -67,5 +79,6 @@ For the docker provider itself (images, package installs, reattach behavior), se
 The tests require a running Docker daemon and `OPENAI_API_KEY`. They use fuzzy comparison
 mode (`test-config.yaml`) with sentinel replies, so every expected answer is exact: the
 guarded profile computes `42` but reports `OFFLINE` for a network fetch (deny enforced),
-the restricted profile reports `BLOCKED` (fail closed), and the relaxed profile computes
-`42` (strict opt-out proceeds).
+the restricted profile reports `BLOCKED` (fail closed), the relaxed profile computes
+`42` (strict opt-out proceeds), and the two permission checks report `DENIED` (bash on the
+`installs` profile, a package install on `guarded`). The permission tests need no network.

@@ -61,12 +61,17 @@ The sandbox capability (`ak-py/src/agentkernel/sandbox/`) is config-driven and p
   (the base default raises `SandboxCapabilityError`), and declares a `capabilities` class attribute.
 - **`Sandbox`** (`base.py`) — a handle to one live sandbox. Implements the two abstract methods
   `execute_code()` (`language="python"`) and `close()`, and optionally `execute_command()`,
-  `upload_file()`, `download_file()`, `install_packages()` (each raises `SandboxCapabilityError`
-  in the base until overridden).
+  `upload_file()`, `download_file()`, `install_packages(packages, ecosystem="python", timeout=None)`
+  (each raises `SandboxCapabilityError` in the base until overridden). An `install_packages` override
+  raises `SandboxCapabilityError(<handle>, "package_ecosystem:<e>")` for an ecosystem the instance
+  does not declare, and honors `timeout` (the install's effective timeout).
 - **`SandboxCapabilities`** (`model.py`) — the honest declaration of what the provider supports
-  (isolation tier, shell, languages, files, package_install, stateful, attach, principal_user,
-  policy_network/filesystem/resources). The manager/worker consult it before routing an operation;
-  an operation a provider didn't declare raises `SandboxCapabilityError`.
+  (isolation tier, shell, languages, files, package_ecosystems, stateful, attach, principal_user,
+  policy_network/filesystem/resources). `package_ecosystems` is the source of truth for installs;
+  `package_install` is derived from it by a validator. The manager/worker consult it before routing
+  an operation; an operation a provider didn't declare raises `SandboxCapabilityError`. What a
+  profile *permits* (`policy.languages`, `policy.package_install`) is decided separately by
+  `SandboxPermissionGuard`; providers never read the policy's permission fields.
 - **`SandboxProviderFactory`** (`factory.py`) — resolves a profile's `type` to a provider. Built-in
   short names are `if/elif` branches with real lazy imports; anything with a dot is treated as a
   dotted path to a `SandboxProvider` subclass (bring-your-own, no code change needed).
@@ -81,10 +86,13 @@ over-declaring is a security bug.
 **Instance-level capability override** (#503): when a capability's enforcement depends on
 operator-asserted infrastructure the provider cannot detect, keep the class declaration honest
 (`False`) and flip it per instance in `__init__` via
-`self.capabilities = type(self).capabilities.model_copy(update=...)` behind an explicit config
-flag. The reference is the `kubernetes` provider's `network_policy: true`, which asserts the
-cluster CNI actually enforces NetworkPolicy; consumers read `provider.capabilities` on the
-instance, so attribute shadowing is sufficient.
+`self.capabilities = type(self).capabilities.derive(...)` behind an explicit config flag.
+Use `derive()`, never `model_copy(update=...)`: `model_copy` skips the validator that keeps
+`package_install` consistent with `package_ecosystems`. Compose every override into **one**
+`derive()` call. The reference is the `kubernetes` provider: its `network_policy: true` (the
+operator asserts the cluster CNI enforces NetworkPolicy) and its `package_installers` keys go into
+the same `derive(package_ecosystems=eco, package_install=bool(eco), policy_network=True)`.
+Consumers read `provider.capabilities` on the instance, so attribute shadowing is sufficient.
 
 ## Step-by-Step
 
@@ -117,6 +125,13 @@ class <Provider>Sandbox(Sandbox):
     # SandboxCapabilityError for execute_command / upload_file / download_file / install_packages
     # when not overridden — that is capability honesty in action.
 
+    # A provider that installs packages: check the instance's declared ecosystems, then let the
+    # injected PackageInstaller validate the specs and build the argv (or command string).
+    async def install_packages(self, packages: list[str], ecosystem: str = "python", timeout: float | None = None) -> SandboxResult:
+        if ecosystem not in self._capabilities.package_ecosystems:
+            raise SandboxCapabilityError(self.__class__.__name__, f"package_ecosystem:{ecosystem}")
+        return await self._exec(self._installer.argv(packages, ecosystem), timeout)  # or installer.command(...)
+
     async def close(self) -> None:
         # Idempotent. For per_session scope this must NOT destroy state needed for a later
         # attach() — only destroy() permanently disposes backend state.
@@ -125,6 +140,14 @@ class <Provider>Sandbox(Sandbox):
 
 Sync SDKs must be wrapped in `asyncio.to_thread` (see `docker.py`), since the sandbox runs on an
 event loop. Enforce `timeout` with `asyncio.wait_for` when the backend has no native timeout.
+
+Handles receive the provider **instance's** `capabilities` (and its `PackageInstaller`) as
+constructor keywords and check those, never the class attribute, so instance overrides count.
+A handle that execs processes inside a container should kill a timed-out or cancelled exec:
+`ProcessKiller` (`providers/process.py`) tags each exec with an environment marker and builds a
+procps-free `/proc` scan that kills exactly that exec and its children (see `docker.py`,
+`kubernetes.py`). Never kill in an environment the framework does not own (`attach_to`).
+The worker's own timer is only a backstop at `timeout + BrokerWorkerCore.BACKSTOP_GRACE_SECONDS`.
 
 ### 3. Implement the Provider
 
@@ -140,7 +163,7 @@ class <Provider>SandboxProvider(SandboxProvider):
         shell=True,
         languages=["python"],
         files=True,
-        package_install=False,
+        package_ecosystems=[],               # e.g. ["python"]; empty = no installs (package_install is derived)
         stateful=False,
         attach=True,
         provisions=True,                     # False for attach-only backends (never create)
@@ -154,6 +177,12 @@ class <Provider>SandboxProvider(SandboxProvider):
     def __init__(self, config) -> None:
         super().__init__(config)             # config is the provider's Pydantic config block
         # Create SDK clients lazily (first use), not here — keep import/constructor cheap.
+        # A provider that installs packages builds its installer from its own config block and
+        # declares the configured ecosystems on the instance:
+        #   self._installer = PackageInstaller.from_config(config)
+        #   eco = self._installer.ecosystems
+        #   self.capabilities = type(self).capabilities.derive(package_ecosystems=eco, package_install=bool(eco))
+        # and passes capabilities=self.capabilities, installer=self._installer to every handle.
 
     async def create(self, *, principal: SandboxPrincipal, policy: SandboxPolicy) -> Sandbox:
         # Provision a new sandbox. Map `policy` onto the backend's real controls here; if a
@@ -203,7 +232,7 @@ wire it as an `Optional` field on **both** `_SandboxProfileConfig` and `_Sandbox
 latter for single-backend sugar), mirroring `_SandboxDockerConfig`:
 
 ```python
-class _Sandbox<Provider>Config(BaseModel):
+class _Sandbox<Provider>Config(BaseModel):   # or _SandboxProviderPackageConfig, see below
     # provider-specific fields, e.g. image, region, api_key_env, attach_to
     ...
 
@@ -213,6 +242,13 @@ class _Sandbox<Provider>Config(BaseModel):
 
 The factory's `_require_block` raises `SandboxConfigError` when a built-in's config block is
 missing, so the block must exist even if all fields have defaults (`<provider>: {}`).
+
+A provider that installs packages subclasses `_SandboxProviderPackageConfig` instead of
+`BaseModel`, as `docker`, `kubernetes`, `e2b` and `daytona` do. That mixin adds
+`package_installers` (ecosystem → installer argv prefix, default `{python: [pip, install]}`;
+declaring it replaces the default) and `package_rules` (ecosystem → dotted path of a
+`PackageSpecRule`), and `PackageSpecRuleFactory.validate_config` resolves its rules at agent and
+worker startup. Don't add your own installer fields.
 
 ### 6. Add the Optional Dependency Extra
 
@@ -230,7 +266,10 @@ Add to `ak-py/tests/test_sandbox_providers.py`:
 - **Contract suite** — subclass the public `SandboxProviderContract` (from
   `agentkernel.sandbox.testing`) with a `provider` fixture returning your provider against a
   mocked SDK. It asserts the ABC semantics (mandatory `execute_code`, capability honesty,
-  idempotent close/destroy, result-vs-exception discipline, attach honesty).
+  idempotent close/destroy, result-vs-exception discipline, attach honesty). When the provider
+  declares `package_install`, the contract also checks that an undeclared ecosystem raises
+  `SandboxCapabilityError`, so the handle needs the `install_packages(packages, ecosystem, timeout)`
+  signature.
 - **Provider specifics** — create/attach/execute/destroy call shapes, policy/principal mapping
   arguments, `to_thread` usage for sync SDKs, timeout behavior.
 
@@ -264,7 +303,8 @@ including a profile that demonstrates enforced policy and sentinel-based determi
 ## Checklist
 
 - [ ] `ak-py/src/agentkernel/sandbox/providers/<provider>.py` with `Sandbox` + `SandboxProvider` subclasses
-- [ ] `capabilities` declared honestly (only what the backend truly enforces)
+- [ ] `capabilities` declared honestly (only what the backend truly enforces); instance overrides via `derive()`
+- [ ] If it installs packages: config subclasses `_SandboxProviderPackageConfig`, handle uses `PackageInstaller` and raises for undeclared ecosystems
 - [ ] Factory `if/elif` real-import branch + name in `_BUILTIN_PROVIDER_NAMES` (`factory.py`)
 - [ ] `_Sandbox<Provider>Config` block on `_SandboxProfileConfig` and `_SandboxConfig` (`config.py`)
 - [ ] Optional dependency extra in `pyproject.toml` (if the SDK isn't stdlib/boto3)
