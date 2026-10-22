@@ -50,7 +50,8 @@ class SandboxPermissionGuard:
         if reason is None:
             return
         self._log.warning(
-            "Sandbox permission denied: operation=%s profile=%s agent=%s ak_session_id=%s sandbox_session_id=%s reason=%s",
+            # sandbox_session_id may be a model-supplied id (an unknown one reaches the guard), so it is repr-escaped.
+            "Sandbox permission denied: operation=%s profile=%s agent=%s ak_session_id=%s sandbox_session_id=%r reason=%s",
             operation,
             context.profile,
             context.agent,
@@ -65,15 +66,16 @@ class SandboxPermissionGuard:
 
     @staticmethod
     def _denial_reason(operation: str, payload: Mapping[str, Any], policy: SandboxPolicy) -> Optional[str]:
-        """The deny rules; None = permitted. Reasons hold only names and the permitted list, never code or specs."""
+        """The deny rules; None = permitted. Reasons hold only names (repr-escaped, as they come from the
+        request) and the permitted list, never code or specs."""
         if operation == "execute_code" and policy.languages is not None:
             language = payload.get("language", "python")
             if language not in policy.languages:
-                return f"language '{language}' is not permitted by the profile (permitted: {policy.languages})"
+                return f"language {language!r} is not permitted by the profile (permitted: {policy.languages})"
         if operation == "install_packages":
             if policy.package_install is None:
                 return "the profile does not permit package installation"
             ecosystem = payload.get("ecosystem", "python")
             if ecosystem not in policy.package_install.ecosystems:
-                return f"ecosystem '{ecosystem}' is not permitted by the profile (permitted: {policy.package_install.ecosystems})"
+                return f"ecosystem {ecosystem!r} is not permitted by the profile (permitted: {policy.package_install.ecosystems})"
         return None

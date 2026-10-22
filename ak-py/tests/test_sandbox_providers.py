@@ -11,14 +11,12 @@ import base64
 import importlib
 import io
 import shlex
-import shutil
 import subprocess
 import sys
 import tarfile
 import threading
 import time
 import types
-import uuid
 from pathlib import Path
 
 import pytest
@@ -198,14 +196,16 @@ class FakeContainer:
         self.id = container_id
         self.status = "running"
         self.exec_calls = []
+        self.exec_envs = []  # the environment= of each exec_run, aligned with exec_calls
         self.exec_threads = []
         self.files: dict[str, bytes] = {}
         self.removed = False
         self.started = False
         self.exec_delay = 0.0
 
-    def exec_run(self, cmd, workdir=None, demux=True):
+    def exec_run(self, cmd, workdir=None, demux=True, environment=None):
         self.exec_calls.append((list(cmd), workdir))
+        self.exec_envs.append(environment)
         self.exec_threads.append(threading.current_thread())
         if self.exec_delay:
             time.sleep(self.exec_delay)
@@ -335,6 +335,11 @@ async def test_docker_execute_call_shape_and_to_thread(docker_env):
         await sandbox.execute_code("echo hi", "bash")  # undeclared language
 
 
+def _docker_marker(container, index):
+    """The ProcessKiller marker the index-th exec carried in its environment."""
+    return container.exec_envs[index][ProcessKiller.MARKER_ENV]
+
+
 @pytest.mark.asyncio
 async def test_docker_timeout_raises_and_best_effort_kills(docker_env):
     module, _client = docker_env
@@ -347,7 +352,7 @@ async def test_docker_timeout_raises_and_best_effort_kills(docker_env):
         await sandbox.execute_code("while True: pass", timeout=0.05)
     container.exec_delay = 0.0
     await asyncio.sleep(0.6)  # let the abandoned exec thread finish recording
-    assert ProcessKiller.argv("python") in [call[0] for call in container.exec_calls]
+    assert ProcessKiller.argv(_docker_marker(container, 0)) in [call[0] for call in container.exec_calls]
 
 
 @pytest.mark.asyncio
@@ -361,7 +366,8 @@ async def test_docker_install_uses_installer_timeout_and_kill(docker_env):
     with pytest.raises(SandboxTimeoutError):
         await sandbox.install_packages(["requests"], timeout=0.05)
     assert container.exec_calls[0][0] == ["pip", "install", "requests"]
-    assert container.exec_calls[-1][0] == ProcessKiller.argv("pip")
+    assert container.exec_calls[-1][0] == ProcessKiller.argv(_docker_marker(container, 0))
+    assert container.exec_envs[-1] is None  # the kill itself is untagged, so it never matches itself
 
 
 @pytest.mark.asyncio
@@ -377,12 +383,12 @@ async def test_docker_cancellation_kills_and_reraises(docker_env):
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
-    assert [call[0] for call in container.exec_calls].count(ProcessKiller.argv("python")) == 1
+    assert [call[0] for call in container.exec_calls].count(ProcessKiller.argv(_docker_marker(container, 0))) == 1
 
 
 @pytest.mark.asyncio
 async def test_docker_attach_to_timeout_sends_no_kill(docker_env):
-    # The framework does not own an attach_to container: a name-based kill could hit the operator's processes.
+    # The framework does not own an attach_to container, so its execs are neither tagged nor killed.
     module, client = docker_env
     existing = FakeContainer("pre-existing")
     client.containers.by_id["pre-existing"] = existing
@@ -393,6 +399,7 @@ async def test_docker_attach_to_timeout_sends_no_kill(docker_env):
     with pytest.raises(SandboxTimeoutError):
         await sandbox.execute_code("while True: pass", timeout=0.05)
     assert [call[0][0] for call in existing.exec_calls] == ["python"]  # no kill exec
+    assert existing.exec_envs == [None]  # and no marker
 
 
 @pytest.mark.asyncio
@@ -1468,6 +1475,16 @@ async def test_daytona_install_passes_timeout_and_checks_ecosystem(daytona_env):
         await sandbox.install_packages(["curl"], ecosystem="deb")
 
 
+@pytest.mark.asyncio
+async def test_daytona_sub_second_timeout_rounds_up_not_to_zero(daytona_env):
+    module, _client_cls = daytona_env
+    provider = _daytona_provider(module)
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    await sandbox.install_packages(["requests"], timeout=0.5)
+    assert sandbox._sandbox.exec_calls[-1][3] == 1  # int() would give 0, which the SDK may read as "no timeout"
+
+
 # --------------------------------------------------------------------------- #
 # kubernetes — mocked Kubernetes client (no cluster)
 # --------------------------------------------------------------------------- #
@@ -1498,7 +1515,8 @@ class FakeK8sCluster:
         self.pod_creates: list[dict] = []
         self.pod_deletes: list[tuple[str, str]] = []
         self.netpol_deletes: list[tuple[str, str]] = []
-        self.exec_calls: list[tuple[str, list, int]] = []  # (pod, command, thread ident)
+        self.exec_calls: list[tuple[str, list, int]] = []  # (pod, command, thread ident); command unwrapped
+        self.exec_markers: list = []  # the ProcessKiller marker each exec was wrapped with (None = unwrapped)
         self.headers_log: list[tuple[str, dict]] = []  # (operation, request headers) for impersonation asserts
         self.api_clients: list = []  # every FakeApiClient the provider constructed
         self.default_phase = "Running"
@@ -1510,9 +1528,11 @@ class FakeK8sCluster:
         pod = self.pods.get((namespace, name))
         if pod is None:
             raise FakeApiException(404)
-        self.exec_calls.append((name, kwargs["command"], threading.get_ident()))
+        command, marker = _unwrap_marker(kwargs["command"])
+        self.exec_calls.append((name, command, threading.get_ident()))
+        self.exec_markers.append(marker)
         self.headers_log.append(("exec", dict(headers or {})))
-        return _FakeExecClient(pod, kwargs["command"], kwargs.get("stdin", False), self)
+        return _FakeExecClient(pod, command, kwargs.get("stdin", False), self)
 
     @staticmethod
     def _default_exec(pod, command, stdin_data):
@@ -1543,6 +1563,16 @@ class FakeK8sCluster:
                 return "", "", 0
             return ("", "simulated failure", 1) if FAIL_MARKER in shell_cmd else (shell_cmd, "", 0)
         return "", f"unknown command {command}", 127
+
+
+_WRAP_PREFIX = ProcessKiller.wrap([], "m")[:4]
+
+
+def _unwrap_marker(command):
+    """Strip ProcessKiller.wrap's launcher: (inner argv, marker), or (command, None) when unwrapped."""
+    if command[:4] == _WRAP_PREFIX:
+        return command[5:], command[4]
+    return command, None
 
 
 class _FakeExecClient:
@@ -1792,7 +1822,7 @@ async def test_k8s_exec_timeout_kills_and_raises(k8s_env):
     cluster.exec_handler = slow_handler
     with pytest.raises(SandboxTimeoutError):
         await sandbox.execute_code("while True: pass", timeout=0.05)
-    assert cluster.exec_calls[-1][1] == ProcessKiller.argv("python")  # the best-effort kill
+    assert _kill_calls(cluster, "python") == [cluster.exec_calls[-1]]  # the best-effort kill
 
 
 def _slow_python(cluster, seconds=1.0):
@@ -1808,7 +1838,9 @@ def _slow_python(cluster, seconds=1.0):
 
 
 def _kill_calls(cluster, executable):
-    return [call for call in cluster.exec_calls if call[1] == ProcessKiller.argv(executable)]
+    """The kill execs aimed at the markers of the execs of ``executable``."""
+    markers = {m for (_, command, _), m in zip(cluster.exec_calls, cluster.exec_markers) if m and command[0] == executable}
+    return [call for call in cluster.exec_calls if any(call[1] == ProcessKiller.argv(m) for m in markers)]
 
 
 @pytest.mark.asyncio
@@ -1849,6 +1881,7 @@ async def test_k8s_attach_to_timeout_sends_no_kill(k8s_env):
     with pytest.raises(SandboxTimeoutError):
         await sandbox.execute_code("while True: pass", timeout=0.05)
     assert _kill_calls(cluster, "python") == []
+    assert set(cluster.exec_markers) == {None}  # attach_to execs are never tagged
 
 
 def test_k8s_instance_capabilities_compose_in_one_derive(k8s_env):
@@ -2072,12 +2105,16 @@ async def test_k8s_worker_admits_user_mode_and_fails_closed_without_one(k8s_env,
 
 
 def test_process_killer_argv_shape():
-    argv = ProcessKiller.argv("/usr/local/bin/a-very-long-interpreter-name")
+    marker = ProcessKiller.new_marker()
+    assert len(marker) == 32 and marker != ProcessKiller.new_marker()  # fixed-length, fresh per exec
+    argv = ProcessKiller.argv(marker)
     assert argv[:2] == ["/bin/sh", "-c"]
     script = argv[2]
-    assert '[ "$comm" = a-very-long-int ]' in script  # basename truncated to the kernel's 15-char comm
+    assert f"AK_EXEC_ID={marker}" in script and "/environ" in script  # matches the marker, not a name
     assert '[ "$pid" = 1 ]' in script and '[ "$pid" = "$$" ]' in script  # PID 1 and the scanner are skipped
     assert "pkill" not in script and "ps " not in script  # procps-free
+    assert ProcessKiller.environment(marker) == {"AK_EXEC_ID": marker}
+    assert ProcessKiller.wrap(["pip", "install", "x"], marker)[-4:] == [marker, "pip", "install", "x"]
 
 
 def test_process_killer_timeout_fits_inside_the_backstop():
@@ -2085,24 +2122,22 @@ def test_process_killer_timeout_fits_inside_the_backstop():
     assert ProcessKiller.KILL_TIMEOUT_SECONDS < BrokerWorkerCore.BACKSTOP_GRACE_SECONDS
 
 
-@pytest.mark.skipif(not Path("/proc/self/comm").exists(), reason="needs a Linux /proc")
-def test_process_killer_kills_the_target_and_skips_its_own_shell(tmp_path):
-    # A uniquely named copy of /bin/sh plays both the target and the scanner, so the scan can
-    # only match these two processes on the host (even across parallel runs), and the
-    # scanner's own `comm` matches too. The name stays within the kernel's 15-char comm.
-    shell = tmp_path / f"akzq{uuid.uuid4().hex[:8]}"
-    shutil.copy("/bin/sh", shell)
-    shell.chmod(0o755)
+@pytest.mark.skipif(not Path("/proc/self/environ").exists(), reason="needs a Linux /proc")
+def test_process_killer_kills_the_tagged_target_and_spares_a_same_named_bystander():
+    # The target is launched through wrap() (the kubernetes launcher) on the host /bin/sh; the
+    # bystander is the same program with no marker, like a background server from an earlier exec.
+    loop = ["/bin/sh", "-c", "while :; do sleep 1; done"]
+    marker = ProcessKiller.new_marker()
+    target = subprocess.Popen(ProcessKiller.wrap(loop, marker))
+    bystander = subprocess.Popen(loop)
     try:
-        target = subprocess.Popen([str(shell), "-c", "while :; do sleep 1; done"])
-    except OSError:
-        pytest.skip("cannot exec from tmp_path (noexec mount)")
-    try:
-        argv = ProcessKiller.argv(str(shell))
-        scanner = subprocess.run([str(shell), *argv[1:]], timeout=10)
-        assert scanner.returncode == 0  # its own $$ was skipped
+        time.sleep(0.2)  # let the launcher exec into the loop
+        scanner = subprocess.run(ProcessKiller.argv(marker), timeout=60)
+        assert scanner.returncode == 0  # the scanner did not kill itself
         assert target.wait(timeout=5) == -9
+        assert bystander.poll() is None  # same name, no marker: untouched
     finally:
-        if target.poll() is None:
-            target.kill()
-            target.wait()
+        for proc in (target, bystander):
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait()

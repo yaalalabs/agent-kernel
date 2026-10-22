@@ -33,7 +33,9 @@ it matches the design's intent:
    was verified with `docker run --rm python:3.12-slim sh -c 'command -v pkill'`, which prints nothing. So today's
    `_best_effort_kill` (`docker.py:89`, `kubernetes.py:169`) kills nothing on the default image. The design
    requires that a timed-out install be killed, so the kill moves to a `/proc` scan that needs no procps (see
-   [ProcessKiller](#processkiller)).
+   [ProcessKiller](#processkiller)). The scan matches a per-exec environment marker, not the process name: once the
+   kill actually works, a name match would also kill same-named processes from earlier execs, such as a background
+   `python` server the agent started.
 4. **A bring-your-own rule for a built-in ecosystem runs after the built-in rule, never instead of it.** The design
    offers bring-your-own rules as the way to get package-name allowlists. A `python` allowlist must therefore be
    able to narrow the `python` grammar, and must not be able to loosen it.
@@ -64,7 +66,7 @@ ak-py/src/agentkernel/sandbox/
 │   ├── queue.py           # ceiling check against the operation's effective timeout
 │   └── queue_worker.py    # startup rule resolution
 └── providers/
-    ├── process.py         # NEW: ProcessKiller (procps-free kill-by-name command)
+    ├── process.py         # NEW: ProcessKiller (per-exec marker + procps-free kill-by-marker command)
     ├── docker.py          # instance caps; installer argv; runtime argv (phase 2); kill on timeout or cancel
     ├── kubernetes.py      # same as docker
     ├── e2b.py             # instance caps; installer command (shlex.join); install timeout
@@ -218,8 +220,10 @@ The deny rules are exhaustive. Any operation not listed here is permitted:
 
 - The guard does not gate `execute_command`, `upload_file`, `download_file` or `destroy`.
 - **Log line.** It is written once per denial, on `ak.sandbox.broker`, at `WARNING`:
-  `Sandbox permission denied: operation=%s profile=%s agent=%s ak_session_id=%s sandbox_session_id=%s reason=%s`.
+  `Sandbox permission denied: operation=%s profile=%s agent=%s ak_session_id=%s sandbox_session_id=%r reason=%s`.
   The reason text holds only the language or ecosystem names and the permitted list, never code or package specs.
+  The names come from the request, so they are repr-escaped (`{name!r}`), and so is `sandbox_session_id` (`%r`),
+  which may be a model-supplied id: a newline in either cannot forge a log line.
 - **Exception message.** It is `profile '<p>' does not permit <operation>: <reason>; this is a configuration
   decision, so do not retry it through run_command`.
 - **Concurrency.** The guard holds no state. One instance per `BrokerWorkerCore` and one per `ExecutionManager` is
@@ -393,14 +397,16 @@ class PackageInstaller:
   - Before the pattern, it rejects these explicitly, each with its own message:
     - a `git+` prefix;
     - any `/`;
-    - an archive suffix: `.whl`, `.tar.gz` or `.zip`.
+    - an archive suffix: pip's full `ARCHIVE_EXTENSIONS` set (`.zip`, `.whl`, `.tar.bz2`, `.tbz`, `.tar.gz`, `.tgz`,
+      `.tar`, `.tar.xz`, `.txz`, `.tlz`, `.tar.lz`, `.tar.lzma`). pip installs a bare entry with any of these
+      suffixes as a local file, so a shorter list would let a file in the workdir through.
   - The pattern excludes `@`, so direct references (`name @ url`) and markers (`;`) are also rejected.
 - **`node` rule.**
   - It accepts `name`, `@scope/name`, and either one followed by `@<version-or-range>`. The pattern is:
     `^(?:@[A-Za-z0-9][A-Za-z0-9._~-]*/)?[A-Za-z0-9][A-Za-z0-9._~-]*(?:@[A-Za-z0-9.^~<>=*|+_-]+)?$`
   - Before the pattern, it rejects these explicitly:
     - the protocol prefixes `github:`, `git+`, `file:`, `link:` and `npm:`;
-    - a `.tgz` or `.tar.gz` suffix;
+    - a `.tgz`, `.tar.gz` or `.tar` suffix (npm-package-arg treats each as a local file);
     - any `/` other than the single scope separator, which covers `user/repo` shorthand.
 - **Rule chains.** For a built-in key, a `package_rules` entry is appended after the built-in rule, so it can only
   narrow (clarification 4). For any other key, the `package_rules` entry is the whole chain.
@@ -418,39 +424,55 @@ class PackageInstaller:
 
 ```python
 class ProcessKiller:
-    """Builds a kill-by-name command that needs no procps (the default python:3.12-slim has none)."""
+    """Tags an exec with a unique marker and builds the procps-free command that kills it."""
 
+    MARKER_ENV: ClassVar[str] = "AK_EXEC_ID"
     KILL_TIMEOUT_SECONDS: ClassVar[float] = 5.0  # must stay below BrokerWorkerCore.BACKSTOP_GRACE_SECONDS
 
     @staticmethod
-    def argv(executable: str) -> list[str]:
-        """['/bin/sh', '-c', <scan /proc/[0-9]*/comm, SIGKILL every pid whose comm equals
-        basename(executable)[:15], skipping PID 1 and the scanning shell's own $$>]."""
+    def new_marker() -> str: ...                                # uuid4().hex: fixed-length, fresh per exec
+
+    @classmethod
+    def environment(cls, marker: str) -> dict[str, str]: ...     # {AK_EXEC_ID: marker}, for Docker exec_run(environment=)
+
+    @classmethod
+    def wrap(cls, argv: list[str], marker: str) -> list[str]:
+        """['/bin/sh', '-c', 'export AK_EXEC_ID="$1"; shift; exec "$@"', 'ak-exec', marker, *argv], for the
+        Kubernetes stream exec, which has no per-exec environment."""
+
+    @classmethod
+    def argv(cls, marker: str) -> list[str]:
+        """['/bin/sh', '-c', <scan /proc/[0-9]*/environ, SIGKILL every pid whose environment holds
+        AK_EXEC_ID=<marker>, skipping PID 1 and the scanning shell's own $$>]."""
 ```
 
-- This is the single home of the kill command shared by `docker` and `kubernetes`. It replaces
-  `["pkill", "-9", name]` (`docker.py:89`) and `sh -c "pkill -9 name"` (`kubernetes.py:169`).
-  - The `[:15]` truncation matches the kernel's `comm` length.
-  - The `$$` skip stops a timed-out `/bin/sh -c` command from killing its own scanner.
-  - The PID 1 skip protects the container's main process. Managed sandboxes run `sleep infinity` as PID 1, but an
-    image whose entrypoint is an interpreter would otherwise be killed with it (the concern noted at
-    `tests/test_sandbox_providers.py:1617`).
+- This is the single home of the kill shared by `docker` and `kubernetes`. It replaces `["pkill", "-9", name]`
+  (`docker.py:89`) and `sh -c "pkill -9 name"` (`kubernetes.py:169`).
+- **Why a marker, not the name.** Once the kill works, a name match kills every same-named process in the sandbox:
+  a timed-out `run_code` would also kill a background `python` server that an earlier exec started. Each killable
+  exec therefore carries a fresh marker in its environment, and the kill matches only that marker.
+  - `docker` passes it through `exec_run(environment=...)`, so the exec argv is unchanged.
+  - `kubernetes` launches the exec through `wrap()`: the launcher exports the marker and `exec`s the real argv, so
+    the process that runs is still argv[0].
+  - Children inherit the environment, so the installer's children (pip's build backends, npm's lifecycle scripts)
+    are killed with it.
+  - The kill's own exec carries no marker, so it never matches itself. The `$$` and PID 1 skips stay as second
+    guards. PID 1 is the container's main process: managed sandboxes run `sleep infinity` there, but an image whose
+    entrypoint is an interpreter would otherwise be at risk (the concern noted at `tests/test_sandbox_providers.py:1617`).
+  - The shell drops environ's NUL separators when reading it. That is safe because the marker is fixed-length hex,
+    so no marker is a prefix of another.
 - **The kill never runs in an environment the framework does not own.** When the provider's config sets
   `attach_to` (`docker` mode 3, `config.py:746`; `kubernetes` mode 3, `config.py:783`), the handle is built with the
-  kill disabled.
+  kill disabled, and its execs are neither tagged nor wrapped.
   - On a timeout or cancellation it raises as usual, and the timed-out process keeps running.
-  - The reason: a name-based kill there would also kill the operator's own processes, such as every `python` worker
-    of the application in that container.
   - The flag comes from the config's `attach_to`, not from create-versus-attach, because managed sessions reattach
     through `attach()` too.
-  - Today `pkill` already behaves this way on attached containers whose image ships procps. The change narrows that
-    hazard rather than widening it.
 - The kill is **best-effort**, for three reasons:
-  - It targets the process whose name equals the argv's first token. An argv prefix that starts with a wrapper,
-    such as `/usr/bin/env node`, kills the wrapper's name only.
-  - Children of the installer are orphaned, not killed. Examples are pip's build backends and npm's lifecycle
-    scripts.
+  - A process that clears or replaces its environment (for example `env -i`) no longer carries the marker and
+    escapes.
+  - Background jobs started *by the timed-out exec itself* inherit its marker and are killed with it.
   - The kill call is bounded by `KILL_TIMEOUT_SECONDS`.
+- The scan needs `/bin/sh` and `cat`, which every supported image ships.
 - The docs state these limits.
 
 ### Provider changes — phase 1 (packages, instance capabilities) and phase 2 (runtimes)
@@ -486,8 +508,8 @@ checks read the instance capabilities, not the class attribute. These five lines
 - **Kill on timeout or cancellation (`docker`, `kubernetes`).**
   - In `_exec` (`docker.py:66-83`, `kubernetes.py:118-163`), both `asyncio.TimeoutError` and
     `asyncio.CancelledError` run the kill:
-    `asyncio.wait_for(self._kill(argv[0]), ProcessKiller.KILL_TIMEOUT_SECONDS)`, which swallows any failure with
-    one warning as today.
+    `asyncio.wait_for(<exec ProcessKiller.argv(marker)>, ProcessKiller.KILL_TIMEOUT_SECONDS)`, where `marker` is
+    the one the timed-out exec carried. It swallows any failure with one warning as today.
   - Then `TimeoutError` becomes `SandboxTimeoutError`, and `CancelledError` is re-raised.
   - Supported Pythons are 3.12 and 3.13. On both, `asyncio.wait_for` cancels the awaited coroutine in the same task
     and waits for its handler to finish before raising. So a backstop cancellation completes the kill while
@@ -680,10 +702,11 @@ All of these are intentional.
    - a timed-out `execute_code`, `execute_command` or install on `docker` and `kubernetes` is killed (best-effort);
    - `local_subprocess` now kills its process group;
    - `ec2_ssm` now cancels its command.
-5. **The kill works on images without procps, and only in managed sandboxes.** The `docker` and `kubernetes` kill
-   now uses a `/proc` scan instead of `pkill`, so it works on the default image, where today it does nothing. It
-   skips PID 1, and it never runs when the provider's `attach_to` is set. Today `pkill` would kill matching
-   processes in an attached container whose image ships procps.
+5. **The kill works on images without procps, targets only the timed-out exec, and runs only in managed
+   sandboxes.** The `docker` and `kubernetes` kill now uses a `/proc` scan for the exec's environment marker instead
+   of `pkill` by name, so it works on the default image, where today it does nothing, and it spares same-named
+   processes from earlier execs. It skips PID 1, and it never runs when the provider's `attach_to` is set. Today
+   `pkill` would kill matching processes in an attached container whose image ships procps.
 6. **`e2b` and `daytona` installs now run under the effective timeout through their SDK's native command timeout.**
    Today they run with none.
 7. **`e2b` and `daytona` build install commands with `PackageInstaller` (`shlex.join`).** The command for a valid
@@ -704,7 +727,8 @@ All of these are intentional.
 - `BrokerOperation`, `ExecutionRequest`, `ExecutionCompletion`, `BrokerWireCodec` and the response-store record
   format.
 - The `docker`/`kubernetes` install argv `["pip", "install", ...]` (`tests/test_sandbox_providers.py:327-328` and
-  `1638-1642`).
+  `1638-1642`). On `kubernetes` a killable exec is launched through `ProcessKiller.wrap`, so the stream API receives
+  the launcher followed by that unchanged argv.
 - Every existing public export.
 - The `_enforce_policy` and `_check_principal` behaviour and their warnings.
 - The default `languages` of every provider.
@@ -741,8 +765,8 @@ All of these are intentional.
   - Install time counts against `package_install.timeout` plus the 10 s backstop.
   - A queue transport's redelivery window (`ack_wait` or visibility timeout) must exceed that total. Otherwise the
     install is redelivered and re-runs (`broker/queue_worker.py:152-156`).
-- **The kill's best-effort limits** from [ProcessKiller](#processkiller), and the rule that a timed-out process in
-  an attached container (`attach_to`) is not killed.
+- **The kill's best-effort limits** from [ProcessKiller](#processkiller) (it targets only the timed-out exec and
+  its children), and the rule that a timed-out process in an attached container (`attach_to`) is not killed.
 - **The migration step for bring-your-own `Sandbox` subclasses:** the new signature, and the shim's one-release
   window. The same text goes into the release notes.
 
@@ -785,7 +809,7 @@ New test files:
 - **`tests/test_sandbox_packages.py`** covers spec validation and rule resolution:
   - every baseline rejection;
   - every accept and reject case of the `python` and `node` rules, including `dist/x.whl`, `sub/pkg`,
-    `user/repo`, `github:a/b` and `pkg@file:x`;
+    `user/repo`, `github:a/b`, `pkg@file:x` and one entry per archive suffix;
   - error messages never contain the entry;
   - `argv()` and `command()` shapes;
   - a bring-your-own rule resolves from `package_rules`;
@@ -821,14 +845,16 @@ Existing test files that change:
   - New:
     - an undeclared ecosystem raises;
     - `package_installers` with `node` declares the ecosystem on the instance;
-    - a timed-out install and a timed-out `execute_code` on `docker` and `kubernetes` run the `ProcessKiller` argv,
-      and so does a cancellation;
-    - with `attach_to` set, a timed-out exec raises `SandboxTimeoutError` and sends no kill;
-    - the `ProcessKiller` script skips PID 1 and its own `$$`;
+    - a timed-out install and a timed-out `execute_code` on `docker` and `kubernetes` run
+      `ProcessKiller.argv(marker)` with the marker the exec carried, and so does a cancellation;
+    - with `attach_to` set, a timed-out exec raises `SandboxTimeoutError`, carries no marker and sends no kill;
+    - the `ProcessKiller` script skips PID 1 and its own `$$`; on a real `/proc` it kills a target launched through
+      `wrap()` and spares a same-named process without the marker;
     - phase 2: a `language_runtimes` entry drives `execute_code`'s argv and the instance `languages`.
   - The kill assertions at `tests/test_sandbox_providers.py:346` and `:1675` move from `pkill` to the
-    `ProcessKiller.argv(...)` shape. The fake cluster's exec handler, which recognises `pkill` today
-    (`tests/test_sandbox_providers.py:1422`), learns the new script.
+    `ProcessKiller.argv(marker)` shape. The fake container records each exec's `environment`. The fake cluster
+    strips the `wrap()` launcher and records the marker, so existing argv assertions stay unchanged, and its exec
+    handler, which recognises `pkill` today (`tests/test_sandbox_providers.py:1422`), learns the new script.
 - **`tests/test_sandbox_queue_broker.py`:**
   - `SandboxPermissionDeniedError` round-trips by name;
   - the ceiling test (`:332-335`) is unchanged; an install-timeout ceiling case is added;

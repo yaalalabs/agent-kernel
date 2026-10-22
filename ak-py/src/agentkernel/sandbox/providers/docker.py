@@ -4,8 +4,8 @@ Each sandbox is a detached container running ``sleep infinity``; executions are
 ``exec_run`` calls of the language interpreter, files travel via ``put_archive`` /
 ``get_archive`` under the ``/workspace`` working directory, and ``install_packages`` execs the
 validated installer argv from ``package_installers``. The SDK is synchronous, so every call
-runs in ``asyncio.to_thread``. A timed-out or cancelled exec is killed by name
-(``ProcessKiller``), except in an ``attach_to`` container the framework does not own.
+runs in ``asyncio.to_thread``. A timed-out or cancelled exec is killed by its environment
+marker (``ProcessKiller``), except in an ``attach_to`` container the framework does not own.
 
 ``close()`` leaves the container running (that is what makes reattach work);
 ``destroy()`` is ``remove(force=True)``. Policy mapping: ``deny`` egress becomes
@@ -51,7 +51,7 @@ class DockerSandbox(Sandbox):
     def __init__(self, container, *, capabilities: SandboxCapabilities, installer: PackageInstaller, kill_enabled: bool) -> None:
         """Bind the handle to a Docker SDK container object; the container id is the sandbox id.
         ``capabilities`` are the provider instance's; ``kill_enabled`` is False for an
-        ``attach_to`` container, where a name-based kill could hit the operator's own processes."""
+        ``attach_to`` container: the framework does not own it, so it neither tags nor kills its execs."""
         self.id = container.id
         self._container = container
         self._capabilities = capabilities
@@ -76,18 +76,23 @@ class DockerSandbox(Sandbox):
 
     async def _exec(self, argv: list[str], timeout: float | None) -> SandboxResult:
         """Run ``exec_run`` in a thread under ``asyncio.wait_for``. On expiry kill the exec'd
-        process and raise ``SandboxTimeoutError``; on cancellation kill it and re-raise."""
+        process and raise ``SandboxTimeoutError``; on cancellation kill it and re-raise. A
+        killable exec carries a fresh ``ProcessKiller`` marker in its environment."""
+        marker = ProcessKiller.new_marker() if self._kill_enabled else None
+        environment = ProcessKiller.environment(marker) if marker else None
 
         def run():
-            return self._container.exec_run(argv, workdir=WORKDIR, demux=True)
+            return self._container.exec_run(argv, workdir=WORKDIR, demux=True, environment=environment)
 
         try:
             exec_result = await asyncio.wait_for(asyncio.to_thread(run), timeout=timeout)
         except asyncio.TimeoutError as exc:
-            await self._kill(argv[0])
+            if marker:
+                await self._kill(marker)
             raise SandboxTimeoutError(f"docker exec exceeded timeout {timeout}s") from exc
         except asyncio.CancelledError:
-            await self._kill(argv[0])
+            if marker:
+                await self._kill(marker)
             raise
         stdout, stderr = exec_result.output if exec_result.output is not None else (b"", b"")
         return SandboxResult(
@@ -96,14 +101,12 @@ class DockerSandbox(Sandbox):
             exit_code=exec_result.exit_code if exec_result.exit_code is not None else -1,
         )
 
-    async def _kill(self, executable: str) -> None:
-        """Best-effort, time-bounded kill of the exec'd process by name. Safe because the
-        concurrency contract allows at most one in-flight execution per sandbox."""
-        if not self._kill_enabled:
-            return
+    async def _kill(self, marker: str) -> None:
+        """Best-effort, time-bounded kill of the processes carrying the exec's marker; earlier
+        execs' processes (e.g. background servers) carry other markers and survive."""
         try:
             await asyncio.wait_for(
-                asyncio.to_thread(self._container.exec_run, ProcessKiller.argv(executable)),
+                asyncio.to_thread(self._container.exec_run, ProcessKiller.argv(marker)),
                 timeout=ProcessKiller.KILL_TIMEOUT_SECONDS,
             )
         except Exception as exc:  # noqa: BLE001 — the kill is best-effort by contract

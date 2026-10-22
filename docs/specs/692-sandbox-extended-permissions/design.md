@@ -238,11 +238,11 @@ check also runs agent-side before a request is submitted.
       `-` (so no smuggled `--index-url`), whitespace, NUL, URLs (`://`) and local paths (a leading `.`, `/` or `~`).
       A bring-your-own rule can narrow the baseline, never loosen it.
     - `python` accepts registry package names, including version specifiers and extras. It also
-      rejects VCS specs (`git+`), any `/`, and archive filenames (`.whl`, `.tar.gz`, `.zip`), so a relative path
-      such as `dist/x.whl` or `sub/pkg` cannot install local code.
+      rejects VCS specs (`git+`), any `/`, and archive filenames (every pip archive suffix, e.g. `.whl`, `.tar.gz`,
+      `.tgz`, `.zip`), so a relative path such as `dist/x.whl` or `sub/pkg` cannot install local code.
     - `node` accepts registry names, `@scope/name`, and either with an `@version` or range. It rejects any other `/`
       (so no `user/repo` GitHub shorthand), protocol prefixes (`github:`, `git+`, `file:`, `link:`, `npm:` aliases)
-      and tarballs (`.tgz`, `.tar.gz`).
+      and tarballs (`.tgz`, `.tar.gz`, `.tar`).
       - It is not in the `package_installers` default. The operator declares it, e.g. `node: [npm, install]`,
         because only the image decides whether `npm` exists.
       - It applies to `docker`, `kubernetes`, `e2b` and `daytona` alike, through the same `PackageInstaller` path.
