@@ -393,6 +393,24 @@ class TestWebSocketModeGuards:
         # Nothing was enqueued: the input queue stays empty.
         assert InMemoryTransport().create_consumer(QueueName.INPUT).fetch(1, 0.05) == []
 
+    def test_stream_with_a_process_local_store_rejects_rest_chat_on_a_broker(self, monkeypatch):
+        """The other half of `_store_can_serve_sse`: the in-memory store *can* stream chunks, but
+        holds them in class-level state, so on a broker the edge and the Response Handler hold
+        separate copies and the request would hang out its whole budget before timing out."""
+        _configure(monkeypatch, mode="stream")
+        monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "sqs"))
+
+        handler = RequestHandler()
+        handler._response_store = InMemoryResponseStore()
+        app = FastAPI()
+        app.include_router(handler.get_router())
+        response = TestClient(app).post(CHAT, json={"prompt": "hi", "session_id": "s1"})
+        assert response.status_code == 400
+        assert "/ws" in response.json()["detail"]["error"]
+
+        # Nothing was enqueued: the input queue stays empty.
+        assert InMemoryTransport().create_consumer(QueueName.INPUT).fetch(1, 0.05) == []
+
 
 class TestEnqueueSeam:
     """#524 moved the envelope into RequestProducer; the REST envelope must not have moved with it."""
