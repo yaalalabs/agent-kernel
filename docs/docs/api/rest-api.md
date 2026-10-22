@@ -156,6 +156,19 @@ When [conversation threads](../advanced/threads.md) are enabled by mounting `Age
 
 **`GET /api/v1/threads/{session_id}`** returns a single thread with its paginated message history (`limit`, `cursor`).
 
+A message's `content` is text, exactly as before — unless the reply was labelled (see [A2UI](../advanced/a2ui.md)), in which case it is the payload object with `media_type` beside it, the same shape `result` has on a live reply. The key is absent on every unlabelled message:
+
+```json
+{
+  "messages": [
+    {"role": "user", "content": "Show me the refund form"},
+    {"role": "assistant", "content": {"version": "v1.0", "createSurface": {"...": "..."}}, "media_type": "application/a2ui+json"},
+    {"role": "assistant", "content": "Anything else?"}
+  ],
+  "next_cursor": null
+}
+```
+
 On the thread handler's chat routes, `user_id` is **required**; the default handler's routes are unaffected. An optional `Authoriser` can protect the read routes by resolving the Bearer token to a `user_id`; requests for another user's thread then return 403. Without an `Authoriser`, the routes are open.
 
 ## Error Handling
