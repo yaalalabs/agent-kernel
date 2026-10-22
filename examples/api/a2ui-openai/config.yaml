@@ -3,7 +3,7 @@ a2ui:
   agents:
     - expenses
 
-# Conversation threads. The block only picks the store; mounting AgentThreadRequestHandler in
+# Conversation threads. The block only picks the store; mounting ThreadRequestHandler in
 # app.py is what enables recording. in_memory keeps the demo to one command — history survives a
 # page reload, which is the point, but not a restart of app.py.
 thread:

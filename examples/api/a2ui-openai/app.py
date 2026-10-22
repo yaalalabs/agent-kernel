@@ -7,10 +7,11 @@ Three things make this work, and only the first is A2UI-specific:
    worse than useless — the model emits them confidently and nothing renders.
 2. The ``a2ui`` block in config.yaml is turned on. From there the framework labels the reply, and
    the REST response carries the payload as an object rather than a string.
-3. ``AgentThreadRequestHandler`` is mounted instead of the default chat handler. It serves the same
-   chat routes with recording wrapped around them, plus the two read routes the frontend's thread
-   list uses. A recorded reply keeps its label, so a form that rendered live renders again on
-   reload rather than coming back as a wall of JSON text.
+3. ``ThreadRequestHandler`` replaces the pipeline's chat handler. The agent runs behind the queue
+   (in-process here, since config.yaml declares no broker), and the handler records the user
+   message before the request is enqueued; the runner records the reply on the other side. It also
+   serves the two read routes the frontend's thread list uses. A recorded reply keeps its label, so
+   a form that rendered live renders again on reload rather than coming back as a wall of JSON text.
 
 Mounting is what enables threads; the ``thread`` block only picks the store. Note the one cost:
 ``user_id`` becomes **required** on this handler's chat routes, since a thread belongs to someone.
@@ -24,10 +25,10 @@ There is no post-hook here. That is the point: handling what comes back is two c
 
 from typing import Optional
 
-from agentkernel.api import RESTAPI
 from agentkernel.auth import Authoriser
 from agentkernel.openai import OpenAIModule
-from agentkernel.thread import AgentThreadRequestHandler
+from agentkernel.pipeline import IOHandler
+from agentkernel.thread import ThreadRequestHandler
 from agents import Agent
 
 CATALOG = """
@@ -106,4 +107,4 @@ expenses_agent = Agent(
 OpenAIModule([expenses_agent])
 
 if __name__ == "__main__":
-    RESTAPI.run(handlers=[AgentThreadRequestHandler(authoriser=DemoAuthoriser())])
+    IOHandler.run(request_handler=ThreadRequestHandler(authoriser=DemoAuthoriser()))

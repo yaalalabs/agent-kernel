@@ -25,7 +25,7 @@ A prose turn is unaffected — `result` is the string it has always been, with n
 That is the contract: **the label is the switch.** Without one, every surface behaves exactly as it
 did before this feature existed.
 
-**And the label survives being stored.** [`app.py`](app.py) mounts `AgentThreadRequestHandler`, so
+**And the label survives being stored.** [`app.py`](app.py) mounts `ThreadRequestHandler`, so
 every turn is recorded into a conversation thread. A recorded reply keeps its payload and its label,
 which means reopening the conversation gives the frontend the same pair it got live:
 
@@ -144,8 +144,9 @@ job, and it is mostly a prompting job.
 ## Reload
 
 Turning on history is two things: the `thread` block in [`config.yaml`](config.yaml) picks the
-store, and mounting `AgentThreadRequestHandler` is what actually enables recording. The handler
-serves the same chat routes with recording wrapped around them, plus `GET /api/v1/threads` and
+store, and mounting `ThreadRequestHandler` (through `IOHandler.run`, so the agent runs behind the
+queue) is what actually enables recording. The handler records the user message before the request
+is enqueued and the runner records the reply, and it also serves `GET /api/v1/threads` and
 `GET /api/v1/threads/{session_id}` — the two routes the **History** rail in the UI reads. Those two
 are behind the `Authoriser`, so `fetchAll` in [`App.tsx`](frontend/src/App.tsx) sends the demo
 token; the chat POST beside it does not.
