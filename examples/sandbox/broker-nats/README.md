@@ -130,7 +130,8 @@ k3d cluster delete ak
 ## Production notes
 
 - Swap `python:3.12-slim` for your security team's hardened image; keep it non-root and
-  give it whatever interpreters your agents need. The image is the operator's contract:
+  give it whatever interpreters your agents need, each declared in the provider's
+  `language_runtimes` (default `python: [python, -c]`). The image is the operator's contract:
   `install_packages` runs only on a profile whose policy sets `package_install`, using the
   installer the provider's `package_installers` names (default `pip install`) inside that
   image, and OS packages belong in the image build.

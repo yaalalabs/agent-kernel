@@ -1378,6 +1378,7 @@ sandbox:
       docker:
         image: python:3.12-slim
         # package_installers: {python: [pip, install]}   # default; declaring it replaces the map
+        # language_runtimes: {python: [python, -c]}      # default; add e.g. node: [node, -e] if the image has it
   broker:
     flavor: thread
 ```
