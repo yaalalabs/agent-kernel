@@ -64,10 +64,10 @@ two processes that share the queues, started from the variant's `app.py`:
 ```bash
 cd openai/kafka        # or openai/nats, openai/sqs
 python app.py io       # LiveKit edge gateway + REST API
-python app.py runner   # Agent Runner + the per-session realtime sockets
+python app.py runner   # Agent Runner + the per-session native live sessions
 ```
 
-Run the `runner` role as a **single replica** — its per-session socket pool is process-local — and
+Run the `runner` role as a **single replica** — its per-session live connection pool is process-local — and
 run exactly one `io` process per room, since each gateway joins the room as a participant. Start
 the broker (Kafka, NATS, or LocalStack for SQS) before either process.
 
@@ -90,6 +90,6 @@ environment or `pyproject.toml` is needed in this directory.
 
 The `LiveKitEdgeGateway` owns the room connection. Incoming mic audio is batched into ~100 ms
 PCM16 frames and enqueued as `AgentRequestVoice` requests; the OpenAI Realtime runner appends them
-to a persistent per-session socket (server VAD detects turn boundaries). The model's audio and
+to a native per-session live conversation (server VAD detects turn boundaries). The model's audio and
 transcript deltas are written back to the output queue tagged with the `livekit` integration, and
 the gateway — registered as the `livekit` outbound adapter — plays them into the room.

@@ -515,6 +515,43 @@ class TestMultiAgentRoom:
             await task
 
     @pytest.mark.asyncio
+    async def test_a_team_announced_while_the_first_participant_joins_waits_for_it(self, monkeypatch):
+        """The conversation can announce its team before the gateway is in the room; no one joins until it is."""
+        gateway, rooms = self._gateway(monkeypatch)
+        open_room, release = livekit_adapter.rtc.Room, asyncio.Event()
+
+        def room():
+            opened = open_room()
+            if len(rooms) == 1:
+                connect = opened.connect
+
+                async def connect_when_released(url, token, options):
+                    await release.wait()
+                    await connect(url, token, options)
+
+                opened.connect = connect_when_released
+            return opened
+
+        monkeypatch.setattr(livekit_adapter.rtc, "Room", room)
+        task = await self._started(gateway)
+        try:
+            assert not gateway._connected
+            await self._announce(gateway, self.TEAM)
+            assert len(rooms) == 1 and not gateway._joining
+
+            release.set()
+            for _ in range(200):
+                await asyncio.sleep(0.01)
+                if len(rooms) == 3 and not gateway._joining:
+                    break
+            assert [room.local_participant.identity for room in rooms] == ["agent-supervisor", "agent-billing", "agent-tech_support"]
+            assert sorted(gateway._by_agent) == sorted(self.TEAM)
+        finally:
+            release.set()
+            await gateway.stop()
+            await task
+
+    @pytest.mark.asyncio
     async def test_a_single_agent_stays_one_participant(self, monkeypatch):
         gateway, rooms = self._gateway(monkeypatch)
         task = await self._started(gateway)

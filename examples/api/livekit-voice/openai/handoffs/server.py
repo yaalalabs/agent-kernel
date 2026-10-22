@@ -1,13 +1,25 @@
 import logging
 
-from agents import Agent as OpenAIAgent
-
 from agentkernel.framework.openai import OpenAIModule, OpenAIToolBuilder
 from agentkernel.integration.adapter import GatewayRunner
 from agentkernel.integration.livekit import LiveKitEdgeGateway
 from agentkernel.pipeline import IOHandler
+from agents.realtime import RealtimeAgent as OpenAIAgent
 
 logging.basicConfig(level=logging.INFO)
+# One line per 100 ms of microphone audio at INFO; warnings and errors still show.
+logging.getLogger("ak.integration.producer").setLevel(logging.WARNING)
+
+
+class _HideResumptionHandles(logging.Filter):
+    """ADK logs a new Gemini session-resumption handle every few seconds; the line says nothing you act on."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return "Update session resumption handle" not in record.getMessage()
+
+
+for _handler in logging.getLogger().handlers:
+    _handler.addFilter(_HideResumptionHandles())
 _log = logging.getLogger(__name__)
 
 MODEL = "gpt-realtime"
@@ -35,7 +47,6 @@ def book_technician(account_id: str, day: str) -> str:
 
 supervisor = OpenAIAgent(
     name="supervisor",
-    model=MODEL,
     handoff_description="Greets callers, answers general questions and routes them to the right team.",
     instructions=(
         "You are the front desk of Acme Internet's support line, speaking with a caller. Keep every answer short and spoken. "
@@ -48,7 +59,6 @@ supervisor = OpenAIAgent(
 
 billing = OpenAIAgent(
     name="billing",
-    model=MODEL,
     handoff_description="Invoices, charges, payments and refunds.",
     instructions=(
         "You are Acme Internet's billing specialist, taking over a call from the front desk. Introduce yourself in a few "
@@ -62,7 +72,6 @@ billing = OpenAIAgent(
 
 tech_support = OpenAIAgent(
     name="tech_support",
-    model=MODEL,
     handoff_description="Internet connection problems, outages and technician visits.",
     instructions=(
         "You are Acme Internet's technical support specialist, taking over a call from the front desk. Introduce "
@@ -76,7 +85,9 @@ tech_support = OpenAIAgent(
 
 supervisor.handoffs = [billing, tech_support]
 
-OpenAIModule([supervisor])
+OpenAIModule([supervisor]).run_options(
+    supervisor, model_config={"initial_model_settings": {"model_name": MODEL, "voice": "alloy"}}
+)
 
 gateway = LiveKitEdgeGateway(session_id="room_01", agent_name="supervisor")
 

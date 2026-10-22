@@ -2,34 +2,29 @@
 
 This example shows one voice conversation moving between several agents with **Google ADK's native agent transfers**, over LiveKit, powered by **Gemini Live**.
 
-The scenario is the support line of an internet provider:
+The scenario is a team offsite. You tell **Maya**, an enthusiastic planner, what you want. She pitches a plan and hands the turn to **Ben**, a cautious budget controller, who works out the real cost and challenges her. The two answer each other, in their own voices, for a few turns **without you speaking**. Then Maya reports back to you with the agreed plan and asks what you think.
 
-| Agent | Handles | Tools | Voice |
+| Agent | Role | Tool | Voice |
 |---|---|---|---|
-| `supervisor` | Greeting, general questions, routing | — | Aoede |
-| `billing` | Invoices, charges, payments, refunds | `get_latest_invoice` | Charon |
-| `tech_support` | Connection problems, outages, technician visits | `check_outage`, `book_technician` | Puck |
+| `planner` (Maya) | Takes your request, pitches the best experience, reports to you | `find_venues` | Aoede |
+| `budget` (Ben) | Checks the cost, challenges the plan, pushes back or accepts | `estimate_total` | Charon |
 
-`billing` and `tech_support` are `sub_agents` of `supervisor`, exactly as you would write them for a text run. ADK's rules decide who can transfer to whom: the supervisor to its sub-agents, and each specialist back to its parent or across to its peer (unless `disallow_transfer_to_parent` / `disallow_transfer_to_peers` is set). Only the root agent, `supervisor`, is registered with Agent Kernel.
+`budget` is a `sub_agent` of `planner`, exactly as you would write it for a text run. ADK lets a sub-agent transfer back to its parent, so the two can pass the turn between them. Only the root agent, `planner`, is registered with Agent Kernel.
 
 It uses the `in_memory` queue transport, so the LiveKit gateway and the agent runner run as threads in a single Python process.
 
 ## How a transfer works in realtime mode
 
-An agent that can transfer is given ADK's own `transfer_to_agent` tool and ADK's transfer instructions. When the model calls it, the tool runs exactly as it does on an ADK run. Any of your own tools can also trigger a transfer by setting `tool_context.actions.transfer_to_agent`, as ADK allows.
-
-A Gemini Live session's instructions and tools are fixed when it opens. So, as ADK's own live runner does, Agent Kernel then closes the socket and opens a new one configured for the new agent, with its instructions, tools and voice. The new socket is seeded with the conversation so far as text, so the new agent knows what the caller already said and answers the question that triggered the transfer.
-
-Every transfer is logged (`Transferring from 'supervisor' to 'billing'`) and reaches the LiveKit gateway as an `agent_changed` event, in order with the audio around it.
+Agent Kernel starts one ADK `Runner.run_live()` call with one `LiveRequestQueue`. ADK handles the native `transfer_to_agent` action, calls the new agent's tools, and manages its Gemini Live connection. Agent Kernel reads ADK's event author and changes the speaking LiveKit participant. Each agent's voice is set on its native `Gemini(speech_config=...)` model.
 
 ## What you see in the room
 
-Every agent in the graph appears in the room as a participant of its own (`agent-supervisor`, `agent-billing`, `agent-tech_support`), with its own audio track. There is nothing to configure: when the call starts, the conversation tells the LiveKit gateway its whole team, and the specialists join the room about a second later.
+Every agent in the graph appears in the room as a participant of its own (`agent-planner`, `agent-budget`), with its own audio track. There is nothing to configure: when the call starts, the conversation tells the LiveKit gateway its whole team, and the other agent joins the room about a second later.
 
 - Only the agent that has the call is heard, in its own voice; the others stay connected and muted (their tiles show a muted mic). On a transfer, the previous agent finishes what it was saying and the next agent's participant takes over, so the room client's speaking indicator moves to it.
 - Each agent's words are published to the room chat from its own participant.
 - Each agent participant carries an `ak.active` attribute, `"true"` on the one that has the call, for a custom client UI to highlight.
-- Only `agent-supervisor`'s connection listens to you; no agent's audio or chat is ever taken as your input.
+- Only `agent-planner`'s connection listens to you; no agent's audio or chat is ever taken as your input.
 
 Each agent participant needs a token of its own, so the gateway needs `AK_LIVEKIT__API_KEY` and `AK_LIVEKIT__API_SECRET` (not a single pre-made token). A single agent with no handoffs is one participant, as before.
 
@@ -54,14 +49,19 @@ Connect to `room_01` in your LiveKit Sandbox dashboard and speak.
 
 ### 3. Try a conversation
 
-1. *"Hi, my account number is A-1042. Why is my bill higher this month?"* — the supervisor transfers you to **billing** (a new voice), which looks up the invoice without asking for your account number again.
-2. *"And my internet keeps dropping. My postcode is SW1A 1AA."* — billing transfers you to **tech_support**.
-3. *"Can someone come out on Friday?"* — tech_support books a technician.
+1. *"Hi, we want to plan a two-night offsite for our team of eight, somewhere in Lisbon."* — Maya looks up venues and pitches the lakeside lodge.
+2. Maya transfers to Ben. Ben runs the numbers, says the total out loud and challenges her: drop the boat trips, or pick the city hotel.
+3. Maya answers him and revises. Ben checks the new total and pushes back once more or accepts. You listen to them without speaking.
+4. After a few turns Maya turns to you: the agreed plan, the total, where they still disagree, and a question for you.
+5. *"I'd rather keep the lodge."* — Maya and Ben continue from there.
+
+The agents are told to stop after three turns each. This is an instruction in their prompts, not a limit enforced by Agent Kernel or ADK, so a model can still keep going. Say something to cut in: your speech interrupts whoever is talking.
 
 ## Limits
 
-- **A short gap on every transfer.** Opening the new socket takes about a second or two. Anything the caller says during it is not heard.
-- **One LiveKit connection per agent.** Every agent in the graph is a participant for the whole call, so LiveKit bills connection minutes for each.
-- **LLM agents only.** Every agent the conversation can transfer to must be an `LlmAgent` with a Gemini Live model and a string `instruction`; a workflow agent (e.g. `SequentialAgent`) or an instruction provider is rejected when the call connects.
-- **One transfer per model turn.** If the model asks for two transfers in one turn, the first is performed and the second is answered as not performed. Any other tool called in the same turn runs, and its result reaches the new agent, as on an ADK run.
-- **Function tools only.** As for a single realtime agent, toolsets (e.g. MCP) are not offered.
+- **One LiveKit connection per agent.** Every listed agent is a participant for the whole call, so LiveKit bills connection minutes for each.
+- **Native live workflows.** Speaking workflow nodes use `mode='chat'` or `mode='task'`. ADK live mode does not support `ParallelAgent` or `LoopAgent`.
+- **Native tools only.** ADK runs tools declared on each `LlmAgent`. A tool requesting human confirmation fails because this LiveKit edge has no decision path.
+- **One agent speaks at a time.** The conversation between the agents is a series of transfers. They do not listen to each other in parallel, and each one sees the earlier turns through ADK's session history.
+- **No enforced turn limit.** Keep a debate short through the prompts, as this example does.
+- **Transfers and recovery.** ADK owns Gemini connection changes. Agent Kernel does not replay a transcript. On `google-adk` 2.7 or later, a transfer refused by a `before_tool_callback` keeps the call open.
