@@ -40,7 +40,7 @@ from agentkernel.sandbox.factory import SandboxProviderFactory
 from agentkernel.sandbox.manager import ExecutionManager
 from agentkernel.sandbox.model import PackageInstallPolicy, SandboxPolicy, SandboxPrincipal, SandboxResult, SandboxSession
 from agentkernel.sandbox.permission import PermissionAuditContext, SandboxPermissionGuard
-from agentkernel.sandbox.testing import FakeSandbox, FakeSandboxProvider
+from agentkernel.sandbox.testing import FakeSandbox, FakeSandboxProvider, SandboxProviderContract
 from agentkernel.sandbox.tools import install_packages as install_packages_tool
 from agentkernel.sandbox.tools import run_code as run_code_tool
 
@@ -451,6 +451,21 @@ async def test_legacy_override_rejects_non_python_ecosystem(monkeypatch, caplog)
         await worker.run(_install(["requests"], policy=policy))
     assert _LegacySandbox.calls == [["requests"]]
     assert len(_deprecations(caplog)) == 1
+
+
+class TestLegacyProviderContract(SandboxProviderContract):
+    """A pre-#692 one-argument override still passes the public contract during the deprecation window."""
+
+    @pytest.fixture
+    def provider(self):
+        _LegacySandbox.calls = []
+        return _LegacyProvider()
+
+
+def test_has_legacy_install_tells_the_signatures_apart():
+    assert BrokerWorkerCore.has_legacy_install(_LegacySandbox)
+    assert not BrokerWorkerCore.has_legacy_install(_PkgSandbox)
+    assert not BrokerWorkerCore.has_legacy_install(FakeSandbox)  # the base ABC's signature
 
 
 @pytest.mark.asyncio

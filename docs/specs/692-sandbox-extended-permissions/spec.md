@@ -521,8 +521,11 @@ checks read the instance capabilities, not the class attribute. These five lines
   hands it to the SDK's native command timeout:
   - `e2b`: `commands.run(timeout=...)` (`e2b.py:59`);
   - `daytona`: `process.exec(timeout=...)` (`daytona.py:62`).
-  - Today their installs pass none (`e2b.py:66`, `daytona.py:67`). How each SDK's own timeout error is mapped is
-    unchanged.
+  - Today their installs pass none (`e2b.py:66`, `daytona.py:67`).
+  - The native timer now always fires before the backstop, so each handle maps its SDK's timeout error to
+    `SandboxTimeoutError` (`e2b.exceptions.TimeoutException` from `run_code` / `commands.run`;
+    `daytona.common.errors.DaytonaTimeoutError` from `code_run` / `exec`). Unmapped, a timeout would complete
+    as `failed` with the SDK's error type instead of `timed_out`.
 - **Self-timing handles benefit from the backstop.** Today the worker's outer timer and a self-timing handle's timer
   share one value. The outer timer starts first, so it fires first and cancels the handle before its own kill runs.
   The grace period fixes that for every self-timing handle:
