@@ -70,7 +70,7 @@ class KubernetesSandbox(Sandbox):
     ) -> None:
         """Bind the handle to a pod; the id is ``<namespace>/<pod>`` (the ``attach_to`` format).
         ``capabilities`` are the provider instance's; ``kill_enabled`` is False for an
-        ``attach_to`` pod, where a name-based kill could hit the operator's own processes."""
+        ``attach_to`` pod: the framework does not own it, so it neither tags nor kills its execs."""
         self.id = f"{namespace}/{pod_name}"
         self._api = api
         self._namespace = namespace
@@ -129,7 +129,11 @@ class KubernetesSandbox(Sandbox):
     async def _exec(self, argv: list[str], timeout: float | None, stdin_data: Optional[str] = None, *, kill: bool = True) -> SandboxResult:
         """Run one exec through the stream API in a thread under ``asyncio.wait_for``. On
         expiry kill the exec'd process and raise ``SandboxTimeoutError``; on cancellation kill
-        it and re-raise. ``kill=False`` is the kill's own exec, so it never triggers another."""
+        it and re-raise. A killable exec is launched through ``ProcessKiller.wrap`` (the stream
+        API has no per-exec environment) so it carries a fresh marker. ``kill=False`` is the
+        kill's own exec, so it never triggers another."""
+        marker = ProcessKiller.new_marker() if kill and self._kill_enabled else None
+        command = ProcessKiller.wrap(argv, marker) if marker else argv
 
         def run() -> tuple[str, str, int]:
             try:
@@ -137,7 +141,7 @@ class KubernetesSandbox(Sandbox):
                     self._api.connect_get_namespaced_pod_exec,
                     self._pod,
                     self._namespace,
-                    command=argv,
+                    command=command,
                     stdout=True,
                     stderr=True,
                     stdin=stdin_data is not None,
@@ -170,22 +174,20 @@ class KubernetesSandbox(Sandbox):
         try:
             stdout, stderr, exit_code = await asyncio.wait_for(asyncio.to_thread(run), timeout=timeout)
         except asyncio.TimeoutError as exc:
-            if kill:
-                await self._kill(argv[0])
+            if marker:
+                await self._kill(marker)
             raise SandboxTimeoutError(f"kubernetes exec exceeded timeout {timeout}s") from exc
         except asyncio.CancelledError:
-            if kill:
-                await self._kill(argv[0])
+            if marker:
+                await self._kill(marker)
             raise
         return SandboxResult(stdout=stdout, stderr=stderr, exit_code=exit_code)
 
-    async def _kill(self, executable: str) -> None:
-        """Best-effort, time-bounded kill of the exec'd process by name. Safe because the
-        concurrency contract allows at most one in-flight execution per sandbox."""
-        if not self._kill_enabled:
-            return
+    async def _kill(self, marker: str) -> None:
+        """Best-effort, time-bounded kill of the processes carrying the exec's marker; earlier
+        execs' processes (e.g. background servers) carry other markers and survive."""
         try:
-            await asyncio.wait_for(self._exec(ProcessKiller.argv(executable), None, kill=False), timeout=ProcessKiller.KILL_TIMEOUT_SECONDS)
+            await asyncio.wait_for(self._exec(ProcessKiller.argv(marker), None, kill=False), timeout=ProcessKiller.KILL_TIMEOUT_SECONDS)
         except Exception as exc:  # noqa: BLE001 — the kill is best-effort by contract
             logger.warning("Best-effort kill in pod %s failed: %s", self.id, exc)
 
@@ -311,7 +313,7 @@ class KubernetesSandboxProvider(SandboxProvider):
             "name": "sandbox",
             "image": self._config.image,
             # sleep runs as PID 1 directly, so PID 1 is never `sh`; the timeout path's
-            # kill-by-name (ProcessKiller) also skips PID 1 as a second guard.
+            # marker kill (ProcessKiller) also skips PID 1 as a second guard.
             "command": ["sleep", "infinity"],
             "workingDir": WORKDIR,
             "securityContext": container_sc,

@@ -51,6 +51,7 @@ class BrokerWorkerCore:
         self._policy_warned: set[tuple[str, ...]] = set()
         self._guard = SandboxPermissionGuard()
         self._install_shim: dict[type, bool] = {}  # Sandbox subclass -> True when its install_packages is legacy
+        self._install_warned: set[type] = set()  # legacy Sandbox subclasses already given the deprecation warning
 
     def _lock_for(self, sandbox_session_id: str) -> asyncio.Lock:
         """Return (creating on first use) the lock serializing operations per sandbox session."""
@@ -290,23 +291,21 @@ class BrokerWorkerCore:
         # A legacy override can only mean pip; the backstop is its only timer.
         if ecosystem != "python":
             raise SandboxCapabilityError(sandbox_cls.__name__, f"package_ecosystem:{ecosystem}")
+        if sandbox_cls not in self._install_warned:
+            self._install_warned.add(sandbox_cls)
+            logger.warning(
+                "Sandbox %s overrides install_packages(packages) without ecosystem/timeout; "
+                "this form is deprecated and will stop working in the next minor release",
+                sandbox_cls.__name__,
+            )
         return await sandbox.install_packages(payload["packages"])
 
     def _is_legacy_install(self, sandbox_cls: type) -> bool:
-        """Whether ``sandbox_cls.install_packages`` predates the ecosystem/timeout signature.
-
-        Decided once per class; the deprecation WARNING is logged when a class is first found legacy.
-        """
+        """Whether ``sandbox_cls.install_packages`` predates the ecosystem/timeout signature; decided once per class."""
         legacy = self._install_shim.get(sandbox_cls)
         if legacy is None:
             params = inspect.signature(sandbox_cls.install_packages).parameters
             takes_kwargs = any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values())
             legacy = not (takes_kwargs or ("ecosystem" in params and "timeout" in params))
             self._install_shim[sandbox_cls] = legacy
-            if legacy:
-                logger.warning(
-                    "Sandbox %s overrides install_packages(packages) without ecosystem/timeout; "
-                    "this form is deprecated and will stop working in the next minor release",
-                    sandbox_cls.__name__,
-                )
         return legacy

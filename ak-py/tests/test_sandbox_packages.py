@@ -115,7 +115,9 @@ def test_python_rule_accepts(entry):
 
 @pytest.mark.parametrize(
     "entry",
-    ["git+zzq", "dist/zzq.whl", "sub/zzq", "zzq.whl", "zzq.tar.gz", "zzq.ZIP", "zzq@zzqurl", 'zzq;python_version>"3"', "zzq[", "_zzq"],
+    ["git+zzq", "dist/zzq.whl", "sub/zzq", "zzq.whl", "zzq.tar.gz", "zzq.ZIP", "zzq@zzqurl", 'zzq;python_version>"3"', "zzq[", "_zzq"]
+    # Every other suffix pip installs as a local archive file.
+    + ["zzq.tgz", "zzq.tar", "zzq.tar.bz2", "zzq.tbz", "zzq.tar.xz", "zzq.txz", "zzq.tlz", "zzq.tar.lz", "zzq.tar.lzma"],
 )
 def test_python_rule_rejects(entry):
     _assert_rejected(PythonPackageSpecRule().validate, [entry], entry)
@@ -128,7 +130,7 @@ def test_node_rule_accepts(entry):
 
 @pytest.mark.parametrize(
     "entry",
-    ["zzq/zzrepo", "github:zzq/zzrepo", "zzq@file:zzr", "link:zzq", "npm:zzq", "git+zzq", "zzq.tgz", "zzq.tar.gz", "@zzq/zza/zzb", "zzq/"],
+    ["zzq/zzrepo", "github:zzq/zzrepo", "zzq@file:zzr", "link:zzq", "npm:zzq", "git+zzq", "zzq.tgz", "zzq.tar.gz", "zzq.tar", "@zzq/zza/zzb", "zzq/"],
 )
 def test_node_rule_rejects(entry):
     _assert_rejected(NodePackageSpecRule().validate, [entry], entry)

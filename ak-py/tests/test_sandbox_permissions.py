@@ -204,12 +204,32 @@ def test_guard_denies_and_logs_once(caplog, operation, payload, policy):
     assert len(records) == 1
     line = records[0].getMessage()
     assert records[0].levelno == logging.WARNING
-    for field in (f"operation={operation}", "profile=prof-a", "agent=agent-a", "ak_session_id=ak-1", "sandbox_session_id=sess-1"):
+    for field in (f"operation={operation}", "profile=prof-a", "agent=agent-a", "ak_session_id=ak-1", "sandbox_session_id='sess-1'"):
         assert field in line
     # No code or package text reaches the log or the error.
     assert "zzq" not in line and "zzq" not in str(excinfo.value)
     assert str(excinfo.value).startswith(f"profile 'prof-a' does not permit {operation}: ")
     assert str(excinfo.value).endswith("this is a configuration decision, so do not retry it through run_command")
+
+
+@pytest.mark.parametrize(
+    "operation, payload, policy",
+    [
+        ("execute_code", {"code": "x", "language": "py\nthon"}, SandboxPolicy(languages=["python"])),
+        ("install_packages", {"packages": ["x"], "ecosystem": "no\nde"}, SandboxPolicy(package_install=PackageInstallPolicy())),
+    ],
+    ids=["language", "ecosystem"],
+)
+def test_guard_escapes_request_supplied_names(caplog, operation, payload, policy):
+    # The language/ecosystem and an explicit sandbox session id come from the model; a raw
+    # newline in any of them would forge a second log line.
+    context = _CONTEXT.model_copy(update={"sandbox_session_id": "se\nss"})
+    with caplog.at_level("WARNING", logger=BROKER_LOGGER):
+        with pytest.raises(SandboxPermissionDeniedError) as excinfo:
+            SandboxPermissionGuard().check_operation(operation, payload, policy, context)
+    line = _broker_records(caplog)[0].getMessage()
+    assert "\n" not in line and "\n" not in str(excinfo.value)
+    assert "\\n" in line
 
 
 @pytest.mark.parametrize(
@@ -400,11 +420,20 @@ async def test_legacy_override_runs_python_with_one_deprecation_warning(monkeypa
 
 
 @pytest.mark.asyncio
-async def test_legacy_override_rejects_non_python_ecosystem(monkeypatch):
+async def test_legacy_override_rejects_non_python_ecosystem(monkeypatch, caplog):
     _use_provider(monkeypatch, dotted=LEGACY_DOTTED)
-    with pytest.raises(SandboxCapabilityError, match="package_ecosystem:node"):
-        await BrokerWorkerCore().run(_install(["lodash"], "node", policy=SandboxPolicy(package_install=INSTALL_ALL)))
-    assert _LegacySandbox.calls == []
+    worker = BrokerWorkerCore()
+    policy = SandboxPolicy(package_install=INSTALL_ALL)
+    with caplog.at_level("WARNING", logger=BROKER_LOGGER):
+        with pytest.raises(SandboxCapabilityError, match="package_ecosystem:node"):
+            await worker.run(_install(["lodash"], "node", policy=policy))
+        assert _LegacySandbox.calls == []
+        # The rejected node request is not the first legacy call, so it logs no deprecation...
+        assert _deprecations(caplog) == []
+        # ...and the first python call still logs exactly one.
+        await worker.run(_install(["requests"], policy=policy))
+    assert _LegacySandbox.calls == [["requests"]]
+    assert len(_deprecations(caplog)) == 1
 
 
 @pytest.mark.asyncio

@@ -57,7 +57,21 @@ class PythonPackageSpecRule(_PatternPackageSpecRule):
         r"(?:(?:===|==|!=|<=|>=|~=|<|>)[A-Za-z0-9.*+!_-]+(?:,(?:===|==|!=|<=|>=|~=|<|>)[A-Za-z0-9.*+!_-]+)*)?$"
     )
     GRAMMAR = "a registry spec (name, optional [extras], optional version specifiers; no markers or direct references)"
-    _ARCHIVE_SUFFIXES: ClassVar[tuple[str, ...]] = (".whl", ".tar.gz", ".zip")
+    # pip's ARCHIVE_EXTENSIONS: pip installs a bare entry with any of these suffixes as a local file.
+    _ARCHIVE_SUFFIXES: ClassVar[tuple[str, ...]] = (
+        ".zip",
+        ".whl",
+        ".tar.bz2",
+        ".tbz",
+        ".tar.gz",
+        ".tgz",
+        ".tar",
+        ".tar.xz",
+        ".txz",
+        ".tlz",
+        ".tar.lz",
+        ".tar.lzma",
+    )
 
     def _explicit_rejection(self, entry: str) -> Optional[str]:
         if entry.startswith("git+"):
@@ -65,7 +79,7 @@ class PythonPackageSpecRule(_PatternPackageSpecRule):
         if "/" in entry:
             return "paths are not allowed ('/')"
         if entry.lower().endswith(self._ARCHIVE_SUFFIXES):
-            return "archive files (.whl, .tar.gz, .zip) are not allowed"
+            return "archive files are not allowed"
         return None
 
 
@@ -75,13 +89,14 @@ class NodePackageSpecRule(_PatternPackageSpecRule):
     PATTERN = re.compile(r"^(?:@[A-Za-z0-9][A-Za-z0-9._~-]*/)?[A-Za-z0-9][A-Za-z0-9._~-]*(?:@[A-Za-z0-9.^~<>=*|+_-]+)?$")
     GRAMMAR = "a registry spec (name or @scope/name, optional @version or range)"
     _PROTOCOLS: ClassVar[tuple[str, ...]] = ("github:", "git+", "file:", "link:", "npm:")
-    _TARBALL_SUFFIXES: ClassVar[tuple[str, ...]] = (".tgz", ".tar.gz")
+    # npm-package-arg treats a bare entry with any of these suffixes as a local file.
+    _TARBALL_SUFFIXES: ClassVar[tuple[str, ...]] = (".tgz", ".tar.gz", ".tar")
 
     def _explicit_rejection(self, entry: str) -> Optional[str]:
         if any(protocol in entry for protocol in self._PROTOCOLS):
             return "protocol specs (github:, git+, file:, link:, npm:) are not allowed"
         if entry.lower().endswith(self._TARBALL_SUFFIXES):
-            return "tarballs (.tgz, .tar.gz) are not allowed"
+            return "tarballs (.tgz, .tar.gz, .tar) are not allowed"
         # Only the scope separator of '@scope/name' may contain '/'; this rejects 'user/repo' shorthand.
         if entry.count("/") != (1 if entry.startswith("@") else 0):
             return "'/' is allowed only as the @scope/name separator"
