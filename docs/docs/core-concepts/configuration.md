@@ -184,9 +184,11 @@ okf:
 # enabled flag. A set, non-empty environment variable named by the key always wins.
 # See /docs/advanced/secrets)
 secret:
-  prefix: ""  # Deployment scope; required by aws_ssm (injected as AK_SECRET__PREFIX by the AWS Terraform modules), ignored by env
+  prefix: ""  # Deployment scope; required by aws_ssm (injected as AK_SECRET__PREFIX by the AWS Terraform modules), ignored by env and kubernetes
   provider:
-    type: env  # env | aws_ssm, or a dotted path to a SecretProvider subclass
+    type: env  # env | aws_ssm | kubernetes, or a dotted path to a SecretProvider subclass
+    kubernetes:
+      mount_path: /var/run/secrets/agentkernel  # Directory the Kubernetes Secrets are mounted under; read only by the kubernetes provider
   cache_ttl: 300  # Seconds a provider hit is served from the process cache; 0 disables caching
 
 # Messaging platform integrations
@@ -525,8 +527,9 @@ export AK_MCP__STATELESS_HTTP=false  # Run in stateless HTTP mode, no Mcp-Sessio
 See [Secret Resolution](../advanced/secrets.md) for the resolution order and providers.
 
 ```bash
-export AK_SECRET__PROVIDER__TYPE=aws_ssm  # Options: 'env', 'aws_ssm', or a dotted path to a SecretProvider subclass (default: 'env')
-export AK_SECRET__PREFIX=myproduct-dev-agents  # Deployment scope; required by aws_ssm, ignored by env (default: '')
+export AK_SECRET__PROVIDER__TYPE=aws_ssm  # Options: 'env', 'aws_ssm', 'kubernetes', or a dotted path to a SecretProvider subclass (default: 'env')
+export AK_SECRET__PROVIDER__KUBERNETES__MOUNT_PATH=/var/run/secrets/agentkernel  # Where the Kubernetes Secrets are mounted; kubernetes provider only (default: /var/run/secrets/agentkernel)
+export AK_SECRET__PREFIX=myproduct-dev-agents  # Deployment scope; required by aws_ssm, ignored by env and kubernetes (default: '')
 export AK_SECRET__CACHE_TTL=300  # Seconds a provider hit is cached; 0 disables caching (default: 300)
 ```
 
