@@ -868,3 +868,105 @@ async def test_concurrent_runs_do_not_leak_current_agent_across_tasks(monkeypatc
     assert runner_a.observed == [agent_a, agent_a]
     assert runner_b.observed == [agent_b, agent_b]
     assert Agent.current() is None
+
+
+class TestA2UICapabilityEndToEnd:
+    """The config block alone must label a reply, with no application post-hook anywhere.
+
+    Every other A2UI test builds the hook directly. This one goes through `Runtime.run`, because
+    the capability's promise is about the registration in `_get_system_post_hooks` — a hook that
+    works but is never reached would pass all of them.
+    """
+
+    @staticmethod
+    def _runtime(monkeypatch, enabled=True, agents=None):
+        class FakeCfg:
+            class session:
+                type = "in_memory"
+
+            class guardrail:
+                class input:
+                    enabled = False
+
+                class output:
+                    enabled = False
+
+            class execution:
+                mode = "rest_sync"
+
+            class a2ui:
+                pass
+
+        FakeCfg.a2ui.enabled = enabled
+        FakeCfg.a2ui.agents = agents
+        monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: FakeCfg))
+        return Runtime(SessionStoreBuilder.build())
+
+    @pytest.mark.asyncio
+    async def test_a_json_reply_arrives_labelled(self, monkeypatch):
+        runtime = self._runtime(monkeypatch)
+        content = {"version": "v1.0", "createSurface": {"surfaceId": "s1"}}
+        agent = StructuredDummyAgent("expenses", StructuredDummyRunner(AgentReplyText(response=json.dumps(content))))
+        runtime.register(agent)
+        session = runtime.sessions().new("s-a2ui-1")
+
+        out = await runtime.run(agent, session, [AgentRequestText(prompt="file a claim")])
+
+        assert isinstance(out, AgentReplyAny)
+        assert out.content == content
+        assert out.media_type == "application/a2ui+json"
+
+    @pytest.mark.asyncio
+    async def test_the_guardrail_sees_the_reply_before_the_label(self, monkeypatch):
+        """The ordering `execution-flow.md` promises: output guardrail first, A2UI second.
+
+        It matters: a guardrail inspecting prose must receive the text it was written for, not a
+        payload the labelling hook has already converted.
+        """
+        from agentkernel.core import runtime as runtime_module
+
+        spy = SpyPostHook()
+        monkeypatch.setattr(runtime_module.OutputGuardrailFactory, "get", classmethod(lambda cls: spy))
+        runtime = self._runtime(monkeypatch)
+        agent = StructuredDummyAgent("expenses", StructuredDummyRunner(AgentReplyText(response='{"a": 1}')))
+        runtime.register(agent)
+        session = runtime.sessions().new("s-a2ui-2")
+
+        out = await runtime.run(agent, session, [AgentRequestText(prompt="hi")])
+
+        assert isinstance(spy.received, AgentReplyText)
+        assert isinstance(out, AgentReplyAny)
+
+    @pytest.mark.asyncio
+    async def test_prose_is_left_alone(self, monkeypatch):
+        runtime = self._runtime(monkeypatch)
+        agent = StructuredDummyAgent("expenses", StructuredDummyRunner(AgentReplyText(response="Hello! How can I help?")))
+        runtime.register(agent)
+        session = runtime.sessions().new("s-a2ui-3")
+
+        out = await runtime.run(agent, session, [AgentRequestText(prompt="hi")])
+
+        assert isinstance(out, AgentReplyText)
+        assert out.response == "Hello! How can I help?"
+
+    @pytest.mark.asyncio
+    async def test_an_agent_outside_the_list_is_left_alone(self, monkeypatch):
+        runtime = self._runtime(monkeypatch, agents=["other"])
+        agent = StructuredDummyAgent("expenses", StructuredDummyRunner(AgentReplyText(response='{"a": 1}')))
+        runtime.register(agent)
+        session = runtime.sessions().new("s-a2ui-4")
+
+        out = await runtime.run(agent, session, [AgentRequestText(prompt="hi")])
+
+        assert isinstance(out, AgentReplyText)
+
+    @pytest.mark.asyncio
+    async def test_the_block_switched_off_changes_nothing(self, monkeypatch):
+        runtime = self._runtime(monkeypatch, enabled=False)
+        agent = StructuredDummyAgent("expenses", StructuredDummyRunner(AgentReplyText(response='{"a": 1}')))
+        runtime.register(agent)
+        session = runtime.sessions().new("s-a2ui-5")
+
+        out = await runtime.run(agent, session, [AgentRequestText(prompt="hi")])
+
+        assert isinstance(out, AgentReplyText)

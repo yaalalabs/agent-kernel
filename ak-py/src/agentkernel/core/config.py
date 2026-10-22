@@ -872,6 +872,20 @@ class _SandboxProfileConfig(BaseModel):
     ec2_ssm: Optional[_SandboxEC2SSMConfig] = Field(default=None, description="Configuration for the 'ec2_ssm' provider")
 
 
+class _A2UIConfig(BaseModel):
+    """Scopes the A2UI labelling capability. Two keys, because the capability does two things:
+    decide whether to run at all, and decide which agents it runs for."""
+
+    enabled: bool = Field(
+        default=False,
+        description="Enable the A2UI capability; when False no hook runs and no reply is labelled",
+    )
+    agents: Optional[list[str]] = Field(
+        default=None,
+        description="Agent names whose JSON replies are labelled as A2UI; omitted = all agents",
+    )
+
+
 class _SandboxConfig(BaseModel):
     enabled: bool = Field(
         default=False, description="Enable the sandbox capability; when False it is inert (no tools, no hook behavior, no provider imports)"
@@ -942,13 +956,26 @@ class _SandboxConfig(BaseModel):
         return self
 
 
+class _SecretKubernetesConfig(BaseModel):
+    mount_path: str = Field(
+        default="/var/run/secrets/agentkernel",
+        description="Absolute directory the Kubernetes Secrets are mounted under, one subdirectory per Secret "
+        "(<mount_path>/<secret-name>/<KEY>); a key file directly under mount_path is also read. The Helm chart's "
+        "secretStore mounts under the default, so set this only for Secrets mounted outside the chart, e.g. by the "
+        "Secrets Store CSI driver or as Docker / Compose secrets (/run/secrets). Read only by the kubernetes provider",
+    )
+
+
 class _SecretProviderConfig(BaseModel):
     type: str = Field(
         default="env",
-        description="Secret backend: a built-in short name (env, aws_ssm) or a dotted path to a SecretProvider subclass. "
-        "'env' reads the environment variable named by the key. 'aws_ssm' is AWS SSM Parameter Store and requires "
-        "secret.prefix. A set, non-empty environment variable named by the key always wins over the provider.",
+        description="Secret backend: a built-in short name (env, aws_ssm, kubernetes) or a dotted path to a "
+        "SecretProvider subclass. 'env' reads the environment variable named by the key. 'aws_ssm' is AWS SSM "
+        "Parameter Store and requires secret.prefix. 'kubernetes' reads one file per key from the Kubernetes Secrets "
+        "mounted under secret.provider.kubernetes.mount_path. A set, non-empty environment variable named by the key "
+        "always wins over the provider.",
     )
+    kubernetes: _SecretKubernetesConfig = Field(default_factory=_SecretKubernetesConfig, description="Settings of the kubernetes secret provider")
 
 
 class _SecretConfig(BaseModel):
@@ -957,7 +984,7 @@ class _SecretConfig(BaseModel):
     prefix: str = Field(
         default="",
         description="Deployment scope a provider uses to namespace its secrets, e.g. 'myproduct-dev-agents'. The aws_ssm "
-        "provider reads OPENAI_API_KEY from the SSM parameter /ak/{prefix}/openai_api_key. Required by aws_ssm; ignored by env",
+        "provider reads OPENAI_API_KEY from the SSM parameter /ak/{prefix}/openai_api_key. Required by aws_ssm; ignored by env and kubernetes",
     )
     provider: _SecretProviderConfig = Field(default_factory=_SecretProviderConfig, description="Backend the secret values are read from")
     cache_ttl: int = Field(
@@ -1038,6 +1065,7 @@ class AKConfig(YamlBaseSettingsModified):
     guardrail: _GuardrailConfig = Field(description="Guardrail related configurations", default_factory=_GuardrailConfig)
     sandbox: _SandboxConfig = Field(description="Sandbox capability configurations", default_factory=_SandboxConfig)
     secret: _SecretConfig = Field(description="Secret resolution configurations", default_factory=_SecretConfig)
+    a2ui: _A2UIConfig = Field(description="A2UI labelling capability configurations", default_factory=_A2UIConfig)
     execution: _ExecutionConfig = Field(description="Execution mode and queue related configurations", default_factory=_ExecutionConfig)
     logging: _LoggingConfig = Field(description="Logging related configurations", default_factory=_LoggingConfig)
     library_version: str = Field(default=_get_ak_version(), description="Library version")

@@ -3,6 +3,8 @@ from typing import Any, Dict, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from ..core.util.payload import JSONText
+
 # Standard message-attribute names carried alongside the body (spec §2). Transports map these to
 # their native metadata mechanism (SQS message attributes, Kafka headers, NATS headers).
 ATTR_REQUEST_ID = "request_id"
@@ -31,9 +33,14 @@ class QueueMessage(BaseModel):
     ``native`` carries the transport-native handle (e.g. a raw boto3 record) for the transport's
     own ack/nack bookkeeping and for legacy consumers that still expect raw records; it is
     excluded from serialization.
+
+    ``body`` is JSON **text**, not an object, because that is what a broker carries. Assigning a
+    dict or a list encodes it here rather than at the sender, so the rule holds for a transport
+    written later: the SQS, Kafka and NATS transports all hand the body straight to the wire, while
+    the in-memory one stores the envelope as an object and would have let a dict through.
     """
 
-    body: str = ""
+    body: JSONText = ""
     attributes: Dict[str, str] = Field(default_factory=dict)
     group_id: Optional[str] = None
     dedup_id: Optional[str] = None

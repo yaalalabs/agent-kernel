@@ -3,9 +3,11 @@ from typing import Any
 
 from fastmcp import Context, FastMCP
 from fastmcp.server.http import StarletteWithLifespan
+from fastmcp.tools.tool import ToolResult
 
 from ...core import Agent, AgentService
 from ...core.config import AKConfig
+from ...core.model import AgentReplyAny, AgentReplyText, AgentRequestText
 from ...core.runtime import Runtime
 
 
@@ -37,12 +39,42 @@ class MCP:
             self.log = logging.getLogger(f"ak.mcp.executor.{agent_name}")
 
         async def execute(self, session_id: str, prompt: str, ctx: Context) -> Any:
+            """Run the agent and return its reply in the richest shape MCP can carry.
+
+            Goes through ``run_multi`` rather than ``run`` because ``run`` stringifies the reply
+            before this method ever sees it, so a structured payload would arrive already flattened.
+
+            A reply carrying a media type becomes a ``ToolResult``: the payload travels as
+            ``structuredContent`` and the format rides in ``_meta``, MCP's own slot for
+            implementation metadata. The alternative — wrapping the payload in an Agent Kernel
+            envelope — was rejected because it changes the shape a client receives.
+
+            An array payload is the one exception, and it is MCP's constraint rather than a choice:
+            ``structuredContent`` is an object by specification, and fastmcp refuses a list outright.
+            Such a payload travels under ``result`` — fastmcp's own convention for a non-object
+            return — with the ``fastmcp.wrap_result`` flag that makes a fastmcp client unwrap it
+            again, so the caller still receives the array it was sent.
+
+            Every reply without a media type reproduces the mapping ``AgentService.run`` applied
+            before this method called ``run_multi`` instead, so a text, image or unlabelled
+            structured reply returns exactly the string it did before.
+            """
             service = AgentService()
             await ctx.info(f"Executing agent '{self.agent_name}' with prompt: {prompt} with session_id: {session_id}")
             service.select(session_id, self.agent_name)
-            response = await service.run(prompt=prompt)
-            await ctx.debug(f"Agent response '{response}'")
-            return response
+            reply = await service.run_multi([AgentRequestText(prompt=prompt)])
+            await ctx.debug(f"Agent response '{reply}'")
+            if isinstance(reply, AgentReplyAny) and reply.media_type:
+                meta: dict[str, Any] = {"media_type": reply.media_type}
+                if isinstance(reply.content, dict):
+                    return ToolResult(structured_content=reply.content, meta=meta)
+                meta["fastmcp"] = {"wrap_result": True}
+                return ToolResult(structured_content={"result": reply.content}, meta=meta)
+            if isinstance(reply, AgentReplyText):
+                return reply.response
+            if isinstance(reply, AgentReplyAny):
+                return str(reply)
+            return "Non-text reply given"
 
     @classmethod
     def get(cls) -> FastMCP:

@@ -1,4 +1,4 @@
-from ...core.util.driver.dynamodb import DynamoDBDriver
+from ...core.util.driver.dynamodb import DynamoDBDriver, DynamoDecimalCodec
 from .base import ResponseStore
 
 
@@ -42,7 +42,11 @@ class DynamoDBResponseStore(ResponseStore):
         return True
 
     def scan_records(self, prefix: str) -> list[dict]:
-        """Scan the table for items whose request_id begins with ``prefix`` (paginated)."""
+        """Scan the table for items whose request_id begins with ``prefix`` (paginated).
+
+        Goes through ``table`` rather than the driver's generic surface, so it converts the
+        Decimals DynamoDB returns itself — the driver's own read paths do it for every other call.
+        """
         from boto3.dynamodb.conditions import Attr
 
         kwargs = {"FilterExpression": Attr("request_id").begins_with(prefix)}
@@ -51,4 +55,4 @@ class DynamoDBResponseStore(ResponseStore):
         while "LastEvaluatedKey" in response:
             response = self._driver.table.scan(ExclusiveStartKey=response["LastEvaluatedKey"], **kwargs)
             items.extend(response.get("Items", []))
-        return items
+        return DynamoDecimalCodec.from_dynamo(items)

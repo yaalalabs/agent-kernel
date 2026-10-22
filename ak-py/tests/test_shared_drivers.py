@@ -1,5 +1,7 @@
 """Unit tests for the shared database drivers in ``agentkernel.core.util.driver``."""
 
+import decimal
+import json
 from unittest.mock import MagicMock
 
 import pytest
@@ -109,6 +111,55 @@ class TestRetry:
             _ = driver.table
         assert calls["n"] == 3
         assert sleep_calls["n"] == 2
+
+
+class TestDynamoDecimalCodec:
+    """DynamoDB stores no floats and returns no ints; both halves of that are converted here."""
+
+    def test_floats_become_decimals_recursively(self):
+        from agentkernel.core.util.driver.dynamodb import DynamoDecimalCodec
+
+        converted = DynamoDecimalCodec.to_dynamo({"price": 2.5, "nested": {"xs": [1.5, 2]}, "name": "x"})
+
+        assert converted == {"price": decimal.Decimal("2.5"), "nested": {"xs": [decimal.Decimal("1.5"), 2]}, "name": "x"}
+
+    def test_decimal_uses_the_printed_form_not_the_binary_expansion(self):
+        from agentkernel.core.util.driver.dynamodb import DynamoDecimalCodec
+
+        assert DynamoDecimalCodec.to_dynamo({"price": 0.1})["price"] == decimal.Decimal("0.1")
+
+    def test_bools_are_not_treated_as_numbers(self):
+        from agentkernel.core.util.driver.dynamodb import DynamoDecimalCodec
+
+        converted = DynamoDecimalCodec.to_dynamo({"active": True, "off": False})
+
+        assert converted == {"active": True, "off": False}
+        assert isinstance(converted["active"], bool)
+
+    def test_decimals_come_back_as_int_or_float(self):
+        from agentkernel.core.util.driver.dynamodb import DynamoDecimalCodec
+
+        restored = DynamoDecimalCodec.from_dynamo({"count": decimal.Decimal("3"), "price": decimal.Decimal("2.5")})
+
+        assert restored == {"count": 3, "price": 2.5}
+        assert isinstance(restored["count"], int)
+        assert isinstance(restored["price"], float)
+
+    def test_round_trip_leaves_a_payload_json_serialisable(self):
+        """The point of converting on read: no consumer ever meets a Decimal."""
+        from agentkernel.core.util.driver.dynamodb import DynamoDecimalCodec
+
+        payload = {"price": 250.0, "count": 3, "coords": [1.5, -2.25], "label": "x", "ok": True}
+
+        restored = DynamoDecimalCodec.from_dynamo(DynamoDecimalCodec.to_dynamo(payload))
+
+        assert restored == payload
+        assert json.loads(json.dumps(restored)) == payload
+
+    def test_from_dynamo_passes_none_through(self):
+        from agentkernel.core.util.driver.dynamodb import DynamoDecimalCodec
+
+        assert DynamoDecimalCodec.from_dynamo(None) is None
 
 
 class TestPingReconnect:
@@ -282,6 +333,39 @@ class TestDynamoDBDriver:
         assert driver.query_sort_keys("p") == ["a", "b", "c"]
         assert driver._table.query.call_count == 2
         assert driver._table.query.call_args.kwargs["ExclusiveStartKey"] == {"pk": "p", "sk": "b"}
+
+    def test_a_payload_carrying_a_float_survives_the_round_trip(self):
+        """The driver's own use of the codec, not the codec in isolation.
+
+        boto3 refuses a float on the way in and returns a Decimal on the way out, and a Decimal is
+        no more serialisable than a float was storable — so a consumer doing ``json.dumps`` on a
+        polled record (``rest_lambda.py:288``) fails unless both halves are wired up here.
+        """
+        driver = self._driver()
+        body = {"pk": "p", "sk": "s", "body": {"result": {"score": 0.5, "count": 3}}}
+
+        driver.put(body)
+
+        stored = driver._table.put_item.call_args.kwargs["Item"]["body"]["result"]
+        assert stored == {"score": decimal.Decimal("0.5"), "count": 3}
+
+        driver._table.get_item.return_value = {"Item": {"pk": "p", "sk": "s", "body": {"result": stored}}}
+        read = driver.get("p", "s")["body"]["result"]
+
+        assert read == {"score": 0.5, "count": 3}
+        assert isinstance(read["score"], float)
+        assert isinstance(read["count"], int)
+        assert json.dumps(read)
+
+    def test_query_items_converts_on_the_way_out_too(self):
+        """The paginating read path is a separate call site; a refactor can drop it on its own."""
+        driver = self._driver()
+        driver._table.query.return_value = {"Items": [{"sk": "a", "score": decimal.Decimal("0.5")}]}
+
+        items = driver.query_items("p")
+
+        assert items == [{"sk": "a", "score": 0.5}]
+        assert json.dumps(items)
 
     def test_sort_key_less_mode(self):
         driver = self._driver(sort_key=None)

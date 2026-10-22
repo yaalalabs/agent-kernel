@@ -1,0 +1,104 @@
+:root {
+  --bg: #f6f7f9;
+  --fg: #16181d;
+  --muted: #5b6270;
+  --line: #d9dde4;
+  --accent: #2563eb;
+  --warn: #b45309;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, sans-serif;
+}
+
+main { max-width: 44rem; margin: 0 auto; padding: 2rem 1rem 6rem; }
+h1 { font-size: 1.25rem; margin: 0 0 .25rem; }
+.hint { color: var(--muted); margin: 0 0 1.5rem; font-size: .9rem; }
+code { background: #e8ebf0; padding: .1em .35em; border-radius: 4px; font-size: .9em; }
+
+.transcript { list-style: none; margin: 0; padding: 0; display: grid; gap: .75rem; }
+.transcript > li { max-width: 90%; }
+.you, .prose, .error {
+  padding: .6rem .85rem;
+  border-radius: 12px;
+  white-space: pre-wrap;
+}
+.you { background: var(--accent); color: #fff; justify-self: end; }
+.prose { background: #fff; border: 1px solid var(--line); }
+.error { background: #fee2e2; border: 1px solid #fca5a5; }
+.pending { color: var(--muted); }
+
+/* Everything below is drawn from the A2UI payload by the catalog. */
+.surface { justify-self: start; width: 100%; }
+.card {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 1rem;
+  display: grid;
+  gap: .75rem;
+}
+.heading { margin: 0; font-size: 1rem; }
+.text { margin: 0; }
+.field { display: grid; gap: .25rem; font-size: .85rem; color: var(--muted); }
+.field input, .field select {
+  font: inherit;
+  color: var(--fg);
+  padding: .45rem .6rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+.submit {
+  justify-self: start;
+  font: inherit;
+  padding: .45rem 1rem;
+  border: 0;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+}
+.unknown {
+  border: 1px dashed var(--warn);
+  color: var(--warn);
+  border-radius: 8px;
+  padding: .5rem .75rem;
+  font-size: .85rem;
+}
+
+.composer {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  display: flex;
+  gap: .5rem;
+  padding: 1rem;
+  background: var(--bg);
+  border-top: 1px solid var(--line);
+}
+.composer input {
+  flex: 1;
+  font: inherit;
+  padding: .55rem .75rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.composer button {
+  font: inherit;
+  padding: .55rem 1.1rem;
+  border: 0;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+}
+.composer button:disabled { opacity: .5; cursor: default; }
+
+fieldset { border: 0; margin: 0; padding: 0; min-inline-size: 0; }
+fieldset:disabled { opacity: .55; }
+.sent { margin: .4rem 0 0; font-size: .8rem; color: var(--muted); }

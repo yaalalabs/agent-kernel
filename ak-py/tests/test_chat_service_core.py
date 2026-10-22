@@ -8,6 +8,7 @@ from agentkernel.core.chat_service import ChatService
 from agentkernel.core.config import AKConfig
 from agentkernel.core.event import MessageEnd, MessageStart, TextDelta
 from agentkernel.core.model import (
+    AgentReplyAny,
     AgentReplyText,
     AgentRequestAny,
     AgentRequestImage,
@@ -228,6 +229,25 @@ class TestProcessWrappers:
             status, body = service.process_chat_request(BaseRunRequest(prompt="hi", session_id="s1"))
         assert status == 200
         assert body == {"result": "agent says hi", "session_id": "s1"}
+
+    def test_process_chat_request_labelled_reply_carries_the_object(self):
+        """The gate reaches the wrappers, not just ResponseBuilder: REST, WebSocket, async and
+        threads all build their body here."""
+        content = {"version": "v1.0", "createSurface": {"surfaceId": "s1"}}
+        handler = _mock_handler(AgentReplyAny(content=content, media_type="application/a2ui+json"))
+        with patch("agentkernel.core.chat_service.AgentHandler", return_value=handler):
+            service = ChatService()
+            status, body = service.process_chat_request(BaseRunRequest(prompt="hi", session_id="s1"))
+        assert status == 200
+        assert body == {"result": content, "media_type": "application/a2ui+json", "session_id": "s1"}
+
+    def test_process_chat_request_unlabelled_structured_reply_is_a_string(self):
+        handler = _mock_handler(AgentReplyAny(content={"a": 1}))
+        with patch("agentkernel.core.chat_service.AgentHandler", return_value=handler):
+            service = ChatService()
+            status, body = service.process_chat_request(BaseRunRequest(prompt="hi", session_id="s1"))
+        assert status == 200
+        assert body == {"result": '{"a": 1}', "session_id": "s1"}
 
     def test_process_chat_request_validation_maps_to_400(self):
         service = ChatService()

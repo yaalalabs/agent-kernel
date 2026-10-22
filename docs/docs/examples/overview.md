@@ -20,6 +20,8 @@ Examples demonstrating Agent Kernel's API capabilities and integrations:
   - `multi/` - Multi-agent runtime with agents exposed as MCP tools
 - **`agui/`** - AG-UI protocol example: an OpenAI Agents SDK agent driven by a React/Vite frontend
   over a streamed AG-UI event surface, with shared state and client-context tools
+- **`a2ui-openai/`** - A2UI example: an OpenAI Agents SDK agent replying with declarative A2UI interfaces
+  (`application/a2ui+json` payloads) rendered by a React/Vite frontend, with the `a2ui` config block enabled
 - **`hitl/`** - Human-in-the-loop example: an OpenAI Agents SDK agent with a gated tool and a
   LangGraph agent asking multiple-choice and free-text questions, both paused and resumed from a
   minimal React AG-UI frontend

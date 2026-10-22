@@ -22,6 +22,7 @@ class AGUIMapper:
     def to_agui(event: StreamEvent) -> Optional["BaseEvent"]:
         """Return the AG-UI event for `event`, or None when AG-UI has no equivalent."""
         from ag_ui.core import (
+            CustomEvent,
             ReasoningMessageContentEvent,
             ReasoningMessageEndEvent,
             ReasoningMessageStartEvent,
@@ -61,6 +62,8 @@ class AGUIMapper:
                 return ReasoningMessageContentEvent(message_id=event.message_id, delta=event.content)
             case "reasoning_end":
                 return ReasoningMessageEndEvent(message_id=event.message_id)
+            case "data_message":
+                return CustomEvent(name=event.media_type or "data", value=event.content)
             case _:
                 _log.debug(f"No AG-UI equivalent for stream event '{event.type}'; not emitted")
                 return None

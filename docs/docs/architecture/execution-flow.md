@@ -119,7 +119,7 @@ reply = await runtime.run(agent, session, requests)
 1. **Session lock**: `async with session` serializes concurrent requests per session and makes `Session.current()` available.
 2. **Pre-hooks**: agent hooks first, then system hooks (input guardrails, multimodal preprocessing). A pre-hook may rewrite the request list or halt by returning an `AgentReply`.
 3. **`Runner.run()`**: converts requests to the framework's native format, restores framework session state, executes, and converts the result back to an `AgentReply` (`AgentReplyText`, `AgentReplyImage`, or `AgentReplyAny` for structured output).
-4. **Post-hooks**: system hooks (output guardrails) first, then agent hooks.
+4. **Post-hooks**: system hooks (output guardrails, then A2UI labelling) first, then agent hooks. Order matters within the system hooks: the guardrail sees the reply while it is still text, because A2UI labelling may replace an `AgentReplyText` with an `AgentReplyAny`.
 5. **Persistence**: the session store saves the session; the volatile cache is cleared in a `finally` block.
 
 ### 4. Response Return

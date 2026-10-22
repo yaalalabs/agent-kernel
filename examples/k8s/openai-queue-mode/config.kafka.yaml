@@ -45,3 +45,9 @@ session:
 logging:
   ak:
     level: INFO
+
+# OPENAI_API_KEY from the environment when set, else from the Secrets the chart mounts under
+# /var/run/secrets/agentkernel (secretStore in ak-values.yaml).
+secret:
+  provider:
+    type: kubernetes

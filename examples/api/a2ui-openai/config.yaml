@@ -1,0 +1,4 @@
+a2ui:
+  enabled: true
+  agents:
+    - expenses

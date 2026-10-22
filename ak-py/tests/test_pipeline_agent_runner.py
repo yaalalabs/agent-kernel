@@ -72,6 +72,46 @@ class TestAgentRunner:
         assert out.attributes["status_code"] == "500"
         assert json.loads(out.body)["error"] == "boom"
 
+    def test_a_labelled_reply_reaches_the_output_queue(self):
+        """The riskiest consumer: this is the call site the bare ``json.dumps`` used to raise on.
+
+        A labelled reply puts an object in ``result``, and before the gate the response body went
+        to the queue through a plain ``json.dumps`` that a ``datetime`` or ``Decimal`` inside that
+        object would have killed — after the agent had already run.
+        """
+        import datetime
+        import decimal
+
+        transport = InMemoryTransport()
+        chat_service = MagicMock()
+        body = {
+            "result": {"version": "v1.0", "at": datetime.datetime(2026, 9, 22, 14, 30), "amount": decimal.Decimal("250.00")},
+            "media_type": "application/a2ui+json",
+            "session_id": "s1",
+        }
+        chat_service.process_chat_request.return_value = (200, body)
+
+        AgentRunner(transport=transport, chat_service=chat_service).process(_input_msg())
+
+        [out] = _fetch_output(transport)
+        assert json.loads(out.body) == {
+            "result": {"version": "v1.0", "at": "2026-09-22T14:30:00", "amount": "250.00"},
+            "media_type": "application/a2ui+json",
+            "session_id": "s1",
+        }
+
+    def test_an_array_payload_reaches_the_output_queue(self):
+        """A2UI v0.9.1 is a message sequence, so ``result`` may be a list rather than an object."""
+        transport = InMemoryTransport()
+        chat_service = MagicMock()
+        content = [{"createSurface": {"surfaceId": "s1"}}, {"updateComponents": {}}]
+        chat_service.process_chat_request.return_value = (200, {"result": content, "media_type": "application/a2ui+json", "session_id": "s1"})
+
+        AgentRunner(transport=transport, chat_service=chat_service).process(_input_msg())
+
+        [out] = _fetch_output(transport)
+        assert json.loads(out.body)["result"] == content
+
     def test_missing_request_id_raises(self):
         runner = AgentRunner(transport=InMemoryTransport(), chat_service=MagicMock())
         with pytest.raises(ValueError, match="request_id"):

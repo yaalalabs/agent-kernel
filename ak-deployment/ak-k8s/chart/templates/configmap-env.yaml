@@ -1,3 +1,4 @@
+{{- include "agent-kernel.secretStoreValidate" . -}}
 {{/*
 The AK_* environment contract, shared by every Agent Kernel container. The application image
 declares WHAT runs (config.yaml: execution.mode, agents); this ConfigMap injects WHERE it runs

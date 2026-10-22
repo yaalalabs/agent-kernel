@@ -1,4 +1,5 @@
 import datetime
+import decimal
 import json
 
 import pytest
@@ -35,12 +36,49 @@ class TestAgentReplyAny:
         reply = AgentReplyAny(content={"k": "v"}, prompt="the prompt")
 
         dumped = reply.model_dump()
-        assert dumped == {"content": {"k": "v"}, "prompt": "the prompt", "type": "other"}
+        assert dumped == {"content": {"k": "v"}, "media_type": None, "prompt": "the prompt", "type": "other"}
         assert json.loads(reply.model_dump_json()) == dumped
 
     def test_non_dict_content_raises(self):
         with pytest.raises(ValidationError):
             AgentReplyAny(content="not a dict")
+
+    def test_media_type_defaults_to_none_and_round_trips(self):
+        assert AgentReplyAny(content={"a": 1}).media_type is None
+
+        reply = AgentReplyAny(content={"a": 1}, media_type="application/a2ui+json")
+        assert AgentReplyAny.model_validate_json(reply.model_dump_json()).media_type == "application/a2ui+json"
+
+    @pytest.mark.parametrize(
+        "content,expected",
+        [
+            ({"city": "Colombo", "temp_c": 31}, '{"city": "Colombo", "temp_c": 31}'),
+            ({"at": datetime.datetime(2026, 9, 22, 14, 30)}, '{"at": "2026-09-22T14:30:00"}'),
+            ({"amount": decimal.Decimal("250.00")}, '{"amount": "250.00"}'),
+            ({"tags": {"a"}}, '{"tags": ["a"]}'),
+            ({1: "one"}, '{"1": "one"}'),
+        ],
+    )
+    def test_str_is_pinned_for_every_coerced_type(self, content, expected):
+        """``__str__`` is what four surfaces reach for, so its output is part of the contract.
+
+        JSON-safe content is byte-identical to what ``json.dumps(default=str)`` produced before;
+        a ``datetime``, a ``set`` and a non-string key are the three that changed. A ``Decimal``
+        did not — normalisation renders it as the same quoted string ``default=str`` did.
+        """
+        assert str(AgentReplyAny(content=content)) == expected
+
+    def test_str_cannot_be_reached_with_a_non_finite_float(self):
+        """The one value with no JSON form: it raises at construction instead of reaching here."""
+        with pytest.raises(ValidationError):
+            AgentReplyAny(content={"avg": float("nan")})
+
+    def test_content_accepts_a_top_level_list(self):
+        """A2UI on v0.9.1 is a sequence of messages, so a reply may carry an array."""
+        content = [{"createSurface": {"surfaceId": "s1"}}, {"updateComponents": {}}]
+
+        assert AgentReplyAny(content=content).content == content
+        assert json.loads(str(AgentReplyAny(content=content))) == content
 
 
 class TestAgentReplyAnyFromOutput:
@@ -67,6 +105,11 @@ class TestAgentReplyAnyFromOutput:
         assert reply.prompt == ""
 
     def test_unstructured_values_return_none(self):
+        """A bare list stays unstructured even though `content` accepts one.
+
+        Promoting it would change `result` for a list-returning agent that never opted in: the
+        reply goes from AgentReplyText's Python repr to AgentReplyAny's JSON.
+        """
         assert AgentReplyAny.from_output("plain text") is None
         assert AgentReplyAny.from_output(42) is None
         assert AgentReplyAny.from_output(None) is None

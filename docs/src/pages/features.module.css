@@ -2323,6 +2323,12 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
     column-gap: 1.5rem;
   }
+
+  /* An odd number of protocols leaves the last card alone on its row; span it
+     so the row reads as a full-width card rather than a half-empty one. */
+  .protocolCell:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
 }
 
 .protocolCell {

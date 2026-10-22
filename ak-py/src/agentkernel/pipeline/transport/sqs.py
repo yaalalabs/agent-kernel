@@ -7,7 +7,6 @@ pipeline and the ECS/Lambda queue mode byte-identical on the wire by constructio
 producers and ECS consumers (or vice versa) interoperate during a migration.
 """
 
-import json
 import threading
 from enum import Enum
 from typing import Any, Dict, List, Mapping, Optional
@@ -15,6 +14,7 @@ from typing import Any, Dict, List, Mapping, Optional
 import boto3
 from pydantic import BaseModel, ConfigDict
 
+from ...core.util.payload import PayloadCodec
 from ..envelope import QueueMessage, QueueName
 from .base import QueueTransport, TransportConsumer
 
@@ -53,7 +53,21 @@ def serialize_message_body(message_body: Any) -> str:
     """Convert a message payload into the string body required by SQS.
 
     Strings are passed through unchanged. Pydantic models are converted with exclude_none=True
-    before being JSON encoded, and all other values are serialized with json.dumps.
+    before being JSON encoded, and all other values go through PayloadCodec, so a response body
+    holding a value that never passed payload validation still serializes instead of raising and
+    losing the message to retry exhaustion.
+
+    **This is the only explicit ``PayloadCodec`` call left in the tree, and the only reason it is
+    here is the second caller.** Everywhere else the rule sits on a field — ``QueueMessage.body``
+    is a ``JSONText``, so a sender hands it an object and the envelope encodes — which is why
+    ``nats.py``, ``kafka.py`` and ``in_memory.py`` have nothing like this. ``SQSTransport.send``
+    does not need it either: it arrives with ``message.body``, already a ``str``, and falls through
+    the first branch. The dict branch exists for ``SQSHandler``, which ``ECSAgentRunner`` and
+    ``ServerlessAgentRunner`` use to write the output queue **without** building a ``QueueMessage``.
+
+    So: do not delete this as dead code because the transports look symmetric, and do not copy it
+    into a new transport. If those two runners are ever converged onto the envelope, this whole
+    function goes with them and ``PayloadCodec.encode`` drops to one internal caller.
 
     :param message_body: The message payload to serialize.
     :return: A string representation suitable for the SQS MessageBody field.
@@ -64,7 +78,7 @@ def serialize_message_body(message_body: Any) -> str:
     if hasattr(message_body, "model_dump"):
         message_body = message_body.model_dump(exclude_none=True)
 
-    return json.dumps(message_body)
+    return PayloadCodec.encode(message_body)
 
 
 def build_message_attribute(custom_attribute: CustomAttribute) -> Dict[str, Any]:

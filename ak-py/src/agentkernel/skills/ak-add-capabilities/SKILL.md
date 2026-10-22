@@ -6,7 +6,7 @@ description: >
   A2A server, AG-UI server, pre/post hooks, multimodal support, conversation thread support,
   scheduled tasks (deferred and recurring chat execution), the sandbox capability
   (isolated code execution), and secret resolution (environment first, then AWS SSM
-  Parameter Store or a custom provider). Session
+  Parameter Store, Kubernetes Secrets mounted into the pod, or a custom provider). Session
   persistence supports Redis, DynamoDB (AWS), Cosmos DB (Azure), and Firestore (GCP).
   Conversation threads support in-memory, Redis, Valkey, DynamoDB (AWS), Firestore (GCP),
   and Cosmos DB (Azure) backends. Generates configuration and code changes needed.
@@ -45,8 +45,9 @@ Which capability would you like to add?
 10. **Sandbox** — Isolated code/command execution with pluggable providers, workload profiles, policy, and per-user identity
 11. **AG-UI Server** — Stream any agent to an AG-UI-compliant frontend (text, tool calls, reasoning, shared state)
 12. **Scheduled Tasks** — Deferred and recurring chat execution (a `schedule` block on a chat request, management routes, agent tools)
-13. **Secret Resolution** — Read API keys through `SecretManager` (environment first, then AWS SSM Parameter Store or a custom provider)
+13. **Secret Resolution** — Read API keys through `SecretManager` (environment first, then AWS SSM Parameter Store, Kubernetes Secrets mounted into the pod, or a custom provider)
 14. **Human in the Loop** — Pause a run for a person's approval or answer and resume from their decision (a gated tool or an interrupt, a `resume` block on the next request)
+15. **A2UI** — Let an agent answer with an interface instead of prose: its JSON reply is labelled so the client receives a document, not a string
 
 ### Step 3: Generate Changes
 
@@ -1400,7 +1401,8 @@ back to `os.environ`** — hand it to the SDK explicitly. The capability is alwa
 flag); the default `env` provider costs nothing.
 
 **Ask:** Which provider — `env` (default; the process environment), `aws_ssm` (AWS SSM Parameter
-Store; needs the `aws` extra and `secret.prefix`), or a dotted path to your own `SecretProvider`
+Store; needs the `aws` extra and `secret.prefix`), `kubernetes` (Kubernetes Secrets mounted into the
+pod as files; no extra), or a dotted path to your own `SecretProvider`
 subclass?
 
 **1. Install the extra (aws_ssm only):**
@@ -1414,7 +1416,9 @@ pip install "agentkernel[aws]"
 ```yaml
 secret:
   provider:
-    type: aws_ssm              # env (default) | aws_ssm | my_pkg.secrets.MyProvider
+    type: aws_ssm              # env (default) | aws_ssm | kubernetes | my_pkg.secrets.MyProvider
+    # kubernetes:
+    #   mount_path: /var/run/secrets/agentkernel   # only for Secrets mounted outside the Helm chart
   prefix: myproduct-dev-agents # required by aws_ssm; AWS Terraform injects AK_SECRET__PREFIX when ssm_enabled = true
   cache_ttl: 300               # seconds a provider hit is cached; 0 disables caching (rotation-pickup window)
 ```
@@ -1422,6 +1426,11 @@ secret:
 With `aws_ssm`, the key `OPENAI_API_KEY` is read from the SSM parameter
 `/ak/{prefix}/openai_api_key` (key lowercased, `GetParameter` with decryption). `prefix` must be a single
 path segment. Create the parameters yourself as `SecureString`.
+
+With `kubernetes`, the key is the file `<mount_path>/<secret-name>/OPENAI_API_KEY`, found across every
+mounted Secret (the same key in two Secrets is an error). Data keys must be named exactly like the AK key
+(`OPENAI_API_KEY`). On the Helm chart, set `secretStore.enabled: true` and list the Secrets in
+`secretStore.secrets`; see `examples/k8s/openai-queue-mode`.
 
 **3. Resolve secrets in agent code instead of reading `os.environ`:**
 
@@ -1443,7 +1452,59 @@ failed — credentials, network, IAM; never masked by `default`), `ValueError` (
 `SecretManager.current().invalidate(key)` / `.clear()` to drop cached values. A custom provider
 subclasses `agentkernel.secret.SecretProvider`, implements `get_secret(key) -> Optional[str]`
 (return `None` on a miss), and can be checked with the `agentkernel.secret.testing.SecretProviderContract`
-pytest suite. See `examples/cli/openai-secret` (env) and `examples/aws-serverless/openai` (aws_ssm).
+pytest suite. See `examples/cli/openai-secret` (env), `examples/aws-serverless/openai` (aws_ssm) and
+`examples/k8s/openai-queue-mode` (kubernetes).
+
+#### A2UI
+
+Let an agent answer with an *interface* rather than prose. It replies with an [A2UI](https://a2ui.org/)
+document — JSON naming components your frontend already implements — and Agent Kernel labels it, so
+the reply arrives as an object with `media_type` beside it instead of a string the client has to
+parse a second time.
+
+Two things make it work, and only the second is configuration. **Agent Kernel ships no component
+catalog**: one listing components your frontend cannot draw is worse than none, because the model
+emits them confidently and nothing renders.
+
+1. Update `config.yaml`:
+```yaml
+a2ui:
+  enabled: true
+  agents:
+    - expenses        # omit for every agent
+```
+
+2. Tell the agent the format and give it *your* catalog, in its instructions. Naming the agent above
+   is the declaration that it emits A2UI; a reply from it that does not parse as JSON is left alone,
+   so ordinary prose turns are unaffected:
+```python
+CATALOG = """
+Reply with ONLY a JSON object in the A2UI format when the answer is better shown than described —
+no prose around it, no markdown fence. One component MUST have "id": "root".
+
+{"version": "v1.0", "createSurface": {"surfaceId": "<name>", "components": [...]}}
+
+The components this client can draw, and nothing else:
+  Card {"children": [ids]} | Text {"text"} | TextField {"label", "name"} | Button {"label"}
+
+For anything that does not need an interface, reply with ordinary prose. Most turns are prose.
+"""
+
+expenses_agent = Agent(name="expenses", instructions=f"{YOUR_INSTRUCTIONS}\n\n{CATALOG}")
+```
+
+3. Read it on the client. `media_type` is the switch — present means `result` is the object:
+```json
+{"result": {"version": "v1.0", "createSurface": {...}},
+ "media_type": "application/a2ui+json",
+ "session_id": "user-123"}
+```
+
+4. Two limits worth knowing before you build on this. It does **not** reach a streamed run
+   (`execution.mode: stream`) — the hook runs on `Runtime.run`, and a warning says so on the first
+   request. And it does **not** touch a reply from an agent you gave a framework `output_type`,
+   since that schema is yours and Agent Kernel has never seen it; write your own post-hook there.
+   See `examples/api/a2ui-openai` for a full demo including a small React renderer.
 
 ---
 

@@ -271,6 +271,22 @@ class TestRunnerRecording:
 
         assert [(m.role, m.content) for m in manager.get_messages("s1").messages] == [("user", "hello"), ("assistant", "ok:hello")]
 
+    def test_a_labelled_reply_is_recorded_as_json_not_a_python_repr(self, monkeypatch):
+        """The runner holds the response body's ``result``, which for a labelled reply is a dict.
+
+        ``str()`` on a dict is a Python repr — single quotes, ``None`` for null — so the same agent
+        would record one encoding here and another through the direct handler, permanently.
+        """
+        manager = _configure(monkeypatch)
+        _open_thread(manager)
+        content = {"version": "v1.0", "createSurface": {"surfaceId": "s1", "title": None}}
+
+        self._runner(result=content).process(_marked_message())
+
+        recorded = manager.get_messages("s1").messages[-1].content
+        assert json.loads(recorded) == content
+        assert "'" not in recorded
+
     def test_an_unmarked_message_records_nothing(self, monkeypatch):
         manager = _configure(monkeypatch)
         _open_thread(manager)

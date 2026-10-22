@@ -14,6 +14,7 @@ except importlib.metadata.PackageNotFoundError:
 from .base import Agent, Runner, RunOptionsFactory, Session
 from .realtime import RealtimeRunner
 from .event import (
+    DataMessage,
     MessageEnd,
     MessageStart,
     ReasoningDelta,

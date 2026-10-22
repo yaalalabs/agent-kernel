@@ -28,6 +28,7 @@ import {
   MdMenuBook,
   MdExtension,
   MdHub,
+  MdDashboardCustomize,
   MdMessage,
   MdCloudUpload,
   MdFactCheck,
@@ -1892,6 +1893,15 @@ function ProtocolSupport() {
         "Agent-to-Agent (A2A) is a communication pattern where multiple AI agents interact directly with each other to share context, delegate tasks, and coordinate decisions. It enables complex workflows by allowing specialized agents to collaborate instead of relying on a single monolithic system. Agent Kernel natively supports exposing any agent over the A2A protocol by switching configuration.",
       link: "/docs/api/a2a-server",
       linkLabel: "A2A Server Docs",
+    },
+    {
+      key: "a2ui",
+      icon: <MdDashboardCustomize />,
+      title: "A2UI - Generative UI",
+      description:
+        "A2UI is a format for an agent to answer with an interface rather than prose: a JSON document naming components your frontend already implements, which it renders and sends interactions back from. Agent Kernel carries it end to end from two config keys — the reply arrives as an object with its format named, over REST, MCP and AG-UI alike — while the component catalog stays with your application, where it belongs.",
+      link: "/docs/next/advanced/a2ui",
+      linkLabel: "A2UI Docs",
     },
   ];
   useLayoutEffect(() => {

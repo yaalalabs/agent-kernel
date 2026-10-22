@@ -93,6 +93,27 @@ The chart does not template this Deployment yet; run it as your own workload (a 
 `in_memory` transport there is no separate container at all: pass
 `IOHandler.run(pollers=[PollerRunner(adapter)])` and it runs as a peer thread.
 
+## Secret Resolution (Kubernetes Secrets)
+
+Model provider credentials are yours to provide. Either inject them as environment variables
+through `extraEnv` (a `secretKeyRef`), or mount whole Secrets with `secretStore` and select
+`secret.provider.type: kubernetes` in your `config.yaml`:
+
+```yaml
+secretStore:
+  enabled: true
+  secrets:
+    - name: openai-credentials   # created by you, with a data key named OPENAI_API_KEY
+```
+
+Each listed Secret is mounted read-only at `/var/run/secrets/agentkernel/<name>` into the tier that
+executes agents only (`agent-runner`, or `io-handler` in the single-process profile), with no RBAC.
+`SecretManager.current().get("OPENAI_API_KEY")` then reads the file, and a set environment variable
+still wins. New keys and rotated values reach the mount without a restart. For the lookup rules,
+key naming, rotation and security notes, see the
+[Secret Resolution guide](../advanced/secrets.md) and the
+[chart README](https://github.com/yaalalabs/agent-kernel/tree/develop/ak-deployment/ak-k8s).
+
 ## Flavors
 
 Flavors never fork templates: every difference is a value.

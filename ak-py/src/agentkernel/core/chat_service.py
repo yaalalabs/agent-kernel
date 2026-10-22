@@ -24,6 +24,7 @@ from .model import (
 )
 from .service import AgentService
 from .util.async_bridge import iterate_async_sync, run_async_sync
+from .util.payload import PayloadCodec
 
 
 class RequestBuilder:
@@ -326,10 +327,32 @@ class ResponseBuilder:
     def build_response(status_code: int, session_id: Optional[str], rest_api_mode: bool, result: Any = None, error: Optional[Exception] = None):
         """Build response from agent result or error.
 
+        A structured reply whose ``media_type`` is set puts its content in ``result`` as an object
+        and names the format alongside it, so a client parses once instead of twice. Every other
+        reply — text, image, and a structured reply with no media type — is serialised exactly as it
+        was before that field existed, which is what makes ``result``'s ``str | dict | list`` shape
+        unobservable to anyone who has not opted in. Only a post-hook sets a media type; no framework
+        adapter does.
+
         A paused reply also carries `status: "PAUSED"`, `run_id`, `agent` and `interruptions` as
         top-level keys, so a client branches on the outcome without parsing `result`. `agent` is
         there because a resume has to name the agent that paused, and a request that named none was
         served by the default agent — without this the client cannot answer its own pause.
+
+        **The dict this returns is JSON-safe, and that is a guarantee rather than a coincidence.**
+        Every other value it holds is a `str` or a `model_dump(mode="json")`; the object form is
+        the one way a payload reaches a client untouched, so that branch re-runs
+        ``PayloadCodec.normalise`` to close the two bypasses the field validator cannot see
+        (`model_copy` over `content`, and in-place mutation). The point is what it buys downstream:
+        a deployment adapter can serialise this body with a bare ``json.dumps`` and be correct,
+        instead of having to know that a codec exists.
+
+        `normalise` rather than a lenient variant, deliberately. It raises on a `NaN`, which the
+        lenient path would render as `null` — indistinguishable from a field the agent chose to
+        omit, which is the whole reason Decision 8 refuses it at construction. Refusing it here too
+        costs nothing a caller wants: the error names the key path and is reported, where `null`
+        would ship wrong data quietly. Leniency belongs at a queue boundary, where a raise loses
+        the message instead of reporting anything.
 
         :param status_code: HTTP status code
         :param session_id: Session identifier for the response
@@ -341,6 +364,8 @@ class ResponseBuilder:
         response_dict: Dict[str, Any]
         if error:
             response_dict = {"error": str(error)}
+        elif isinstance(result, AgentReplyAny) and result.media_type:
+            response_dict = {"result": PayloadCodec.normalise(result.content), "media_type": result.media_type}
         else:
             response_dict = {
                 "result": str(result) if isinstance(result, (AgentReplyText, AgentReplyImage, AgentReplyAny)) else "Non textual result received"
@@ -377,10 +402,15 @@ class ResponseBuilder:
 
         :param chunk: StreamChunk to format
         :param session_id: Session identifier to include in the payload
+        Dumped in JSON mode so an event carrying a payload reaches ``json.dumps`` already converted.
+        Every field of every other event is a str, int or bool, so this is byte-identical for them;
+        without it a payload would raise here, mid-stream, after the client had rendered part of
+        the message.
+
         :param sse_format: When True, wrap the JSON payload as an SSE frame.
         :return: JSON string or SSE-formatted string with excluded None values
         """
-        payload_dict = chunk.model_dump(exclude_none=True)
+        payload_dict = chunk.model_dump(mode="json", exclude_none=True)
         payload_dict["session_id"] = session_id
         payload = json.dumps(payload_dict)
         return f"data: {payload}\n\n" if sse_format else payload

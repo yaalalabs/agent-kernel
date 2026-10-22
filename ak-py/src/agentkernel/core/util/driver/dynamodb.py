@@ -1,5 +1,6 @@
 """Shared DynamoDB connection driver."""
 
+import decimal
 import time
 from typing import Any, Optional
 
@@ -7,6 +8,58 @@ import boto3
 from boto3.dynamodb.conditions import Key as DDBKey
 
 from .base import BaseDriver
+
+
+class DynamoDecimalCodec:
+    """Converts between JSON numbers and DynamoDB's Decimal-only numeric type.
+
+    boto3 refuses a ``float`` outright — ``Float types are not supported`` — and hands every number
+    back as a ``Decimal``. Both halves are needed: converting only on write moves the failure to
+    whatever serializes the value afterwards, and a ``Decimal`` is no more JSON-serializable than a
+    ``float`` is storable. Round-tripping through here means no consumer ever meets either problem.
+
+    A separate class from the driver because it is a self-contained rule with its own tests, and
+    the driver should not grow a second responsibility. It stays in this module because the rule is
+    DynamoDB's and nothing else needs it.
+    """
+
+    @classmethod
+    def to_dynamo(cls, value: Any) -> Any:
+        """
+        Replace every float in a value with a Decimal, recursively.
+
+        Uses ``Decimal(str(value))`` rather than ``Decimal(value)`` so the stored number matches the
+        float's printed form instead of its binary expansion.
+
+        :param value: The value to convert; containers are rebuilt, scalars returned as they are.
+        :return: The value with no floats left in it.
+        """
+        if isinstance(value, float):
+            return decimal.Decimal(str(value))
+        if isinstance(value, dict):
+            return {key: cls.to_dynamo(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [cls.to_dynamo(item) for item in value]
+        return value
+
+    @classmethod
+    def from_dynamo(cls, value: Any) -> Any:
+        """
+        Replace every Decimal in a value with an int or a float, recursively.
+
+        A Decimal with no fractional part becomes an int, so a count stored as 3 reads back as 3
+        rather than 3.0.
+
+        :param value: The value to convert; containers are rebuilt, scalars returned as they are.
+        :return: The value with no Decimals left in it.
+        """
+        if isinstance(value, decimal.Decimal):
+            return int(value) if value == value.to_integral_value() else float(value)
+        if isinstance(value, dict):
+            return {key: cls.from_dynamo(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [cls.from_dynamo(item) for item in value]
+        return value
 
 
 class DynamoDBDriver(BaseDriver):
@@ -85,7 +138,8 @@ class DynamoDBDriver(BaseDriver):
         """
         Put a single item. When TTL is configured (> 0), attaches an ``expiry_time``
         attribute (UNIX epoch seconds) to a copy of the item — the caller's dict is
-        never mutated.
+        never mutated. Floats anywhere in the item become Decimals, which DynamoDB requires;
+        the read paths convert them back, so a store never sees either type leak.
 
         :param item: The complete item dict, including key attributes.
         """
@@ -93,7 +147,7 @@ class DynamoDBDriver(BaseDriver):
             if self._ttl > 0:
                 item = dict(item)
                 item["expiry_time"] = int(time.time()) + self._ttl
-            self.table.put_item(Item=item)
+            self.table.put_item(Item=DynamoDecimalCodec.to_dynamo(item))
         except Exception as e:
             self._log.error("Failed to put item into table %s: %s", self._table_name, e)
             raise
@@ -109,7 +163,7 @@ class DynamoDBDriver(BaseDriver):
         """
         try:
             resp = self.table.get_item(Key=self._item_key(pk_value, sk_value))
-            return resp.get("Item")
+            return DynamoDecimalCodec.from_dynamo(resp.get("Item"))
         except Exception as e:
             self._log.error("Failed to get item from table %s: %s", self._table_name, e)
             raise
@@ -146,7 +200,7 @@ class DynamoDBDriver(BaseDriver):
         except Exception as e:
             self._log.error("Failed to query items for %s=%s: %s", self._partition_key, pk_value, e)
             raise
-        return items
+        return DynamoDecimalCodec.from_dynamo(items)
 
     def query_index(self, index_name: str, key_name: str, key_value: Any) -> list[dict]:
         """
@@ -168,7 +222,7 @@ class DynamoDBDriver(BaseDriver):
         except Exception as e:
             self._log.error("Failed to query index %s for %s=%s: %s", index_name, key_name, key_value, e)
             raise
-        return items
+        return DynamoDecimalCodec.from_dynamo(items)
 
     def query_sort_keys(self, pk_value: Any) -> list[str]:
         """

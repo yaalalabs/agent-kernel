@@ -8,6 +8,8 @@ slug: /
 **The Operating System for Scalable & Compliant Enterprise AI Agents.**
 
 :::tip What's New
+🎨 **A2UI** - Turn two config keys on and an agent's JSON reply reaches the client as an [A2UI](https://a2ui.org/) document: `result` carries the object and `media_type` names the format, over REST, MCP and AG-UI alike. [Learn more →](./advanced/a2ui.md)
+
 🔀 **Realtime multi-agent handoffs** - A voice call moves between agents with the OpenAI Agents SDK's handoffs or Google ADK's transfers, and in LiveKit every agent appears as its own participant, with only the active one unmuted. [Learn more →](./integrations/livekit.md#multi-agent-handoffs)
 
 🙋 **Human in the Loop** - Let a run pause for a person's approval or answer, and resume from their decision minutes or hours later, on any replica. Works on OpenAI, LangGraph, Pydantic AI and Google ADK, over REST, streaming and AG-UI. [Learn more →](./advanced/human-in-the-loop.md)
@@ -93,6 +95,7 @@ Agent Kernel provides pre-built execution capabilities:
 - **MCP Server** for Model Context Protocol tool publishing
 - **A2A Server** for Agent-to-Agent communication
 - **AG-UI Server** for streaming any agent (text, tool calls, reasoning, shared state) to an AG-UI-compliant frontend
+- **A2UI labelling** so a generative-UI document reaches the client as an object with its format named, not a JSON string to parse twice
 
 ### Multi-Cloud Architecture
 
@@ -147,7 +150,7 @@ Easily extend Agent Kernel with custom framework adapters, memory back-ends, and
 - **Multimodal Attachments**: Image and file support with pluggable attachment storage and on-demand vision analysis
 - **Sandbox**: Execute agent-generated code and shell commands in an isolated, permission-bounded environment, with pluggable providers (`local_subprocess`, `docker`, `e2b`, `daytona`, `ec2_ssm`), workload profiles, policy enforcement, and per-user identity. [Learn more →](/docs/advanced/sandbox)
 - **Conversation Threads**: Persistent, named threads with auto-naming and REST read APIs
-- **Secret Resolution**: Resolve API keys and passwords through `SecretManager` — environment first, then a managed store (`env` or AWS SSM Parameter Store, or your own provider) — with only `config.yaml` changing between laptop and production. [Learn more →](./advanced/secrets.md)
+- **Secret Resolution**: Resolve API keys and passwords through `SecretManager` — environment first, then a managed store (`env`, AWS SSM Parameter Store, Kubernetes Secrets mounted into the pod, or your own provider) — with only `config.yaml` changing between laptop and production. [Learn more →](./advanced/secrets.md)
 - **Structured Output**: Typed/JSON agent replies (`AgentReplyAny`) across OpenAI, LangGraph, ADK, CrewAI, Smolagents, and Pydantic AI
 - **Agent Testing Capability**: Built in Agent test framework so that you can write automated tests easily
 - **Governance**: Input/output guardrails with OpenAI Guardrails, AWS Bedrock Guardrails, and Walled AI (including PII redaction)

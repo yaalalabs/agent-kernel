@@ -184,9 +184,11 @@ okf:
 # enabled flag. A set, non-empty environment variable named by the key always wins.
 # See /docs/advanced/secrets)
 secret:
-  prefix: ""  # Deployment scope; required by aws_ssm (injected as AK_SECRET__PREFIX by the AWS Terraform modules), ignored by env
+  prefix: ""  # Deployment scope; required by aws_ssm (injected as AK_SECRET__PREFIX by the AWS Terraform modules), ignored by env and kubernetes
   provider:
-    type: env  # env | aws_ssm, or a dotted path to a SecretProvider subclass
+    type: env  # env | aws_ssm | kubernetes, or a dotted path to a SecretProvider subclass
+    kubernetes:
+      mount_path: /var/run/secrets/agentkernel  # Directory the Kubernetes Secrets are mounted under; read only by the kubernetes provider
   cache_ttl: 300  # Seconds a provider hit is served from the process cache; 0 disables caching
 
 # Messaging platform integrations
@@ -230,6 +232,14 @@ teams:
   app_id: ""  # Azure Bot / Entra ID application (client) ID
   app_password: ""  # Azure Bot / Entra ID application client secret
   tenant_id: ""  # Bot app registration's own tenant; empty for a multi-tenant bot
+
+# A2UI labelling (optional - off unless `enabled` is true)
+# Labels a JSON reply as A2UI so a client receives the document as an object with its format
+# named, instead of a JSON string. See /docs/advanced/a2ui
+a2ui:
+  enabled: true
+  agents:
+    - expenses  # omit for every agent
 
 # Guardrails configuration
 guardrail:
@@ -517,8 +527,9 @@ export AK_MCP__STATELESS_HTTP=false  # Run in stateless HTTP mode, no Mcp-Sessio
 See [Secret Resolution](../advanced/secrets.md) for the resolution order and providers.
 
 ```bash
-export AK_SECRET__PROVIDER__TYPE=aws_ssm  # Options: 'env', 'aws_ssm', or a dotted path to a SecretProvider subclass (default: 'env')
-export AK_SECRET__PREFIX=myproduct-dev-agents  # Deployment scope; required by aws_ssm, ignored by env (default: '')
+export AK_SECRET__PROVIDER__TYPE=aws_ssm  # Options: 'env', 'aws_ssm', 'kubernetes', or a dotted path to a SecretProvider subclass (default: 'env')
+export AK_SECRET__PROVIDER__KUBERNETES__MOUNT_PATH=/var/run/secrets/agentkernel  # Where the Kubernetes Secrets are mounted; kubernetes provider only (default: /var/run/secrets/agentkernel)
+export AK_SECRET__PREFIX=myproduct-dev-agents  # Deployment scope; required by aws_ssm, ignored by env and kubernetes (default: '')
 export AK_SECRET__CACHE_TTL=300  # Seconds a provider hit is cached; 0 disables caching (default: 300)
 ```
 
@@ -605,6 +616,14 @@ export LANGFUSE_HOST=https://cloud.langfuse.com  # Langfuse host (or self-hosted
 # OpenLLMetry (Traceloop) configuration (required when using OpenLLMetry)
 export TRACELOOP_API_KEY=your-api-key  # Your Traceloop API key
 export TRACELOOP_BASE_URL=https://api.traceloop.com  # Optional: Traceloop base URL (for self-hosted)
+```
+
+### A2UI
+
+```bash
+# Enable A2UI labelling
+export AK_A2UI__ENABLED=true  # default: false
+export AK_A2UI__AGENTS="expenses,support"  # Comma-separated list (default: every agent)
 ```
 
 ### Guardrails Configuration

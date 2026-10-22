@@ -3,6 +3,7 @@ ThreadRecorder — records a chat exchange into the conversation-thread store
 around a ChatService execution-core run.
 """
 
+import json
 import logging
 from typing import Any, List
 
@@ -60,7 +61,35 @@ class ThreadRecorder:
         """Thread work done after a successful agent run: append the assistant message.
 
         :param req: The originating chat request
-        :param result: The agent's reply (stringified for recording)
+        :param result: The agent's reply, in whichever form the caller holds it
         :return: None
         """
-        self._manager.append_message(req.session_id, "assistant", str(result))
+        self._manager.append_message(req.session_id, "assistant", self._as_thread_content(result))
+
+    @staticmethod
+    def _as_thread_content(result: Any) -> str:
+        """Render a reply as the string the thread store holds, without ever producing a repr.
+
+        The callers pass three different things, which is what makes a single ``str()`` wrong. The
+        direct handlers pass an ``AgentReply``, whose ``__str__`` already yields JSON, and the
+        streaming one passes the accumulated text; but the queue runner has only the response body
+        it just built, so for a labelled reply it passes a dict — and ``str()`` on a dict is a
+        Python repr, not JSON. Left alone, the same agent would record one encoding in
+        single-process mode and another through the queue, permanently.
+
+        The dict branch deliberately mirrors ``AgentReplyAny.__str__``'s own call, including its
+        ``default=str`` fallback, rather than using ``PayloadCodec.encode``. For JSON-safe content
+        the two agree; they part on a value that reached ``content`` through one of the documented
+        bypasses, where ``default=str`` renders a datetime as the reply's ``__str__`` does and the
+        codec renders it as ISO 8601. Matching the reply exactly is the point — the alternative is
+        two stores holding the same reply in two encodings, which is invisible until someone diffs
+        them.
+
+        :param result: An AgentReply, a plain string, or the response body's ``result`` value.
+        :return: The thread message content.
+        """
+        if isinstance(result, str):
+            return result
+        if isinstance(result, (dict, list)):
+            return json.dumps(result, default=str)
+        return str(result)

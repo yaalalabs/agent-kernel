@@ -43,7 +43,7 @@ Most agent frameworks help you build a *prototype*. **Agent Kernel is the platfo
 | 🧠 **Stateful & Knowledge-Aware** | Pluggable session stores (Redis, Valkey, DynamoDB, Cosmos DB) + knowledge bases (ChromaDB, Neo4j, Starburst, Open Knowledge Format bundles). |
 | 💬 **Channels Built-In** | Slack, WhatsApp, Teams, Telegram, Gmail, Messenger, Instagram, and LiveKit — out of the box. |
 | 🔍 **Production Observability** | LangFuse, OpenLLMetry, Pydantic Logfire, and AWS CloudWatch tracing wired in. Every agent run — visible, with LLM and tool calls where the framework supports it. |
-| 🤝 **Open Standards** | Native **MCP** (Model Context Protocol), **A2A** (Agent-to-Agent), and **AG-UI** (streamed event protocol for agent-facing frontends) support. |
+| 🤝 **Open Standards** | Native **MCP** (Model Context Protocol), **A2A** (Agent-to-Agent), **AG-UI** (streamed event protocol for agent-facing frontends), and **A2UI** (generative UI documents, labelled from config) support. |
 | 🆓 **Apache 2.0** | No licensing fees. No vendor lock-in. Production-ready open source. |
 
 > ⭐ **If Agent Kernel is solving real problems for you, please star the repo — it's the single best way to help us grow.**
@@ -112,7 +112,7 @@ Enterprises can't ship agents they can't audit. Agent Kernel makes compliance th
 - **Framework-Native Run Options**: Pass each framework's own run arguments and lifecycle hooks (OpenAI `RunHooks` and `RunConfig`, LangGraph callbacks, ADK plugins, Pydantic AI usage limits) per agent through `Module.run_options`, statically or computed per run by a factory, with the keys Agent Kernel owns kept safe.
 - **Full Traceability** — Every agent action, tool call, and LLM invocation logged with configurable verbosity.
 - **Observability** — LangFuse, OpenLLMetry, Pydantic Logfire, and AWS CloudWatch tracing with a single config line.
-- **Secret Resolution** — Resolve API keys from the environment locally and from AWS SSM Parameter Store in production via `SecretManager`, with only `config.yaml` changing.
+- **Secret Resolution** — Resolve API keys from the environment locally and from AWS SSM Parameter Store or mounted Kubernetes Secrets in production via `SecretManager`, with only `config.yaml` changing.
 - **Data Residency** — Pick your cloud, your region, your storage backend. Your data stays where you need it.
 
 ### 📦 Sandboxed Code Execution

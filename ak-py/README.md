@@ -12,7 +12,7 @@ Agent Kernel is a lightweight **AI agent runtime** and adapter layer for buildin
 - **Session Management**: Built-in session abstraction with pluggable storage backends
 - **Knowledge Bases**: Unified, capability-declaring `KnowledgeBase` interface with ChromaDB, Neo4j, Starburst/Trino and Open Knowledge Format bundle (local directory or S3) backends via `KnowledgeBuilder`
 - **Sandbox**: Execute agent-generated code and shell commands in an isolated, permission-bounded environment with pluggable providers (`local_subprocess`, `docker`, `kubernetes`, `e2b`, `daytona`, `ec2_ssm`), workload profiles, policy enforcement, per-user identity, and a queue-decoupled broker for long-running executions
-- **Secret Resolution**: `SecretManager` resolves API keys and passwords environment-first, falling back to a pluggable provider (`env`, `aws_ssm` for AWS SSM Parameter Store, or your own) with a TTL'd process cache
+- **Secret Resolution**: `SecretManager` resolves API keys and passwords environment-first, falling back to a pluggable provider (`env`, `aws_ssm` for AWS SSM Parameter Store, `kubernetes` for Kubernetes Secrets mounted into the pod, or your own) with a TTL'd process cache
 - **Scheduled Tasks**: Deferred and recurring chat execution (`schedule.at`/`schedule.cron`) with a management REST API, five agent-facing tools, and pluggable provider (`local`, `eventbridge`) and store (`in_memory`, `redis`, `valkey`, `dynamodb`) backends
 - **Human in the Loop**: Pause a run for a person's approval or answer and resume from their decision — `status: "PAUSED"` with HTTP 202, a `resume` block carrying `approved`/`denied`/`cancelled` decisions, supported on OpenAI Agents SDK, LangGraph, Pydantic AI and Google ADK over REST, streaming and AG-UI
 - **Flexible Deployment**: Interactive CLI, REST API, serverless, or containerized deployment — see the "Multi-Cloud Deployment" section below
@@ -20,6 +20,7 @@ Agent Kernel is a lightweight **AI agent runtime** and adapter layer for buildin
 - **MCP Server**: Built-in Model Context Protocol server for exposing agents as MCP tools and exposing any custom tool
 - **A2A Server**: Built-in Agent-to-Agent communication server for exposing agents with a simple configuration change
 - **AG-UI Server**: Built-in [AG-UI protocol](https://github.com/ag-ui-protocol/ag-ui) handler for driving any streaming-capable agent from an AG-UI frontend, with opt-in shared state and client-context tools
+- **A2UI**: Label a JSON reply as [A2UI](https://a2ui.org/) from two config keys, so a client receives a generative-UI document as an object with its format named rather than a string to parse twice
 - **REST API**: Built-in REST API server for agent interaction
 - **Test Automation**: Built-in test suite for testing agents
 
@@ -700,16 +701,27 @@ failure raises `SecretError` even with a `default`. The capability is always ava
   - **Type**: string
   - **Default**: `env`
   - **Options**: `env` (the process environment), `aws_ssm` (AWS SSM Parameter Store; requires
-    `secret.prefix` and the `aws` extra — `OPENAI_API_KEY` is read from `/ak/<prefix>/openai_api_key`), or a
-    dotted path to a `SecretProvider` subclass
+    `secret.prefix` and the `aws` extra — `OPENAI_API_KEY` is read from `/ak/<prefix>/openai_api_key`),
+    `kubernetes` (one file per key from Kubernetes Secrets mounted under
+    `secret.provider.kubernetes.mount_path`, standard library only, no API calls), or a dotted path to a
+    `SecretProvider` subclass
   - **Environment Variable**: `AK_SECRET__PROVIDER__TYPE`
+
+- **Kubernetes Mount Path**
+  - **Field**: `secret.provider.kubernetes.mount_path`
+  - **Type**: string (absolute path)
+  - **Default**: `/var/run/secrets/agentkernel`
+  - **Description**: Directory the Kubernetes Secrets are mounted under, one subdirectory per Secret
+    (`<mount_path>/<secret-name>/<KEY>`). The Helm chart's `secretStore` mounts under the default. Read only by
+    the `kubernetes` provider
+  - **Environment Variable**: `AK_SECRET__PROVIDER__KUBERNETES__MOUNT_PATH`
 
 - **Prefix**
   - **Field**: `secret.prefix`
   - **Type**: string
   - **Default**: `""`
   - **Description**: Deployment scope providers namespace secrets under; a single path segment. Required by
-    `aws_ssm`, ignored by `env`. Injected by the AWS Terraform modules when `ssm_enabled = true`
+    `aws_ssm`, ignored by `env` and `kubernetes`. Injected by the AWS Terraform modules when `ssm_enabled = true`
   - **Environment Variable**: `AK_SECRET__PREFIX`
 
 - **Cache TTL**
@@ -1077,6 +1089,27 @@ Pydantic AI — not CrewAI or Smolagents). See `examples/api/agui`.
   - **Field**: `agui.client_context.agents`
   - **Default**: unset (every agent gets the tools)
   - **Environment Variable**: `AK_AGUI__CLIENT_CONTEXT__AGENTS` (comma-separated)
+
+#### A2UI Configuration
+
+Labels a JSON reply as [A2UI](https://a2ui.org/) so a client receives the document as an object with
+its format named, instead of a JSON string it has to parse a second time. Agent Kernel supplies the
+media type and nothing else — the component catalog belongs in your agent's instructions, because it
+has to match the components your frontend implements. The block does not reach a streamed run
+(`execution.mode: stream`) or an agent configured with a framework `output_type`; both are told to
+write their own post-hook. See `examples/api/a2ui-openai`.
+
+- **Enabled**
+  - **Field**: `a2ui.enabled`
+  - **Default**: `false`
+  - **Description**: Master switch. When off, no hook runs and no reply is labelled
+  - **Environment Variable**: `AK_A2UI__ENABLED`
+
+- **Agents**
+  - **Field**: `a2ui.agents`
+  - **Default**: unset (every agent's JSON replies are labelled)
+  - **Description**: Agent names whose JSON replies are labelled `application/a2ui+json`. Naming an agent is the declaration that it emits A2UI; a reply from it that does not parse as JSON is left alone
+  - **Environment Variable**: `AK_A2UI__AGENTS` (comma-separated)
 
 #### Trace (Observability) Configuration
 

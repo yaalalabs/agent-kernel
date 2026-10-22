@@ -1,4 +1,3 @@
-from datetime import datetime
 from unittest.mock import Mock, patch
 
 import pytest
@@ -64,16 +63,20 @@ class TestWalledAIOutputGuardrail:
 
     @pytest.mark.asyncio
     async def test_structured_reply_non_string_values_are_untouched(self, guardrail, mock_session):
-        """Test that non-string values and non-string keys survive unmasking unchanged."""
-        ts = datetime(2026, 1, 1)
+        """Test that non-string values survive unmasking unchanged.
+
+        The values here are deliberately JSON-native. `AgentReplyAny.content` normalises a datetime
+        or a non-string key at construction (see test_payload.py), so using those would test the
+        payload rule rather than the guardrail.
+        """
         mock_session.get_non_volatile_cache().set(WALLEDAI_PII_MAPPING_KEY, {"[NAME_1]": "John Doe"})
-        reply = AgentReplyAny(content={"name": "[NAME_1]", "ts": ts, "counts": {1: 2}, "active": True})
+        reply = AgentReplyAny(content={"name": "[NAME_1]", "ts": "2026-01-01T00:00:00", "counts": {"1": 2}, "active": True, "scores": [1, 2.5]})
 
         with patch.object(AKConfig, "get", return_value=_pii_config()):
             result = await guardrail.on_run(mock_session, [], Mock(), reply)
 
         assert isinstance(result, AgentReplyAny)
-        assert result.content == {"name": "John Doe", "ts": ts, "counts": {1: 2}, "active": True}
+        assert result.content == {"name": "John Doe", "ts": "2026-01-01T00:00:00", "counts": {"1": 2}, "active": True, "scores": [1, 2.5]}
 
     @pytest.mark.asyncio
     async def test_text_reply_is_unmasked_as_text(self, guardrail, mock_session):

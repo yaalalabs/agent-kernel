@@ -265,3 +265,35 @@ def test_process_stream_chat_sync_closes_its_inner_iterator_by_contract(monkeypa
     stream.close()
 
     assert torn_down == ["closed"], "the wrapper left the inner iterator's teardown to the garbage collector"
+
+
+class TestDataMessageFraming:
+    """A payload event has to survive the frame serializer, which runs mid-stream."""
+
+    def test_data_message_frame_carries_the_object(self):
+        import json as _json
+
+        from agentkernel.core.chat_service import ResponseBuilder
+        from agentkernel.core.event import DataMessage
+        from agentkernel.core.model import StreamChunk
+
+        content = {"version": "v1.0", "createSurface": {"surfaceId": "s1"}}
+        chunk = StreamChunk(event=DataMessage(message_id="m1", content=content, media_type="application/a2ui+json"))
+
+        frame = _json.loads(ResponseBuilder.stream_chunk(chunk, "s1"))
+
+        assert frame["event"]["content"] == content
+        assert frame["event"]["media_type"] == "application/a2ui+json"
+        assert frame["session_id"] == "s1"
+
+    def test_text_frames_are_unchanged_by_json_mode(self):
+        """Every other event is scalars only, so dumping in JSON mode is byte-identical for them."""
+        from agentkernel.core.chat_service import ResponseBuilder
+        from agentkernel.core.event import TextDelta
+        from agentkernel.core.model import StreamChunk
+
+        chunk = StreamChunk(delta="hello", event=TextDelta(message_id="m1", content="hello"))
+
+        assert ResponseBuilder.stream_chunk(chunk, "s1") == (
+            '{"delta": "hello", "event": {"type": "text_delta", "message_id": "m1", "content": "hello"},' ' "done": false, "session_id": "s1"}'
+        )

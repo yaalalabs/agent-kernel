@@ -5,8 +5,8 @@ import logging
 import uuid
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi import APIRouter, File, Form, HTTPException, Response, UploadFile
+from fastapi.responses import StreamingResponse
 
 from ..api.handler import AgentRESTRequestHandler
 from ..core.config import AKConfig
@@ -104,6 +104,12 @@ class RestHandler(AgentRESTRequestHandler):
         an error body, and a 2xx-non-200 status (the 202 of a deferred chat) is preserved rather
         than collapsing to 200. A record without a status_code defaults to 200, so records
         written before the status was forwarded keep their behavior.
+
+        The 2xx-non-200 body is written with ``json.dumps`` into a plain ``Response`` rather than
+        handed to ``JSONResponse``, whose encoder rejects values FastAPI's own return path accepts.
+        Without that the same payload would succeed on direct REST and fail here, which is the
+        per-surface divergence this work exists to remove. The ``json.dumps`` is safe because the
+        record came off the wire as text; see ``ResponseBuilder.build_response``.
         """
         if not isinstance(record, dict) or "body" not in record:
             return record
@@ -113,7 +119,7 @@ class RestHandler(AgentRESTRequestHandler):
         if status_code >= 400:
             raise HTTPException(status_code=status_code, detail=body)
         if 200 < status_code < 400:
-            return JSONResponse(content=body, status_code=status_code)
+            return Response(content=json.dumps(body), media_type="application/json", status_code=status_code)
         return body
 
     async def enqueue_and_wait(self, body: BaseRunRequest):

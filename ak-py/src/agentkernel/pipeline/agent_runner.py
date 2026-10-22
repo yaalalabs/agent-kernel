@@ -199,7 +199,7 @@ class AgentRunner:
 
         self._transport.send(
             QueueName.OUTPUT,
-            QueueMessage(body=json.dumps(response_body), attributes=attributes, group_id=group_id, dedup_id=dedup_id),
+            QueueMessage(body=response_body, attributes=attributes, group_id=group_id, dedup_id=dedup_id),
         )
 
 

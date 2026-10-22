@@ -2,7 +2,7 @@ import json
 import threading
 
 import pytest
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 
@@ -250,9 +250,30 @@ class TestStatusHonoringResponses:
 
         response = RequestHandler()._build_sync_response(record)
 
-        assert isinstance(response, JSONResponse)
+        assert isinstance(response, Response)
         assert response.status_code == 202
+        assert response.media_type == "application/json"
         assert json.loads(response.body) == {"status": "SCHEDULED", "session_id": "s1"}
+
+    def test_2xx_non_200_body_survives_a_value_json_response_would_reject(self, monkeypatch):
+        """Why this path builds a plain `Response` instead of a `JSONResponse`.
+
+        `JSONResponse` encodes with ``allow_nan=False`` and raises on a non-finite float, where
+        FastAPI's own return path — the 200 case two tests down — writes it through. A `NaN`
+        reaches a stored record the ordinary way: stdlib ``json.dumps`` writes the token ``NaN``
+        onto the queue and ``json.loads`` reads it back as a float, so the two REST surfaces would
+        disagree about the same record.
+        """
+        _configure(monkeypatch, mode="rest_sync")
+        record = {"request_id": "r1", "status_code": 202, "body": json.loads(json.dumps({"avg": float("nan")}))}
+
+        with pytest.raises(ValueError, match="not JSON compliant"):
+            JSONResponse(content=record["body"])
+
+        response = RequestHandler()._build_sync_response(record)
+
+        assert response.status_code == 202
+        assert response.body == b'{"avg": NaN}'
 
     def test_200_returns_the_bare_body(self, monkeypatch):
         _configure(monkeypatch, mode="rest_sync")
