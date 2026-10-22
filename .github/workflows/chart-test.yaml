@@ -30,10 +30,6 @@ permissions:
 env:
   CHART_DIR: ak-deployment/ak-k8s/chart
   GATEWAY_API_VERSION: v1.6.0
-  # Pinned so an upstream release cannot change a run with no commit here. The NACK chart ships
-  # its own CRDs, so its version also decides which CRDs the cluster gets.
-  HELM_VERSION: v4.3.1
-  NACK_CHART_VERSION: 0.35.0
 
 jobs:
   lint:
@@ -46,8 +42,6 @@ jobs:
 
       - name: Set up Helm
         uses: azure/setup-helm@v4
-        with:
-          version: ${{ env.HELM_VERSION }}
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -165,8 +159,6 @@ jobs:
 
       - name: Set up Helm
         uses: azure/setup-helm@v4
-        with:
-          version: ${{ env.HELM_VERSION }}
 
       - name: Build agentkernel wheel
         working-directory: ak-py
@@ -193,8 +185,7 @@ jobs:
           helm repo add nats https://nats-io.github.io/k8s/helm/charts/
           # NACK retries the NATS connection until the release's server exists. The chart installs
           # its own CRDs; applying them separately as well lets the two copies drift apart.
-          helm install nack nats/nack --version "${NACK_CHART_VERSION}" \
-            --set jetstream.nats.url=nats://ak-nats:4222 --wait --timeout 120s
+          helm install nack nats/nack --set jetstream.nats.url=nats://ak-nats:4222 --wait --timeout 120s
 
       - name: Install chart
         run: |
