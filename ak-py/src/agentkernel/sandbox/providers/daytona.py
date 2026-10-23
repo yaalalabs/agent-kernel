@@ -22,7 +22,7 @@ import asyncio
 import logging
 import math
 import os
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from daytona import (
     CreateSandboxFromImageParams,
@@ -70,7 +70,7 @@ class DaytonaSandbox(Sandbox):
             raise SandboxCapabilityError(self.__class__.__name__, f"package_ecosystem:{ecosystem}")
         return await self.execute_command(self._installer.command(packages, ecosystem), timeout)
 
-    async def _run(self, call: Any, source: str, timeout: float | None) -> SandboxResult:
+    async def _run(self, call: Callable[..., Any], source: str, timeout: float | None) -> SandboxResult:
         """Run ``code_run`` / ``exec`` in a thread under the SDK's native timeout (whole seconds,
         rounded up); its ``DaytonaTimeoutError`` raises ``SandboxTimeoutError``."""
         try:

@@ -29,6 +29,7 @@ import logging
 import posixpath
 import shlex
 import tarfile
+import threading
 import time
 import uuid
 from typing import Any, ClassVar, Optional
@@ -159,6 +160,9 @@ class KubernetesSandbox(Sandbox):
         triggers another."""
         marker = ProcessKiller.new_marker() if kill and self._kill_enabled and await self._has_shell() else None
         command = ProcessKiller.wrap(argv, marker) if marker else argv
+        # Set when the caller stops waiting (timeout or cancellation): the thread cannot be cancelled,
+        # so it stops streaming and closes the WebSocket itself within one update() tick.
+        stop = threading.Event()
 
         def run() -> tuple[str, str, int]:
             try:
@@ -186,7 +190,7 @@ class KubernetesSandbox(Sandbox):
                 resp.write_stdin(stdin_data)
             stdout_parts: list[str] = []
             stderr_parts: list[str] = []
-            while resp.is_open():
+            while resp.is_open() and not stop.is_set():
                 resp.update(timeout=1)
                 if resp.peek_stdout():
                     stdout_parts.append(resp.read_stdout())
@@ -204,10 +208,12 @@ class KubernetesSandbox(Sandbox):
         try:
             stdout, stderr, exit_code = await asyncio.wait_for(asyncio.to_thread(run), timeout=timeout)
         except asyncio.TimeoutError as exc:
+            stop.set()
             if marker:
                 await self._kill(marker)
             raise SandboxTimeoutError(f"kubernetes exec exceeded timeout {timeout}s") from exc
         except asyncio.CancelledError:
+            stop.set()
             if marker:
                 await self._kill(marker)
             raise
@@ -497,9 +503,11 @@ class KubernetesSandboxProvider(SandboxProvider):
             pod = await asyncio.to_thread(core.read_namespaced_pod, name, namespace)
         except kubernetes.client.rest.ApiException as exc:
             if exc.status == 404:
+                self._shell_pods.pop(f"{namespace}/{name}", None)  # deleted elsewhere: drop its cached probe answer
                 raise SandboxGoneError(f"sandbox pod '{namespace}/{name}' no longer exists") from exc
             raise
         if getattr(pod.metadata, "deletion_timestamp", None) is not None or getattr(pod.status, "phase", None) in _TERMINAL_PHASES:
+            self._shell_pods.pop(f"{namespace}/{name}", None)
             raise SandboxGoneError(f"sandbox pod '{namespace}/{name}' is terminating or terminated")
         if getattr(pod.status, "phase", None) == "Pending":
             await self._wait_running(core, name, namespace)  # the same bounded wait as create

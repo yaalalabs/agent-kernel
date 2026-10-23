@@ -35,7 +35,14 @@ from agentkernel.core.config import (
 from agentkernel.core.session.in_memory import InMemorySessionStore
 from agentkernel.sandbox.broker.base import ExecutionRequest
 from agentkernel.sandbox.broker.worker import BrokerWorkerCore
-from agentkernel.sandbox.errors import SandboxCapabilityError, SandboxGoneError, SandboxPolicyError, SandboxProvisionError, SandboxTimeoutError
+from agentkernel.sandbox.errors import (
+    SandboxCapabilityError,
+    SandboxError,
+    SandboxGoneError,
+    SandboxPolicyError,
+    SandboxProvisionError,
+    SandboxTimeoutError,
+)
 from agentkernel.sandbox.factory import SandboxProviderFactory
 from agentkernel.sandbox.manager import ExecutionManager
 from agentkernel.sandbox.model import SandboxPolicy, SandboxPrincipal, SandboxSession
@@ -952,6 +959,7 @@ def e2b_env(monkeypatch):
         next_execution: FakeExecution = FakeExecution()
         next_command_error: Exception | None = None
         next_code_error: Exception | None = None
+        error_delay: float = 0.0  # seconds a call runs before raising next_*_error (a native timeout takes its full timeout)
 
         def __init__(self, sandbox_id):
             self.sandbox_id = sandbox_id
@@ -962,6 +970,7 @@ def e2b_env(monkeypatch):
             async def run(cmd, timeout=None):
                 self.command_calls.append((cmd, timeout))
                 if FakeAsyncSandbox.next_command_error is not None:
+                    await asyncio.sleep(FakeAsyncSandbox.error_delay)
                     raise FakeAsyncSandbox.next_command_error
                 return types.SimpleNamespace(stdout="cmd out", stderr="", exit_code=0)
 
@@ -979,6 +988,7 @@ def e2b_env(monkeypatch):
         async def run_code(self, code, timeout=None):
             self.run_calls.append((code, timeout))
             if FakeAsyncSandbox.next_code_error is not None:
+                await asyncio.sleep(FakeAsyncSandbox.error_delay)
                 raise FakeAsyncSandbox.next_code_error
             return FakeAsyncSandbox.next_execution
 
@@ -1136,14 +1146,42 @@ async def test_e2b_native_timeout_raises_sandbox_timeout(e2b_env):
     principal, policy = _principal_policy()
     sandbox = await provider.create(principal=principal, policy=policy)
     try:
+        fake_cls.error_delay = 0.05  # the native timeout fires once the call has run for its timeout
         fake_cls.next_code_error = FakeE2BTimeout("deadline exceeded")
         with pytest.raises(SandboxTimeoutError):
-            await sandbox.execute_code("while True: pass", timeout=5)
+            await sandbox.execute_code("while True: pass", timeout=0.05)
         fake_cls.next_command_error = FakeE2BTimeout("deadline exceeded")
         with pytest.raises(SandboxTimeoutError):
-            await sandbox.execute_command("sleep 60", timeout=5)
+            await sandbox.execute_command("sleep 60", timeout=0.05)
         with pytest.raises(SandboxTimeoutError):
-            await sandbox.install_packages(["numpy"], timeout=5)
+            await sandbox.install_packages(["numpy"], timeout=0.05)
+    finally:
+        fake_cls.error_delay = 0.0
+        fake_cls.next_code_error = None
+        fake_cls.next_command_error = None
+
+
+@pytest.mark.asyncio
+async def test_e2b_non_execution_timeout_is_not_a_timed_out_result(e2b_env):
+    # The SDK's TimeoutException also covers sandbox-lifetime expiry and request timeouts. Raised
+    # before the call's own timeout elapsed (or with none), it is not the execution's timeout.
+    module, fake_cls = e2b_env
+    provider = _e2b_provider(module)
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    expired = FakeE2BTimeout("This error is likely due to sandbox timeout")
+    try:
+        fake_cls.next_code_error = expired
+        fake_cls.next_command_error = expired
+        for call in (
+            lambda: sandbox.execute_code("print(1)", timeout=5),
+            lambda: sandbox.execute_code("print(1)"),
+            lambda: sandbox.execute_command("echo hi", timeout=5),
+            lambda: sandbox.execute_command("echo hi"),
+        ):
+            with pytest.raises(SandboxError, match="likely due to sandbox timeout") as info:
+                await call()
+            assert not isinstance(info.value, SandboxTimeoutError)
     finally:
         fake_cls.next_code_error = None
         fake_cls.next_command_error = None
@@ -1633,6 +1671,8 @@ class FakeK8sCluster:
         self.exec_markers: list = []  # the ProcessKiller marker each exec was wrapped with (None = unwrapped)
         self.shell_probes: list[str] = []  # pod of each ProcessKiller.SHELL_PROBE exec (kept out of exec_calls)
         self.has_shell = True  # False = a shell-less image: the probe fails
+        self.streaming: set[str] = set()  # executables whose exec stream stays open until closed (long-running)
+        self.abandoned: list[list] = []  # commands whose stream the provider closed before the process finished
         self.headers_log: list[tuple[str, dict]] = []  # (operation, request headers) for impersonation asserts
         self.api_clients: list = []  # every FakeApiClient the provider constructed
         self.default_phase = "Running"
@@ -1728,6 +1768,9 @@ class _FakeExecClient:
         return self._open
 
     def update(self, timeout=None):
+        if self._command[0] in self._cluster.streaming:
+            time.sleep(0.02)  # one quiet tick of a still-running process; the stream stays open
+            return
         if not self._ran and (not self._needs_stdin or self._stdin):
             stdin_data = "".join(self._stdin) if self._needs_stdin else None
             self._stdout, self._stderr, self._status = self._cluster.exec_handler(self._pod, self._command, stdin_data)
@@ -1749,6 +1792,8 @@ class _FakeExecClient:
         return err
 
     def close(self):
+        if self._open and not self._ran:
+            self._cluster.abandoned.append(self._command)
         self._open = False
 
 
@@ -2050,6 +2095,37 @@ async def test_k8s_shell_less_pod_runs_unwrapped_without_kill(k8s_env):
     assert set(cluster.exec_markers) == {None}  # never wrapped in the /bin/sh launcher
     assert _kill_calls(cluster, "python") == []
     assert len(cluster.shell_probes) == 1  # the negative answer is cached too
+
+
+@pytest.mark.asyncio
+async def test_k8s_timed_out_exec_stops_its_stream_thread(k8s_env):
+    # The worker thread cannot be cancelled; on timeout it must stop streaming and close the socket itself.
+    module, cluster = k8s_env
+    provider = _k8s_provider(module)
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    cluster.streaming.add("python")
+    with pytest.raises(SandboxTimeoutError):
+        await sandbox.execute_code("while True: pass", timeout=0.1)
+    deadline = time.monotonic() + 1.5
+    while not cluster.abandoned and time.monotonic() < deadline:
+        await asyncio.sleep(0.02)
+    assert cluster.abandoned == [["python", "-c", "while True: pass"]]
+
+
+@pytest.mark.asyncio
+async def test_k8s_attach_to_a_gone_pod_drops_its_shell_answer(k8s_env):
+    module, cluster = k8s_env
+    provider = _k8s_provider(module)
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    await sandbox.execute_code("print(1)")
+    assert sandbox.id in provider._shell_pods
+    namespace, name = sandbox.id.split("/")
+    del cluster.pods[(namespace, name)]  # deleted outside this provider (another replica, activeDeadlineSeconds)
+    with pytest.raises(SandboxGoneError):
+        await provider.attach(sandbox.id, principal=principal, policy=policy)
+    assert sandbox.id not in provider._shell_pods
 
 
 @pytest.mark.asyncio

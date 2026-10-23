@@ -11,7 +11,6 @@ Every broker flavor (embedded, thread, ECS, Lambda) drives the same engine to tu
 """
 
 import asyncio
-import inspect
 import logging
 import time
 from typing import Any, ClassVar, Optional
@@ -41,8 +40,6 @@ class BrokerWorkerCore:
 
     # The handle owns the operation's timeout; the worker's own timer fires this much later as a backstop.
     BACKSTOP_GRACE_SECONDS: ClassVar[float] = 10.0
-    # The keywords the worker passes to install_packages; a pre-#692 override may lack either.
-    INSTALL_KEYWORDS: ClassVar[frozenset[str]] = frozenset({"ecosystem", "timeout"})
 
     def __init__(self, *, inline_payload_max_bytes: Optional[int] = None) -> None:
         """Create an engine instance. ``inline_payload_max_bytes`` is the offload threshold
@@ -293,7 +290,7 @@ class BrokerWorkerCore:
         ecosystem = payload.get("ecosystem", "python")
         sandbox_cls = type(sandbox)
         accepted = self._install_params_for(sandbox_cls)
-        if accepted == self.INSTALL_KEYWORDS:
+        if accepted == Sandbox.INSTALL_KEYWORDS:
             return await sandbox.install_packages(payload["packages"], ecosystem=ecosystem, timeout=timeout)
         # An override without ``ecosystem`` can only mean pip; one without ``timeout`` has only the backstop.
         if "ecosystem" not in accepted and ecosystem != "python":
@@ -303,26 +300,15 @@ class BrokerWorkerCore:
             logger.warning(
                 "Sandbox %s overrides install_packages without %s; this form is deprecated and will stop working in the next minor release",
                 sandbox_cls.__name__,
-                " and ".join(sorted(self.INSTALL_KEYWORDS - accepted)),
+                " and ".join(sorted(Sandbox.INSTALL_KEYWORDS - accepted)),
             )
         kwargs = {name: value for name, value in (("ecosystem", ecosystem), ("timeout", timeout)) if name in accepted}
         return await sandbox.install_packages(payload["packages"], **kwargs)
 
-    def _install_params_for(self, sandbox_cls: type) -> frozenset[str]:
-        """``install_parameters`` for ``sandbox_cls``, decided once per class."""
+    def _install_params_for(self, sandbox_cls: type[Sandbox]) -> frozenset[str]:
+        """``Sandbox.install_parameters`` for ``sandbox_cls``, decided once per class."""
         accepted = self._install_params.get(sandbox_cls)
         if accepted is None:
-            accepted = self.install_parameters(sandbox_cls)
+            accepted = sandbox_cls.install_parameters()
             self._install_params[sandbox_cls] = accepted
         return accepted
-
-    @classmethod
-    def install_parameters(cls, sandbox_cls: type) -> frozenset[str]:
-        """Which of ``ecosystem`` / ``timeout`` ``sandbox_cls.install_packages`` accepts (``**kwargs`` = both).
-
-        Shared with ``SandboxProviderContract``, which must not pass an override a keyword it lacks.
-        """
-        params = inspect.signature(sandbox_cls.install_packages).parameters
-        if any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values()):
-            return cls.INSTALL_KEYWORDS
-        return cls.INSTALL_KEYWORDS & frozenset(params)

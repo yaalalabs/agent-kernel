@@ -20,7 +20,6 @@ import pytest
 from pydantic import BaseModel
 
 from .base import Sandbox, SandboxProvider
-from .broker.worker import BrokerWorkerCore
 from .errors import SandboxCapabilityError, SandboxGoneError
 from .model import IsolationTier, SandboxCapabilities, SandboxPolicy, SandboxPrincipal, SandboxResult
 
@@ -207,7 +206,7 @@ class SandboxProviderContract:
                 assert isinstance(await sandbox.install_packages(["pip-noop"]), SandboxResult)
                 # An ecosystem the instance does not declare raises; it is never run as pip. A pre-#692
                 # override without an ecosystem parameter cannot take one: the worker's shim rejects it instead.
-                if "ecosystem" in BrokerWorkerCore.install_parameters(type(sandbox)):
+                if "ecosystem" in type(sandbox).install_parameters():
                     with pytest.raises(SandboxCapabilityError):
                         await sandbox.install_packages(["pip-noop"], ecosystem="definitely-not-an-ecosystem")
             else:

@@ -262,10 +262,9 @@ class BrokerWorkerCore:
 
     async def _call_install(self, sandbox: Sandbox, payload: dict, timeout: float) -> SandboxResult:
         """Dispatch install_packages with the keywords the override accepts (the deprecation shim)."""
-
-    @classmethod
-    def install_parameters(cls, sandbox_cls: type) -> frozenset[str]:
-        """Which of ecosystem / timeout the override accepts (**kwargs = both); shared with the contract suite."""
+    # The signature check itself lives on the ABC, so the contract suite needs no worker import:
+    #   Sandbox.INSTALL_KEYWORDS = frozenset({"ecosystem", "timeout"})
+    #   Sandbox.install_parameters() -> frozenset[str]   # classmethod; **kwargs = both
 ```
 
 - **Mismatch warning.**
@@ -294,7 +293,8 @@ class BrokerWorkerCore:
     timer.
 - **Install dispatch and the legacy shim.**
   - `_call_install` decides once per `Sandbox` subclass which of `ecosystem` and `timeout` its override accepts,
-    via `install_parameters`, which inspects `inspect.signature(type(sandbox).install_packages)`. `**kwargs`
+    via `type(sandbox).install_parameters()` (a classmethod on the `Sandbox` ABC), which inspects
+    `inspect.signature(cls.install_packages)`. `**kwargs`
     counts as both.
   - **Modern overrides** (both accepted) are called as `install_packages(packages, ecosystem=..., timeout=...)`.
   - **Pre-#692 overrides** (either one missing, including the one-argument form):
@@ -902,7 +902,7 @@ Existing test files that change:
   `package_install` is declared, `install_packages(["pip-noop"], ecosystem="definitely-not-an-ecosystem")` raises
   `SandboxCapabilityError`.
   - The check runs only when the handle's override accepts `ecosystem`
-    (`"ecosystem" in BrokerWorkerCore.install_parameters(type(sandbox))`). A pre-#692 override without it would
+    (`"ecosystem" in type(sandbox).install_parameters()`). A pre-#692 override without it would
     otherwise fail with `TypeError`, so it still passes the contract during the deprecation window, and the
     worker's shim rejects its non-`python` installs at runtime instead.
 

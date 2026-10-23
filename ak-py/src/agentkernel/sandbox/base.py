@@ -7,6 +7,7 @@ operation is optional and, if not overridden, raises ``SandboxCapabilityError``
 naming the missing capability.
 """
 
+import inspect
 from abc import ABC, abstractmethod
 from typing import ClassVar
 
@@ -25,6 +26,9 @@ class Sandbox(ABC):
     """
 
     id: str  # provider-scoped identifier, stable across attach/reconnect
+
+    # The keywords the broker worker passes to install_packages; a pre-#692 override may lack either.
+    INSTALL_KEYWORDS: ClassVar[frozenset[str]] = frozenset({"ecosystem", "timeout"})
 
     @abstractmethod
     async def execute_code(self, code: str, language: str = "python", timeout: float | None = None) -> SandboxResult:
@@ -70,6 +74,18 @@ class Sandbox(ABC):
         the default raises ``SandboxCapabilityError``.
         """
         raise SandboxCapabilityError(self.__class__.__name__, "package_install")
+
+    @classmethod
+    def install_parameters(cls) -> frozenset[str]:
+        """Which of ``ecosystem`` / ``timeout`` this class's ``install_packages`` accepts (``**kwargs`` = both).
+
+        A pre-#692 override may lack either: the broker worker's deprecation shim passes it only
+        what it accepts, and ``SandboxProviderContract`` does not pass it a keyword it lacks.
+        """
+        params = inspect.signature(cls.install_packages).parameters
+        if any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values()):
+            return cls.INSTALL_KEYWORDS
+        return cls.INSTALL_KEYWORDS & frozenset(params)
 
     @abstractmethod
     async def close(self) -> None:

@@ -493,12 +493,12 @@ class TestLegacyProviderContract(SandboxProviderContract):
 
 def test_install_parameters_reads_each_signature_shape():
     both = frozenset({"ecosystem", "timeout"})
-    assert BrokerWorkerCore.install_parameters(_PkgSandbox) == both
-    assert BrokerWorkerCore.install_parameters(FakeSandbox) == both  # the base ABC's signature
-    assert BrokerWorkerCore.install_parameters(_KwargsSandbox) == both
-    assert BrokerWorkerCore.install_parameters(_EcosystemOnlySandbox) == {"ecosystem"}
-    assert BrokerWorkerCore.install_parameters(_TimeoutOnlySandbox) == {"timeout"}
-    assert BrokerWorkerCore.install_parameters(_LegacySandbox) == frozenset()
+    assert _PkgSandbox.install_parameters() == both
+    assert FakeSandbox.install_parameters() == both  # the base ABC's signature
+    assert _KwargsSandbox.install_parameters() == both
+    assert _EcosystemOnlySandbox.install_parameters() == {"ecosystem"}
+    assert _TimeoutOnlySandbox.install_parameters() == {"timeout"}
+    assert _LegacySandbox.install_parameters() == frozenset()
 
 
 class TestEcosystemOnlyProviderContract(SandboxProviderContract):

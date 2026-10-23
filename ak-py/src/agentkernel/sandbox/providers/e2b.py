@@ -18,6 +18,7 @@ explicitly on every SDK call.
 
 import logging
 import os
+import time
 from typing import Optional
 
 from e2b.exceptions import NotFoundException, TimeoutException
@@ -25,7 +26,7 @@ from e2b.sandbox.commands.command_handle import CommandExitException
 from e2b_code_interpreter import AsyncSandbox
 
 from ..base import Sandbox, SandboxProvider
-from ..errors import SandboxCapabilityError, SandboxConfigError, SandboxGoneError, SandboxTimeoutError
+from ..errors import SandboxCapabilityError, SandboxConfigError, SandboxError, SandboxGoneError, SandboxTimeoutError
 from ..model import IsolationTier, SandboxCapabilities, SandboxPolicy, SandboxPrincipal, SandboxResult
 from ..packages import PackageInstaller
 
@@ -45,13 +46,14 @@ class E2BSandbox(Sandbox):
 
     async def execute_code(self, code: str, language: str = "python", timeout: float | None = None) -> SandboxResult:
         """Run the code in the sandbox's Jupyter kernel; an execution error is a non-zero result.
-        The SDK's native timeout raises ``SandboxTimeoutError``."""
+        The SDK's native timeout raises ``SandboxTimeoutError`` (see ``_timeout_error``)."""
         if language not in self._capabilities.languages:
             raise SandboxCapabilityError(self.__class__.__name__, f"language:{language}")
+        started = time.monotonic()
         try:
             execution = await self._sandbox.run_code(code, timeout=timeout)
         except TimeoutException as exc:
-            raise SandboxTimeoutError(f"e2b code execution exceeded timeout {timeout}s") from exc
+            raise self._timeout_error(exc, started, timeout, "code execution") from exc
         stderr = "".join(execution.logs.stderr)
         if execution.error is not None:
             stderr = stderr + ("\n" if stderr else "") + f"{execution.error.name}: {execution.error.value}"
@@ -63,14 +65,26 @@ class E2BSandbox(Sandbox):
 
     async def execute_command(self, command: str, timeout: float | None = None) -> SandboxResult:
         """Run a shell command; the SDK raises on non-zero exit, which is converted back to a result.
-        The SDK's native timeout raises ``SandboxTimeoutError``."""
+        The SDK's native timeout raises ``SandboxTimeoutError`` (see ``_timeout_error``)."""
+        started = time.monotonic()
         try:
             result = await self._sandbox.commands.run(command, timeout=timeout)
         except CommandExitException as exc:  # non-zero exit is data, not an error (ABC contract)
             return SandboxResult(stdout=exc.stdout, stderr=exc.stderr, exit_code=exc.exit_code)
         except TimeoutException as exc:
-            raise SandboxTimeoutError(f"e2b command exceeded timeout {timeout}s") from exc
+            raise self._timeout_error(exc, started, timeout, "command") from exc
         return SandboxResult(stdout=result.stdout, stderr=result.stderr, exit_code=result.exit_code)
+
+    @staticmethod
+    def _timeout_error(exc: TimeoutException, started: float, timeout: float | None, what: str) -> SandboxError:
+        """``SandboxTimeoutError`` when the call ran for its whole timeout (the SDK's native timeout
+        fired). The SDK's ``TimeoutException`` also covers the sandbox's own lifetime expiring, a
+        paused or shut-down sandbox, and request timeouts; those are not the execution's timeout and
+        stay a plain ``SandboxError`` carrying the SDK's message. Decided by elapsed time, not by
+        the SDK's message text, which changes between versions."""
+        if timeout is not None and time.monotonic() - started >= timeout:
+            return SandboxTimeoutError(f"e2b {what} exceeded timeout {timeout}s")
+        return SandboxError(f"e2b {what} failed: {exc}")
 
     async def install_packages(self, packages: list[str], ecosystem: str = "python", timeout: float | None = None) -> SandboxResult:
         """Run the ecosystem's validated installer command, under the SDK's native command timeout."""
