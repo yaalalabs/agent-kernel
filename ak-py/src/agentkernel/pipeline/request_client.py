@@ -94,6 +94,7 @@ class QueueRequestClient:
     loop: the transport and store are built on that loop before any ``to_thread`` hand-off, and
     both are already shared across worker threads by the REST handler.
     """
+
     DEFAULT_BUDGET: ClassVar[tuple[int, float]] = (60, 1.0)
 
     _log = logging.getLogger("ak.pipeline.request_client")
