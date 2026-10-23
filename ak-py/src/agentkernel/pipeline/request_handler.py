@@ -12,14 +12,10 @@ from ..api.handler import AgentRESTRequestHandler
 from ..core.config import AKConfig
 from ..core.model import BaseRunRequest, ExecutionMode, FileData, ImageData
 from .producer import RequestProducer
+from .request_client import QueueRequestClient
 from .response_store.base import ResponseStore
 from .response_store.factory import ResponseStoreFactory
 from .transport.base import QueueTransport, QueueTransportFactory
-
-# Retry budget for awaiting a response when no execution.response_store block is configured:
-# 60 x 1s. Agent runs are frequently LLM-bound and slow; direct mode waited indefinitely, so the
-# unconfigured default errs generous. Set execution.response_store.{retry_count,delay} to tune.
-_DEFAULT_RESPONSE_RETRY = (60, 1.0)
 
 
 class RestHandler(AgentRESTRequestHandler):
@@ -74,27 +70,16 @@ class RestHandler(AgentRESTRequestHandler):
         return self._config.execution.mode
 
     def _response_retry_config(self) -> tuple[int, float]:
-        """The (retry_count, delay) budget for awaiting a queued response."""
-        response_store_config = self._config.execution.response_store
-        if response_store_config is None:
-            return _DEFAULT_RESPONSE_RETRY
-        return response_store_config.retry_count, response_store_config.delay
+        """The (retry_count, delay) budget for awaiting a queued response, shared with A2A and MCP."""
+        return QueueRequestClient.budget_for(self._config.execution.response_store)
 
     async def _await_response_record(self, request_id: str):
         """Wait for the response record for ``request_id`` and return it (or None on timeout).
 
-        Polls full records (``get_record``) rather than bodies (``get_message``) on every store,
-        so the stored status_code reaches ``_build_sync_response`` on shared stores too.
+        Runs the wait loop the A2A and MCP surfaces use, over this handler's own store and budget,
+        so overriding ``get_response_store`` or ``_response_retry_config`` still takes effect.
         """
-        store = self.get_response_store()
-        retry_count, delay = self._response_retry_config()
-        for attempt in range(retry_count):
-            record = await asyncio.to_thread(store.get_record, request_id, True)
-            if record is not None:
-                return record
-            if attempt < retry_count - 1:
-                await asyncio.sleep(delay)
-        return None
+        return await QueueRequestClient.wait_for_record(self.get_response_store(), request_id, *self._response_retry_config())
 
     def _build_sync_response(self, record: Any) -> Any:
         """Map a stored response record to the HTTP response, honoring its stored status.

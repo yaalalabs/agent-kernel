@@ -40,6 +40,10 @@ This is the same five-component [queue pipeline](../advanced/queue-mode-guide) t
 in-process locally and over SQS on AWS, split into the two-process topology: the transport is
 configuration, not code.
 
+A2A and MCP are served by the io-handler and executed by the agent-runner through the same queues;
+see the example's [A2A and MCP section](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/k8s/openai-queue-mode#a2a-and-mcp)
+for the setup (agents loaded in both images, `mcp.stateless_http` for several io-handler replicas).
+
 ## Quick Start
 
 Build your application images (the

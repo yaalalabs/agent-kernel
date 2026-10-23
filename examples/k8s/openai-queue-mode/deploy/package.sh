@@ -37,6 +37,7 @@ IMAGE_TAG="${IMAGE_TAG-dev}"
 
 create_deployment_package() {
   local component="$1" entry="$2"
+  shift 2
   local dist="dist-${component}"
 
   pushd ../
@@ -53,7 +54,7 @@ create_deployment_package() {
     uv pip install --force-reinstall --no-deps --no-index --no-cache --target="$dist/data" \
       --find-links ../../../ak-py/dist agentkernel
   fi
-  cp "$entry" "$dist/data/"
+  cp "$entry" "$@" "$dist/data/"
   cp "config.${TRANSPORT}.yaml" "$dist/data/config.yaml"
 
   popd
@@ -66,8 +67,8 @@ pushd ../
 uv export --no-hashes --no-dev > requirements.txt
 popd
 
-create_deployment_package io-handler app_io_handler.py
-create_deployment_package agent-runner app_agent_runner.py
+create_deployment_package io-handler app_io_handler.py app_agents.py
+create_deployment_package agent-runner app_agent_runner.py app_agents.py
 create_deployment_package ws-gateway app_ws_gateway.py
 
 rm -f ../requirements.txt

@@ -14,6 +14,7 @@ from agentkernel.core.runtime import Runtime
 from agentkernel.pipeline.agent_runner import AgentRunner, StreamAgentRunner
 from agentkernel.pipeline.consumer import ConsumerLoop
 from agentkernel.pipeline.envelope import QueueName
+from agentkernel.pipeline.request_client import QueueRequestClient
 from agentkernel.pipeline.request_handler import RequestHandler, RestHandler
 from agentkernel.pipeline.response_handler import ResponseHandler
 from agentkernel.pipeline.response_store.in_memory import InMemoryResponseStore
@@ -421,6 +422,45 @@ class TestEnqueueSeam:
         handler._enqueue_request(BaseRunRequest(prompt="hi", session_id="s1"), "r1")
 
         assert len(injected.create_consumer(QueueName.INPUT).fetch(1, 0.5)) == 1
+
+
+class TestResponseWaitSeam:
+    """#780 moved the wait loop and its budget into QueueRequestClient; REST borrows both."""
+
+    def test_no_response_store_block_waits_sixty_reads_one_second_apart(self, monkeypatch):
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+        monkeypatch.delenv("AK_EXECUTION__RESPONSE_STORE__RETRY_COUNT", raising=False)
+        monkeypatch.delenv("AK_EXECUTION__RESPONSE_STORE__DELAY", raising=False)
+        AKConfig._reset()
+
+        assert RestHandler()._response_retry_config() == (60, 1.0)
+
+    def test_a_response_store_block_supplies_the_budget(self, monkeypatch):
+        _configure(monkeypatch)
+
+        assert RestHandler()._response_retry_config() == (100, 0.05)
+
+    @pytest.mark.asyncio
+    async def test_the_wait_uses_the_handlers_own_store_and_budget(self, monkeypatch):
+        _configure(monkeypatch)
+        store = InMemoryResponseStore()
+        calls = []
+
+        async def _wait_for_record(store_arg, request_id, retry_count, delay):
+            calls.append((store_arg, request_id, retry_count, delay))
+            return {"request_id": request_id}
+
+        class OverridingHandler(RestHandler):
+            def get_response_store(self):
+                return store
+
+            def _response_retry_config(self):
+                return 7, 0.3
+
+        monkeypatch.setattr(QueueRequestClient, "wait_for_record", staticmethod(_wait_for_record))
+
+        assert await OverridingHandler()._await_response_record("r1") == {"request_id": "r1"}
+        assert calls == [(store, "r1", 7, 0.3)]
 
 
 class TestStreamErrorFrames:
