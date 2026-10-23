@@ -36,12 +36,13 @@ type ParticleBackgroundHandle = {
 
 /* ─── Hero ──────────────────────────────────────────────────────────────── */
 
+/** Render the introductory hero for the use cases page. */
 function Hero() {
   return (
     <HeroAnimation
       badge="Use Cases"
       title="Who Is Agent Kernel Built For?"
-      subtitle="Agent Kernel is an open-source runtime that lets you build, test, and deploy AI agents to production in days instead of months. It works with any major AI framework (OpenAI, LangGraph, CrewAI, Google ADK, Smolagents, Pydantic AI) and can run agents from multiple frameworks together in a single runtime. It deploys to AWS, Azure, GCP, or your own servers with zero platform code."
+      subtitle="Agent Kernel is an open-source runtime that lets you build, test, and deploy AI agents to production in days instead of months. It works with any major AI framework (OpenAI, LangGraph, CrewAI, Google ADK, Smolagents, Pydantic AI, Microsoft Agent Framework) and can run agents from multiple frameworks together in a single runtime. It deploys to AWS, Azure, GCP, or your own servers with zero platform code."
     />
   );
 }
@@ -269,7 +270,7 @@ const ORBIT_CARDS = [
     icon: <MdSwapHoriz />,
     color: '#00DDFF',
     title: 'Framework-Neutral',
-    desc: 'The only runtime that lets you bring in and swap between agents written with OpenAI Agents, CrewAI, LangGraph, Google ADK, Smolagents, and Pydantic AI with near-zero code change - and run all of them simultaneously in a single runtime.',
+    desc: 'The only runtime that lets you bring in and swap between agents written with OpenAI Agents, CrewAI, LangGraph, Google ADK, Smolagents, Pydantic AI, and Microsoft Agent Framework with near-zero code change - and run all of them simultaneously in a single runtime.',
   },
   {
     icon: <MdCloud />,
