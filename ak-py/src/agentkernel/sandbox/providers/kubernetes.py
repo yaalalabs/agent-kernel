@@ -7,8 +7,8 @@ travel as single-member tars framed in base64 over the exec channels (``head -c 
 the remote pipeline its EOF, since a WebSocket exec cannot half-close stdin). The SDK is
 synchronous, so every call runs in ``asyncio.to_thread``. A timed-out or cancelled exec is
 killed by its environment marker (``ProcessKiller``), which needs ``/bin/sh`` in the image:
-the first exec on each pod probes for it once, and a shell-less pod runs its argv directly,
-with no kill.
+the first exec on each pod probes for it (bounded, cached once definite), and a shell-less pod
+runs its argv directly, with no kill.
 
 ``close()`` leaves the pod running (that is what makes reattach work); ``destroy()``
 deletes the pod and its per-pod NetworkPolicy. The security boundary is the credential:
@@ -24,13 +24,14 @@ import asyncio
 import base64
 import io
 import ipaddress
+import json
 import logging
 import posixpath
 import shlex
 import tarfile
 import time
 import uuid
-from typing import Any, Optional
+from typing import Any, ClassVar, Optional
 
 import kubernetes
 import kubernetes.client
@@ -54,6 +55,9 @@ _NAME_LABEL = "agentkernel.io/sandbox-name"
 
 _TERMINAL_PHASES = ("Succeeded", "Failed")
 
+# kubernetes.stream.ws_client.ERROR_CHANNEL: where the API server writes the exec's final status.
+_ERROR_CHANNEL = 3
+
 
 def _safe_rel(path: str) -> str:
     """Resolve a caller path to a WORKDIR-relative POSIX path: an absolute path is treated
@@ -68,6 +72,9 @@ def _safe_rel(path: str) -> str:
 
 class KubernetesSandbox(Sandbox):
     """Handle to one running sandbox pod; executions are stream-API exec calls inside it."""
+
+    # Container-runtime wording for a missing /bin/sh in an exec's failure status (containerd, CRI-O).
+    _NO_SHELL_MARKERS: ClassVar[tuple[str, ...]] = ("no such file or directory", "executable file not found", "not found")
 
     def __init__(
         self,
@@ -186,12 +193,12 @@ class KubernetesSandbox(Sandbox):
                 if resp.peek_stderr():
                     stderr_parts.append(resp.read_stderr())
             resp.close()
-            try:
-                exit_code = resp.returncode
-            except (KeyError, TypeError, ValueError):
-                # A failure status with no exit code (e.g. a missing executable) has no details to parse.
-                stderr_parts.append("exec failed before the process started (is the executable present in the image?)")
-                exit_code = None
+            # Read the status ourselves: the client's ``returncode`` consumes it and drops the message.
+            exit_code, message = self._exit_status(resp.read_channel(_ERROR_CHANNEL))
+            if exit_code is None:
+                stderr_parts.append(
+                    f"exec failed before the process started: {message}" if message else "exec ended without a status from the API server"
+                )
             return "".join(stdout_parts), "".join(stderr_parts), exit_code if exit_code is not None else -1
 
         try:
@@ -206,24 +213,50 @@ class KubernetesSandbox(Sandbox):
             raise
         return SandboxResult(stdout=stdout, stderr=stderr, exit_code=exit_code)
 
-    async def _has_shell(self) -> bool:
-        """Whether the pod can run ``/bin/sh`` (the launcher and the kill scan need it), probed once per pod.
+    @staticmethod
+    def _exit_status(raw: str) -> tuple[Optional[int], str]:
+        """Parse an exec's status channel into ``(exit_code, message)``: ``0`` on Success, the
+        ``details.causes`` exit code on a Failure carrying one, else ``None`` with the status
+        message (empty when there is no parseable status)."""
+        try:
+            status = json.loads(raw)
+        except (TypeError, ValueError):
+            return None, ""
+        if not isinstance(status, dict):
+            return None, ""
+        if status.get("status") == "Success":
+            return 0, ""
+        try:
+            return int(status["details"]["causes"][0]["message"]), ""
+        except (KeyError, IndexError, TypeError, ValueError):
+            return None, str(status.get("message") or "")
 
-        A definite answer is cached on the provider; a probe that raises (a transient failure)
-        is not, and this exec just runs unwrapped."""
+    async def _has_shell(self) -> bool:
+        """Whether the pod can run ``/bin/sh`` (the launcher and the kill scan need it), probed once per pod
+        under ``SHELL_PROBE_TIMEOUT_SECONDS``.
+
+        Only a definite answer is cached on the provider: exit 0, or ``/bin/sh`` reported missing
+        (exit 126/127, or a not-found status). Anything else (a raise, the probe's timeout, another
+        failure) is treated as transient: this exec runs unwrapped and the next one probes again."""
         has_shell = self._shell_cache.get(self.id)
         if has_shell is not None:
             return has_shell
         try:
-            probe = await asyncio.wait_for(self._exec(list(ProcessKiller.SHELL_PROBE), None, kill=False), timeout=ProcessKiller.KILL_TIMEOUT_SECONDS)
+            probe = await asyncio.wait_for(
+                self._exec(list(ProcessKiller.SHELL_PROBE), None, kill=False), timeout=ProcessKiller.SHELL_PROBE_TIMEOUT_SECONDS
+            )
         except Exception as exc:  # noqa: BLE001 — the probe only decides whether to tag; it never fails the exec
-            logger.warning("Shell probe in pod %s failed: %s", self.id, exc)
+            logger.warning("Shell probe in pod %s failed: %s", self.id, str(exc) or type(exc).__name__)
             return False
-        has_shell = probe.exit_code == 0
-        self._shell_cache[self.id] = has_shell
-        if not has_shell:
+        if probe.exit_code == 0:
+            self._shell_cache[self.id] = True
+            return True
+        if probe.exit_code in (126, 127) or (probe.exit_code == -1 and any(m in probe.stderr.lower() for m in self._NO_SHELL_MARKERS)):
+            self._shell_cache[self.id] = False
             logger.info("Pod %s has no /bin/sh; its timed-out executions cannot be killed", self.id)
-        return has_shell
+            return False
+        logger.warning("Shell probe in pod %s was inconclusive (exit %s): %s", self.id, probe.exit_code, probe.stderr)
+        return False
 
     async def _kill(self, marker: str) -> None:
         """Best-effort, time-bounded kill of the processes carrying the exec's marker; earlier
