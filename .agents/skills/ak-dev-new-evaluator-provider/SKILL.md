@@ -39,7 +39,10 @@ a **first-party, in-repo** provider that ships with AK and gets its own short `t
 ## Architecture Overview
 
 - **`AKEvaluator`** (`ak-py/src/agentkernel/test/core/evaluator/base.py`) is the abstract base
-  every evaluator — built-in or bring-your-own — implements. It has exactly two abstract methods:
+  every evaluator — built-in or bring-your-own — implements. It and the payload and error types are
+  re-exported from `agentkernel.test`, the import path users and examples use; built-in providers
+  inside the package import them from `.base`. A new interface type goes in `core/evaluator/__init__.py`'s
+  `__all__` and in `agentkernel/test/__init__.py`. It has exactly two abstract methods:
   - `evaluate_by_score(case: AKEvaluationCase) -> AKEvaluationResult` — deterministic scoring,
     no LLM call
   - `evaluate_by_llm(case: AKEvaluationCase) -> AKEvaluationResult` — LLM-as-judge scoring

@@ -8,6 +8,7 @@ slug: /
 **The Operating System for Scalable & Compliant Enterprise AI Agents.**
 
 :::tip What's New
+🔎 **Fetch spans back for evaluation** - Read agent, LLM and tool spans back from Langfuse, Logfire, OpenLLMetry or CloudWatch with one provider-neutral `Trace.fetch_spans()` or `Trace.fetch_traces()` filter, including each model call's tokens and cost, to grade production traffic. [Learn more →](./advanced/traceability.md#fetching-spans-back)
 🎨 **A2UI** - Turn two config keys on and an agent's JSON reply reaches the client as an [A2UI](https://a2ui.org/) document: `result` carries the object and `media_type` names the format, over REST, MCP and AG-UI alike. [Learn more →](./advanced/a2ui.md)
 
 🔀 **Realtime multi-agent handoffs** - A voice call moves between agents with the OpenAI Agents SDK's handoffs or Google ADK's transfers, and in LiveKit every agent appears as its own participant, with only the active one unmuted. [Learn more →](./integrations/livekit.md#multi-agent-handoffs)

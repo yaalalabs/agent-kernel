@@ -1,0 +1,49 @@
+[project]
+name = "aws-serverless-openai-langfuse-trace-evaluation"
+version = "0.1.0"
+description = "Agent Kernel OpenAI agent on AWS Lambda whose Langfuse traces are graded by Opik judges and stored in DynamoDB"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []
+
+[project.optional-dependencies]
+# Per-Lambda dependency sets; deploy.sh installs each package with `uv export --extra <name>`.
+# The request handler serves /eval and /check and runs the grading, so it carries Opik; only the agent
+# runner needs the OpenAI Agents SDK. langfuse>=4.7.0 takes Langfuse's fast ingestion path.
+request_handler = [
+    "agentkernel[aws,redis,langfuse,opik]>=0.9.5",
+    "boto3>=1.40.0",
+    "langfuse>=4.7.0",
+]
+agent_runner = [
+    "agentkernel[aws,openai,redis,langfuse]>=0.9.5",
+    "langfuse>=4.7.0",
+]
+response_handler = [
+    "agentkernel[aws,redis]>=0.9.5",
+]
+
+[dependency-groups]
+dev = [
+    "agentkernel[test]>=0.9.5",
+    "httpx>=0.27.0",
+    "black==26.5.1",
+    "isort>=5.0.0",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+# Show the live test's progress logs as it runs
+log_cli = true
+log_cli_level = "INFO"
+
+[tool.isort]
+profile = "black"
+line_length = 120
+
+[tool.black]
+line-length = 120
+target-version = ["py312"]

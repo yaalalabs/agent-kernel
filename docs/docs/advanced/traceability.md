@@ -101,6 +101,10 @@ LANGFUSE_SECRET_KEY=sk-lf-...
 LANGFUSE_HOST=https://cloud.langfuse.com
 ```
 
+### Running on AWS Lambda
+
+The Langfuse client normally exports in the background, but Lambda freezes the execution environment as soon as an invocation returns, so pending spans would wait for the next invocation or be lost. When `AWS_LAMBDA_FUNCTION_NAME` is set, Agent Kernel therefore flushes the Langfuse client at the end of every agent run, including failed runs. The cost is one export round trip added to each run. Streamed runs are not flushed.
+
 ### Getting Langfuse Credentials
 
 1. Sign up for a free account at [https://cloud.langfuse.com](https://cloud.langfuse.com)
@@ -572,6 +576,166 @@ The batch span processor normally exports in the background, but Lambda freezes 
 1. Open the CloudWatch console in the region you export to.
 2. Go to **Application Signals → Transaction Search** and filter spans by `session.id` or by service `AgentKernel`. Open a trace to see the run span with its agent, LLM, and tool spans nested under it.
 3. Optionally, check **GenAI Observability**. Agent Kernel sets the `aws.service.type=gen_ai_agent` resource attribute and `session.id` that the AWS Distro for OpenTelemetry sets, but AWS does not document whether its agent and session views list agents that export without the distro, so treat Transaction Search as the supported view.
+
+## Fetching Spans Back
+
+Traces stay in your provider's cloud, but you can read them back into Python (for example, to run evaluations
+over recent tool calls) with `Trace.fetch_spans()` (single spans) or `Trace.fetch_traces()` (whole traces). They take one provider-neutral filter and translates it into
+each provider's query API:
+
+```python
+from datetime import timedelta
+
+from agentkernel.trace import SpanKind, SpanStatus, Trace
+
+trace = Trace.get()  # uses the configured trace.type
+
+# Tool calls from the last 6 hours
+tool_calls = trace.fetch_spans(last=timedelta(hours=6), kinds=[SpanKind.TOOL])
+
+# Every span of one AK session in an explicit window
+spans = trace.fetch_spans(start=start, end=end, session_id="session-123")
+
+for span in tool_calls:
+    print(span.trace_id, span.name, span.input, span.output)
+```
+
+| Filter | Meaning |
+|--------|---------|
+| `start` / `end` | Span start time window (`end` defaults to now, `start` to `end - last`) |
+| `last` | Look-back window when `start` is not given (default 1 hour) |
+| `kinds` | `SpanKind.AGENT`, `LLM`, `TOOL` or `OTHER` (everything else); `None` returns all |
+| `session_id` | Only spans of this AK session |
+| `trace_ids` | Only spans of these traces (fetch tool calls first, then their whole traces) |
+| `name` | Exact span name |
+| `limit` | Maximum spans returned (default 1000); the most recent are kept, and a warning is logged when a fetch reaches it |
+
+Each result is a `FetchedSpan` (trace/span/parent ids, name, kind, status, start/end time, session id, input, output,
+usage, attributes) plus `raw`, the provider's full record. Its `provider` is the tracer's `trace.type` name
+(`langfuse`, `logfire`, `openllmetry` or `cloudwatch`). Spans are returned oldest first.
+
+`status` is a `SpanStatus` (`UNSET`, `OK` or `ERROR`), following the OpenTelemetry span status; each provider's own field
+(Langfuse's `level`, the OTel status code elsewhere) is mapped onto it. Agent Kernel maps each provider's fields onto
+these neutral ones but doesn't correct a provider's own mistakes, such as a span it labels with the wrong type.
+
+`usage` is a `SpanUsage` (`input_tokens`, `output_tokens`, `total_tokens`, `cost` in USD) for spans that record a
+model call, and `None` otherwise. It covers only that span's own call, never its children, so the cost of a whole
+run (including LLM calls made inside tools and sub-agents) is the sum over the trace's spans:
+
+```python
+spans = trace.fetch_spans(trace_ids=["4bf92f3577b34da6a3ce929d0e0e4736"])
+tokens = sum(span.usage.total_tokens or 0 for span in spans if span.usage)
+```
+
+Token counts come from every provider. Cost is filled in by Langfuse (which prices model calls itself) and, on the
+other providers, only for Pydantic AI, whose instrumentation reports a per-call cost.
+
+With OpenLLMetry and Pydantic AI, each LLM call is recorded twice (an `openai.chat` span and a Pydantic AI
+`chat` span), so a plain sum counts its tokens twice.
+
+### Fetching Whole Traces
+
+`Trace.fetch_traces()` returns the same spans grouped into traces, so you don't have to group them, find the root or
+add up usage yourself. It takes the filters above except `kinds` and `name`, which select single spans: filter
+`trace.spans` instead.
+
+```python
+for trace in Trace.get().fetch_traces(session_id="session-123", last=timedelta(hours=24)):
+    if trace.root is None:
+        continue  # the root span isn't stored (yet), so there is no request to grade
+    print(trace.trace_id, trace.user_input, trace.output, trace.usage.cost, trace.agent_names)
+    failed = [span.name for span in trace.tool_spans if span.status == SpanStatus.ERROR]
+```
+
+Each `FetchedTrace` has `trace_id`, `session_id`, `spans` (oldest first), and:
+
+| Property | Meaning |
+|----------|---------|
+| `root` | The single span with no parent, or `None` when there is none or more than one |
+| `user_input` / `output` | The root span's input and output |
+| `started_at` / `ended_at` | The root span's start and end time |
+| `tool_spans` | The spans with `kind == TOOL` |
+| `agent_names` | The names of the agent spans, de-duplicated, in start order |
+| `usage` | A `SpanUsage` summed over the spans; a field stays `None` when no span reports it |
+
+`fetch_traces` is one pass over the window's spans, so a trace at the edge of the window can be partial (the window
+filters on span start time), and Agent Kernel doesn't decide when a trace is complete: it returns what the provider has
+stored, as the provider's own UI does while spans are still arriving. A trace whose root is missing comes back with
+`root=None` instead of being dropped. The `limit` still applies to spans, not traces.
+
+On OpenLLMetry (Traceloop), Agent Kernel adds no wrapper span around a run, so the root is the framework's own span
+(for example `Agent Workflow` for the OpenAI Agents SDK), which carries no input or output: `user_input` and `output`
+are empty there.
+
+| Provider | Read API | Credentials |
+|----------|----------|-------------|
+| Langfuse | v2 observations API | Same `LANGFUSE_*` keys used for sending |
+| Logfire | SQL Query API | A separate **read token**, `LOGFIRE_READ_TOKEN` (`logfire read-tokens --project <org>/<project> create`) |
+| OpenLLMetry (Traceloop) | Warehouse spans REST API | Same `TRACELOOP_API_KEY` (and `TRACELOOP_BASE_URL`) |
+| AWS CloudWatch | CloudWatch Logs Insights over the `aws/spans` log group | The standard AWS chain and region; the identity needs `logs:StartQuery`, `logs:GetQueryResults` and `logs:StopQuery` on `aws/spans` (`AWSXrayWriteOnlyAccess` does not grant them) |
+
+`LOGFIRE_READ_TOKEN` and `TRACELOOP_API_KEY` are read through Agent Kernel's [secret manager](./secrets.md): an
+environment variable wins, and with `secret.provider.type: aws_ssm` the key can live in SSM Parameter Store
+instead. The `LANGFUSE_*` keys are read by the Langfuse SDK itself, so they stay environment variables.
+
+Session ids reach every tracing provider exactly as you pass them: Langfuse, OpenLLMetry and CloudWatch record
+them on spans, and Logfire keeps them out of its default scrubbing so traces can be filtered by session. Agent
+Kernel doesn't make them opaque, so keep personal data out of them. If you derive session ids from user ids,
+use a hash or a random id instead.
+
+Provider limits to keep in mind:
+
+- **Langfuse:** spans are readable ~15–30 seconds after ingestion; API rate limits depend on your plan.
+- **Logfire:** spans are readable ~5 minutes after ingestion; queries return at most 10,000 rows, so larger
+  fetches are paged automatically.
+- **Traceloop:** fetching is best effort. The free plan keeps spans for 24 hours only, and the warehouse
+  API is undocumented beyond its basics; its session, trace id and time filters and its cursor paging have
+  been checked against a live account (LangGraph spans). `kinds` is applied only after the spans
+  arrive (a span's kind can come from either of two attributes, and the API can't OR them), so a
+  kind-filtered fetch pages through every span in the window.
+- **CloudWatch:** only spans ingested through Transaction Search are readable, since they are what lands in
+  `aws/spans`. Transaction Search must be on, and the spans must reach X-Ray: the default export does, but if
+  you point `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` at a collector, it has to forward to X-Ray. Without
+  `aws/spans`, `fetch_spans` raises an `AKConfigError` telling you to enable Transaction Search. Logs Insights returns at most 10,000 rows per query, so larger fetches are paged automatically,
+  and each query is billed by the data it scans.
+  `kinds` is filtered server side on the OpenInference and OTel GenAI attributes the CloudWatch runners
+  emit, so spans that carry only Traceloop or Logfire kind attributes (custom instrumentation) are not
+  returned by a kind-filtered fetch; fetch without `kinds` to get them.
+
+Every built-in fetcher re-checks each filter on the spans it gets back, so no provider's own boundary rules leak
+into the result.
+
+A bring-your-own tracer can support fetching by overriding `BaseTrace.fetch_spans(query)`; tracers that don't raise
+`NotImplementedError`. `TraceQuery.matches(span)` applies every filter to a span, and
+`agentkernel.trace.testing.TraceFetchContract` is the pytest suite the built-in fetchers pass; subclass it to check
+yours:
+
+```python
+import pytest
+
+from agentkernel.trace import BaseTrace, FetchedSpan, TraceQuery
+from agentkernel.trace.testing import TraceFetchContract
+
+
+class MyTrace(BaseTrace):  # your bring-your-own tracer
+    ...
+
+    def fetch_spans(self, query: TraceQuery) -> list[FetchedSpan]:
+        spans = [span for span in self._backend_spans() if query.matches(span)]
+        return FetchedSpan.oldest_first(spans)[-query.limit :]  # newest `limit` kept, returned oldest first
+
+
+class TestMyTraceFetch(TraceFetchContract):
+    @pytest.fixture
+    def tracer(self):
+        return MyTrace()
+
+    def seed(self, tracer, spans):
+        ...  # write these spans to the backend your tracer reads
+```
+
+For an end-to-end use of `fetch_traces` and `usage`, see the [`openai-langfuse-trace-evaluation` example](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/openai-langfuse-trace-evaluation): an agent on
+AWS Lambda whose Langfuse traces are read back per session, graded by Opik LLM judges and stored in DynamoDB.
 
 ## Integrate with Your Own Traceability Platform
 

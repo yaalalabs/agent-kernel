@@ -17,7 +17,7 @@ Phase 1 (iterations 1–7) lands first: the example in Phases 2–3 (iterations 
 - **Steps:**
   1. Add `SpanKind`, `TraceQuery`, `SpanUsage`, `FetchedSpan` and `OTelSpanClassifier`, including
      `OTelSpanClassifier.usage` (spec §`trace/fetch.py`).
-  2. Add the `TraceFetcher` base: the pinned window, the merge, `_follow_cursor` and `_page_backward`
+  2. Add the `TraceFetcher` base: the pinned window, the merge, `_fetch_by_cursor` and `_fetch_by_time_window`
      (spec §`trace/fetch.py`).
   3. Add the non-abstract `BaseTrace.fetch_spans` and `Trace.fetch_spans` (spec §`BaseTrace.fetch_spans` and `Trace.fetch_spans`).
   4. Export the five public names (`TraceQuery`, `FetchedSpan`, `SpanUsage`, `SpanKind`,
@@ -35,12 +35,12 @@ Phase 1 (iterations 1–7) lands first: the example in Phases 2–3 (iterations 
 - **Files:** `trace/langfuse/fetch.py` (new), `trace/langfuse/langfuse.py`, `tests/test_trace_fetch.py`.
 - **Steps:**
   1. Add `LangfuseTraceFetcher(TraceFetcher)` (spec §`LangFuse.fetch_spans`), including the `_usage` mapping,
-     `expand_metadata` and one `_follow_cursor` per request-matrix cell.
+     `expand_metadata` and one `_fetch_by_cursor` per request-matrix cell.
   2. Add `LangFuse.fetch_spans`, which delegates to it.
   3. Add `LangFuse.flush_on_lambda` and call it from a `finally` in the six runners (spec §Langfuse
      flush on AWS Lambda).
-  4. Add `TestLangfuseFetcher`, `TestLangfuseFetchContract`, and `TestLangFuseLambdaFlush` parametrized
-     over all six runners (`tests/test_trace_langfuse_flush.py`).
+  4. Add `TestLangfuseFetcher`, `TestLangfuseFetchContract`, and `TestRunnersFlush` (parametrized over all six
+     runners) plus `TestFlushOnLambda` in `tests/test_trace_langfuse_flush.py`.
 - **Verify:** `uv run pytest tests/test_trace_fetch.py -k Langfuse tests/test_trace_langfuse_langgraph.py tests/test_trace_langfuse_flush.py`
 
 ### Iteration 3: Logfire fetcher and scrubbing fix
@@ -50,7 +50,7 @@ Phase 1 (iterations 1–7) lands first: the example in Phases 2–3 (iterations 
 - **Files:** `trace/logfire/fetch.py` (new), `trace/logfire/logfire.py`, `tests/test_trace_fetch.py`,
   `tests/test_trace_logfire.py`.
 - **Steps:**
-  1. Add `LogfireTraceFetcher(TraceFetcher)` (spec §`Logfire.fetch_spans`), paging through `_page_backward`.
+  1. Add `LogfireTraceFetcher(TraceFetcher)` (spec §`Logfire.fetch_spans`), paging through `_fetch_by_time_window`.
   2. Add `Logfire.fetch_spans`, which resolves `LOGFIRE_READ_TOKEN` through `SecretManager`.
   3. Add the `ScrubbingOptions` callback to `init()` (spec §Scrubbing fix).
   4. Add `ScrubbingOptions` to the `fake_logfire` fixture, plus the scrubbing test.
@@ -65,7 +65,7 @@ Phase 1 (iterations 1–7) lands first: the example in Phases 2–3 (iterations 
   `ak-py/pyproject.toml`, `ak-py/uv.lock`, `tests/test_trace_fetch.py`.
 - **Steps:**
   1. Add `TraceloopTraceFetcher(TraceFetcher)` (spec §`OpenLLMetry.fetch_spans`), with the `ceil(end)` bound,
-     one `_follow_cursor`, and no server-side kind filter.
+     one `_fetch_by_cursor`, and no server-side kind filter.
   2. Add `OpenLLMetry.fetch_spans`, which resolves `TRACELOOP_API_KEY` through `SecretManager`.
   3. Add `httpx>=0.27.0` to the `openllmetry` and `logfire` extras, then run `uv lock`.
   4. Add `TestTraceloopFetcher` (including the `traceloop.span.kind`-only tool span) and
@@ -77,10 +77,10 @@ Phase 1 (iterations 1–7) lands first: the example in Phases 2–3 (iterations 
 - **Goal:** `trace.type: cloudwatch` fetches spans from `aws/spans` through CloudWatch Logs Insights.
 - **Files:** `trace/cloudwatch/fetch.py` (new), `trace/cloudwatch/cloudwatch.py`, `tests/test_trace_fetch.py`.
 - **Steps:**
-  1. Lift the region lookup in `CloudWatch._exporter()` (`trace/cloudwatch/cloudwatch.py:137`) into the
-     static `CloudWatch.region()`, with no change to the exporter's behaviour or errors.
+  1. Lift the region lookup in `CloudWatch._exporter()` (`trace/cloudwatch/cloudwatch.py:146`) into the
+     static `CloudWatch.region(botocore_session)`, with no change to the exporter's behaviour or errors.
   2. Add `CloudWatchTraceFetcher(TraceFetcher)` (spec §`CloudWatch.fetch_spans`), paging through
-     `_page_backward`.
+     `_fetch_by_time_window`.
   3. Add `CloudWatch.fetch_spans`.
   4. Add `TestCloudWatchFetcher`.
 - **Verify:** `uv run pytest tests/test_trace_fetch.py -k CloudWatch tests/test_trace_cloudwatch.py`
@@ -136,7 +136,10 @@ Phase 1 (iterations 1–7) lands first: the example in Phases 2–3 (iterations 
 
 ## Phases 2–3: Evaluate and store (example)
 
-All files are under `examples/aws-serverless/langfuse-trace-evaluation/` unless a path says otherwise.
+All files are under `examples/aws-serverless/openai-langfuse-trace-evaluation/` unless a path says otherwise.
+The example runs in queue mode (`queue_mode = true`, `execution_mode = "rest_sync"`) with three Lambdas:
+`lambda_request_handler.py` (ingress plus `/eval`, `/check` and the internal `/grade`), `lambda_agent_runner.py`
+(the agent) and `lambda_response_handler.py`. It has no unit-test suite; `lambda_test.py` is its only test.
 
 ### Before merge: owner tasks (not code)
 
@@ -147,15 +150,18 @@ All files are under `examples/aws-serverless/langfuse-trace-evaluation/` unless 
 ### Iteration 8: Example scaffold, the agent and the traffic
 
 - **Goal:** the agent deploys on its own, answers, and its traces appear in Langfuse.
-- **Files:** `pyproject.toml`, `uv.lock`, `config.yaml`, `lambda.py`, `simulate_traffic.py`, `build.sh`,
-  `deploy/{main.tf,variables.tf,outputs.tf,providers.tf,backend.tf,terraform.tfvars,deploy.sh,Dockerfile}`.
+- **Files:** `pyproject.toml`, `uv.lock`, `config.yaml`, `lambda_request_handler.py`, `lambda_agent_runner.py`,
+  `lambda_response_handler.py`, `simulate_traffic.py`, `build.sh`,
+  `deploy/{main.tf,variables.tf,outputs.tf,providers.tf,terraform.tfvars,deploy.sh,Dockerfile.request_handler,Dockerfile.agent_runner}`.
 - **Steps:**
   1. `pyproject.toml` with the runtime dependencies and the `dev` group (spec §`pyproject.toml`); `uv lock`.
-  2. `lambda.py` with the agent and `handler = Lambda.handler` for now (spec §The agent and the wiring).
+  2. `lambda_agent_runner.py` with the triage and support agents and the `get_order_status` tool;
+     `lambda_request_handler.py` with `handler = Lambda.handler`; `lambda_response_handler.py` with
+     `ResponseHandler.handle` (spec §The agent and the wiring).
   3. `TrafficSimulator` and its CLI (spec §`simulate_traffic.py`).
   4. `main.tf` with `module "serverless_agents"` (no `gateway_endpoints` yet), plus variables, outputs
      (`agent_invoke_url`), providers and backend (spec §Deployment).
-  5. `deploy.sh` building `dist`.
+  5. `deploy.sh` building `dist_request_handler`, `dist_agent_runner` and `dist_response_handler`.
 - **Verify:** `cd deploy && ./deploy.sh local`; `uv run python simulate_traffic.py`; the 3 traces (root,
   agents, tool, generations) show in the Langfuse UI under the printed session id within a minute, without
   waiting for another request (the Lambda flush); `terraform destroy`.
@@ -163,38 +169,38 @@ All files are under `examples/aws-serverless/langfuse-trace-evaluation/` unless 
 ### Iteration 9: Phase 2: trace cases and the Opik evaluator
 
 - **Goal:** a trace's spans become a `TraceCase`, and each of the four metrics scores it.
-- **Files:** `evaluator/{__init__,case,opik_evaluator}.py`, `tests/test_evaluator.py`.
+- **Files:** `evaluator/{__init__,case,opik_evaluator}.py`, `ak-py/src/agentkernel/test/__init__.py`.
 - **Steps:**
   1. `ToolCall`, `TraceCase`, `TraceEvaluationCase` (spec §`evaluator/case.py`).
   2. `OpikTraceEvaluator` with the metric table, the pass rules and the two-attempt rule (spec
      §`evaluator/opik_evaluator.py`).
-  3. The span fixtures, `TestTraceCase` and `TestOpikTraceEvaluator` (spec §Phases 2–3 testing).
-- **Verify:** `./build.sh local && uv run pytest tests/ -k "TraceCase or OpikTraceEvaluator"`
+  3. Export `AKEvaluator`, `AKEvaluationCase`, `AKEvaluationResult`, `AKEvaluationError`, `AKMetricNotSupported`
+     and `AKMissingInput` from `agentkernel.test`, so the example imports them from the public package.
+- **Verify:** `./build.sh local`; the evaluator is exercised end to end in iteration 12.
 
 ### Iteration 10: Phase 3: the DynamoDB store
 
 - **Goal:** each found trace has one row with its `progress`; a graded trace's row gets a column per
   metric in one atomic write, within the whole-item size budget; a session's rows can be counted by
   `progress`.
-- **Files:** `evaluator/store.py`, `tests/test_evaluator.py`.
+- **Files:** `evaluator/store.py`.
 - **Steps:**
-  1. `Progress`, `TraceProgress` and `EvaluationStore`, including `progress`, `mark`, `save` and
-     `counts` (spec §`evaluator/store.py`).
-  2. `TestEvaluationStore` on `moto`, with the table schema from spec §Deployment.
-- **Verify:** `uv run pytest tests/ -k EvaluationStore`
+  1. `Progress`, `TraceProgress`, `SessionProgress` and `EvaluationStore`, including `read_progress`,
+     `write_progress`, `save_results`, `mark_failed` and `count_session_progress` (spec §`evaluator/store.py`).
+- **Verify:** exercised end to end in iteration 12.
 
 ### Iteration 11: The evaluation run and the API
 
 - **Goal:** `/eval` sets every found trace's `progress` and starts grading the ready ones asynchronously,
   `grade` judges them, and `/check` counts the session's traces by `progress`.
-- **Files:** `evaluator/{job,api}.py`, `lambda.py`, `tests/test_evaluator.py`.
+- **Files:** `evaluator/{job,api}.py`, `lambda_request_handler.py`.
 - **Steps:**
-  1. `PrepareSummary`, `GradeSummary` and `TraceEvaluationJob` (spec §`evaluator/job.py`).
-  2. `EvaluationAPI` with `start`, `check` and `handler` (spec §`evaluator/api.py`).
-  3. `lambda.py`: register `api.start` / `api.check` and set `handler = api.handler` (spec §The agent and
-     the wiring).
-  4. `TestTraceEvaluationJob`, `TestEvaluationAPI`, `TestTrafficSimulator`.
-- **Verify:** `uv run pytest -o addopts="" tests/test_evaluator.py`
+  1. `PrepareSummary`, `GradeSummary` and `TraceEvaluationJob` with `prepare_traces` and `grade_traces`
+     (`FETCH_WINDOW`, `SETTLE_TIME`, `GRADING_LEASE`) (spec §`evaluator/job.py`).
+  2. `EvaluationAPI` with `from_env`, `start_evaluation`, `check_progress` and `grade_traces` (spec §`evaluator/api.py`).
+  3. `lambda_request_handler.py`: register `/eval` (POST), `/check` (GET) and the internal `/grade` (POST) with
+     `Lambda.register`; keep `handler = Lambda.handler` (spec §The agent and the wiring).
+- **Verify:** exercised end to end in iteration 12.
 
 ### Iteration 12: Evaluation infrastructure
 
@@ -207,7 +213,7 @@ All files are under `examples/aws-serverless/langfuse-trace-evaluation/` unless 
   2. `aws_dynamodb_table.results` (with the `INCLUDE`-projected `session_id-index`),
      `aws_iam_role_policy.evaluation`, `aws_lambda_function_event_invoke_config.grading`
      (`maximum_retry_attempts = 0`) and the `results_table_name` output.
-  3. `deploy.sh` also copies `evaluator/` into the package.
+  3. `deploy.sh` also copies `evaluator/` into the request handler package (`dist_request_handler`).
 - **Verify:**
   - `terraform validate`; `./deploy.sh local`.
   - `uv run python simulate_traffic.py`, wait 2.5 minutes (the job's settle time), then
@@ -275,26 +281,28 @@ the fetcher returns. Branch `feature/803-prod-eval-implementation` is unpublishe
 
 ### Iteration 16: Example cleanup
 
-- **Goal:** each evaluation example builds its `TraceCase` from a `FetchedTrace` and holds no trace-assembly code.
-- **Files:** `evaluator/{case,job}.py`, `README.md` and `tests/test_evaluator.py` of
-  `openai-langfuse-trace-evaluation`, `adk-cloudwatch-trace-evaluation` and `pydanticai-logfire-trace-evaluation`;
-  `fetch_api.py` and its README in `langgraph-traceloop-trace-fetch` (rename only).
+- **Goal:** the example builds its `TraceCase` from a `FetchedTrace` and holds no trace-assembly code.
+- **Files:** `evaluator/{case,job}.py` and `README.md` of `openai-langfuse-trace-evaluation`.
 - **Steps:**
   1. `case.py`: remove `_span_kind`, `_sum_usage`, `spans_missing_parent` and the root finding; add
      `TraceCase.from_trace`; a tool call is failed when `status == ERROR`. Keep the provider-specific name and
      result readers.
-  2. `job.py`: call `fetch_traces(session_id=..., last=FETCH_WINDOW)`; skip `root is None` and count it in
-     `no_root`; remove `FETCH_LIMIT` and its check. Keep `SETTLE_TIME`, the progress states and the "not found"
+  2. `job.py`: call `fetch_traces(last=FETCH_WINDOW, ...)` by `session_id` in `prepare_traces` and by `trace_ids`
+     in `grade_traces`; skip `root is None` and count it in `PrepareSummary.no_root`; remove `FETCH_LIMIT` and its check. Keep `SETTLE_TIME`, the progress states and the "not found"
      handling in `/grade`.
-  3. Update the tests and the READMEs ("The evaluation run", the "public AK API" line).
-- **Verify:** `uv run pytest tests/` in each example.
+  3. Update the README ("The evaluation run", the "public AK API" line).
+- **Verify:** `./build.sh local`; `AK_TEST_ENDPOINT=... uv run pytest lambda_test.py` against a deployment.
 
 ### Iteration 17: Docs and skills
 
 - `docs/docs/advanced/traceability.md` §Fetching Spans Back: the rename, `fetch_traces` and `FetchedTrace`,
   `status`, the Traceloop root note and partial traces at window edges. `docs/docs/intro.md` and
-  `docs/docs/examples/overview.md`: the renamed call.
+  `docs/docs/examples/overview.md`: the renamed call. `docs/docs/deployment/aws-serverless.md`: list the
+  example. `docs/src/pages/index.tsx` and `docs/src/components/FeatureExplorer/data.tsx`: the span-fetch
+  highlight and tag. `docs/docs/core-concepts/configuration.md` and `docs/docs/testing/cli-testing.md`: import
+  `AKEvaluator` from `agentkernel.test`.
 - Dev skills: `ak-dev-new-tracing-provider`, `ak-dev-architecture`, `ak-dev-testing-conventions`.
-- Bundled skill: `ak-py/src/agentkernel/skills/ak-add-capabilities/SKILL.md` and its `evals/evals.json`.
+- Bundled skills: `ak-py/src/agentkernel/skills/ak-add-capabilities/SKILL.md` and its `evals/evals.json`;
+  `ak-test/SKILL.md` (the `agentkernel.test` import).
 - **Open:** one live run of the Langfuse example to confirm tool spans come back as `TOOL`; the Logfire
   `otel_status_code` column and Traceloop's status field name are unverified against live accounts.
