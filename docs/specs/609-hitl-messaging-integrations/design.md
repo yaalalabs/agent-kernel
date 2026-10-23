@@ -68,7 +68,11 @@ graph LR
   text, in the shape `split_reply` already has — a text helper on the base that every adapter
   inherits and any adapter may override.
   - It names what is waiting (`tool_name`, its `arguments`, the interruption's `message`) and says
-    the run is paused until someone approves it.
+    the run is paused and waiting on a person.
+  - **Its closing line is written per `kind`.** The default catches every pause, `input_required`
+    among them, and that kind asks for a value rather than permission — "waiting for approval"
+    would describe the wrong thing. `tool_call` and `confirmation` say approval is needed;
+    `input_required` says an answer is.
   - It states **no reply instruction**. "Reply APPROVE" would only work if a typed word resolved a
     pause, and nothing maps text to a decision: the inbound adapter would build an ordinary
     `AgentRequestText`, the run would stay paused, and on Pydantic AI a fresh turn during an
@@ -88,6 +92,13 @@ graph LR
 - Once a decision is accepted, the pause message is rewritten to drop its buttons and state what
   was decided — **what, not who**. Naming the presser is a disclosure a deployment adds by
   subclassing, not one this change assumes.
+  - **The edit names the interruptions it answered**, not a bare "Approved". One press answers one
+    interruption, and a pause may hold several; a message that says only "Approved" claims more
+    than happened.
+  - All controls go, even when interruptions remain undecided. Answering some and leaving the rest
+    is supported, and **the remainder comes back as another pause** (`core/model.py:190-191`) —
+    which reaches `deliver_paused` again and posts its own message with its own controls. Leaving
+    the old controls up would put two live buttons on one interruption.
   - **The outbound half edits, not the inbound half.** The inbound adapter puts the pause message's
     coordinates into the decision turn's `reply_context`, where they cross the queue like every
     other delivery coordinate; the outbound adapter edits that message when it delivers the
@@ -115,12 +126,18 @@ graph LR
     `ResumeDecision.message` carries the refusal's reason when the platform collected one.
 - The button payload carries the interruption id and the verb, and nothing else.
 - `request_id` must be synthesised so that a double-press deduplicates: the platform's own press
-  identifier where one exists, otherwise `<platform>:<conversation>:<message id>:<verb>`.
-  - The verb is in the key deliberately. Pressing Approve twice is one `dedup_id` and the transport
-    discards the second. Pressing Approve then Deny is two, so both reach the runtime — the first
-    resumes, the second answers a pause that no longer exists and takes the 400 path above. That is
-    the intended outcome, not a hole: a decision already applied must not be revisable by a later
-    press.
+  identifier where one exists, otherwise
+  `<platform>:<conversation>:<message id>:<interruption id>:<verb>`.
+  - **The interruption id is in the key because a pause can carry several interruptions**
+    (`interruptions` is a list, and one turn can produce several gated tool calls). Without it,
+    approving two different interruptions on the same message collides on one `dedup_id`, the
+    transport discards the second, and that interruption is never answered.
+  - The verb is in the key too. Pressing Approve twice is one `dedup_id` and the transport discards
+    the second. Pressing Approve then Deny is two, so both reach the runtime — the first resumes,
+    the second answers a pause that no longer exists and takes the 400 path above. That is the
+    intended outcome, not a hole: a decision already applied must not be revisable by a later press.
+  - Two presses answering *different* interruptions are serialised by the queue's per-session FIFO,
+    so the second is validated against the pause the first produced rather than racing it.
 - `session_id` for a press must resolve to the same conversation key the original turn used, or the
   decision reaches a session holding no pause.
 - A press answering an already-resolved pause produces the runtime's `ValueError` → 400 → the
@@ -227,6 +244,9 @@ graph LR
   carrying the right id and status; a press deduplicates; Telegram's over-budget id degrades to text.
 - The message edit under all three outcomes: an accepted decision drops the buttons, a rejected or
   stale one leaves them live, and a duplicate press changes nothing further.
+- A pause carrying two interruptions: each renders its own controls, approving one does not
+  deduplicate against approving the other, the edit names only what was answered, and the remainder
+  arrives as a second pause message.
 - A round trip through the `in_memory` topology — pause out, press in, resume — extending
   `tests/test_integration_roundtrip.py`.
 
@@ -245,8 +265,10 @@ graph LR
   is changed; all of them keep today's text delivery through the default `deliver_paused`.
 - **`input_required` pauses.** A free-text answer has no button form, and correlating a later plain
   message back to an interruption is a problem this change does not solve; such a pause renders as
-  text. Slack's denial modal is not an exception — its `private_metadata` carries the interruption
-  id, so nothing is correlated.
+  text and is answered from a non-platform surface. Slack's denial modal is not an exception: it is
+  opened by a press and carries its own context forward in `private_metadata`, so a modal
+  submission stays correlated. What is out of scope is a plain typed message answering a pause, on
+  any platform.
 - **Answering a pause by typing.** `format_pause` deliberately gives no reply instruction, because
   mapping a typed "approve" onto a decision needs the session's pending pauses at the moment the
   text arrives. That belongs in a core pre-hook, applies to every surface rather than just
