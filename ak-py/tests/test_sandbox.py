@@ -1097,6 +1097,25 @@ def test_install_packages_tool_registered_with_permission_guidance(monkeypatch):
     assert "" not in guidance.splitlines()
 
 
+def test_guidance_lists_runtime_languages(monkeypatch):
+    # docker/kubernetes declare their languages in language_runtimes; the guidance shows them, narrowed by policy.languages.
+    docker = _SandboxDockerConfig(language_runtimes={"python": ["python", "-c"], "node": ["node", "-e"]})
+    profiles = {
+        "default": _SandboxProfileConfig(type="docker", docker=docker),
+        "narrowed": _SandboxProfileConfig(type="docker", docker=docker, policy=_SandboxPolicyConfig(languages=["node", "ruby"])),
+        "mismatched": _SandboxProfileConfig(type="docker", docker=docker, policy=_SandboxPolicyConfig(languages=["ruby"])),
+        "plain": _SandboxProfileConfig(type="docker", docker=_SandboxDockerConfig()),
+        "byo": _SandboxProfileConfig(type=FAKE_DOTTED),
+    }
+    _install_sandbox_cfg(monkeypatch, _sandbox_cfg(profiles=profiles))
+    lines = {line.split("'")[1]: line for line in get_sandbox_tools()[0].description.splitlines() if line.startswith("- '")}
+    assert lines["default"].endswith("; languages: python, node")  # no policy.languages: the runtime keys
+    assert lines["narrowed"].endswith("; languages: node")  # ruby is permitted but not declared, so not offered
+    assert lines["mismatched"].endswith("; run_code unavailable (no permitted language is in the provider's language_runtimes)")
+    assert lines["plain"].endswith("; languages: python")  # the default runtime map
+    assert "languages" not in lines["byo"]  # no config-declared runtimes and no policy: nothing to say
+
+
 def test_get_sandbox_tools_fails_on_an_unresolvable_package_rule(monkeypatch):
     docker = _SandboxDockerConfig(package_installers={"deb": ["apt-get", "install", "-y"]})  # no rule for deb
     profiles = {"default": _SandboxProfileConfig(type="docker", docker=docker)}
