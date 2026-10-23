@@ -95,10 +95,18 @@ graph LR
   - **The edit names the interruptions it answered**, not a bare "Approved". One press answers one
     interruption, and a pause may hold several; a message that says only "Approved" claims more
     than happened.
-  - All controls go, even when interruptions remain undecided. Answering some and leaving the rest
-    is supported, and **the remainder comes back as another pause** (`core/model.py:190-191`) —
-    which reaches `deliver_paused` again and posts its own message with its own controls. Leaving
-    the old controls up would put two live buttons on one interruption.
+  - All controls go, even when interruptions remain undecided, because **a partial resume produces
+    a fresh pause** rather than a run that silently drops what was not answered. Each adapter's
+    `resume` applies only the supplied decisions and then re-checks: OpenAI returns
+    `self._paused_reply(agent, session, result)` when `result.interruptions` is non-empty, and
+    LangGraph does the same when `INTERRUPT_KEY in result`. That reply travels the ordinary output
+    path and reaches `deliver_paused` again, posting its own message with its own controls.
+  - So keeping the old controls up is the wrong repair: it would leave two live buttons for one
+    interruption, the stale one and the new one. The edit's job is to stop claiming more than was
+    decided, which is why it names the interruptions it answered.
+  - This rests on an invariant the messaging UI does not own: an adapter whose `resume` completes
+    while interruptions are still pending would strand them, and that would be a defect in #606's
+    contract (`core/model.py:190-191`), not something a button layout can correct.
   - **The outbound half edits, not the inbound half.** The inbound adapter puts the pause message's
     coordinates into the decision turn's `reply_context`, where they cross the queue like every
     other delivery coordinate; the outbound adapter edits that message when it delivers the
