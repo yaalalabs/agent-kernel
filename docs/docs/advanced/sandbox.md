@@ -85,7 +85,9 @@ operations a profile does not permit, come back as `{"error": ...}` rather than 
 | `install_packages(packages, ecosystem, sandbox_session_id, profile)` | Install registry packages of one ecosystem (default `python`). Registered only when a profile's policy sets `package_install`. |
 
 The injected guidance lists what each profile permits (languages, package installs) and tells
-the agent to report a denial to the user rather than work around it with `run_command`.
+the agent to report a denial to the user rather than work around it with `run_command`. On
+`docker` and `kubernetes` the listed languages are the `language_runtimes` keys, narrowed by
+`policy.languages` (see [Language runtimes](#language-runtimes)).
 
 `tool_output_max_chars` (default `8000`) bounds how much stdout/stderr or file content is
 returned to the model.
@@ -315,6 +317,9 @@ profiles:
 - **Permitted but not declared.** A `policy.languages` entry missing from `language_runtimes`
   passes the permission check, then fails with `SandboxCapabilityError`; the broker worker logs a
   one-time warning per provider and profile naming it.
+- **The agent sees the result.** The injected guidance lists each profile's usable languages: the
+  `language_runtimes` keys, or the `policy.languages` entries the map declares. A profile whose
+  permitted languages are all undeclared is shown as having `run_code` unavailable.
 
 As environment variables:
 `AK_SANDBOX__PROFILES__<NAME>__DOCKER__LANGUAGE_RUNTIMES='{"python":["python","-c"],"node":["node","-e"]}'`.

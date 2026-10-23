@@ -334,12 +334,12 @@ check also runs agent-side before a request is submitted.
 
 ### Delivery
 
-- One design, shipped as phased PRs against it:
+- One design, built in two phases and shipped in one PR:
   1. the guard (worker and agent side), the policy fields and package installation with the `PackageSpecRule`
      extension point and the built-in `python` and `node` rules on `docker`, `kubernetes`, `e2b` and `daytona`. This
      closes #692;
   2. language runtimes.
-- Packages ship first because #692 asks for them and because a raw `install_packages` request runs unchecked today.
+- Packages are built first because #692 asks for them and because a raw `install_packages` request runs unchecked today.
   Language runtimes are new capability that nothing is blocked on.
 - Each policy and provider field is added in the phase that first reads it. The `python`-key validator ships with
   `language_runtimes` in phase 2.

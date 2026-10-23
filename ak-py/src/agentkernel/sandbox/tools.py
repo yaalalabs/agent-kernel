@@ -334,26 +334,44 @@ def _profiles_text(config: Any, installs: bool) -> str:
                 "change or `sudo su` does NOT carry to the next command. Chain state-dependent steps in "
                 "one command (e.g. `cd /app && ./run.sh`)"
             )
-        detail += _permissions_text(prof.policy, installs)
+        detail += _permissions_text(prof.policy, installs, _runtime_languages(prof))
         lines.append(f"- '{name}'{marker}: {detail}")
     return "\n".join(lines) if lines else "- (none configured)"
 
 
-def _permissions_text(policy: Any, installs: bool) -> str:
+def _permissions_text(policy: Any, installs: bool, runtimes: Optional[list[str]] = None) -> str:
     """The profile's permissions for the guidance: run_code languages, then package installs.
-    The install part appears only when ``installs`` (some profile permits them, so the tool exists);
-    otherwise it would describe a tool the agent does not have. Empty when there is nothing to say."""
+    ``runtimes`` is the provider's ``language_runtimes`` keys when the config declares them (else
+    None): they are the languages when the policy names none, and narrow the policy's list otherwise,
+    so the agent is never told about a language that would fail. The install part appears only when
+    ``installs`` (some profile permits them, so the tool exists); otherwise it would describe a tool
+    the agent does not have. Empty when there is nothing to say."""
     parts = []
     if policy.languages == []:
         parts.append("run_code disabled (command-only profile)")
-    elif policy.languages:
-        parts.append(f"languages: {', '.join(policy.languages)}")
+    else:
+        languages = (
+            policy.languages
+            if runtimes is None
+            else runtimes if policy.languages is None else [lang for lang in policy.languages if lang in runtimes]
+        )
+        if languages:
+            parts.append(f"languages: {', '.join(languages)}")
+        elif languages is not None:
+            parts.append("run_code unavailable (no permitted language is in the provider's language_runtimes)")
     if installs:
         if policy.package_install is not None:
             parts.append(f"package installs: {', '.join(policy.package_install.ecosystems)}")
         else:
             parts.append("package installs not permitted")
     return "; " + "; ".join(parts) if parts else ""
+
+
+def _runtime_languages(prof: Any) -> Optional[list[str]]:
+    """The profile provider's ``language_runtimes`` keys, when its config block declares that map
+    (``docker``, ``kubernetes``); None for every other provider (config-derived; no provider import)."""
+    runtimes = getattr(getattr(prof, prof.type, None), "language_runtimes", None)
+    return list(runtimes) if runtimes is not None else None
 
 
 def _installs_permitted(config: Any) -> bool:

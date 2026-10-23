@@ -1,7 +1,7 @@
 # Release notes draft: #692 sandbox extended permissions
 
-Paste-ready material for the GitHub release that ships #692. The capability lands over two PRs
-(`plan.md` phases 1 and 2): phase 1 adds the permission guard, per-profile language and
+Paste-ready material for the GitHub release that ships #692. The capability ships in one PR, built
+in two phases (`plan.md` phases 1 and 2): phase 1 adds the permission guard, per-profile language and
 package-install permissions, and the `install_packages` tool; phase 2 adds operator-declared language
 runtimes for `docker` and `kubernetes`.
 

@@ -4,9 +4,11 @@
 
 This plan sets the order in which [spec.md](spec.md) gets built.
 
-- It ships as **two PRs**, following design.md's Delivery section:
+- It ships as **one PR** containing both phases, following design.md's Delivery section:
   - **Phase 1** (iterations 1–7) adds the guard and package installation, and closes #692.
   - **Phase 2** (iterations 8–10) adds language runtimes.
+  - Phase 2 is small and was built on the same branch as phase 1's follow-up fixes, so splitting it into its own PR
+    would mean rewriting history for no review benefit.
 - Each phase ends with its own tests gate and its own docs-and-skills sync.
 - Unit tests land with the component they cover, which is the repo convention.
 - Each iteration leaves the branch working, with `cd ak-py && uv run pytest tests/test_sandbox*.py` green.
@@ -14,7 +16,7 @@ This plan sets the order in which [spec.md](spec.md) gets built.
 All paths below are relative to `ak-py/src/agentkernel/` unless they start with `ak-py/`, `docs/`, `examples/` or
 `.agents/`.
 
-## Phase 1 (PR 1): permission guard and package installation
+## Phase 1: permission guard and package installation
 
 ### Iteration 1: Models, errors and config
 
@@ -228,7 +230,7 @@ All paths below are relative to `ak-py/src/agentkernel/` unless they start with 
     and confirm they report nothing missing.
   - `cd docs && npm run build` passes.
 
-## Phase 2 (PR 2): language runtimes
+## Phase 2: language runtimes
 
 ### Iteration 8: Runtime config and execution
 

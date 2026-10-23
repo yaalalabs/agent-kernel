@@ -628,10 +628,17 @@ checks read the instance capabilities, not the class attribute. These five lines
     `policy.package_install is not None`. The other eight tools are unchanged. The decision is derived from config
     only, with no provider import.
   - **Guidance.**
-    - `_profiles_text` (`tools.py:287-306`) appends each profile's permissions:
-      - `languages: python, bash` when `policy.languages` is set;
-      - `run_code disabled (command-only profile)` when it is `[]`;
-      - `package installs: python, node` or `package installs not permitted`.
+    - `_profiles_text` appends each profile's permissions through `_permissions_text`:
+      - `run_code disabled (command-only profile)` when `policy.languages` is `[]`;
+      - otherwise `languages: …`. On a provider whose config block declares `language_runtimes` (`docker`,
+        `kubernetes`; read by `_runtime_languages`, config-only) these are the runtime keys when `policy.languages`
+        is unset, and the policy entries the map declares when it is set, so the agent is never offered a language
+        that would fail. If none of the permitted languages is declared, `run_code unavailable (no permitted
+        language is in the provider's language_runtimes)`. Elsewhere it is `policy.languages` when set, and nothing
+        when unset;
+      - `package installs: python, node` or `package installs not permitted`, but **only when some profile permits
+        installs** (so `install_packages` is registered); otherwise it would describe a tool the agent lacks.
+      - A profile with nothing to say adds no `;` part.
     - The tool list gains an `install_packages(...)` line only when the tool is registered.
     - One new sentence: `If a result says an action is not permitted by the profile, report it to the user; do not
       work around it with run_command or run_code.`
