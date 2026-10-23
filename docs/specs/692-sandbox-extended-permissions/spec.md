@@ -440,7 +440,9 @@ class ProcessKiller:
     """Tags an exec with a unique marker and builds the procps-free command that kills it."""
 
     MARKER_ENV: ClassVar[str] = "AK_EXEC_ID"
-    KILL_TIMEOUT_SECONDS: ClassVar[float] = 5.0  # must stay below BrokerWorkerCore.BACKSTOP_GRACE_SECONDS
+    KILL_TIMEOUT_SECONDS: ClassVar[float] = 5.0
+    SHELL_PROBE: ClassVar[tuple[str, ...]] = ("/bin/sh", "-c", "exit 0")
+    SHELL_PROBE_TIMEOUT_SECONDS: ClassVar[float] = 2.0  # + KILL_TIMEOUT_SECONDS < BrokerWorkerCore.BACKSTOP_GRACE_SECONDS
 
     @staticmethod
     def new_marker() -> str: ...                                # uuid4().hex: fixed-length, fresh per exec
@@ -486,6 +488,18 @@ class ProcessKiller:
   - Background jobs started *by the timed-out exec itself* inherit its marker and are killed with it.
   - The kill call is bounded by `KILL_TIMEOUT_SECONDS`.
 - The scan needs `/bin/sh` and `cat`, which every supported image ships.
+- **The `kubernetes` shell probe.** The launcher and the scan both need `/bin/sh`, so the first killable exec on each
+  pod runs `SHELL_PROBE` (untagged), bounded by `SHELL_PROBE_TIMEOUT_SECONDS`.
+  - Only a definite answer is cached per pod on the provider (and dropped on `destroy`): exit 0 means a shell; exit
+    126/127, or a no-exit-code status whose message says the executable was not found, means none.
+  - Anything else (a raise, the probe's timeout, another failure) is transient: that exec runs unwrapped and the
+    next one probes again.
+  - A shell-less pod runs its execs unwrapped, so its timed-out execs cannot be killed.
+  - **Budget.** A pod's first exec can spend the probe and the kill outside its own timeout, so
+    `SHELL_PROBE_TIMEOUT_SECONDS + KILL_TIMEOUT_SECONDS` must stay below `BACKSTOP_GRACE_SECONDS`; otherwise the
+    backstop cancels the kill partway through. A test pins this.
+  - The handle reads the exec's status channel itself rather than through the client's `returncode`, which
+    consumes it, so a failure status without an exit code keeps its message in `stderr` (exit code `-1`).
 - The docs state these limits.
 
 ### Provider changes — phase 1 (packages, instance capabilities) and phase 2 (runtimes)

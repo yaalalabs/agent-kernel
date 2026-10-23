@@ -10,6 +10,7 @@ import asyncio
 import base64
 import importlib
 import io
+import json
 import shlex
 import subprocess
 import sys
@@ -1703,16 +1704,22 @@ class _FakeExecClient:
         self._stdin: list[str] = []
         self._stdout = ""
         self._stderr = ""
-        self._returncode = None
+        self._status = None  # the handler's third value: an exit code, a raw status dict, or None (no status)
         self._open = True
         self._ran = False
 
-    @property
-    def returncode(self):
-        # An exception stands in for the real client's KeyError on a failure status with no exit code.
-        if isinstance(self._returncode, Exception):
-            raise self._returncode
-        return self._returncode
+    def read_channel(self, channel):
+        # The JSON status the API server writes on the error channel (3) when the exec ends.
+        assert channel == 3
+        if self._status is None:
+            return ""
+        if isinstance(self._status, dict):
+            return json.dumps(self._status)
+        if self._status == 0:
+            return json.dumps({"status": "Success"})
+        return json.dumps(
+            {"status": "Failure", "reason": "NonZeroExitCode", "details": {"causes": [{"reason": "ExitCode", "message": str(self._status)}]}}
+        )
 
     def write_stdin(self, data):
         self._stdin.append(data)
@@ -1723,7 +1730,7 @@ class _FakeExecClient:
     def update(self, timeout=None):
         if not self._ran and (not self._needs_stdin or self._stdin):
             stdin_data = "".join(self._stdin) if self._needs_stdin else None
-            self._stdout, self._stderr, self._returncode = self._cluster.exec_handler(self._pod, self._command, stdin_data)
+            self._stdout, self._stderr, self._status = self._cluster.exec_handler(self._pod, self._command, stdin_data)
             self._ran = True
             self._open = False
 
@@ -2067,13 +2074,90 @@ async def test_k8s_exec_without_an_exit_code_is_a_failed_result(k8s_env):
 
     def missing_interpreter(pod, command, stdin_data):
         if command[0] == "python":
-            return "", "", KeyError("details")
+            return "", "", {"status": "Failure", "message": 'exec: "python": executable file not found in $PATH'}
         return default_handler(pod, command, stdin_data)
 
     cluster.exec_handler = missing_interpreter
     result = await sandbox.execute_code("print(1)")
     assert result.exit_code == -1
-    assert "is the executable present in the image?" in result.stderr
+    assert 'exec failed before the process started: exec: "python": executable file not found' in result.stderr  # the status's own message
+
+
+@pytest.mark.asyncio
+async def test_k8s_exec_without_any_status_is_a_failed_result(k8s_env):
+    module, cluster = k8s_env
+    provider = _k8s_provider(module)
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    default_handler = cluster.exec_handler
+    cluster.exec_handler = lambda pod, command, stdin_data: ("", "", None) if command[0] == "python" else default_handler(pod, command, stdin_data)
+    result = await sandbox.execute_code("print(1)")
+    assert result.exit_code == -1
+    assert "exec ended without a status from the API server" in result.stderr
+
+
+def _probe_answers(cluster, *answers):
+    """Answer successive shell probes with ``answers`` (handler tuples), then the default handler."""
+    default_handler = cluster.exec_handler
+    pending = list(answers)
+
+    def handler(pod, command, stdin_data):
+        if tuple(command) == ProcessKiller.SHELL_PROBE and pending:
+            return pending.pop(0)
+        return default_handler(pod, command, stdin_data)
+
+    cluster.exec_handler = handler
+
+
+@pytest.mark.asyncio
+async def test_k8s_shell_probe_transient_failure_is_not_cached(k8s_env):
+    module, cluster = k8s_env
+    _probe_answers(cluster, ("", "", {"status": "Failure", "message": "container not running"}))
+    provider = _k8s_provider(module)
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    await sandbox.execute_code("print(1)")
+    await sandbox.execute_code("print(2)")
+    assert len(cluster.shell_probes) == 2  # the inconclusive answer was not cached, so the next exec probed again
+    assert cluster.exec_markers == [None, cluster.exec_markers[1]] and cluster.exec_markers[1]  # unwrapped, then tagged
+    assert provider._shell_pods == {sandbox.id: True}
+
+
+@pytest.mark.asyncio
+async def test_k8s_shell_probe_not_found_status_is_cached(k8s_env):
+    # A runtime that reports a missing /bin/sh as a status with no exit code (containerd's wording).
+    module, cluster = k8s_env
+    _probe_answers(cluster, ("", "", {"status": "Failure", "message": 'exec: "/bin/sh": stat /bin/sh: no such file or directory'}))
+    provider = _k8s_provider(module)
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    await sandbox.execute_code("print(1)")
+    await sandbox.execute_code("print(2)")
+    assert len(cluster.shell_probes) == 1
+    assert set(cluster.exec_markers) == {None}
+    assert provider._shell_pods == {sandbox.id: False}
+
+
+@pytest.mark.asyncio
+async def test_k8s_shell_probe_is_bounded_by_its_own_timeout(k8s_env, monkeypatch):
+    module, cluster = k8s_env
+    monkeypatch.setattr(ProcessKiller, "SHELL_PROBE_TIMEOUT_SECONDS", 0.05)
+    default_handler = cluster.exec_handler
+
+    def hanging_probe(pod, command, stdin_data):
+        if tuple(command) == ProcessKiller.SHELL_PROBE:
+            time.sleep(0.5)
+        return default_handler(pod, command, stdin_data)
+
+    cluster.exec_handler = hanging_probe
+    provider = _k8s_provider(module)
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    started = time.monotonic()
+    assert (await sandbox.execute_code("print(1)")).exit_code == 0
+    assert time.monotonic() - started < 0.4  # the probe gave up at its own bound, not when the exec finished
+    assert cluster.exec_markers == [None]  # ran unwrapped
+    assert sandbox.id not in provider._shell_pods  # a timed-out probe is not an answer
 
 
 def test_k8s_instance_capabilities_compose_in_one_derive(k8s_env):
@@ -2333,8 +2417,9 @@ def test_process_killer_argv_shape():
 
 
 def test_process_killer_timeout_fits_inside_the_backstop():
-    # The kill must finish while the worker's per-session lock is still held.
-    assert ProcessKiller.KILL_TIMEOUT_SECONDS < BrokerWorkerCore.BACKSTOP_GRACE_SECONDS
+    # The kill must finish while the worker's per-session lock is still held, even on a pod's first
+    # exec, which also spends the shell probe outside its own timeout.
+    assert ProcessKiller.SHELL_PROBE_TIMEOUT_SECONDS + ProcessKiller.KILL_TIMEOUT_SECONDS < BrokerWorkerCore.BACKSTOP_GRACE_SECONDS
 
 
 @pytest.mark.skipif(not Path("/proc/self/environ").exists(), reason="needs a Linux /proc")

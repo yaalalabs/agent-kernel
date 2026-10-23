@@ -35,9 +35,12 @@ class ProcessKiller:
     """Tags an exec with a unique marker and builds the procps-free command that kills it."""
 
     MARKER_ENV: ClassVar[str] = "AK_EXEC_ID"
-    KILL_TIMEOUT_SECONDS: ClassVar[float] = 5.0  # must stay below BrokerWorkerCore.BACKSTOP_GRACE_SECONDS
+    # A pod's first exec can spend both the shell probe and the kill outside its own timeout, so
+    # SHELL_PROBE_TIMEOUT_SECONDS + KILL_TIMEOUT_SECONDS must stay below BrokerWorkerCore.BACKSTOP_GRACE_SECONDS.
+    KILL_TIMEOUT_SECONDS: ClassVar[float] = 5.0
     # Exits 0 only where /bin/sh runs — which the launcher and the kill scan both need.
     SHELL_PROBE: ClassVar[tuple[str, ...]] = ("/bin/sh", "-c", "exit 0")
+    SHELL_PROBE_TIMEOUT_SECONDS: ClassVar[float] = 2.0
 
     @staticmethod
     def new_marker() -> str:
