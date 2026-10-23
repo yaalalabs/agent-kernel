@@ -509,7 +509,8 @@ terraform {
     required_providers {
         aws = {
             source  = "hashicorp/aws"
-            version = ">= 6.11.0"
+            # 6.69.0 fails to create zip-packaged Lambdas (https://github.com/hashicorp/terraform-provider-aws/issues/50474)
+            version = "6.68.0"
         }
         docker = {
             source  = "kreuzwerker/docker"
