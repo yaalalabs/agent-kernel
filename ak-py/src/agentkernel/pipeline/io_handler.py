@@ -77,6 +77,7 @@ class IOHandler:
         mode = config.execution.mode
         transport_type = QueueTransportFactory.resolve_type()
         cls._validate_topology(mode, transport_type, config, auth_validator)
+        cls._warn_if_no_agents(config)
 
         single_process = transport_type == "in_memory"
         # REALTIME is deliberately absent: its replies go through the integration gateway adapter,
@@ -242,3 +243,35 @@ class IOHandler:
                     "multi-process REST queue modes need a shared response store (redis, valkey or dynamodb): "
                     "the in_memory store is single-process only"
                 )
+        if transport_type != "in_memory":
+            from ..api.http import RESTAPI  # local import: RESTAPI.run() lazily imports this module
+
+            # A2A and MCP callers wait for the runner's reply in the response store whatever the
+            # mode is (#780), so in WebSocket and realtime modes too the store must be shared.
+            surfaces = RESTAPI.agent_protocol_surfaces(config)
+            response_store_config = config.execution.response_store
+            if surfaces and (response_store_config is None or response_store_config.type in (None, "in_memory")):
+                raise AKConfigError(
+                    f"{' and '.join(surfaces)} over a broker transport need a shared response store (redis, valkey or dynamodb) in every "
+                    "execution mode: their callers wait there for the agent runner's reply"
+                )
+
+    @classmethod
+    def _warn_if_no_agents(cls, config) -> None:
+        """Warn when A2A or agent MCP is on but this process has registered no agents.
+
+        A2A cards and MCP agent tools are built from this process's agent registry, even though
+        the agents run on the agent runner. A split deployment whose IO process loads no agent
+        modules would serve an empty catalog without saying why. A warning rather than an error:
+        the process still serves everything else.
+        """
+        from ..api.http import RESTAPI  # local import: RESTAPI.run() lazily imports this module
+        from ..core.runtime import Runtime
+
+        surfaces = RESTAPI.agent_protocol_surfaces(config)
+        if surfaces and not Runtime.current().agents():
+            cls._log.warning(
+                f"{' and '.join(surfaces)} enabled but no agents are registered in this process: the A2A catalog and the MCP "
+                "agent tool list will be empty, and per-agent A2A routes are not mounted, so they return 404. Import the same "
+                "agent modules here as in the agent runner: cards and tools are built from this process's registry"
+            )

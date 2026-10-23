@@ -5,6 +5,7 @@ import subprocess
 import sys
 import threading
 import time
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import httpx
@@ -31,7 +32,7 @@ def _restore_signals_and_shutdown_state():
     AKConfig._reset()
 
 
-def _cfg(mode=None, response_store_type=None, push_auth_token=None):
+def _cfg(mode=None, response_store_type=None, push_auth_token=None, a2a=False, mcp=False, expose_agents=False):
     class _ResponseStore:
         type = response_store_type
 
@@ -52,6 +53,8 @@ def _cfg(mode=None, response_store_type=None, push_auth_token=None):
             max_file_size = 10 * 1024 * 1024
 
     _Cfg.execution.mode = mode
+    _Cfg.a2a = SimpleNamespace(enabled=a2a)
+    _Cfg.mcp = SimpleNamespace(enabled=mcp, expose_agents=expose_agents)
     return _Cfg
 
 
@@ -94,6 +97,104 @@ class TestTopologyValidation:
 
     def test_in_memory_topology_passes(self):
         IOHandler._validate_topology(ExecutionMode.STREAM, "in_memory", _cfg(ExecutionMode.STREAM))
+
+
+class TestProtocolResponseStore:
+    """A2A and MCP callers wait in the response store whatever the mode is (#780), so on a broker the
+    store must be shared in every mode, not only the REST ones."""
+
+    # The push token satisfies the WebSocket modes' own check, so only the store check can fire.
+    MODES = [ExecutionMode.REST_SYNC, ExecutionMode.ASYNC, ExecutionMode.STREAM, ExecutionMode.REALTIME]
+
+    @pytest.mark.parametrize("mode", MODES)
+    @pytest.mark.parametrize("store", [None, "in_memory"])
+    def test_a2a_on_a_broker_without_a_shared_store_is_refused_in_every_mode(self, mode, store):
+        with pytest.raises(AKConfigError, match="shared response store"):
+            IOHandler._validate_topology(mode, "kafka", _cfg(mode, response_store_type=store, push_auth_token="s3cret", a2a=True))
+
+    @pytest.mark.parametrize("mode", [ExecutionMode.ASYNC, ExecutionMode.STREAM, ExecutionMode.REALTIME])
+    def test_the_message_names_the_surfaces(self, mode):
+        with pytest.raises(AKConfigError, match="A2A and MCP over a broker transport"):
+            IOHandler._validate_topology(mode, "nats", _cfg(mode, push_auth_token="s3cret", a2a=True, mcp=True, expose_agents=True))
+
+    @pytest.mark.parametrize("mode", MODES)
+    def test_a_shared_store_passes_in_every_mode(self, mode):
+        IOHandler._validate_topology(mode, "sqs", _cfg(mode, response_store_type="redis", push_auth_token="s3cret", a2a=True))
+
+    @pytest.mark.parametrize("store", ["redis", "valkey", "dynamodb", "byo_pkg.MyStore"])
+    def test_any_non_in_memory_store_counts_as_shared(self, store):
+        IOHandler._validate_topology(
+            ExecutionMode.ASYNC, "sqs", _cfg(ExecutionMode.ASYNC, response_store_type=store, push_auth_token="s3cret", a2a=True)
+        )
+
+    def test_the_in_memory_transport_needs_no_shared_store(self):
+        IOHandler._validate_topology(ExecutionMode.STREAM, "in_memory", _cfg(ExecutionMode.STREAM, a2a=True, mcp=True, expose_agents=True))
+
+    def test_mcp_without_agent_tools_needs_no_shared_store(self):
+        IOHandler._validate_topology(ExecutionMode.ASYNC, "kafka", _cfg(ExecutionMode.ASYNC, push_auth_token="s3cret", mcp=True))
+
+    def test_agent_mcp_alone_is_enough_to_need_one(self):
+        with pytest.raises(AKConfigError, match="MCP over a broker transport"):
+            IOHandler._validate_topology(
+                ExecutionMode.ASYNC, "kafka", _cfg(ExecutionMode.ASYNC, push_auth_token="s3cret", mcp=True, expose_agents=True)
+            )
+
+
+class TestNoAgentsWarning:
+    """Cards and tools are built from this process's registry: an IO process without the agents
+    serves empty catalogs, so it says so (decision 4: a warning, not an error)."""
+
+    @pytest.fixture
+    def registry(self, monkeypatch):
+        from agentkernel.core.runtime import Runtime
+
+        def _set(agents):
+            monkeypatch.setattr(Runtime.current(), "agents", lambda: agents)
+
+        return _set
+
+    def test_an_empty_registry_warns_with_the_fix(self, registry, caplog):
+        registry({})
+
+        with caplog.at_level("WARNING"):
+            IOHandler._warn_if_no_agents(_cfg(a2a=True, mcp=True, expose_agents=True))
+
+        assert "A2A and MCP enabled but no agents are registered" in caplog.text
+        assert "Import the same agent modules here as in the agent runner" in caplog.text
+
+    @pytest.mark.parametrize(
+        "agents, config",
+        [
+            ({"triage": object()}, _cfg(a2a=True)),
+            ({}, _cfg(mcp=True)),
+            ({}, _cfg()),
+        ],
+        ids=["agents-registered", "mcp-without-agent-tools", "nothing-enabled"],
+    )
+    def test_nothing_is_logged_otherwise(self, registry, caplog, agents, config):
+        registry(agents)
+
+        with caplog.at_level("WARNING"):
+            IOHandler._warn_if_no_agents(config)
+
+        assert "no agents are registered" not in caplog.text
+
+    def test_run_warns_and_carries_on(self, monkeypatch, registry, caplog):
+        registry({})
+        started = {}
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+        monkeypatch.setenv("AK_A2A__ENABLED", "true")
+        AKConfig._reset()
+        monkeypatch.setattr("agentkernel.api.http.RESTAPI.build_app", classmethod(lambda cls, handlers=None: MagicMock()))
+        monkeypatch.setattr("agentkernel.pipeline.io_handler.uvicorn.Server", MagicMock())
+        monkeypatch.setattr(IOHandler, "_install_signal_handlers", classmethod(lambda cls, server: None))
+        monkeypatch.setattr(ThreadRunner, "run", staticmethod(lambda tasks, max_workers=None, exit_on_shutdown=True: started.update(tasks=tasks)))
+
+        with caplog.at_level("WARNING"):
+            IOHandler.run()
+
+        assert "no agents are registered" in caplog.text
+        assert "agent-runner" in [task.thread_name for task in started["tasks"]]
 
 
 class TestRequestHandlerValidation:
