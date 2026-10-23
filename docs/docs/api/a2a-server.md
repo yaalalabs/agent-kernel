@@ -41,6 +41,27 @@ if __name__ == "__main__":
     RESTAPI.run()
 ```
 
+### How A2A requests run
+
+A2A always goes through the [queue pipeline](../advanced/queue-mode-guide.md), like a REST chat
+request: each message is put on the input queue, the agent runner executes it, and the reply is
+read back from the response store. The agent never runs inside the web-server process.
+
+| How the app starts | A2A |
+|---|---|
+| `RESTAPI.run()` with no `execution.queues` block (the laptop default) | ✅ one process, in-memory queue |
+| `IOHandler.run(handlers=[...])`, any transport | ✅ through the queue |
+| `RESTAPI.run(handlers=[...])`, `RESTAPI.run()` on SQS/Kafka/NATS, `AWSRestAPI`, `AWSWebsocketAPI`, `ECSIOHandler` | ❌ refuses to start (`AKConfigError`): these start no agent runner |
+
+- **Split deployments** (SQS, Kafka or NATS, with the agent runner in its own process): import the
+  same agent modules in the IO process as in the runner, because agent cards are built from the
+  IO process's registry. Without them the IO process logs a warning and serves an empty catalog.
+  The response store must be shared (`redis`, `valkey` or `dynamodb`) in every execution mode.
+- **Latency**: the reply is picked up by polling the response store, so it takes at least one
+  `execution.response_store.delay` (1 s without a `response_store` block), and the wait gives up
+  after `retry_count` reads (about 59 s without a block).
+- **Execution mode**: A2A ignores `execution.mode` and always waits for one whole reply.
+
 ## Agent Capabilities
 
 Each exposed agent automatically publishes an A2A **agent card** (via the framework adapter's `get_a2a_card()`), describing its name, description, and endpoint.
@@ -66,14 +87,14 @@ Each agent is mounted under `/a2a/{agent}` with the standard A2A protocol routes
 | Route | Purpose |
 |-------|---------|
 | `POST /a2a/{agent}/v1/message:send` | Send a message to the agent |
-| `POST /a2a/{agent}/v1/message:stream` | Send a message with streamed protocol responses |
+| `POST /a2a/{agent}/v1/message:stream` | Refused: Agent Kernel's cards declare `streaming: false`, so use `message:send` |
 | `GET /a2a/{agent}/v1/tasks` | List tasks |
 | `GET /a2a/{agent}/v1/tasks/{id}` | Get a task |
 | `POST /a2a/{agent}/v1/tasks/{id}:cancel` | Cancel a task |
 | `GET /a2a/{agent}/v1/tasks/{id}:subscribe` | Subscribe to task updates |
 | `GET /a2a/{agent}/v1/card` | Get the agent card |
 
-Incoming A2A messages are executed through the same `Runtime` pipeline as every other surface: hooks, guardrails, and session persistence all apply.
+Incoming A2A messages are executed by the agent runner through the queue pipeline, exactly like a REST chat request: hooks, guardrails, and session persistence all apply. The A2A `context_id` is the Agent Kernel session, so one conversation's messages are processed in order. A successful reply is one text message (a structured reply as its JSON text); a failure is a generic message plus an A2A `InternalError`, with the details in the server logs only.
 
 ## Multi-Agent Network
 

@@ -36,6 +36,29 @@ if __name__ == "__main__":
 
 Agents are automatically exposed as MCP tools if you set `mcp.expose_agents` to `true`. You can selectively expose agents as well. 
 
+An agent tool call always goes through the [queue pipeline](../advanced/queue-mode-guide.md), like a
+REST chat request: it is put on the input queue, the agent runner executes it, and the reply is read
+back from the response store. The tool's `session_id` argument is the Agent Kernel session.
+
+| How the app starts | MCP with `expose_agents: true` |
+|---|---|
+| `RESTAPI.run()` with no `execution.queues` block (the laptop default) | ✅ one process, in-memory queue |
+| `IOHandler.run(handlers=[...])`, any transport | ✅ through the queue |
+| `RESTAPI.run(handlers=[...])`, `RESTAPI.run()` on SQS/Kafka/NATS, `AWSRestAPI`, `AWSWebsocketAPI`, `ECSIOHandler` | ❌ refuses to start (`AKConfigError`): these start no agent runner |
+
+- **Split deployments** (SQS, Kafka or NATS, with the agent runner in its own process): import the
+  same agent modules in the IO process as in the runner, because agent tools are built from the IO
+  process's registry. Without them the IO process logs a warning and lists no agent tools. The
+  response store must be shared (`redis`, `valkey` or `dynamodb`) in every execution mode. With more
+  than one IO replica behind a load balancer, set `mcp.stateless_http: true`, since a stateful MCP
+  session is pinned to one replica.
+- **Latency**: the reply is picked up by polling the response store, so it takes at least one
+  `execution.response_store.delay` (1 s without a `response_store` block), and the wait gives up
+  after `retry_count` reads (about 59 s without a block).
+- **Errors**: a failed run, a timeout or any other error reaches the client as a `ToolError` with a
+  fixed message; the details go to the server logs only.
+- **Execution mode**: MCP ignores `execution.mode` and always waits for one whole reply.
+
 ## Custom Tools
 
 Expose custom tools via MCP:
@@ -52,6 +75,10 @@ def custom_tool(param: str) -> str:
 
 RESTAPI.run()
 ```
+
+Custom tools are your application's own code: they run in the web-server process, not through the
+queue. An MCP server with `expose_agents: false` serves only these tools, so it runs no agent and
+starts on any entry point.
 
 ## Configuration
 

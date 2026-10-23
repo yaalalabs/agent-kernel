@@ -140,6 +140,30 @@ paths unchanged.
 
 ---
 
+## A2A and MCP on the Pipeline
+
+[A2A](../api/a2a-server.md) and [MCP](../api/mcp-server.md) agent tools always run through the
+pipeline: the executor puts the request on the input queue with a `protocol` message attribute
+(`a2a` or `mcp`), the agent runner executes it, and the executor polls the response store for the
+reply. The `protocol` attribute makes the runners produce one whole reply and the Response Handler
+store it, whatever `execution.mode` is, because these callers wait for one whole reply.
+
+- **Entry points**: a bare `RESTAPI.run()` (in-memory queue) and `IOHandler.run(handlers=[...])`
+  serve them. With `a2a.enabled`, or `mcp.enabled` plus `mcp.expose_agents`, every entry point
+  that starts no agent runner (`RESTAPI.run(handlers=[...])`, `RESTAPI.run()` on a broker,
+  `AWSRestAPI`, `AWSWebsocketAPI`, `ECSIOHandler`) raises `AKConfigError` at startup.
+- **Broker transports**: the response store must be shared (`redis`, `valkey` or `dynamodb`) in
+  every execution mode, not only the REST ones. Load the same agent modules in the IO process as
+  in the agent runner, since cards and agent tools are built from the IO process's registry; an
+  IO process without them logs a warning and serves empty catalogs.
+- **Wait budget**: the same `execution.response_store.retry_count × delay` as `rest_sync` (60 × 1 s
+  without a block). Replies arrive on the next poll, so expect at least one `delay` of latency.
+- **Rolling upgrades** in a WebSocket mode: upgrade the agent runners first. A runner from before
+  this change does not forward `protocol`, so the reply would be routed by mode and the A2A/MCP
+  caller would time out. REST modes are unaffected.
+
+---
+
 ## Running Queue Mode on Kafka
 
 Install the extra (`pip install agentkernel[kafka]`) and configure the broker; topics are
