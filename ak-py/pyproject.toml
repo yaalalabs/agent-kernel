@@ -182,7 +182,7 @@ test = [
     "litellm>=1.89.2",
 ]
 a2a = [
-    "a2a-sdk[http-server]>=0.3.6",
+    "a2a-sdk[http-server]>=0.3.6,<1",
 ]
 mcp = [
     "fastmcp>=3.2.0,<4.0.0"

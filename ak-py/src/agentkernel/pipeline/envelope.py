@@ -17,6 +17,7 @@ ATTR_THREAD = "thread"
 # Response Handler routes it to the integration adapter's deliver_chunk instead of guessing from
 # the body shape.
 ATTR_REALTIME = "realtime"
+ATTR_PROTOCOL = "protocol"
 REPLY_CONTEXT_PREFIX = "reply_"
 
 
