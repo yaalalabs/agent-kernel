@@ -265,7 +265,8 @@ dropped) already satisfy the rest.
 With `keda.enabled: true` the tier scales on the sandbox input queue's backlog, mirroring
 the agent-runner scaler; drain follows the same SIGTERM discipline, so keep
 `sandboxWorker.terminationGracePeriodSeconds` (default 600) above your longest sandbox
-effective timeout (including `policy.package_install.timeout`).
+effective timeout (including `policy.package_install.timeout`) plus the worker's 10-second
+backstop and a shutdown margin, so a hung operation is still recorded as timed out before the pod is killed.
 
 ### Standalone sandbox worker (agents in Lambda or ECS)
 

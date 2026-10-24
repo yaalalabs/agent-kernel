@@ -12,7 +12,7 @@
 #   - offline : `network_egress: deny` — E2B ENFORCES this (allow_internet_access=false),
 #               so outbound requests genuinely fail.
 #   - pinned  : an allowlist — mapped to E2B network allow_out rules. NOT yet verified as a
-#               hard limit for domain entries; use `deny` plus a mirror when you need one.
+#               hard limit for domain entries; use `deny` with packages baked into the template when you need one.
 sandbox:
   enabled: true
   profiles:

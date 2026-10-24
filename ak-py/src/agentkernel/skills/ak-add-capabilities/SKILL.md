@@ -1383,8 +1383,9 @@ sandbox:
 ```
 
 Package installs are off unless a profile declares `package_install`, and are rejected on an
-`environment: attached` profile. With `network_egress: deny`, installs need a package mirror or
-packages baked into the image.
+`environment: attached` profile. `network_egress: deny` blocks all egress, so installs in this
+example only work from packages or an offline repository baked into the image (set the matching
+offline `package_installers` prefix); use `network_egress: allow` to install from the public registry.
 
 **3. No agent code changes needed** — the tools and prompt guidance attach automatically. Keep
 the agent's instructions about *what* to do; the sandbox usage is injected.

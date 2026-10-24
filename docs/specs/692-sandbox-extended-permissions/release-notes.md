@@ -105,8 +105,8 @@ Instance capability overrides should use `SandboxCapabilities.derive(...)` inste
 ## Known limits
 
 - **`network_egress: allowlist` on `e2b` and `daytona` is not yet verified as a hard limit** for
-  registry domains such as `pypi.org`. For a hard limit, use `deny` plus a package mirror or
-  pre-baked packages. A live gate (`ak-py/tests/test_sandbox_egress_live.py`, run with
+  registry domains such as `pypi.org`. For a hard limit, use `deny` with packages or an offline
+  repository baked into the image (`deny` blocks all egress, so a network mirror is unreachable). A live gate (`ak-py/tests/test_sandbox_egress_live.py`, run with
   `AK_TEST_SANDBOX_EGRESS=1`) decides whether `allowlist` joins the hardening recipe.
 - **The kill is best-effort.** A process that clears its own environment escapes it, and the kill
   itself is time-bounded.

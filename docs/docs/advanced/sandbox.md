@@ -273,8 +273,10 @@ image with a read-only root filesystem and no installer binaries.
 | `local_subprocess`, `ec2_ssm` | Not enforced. | Not enforced. |
 
 **Hardening recipe.** For a hard limit on what an agent can fetch or install, use
-`network_egress: deny` and serve packages from a mirror inside your network or bake them into
-the image (the offline installer prefixes are in the [posture table](#installer-prefixes-per-posture)).
+`network_egress: deny` and bake the packages into the image, or ship an offline repository
+(a wheelhouse or npm cache) inside it (the offline installer prefixes are in the
+[posture table](#installer-prefixes-per-posture)). `deny` blocks all egress, so a sandbox under it
+cannot reach a network mirror; a mirror needs a policy that permits access to it.
 Do not rely on `allowlist` on `e2b` or `daytona` as a hard limit until the live egress gate
 (`ak-py/tests/test_sandbox_egress_live.py`) has passed against that provider.
 
@@ -315,7 +317,7 @@ profiles:
   rejected at config load: an install would change a system the framework does not own.
 - **Startup warnings.** The agent process warns once per profile when installs are permitted
   together with `scope: per_runtime` (an install changes a sandbox every session shares),
-  `network_egress: deny` (installs then need a mirror or pre-baked packages), or, on `docker` and
+  `network_egress: deny` (installs then need packages or an offline repository baked into the image), or, on `docker` and
   `kubernetes`, a filesystem policy (the root filesystem is then read-only; see the posture table).
 
 ### Package specs
