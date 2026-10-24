@@ -19,9 +19,16 @@ All 1.x behaviour quoted here was run on **a2a-sdk 1.2.3** in a scratch venv on 
 - `ak-py/uv.lock`: `uv lock --upgrade-package a2a-sdk` (today resolves 0.3.26, `uv.lock:19-20`).
   - 1.2.3's `http-server` extra brings `starlette` and `sse-starlette`, which `create_rest_routes`
     needs. No `grpc` is needed: 1.0.0 failed `import a2a.server.routes` without it, 1.1.2+ does not.
-- `examples/k8s/openai-queue-mode/pyproject.toml:9`: same exact pin; re-lock (its lock has 0.3.26).
-- `examples/api/a2a/multi/uv.lock:11-12` (0.3.6): the example's `pyproject.toml` has no direct pin,
-  so `uv lock --upgrade-package a2a-sdk` moves it.
+  - It no longer brings `fastapi`, which 0.3's did. The A2A surface is served by `RESTAPI`
+    (`fastapi` + `uvicorn`), and an app listing `a2a` without `api` used to get `fastapi` from the
+    SDK by accident. So the `a2a` extra now ships them itself: `fastapi>=0.118.0`,
+    `uvicorn>=0.37.0`, the same floors as the `api` extra (the #760 precedent: the webhook platform
+    extras ship `fastapi`). `agentkernel[a2a]` alone serves A2A again.
+- `examples/k8s/openai-queue-mode/pyproject.toml:9`: same exact pin. Its `uv.lock` is git-ignored
+  (`examples/k8s/openai-queue-mode/.gitignore:5`), so nothing to commit there.
+- `examples/api/a2a/multi`: its `pyproject.toml` has no direct pin, so `uv lock --upgrade-package
+  a2a-sdk` moves the lock (0.3.6 → 1.2.3); its `agentkernel[cli,smolagents,openai,a2a]` also gains
+  `api`, so it works against the published `agentkernel` whose `a2a` extra predates the fix above.
 - The six framework extras are unchanged: none imports `a2a`.
 
 ### 2. Card builder (`A2ACardBuilder`, `core/builder.py:19-48`)
@@ -424,7 +431,8 @@ true in scope, false (and logged) when reading config raises; `_applies_to` agre
 `EXTENSION_URI` is the v0.9.1 identifier; `a2a_data` wraps an A2UI object and returns a list or
 another media type's payload as is.
 
-**`tests/test_packaging_extras.py`**: the `a2a` extra is exactly `a2a-sdk[http-server]==1.2.3`.
+**`tests/test_packaging_extras.py`**: the `a2a` extra is exactly `a2a-sdk[http-server]==1.2.3`,
+and ships `fastapi` and `uvicorn`.
 
 ### New file: `tests/test_api_a2a_surface.py`
 

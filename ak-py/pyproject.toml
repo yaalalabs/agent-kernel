@@ -183,6 +183,8 @@ test = [
 ]
 a2a = [
     "a2a-sdk[http-server]==1.2.3",
+    "fastapi>=0.118.0",
+    "uvicorn>=0.37.0",
 ]
 mcp = [
     "fastmcp>=3.2.0,<4.0.0"

@@ -79,7 +79,7 @@ it has always carried when it is not, so nothing changes for a client that has n
 | Conversation threads | the live reply; stored history is not labelled |
 | Streaming / AG-UI | yes, with your own `on_stream_event` hook — see below |
 | MCP | yes, as `structuredContent` with the label in `_meta` |
-| A2A | not yet; it arrives with the `a2a-sdk` 1.x port |
+| A2A | yes, as a data part labelled in `mediaType` and `metadata.mimeType` (an object as a one-item list); the agent card declares the A2UI v0.9.1 extension — see [A2A Server](../api/a2a-server.md) |
 
 ## Limits worth knowing before you build on it
 

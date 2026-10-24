@@ -986,12 +986,20 @@ ak-py/src/agentkernel/
 ├── a2ui/                    # A2UI labelling capability: A2UIPostHook (labels a parsed JSON reply
 │   │                        #   `application/a2ui+json`), NoOpA2UIPostHook, A2UIPostHookFactory.
 │   │                        #   A capability, not an integration — it adds no surface of its own,
-│   │                        #   and it is the only place in src/ that names A2UI
+│   │                        #   and it is the only place in src/ that names A2UI. Also answers by
+│   │                        #   agent name for surfaces that describe it (#762): A2UIPostHook.scopes
+│   │                        #   (the one scoping rule), A2UIPostHookFactory.labels (enabled + in
+│   │                        #   scope), EXTENSION_URI (the v0.9.1 A2A extension id) and a2a_data
+│   │                        #   (an A2UI object as the binding's one-item list)
 │   └── hook.py
 ├── api/                     # API layers
 │   ├── handler.py           # REST API handler
 │   ├── http.py              # RESTAPI class (run() delegates to pipeline IOHandler: see activation rule)
-│   ├── a2a/                 # Agent-to-Agent server (executor enqueues via QueueRequestClient, #780)
+│   ├── a2a/                 # Agent-to-Agent server on a2a-sdk 1.2.3, A2A 1.0 only (#762): the SDK's
+│   │                        #   create_rest_routes + create_agent_card_routes per agent (no /v1, no
+│   │                        #   /{tenant}); executor enqueues via QueueRequestClient (#780), sends a
+│   │                        #   labelled reply as a data part (media_type + metadata.mimeType), raises
+│   │                        #   InternalError on failure; card-less agents are skipped with a warning
 │   └── mcp/                 # MCP server (agent tools enqueue via QueueRequestClient, #780)
 ├── pipeline/                # Queue execution pipeline (#495): see its section
 │   ├── envelope.py           # QueueMessage + attribute constants, QueueName

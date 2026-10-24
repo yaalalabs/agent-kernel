@@ -212,7 +212,7 @@
         "agents:",
         "agentkernel[",
         "a2a",
-        ".well-known/agent.json"
+        ".well-known/agent-card.json"
       ]
     },
     {

@@ -55,12 +55,12 @@ does not import on 1.x), so iteration 2 is the one large step; everything else i
 ## Iteration 4: Examples
 
 - **Goal:** both example clients run against a 1.x server.
-- **Files:** `examples/api/a2a/multi/client.py`, `examples/api/a2a/multi/uv.lock`,
-  `examples/k8s/openai-queue-mode/protocol_client.py`, `examples/k8s/openai-queue-mode/pyproject.toml`,
-  `examples/k8s/openai-queue-mode/uv.lock`
+- **Files:** `examples/api/a2a/multi/client.py`, `examples/api/a2a/multi/pyproject.toml`,
+  `examples/api/a2a/multi/uv.lock`, `examples/k8s/openai-queue-mode/protocol_client.py`,
+  `examples/k8s/openai-queue-mode/pyproject.toml` (its `uv.lock` is git-ignored)
 - **Steps:**
   1. Port both clients to the 1.x shape in spec [Consumer changes](spec.md#consumer-changes).
-  2. k8s pin `==1.2.3`; `uv lock --upgrade-package a2a-sdk` in both examples.
+  2. k8s pin `==1.2.3`; multi gains the `api` extra (spec §1); re-lock both.
 - **Verify:** `cd examples/api/a2a/multi && ./build.sh local && uv run pytest -s a2a_test.py` (needs
   `OPENAI_API_KEY`); `make lint-check-all`.
 
@@ -96,7 +96,11 @@ does not import on 1.x), so iteration 2 is the one large step; everything else i
 - **Bundled user skill:** `ak-py/src/agentkernel/skills/ak-add-capabilities/SKILL.md:563` — the
   well-known path is wrong today (`/.well-known/agent.json`); make it
   `/a2a/{agent}/.well-known/agent-card.json` and say callers need an a2a-sdk 1.x client.
-- **No update needed (verified):** `ak-py/README.md:997-1013` (A2A config fields unchanged);
+  Its example `a2a.url` (`http://localhost:8000`) also loses the `/a2a` base, which 1.x clients
+  would now call; and `evals/evals.json` (`cap-a2a`) expects the card path.
+- **No update needed (verified):** `docs/versioned_docs/version-0.*/api/a2a-server.md` (they
+  document released versions, which do serve `/v1/`);
+  `ak-py/README.md:997-1013` (A2A config fields unchanged);
   `examples/api/a2a/multi/README.md` and `examples/k8s/openai-queue-mode/README.md` (no 0.3 route
   or SDK-version text).
 - **Verify:** run the `ak-dev-sync-docs-from-branch` and `ak-dev-sync-skills-from-branch` flows

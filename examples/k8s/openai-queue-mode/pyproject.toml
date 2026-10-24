@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "agentkernel[openai,api,nats,kafka,valkey,auth,a2a,mcp]>=0.9.5",
-    "a2a-sdk[http-server]>=0.3.6,<1",
+    "a2a-sdk[http-server]==1.2.3",
 ]
 
 [dependency-groups]

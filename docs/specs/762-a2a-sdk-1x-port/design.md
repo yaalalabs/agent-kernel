@@ -10,7 +10,7 @@
 | **Base** | `feature/780-a2a-and-mcp-from-queue-pipeline` (A2A already runs through the queue). |
 | **Read time** | About 5 minutes. Code evidence is folded away under ▸ **Evidence**. |
 | **Breaking?** | Yes: A2A 0.3 clients are no longer served, and apps that import `a2a` 0.3 types must port. See [Breaking changes](#breaking-changes). |
-| **Decisions** | All 8 resolved (D2 superseded by D7): [Decisions](#decisions) |
+| **Decisions** | All 9 resolved (D2 superseded by D7): [Decisions](#decisions) |
 
 ---
 
@@ -111,6 +111,9 @@ flowchart LR
 - `ak-py/pyproject.toml` `a2a` extra pins `a2a-sdk[http-server]==1.2.3` (D5).
   - An exact pin, not a range: an unbounded range is what caused this bug.
   - `ak-py/uv.lock` is re-locked; the six framework adapters need no new extra.
+- The `a2a` extra also ships `fastapi` and `uvicorn` (D9).
+  - 1.x's `http-server` extra dropped `fastapi`, which 0.3's brought; an app on
+    `agentkernel[a2a]` without `api` would otherwise lose the server A2A is served by.
 - Examples that pin the SDK move to the same version and re-lock:
   `examples/k8s/openai-queue-mode/pyproject.toml:9`, `examples/api/a2a/multi/uv.lock` (pins 0.3.6).
 
@@ -291,6 +294,13 @@ flowchart LR
   - A2A surface only: REST, WebSocket, MCP and the rest keep today's shape.
   - The rule lives in `a2ui/` (`a2ui/` stays the only package that names A2UI); other media types
     are sent as they are.
+
+- **D9. The `a2a` extra ships `fastapi` and `uvicorn`** (2026-10-24, requester).
+  - Found porting the examples: a2a-sdk 1.2.3's `http-server` extra brings `starlette` and
+    `sse-starlette` only, while 0.3's brought `fastapi`. `examples/api/a2a/multi` listed `a2a`
+    without `api` and was served only because of that.
+  - `agentkernel[a2a]` alone serves A2A again, as the webhook platform extras ship `fastapi`
+    (#760). Floors match the `api` extra.
 
 ## Open questions
 

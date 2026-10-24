@@ -11,7 +11,7 @@ import uuid
 import httpx
 import pytest
 from a2a.client import A2ACardResolver, ClientConfig, ClientFactory
-from a2a.helpers import get_message_text
+from a2a.helpers import get_data_parts, get_message_text
 from a2a.types import Message, Part, Role, SendMessageRequest
 from fastmcp import Client
 
@@ -35,7 +35,10 @@ BASE_URL = "http://ak.test"
 
 
 class CountingRunner(Runner):
-    """Replies with the prompt, the thread it ran on, and the session's turn count."""
+    """Replies with the prompt, the thread it ran on, and the session's turn count.
+
+    A JSON prompt is echoed as is, so the A2UI hook has a body it can label.
+    """
 
     runs: list[tuple[str, str]] = []
 
@@ -46,6 +49,8 @@ class CountingRunner(Runner):
         thread = threading.current_thread().name
         CountingRunner.runs.append((thread, session.id))
         prompt = requests[0].prompt if isinstance(requests[0], AgentRequestText) else ""
+        if prompt.startswith(("{", "[")):
+            return AgentReplyText(response=prompt)
         return AgentReplyText(response=f"{prompt}|thread={thread}|turn={turn}")
 
     async def stream(self, agent, session, requests):  # pragma: no cover - a tagged message never streams
@@ -139,7 +144,7 @@ def _configure(monkeypatch, mode=None, **env):
     AKConfig._reset()
 
 
-async def _a2a_send(texts: list[str], context_id: str) -> list[str]:
+async def _a2a_messages(texts: list[str], context_id: str) -> list[Message]:
     """Send each text as one A2A message:send in the same context, the way an A2A client does."""
     app = RESTAPI.build_app(handlers=[])
     agent_url = f"{BASE_URL}/a2a/{AGENT_NAME}"
@@ -151,8 +156,12 @@ async def _a2a_send(texts: list[str], context_id: str) -> list[str]:
         for text in texts:
             message = Message(message_id=str(uuid.uuid4()), context_id=context_id, role=Role.ROLE_USER, parts=[Part(text=text)])
             async for item in client.send_message(SendMessageRequest(message=message)):
-                replies.append(get_message_text(item.message))
+                replies.append(item.message)
     return replies
+
+
+async def _a2a_send(texts: list[str], context_id: str) -> list[str]:
+    return [get_message_text(message) for message in await _a2a_messages(texts, context_id)]
 
 
 async def _mcp_call(prompts: list[str], session_id: str) -> list[str]:
@@ -177,6 +186,34 @@ class TestA2A:
         assert pump.errors == []
         assert replies == [f"first|thread={PUMP_THREAD}|turn=1", f"second|thread={PUMP_THREAD}|turn=2"]
         assert CountingRunner.runs == [(PUMP_THREAD, context_id), (PUMP_THREAD, context_id)]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("mode", [None, "stream"])
+    async def test_a_labelled_reply_arrives_through_the_queue_as_a_data_part(self, monkeypatch, mode):
+        """The A2UI hook labels the reply on the runner; the A2A caller gets a data part (#762)."""
+        _configure(monkeypatch, mode, AK_A2A__ENABLED="true", AK_A2UI__ENABLED="true")
+        # System post-hooks are built once per process; rebuild them with A2UI on, and restore after.
+        monkeypatch.setattr(Runtime, "_system_post_hooks", None)
+
+        with Pump(stream=mode == "stream") as pump:
+            [message] = await _a2a_messages(['{"createSurface": {"surfaceId": "s1"}}'], f"a2a-{uuid.uuid4()}")
+
+        assert pump.errors == []
+        [part] = message.parts
+        assert part.media_type == "application/a2ui+json"
+        assert dict(part.metadata) == {"mimeType": "application/a2ui+json"}
+        assert get_data_parts([part]) == [[{"createSurface": {"surfaceId": "s1"}}]]
+
+    @pytest.mark.asyncio
+    async def test_the_0_3_routes_are_not_served(self, monkeypatch):
+        """D1: A2A 1.0 only; the SDK's v0.3 compatibility routes stay off."""
+        _configure(monkeypatch, AK_A2A__ENABLED="true")
+        app = RESTAPI.build_app(handlers=[])
+
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=BASE_URL) as http:
+            response = await http.post(f"/a2a/{AGENT_NAME}/v1/message:send", json={"message": {}})
+
+        assert response.status_code == 404
 
 
 class TestMCP:

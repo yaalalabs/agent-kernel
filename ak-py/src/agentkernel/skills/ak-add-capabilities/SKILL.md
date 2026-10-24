@@ -557,10 +557,13 @@ a2a:
   enabled: true
   agents:
     - general         # List agents to expose via A2A
-  url: "http://localhost:8000"
+  url: "http://localhost:8000/a2a"   # public base of the A2A routes; each card advertises {url}/{agent}
 ```
 
-3. No code changes needed. The A2A well-known endpoint is automatically available at `/.well-known/agent.json`.
+3. No code changes needed. Each agent's card is served at `/a2a/{agent}/.well-known/agent-card.json`
+   (all cards at `/a2a/catalog`). Agent Kernel serves A2A 1.0 only (`a2a-sdk` 1.2.3): callers need
+   an `a2a-sdk` 1.x client, built with `ClientFactory` (it sends the required `A2A-Version: 1.0`
+   header). A reply labelled by the A2UI capability arrives as a data part.
 
 4. Know how A2A calls run: through the queue pipeline, never in the web-server process. Each
    `message:send` is enqueued (the A2A `context_id` is the session), the agent runner executes it,

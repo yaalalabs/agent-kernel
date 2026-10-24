@@ -8,11 +8,10 @@ The fixture deliberately carries a `datetime` and a `Decimal`. Parity on a paylo
 risk proves nothing — those two are exactly the values the encoders rendered three different ways,
 and one of them crashed on.
 
-A2A still sits out: it carries a structured payload as JSON text rather than a data part, and it
-joins when the a2a-sdk 1.x port (#762) adds the data part.
-
-MCP runs over the body a runner stores (`ResponseBuilder.build_response`), because since #780 that body
-is what the queue carries to the MCP executor.
+MCP and A2A run over the body a runner stores (`ResponseBuilder.build_response`), because since #780
+that body is what the queue carries to their executors. A2A carries the payload as a data part
+(#762), and its one allowed difference is the A2UI binding's: a single object goes out as a
+one-item list of messages.
 """
 
 import datetime
@@ -30,7 +29,7 @@ MEDIA_TYPE = "application/a2ui+json"
 
 
 class _QueueClient:
-    """Answers every MCP request with the body a runner stores for ``reply``."""
+    """Answers every MCP or A2A request with the body a runner stores for ``reply``."""
 
     def __init__(self, reply):
         from agentkernel.pipeline.request_client import QueuedReply
@@ -40,6 +39,32 @@ class _QueueClient:
 
     async def request(self, body, protocol):
         return self._reply
+
+
+async def _a2a_part(reply, monkeypatch):
+    """The one part the A2A executor sends for ``reply``, through a real 1.x RequestContext."""
+    from a2a.server.agent_execution import RequestContext
+    from a2a.server.context import ServerCallContext
+    from a2a.server.events import EventQueue
+    from a2a.types import Message, Part, Role, SendMessageRequest
+
+    from agentkernel.api.a2a.a2a import A2A
+
+    class _Queue(EventQueue):
+        def __init__(self):
+            self.events = []
+
+        async def enqueue_event(self, event) -> None:
+            self.events.append(event)
+
+    monkeypatch.setattr(A2A, "_client", _QueueClient(reply))
+    message = Message(message_id="m1", role=Role.ROLE_USER, parts=[Part(text="hi")])
+    context = RequestContext(ServerCallContext(), request=SendMessageRequest(message=message), task_id="t1", context_id="s1")
+    queue = _Queue()
+    await A2A.Executor("expenses").execute(context, queue)
+    [event] = queue.events
+    [part] = event.parts
+    return part
 
 
 RAW_CONTENT = {
@@ -126,12 +151,27 @@ async def test_mcp_carries_the_same_pair(labelled_reply, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_a2a_carries_the_same_pair(labelled_reply, monkeypatch):
+    """A data part labelled in both places A2A and A2UI clients look; the object as a one-item list."""
+    from a2a.helpers import get_data_parts
+
+    part = await _a2a_part(labelled_reply, monkeypatch)
+
+    assert get_data_parts([part]) == [[EXPECTED_CONTENT]]
+    assert part.media_type == MEDIA_TYPE
+    assert dict(part.metadata) == {"mimeType": MEDIA_TYPE}
+
+
+@pytest.mark.asyncio
 async def test_an_array_payload_is_reshaped_only_by_mcp(monkeypatch):
     """The one place parity cannot hold, and the only place it is allowed not to.
 
     A2UI on v0.9.1 is a sequence, so a reply may carry an array. Every surface here carries it
-    unchanged except MCP, whose `structuredContent` is an object by specification.
+    unchanged except MCP, whose `structuredContent` is an object by specification. A2A included:
+    an array is already the list of messages its binding requires.
     """
+    from a2a.helpers import get_data_parts
+
     from agentkernel.api.mcp.akmcp import MCP
     from agentkernel.integration.agui.mapping import AGUIMapper
 
@@ -143,6 +183,7 @@ async def test_an_array_payload_is_reshaped_only_by_mcp(monkeypatch):
     agui = AGUIMapper.to_agui(DataMessage(message_id="m1", content=content, media_type=MEDIA_TYPE))
 
     assert rest == stream["event"]["content"] == agui.value == content
+    assert get_data_parts([await _a2a_part(reply, monkeypatch)]) == [content]
 
     monkeypatch.setattr(MCP, "_client", _QueueClient(reply))
     mcp = await MCP.Executor("expenses").execute("s1", "hi", AsyncMock())
@@ -162,16 +203,20 @@ def test_thread_history_records_the_same_bytes_from_either_path(labelled_reply):
     assert json.loads(direct) == EXPECTED_CONTENT
 
 
-def test_every_surface_agrees_on_the_payload(labelled_reply):
+@pytest.mark.asyncio
+async def test_every_surface_agrees_on_the_payload(labelled_reply, monkeypatch):
     """The assertion the file exists for: one value, every carrier, no divergence."""
+    from a2a.helpers import get_data_parts
+
     from agentkernel.integration.agui.mapping import AGUIMapper
 
     rest = ResponseBuilder.build_response(200, "s1", rest_api_mode=True, result=labelled_reply)["result"]
     _status, async_body = ResponseBuilder.build_response(200, "s1", rest_api_mode=False, result=labelled_reply)
     stream = json.loads(ResponseBuilder.stream_chunk(StreamChunk(event=DataMessage(message_id="m1", content=RAW_CONTENT)), "s1"))
     agui = AGUIMapper.to_agui(DataMessage(message_id="m1", content=RAW_CONTENT, media_type=MEDIA_TYPE))
+    [[a2a]] = get_data_parts([await _a2a_part(labelled_reply, monkeypatch)])  # the binding's one-item list
 
-    assert rest == async_body["result"] == stream["event"]["content"] == agui.value == EXPECTED_CONTENT
+    assert rest == async_body["result"] == stream["event"]["content"] == agui.value == a2a == EXPECTED_CONTENT
 
 
 def test_an_unlabelled_reply_still_leaves_as_a_string_everywhere():

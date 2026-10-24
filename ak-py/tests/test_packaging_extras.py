@@ -30,3 +30,15 @@ def test_the_slack_extra_ships_aiohttp():
 
 def test_the_gmail_extra_stays_fastapi_free():
     assert "fastapi" not in _requirement_names("gmail")
+
+
+def test_the_a2a_extra_pins_one_exact_sdk_version():
+    """#762 D5: an unbounded range is what let 1.x break the import."""
+    extras = tomllib.loads(PYPROJECT.read_text())["project"]["optional-dependencies"]
+
+    assert "a2a-sdk[http-server]==1.2.3" in extras["a2a"]
+
+
+def test_the_a2a_extra_ships_the_server_it_is_served_by():
+    """a2a-sdk 1.x's http-server extra dropped fastapi, which 0.3's brought; RESTAPI serves A2A (#762)."""
+    assert {"fastapi", "uvicorn"} <= _requirement_names("a2a")
