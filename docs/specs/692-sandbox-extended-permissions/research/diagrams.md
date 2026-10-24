@@ -345,5 +345,5 @@ sequenceDiagram
   QW->>Q: publish completion
   Q-->>EM: completion, tool returns result or error JSON
   Note over EM,G: Old agent to new worker: new fields decode as absent, so gated operations are denied
-  Note over EM,G: New agent to old worker: old worker drops the new fields and ignores ecosystem (runs pip). The agent-side guard prevents unchecked installs. Upgrade workers first.
+  Note over EM,G: New agent to old worker: old worker drops the new fields and ignores ecosystem (runs pip). The agent-side guard checks permission only. Upgrading workers first is what prevents the mismatch.
 ```

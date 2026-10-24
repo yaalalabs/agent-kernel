@@ -119,7 +119,8 @@ check also runs agent-side before a request is submitted.
 - **Worker (authoritative):** `BrokerWorkerCore` invokes it after `_enforce_policy` and before the sandbox is acquired.
   It therefore covers every broker flavor (embedded, thread, queue) and bring-your-own `ExecutionManager` callers.
 - **Agent side (defence in depth):** `ExecutionManager` runs the same guard before submitting a request.
-  - This also protects against a new agent talking to an old worker during a rolling upgrade (see Wire compatibility).
+  - During a rolling upgrade it still blocks unpermitted installs sent to an old worker. It checks permission only:
+    it does not stop an old worker running a permitted non-`python` install as `pip install` (see Wire compatibility).
 
 ### Configuration
 
@@ -183,13 +184,14 @@ check also runs agent-side before a request is submitted.
   - **Old agent to new worker:** the new fields decode as absent, so package installation is denied.
   - **New agent to old worker:** the old worker silently drops the new policy fields, because the models use
     Pydantic's default `extra="ignore"`.
-    - The agent-side guard keeps installs from running unchecked.
+    - The agent-side guard still blocks unpermitted installs, but it checks permission only.
     - The old worker passes only `payload["packages"]` (`worker.py:220`) and ignores `ecosystem`, so a permitted
       non-`python` install would run as `pip install`.
     - It also ignores `package_install.timeout`, so an install runs under `policy.timeout`, as today.
   - **New worker to old agent:** a `SandboxPermissionDeniedError` completion degrades to `ExecutionBrokerError` on the
     old agent (`queue.py:162-165`). The request is still denied.
-  - **Rollout rule:** upgrade queue workers before agent pods. The docs say so.
+  - **Rollout rule (hard requirement):** upgrade queue workers before agent pods. It is the only guard against the
+    ecosystem mismatch above; the docs state it as a deployment precondition.
 
 ### Capability 1: code execution in additional languages
 
