@@ -58,7 +58,7 @@ class IntegrationProducer:
             "single-process in_memory transport"
         )
 
-    def enqueue(self, adapter_name: str, request: InboundRequest) -> Dict[str, Any]:
+    def enqueue(self, adapter_name: str, request: InboundRequest, attributes: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
         """Enqueue one parsed platform message.
 
         ``user_id`` is deliberately not stamped as a message attribute: that attribute is the
@@ -68,10 +68,18 @@ class IntegrationProducer:
         :param adapter_name: The inbound adapter's ``name``; becomes the routing attribute and
             namespaces the dedup key.
         :param request: The normalized request to send.
+        :param attributes: Extra message attributes, merged after the integration and reply attributes
+            (a realtime edge's end-of-session control rides here).
         :return: The transport's send response.
-        :raises ValueError: If the serialized reply context exceeds the budget.
+        :raises ValueError: If the serialized reply context exceeds the budget, or an extra attribute
+            collides with the integration or a reply attribute.
         """
-        attributes = {ATTR_INTEGRATION: adapter_name, **self._reply_attributes(adapter_name, request.reply_context)}
+        merged = {ATTR_INTEGRATION: adapter_name, **self._reply_attributes(adapter_name, request.reply_context)}
+        for key, value in (attributes or {}).items():
+            if key in merged:
+                raise ValueError(f"Extra attribute '{key}' collides with an attribute the integration producer sets")
+            merged[key] = value
+        attributes = merged
         body = BaseRunRequest(
             prompt=request.prompt,
             agent=request.agent,

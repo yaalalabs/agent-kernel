@@ -806,6 +806,10 @@ class OpenAIRealtimeRunner(BaseRealtimeRunner):
         kind = data.type
         if kind in ("transcript_delta", "output_text_delta"):
             await self._callback("transcript_delta", {"delta": data.delta, "message_id": data.item_id})
+        elif kind == "input_audio_transcription_completed":
+            text = (data.transcript or "").strip()
+            if text:
+                await self._callback("input_transcript", {"text": text, "message_id": data.item_id})
         elif kind == "turn_started":
             self._response_in_flight = True
         elif kind == "turn_ended":

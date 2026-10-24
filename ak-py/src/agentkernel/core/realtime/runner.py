@@ -118,6 +118,8 @@ class RealtimeRunner(Runner):
               carries the roster when this change names an agent the roster did not hold. The pool
               announces :meth:`initial_speaker` (and its :meth:`team`) itself, so an adapter reports
               only the changes, plus the first speaker when :meth:`initial_speaker` is ``None``
+            - ``input_transcript``: ``{"text": str, "message_id": str}``, one finished caller
+              utterance; report it only when the text is not empty, and never report partial text
         """
         raise NotImplementedError()
 

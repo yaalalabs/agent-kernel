@@ -82,3 +82,128 @@ flowchart LR
 ## Open questions
 
 - Can the LiveKit edge report actual playout to OpenAI's native playback tracker? A successful AK queue send is not proof that the listener heard the audio.
+
+
+## Edge additions for the realtime requirements meeting (C1 to C6)
+
+Six small, framework-neutral additions to Agent Kernel, built for the [realtime requirements meeting](../../../use-cases/realtime-requirements-meeting/docs/design.md) use case. Each works the same for OpenAI and ADK. No new `AKConfig` fields.
+
+Each change works the same way for OpenAI and ADK. The use case picks ADK, but nothing in AK assumes it.
+
+```mermaid
+sequenceDiagram
+    participant C as Client (room)
+    participant G as LiveKit gateway
+    participant P as Realtime pool
+    participant A as Adapter: ADK or OpenAI
+    participant N as Native session
+    participant U as Use case: event log
+
+    C->>G: speaks
+    G->>P: audio (queue)
+    P->>A: append_audio
+    A->>N: audio
+    N-->>A: caller's words as text
+    A-->>P: input_transcript (C1, new)
+    P-->>G: InputTranscript chunk
+    G-->>C: caption for the client (C2)
+    G-->>U: on_transcript: client line (C2)
+    N-->>A: hands off, PM to Architect (native)
+    A-->>P: agent_changed (v1)
+    P-->>G: AgentChanged chunk
+    G-->>U: on_agent_changed (C2)
+    N-->>A: Architect's audio + text
+    A-->>P: audio_delta, transcript_delta
+    P-->>G: paced audio + text
+    G-->>C: Architect's voice + live caption (C2)
+    G-->>U: on_transcript: Architect line, at turn end (C2)
+```
+
+### C1. The caller's words as an event
+
+- Add a stream event, `InputTranscript` (`core/event.py`, next to `AgentChanged`). It carries one finished caller
+  utterance as text.
+- Add a `RealtimeRunner` callback event, `input_transcript`, to the contract's list of events.
+- Map it in both adapters from what the SDK already produces:
+  - **ADK:** an event with `author == "user"` and a finished `input_transcription`.
+  - **OpenAI:** the `input_audio_transcription_completed` model event.
+- The pool emits it **in spoken order** with the agents' output, so the transcript reads in the right order.
+- **No new AK setting.** It appears when the SDK's own input transcription is on:
+  - ADK: on by default. `RunConfig.input_audio_transcription` defaults to on
+    (`google/adk/agents/run_config.py:127`).
+  - OpenAI: set `input_audio_transcription` in the session's model settings, through `Module.run_options`.
+- An edge that does not use it (the existing examples) ignores it.
+- **Test:** for each SDK, a scripted caller utterance gives exactly one `InputTranscript` chunk, before the reply that
+  answers it.
+
+### C2. Live captions and edge hooks
+
+- **Live captions:** the LiveKit gateway publishes text as it plays.
+  - Agent text deltas go out on a LiveKit text stream from the speaking agent's participant, paced with the audio.
+  - The caller's line goes out attributed to the caller.
+  - Use LiveKit's transcription conventions, so standard LiveKit client components can show the captions
+    ([LiveKit text docs](https://docs.livekit.io/agents/build/text/)):
+    - the text stream topic `lk.transcription`;
+    - the attributes `lk.transcribed_track_id`, `lk.segment_id` and `lk.transcription_final`;
+    - the sender identity is the transcribed participant.
+- **Keep today's turn-end chat message**, so existing clients keep working.
+- **Three hooks for server code**, as overridable methods on `StatefulEdgeAdapter`. Each does nothing by default, so
+  existing edges are unchanged:
+  - `on_transcript(line)`: one `TranscriptLine` (speaker, `user` or `agent`, text, time, message id, `typed`) for each
+    finished line.
+    - The LiveKit gateway calls it once for each finished agent turn (per speaker, split at handoffs) and once for each
+      caller line.
+    - **A message the client types in the room is a caller line too**, with `typed=True`. It is staged for the model as
+      before; the hook is what lets a server read it. An agent participant's own chat is ignored, as before.
+    - An interrupted turn gives the part that was spoken, marked `interrupted`.
+  - `on_agent_changed(agent, previous)`: when the speaking agent changes, in order with the lines.
+  - `on_error(message)`: when an error chunk reaches the edge, besides today's chat text.
+- Hooks must never block the audio. Each edge runs its hooks in order on one worker thread of its own, off the
+  delivery path. A hook that raises is logged and ignored.
+- **Example:** the use case subclasses the gateway and turns each hook call into an event-log entry (A5).
+- **Test:** a scripted turn with a handoff and an error checks three things: lines and speaker changes arrive in
+  order with the right speaker, captions come from the right participant, and a hook that raises does not stop the
+  audio.
+
+### C3. Start and stop a gateway while the app runs
+
+- Extend `GatewayRunner` (no new sibling class) so it can **start in the background**. It runs the gateway on its own
+  thread and returns once the gateway has joined the room or failed.
+- Add a **stop** that ends that one gateway cleanly. It leaves the room and removes its registry entry.
+- Gateways started at boot through `IOHandler.run(gateways=...)` behave as today.
+- A background gateway still stops when the process shuts down (`ThreadRunner.shutdown_event`).
+- **Works for any `StatefulEdgeAdapter`**, not only LiveKit.
+- **Test:** start two gateways after boot, stop one, and the other keeps working. Each reply reaches only its own room.
+
+### C4. End a realtime session at once
+
+- When an edge stops (C3, or the room closing), it sends an **end-of-session control** on the input queue for its
+  session id. This uses the existing queue, not a new one.
+- The realtime pool closes that session's native connection at once, instead of waiting up to 300 s for idle eviction.
+- It works when the gateway and the pool run in different processes, because it goes through the queue.
+- **A late audio frame cannot reopen it.** The pool ignores input for an ended session for a short while.
+- **Trailing output is dropped quietly.** The Response Handler drops chunks still on their way to an edge that has just
+  ended, instead of retrying them into permanent-failure errors.
+- **Test:** after the control, the adapter's `disconnect` has run. Later audio for that session id is dropped, and a
+  chunk for the ended edge is not retried.
+
+### C5. A meeting's own first words
+
+- Turn the fixed greeting (`adapter.py:258`) into an overridable gateway method that returns the opening prompt, or
+  `None` to send nothing.
+- Its default is today's text, so existing examples behave as today.
+- **Example:** the use case returns *"Open the meeting as the PM: greet {name} and ask what they want to build."*
+- **Test:** returning `None` sends no opening request, and a custom prompt is sent once.
+
+### C6. Back off after a failed native session
+
+- **The problem:** a native session that fails right after it opens (a bad setting, a quota error) was replaced by the
+  next audio frame, about every 100 ms. Each replacement failed again, sent an error chunk to the room and hit the model
+  provider.
+- **The pool backs off per session.** After a failure, input for that session is dropped for 1 s, then 2 s, 4 s... up to
+  30 s for each further failure in a row. A new connection is not opened before that time.
+- **It resets:** a connection that produced output (audio, a transcript or a turn end) before it failed starts the count
+  again; ending the session clears it.
+- **Not config:** the delays are constants of the pool, like its other timeouts.
+- **Test:** repeated immediate failures drop input between attempts with delays of 1, 2, 4... s; a connection that
+  produced output restarts the count; ending the session clears it.

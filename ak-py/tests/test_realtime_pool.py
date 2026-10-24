@@ -1,17 +1,18 @@
 import asyncio
 import json
 import threading
+import time
 import types
 
 import pytest
 
 from agentkernel import Agent, Runner, Session
 from agentkernel.core.event import TextDelta
-from agentkernel.core.model import AgentReplyText, ExecutionMode, StreamChunk
+from agentkernel.core.model import AgentReplyText, AgentRequestText, BaseRunRequest, ExecutionMode, StreamChunk
 from agentkernel.core.realtime import RealtimeRunner
 from agentkernel.core.runtime import Runtime
 from agentkernel.core.session.in_memory import InMemorySessionStore
-from agentkernel.pipeline.envelope import ATTR_INTEGRATION, ATTR_REALTIME, QueueName
+from agentkernel.pipeline.envelope import ATTR_INTEGRATION, ATTR_REALTIME, ATTR_REALTIME_END, QueueName
 from agentkernel.pipeline.realtime_pool import RealtimeConnection, RealtimeConnectionPool
 from agentkernel.pipeline.thread_runner import ThreadRunner
 from agentkernel.pipeline.transport.base import QueueTransportFactory
@@ -528,6 +529,239 @@ class TestRealtimeAgentChanged:
         assert message.attributes["reply_session_id"] == "s1"
 
 
+class TestRealtimeInputTranscript:
+    """The caller's finished line rides the paced queue, so it reaches the edge in spoken order."""
+
+    @pytest.mark.asyncio
+    async def test_it_is_emitted_in_order_behind_queued_audio(self, monkeypatch):
+        transport = InMemoryTransport()
+        monkeypatch.setattr(QueueTransportFactory, "create", staticmethod(lambda *a, **k: transport))
+        conn = _connection(agent=_Agent(name="supervisor"), loop=asyncio.get_running_loop())
+        await conn.connect()
+
+        await conn.handle_framework_event("audio_delta", {"delta": "QUFB", "message_id": "m1"})
+        await conn.handle_framework_event("input_transcript", {"text": "yes please", "message_id": "i1"})
+        await conn.handle_framework_event("transcript_delta", {"delta": "Great.", "message_id": "m2"})
+        await asyncio.sleep(0.2)
+        conn._pacing_task.cancel()
+
+        messages = _drain_output(transport)
+        assert _kinds(messages) == ["agent_changed", "audio_delta", "input_transcript", "text_delta"]
+        assert json.loads(messages[2].body)["event"] == {"type": "input_transcript", "message_id": "i1", "content": "yes please"}
+
+    @pytest.mark.asyncio
+    async def test_a_barge_in_keeps_a_queued_input_transcript(self, monkeypatch):
+        monkeypatch.setattr(QueueTransportFactory, "create", staticmethod(lambda *a, **k: InMemoryTransport()))
+        conn = _connection(loop=asyncio.get_running_loop())
+
+        await conn.handle_framework_event("audio_delta", {"delta": "QUFB"})
+        await conn.handle_framework_event("input_transcript", {"text": "wait", "message_id": "i1"})
+        await conn.handle_framework_event("audio_delta", {"delta": "QUFB"})
+        await conn.handle_framework_event("interrupt", {})
+
+        assert [item[0] for item in list(conn._audio_queue._queue)] == ["interrupt", "input_transcript"]
+        assert conn._queued_audio == 0
+
+    @pytest.mark.asyncio
+    async def test_it_does_not_count_as_queued_audio(self, monkeypatch):
+        monkeypatch.setattr(QueueTransportFactory, "create", staticmethod(lambda *a, **k: InMemoryTransport()))
+        conn = _connection(loop=asyncio.get_running_loop())
+
+        await conn.handle_framework_event("input_transcript", {"text": "hi", "message_id": "i1"})
+        await conn.handle_framework_event("speech_started", {})
+
+        assert conn._queued_audio == 0
+        assert [item[0] for item in list(conn._audio_queue._queue)] == ["input_transcript"]
+
+
+class TestRealtimeEndSession:
+    """An edge that ended closes its native session at once, and late input for it is dropped for a while."""
+
+    @staticmethod
+    def _input(session_id="s1", text="hi"):
+        return BaseRunRequest(prompt="", session_id=session_id, requests=[AgentRequestText(prompt=text)])
+
+    @staticmethod
+    def _chat_service(session_id="s1"):
+        from unittest.mock import MagicMock
+
+        handler = types.SimpleNamespace(
+            service=types.SimpleNamespace(agent=_Agent(), runtime=Runtime(InMemorySessionStore()), session=Session(session_id))
+        )
+        chat_service = MagicMock()
+        chat_service.prepare_agent_handler.return_value = handler
+        return chat_service
+
+    @pytest.fixture
+    def pool(self, monkeypatch):
+        monkeypatch.setattr(QueueTransportFactory, "create", staticmethod(lambda *a, **k: InMemoryTransport()))
+        pool = RealtimeConnectionPool.initialize()
+        thread = threading.Thread(target=pool.start, daemon=True)
+        thread.start()
+        yield pool
+        ThreadRunner.shutdown_event.set()
+        thread.join(timeout=5)
+
+    def test_the_control_closes_the_connection_without_creating_one(self, pool):
+        chat_service = self._chat_service()
+        pool.dispatch(self._input(), "r1", None, {}, chat_service)
+        conn = pool.get_connection("s1")
+        assert conn is not None
+
+        pool.dispatch(BaseRunRequest(prompt="", session_id="s1", requests=[]), "r2", None, {ATTR_REALTIME_END: "true"}, chat_service)
+
+        assert conn.closed
+        assert pool.get_connection("s1") is None
+        assert chat_service.prepare_agent_handler.call_count == 1
+
+    def test_the_control_for_a_session_with_no_connection_creates_none(self, pool):
+        chat_service = self._chat_service()
+
+        pool.dispatch(BaseRunRequest(prompt="", session_id="s1", requests=[]), "r1", None, {ATTR_REALTIME_END: "true"}, chat_service)
+
+        chat_service.prepare_agent_handler.assert_not_called()
+        assert pool.get_connection("s1") is None
+
+    def test_input_within_the_ttl_is_dropped(self, pool):
+        chat_service = self._chat_service()
+        pool.dispatch(BaseRunRequest(prompt="", session_id="s1", requests=[]), "r1", None, {ATTR_REALTIME_END: "true"}, chat_service)
+
+        pool.dispatch(self._input(), "r2", None, {}, chat_service)
+
+        chat_service.prepare_agent_handler.assert_not_called()
+        assert pool.get_connection("s1") is None
+
+    def test_input_after_the_ttl_reconnects(self, pool):
+        chat_service = self._chat_service()
+        pool.dispatch(BaseRunRequest(prompt="", session_id="s1", requests=[]), "r1", None, {ATTR_REALTIME_END: "true"}, chat_service)
+        pool._ended["s1"] = time.time() - 61
+
+        pool.dispatch(self._input(), "r2", None, {}, chat_service)
+
+        assert pool.get_connection("s1") is not None
+        assert "s1" not in pool._ended
+
+    def test_other_sessions_are_not_affected(self, pool):
+        chat_service = self._chat_service("s2")
+        pool.dispatch(BaseRunRequest(prompt="", session_id="s1", requests=[]), "r1", None, {ATTR_REALTIME_END: "true"}, chat_service)
+
+        pool.dispatch(self._input("s2"), "r2", None, {}, chat_service)
+
+        assert pool.get_connection("s2") is not None
+
+
+class TestRealtimeReconnectBackoff:
+    """A session whose native connection fails is not reopened by every audio frame: input is dropped for 1, 2, 4... s."""
+
+    @pytest.fixture
+    def clock(self, monkeypatch):
+        now = [1000.0]
+        monkeypatch.setattr("agentkernel.pipeline.realtime_pool.time", types.SimpleNamespace(time=lambda: now[0]))
+        return now
+
+    @pytest.fixture
+    def pool(self, monkeypatch, clock):
+        monkeypatch.setattr(QueueTransportFactory, "create", staticmethod(lambda *a, **k: InMemoryTransport()))
+        pool = RealtimeConnectionPool.initialize()
+        thread = threading.Thread(target=pool.start, daemon=True)
+        thread.start()
+        yield pool
+        ThreadRunner.shutdown_event.set()
+        thread.join(timeout=5)
+
+    @staticmethod
+    def _send(pool, chat_service):
+        pool.dispatch(TestRealtimeEndSession._input(), "r", None, {}, chat_service)
+
+    def test_repeated_immediate_failures_drop_input_between_attempts_with_doubling_delays(self, pool, clock):
+        chat_service = TestRealtimeEndSession._chat_service()
+        opened = lambda: chat_service.prepare_agent_handler.call_count
+
+        expected_delays = [1.0, 2.0, 4.0, 8.0]
+        for attempt, delay in enumerate(expected_delays, start=1):
+            self._send(pool, chat_service)  # opens a connection
+            assert opened() == attempt
+            pool._connections["s1"].closed = True  # the native session failed as soon as it opened
+            self._send(pool, chat_service)  # evicts it, records the failure and drops this frame
+            assert opened() == attempt and pool.get_connection("s1") is None
+            assert pool._failures["s1"] == (attempt, clock[0] + delay)
+
+            clock[0] += delay - 0.1
+            self._send(pool, chat_service)  # still backing off
+            assert opened() == attempt
+            clock[0] += 0.1  # the retry time
+
+    def test_the_delay_is_capped(self, pool, clock):
+        chat_service = TestRealtimeEndSession._chat_service()
+        pool._failures["s1"] = (9, clock[0] - 1)
+        self._send(pool, chat_service)
+        pool._connections["s1"].closed = True
+        self._send(pool, chat_service)
+
+        assert pool._failures["s1"] == (10, clock[0] + 30.0)
+
+    def test_a_connection_that_produced_output_restarts_the_count(self, pool, clock):
+        chat_service = TestRealtimeEndSession._chat_service()
+        pool._failures["s1"] = (3, clock[0] - 1)
+        self._send(pool, chat_service)
+        conn = pool._connections["s1"]
+        asyncio.run_coroutine_threadsafe(conn.handle_framework_event("transcript_delta", {"delta": "hi", "message_id": "m"}), pool._loop).result(5)
+        assert conn.produced_output
+        conn.closed = True
+
+        self._send(pool, chat_service)
+
+        assert pool._failures["s1"] == (1, clock[0] + 1.0)
+
+    def test_a_connection_that_never_produced_output_adds_one(self, pool, clock):
+        chat_service = TestRealtimeEndSession._chat_service()
+        pool._failures["s1"] = (2, clock[0] - 1)
+        self._send(pool, chat_service)
+        pool._connections["s1"].closed = True
+
+        self._send(pool, chat_service)
+
+        assert pool._failures["s1"][0] == 3
+
+    def test_a_connect_that_fails_is_a_failure_too(self, pool, clock, monkeypatch):
+        chat_service = TestRealtimeEndSession._chat_service()
+
+        class _Refusing(_Adapter):
+            async def connect(self, session, agent, callback):
+                raise RuntimeError("quota")
+
+        chat_service.prepare_agent_handler.return_value.service.agent = _Agent(realtime_runner_cls=_Refusing)
+        with pytest.raises(RuntimeError, match="quota"):
+            self._send(pool, chat_service)
+        assert pool._failures["s1"] == (1, clock[0] + 1.0)
+
+        self._send(pool, chat_service)  # dropped, no second attempt
+        assert chat_service.prepare_agent_handler.call_count == 1
+
+    def test_end_session_clears_the_count(self, pool, clock):
+        chat_service = TestRealtimeEndSession._chat_service()
+        pool._failures["s1"] = (4, clock[0] + 99)
+
+        pool.dispatch(BaseRunRequest(prompt="", session_id="s1", requests=[]), "r", None, {ATTR_REALTIME_END: "true"}, chat_service)
+
+        assert "s1" not in pool._failures
+
+    def test_an_idle_evicted_or_ended_connection_is_not_a_failure(self, pool, clock):
+        chat_service = TestRealtimeEndSession._chat_service()
+        self._send(pool, chat_service)
+        pool.end_session("s1")
+
+        assert "s1" not in pool._failures
+
+    def test_other_sessions_are_not_held_back(self, pool, clock):
+        chat_service = TestRealtimeEndSession._chat_service("s2")
+        pool._failures["s1"] = (1, clock[0] + 50)
+
+        pool.dispatch(TestRealtimeEndSession._input("s2"), "r", None, {}, chat_service)
+
+        assert pool.get_connection("s2") is not None
+
+
 class TestRealtimeFailureHandling:
     """A dead model socket must be surfaced to the edge and evicted, not written to forever."""
 
@@ -575,6 +809,14 @@ class TestLiveKitGatewayErrorChunk:
 
         gateway = object.__new__(LiveKitEdgeGateway)
         gateway._transcript = ["half a sentence"]
+        gateway._line_parts = ["half a sentence"]
+        gateway._line_message_id = None
+        gateway._caption = None
+        gateway._speaking_agent = None
+        gateway.agent = None
+        gateway._hooks = None
+        gateway.session_id = "s1"
+        gateway.name = "livekit"
         gateway._interrupted = False
         gateway.audio_source = None
         gateway._loop = None

@@ -17,6 +17,8 @@ ATTR_THREAD = "thread"
 # Response Handler routes it to the integration adapter's deliver_chunk instead of guessing from
 # the body shape.
 ATTR_REALTIME = "realtime"
+# Present on an input message: the edge for this session has ended (a realtime end-of-session control).
+ATTR_REALTIME_END = "realtime_end"
 REPLY_CONTEXT_PREFIX = "reply_"
 
 

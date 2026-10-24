@@ -13,11 +13,14 @@ turn open past the platform's delivery timeout.
 """
 
 import base64
+import logging
+import threading
 import uuid
 from abc import ABC, abstractmethod
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -25,6 +28,8 @@ from ...core.model import AgentReply, AgentRequestUnion, AgentRequestVoice, Stre
 
 if TYPE_CHECKING:  # typing only; producer.py imports this module
     from .producer import IntegrationProducer
+
+_hooks_log = logging.getLogger("ak.integration.edge_hooks")
 
 ATTACHMENTS_DISABLED_ERROR = (
     "Attachments from messaging integrations require multimodal support — " "set multimodal.enabled: true in config.yaml to accept images and files"
@@ -251,6 +256,66 @@ class OutboundAdapter(ABC):
         return chunks
 
 
+class TranscriptLine(BaseModel):
+    """One finished line of a realtime conversation, as an edge assembled it.
+
+    speaker: str : The agent's name, or the caller's participant identity
+    role: Literal["user", "agent"] : Who spoke
+    text: str : What was said
+    at: float : Epoch seconds when the line finished at the edge
+    message_id: str | None : The framework's id for the line, when it has one
+    interrupted: bool : An agent line cut off by the caller: the text is what was delivered
+    typed: bool : A user line the caller typed in the room chat instead of speaking
+    """
+
+    speaker: str
+    role: Literal["user", "agent"]
+    text: str
+    at: float
+    message_id: Optional[str] = None
+    interrupted: bool = False
+    typed: bool = False
+
+
+class _EdgeHookWorker:
+    """Runs one edge's observation hooks, in call order, on a thread of its own.
+
+    The worker thread is started on the first call, so an edge that never calls a hook costs
+    nothing. A hook that raises is logged and the next one still runs.
+    """
+
+    def __init__(self, session_id: str):
+        self._session_id = session_id
+        self._executor: Optional[ThreadPoolExecutor] = None
+        self._closed = False
+        self._lock = threading.Lock()
+
+    def submit(self, hook: Callable[..., None], *args: Any) -> None:
+        """Queue one hook call; never blocks. After :meth:`close` the call is dropped."""
+        with self._lock:
+            if self._closed:
+                _hooks_log.debug(f"Edge {self._session_id} hooks are closed: dropping a call to {getattr(hook, '__name__', hook)}")
+                return
+            if self._executor is None:
+                self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix=f"edge-hooks-{self._session_id}")
+            self._executor.submit(self._guard, hook, args)
+
+    @staticmethod
+    def _guard(hook: Callable[..., None], args: tuple) -> None:
+        try:
+            hook(*args)
+        except Exception:
+            _hooks_log.exception(f"Edge hook {getattr(hook, '__name__', hook)} raised; ignored")
+
+    def close(self, wait: bool = True) -> None:
+        """Stop the worker after the calls already queued; safe to call more than once."""
+        with self._lock:
+            self._closed = True
+            executor, self._executor = self._executor, None
+        if executor is not None:
+            executor.shutdown(wait=wait)
+
+
 class StatefulEdgeAdapter(ABC):
     """A stateful, bidirectional edge that owns a long-lived platform connection.
 
@@ -270,9 +335,15 @@ class StatefulEdgeAdapter(ABC):
     # Agent this edge's session is bound to; None selects the runner's default agent. A realtime
     # session binds its agent once, when its connection is created from the first request.
     agent: Optional[str] = None
+    # Defaults for an edge whose subclass never reached ``super().__init__()``: the hook worker and the
+    # readiness event are then created on first use.
+    _hooks: Optional[_EdgeHookWorker] = None
+    _init_lock = threading.Lock()
 
     def __init__(self):
         self._producer: Optional["IntegrationProducer"] = None
+        self._hooks: Optional[_EdgeHookWorker] = None
+        self._ready = threading.Event()
 
     # ── Lifecycle ──
 
@@ -287,6 +358,49 @@ class StatefulEdgeAdapter(ABC):
         Called by GatewayRunner when the process is shutting down.
         Must cause start() to return cleanly.
         """
+
+    def _mark_ready(self) -> None:
+        """Called by the edge once its platform connection is up; wakes a waiting background start."""
+        self._readiness().set()
+
+    def wait_ready(self, timeout: float) -> bool:
+        """True once the edge called :meth:`_mark_ready`, False on timeout."""
+        return self._readiness().wait(timeout)
+
+    def _readiness(self) -> threading.Event:
+        with StatefulEdgeAdapter._init_lock:
+            event = self.__dict__.get("_ready")
+            if event is None:
+                event = self.__dict__["_ready"] = threading.Event()
+            return event
+
+    # ── Observation hooks: override in an app subclass; each runs on the edge's hook worker ──
+
+    def on_transcript(self, line: TranscriptLine) -> None:
+        """One finished line of the conversation. Does nothing by default.
+
+        Runs on the edge's hook worker thread, in the order the edge dispatched it: state it shares
+        with other threads needs its own lock. It may block without touching any event loop.
+        """
+
+    def on_agent_changed(self, agent: str, previous: Optional[str]) -> None:
+        """The speaking agent changed, in order with the lines. Does nothing by default."""
+
+    def on_error(self, message: str) -> None:
+        """An error reached the edge, besides the text it shows the user. Does nothing by default."""
+
+    def _dispatch_hook(self, hook: Callable[..., None], *args: Any) -> None:
+        """Queue one hook call on this edge's hook worker, in call order; never blocks the caller."""
+        with StatefulEdgeAdapter._init_lock:
+            if self._hooks is None:
+                self._hooks = _EdgeHookWorker(self.session_id or self.name)
+            worker = self._hooks
+        worker.submit(hook, *args)
+
+    def _close_hooks(self, wait: bool = True) -> None:
+        """Stop the hook worker after the calls already queued; safe to call more than once."""
+        if self._hooks is not None:
+            self._hooks.close(wait=wait)
 
     # ── Inbound: Platform -> Agent Kernel ──
 
@@ -309,6 +423,16 @@ class StatefulEdgeAdapter(ABC):
             session_id=self.session_id,
             request_id=str(uuid.uuid4()),
             requests=[request],
+            agent=self.agent,
+            reply_context={"session_id": self.session_id},
+        )
+
+    def _enqueue_end(self) -> InboundRequest:
+        """Build the empty request that carries the end-of-session control: the twin of :meth:`_enqueue`."""
+        return InboundRequest(
+            session_id=self.session_id,
+            request_id=str(uuid.uuid4()),
+            requests=[],
             agent=self.agent,
             reply_context={"session_id": self.session_id},
         )

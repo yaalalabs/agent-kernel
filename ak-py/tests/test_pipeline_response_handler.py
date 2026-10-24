@@ -276,3 +276,75 @@ class TestIntegrationDispatch:
         handler.process(_output_msg({"result": "hi", "session_id": "s1"}))
         assert _adapter.delivered == []
         assert store.get_record("r1")["body"] == {"result": "hi", "session_id": "s1"}
+
+
+class TestRealtimeTrailingOutput:
+    """Chunks still on their way to an edge that has just ended are acked and dropped, not retried."""
+
+    @staticmethod
+    def _message(session_id="s1"):
+        from agentkernel.core.model import StreamChunk
+        from agentkernel.pipeline.envelope import ATTR_REALTIME
+
+        body = json.dumps(StreamChunk(done=True).model_dump(exclude_none=True))
+        attributes = {"request_id": "r1", ATTR_INTEGRATION: "livekit", ATTR_REALTIME: "true", "reply_session_id": session_id}
+        return QueueMessage(body=body, attributes=attributes, group_id=session_id, dedup_id="d1")
+
+    class _Edge:
+        ERROR_MESSAGE = "sorry"
+
+        def __init__(self):
+            self.chunks = []
+            self.errors = []
+
+        async def deliver_chunk(self, chunk, reply_context):
+            self.chunks.append(chunk)
+
+        async def deliver_error(self, message, reply_context):
+            self.errors.append(message)
+
+    def _handler(self):
+        handler = ResponseHandler(transport=InMemoryTransport())
+        handler._integration_delivery = None  # the webhook path must not be reached
+        return handler
+
+    def test_a_chunk_for_a_recently_ended_edge_is_dropped_without_a_delivery_or_a_retry(self):
+        from agentkernel.integration.adapter.registry import StatefulEdgeRegistry
+
+        StatefulEdgeRegistry.reset()
+        StatefulEdgeRegistry.unregister("s1")
+
+        self._handler().process(self._message())  # does not raise: the consumer loop acks it
+
+        StatefulEdgeRegistry.reset()
+
+    def test_a_chunk_for_an_edge_that_never_existed_still_raises_for_retry(self):
+        from agentkernel.integration.adapter.registry import StatefulEdgeRegistry
+
+        StatefulEdgeRegistry.reset()
+
+        with pytest.raises(ValueError, match="No active realtime edge"):
+            self._handler().process(self._message())
+
+    def test_a_permanent_failure_for_a_recently_ended_edge_is_dropped_quietly(self, monkeypatch, caplog):
+        from agentkernel.integration.adapter.registry import StatefulEdgeRegistry
+
+        _use_mode(monkeypatch, ExecutionMode.REALTIME)
+        StatefulEdgeRegistry.reset()
+        StatefulEdgeRegistry.unregister("s1")
+
+        with caplog.at_level("WARNING"):
+            self._handler().on_permanent_failure(self._message())
+
+        assert "Could not find live edge" not in caplog.text
+        StatefulEdgeRegistry.reset()
+
+    def test_a_live_edge_still_receives_its_chunks(self, monkeypatch):
+        from agentkernel.integration.adapter.registry import StatefulEdgeRegistry
+
+        edge = self._Edge()
+        monkeypatch.setattr(StatefulEdgeRegistry, "get", classmethod(lambda cls, session_id: edge))
+
+        self._handler().process(self._message())
+
+        assert len(edge.chunks) == 1

@@ -17,7 +17,7 @@ Only OpenAI Agents SDK and Google ADK agents can run in realtime mode. They are 
 2. The `LiveKitEdgeGateway` batches the microphone audio (see `input_batch_ms`) and puts it on the input queue. Chat text from the room's data channel goes the same way.
 3. The Agent Runner hands each chunk to the `RealtimeConnectionPool`, which keeps one native SDK live session per AK session.
 4. The model's audio and transcript are paced at playback speed and put on the output queue.
-5. The Response Handler passes each chunk to the gateway, which plays the audio into the room and publishes the transcript as a chat message when the turn ends.
+5. The Response Handler passes each chunk to the gateway, which plays the audio into the room, writes the transcript as live captions while it plays, and publishes it as a chat message when the turn ends.
 
 For the architecture behind these steps, including multi-agent handoffs, see [Realtime Voice Internals](../architecture/realtime-internals.md).
 
@@ -25,6 +25,8 @@ For the architecture behind these steps, including multi-agent handoffs, see [Re
 
 - **Realtime voice**: two-way streaming audio between the room and the model.
 - **Barge-in**: when the user talks over the model, the model's response is cancelled and the gateway clears the audio it has buffered.
+- **Live captions**: the gateway publishes each agent's words, as they are spoken, and the caller's finished lines, on LiveKit's `lk.transcription` text streams, so standard LiveKit client components show them. The turn-end chat message stays.
+- **Server hooks**: `on_transcript`, `on_agent_changed` and `on_error` let your own code follow the call. See [Following the call from server code](#following-the-call-from-server-code).
 - **Tools**: realtime runs native agent tools only, through the OpenAI Agents SDK or Google ADK.
 - **Multi-agent handoffs**: a supervisor hands the call to a specialist and back with the framework's own handoffs, and every agent appears in the room as its own participant. See [Multi-agent handoffs](#multi-agent-handoffs).
 
@@ -126,6 +128,56 @@ latency at the start of each response.
 
 Declare realtime tools on the native `RealtimeAgent` or ADK `LlmAgent`. The SDK calls them and returns their results. OpenAI's native run context can be set through the AK session `framework_context`; that does not create AK `ToolContext`. In realtime mode, AK skips automatic system tools and their prompt guidance; tools you declare on the native agent remain available.
 
+## Following the call from server code
+
+Subclass the gateway and override any of three hooks on `StatefulEdgeAdapter`. Each does nothing by default, so existing gateways are unchanged:
+
+```python
+from agentkernel.integration.adapter import TranscriptLine
+from agentkernel.integration.livekit import LiveKitEdgeGateway
+
+
+class LoggingGateway(LiveKitEdgeGateway):
+    def on_transcript(self, line: TranscriptLine) -> None:
+        # speaker, role ("user" or "agent"), text, at, message_id, interrupted, typed
+        print(f"{line.speaker}: {line.text}")
+
+    def on_agent_changed(self, agent: str, previous: str | None) -> None:
+        print(f"{previous} -> {agent}")
+
+    def on_error(self, message: str) -> None:
+        print(f"error: {message}")
+```
+
+- `on_transcript(line)` runs once for each finished agent turn (per speaker, split at handoffs) and once for each caller line. A turn the caller cut off gives the part that was delivered, with `interrupted=True`. The caller's line needs the SDK's input transcription: on by default for ADK, and set through `input_audio_transcription` in the model settings for OpenAI. A message the caller types in the room chat is also a caller line, with `typed=True`, so server code sees typed and spoken input alike. An agent participant's own chat is ignored.
+- `on_agent_changed(agent, previous)` runs when the speaking agent changes, in order with the lines.
+- `on_error(message)` runs when an error reaches the edge, besides the chat text the room still gets.
+
+Hooks run **in call order on a worker thread of their own** for each gateway, never on the delivery thread that plays the audio, so a slow hook cannot delay anyone's audio. They are plain methods, so they may block (a file write); any state they share with other threads needs its own lock. A hook that raises is logged on `ak.integration.edge_hooks` and ignored.
+
+### The opening prompt
+
+When the caller's microphone appears, the gateway asks the conversation to say a short hello. Override `opening_prompt(participant_identity)` to open with words of your own, or return `None` to send nothing. It is called on every caller track subscription, a rejoin after a page reload included, so keep track of whether you already opened.
+
+```python
+class MeetingGateway(LiveKitEdgeGateway):
+    def opening_prompt(self, participant_identity: str) -> str | None:
+        return f"Open the meeting as the PM: greet {participant_identity} and ask what they want to build."
+```
+
+### One gateway per room, started and stopped at runtime
+
+`IOHandler.run(gateways=...)` starts gateways when the app boots. To start one when something happens (a visitor presses *Start a meeting*), use the runner's background start. It returns once the gateway has joined its room, and raises if it could not:
+
+```python
+runner = GatewayRunner(LiveKitEdgeGateway(session_id="room-42", agent_name="supervisor"))
+runner.start_background()   # raises the edge's own error, or TimeoutError after READY_TIMEOUT_SECONDS (30 s)
+...
+runner.stop()               # leaves the room and closes the model session at once
+```
+
+This needs the single-process `in_memory` topology, with `IOHandler.run(handlers=...)` hosting your routes and no boot-time gateways; the [realtime requirements meeting](https://github.com/yaalalabs/agent-kernel/tree/develop/use-cases/realtime-requirements-meeting) use case does exactly this. A gateway of your own works the same way if it calls `self._mark_ready()` once its platform connection is up. When a gateway stops or loses its room it sends an end-of-session control, so the native session closes at once.
+
 ## Multi-agent handoffs
 
 One call can move between several agents. Declare native live agents and register the entry agent:
@@ -160,7 +212,7 @@ Every agent the entry agent can reach through handoffs appears as a participant 
 
 - Only the agent that has the call is heard and unmuted; the others stay connected and muted.
 - On a handoff, the previous agent finishes what it was saying before the next agent's participant takes over, so the room client's speaking indicator moves to it.
-- Each agent's words are published to the room chat from its own participant.
+- Each agent's words are published to the room chat from its own participant, and written as live captions from it.
 - Each agent participant carries an `ak.active` attribute, `"true"` on the one that has the call, for a custom client UI to highlight.
 - Only the first participant listens to the caller; no agent's audio or chat is ever taken as the caller's input.
 
@@ -186,7 +238,7 @@ Complete working examples (with In-Memory, Kafka, NATS, and AWS SQS architecture
 - **AK hooks and guardrails** do not automatically run on native realtime turns. Use native SDK live features where supported.
 - **Human approval** has no decision path in this LiveKit edge. Approval-requiring OpenAI tools and ADK confirmation requests fail clearly.
 - **Native tools only.** Realtime runs the tools declared on the native agent, through the SDK. AK does not attach its system tools in realtime mode.
-- **One room per gateway**: each `LiveKitEdgeGateway` joins one room, and the room uses one AK session.
+- **One room per gateway**: each `LiveKitEdgeGateway` joins one room, and the room uses one AK session. Many gateways can run in one process, each started with `GatewayRunner.start_background()`.
 - **Connection lifetime**: a failed or expired native session is closed. A later input can start a fresh session; AK does not replay the old transcript.
 - **One LiveKit connection per agent**: with handoffs, every listed agent is a participant, and LiveKit bills connection minutes for each.
 - **Single replicas**: one Agent Runner replica and one IOHandler process, as described above.

@@ -9,13 +9,15 @@ import asyncio
 import base64
 import json
 import logging
+import threading
 import types
 
 import pytest
 
 import agentkernel.integration.livekit.adapter as livekit_adapter
-from agentkernel.core.event import AgentChanged, AudioDelta, Interrupt, TextDelta
+from agentkernel.core.event import AgentChanged, AudioDelta, InputTranscript, Interrupt, TextDelta
 from agentkernel.core.model import AgentRequestText, AgentRequestVoice, StreamChunk
+from agentkernel.integration.adapter.base import TranscriptLine
 from agentkernel.integration.livekit.adapter import LiveKitEdgeGateway
 
 
@@ -29,8 +31,8 @@ class _Producer:
     def __init__(self):
         self.calls = []
 
-    def enqueue(self, adapter_name, request):
-        self.calls.append({"adapter_name": adapter_name, "request": request})
+    def enqueue(self, adapter_name, request, attributes=None):
+        self.calls.append({"adapter_name": adapter_name, "request": request, "attributes": attributes})
 
 
 class _AudioSource:
@@ -63,12 +65,31 @@ class _Track:
         self.muted = False
 
 
+class _TextWriter:
+    """A LiveKit text stream writer: records what was written and whether it was closed."""
+
+    def __init__(self, topic, attributes, sender_identity):
+        self.topic = topic
+        self.attributes = attributes
+        self.sender_identity = sender_identity
+        self.written = []
+        self.closed = False
+
+    async def write(self, text):
+        self.written.append(text)
+
+    async def aclose(self):
+        self.closed = True
+
+
 class _LocalParticipant:
     def __init__(self, identity=None):
         self.identity = identity
         self.attributes = {}
         self.chat = []
         self.tracks = []
+        self.streams = []
+        self.texts = []
 
     async def publish_track(self, track, options):
         self.tracks.append(track)
@@ -78,6 +99,14 @@ class _LocalParticipant:
 
     async def publish_data(self, payload, reliable=True, topic=""):
         self.chat.append(json.loads(payload)["message"])
+
+    async def stream_text(self, *, topic="", attributes=None, sender_identity=None, **kwargs):
+        writer = _TextWriter(topic, dict(attributes or {}), sender_identity)
+        self.streams.append(writer)
+        return writer
+
+    async def send_text(self, text, *, topic="", attributes=None, **kwargs):
+        self.texts.append({"text": text, "topic": topic, "attributes": dict(attributes or {})})
 
 
 class _Room:
@@ -106,6 +135,7 @@ def _participant(agent=None, identity="agent-general", muted=False):
     participant.room = _Room(identity)
     participant.audio_source = _AudioSource()
     participant.track = _Track()
+    participant.track.sid = f"TR_{identity}"
     participant.track.muted = muted
     return participant
 
@@ -133,6 +163,19 @@ def _gateway(*agents) -> LiveKitEdgeGateway:
     gateway._background_tasks = set()
     gateway._transcript = []
     gateway._interrupted = False
+    gateway._line_parts = []
+    gateway._line_message_id = None
+    gateway._caption = None
+    gateway._caption_queue = None
+    gateway._caption_task = None
+    gateway._caller_identity = None
+    gateway._caller_track_sid = None
+    gateway._ending = False
+    gateway._end_sent = False
+    gateway._connected = False
+    gateway._hooks = None
+    gateway._ready = threading.Event()
+    gateway.name = "livekit"
     gateway._input_batch_ms = 100
     gateway._input_batch_bytes = 4800
     return gateway
@@ -874,3 +917,524 @@ class TestMultiAgentOutbound:
         assert len(gateway._active.audio_source.frames) == 1
         assert gateway._active.room.local_participant.attributes == {}
         assert gateway._active.track.muted is False
+
+
+class _Recorder(LiveKitEdgeGateway):
+    """A gateway whose three hooks record what they were called with, in order, and where they ran."""
+
+    @classmethod
+    def build(cls, *agents) -> "_Recorder":
+        gateway = _gateway(*agents)
+        gateway.__class__ = cls
+        gateway.calls = []
+        gateway.threads = []
+        return gateway
+
+    def on_transcript(self, line):
+        self.threads.append(threading.current_thread().name)
+        self.calls.append(("line", line))
+
+    def on_agent_changed(self, agent, previous):
+        self.calls.append(("changed", agent, previous))
+
+    def on_error(self, message):
+        self.calls.append(("error", message))
+
+
+def _audio():
+    return StreamChunk(event=AudioDelta(message_id="m", content=base64.b64encode(b"\x00\x00").decode("utf-8")))
+
+
+def _text(text, message_id="m"):
+    return StreamChunk(event=TextDelta(message_id=message_id, content=text))
+
+
+def _change(agent, previous=None, agents=None):
+    return StreamChunk(event=AgentChanged(agent=agent, previous_agent=previous, agents=agents))
+
+
+def _heard(text, message_id="i1"):
+    return StreamChunk(event=InputTranscript(message_id=message_id, content=text))
+
+
+def _lines(gateway):
+    gateway._close_hooks()
+    return [(call[1].speaker, call[1].role, call[1].text, call[1].interrupted) for call in gateway.calls if call[0] == "line"]
+
+
+class TestTranscriptHooks:
+    @pytest.mark.asyncio
+    async def test_lines_and_speaker_changes_arrive_in_order_across_a_handoff(self, monkeypatch):
+        monkeypatch.setattr(livekit_adapter, "rtc", _FakeRtc)
+        gateway = _Recorder.build("pm", "ba")
+        gateway._loop = asyncio.get_running_loop()
+        gateway._caller_identity = "client-1"
+
+        for chunk in [
+            _change("pm"),
+            _text("Hello. "),
+            _text("What do you need?"),
+            _change("ba", "pm"),
+            _text("BA here."),
+            StreamChunk(done=True),
+            _heard("a booking system"),
+        ]:
+            await gateway.deliver_chunk(chunk, {})
+        gateway._close_hooks()
+
+        kinds = [(call[0], *([call[1].speaker, call[1].text] if call[0] == "line" else call[1:])) for call in gateway.calls]
+        assert kinds == [
+            ("changed", "pm", None),
+            ("line", "pm", "Hello. What do you need?"),
+            ("changed", "ba", "pm"),
+            ("line", "ba", "BA here."),
+            ("line", "client-1", "a booking system"),
+        ]
+        roles = [call[1].role for call in gateway.calls if call[0] == "line"]
+        assert roles == ["agent", "agent", "user"]
+        assert all(name.startswith("edge-hooks-s1") for name in gateway.threads)
+
+    def test_a_typed_chat_message_is_one_typed_user_line_and_is_still_staged(self, monkeypatch):
+        gateway = _Recorder.build("pm", "ba")
+        staged = []
+        monkeypatch.setattr(gateway, "_stage_request", staged.append)
+
+        gateway._handle_chat_message(_packet('{"message": "half of all bookings online"}'))
+        gateway._close_hooks()
+
+        assert [request.prompt for request in staged] == ["half of all bookings online"]
+        [(kind, line)] = gateway.calls
+        assert kind == "line"
+        assert (line.speaker, line.role, line.text, line.typed) == ("human", "user", "half of all bookings online", True)
+        assert line.interrupted is False and line.at > 0
+
+    def test_an_agent_participants_chat_gives_no_line(self, monkeypatch):
+        gateway = _Recorder.build("pm", "ba")
+        monkeypatch.setattr(gateway, "_stage_request", lambda request: None)
+
+        gateway._handle_chat_message(types.SimpleNamespace(topic="lk-chat", data=b"BA here.", participant=types.SimpleNamespace(identity="agent-ba")))
+        gateway._close_hooks()
+
+        assert gateway.calls == []
+
+    def test_a_spoken_line_is_not_typed(self):
+        assert TranscriptLine(speaker="client", role="user", text="hi", at=1.0).typed is False
+
+    @pytest.mark.asyncio
+    async def test_a_single_participant_gateway_still_splits_lines_at_a_handoff(self):
+        gateway = _Recorder.build()
+        gateway._loop = asyncio.get_running_loop()
+
+        for chunk in [_change("pm"), _text("One."), _change("ba", "pm"), _text("Two."), StreamChunk(done=True)]:
+            await gateway.deliver_chunk(chunk, {})
+
+        assert _lines(gateway) == [("pm", "agent", "One.", False), ("ba", "agent", "Two.", False)]
+        # The chat text is not split at the handoff: it is one message at the end of the turn.
+        assert gateway._participants[0].room.local_participant.chat == ["One.Two."]
+
+    @pytest.mark.asyncio
+    async def test_the_previous_agent_falls_back_to_the_one_that_was_speaking(self):
+        gateway = _Recorder.build("pm", "ba")
+        gateway._loop = asyncio.get_running_loop()
+
+        await gateway.deliver_chunk(_change("pm"), {})
+        await gateway.deliver_chunk(_change("ba"), {})
+        gateway._close_hooks()
+
+        assert [call for call in gateway.calls if call[0] == "changed"] == [("changed", "pm", None), ("changed", "ba", "pm")]
+
+    @pytest.mark.asyncio
+    async def test_an_interrupted_line_carries_what_was_delivered_and_nothing_after_it(self):
+        gateway = _Recorder.build("pm")
+        gateway._loop = asyncio.get_running_loop()
+
+        for chunk in [_change("pm"), _text("I was about to"), StreamChunk(event=Interrupt()), _text(" never delivered"), StreamChunk(done=True)]:
+            await gateway.deliver_chunk(chunk, {})
+
+        assert _lines(gateway) == [("pm", "agent", "I was about to", True)]
+
+    @pytest.mark.asyncio
+    async def test_the_caller_is_named_user_before_any_track_has_been_seen(self):
+        gateway = _Recorder.build("pm")
+        gateway._loop = asyncio.get_running_loop()
+
+        await gateway.deliver_chunk(_heard("hi"), {})
+
+        assert _lines(gateway) == [("user", "user", "hi", False)]
+
+    @pytest.mark.asyncio
+    async def test_an_error_chunk_flushes_the_partial_line_then_calls_on_error(self):
+        gateway = _Recorder.build("pm")
+        gateway._loop = asyncio.get_running_loop()
+
+        for chunk in [_change("pm"), _text("Half a"), StreamChunk(error="model failed", done=True)]:
+            await gateway.deliver_chunk(chunk, {})
+        gateway._close_hooks()
+
+        assert [call[0] for call in gateway.calls] == ["changed", "line", "error"]
+        assert gateway.calls[1][1].interrupted is True
+        assert gateway.calls[2] == ("error", "model failed")
+        assert gateway._participants[0].room.local_participant.chat == ["model failed"]
+
+    @pytest.mark.asyncio
+    async def test_deliver_error_called_directly_also_calls_on_error(self):
+        gateway = _Recorder.build("pm")
+        gateway._loop = asyncio.get_running_loop()
+
+        await gateway.deliver_error("permanent failure", {})
+        gateway._close_hooks()
+
+        assert gateway.calls == [("error", "permanent failure")]
+
+    @pytest.mark.asyncio
+    async def test_a_raising_hook_does_not_stop_delivery_or_the_next_hook(self, monkeypatch, caplog):
+        monkeypatch.setattr(livekit_adapter, "rtc", _FakeRtc)
+        gateway = _Recorder.build("pm")
+        gateway._loop = asyncio.get_running_loop()
+
+        def explode(line):
+            raise RuntimeError("hook bug")
+
+        gateway.on_transcript = explode
+        with caplog.at_level(logging.ERROR, logger="ak.integration.edge_hooks"):
+            for chunk in [_change("pm"), _audio(), _text("Hello."), StreamChunk(done=True), _audio()]:
+                await gateway.deliver_chunk(chunk, {})
+            gateway._close_hooks()
+
+        assert len(gateway._participants[0].audio_source.frames) == 2
+        assert gateway._participants[0].room.local_participant.chat == ["Hello."]
+        assert [call[0] for call in gateway.calls] == ["changed"]
+        assert "hook bug" in caplog.text
+
+
+class TestCaptions:
+    @pytest.mark.asyncio
+    async def test_an_agents_deltas_stream_on_its_participant_and_end_with_one_final_message(self):
+        gateway = _gateway("pm", "ba")
+        gateway._loop = asyncio.get_running_loop()
+        gateway._start_captions()
+        pm, ba = gateway._participants
+
+        for chunk in [_change("pm"), _text("Hello "), _text("there."), StreamChunk(done=True)]:
+            await gateway.deliver_chunk(chunk, {})
+        await gateway._drain_captions(1)
+
+        [stream] = pm.room.local_participant.streams
+        assert stream.topic == "lk.transcription"
+        assert stream.sender_identity == "agent-pm"
+        assert stream.written == ["Hello ", "there."]
+        assert stream.closed
+        assert stream.attributes["lk.transcribed_track_id"] == "TR_agent-pm"
+        assert stream.attributes["lk.transcription_final"] == "false"
+        [final] = pm.room.local_participant.texts
+        assert final["text"] == "Hello there."
+        assert final["topic"] == "lk.transcription"
+        assert final["attributes"]["lk.segment_id"] == stream.attributes["lk.segment_id"]
+        assert final["attributes"]["lk.transcription_final"] == "true"
+        assert ba.room.local_participant.streams == []
+        # The turn-end chat message is unchanged.
+        assert pm.room.local_participant.chat == ["Hello there."]
+
+    @pytest.mark.asyncio
+    async def test_each_boundary_ends_a_segment_and_the_next_one_gets_its_own_id(self):
+        gateway = _gateway("pm", "ba")
+        gateway._loop = asyncio.get_running_loop()
+        gateway._start_captions()
+        pm, ba = gateway._participants
+
+        for chunk in [
+            _change("pm"),
+            _text("One."),
+            _change("ba", "pm"),
+            _text("Two."),
+            StreamChunk(done=True),
+            _text("Three."),
+            StreamChunk(event=Interrupt()),
+        ]:
+            await gateway.deliver_chunk(chunk, {})
+        await gateway._drain_captions(1)
+
+        assert [stream.written for stream in pm.room.local_participant.streams] == [["One."]]
+        assert [stream.written for stream in ba.room.local_participant.streams] == [["Two."], ["Three."]]
+        assert [text["text"] for text in ba.room.local_participant.texts] == ["Two.", "Three."]
+        ids = {stream.attributes["lk.segment_id"] for participant in (pm, ba) for stream in participant.room.local_participant.streams}
+        assert len(ids) == 3
+        # The speaking participant's own track is what each caption is attributed to.
+        assert {stream.attributes["lk.transcribed_track_id"] for stream in ba.room.local_participant.streams} == {"TR_agent-ba"}
+
+    @pytest.mark.asyncio
+    async def test_an_interrupted_segment_ends_with_what_was_delivered(self):
+        gateway = _gateway("pm")
+        gateway._loop = asyncio.get_running_loop()
+        gateway._start_captions()
+
+        for chunk in [_text("Almost"), StreamChunk(event=Interrupt()), _text(" lost"), StreamChunk(done=True)]:
+            await gateway.deliver_chunk(chunk, {})
+        await gateway._drain_captions(1)
+
+        participant = gateway._participants[0].room.local_participant
+        assert [text["text"] for text in participant.texts] == ["Almost"]
+        assert [stream.written for stream in participant.streams] == [["Almost"]]
+
+    @pytest.mark.asyncio
+    async def test_the_callers_line_is_a_final_caption_attributed_to_the_caller(self):
+        gateway = _gateway("pm", "ba")
+        gateway._loop = asyncio.get_running_loop()
+        gateway._start_captions()
+        gateway._caller_identity = "client-1"
+        gateway._caller_track_sid = "TR_client"
+
+        await gateway.deliver_chunk(_heard("we need booking"), {})
+        await gateway._drain_captions(1)
+
+        [stream] = gateway._participants[0].room.local_participant.streams
+        assert stream.sender_identity == "client-1"
+        assert stream.topic == "lk.transcription"
+        assert stream.written == ["we need booking"]
+        assert stream.attributes["lk.transcribed_track_id"] == "TR_client"
+        assert stream.attributes["lk.transcription_final"] == "true"
+
+    @pytest.mark.asyncio
+    async def test_a_failing_stream_logs_once_per_segment_and_never_stops_audio_or_chat(self, caplog):
+        gateway = _gateway("pm")
+        gateway._loop = asyncio.get_running_loop()
+        gateway._start_captions()
+        participant = gateway._participants[0]
+
+        async def broken(**kwargs):
+            raise RuntimeError("no stream")
+
+        participant.room.local_participant.stream_text = broken
+        with caplog.at_level(logging.WARNING, logger="ak.integration.livekit"):
+            for chunk in [
+                _text("One "),
+                _text("two "),
+                _text("three."),
+                StreamChunk(done=True),
+                _text("Next "),
+                _text("segment."),
+                StreamChunk(done=True),
+            ]:
+                await gateway.deliver_chunk(chunk, {})
+            await gateway._drain_captions(1)
+
+        assert participant.room.local_participant.chat == ["One two three.", "Next segment."]
+        assert participant.room.local_participant.texts == []
+        assert caplog.text.count("Caption stream failed") == 2  # one per segment, not one per delta
+
+    @pytest.mark.asyncio
+    async def test_a_blocked_caption_write_does_not_block_delivery_and_captions_arrive_in_order(self):
+        gateway = _gateway("pm")
+        gateway._loop = asyncio.get_running_loop()
+        gateway._start_captions()
+        participant = gateway._participants[0]
+        gate = asyncio.Event()
+        original = participant.room.local_participant.stream_text
+
+        async def slow(**kwargs):
+            await gate.wait()
+            return await original(**kwargs)
+
+        participant.room.local_participant.stream_text = slow
+        chunks = [_text("Hello "), _text("there."), StreamChunk(done=True), _heard("hi")]
+
+        for chunk in chunks:
+            await asyncio.wait_for(gateway.deliver_chunk(chunk, {}), 1)  # returns although the stream cannot open yet
+
+        assert participant.room.local_participant.streams == []
+        assert participant.room.local_participant.chat == ["Hello there."]  # the chat message does not wait either
+        gate.set()
+        await gateway._drain_captions(2)
+
+        streams = participant.room.local_participant.streams
+        assert [stream.written for stream in streams] == [["Hello ", "there."], ["hi"]]
+        assert [text["text"] for text in participant.room.local_participant.texts] == ["Hello there."]
+        assert streams[0].attributes["lk.transcription_final"] == "false" and streams[1].attributes["lk.transcription_final"] == "true"
+
+    @pytest.mark.asyncio
+    async def test_release_drains_the_caption_queue_and_stops_the_task(self):
+        gateway = _gateway("pm")
+        gateway._loop = asyncio.get_running_loop()
+        gateway._start_captions()
+        task = gateway._caption_task
+        await gateway.deliver_chunk(_text("Bye."), {})
+        await gateway.deliver_chunk(StreamChunk(done=True), {})
+
+        await gateway._release()
+
+        assert task.done() and gateway._caption_task is None
+
+    @pytest.mark.asyncio
+    async def test_release_cancels_a_caption_task_stuck_past_the_drain_time(self, monkeypatch, caplog):
+        monkeypatch.setattr(LiveKitEdgeGateway, "CAPTION_DRAIN_SECONDS", 0.05)
+        gateway = _gateway("pm")
+        gateway._loop = asyncio.get_running_loop()
+        gateway._start_captions()
+        task = gateway._caption_task
+
+        async def stuck(**kwargs):
+            await asyncio.Event().wait()
+
+        gateway._participants[0].room.local_participant.stream_text = stuck
+        await gateway.deliver_chunk(_text("Never opens."), {})
+        await asyncio.sleep(0.02)
+        with caplog.at_level(logging.WARNING, logger="ak.integration.livekit"):
+            await asyncio.wait_for(gateway._release(), 2)
+
+        assert task.done() and "not all sent" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_a_participant_with_no_track_yet_skips_the_caption_but_keeps_the_line(self):
+        gateway = _Recorder.build("pm")
+        gateway._loop = asyncio.get_running_loop()
+        gateway._start_captions()
+        gateway._participants[0].track = None
+
+        for chunk in [_change("pm"), _text("Early words."), StreamChunk(done=True)]:
+            await gateway.deliver_chunk(chunk, {})
+
+        assert gateway._participants[0].room.local_participant.streams == []
+        assert _lines(gateway) == [("pm", "agent", "Early words.", False)]
+
+
+class TestOpeningPrompt:
+    @staticmethod
+    def _staged(gateway):
+        gateway._producer = object()
+        gateway._pending = asyncio.Queue()
+        return gateway._pending
+
+    @pytest.mark.asyncio
+    async def test_the_default_is_the_fixed_hello_word_for_word(self):
+        gateway = _gateway("pm")
+        pending = self._staged(gateway)
+
+        await gateway._greet("human-1")
+
+        [staged] = [pending.get_nowait()]
+        assert staged.requests[0].prompt == (
+            "A user named human-1 just connected their microphone. Say a very short hello to them and confirm you are connected!"
+        )
+
+    @pytest.mark.asyncio
+    async def test_none_stages_nothing(self):
+        gateway = _gateway("pm")
+        gateway.opening_prompt = lambda identity: None
+        pending = self._staged(gateway)
+
+        await gateway._greet("human-1")
+
+        assert pending.empty()
+
+    @pytest.mark.asyncio
+    async def test_a_custom_prompt_is_sent_once_per_subscription(self):
+        gateway = _gateway("pm")
+        gateway.opening_prompt = lambda identity: f"Open the meeting for {identity}."
+        pending = self._staged(gateway)
+
+        await gateway._greet("human-1")
+
+        assert pending.qsize() == 1
+        assert pending.get_nowait().requests[0].prompt == "Open the meeting for human-1."
+
+    def test_the_callers_identity_and_track_are_recorded_on_subscribe(self, monkeypatch):
+        gateway = _gateway("pm", "ba")
+        monkeypatch.setattr(livekit_adapter.asyncio, "create_task", lambda coro: coro.close())
+        monkeypatch.setattr(livekit_adapter, "rtc", types.SimpleNamespace(TrackKind=types.SimpleNamespace(KIND_AUDIO=1)))
+        track = types.SimpleNamespace(kind=1, sid="TR_mic")
+
+        gateway._on_track_subscribed(track, types.SimpleNamespace(sid="TR_pub"), types.SimpleNamespace(identity="client-9"))
+
+        assert gateway._caller_identity == "client-9"
+        assert gateway._caller_track_sid == "TR_pub"
+
+
+class TestSessionEnd:
+    @pytest.mark.asyncio
+    async def test_release_sends_one_control_after_the_pending_frames(self):
+        gateway = _gateway("pm")
+        gateway._connected = True
+        gateway._loop = asyncio.get_running_loop()
+        producer = _Producer()
+        gateway._producer = producer
+        gateway._pending = asyncio.Queue()
+        gateway._sender_task = asyncio.create_task(gateway._drain_requests())
+        gateway._stage_request(AgentRequestText(prompt="last words"))
+        gateway._stage_request(AgentRequestText(prompt="more"))
+
+        await gateway._release()
+        await gateway._release()
+
+        prompts = [[request.prompt for request in call["request"].requests] for call in producer.calls]
+        assert prompts == [["last words"], ["more"], []]
+        assert [call["attributes"] for call in producer.calls] == [None, None, {"realtime_end": "true"}]
+        assert producer.calls[-1]["request"].session_id == "s1"
+
+    @pytest.mark.asyncio
+    async def test_frames_after_the_end_are_not_staged(self):
+        gateway = _gateway("pm")
+        gateway._connected = True
+        gateway._producer = _Producer()
+        gateway._pending = asyncio.Queue()
+        gateway._sender_task = asyncio.create_task(gateway._drain_requests())
+
+        await gateway._release()
+        gateway._stage_request(AgentRequestText(prompt="late"))
+
+        assert gateway._pending.empty()
+
+    @pytest.mark.asyncio
+    async def test_a_gateway_that_never_connected_sends_no_control(self):
+        gateway = _gateway("pm")
+        gateway._producer = _Producer()
+
+        await gateway._release()
+
+        assert gateway._producer.calls == []
+
+    @pytest.mark.asyncio
+    async def test_a_failing_control_is_logged_and_release_still_leaves_the_room(self, caplog):
+        gateway = _gateway("pm")
+        gateway._connected = True
+
+        class _Broken:
+            def enqueue(self, *args, **kwargs):
+                raise RuntimeError("broker down")
+
+        gateway._producer = _Broken()
+        participant = gateway._participants[0]
+        room = participant.room
+        with caplog.at_level(logging.WARNING, logger="ak.integration.livekit"):
+            await gateway._release()
+
+        assert "broker down" in caplog.text
+        assert room.disconnects == 1
+
+    @pytest.mark.asyncio
+    async def test_start_marks_the_edge_ready_once_connected(self, monkeypatch):
+        _config(monkeypatch)
+        gateway = LiveKitEdgeGateway(session_id="room-r")
+
+        class _Room2(_Room):
+            async def connect(self, url, token, options):
+                self.options = options
+
+        class _RtcStub:
+            RoomOptions = staticmethod(lambda **kwargs: kwargs)
+            TrackSource = types.SimpleNamespace(SOURCE_MICROPHONE=2)
+            TrackPublishOptions = staticmethod(lambda **kwargs: kwargs)
+            AudioSource = staticmethod(lambda **kwargs: _AudioSource())
+            LocalAudioTrack = types.SimpleNamespace(create_audio_track=staticmethod(lambda name, source: _Track(name)))
+            Room = _Room2
+
+        monkeypatch.setattr(livekit_adapter, "rtc", _RtcStub)
+        monkeypatch.setattr(gateway, "_init_producer", lambda: setattr(gateway, "_producer", _Producer()))
+        task = asyncio.create_task(gateway.start())
+        for _ in range(100):
+            if gateway.wait_ready(0):
+                break
+            await asyncio.sleep(0.01)
+
+        assert gateway.wait_ready(0)
+        await gateway.stop()
+        await asyncio.wait_for(task, 5)

@@ -8,6 +8,7 @@ from agentkernel.core.event import (
     AgentChanged,
     AudioDelta,
     DataMessage,
+    InputTranscript,
     Interrupt,
     MessageEnd,
     MessageStart,
@@ -50,6 +51,7 @@ ALL_EVENTS = [
     AudioDelta(message_id="m1", content="YmFzZTY0Cg=="),
     Interrupt(),
     AgentChanged(agent="billing", previous_agent="supervisor"),
+    InputTranscript(message_id="i-1", content="hello"),
     RunPaused(run_id="run-1", agent="refunds", interruptions=[PausedInterruption(id="i1", kind="tool_call", tool_name="refund")]),
     DataMessage(message_id="m1", content={"version": "v1.0", "cost": 1.5}, media_type="application/a2ui+json"),
 ]

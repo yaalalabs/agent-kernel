@@ -58,3 +58,119 @@ Build the [design](design.md) using the component contracts and limits in [spec.
   3. Check `.agents/skills/ak-dev-architecture/SKILL.md`, `ak-dev-testing-conventions/SKILL.md`, and `ak-dev-new-framework-integration/SKILL.md` for stale realtime guidance. The current scan found no named realtime runner references there; leave them unchanged if a final scan confirms that. Do not edit bundled end-user skills unless a shipped instruction actually describes the old realtime behavior.
   4. Follow `ak-dev-sync-docs-from-branch` and `ak-dev-sync-skills-from-branch` before merge. The docs landing/features inventories need no new entry because OpenAI, ADK, and LiveKit already exist; recheck hard-coded claims, and never edit `docs/versioned_docs/`.
 - **Verify:** Run the example imports or startup validation without opening billable live calls, inspect the changed docs for old claims with scoped `rg`, and rerun `make lint-check-all`. Confirm the final diff contains only the intended source, tests, examples, and current docs/skills.
+
+
+## Edge additions for the realtime requirements meeting (C1 to C6)
+
+### Iteration 1: The caller's words as an event (C1)
+
+- **Goal:** Both adapters report the caller's finished utterance, and it reaches the edge in spoken order.
+- **Files:**
+  - `ak-py/src/agentkernel/core/event.py`: the `InputTranscript` event, added to the `StreamEvent` union.
+  - `ak-py/src/agentkernel/core/realtime/runner.py`: document the `input_transcript` callback in `connect()`.
+  - `ak-py/src/agentkernel/pipeline/realtime_pool.py`: accept `input_transcript` in `handle_framework_event` and emit
+    it from `_pacing_loop`.
+  - `ak-py/src/agentkernel/framework/adk/adk.py`: map a finished `input_transcription` on a user-authored event,
+    before the early return at `:1112`.
+  - `ak-py/src/agentkernel/framework/openai/openai.py`: map `input_audio_transcription_completed` in
+    `_handle_model_event` (`:805`).
+  - `ak-py/src/agentkernel/integration/livekit/adapter.py`: accept the new event in `deliver_chunk` and ignore it for
+    now.
+- **Steps:**
+  1. Add the event and the callback name.
+  2. In the pool, queue it behind output, and keep it through a barge-in (spec §1.3, rule 1).
+  3. Map it in both adapters (spec §1.4, §1.5). Partial ADK transcription is not reported, only finished lines.
+  4. Add `InputTranscript` to `ALL_EVENTS` in `tests/test_stream_events.py`. Its union-coverage guard fails otherwise.
+- **Verify:**
+
+  ```bash
+  cd ak-py && uv run pytest tests/test_stream_events.py tests/test_adk_realtime.py tests/test_openai_realtime.py tests/test_realtime_pool.py
+  ```
+
+  The new tests check one `InputTranscript` per scripted utterance, before the reply that answers it, for each SDK.
+
+### Iteration 2: Live captions, edge hooks, opening prompt (C2, C5)
+
+- **Goal:** The room gets live captions for every speaker. Server code gets one `TranscriptLine` per finished line,
+  plus each speaker change and error. The opening prompt can be changed.
+- **Files:**
+  - `ak-py/src/agentkernel/integration/adapter/base.py`: the `TranscriptLine` model, and three no-op hooks on
+    `StatefulEdgeAdapter`: `on_transcript(line)`, `on_agent_changed(agent, previous)` and `on_error(message)`.
+  - `ak-py/src/agentkernel/integration/livekit/adapter.py`: captions, line assembly, and the opening-prompt method
+    that replaces the fixed text at `:258`.
+  - Exports in `ak-py/src/agentkernel/integration/adapter/__init__.py` (lazy, as the package does today).
+- **Steps:**
+  1. Add the hook worker and the three hooks on `StatefulEdgeAdapter` (spec §2.1). Use LiveKit's caption names from
+     spec §2.3, through `local_participant.stream_text(...)` / `send_text(...)`, which exist in `livekit` 1.1.20.
+     Check against a real LiveKit server that `sender_identity` for the caller's caption is accepted.
+  2. Stream agent text deltas from the speaking participant as they are paced. Send the caller's line attributed to the
+     caller.
+  3. Build lines: split agent text at `AgentChanged`, close the line at `done`, and mark an interrupted turn
+     `interrupted`.
+  4. Call the hooks in order: `on_agent_changed` at each `AgentChanged`, `on_transcript` for each finished line, and
+     `on_error` for each error chunk (today's chat text stays). Run the hooks off the playback path, and log and
+     ignore any that raise.
+  5. Keep the turn-end `lk-chat` message as it is.
+  6. Add the opening-prompt method. Its default returns today's text, and `None` sends nothing.
+- **Verify:**
+
+  ```bash
+  cd ak-py && uv run pytest tests/test_livekit_gateway.py
+  ```
+
+  The tests cover:
+  - a turn with a handoff: lines and speaker changes in order, the right speakers, captions from the right
+    participant;
+  - a barge-in: an `interrupted` line;
+  - an error chunk, which calls `on_error`;
+  - a hook that raises, which does not stop the audio;
+  - the opening prompt: `None`, custom, and the default.
+
+### Iteration 3: Gateways at runtime, end a session at once (C3, C4)
+
+- **Goal:** Many meetings in one process. Each starts and stops on demand, and ending one closes its model session
+  at once.
+- **Files:**
+  - `ak-py/src/agentkernel/integration/adapter/base.py`: `_mark_ready` / `wait_ready` and `_enqueue_end` (spec §3.1,
+    §4.2).
+  - `ak-py/src/agentkernel/integration/adapter/gateway.py`: `start_background`, `stop` and `running` (spec §3.2).
+  - `ak-py/src/agentkernel/integration/adapter/registry.py`: an identity-safe `unregister`, and `recently_ended`
+    (spec §3.3).
+  - `ak-py/src/agentkernel/integration/adapter/producer.py`: `enqueue(..., attributes=)` (spec §4.1).
+  - `ak-py/src/agentkernel/pipeline/envelope.py`: `ATTR_REALTIME_END` (spec §4.1).
+  - `ak-py/src/agentkernel/integration/livekit/adapter.py`: `_mark_ready` on connect, and `_send_session_end` in
+    `_release` (spec §4.2).
+  - `ak-py/src/agentkernel/pipeline/realtime_pool.py`: `end_session` and the ended-session TTL (spec §4.3).
+  - `ak-py/src/agentkernel/pipeline/response_handler.py`: drop trailing chunks for a recently ended edge (spec §4.4).
+- **Steps:**
+  1. Readiness on the edge, then `start_background` / `stop` on `GatewayRunner`. A background failure is re-raised to
+     the caller and never ends the process.
+  2. Registry: an identity-safe unregister, plus the recently-ended marks.
+  3. Producer extra attributes, then the control send in `_release`: stop staging, drain `_pending`, send the control.
+  4. Pool `end_session` and the TTL drop, then the Response Handler's quiet drop.
+- **Verify:**
+
+  ```bash
+  cd ak-py && uv run pytest tests/test_integration_gateway_runner.py tests/test_realtime_pool.py tests/test_livekit_gateway.py \
+    tests/test_pipeline_response_handler.py tests/test_integration_producer.py
+  ```
+
+  The tests are the C3 and C4 cases listed in spec "Testing".
+
+### Iteration 4: AK tests and lint
+
+- **Goal:** C1 to C5 work together through the whole path, and nothing older breaks.
+- **Files:** the test files above, plus `ak-py/tests/test_ecs_akagentrunner_realtime.py` (the ECS realtime path must
+  still pass).
+- **Steps:**
+  1. Run one path with a fake native session: a caller line, a handoff, the agent's reply, then end-of-session. Check
+     the chunk order and the `TranscriptLine`s.
+  2. Check that the existing LiveKit examples still import and start validation without credentials.
+- **Verify:**
+
+  ```bash
+  cd ak-py && uv run pytest tests/test_realtime_pool.py tests/test_openai_realtime.py tests/test_adk_realtime.py \
+    tests/test_livekit_gateway.py tests/test_integration_gateway_runner.py tests/test_ecs_akagentrunner_realtime.py
+  make lint-check-all   # from the repo root
+  ```
+

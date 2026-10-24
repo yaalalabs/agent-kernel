@@ -18,6 +18,7 @@ from agents.realtime import (
     RealtimeModel,
     RealtimeModelAudioEvent,
     RealtimeModelAudioInterruptedEvent,
+    RealtimeModelInputAudioTranscriptionCompletedEvent,
     RealtimeModelToolCallEvent,
     RealtimeModelTranscriptDeltaEvent,
     RealtimeModelTurnEndedEvent,
@@ -281,7 +282,49 @@ class TestHandoffsAndTools:
 # --- what the adapter reports ---------------------------------------------------------------------
 
 
+def heard(transcript: str, then, *, item_id: str = "item-in-1"):
+    """A scripted step: the model transcribes the caller's speech, then plays ``then``."""
+
+    async def step(model: ScriptedModel):
+        await model.emit(RealtimeModelInputAudioTranscriptionCompletedEvent(item_id=item_id, transcript=transcript))
+        await then(model)
+
+    return step
+
+
 class TestEventMapping:
+    @pytest.mark.asyncio
+    async def test_a_finished_caller_utterance_is_reported_before_the_reply_that_answers_it(self, runtime, monkeypatch):
+        coordinator, _ = _team()
+        _no_system_tools(monkeypatch)
+        module = OpenAIModule([coordinator])
+        model = ScriptedModel(heard("  we have 2000 patients ", response("r1", say="Noted.")))
+        runner, recorder, _ = await _connect(runtime, module, "coordinator", model)
+        try:
+            await runner.send_text("hi")
+            await recorder.until("done")
+        finally:
+            await runner.disconnect()
+
+        assert recorder.kinds()[0] == "input_transcript"
+        assert recorder.of("input_transcript") == [{"text": "we have 2000 patients", "message_id": "item-in-1"}]
+        assert recorder.kinds().index("input_transcript") < recorder.kinds().index("transcript_delta")
+
+    @pytest.mark.asyncio
+    async def test_an_empty_caller_transcript_is_not_reported(self, runtime, monkeypatch):
+        coordinator, _ = _team()
+        _no_system_tools(monkeypatch)
+        module = OpenAIModule([coordinator])
+        model = ScriptedModel(heard("   ", response("r1", say="Hi.")))
+        runner, recorder, _ = await _connect(runtime, module, "coordinator", model)
+        try:
+            await runner.send_text("hi")
+            await recorder.until("done")
+        finally:
+            await runner.disconnect()
+
+        assert recorder.of("input_transcript") == []
+
     @pytest.mark.asyncio
     async def test_audio_text_and_the_end_of_a_turn_are_reported_in_order(self, runtime, monkeypatch):
         coordinator, _ = _team()

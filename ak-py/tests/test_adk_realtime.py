@@ -116,6 +116,60 @@ async def test_one_native_run_reports_a_b_a(monkeypatch):
         assert [data["delta"] for kind, data in seen if kind == "transcript_delta"] == ["Asking billing", "Your invoice is 42", "Anything else"]
 
 
+async def _run_user_events(monkeypatch, events):
+    """Connect a runner over a scripted native run, feed it ``events`` and return what it reported."""
+    monkeypatch.setattr(SystemToolFactory, "get_all", staticmethod(lambda agent_name=None: []))
+    monkeypatch.setattr(SystemToolFactory, "get_system_prompt_suffix", staticmethod(lambda agent_name=None: ""))
+    monkeypatch.setattr("agentkernel.framework.adk.adk.Runner", NativeRun)
+    coordinator, billing = team()
+    with Runtime(InMemorySessionStore()):
+        module = GoogleADKModule([coordinator, billing])
+        runner = GoogleADKRealtimeRunner()
+        seen = []
+
+        async def collect(kind, data):
+            seen.append((kind, data))
+
+        await runner.connect(Session("call-t"), module.get_agent("coordinator"), collect)
+        for event in events:
+            await NativeRun.latest.events.put(event)
+        # A marker turn after them: once it is reported, every earlier event has been handled.
+        await NativeRun.latest.events.put(
+            Event(author="coordinator", invocation_id="i", content=types.Content(parts=[types.Part(text="x")]), turn_complete=True)
+        )
+        for _ in range(300):
+            if any(kind == "done" for kind, _ in seen):
+                break
+            await asyncio.sleep(0.01)
+        await runner.disconnect()
+        return seen
+
+
+def _heard(text, finished, partial=False, event_id="u-1"):
+    return Event(
+        id=event_id,
+        author="user",
+        invocation_id="i",
+        partial=partial,
+        input_transcription=types.Transcription(text=text, finished=finished),
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_finished_caller_transcription_is_reported_once(monkeypatch):
+    seen = await _run_user_events(monkeypatch, [_heard("we ", False, partial=True), _heard("we have 2000 patients ", True)])
+
+    assert [data for kind, data in seen if kind == "input_transcript"] == [{"text": "we have 2000 patients", "message_id": "u-1"}]
+
+
+@pytest.mark.asyncio
+async def test_partial_empty_and_history_user_events_are_not_reported(monkeypatch):
+    replayed = Event(author="user", invocation_id="i", content=types.Content(parts=[types.Part(text="earlier words")]))
+    seen = await _run_user_events(monkeypatch, [_heard("par", False, partial=True), _heard("   ", True), replayed])
+
+    assert [kind for kind, _ in seen if kind == "input_transcript"] == []
+
+
 @pytest.mark.asyncio
 async def test_workflow_announces_its_first_speaking_node(monkeypatch):
     monkeypatch.setattr(SystemToolFactory, "get_all", staticmethod(lambda agent_name=None: []))
@@ -375,8 +429,9 @@ OPENED: list["FakeConnection"] = []
 
 
 class FakeConnection(BaseLlmConnection):
-    def __init__(self, name, script):
+    def __init__(self, name, script, tool_names=()):
         self.name, self.script, self.closed = name, script, False
+        self.tool_names = tuple(tool_names)
 
     async def send_history(self, history):
         pass
@@ -403,6 +458,8 @@ class FakeLiveModel(BaseLlm):
     model: str = "fake-live"
     label: str = "agent"
     transfers: bool = False
+    transfer_target: str = "billing"
+    says_hello: bool = False
 
     async def generate_content_async(self, llm_request, stream=False):
         raise NotImplementedError("live only")
@@ -410,9 +467,11 @@ class FakeLiveModel(BaseLlm):
 
     @asynccontextmanager
     async def connect(self, llm_request):
-        call = types.FunctionCall(id="call-1", name="transfer_to_agent", args={"agent_name": "billing"})
-        script = [LlmResponse(content=types.Content(role="model", parts=[types.Part(function_call=call)]))] if self.transfers else []
-        connection = FakeConnection(self.label, script)
+        call = types.FunctionCall(id="call-1", name="transfer_to_agent", args={"agent_name": self.transfer_target})
+        script = [LlmResponse(content=types.Content(role="model", parts=[types.Part(text=f"Hello from {self.label}")]))] if self.says_hello else []
+        if self.transfers:
+            script.append(LlmResponse(content=types.Content(role="model", parts=[types.Part(function_call=call)])))
+        connection = FakeConnection(self.label, script, llm_request.tools_dict)
         OPENED.append(connection)
         try:
             yield connection
@@ -476,3 +535,65 @@ async def test_adk_keeps_the_connection_and_starts_no_one_for_a_refused_transfer
     state = await run_transfer_scenario(refuse_transfer)
     assert state["opened"] == ["coordinator"]
     assert state["closed"]["coordinator"] is False
+
+
+@pytest.mark.asyncio
+async def test_adk_live_transfers_from_one_sub_agent_to_its_peer(fast_transfer):
+    OPENED.clear()
+    ba = LlmAgent(name="ba", model=FakeLiveModel(label="ba", transfers=True, transfer_target="architect"))
+    architect = LlmAgent(name="architect", model=FakeLiveModel(label="architect"))
+    pm = LlmAgent(
+        name="pm",
+        model=FakeLiveModel(label="pm", transfers=True, transfer_target="ba"),
+        sub_agents=[ba, architect],
+    )
+    runner = ADKRunner(app_name="probe", agent=pm, session_service=InMemorySessionService(), auto_create_session=True)
+    queue = LiveRequestQueue()
+
+    async def consume():
+        async for _ in runner.run_live(user_id="u", session_id="s", live_request_queue=queue, run_config=RunConfig(response_modalities=["AUDIO"])):
+            pass
+
+    task = asyncio.create_task(consume())
+    try:
+        for _ in range(1000):
+            await asyncio.sleep(0.01)
+            if len(OPENED) >= 3:
+                break
+        assert [connection.name for connection in OPENED] == ["pm", "ba", "architect"]
+        assert "transfer_to_agent" in OPENED[1].tool_names
+        assert OPENED[0].closed and OPENED[1].closed
+    finally:
+        queue.close()
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        await runner.close()
+
+
+@pytest.mark.asyncio
+async def test_realtime_adapter_reports_native_peer_handoff(fast_transfer, monkeypatch):
+    monkeypatch.setattr(AKConfig.get().execution, "mode", ExecutionMode.REALTIME)
+    OPENED.clear()
+    ba = LlmAgent(name="ba", model=FakeLiveModel(label="ba", transfers=True, transfer_target="architect", says_hello=True))
+    architect = LlmAgent(name="architect", model=FakeLiveModel(label="architect", says_hello=True))
+    pm = LlmAgent(name="pm", model=FakeLiveModel(label="pm", transfers=True, transfer_target="ba"), sub_agents=[ba, architect])
+    seen = []
+
+    async def collect(kind, data):
+        seen.append((kind, data))
+
+    with Runtime(InMemorySessionStore()):
+        module = GoogleADKModule([pm])
+        module.run_options(pm, run_config=RunConfig(response_modalities=["AUDIO"]))
+        adapter = GoogleADKRealtimeRunner()
+        await adapter.connect(Session("peer-call"), module.get_agent("pm"), collect)
+        try:
+            await adapter.send_text("Start the call")
+            for _ in range(1000):
+                await asyncio.sleep(0.01)
+                if len([kind for kind, _ in seen if kind == "agent_changed"]) >= 2:
+                    break
+            assert [data["agent"] for kind, data in seen if kind == "agent_changed"] == ["ba", "architect"]
+            assert [connection.name for connection in OPENED] == ["pm", "ba", "architect"]
+        finally:
+            await adapter.disconnect()
