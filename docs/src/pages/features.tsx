@@ -861,7 +861,7 @@ function CoreFeatures() {
         "local_subprocess, docker, kubernetes, e2b, daytona, ec2_ssm",
         "Queue broker over SQS, Kafka, or NATS for long-running executions",
         "Session-persistent workspaces",
-        "Fail-closed network, filesystem, CPU, and memory policies; per-profile language and package-install permissions",
+        "Fail-closed network, filesystem, CPU, and memory policies; per-profile language and package-install permissions; configurable language runtimes on Docker and Kubernetes",
         "Agent or end-user identity",
       ],
       link: "/docs/advanced/sandbox",

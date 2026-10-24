@@ -115,11 +115,13 @@ sends.
 to the new signature. Raise `SandboxCapabilityError` for an ecosystem the provider does not declare
 (in `capabilities.package_ecosystems`), and honor `timeout`.
 
-A subclass that still overrides `install_packages(self, packages)` keeps working for `python`
-installs **for one minor release**. The worker calls it through a compatibility shim and logs one
-deprecation warning per class. Any other ecosystem fails with `SandboxCapabilityError`, and the
-worker's backstop is the only timer. The shim is removed in the following minor release. The
-`SandboxProviderContract` test suite already requires the new signature.
+A subclass whose `install_packages` override lacks `ecosystem` and/or `timeout` keeps working
+**for one minor release**. The worker calls it through a compatibility shim with only the keywords
+it accepts, and logs one deprecation warning per class naming the missing ones. Without `ecosystem`,
+only `python` installs work; any other ecosystem fails with `SandboxCapabilityError`. Without
+`timeout`, the worker's backstop is the only timer. The shim is removed in the following minor
+release. During the deprecation window the `SandboxProviderContract` test suite skips its
+undeclared-ecosystem check for an override that lacks `ecosystem`, so such overrides still pass it.
 
 Instance capability overrides should use `SandboxCapabilities.derive(...)` instead of
 `model_copy(update=...)`, which skips the new `package_ecosystems` validator.

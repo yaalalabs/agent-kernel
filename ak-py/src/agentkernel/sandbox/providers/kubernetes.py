@@ -222,8 +222,9 @@ class KubernetesSandbox(Sandbox):
     @staticmethod
     def _exit_status(raw: str) -> tuple[Optional[int], str]:
         """Parse an exec's status channel into ``(exit_code, message)``: ``0`` on Success, the
-        ``details.causes`` exit code on a Failure carrying one, else ``None`` with the status
-        message (empty when there is no parseable status)."""
+        message of the ``details.causes`` entry whose ``reason`` is ``ExitCode`` on a Failure
+        carrying one (client-go's remotecommand selects it the same way), else ``None`` with the
+        status message (empty when there is no parseable status)."""
         try:
             status = json.loads(raw)
         except (TypeError, ValueError):
@@ -233,8 +234,9 @@ class KubernetesSandbox(Sandbox):
         if status.get("status") == "Success":
             return 0, ""
         try:
-            return int(status["details"]["causes"][0]["message"]), ""
-        except (KeyError, IndexError, TypeError, ValueError):
+            causes = status["details"]["causes"]
+            return next(int(cause["message"]) for cause in causes if cause.get("reason") == "ExitCode"), ""
+        except (KeyError, TypeError, ValueError, AttributeError, StopIteration):
             return None, str(status.get("message") or "")
 
     async def _has_shell(self) -> bool:

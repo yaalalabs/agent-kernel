@@ -2172,6 +2172,23 @@ async def test_k8s_exec_without_any_status_is_a_failed_result(k8s_env):
     assert "exec ended without a status from the API server" in result.stderr
 
 
+@pytest.mark.parametrize(
+    "status,expected",
+    [
+        ({"status": "Success"}, (0, "")),
+        ({"status": "Failure", "details": {"causes": [{"reason": "ExitCode", "message": "3"}]}}, (3, "")),
+        # The ExitCode cause is selected by reason, not position.
+        ({"status": "Failure", "details": {"causes": [{"reason": "Other", "message": "7"}, {"reason": "ExitCode", "message": "2"}]}}, (2, "")),
+        ({"status": "Failure", "message": "boom", "details": {"causes": [{"reason": "Other", "message": "oops"}]}}, (None, "boom")),
+        ({"status": "Failure", "message": "boom", "details": {"causes": [{"reason": "ExitCode", "message": "x"}]}}, (None, "boom")),
+        ({"status": "Failure", "message": "boom"}, (None, "boom")),
+    ],
+)
+def test_k8s_exit_status_selects_the_exit_code_cause_by_reason(k8s_env, status, expected):
+    module, _ = k8s_env
+    assert module.KubernetesSandbox._exit_status(json.dumps(status)) == expected
+
+
 def _probe_answers(cluster, *answers):
     """Answer successive shell probes with ``answers`` (handler tuples), then the default handler."""
     default_handler = cluster.exec_handler
