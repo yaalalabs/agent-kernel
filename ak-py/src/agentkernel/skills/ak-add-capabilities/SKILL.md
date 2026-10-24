@@ -525,7 +525,7 @@ mcp:
 
 3. No code changes needed. The MCP server endpoint is automatically available.
 
-4. Know how agent tools run: through the queue pipeline, never in the web-server process. Each call
+4. Know how agent tools run: through the queue pipeline, never on the HTTP request thread. Each call
    is enqueued, the agent runner executes it, and the reply is read back from the response store.
    - Start the app with `RESTAPI.run()` (no handlers: one process on the in-memory queue) or
      `IOHandler.run(handlers=[...])`. With `expose_agents: true`, `RESTAPI.run(handlers=[...])`,
@@ -562,7 +562,7 @@ a2a:
 
 3. No code changes needed. The A2A well-known endpoint is automatically available at `/.well-known/agent.json`.
 
-4. Know how A2A calls run: through the queue pipeline, never in the web-server process. Each
+4. Know how A2A calls run: through the queue pipeline, never on the HTTP request thread. Each
    `message:send` is enqueued (the A2A `context_id` is the session), the agent runner executes it,
    and the reply is read back from the response store.
    - Start the app with `RESTAPI.run()` (no handlers: one process on the in-memory queue) or

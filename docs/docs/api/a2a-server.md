@@ -45,7 +45,8 @@ if __name__ == "__main__":
 
 A2A always goes through the [queue pipeline](../advanced/queue-mode-guide.md), like a REST chat
 request: each message is put on the input queue, the agent runner executes it, and the reply is
-read back from the response store. The agent never runs inside the web-server process.
+read back from the response store. The agent never runs on the HTTP request thread; it runs in a
+separate process only in split deployments.
 
 | How the app starts | A2A |
 |---|---|
