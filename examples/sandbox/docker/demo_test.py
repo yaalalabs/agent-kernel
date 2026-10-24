@@ -50,3 +50,14 @@ async def test_offline_profile_blocks_network(test_client):
         "If the request fails for any reason, reply with only the single word: OFFLINE"
     )
     await test_client.expect(["OFFLINE"])
+
+
+@pytest.mark.order(5)
+async def test_bash_runtime_runs_through_run_code(test_client):
+    # The default profile declares bash in docker.language_runtimes, so run_code execs
+    # ["bash", "-c", code] in the container. The sentinel is printed by bash itself.
+    await test_client.send(
+        "Use run_code with language bash (not run_command) to run this bash code: "
+        'echo "BASH $(echo OK)". Reply with only what it printed.'
+    )
+    await test_client.expect(["BASH OK"])

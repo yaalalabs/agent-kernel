@@ -249,15 +249,23 @@ def test_model_capabilities_derive_revalidates():
     assert base.derive(package_install=True).package_ecosystems == ["python"]
 
 
-def test_model_capabilities_derive_requires_both_fields_for_ecosystem_changes():
-    # model_dump() marks package_install as explicitly set on the copy, so an override that changes
-    # ecosystems must set both fields together.
+def test_model_capabilities_derive_keeps_package_fields_consistent():
+    # Updating one package field re-derives the other instead of keeping its stale value.
     off = SandboxCapabilities(isolation=IsolationTier.CONTAINER)
-    with pytest.raises(ValidationError):
-        off.derive(package_ecosystems=["node"])
+    node = off.derive(package_ecosystems=["node"])
+    assert node.package_install is True and node.package_ecosystems == ["node"]
 
     on = SandboxCapabilities(isolation=IsolationTier.CONTAINER, package_ecosystems=["node"])
-    assert on.derive(package_ecosystems=[]).package_ecosystems == ["python"]  # the legacy branch, not "no installs"
+    cleared = on.derive(package_ecosystems=[])
+    assert cleared.package_install is False and cleared.package_ecosystems == []  # "no installs", not the legacy ["python"]
+
+    disabled = on.derive(package_install=False)
+    assert disabled.package_install is False and disabled.package_ecosystems == []
+
+    assert on.derive(package_install=True).package_ecosystems == ["node"]  # the existing ecosystems are kept
+
+    with pytest.raises(ValidationError):  # an explicit contradiction still raises
+        off.derive(package_ecosystems=["node"], package_install=False)
 
 
 def test_model_package_install_policy():
@@ -389,6 +397,29 @@ def test_config_provider_package_installers_reject_empty_argv(installers):
 def test_config_provider_package_installers_replace_default():
     cfg = _SandboxDockerConfig(package_installers={"node": ["npm", "install"]})
     assert cfg.package_installers == {"node": ["npm", "install"]}  # not merged with the python default
+
+
+@pytest.mark.parametrize("model", [_SandboxDockerConfig, _SandboxKubernetesConfig])
+def test_config_provider_language_runtimes_defaults(model):
+    assert model().language_runtimes == {"python": ["python", "-c"]}
+
+
+@pytest.mark.parametrize("model", [_SandboxE2BConfig, _SandboxDaytonaConfig])
+def test_config_sdk_native_providers_have_no_language_runtimes(model):
+    assert "language_runtimes" not in model.model_fields  # their SDK picks the interpreter, not an argv
+
+
+def test_config_provider_language_runtimes_require_python():
+    with pytest.raises(ValidationError, match="'python' runtime"):
+        _SandboxDockerConfig(language_runtimes={"node": ["node", "-e"]})
+    with pytest.raises(ValidationError, match="'python' runtime"):
+        _SandboxKubernetesConfig(language_runtimes={"node": [""]})  # the python check runs first
+
+
+@pytest.mark.parametrize("runtimes", [{"python": []}, {"python": ["python", ""]}, {"python": ["python", "-c"], "node": [""]}])
+def test_config_provider_language_runtimes_reject_empty_argv(runtimes):
+    with pytest.raises(ValidationError, match="non-empty argv prefix"):
+        _SandboxDockerConfig(language_runtimes=runtimes)
 
 
 def test_config_attached_profile_rejects_package_install():
@@ -1041,7 +1072,8 @@ def test_install_packages_tool_absent_without_a_permitting_profile(monkeypatch):
     assert [t.name for t in tools] == SANDBOX_TOOL_NAMES
     guidance = tools[0].description
     assert "install_packages(" not in guidance
-    assert "package installs not permitted" in guidance
+    assert "package installs" not in guidance  # no tool, so no per-profile install permissions either
+    assert not any(line.rstrip().endswith(";") for line in guidance.splitlines())  # no dangling separator
     assert "not permitted by the profile, report it to the user" in guidance  # always present
 
 
@@ -1063,6 +1095,25 @@ def test_install_packages_tool_registered_with_permission_guidance(monkeypatch):
     assert "run_code disabled (command-only profile)" in guidance
     assert "package installs not permitted" in guidance  # the 'shell' profile
     assert "" not in guidance.splitlines()
+
+
+def test_guidance_lists_runtime_languages(monkeypatch):
+    # docker/kubernetes declare their languages in language_runtimes; the guidance shows them, narrowed by policy.languages.
+    docker = _SandboxDockerConfig(language_runtimes={"python": ["python", "-c"], "node": ["node", "-e"]})
+    profiles = {
+        "default": _SandboxProfileConfig(type="docker", docker=docker),
+        "narrowed": _SandboxProfileConfig(type="docker", docker=docker, policy=_SandboxPolicyConfig(languages=["node", "ruby"])),
+        "mismatched": _SandboxProfileConfig(type="docker", docker=docker, policy=_SandboxPolicyConfig(languages=["ruby"])),
+        "plain": _SandboxProfileConfig(type="docker", docker=_SandboxDockerConfig()),
+        "byo": _SandboxProfileConfig(type=FAKE_DOTTED),
+    }
+    _install_sandbox_cfg(monkeypatch, _sandbox_cfg(profiles=profiles))
+    lines = {line.split("'")[1]: line for line in get_sandbox_tools()[0].description.splitlines() if line.startswith("- '")}
+    assert lines["default"].endswith("; languages: python, node")  # no policy.languages: the runtime keys
+    assert lines["narrowed"].endswith("; languages: node")  # ruby is permitted but not declared, so not offered
+    assert lines["mismatched"].endswith("; run_code unavailable (no permitted language is in the provider's language_runtimes)")
+    assert lines["plain"].endswith("; languages: python")  # the default runtime map
+    assert "languages" not in lines["byo"]  # no config-declared runtimes and no policy: nothing to say
 
 
 def test_get_sandbox_tools_fails_on_an_unresolvable_package_rule(monkeypatch):

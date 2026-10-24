@@ -818,7 +818,11 @@ inert when disabled. To add a provider, use the `ak-dev-new-sandbox-provider` sk
   shell, languages, files, package_ecosystems, stateful, attach, principal_user, policy_*).
   `package_ecosystems` is the source of truth for installs; a validator derives `package_install`
   from it. Instance overrides go through `capabilities.derive(**update)`, never `model_copy`
-  (which skips that validator). The manager/worker consult it before routing; the worker enforces
+  (which skips that validator). On `docker` and `kubernetes`, `languages` is instance-declared
+  too: the keys of the provider block's `language_runtimes` (`_SandboxProviderRuntimeConfig`, default
+  `{python: [python, -c]}`, `python` required), set in the same single `derive()`; their
+  `execute_code` execs `[*language_runtimes[language], code]`. `e2b`/`daytona` stay `["python"]`.
+  The manager/worker consult it before routing; the worker enforces
   principal and policy **fail-closed** against it (unenforceable + `strict` → `SandboxPolicyError`).
 - **`SandboxPermissionGuard`** (`permission.py`): decides what a profile **permits**, from the
   request's own `SandboxPolicy` (`languages` for `execute_code`, `package_install` for

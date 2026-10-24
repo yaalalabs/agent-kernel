@@ -1,7 +1,8 @@
 """``docker`` provider — container-per-sandbox via the Docker SDK (``sandbox-docker`` extra).
 
 Each sandbox is a detached container running ``sleep infinity``; executions are
-``exec_run`` calls of the language interpreter, files travel via ``put_archive`` /
+``exec_run`` calls of the language's interpreter argv from ``language_runtimes`` with the
+code appended, files travel via ``put_archive`` /
 ``get_archive`` under the ``/workspace`` working directory, and ``install_packages`` execs the
 validated installer argv from ``package_installers``. The SDK is synchronous, so every call
 runs in ``asyncio.to_thread``. A timed-out or cancelled exec is killed by its environment
@@ -48,21 +49,25 @@ def _safe_rel(path: str) -> str:
 class DockerSandbox(Sandbox):
     """Handle to one running container; executions are ``exec_run`` calls inside it."""
 
-    def __init__(self, container, *, capabilities: SandboxCapabilities, installer: PackageInstaller, kill_enabled: bool) -> None:
+    def __init__(
+        self, container, *, capabilities: SandboxCapabilities, installer: PackageInstaller, runtimes: dict[str, list[str]], kill_enabled: bool
+    ) -> None:
         """Bind the handle to a Docker SDK container object; the container id is the sandbox id.
-        ``capabilities`` are the provider instance's; ``kill_enabled`` is False for an
-        ``attach_to`` container: the framework does not own it, so it neither tags nor kills its execs."""
+        ``capabilities`` are the provider instance's; ``runtimes`` is its ``language_runtimes``
+        map; ``kill_enabled`` is False for an ``attach_to`` container: the framework does not
+        own it, so it neither tags nor kills its execs."""
         self.id = container.id
         self._container = container
         self._capabilities = capabilities
         self._installer = installer
+        self._runtimes = runtimes
         self._kill_enabled = kill_enabled
 
     async def execute_code(self, code: str, language: str = "python", timeout: float | None = None) -> SandboxResult:
-        """Exec the language interpreter with the code (``python -c`` in v1)."""
+        """Exec the language's configured interpreter argv with the code appended (default ``python -c``)."""
         if language not in self._capabilities.languages:
             raise SandboxCapabilityError(self.__class__.__name__, f"language:{language}")
-        return await self._exec(["python", "-c", code], timeout)
+        return await self._exec([*self._runtimes[language], code], timeout)
 
     async def execute_command(self, command: str, timeout: float | None = None) -> SandboxResult:
         """Exec a shell command via ``/bin/sh -c``."""
@@ -148,7 +153,7 @@ class DockerSandboxProvider(SandboxProvider):
     capabilities = SandboxCapabilities(
         isolation=IsolationTier.CONTAINER,
         shell=True,
-        languages=["python"],
+        languages=["python"],  # the default; each instance declares its language_runtimes keys
         files=True,
         package_ecosystems=["python"],  # the default; each instance declares its package_installers keys
         stateful=False,
@@ -161,17 +166,19 @@ class DockerSandboxProvider(SandboxProvider):
     )
 
     def __init__(self, config) -> None:
-        """Store the config and build the installer; the Docker client is created lazily on first use."""
+        """Store the config and build the installer and runtime map; the Docker client is created lazily on first use."""
         super().__init__(config)
         self._client_instance: Optional["docker.DockerClient"] = None
         self._installer = PackageInstaller.from_config(config)
-        ecosystems = self._installer.ecosystems
-        self.capabilities = type(self).capabilities.derive(package_ecosystems=ecosystems, package_install=bool(ecosystems))
+        self._runtimes = dict(config.language_runtimes)
+        self.capabilities = type(self).capabilities.derive(languages=list(self._runtimes), package_ecosystems=self._installer.ecosystems)
         self._kill_enabled = not config.attach_to
 
     def _handle(self, container) -> "DockerSandbox":
-        """Wrap a container in a handle carrying this instance's capabilities and installer."""
-        return DockerSandbox(container, capabilities=self.capabilities, installer=self._installer, kill_enabled=self._kill_enabled)
+        """Wrap a container in a handle carrying this instance's capabilities, installer and runtimes."""
+        return DockerSandbox(
+            container, capabilities=self.capabilities, installer=self._installer, runtimes=self._runtimes, kill_enabled=self._kill_enabled
+        )
 
     def _client(self):
         """Return the lazily created Docker client (``docker.from_env()``)."""

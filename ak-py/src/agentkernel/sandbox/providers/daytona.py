@@ -22,7 +22,7 @@ import asyncio
 import logging
 import math
 import os
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from daytona import (
     CreateSandboxFromImageParams,
@@ -31,10 +31,10 @@ from daytona import (
     DaytonaConfig,
     Resources,
 )
-from daytona.common.errors import DaytonaError
+from daytona.common.errors import DaytonaError, DaytonaTimeoutError
 
 from ..base import Sandbox, SandboxProvider
-from ..errors import SandboxCapabilityError, SandboxConfigError, SandboxGoneError
+from ..errors import SandboxCapabilityError, SandboxConfigError, SandboxGoneError, SandboxTimeoutError
 from ..model import IsolationTier, SandboxCapabilities, SandboxPolicy, SandboxPrincipal, SandboxResult
 from ..packages import PackageInstaller
 
@@ -58,19 +58,26 @@ class DaytonaSandbox(Sandbox):
         """Run the code via ``process.code_run``; a non-zero exit is data on the response."""
         if language not in self._capabilities.languages:
             raise SandboxCapabilityError(self.__class__.__name__, f"language:{language}")
-        response = await asyncio.to_thread(self._sandbox.process.code_run, code, timeout=math.ceil(timeout) if timeout else None)
-        return _to_result(response)
+        return await self._run(self._sandbox.process.code_run, code, timeout)
 
     async def execute_command(self, command: str, timeout: float | None = None) -> SandboxResult:
         """Run a shell command via ``process.exec``."""
-        response = await asyncio.to_thread(self._sandbox.process.exec, command, timeout=math.ceil(timeout) if timeout else None)
-        return _to_result(response)
+        return await self._run(self._sandbox.process.exec, command, timeout)
 
     async def install_packages(self, packages: list[str], ecosystem: str = "python", timeout: float | None = None) -> SandboxResult:
         """Run the ecosystem's validated installer command via ``process.exec``, under its native timeout."""
         if ecosystem not in self._capabilities.package_ecosystems:
             raise SandboxCapabilityError(self.__class__.__name__, f"package_ecosystem:{ecosystem}")
         return await self.execute_command(self._installer.command(packages, ecosystem), timeout)
+
+    async def _run(self, call: Callable[..., Any], source: str, timeout: float | None) -> SandboxResult:
+        """Run ``code_run`` / ``exec`` in a thread under the SDK's native timeout (whole seconds,
+        rounded up); its ``DaytonaTimeoutError`` raises ``SandboxTimeoutError``."""
+        try:
+            response = await asyncio.to_thread(call, source, timeout=math.ceil(timeout) if timeout else None)
+        except DaytonaTimeoutError as exc:
+            raise SandboxTimeoutError(f"daytona execution exceeded timeout {timeout}s") from exc
+        return _to_result(response)
 
     async def upload_file(self, path: str, content: bytes) -> None:
         """Upload the bytes to the sandbox filesystem."""
@@ -126,8 +133,7 @@ class DaytonaSandboxProvider(SandboxProvider):
         self._idle_timeout = idle_timeout
         self._client_instance: Optional[Daytona] = None
         self._installer = PackageInstaller.from_config(config)
-        ecosystems = self._installer.ecosystems
-        self.capabilities = type(self).capabilities.derive(package_ecosystems=ecosystems, package_install=bool(ecosystems))
+        self.capabilities = type(self).capabilities.derive(package_ecosystems=self._installer.ecosystems)
 
     def _handle(self, sandbox: Any) -> DaytonaSandbox:
         """Wrap an SDK sandbox in a handle carrying this instance's capabilities and installer."""

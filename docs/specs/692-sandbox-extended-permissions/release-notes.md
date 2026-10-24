@@ -1,9 +1,9 @@
 # Release notes draft: #692 sandbox extended permissions
 
-Paste-ready material for the GitHub release that ships #692. The capability lands over two PRs
-(`plan.md` phases 1 and 2). **Shipped so far: phase 1**: the permission guard, per-profile language
-and package-install permissions, and the `install_packages` tool. Phase 2 (operator-declared language
-runtimes for `docker` and `kubernetes`) follows.
+Paste-ready material for the GitHub release that ships #692. The capability ships in one PR, built
+in two phases (`plan.md` phases 1 and 2): phase 1 adds the permission guard, per-profile language and
+package-install permissions, and the `install_packages` tool; phase 2 adds operator-declared language
+runtimes for `docker` and `kubernetes`.
 
 ## New: per-profile language and package-install permissions
 
@@ -56,6 +56,28 @@ What ships with it:
 See [Sandbox → Package installation](https://kernel.yaala.ai/docs/advanced/sandbox#package-installation)
 for the posture table (offline installs, read-only root filesystems, non-root images).
 
+## New: language runtimes for `docker` and `kubernetes`
+
+`run_code` on `docker` and `kubernetes` is no longer Python-only. The provider block's
+`language_runtimes` maps each language the image provides to its interpreter argv; the code is
+appended as the last argument:
+
+```yaml
+    docker:
+      image: my-org/agent-runtime:1
+      language_runtimes:             # the keys are the languages run_code accepts on this provider
+        python: [python, -c]         # the default; required
+        node: [node, -e]
+```
+
+- `python` is required, and declaring `language_runtimes` replaces the default map rather than
+  merging with it.
+- `policy.languages` still narrows per profile; `[]` keeps a profile command-only.
+- `e2b` and `daytona` stay Python-only: their SDKs choose the interpreter.
+- No behaviour change for existing configs: the default map runs `python -c` as before.
+
+See [Sandbox → Language runtimes](https://kernel.yaala.ai/docs/advanced/sandbox#language-runtimes).
+
 ## Behaviour changes
 
 - **Raw `install_packages` requests are now denied** unless the profile declares `package_install`.
@@ -93,11 +115,13 @@ sends.
 to the new signature. Raise `SandboxCapabilityError` for an ecosystem the provider does not declare
 (in `capabilities.package_ecosystems`), and honor `timeout`.
 
-A subclass that still overrides `install_packages(self, packages)` keeps working for `python`
-installs **for one minor release**. The worker calls it through a compatibility shim and logs one
-deprecation warning per class. Any other ecosystem fails with `SandboxCapabilityError`, and the
-worker's backstop is the only timer. The shim is removed in the following minor release. The
-`SandboxProviderContract` test suite already requires the new signature.
+A subclass whose `install_packages` override lacks `ecosystem` and/or `timeout` keeps working
+**for one minor release**. The worker calls it through a compatibility shim with only the keywords
+it accepts, and logs one deprecation warning per class naming the missing ones. Without `ecosystem`,
+only `python` installs work; any other ecosystem fails with `SandboxCapabilityError`. Without
+`timeout`, the worker's backstop is the only timer. The shim is removed in the following minor
+release. During the deprecation window the `SandboxProviderContract` test suite skips its
+undeclared-ecosystem check for an override that lacks `ecosystem`, so such overrides still pass it.
 
 Instance capability overrides should use `SandboxCapabilities.derive(...)` instead of
 `model_copy(update=...)`, which skips the new `package_ecosystems` validator.

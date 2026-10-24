@@ -204,9 +204,11 @@ class SandboxProviderContract:
 
             if caps.package_install:
                 assert isinstance(await sandbox.install_packages(["pip-noop"]), SandboxResult)
-                # An ecosystem the instance does not declare raises; it is never run as pip.
-                with pytest.raises(SandboxCapabilityError):
-                    await sandbox.install_packages(["pip-noop"], ecosystem="definitely-not-an-ecosystem")
+                # An ecosystem the instance does not declare raises; it is never run as pip. A pre-#692
+                # override without an ecosystem parameter cannot take one: the worker's shim rejects it instead.
+                if "ecosystem" in type(sandbox).install_parameters():
+                    with pytest.raises(SandboxCapabilityError):
+                        await sandbox.install_packages(["pip-noop"], ecosystem="definitely-not-an-ecosystem")
             else:
                 with pytest.raises(SandboxCapabilityError):
                     await sandbox.install_packages(["pip-noop"])

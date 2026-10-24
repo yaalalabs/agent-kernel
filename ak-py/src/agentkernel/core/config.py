@@ -779,7 +779,34 @@ class _SandboxProviderPackageConfig(BaseModel):
         return value
 
 
-class _SandboxDockerConfig(_SandboxProviderPackageConfig):
+class _SandboxProviderRuntimeConfig(BaseModel):
+    """Language-runtime fields shared by the provider blocks that exec an interpreter argv."""
+
+    language_runtimes: dict[str, list[str]] = Field(
+        default_factory=lambda: {"python": ["python", "-c"]},
+        description="Language -> interpreter argv prefix the image provides; the code is appended as the last argument. "
+        "The keys are the provider's declared languages; declaring it replaces the default map and must keep a 'python' key",
+    )
+
+    @field_validator("language_runtimes")
+    @classmethod
+    def _runtimes_require_python(cls, value: dict[str, list[str]]) -> dict[str, list[str]]:
+        """Python execution is mandatory under the provider contract, so the map must declare it."""
+        if "python" not in value:
+            raise ValueError("language_runtimes must declare a 'python' runtime")
+        return value
+
+    @field_validator("language_runtimes")
+    @classmethod
+    def _runtime_argv_non_empty(cls, value: dict[str, list[str]]) -> dict[str, list[str]]:
+        """Every interpreter argv prefix holds at least one token, and no token is empty."""
+        for language, argv in value.items():
+            if not argv or any(not token for token in argv):
+                raise ValueError(f"language_runtimes[{language!r}] must be a non-empty argv prefix with no empty tokens")
+        return value
+
+
+class _SandboxDockerConfig(_SandboxProviderPackageConfig, _SandboxProviderRuntimeConfig):
     image: str = Field(default="python:3.12-slim", description="Container image used to create sandboxes")
     runtime: str = Field(default="docker", description="Container runtime to invoke (e.g. docker, nvidia)")
     attach_to: Optional[str] = Field(default=None, description="Existing container id to attach to instead of creating one (mode 3)")
@@ -816,7 +843,7 @@ class _SandboxBedrockAgentCoreConfig(BaseModel):
     network_mode: str = Field(default="sandbox", description="AgentCore session network mode (e.g. 'sandbox', 'public')")
 
 
-class _SandboxKubernetesConfig(_SandboxProviderPackageConfig):
+class _SandboxKubernetesConfig(_SandboxProviderPackageConfig, _SandboxProviderRuntimeConfig):
     namespace: str = Field(default="default", description="Kubernetes namespace for sandbox pods")
     image: str = Field(default="python:3.12-slim", description="Container image used for launched sandbox pods")
     attach_to: Optional[str] = Field(default=None, description="Existing '<namespace>/<pod>' to exec into instead of launching a pod (mode 3)")

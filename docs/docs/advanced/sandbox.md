@@ -74,7 +74,7 @@ operations a profile does not permit, come back as `{"error": ...}` rather than 
 
 | Tool | Purpose |
 |---|---|
-| `run_code(code, language, sandbox_session_id, profile)` | Execute code; returns stdout, stderr, exit_code. `language` must be one the profile permits (`policy.languages`). |
+| `run_code(code, language, sandbox_session_id, profile)` | Execute code; returns stdout, stderr, exit_code. `language` must be one the profile permits (`policy.languages`) and the provider declares (see [Language runtimes](#language-runtimes)). |
 | `run_command(command, sandbox_session_id, profile)` | Execute a shell command. |
 | `write_sandbox_file(path, content, sandbox_session_id, profile)` | Write a UTF-8 text file into the workspace. |
 | `read_sandbox_file(path, sandbox_session_id, profile)` | Read a UTF-8 text file (truncated to `tool_output_max_chars`). |
@@ -85,7 +85,9 @@ operations a profile does not permit, come back as `{"error": ...}` rather than 
 | `install_packages(packages, ecosystem, sandbox_session_id, profile)` | Install registry packages of one ecosystem (default `python`). Registered only when a profile's policy sets `package_install`. |
 
 The injected guidance lists what each profile permits (languages, package installs) and tells
-the agent to report a denial to the user rather than work around it with `run_command`.
+the agent to report a denial to the user rather than work around it with `run_command`. On
+`docker` and `kubernetes` the listed languages are the `language_runtimes` keys, narrowed by
+`policy.languages` (see [Language runtimes](#language-runtimes)).
 
 `tool_output_max_chars` (default `8000`) bounds how much stdout/stderr or file content is
 returned to the model.
@@ -242,7 +244,7 @@ Two policy fields decide which sandbox operations a profile **permits**:
 - **`languages`** narrows `run_code`. Omitted (`null`), every language the provider declares
   is allowed, as before. A list allows only those languages, and `[]` disables `run_code`
   entirely (a command-only profile). It can only narrow: a listed language the provider does not
-  support still fails.
+  support still fails (see [Language runtimes](#language-runtimes)).
 - **`package_install`** permits the `install_packages` tool. It is off unless the block is
   present; see [Package installation](#package-installation).
 
@@ -279,6 +281,48 @@ image with a read-only root filesystem and no installer binaries.
 cannot reach a network mirror; a mirror needs a policy that permits access to it.
 Do not rely on `allowlist` on `e2b` or `daytona` as a hard limit until the live egress gate
 (`ak-py/tests/test_sandbox_egress_live.py`) has passed against that provider.
+
+### Language runtimes
+
+Which languages `run_code` can use is decided in two places: the **provider** declares what the
+image can run, and the profile's `policy.languages` narrows that per profile. On `docker` and
+`kubernetes`, the provider block's `language_runtimes` declares the languages:
+
+```yaml
+profiles:
+  polyglot:
+    type: docker
+    policy:
+      languages: [python, node]      # this profile permits two of the three declared languages
+    docker:
+      image: my-org/agent-runtime:1  # must provide every interpreter below
+      language_runtimes:             # language -> interpreter argv prefix; the code is appended last
+        python: [python, -c]         # the default when language_runtimes is omitted
+        node: [node, -e]
+        bash: [bash, -c]
+```
+
+- **The keys are what the provider supports.** `run_code(code, "node")` execs
+  `["node", "-e", code]`, with no shell in between. The interpreter is always the first argument
+  and the code always the last, so pick a prefix whose final flag takes the code as a string.
+- **`python` is required**, because every provider must run Python. Every argv prefix needs at
+  least one token, and no token may be empty. Both are checked at config load.
+- **`language_runtimes` replaces the default, it is not merged with it.** Adding `node` means
+  restating `python` (the same rule as `package_installers`).
+- **Command-only profiles.** `policy.languages: []` disables `run_code` for a profile while
+  `run_command` keeps working.
+- **Only `docker` and `kubernetes`.** `e2b` runs code in the kernel its `template` provides, and
+  Daytona's SDK fixes the language per sandbox, so both run `python` only. `local_subprocess`
+  runs `python` and `bash`; `ec2_ssm` runs `python`.
+- **Permitted but not declared.** A `policy.languages` entry missing from `language_runtimes`
+  passes the permission check, then fails with `SandboxCapabilityError`; the broker worker logs a
+  one-time warning per provider and profile naming it.
+- **The agent sees the result.** The injected guidance lists each profile's usable languages: the
+  `language_runtimes` keys, or the `policy.languages` entries the map declares. A profile whose
+  permitted languages are all undeclared is shown as having `run_code` unavailable.
+
+As environment variables:
+`AK_SANDBOX__PROFILES__<NAME>__DOCKER__LANGUAGE_RUNTIMES='{"python":["python","-c"],"node":["node","-e"]}'`.
 
 ## Package installation
 
@@ -365,7 +409,12 @@ class ApprovedPythonPackages(PackageSpecRule):
         python: myapp.sandbox.ApprovedPythonPackages
 ```
 
-The rule class must be importable both in the agent process and in the broker worker.
+The rule class must be importable both in the agent process and in the broker worker. Both
+sides resolve every `package_rules` path at startup: the agent when it builds its sandbox tools
+(it also validates package specs before submitting an install), and the worker at
+`QueueBrokerWorker` startup and when it creates the provider. On the `queue` flavor, ship the rule
+module in **both** images: if the agent image lacks it, agent construction fails with
+`SandboxConfigError`, even though installs only run on the worker.
 
 ### Installer prefixes per posture
 
@@ -458,11 +507,11 @@ Providers available today:
 | Provider | Extra | Isolation | Notes |
 |---|---|---|---|
 | `local_subprocess` | — (stdlib) | `none` | Runs on the host. Dev/test only. Shell + files + `python`/`bash`. |
-| `docker` | `sandbox-docker` | `container` | Container per sandbox (`sleep infinity`); files via archives; package installs (default installer `pip install`, configurable via `package_installers`). Maps `deny`→`network_mode: none`, cpu/memory→limits, fs→read-only rootfs + writable workdir. Requires a Docker daemon. |
+| `docker` | `sandbox-docker` | `container` | Container per sandbox (`sleep infinity`); code runs through `language_runtimes` (default `python -c`); files via archives; package installs (default installer `pip install`, configurable via `package_installers`). Maps `deny`→`network_mode: none`, cpu/memory→limits, fs→read-only rootfs + writable workdir. Requires a Docker daemon. |
 | `e2b` | `e2b` | `micro_vm` | Managed Firecracker micro-VMs on the E2B cloud (native async SDK). Stateful Jupyter-kernel execution (variables persist across calls); shell, files, package installs (default `pip install`, configurable via `package_installers`). Maps `deny`→no internet access, `allowlist`→`allow_out` network rules; the profile's `idle_timeout` becomes E2B's native auto-kill timeout. Needs `E2B_API_KEY` (name configurable via `api_key_env`). |
 | `daytona` | `daytona` | `container` | Container sandboxes on the Daytona cloud (sync SDK via `to_thread`). Shell, files, package installs (default `pip install`, configurable via `package_installers`). Maps `deny`→block-all, `allowlist`→CIDR allow list, cpu/memory→`Resources` (image-based sandbox); `idle_timeout` becomes Daytona's native `auto_stop_interval`. Needs `DAYTONA_API_KEY` (name configurable via `api_key_env`). |
 | `ec2_ssm` | `aws` | `none` | **Attach-only** (requires `environment: attached`): executes on an existing EC2 instance via SSM Run Command — binds to `attach_to`, never provisions or disposes. Shell + `python` (heredoc); no policy enforcement beyond the execution timeout. Supports **user identity** (`sts:AssumeRole` + optional `run_as` OS user). No persistent shell: each command is its own process, so cwd/env/`sudo su` do not carry across commands (`stateful=False`); chain dependent steps (`cd /app && ./run.sh`). |
-| `kubernetes` | `kubernetes` | `container` | Pod per sandbox (`sleep infinity`) via the Kubernetes API; exec over the stream API, files as tar streams, package installs (default `pip install`, configurable via `package_installers`). Hardened container defaults (no privilege escalation, seccomp `RuntimeDefault`, all capabilities dropped) under your `security_context` overlays. Maps cpu/memory→requests=limits, fs→read-only rootfs + emptyDir workdir, and egress→per-pod NetworkPolicies only when `network_policy: true` asserts the cluster CNI enforces them. Supports **user identity** via RBAC impersonation (see Identity). Pods carry `activeDeadlineSeconds = 2 × idle_timeout` as the orphan ceiling; the pod ServiceAccount's RBAC is the security boundary. |
+| `kubernetes` | `kubernetes` | `container` | Pod per sandbox (`sleep infinity`) via the Kubernetes API; exec over the stream API, code through `language_runtimes` (default `python -c`), files as tar streams, package installs (default `pip install`, configurable via `package_installers`). Hardened container defaults (no privilege escalation, seccomp `RuntimeDefault`, all capabilities dropped) under your `security_context` overlays. Maps cpu/memory→requests=limits, fs→read-only rootfs + emptyDir workdir, and egress→per-pod NetworkPolicies only when `network_policy: true` asserts the cluster CNI enforces them. Supports **user identity** via RBAC impersonation (see Identity). Pods carry `activeDeadlineSeconds = 2 × idle_timeout` as the orphan ceiling; the pod ServiceAccount's RBAC is the security boundary. |
 
 Additional providers (`bedrock_agentcore`) are planned in later iterations.
 
@@ -477,7 +526,7 @@ sandbox:
   enabled: true
   type: docker
   docker:
-    image: python:3.12-slim     # any image with python
+    image: python:3.12-slim     # any image with the interpreters in language_runtimes (default: python)
   broker:
     flavor: thread
 ```
@@ -611,12 +660,13 @@ effective timeout. The built-in providers delegate validation to `PackageInstall
 bring-your-own provider can reuse it the same way.
 
 :::note Migrating a bring-your-own `Sandbox` subclass
-`install_packages` used to take only `packages`. A subclass that still overrides
-`install_packages(self, packages)` keeps working for `python` installs for one more release: the
-broker worker calls it through a compatibility shim and logs a one-time deprecation warning, with
-the backstop as the install's only timer. Requests for any other ecosystem fail with
-`SandboxCapabilityError`. Update the override to the new signature. The
-`SandboxProviderContract` suite already requires it.
+`install_packages` used to take only `packages`. A subclass whose override lacks `ecosystem`
+and/or `timeout` keeps working for one more release: the broker worker calls it through a
+compatibility shim with only the keywords it accepts, and logs a one-time deprecation warning
+naming the missing ones. Without `timeout`, the backstop is the install's only timer; without
+`ecosystem`, the override only gets `python` installs, and requests for any other ecosystem fail
+with `SandboxCapabilityError`. Update the override to
+`install_packages(self, packages, ecosystem="python", timeout=None)`.
 :::
 
 ## Broker flavors
@@ -674,6 +724,10 @@ e.g. Lambda or ECS, with the worker beside it) and `sandbox/broker-nats` (everyt
 in-cluster via the ak-k8s chart's `sandboxWorker` tier, including its standalone worker-only
 install); see the chart README's sandbox worker section for KEDA scaling and namespace
 hardening.
+
+**Custom package rules go in both images.** A `package_rules` module is imported by the agent as
+well as the worker, so a missing module fails the agent at startup (see
+[Package specs](#package-specs)).
 
 **Upgrade queue workers before agent pods.** The worker enforces the permissions the agent side
 sends. An older worker ignores `package_install` (and runs any install as `pip install`), while
@@ -734,6 +788,8 @@ sandbox:
         image: python:3.12-slim
         runtime: docker
         attach_to: null          # existing container id to attach to (mode 3)
+        language_runtimes:       # language -> interpreter argv prefix, code appended last
+          python: [python, -c]   #   (needs a python key; replaces, not merges)
         package_installers:      # ecosystem -> installer argv prefix (replaces, not merges)
           python: [pip, install]
         package_rules: {}        # ecosystem -> dotted path of a PackageSpecRule
@@ -764,6 +820,7 @@ sandbox:
         image_pull_secrets: []
         security_context: {}     # pod-level overlay
         container_security_context: {}   # overlays the hardened defaults
+        language_runtimes: {python: [python, -c]}
         package_installers: {python: [pip, install]}
         package_rules: {}
 
@@ -777,7 +834,8 @@ All fields are overridable by environment variables with the `AK_` prefix and `_
 e.g. `AK_SANDBOX__ENABLED=true`, `AK_SANDBOX__BROKER__FLAVOR=embedded`,
 `AK_SANDBOX__TOOL_OUTPUT_MAX_CHARS=4000`, or
 `AK_SANDBOX__PROFILES__BUILDER__POLICY__PACKAGE_INSTALL__ECOSYSTEMS='["python","node"]'` and
-`AK_SANDBOX__PROFILES__BUILDER__DOCKER__PACKAGE_INSTALLERS='{"python":["pip","install"],"node":["npm","install"]}'`.
+`AK_SANDBOX__PROFILES__BUILDER__DOCKER__PACKAGE_INSTALLERS='{"python":["pip","install"],"node":["npm","install"]}'`
+and `AK_SANDBOX__PROFILES__BUILDER__DOCKER__LANGUAGE_RUNTIMES='{"python":["python","-c"],"node":["node","-e"]}'`.
 
 ## Examples
 

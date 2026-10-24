@@ -130,7 +130,8 @@ k3d cluster delete ak
 ## Production notes
 
 - Swap `python:3.12-slim` for your security team's hardened image; keep it non-root and
-  give it whatever interpreters your agents need. The image is the operator's contract:
+  give it whatever interpreters your agents need, each declared in the provider's
+  `language_runtimes` (default `python: [python, -c]`). The image is the operator's contract:
   `install_packages` runs only on a profile whose policy sets `package_install`, using the
   installer the provider's `package_installers` names (default `pip install`) inside that
   image, and OS packages belong in the image build.
@@ -143,5 +144,8 @@ k3d cluster delete ak
   (at-least-once semantics).
 - When upgrading, roll the sandbox worker before the agent pods: the worker enforces the
   sandbox permissions the agent side sends.
+- A custom `package_rules` class (a dotted path to your own `PackageSpecRule`) must be
+  importable in **both** the runner image and the sandbox-worker image: the runner resolves
+  it at agent construction and fails with `SandboxConfigError` when it is missing.
 - With KEDA installed, `keda.enabled: true` also scales the sandbox worker on the
   `SANDBOX_REQUESTS` backlog.

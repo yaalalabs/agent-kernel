@@ -168,8 +168,14 @@ class SandboxPolicy(BaseModel):
         - package_install=True with no ecosystems (a pre-#692 BYO declaration) -> ["python"]."""
 
     def derive(self, **update: Any) -> "SandboxCapabilities":
-        """A re-validated copy with ``update`` applied: the instance-override helper."""
-        return type(self).model_validate({**self.model_dump(), **update})
+        """A re-validated copy with ``update`` applied: the instance-override helper. Updating one
+        package field re-derives the other instead of keeping its stale value."""
+        data = self.model_dump()
+        if "package_ecosystems" in update and "package_install" not in update:
+            del data["package_install"]  # the validator derives it from the new ecosystems
+        elif "package_install" in update and "package_ecosystems" not in update and not update["package_install"]:
+            data["package_ecosystems"] = []
+        return type(self).model_validate({**data, **update})
 ```
 
 - **Why `derive` exists.** Pydantic's `model_copy(update=...)` skips validators. If the instance overrides used it,
@@ -177,9 +183,9 @@ class SandboxPolicy(BaseModel):
   `package_install=True` with no ecosystems.
 - **Rule for every instance override.** Each override goes through `derive`, including the existing kubernetes
   `policy_network` flip.
-  - An override that changes ecosystems sets both fields together: `derive(package_ecosystems=eco,
-    package_install=bool(eco))`. This means a provider configured with `package_installers: {}` honestly declares
-    no installs.
+  - An override that changes ecosystems passes only `package_ecosystems`; `derive` re-derives `package_install`
+    from it. So a provider configured with `package_installers: {}` honestly declares no installs, rather than
+    falling back to the legacy `["python"]` branch through the copied `package_install=True`.
 
 ### SandboxPermissionGuard (`sandbox/permission.py`) — phase 1
 
@@ -248,14 +254,17 @@ class BrokerWorkerCore:
 
     # __init__ adds:
     #   self._guard = SandboxPermissionGuard()
-    #   self._install_shim: dict[type, bool] = {}  # Sandbox subclass -> True when its install_packages is legacy
+    #   self._install_params: dict[type, frozenset[str]] = {}  # Sandbox subclass -> install keywords it accepts
     #   self._policy_warned: set[tuple[str, ...]]  # was set[tuple[str, str]]; widened for the tagged mismatch key
 
     def _warn_capability_mismatch(self, provider: SandboxProvider, request: ExecutionRequest) -> None:
         """One WARNING per (provider, profile) when the policy permits what the instance does not declare."""
 
     async def _call_install(self, sandbox: Sandbox, payload: dict, timeout: float) -> SandboxResult:
-        """Dispatch install_packages, routing a pre-#692 one-argument override through the deprecation shim."""
+        """Dispatch install_packages with the keywords the override accepts (the deprecation shim)."""
+    # The signature check itself lives on the ABC, so the contract suite needs no worker import:
+    #   Sandbox.INSTALL_KEYWORDS = frozenset({"ecosystem", "timeout"})
+    #   Sandbox.install_parameters() -> frozenset[str]   # classmethod; **kwargs = both
 ```
 
 - **Mismatch warning.**
@@ -283,17 +292,21 @@ class BrokerWorkerCore:
   - `upload_file` and `download_file` pass no timeout to their handles, as today, so the backstop is their only
     timer.
 - **Install dispatch and the legacy shim.**
-  - `_call_install` decides once per `Sandbox` subclass whether its override is legacy. It inspects
-    `inspect.signature(type(sandbox).install_packages)`. The override counts as **modern** when it names both
-    `ecosystem` and `timeout`, or when it takes `**kwargs`.
-  - **Modern overrides** are called as `install_packages(packages, ecosystem=..., timeout=...)`.
-  - **Legacy overrides:**
-    - An `ecosystem` other than `python` raises `SandboxCapabilityError(<class>, "package_ecosystem:<e>")`.
-    - Otherwise the call is `install_packages(packages)`, and the first such call per class logs one `WARNING` on
-      `ak.sandbox.broker`: `Sandbox %s overrides install_packages(packages) without ecosystem/timeout; this form is
-      deprecated and will stop working in the next minor release`.
-    - The backstop is the install's only timer.
-  - The memo `_install_shim` is per `BrokerWorkerCore` instance, so a worker warns at most once per class.
+  - `_call_install` decides once per `Sandbox` subclass which of `ecosystem` and `timeout` its override accepts,
+    via `type(sandbox).install_parameters()` (a classmethod on the `Sandbox` ABC), which inspects
+    `inspect.signature(cls.install_packages)`. `**kwargs`
+    counts as both.
+  - **Modern overrides** (both accepted) are called as `install_packages(packages, ecosystem=..., timeout=...)`.
+  - **Pre-#692 overrides** (either one missing, including the one-argument form):
+    - Without `ecosystem`, an `ecosystem` other than `python` raises
+      `SandboxCapabilityError(<class>, "package_ecosystem:<e>")`. An override with `ecosystem` gets every
+      ecosystem and decides for itself.
+    - The call passes only the accepted keywords, and the first such call per class logs one `WARNING` on
+      `ak.sandbox.broker`: `Sandbox %s overrides install_packages without <missing>; this form is deprecated and
+      will stop working in the next minor release`, where `<missing>` is `ecosystem`, `timeout`, or
+      `ecosystem and timeout`.
+    - Without `timeout`, the backstop is the install's only timer.
+  - The memo `_install_params` is per `BrokerWorkerCore` instance, so a worker warns at most once per class.
 
 ### Thread and queue flavors — phase 1
 
@@ -428,7 +441,9 @@ class ProcessKiller:
     """Tags an exec with a unique marker and builds the procps-free command that kills it."""
 
     MARKER_ENV: ClassVar[str] = "AK_EXEC_ID"
-    KILL_TIMEOUT_SECONDS: ClassVar[float] = 5.0  # must stay below BrokerWorkerCore.BACKSTOP_GRACE_SECONDS
+    KILL_TIMEOUT_SECONDS: ClassVar[float] = 5.0
+    SHELL_PROBE: ClassVar[tuple[str, ...]] = ("/bin/sh", "-c", "exit 0")
+    SHELL_PROBE_TIMEOUT_SECONDS: ClassVar[float] = 2.0  # + KILL_TIMEOUT_SECONDS < BrokerWorkerCore.BACKSTOP_GRACE_SECONDS
 
     @staticmethod
     def new_marker() -> str: ...                                # uuid4().hex: fixed-length, fresh per exec
@@ -474,6 +489,18 @@ class ProcessKiller:
   - Background jobs started *by the timed-out exec itself* inherit its marker and are killed with it.
   - The kill call is bounded by `KILL_TIMEOUT_SECONDS`.
 - The scan needs `/bin/sh` and `cat`, which every supported image ships.
+- **The `kubernetes` shell probe.** The launcher and the scan both need `/bin/sh`, so the first killable exec on each
+  pod runs `SHELL_PROBE` (untagged), bounded by `SHELL_PROBE_TIMEOUT_SECONDS`.
+  - Only a definite answer is cached per pod on the provider (and dropped on `destroy`): exit 0 means a shell; exit
+    126/127, or a no-exit-code status whose message says the executable was not found, means none.
+  - Anything else (a raise, the probe's timeout, another failure) is transient: that exec runs unwrapped and the
+    next one probes again.
+  - A shell-less pod runs its execs unwrapped, so its timed-out execs cannot be killed.
+  - **Budget.** A pod's first exec can spend the probe and the kill outside its own timeout, so
+    `SHELL_PROBE_TIMEOUT_SECONDS + KILL_TIMEOUT_SECONDS` must stay below `BACKSTOP_GRACE_SECONDS`; otherwise the
+    backstop cancels the kill partway through. A test pins this.
+  - The handle reads the exec's status channel itself rather than through the client's `returncode`, which
+    consumes it, so a failure status without an exit code keeps its message in `stderr` (exit code `-1`).
 - The docs state these limits.
 
 ### Provider changes — phase 1 (packages, instance capabilities) and phase 2 (runtimes)
@@ -521,8 +548,11 @@ checks read the instance capabilities, not the class attribute. These five lines
   hands it to the SDK's native command timeout:
   - `e2b`: `commands.run(timeout=...)` (`e2b.py:59`);
   - `daytona`: `process.exec(timeout=...)` (`daytona.py:62`).
-  - Today their installs pass none (`e2b.py:66`, `daytona.py:67`). How each SDK's own timeout error is mapped is
-    unchanged.
+  - Today their installs pass none (`e2b.py:66`, `daytona.py:67`).
+  - The native timer now always fires before the backstop, so each handle maps its SDK's timeout error to
+    `SandboxTimeoutError` (`e2b.exceptions.TimeoutException` from `run_code` / `commands.run`;
+    `daytona.common.errors.DaytonaTimeoutError` from `code_run` / `exec`). Unmapped, a timeout would complete
+    as `failed` with the SDK's error type instead of `timed_out`.
 - **Self-timing handles benefit from the backstop.** Today the worker's outer timer and a self-timing handle's timer
   share one value. The outer timer starts first, so it fires first and cancels the handle before its own kill runs.
   The grace period fixes that for every self-timing handle:
@@ -598,10 +628,17 @@ checks read the instance capabilities, not the class attribute. These five lines
     `policy.package_install is not None`. The other eight tools are unchanged. The decision is derived from config
     only, with no provider import.
   - **Guidance.**
-    - `_profiles_text` (`tools.py:287-306`) appends each profile's permissions:
-      - `languages: python, bash` when `policy.languages` is set;
-      - `run_code disabled (command-only profile)` when it is `[]`;
-      - `package installs: python, node` or `package installs not permitted`.
+    - `_profiles_text` appends each profile's permissions through `_permissions_text`:
+      - `run_code disabled (command-only profile)` when `policy.languages` is `[]`;
+      - otherwise `languages: …`. On a provider whose config block declares `language_runtimes` (`docker`,
+        `kubernetes`; read by `_runtime_languages`, config-only) these are the runtime keys when `policy.languages`
+        is unset, and the policy entries the map declares when it is set, so the agent is never offered a language
+        that would fail. If none of the permitted languages is declared, `run_code unavailable (no permitted
+        language is in the provider's language_runtimes)`. Elsewhere it is `policy.languages` when set, and nothing
+        when unset;
+      - `package installs: python, node` or `package installs not permitted`, but **only when some profile permits
+        installs** (so `install_packages` is registered); otherwise it would describe a tool the agent lacks.
+      - A profile with nothing to say adds no `;` part.
     - The tool list gains an `install_packages(...)` line only when the tool is registered.
     - One new sentence: `If a result says an action is not permitted by the profile, report it to the user; do not
       work around it with run_command or run_code.`
@@ -784,7 +821,7 @@ All of these are intentional.
 | Install exceeds its effective timeout | `SandboxTimeoutError` from the handle, after a best-effort kill | Tool error; `timed_out` completion | `process()`'s existing timed-out warning |
 | Handle hangs past the backstop | `SandboxTimeoutError` (backstop) | The same | The same |
 | Installer exits non-zero | No exception: `SandboxResult(exit_code != 0)` | Tool result JSON | None |
-| Legacy one-argument override asked for a non-`python` ecosystem | `SandboxCapabilityError` | Tool error | The generic warning |
+| Pre-#692 override without an `ecosystem` parameter asked for a non-`python` ecosystem | `SandboxCapabilityError` | Tool error | The generic warning |
 
 ## Testing
 
@@ -864,9 +901,10 @@ Existing test files that change:
 - **`sandbox/testing.py` (`SandboxProviderContract`):** `test_contract_capability_honesty` gains a check that, when
   `package_install` is declared, `install_packages(["pip-noop"], ecosystem="definitely-not-an-ecosystem")` raises
   `SandboxCapabilityError`.
-  - The contract requires the new signature immediately. A bring-your-own provider whose handle keeps the
-    one-argument override fails this check with `TypeError`. The worker's shim covers runtime only, not
-    conformance.
+  - The check runs only when the handle's override accepts `ecosystem`
+    (`"ecosystem" in type(sandbox).install_parameters()`). A pre-#692 override without it would
+    otherwise fail with `TypeError`, so it still passes the contract during the deprecation window, and the
+    worker's shim rejects its non-`python` installs at runtime instead.
 
 Run the suite with `cd ak-py && uv run pytest tests/test_sandbox*.py`, then run the full `uv run pytest`.
 

@@ -40,7 +40,7 @@ from agentkernel.sandbox.factory import SandboxProviderFactory
 from agentkernel.sandbox.manager import ExecutionManager
 from agentkernel.sandbox.model import PackageInstallPolicy, SandboxPolicy, SandboxPrincipal, SandboxResult, SandboxSession
 from agentkernel.sandbox.permission import PermissionAuditContext, SandboxPermissionGuard
-from agentkernel.sandbox.testing import FakeSandbox, FakeSandboxProvider
+from agentkernel.sandbox.testing import FakeSandbox, FakeSandboxProvider, SandboxProviderContract
 from agentkernel.sandbox.tools import install_packages as install_packages_tool
 from agentkernel.sandbox.tools import run_code as run_code_tool
 
@@ -85,6 +85,33 @@ class _LegacyProvider(_PkgProvider):
     sandbox_cls = _LegacySandbox
 
 
+class _EcosystemOnlySandbox(FakeSandbox):
+    """A pre-#692 bring-your-own handle that took an ecosystem but no timeout."""
+
+    calls: list[tuple[list[str], str]] = []
+
+    async def install_packages(self, packages, ecosystem="python"):
+        if ecosystem not in ("python", "node"):
+            raise SandboxCapabilityError(self.__class__.__name__, f"package_ecosystem:{ecosystem}")
+        type(self).calls.append((packages, ecosystem))
+        return SandboxResult(stdout="ecosystem-only", exit_code=0)
+
+
+class _EcosystemOnlyProvider(_PkgProvider):
+    sandbox_cls = _EcosystemOnlySandbox
+    capabilities = FakeSandboxProvider.capabilities.derive(package_ecosystems=["python", "node"])
+
+
+class _TimeoutOnlySandbox(FakeSandbox):
+    async def install_packages(self, packages, timeout=None):
+        return SandboxResult()
+
+
+class _KwargsSandbox(FakeSandbox):
+    async def install_packages(self, packages, **kwargs):
+        return SandboxResult()
+
+
 class _HangingSandbox(FakeSandbox):
     """Ignores its timeout, so only the worker's backstop can end the call."""
 
@@ -99,6 +126,7 @@ class _HangingProvider(_PkgProvider):
 
 PKG_DOTTED = f"{__name__}._PkgProvider"
 LEGACY_DOTTED = f"{__name__}._LegacyProvider"
+ECOSYSTEM_ONLY_DOTTED = f"{__name__}._EcosystemOnlyProvider"
 HANGING_DOTTED = f"{__name__}._HangingProvider"
 
 INSTALL_ALL = PackageInstallPolicy(ecosystems=["python", "node"])
@@ -132,6 +160,7 @@ def reset_singletons():
     _reset_all()
     _PkgSandbox.calls = []
     _LegacySandbox.calls = []
+    _EcosystemOnlySandbox.calls = []
     yield
     _stop_leaked_thread_broker()
     _reset_all()
@@ -451,6 +480,49 @@ async def test_legacy_override_rejects_non_python_ecosystem(monkeypatch, caplog)
         await worker.run(_install(["requests"], policy=policy))
     assert _LegacySandbox.calls == [["requests"]]
     assert len(_deprecations(caplog)) == 1
+
+
+class TestLegacyProviderContract(SandboxProviderContract):
+    """A pre-#692 one-argument override still passes the public contract during the deprecation window."""
+
+    @pytest.fixture
+    def provider(self):
+        _LegacySandbox.calls = []
+        return _LegacyProvider()
+
+
+def test_install_parameters_reads_each_signature_shape():
+    both = frozenset({"ecosystem", "timeout"})
+    assert _PkgSandbox.install_parameters() == both
+    assert FakeSandbox.install_parameters() == both  # the base ABC's signature
+    assert _KwargsSandbox.install_parameters() == both
+    assert _EcosystemOnlySandbox.install_parameters() == {"ecosystem"}
+    assert _TimeoutOnlySandbox.install_parameters() == {"timeout"}
+    assert _LegacySandbox.install_parameters() == frozenset()
+
+
+class TestEcosystemOnlyProviderContract(SandboxProviderContract):
+    """An override with an ecosystem but no timeout passes the contract, including the undeclared-ecosystem check."""
+
+    @pytest.fixture
+    def provider(self):
+        return _EcosystemOnlyProvider()
+
+
+@pytest.mark.asyncio
+async def test_ecosystem_only_override_gets_its_ecosystem_with_one_deprecation_warning(monkeypatch, caplog):
+    # Only the missing timeout makes it pre-#692: a node install reaches it, not a capability error.
+    _use_provider(monkeypatch, dotted=ECOSYSTEM_ONLY_DOTTED)
+    worker = BrokerWorkerCore()
+    with caplog.at_level("WARNING", logger=BROKER_LOGGER):
+        r1, _ = await worker.run(_install(["lodash"], "node", policy=SandboxPolicy(package_install=INSTALL_ALL)))
+        await worker.run(_install(["requests"], policy=SandboxPolicy(package_install=INSTALL_ALL)))
+    assert r1.stdout == "ecosystem-only"
+    assert _EcosystemOnlySandbox.calls == [(["lodash"], "node"), (["requests"], "python")]
+    records = _deprecations(caplog)
+    assert len(records) == 1
+    message = records[0].getMessage()
+    assert "_EcosystemOnlySandbox" in message and "without timeout;" in message
 
 
 @pytest.mark.asyncio
