@@ -758,7 +758,8 @@ All of these are intentional.
   (`languages: []`).
 - **Permissions versus capabilities, and what permissions do not gate.** This covers `run_command`, `subprocess`
   inside `run_code`, and self-provisioned tooling such as `pip install playwright` with network egress.
-- **The hardening recipe:** `deny` plus a mirror or a pre-baked image. `allowlist` on `e2b`/`daytona` is added to
+- **The hardening recipe:** `deny` plus packages or an offline repository baked into the image (a network mirror is
+  unreachable under `deny`). `allowlist` on `e2b`/`daytona` is added to
   the recipe only after the live egress test passes.
 - **Per-provider `network_egress` enforcement**, following the design's list.
 - **The upgrade rule:** workers before agents.

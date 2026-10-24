@@ -170,6 +170,10 @@ and response store. See the
 [chart README's sandbox worker section](https://github.com/yaalalabs/agent-kernel/tree/develop/ak-deployment/ak-k8s)
 for the values and the agent-side mirror configuration.
 
+**Upgrade the sandbox worker before the agent tier.** The worker enforces the sandbox
+permissions the agent side sends (`policy.languages`, `policy.package_install`); an older
+worker would ignore them. See [Sandbox → The `queue` flavor](../advanced/sandbox.md#the-queue-flavor).
+
 ## Autoscaling
 
 The `agent-runner` tier scales on queue depth via KEDA (Kafka consumer lag, NATS JetStream

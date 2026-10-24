@@ -8,9 +8,9 @@ See [../README.md](../README.md) for the full set of sandbox examples. This one 
 
 Each sandbox is its own container, created from the configured `image` (default
 `python:3.12-slim`) and kept alive with `sleep infinity`. Executions are `exec` calls
-inside it, files live under `/workspace`, and `install_packages` is a `pip install` run in
-the container on a profile whose policy permits it (`policy.package_install`; installs are
-denied by default). Closing a session leaves the container running so the sandbox can be
+inside it, files live under `/workspace`, and `install_packages` runs the installer configured in
+`docker.package_installers` (default `pip install`) in the container, on a profile whose policy
+permits it (`policy.package_install`; installs are denied by default). Closing a session leaves the container running so the sandbox can be
 reattached later; destroying the session force-removes it. An idle-expired sandbox
 (`idle_timeout`, 6 hours here) is removed and transparently recreated on next use with an
 empty workspace, and the agent is told via a result "notice" when that happens.

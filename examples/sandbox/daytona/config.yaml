@@ -20,7 +20,7 @@ sandbox:
       idle_timeout: 21600 # 6 hours -> Daytona auto_stop_interval (native, rounded up to minutes)
       policy:
         package_install:
-          ecosystems: [python] # -> install_packages runs `pip install` in the sandbox
+          ecosystems: [python] # -> install_packages runs the default `pip install` (daytona.package_installers) in the sandbox
       daytona:
         image: python:3.12-slim # container image (or `snapshot: <name>` — mutually exclusive; omit both for Daytona's default)
         env_vars:

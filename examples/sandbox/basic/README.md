@@ -7,7 +7,8 @@ This package demonstrates the Agent Kernel sandbox capability: an OpenAI Agents 
 that writes code and executes it in a sandbox. When `sandbox.enabled` is true, Agent
 Kernel attaches the sandbox system tools (`run_code`, `run_command`, `write_sandbox_file`,
 `read_sandbox_file`, `check_sandbox_task`, `list_sandbox_sessions`, `new_sandbox_session`,
-`destroy_sandbox_session`) to every agent **and injects the usage context into each agent's
+`destroy_sandbox_session`, plus `install_packages` when a profile permits package installs) to
+every agent **and injects the usage context into each agent's
 system prompt** — note that `demo.py`'s agent instructions say nothing about the sandbox;
 the capability is self-describing.
 

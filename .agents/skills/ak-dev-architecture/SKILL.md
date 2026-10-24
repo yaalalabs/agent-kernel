@@ -807,13 +807,27 @@ inert when disabled. To add a provider, use the `ak-dev-new-sandbox-provider` sk
 - **`SandboxProvider` / `Sandbox`** (`base.py`): the public ABCs a backend implements. `Sandbox`
   has two abstract methods, `execute_code` (`language="python"`) and `close`;
   `execute_command`/`upload_file`/`download_file`/`install_packages` are optional and raise
-  `SandboxCapabilityError` unless the provider declares them. `SandboxProvider` implements
+  `SandboxCapabilityError` unless the provider declares them.
+  `install_packages(packages, ecosystem="python", timeout=None)` raises
+  `SandboxCapabilityError(<handle>, "package_ecosystem:<e>")` for an ecosystem the instance does
+  not declare. The built-in installing providers delegate validation and argv building to
+  `PackageInstaller` (`packages.py`). `SandboxProvider` implements
   `create`/`destroy` (and `attach` when `capabilities.attach` is declared) and declares a
   `capabilities` class attribute.
 - **`SandboxCapabilities`** (`model.py`): the honest per-provider declaration (isolation tier,
-  shell, languages, files, package_install, stateful, attach, principal_user, policy_*). The
-  manager/worker consult it before routing; the worker enforces principal and policy **fail-closed**
-  against it (unenforceable + `strict` → `SandboxPolicyError`).
+  shell, languages, files, package_ecosystems, stateful, attach, principal_user, policy_*).
+  `package_ecosystems` is the source of truth for installs; a validator derives `package_install`
+  from it. Instance overrides go through `capabilities.derive(**update)`, never `model_copy`
+  (which skips that validator). The manager/worker consult it before routing; the worker enforces
+  principal and policy **fail-closed** against it (unenforceable + `strict` → `SandboxPolicyError`).
+- **`SandboxPermissionGuard`** (`permission.py`): decides what a profile **permits**, from the
+  request's own `SandboxPolicy` (`languages` for `execute_code`, `package_install` for
+  `install_packages`), never from `AKConfig` or capabilities. A denial raises
+  `SandboxPermissionDeniedError` after exactly one audit `WARNING` on `ak.sandbox.broker`. It runs
+  authoritatively in `BrokerWorkerCore` and, as defence in depth, in `ExecutionManager` before
+  session resolution (with package-spec validation), so a denied request has no side effects.
+  Not permitted (`SandboxPermissionDeniedError`) and not supported (`SandboxCapabilityError`)
+  stay separate.
 - **`ExecutionManager`** (`manager.py`): process-wide singleton (like `ConversationThreadManager`).
   Resolves the workload **profile** → provider, owns sandbox **sessions** (nv_cache registry,
   namespace-isolated per AK session; `per_call`/`per_session`/`per_runtime` scopes), and records
@@ -840,8 +854,9 @@ inert when disabled. To add a provider, use the `ak-dev-new-sandbox-provider` sk
   **Coupling amendment**: these three modules may import
   `pipeline.envelope`/`transport`/`consumer`/`thread_runner`/`response_store` (all core-only
   imports); the rest of `sandbox/` keeps the #494 core-only rule.
-- **Agent surface**: `tools.py` provides eight system tools (attached via `SystemToolFactory` when
-  enabled, optionally scoped to `sandbox.agents`); `hooks.py`'s `SandboxPreHook` ingests
+- **Agent surface**: `tools.py` provides eight system tools, plus `install_packages` when any
+  profile's policy sets `package_install` (attached via `SystemToolFactory` when enabled, optionally
+  scoped to `sandbox.agents`); `hooks.py`'s `SandboxPreHook` ingests
   task-completion events (the third system pre-hook). `principal.py` maps session/agent to a
   `SandboxPrincipal` (`principal_resolver` config for user identity). `testing.py` ships
   `FakeSandboxProvider` and the reusable `SandboxProviderContract`.
@@ -1076,11 +1091,14 @@ ak-py/src/agentkernel/
 │   ├── manager.py           # ExecutionManager (profile routing, sessions, fail-closed enforcement)
 │   ├── factory.py           # SandboxProviderFactory + ExecutionBrokerFactory
 │   ├── principal.py         # PrincipalResolver, AgentPrincipalResolver
-│   ├── tools.py             # The eight agent-facing system tools
+│   ├── tools.py             # Eight agent-facing system tools (+ conditional install_packages)
+│   ├── permission.py        # SandboxPermissionGuard, PermissionAuditContext (languages / package installs)
+│   ├── packages.py          # PackageSpecRule ABC, python/node rules, PackageSpecRuleFactory, PackageInstaller
 │   ├── hooks.py             # SandboxPreHook (task-completion ingestion)
 │   ├── testing.py           # FakeSandboxProvider + SandboxProviderContract (BYO test suite)
-│   ├── providers/           # local_subprocess, docker, e2b, daytona, ec2_ssm (+ planned: kubernetes, ...)
-│   └── broker/              # embedded, thread flavors + BrokerWorkerCore (+ planned: sqs)
+│   ├── providers/           # local_subprocess, docker, kubernetes, e2b, daytona, ec2_ssm;
+│   │                        #   process.py: ProcessKiller (env-marker kill for docker/kubernetes)
+│   └── broker/              # embedded, thread, queue flavors + BrokerWorkerCore + QueueBrokerWorker
 ├── schedule/                # Scheduling capability (deferred + recurring chat execution)
 │   ├── model.py             # ScheduledTask, ScheduledTaskPage, ScheduleStatus, occurrence tokens
 │   ├── errors.py            # ScheduleError

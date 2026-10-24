@@ -22,7 +22,7 @@ slug: /
 
 ⏰ **Scheduling** - Defer chat execution to a later moment or a recurring cadence (`at`/`cron`), with a management REST API and agent-facing scheduling tools. [Learn more →](./advanced/scheduling.md)
 
-📦 **Sandbox** - Let agents execute code and shell commands in an isolated, permission-bounded environment, with pluggable providers, workload profiles, and per-user identity. [Learn more →](/docs/advanced/sandbox)
+📦 **Sandbox** - Let agents execute code and shell commands in an isolated, permission-bounded environment, with pluggable providers, workload profiles, per-user identity, and per-profile language and package-install permissions. [Learn more →](/docs/advanced/sandbox)
 
 :::
 
@@ -148,7 +148,7 @@ Easily extend Agent Kernel with custom framework adapters, memory back-ends, and
   - AWS CloudWatch
 - **Multi-Agent Collaboration**: Leverage multi-agent hierarchies of supported agentic frameworks
 - **Multimodal Attachments**: Image and file support with pluggable attachment storage and on-demand vision analysis
-- **Sandbox**: Execute agent-generated code and shell commands in an isolated, permission-bounded environment, with pluggable providers (`local_subprocess`, `docker`, `e2b`, `daytona`, `ec2_ssm`), workload profiles, policy enforcement, and per-user identity. [Learn more →](/docs/advanced/sandbox)
+- **Sandbox**: Execute agent-generated code and shell commands in an isolated, permission-bounded environment, with pluggable providers (`local_subprocess`, `docker`, `kubernetes`, `e2b`, `daytona`, `ec2_ssm`), workload profiles, policy enforcement, per-profile language and package-install permissions, and per-user identity. [Learn more →](/docs/advanced/sandbox)
 - **Conversation Threads**: Persistent, named threads with auto-naming and REST read APIs
 - **Secret Resolution**: Resolve API keys and passwords through `SecretManager` — environment first, then a managed store (`env`, AWS SSM Parameter Store, Kubernetes Secrets mounted into the pod, or your own provider) — with only `config.yaml` changing between laptop and production. [Learn more →](./advanced/secrets.md)
 - **Structured Output**: Typed/JSON agent replies (`AgentReplyAny`) across OpenAI, LangGraph, ADK, CrewAI, Smolagents, and Pydantic AI

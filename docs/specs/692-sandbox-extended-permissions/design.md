@@ -96,7 +96,8 @@ check also runs agent-side before a request is submitted.
         needs (`pypi.org`, `registry.npmjs.org`): `e2b` is sent `allow_out` with no `deny_out`, and `daytona` receives
         domains in its CIDR-only `network_allow_list` (`research/agent-web-access.md` §7a);
       - `kubernetes` enforces it only with an operator-asserted network policy (`kubernetes.py:206`).
-    - The docs give `deny` plus a mirror or pre-baked image as the hardening recipe for admins who want hard limits.
+    - The docs give `deny` plus packages or an offline repository baked into the image as the hardening recipe for
+      admins who want hard limits (`deny` blocks all egress, so a network mirror is unreachable).
       `allowlist` on `e2b` and `daytona` joins the recipe only once the live test in Testing passes.
   - The docs state, per posture (`deny` egress, read-only root filesystem, non-root or PSA-restricted image), which
     ecosystems can install and which installer argv prefix to configure. #692 asks for this.

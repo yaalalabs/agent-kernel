@@ -66,14 +66,15 @@ hooks run, and no provider dependencies are imported.
 
 ## Agent tools
 
-When enabled, every in-scope agent gains eight tools. All return JSON strings; the execution and
-file tools echo a `sandbox_session_id` (the session tools return session lists/ids and
-`check_sandbox_task` its status). Machinery failures come back as `{"error": ...}` rather than
-raising.
+When enabled, every in-scope agent gains eight tools, plus a ninth, `install_packages`, when at
+least one profile permits package installation (see [Package installation](#package-installation)).
+All return JSON strings; the execution and file tools echo a `sandbox_session_id` (the session
+tools return session lists/ids and `check_sandbox_task` its status). Machinery failures, and
+operations a profile does not permit, come back as `{"error": ...}` rather than raising.
 
 | Tool | Purpose |
 |---|---|
-| `run_code(code, language, sandbox_session_id, profile)` | Execute code; returns stdout, stderr, exit_code. |
+| `run_code(code, language, sandbox_session_id, profile)` | Execute code; returns stdout, stderr, exit_code. `language` must be one the profile permits (`policy.languages`). |
 | `run_command(command, sandbox_session_id, profile)` | Execute a shell command. |
 | `write_sandbox_file(path, content, sandbox_session_id, profile)` | Write a UTF-8 text file into the workspace. |
 | `read_sandbox_file(path, sandbox_session_id, profile)` | Read a UTF-8 text file (truncated to `tool_output_max_chars`). |
@@ -81,6 +82,10 @@ raising.
 | `list_sandbox_sessions()` | List the sandbox sessions in the conversation (id, name, profile, status). |
 | `new_sandbox_session(name, profile)` | Create a fresh, empty session; returns its `sandbox_session_id`. |
 | `destroy_sandbox_session(sandbox_session_id)` | Destroy a session and its sandbox. |
+| `install_packages(packages, ecosystem, sandbox_session_id, profile)` | Install registry packages of one ecosystem (default `python`). Registered only when a profile's policy sets `package_install`. |
+
+The injected guidance lists what each profile permits (languages, package installs) and tells
+the agent to report a denial to the user rather than work around it with `run_command`.
 
 `tool_output_max_chars` (default `8000`) bounds how much stdout/stderr or file content is
 returned to the model.
@@ -213,6 +218,9 @@ profiles:
       memory_mb: 512              # memory limit (MB)
       timeout: 30.0               # per-execution wall-clock seconds (always enforced)
       strict: true                # fail closed on unenforceable dimensions
+      languages: [python]         # run_code allowlist; omitted = whatever the provider declares; [] = no run_code
+      package_install:            # omitted = installs denied (see Package installation)
+        ecosystems: [python]
     docker:
       image: python:3.12-slim
 ```
@@ -226,6 +234,162 @@ the provider cannot enforce:
 - `strict: false` → it proceeds, with a one-time warning naming the unenforced dimensions.
 
 `timeout` is always enforceable (framework-side), so it never triggers a strict rejection.
+
+### Permissions: languages and package installs
+
+Two policy fields decide which sandbox operations a profile **permits**:
+
+- **`languages`** narrows `run_code`. Omitted (`null`), every language the provider declares
+  is allowed, as before. A list allows only those languages, and `[]` disables `run_code`
+  entirely (a command-only profile). It can only narrow: a listed language the provider does not
+  support still fails.
+- **`package_install`** permits the `install_packages` tool. It is off unless the block is
+  present; see [Package installation](#package-installation).
+
+**Not permitted is different from not supported.** A request the profile does not permit fails
+with `SandboxPermissionDeniedError` and is written once to the `ak.sandbox.broker` log as a
+`WARNING` (operation, profile, agent and session ids, and the reason; never the code or the package
+names). There is no audit-only mode. A request the profile permits but the provider cannot do (a
+language or ecosystem it does not declare) fails with `SandboxCapabilityError`, and the broker
+worker logs a one-time warning per provider and profile pointing at the misconfiguration. The
+check runs before anything reaches the sandbox: in the broker worker, which is authoritative,
+and again agent-side before the request is submitted.
+
+**Permissions gate Agent Kernel's sandbox operations, not the environment.** `run_command`, or a
+`subprocess` call inside `run_code`, can still reach any interpreter or installer the image
+contains, and with network egress an agent can provision its own tooling (for example
+`pip install playwright` through `run_command`). Hard containment comes from the provider's
+isolation tier plus `network_egress`, the filesystem policy and your image choice: a non-root
+image with a read-only root filesystem and no installer binaries.
+
+**`network_egress` enforcement differs by provider:**
+
+| Provider | `deny` | `allowlist` |
+|---|---|---|
+| `docker` | Enforced (`network_mode: none`). | Not enforceable; fails closed under `strict`. |
+| `e2b` | Enforced. | Mapped to E2B `allow_out` rules; **not yet verified** as a hard limit for registry domains. |
+| `daytona` | Enforced. | Mapped to Daytona's CIDR allow list; **not yet verified** for domain entries such as `pypi.org`. |
+| `kubernetes` | Enforced only with `network_policy: true` (operator-asserted CNI support). | CIDR entries only, with `network_policy: true`; domain names fail closed under `strict`. |
+| `local_subprocess`, `ec2_ssm` | Not enforced. | Not enforced. |
+
+**Hardening recipe.** For a hard limit on what an agent can fetch or install, use
+`network_egress: deny` and bake the packages into the image, or ship an offline repository
+(a wheelhouse or npm cache) inside it (the offline installer prefixes are in the
+[posture table](#installer-prefixes-per-posture)). `deny` blocks all egress, so a sandbox under it
+cannot reach a network mirror; a mirror needs a policy that permits access to it.
+Do not rely on `allowlist` on `e2b` or `daytona` as a hard limit until the live egress gate
+(`ak-py/tests/test_sandbox_egress_live.py`) has passed against that provider.
+
+## Package installation
+
+Agents can install packages into their sandbox with the `install_packages` tool, on profiles that
+permit it. Installation is **off by default**: a profile permits it only when its policy declares a
+`package_install` block.
+
+```yaml
+profiles:
+  builder:
+    type: docker
+    policy:
+      package_install:
+        ecosystems: [python, node]   # default [python]; [] is rejected (omit the block to deny)
+        timeout: 300                 # an install's own wall clock; omitted = policy.timeout
+    docker:
+      image: my-org/agent-runtime:1  # must provide the installers below
+      package_installers:            # ecosystem -> installer argv prefix the image provides
+        python: [pip, install]       # the default when package_installers is omitted
+        node: [npm, install]
+```
+
+- **Presence enables it.** Declaring the block (even `package_install: {}`) permits `python`
+  installs. The same holds for environment variables: any
+  `AK_SANDBOX__PROFILES__<NAME>__POLICY__PACKAGE_INSTALL__*` variable materializes the block. A
+  profile defined only through environment variables also needs its `__TYPE`, and the profile
+  name is lowercased (`<NAME>` = `BUILDER` gives profile `builder`).
+- **The ecosystem must be permitted and supported.** `ecosystems` lists what the profile permits.
+  The provider's `package_installers` keys are what it supports, on `docker`, `kubernetes`, `e2b`
+  and `daytona`. `local_subprocess` and `ec2_ssm` do not install packages.
+- **`package_installers` replaces the default, it is not merged with it.** Adding `node` means
+  restating `python`; an image with no `pip` may leave `python` out. Every argv prefix needs at least
+  one token, and packages are appended as separate arguments (`e2b` and `daytona` receive the same
+  argv joined with `shlex.join`).
+- **Not on attached environments.** `package_install` on an `environment: attached` profile is
+  rejected at config load: an install would change a system the framework does not own.
+- **Startup warnings.** The agent process warns once per profile when installs are permitted
+  together with `scope: per_runtime` (an install changes a sandbox every session shares),
+  `network_egress: deny` (installs then need packages or an offline repository baked into the image), or, on `docker` and
+  `kubernetes`, a filesystem policy (the root filesystem is then read-only; see the posture table).
+
+### Package specs
+
+Every request is validated before it is submitted, and again in the worker. A rejected spec
+fails with an error naming the entry's position and the rule it broke, never the entry itself.
+
+- **Every ecosystem:** no empty entries, no entries starting with `-` (so no smuggled
+  `--index-url`), no whitespace or NUL, no URLs (`://`), and no local paths (a leading `.`, `/` or
+  `~`).
+- **`python`:** a registry name with optional extras and version specifiers, such as
+  `requests==2.31.0` or `requests[socks]>=2,<3`. VCS specs (`git+`), any `/`, archive files (every
+  suffix pip installs locally, such as `.whl`, `.tar.gz`, `.zip`), direct references
+  (`name @ url`) and markers (`;`) are rejected.
+- **`node`:** `name` or `@scope/name`, optionally followed by `@<version-or-range>`. Protocol
+  specs (`github:`, `git+`, `file:`, `link:`, `npm:`), tarballs (`.tgz`, `.tar.gz`, `.tar`) and any
+  other `/` (such as the `user/repo` shorthand) are rejected.
+
+`package_rules` maps an ecosystem to a dotted path of your own `PackageSpecRule`. For `python` and
+`node` it runs **after** the built-in rule, so it can narrow the grammar but never loosen it. For
+any other ecosystem key (say `deb`) it is the whole rule, and an ecosystem with neither a
+built-in rule nor a `package_rules` entry fails at process startup. A package-name allowlist
+looks like this:
+
+```python
+import re
+
+from agentkernel.sandbox import PackageSpecRule
+
+class ApprovedPythonPackages(PackageSpecRule):
+    """Allow only an approved set of package names (any version)."""
+
+    APPROVED = {"requests", "numpy", "pandas"}
+    _NAME = re.compile(r"[A-Za-z0-9._-]+")  # the built-in rule has already checked the grammar
+
+    def validate(self, packages: list[str]) -> None:
+        for index, entry in enumerate(packages):
+            if self._NAME.match(entry).group(0).lower() not in self.APPROVED:
+                raise ValueError(f"package {index}: not on the approved list")  # never echo the entry
+```
+
+```yaml
+    docker:
+      package_rules:
+        python: myapp.sandbox.ApprovedPythonPackages
+```
+
+The rule class must be importable both in the agent process and in the broker worker.
+
+### Installer prefixes per posture
+
+Some hardened postures need a different installer prefix:
+
+| Posture | `python` | `node` |
+|---|---|---|
+| `network_egress: deny` | Offline only: `[pip, install, --no-index, --find-links, /wheels]` over wheels baked into the image. | Offline only: `[npm, install, --offline]` over a cache baked into the image. |
+| Read-only root filesystem (`docker` or `kubernetes` with a filesystem policy) | `[pip, install, --target, /workspace/site]`, with `/workspace/site` on `PYTHONPATH`: set it in the image on `docker` (its config has no `env`), or with `kubernetes.env`. On `docker` the writable workdir is a `noexec` tmpfs, so only pure-Python packages work there; packages with compiled extensions fail to import. | `[npm, install, --cache, /workspace/.npm]` (a local install into the writable workdir). |
+| Non-root or PSA-restricted image | `[pip, install, --target, <writable dir>]`, or `[pip, install, --user]` with a writable `HOME`. | Local installs work; avoid `-g`. |
+
+### Install timeouts and kills
+
+- An install runs under its **effective timeout**: `package_install.timeout` when set, otherwise
+  `policy.timeout`. The provider applies it; the broker worker's own timer fires 10 seconds later
+  as a backstop.
+- On the `queue` flavor, `worker_timeout_ceiling` is checked against the install's effective
+  timeout, and the transport's redelivery window must exceed that timeout plus the backstop (see
+  [The `queue` flavor](#the-queue-flavor)).
+- On `docker` and `kubernetes`, a timed-out or cancelled execution (an install, `run_code`, or
+  `run_command`) is killed, with its child processes, on any image (no `pkill` needed). The kill
+  is best-effort: a process that clears its own environment escapes it, and the kill itself is
+  time-bounded. It never runs in an `attach_to` container or pod, which the framework does not own:
+  there the timed-out process keeps running.
 
 ## Identity
 
@@ -294,11 +458,11 @@ Providers available today:
 | Provider | Extra | Isolation | Notes |
 |---|---|---|---|
 | `local_subprocess` | — (stdlib) | `none` | Runs on the host. Dev/test only. Shell + files + `python`/`bash`. |
-| `docker` | `sandbox-docker` | `container` | Container per sandbox (`sleep infinity`); files via archives; `pip install`. Maps `deny`→`network_mode: none`, cpu/memory→limits, fs→read-only rootfs + writable workdir. Requires a Docker daemon. |
-| `e2b` | `e2b` | `micro_vm` | Managed Firecracker micro-VMs on the E2B cloud (native async SDK). Stateful Jupyter-kernel execution (variables persist across calls); shell, files, `pip install`. Maps `deny`→no internet access, `allowlist`→`allow_out` network rules; the profile's `idle_timeout` becomes E2B's native auto-kill timeout. Needs `E2B_API_KEY` (name configurable via `api_key_env`). |
-| `daytona` | `daytona` | `container` | Container sandboxes on the Daytona cloud (sync SDK via `to_thread`). Shell, files, `pip install`. Maps `deny`→block-all, `allowlist`→CIDR allow list, cpu/memory→`Resources` (image-based sandbox); `idle_timeout` becomes Daytona's native `auto_stop_interval`. Needs `DAYTONA_API_KEY` (name configurable via `api_key_env`). |
+| `docker` | `sandbox-docker` | `container` | Container per sandbox (`sleep infinity`); files via archives; package installs (default installer `pip install`, configurable via `package_installers`). Maps `deny`→`network_mode: none`, cpu/memory→limits, fs→read-only rootfs + writable workdir. Requires a Docker daemon. |
+| `e2b` | `e2b` | `micro_vm` | Managed Firecracker micro-VMs on the E2B cloud (native async SDK). Stateful Jupyter-kernel execution (variables persist across calls); shell, files, package installs (default `pip install`, configurable via `package_installers`). Maps `deny`→no internet access, `allowlist`→`allow_out` network rules; the profile's `idle_timeout` becomes E2B's native auto-kill timeout. Needs `E2B_API_KEY` (name configurable via `api_key_env`). |
+| `daytona` | `daytona` | `container` | Container sandboxes on the Daytona cloud (sync SDK via `to_thread`). Shell, files, package installs (default `pip install`, configurable via `package_installers`). Maps `deny`→block-all, `allowlist`→CIDR allow list, cpu/memory→`Resources` (image-based sandbox); `idle_timeout` becomes Daytona's native `auto_stop_interval`. Needs `DAYTONA_API_KEY` (name configurable via `api_key_env`). |
 | `ec2_ssm` | `aws` | `none` | **Attach-only** (requires `environment: attached`): executes on an existing EC2 instance via SSM Run Command — binds to `attach_to`, never provisions or disposes. Shell + `python` (heredoc); no policy enforcement beyond the execution timeout. Supports **user identity** (`sts:AssumeRole` + optional `run_as` OS user). No persistent shell: each command is its own process, so cwd/env/`sudo su` do not carry across commands (`stateful=False`); chain dependent steps (`cd /app && ./run.sh`). |
-| `kubernetes` | `kubernetes` | `container` | Pod per sandbox (`sleep infinity`) via the Kubernetes API; exec over the stream API, files as tar streams, `pip install`. Hardened container defaults (no privilege escalation, seccomp `RuntimeDefault`, all capabilities dropped) under your `security_context` overlays. Maps cpu/memory→requests=limits, fs→read-only rootfs + emptyDir workdir, and egress→per-pod NetworkPolicies only when `network_policy: true` asserts the cluster CNI enforces them. Supports **user identity** via RBAC impersonation (see Identity). Pods carry `activeDeadlineSeconds = 2 × idle_timeout` as the orphan ceiling; the pod ServiceAccount's RBAC is the security boundary. |
+| `kubernetes` | `kubernetes` | `container` | Pod per sandbox (`sleep infinity`) via the Kubernetes API; exec over the stream API, files as tar streams, package installs (default `pip install`, configurable via `package_installers`). Hardened container defaults (no privilege escalation, seccomp `RuntimeDefault`, all capabilities dropped) under your `security_context` overlays. Maps cpu/memory→requests=limits, fs→read-only rootfs + emptyDir workdir, and egress→per-pod NetworkPolicies only when `network_policy: true` asserts the cluster CNI enforces them. Supports **user identity** via RBAC impersonation (see Identity). Pods carry `activeDeadlineSeconds = 2 × idle_timeout` as the orphan ceiling; the pod ServiceAccount's RBAC is the security boundary. |
 
 Additional providers (`bedrock_agentcore`) are planned in later iterations.
 
@@ -440,6 +604,21 @@ Subclass `SandboxProvider` (and `Sandbox`), declare `capabilities`, and implemen
 capabilities advertise). The reusable `SandboxProviderContract` test suite (in
 `agentkernel.sandbox.testing`) asserts the ABC semantics your provider must honor.
 
+To support package installs, declare the ecosystems in `capabilities.package_ecosystems` and
+override `install_packages(packages, ecosystem="python", timeout=None)`. Raise
+`SandboxCapabilityError` for an ecosystem you do not declare, and honor `timeout`, the install's
+effective timeout. The built-in providers delegate validation to `PackageInstaller`; a
+bring-your-own provider can reuse it the same way.
+
+:::note Migrating a bring-your-own `Sandbox` subclass
+`install_packages` used to take only `packages`. A subclass that still overrides
+`install_packages(self, packages)` keeps working for `python` installs for one more release: the
+broker worker calls it through a compatibility shim and logs a one-time deprecation warning, with
+the backstop as the install's only timer. Requests for any other ecosystem fail with
+`SandboxCapabilityError`. Update the override to the new signature. The
+`SandboxProviderContract` suite already requires it.
+:::
+
 ## Broker flavors
 
 The **broker** decouples the agent from execution. It is chosen with `sandbox.broker.flavor`:
@@ -475,8 +654,9 @@ FIFO ordering makes that safe).
 **At-least-once semantics.** A worker that dies mid-execution has the request redelivered up
 to `queue.input.max_receive_count` deliveries, after which a permanent-failure completion is
 recorded; side-effectful commands are therefore not exactly-once. Size the transport's
-visibility window above your largest profile `policy.timeout` (NATS `ack_wait`, the SQS
-visibility timeout), or a still-running execution is redelivered and runs twice. Once a
+visibility window (NATS `ack_wait`, the SQS visibility timeout) above your largest effective
+timeout (`policy.timeout`, or `package_install.timeout` for installs) plus the worker's 10-second
+backstop, or a still-running execution is redelivered and runs twice. Once a
 completion has been queued, a response-store outage only retries the persist, never the
 execution. The worker also sweeps managed sandboxes idle past their profile's `idle_timeout`
 when the response store supports key scans (all four built-ins do).
@@ -494,6 +674,11 @@ e.g. Lambda or ECS, with the worker beside it) and `sandbox/broker-nats` (everyt
 in-cluster via the ak-k8s chart's `sandboxWorker` tier, including its standalone worker-only
 install); see the chart README's sandbox worker section for KEDA scaling and namespace
 hardening.
+
+**Upgrade queue workers before agent pods.** The worker enforces the permissions the agent side
+sends. An older worker ignores `package_install` (and runs any install as `pip install`), while
+an older agent sends no permissions, so a newer worker denies its install requests. Rolling the
+workers first keeps every request enforced.
 
 ## Configuration reference
 
@@ -537,6 +722,10 @@ sandbox:
         memory_mb: null          # memory limit (MB)
         timeout: 120.0           # per-execution wall-clock seconds
         strict: true             # fail closed on unenforceable policy
+        languages: null          # run_code allowlist; null = provider-declared; [] = no run_code
+        package_install: null    # present = installs permitted:
+        #   ecosystems: [python] #   permitted ecosystems (non-empty)
+        #   timeout: null        #   an install's wall clock; null = policy.timeout
       params: {}                 # passed to a dotted-path (BYO) provider
       # ...one provider config block matching `type`, e.g.:
       local_subprocess:
@@ -545,6 +734,22 @@ sandbox:
         image: python:3.12-slim
         runtime: docker
         attach_to: null          # existing container id to attach to (mode 3)
+        package_installers:      # ecosystem -> installer argv prefix (replaces, not merges)
+          python: [pip, install]
+        package_rules: {}        # ecosystem -> dotted path of a PackageSpecRule
+      e2b:
+        api_key_env: E2B_API_KEY
+        template: base
+        package_installers: {python: [pip, install]}
+        package_rules: {}
+      daytona:
+        api_key_env: DAYTONA_API_KEY
+        target: null
+        image: null              # or snapshot (mutually exclusive)
+        snapshot: null
+        env_vars: {}
+        package_installers: {python: [pip, install]}
+        package_rules: {}
       kubernetes:
         namespace: default
         image: python:3.12-slim
@@ -559,6 +764,8 @@ sandbox:
         image_pull_secrets: []
         security_context: {}     # pod-level overlay
         container_security_context: {}   # overlays the hardened defaults
+        package_installers: {python: [pip, install]}
+        package_rules: {}
 
   # Single-backend sugar (used only when `profiles` is empty): synthesizes profiles[default_profile]
   type: null                     # provider short name or dotted path
@@ -568,13 +775,15 @@ sandbox:
 
 All fields are overridable by environment variables with the `AK_` prefix and `__` nesting,
 e.g. `AK_SANDBOX__ENABLED=true`, `AK_SANDBOX__BROKER__FLAVOR=embedded`,
-`AK_SANDBOX__TOOL_OUTPUT_MAX_CHARS=4000`.
+`AK_SANDBOX__TOOL_OUTPUT_MAX_CHARS=4000`, or
+`AK_SANDBOX__PROFILES__BUILDER__POLICY__PACKAGE_INSTALL__ECOSYSTEMS='["python","node"]'` and
+`AK_SANDBOX__PROFILES__BUILDER__DOCKER__PACKAGE_INSTALLERS='{"python":["pip","install"],"node":["npm","install"]}'`.
 
 ## Examples
 
 - [`sandbox/basic`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/sandbox/basic) — enable the sandbox, run code, persist a workspace, manage named sessions.
 - [`sandbox/profiles`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/sandbox/profiles) — multiple profiles with different scopes; the agent routes per call.
-- [`sandbox/policy`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/sandbox/policy) — policy/permissions on the docker provider: an enforced envelope plus the fail-closed `strict` model for what docker cannot enforce.
+- [`sandbox/policy`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/sandbox/policy) — policy/permissions on the docker provider: an enforced envelope, the fail-closed `strict` model for what docker cannot enforce, and a profile that permits package installs.
 - [`sandbox/docker`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/sandbox/docker) — the `docker` provider: container-isolated execution with policy actually enforced (`network_egress: deny` → no network).
 - [`sandbox/daytona`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/sandbox/daytona) — the `daytona` provider: cloud container sandboxes with enforced network and resource policy (needs a Daytona API key).
 - [`sandbox/e2b`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/sandbox/e2b) — the `e2b` provider: Firecracker micro-VM sandboxes with a stateful Jupyter kernel and enforced network policy (needs an E2B API key).

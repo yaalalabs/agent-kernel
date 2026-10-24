@@ -131,11 +131,17 @@ k3d cluster delete ak
 
 - Swap `python:3.12-slim` for your security team's hardened image; keep it non-root and
   give it whatever interpreters your agents need. The image is the operator's contract:
-  `install_packages` is pip against that image, and OS packages belong in the image build.
+  `install_packages` runs only on a profile whose policy sets `package_install`, using the
+  installer the provider's `package_installers` names (default `pip install`) inside that
+  image, and OS packages belong in the image build.
 - Set `auto_provision: false` and manage the four JetStream streams (chat + sandbox) as
   NACK CRs: `natsResources.enabled` in the chart renders all four (the sandbox pair is
   included whenever `sandboxWorker.enabled` is set).
-- Size `sandbox.broker.queue.nats.ack_wait` above your largest profile `policy.timeout`,
-  or a still-running execution gets redelivered and runs twice (at-least-once semantics).
+- Size `sandbox.broker.queue.nats.ack_wait` above your largest effective timeout
+  (`policy.timeout`, or `policy.package_install.timeout` for installs) plus the worker's
+  10-second backstop, or a still-running execution gets redelivered and runs twice
+  (at-least-once semantics).
+- When upgrading, roll the sandbox worker before the agent pods: the worker enforces the
+  sandbox permissions the agent side sends.
 - With KEDA installed, `keda.enabled: true` also scales the sandbox worker on the
   `SANDBOX_REQUESTS` backlog.
