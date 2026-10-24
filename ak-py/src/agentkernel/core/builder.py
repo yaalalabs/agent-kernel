@@ -32,17 +32,33 @@ class A2ACardBuilder(Builder):
     """
     The one A2A protocol version served; 0.3 clients are not
     """
+    TEXT_MODE = "text/plain"
+    """
+    The media type of every request read and every unlabelled reply sent
+    """
 
     @classmethod
     def build(cls, name: str, description: Any, skills: list[Any]) -> Any:
         """
         Build and return an A2A AgentCard instance.
+
+        Modes list only what is actually exchanged: text in, text out, plus the A2UI media type and
+        extension for an agent whose JSON replies the A2UI capability labels.
         :param name: Name of the agent.
         :param description: Description of the agent; anything but a str is replaced by "".
         :param skills: List of AgentSkill objects; any with empty tags is tagged with the agent name.
         :return: An A2A AgentCard instance.
         """
-        from a2a.types import AgentCapabilities, AgentCard, AgentInterface
+        from a2a.types import AgentCapabilities, AgentCard, AgentExtension, AgentInterface
+
+        # Imported here: a2ui imports core, so a module-scope import risks a cycle through core/__init__
+        from ..a2ui.hook import A2UIPostHook, A2UIPostHookFactory
+
+        output_modes = [cls.TEXT_MODE]
+        extensions = []
+        if A2UIPostHookFactory.labels(name):
+            output_modes.append(A2UIPostHook.MEDIA_TYPE)
+            extensions.append(AgentExtension(uri=A2UIPostHook.EXTENSION_URI, required=False))
 
         return AgentCard(
             name=name,
@@ -51,9 +67,9 @@ class A2ACardBuilder(Builder):
                 AgentInterface(url=f"{AKConfig.get().a2a.url}/{name}", protocol_binding=cls.PROTOCOL_BINDING, protocol_version=cls.PROTOCOL_VERSION)
             ],
             version=AKConfig.get().library_version,
-            default_input_modes=["text"],
-            default_output_modes=["json"],
-            capabilities=AgentCapabilities(streaming=False),
+            default_input_modes=[cls.TEXT_MODE],
+            default_output_modes=output_modes,
+            capabilities=AgentCapabilities(streaming=False, extensions=extensions),
             skills=cls._tag_untagged(name, skills),
         )
 

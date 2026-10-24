@@ -6,11 +6,11 @@
 
 | | |
 |---|---|
-| **Status** | Draft for review; reopened 2026-10-24 after the A2UI v0.9.1 binding was found (D6, Q1–Q2). |
+| **Status** | Draft for review; all open questions resolved 2026-10-24 (D6–D8 added after the A2UI v0.9.1 binding was found). |
 | **Base** | `feature/780-a2a-and-mcp-from-queue-pipeline` (A2A already runs through the queue). |
 | **Read time** | About 5 minutes. Code evidence is folded away under ▸ **Evidence**. |
 | **Breaking?** | Yes: A2A 0.3 clients are no longer served, and apps that import `a2a` 0.3 types must port. See [Breaking changes](#breaking-changes). |
-| **Decisions** | 5 resolved, 1 added (D6), D2 reopened: [Decisions](#decisions), [Open questions](#open-questions) |
+| **Decisions** | All 8 resolved (D2 superseded by D7): [Decisions](#decisions) |
 
 ---
 
@@ -156,8 +156,8 @@ flowchart LR
 - **Reply mapping:**
   - Text result → one text part (`new_text_message`), as today.
   - Result with a `media_type` (`QueuedReply.media_type`) whose `result` is a dict or list → one
-    data part with that `media_type` (`new_data_message`). Pending Q1 (label also in
-    `metadata["mimeType"]`) and Q2 (an object as a one-item list).
+    data part with that `media_type` (`new_data_message`), the label also in
+    `metadata["mimeType"]` (D7); an A2UI object goes as a one-item list (D8).
   - Structured result without a `media_type` → JSON text, as today (D3).
   - The executor stays generic: it maps any `media_type`, and never names A2UI.
 - **Failures:** raise `InternalError(message=ERROR_MESSAGE)` (timeout: `TIMEOUT_MESSAGE`).
@@ -247,11 +247,11 @@ flowchart LR
   - Recorded for context: it was verified to work with the real 0.3.26 client; it was declined,
     not found unworkable.
 - **D2. The label goes in `media_type` only; no `metadata.mimeType` copy** (2026-10-24, follows D1).
-  **Reopened 2026-10-24: see Q1.**
+  **Superseded 2026-10-24 by D7.**
   - The copy existed only for 0.3 clients, which the compat layer would have served without
     `media_type`. With no 0.3 clients there is no reader for it.
   - That reasoning missed the A2UI binding itself: v0.9.1 requires the label in
-    `metadata["mimeType"]` (Q1).
+    `metadata["mimeType"]` (D7).
 - **D3. An unlabelled structured reply stays JSON text** (2026-10-24, requester).
   - Only a reply with a `media_type` becomes a data part; the issue scopes data parts to labelled
     replies, and a text-only client keeps reading every reply.
@@ -277,20 +277,21 @@ flowchart LR
     `.../specification/v1.0-a2ui-extension-specification/`; the `-a2a-extension` slugs checked
     before (`research/a2a-datapart.md` §3 of #706) were the wrong addresses.
 
+- **D7. The label goes in both `media_type` and `metadata["mimeType"]`** (2026-10-24, requester;
+  supersedes D2).
+  - The v0.9.1 binding ("Data encoding", a MUST): a data part is A2UI when it has
+    `metadata["mimeType"] = "application/a2ui+json"`. A client that follows it reads only that key.
+  - `media_type` is A2A 1.x's own field; `metadata.mimeType` is what A2UI clients read. Cost: the
+    label is written twice on each labelled data part.
+  - Generic: every labelled data part carries both, whatever its media type, so the executor
+    still never names A2UI.
+- **D8. A labelled A2UI object reply goes out as a one-item list over A2A** (2026-10-24, requester).
+  - The v0.9.1 binding (a MUST): the data part's `data` is an array of messages. The A2UI hook
+    labels a JSON object or array (`a2ui/hook.py:53`), so an object reply would break that rule.
+  - A2A surface only: REST, WebSocket, MCP and the rest keep today's shape.
+  - The rule lives in `a2ui/` (`a2ui/` stays the only package that names A2UI); other media types
+    are sent as they are.
+
 ## Open questions
 
-Both come from the v0.9.1 binding's "Data encoding" section, which uses MUST for each.
-
-- **Q1. Also put the label in `metadata["mimeType"]`?** (reopens D2)
-  - The binding: a data part is A2UI when it has `metadata["mimeType"] = "application/a2ui+json"`.
-    A client that follows it reads only that key, and finds no label if we set only `media_type`.
-  - **Recommended: yes, set both.** `media_type` is A2A 1.x's own field; `metadata.mimeType` is
-    what A2UI clients read. Cost: the label is written twice on each labelled data part.
-- **Q2. A labelled object reply: send as is, or as a one-item list?**
-  - The binding: the data part's `data` "MUST be an array of messages". The A2UI hook labels a
-    JSON object or array (`a2ui/hook.py:53`), so an object reply would break that rule.
-  - Options: (a) wrap an object in a one-item list on the A2A surface only, so other surfaces keep
-    today's shape; (b) send it as is and document the gap.
-  - **Recommended: (a).** It is the only way an object reply is valid A2UI over A2A, and it touches
-    no other surface. Where the rule lives is a spec detail, under the constraint that `a2ui/`
-    stays the only package that names A2UI.
+- None. Q1 and Q2 (raised by the v0.9.1 binding) are resolved as D7 and D8.

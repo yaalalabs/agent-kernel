@@ -40,14 +40,17 @@ does not import on 1.x), so iteration 2 is the one large step; everything else i
 
 - **Goal:** a labelled reply leaves as a data part; cards carry media-type modes and the A2UI
   extension for in-scope agents.
-- **Files:** `ak-py/src/agentkernel/api/a2a/a2a.py`, `ak-py/src/agentkernel/core/builder.py`,
-  `ak-py/tests/test_api_a2a.py`
+- **Files:** `ak-py/src/agentkernel/a2ui/hook.py`, `ak-py/src/agentkernel/api/a2a/a2a.py`,
+  `ak-py/src/agentkernel/core/builder.py`, `ak-py/tests/test_api_a2a.py`,
+  `ak-py/tests/test_a2ui_hook.py`, `ak-py/tests/test_api_a2a_surface.py` (new, card tests)
 - **Steps:**
-  1. `Executor._as_message` per the D3 table (spec §4).
-  2. `A2ACardBuilder.build`: `text/plain` modes, and `labels(name)` → A2UI output mode +
+  1. `EXTENSION_URI` → v0.9.1 (D6); `A2UIPostHook.a2a_data` (D8) (spec §3).
+  2. `Executor._as_message` per the D3/D7/D8 table (spec §4).
+  3. `A2ACardBuilder.build`: `text/plain` modes, and `labels(name)` → A2UI output mode +
      `AgentExtension` (spec §2, rule 1).
-  3. Flip the labelled rows in `TestReplies` to data-part assertions; add the `1` → `1.0` row.
-- **Verify:** `uv run pytest tests/test_api_a2a.py tests/test_a2ui_hook.py`
+  4. Move the labelled rows to `TestDataParts` (both labels, the list wrap, `1` → `1.0`); card
+     tests start `test_api_a2a_surface.py`.
+- **Verify:** `uv run pytest tests/test_api_a2a.py tests/test_api_a2a_surface.py tests/test_a2ui_hook.py`
 
 ## Iteration 4: Examples
 
@@ -64,11 +67,11 @@ does not import on 1.x), so iteration 2 is the one large step; everything else i
 ## Iteration 5: Tests
 
 - **Goal:** every behaviour in spec [Behavioural changes](spec.md#behavioural-changes) has a test.
-- **Files:** `ak-py/tests/test_api_a2a_surface.py` (new),
+- **Files:** `ak-py/tests/test_api_a2a_surface.py` (card tests already in, from iteration 3),
   `ak-py/tests/test_protocol_pipeline_roundtrip.py`, `ak-py/tests/test_cross_surface_parity.py`,
   `ak-py/tests/test_packaging_extras.py`
 - **Steps:**
-  1. New `test_api_a2a_surface.py`: imports, card, routes (spec Testing, New file).
+  1. `test_api_a2a_surface.py`: add the imports and routes classes (spec Testing, New file).
   2. Round trip: `/v1/message:send` → 404; labelled reply through the queue as a data part
      (reset `Runtime._system_post_hooks`).
   3. Parity: `test_a2a_carries_the_same_pair`; A2A joins the all-surfaces test; drop the

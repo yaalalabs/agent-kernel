@@ -78,13 +78,17 @@ Rules:
 
 ### 3. A2UI scope and extension URI (`a2ui/hook.py`)
 
-Two additions keep `a2ui/` the only package that names A2UI (design §5), and one rule decides both
+These additions keep `a2ui/` the only package that names A2UI (design §5), and one rule decides both
 labelling and the card.
 
 ```python
 class A2UIPostHook(PostHook):
     MEDIA_TYPE = "application/a2ui+json"                            # unchanged (:34)
-    EXTENSION_URI = "https://a2ui.org/a2a-extension/a2ui/v0.8"      # new: the only published binding
+    EXTENSION_URI = "https://a2ui.org/a2a-extension/a2ui/v0.9.1"    # new (D6): an identifier, not a page
+
+    @classmethod
+    def a2a_data(cls, media_type: str, content: Any) -> Any:
+        """What an A2A data part carries (D8): an A2UI dict -> [dict]; a list, or any other media type, as is."""
 
     @staticmethod
     def scopes(agent_name: str) -> bool:
@@ -105,6 +109,12 @@ class A2UIPostHookFactory:
         """
 ```
 
+- `EXTENSION_URI` is the v0.9.1 binding's identifier, defined at
+  `https://a2ui.org/specification/v0.9.1-a2ui-extension-specification/`; it does not resolve as a
+  page (404) by design.
+- `a2a_data` holds the binding's "data MUST be an array of messages" rule in `a2ui/`, so the
+  executor applies it without naming A2UI. Only the A2A executor calls it; no other surface's shape
+  changes.
 - `_applies_to` keeps its name and signature (no test patches it today; it stays the hook's call
   site at `hook.py:45`).
 - `labels` deliberately ignores `execution.mode`. `get()` warns that the hook never runs on a
@@ -120,6 +130,8 @@ Imports (`a2a.py:1-10`):
 from a2a.helpers import new_data_message, new_text_message   # was a2a.utils.new_agent_text_message
 from a2a.types import AgentCard, InternalError, Message, UnsupportedOperationError
 # removed: from a2a.utils.errors import ServerError
+
+from ...a2ui.hook import A2UIPostHook   # a2a_data only; a2ui imports core, never api
 ```
 
 `a2a.server.agent_execution`, `a2a.server.events.EventQueue` and
@@ -152,11 +164,11 @@ class Executor(AgentExecutor):
 4. `reply.is_error or reply.result is None` → log as today (`:88`), then `raise InternalError(message=ERROR_MESSAGE)`.
 5. Success → `await event_queue.enqueue_event(self._as_message(reply, context))`.
 
-`_as_message` mapping (D3):
+`_as_message` mapping (D3, D7, D8):
 
 | `reply.media_type` | `reply.result` | Message |
 |---|---|---|
-| set | `dict` or `list` | `new_data_message(result, media_type=media_type, context_id=..., task_id=...)` |
+| set | `dict` or `list` | `new_data_message(A2UIPostHook.a2a_data(media_type, result), media_type=media_type, context_id=..., task_id=...)`, then `parts[0].metadata["mimeType"] = media_type` |
 | set | anything else | `new_text_message(_as_text(result), context_id=..., task_id=...)` |
 | unset | any | `new_text_message(_as_text(result), context_id=..., task_id=...)` |
 
@@ -168,7 +180,9 @@ Rules:
    ported positionally would send the context id as the media type.
 2. **No media type on a text part.** The text helper's `media_type` stays unset, as today.
 3. **The executor never names A2UI.** It maps whatever `media_type` the body carries
-   (`QueuedReply.media_type`, `pipeline/request_client.py:43-45`).
+   (`QueuedReply.media_type`, `pipeline/request_client.py:43-45`), passes every labelled payload
+   through `A2UIPostHook.a2a_data`, and writes the label in both `media_type` and
+   `metadata["mimeType"]` for every media type (D7).
 4. **`_send_error` is deleted** (`:97-98`). On 1.x an event enqueued before the raise is never
    delivered (verified: the caller gets only the error), so the error's own `message` is what the
    caller reads. Details stay in the log only; the message text is fixed, never the exception's.
@@ -312,14 +326,17 @@ All intentional.
    `preferredTransport`. Hand-written `/a2a/catalog` readers must update.
 3. **Card modes are media types** (D4): `text/plain` in and out, plus `application/a2ui+json` out
    for agents in A2UI scope.
-4. **The card declares the A2UI extension** for agents in A2UI scope (`required: false`).
+4. **The card declares the A2UI v0.9.1 extension** for agents in A2UI scope (`required: false`, D6).
 5. **Untagged skills carry `[<agent name>]`**, so 1.x stops warning "not spec-compliant" on each
    card serialisation.
 6. **A non-string `description` becomes `""` with a warning**, instead of failing the A2A mount.
 7. **An agent with no card is not served** (warning), instead of being stored as `None` and making
    `/a2a/catalog` call `None.model_dump()` (`handler.py:44`).
 8. **An unknown agent's well-known card → 404**, not 500; the card route now sends an `ETag`.
-9. **A labelled reply is a data part** (`{"data": ..., "mediaType": ...}`), not JSON text.
+9. **A labelled reply is a data part** (`{"data": ..., "mediaType": ..., "metadata": {"mimeType": ...}}`),
+   not JSON text. The label is in both places (D7).
+   - An A2UI object arrives as a one-item list (D8), on A2A only; a list, or a payload with any
+     other media type, keeps its shape.
    - Numbers ride as protobuf `Value` doubles: an integer `1` arrives as `1.0` in a Python 1.x
      client, and an integer above 2^53 loses precision. JSON text never had this limit; it is the
      protocol's data-part encoding, not an Agent Kernel choice. A JavaScript client sees no
@@ -377,8 +394,10 @@ All intentional.
 - `EventQueue` is abstract on 1.x (only `enqueue_event`): a `RecordingEventQueue(EventQueue)`
   double collects events; `_execute` returns `(events, raised A2AError | None)`.
 - `TestReplies`: text and image rows unchanged; `AgentReplyAny(content={"a": 1})` (no label) stays
-  text `'{"a": 1}'`; the two labelled rows become data-part rows — one part, `part.media_type ==
-  "application/a2ui+json"`, `get_data_parts(...) == [content]`; a new row pins `1` → `1.0`.
+  text `'{"a": 1}'`; the labelled rows move to a new `TestDataParts`.
+- New `TestDataParts`: a labelled list is one data part with `media_type` and
+  `metadata == {"mimeType": ...}`; an A2UI object arrives as `[object]`; another media type keeps
+  its object and still carries both labels; `1` arrives as the float `1.0`.
 - `TestFailures`: `events == []` and `raised.message == ERROR_MESSAGE` (timeout: `TIMEOUT_MESSAGE`);
   log assertions unchanged. `cancel` raises `UnsupportedOperationError`.
 - New: positional-argument guard — the text message's `context_id`/`task_id` equal the context's
@@ -395,12 +414,15 @@ All intentional.
   to `None` before and after, since it is cached per class.
 
 **`tests/test_cross_surface_parity.py`**: new `test_a2a_carries_the_same_pair` (executor over
-the file's `_QueueClient`, data part content `== EXPECTED_CONTENT`, media type `== MEDIA_TYPE`);
+the file's `_QueueClient`, data part content `== [EXPECTED_CONTENT]` — the A2A-only list of D8 —
+media type `== MEDIA_TYPE`);
 A2A joins `test_every_surface_agrees_on_the_payload`; the "A2A sits out" docstring (`:11-12`) goes.
 The fixture's values are all strings after normalisation, so the double encoding does not affect it.
 
 **`tests/test_a2ui_hook.py`**: `scopes` by name; `labels` false when disabled, false out of scope,
-true in scope, false (and logged) when reading config raises; `_applies_to` agrees with `scopes`.
+true in scope, false (and logged) when reading config raises; `_applies_to` agrees with `scopes`;
+`EXTENSION_URI` is the v0.9.1 identifier; `a2a_data` wraps an A2UI object and returns a list or
+another media type's payload as is.
 
 **`tests/test_packaging_extras.py`**: the `a2a` extra is exactly `a2a-sdk[http-server]==1.2.3`.
 
@@ -444,7 +466,8 @@ uv run pytest            # full suite
   one `Route`. Re-registered on an `APIRouter(prefix="/a2a/triage")`: card 200 with `ETag`, unknown
   agent 404, `/v1/message:send` 404, `/message:send` without `A2A-Version` 400
   `FAILED_PRECONDITION`.
-- Data reply on the wire: `"parts":[{"data":{"a":1.0},"mediaType":"application/a2ui+json"}]`;
+- Data reply on the wire: `"parts":[{"data":{"a":1.0},"mediaType":"application/a2ui+json"}]`
+  (with D7's `metadata.mimeType` set: `{"data":[{"a":1.0}],"metadata":{"mimeType":"application/a2ui+json"},"mediaType":"application/a2ui+json"}`);
   `2**60` decodes as `1.152921504606847e+18`; a list payload stays a list.
 - `raise InternalError(message=...)` in the executor → HTTP 500
   `{"error":{"code":500,"status":"INTERNAL","message":...}}`; the 1.x client raises

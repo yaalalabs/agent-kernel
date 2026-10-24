@@ -256,6 +256,29 @@ class TestScopeByName:
         assert AGENT_NAME in caplog.text
 
 
+class TestA2AData:
+    """The A2A binding's shape rule (#762): an A2UI data part holds a list of messages."""
+
+    def test_the_extension_is_the_v0_9_1_binding(self):
+        """Matches what the hook labels: createSurface-style messages under application/a2ui+json."""
+        assert A2UIPostHook.EXTENSION_URI == "https://a2ui.org/a2a-extension/a2ui/v0.9.1"
+
+    def test_an_a2ui_object_becomes_a_one_item_list(self):
+        content = {"createSurface": {"surfaceId": "s1"}}
+
+        assert A2UIPostHook.a2a_data(A2UIPostHook.MEDIA_TYPE, content) == [content]
+
+    def test_an_a2ui_list_is_returned_as_is(self):
+        content = [{"createSurface": {}}, {"updateComponents": {}}]
+
+        assert A2UIPostHook.a2a_data(A2UIPostHook.MEDIA_TYPE, content) is content
+
+    def test_another_media_type_is_returned_as_is(self):
+        content = {"k": "v"}
+
+        assert A2UIPostHook.a2a_data("application/vnd.acme+json", content) is content
+
+
 class TestEndToEnd:
     """Config on, an agent returning an A2UI document, and no application post-hook anywhere."""
 

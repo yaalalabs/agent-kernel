@@ -11,7 +11,7 @@ import uuid
 from unittest.mock import Mock
 
 import pytest
-from a2a.helpers import get_message_text
+from a2a.helpers import get_data_parts, get_message_text
 from a2a.server.agent_execution import RequestContext
 from a2a.server.context import ServerCallContext
 from a2a.server.events import EventQueue
@@ -24,6 +24,7 @@ from agentkernel.core.model import AgentReplyAny, AgentReplyImage, AgentReplyTex
 from agentkernel.pipeline.request_client import QueuedReply, ReplyTimeoutError
 
 AGENT = "triage"
+A2UI = "application/a2ui+json"
 
 
 @pytest.fixture(autouse=True)
@@ -123,11 +124,9 @@ class TestReplies:
             (AgentReplyText(response="4"), "4"),
             (AgentReplyImage(response="here it is", name="chart.png", image_data="aGk="), "here it is. Image chart.png is attached."),
             (AgentReplyAny(content={"a": 1}), '{"a": 1}'),
-            (AgentReplyAny(content={"a": 1}, media_type="application/a2ui+json"), '{"a": 1}'),
-            (AgentReplyAny(content=[{"b": 2}], media_type="application/a2ui+json"), '[{"b": 2}]'),
         ],
     )
-    async def test_a_successful_reply_is_one_text_message(self, agent_reply, expected_text):
+    async def test_an_unlabelled_reply_is_one_text_message(self, agent_reply, expected_text):
         events, raised = await _execute(FakeClient(_queued(agent_reply)))
 
         assert raised is None
@@ -145,13 +144,60 @@ class TestReplies:
         assert (events[0].context_id, events[0].task_id) == ("ctx-1", "task-1")
 
     @pytest.mark.asyncio
-    async def test_a_structured_reply_reads_as_the_json_the_old_path_gave(self):
-        reply = AgentReplyAny(content={"x": [1, 2]}, media_type="application/a2ui+json")
+    async def test_an_unlabelled_structured_reply_reads_as_the_json_the_old_path_gave(self):
+        """D3: without a media type a structured reply stays JSON text, so a text-only client reads it."""
+        reply = AgentReplyAny(content={"x": [1, 2]})
 
         events, _ = await _execute(FakeClient(_queued(reply)))
 
         assert json.loads(get_message_text(events[0])) == reply.content
         assert get_message_text(events[0]) == str(reply)
+
+
+class TestDataParts:
+    """A labelled structured reply is one data part, labelled where both A2A and A2UI clients look (#762)."""
+
+    async def _part(self, agent_reply):
+        events, raised = await _execute(FakeClient(_queued(agent_reply)))
+
+        assert raised is None
+        [event] = events
+        assert (event.context_id, event.task_id) == ("ctx-1", "task-1")
+        [part] = event.parts
+        return part
+
+    @pytest.mark.asyncio
+    async def test_a_labelled_reply_is_a_data_part_labelled_twice(self):
+        part = await self._part(AgentReplyAny(content=[{"b": "2"}], media_type=A2UI))
+
+        assert part.HasField("data")
+        assert part.media_type == A2UI
+        assert dict(part.metadata) == {"mimeType": A2UI}
+        assert get_data_parts([part]) == [[{"b": "2"}]]
+
+    @pytest.mark.asyncio
+    async def test_an_a2ui_object_goes_out_as_a_one_item_list(self):
+        """The A2UI binding requires a list of messages in the data part."""
+        part = await self._part(AgentReplyAny(content={"createSurface": {"surfaceId": "s1"}}, media_type=A2UI))
+
+        assert get_data_parts([part]) == [[{"createSurface": {"surfaceId": "s1"}}]]
+
+    @pytest.mark.asyncio
+    async def test_another_media_type_keeps_its_object(self):
+        """The executor maps any label; only A2UI's own rule wraps an object."""
+        part = await self._part(AgentReplyAny(content={"k": "v"}, media_type="application/vnd.acme+json"))
+
+        assert part.media_type == "application/vnd.acme+json"
+        assert dict(part.metadata) == {"mimeType": "application/vnd.acme+json"}
+        assert get_data_parts([part]) == [{"k": "v"}]
+
+    @pytest.mark.asyncio
+    async def test_numbers_arrive_as_doubles(self):
+        """A data part carries a protobuf Struct, whose numbers are doubles: 1 arrives as 1.0."""
+        part = await self._part(AgentReplyAny(content=[{"n": 1}], media_type=A2UI))
+
+        [[item]] = get_data_parts([part])
+        assert item["n"] == 1 and isinstance(item["n"], float)
 
 
 class TestFailures:

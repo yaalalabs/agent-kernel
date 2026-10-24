@@ -20,7 +20,7 @@ other owns the labelling, never both.
 
 import json
 import logging
-from typing import Optional
+from typing import Any, Optional
 
 from ..core.base import Agent, Session
 from ..core.config import AKConfig
@@ -32,11 +32,28 @@ class A2UIPostHook(PostHook):
     """Label a parsed reply from an agent the configuration declares to be an A2UI agent."""
 
     MEDIA_TYPE = "application/a2ui+json"
-    EXTENSION_URI = "https://a2ui.org/a2a-extension/a2ui/v0.8"
+    EXTENSION_URI = "https://a2ui.org/a2a-extension/a2ui/v0.9.1"
     """
-    The A2A extension an agent card declares for a labelled agent. v0.8 is the only published
-    binding; this moves when a newer one is published.
+    The A2A extension an agent card declares for a labelled agent: an identifier, not a page. It is
+    defined by the binding at https://a2ui.org/specification/v0.9.1-a2ui-extension-specification/
+    and moves when Agent Kernel's labelled payloads move to a newer A2UI version.
     """
+
+    @classmethod
+    def a2a_data(cls, media_type: str, content: Any) -> Any:
+        """Return the data an A2A data part carries for a payload labelled `media_type`.
+
+        The A2A binding requires an A2UI data part to hold a list of messages, so a single A2UI
+        object goes out as a one-item list. Any other media type, and a list, is returned as is.
+        Other surfaces never call this: they keep the payload's own shape.
+
+        :param media_type: The payload's label.
+        :param content: The labelled payload, a dict or a list.
+        :return: The data to put in the data part.
+        """
+        if media_type == cls.MEDIA_TYPE and isinstance(content, dict):
+            return [content]
+        return content
 
     async def on_run(self, session: Session, requests: list[AgentRequest], agent: Agent, agent_reply: AgentReply) -> AgentReply:
         """Return the reply labelled as A2UI when it parses, and untouched when it does not.
