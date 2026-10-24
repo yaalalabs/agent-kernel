@@ -32,6 +32,11 @@ class A2UIPostHook(PostHook):
     """Label a parsed reply from an agent the configuration declares to be an A2UI agent."""
 
     MEDIA_TYPE = "application/a2ui+json"
+    EXTENSION_URI = "https://a2ui.org/a2a-extension/a2ui/v0.8"
+    """
+    The A2A extension an agent card declares for a labelled agent. v0.8 is the only published
+    binding; this moves when a newer one is published.
+    """
 
     async def on_run(self, session: Session, requests: list[AgentRequest], agent: Agent, agent_reply: AgentReply) -> AgentReply:
         """Return the reply labelled as A2UI when it parses, and untouched when it does not.
@@ -64,9 +69,21 @@ class A2UIPostHook(PostHook):
         :param agent: The agent that produced the reply.
         :return: True when `a2ui.agents` is unset or names this agent.
         """
+        return A2UIPostHook.scopes(agent.name)
+
+    @staticmethod
+    def scopes(agent_name: str) -> bool:
+        """Return whether `a2ui.agents` covers the agent with this name.
+
+        The one scoping rule, shared by the hook and by anything that describes what the hook will
+        do, such as an A2A agent card, so the two can never disagree.
+
+        :param agent_name: The agent's name.
+        :return: True when `a2ui.agents` is unset or names this agent.
+        """
         config = getattr(AKConfig.get(), "a2ui", None)
         agents: Optional[list[str]] = getattr(config, "agents", None) if config else None
-        return agents is None or agent.name in agents
+        return agents is None or agent_name in agents
 
     def name(self) -> str:
         """Return the hook name."""
@@ -122,3 +139,21 @@ class A2UIPostHookFactory:
         except Exception:  # noqa: BLE001 — the hook chain must never break the runtime
             cls._log.exception("Failed to initialize A2UIPostHook; falling back to NoOpA2UIPostHook.")
             return NoOpA2UIPostHook()
+
+    @classmethod
+    def labels(cls, agent_name: str) -> bool:
+        """Return whether this agent's JSON replies get labelled: `a2ui.enabled` and in scope.
+
+        Ignores ``execution.mode`` on purpose: a caller asking by name (an A2A card) runs on the
+        single-reply path, where the hook is called even when the app streams. Any failure is logged
+        and answers False, the same fallback ``get()`` uses, so a broken block never breaks a caller.
+
+        :param agent_name: The agent's name.
+        :return: True when the capability is enabled and `a2ui.agents` covers the agent.
+        """
+        try:
+            config = getattr(AKConfig.get(), "a2ui", None)
+            return bool(config and config.enabled) and A2UIPostHook.scopes(agent_name)
+        except Exception:  # noqa: BLE001 — a describing caller must never fail on this block
+            cls._log.exception(f"Failed to read the a2ui configuration; treating '{agent_name}' as unlabelled.")
+            return False

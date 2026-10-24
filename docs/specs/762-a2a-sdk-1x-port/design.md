@@ -6,11 +6,11 @@
 
 | | |
 |---|---|
-| **Status** | Draft for review; all open questions resolved 2026-10-24. |
+| **Status** | Draft for review; reopened 2026-10-24 after the A2UI v0.9.1 binding was found (D6, Q1–Q2). |
 | **Base** | `feature/780-a2a-and-mcp-from-queue-pipeline` (A2A already runs through the queue). |
 | **Read time** | About 5 minutes. Code evidence is folded away under ▸ **Evidence**. |
 | **Breaking?** | Yes: A2A 0.3 clients are no longer served, and apps that import `a2a` 0.3 types must port. See [Breaking changes](#breaking-changes). |
-| **Decisions** | All 5 resolved: [Decisions](#decisions) |
+| **Decisions** | 5 resolved, 1 added (D6), D2 reopened: [Decisions](#decisions), [Open questions](#open-questions) |
 
 ---
 
@@ -156,7 +156,8 @@ flowchart LR
 - **Reply mapping:**
   - Text result → one text part (`new_text_message`), as today.
   - Result with a `media_type` (`QueuedReply.media_type`) whose `result` is a dict or list → one
-    data part with that `media_type` (`new_data_message`).
+    data part with that `media_type` (`new_data_message`). Pending Q1 (label also in
+    `metadata["mimeType"]`) and Q2 (an object as a one-item list).
   - Structured result without a `media_type` → JSON text, as today (D3).
   - The executor stays generic: it maps any `media_type`, and never names A2UI.
 - **Failures:** raise `InternalError(message=ERROR_MESSAGE)` (timeout: `TIMEOUT_MESSAGE`).
@@ -168,16 +169,20 @@ flowchart LR
 ### 5. A2UI extension on the card
 
 - When `a2ui.enabled` and the agent is in scope for the A2UI post-hook, the agent's card declares
-  `AgentExtension(uri="https://a2ui.org/a2a-extension/a2ui/v0.8", required=False)` in
-  `capabilities.extensions`.
+  `AgentExtension(uri="https://a2ui.org/a2a-extension/a2ui/v0.9.1", required=False)` in
+  `capabilities.extensions` (D6).
   - Scope reuses the hook's own rule (`A2UIPostHook._applies_to`, `a2ui/hook.py:58`), so the card
     and the labelling can never disagree.
   - `required=False`: a data part is core A2A, so a client that ignores the extension still gets a
-    valid message.
+    valid message. The binding calls the declaration optional but encouraged.
+  - No `params`: `supportedCatalogIds` names the application's component catalog, which Agent
+    Kernel never sees (the same reason `a2ui/` never reads message names).
 - The URI string lives in `a2ui/` beside `A2UIPostHook.MEDIA_TYPE` (`a2ui/hook.py:34`), keeping
   `a2ui/` the only package that names A2UI. The A2A surface reads it from there.
-- v0.8 is the only published binding; the v0.9.1 and v1.0 extension pages return 404 (checked
-  2026-10-24). The URI moves when a newer binding is published.
+- The URI is an identifier, not a page: it does not resolve (404), by design. It is defined by the
+  binding spec at `https://a2ui.org/specification/v0.9.1-a2ui-extension-specification/`
+  ("Extension URI" section). The URI moves when the app-facing A2UI version moves (v1.0 is a
+  candidate today).
 
 ### 6. Configuration
 
@@ -242,8 +247,11 @@ flowchart LR
   - Recorded for context: it was verified to work with the real 0.3.26 client; it was declined,
     not found unworkable.
 - **D2. The label goes in `media_type` only; no `metadata.mimeType` copy** (2026-10-24, follows D1).
+  **Reopened 2026-10-24: see Q1.**
   - The copy existed only for 0.3 clients, which the compat layer would have served without
     `media_type`. With no 0.3 clients there is no reader for it.
+  - That reasoning missed the A2UI binding itself: v0.9.1 requires the label in
+    `metadata["mimeType"]` (Q1).
 - **D3. An unlabelled structured reply stays JSON text** (2026-10-24, requester).
   - Only a reply with a `media_type` becomes a data part; the issue scopes data parts to labelled
     replies, and a text-only client keeps reading every reply.
@@ -259,6 +267,30 @@ flowchart LR
   - Accepted cost: an app that needs a different a2a-sdk version cannot install `agentkernel[a2a]`
     beside it.
 
+- **D6. The card declares the A2UI v0.9.1 extension, not v0.8** (2026-10-24, requester).
+  - v0.9.1 is A2UI's current version; v0.8 is marked legacy, and v1.0 is a candidate.
+  - v0.9.1 matches what Agent Kernel labels: `createSurface`-style messages under
+    `application/a2ui+json`. The v0.8 binding uses `beginRendering` and `application/json+a2ui`,
+    so declaring it would promise a format that is never sent.
+  - Corrects an earlier check: the v0.9.1 and v1.0 binding pages exist at
+    `.../specification/v0.9.1-a2ui-extension-specification/` and
+    `.../specification/v1.0-a2ui-extension-specification/`; the `-a2a-extension` slugs checked
+    before (`research/a2a-datapart.md` §3 of #706) were the wrong addresses.
+
 ## Open questions
 
-- None. All resolved: [Decisions](#decisions).
+Both come from the v0.9.1 binding's "Data encoding" section, which uses MUST for each.
+
+- **Q1. Also put the label in `metadata["mimeType"]`?** (reopens D2)
+  - The binding: a data part is A2UI when it has `metadata["mimeType"] = "application/a2ui+json"`.
+    A client that follows it reads only that key, and finds no label if we set only `media_type`.
+  - **Recommended: yes, set both.** `media_type` is A2A 1.x's own field; `metadata.mimeType` is
+    what A2UI clients read. Cost: the label is written twice on each labelled data part.
+- **Q2. A labelled object reply: send as is, or as a one-item list?**
+  - The binding: the data part's `data` "MUST be an array of messages". The A2UI hook labels a
+    JSON object or array (`a2ui/hook.py:53`), so an object reply would break that rule.
+  - Options: (a) wrap an object in a one-item list on the A2A surface only, so other surfaces keep
+    today's shape; (b) send it as is and document the gap.
+  - **Recommended: (a).** It is the only way an object reply is valid A2UI over A2A, and it touches
+    no other surface. Where the rule lives is a spec detail, under the constraint that `a2ui/`
+    stays the only package that names A2UI.

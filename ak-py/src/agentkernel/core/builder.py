@@ -24,28 +24,65 @@ class A2ACardBuilder(Builder):
     according to the application configuration.
     """
 
-    @staticmethod
-    def build(name: str, description: str, skills: list[Any]) -> Any:
+    PROTOCOL_BINDING = "HTTP+JSON"
+    """
+    The one binding served: REST
+    """
+    PROTOCOL_VERSION = "1.0"
+    """
+    The one A2A protocol version served; 0.3 clients are not
+    """
+
+    @classmethod
+    def build(cls, name: str, description: Any, skills: list[Any]) -> Any:
         """
         Build and return an A2A AgentCard instance.
         :param name: Name of the agent.
-        :param description: Description of the agent.
-        :param skills: List of AgentSkill objects.
+        :param description: Description of the agent; anything but a str is replaced by "".
+        :param skills: List of AgentSkill objects; any with empty tags is tagged with the agent name.
         :return: An A2A AgentCard instance.
         """
-        from a2a.types import AgentCapabilities, AgentCard
+        from a2a.types import AgentCapabilities, AgentCard, AgentInterface
 
         return AgentCard(
             name=name,
-            description=description,
-            url=f"{AKConfig.get().a2a.url}/{name}",
+            description=cls._description(name, description),
+            supported_interfaces=[
+                AgentInterface(url=f"{AKConfig.get().a2a.url}/{name}", protocol_binding=cls.PROTOCOL_BINDING, protocol_version=cls.PROTOCOL_VERSION)
+            ],
             version=AKConfig.get().library_version,
             default_input_modes=["text"],
             default_output_modes=["json"],
-            preferred_transport="HTTP+JSON",
             capabilities=AgentCapabilities(streaming=False),
-            skills=skills,
+            skills=cls._tag_untagged(name, skills),
         )
+
+    @classmethod
+    def _description(cls, name: str, description: Any) -> str:
+        """
+        The card's description: a str as is, anything else "" with a warning.
+        A non-str (OpenAI instructions may be a callable) would otherwise fail the whole A2A mount.
+        :param name: Name of the agent, for the warning.
+        :param description: The description the adapter supplied.
+        :return: The description to put on the card.
+        """
+        if isinstance(description, str):
+            return description
+        cls._log.warning(f"Agent '{name}' has a non-string description ({type(description).__name__}); its A2A card uses an empty one")
+        return ""
+
+    @staticmethod
+    def _tag_untagged(name: str, skills: list[Any]) -> list[Any]:
+        """
+        Tag each skill that has no tags with the agent name; A2A requires at least one tag.
+        :param name: Name of the agent.
+        :param skills: List of AgentSkill objects, changed in place.
+        :return: The same skills.
+        """
+        for skill in skills:
+            if not skill.tags:
+                skill.tags.append(name)
+        return skills
 
 
 class SessionCacheBuilder(Builder):

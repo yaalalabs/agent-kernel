@@ -10,11 +10,9 @@ import uuid
 
 import httpx
 import pytest
-from a2a.client import A2ACardResolver, ClientConfig
-from a2a.client.base_client import BaseClient
-from a2a.client.transports.rest import RestTransport
-from a2a.types import Message, Part, Role, TextPart
-from a2a.utils import get_message_text
+from a2a.client import A2ACardResolver, ClientConfig, ClientFactory
+from a2a.helpers import get_message_text
+from a2a.types import Message, Part, Role, SendMessageRequest
 from fastmcp import Client
 
 from agentkernel.api.a2a.a2a import A2A
@@ -112,6 +110,8 @@ def _environment(monkeypatch):
     # A fast wait budget: up to 200 reads 20 ms apart.
     monkeypatch.setenv("AK_EXECUTION__RESPONSE_STORE__RETRY_COUNT", "200")
     monkeypatch.setenv("AK_EXECUTION__RESPONSE_STORE__DELAY", "0.02")
+    # The card's interface URL, which the A2A client sends to.
+    monkeypatch.setenv("AK_A2A__URL", f"{BASE_URL}/a2a")
     AKConfig._reset()
     InMemoryTransport.reset()
     InMemoryResponseStore.reset()
@@ -146,11 +146,12 @@ async def _a2a_send(texts: list[str], context_id: str) -> list[str]:
     replies = []
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=BASE_URL, timeout=10) as http:
         card = await A2ACardResolver(http, base_url=agent_url).get_agent_card()
-        client = BaseClient(card, ClientConfig(streaming=False), RestTransport(http, card, url=agent_url), consumers=[], middleware=[])
+        # The factory picks the card's HTTP+JSON interface and sends the A2A-Version: 1.0 header.
+        client = ClientFactory(ClientConfig(streaming=False, httpx_client=http, supported_protocol_bindings=["HTTP+JSON"])).create(card)
         for text in texts:
-            message = Message(message_id=str(uuid.uuid4()), context_id=context_id, role=Role.user, parts=[Part(root=TextPart(text=text))])
-            async for reply in client.send_message(message):
-                replies.append(get_message_text(reply))
+            message = Message(message_id=str(uuid.uuid4()), context_id=context_id, role=Role.ROLE_USER, parts=[Part(text=text)])
+            async for item in client.send_message(SendMessageRequest(message=message)):
+                replies.append(get_message_text(item.message))
     return replies
 
 
