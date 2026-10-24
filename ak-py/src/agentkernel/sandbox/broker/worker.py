@@ -29,6 +29,7 @@ from ..errors import (
 )
 from ..factory import SandboxProviderFactory
 from ..model import SandboxFile, SandboxResult, SandboxSession
+from ..packages import PackageInstaller
 from ..permission import SandboxPermissionGuard
 from .base import ExecutionCompletion, ExecutionRequest
 
@@ -283,7 +284,9 @@ class BrokerWorkerCore:
             raise
 
     async def _call_install(self, sandbox: Sandbox, payload: dict[str, Any], timeout: float) -> SandboxResult:
-        """Dispatch install_packages, routing a pre-#692 one-argument override through the deprecation shim."""
+        """Dispatch install_packages, routing a pre-#692 one-argument override through the deprecation shim.
+        The ecosystem-independent package baseline runs first, for every override (ValueError on rejection)."""
+        PackageInstaller.check_baseline(payload["packages"])
         ecosystem = payload.get("ecosystem", "python")
         sandbox_cls = type(sandbox)
         if not self._is_legacy_install(sandbox_cls):

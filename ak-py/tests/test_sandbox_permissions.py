@@ -437,6 +437,18 @@ async def test_legacy_override_rejects_non_python_ecosystem(monkeypatch, caplog)
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("dotted,sandbox_cls", [(PKG_DOTTED, _PkgSandbox), (LEGACY_DOTTED, _LegacySandbox)])
+@pytest.mark.parametrize("packages", [["--index-url=https://evil"], ["https://evil/pkg.whl"], ["./local"], ["a b"]])
+async def test_worker_runs_the_package_baseline_before_any_override(monkeypatch, dotted, sandbox_cls, packages):
+    # A custom provider's override never sees a spec the baseline rejects, modern or legacy.
+    _use_provider(monkeypatch, dotted=dotted)
+    worker = BrokerWorkerCore()
+    with pytest.raises(ValueError):
+        await worker.run(_install(packages, policy=SandboxPolicy(package_install=PackageInstallPolicy())))
+    assert sandbox_cls.calls == []
+
+
+@pytest.mark.asyncio
 async def test_modern_override_logs_no_deprecation(monkeypatch, caplog):
     _use_provider(monkeypatch)
     with caplog.at_level("WARNING", logger=BROKER_LOGGER):

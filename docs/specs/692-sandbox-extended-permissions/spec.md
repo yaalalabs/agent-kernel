@@ -382,7 +382,8 @@ class PackageInstaller:
         """shlex.join(argv(...)), for SDKs that accept only a command string."""
 ```
 
-- **Baseline.** `PackageInstaller._check_baseline` runs before any rule. It rejects:
+- **Baseline.** `PackageInstaller.check_baseline` runs before any rule, and again in `BrokerWorkerCore._call_install`
+  before any provider override. It rejects:
   - an empty list;
   - an empty entry;
   - an entry starting with `-`;

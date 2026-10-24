@@ -170,7 +170,7 @@ class PackageInstaller:
 
     def validate(self, packages: list[str], ecosystem: str) -> None:
         """Baseline, then every rule in the ecosystem's chain. ValueError on rejection."""
-        self._check_baseline(packages)
+        self.check_baseline(packages)
         for rule in self._rules.get(ecosystem, ()):
             rule.validate(packages)
 
@@ -187,8 +187,9 @@ class PackageInstaller:
         return shlex.join(self.argv(packages, ecosystem))
 
     @staticmethod
-    def _check_baseline(packages: list[str]) -> None:
-        """Ecosystem-independent rejections that run before any rule, so no rule can loosen them."""
+    def check_baseline(packages: list[str]) -> None:
+        """Ecosystem-independent rejections that run before any rule, so no rule can loosen them.
+        The worker also runs it before any install override, so a custom provider gets the same floor."""
         # A bare string would iterate as characters and each would pass as a one-letter name.
         if not isinstance(packages, list):
             raise ValueError("packages must be a list of package specs")
