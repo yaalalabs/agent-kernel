@@ -60,10 +60,13 @@ class Sandbox(ABC):
         """
         raise SandboxCapabilityError(self.__class__.__name__, "files")
 
-    async def install_packages(self, packages: list[str]) -> SandboxResult:
-        """Install packages into the sandbox and return the installer's ``SandboxResult``.
+    async def install_packages(self, packages: list[str], ecosystem: str = "python", timeout: float | None = None) -> SandboxResult:
+        """Install packages of one ecosystem and return the installer's ``SandboxResult``.
 
-        Optional: override only when the provider declares ``capabilities.package_install``;
+        An undeclared ecosystem raises ``SandboxCapabilityError(<handle>, "package_ecosystem:<e>")``;
+        an installer failure is a non-zero result. ``timeout`` is the install's effective wall clock.
+
+        Optional: override only when the provider declares ``capabilities.package_ecosystems``;
         the default raises ``SandboxCapabilityError``.
         """
         raise SandboxCapabilityError(self.__class__.__name__, "package_install")

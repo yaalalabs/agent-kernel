@@ -7,7 +7,8 @@
 #
 # Three profiles:
 #   - default : a per-session micro-VM workspace; files AND in-kernel variables persist
-#               across turns, and E2B's native idle timeout reclaims the sandbox.
+#               across turns, E2B's native idle timeout reclaims the sandbox, and
+#               install_packages is permitted (installs are off unless a profile opts in).
 #   - offline : `network_egress: deny` — E2B ENFORCES this (allow_internet_access=false),
 #               so outbound requests genuinely fail.
 #   - pinned  : an allowlist — E2B ENFORCES it as network allow_out rules (only the listed
@@ -18,6 +19,9 @@ sandbox:
     default:
       type: e2b
       idle_timeout: 3600 # 1 hour -> passed as the E2B sandbox timeout (native auto-kill)
+      policy:
+        package_install:
+          ecosystems: [python] # -> install_packages runs `pip install` in the micro-VM
       e2b:
         {}
         # template: base       # E2B template to launch; omitted = base

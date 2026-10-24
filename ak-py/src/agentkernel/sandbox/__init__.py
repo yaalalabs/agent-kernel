@@ -17,6 +17,7 @@ from .broker.queue_worker import QueueBrokerWorker
 from .manager import ExecutionManager
 from .model import (
     IsolationTier,
+    PackageInstallPolicy,
     SandboxCapabilities,
     SandboxFile,
     SandboxPolicy,
@@ -25,6 +26,7 @@ from .model import (
     SandboxSession,
     SandboxTask,
 )
+from .packages import PackageSpecRule
 from .principal import AgentPrincipalResolver, PrincipalResolver
 
 __all__ = [
@@ -42,6 +44,8 @@ __all__ = [
     "SandboxCapabilities",
     "SandboxFile",
     "SandboxPolicy",
+    "PackageInstallPolicy",
+    "PackageSpecRule",
     "SandboxPrincipal",
     "SandboxResult",
     "SandboxSession",

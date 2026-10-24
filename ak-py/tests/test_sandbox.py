@@ -26,6 +26,7 @@ from agentkernel.core.config import (
     _SandboxIdentityConfig,
     _SandboxKubernetesConfig,
     _SandboxLocalSubprocessConfig,
+    _SandboxPackageInstallConfig,
     _SandboxPolicyConfig,
     _SandboxProfileConfig,
 )
@@ -42,6 +43,7 @@ from agentkernel.sandbox.hooks import NoOpSandboxPreHook, SandboxPreHook, Sandbo
 from agentkernel.sandbox.manager import ExecutionManager
 from agentkernel.sandbox.model import (
     IsolationTier,
+    PackageInstallPolicy,
     SandboxCapabilities,
     SandboxPolicy,
     SandboxPrincipal,
@@ -150,6 +152,7 @@ def test_model_package_public_exports():
     assert sandbox.SandboxResult is SandboxResult
     assert sandbox.IsolationTier is IsolationTier
     assert sandbox.errors.SandboxError is errors.SandboxError
+    assert sandbox.PackageInstallPolicy is PackageInstallPolicy
     # the attached-environment surface is public: handle base + provider base
     assert issubclass(sandbox.AttachedEnvironment, sandbox.Sandbox)
     assert issubclass(sandbox.AttachedEnvironmentProvider, sandbox.SandboxProvider)
@@ -174,6 +177,7 @@ def test_model_capabilities_defaults():
     ):
         assert flag is False
     assert caps.provisions is True  # providers create managed sandboxes unless declared attach-only
+    assert caps.package_ecosystems == []
 
 
 def test_model_capabilities_isolation_is_required():
@@ -209,12 +213,85 @@ def test_model_policy_and_principal_defaults():
         SandboxPrincipal()
 
 
+def test_model_capabilities_ecosystems_imply_package_install():
+    caps = SandboxCapabilities(isolation=IsolationTier.CONTAINER, package_ecosystems=["python", "node"])
+    assert caps.package_install is True
+    assert caps.package_ecosystems == ["python", "node"]
+
+
+def test_model_capabilities_legacy_package_install_maps_to_python():
+    # A pre-#692 BYO declaration sets only the flag; it keeps meaning "pip installs".
+    caps = SandboxCapabilities(isolation=IsolationTier.CONTAINER, package_install=True)
+    assert caps.package_ecosystems == ["python"]
+
+
+def test_model_capabilities_explicit_false_with_ecosystems_raises():
+    with pytest.raises(ValidationError):
+        SandboxCapabilities(isolation=IsolationTier.CONTAINER, package_install=False, package_ecosystems=["python"])
+
+
+def test_model_capabilities_derive_revalidates():
+    base = SandboxCapabilities(isolation=IsolationTier.CONTAINER, shell=True)
+
+    node = base.derive(package_ecosystems=["node"], package_install=True)
+    assert node.package_install is True and node.package_ecosystems == ["node"]
+    assert node.shell is True  # untouched fields carry over
+
+    none = node.derive(package_ecosystems=[], package_install=False)
+    assert none.package_install is False and none.package_ecosystems == []
+
+    flipped = base.derive(policy_network=True)
+    assert flipped.policy_network is True and flipped.shell is True
+    assert base.policy_network is False  # the class-level declaration is not mutated
+
+    # model_copy skips validators; derive does not.
+    assert base.model_copy(update={"package_install": True}).package_ecosystems == []
+    assert base.derive(package_install=True).package_ecosystems == ["python"]
+
+
+def test_model_capabilities_derive_requires_both_fields_for_ecosystem_changes():
+    # model_dump() marks package_install as explicitly set on the copy, so an override that changes
+    # ecosystems must set both fields together.
+    off = SandboxCapabilities(isolation=IsolationTier.CONTAINER)
+    with pytest.raises(ValidationError):
+        off.derive(package_ecosystems=["node"])
+
+    on = SandboxCapabilities(isolation=IsolationTier.CONTAINER, package_ecosystems=["node"])
+    assert on.derive(package_ecosystems=[]).package_ecosystems == ["python"]  # the legacy branch, not "no installs"
+
+
+def test_model_package_install_policy():
+    assert PackageInstallPolicy().ecosystems == ["python"]
+    assert PackageInstallPolicy().timeout is None
+    with pytest.raises(ValidationError):
+        PackageInstallPolicy(ecosystems=[])
+    with pytest.raises(ValidationError):
+        PackageInstallPolicy(timeout=0)
+
+
+def test_model_policy_permission_defaults():
+    policy = SandboxPolicy()
+    assert policy.languages is None  # provider-declared
+    assert policy.package_install is None  # installs denied
+
+
+def test_model_policy_effective_timeout():
+    assert SandboxPolicy(timeout=30).effective_timeout("install_packages") == 30
+    assert SandboxPolicy(timeout=30, package_install=PackageInstallPolicy()).effective_timeout("install_packages") == 30
+
+    policy = SandboxPolicy(timeout=30, package_install=PackageInstallPolicy(timeout=600))
+    assert policy.effective_timeout("install_packages") == 600
+    assert policy.effective_timeout("execute_code") == 30
+    assert policy.effective_timeout("execute_command") == 30
+
+
 def test_errors_hierarchy():
     # Every sandbox error derives from SandboxError; SandboxGoneError is a provision error.
     for exc in (
         errors.SandboxConfigError,
         errors.SandboxCapabilityError,
         errors.SandboxPolicyError,
+        errors.SandboxPermissionDeniedError,
         errors.SandboxTimeoutError,
         errors.SandboxProvisionError,
         errors.SandboxGoneError,
@@ -223,6 +300,7 @@ def test_errors_hierarchy():
     ):
         assert issubclass(exc, errors.SandboxError)
     assert issubclass(errors.SandboxGoneError, errors.SandboxProvisionError)
+    assert issubclass(errors.SandboxPermissionDeniedError, errors.SandboxPolicyError)
 
 
 # --------------------------------------------------------------------------- #
@@ -276,6 +354,54 @@ def test_config_explicit_profiles_skip_sugar():
     sb = _SandboxConfig(type="docker", profiles={"p1": _SandboxProfileConfig(type="e2b")})
     assert set(sb.profiles) == {"p1"}
     assert "default" not in sb.profiles
+
+
+def test_config_policy_permission_defaults():
+    policy = _SandboxPolicyConfig()
+    assert policy.languages is None
+    assert policy.package_install is None
+    # [] is a valid command-only profile, not an error
+    assert _SandboxPolicyConfig(languages=[]).languages == []
+
+
+def test_config_package_install_defaults_and_rejections():
+    assert _SandboxPackageInstallConfig().ecosystems == ["python"]
+    assert _SandboxPolicyConfig(package_install={}).package_install.ecosystems == ["python"]
+    with pytest.raises(ValidationError):
+        _SandboxPackageInstallConfig(ecosystems=[])
+    with pytest.raises(ValidationError):
+        _SandboxPackageInstallConfig(timeout=0)
+
+
+@pytest.mark.parametrize("model", [_SandboxDockerConfig, _SandboxE2BConfig, _SandboxDaytonaConfig, _SandboxKubernetesConfig])
+def test_config_provider_package_installers_defaults(model):
+    cfg = model()
+    assert cfg.package_installers == {"python": ["pip", "install"]}
+    assert cfg.package_rules == {}
+
+
+@pytest.mark.parametrize("installers", [{"python": []}, {"python": ["pip", ""]}, {"node": [""]}])
+def test_config_provider_package_installers_reject_empty_argv(installers):
+    with pytest.raises(ValidationError):
+        _SandboxDockerConfig(package_installers=installers)
+
+
+def test_config_provider_package_installers_replace_default():
+    cfg = _SandboxDockerConfig(package_installers={"node": ["npm", "install"]})
+    assert cfg.package_installers == {"node": ["npm", "install"]}  # not merged with the python default
+
+
+def test_config_attached_profile_rejects_package_install():
+    with pytest.raises(ValidationError):
+        _SandboxProfileConfig(
+            type="docker",
+            environment="attached",
+            policy=_SandboxPolicyConfig(package_install=_SandboxPackageInstallConfig()),
+        )
+    # attached without installs still loads, and managed with installs loads
+    assert _SandboxProfileConfig(type="docker", environment="attached").policy.package_install is None
+    managed = _SandboxProfileConfig(type="docker", policy=_SandboxPolicyConfig(package_install=_SandboxPackageInstallConfig()))
+    assert managed.policy.package_install is not None
 
 
 def test_config_env_override(monkeypatch):
@@ -345,6 +471,8 @@ async def test_capability_abc_defaults_raise_for_optional_ops():
         await sandbox.download_file("p")
     with pytest.raises(SandboxCapabilityError):
         await sandbox.install_packages(["p"])
+    with pytest.raises(SandboxCapabilityError):
+        await sandbox.install_packages(["p"], ecosystem="node", timeout=1)
 
 
 def test_capability_error_message_forms():
@@ -905,6 +1033,47 @@ def test_tool_guidance_flags_attached_and_no_persistent_shell(monkeypatch):
     assert "environment attached" in guidance
     assert "NO persistent shell" in guidance
     assert "cd /app && ./run.sh" in guidance
+
+
+def test_install_packages_tool_absent_without_a_permitting_profile(monkeypatch):
+    _install_sandbox_cfg(monkeypatch, _sandbox_cfg())
+    tools = get_sandbox_tools()
+    assert [t.name for t in tools] == SANDBOX_TOOL_NAMES
+    guidance = tools[0].description
+    assert "install_packages(" not in guidance
+    assert "package installs not permitted" in guidance
+    assert "not permitted by the profile, report it to the user" in guidance  # always present
+
+
+def test_install_packages_tool_registered_with_permission_guidance(monkeypatch):
+    profiles = {
+        "default": _SandboxProfileConfig(
+            type=FAKE_DOTTED,
+            policy=_SandboxPolicyConfig(languages=["python", "bash"], package_install=_SandboxPackageInstallConfig(ecosystems=["python", "node"])),
+        ),
+        "shell": _SandboxProfileConfig(type=FAKE_DOTTED, policy=_SandboxPolicyConfig(languages=[])),
+    }
+    _install_sandbox_cfg(monkeypatch, _sandbox_cfg(profiles=profiles))
+    tools = get_sandbox_tools()
+    assert [t.name for t in tools] == [*SANDBOX_TOOL_NAMES, "install_packages"]
+    assert tools[-1].func.__name__ == "install_packages"  # tool builders bind by func.__name__
+    guidance = tools[0].description
+    assert "install_packages(packages, ecosystem, sandbox_session_id, profile)" in guidance
+    assert "languages: python, bash" in guidance and "package installs: python, node" in guidance
+    assert "run_code disabled (command-only profile)" in guidance
+    assert "package installs not permitted" in guidance  # the 'shell' profile
+    assert "" not in guidance.splitlines()
+
+
+def test_get_sandbox_tools_fails_on_an_unresolvable_package_rule(monkeypatch):
+    docker = _SandboxDockerConfig(package_installers={"deb": ["apt-get", "install", "-y"]})  # no rule for deb
+    profiles = {"default": _SandboxProfileConfig(type="docker", docker=docker)}
+    _install_sandbox_cfg(monkeypatch, _sandbox_cfg(profiles=profiles))
+    with pytest.raises(SandboxConfigError, match="deb"):
+        get_sandbox_tools()
+    # The same failure surfaces through the agent-construction path (Agent._attach_system_tools).
+    with pytest.raises(SandboxConfigError, match="deb"):
+        SystemToolFactory.get_all("any-agent")
 
 
 def test_system_prompt_suffix_carries_sandbox_guidance(monkeypatch):

@@ -43,6 +43,10 @@ class SandboxPolicyError(SandboxError):
     """A policy that cannot be enforced (under ``strict``) or has been violated; also the user-identity fail-closed signal."""
 
 
+class SandboxPermissionDeniedError(SandboxPolicyError):
+    """The profile's policy does not permit this operation (raised and audit-logged by SandboxPermissionGuard)."""
+
+
 class SandboxTimeoutError(SandboxError):
     """The effective execution timeout was exceeded."""
 

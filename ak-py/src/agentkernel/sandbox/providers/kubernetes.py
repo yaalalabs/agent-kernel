@@ -36,6 +36,8 @@ import kubernetes.stream
 from ..base import Sandbox, SandboxProvider
 from ..errors import SandboxCapabilityError, SandboxError, SandboxGoneError, SandboxPolicyError, SandboxProvisionError, SandboxTimeoutError
 from ..model import IsolationTier, SandboxCapabilities, SandboxPolicy, SandboxPrincipal, SandboxResult
+from ..packages import PackageInstaller
+from .process import ProcessKiller
 
 logger = logging.getLogger("ak.sandbox.provider")
 
@@ -63,16 +65,23 @@ def _safe_rel(path: str) -> str:
 class KubernetesSandbox(Sandbox):
     """Handle to one running sandbox pod; executions are stream-API exec calls inside it."""
 
-    def __init__(self, api: Any, namespace: str, pod_name: str) -> None:
-        """Bind the handle to a pod; the id is ``<namespace>/<pod>`` (the ``attach_to`` format)."""
+    def __init__(
+        self, api: Any, namespace: str, pod_name: str, *, capabilities: SandboxCapabilities, installer: PackageInstaller, kill_enabled: bool
+    ) -> None:
+        """Bind the handle to a pod; the id is ``<namespace>/<pod>`` (the ``attach_to`` format).
+        ``capabilities`` are the provider instance's; ``kill_enabled`` is False for an
+        ``attach_to`` pod: the framework does not own it, so it neither tags nor kills its execs."""
         self.id = f"{namespace}/{pod_name}"
         self._api = api
         self._namespace = namespace
         self._pod = pod_name
+        self._capabilities = capabilities
+        self._installer = installer
+        self._kill_enabled = kill_enabled
 
     async def execute_code(self, code: str, language: str = "python", timeout: float | None = None) -> SandboxResult:
         """Exec the language interpreter with the code (``python -c`` in v1)."""
-        if language not in KubernetesSandboxProvider.capabilities.languages:
+        if language not in self._capabilities.languages:
             raise SandboxCapabilityError(self.__class__.__name__, f"language:{language}")
         return await self._exec(["python", "-c", code], timeout)
 
@@ -80,9 +89,11 @@ class KubernetesSandbox(Sandbox):
         """Exec a shell command via ``/bin/sh -c``."""
         return await self._exec(["/bin/sh", "-c", command], timeout)
 
-    async def install_packages(self, packages: list[str]) -> SandboxResult:
-        """Exec ``pip install`` for the given packages."""
-        return await self._exec(["pip", "install", *packages], None)
+    async def install_packages(self, packages: list[str], ecosystem: str = "python", timeout: float | None = None) -> SandboxResult:
+        """Exec the ecosystem's validated installer argv (e.g. ``pip install <packages>``)."""
+        if ecosystem not in self._capabilities.package_ecosystems:
+            raise SandboxCapabilityError(self.__class__.__name__, f"package_ecosystem:{ecosystem}")
+        return await self._exec(self._installer.argv(packages, ecosystem), timeout)
 
     async def upload_file(self, path: str, content: bytes) -> None:
         """Ship the file as a single-member tar on exec stdin, base64-framed for the text
@@ -115,9 +126,14 @@ class KubernetesSandbox(Sandbox):
         """Leave the pod running so a later ``attach`` can reconnect. Idempotent."""
         return None
 
-    async def _exec(self, argv: list[str], timeout: float | None, stdin_data: Optional[str] = None) -> SandboxResult:
-        """Run one exec through the stream API in a thread under ``asyncio.wait_for``; on
-        expiry make a best-effort kill of the exec'd process and raise ``SandboxTimeoutError``."""
+    async def _exec(self, argv: list[str], timeout: float | None, stdin_data: Optional[str] = None, *, kill: bool = True) -> SandboxResult:
+        """Run one exec through the stream API in a thread under ``asyncio.wait_for``. On
+        expiry kill the exec'd process and raise ``SandboxTimeoutError``; on cancellation kill
+        it and re-raise. A killable exec is launched through ``ProcessKiller.wrap`` (the stream
+        API has no per-exec environment) so it carries a fresh marker. ``kill=False`` is the
+        kill's own exec, so it never triggers another."""
+        marker = ProcessKiller.new_marker() if kill and self._kill_enabled else None
+        command = ProcessKiller.wrap(argv, marker) if marker else argv
 
         def run() -> tuple[str, str, int]:
             try:
@@ -125,7 +141,7 @@ class KubernetesSandbox(Sandbox):
                     self._api.connect_get_namespaced_pod_exec,
                     self._pod,
                     self._namespace,
-                    command=argv,
+                    command=command,
                     stdout=True,
                     stderr=True,
                     stdin=stdin_data is not None,
@@ -158,15 +174,20 @@ class KubernetesSandbox(Sandbox):
         try:
             stdout, stderr, exit_code = await asyncio.wait_for(asyncio.to_thread(run), timeout=timeout)
         except asyncio.TimeoutError as exc:
-            await self._best_effort_kill(argv[0])
+            if marker:
+                await self._kill(marker)
             raise SandboxTimeoutError(f"kubernetes exec exceeded timeout {timeout}s") from exc
+        except asyncio.CancelledError:
+            if marker:
+                await self._kill(marker)
+            raise
         return SandboxResult(stdout=stdout, stderr=stderr, exit_code=exit_code)
 
-    async def _best_effort_kill(self, interpreter: str) -> None:
-        """Kill the timed-out exec'd process by interpreter name. Safe because the
-        concurrency contract allows at most one in-flight execution per sandbox."""
+    async def _kill(self, marker: str) -> None:
+        """Best-effort, time-bounded kill of the processes carrying the exec's marker; earlier
+        execs' processes (e.g. background servers) carry other markers and survive."""
         try:
-            await self._exec(["sh", "-c", f"pkill -9 {posixpath.basename(interpreter)}"], None)
+            await asyncio.wait_for(self._exec(ProcessKiller.argv(marker), None, kill=False), timeout=ProcessKiller.KILL_TIMEOUT_SECONDS)
         except Exception as exc:  # noqa: BLE001 — the kill is best-effort by contract
             logger.warning("Best-effort kill in pod %s failed: %s", self.id, exc)
 
@@ -179,7 +200,7 @@ class KubernetesSandboxProvider(SandboxProvider):
         shell=True,
         languages=["python"],
         files=True,
-        package_install=True,
+        package_ecosystems=["python"],  # the default; each instance declares its package_installers keys
         stateful=False,
         attach=True,
         provisions=True,
@@ -199,11 +220,20 @@ class KubernetesSandboxProvider(SandboxProvider):
         self._networking_api: Optional[Any] = None
         # Impersonating client pairs cached per (user, groups) subject (the ec2_ssm pattern).
         self._subject_apis: dict[tuple[str, tuple[str, ...]], tuple[Any, Any]] = {}
+        self._installer = PackageInstaller.from_config(config)
+        ecosystems = self._installer.ecosystems
+        overrides: dict[str, Any] = {"package_ecosystems": ecosystems, "package_install": bool(ecosystems)}
         if config.network_policy:
             # Instance-level capability override (#503): whether NetworkPolicy is actually
             # enforced depends on the cluster CNI, which the provider cannot detect; the
             # operator asserts it per instance. The class default stays honest (False).
-            self.capabilities = type(self).capabilities.model_copy(update={"policy_network": True})
+            overrides["policy_network"] = True
+        self.capabilities = type(self).capabilities.derive(**overrides)
+        self._kill_enabled = not config.attach_to
+
+    def _handle(self, api: Any, namespace: str, pod_name: str) -> "KubernetesSandbox":
+        """Wrap a pod in a handle carrying this instance's capabilities and installer."""
+        return KubernetesSandbox(api, namespace, pod_name, capabilities=self.capabilities, installer=self._installer, kill_enabled=self._kill_enabled)
 
     def _apis(self) -> tuple[Any, Any]:
         """Return the lazily created ``(CoreV1Api, NetworkingV1Api)`` pair."""
@@ -272,7 +302,7 @@ class KubernetesSandboxProvider(SandboxProvider):
         except Exception:
             await self._cleanup(name, namespace)  # no orphan from a failed create
             raise
-        return KubernetesSandbox(core, namespace, name)
+        return self._handle(core, namespace, name)
 
     def _pod_manifest(self, name: str, namespace: str, policy: SandboxPolicy) -> dict:
         """Build the pod manifest: hardened securityContext defaults under the config
@@ -282,8 +312,8 @@ class KubernetesSandboxProvider(SandboxProvider):
         container: dict = {
             "name": "sandbox",
             "image": self._config.image,
-            # sleep runs as PID 1 directly: under `sh -c` PID 1 would be `sh`, and the
-            # timeout path's best-effort `pkill sh` could kill it and take down the pod.
+            # sleep runs as PID 1 directly, so PID 1 is never `sh`; the timeout path's
+            # marker kill (ProcessKiller) also skips PID 1 as a second guard.
             "command": ["sleep", "infinity"],
             "workingDir": WORKDIR,
             "securityContext": container_sc,
@@ -388,7 +418,7 @@ class KubernetesSandboxProvider(SandboxProvider):
             raise SandboxGoneError(f"sandbox pod '{namespace}/{name}' is terminating or terminated")
         if getattr(pod.status, "phase", None) == "Pending":
             await self._wait_running(core, name, namespace)  # the same bounded wait as create
-        return KubernetesSandbox(core, namespace, name)
+        return self._handle(core, namespace, name)
 
     async def destroy(self, sandbox_id: str) -> None:
         """Delete the pod and its NetworkPolicy if one exists. Idempotent; 404s are no-ops.
