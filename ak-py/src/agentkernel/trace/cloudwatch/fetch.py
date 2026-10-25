@@ -15,9 +15,9 @@ from ..fetch import FetchedSpan, OTelSpanClassifier, SpanKind, SpanStatus, Trace
 class CloudWatchTraceFetcher(TraceFetcher):
     """
     Fetches spans from the ``aws/spans`` log group, where Transaction Search stores every span sent to
-    X-Ray as OpenTelemetry JSON, through CloudWatch Logs Insights. Credentials and region come from the
-    standard AWS chain; the identity needs ``logs:StartQuery``, ``logs:GetQueryResults`` and
-    ``logs:StopQuery`` on the log group.
+    X-Ray as OpenTelemetry JSON, through CloudWatch Logs Insights. The region comes from AWS_REGION and
+    credentials from the standard AWS chain; the identity needs ``logs:StartQuery``,
+    ``logs:GetQueryResults`` and ``logs:StopQuery`` on the log group.
 
     Logs Insights returns at most 10,000 rows per query and has no cursor, so larger fetches page
     backwards on ``@timestamp``.
@@ -46,7 +46,7 @@ class CloudWatchTraceFetcher(TraceFetcher):
     def __init__(self, client: Any = None, region: Optional[str] = None, log_group: str = LOG_GROUP, timeout: float = 120.0):
         """
         :param client: A botocore CloudWatch Logs client; defaults to one built from the standard AWS chain.
-        :param region: The AWS region to query; defaults to AWS_REGION, then the botocore chain.
+        :param region: The AWS region to query; defaults to AWS_REGION.
         :param log_group: The log group holding the spans.
         :param timeout: Seconds to wait for one Logs Insights query before stopping it.
         """
@@ -74,11 +74,10 @@ class CloudWatchTraceFetcher(TraceFetcher):
 
         from .cloudwatch import CloudWatch
 
-        botocore_session = BotocoreSession()
-        region = self._region or CloudWatch.region(botocore_session)
+        region = self._region or CloudWatch.region()
         if not region:
             raise AKConfigError("fetching CloudWatch traces needs an AWS region; set AWS_REGION")
-        return botocore_session.create_client("logs", region_name=region)
+        return BotocoreSession().create_client("logs", region_name=region)
 
     def _run(self, client: Any, query_string: str, start: datetime, end: datetime) -> list[dict[str, str]]:
         """

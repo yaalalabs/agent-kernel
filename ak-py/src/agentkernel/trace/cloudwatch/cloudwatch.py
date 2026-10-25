@@ -7,7 +7,6 @@ import threading
 from contextlib import contextmanager
 from typing import Iterator
 
-from botocore.session import Session as BotocoreSession
 from opentelemetry import baggage, context
 from opentelemetry import trace as trace_api
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
@@ -121,12 +120,12 @@ class CloudWatch(BaseTrace):
         return detected.merge(Resource(defaults))
 
     @staticmethod
-    def region(botocore_session: BotocoreSession) -> str | None:
+    def region() -> str | None:
         """
-        The AWS region from AWS_REGION, then the botocore chain (AWS_DEFAULT_REGION, the active profile).
-        :param botocore_session: The botocore session whose configuration is consulted.
+        The AWS region from AWS_REGION. There is no fallback to AWS_DEFAULT_REGION or a profile, so a missing
+        AWS_REGION fails loudly instead of sending spans to an unexpected region.
         """
-        return os.environ.get("AWS_REGION") or botocore_session.get_config_variable("region")
+        return os.environ.get("AWS_REGION")
 
     @staticmethod
     def _exporter() -> OTLPSpanExporter:
@@ -142,8 +141,7 @@ class CloudWatch(BaseTrace):
                 return OTLPSpanExporter()
             return OTLPSpanExporter(session=SigV4Session(match["region"]))
 
-        botocore_session = BotocoreSession()
-        region = CloudWatch.region(botocore_session)
+        region = CloudWatch.region()
         if not region:
             raise AKConfigError(
                 "trace.type: cloudwatch needs an AWS region to reach the X-Ray OTLP endpoint; set AWS_REGION, "
@@ -154,7 +152,7 @@ class CloudWatch(BaseTrace):
         domain = "amazonaws.com.cn" if region.startswith("cn-") else "amazonaws.com"
         return OTLPSpanExporter(
             endpoint=f"https://xray.{region}.{domain}/v1/traces",
-            session=SigV4Session(region, botocore_session=botocore_session),
+            session=SigV4Session(region),
         )
 
     def openai(self) -> Runner:

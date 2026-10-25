@@ -318,7 +318,7 @@ python -c "import logfire; logfire.configure(send_to_logfire='if-token-present')
 
 **Traces Not Appearing:**
 
-1. **Check Transaction Search**: an `ak.trace.cloudwatch` error `X-Ray in <region> rejected the span export (HTTP 400): The OTLP API is supported with CloudWatch Logs as a Trace Segment Destination...` means it is not enabled in the region named in the message (which is the region exports go to: `AWS_REGION`, else your profile's default) — `aws xray get-trace-segment-destination` must report `"Destination": "CloudWatchLogs"` and `"Status": "ACTIVE"`
+1. **Check Transaction Search**: an `ak.trace.cloudwatch` error `X-Ray in <region> rejected the span export (HTTP 400): The OTLP API is supported with CloudWatch Logs as a Trace Segment Destination...` means it is not enabled in the region named in the message (which is the region exports go to: `AWS_REGION`) — `aws xray get-trace-segment-destination` must report `"Destination": "CloudWatchLogs"` and `"Status": "ACTIVE"`
 2. **Check Permissions**: `X-Ray in <region> rejected the span export (HTTP 403)` means the role lacks `AWSXrayWriteOnlyAccess`
 3. **Check Credentials**: `Exception while exporting Span.` with `NoCredentialsError` means no AWS credentials resolved in the process
 4. **Check Region**: spans land in the region named by `AWS_REGION` (or the endpoint URL), so open the console in that region
@@ -527,7 +527,7 @@ export AK_TRACE__TYPE=cloudwatch
 
 1. **Enable Transaction Search** once per account and region. In the CloudWatch console, choose **Application Signals → Transaction Search → Enable Transaction Search**. To do it with the AWS CLI instead, follow the [AWS guide](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/Enable-TransactionSearch.html): add a CloudWatch Logs resource policy for `xray.amazonaws.com`, then run `aws xray update-trace-segment-destination --destination CloudWatchLogs`. `aws xray get-trace-segment-destination` reports `"Status": "ACTIVE"` once spans are being ingested, which can take about 10 minutes.
 2. **Grant write access**: attach the AWS managed policy `AWSXrayWriteOnlyAccess` to the identity that runs your agent (the Lambda execution role, ECS task role, or your local profile). Agent Kernel's Terraform modules do not attach it for you.
-3. **Region and credentials** come from the standard AWS SDK chain. The region is read from `AWS_REGION`, then `AWS_DEFAULT_REGION` or the active profile; Lambda and ECS set it for you. Credentials can come from environment variables, a profile, SSO, or an instance or task role.
+3. **Region and credentials**: the region is read only from `AWS_REGION`, and Agent Kernel raises an error if it is not set (`AWS_DEFAULT_REGION` and the profile region are not used). Lambda and ECS set it for you. Credentials can come from environment variables, a profile, SSO, or an instance or task role.
 
 ### Export Endpoint
 

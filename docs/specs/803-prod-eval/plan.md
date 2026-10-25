@@ -78,7 +78,7 @@ Phase 1 (iterations 1–7) lands first: the example in Phases 2–3 (iterations 
 - **Files:** `trace/cloudwatch/fetch.py` (new), `trace/cloudwatch/cloudwatch.py`, `tests/test_trace_fetch.py`.
 - **Steps:**
   1. Lift the region lookup in `CloudWatch._exporter()` (`trace/cloudwatch/cloudwatch.py:146`) into the
-     static `CloudWatch.region(botocore_session)`, with no change to the exporter's behaviour or errors.
+     static `CloudWatch.region()`, which reads only `AWS_REGION` (no botocore fallback), so a missing region raises.
   2. Add `CloudWatchTraceFetcher(TraceFetcher)` (spec §`CloudWatch.fetch_spans`), paging through
      `_fetch_by_time_window`.
   3. Add `CloudWatch.fetch_spans`.

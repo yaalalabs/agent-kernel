@@ -835,7 +835,7 @@ def _logs_client(*pages):
 class TestCloudWatchFetcher:
     def test_missing_region_raises(self, monkeypatch):
         monkeypatch.delenv("AWS_REGION", raising=False)
-        monkeypatch.setattr("agentkernel.trace.cloudwatch.cloudwatch.CloudWatch.region", staticmethod(lambda session: None))
+        monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")  # not a fallback: only AWS_REGION counts
         with pytest.raises(AKConfigError, match="AWS_REGION"):
             CloudWatchTraceFetcher().fetch_spans(TraceQuery())
 

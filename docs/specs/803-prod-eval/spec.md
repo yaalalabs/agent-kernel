@@ -564,17 +564,18 @@ class CloudWatchTraceFetcher(TraceFetcher):
 # trace/cloudwatch/cloudwatch.py
 class CloudWatch(BaseTrace):
     @staticmethod
-    def region(botocore_session: BotocoreSession) -> str | None:
-        return os.environ.get("AWS_REGION") or botocore_session.get_config_variable("region")
+    def region() -> str | None:
+        return os.environ.get("AWS_REGION")
 
     def fetch_spans(self, query: TraceQuery) -> list[FetchedSpan]:
         from .fetch import CloudWatchTraceFetcher
         return CloudWatchTraceFetcher().fetch_spans(query)
 ```
 
-- `CloudWatch.region()` is the expression `_exporter()` used inline (`trace/cloudwatch/cloudwatch.py:129`),
-  lifted out unchanged. `_exporter()` keeps its own missing-region and malformed-region errors; botocore
-  validates the region name for the fetcher's client.
+- `CloudWatch.region()` reads only `AWS_REGION`, with no fallback to `AWS_DEFAULT_REGION` or the profile,
+  so a missing region raises instead of exporting to or reading from an unexpected region. `_exporter()`
+  keeps its own missing-region and malformed-region errors; botocore validates the region name for the
+  fetcher's client.
 - Client: the injected `client` if given. Otherwise `BotocoreSession().create_client("logs", region_name=...)`,
   with the region from the argument, else `CloudWatch.region()`. No region → `AKConfigError("fetching
   CloudWatch traces needs an AWS region; set AWS_REGION")`.

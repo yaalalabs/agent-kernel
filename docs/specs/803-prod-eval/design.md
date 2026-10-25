@@ -256,8 +256,8 @@ graph LR
 
 ### CloudWatch fetcher
 
-- Credentials and region from the standard AWS chain, as on the send side. The region lookup
-  (`trace/cloudwatch/cloudwatch.py:129`) moves into a shared `CloudWatch.region()`.
+- Credentials from the standard AWS chain, as on the send side. The region comes only from `AWS_REGION`,
+  through a shared `CloudWatch.region()` used by both the exporter and the fetcher.
   - Needs `logs:StartQuery`, `logs:GetQueryResults` and `logs:StopQuery` on `aws/spans`, which the
     send-side `AWSXrayWriteOnlyAccess` doesn't grant.
 - Logs Insights over `aws/spans`; each `@message` is the span's OTel JSON and becomes `raw`.
