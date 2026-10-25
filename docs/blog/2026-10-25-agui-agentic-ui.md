@@ -47,15 +47,13 @@ Here is what that looks like in practice: an agent that draws an AWS architectur
 
 ![An Agent Kernel agent drawing an AWS architecture live over AG-UI: asked for a serverless todo API, it adds Users, API Gateway, Lambda and DynamoDB one box at a time; asked to add sign-in, it slots Cognito in; asked to host the frontend, it adds CloudFront and S3 — each box and arrow appearing on the canvas the moment the matching tool call runs, while its reply streams into the chat beside it](/img/blog/agui-aws-diagram-small.gif)
 
-Shared state, the last item on that list, deserves a closer look.
-
 ## Shared State: The Agent Edits Your UI, Not Just Your Chat
 
-Picture a task-list app with an agent beside it. The user says *"add milk and bread to my list."*
+Look at the diagram drawer above. The user says *"a serverless REST API for a todo app."*
 
-In a chat-only world, the agent replies *"Done! I've added milk and bread."* — and nothing on screen changes. The list is still empty. The agent described a change it had no way to make.
+In a chat-only world, the agent replies with a paragraph: *"Use API Gateway in front of a Lambda that writes to DynamoDB."* Nothing on screen changes. The user is left to draw the diagram themselves from a description.
 
-With AG-UI shared state, the agent calls `update_agui_state`, Agent Kernel streams the new state back to the browser, and **the list on the right-hand side of the screen updates.** The next turn, the browser sends the state back. Neither side owns it; both edit it.
+With AG-UI, the diagram itself is the agent's to edit. Every box and arrow the agent adds lands on the canvas as its tool call finishes, and the whole diagram lives in **shared state** that Agent Kernel sends back to the browser when the run ends. So when the user follows up with *"add user sign-in"*, the agent reads the diagram that is already there and slots Cognito into it, rather than starting over.
 
 This is the difference between a chatbot bolted onto your app and an agent that actually works *inside* it. A form that fills itself in. A dashboard filter the agent sets. A cart the agent edits. A draft the agent and the user write together.
 
@@ -65,11 +63,13 @@ AG-UI in Agent Kernel follows the same rules as everything else in the kernel.
 
 **Framework agnostic.** Write your agent in the OpenAI Agents SDK, LangGraph, Google ADK or Pydantic AI. The frontend sees the same events either way. Change frameworks next quarter and your UI does not notice.
 
-**One handler, not a new server.** AG-UI mounts alongside your existing REST, MCP and A2A surfaces. Same process, same sessions, same memory, same deployment.
+**One handler, not a new server.** AG-UI mounts alongside your existing REST, MCP and A2A surfaces. Same sessions, same memory, same deployment.
+
+**Scales off the web tier.** Runs go through Agent Kernel's queue pipeline. Put SQS, Kafka or NATS behind it and agent runs move to their own workers, while the web tier just holds the connection and streams the events back. The frontend never knows the difference.
 
 **Secure by default.** AG-UI has no anonymous mode. You plug in your own authoriser — Agent Kernel refuses to start the surface without one, because every run executes an agent on a real user's behalf.
 
-**No prompt injection through the side door.** The frontend can attach context to a run: the page the user is on, their local time, a selected record. Agent Kernel never pastes that into the prompt. The agent has to *ask* for it through a read-only tool, so a frontend can inform the agent without being able to instruct it.
+**Client context stays out of the prompt.** The frontend can attach context to a run: the page the user is on, their local time, a selected record. Agent Kernel never pastes that into the system prompt. The agent has to *ask* for it through a read-only tool, so it reads that context as tool output, not as instructions.
 
 **Everything still applies.** Sessions, memory, hooks, tracing, multimodal attachments — a run over AG-UI goes through the same runtime as any other request. Users can even drop an image or a PDF into the conversation.
 
@@ -88,10 +88,10 @@ export OPENAI_API_KEY=sk-...
 
 ```python
 # app.py
-from agentkernel.agui import AGUIRequestHandler
-from agentkernel.api import RESTAPI
+from agentkernel.agui import AGUIPipelineRequestHandler
 from agentkernel.auth import Authoriser
 from agentkernel.openai import OpenAIModule
+from agentkernel.pipeline import IOHandler
 from agents import Agent
 
 
@@ -109,10 +109,10 @@ agent = Agent(
 OpenAIModule([agent])
 
 if __name__ == "__main__":
-    RESTAPI.run(handlers=[AGUIRequestHandler(authoriser=DemoAuth())])
+    IOHandler.run(handlers=[AGUIPipelineRequestHandler(authoriser=DemoAuth())])
 ```
 
-Mounting `AGUIRequestHandler` is what turns AG-UI on. There is no flag to forget.
+Mounting `AGUIPipelineRequestHandler` is what turns AG-UI on. There is no flag to forget. The agent runs on Agent Kernel's queue pipeline: on your laptop that is still one process with nothing else to install, and pointing the config at a broker moves the runs off the web tier without touching this code or your frontend.
 
 ### 3. Turn on shared state
 
@@ -151,10 +151,7 @@ Watch the events stream in: `RUN_STARTED`, a tool call to `update_agui_state`, a
 
 ### 5. Put a UI on it
 
-The stream is plain Server-Sent Events, so any frontend can read it with `fetch`. Two good paths:
-
-- **Start from our example.** [`examples/api/agui`](https://github.com/yaalalabs/agent-kernel/tree/main/examples/api/agui) is a small React + TypeScript app that renders every event kind: streamed answers, a thinking block, a card per tool call, a live status strip, a shared task-list panel and file attachments. The whole protocol client is one pure function, `reduceEvent(view, event)`, that folds the stream into what is on screen — written to be read, and easy to lift into your own app.
-- **Ship with CopilotKit.** [CopilotKit](https://docs.copilotkit.ai), from the team behind AG-UI, gives you polished chat components, generative UI and approval flows out of the box. Note that it runs its own runtime service in front of the agent, so it is a different architecture from our single-process example.
+The stream is plain Server-Sent Events, so any frontend can read it with `fetch`. The quickest start is our example: [`examples/api/agui`](https://github.com/yaalalabs/agent-kernel/tree/main/examples/api/agui) is a small React + TypeScript app that renders every event kind: streamed answers, a thinking block, a card per tool call, a live status strip, a shared task-list panel and file attachments. The whole protocol client is one pure function, `reduceEvent(view, event)`, that folds the stream into what is on screen — written to be read, and easy to lift into your own app.
 
 ## The Bottom Line
 
