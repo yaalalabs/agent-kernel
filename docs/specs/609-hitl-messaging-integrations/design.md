@@ -120,9 +120,7 @@ class OutboundAdapter(ABC):
     }]
   }],
   "reply_context": {
-    "chat_id": "94771234567",
-    "pause_message_id": "812"    // presence of this key is the ONLY signal to edit the pause
-                                 // message later; absent on an ordinary turn
+    "chat_id": "94771234567"     // delivery coordinates only; the pause message is not edited
   }
 }
 ```
@@ -151,24 +149,57 @@ show the second a generic error. Each segment earns its place:
   write — is a **follow-up issue**, named here so it is inherited deliberately. #609 narrows it:
   the exposure needs a multi-interruption pause *and* a redelivery, not just an impatient human.
 
-### Editing the pause message after a decision
+### Who may approve
 
-- **The outbound half edits, not the inbound half.** Inbound puts the message coordinates into
-  `reply_context`; outbound edits when it delivers the **resumed reply**, which exists only because
-  the resume succeeded. Editing at parse time would clear the buttons for a decision the runtime
-  then refused.
-- The coordinates' presence in `reply_context` is the only signal — `deliver` receives every reply
-  the same way, and only the press path sets them. `deliver_error` sees the same context and must
-  **not** edit, so a stale or rejected decision leaves the buttons live.
-- The edit **names the interruptions it answered**, not a bare "Approved" — one press answers one
-  interruption and a pause may hold several. It states what was decided, **not who**; naming the
-  presser is a disclosure a deployment adds by subclassing.
-- All controls go even when interruptions remain, because a partial resume produces a *fresh pause*:
-  OpenAI returns `self._paused_reply(...)` when `result.interruptions` is non-empty, LangGraph when
-  `INTERRUPT_KEY in result`. That reply reaches `deliver_paused` again with its own controls, so
-  keeping the old ones would leave two live buttons for one interruption. This rests on an invariant
-  the UI does not own: an adapter resuming while interruptions are pending would strand them, and
-  that is a defect in #606's contract (`core/model.py:190-191`).
+**Agent Kernel ships no approver policy: anyone who can see the message can press the button.**
+That is the honest default for a channel, and it is stated rather than implied because it is a
+security-relevant one.
+
+What the design guarantees instead is that **an application can impose its own policy**, because
+the presser's platform identity reaches the run:
+
+- The inbound adapter sets `InboundRequest.user_id` from the press — Telegram already does
+  (`integration/telegram/adapter.py:182`, `:208`), and Slack's action listener must do the same from
+  the payload's `user.id`.
+- `IntegrationProducer` carries it in the **body**, not as a message attribute
+  (`integration/adapter/producer.py:74-82`), and `ChatService` threads it through as
+  `acting_user_id`, which `Runtime` publishes under `ACTING_USER_CACHE_KEY` in the volatile cache
+  before the pre-hook span (`core/runtime.py:397`).
+
+So an application has two unblocked places to decide who may answer:
+
+| Where | Fits when |
+|---|---|
+| A `PreHook` that sees an `AgentResumeRequestAny` in `requests`, reads the acting user, and halts by returning an `AgentReply` | The policy should hold on every surface, not just messaging — this is the recommended one. |
+| A bring-your-own inbound adapter (the application constructs the inbound half itself, so this needs no factory) | The check is platform-specific, or should reject the press before anything is enqueued. |
+
+Neither needs a change in this issue; both are named here so the omission is read as a deliberate
+boundary rather than an oversight. A built-in allow-list is not added: who may approve is
+application policy, and `AKConfig` holds no vocabulary for it. #610 owns the different question of a
+decision arriving from *another* session.
+
+### After a decision: no edit
+
+**The pause message is not rewritten, and the controls stay.** The resumed reply is delivered as an
+ordinary message in the conversation.
+
+- **Why not:** a pre-hook that halts a resume returns a 200 with a text reply — identical, at the
+  delivery layer, to a run that resumed successfully. `Runtime` knows the difference and logs it,
+  but only to the server log (`_warn_resume_halted`, `core/runtime.py:362-376`: *"the client
+  receives a reply that reads like completion"*). An adapter editing on that guess would strip the
+  buttons off a pause that is still open and claim a decision that never applied.
+- Delivering the reply plainly is correct either way: if the decision applied, the next thing in
+  the chat is the agent's answer; if it was refused, it is the refusal.
+- **Live controls are harmless.** A second press of the same button produces a byte-identical
+  `request_id`, so the transport drops it — no runner, no session load, no reply. Outside the
+  transport's dedup window (300s on `in_memory`, `transport/in_memory.py:15`; 5 minutes on SQS
+  FIFO) it gets through, runs the pre-hooks, fails `_validate_resume` and costs one generic error
+  message. The agent never runs and no second decision is ever applied.
+- **A deployment that wants the edit can add it**, and nothing here blocks that: the application
+  constructs the inbound adapter, so a subclass can put the message's channel and id into
+  `reply_context`, and `<platform>.outbound_adapter` swaps the outbound half, so a subclass can
+  override `deliver` and update the message. It inherits the ambiguity above knowingly — which is
+  the deployment's call, since it may know its own pre-hooks never halt a resume.
 
 ### Slack
 
@@ -197,12 +228,8 @@ show the second a generic error. Each segment earns its place:
 - A failed `views.open` is logged and leaves the pause live; nothing was decided, so nothing is
   queued. A dismissed modal records no decision. The existing `x-slack-retry-reason: http_timeout`
   drop (`:74`) still applies.
-- Edit with **`chat.update`, not `response_url`.** The press hands you a `response_url` that is
-  easier, but it expires (about thirty minutes, a handful of uses) and our edit lands after a queue
-  hop and a full agent resume, which is unbounded. `chat.update` takes the channel and `ts` already
-  in `reply_context`, needs only the bot token, and has no window. It works here because the pause
-  message was posted through ordinary `chat.postMessage`; updating one created *via* `response_url`
-  is reported to fail with `cant_update_message`.
+- `private_metadata` still carries channel and `ts` even though nothing is edited: the channel
+  resolves `session_id` and the `ts` is the `<message id>` segment of the dedup key.
 
 ### Telegram
 
@@ -221,13 +248,7 @@ show the second a generic error. Each segment earns its place:
   (which would need expiry, restart and worker-routing semantics).
 - Inbound: `_from_callback_query` (`:174`) produces a decision when the callback data is ours and
   keeps today's text behaviour otherwise. `answer_callback_query` (`:63`) keeps clearing the spinner.
-- Edit via `editMessageReplyMarkup` / `editMessageText` on the `message_id` the press carried.
-  Telegram publishes an editing window; whether it binds a bot editing its own message is confirmed
-  while writing `spec.md`. **Telegram ships either way** — the edit is attempted, a refusal is
-  logged, the decision stands, and the adapter posts a short confirmation instead.
-- A keyboard left live is noise, not danger: the same button shares one `request_id` and never
-  reaches the runtime. Only a different verb, or a press past the dedup window, costs one error
-  message.
+- The keyboard stays after a decision, as everywhere else — see *After a decision*.
 - `DENY_COLLECTS_REASON` stays `False`: no modal, and a `force_reply` answer would have to be
   correlated back to an interruption using state the adapter does not hold.
 
@@ -252,10 +273,10 @@ changed by subclassing and mounting via `<platform>.outbound_adapter`.
   falls through to text.
 - Per platform: buttons render; a press parses to an `AgentResumeRequestAny` with the right id and
   status; a second press dedupes; Telegram's over-budget id degrades to text.
-- The edit under all three outcomes: accepted drops the controls, rejected or stale leaves them,
-  duplicate changes nothing.
-- A two-interruption pause: separate controls, no cross-dedup, the edit names only what was
-  answered, the remainder arrives as a second pause message.
+- A two-interruption pause: separate controls, no cross-dedup, and the remainder arrives as a
+  second pause message.
+- A second press of the same button inside the dedup window reaches neither the runner nor the
+  agent; past it, it fails validation and delivers the generic error.
 - Two decisions on one session delivered in order both land. Deliberately **not** a multi-worker
   concurrency test — that asserts the pipeline's guarantee, which this issue does not change.
 - A round trip through `in_memory` — pause out, press in, resume — extending
@@ -265,7 +286,13 @@ changed by subclassing and mounting via `<platform>.outbound_adapter`.
 
 - `docs/docs/advanced/human-in-the-loop.md`: approving from a messaging platform, what Slack and
   Telegram support, what the others do instead, and the `cancelled` caveat.
-- `docs/docs/integrations/slack.md` and `telegram.md`: the pause rendering and its limits.
+- `docs/docs/integrations/slack.md` and `telegram.md`: the pause rendering and its limits, **plus
+  the platform-side setup this needs** — for Slack, enabling Interactivity & Shortcuts and pointing
+  its Request URL at the same URL as Event Subscriptions (no new scope: the adapter only posts and
+  opens a modal, both of which its existing token already allows); for Telegram, nothing new, since
+  inline keyboards need no extra registration.
+- Both pages state the default plainly: anyone who can see the message can press it, and a
+  deployment that needs an approver policy adds a pre-hook.
 - One example extending an existing integration example rather than adding a new one.
 
 ## Non-goals
@@ -278,6 +305,18 @@ changed by subclassing and mounting via `<platform>.outbound_adapter`.
   answering a pause, on any platform.
 - **Answering a pause by typing.** Needs the session's pending pauses at the moment the text
   arrives, so it belongs in a core pre-hook affecting every surface. Follow-up issue.
+- **Editing the pause message after a decision.** Not because Telegram forbids it — its 48-hour
+  limit covers business messages *not* sent by the bot and without an inline keyboard, the inverse
+  of this case — but because nothing in the response distinguishes a refused resume from a
+  successful one. A deployment can add it (see *After a decision*); AK will once the signal below
+  exists.
+- **A "decision was applied" marker in the response body.** The gap that blocks the edit, and a
+  defect in #606's contract rather than this one: `_warn_resume_halted` (`core/runtime.py:362-376`)
+  documents that a halted resume "reads like completion" to the client, and
+  `examples/api/hitl/frontend/src/App.tsx:53-64` already retires its approval card on that false
+  signal. It needs design rather than a key — `Runtime.run` returns only an `AgentReply`, replies
+  are built by the framework adapters, and the volatile cache is cleared before the caller reads
+  it. **Follow-up issue**, and the only one this change needs.
 - **A per-session resume lease.** The concurrency gap above belongs to the pipeline. Follow-up issue.
 - **Cross-session approval** (#610) and **conversation initiation** (#608).
 - **Streaming.** Integration traffic already takes the non-streaming path
