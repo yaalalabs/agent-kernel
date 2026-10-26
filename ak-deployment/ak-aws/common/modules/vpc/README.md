@@ -21,7 +21,7 @@ Perfect for serverless architectures, Lambda functions requiring VPC access, Red
 | Name | Version |
 |------|---------|
 | Terraform | >= 1.9.5 |
-| AWS Provider | 6.68.0 (pinned) |
+| AWS Provider | 6.70.0 (pinned) |
 
 ## 🚀 Usage
 
