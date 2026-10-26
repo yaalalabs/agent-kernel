@@ -95,7 +95,7 @@ export const FEATURE_TABS: FeatureTab[] = [
       {
         title: "LiveKit",
         description:
-          "Connect OpenAI Agents SDK and Google ADK agents to LiveKit WebRTC rooms. A stateful gateway carries user audio and text and returns streamed model audio and transcripts through the realtime pipeline, with multi-agent handoffs between voice agents. Live captions for the caller and the agents, server-side hooks for transcripts, speaker changes and errors, a custom opening prompt, and one gateway per room that can be started and stopped at runtime.",
+          "Connect OpenAI Agents SDK and Google ADK agents to LiveKit WebRTC rooms. A stateful gateway carries user audio and text and returns streamed model audio and transcripts through the realtime pipeline, with multi-agent handoffs between voice agents. Live captions for the caller and the agents, server-side hooks for transcripts, agent changes and errors, a custom opening prompt, and one gateway per room that can be started and stopped at runtime.",
         tags: ["Voice integration", "WebRTC", "Realtime"],
         // Drop /next after the LiveKit integration is released.
         docs: "/docs/next/integrations/livekit",

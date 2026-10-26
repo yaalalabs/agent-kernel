@@ -329,7 +329,12 @@ class RealtimeConnection:
         """
         task = loop.create_task(self.close())
         RealtimeConnection._closing.add(task)
-        task.add_done_callback(RealtimeConnection._closing.discard)
+        task.add_done_callback(self._close_finished)
+
+    def _close_finished(self, task: "asyncio.Task") -> None:
+        RealtimeConnection._closing.discard(task)
+        if not task.cancelled() and task.exception() is not None:
+            _log.error(f"Realtime session {self.session_id}: failed to close: {task.exception()}")
 
     async def close(self) -> None:
         """Stop pacing and disconnect the adapter; a second call returns at once."""

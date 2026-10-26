@@ -265,6 +265,23 @@ class TestRealtimePoolShutdown:
         assert conn.adapter.disconnects == 1
         assert not RealtimeConnection._closing
 
+    @pytest.mark.asyncio
+    async def test_a_background_close_that_raises_is_logged_with_the_session(self, monkeypatch, caplog):
+        class _Failing(self._CountingAdapter):
+            async def disconnect(self):
+                raise RuntimeError("socket gone")
+
+        monkeypatch.setattr(QueueTransportFactory, "create", staticmethod(lambda *a, **k: InMemoryTransport()))
+        conn = _connection("s9", agent=_Agent(realtime_runner_cls=_Failing), loop=asyncio.get_running_loop())
+
+        with caplog.at_level("ERROR"):
+            conn.close_in_background(asyncio.get_running_loop())
+            await asyncio.gather(*RealtimeConnection._closing, return_exceptions=True)
+            await asyncio.sleep(0)
+
+        assert "Realtime session s9: failed to close: socket gone" in caplog.text
+        assert not RealtimeConnection._closing
+
     def test_the_runner_drops_input_during_shutdown(self, monkeypatch):
         from unittest.mock import MagicMock
 
