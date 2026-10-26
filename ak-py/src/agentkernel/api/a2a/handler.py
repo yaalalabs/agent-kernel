@@ -38,7 +38,10 @@ class A2ARESTRequestHandler:
 
         @router.get("/catalog")
         def list_cards():
-            return {"cards": [agent_card_to_dict(card) for card in A2A.get_cards()]}
+            cards = A2A.get_cards()
+            card_dicts = [agent_card_to_dict(card) for card in cards]
+
+            return {"cards": card_dicts}
 
         return router
 
