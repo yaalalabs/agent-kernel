@@ -86,7 +86,8 @@ class PythonPackageSpecRule(_PatternPackageSpecRule):
 class NodePackageSpecRule(_PatternPackageSpecRule):
     """'node': npm-registry specs — name or @scope/name, optionally @version-or-range."""
 
-    PATTERN = re.compile(r"^(?:@[A-Za-z0-9][A-Za-z0-9._~-]*/)?[A-Za-z0-9][A-Za-z0-9._~-]*(?:@[A-Za-z0-9.^~<>=*|+_-]+)?$")
+    # The version may not start with '.': npm-package-arg reads 'name@.' or 'name@..' as a local directory.
+    PATTERN = re.compile(r"^(?:@[A-Za-z0-9][A-Za-z0-9._~-]*/)?[A-Za-z0-9][A-Za-z0-9._~-]*(?:@[A-Za-z0-9^~<>=*|+_-][A-Za-z0-9.^~<>=*|+_-]*)?$")
     GRAMMAR = "a registry spec (name or @scope/name, optional @version or range)"
     _PROTOCOLS: ClassVar[tuple[str, ...]] = ("github:", "git+", "file:", "link:", "npm:")
     # npm-package-arg treats a bare entry with any of these suffixes as a local file.

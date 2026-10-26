@@ -157,7 +157,22 @@ def test_node_rule_accepts(entry):
 
 @pytest.mark.parametrize(
     "entry",
-    ["zzq/zzrepo", "github:zzq/zzrepo", "zzq@file:zzr", "link:zzq", "npm:zzq", "git+zzq", "zzq.tgz", "zzq.tar.gz", "zzq.tar", "@zzq/zza/zzb", "zzq/"],
+    [
+        "zzq/zzrepo",
+        "github:zzq/zzrepo",
+        "zzq@file:zzr",
+        "link:zzq",
+        "npm:zzq",
+        "git+zzq",
+        "zzq.tgz",
+        "zzq.tar.gz",
+        "zzq.tar",
+        "@zzq/zza/zzb",
+        "zzq/",
+        "zzq@.",
+        "zzq@..",
+        "zzq@.1",
+    ],
 )
 def test_node_rule_rejects(entry):
     _assert_rejected(NodePackageSpecRule().validate, [entry], entry)
