@@ -1,6 +1,6 @@
 # Agent Kernel streaming Microsoft Agent Framework (MAF) over SSE
 
-This package contains a demo of Agent Kernel streaming a MAF agent's response as it is produced. With `execution.mode: stream` in `config.yaml`, `POST /api/v1/chat` returns a Server-Sent Events (SSE) stream instead of a single JSON body — each frame carries one typed **stream event** as the model produces it, driven by `MAFRunner.stream()`.
+This package contains a demo of Agent Kernel streaming a MAF agent's response as it is produced. With `execution.mode: stream` in `config.yaml`, `POST /api/v1/chat` returns a Server-Sent Events (SSE) stream instead of a single JSON body — each event frame carries one typed **stream event** as the model produces it, driven by `MAFRunner.stream()`, and a final frame carries `done`.
 
 ## Setup
 
