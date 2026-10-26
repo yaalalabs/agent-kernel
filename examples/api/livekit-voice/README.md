@@ -93,8 +93,7 @@ The gateway can show and report the caller's own words (live captions on LiveKit
 - **Google ADK** (`google/*`): on by default, nothing to do.
 - **OpenAI** (`openai/*`): set `input_audio_transcription` in the session's model settings, for example `model_config={"initial_model_settings": {..., "input_audio_transcription": {"model": "gpt-4o-mini-transcribe"}}}` in `Module.run_options`. Without it no caller line is produced, and nothing fails.
 
-These examples ignore the caller's lines, so they behave as before either way. See the
-[realtime requirements meeting](../../../use-cases/realtime-requirements-meeting/) use case for a gateway that logs them.
+These examples ignore the caller's lines, so they behave as before either way. See [Following the call from server code](../../../docs/docs/integrations/livekit.md#following-the-call-from-server-code) for a gateway that logs them.
 
 ## How it works
 

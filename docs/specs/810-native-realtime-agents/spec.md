@@ -137,7 +137,7 @@ Use SDK fakes or public mock sessions for unit tests; reserve credentialed smoke
 Run focused tests from `ak-py/` with `uv run pytest tests/test_realtime_pool.py tests/test_openai_runner.py tests/test_adk_runner.py tests/test_livekit_gateway.py tests/test_ecs_akagentrunner_realtime.py`; run `make lint-check-all` from the repo root before implementation is considered complete. Credentialed live-call tests require API keys and are a separate verification gate, not a reason to skip the deterministic tests. Record the installed SDK versions used for the SDK integration checks.
 
 
-## Edge additions for the realtime requirements meeting (C1 to C6)
+## Edge additions for realtime meetings (C1 to C6)
 
 The full detail of the six additions (the caller's words as an event, edge hooks and live captions, gateways at runtime, ending a session at once, the opening prompt, reconnect back-off). The use case that needs them is specified in its own folder.
 

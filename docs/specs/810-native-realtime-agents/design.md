@@ -84,9 +84,9 @@ flowchart LR
 - Can the LiveKit edge report actual playout to OpenAI's native playback tracker? A successful AK queue send is not proof that the listener heard the audio.
 
 
-## Edge additions for the realtime requirements meeting (C1 to C6)
+## Edge additions for realtime meetings (C1 to C6)
 
-Six small, framework-neutral additions to Agent Kernel, built for the [realtime requirements meeting](../../../use-cases/realtime-requirements-meeting/docs/design.md) use case. Each works the same for OpenAI and ADK. No new `AKConfig` fields.
+Six small, framework-neutral additions to Agent Kernel, built for a realtime multi-agent meeting use case. Each works the same for OpenAI and ADK. No new `AKConfig` fields.
 
 Each change works the same way for OpenAI and ADK. The use case picks ADK, but nothing in AK assumes it.
 

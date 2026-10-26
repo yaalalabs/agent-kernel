@@ -1371,6 +1371,28 @@ class TestSessionEnd:
         assert producer.calls[-1]["request"].session_id == "s1"
 
     @pytest.mark.asyncio
+    async def test_a_hook_that_never_returns_cannot_hold_up_release(self, monkeypatch):
+        gateway = _Recorder.build("pm")
+        gateway._connected = True
+        gateway._loop = asyncio.get_running_loop()
+        gateway._producer = _Producer()
+        gateway._pending = asyncio.Queue()
+        monkeypatch.setattr(gateway, "HOOKS_CLOSE_TIMEOUT_SECONDS", 0.2)
+        stuck, entered = threading.Event(), threading.Event()
+
+        def block(line):
+            entered.set()
+            stuck.wait()
+
+        gateway._dispatch_hook(block, TranscriptLine(speaker="pm", role="agent", text="hi", at=1.0))
+        assert await asyncio.to_thread(entered.wait, 5)
+
+        try:
+            await asyncio.wait_for(gateway._release(), timeout=3)
+        finally:
+            stuck.set()
+
+    @pytest.mark.asyncio
     async def test_frames_after_the_end_are_not_staged(self):
         gateway = _gateway("pm")
         gateway._connected = True

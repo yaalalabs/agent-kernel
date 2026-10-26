@@ -252,6 +252,19 @@ class TestRealtimePoolShutdown:
 
         assert conn.adapter.disconnects == 1
 
+    @pytest.mark.asyncio
+    async def test_a_failed_session_is_closed_by_a_task_that_is_kept_until_done(self, monkeypatch):
+        monkeypatch.setattr(QueueTransportFactory, "create", staticmethod(lambda *a, **k: InMemoryTransport()))
+        conn = _connection(agent=_Agent(realtime_runner_cls=self._CountingAdapter), loop=asyncio.get_running_loop())
+
+        await conn._fail("model failed")
+
+        assert len(RealtimeConnection._closing) == 1
+        await asyncio.gather(*RealtimeConnection._closing)
+        await asyncio.sleep(0)
+        assert conn.adapter.disconnects == 1
+        assert not RealtimeConnection._closing
+
     def test_the_runner_drops_input_during_shutdown(self, monkeypatch):
         from unittest.mock import MagicMock
 

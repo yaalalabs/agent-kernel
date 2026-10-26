@@ -6,7 +6,7 @@ import threading
 import time
 import uuid
 from concurrent.futures import Future
-from typing import TYPE_CHECKING, Any, Mapping, Optional
+from typing import TYPE_CHECKING, Any, ClassVar, Mapping, Optional
 
 from ..core.base import Agent as BaseAgent
 from ..core.base import Session
@@ -51,6 +51,9 @@ class RealtimeConnection:
     framework's native live session and calls a callback; this class stamps queue attributes and
     emits.  The framework runs its own tools and handoffs; nothing here executes a tool.
     """
+
+    # Background close tasks still running (see close_in_background).
+    _closing: ClassVar[set[asyncio.Task]] = set()
 
     def __init__(self, session_id: str, agent: BaseAgent, runtime: Runtime, session: Session, loop: asyncio.AbstractEventLoop):
         self.session_id = session_id
@@ -202,7 +205,7 @@ class RealtimeConnection:
         finally:
             # The callback may be inside the adapter's listener. Close in a separate task so
             # that listener does not wait for its own shutdown, even if queue delivery failed.
-            asyncio.create_task(self.close())
+            self.close_in_background(asyncio.get_running_loop())
 
     async def _pacing_loop(self) -> None:
         """Emit model audio at playback rate, with control events behind their own audio.
@@ -318,6 +321,16 @@ class RealtimeConnection:
         if not task.cancelled() and task.exception() is not None:
             _log.error(f"Realtime session {self.session_id}: failed to {action}: {task.exception()}")
 
+    def close_in_background(self, loop: asyncio.AbstractEventLoop) -> None:
+        """Schedule :meth:`close` on ``loop`` without awaiting it.
+
+        The event loop keeps only a weak reference to a task, so the task is held here until it finishes;
+        otherwise it could be collected before the native session is closed.
+        """
+        task = loop.create_task(self.close())
+        RealtimeConnection._closing.add(task)
+        task.add_done_callback(RealtimeConnection._closing.discard)
+
     async def close(self) -> None:
         """Stop pacing and disconnect the adapter; a second call returns at once."""
         self.closed = True
@@ -428,7 +441,7 @@ class RealtimeConnectionPool:
                         conn = self._connections.pop(session_id, None)
                     if conn:
                         _log.info(f"Realtime session {session_id} idle for > {_IDLE_TIMEOUT_SECONDS}s; evicting.")
-                        self._loop.create_task(conn.close())
+                        conn.close_in_background(self._loop)
             await asyncio.sleep(0.5)
 
     async def _close_all(self) -> None:

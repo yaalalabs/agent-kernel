@@ -76,6 +76,9 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
     SESSION_END_TIMEOUT_SECONDS: float = 2.0
     # How long a stopping gateway lets queued captions finish before it cancels the caption task.
     CAPTION_DRAIN_SECONDS: float = 1.0
+    # How long a stopping gateway waits for queued hooks to finish. A hook is application code and may
+    # block; after this the gateway stops waiting, so a stuck hook cannot hold up stop() or the drain.
+    HOOKS_CLOSE_TIMEOUT_SECONDS: float = 5.0
     # LiveKit's transcription conventions (https://docs.livekit.io/agents/build/text/), so standard
     # LiveKit client components show the captions.
     TRANSCRIPTION_TOPIC = "lk.transcription"
@@ -280,7 +283,7 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
         """Tell the pool the session is over, stop the sender and the background work, and leave the room.
 
         Every agent participant is taken out of the room, and the hooks still queued run before their
-        worker stops.
+        worker stops, for at most :attr:`HOOKS_CLOSE_TIMEOUT_SECONDS`.
         """
         await self._send_session_end()
         await self._drain_captions(self.CAPTION_DRAIN_SECONDS)
@@ -294,7 +297,10 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
                 await participant.leave()
             except Exception:
                 _log.exception(f"Failed to disconnect agent participant {participant.identity or participant.agent}")
-        await asyncio.to_thread(self._close_hooks)
+        try:
+            await asyncio.wait_for(asyncio.to_thread(self._close_hooks), timeout=self.HOOKS_CLOSE_TIMEOUT_SECONDS)
+        except asyncio.TimeoutError:
+            _log.warning(f"Edge hooks did not finish within {self.HOOKS_CLOSE_TIMEOUT_SECONDS}s; not waiting for them")
 
     async def _send_session_end(self) -> None:
         """Send the end-of-session control, once, behind the frames already staged.

@@ -60,7 +60,7 @@ Build the [design](design.md) using the component contracts and limits in [spec.
 - **Verify:** Run the example imports or startup validation without opening billable live calls, inspect the changed docs for old claims with scoped `rg`, and rerun `make lint-check-all`. Confirm the final diff contains only the intended source, tests, examples, and current docs/skills.
 
 
-## Edge additions for the realtime requirements meeting (C1 to C6)
+## Edge additions for realtime meetings (C1 to C6)
 
 ### Iteration 1: The caller's words as an event (C1)
 

@@ -176,7 +176,7 @@ runner.start_background()   # raises the edge's own error, or TimeoutError after
 runner.stop()               # leaves the room and closes the model session at once
 ```
 
-This needs the single-process `in_memory` topology, with `IOHandler.run(handlers=...)` hosting your routes and no boot-time gateways; the [realtime requirements meeting](https://github.com/yaalalabs/agent-kernel/tree/develop/use-cases/realtime-requirements-meeting) use case does exactly this. A gateway of your own works the same way if it calls `self._mark_ready()` once its platform connection is up. When a gateway stops or loses its room it sends an end-of-session control, so the native session closes at once.
+This needs the single-process `in_memory` topology, with `IOHandler.run(handlers=...)` hosting your routes and no boot-time gateways. A gateway of your own works the same way if it calls `self._mark_ready()` once its platform connection is up. When a gateway stops or loses its room it sends an end-of-session control, so the native session closes at once.
 
 ## Multi-agent handoffs
 
