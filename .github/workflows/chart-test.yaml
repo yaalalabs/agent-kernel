@@ -182,9 +182,9 @@ jobs:
         if: matrix.flavor != 'dev'
         run: |
           kubectl apply -f "https://github.com/kubernetes-sigs/gateway-api/releases/download/${GATEWAY_API_VERSION}/standard-install.yaml"
-          kubectl apply -f https://github.com/nats-io/nack/releases/latest/download/crds.yml
           helm repo add nats https://nats-io.github.io/k8s/helm/charts/
-          # NACK retries the NATS connection until the release's server exists.
+          # NACK retries the NATS connection until the release's server exists. The chart installs
+          # its own CRDs; applying them separately as well lets the two copies drift apart.
           helm install nack nats/nack --set jetstream.nats.url=nats://ak-nats:4222 --wait --timeout 120s
 
       - name: Install chart
