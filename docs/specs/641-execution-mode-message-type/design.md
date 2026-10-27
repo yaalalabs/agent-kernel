@@ -68,8 +68,9 @@ and the valid alternatives.
   - Under `async + delta`, the REST chat route returns the existing `async` 400 "connect to /ws instead"
     (`request_handler.py:299`). The `ATTR_USER_ID` route split in `response_handler.py:72-80` goes away,
     because every `async + delta` reply goes to WebSocket.
-  - `async + delta` on the `in_memory` transport needs an `auth_validator`, the same as `async` does today
-    (`io_handler.py:220`).
+  - `async` with either message type on the `in_memory` transport needs an `auth_validator`, as today
+    (`io_handler.py:220`). The check keys on the mode, so it covers both. This is new for former
+    `stream` users, which run without one today.
   - Intentional behaviour change: no single config serves SSE and WebSocket together any more, which
     today's `stream` does in one process.
 - `rest_sync + delta` is the only SSE configuration. It serves SSE only, and no WebSocket is co-hosted or required.
@@ -78,12 +79,18 @@ and the valid alternatives.
     (`io_handler.py:108-113`) instead of co-hosting `/ws`.
   - On a broker transport (`sqs`, `kafka`, `nats`) it needs a shared response store that can hold
     chunks: Redis or Valkey once #755 merges. DynamoDB cannot (`response_store/base.py:54`).
-    - Otherwise `IOHandler` and `ECSIOHandler` fail at startup with `AKConfigError`, naming
+    - Otherwise `IOHandler` and `ECSIOHandler` fail at startup with `AKConfigError`. The error names
+      the configured `rest_sync + delta` and both fixes: a chunk-capable response store, or
       `async + delta`. Today this is a 400 on every request (`request_handler.py:304`).
-- `rest_sync + delta` on AWS Lambda fails at router init, naming `async + delta` or a Function URL
-  streaming entry point. API Gateway REST cannot stream (`rest_lambda.py:299-315`).
+- `rest_sync + delta` on AWS Lambda fails at router init. The error names the configured
+  `rest_sync + delta` and suggests `async + delta`, the only streaming option on Lambda. API Gateway
+  REST cannot stream (`rest_lambda.py:299-315`).
 - Messaging webhooks (`LambdaWebhookHost`, `webhook_host.py:92`) keep requiring a REST mode, and
   also require `message_type: complete`. Platform adapters deliver whole messages.
+- Non-realtime integration messages always run and deliver as whole replies, whatever
+  `message_type` is. This covers webhook and poller entry points. `StreamAgentRunner` hands them to
+  the whole-reply path (`agent_runner.py:217`), and `ResponseHandler` routes them to
+  `IntegrationDelivery.deliver` before any mode check (`response_handler.py:66`). Both stay as they are.
 
 ### Legacy `stream`
 
