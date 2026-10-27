@@ -34,8 +34,8 @@ What ships with it:
   sandbox_session_id, profile)`, only when at least one profile permits installs. The injected
   guidance lists what each profile permits.
 - **Installs are off by default.** Only a profile that declares `package_install` permits them, and
-  only for its `ecosystems`. `package_install` on an `environment: attached` profile is rejected at
-  config load.
+  only for its `ecosystems`. `package_install` on an `environment: attached` or `scope: per_call` profile is
+  rejected at config load.
 - **Configurable installers.** `docker`, `kubernetes`, `e2b` and `daytona` take `package_installers`
   (the installer argv per ecosystem, default `pip install`) and `package_rules` (ecosystem → dotted
   path of a `PackageSpecRule`).

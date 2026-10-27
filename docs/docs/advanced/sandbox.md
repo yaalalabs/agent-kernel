@@ -359,6 +359,9 @@ profiles:
   argv joined with `shlex.join`).
 - **Not on attached environments.** `package_install` on an `environment: attached` profile is
   rejected at config load: an install would change a system the framework does not own.
+- **Not on `per_call` profiles.** `package_install` on a `scope: per_call` profile is rejected at
+  config load: the sandbox is destroyed after every operation, so installed packages would be gone
+  before the next `run_code`. Use `per_session` (or `per_runtime`) for profiles that install.
 - **Startup warnings.** The agent process warns once per profile when installs are permitted
   together with `scope: per_runtime` (an install changes a sandbox every session shares),
   `network_egress: deny` (installs then need packages or an offline repository baked into the image), or, on `docker` and
