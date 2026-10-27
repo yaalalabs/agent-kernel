@@ -42,7 +42,7 @@ This example is docker-backed, which shows **both sides** of that model:
 - The **`installs`** profile shows the permissions: it permits package installs
   (`package_install`, so the agent also gets the `install_packages` tool) and only Python in
   `run_code` (`languages: [python]`). The other profiles declare no `package_install`, so
-  installs there are denied.
+  the `install_packages` tool is denied there. `run_command` is not gated by this permission.
 
 (On a provider that enforces nothing, like `local_subprocess`, the same `guarded` profile
 would fail closed too: the `strict` model is uniform, only each provider's enforceable set

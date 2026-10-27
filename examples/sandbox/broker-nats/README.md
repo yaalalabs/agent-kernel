@@ -134,14 +134,17 @@ k3d cluster delete ak
   `language_runtimes` (default `python: [python, -c]`). The image is the operator's contract:
   `install_packages` runs only on a profile whose policy sets `package_install`, using the
   installer the provider's `package_installers` names (default `pip install`) inside that
-  image, and OS packages belong in the image build.
+  image, and OS packages belong in the image build. With this example's read-only root filesystem and
+  non-root user, the default `pip install` can fail; use the installer prefix for that posture in the
+  "Installer prefixes per posture" table of the sandbox guide.
 - Set `auto_provision: false` and manage the four JetStream streams (chat + sandbox) as
   NACK CRs: `natsResources.enabled` in the chart renders all four (the sandbox pair is
   included whenever `sandboxWorker.enabled` is set).
-- Size `sandbox.broker.queue.nats.ack_wait` above your largest effective timeout
-  (`policy.timeout`, or `policy.package_install.timeout` for installs) plus the worker's
-  10-second backstop, or a still-running execution gets redelivered and runs twice
-  (at-least-once semantics).
+- Size `sandbox.broker.queue.nats.ack_wait` above the sandbox provisioning time plus your largest
+  effective timeout (`policy.timeout`, or `policy.package_install.timeout` for installs) plus the
+  worker's 10-second backstop. Provisioning runs before the execution timer starts, and a Kubernetes
+  pod can take up to `create_timeout` (120 seconds by default) to reach Running. If `ack_wait` is
+  shorter, a still-running execution gets redelivered and runs twice (at-least-once semantics).
 - When upgrading, roll the sandbox worker before the agent pods: the worker enforces the
   sandbox permissions the agent side sends.
 - A custom `package_rules` class (a dotted path to your own `PackageSpecRule`) must be

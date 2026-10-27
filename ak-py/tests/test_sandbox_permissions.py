@@ -529,12 +529,32 @@ async def test_ecosystem_only_override_gets_its_ecosystem_with_one_deprecation_w
 @pytest.mark.parametrize("dotted,sandbox_cls", [(PKG_DOTTED, _PkgSandbox), (LEGACY_DOTTED, _LegacySandbox)])
 @pytest.mark.parametrize("packages", [["--index-url=https://evil"], ["https://evil/pkg.whl"], ["./local"], ["a b"]])
 async def test_worker_runs_the_package_baseline_before_any_override(monkeypatch, dotted, sandbox_cls, packages):
-    # A custom provider's override never sees a spec the baseline rejects, modern or legacy.
+    # A custom provider's override never sees a spec the baseline rejects, modern or legacy,
+    # and no sandbox is created or attached for it.
     _use_provider(monkeypatch, dotted=dotted)
+    _forbid_acquire(monkeypatch)
     worker = BrokerWorkerCore()
     with pytest.raises(ValueError):
         await worker.run(_install(packages, policy=SandboxPolicy(package_install=PackageInstallPolicy())))
     assert sandbox_cls.calls == []
+
+
+@pytest.mark.asyncio
+async def test_worker_rejects_an_install_payload_without_packages_before_acquiring(monkeypatch):
+    # A raw queue producer may omit the key: the baseline's ValueError, not a KeyError mid-execution.
+    _use_provider(monkeypatch)
+    _forbid_acquire(monkeypatch)
+    request = _request("install_packages", {"ecosystem": "python"}, policy=SandboxPolicy(package_install=PackageInstallPolicy()))
+    with pytest.raises(ValueError, match="must be a list"):
+        await BrokerWorkerCore().run(request)
+
+
+def _forbid_acquire(monkeypatch):
+    async def fail(*args, **kwargs):
+        raise AssertionError("a sandbox was acquired for a request the baseline rejects")
+
+    monkeypatch.setattr(_PkgProvider, "create", fail)
+    monkeypatch.setattr(_PkgProvider, "attach", fail)
 
 
 @pytest.mark.asyncio

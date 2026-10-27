@@ -18,10 +18,14 @@ from agentkernel.core.config import (
     AKConfig,
     _ExecutionBrokerConfig,
     _GuardrailConfig,
+    _InMemoryQueueConfig,
     _QueuesConfig,
     _ResponseStoreConfig,
     _SandboxConfig,
     _SandboxDockerConfig,
+    _SandboxKubernetesConfig,
+    _SandboxPackageInstallConfig,
+    _SandboxPolicyConfig,
     _SandboxProfileConfig,
 )
 from agentkernel.core.runtime import Runtime
@@ -468,6 +472,45 @@ class TestQueueBrokerWorker:
         cfg.profiles["apt"] = _SandboxProfileConfig(type="docker", docker=docker)
         with pytest.raises(SandboxConfigError, match="apt"):
             QueueBrokerWorker(cfg)
+
+    @staticmethod
+    def _redelivery_warnings(caplog):
+        return [r for r in caplog.records if "will be redelivered and run twice" in r.getMessage()]
+
+    def test_startup_warns_when_an_install_can_outlive_ack_wait(self, caplog):
+        cfg = _worker_cfg(queue=_QueuesConfig(type="in_memory", in_memory=_InMemoryQueueConfig(ack_wait=300)))
+        cfg.profiles["installs"] = _SandboxProfileConfig(
+            type=FAKE_DOTTED, policy=_SandboxPolicyConfig(package_install=_SandboxPackageInstallConfig(timeout=600))
+        )
+        with caplog.at_level("WARNING", logger="ak.sandbox.broker"):
+            QueueBrokerWorker(cfg)
+        records = self._redelivery_warnings(caplog)
+        assert len(records) == 1
+        message = records[0].getMessage()
+        assert "installs" in message and "610.0s" in message and "sandbox.broker.queue.in_memory.ack_wait is 300" in message
+
+    def test_startup_does_not_warn_with_default_timeouts(self, caplog):
+        with caplog.at_level("WARNING", logger="ak.sandbox.broker"):
+            QueueBrokerWorker(_worker_cfg())  # 120s + 10s backstop < the 300s default ack_wait
+        assert self._redelivery_warnings(caplog) == []
+
+    def test_startup_counts_kubernetes_provisioning_toward_the_window(self, caplog):
+        cfg = _worker_cfg(queue=_QueuesConfig(type="in_memory", in_memory=_InMemoryQueueConfig(ack_wait=200)))
+        # 120s create_timeout + 120s policy timeout + 10s backstop = 250s > 200s, though the timeout alone fits.
+        cfg.profiles["k8s"] = _SandboxProfileConfig(type="kubernetes", kubernetes=_SandboxKubernetesConfig())
+        with caplog.at_level("WARNING", logger="ak.sandbox.broker"):
+            QueueBrokerWorker(cfg)
+        records = self._redelivery_warnings(caplog)
+        assert len(records) == 1 and "k8s" in records[0].getMessage()
+
+    def test_startup_skips_transports_whose_window_is_not_ak_config(self, caplog):
+        cfg = _worker_cfg()
+        cfg.profiles["installs"] = _SandboxProfileConfig(
+            type=FAKE_DOTTED, policy=_SandboxPolicyConfig(package_install=_SandboxPackageInstallConfig(timeout=3600))
+        )
+        with caplog.at_level("WARNING", logger="ak.sandbox.broker"):
+            QueueBrokerWorker._warn_redelivery_window(cfg, "sqs")
+        assert self._redelivery_warnings(caplog) == []
 
     @pytest.mark.asyncio
     async def test_request_loop_queues_the_ready_to_store_record(self, monkeypatch):

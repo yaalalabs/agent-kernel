@@ -86,11 +86,12 @@ class BrokerWorkerCore:
             session.sandbox_id = None
             return SandboxResult(sandbox_session_id=session.sandbox_session_id), session
 
-        # 2. Fail-closed checks: principal, policy, then permission (before any provider call).
+        # 2. Fail-closed checks: principal, policy, permission, then payload (before any provider call).
         self._warn_capability_mismatch(provider, request)
         self._check_principal(provider, request)
         self._enforce_policy(provider, request)
         self._guard.check(request)
+        self._validate_payload(request)
 
         async with self._lock_for(session.sandbox_session_id):
             # 3. Attach-or-create with self-heal.
@@ -282,11 +283,17 @@ class BrokerWorkerCore:
         except SandboxError:
             raise
 
+    @staticmethod
+    def _validate_payload(request: ExecutionRequest) -> None:
+        """Input checks that must fail before the sandbox is acquired; only install_packages has any:
+        the ecosystem-independent package baseline, for every override (ValueError on rejection)."""
+        if request.operation == "install_packages":
+            PackageInstaller.check_baseline(request.payload.get("packages"))
+
     async def _call_install(self, sandbox: Sandbox, payload: dict[str, Any], timeout: float) -> SandboxResult:
         """Dispatch install_packages with the keywords the override accepts; a pre-#692 override missing
-        ``ecosystem`` and/or ``timeout`` goes through the deprecation shim. The ecosystem-independent
-        package baseline runs first, for every override (ValueError on rejection)."""
-        PackageInstaller.check_baseline(payload["packages"])
+        ``ecosystem`` and/or ``timeout`` goes through the deprecation shim. The package baseline has
+        already run in ``_validate_payload``, before the sandbox was acquired."""
         ecosystem = payload.get("ecosystem", "python")
         sandbox_cls = type(sandbox)
         accepted = self._install_params_for(sandbox_cls)

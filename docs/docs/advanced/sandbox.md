@@ -707,9 +707,12 @@ FIFO ordering makes that safe).
 **At-least-once semantics.** A worker that dies mid-execution has the request redelivered up
 to `queue.input.max_receive_count` deliveries, after which a permanent-failure completion is
 recorded; side-effectful commands are therefore not exactly-once. Size the transport's
-visibility window (NATS `ack_wait`, the SQS visibility timeout) above your largest effective
-timeout (`policy.timeout`, or `package_install.timeout` for installs) plus the worker's 10-second
-backstop, or a still-running execution is redelivered and runs twice. Once a
+visibility window (NATS `ack_wait`, the SQS visibility timeout) above the sandbox provisioning
+time plus your largest effective timeout (`policy.timeout`, or `package_install.timeout` for
+installs) plus the worker's 10-second backstop, or a still-running execution is redelivered and
+runs twice. On the `in_memory` and `nats` transports, whose window is AK config, the worker warns
+at startup for each profile that does not fit (counting `kubernetes.create_timeout` as
+provisioning); the SQS visibility timeout lives outside AK config and is not checked. Once a
 completion has been queued, a response-store outage only retries the persist, never the
 execution. The worker also sweeps managed sandboxes idle past their profile's `idle_timeout`
 when the response store supports key scans (all four built-ins do).
