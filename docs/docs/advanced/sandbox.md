@@ -433,7 +433,8 @@ Some hardened postures need a different installer prefix:
 
 - An install runs under its **effective timeout**: `package_install.timeout` when set, otherwise
   `policy.timeout`. The provider applies it; the broker worker's own timer fires 10 seconds later
-  as a backstop.
+  as a backstop. If the backstop ever has to end an execution, the worker logs one warning per
+  sandbox handle class, since that handle ignored the timeout it was passed.
 - On the `queue` flavor, `worker_timeout_ceiling` is checked against the install's effective
   timeout, and the transport's redelivery window must exceed that timeout plus the backstop (see
   [The `queue` flavor](#the-queue-flavor)).

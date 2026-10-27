@@ -92,7 +92,8 @@ See [Sandbox → Language runtimes](https://kernel.yaala.ai/docs/advanced/sandbo
 - **The worker's timer is now a backstop.** Each operation's handle enforces its effective timeout
   (`package_install.timeout` for installs, otherwise `policy.timeout`). The broker worker's outer timer
   fires at that timeout plus 10 seconds. A hung handle is therefore reported up to 10 seconds later
-  than before.
+  than before, and the worker logs one warning per handle class whose timeout the backstop had to
+  enforce, so a custom provider that ignores `timeout` is visible.
 - **`e2b` and `daytona` installs now have a timeout**, passed to the SDK's native command timeout.
   Before, they had none. Their install command is now built with `shlex.join`, which gives the same
   string as before for any valid spec.

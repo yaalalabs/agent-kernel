@@ -152,7 +152,9 @@ A handle that execs processes inside a container should kill a timed-out or canc
 `ProcessKiller` (`providers/process.py`) tags each exec with an environment marker and builds a
 procps-free `/proc` scan that kills exactly that exec and its children (see `docker.py`,
 `kubernetes.py`). Never kill in an environment the framework does not own (`attach_to`).
-The worker's own timer is only a backstop at `timeout + BrokerWorkerCore.BACKSTOP_GRACE_SECONDS`.
+The worker's own timer is only a backstop at `timeout + BrokerWorkerCore.BACKSTOP_GRACE_SECONDS`;
+when it fires, the worker logs one warning per handle class, so that warning means your handle
+ignored the `timeout` it was passed.
 
 ### 3. Implement the Provider
 
