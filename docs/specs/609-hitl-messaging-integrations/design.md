@@ -222,9 +222,12 @@ ordinary message in the conversation.
   (`integration/slack/adapter.py:58`). **No second route** — Bolt serves events and interactivity on
   one endpoint, so the Interactivity Request URL is the events URL and `BUILTIN_WEBHOOK_ROUTES` is
   unchanged.
-- **Acknowledge first, work after.** The 3-second window plus `process_before_response=True` (which
-  defers the ack until the listener returns) means opening the modal before the ack spends the
-  budget the ack needs.
+- **The whole listener must finish inside Slack's 3 seconds.** `process_before_response=True` holds
+  the HTTP response until the listener returns, so `ack()` ordering buys nothing — the budget covers
+  everything the listener does, `views.open` included. The mitigation is to keep a press listener to
+  at most one Slack API call and no agent work; Bolt's lazy listeners are the documented escape
+  hatch if that ever stops being enough, but they are beta and Python-only, so this does not rely
+  on them.
 - A failed `views.open` is logged and leaves the pause live; nothing was decided, so nothing is
   queued. A dismissed modal records no decision. The existing `x-slack-retry-reason: http_timeout`
   drop (`:74`) still applies.
@@ -236,9 +239,11 @@ ordinary message in the conversation.
 ```jsonc
 // outbound: send_message (integration/telegram/adapter.py:46) gains an optional reply_markup
 "reply_markup": {"inline_keyboard": [[
-  {"text": "✓ Approve", "callback_data": "ak:a:call_9f2b41d7c8e0"},  // 25 of 64 bytes
-  {"text": "✗ Deny",    "callback_data": "ak:d:call_9f2b41d7c8e0"}
+  {"text": "✓ Approve", "callback_data": "akhitl:a:call_9f2b41d7c8e0"},  // 26 of 64 bytes
+  {"text": "✗ Deny",    "callback_data": "akhitl:d:call_9f2b41d7c8e0"}
 ]]}
+// the prefix is "akhitl:", not "ak:": an Agent Kernel app may already ship its own inline
+// keyboards, and a short prefix would hijack its presses into decisions.
 ```
 
 - **`callback_data` is 1–64 bytes**, and the interruption id is the framework's own (`call_id`,
