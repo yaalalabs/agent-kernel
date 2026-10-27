@@ -1384,7 +1384,7 @@ sandbox:
 ```
 
 Package installs are off unless a profile declares `package_install`, and are rejected on an
-`environment: attached` profile. `network_egress: deny` blocks all egress, so installs in this
+`environment: attached` or `scope: per_call` profile. `network_egress: deny` blocks all egress, so installs in this
 example only work from packages or an offline repository baked into the image (set the matching
 offline `package_installers` prefix); use `network_egress: allow` to install from the public registry.
 

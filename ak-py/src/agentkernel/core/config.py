@@ -944,6 +944,17 @@ class _SandboxProfileConfig(BaseModel):
             raise ValueError("policy.package_install is not allowed on a profile with environment 'attached'")
         return self
 
+    @model_validator(mode="after")
+    def _per_call_forbids_package_install(self) -> "_SandboxProfileConfig":
+        """A per_call sandbox is destroyed after every operation, so an install would be gone before
+        the next run_code — reject it rather than report a success that has no effect."""
+        if self.scope == "per_call" and self.policy.package_install is not None:
+            raise ValueError(
+                "policy.package_install is not allowed on a profile with scope 'per_call': the sandbox is destroyed "
+                "after every operation, so installed packages would not survive to the next execution"
+            )
+        return self
+
 
 class _A2UIConfig(BaseModel):
     """Scopes the A2UI labelling capability. Two keys, because the capability does two things:

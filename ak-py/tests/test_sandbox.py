@@ -435,6 +435,34 @@ def test_config_attached_profile_rejects_package_install():
     assert managed.policy.package_install is not None
 
 
+def test_config_per_call_profile_rejects_package_install():
+    # per_call destroys the sandbox after every operation, so an install could never reach the next run_code
+    with pytest.raises(ValidationError, match="scope 'per_call'"):
+        _SandboxProfileConfig(
+            type="docker",
+            scope="per_call",
+            policy=_SandboxPolicyConfig(package_install=_SandboxPackageInstallConfig()),
+        )
+    # per_call without installs still loads
+    assert _SandboxProfileConfig(type="docker", scope="per_call").policy.package_install is None
+
+
+@pytest.mark.parametrize("scope", ["per_session", "per_runtime"])
+def test_config_persistent_scope_allows_package_install(scope):
+    profile = _SandboxProfileConfig(type="docker", scope=scope, policy=_SandboxPolicyConfig(package_install=_SandboxPackageInstallConfig()))
+    assert profile.policy.package_install is not None
+
+
+def test_config_profiles_map_rejects_per_call_package_install():
+    # the profile validator also guards profiles declared through the sandbox block
+    with pytest.raises(ValidationError, match="scope 'per_call'"):
+        _SandboxConfig(
+            profiles={
+                "scratch": {"type": "docker", "scope": "per_call", "policy": {"package_install": {"ecosystems": ["python"]}}},
+            }
+        )
+
+
 def test_config_env_override(monkeypatch):
     monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
     monkeypatch.setenv("AK_SANDBOX__ENABLED", "true")
