@@ -214,8 +214,10 @@ if len(data.encode()) > CALLBACK_LIMIT:
 - The budget is checked in **bytes**, not characters.
 - `VERB_CODES` is a wire format: a code is never reused for another verb, because a message can
   outlive the deploy that rendered it.
-- An over-budget interruption contributes no row; the others still get theirs, and the pause text
-  already names every interruption, so nothing is hidden — only unpressable.
+- An over-budget interruption contributes no row; the others still get theirs, and the message
+  appends `UNPRESSABLE_NOTICE` naming its id. The notice is required, not cosmetic: `format_pause`
+  shows an id only when the framework named nothing else, so without it two gated calls to the same
+  tool are indistinguishable and the reader cannot tell which one has no buttons.
 - If no interruption fits, the message is sent with no `reply_markup` and is exactly the default
   text delivery.
 

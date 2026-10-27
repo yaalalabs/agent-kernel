@@ -249,8 +249,11 @@ ordinary message in the conversation.
 - **`callback_data` is 1–64 bytes**, and the interruption id is the framework's own (`call_id`,
   `tool_call_id`, LangGraph's interrupt id) — not Agent Kernel's to bound. An id that fits with the
   prefix and verb gets buttons; one that does not falls back to text **for that interruption only**,
-  with a warning. No truncation, no raise, no silently broken button, and no server-side token store
-  (which would need expiry, restart and worker-routing semantics).
+  with a warning, and the message names it as unanswerable here. Naming it is not decoration: the
+  pause text shows an interruption's id only when the framework named nothing else, so two gated
+  calls to the same tool read alike and a reader could not tell which one lost its buttons. No
+  truncation, no raise, no silently broken button, and no server-side token store (which would need
+  expiry, restart and worker-routing semantics).
 - Inbound: `_from_callback_query` (`:174`) produces a decision when the callback data is ours and
   keeps today's text behaviour otherwise. `answer_callback_query` (`:63`) keeps clearing the spinner.
 - The keyboard stays after a decision, as everywhere else — see *After a decision*.
