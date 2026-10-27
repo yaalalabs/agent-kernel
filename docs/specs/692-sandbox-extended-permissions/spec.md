@@ -677,8 +677,10 @@ checks read the instance capabilities, not the class attribute. These five lines
   - `ecosystems: []` fails at config load with a pydantic `ValidationError`.
   - `timeout` is needed because the install's wall clock differs from the `run_code` limit (`config.py:735`), which
     is sized for code.
-- **New validator on `_SandboxProfileConfig`** (`config.py:845`): a `model_validator(mode="after")` rejects
-  `environment == "attached"` combined with `policy.package_install is not None`.
+- **New validators on `_SandboxProfileConfig`** (`config.py:845`): two `model_validator(mode="after")` methods reject
+  `policy.package_install is not None` combined with `environment == "attached"` (an environment the framework does
+  not own) or with `scope == "per_call"` (the sandbox is destroyed after every operation, `manager.py:276-279`, so
+  the install would not survive to the next execution).
 - **New mixin, phase 1: `_SandboxProviderPackageConfig`.** It is subclassed by `_SandboxDockerConfig`,
   `_SandboxKubernetesConfig`, `_SandboxE2BConfig` and `_SandboxDaytonaConfig`. `PackageInstaller.from_config` reads
   it.
@@ -817,7 +819,7 @@ All of these are intentional.
 | Permitted, but the provider does not declare it (language, ecosystem, or install at all) | `SandboxCapabilityError` from the handle | Tool error | The generic warning; plus the worker's one-time mismatch warning per (provider, profile) |
 | Rejected package spec | `ValueError` (index and rule only) | Tool error, before submit agent-side; again in the handle | The tools' warning only |
 | Unresolvable or missing rule, or a rule class that is not a `PackageSpecRule` | `SandboxConfigError` | Agent construction (`get_sandbox_tools`) or `QueueBrokerWorker` startup | Startup traceback |
-| Empty argv prefix, `ecosystems: []`, `attached` + `package_install`, or no `python` runtime (phase 2) | pydantic `ValidationError` | `AKConfig` load | Startup traceback |
+| Empty argv prefix, `ecosystems: []`, `attached` or `per_call` + `package_install`, or no `python` runtime (phase 2) | pydantic `ValidationError` | `AKConfig` load | Startup traceback |
 | Install exceeds its effective timeout | `SandboxTimeoutError` from the handle, after a best-effort kill | Tool error; `timed_out` completion | `process()`'s existing timed-out warning |
 | Handle hangs past the backstop | `SandboxTimeoutError` (backstop) | The same | The same |
 | Installer exits non-zero | No exception: `SandboxResult(exit_code != 0)` | Tool result JSON | None |
@@ -872,6 +874,7 @@ Existing test files that change:
     - an empty argv prefix is rejected;
     - `ecosystems: []` is rejected;
     - `attached` + `package_install` is rejected;
+    - `per_call` + `package_install` is rejected, and `per_session` / `per_runtime` + `package_install` load;
     - `languages: []` loads;
     - an omitted `ecosystems` gives `["python"]`;
     - phase 2: `language_runtimes` without `python` is rejected.

@@ -43,7 +43,8 @@ All paths below are relative to `ak-py/src/agentkernel/` unless they start with 
   - The existing suite passes unchanged.
   - The new `test_sandbox.py` cases pass:
     - capability derivation, including the explicit `False` rejection and `derive()` re-validation;
-    - config rejections: empty argv, `ecosystems: []`, `attached` with `package_install`;
+    - config rejections: empty argv, `ecosystems: []`, `attached` with `package_install`, `per_call` with
+      `package_install`;
     - `languages: []` loads;
     - the default `ecosystems` is `["python"]`.
 

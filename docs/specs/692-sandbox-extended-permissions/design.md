@@ -36,6 +36,10 @@ check also runs agent-side before a request is submitted.
   - `execute_code` has the same gap today. The worker passes the same timeout to its outer `asyncio.wait_for` and to
     the handle. The outer timer starts first, so it expires first and cancels the handle. The handle then sees
     `CancelledError`, not `TimeoutError`, so `_best_effort_kill` (`docker.py:76`) never runs.
+  - Even when it runs, `_best_effort_kill` kills nothing useful. It is `pkill -9 <argv[0] name>` (`docker.py:89`,
+    `kubernetes.py:169`), and the default image `python:3.12-slim` ships no `pkill`. A name match would also miss
+    an installer's children (pip's build backends and compilers, npm's lifecycle scripts and `node-gyp`), which
+    keep running after their parent dies.
 - **No configuration decides *what* an agent may do, only how it is contained.**
   - `_SandboxPolicyConfig` (`ak-py/src/agentkernel/core/config.py:724-736`) and its wire mirror `SandboxPolicy`
     (`sandbox/model.py:123`) cover network, filesystem, resources, timeout and strictness.
@@ -145,6 +149,10 @@ check also runs agent-side before a request is submitted.
   - A `package_install` block on a profile with `environment: attached` is rejected at config load
     (`_SandboxProfileConfig`, `config.py:845`). An install would change an environment the framework explicitly does
     not own.
+  - A `package_install` block on a profile with `scope: per_call` is rejected at config load. `_submit_op` destroys
+    the ephemeral sandbox after every operation (`manager.py:276-279`), so an install would exit 0 and be gone before
+    the next `run_code`, which then fails with `ModuleNotFoundError`. Rejecting it is better than a success that has
+    no effect.
   - A `package_install` block on a profile with `scope: per_runtime` is allowed. `ExecutionManager` warns once per
     profile, because an install there changes a sandbox every AK session on the runtime shares.
   - `PackageInstallPolicy` is the wire model, and `_SandboxPackageInstallConfig` is its config mirror.
@@ -210,7 +218,18 @@ check also runs agent-side before a request is submitted.
   - An ecosystem the instance has not declared raises `SandboxCapabilityError`.
   - An installer failure is a `SandboxResult` with a non-zero `exit_code`, not an exception.
   - **The handle owns the timeout.** The worker passes the effective timeout, and the handle applies it to the
-    installer process and kills it (`_best_effort_kill`) on expiry.
+    installer process and kills it on expiry.
+    - **The kill covers the whole process tree, not one process.** Installers spawn children (build backends,
+      compilers, lifecycle scripts), and killing only the parent leaves them running. Each `docker` and `kubernetes`
+      exec carries a fresh per-exec marker in its environment, children inherit it, and the kill SIGKILLs every
+      process carrying that marker. SIGKILL cannot be trapped, so an installer's own signal handlers cannot delay
+      it.
+    - It matches the marker, not the process name. A name match misses the children and would also kill same-named
+      processes left by earlier execs, such as a background `python` server.
+    - The kill needs only `/bin/sh` and `/proc`, so it works on images without procps. The mechanism is
+      `ProcessKiller` in `spec.md`.
+    - It is best-effort: a process that clears its environment (`env -i`) escapes, a pod without `/bin/sh` cannot be
+      killed, and an `attach_to` environment is never killed because the framework does not own it.
     - For `install_packages` the effective timeout is `package_install.timeout`, or `policy.timeout` when it is unset.
     - The worker's outer `asyncio.wait_for` becomes a backstop: effective timeout plus a fixed grace period. It cannot
       fire before the handle's own timer, so the kill finishes before the session lock is released.
@@ -318,8 +337,8 @@ check also runs agent-side before a request is submitted.
   `PackageSpecRule` or a bad dotted path raises `SandboxConfigError`; the baseline still rejects a spec that a
   permissive bring-your-own rule accepts.
 - Config tests: an empty `language_runtimes` argv prefix, `package_install.ecosystems: []` and a `package_install`
-  block on an `environment: attached` profile are rejected at load; `languages: []` loads and the guard denies every
-  `run_code` on that profile; an omitted `ecosystems` permits only `python`.
+  block on an `environment: attached` or `scope: per_call` profile are rejected at load; `languages: []` loads and
+  the guard denies every `run_code` on that profile; an omitted `ecosystems` permits only `python`.
 - Timeout tests: an install runs under `package_install.timeout` when set and under `policy.timeout` otherwise, and the
   worker's backstop is that timeout plus the grace constant.
 - Handle tests: a timed-out install and a timed-out `execute_code` on `docker` and `kubernetes` kill the process, and
