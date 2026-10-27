@@ -5,7 +5,7 @@ import hmac
 import json
 import logging
 import time
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -15,10 +15,24 @@ from fastapi import FastAPI  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 from agentkernel.core.config import AKConfig  # noqa: E402
-from agentkernel.core.model import AgentReplyText, AgentRequestAny, AgentRequestImage, AgentRequestText  # noqa: E402
+from agentkernel.core.event import PausedInterruption  # noqa: E402
+from agentkernel.core.model import (  # noqa: E402
+    AgentPausedReplyAny,
+    AgentReplyText,
+    AgentRequestAny,
+    AgentRequestImage,
+    AgentRequestText,
+    AgentResumeRequestAny,
+)
 from agentkernel.integration.adapter.producer import IntegrationProducer  # noqa: E402
 from agentkernel.integration.adapter.webhook import WebhookRESTRequestHandler  # noqa: E402
-from agentkernel.integration.slack.adapter import SlackInboundAdapter, SlackOutboundAdapter  # noqa: E402
+from agentkernel.integration.slack.adapter import (  # noqa: E402
+    ACTION_PREFIX,
+    BLOCK_PREFIX,
+    MAX_BLOCKS,
+    SlackInboundAdapter,
+    SlackOutboundAdapter,
+)
 from agentkernel.pipeline.envelope import QueueName  # noqa: E402
 from agentkernel.pipeline.transport.in_memory import InMemoryTransport  # noqa: E402
 
@@ -305,3 +319,106 @@ class TestDeliver:
 def test_logging_name_is_stable():
     # Operators filter on this; it survived the move from handler to adapter.
     assert logging.getLogger("ak.integration.slack") is SlackInboundAdapter._log
+
+
+def _paused(*interruption_ids):
+    return AgentPausedReplyAny(
+        run_id="01JD7K2MX4",
+        session_id="000.111",
+        agent="helper",
+        interruptions=[
+            PausedInterruption(id=i, kind="tool_call", tool_name="refund_order", arguments='{"order_id": "A-10294"}') for i in interruption_ids
+        ],
+    )
+
+
+def _press(value="call_9f2b:approved", channel="C9", message_ts="111.222", thread_ts="000.111", user="U123"):
+    return {
+        "actions": [{"action_id": f"{ACTION_PREFIX}approved", "value": value}],
+        "channel": {"id": channel},
+        "container": {"message_ts": message_ts, "thread_ts": thread_ts},
+        "user": {"id": user},
+    }
+
+
+class TestPauseRendering:
+    """A paused run drawn as Block Kit buttons."""
+
+    @pytest.mark.asyncio
+    async def test_each_interruption_gets_an_actions_block(self):
+        adapter, posted = _outbound(), AsyncMock()
+        with patch.object(SlackOutboundAdapter, "_client", return_value=MagicMock(chat_postMessage=posted)):
+            await adapter.deliver_paused(_paused("call_a", "call_b"), {"channel": "C9", "thread_ts": "000.111"})
+
+        blocks = posted.await_args.kwargs["blocks"]
+        actions = [b for b in blocks if b["type"] == "actions"]
+        assert [b["block_id"] for b in actions] == [f"{BLOCK_PREFIX}call_a", f"{BLOCK_PREFIX}call_b"]
+        assert [e["value"] for e in actions[0]["elements"]] == ["call_a:approved", "call_a:denied"]
+        assert [e["action_id"] for e in actions[0]["elements"]] == [f"{ACTION_PREFIX}approved", f"{ACTION_PREFIX}denied"]
+        assert [e.get("style") for e in actions[0]["elements"]] == ["primary", "danger"]
+        assert any("refund_order" in str(b) for b in blocks if b["type"] == "section")
+
+    @pytest.mark.asyncio
+    async def test_a_third_verb_is_offered_when_the_adapter_declares_it(self):
+        adapter, posted = _outbound(), AsyncMock()
+        adapter.DECISIONS = ("approved", "denied", "cancelled")
+        with patch.object(SlackOutboundAdapter, "_client", return_value=MagicMock(chat_postMessage=posted)):
+            await adapter.deliver_paused(_paused("call_a"), {"channel": "C9"})
+
+        [actions] = [b for b in posted.await_args.kwargs["blocks"] if b["type"] == "actions"]
+        assert [e["text"]["text"] for e in actions["elements"]] == ["Approve", "Deny", "Cancel"]
+
+    @pytest.mark.asyncio
+    async def test_interruptions_past_the_block_budget_are_named_instead_of_dropped(self):
+        adapter, posted = _outbound(), AsyncMock()
+        with patch.object(SlackOutboundAdapter, "_client", return_value=MagicMock(chat_postMessage=posted)):
+            await adapter.deliver_paused(_paused(*[f"call_{n}" for n in range(MAX_BLOCKS + 5)]), {"channel": "C9"})
+
+        blocks = posted.await_args.kwargs["blocks"]
+        assert len(blocks) <= MAX_BLOCKS, "Slack refuses a message over its block budget"
+        [notice] = [b for b in blocks if b["type"] == "context"]
+        assert "call_49" in notice["elements"][0]["text"], "an interruption without buttons must still be named"
+
+
+class TestPressParsing:
+    """A press on a pause button, as the decision it carries."""
+
+    def test_a_press_becomes_a_decision(self):
+        request = _inbound()._decision_from_press(_press())
+
+        [resume] = request.requests
+        assert isinstance(resume, AgentResumeRequestAny)
+        assert resume.run_id is None, "the runtime resolves the run from the interruption id"
+        assert [(d.id, d.status) for d in resume.decisions] == [("call_9f2b", "approved")]
+        assert request.session_id == "000.111", "the pause lives in the thread the turn opened"
+        assert request.group_id == "C9"
+        assert request.user_id == "U123", "who pressed is what lets a pre-hook decide whether they may"
+        assert request.reply_context == {"channel": "C9", "thread_ts": "000.111", "user": "U123"}
+
+    def test_a_press_is_identified_by_the_decision_not_the_click(self):
+        """Slack mints action_ts per click, so a second press of one button must not be a new request."""
+        first = _inbound()._decision_from_press(_press())
+        again = _inbound()._decision_from_press(_press())
+        denied = _inbound()._decision_from_press(_press(value="call_9f2b:denied"))
+
+        assert first.request_id == again.request_id == "slack:C9:111.222:call_9f2b:approved"
+        assert denied.request_id != first.request_id, "approve then deny are two decisions, not a repeat"
+
+    def test_an_id_containing_a_colon_survives(self):
+        request = _inbound()._decision_from_press(_press(value="ns:call_9f2b:denied"))
+
+        assert [(d.id, d.status) for d in request.requests[0].decisions] == [("ns:call_9f2b", "denied")]
+
+    @pytest.mark.parametrize("value", [None, "", "call_9f2b", "call_9f2b:nonsense", ":approved"])
+    def test_a_press_that_does_not_parse_is_ignored(self, value):
+        assert _inbound()._decision_from_press(_press(value=value)) is None
+
+    def test_a_press_without_a_channel_is_ignored(self):
+        press = _press()
+        press["channel"] = {}
+        assert _inbound()._decision_from_press(press) is None
+
+    def test_an_unthreaded_pause_falls_back_to_the_message_timestamp(self):
+        press = _press(thread_ts=None)
+        press["container"] = {"message_ts": "111.222"}
+        assert _inbound()._decision_from_press(press).session_id == "111.222"
