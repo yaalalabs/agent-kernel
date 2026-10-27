@@ -22,6 +22,7 @@ import asyncio
 import logging
 import math
 import os
+import time
 from typing import Any, Callable, Optional
 
 from daytona import (
@@ -34,7 +35,7 @@ from daytona import (
 from daytona.common.errors import DaytonaError, DaytonaTimeoutError
 
 from ..base import Sandbox, SandboxProvider
-from ..errors import SandboxCapabilityError, SandboxConfigError, SandboxGoneError, SandboxTimeoutError
+from ..errors import SandboxCapabilityError, SandboxConfigError, SandboxError, SandboxGoneError, SandboxTimeoutError
 from ..model import IsolationTier, SandboxCapabilities, SandboxPolicy, SandboxPrincipal, SandboxResult
 from ..packages import PackageInstaller
 
@@ -58,11 +59,11 @@ class DaytonaSandbox(Sandbox):
         """Run the code via ``process.code_run``; a non-zero exit is data on the response."""
         if language not in self._capabilities.languages:
             raise SandboxCapabilityError(self.__class__.__name__, f"language:{language}")
-        return await self._run(self._sandbox.process.code_run, code, timeout)
+        return await self._run(self._sandbox.process.code_run, code, timeout, "code execution")
 
     async def execute_command(self, command: str, timeout: float | None = None) -> SandboxResult:
         """Run a shell command via ``process.exec``."""
-        return await self._run(self._sandbox.process.exec, command, timeout)
+        return await self._run(self._sandbox.process.exec, command, timeout, "command")
 
     async def install_packages(self, packages: list[str], ecosystem: str = "python", timeout: float | None = None) -> SandboxResult:
         """Run the ecosystem's validated installer command via ``process.exec``, under its native timeout."""
@@ -70,14 +71,25 @@ class DaytonaSandbox(Sandbox):
             raise SandboxCapabilityError(self.__class__.__name__, f"package_ecosystem:{ecosystem}")
         return await self.execute_command(self._installer.command(packages, ecosystem), timeout)
 
-    async def _run(self, call: Callable[..., Any], source: str, timeout: float | None) -> SandboxResult:
+    async def _run(self, call: Callable[..., Any], source: str, timeout: float | None, what: str) -> SandboxResult:
         """Run ``code_run`` / ``exec`` in a thread under the SDK's native timeout (whole seconds,
-        rounded up); its ``DaytonaTimeoutError`` raises ``SandboxTimeoutError``."""
+        rounded up); its ``DaytonaTimeoutError`` is mapped by ``_timeout_error``."""
+        started = time.monotonic()
         try:
             response = await asyncio.to_thread(call, source, timeout=math.ceil(timeout) if timeout else None)
         except DaytonaTimeoutError as exc:
-            raise SandboxTimeoutError(f"daytona execution exceeded timeout {timeout}s") from exc
+            raise self._timeout_error(exc, started, timeout, what) from exc
         return _to_result(response)
+
+    @staticmethod
+    def _timeout_error(exc: DaytonaTimeoutError, started: float, timeout: float | None, what: str) -> SandboxError:
+        """``SandboxTimeoutError`` when the call ran for its whole timeout (the execution's own limit
+        surfaces as the SDK's read timeout). The SDK maps every HTTP timeout to ``DaytonaTimeoutError``,
+        including a connect timeout seconds into the call; those are not the execution's timeout and
+        stay a plain ``SandboxError`` carrying the SDK's message (the e2b handle's rule)."""
+        if timeout is not None and time.monotonic() - started >= timeout:
+            return SandboxTimeoutError(f"daytona {what} exceeded timeout {timeout}s")
+        return SandboxError(f"daytona {what} failed: {exc}")
 
     async def upload_file(self, path: str, content: bytes) -> None:
         """Upload the bytes to the sandbox filesystem."""

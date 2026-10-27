@@ -179,7 +179,7 @@ class PackageInstaller:
         """validate(), then the configured prefix + one argument per package."""
         prefix = self._installers.get(ecosystem)
         if prefix is None:
-            raise SandboxCapabilityError(f"package_ecosystem:{ecosystem}")
+            raise SandboxCapabilityError(type(self).__name__, f"package_ecosystem:{ecosystem}")
         self.validate(packages, ecosystem)
         return [*prefix, *packages]
 

@@ -314,6 +314,16 @@ async def destroy_sandbox_session(sandbox_session_id: str) -> str:
 # across separate commands. Config-derived only: no provider import at registration time.
 _NO_PERSISTENT_SHELL_TYPES = {"ec2_ssm"}
 
+# Built-in providers whose languages are fixed by the provider class, not declared in config
+# (docker/kubernetes declare theirs in language_runtimes). Config-derived only, like the set
+# above; a test keeps it equal to each class's capabilities.languages.
+_FIXED_LANGUAGES: dict[str, list[str]] = {
+    "local_subprocess": ["python", "bash"],
+    "e2b": ["python"],
+    "daytona": ["python"],
+    "ec2_ssm": ["python"],
+}
+
 
 def _profiles_text(config: Any, installs: bool) -> str:
     """Render the configured workload profiles for the tool guidance (config-derived only —
@@ -341,9 +351,10 @@ def _profiles_text(config: Any, installs: bool) -> str:
 
 def _permissions_text(policy: Any, installs: bool, runtimes: Optional[list[str]] = None) -> str:
     """The profile's permissions for the guidance: run_code languages, then package installs.
-    ``runtimes`` is the provider's ``language_runtimes`` keys when the config declares them (else
-    None): they are the languages when the policy names none, and narrow the policy's list otherwise,
-    so the agent is never told about a language that would fail. The install part appears only when
+    ``runtimes`` is the languages the provider can run, from ``_runtime_languages`` (None for a
+    dotted-path provider): they are the languages when the policy names none, and narrow the policy's
+    list otherwise, so for a built-in provider the agent is never told about a language that would
+    fail; a dotted-path provider's policy list is shown as is. The install part appears only when
     ``installs`` (some profile permits them, so the tool exists); otherwise it would describe a tool
     the agent does not have. Empty when there is nothing to say."""
     parts = []
@@ -358,7 +369,7 @@ def _permissions_text(policy: Any, installs: bool, runtimes: Optional[list[str]]
         if languages:
             parts.append(f"languages: {', '.join(languages)}")
         elif languages is not None:
-            parts.append("run_code unavailable (no permitted language is in the provider's language_runtimes)")
+            parts.append("run_code unavailable (the provider declares none of the permitted languages)")
     if installs:
         if policy.package_install is not None:
             parts.append(f"package installs: {', '.join(policy.package_install.ecosystems)}")
@@ -368,10 +379,14 @@ def _permissions_text(policy: Any, installs: bool, runtimes: Optional[list[str]]
 
 
 def _runtime_languages(prof: Any) -> Optional[list[str]]:
-    """The profile provider's ``language_runtimes`` keys, when its config block declares that map
-    (``docker``, ``kubernetes``); None for every other provider (config-derived; no provider import)."""
+    """The languages the profile's provider can run, config-derived (no provider import): the
+    ``language_runtimes`` keys when its config block declares that map (``docker``, ``kubernetes``),
+    else a built-in provider's fixed languages; None for a dotted-path provider (unknown here)."""
     runtimes = getattr(getattr(prof, prof.type, None), "language_runtimes", None)
-    return list(runtimes) if runtimes is not None else None
+    if runtimes is not None:
+        return list(runtimes)
+    fixed = _FIXED_LANGUAGES.get(prof.type)
+    return list(fixed) if fixed is not None else None
 
 
 def _installs_permitted(config: Any) -> bool:

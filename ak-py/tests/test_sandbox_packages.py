@@ -203,8 +203,10 @@ def test_installer_argv_validates():
 
 def test_installer_undeclared_ecosystem():
     installer = _installer()  # python only
-    with pytest.raises(SandboxCapabilityError):
+    with pytest.raises(SandboxCapabilityError) as excinfo:
         installer.argv(["lodash"], "node")
+    # The two-argument form every handle uses: subject plus capability.
+    assert (excinfo.value.subject, excinfo.value.capability) == ("PackageInstaller", "package_ecosystem:node")
     with pytest.raises(SandboxCapabilityError):
         installer.command(["lodash"], "node")
     # validate() runs the baseline only: the handle owns the "declared" check, and the worker decides.

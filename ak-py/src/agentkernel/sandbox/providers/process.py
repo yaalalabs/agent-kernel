@@ -41,6 +41,8 @@ class ProcessKiller:
     # Exits 0 only where /bin/sh runs — which the launcher and the kill scan both need.
     SHELL_PROBE: ClassVar[tuple[str, ...]] = ("/bin/sh", "-c", "exit 0")
     SHELL_PROBE_TIMEOUT_SECONDS: ClassVar[float] = 2.0
+    # Inconclusive probes per pod before it is treated as shell-less (no marker, no kill).
+    SHELL_PROBE_MAX_INCONCLUSIVE: ClassVar[int] = 3
 
     @staticmethod
     def new_marker() -> str:

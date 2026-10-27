@@ -35,7 +35,7 @@ from agentkernel.core.runtime import Runtime
 from agentkernel.core.session.in_memory import InMemorySessionStore
 from agentkernel.core.tool import SystemToolFactory
 from agentkernel.sandbox import errors
-from agentkernel.sandbox.base import Sandbox
+from agentkernel.sandbox.base import Sandbox, SandboxProvider
 from agentkernel.sandbox.broker.base import ExecutionCompletion
 from agentkernel.sandbox.errors import SandboxCapabilityError, SandboxConfigError, SandboxPolicyError, SandboxSessionNotFoundError
 from agentkernel.sandbox.factory import SandboxProviderFactory
@@ -54,6 +54,7 @@ from agentkernel.sandbox.model import (
 from agentkernel.sandbox.principal import AgentPrincipalResolver
 from agentkernel.sandbox.testing import FakeSandbox, FakeSandboxProvider, SandboxProviderContract
 from agentkernel.sandbox.tools import (
+    _FIXED_LANGUAGES,
     check_sandbox_task,
     destroy_sandbox_session,
     get_sandbox_tools,
@@ -1139,9 +1140,33 @@ def test_guidance_lists_runtime_languages(monkeypatch):
     lines = {line.split("'")[1]: line for line in get_sandbox_tools()[0].description.splitlines() if line.startswith("- '")}
     assert lines["default"].endswith("; languages: python, node")  # no policy.languages: the runtime keys
     assert lines["narrowed"].endswith("; languages: node")  # ruby is permitted but not declared, so not offered
-    assert lines["mismatched"].endswith("; run_code unavailable (no permitted language is in the provider's language_runtimes)")
+    assert lines["mismatched"].endswith("; run_code unavailable (the provider declares none of the permitted languages)")
     assert lines["plain"].endswith("; languages: python")  # the default runtime map
     assert "languages" not in lines["byo"]  # no config-declared runtimes and no policy: nothing to say
+
+
+def test_guidance_narrows_policy_languages_for_fixed_language_providers(monkeypatch):
+    # e2b runs only python; a policy that also permits bash must not advertise bash to the agent.
+    profiles = {
+        "e2b": _SandboxProfileConfig(type="e2b", e2b=_SandboxE2BConfig(), policy=_SandboxPolicyConfig(languages=["python", "bash"])),
+        "local": _SandboxProfileConfig(type="local_subprocess"),
+        "byo": _SandboxProfileConfig(type=FAKE_DOTTED, policy=_SandboxPolicyConfig(languages=["python", "bash"])),
+    }
+    _install_sandbox_cfg(monkeypatch, _sandbox_cfg(profiles=profiles))
+    lines = {line.split("'")[1]: line for line in get_sandbox_tools()[0].description.splitlines() if line.startswith("- '")}
+    assert lines["e2b"].endswith("; languages: python")
+    assert lines["local"].endswith("; languages: python, bash")  # no policy: the provider's own languages
+    assert lines["byo"].endswith("; languages: python, bash")  # a dotted-path provider's languages are unknown here
+
+
+@pytest.mark.parametrize("provider_type", sorted(_FIXED_LANGUAGES))
+def test_fixed_languages_match_the_provider_classes(provider_type):
+    # The guidance's config-only map must not drift from the providers' declared capabilities.
+    module = pytest.importorskip(f"agentkernel.sandbox.providers.{provider_type}")
+    provider_cls = next(
+        cls for cls in vars(module).values() if isinstance(cls, type) and issubclass(cls, SandboxProvider) and cls.__module__ == module.__name__
+    )
+    assert provider_cls.capabilities.languages == _FIXED_LANGUAGES[provider_type]
 
 
 def test_get_sandbox_tools_fails_on_an_unresolvable_package_rule(monkeypatch):

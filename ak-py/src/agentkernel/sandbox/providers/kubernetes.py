@@ -74,7 +74,8 @@ def _safe_rel(path: str) -> str:
 class KubernetesSandbox(Sandbox):
     """Handle to one running sandbox pod; executions are stream-API exec calls inside it."""
 
-    # Container-runtime wording for a missing /bin/sh in an exec's failure status (containerd, CRI-O).
+    # Container-runtime wording for a missing /bin/sh in an exec's failure status (containerd, CRI-O);
+    # it counts only alongside "/bin/sh" itself, so e.g. "container not found" stays inconclusive.
     _NO_SHELL_MARKERS: ClassVar[tuple[str, ...]] = ("no such file or directory", "executable file not found", "not found")
 
     def __init__(
@@ -88,12 +89,14 @@ class KubernetesSandbox(Sandbox):
         runtimes: dict[str, list[str]],
         kill_enabled: bool,
         shell_cache: dict[str, bool],
+        probe_misses: dict[str, int],
     ) -> None:
         """Bind the handle to a pod; the id is ``<namespace>/<pod>`` (the ``attach_to`` format).
         ``capabilities`` are the provider instance's; ``runtimes`` is its ``language_runtimes``
         map; ``kill_enabled`` is False for an ``attach_to`` pod: the framework does not own it,
         so it neither tags nor kills its execs. ``shell_cache`` is the provider's per-pod
-        record of whether the pod has ``/bin/sh``, shared by every handle to the pod."""
+        record of whether the pod has ``/bin/sh``, shared by every handle to the pod;
+        ``probe_misses`` is its per-pod count of inconclusive probes."""
         self.id = f"{namespace}/{pod_name}"
         self._api = api
         self._namespace = namespace
@@ -103,6 +106,7 @@ class KubernetesSandbox(Sandbox):
         self._runtimes = runtimes
         self._kill_enabled = kill_enabled
         self._shell_cache = shell_cache
+        self._probe_misses = probe_misses
 
     async def execute_code(self, code: str, language: str = "python", timeout: float | None = None) -> SandboxResult:
         """Exec the language's configured interpreter argv with the code appended (default ``python -c``)."""
@@ -243,9 +247,10 @@ class KubernetesSandbox(Sandbox):
         """Whether the pod can run ``/bin/sh`` (the launcher and the kill scan need it), probed once per pod
         under ``SHELL_PROBE_TIMEOUT_SECONDS``.
 
-        Only a definite answer is cached on the provider: exit 0, or ``/bin/sh`` reported missing
-        (exit 126/127, or a not-found status). Anything else (a raise, the probe's timeout, another
-        failure) is treated as transient: this exec runs unwrapped and the next one probes again."""
+        A definite answer is cached on the provider: exit 0, or ``/bin/sh`` reported missing
+        (exit 126/127, or a status naming ``/bin/sh`` as not found). Anything else (a raise, the
+        probe's timeout, another failure) is inconclusive: this exec runs unwrapped and the next one
+        probes again, until ``SHELL_PROBE_MAX_INCONCLUSIVE`` misses cache "no shell" for the pod."""
         has_shell = self._shell_cache.get(self.id)
         if has_shell is not None:
             return has_shell
@@ -254,16 +259,30 @@ class KubernetesSandbox(Sandbox):
                 self._exec(list(ProcessKiller.SHELL_PROBE), None, kill=False), timeout=ProcessKiller.SHELL_PROBE_TIMEOUT_SECONDS
             )
         except Exception as exc:  # noqa: BLE001 — the probe only decides whether to tag; it never fails the exec
-            logger.warning("Shell probe in pod %s failed: %s", self.id, str(exc) or type(exc).__name__)
-            return False
+            return self._probe_missed(f"failed: {str(exc) or type(exc).__name__}")
         if probe.exit_code == 0:
             self._shell_cache[self.id] = True
             return True
-        if probe.exit_code in (126, 127) or (probe.exit_code == -1 and any(m in probe.stderr.lower() for m in self._NO_SHELL_MARKERS)):
+        stderr = probe.stderr.lower()
+        if probe.exit_code in (126, 127) or (probe.exit_code == -1 and "/bin/sh" in stderr and any(m in stderr for m in self._NO_SHELL_MARKERS)):
             self._shell_cache[self.id] = False
             logger.info("Pod %s has no /bin/sh; its timed-out executions cannot be killed", self.id)
             return False
-        logger.warning("Shell probe in pod %s was inconclusive (exit %s): %s", self.id, probe.exit_code, probe.stderr)
+        return self._probe_missed(f"was inconclusive (exit {probe.exit_code}): {probe.stderr}")
+
+    def _probe_missed(self, detail: str) -> bool:
+        """Count one inconclusive probe (always False: this exec runs unwrapped); the last one allowed
+        caches "no shell" so the pod stops paying for a probe on every exec."""
+        misses = self._probe_misses.get(self.id, 0) + 1
+        self._probe_misses[self.id] = misses
+        logger.warning("Shell probe in pod %s %s", self.id, detail)
+        if misses >= ProcessKiller.SHELL_PROBE_MAX_INCONCLUSIVE:
+            self._shell_cache[self.id] = False
+            logger.warning(
+                "Shell probe in pod %s was inconclusive %s times; no longer probing, so its timed-out executions will not be killed",
+                self.id,
+                misses,
+            )
         return False
 
     async def _kill(self, marker: str) -> None:
@@ -314,6 +333,7 @@ class KubernetesSandboxProvider(SandboxProvider):
         self.capabilities = type(self).capabilities.derive(**overrides)
         self._kill_enabled = not config.attach_to
         self._shell_pods: dict[str, bool] = {}  # '<namespace>/<pod>' -> whether it has /bin/sh
+        self._shell_probe_misses: dict[str, int] = {}  # '<namespace>/<pod>' -> inconclusive probes so far
 
     def _handle(self, api: Any, namespace: str, pod_name: str) -> "KubernetesSandbox":
         """Wrap a pod in a handle carrying this instance's capabilities, installer and runtimes."""
@@ -326,6 +346,7 @@ class KubernetesSandboxProvider(SandboxProvider):
             runtimes=self._runtimes,
             kill_enabled=self._kill_enabled,
             shell_cache=self._shell_pods,
+            probe_misses=self._shell_probe_misses,
         )
 
     def _apis(self) -> tuple[Any, Any]:
@@ -505,11 +526,11 @@ class KubernetesSandboxProvider(SandboxProvider):
             pod = await asyncio.to_thread(core.read_namespaced_pod, name, namespace)
         except kubernetes.client.rest.ApiException as exc:
             if exc.status == 404:
-                self._shell_pods.pop(f"{namespace}/{name}", None)  # deleted elsewhere: drop its cached probe answer
+                self._forget_pod(f"{namespace}/{name}")  # deleted elsewhere: drop its cached probe state
                 raise SandboxGoneError(f"sandbox pod '{namespace}/{name}' no longer exists") from exc
             raise
         if getattr(pod.metadata, "deletion_timestamp", None) is not None or getattr(pod.status, "phase", None) in _TERMINAL_PHASES:
-            self._shell_pods.pop(f"{namespace}/{name}", None)
+            self._forget_pod(f"{namespace}/{name}")
             raise SandboxGoneError(f"sandbox pod '{namespace}/{name}' is terminating or terminated")
         if getattr(pod.status, "phase", None) == "Pending":
             await self._wait_running(core, name, namespace)  # the same bounded wait as create
@@ -521,7 +542,12 @@ class KubernetesSandboxProvider(SandboxProvider):
         principal here, and the idle sweep destroys with no user in context either)."""
         namespace, name = self._parse_id(sandbox_id)
         await self._cleanup(name, namespace)
-        self._shell_pods.pop(f"{namespace}/{name}", None)
+        self._forget_pod(f"{namespace}/{name}")
+
+    def _forget_pod(self, pod_id: str) -> None:
+        """Drop a gone pod's cached shell-probe answer and inconclusive-probe count."""
+        self._shell_pods.pop(pod_id, None)
+        self._shell_probe_misses.pop(pod_id, None)
 
     def _parse_id(self, sandbox_id: str) -> tuple[str, str]:
         """Split ``<namespace>/<pod>``; a bare pod name uses the configured namespace."""

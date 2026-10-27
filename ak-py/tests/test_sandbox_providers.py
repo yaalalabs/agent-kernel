@@ -10,6 +10,7 @@ import asyncio
 import base64
 import importlib
 import io
+import itertools
 import json
 import shlex
 import subprocess
@@ -1610,11 +1611,18 @@ async def test_daytona_install_passes_timeout_and_checks_ecosystem(daytona_env):
         await sandbox.install_packages(["curl"], ecosystem="deb")
 
 
+def _daytona_clock(monkeypatch, module, elapsed):
+    """Make every call through the daytona handle appear to run for ``elapsed`` seconds."""
+    ticks = itertools.count(step=elapsed)
+    monkeypatch.setattr(module, "time", types.SimpleNamespace(monotonic=lambda: next(ticks)))
+
+
 @pytest.mark.asyncio
-async def test_daytona_native_timeout_raises_sandbox_timeout(daytona_env):
+async def test_daytona_native_timeout_raises_sandbox_timeout(daytona_env, monkeypatch):
     # The SDK's native timeout fires before the worker's backstop, so it must surface as
     # SandboxTimeoutError (a timed_out completion), never as DaytonaTimeoutError.
     module, _client_cls = daytona_env
+    _daytona_clock(monkeypatch, module, elapsed=5)
     provider = _daytona_provider(module)
     principal, policy = _principal_policy()
     sandbox = await provider.create(principal=principal, policy=policy)
@@ -1625,6 +1633,21 @@ async def test_daytona_native_timeout_raises_sandbox_timeout(daytona_env):
         await sandbox.execute_command("sleep 60", timeout=5)
     with pytest.raises(SandboxTimeoutError):
         await sandbox.install_packages(["numpy"], timeout=5)
+
+
+@pytest.mark.asyncio
+async def test_daytona_early_sdk_timeout_is_not_an_execution_timeout(daytona_env, monkeypatch):
+    # The SDK maps any HTTP timeout (e.g. a connect timeout) to DaytonaTimeoutError; one that fires
+    # before the execution's own timeout is a machinery failure, not a timed_out execution.
+    module, _client_cls = daytona_env
+    _daytona_clock(monkeypatch, module, elapsed=1)
+    provider = _daytona_provider(module)
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    sandbox._sandbox.next_error = FakeDaytonaTimeoutError("connect timeout")
+    with pytest.raises(SandboxError, match="daytona command failed: connect timeout") as excinfo:
+        await sandbox.execute_command("echo hi", timeout=5)
+    assert not isinstance(excinfo.value, SandboxTimeoutError)
 
 
 @pytest.mark.asyncio
@@ -2229,6 +2252,40 @@ async def test_k8s_shell_probe_not_found_status_is_cached(k8s_env):
     assert len(cluster.shell_probes) == 1
     assert set(cluster.exec_markers) == {None}
     assert provider._shell_pods == {sandbox.id: False}
+
+
+@pytest.mark.asyncio
+async def test_k8s_shell_probe_not_found_status_without_bin_sh_is_inconclusive(k8s_env):
+    # "not found" about something other than /bin/sh (here the container) must not turn kills off for good.
+    module, cluster = k8s_env
+    _probe_answers(cluster, ("", "", {"status": "Failure", "message": 'container not found ("sandbox")'}))
+    provider = _k8s_provider(module)
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    await sandbox.execute_code("print(1)")
+    await sandbox.execute_code("print(2)")
+    assert len(cluster.shell_probes) == 2  # probed again
+    assert provider._shell_pods == {sandbox.id: True}
+
+
+@pytest.mark.asyncio
+async def test_k8s_shell_probe_gives_up_after_max_inconclusive(k8s_env, caplog):
+    module, cluster = k8s_env
+    inconclusive = ("", "", {"status": "Failure", "message": "container not running"})
+    _probe_answers(cluster, *[inconclusive] * (ProcessKiller.SHELL_PROBE_MAX_INCONCLUSIVE + 1))
+    provider = _k8s_provider(module)
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    with caplog.at_level("WARNING", logger="ak.sandbox.provider"):
+        for i in range(ProcessKiller.SHELL_PROBE_MAX_INCONCLUSIVE + 1):
+            await sandbox.execute_code(f"print({i})")
+    assert len(cluster.shell_probes) == ProcessKiller.SHELL_PROBE_MAX_INCONCLUSIVE  # the last exec did not probe
+    assert set(cluster.exec_markers) == {None}
+    assert provider._shell_pods == {sandbox.id: False}
+    assert len([r for r in caplog.records if "no longer probing" in r.getMessage()]) == 1
+
+    await provider.destroy(sandbox.id)
+    assert sandbox.id not in provider._shell_probe_misses  # a destroyed pod's count is dropped
 
 
 @pytest.mark.asyncio
