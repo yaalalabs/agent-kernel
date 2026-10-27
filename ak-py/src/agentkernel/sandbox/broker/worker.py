@@ -52,6 +52,7 @@ class BrokerWorkerCore:
         self._guard = SandboxPermissionGuard()
         self._install_params: dict[type, frozenset[str]] = {}  # Sandbox subclass -> install keywords it accepts
         self._install_warned: set[type] = set()  # legacy Sandbox subclasses already given the deprecation warning
+        self._backstop_warned: set[type] = set()  # Sandbox subclasses whose timeout the backstop had to enforce
 
     def _lock_for(self, sandbox_session_id: str) -> asyncio.Lock:
         """Return (creating on first use) the lock serializing operations per sandbox session."""
@@ -279,9 +280,25 @@ class BrokerWorkerCore:
         try:
             return await asyncio.wait_for(call(), timeout=timeout + self.BACKSTOP_GRACE_SECONDS)
         except asyncio.TimeoutError as exc:
+            self._warn_backstop(type(sandbox), op, timeout)
             raise SandboxTimeoutError(f"sandbox operation '{op}' exceeded timeout {timeout}s (backstop)") from exc
         except SandboxError:
             raise
+
+    def _warn_backstop(self, sandbox_cls: type, op: str, timeout: float) -> None:
+        """One WARNING per handle class whose timeout the backstop had to enforce: the handle ignored
+        the ``timeout`` it was passed, so its executions overrun the policy by the grace."""
+        if sandbox_cls in self._backstop_warned:
+            return
+        self._backstop_warned.add(sandbox_cls)
+        logger.warning(
+            "Sandbox %s did not enforce its %ss timeout on %s; the worker's backstop ended it %ss later. A handle must "
+            "enforce the timeout it is passed (raise SandboxTimeoutError and stop the work), or its executions overrun policy.timeout",
+            sandbox_cls.__name__,
+            timeout,
+            op,
+            self.BACKSTOP_GRACE_SECONDS,
+        )
 
     @staticmethod
     def _validate_payload(request: ExecutionRequest) -> None:

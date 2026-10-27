@@ -35,7 +35,7 @@ from agentkernel.sandbox.broker.base import ExecutionRequest
 from agentkernel.sandbox.broker.queue_worker import QueueBrokerWorker
 from agentkernel.sandbox.broker.thread import ThreadBroker
 from agentkernel.sandbox.broker.worker import BrokerWorkerCore
-from agentkernel.sandbox.errors import SandboxCapabilityError, SandboxPermissionDeniedError, SandboxPolicyError
+from agentkernel.sandbox.errors import SandboxCapabilityError, SandboxPermissionDeniedError, SandboxPolicyError, SandboxTimeoutError
 from agentkernel.sandbox.factory import SandboxProviderFactory
 from agentkernel.sandbox.manager import ExecutionManager
 from agentkernel.sandbox.model import PackageInstallPolicy, SandboxPolicy, SandboxPrincipal, SandboxResult, SandboxSession
@@ -124,10 +124,22 @@ class _HangingProvider(_PkgProvider):
     sandbox_cls = _HangingSandbox
 
 
+class _SelfTimingOutSandbox(FakeSandbox):
+    """Enforces its own timeout, as the contract asks, so the backstop never fires."""
+
+    async def install_packages(self, packages, ecosystem="python", timeout=None):
+        raise SandboxTimeoutError(f"install exceeded timeout {timeout}s")
+
+
+class _SelfTimingOutProvider(_PkgProvider):
+    sandbox_cls = _SelfTimingOutSandbox
+
+
 PKG_DOTTED = f"{__name__}._PkgProvider"
 LEGACY_DOTTED = f"{__name__}._LegacyProvider"
 ECOSYSTEM_ONLY_DOTTED = f"{__name__}._EcosystemOnlyProvider"
 HANGING_DOTTED = f"{__name__}._HangingProvider"
+SELF_TIMING_OUT_DOTTED = f"{__name__}._SelfTimingOutProvider"
 
 INSTALL_ALL = PackageInstallPolicy(ecosystems=["python", "node"])
 
@@ -602,6 +614,37 @@ async def test_backstop_fires_after_the_grace(monkeypatch):
     completion = await asyncio.wait_for(BrokerWorkerCore().process(_install(policy=policy)), timeout=5)
     assert completion.status == "timed_out"
     assert "(backstop)" in completion.error and "0.05s" in completion.error
+
+
+def _backstop_warnings(caplog):
+    return [r for r in _broker_records(caplog) if "the worker's backstop ended it" in r.getMessage()]
+
+
+@pytest.mark.asyncio
+async def test_backstop_warns_once_per_handle_class_that_ignores_its_timeout(monkeypatch, caplog):
+    _use_provider(monkeypatch, dotted=HANGING_DOTTED)
+    monkeypatch.setattr("agentkernel.sandbox.broker.worker.BrokerWorkerCore.BACKSTOP_GRACE_SECONDS", 0.05)
+    policy = SandboxPolicy(timeout=30, package_install=PackageInstallPolicy(timeout=0.05))
+    worker = BrokerWorkerCore()
+    with caplog.at_level("WARNING", logger=BROKER_LOGGER):
+        for _ in range(2):
+            completion = await asyncio.wait_for(worker.process(_install(policy=policy)), timeout=5)
+            assert completion.status == "timed_out"
+    records = _backstop_warnings(caplog)
+    assert len(records) == 1
+    message = records[0].getMessage()
+    assert "_HangingSandbox" in message and "install_packages" in message and "0.05s" in message
+    assert "requests" not in message  # never the package list
+
+
+@pytest.mark.asyncio
+async def test_handle_that_enforces_its_timeout_gets_no_backstop_warning(monkeypatch, caplog):
+    _use_provider(monkeypatch, dotted=SELF_TIMING_OUT_DOTTED)
+    policy = SandboxPolicy(timeout=30, package_install=PackageInstallPolicy(timeout=0.05))
+    with caplog.at_level("WARNING", logger=BROKER_LOGGER):
+        completion = await BrokerWorkerCore().process(_install(policy=policy))
+    assert completion.status == "timed_out" and "(backstop)" not in completion.error
+    assert _backstop_warnings(caplog) == []
 
 
 @pytest.mark.asyncio
