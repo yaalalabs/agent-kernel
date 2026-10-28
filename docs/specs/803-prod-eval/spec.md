@@ -424,6 +424,7 @@ class LogfireTraceFetcher(TraceFetcher):
     `openinference.span.kind = 'LLM'` OR `array_has(tags, 'LLM')`.
   - `_KIND_SQL[AGENT]`: `gen_ai.operation.name IN ('invoke_agent','create_agent')` OR
     `openinference.span.kind = 'AGENT'` OR `span_name LIKE 'Agent run:%'`.
+  - Traceloop conventions are left out: no Logfire runner emits them.
   - The window is passed as `min_timestamp=start, max_timestamp=end`, never in SQL, so Logfire's
     timestamp index is used. Whether `max_timestamp` is inclusive is undocumented; `matches` applies
     the exclusive end either way.
@@ -616,6 +617,8 @@ class CloudWatch(BaseTrace):
     `(@timestamp, span)` rows.
     `@timestamp`'s relation to the span start is not documented, so the range runs past `end`, and
     `matches` applies `start <= start_time < end` locally on `startTimeUnixNano`.
+    A fetch that reaches `limit` stops in `@timestamp` order, so the spans kept near the cut may differ
+    slightly from the newest by start time; such a fetch is truncated anyway and logs the limit warning.
   - Each query's `endTime` is `ceil(upper_bound)`, so rows in the boundary second are re-read and dropped
     as already seen. When that re-reads more rows than the base expected, the base grows the next page
     (step 5 of `_fetch_by_time_window`); more than `_MAX_ROWS` spans in one second hits its warn-and-stop rule.
@@ -1435,7 +1438,8 @@ class TraceEvaluationJob:
      `store.mark_failed(grading_ids, error, clock())`, where `error = f"{type(e).__name__}: {e}"`; return the
      summary with `failed = len(grading_ids)`.
   3. Ids with no case in the fetch → `store.mark_failed(missing, "trace not found in the fetch", clock())`,
-     counted as `failed`.
+     counted as `failed`. This includes a trace whose root left `FETCH_WINDOW` between `/eval` and grading;
+     that gap is seconds, and such a trace is past the window any later `/eval` would fetch.
   4. For each case, oldest first, inside its own `try`: `results = _run_evaluators(case)`;
      `store.save_results(case, results, clock())`; `graded += 1`; `metric_errors +=` the results with
      `score is None`. An exception → logged with the trace id, `store.mark_failed([case.trace_id], error,
