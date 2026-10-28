@@ -38,8 +38,15 @@ SHELL_VERSION_PATTERN = re.compile(rf'^(\s*CHART_VERSION=")({SEMVER})(")', re.MU
 # The chart's own Chart.yaml carries the release in its top-level version and appVersion keys
 # (publish-chart.yaml stamps both from the tag at package time as well, so a checkout renders the
 # same chart labels and NOTES as the published artifact). Only column-0 keys qualify: the indented
-# version keys under dependencies belong to the Valkey and NATS charts.
-CHART_YAML_VERSION_PATTERN = re.compile(rf'^((?:version|appVersion):[ \t]*"?)({SEMVER})("?)[ \t]*(?:#.*)?$', re.MULTILINE)
+# version keys under dependencies belong to the Valkey and NATS charts. Either YAML quote style is
+# accepted and, since only the version token is rewritten, kept as found.
+CHART_YAML_VERSION_PATTERN = re.compile(rf"""^((?:version|appVersion):[ \t]*['"]?)({SEMVER})(['"]?)[ \t]*(?:#.*)?$""", re.MULTILINE)
+
+# Which Chart.yaml is the chart's own: the one whose top-level name is the chart's. A wrapper chart
+# whose description tells users to install the Agent Kernel chart gets that install command
+# repinned like any other file, but its own version keys are not ours to touch.
+CHART_NAME = CHART_REF.rsplit("/", 1)[-1]
+CHART_NAME_PATTERN = re.compile(rf"""^name:[ \t]*['"]?{re.escape(CHART_NAME)}['"]?[ \t]*(?:#.*)?$""", re.MULTILINE)
 
 FILE_GLOBS = ("*.md", "*.yaml", "*.yml", "*.sh")
 FILE_SUFFIXES = tuple(glob[1:] for glob in FILE_GLOBS)
@@ -87,11 +94,11 @@ def find_files(directories: List[str], exclude_patterns: List[str] = None) -> Li
 def patterns_for(file_path: Path, content: str) -> List[re.Pattern]:
     """The pin patterns that apply to a file: the install-command form everywhere, plus the
     CHART_VERSION variable in shell scripts that reference the chart, plus the version and
-    appVersion keys in a Chart.yaml that references it (the chart's own)."""
+    appVersion keys in the chart's own Chart.yaml (the one named after it)."""
     patterns = [CHART_VERSION_PATTERN]
     if file_path.suffix == ".sh" and CHART_REF in content:
         patterns.append(SHELL_VERSION_PATTERN)
-    if file_path.name == "Chart.yaml" and CHART_REF in content:
+    if file_path.name == "Chart.yaml" and CHART_NAME_PATTERN.search(content):
         patterns.append(CHART_YAML_VERSION_PATTERN)
     return patterns
 

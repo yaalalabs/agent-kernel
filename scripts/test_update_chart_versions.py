@@ -201,17 +201,39 @@ dependencies:
         print("✅ test_update_chart_yaml_version_fields passed")
 
 
-def test_chart_yaml_fields_need_the_chart_reference():
-    """Another chart's Chart.yaml, one that never names the Agent Kernel chart, is left alone."""
-    content = 'apiVersion: v2\nname: other-chart\nversion: 0.1.0\nappVersion: "0.8.1"\n'
+def test_update_chart_yaml_single_quoted_values():
+    """Single-quoted version values are valid YAML too: they are pinned and keep their quote style.
+    The chart's name alone qualifies the file; its description need not carry an install command."""
+    content = "apiVersion: v2\nname: agent-kernel\nversion: '0.1.0'\nappVersion: '0.8.1'\n"
     with tempfile.TemporaryDirectory() as tmp:
         chart_yaml = _write_named(Path(tmp), "Chart.yaml", content)
 
         was_modified, num_updates = update_chart_versions(chart_yaml, "0.9.5")
 
-        assert not was_modified and num_updates == 0
-        assert chart_yaml.read_text() == content
-        print("✅ test_chart_yaml_fields_need_the_chart_reference passed")
+        assert was_modified and num_updates == 2, f"Expected 2 updates, got {num_updates}"
+        assert chart_yaml.read_text() == "apiVersion: v2\nname: agent-kernel\nversion: '0.9.5'\nappVersion: '0.9.5'\n"
+        print("✅ test_update_chart_yaml_single_quoted_values passed")
+
+
+def test_chart_yaml_fields_need_the_chart_name():
+    """Another chart's Chart.yaml keeps its own version and appVersion even when its description
+    tells users to install the Agent Kernel chart; only that install command is repinned."""
+    content = f"""apiVersion: v2
+name: agent-kernel-wrapper
+description: Wraps {CHART} --version 0.9.0 for our cluster.
+version: 0.1.0
+appVersion: "0.8.1"
+"""
+    with tempfile.TemporaryDirectory() as tmp:
+        chart_yaml = _write_named(Path(tmp), "Chart.yaml", content)
+
+        was_modified, num_updates = update_chart_versions(chart_yaml, "0.9.5")
+
+        assert was_modified and num_updates == 1, f"Expected 1 update, got {num_updates}"
+        result = chart_yaml.read_text()
+        assert f"Wraps {CHART} --version 0.9.5 for our cluster." in result
+        assert 'version: 0.1.0\nappVersion: "0.8.1"\n' in result, "another chart's own versions are not ours to touch"
+        print("✅ test_chart_yaml_fields_need_the_chart_name passed")
 
 
 def test_version_keys_only_pinned_in_chart_yaml():
@@ -288,7 +310,8 @@ if __name__ == "__main__":
     test_update_deploy_script_pin()
     test_shell_pin_needs_the_chart_reference()
     test_update_chart_yaml_version_fields()
-    test_chart_yaml_fields_need_the_chart_reference()
+    test_update_chart_yaml_single_quoted_values()
+    test_chart_yaml_fields_need_the_chart_name()
     test_version_keys_only_pinned_in_chart_yaml()
     test_find_files_globs_and_excludes()
     test_find_files_accepts_single_file()
