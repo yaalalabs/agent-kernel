@@ -1,6 +1,7 @@
 import json
 from unittest.mock import MagicMock, patch
 
+from agentkernel.core.config import _ExecutionConfig
 from agentkernel.deployment.aws.serverless.core.router.ws_lambda import LambdaWSHandler, SystemRoutesHandler
 
 
@@ -34,11 +35,16 @@ def _make_system_routes_handler():
         mock_config.websocket_api.connection_table.table_name = "connections"
         mock_config.websocket_api.connection_table.ttl = 86400
         mock_config.websocket_api.chat_route = "/chat"
-        mock_config.execution.queues.input.url = None
+        mock_config.execution = _ExecutionConfig()
         mock_config_cls.get.return_value = mock_config
         handler = SystemRoutesHandler()
         handler._config = mock_config
     return handler
+
+
+def _set_execution(handler, mode, message_type=None):
+    """Swap in a real execution config (the predicates are properties, so a MagicMock would answer truthy)."""
+    handler._config.execution = _ExecutionConfig(mode=mode, message_type=message_type)
 
 
 def test_message_type_includes_stream_chunk():
@@ -46,22 +52,22 @@ def test_message_type_includes_stream_chunk():
     assert LambdaWSHandler.MessageType.STREAM_CHUNK.value == "STREAM_CHUNK"
 
 
-def test_get_chat_handler_by_mode_returns_stream_direct_for_stream_no_queue():
+def test_get_chat_handler_by_mode_returns_stream_direct_for_async_delta_no_queue():
     from agentkernel.core.model import ExecutionMode
 
     handler = _make_system_routes_handler()
-    handler._config.execution.mode = ExecutionMode.STREAM
+    _set_execution(handler, ExecutionMode.ASYNC, "delta")
     handler._config.execution.queues.input.url = None
 
     chat_handler = handler._get_chat_handler_by_mode()
     assert chat_handler == handler._handle_stream_direct
 
 
-def test_get_chat_handler_by_mode_returns_queue_stream_for_stream_with_queue():
+def test_get_chat_handler_by_mode_returns_queue_mode_for_async_delta_with_queue():
     from agentkernel.core.model import ExecutionMode
 
     handler = _make_system_routes_handler()
-    handler._config.execution.mode = ExecutionMode.STREAM
+    _set_execution(handler, ExecutionMode.ASYNC, "delta")
     handler._config.execution.queues.input.url = "https://sqs.us-east-1.amazonaws.com/123/input"
 
     chat_handler = handler._get_chat_handler_by_mode()
@@ -72,7 +78,7 @@ def test_get_chat_handler_by_mode_returns_direct_chat_for_async_no_queue():
     from agentkernel.core.model import ExecutionMode
 
     handler = _make_system_routes_handler()
-    handler._config.execution.mode = ExecutionMode.ASYNC
+    _set_execution(handler, ExecutionMode.ASYNC)
     handler._config.execution.queues.input.url = None
 
     chat_handler = handler._get_chat_handler_by_mode()
@@ -83,7 +89,7 @@ def test_handle_queue_mode_sends_to_sqs_and_returns_200():
     from agentkernel.core.model import ExecutionMode
 
     handler = _make_system_routes_handler()
-    handler._config.execution.mode = ExecutionMode.STREAM
+    _set_execution(handler, ExecutionMode.ASYNC, "delta")
     handler._config.execution.queues.input.url = "https://sqs.us-east-1.amazonaws.com/123/input"
 
     event = _make_ws_event()
@@ -122,7 +128,7 @@ def test_handle_stream_direct_streams_chunks_and_returns_200():
     from agentkernel.core.model import ExecutionMode
 
     handler = _make_system_routes_handler()
-    handler._config.execution.mode = ExecutionMode.STREAM
+    _set_execution(handler, ExecutionMode.ASYNC, "delta")
 
     event = _make_ws_event()
     handler.get_user_id = MagicMock(return_value="user-1")
@@ -154,7 +160,7 @@ def test_handle_stream_direct_broadcasts_error_chunk_on_failure():
     from agentkernel.core.model import ExecutionMode
 
     handler = _make_system_routes_handler()
-    handler._config.execution.mode = ExecutionMode.STREAM
+    _set_execution(handler, ExecutionMode.ASYNC, "delta")
 
     event = _make_ws_event()
     handler.get_user_id = MagicMock(return_value="user-1")
@@ -184,7 +190,7 @@ def test_handle_stream_direct_broadcasts_error_chunk_with_session_id_on_failure(
     from agentkernel.core.model import ExecutionMode
 
     handler = _make_system_routes_handler()
-    handler._config.execution.mode = ExecutionMode.STREAM
+    _set_execution(handler, ExecutionMode.ASYNC, "delta")
 
     event = _make_ws_event(session_id="session-123")
     handler.get_user_id = MagicMock(return_value="user-1")

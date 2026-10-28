@@ -6,6 +6,7 @@ from typing import Any, Callable, Dict, Optional
 from ......core.chat_service import ChatService
 from ......core.config import AKConfig
 from ......core.model import BaseRequest, ExecutionMode
+from ......core.util.factory import AKConfigError
 from ....core.response_store import ResponseStoreFactory
 from ....core.sqs_handler import SQSHandler
 from .common import BaseLambdaRouter
@@ -42,7 +43,13 @@ class DefaultEndpointsHandler:
         """
         Return route mappings based on execution mode.
         :return: Dictionary mapping paths → HTTP methods → handler functions
+        :raises AKConfigError: For rest_sync + delta (SSE), which this router does not serve
         """
+        if self._config.execution.is_sse:
+            raise AKConfigError(
+                "execution.mode rest_sync with message_type delta (SSE) is not supported on AWS Lambda: the Lambda "
+                "REST router does not stream responses. Use execution.mode async with message_type delta (WebSocket)"
+            )
 
         input_queue_url = SQSHandler.get_input_queue_url()
         exec_mode = self._config.execution.mode
@@ -69,10 +76,6 @@ class DefaultEndpointsHandler:
                     default_user_polling_method: self._handle_async_poll,
                 }
             }
-
-        if exec_mode == ExecutionMode.STREAM:
-            self._log.info("Initialized STREAM endpoint.")
-            return {self._default_chat_path: {self._default_chat_method: self._handle_stream}}
 
         raise ValueError(f"Unsupported EXECUTION_MODE: {exec_mode}")
 
@@ -295,24 +298,6 @@ class DefaultEndpointsHandler:
                 "statusCode": 500,
                 "body": json.dumps({"error": "Error processing request", "session_id": None}),
             }
-
-    def _handle_stream(self, event: Dict[str, Any], context: Any) -> tuple[int, Dict[str, Any]]:
-        """
-        Handle streaming request.
-
-        :param event: API Gateway event
-        :param context: Lambda context
-        :return: Tuple of (status_code, error_body) — SSE streaming via REST API Gateway is not supported in Lambda
-        """
-        return (
-            400,
-            {
-                "error": (
-                    "SSE streaming requires a Lambda Function URL with InvokeMode: RESPONSE_STREAM. "
-                    "Use streaming_handler as your Lambda entry point."
-                )
-            },
-        )
 
 
 class RESTLambdaRouter(BaseLambdaRouter):

@@ -5,7 +5,7 @@ import logging
 from typing import Any, Dict
 
 from ....core.config import AKConfig
-from ....core.model import ExecutionMode, StreamChunk
+from ....core.model import StreamChunk
 from ..core.response_store import ResponseStoreFactory
 from ..core.sqs_handler import SQSHandler
 from ..core.websocket_service import AWSWebSocketHandler, WebSocketConnectionStore
@@ -15,7 +15,7 @@ from .core import ECSSQSConsumer
 class ECSOutputConsumer(ECSSQSConsumer):
     """
     ECS Output Consumer — polls the Output Queue and delivers results: pushed over
-    WebSocket in ASYNC mode, else written to the Response Store.
+    WebSocket in async mode (whole replies or delta chunks), else written to the Response Store.
 
     Extends ECSSQSConsumer so it inherits the blocking SQS poll loop via
     run(). Started as Thread 2 by ECSIOHandler.
@@ -55,21 +55,16 @@ class ECSOutputConsumer(ECSSQSConsumer):
     @classmethod
     def process_message(cls, record: Dict[str, Any]) -> None:
         """
-        Process one Output Queue message: push over WebSocket (ASYNC) or write to the Response Store.
+        Process one Output Queue message: push over WebSocket (async) or write to the Response Store.
 
         :param record: boto3 SQS ``receive_message`` record
         """
         message_id = record.get("MessageId")
         cls._log.info(f"[OUTPUT START] Processing output message {message_id}")
 
-        exec_mode = cls._config.execution.mode
-        message_type = None
-        if exec_mode == ExecutionMode.ASYNC:
-            message_type = AWSWebSocketHandler.MessageType.CHAT_RESPONSE
-        elif exec_mode == ExecutionMode.STREAM:
-            message_type = AWSWebSocketHandler.MessageType.STREAM_CHUNK
-
-        if exec_mode in (ExecutionMode.ASYNC, ExecutionMode.STREAM):
+        execution = cls._config.execution
+        if execution.is_websocket:
+            message_type = AWSWebSocketHandler.MessageType.STREAM_CHUNK if execution.is_delta else AWSWebSocketHandler.MessageType.CHAT_RESPONSE
             cls._broadcast_via_websocket(record, message_type=message_type)
             cls._log.info(f"[OUTPUT DONE] Broadcasted {message_type.value} {message_id} via WebSocket")
             return
@@ -86,7 +81,7 @@ class ECSOutputConsumer(ECSSQSConsumer):
     def on_permanent_failure(cls, record: Dict[str, Any]) -> None:
         """
         Handle an output message that exceeded ``max_receive_count``: push an error over
-        WebSocket (ASYNC), or write an error entry to the Response Store so the waiting
+        WebSocket (async), or write an error entry to the Response Store so the waiting
         HTTP caller gets a response instead of hanging.
 
         :param record: boto3 SQS ``receive_message`` record
@@ -105,14 +100,9 @@ class ECSOutputConsumer(ECSSQSConsumer):
             if session_id:
                 error_payload["session_id"] = session_id
 
-            exec_mode = cls._config.execution.mode
-            message_type = None
-            if exec_mode == ExecutionMode.ASYNC:
-                message_type = AWSWebSocketHandler.MessageType.SYSTEM_RESPONSE
-            elif exec_mode == ExecutionMode.STREAM:
-                message_type = AWSWebSocketHandler.MessageType.STREAM_CHUNK
-
-            if exec_mode in (ExecutionMode.ASYNC, ExecutionMode.STREAM):
+            execution = cls._config.execution
+            if execution.is_websocket:
+                message_type = AWSWebSocketHandler.MessageType.STREAM_CHUNK if execution.is_delta else AWSWebSocketHandler.MessageType.SYSTEM_RESPONSE
                 if message_type == AWSWebSocketHandler.MessageType.STREAM_CHUNK:
                     error_message = StreamChunk(error=error_payload["error"], done=True).model_dump(exclude_none=True)
                     if session_id:

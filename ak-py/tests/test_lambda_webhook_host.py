@@ -299,7 +299,7 @@ class TestGuards:
 
         assert "execution.queues.type" in str(excinfo.value)
 
-    @pytest.mark.parametrize("mode", ["async", "stream", None])
+    @pytest.mark.parametrize("mode", ["async", None])
     def test_a_websocket_or_unset_mode_is_refused(self, monkeypatch, mode):
         if mode is None:
             monkeypatch.delenv("AK_EXECUTION__MODE")
@@ -309,6 +309,23 @@ class TestGuards:
 
         with pytest.raises(AKConfigError, match="rest_sync or rest_async"):
             _host(_handler())
+
+    def test_a_delta_message_type_is_refused(self, monkeypatch):
+        """Platform adapters deliver whole messages, so webhooks never take chunked replies."""
+        monkeypatch.setenv("AK_EXECUTION__MODE", "rest_sync")
+        monkeypatch.setenv("AK_EXECUTION__MESSAGE_TYPE", "delta")
+        AKConfig._reset()
+
+        with pytest.raises(AKConfigError, match="message_type complete only"):
+            _host(_handler())
+
+    @pytest.mark.parametrize("mode", ["rest_sync", "rest_async"])
+    def test_a_rest_mode_with_complete_replies_is_hosted(self, monkeypatch, mode):
+        monkeypatch.setenv("AK_EXECUTION__MODE", mode)
+        monkeypatch.setenv("AK_EXECUTION__MESSAGE_TYPE", "complete")
+        AKConfig._reset()
+
+        _host(_handler())
 
     @pytest.mark.parametrize("variable", sorted(BASE_PATH_ENV))
     def test_a_missing_base_path_variable_is_refused(self, monkeypatch, variable):
