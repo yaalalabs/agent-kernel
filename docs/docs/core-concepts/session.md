@@ -462,7 +462,7 @@ def add_to_cart(wrapper: RunContextWrapper[dict], item: str) -> str:
 The runner injects a **deep copy** of the stored dict into the framework and, on a successful run,
 replaces the stored context wholesale with what the framework produced. A tool that reaches back through
 `ToolContext.get().session` is therefore reading and writing a *different* object than the run is
-carrying: its write is silently discarded on OpenAI, Pydantic AI, Google ADK, LangGraph and smolagents
+carrying: its write is silently discarded on OpenAI, Pydantic AI, Microsoft Agent Framework, Google ADK, LangGraph and smolagents
 (it survives only on CrewAI, which never writes back), and it would break the atomic-per-turn guarantee,
 since the write would persist even when the run fails.
 
@@ -472,6 +472,8 @@ Each framework's native handle:
   ([example](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/openai_context))
 - **Pydantic AI** — mutate `ctx.deps` from a native tool taking `RunContext`
   ([example](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/pydanticai_context))
+- **Microsoft Agent Framework** — mutate `ctx.session.state["ak_context"]` from a native tool taking `FunctionInvocationContext`
+  ([example](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/maf_context))
 - **LangGraph** — return an update for a declared state channel
   ([example](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/langgraph_context))
 - **Google ADK** — write to `tool_context.state`
