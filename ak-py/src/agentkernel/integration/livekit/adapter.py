@@ -79,6 +79,8 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
     # How long a stopping gateway waits for queued hooks to finish. A hook is application code and may
     # block; after this the gateway stops waiting, so a stuck hook cannot hold up stop() or the drain.
     HOOKS_CLOSE_TIMEOUT_SECONDS: float = 5.0
+    # How long send_text() blocks a calling thread for the gateway's own loop to stage the request.
+    SEND_TEXT_TIMEOUT_SECONDS: float = 5.0
     # LiveKit's transcription conventions (https://docs.livekit.io/agents/build/text/), so standard
     # LiveKit client components show the captions.
     TRANSCRIPTION_TOPIC = "lk.transcription"
@@ -408,19 +410,57 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
         if buffer:
             self._stage_request(self._enqueue_audio(buffer))
 
-    def _stage_request(self, request) -> None:
+    def _stage_request(self, request) -> bool:
         """Stage one request for the sender task, tagged for this livekit session.
 
         Staging (rather than spawning a fire-and-forget task per frame) bounds what a stalled
         broker can accumulate; a full queue drops the frame with a warning instead of growing.
+
+        :return: Whether the request was queued.
         """
         if self._producer is None or self._pending is None or self._ending:
-            return
+            return False
 
         try:
             self._pending.put_nowait(self._enqueue(request))
+            return True
         except asyncio.QueueFull:
             _log.warning(f"Realtime input queue is full for session {self.session_id}; dropping a frame (broker slow or unreachable?)")
+            return False
+
+    def send_text(self, text: str) -> bool:
+        """Stage ``text`` as a caller text message, as if typed in the room: for server code saying something
+        into the call from outside it (a nudge, a team update), not from the caller. Needs a reference to this
+        gateway instance; it does not reach a gateway in another process. Safe to call from any thread.
+
+        :return: Whether it was queued, not whether the native session has it. ``False`` on no loop yet, ending,
+            a full queue, or a timeout (then best-effort cancelled, but a retry can still double-stage it).
+        """
+        if self._loop is None:
+            return False
+        try:
+            running = asyncio.get_running_loop()
+        except RuntimeError:
+            running = None
+        if running is self._loop:
+            return self._stage_request(AgentRequestText(prompt=text))
+        stage = self._stage_text(text)
+        try:
+            future = asyncio.run_coroutine_threadsafe(stage, self._loop)
+        except RuntimeError:
+            # The gateway's loop has closed under a stopping gateway: dropping is the contract, not an
+            # exception into the caller's thread. Close the coroutine so it is not left un-awaited.
+            stage.close()
+            return False
+        try:
+            return future.result(timeout=self.SEND_TEXT_TIMEOUT_SECONDS)
+        except Exception as e:
+            future.cancel()  # best-effort: too late if staging already started, but costs nothing to try
+            _log.error(f"Could not stage text for session {self.session_id}: {e}")
+            return False
+
+    async def _stage_text(self, text: str) -> bool:
+        return self._stage_request(AgentRequestText(prompt=text))
 
     async def _drain_requests(self) -> None:
         """Send staged inbound requests to the input queue, one at a time, off the room loop.

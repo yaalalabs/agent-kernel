@@ -920,27 +920,11 @@ class GoogleADKRunner(BaseRunner):
 
 
 class GoogleADKRealtimeRunner(BaseRealtimeRunner):
-    """Runs a live conversation on ADK's own ``Runner.run_live()``, behind the realtime pool.
+    """Runs a live conversation on ADK's ``Runner.run_live()`` behind the realtime pool.
 
-    One ``LiveRequestQueue`` and one ``run_live()`` call per connection, for the whole conversation.
-    ADK owns everything inside it: its Live API connections (it opens a fresh one for an agent that
-    receives a transfer), which agent is speaking, its tools and their results, transfers and
-    workflows. This class sends caller audio and text into the queue and maps the events ADK yields
-    onto the framework-neutral events the pool paces and queues; ``Event.author`` names the speaker.
-
-    The root is an ``LlmAgent`` (with ``sub_agents`` for transfers) or an ADK ``Workflow``. A
-    ``Workflow`` is a container, not a voice: it has no tools of its own and the first agent to
-    speak is announced when ADK produces its first output. A speaking workflow node declares
-    ``mode='chat'`` or ``mode='task'``; ``ParallelAgent`` and ``LoopAgent`` do not run live and are
-    rejected. A tool that requires confirmation cannot run: the LiveKit edge has no route for a
-    decision, and ADK's live flow refuses the call itself, so the connection is failed when ADK says
-    one was requested. Agent Kernel hooks and guardrails do not run on this path; ADK's do.
-
-    Gemini Live's realtime input is 16 kHz PCM16 mono and its audio output is 24 kHz, hence the two
-    sample rates; the pool resamples around them. ``Module.run_options`` carries the native settings:
-    ``run_config`` reaches ``run_live()`` (``RunConfig.speech_config`` is the one session voice;
-    per-agent voice is ``Gemini(speech_config=...)`` on the agent's model), and the ``Runner``
-    constructor options (``plugins``, services) reach the ``Runner`` and ``App``.
+    ADK owns the agent graph, tools, transfers and session state. This class sends caller
+    audio/text, maps ADK events onto the pool's events, and starts a fresh ``run_live()``
+    attempt after a transient transport drop (``RESTART_DELAYS_SECONDS``).
     """
 
     input_sample_rate = 16000
@@ -949,6 +933,12 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
     # The one run_live setting an agent's run_options may name; the Runner constructor options are
     # GoogleADKRunner.RUNNER_CONSTRUCTOR_OPTIONS.
     LIVE_OPTIONS: ClassVar[frozenset[str]] = frozenset({"run_config"})
+    # Options that belong to ADK's App, not its Runner: plugins and the per-agent prompt/tool cache (which
+    # stops every handoff from re-sending an uncached prompt).
+    APP_OPTIONS: ClassVar[frozenset[str]] = frozenset({"plugins", "context_cache_config"})
+    # Delays before starting a dropped live run again, in order. Only a transport drop retries;
+    # terminal failures are surfaced to the caller. Empty disables restart.
+    RESTART_DELAYS_SECONDS: ClassVar[tuple[float, ...]] = (0.5, 1.0, 2.0)
 
     def __init__(self):
         super().__init__(FRAMEWORK)
@@ -957,6 +947,12 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
         self._runner: Runner | None = None
         self._queue: LiveRequestQueue | None = None
         self._listen_task: asyncio.Task | None = None
+        # What a restart needs: the ADK session and the run options of the connection. The ADK
+        # session already holds the conversation and any tool results, so a restarted run is seeded
+        # with them and does not repeat a tool call.
+        self._session_id: str | None = None
+        self._live_options: dict[str, Any] = {}
+        self._restart_attempt = 0
         # True once disconnect() runs; the listener suppresses its error callback then so a normal
         # shutdown does not surface as a failure.
         self._closing = False
@@ -964,6 +960,9 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
         # speak, and every agent announced so far.
         self._speaker: str | None = None
         self._roster: list[str] = []
+        # One AK tool context for the whole connection, found the same way a non-realtime run's is
+        # (GoogleADKToolBuilder._wrap, by id from the ADK session state).
+        self._tool_context: AKToolContext | None = None
 
     # -- the agent graph ----------------------------------------------------------------------
 
@@ -1045,40 +1044,98 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
         self._speaker = self.initial_speaker(agent)
         self._roster = self.team(agent)
         options = await agent.resolve_run_options(session, [])
-        constructor_options, live_options = self._split_options(agent, options)
+        constructor_options, live_options, app_options = self._split_options(agent, options)
 
         try:
             adk_session = GoogleADKRunner._session(session)
             await adk_session.create_session(app_name=APP_NAME, user_id=USER_ID, session_id=session.id)
-            plugins = constructor_options.pop("plugins", None)
-            app = App(name=APP_NAME, root_agent=root, **({"plugins": plugins} if plugins is not None else {}))
+            # One AK tool context for the whole connection; GoogleADKToolBuilder's wrapper finds it by
+            # id from the ADK session state. ``requests`` is empty: live input is not one AgentRequest.
+            self._tool_context = AKToolContext(Runtime.current(), agent, session, [])
+            self._tool_context.__enter__()
+            await adk_session.update_session_state(self._tool_context.id, agent.name, {"ak_tool_context": self._tool_context.id})
+            plugins = app_options.pop("plugins", None)
+            app = App(name=APP_NAME, root_agent=root, **app_options, **({"plugins": plugins} if plugins is not None else {}))
             self._runner = Runner(
                 **GoogleADKRunner._native_kwargs(constructor_options, app=app, app_name=APP_NAME, session_service=adk_session.session_service)
             )
-            self._queue = LiveRequestQueue()
-            events = self._runner.run_live(user_id=USER_ID, session_id=session.id, live_request_queue=self._queue, **live_options)
-            # Consuming starts before any input is accepted, so ADK's first event is never missed.
-            self._listen_task = asyncio.create_task(self._listen(events))
+            self._session_id = session.id
+            self._live_options = dict(live_options)
+            self._restart_attempt = 0
+            self._start_live()
         except (Exception, asyncio.CancelledError):
             # The pool does not disconnect a connection whose connect failed, so what is open is closed here.
             await self.disconnect()
             raise
 
-    def _split_options(self, agent: AKBaseAgent, options: Mapping[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
-        """The agent's run options, split between the ``Runner`` constructor and ``run_live()``.
+    def _split_options(self, agent: AKBaseAgent, options: Mapping[str, Any]) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+        """The agent's run options, split between the ``App``, the ``Runner`` constructor and ``run_live()``.
 
         :raises ValueError: Naming the agent and every key that is neither, with the reason when the adapter owns it.
         """
-        constructor_options, other = GoogleADKRunner._split_run_options(options)
+        remaining = dict(options)
+        app_options = {key: remaining.pop(key) for key in self.APP_OPTIONS if key in remaining}
+        constructor_options, other = GoogleADKRunner._split_run_options(remaining)
         rejected = sorted(key for key in other if key not in self.LIVE_OPTIONS)
         if rejected:
             reasons = {**GoogleADKAgent.RESERVED_RUN_OPTIONS}
             details = "; ".join(f"'{key}'" + (f": {reasons[key]}" if key in reasons else ": not a setting of ADK's run_live()") for key in rejected)
-            accepted = ", ".join(sorted(GoogleADKRunner.RUNNER_CONSTRUCTOR_OPTIONS | self.LIVE_OPTIONS))
+            accepted = ", ".join(sorted(GoogleADKRunner.RUNNER_CONSTRUCTOR_OPTIONS | self.APP_OPTIONS | self.LIVE_OPTIONS))
             raise ValueError(
                 f"Run option(s) cannot apply to a realtime session of agent '{agent.name}': {details}. A realtime session takes: {accepted}"
             )
-        return dict(constructor_options), dict(other)
+        return dict(constructor_options), dict(other), app_options
+
+    def _start_live(self) -> None:
+        """Start one ``run_live()`` stream on a fresh request queue, consuming it at once."""
+        assert self._runner is not None and self._session_id is not None
+        queue, self._queue = self._queue, LiveRequestQueue()
+        if queue is not None:
+            queue.close()
+        events = self._runner.run_live(
+            user_id=USER_ID,
+            session_id=self._session_id,
+            live_request_queue=self._queue,
+            **self._live_options,
+        )
+        # Consuming starts before any input is accepted, so ADK's first event is never missed.
+        self._listen_task = asyncio.create_task(self._listen(events))
+
+    @staticmethod
+    def _restartable(error: Exception) -> bool:
+        """Whether this is a transport drop a new live run can recover from, not a terminal failure."""
+        if isinstance(error, (ConnectionError, ConnectionAbortedError, ConnectionResetError, TimeoutError)):
+            return True
+        name = type(error).__name__.lower()
+        if "connectionclosed" in name or "connectionreset" in name:
+            return True
+        text = str(error).lower()
+        return any(marker in text for marker in ("abnormal closure", "connection lost", "connection closed", "1006"))
+
+    async def _restart(self, error: Exception) -> bool:
+        """Start a dropped live run again, with the configured delays. ``False`` when it should surface."""
+        if self._closing or self._runner is None or self._session_id is None or not self.RESTART_DELAYS_SECONDS:
+            return False
+        if not self._restartable(error):
+            return False
+        while self._restart_attempt < len(self.RESTART_DELAYS_SECONDS):
+            delay = self.RESTART_DELAYS_SECONDS[self._restart_attempt]
+            self._restart_attempt += 1
+            self._log.warning(
+                f"ADK live run failed: {error}; restarting in {delay}s " f"(attempt {self._restart_attempt}/{len(self.RESTART_DELAYS_SECONDS)})"
+            )
+            await asyncio.sleep(delay)
+            if self._closing:
+                return False
+            try:
+                self._start_live()
+                return True
+            except Exception as next_error:  # noqa: BLE001 - each failed start is the next attempt's reason
+                error = next_error
+                self._log.error(f"Could not restart the ADK live run: {next_error}")
+                if not self._restartable(next_error):
+                    return False
+        return False
 
     async def _listen(self, events: AsyncGenerator[Event, None]) -> None:
         """Report ADK's events to the pool, in order. The pool paces audio and emits chunks."""
@@ -1087,12 +1144,15 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
             # not left half-run for the loop's shutdown to close twice.
             async with contextlib.aclosing(events) as stream:
                 async for event in stream:
+                    self._restart_attempt = 0  # an event means the restarted run is healthy
                     if await self._handle_event(event):
                         return
         except asyncio.CancelledError:
             raise
         except Exception as e:
             self._log.error(f"ADK live run failed: {e}")
+            if await self._restart(e):
+                return
             if not self._closing:
                 await self._callback("error", {"message": f"ADK live run failed: {e}"})
             return
@@ -1193,6 +1253,9 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
         runner, self._runner = self._runner, None
         if runner is not None:
             await runner.close()
+        ctx, self._tool_context = self._tool_context, None
+        if ctx is not None:
+            ctx.__exit__(None, None, None)
 
 
 class GoogleADKAgent(AKBaseAgent):

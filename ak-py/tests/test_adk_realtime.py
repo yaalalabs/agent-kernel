@@ -27,7 +27,8 @@ from agentkernel.core.model import ExecutionMode
 from agentkernel.core.runtime import Runtime
 from agentkernel.core.session.in_memory import InMemorySessionStore
 from agentkernel.core.tool import SystemToolFactory
-from agentkernel.framework.adk.adk import GoogleADKAgent, GoogleADKModule, GoogleADKRealtimeRunner, GoogleADKRunner
+from agentkernel.core.tool import ToolContext as AKToolContext
+from agentkernel.framework.adk.adk import GoogleADKAgent, GoogleADKModule, GoogleADKRealtimeRunner, GoogleADKRunner, GoogleADKToolBuilder
 
 
 def team():
@@ -114,6 +115,39 @@ async def test_one_native_run_reports_a_b_a(monkeypatch):
         assert native.closed
         assert [data["agent"] for kind, data in seen if kind == "agent_changed"] == ["billing", "coordinator"]
         assert [data["delta"] for kind, data in seen if kind == "transcript_delta"] == ["Asking billing", "Your invoice is 42", "Anything else"]
+
+
+@pytest.mark.asyncio
+async def test_a_live_tool_resolves_its_session_through_tool_context(monkeypatch):
+    """A live tool has no Session.current(); it finds its session through ToolContext.get() instead."""
+    monkeypatch.setattr(SystemToolFactory, "get_all", staticmethod(lambda agent_name=None: []))
+    monkeypatch.setattr(SystemToolFactory, "get_system_prompt_suffix", staticmethod(lambda agent_name=None: ""))
+    monkeypatch.setattr("agentkernel.framework.adk.adk.Runner", NativeRun)
+    coordinator, billing = team()
+
+    def read_session() -> str:
+        return AKToolContext.get().session.id
+
+    tool = GoogleADKToolBuilder.bind([read_session])[0]
+    with Runtime(InMemorySessionStore()):
+        module = GoogleADKModule([coordinator, billing])
+        runner = GoogleADKRealtimeRunner()
+
+        async def collect(kind, data):
+            pass
+
+        session = Session("call-ctx")
+        await runner.connect(session, module.get_agent("coordinator"), collect)
+        assert Session.current() is None
+
+        ak_tool_context = runner._tool_context
+        state = SimpleNamespace(state={"ak_tool_context": ak_tool_context.id})
+        assert tool.func(tool_context=state) == "call-ctx"
+        assert AKToolContext.fetch(ak_tool_context.id) is ak_tool_context
+
+        await runner.disconnect()
+        with pytest.raises(KeyError):  # disconnect() must not leak the connection's tool context
+            AKToolContext.fetch(ak_tool_context.id)
 
 
 async def _run_user_events(monkeypatch, events):
@@ -413,12 +447,32 @@ def test_parallel_and_loop_agents_are_rejected_before_connecting(native):
                 GoogleADKRealtimeRunner()._check_graph(owner, root)
 
 
+def test_only_transport_drops_are_restarted():
+    runner = GoogleADKRealtimeRunner()
+
+    assert runner._restartable(ConnectionError("1006 abnormal closure"))
+    assert runner._restartable(TimeoutError("socket timed out"))
+    assert not runner._restartable(ValueError("ADK produced audio at 16000 Hz"))
+
+
 def test_a_run_option_the_adapter_owns_is_rejected_by_name(native):
     coordinator, billing = team()
     with Runtime(InMemorySessionStore()):
         owner = GoogleADKModule([coordinator, billing]).get_agent("coordinator")
         with pytest.raises(ValueError, match="session_id"):
             GoogleADKRealtimeRunner()._split_options(owner, {"session_id": "mine"})
+
+
+def test_app_options_are_split_out_before_the_runner_and_live_options(native):
+    coordinator, billing = team()
+    with Runtime(InMemorySessionStore()):
+        owner = GoogleADKModule([coordinator, billing]).get_agent("coordinator")
+        cache = object()
+
+        constructor, live, app = GoogleADKRealtimeRunner()._split_options(owner, {"context_cache_config": cache, "run_config": "live"})
+
+    assert app == {"context_cache_config": cache}
+    assert live == {"run_config": "live"} and constructor == {}
 
 
 # -- ADK's own transfer flow, offline: a fake Live model, no credentials -------------------------

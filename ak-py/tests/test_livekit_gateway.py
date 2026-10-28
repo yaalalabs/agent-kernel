@@ -11,6 +11,7 @@ import json
 import logging
 import threading
 import types
+import warnings
 
 import pytest
 
@@ -311,6 +312,84 @@ class TestInboundStaging:
 
         assert gateway._pending.qsize() == 1
         assert any("full" in record.message for record in caplog.records)
+
+    def test_send_text_with_no_loop_yet_is_dropped(self):
+        gateway = _gateway()
+
+        assert gateway.send_text("nudge") is False
+
+    def test_send_text_after_the_gateways_loop_closed_is_dropped(self):
+        gateway = _gateway()
+        loop = asyncio.new_event_loop()
+        loop.close()
+        gateway._loop = loop
+
+        with warnings.catch_warnings(record=True) as seen:
+            warnings.simplefilter("always")
+            assert gateway.send_text("nudge") is False
+
+        assert not [warning for warning in seen if "never awaited" in str(warning.message)]
+
+    @pytest.mark.asyncio
+    async def test_send_text_from_the_gateways_own_loop_stages_at_once(self):
+        gateway = _gateway()
+        gateway._producer = _Producer()
+        gateway._pending = asyncio.Queue(maxsize=4)
+        gateway._loop = asyncio.get_running_loop()
+
+        assert gateway.send_text("the call went quiet") is True
+        [staged] = [gateway._pending.get_nowait()]
+        assert staged.requests[0].prompt == "the call went quiet"
+
+    @pytest.mark.asyncio
+    async def test_send_text_from_another_thread_stages_on_the_gateways_loop(self):
+        gateway = _gateway()
+        gateway._producer = _Producer()
+        gateway._pending = asyncio.Queue(maxsize=4)
+        gateway._loop = asyncio.get_running_loop()
+
+        result = await asyncio.to_thread(gateway.send_text, "nudge from another thread")
+
+        assert result is True
+        staged = gateway._pending.get_nowait()
+        assert staged.requests[0].prompt == "nudge from another thread"
+
+    @pytest.mark.asyncio
+    async def test_send_text_once_the_gateway_is_ending_is_dropped(self):
+        gateway = _gateway()
+        gateway._producer = _Producer()
+        gateway._pending = asyncio.Queue(maxsize=4)
+        gateway._loop = asyncio.get_running_loop()
+        gateway._ending = True
+
+        assert gateway.send_text("too late") is False
+
+    def test_send_text_that_times_out_is_dropped_and_its_future_is_cancelled(self, monkeypatch):
+        """The gateway's own loop could not confirm staging in time: reported as False, and the scheduled
+        staging is cancelled on a best-effort basis so it cannot run late."""
+        gateway = _gateway()
+        gateway._loop = asyncio.new_event_loop()  # never run: send_text must not need it to actually execute
+
+        class _TimedOutFuture:
+            cancelled = False
+
+            def result(self, timeout=None):
+                raise TimeoutError("the gateway's loop did not answer in time")
+
+            def cancel(self):
+                self.cancelled = True
+
+        future = _TimedOutFuture()
+
+        def fake_dispatch(coro, loop):
+            coro.close()  # never run, so it must not warn about an un-awaited coroutine
+            return future
+
+        monkeypatch.setattr(asyncio, "run_coroutine_threadsafe", fake_dispatch)
+
+        assert gateway.send_text("nudge") is False
+        assert future.cancelled is True
+        gateway._loop.close()
 
     @pytest.mark.asyncio
     async def test_chat_message_parses_json_and_plain_text(self, monkeypatch):
