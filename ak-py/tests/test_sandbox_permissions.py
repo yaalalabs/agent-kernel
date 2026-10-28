@@ -141,6 +141,33 @@ ECOSYSTEM_ONLY_DOTTED = f"{__name__}._EcosystemOnlyProvider"
 HANGING_DOTTED = f"{__name__}._HangingProvider"
 SELF_TIMING_OUT_DOTTED = f"{__name__}._SelfTimingOutProvider"
 
+
+class _HangingUploadSandbox(FakeSandbox):
+    """A file transfer is never passed a timeout, so the worker must enforce it."""
+
+    async def upload_file(self, path, content):
+        await asyncio.sleep(30)
+
+
+class _HangingUploadProvider(_PkgProvider):
+    sandbox_cls = _HangingUploadSandbox
+
+
+class _HangingLegacySandbox(FakeSandbox):
+    """A pre-#692 override with no timeout parameter, which hangs."""
+
+    async def install_packages(self, packages):
+        await asyncio.sleep(30)
+        return SandboxResult()
+
+
+class _HangingLegacyProvider(_PkgProvider):
+    sandbox_cls = _HangingLegacySandbox
+
+
+HANGING_UPLOAD_DOTTED = f"{__name__}._HangingUploadProvider"
+HANGING_LEGACY_DOTTED = f"{__name__}._HangingLegacyProvider"
+
 INSTALL_ALL = PackageInstallPolicy(ecosystems=["python", "node"])
 
 
@@ -643,6 +670,27 @@ async def test_handle_that_enforces_its_timeout_gets_no_backstop_warning(monkeyp
     policy = SandboxPolicy(timeout=30, package_install=PackageInstallPolicy(timeout=0.05))
     with caplog.at_level("WARNING", logger=BROKER_LOGGER):
         completion = await BrokerWorkerCore().process(_install(policy=policy))
+    assert completion.status == "timed_out" and "(backstop)" not in completion.error
+    assert _backstop_warnings(caplog) == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "dotted,request_factory",
+    [
+        (HANGING_UPLOAD_DOTTED, lambda: _request("upload_file", {"path": "a.txt", "content": b"x"}, policy=SandboxPolicy(timeout=0.05))),
+        (HANGING_LEGACY_DOTTED, lambda: _install(policy=SandboxPolicy(timeout=30, package_install=PackageInstallPolicy(timeout=0.05)))),
+    ],
+    ids=["upload_file", "legacy_install"],
+)
+async def test_worker_enforces_the_bare_timeout_when_the_handle_gets_none(monkeypatch, caplog, dotted, request_factory):
+    # The handle is never passed a timeout, so no grace is added and the backstop warning would be wrong.
+    _use_provider(monkeypatch, dotted=dotted)
+    monkeypatch.setattr("agentkernel.sandbox.broker.worker.BrokerWorkerCore.BACKSTOP_GRACE_SECONDS", 5.0)
+    started = time.monotonic()
+    with caplog.at_level("WARNING", logger=BROKER_LOGGER):
+        completion = await asyncio.wait_for(BrokerWorkerCore().process(request_factory()), timeout=10)
+    assert time.monotonic() - started < 2  # the bare 0.05 s, not 0.05 s + the 5 s grace
     assert completion.status == "timed_out" and "(backstop)" not in completion.error
     assert _backstop_warnings(caplog) == []
 

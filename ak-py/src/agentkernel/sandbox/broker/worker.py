@@ -254,12 +254,19 @@ class BrokerWorkerCore:
         return getattr(profile_cfg, "environment", "managed") if profile_cfg is not None else "managed"
 
     async def _execute(self, sandbox, request: ExecutionRequest) -> SandboxResult:
-        """Dispatch the request's operation to the sandbox handle with the operation's
-        effective timeout, under a backstop ``asyncio.wait_for`` that fires
-        ``BACKSTOP_GRACE_SECONDS`` later; backstop expiry raises ``SandboxTimeoutError``."""
+        """Dispatch the request's operation to the sandbox handle under ``asyncio.wait_for``.
+
+        When the handle is passed the operation's effective timeout (code, commands, and installs
+        whose override accepts ``timeout``), it owns that timeout and the worker's timer is a
+        backstop that fires ``BACKSTOP_GRACE_SECONDS`` later. Otherwise (file transfers, a legacy
+        install override) the worker enforces the bare timeout itself. Expiry raises
+        ``SandboxTimeoutError``."""
         op = request.operation
         payload = request.payload
         timeout = request.policy.effective_timeout(op)
+        handle_owns_timeout = op in ("execute_code", "execute_command") or (
+            op == "install_packages" and "timeout" in self._install_params_for(type(sandbox))
+        )
 
         async def call() -> SandboxResult:
             """Map the operation name to the corresponding sandbox method call."""
@@ -278,8 +285,10 @@ class BrokerWorkerCore:
             raise SandboxConfigError(f"unknown sandbox operation: {op}")
 
         try:
-            return await asyncio.wait_for(call(), timeout=timeout + self.BACKSTOP_GRACE_SECONDS)
+            return await asyncio.wait_for(call(), timeout=timeout + self.BACKSTOP_GRACE_SECONDS if handle_owns_timeout else timeout)
         except asyncio.TimeoutError as exc:
+            if not handle_owns_timeout:
+                raise SandboxTimeoutError(f"sandbox operation '{op}' exceeded timeout {timeout}s") from exc
             self._warn_backstop(type(sandbox), op, timeout)
             raise SandboxTimeoutError(f"sandbox operation '{op}' exceeded timeout {timeout}s (backstop)") from exc
         except SandboxError:
