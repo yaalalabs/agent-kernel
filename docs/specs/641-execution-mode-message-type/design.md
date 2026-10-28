@@ -23,9 +23,10 @@ served both routes, is retired.
   these checks mean "emit chunks", not "use this transport". Examples: `StreamAgentRunner` selection at
   `pipeline/io_handler.py:142`, and the ECS runner dispatch at
   `deployment/aws/containerized/akagentrunner.py:172`.
-- **"Is this WebSocket?" is spelled `mode in (ASYNC, STREAM)`** in seven places (`io_handler.py:85`, `:94`,
+- **"Is this WebSocket?" is spelled `mode in (ASYNC, STREAM)`** in nine places (`io_handler.py:85`, `:94`,
   `:227`; `ws/gateway.py:91`; `aws/serverless/aklambda.py:37`; `aws/containerized/ecs_io_handler.py:50`;
-  `aws/serverless/akagentrunner.py:82`). Every new delivery variant would have to be added to each one.
+  `aws/containerized/akoutputconsumer.py:72`, `:115`; `aws/serverless/akagentrunner.py:82`). Every new
+  delivery variant would have to be added to each one.
 - **`realtime` hides its delivery.** It always streams (`io_handler.py:145`,
   `pipeline/agent_runner.py:104`), but nothing in the config says so.
 - **`rest_lambda.py:73` is dead.** `Lambda._is_websocket_mode` sends `STREAM` to the WebSocket router
@@ -79,9 +80,12 @@ and the valid alternatives.
     (`io_handler.py:108-113`) instead of co-hosting `/ws`.
   - On a broker transport (`sqs`, `kafka`, `nats`) it needs a shared response store that can hold
     chunks: Redis or Valkey once #755 merges. DynamoDB cannot (`response_store/base.py:54`).
-    - Otherwise `IOHandler` and `ECSIOHandler` fail at startup with `AKConfigError`. The error names
-      the configured `rest_sync + delta` and both fixes: a chunk-capable response store, or
-      `async + delta`. Today this is a 400 on every request (`request_handler.py:304`).
+    - Otherwise `IOHandler` fails at startup with `AKConfigError`. The error names the configured
+      `rest_sync + delta` and both fixes: a chunk-capable response store, or `async + delta`. Today
+      this is a 400 on every request (`request_handler.py:304`).
+  - `ECSIOHandler` rejects `rest_sync + delta` at startup whatever the store, naming `async + delta`.
+    Its REST container serves `ECSQueueRequestHandler` (`containerized/core/api/rest_api.py:6`), the
+    plain `RestHandler` with no SSE route.
 - `rest_sync + delta` on AWS Lambda fails at router init. The error names the configured
   `rest_sync + delta` and suggests `async + delta`, the only streaming option on Lambda. API Gateway
   REST cannot stream (`rest_lambda.py:299-315`).
@@ -98,9 +102,10 @@ and the valid alternatives.
 - No single replacement covers what `stream` does today, so a silent alias would break some
   deployments:
   - SSE deployments need `rest_sync + delta`. These are the bare `RESTAPI.run()` path, direct REST,
-    and single-container deployments: ECS Simple REST (one container running `RESTAPI`), Azure
-    Container Apps or Cloud Run. ECS queue mode runs `stream` as WebSocket today, so it is not one.
-  - WebSocket deployments need `async + delta`. These are AWS Lambda WS, ECS WS and the Helm `wsGateway`.
+    and single-container REST apps such as Azure Container Apps or Cloud Run. ECS is not one: its
+    Terraform module deploys `stream` as WebSocket with or without queues (`containerized/state.tf:25`).
+  - WebSocket deployments need `async + delta`. These are AWS Lambda WS, ECS (queue and direct) and
+    the Helm `wsGateway`.
   - Mapped to `async + delta`, an SSE deployment on `in_memory` with no `auth_validator` would fail at
     startup (`io_handler.py:220`).
 - **Hard fail, no alias.** `execution.mode: stream` fails at config load with `AKConfigError`. This
@@ -141,10 +146,13 @@ and the valid alternatives.
     drops `stream`. Its `error_message` names the same two replacements, so `terraform plan` fails
     before anything is deployed.
   - The WebSocket conditions `contains(["async","stream"], …)` (`containerized/state.tf:25`,
-    `variables.tf:66-307`) become `execution_mode == "async"` once `stream` is gone.
+    `containerized/variables.tf:66-307`, `serverless/state.tf:39`, `serverless/variables.tf:124-335`)
+    become `execution_mode == "async"` once `stream` is gone.
   - The new combination rules are validated in Python only, not duplicated in HCL.
-- The Helm chart passes `execution.message_type` through like `execution.mode`. The chart CI
-  (`.github/workflows/chart-test.yaml:78`, `:116`) gets one render using `async + delta`.
+- The Helm chart gets an `execution.messageType` value (the chart's camelCase), passed through as
+  `AK_EXECUTION__MESSAGE_TYPE` like `execution.mode`. The two chart CI renders that set
+  `execution.mode=stream` (`.github/workflows/chart-test.yaml:78`, `:116`) move to `async`, and one
+  of them also sets `messageType=delta`.
 - Azure and GCP modules inject no execution mode and need no change. Verify this during the spec.
 
 ### Docs and skills
@@ -152,6 +160,10 @@ and the valid alternatives.
 - Every `stream` reference is updated to the new pair. This covers about 30 files in
   `docs/docs/`, `ak-py/README.md`, the bundled skills (`ak-add-capabilities`, `ak-cloud-deploy`),
   `.agents/skills/ak-dev-architecture`, `ak-deployment/ak-k8s/README.md` and the AWS module READMEs.
+- The four examples that set `stream` move to the new pair, in `config.yaml` and `deploy/main.tf`:
+  - `api/pydanticai-streaming` becomes `rest_sync + delta`.
+  - `aws-containerized/openai-stream`, `aws-containerized/openai-stream-queue-mode` and
+    `aws-serverless/streaming-openai` become `async + delta`.
 - `docs/versioned_docs/` and existing `docs/specs/` are left as written.
 
 ### Tests
@@ -159,8 +171,10 @@ and the valid alternatives.
 - Config: every cell of the matrix, the defaults (`None` resolves to `complete`, or `delta` for
   `realtime`), and `stream` from YAML and from env failing with the migration message
   (asserting both replacements appear in it).
-- Each rewritten branch keeps its current test coverage. The 13 test files that reference
-  `ExecutionMode` and their roughly 33 `STREAM` / `"stream"` hits move to the new pair.
+- Each rewritten branch keeps its current test coverage. The 32 `STREAM` / `"stream"` mode hits in
+  12 test files move to the new pair.
+  - Test fakes that stub `execution` with plain classes or mocks build a real `_ExecutionConfig`
+    instead, because the new predicates are properties a stub would not have.
 - One new test per newly reachable combination: `rest_sync + delta` serves SSE with no WS co-host
   (pipeline and direct), `async + delta` rejects the REST chat route, and `rest_sync + delta` on the
   Lambda REST router is rejected at init.
