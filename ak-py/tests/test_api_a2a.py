@@ -16,7 +16,7 @@ from a2a.utils.errors import ServerError
 from agentkernel.api.a2a.a2a import A2A
 from agentkernel.core.chat_service import ResponseBuilder
 from agentkernel.core.model import AgentReplyAny, AgentReplyImage, AgentReplyText
-from agentkernel.pipeline.request_client import QueuedReply, ReplyTimeoutError
+from agentkernel.pipeline.request_handler import QueuedReply, ReplyTimeoutError
 
 AGENT = "triage"
 
@@ -30,7 +30,7 @@ def reset_a2a_state():
 
 
 class FakeClient:
-    """Stands in for QueueRequestClient: records each request and answers with ``reply`` or raises ``raises``."""
+    """Stands in for the RestHandler queue client: records each request and answers with ``reply`` or raises ``raises``."""
 
     def __init__(self, reply=None, raises=None):
         self.reply = reply
@@ -172,9 +172,9 @@ class TestFailures:
     @pytest.mark.asyncio
     async def test_an_empty_prompt_is_refused_by_the_client_as_a_generic_failure(self, caplog):
         """The real client validates before sending; the executor reports it like any other failure."""
-        from agentkernel.pipeline.request_client import QueueRequestClient
+        from agentkernel.pipeline.request_handler import RestHandler
 
-        events, raised = await _execute(QueueRequestClient(transport=object(), response_store=object(), budget=(1, 0)), _context(text=""))
+        events, raised = await _execute(RestHandler(), _context(text=""))
 
         assert get_message_text(events[0]) == A2A.Executor.ERROR_MESSAGE
         assert raised.error.message == "Internal error"
@@ -187,7 +187,7 @@ class TestFailures:
 
 class TestClient:
     def test_the_client_is_built_once_and_reused(self, monkeypatch):
-        from agentkernel.pipeline import request_client
+        from agentkernel.pipeline import request_handler
 
         built = []
 
@@ -195,7 +195,7 @@ class TestClient:
             def __init__(self):
                 built.append(self)
 
-        monkeypatch.setattr(request_client, "QueueRequestClient", _Client)
+        monkeypatch.setattr(request_handler, "RestHandler", _Client)
         A2A._client = None
 
         assert A2A.get_client() is A2A.get_client()
@@ -208,5 +208,5 @@ class TestClient:
         assert not hasattr(A2A.Executor, "_execute_agent")
 
     def test_importing_the_module_does_not_load_the_pipeline_client(self):
-        code = "import sys, agentkernel.api.a2a.a2a; sys.exit('agentkernel.pipeline.request_client' in sys.modules)"
+        code = "import sys, agentkernel.api.a2a.a2a; sys.exit('agentkernel.pipeline.request_handler' in sys.modules)"
         assert subprocess.run([sys.executable, "-c", code]).returncode == 0

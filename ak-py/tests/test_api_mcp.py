@@ -5,7 +5,7 @@ from fastmcp.exceptions import ToolError
 
 from agentkernel.api.mcp.akmcp import MCP
 from agentkernel.core.chat_service import ResponseBuilder
-from agentkernel.pipeline.request_client import QueuedReply, ReplyTimeoutError
+from agentkernel.pipeline.request_handler import QueuedReply, ReplyTimeoutError
 
 MCP_NAME = "Agent Kernel FastMCP Instance"
 
@@ -24,7 +24,7 @@ def reset_mcp_state():
 
 
 class FakeClient:
-    """Stands in for QueueRequestClient: records each request and answers with ``reply`` or raises ``raises``."""
+    """Stands in for the RestHandler queue client: records each request and answers with ``reply`` or raises ``raises``."""
 
     def __init__(self, reply=None, raises=None):
         self.reply = reply
@@ -269,7 +269,7 @@ class TestExecutorThroughTheQueue:
         assert not hasattr(module, "AgentService")
 
     def test_the_client_is_built_once_and_reused(self, monkeypatch):
-        from agentkernel.pipeline import request_client
+        from agentkernel.pipeline import request_handler
 
         built = []
 
@@ -277,7 +277,7 @@ class TestExecutorThroughTheQueue:
             def __init__(self):
                 built.append(self)
 
-        monkeypatch.setattr(request_client, "QueueRequestClient", _Client)
+        monkeypatch.setattr(request_handler, "RestHandler", _Client)
         MCP._client = None
 
         assert MCP.get_client() is MCP.get_client()

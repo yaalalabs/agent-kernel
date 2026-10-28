@@ -15,7 +15,7 @@ from ...core.model import BaseRunRequest
 from ...core.runtime import Runtime
 
 if TYPE_CHECKING:  # pragma: no cover: annotation only; api reaches pipeline lazily
-    from ...pipeline.request_client import QueueRequestClient
+    from ...pipeline.request_handler import RestHandler
 
 
 class A2A:
@@ -43,9 +43,9 @@ class A2A:
     """
     Card built flag
     """
-    _client: Optional["QueueRequestClient"] = None
+    _client: Optional["RestHandler"] = None
     """
-    The surface's one queue client, built on first use
+    The surface's one queue client (the pipeline's ``RestHandler``), built on first use
     """
     _log = logging.getLogger("ak.a2a")
 
@@ -65,7 +65,7 @@ class A2A:
             self.log = logging.getLogger(f"ak.a2a.executor.{agent_name}")
 
         async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
-            from ...pipeline.request_client import ReplyTimeoutError
+            from ...pipeline.request_handler import ReplyTimeoutError
 
             if not context.task_id or not context.context_id:
                 raise ValueError("RequestContext must have task_id and context_id")
@@ -103,15 +103,16 @@ class A2A:
             return result if isinstance(result, str) else json.dumps(result)
 
     @classmethod
-    def get_client(cls) -> "QueueRequestClient":
-        """The surface's one queue client, built on first use.
+    def get_client(cls) -> "RestHandler":
+        """The surface's one queue client, built on first use: a ``RestHandler``, whose ``request`` is
+        the REST chat route's "enqueue, then wait" without the HTTP.
 
         Imported here, not at module scope: ``api`` reaches ``pipeline`` lazily, as ``RESTAPI.run`` does.
         """
         if cls._client is None:
-            from ...pipeline.request_client import QueueRequestClient
+            from ...pipeline.request_handler import RestHandler
 
-            cls._client = QueueRequestClient()
+            cls._client = RestHandler()
         return cls._client
 
     @classmethod

@@ -2,7 +2,7 @@
 
 A2A and MCP stop running agents in the IO process. Both executors put a chat request on the input
 queue and wait for its reply in the response store, the way the REST chat route already does. The
-work is one new pipeline class (`QueueRequestClient`), one message attribute (`protocol`), two
+work is one new `RestHandler` method (`request`), one message attribute (`protocol`), two
 rewritten executors, startup checks in three entry points, and an a2a-sdk cap. There is **no new
 configuration**. The requirements come from [design.md](design.md). Every claim below was checked
 against `develop` at `ddf65964`.
@@ -30,21 +30,20 @@ Writing this spec turned up five things the design got wrong or left out. Each o
 
 | File | Change |
 |---|---|
-| `ak-py/src/agentkernel/pipeline/request_client.py` | **New**: `QueueRequestClient`, `QueuedReply`, `ReplyTimeoutError` |
-| `ak-py/src/agentkernel/pipeline/__init__.py` | Lazy exports for the three new names |
-| `ak-py/src/agentkernel/pipeline/envelope.py` | `ATTR_PROTOCOL = "protocol"` |
-| `ak-py/src/agentkernel/pipeline/request_handler.py` | `RestHandler` borrows the client's budget and wait loop; `_DEFAULT_RESPONSE_RETRY` removed |
+| `ak-py/src/agentkernel/pipeline/request_handler.py` | **New**: `QueuedReply`, `ReplyTimeoutError` and `RestHandler.request` |
+| `ak-py/src/agentkernel/pipeline/__init__.py` | Lazy exports for `QueuedReply` and `ReplyTimeoutError` |
+| `ak-py/src/agentkernel/pipeline/envelope.py` | `ATTR_PROTOCOL = "protocol"` and `QueueMessage.protocol_of` |
 | `ak-py/src/agentkernel/pipeline/agent_runner.py` | Forward `protocol`; hand tagged messages to the single-reply path in the stream and realtime runners |
 | `ak-py/src/agentkernel/pipeline/response_handler.py` | Check `protocol` before the mode; extract `_store_failure_record` |
 | `ak-py/src/agentkernel/pipeline/io_handler.py` | Shared-store check for A2A/MCP in every mode; warn on an empty agent registry |
 | `ak-py/src/agentkernel/api/http.py` | `RESTAPI.agent_protocol_surfaces`, `RESTAPI.reject_unqueued_protocols`, and the call in `run` |
-| `ak-py/src/agentkernel/api/a2a/a2a.py` | Executor uses the client; `AgentService` import removed |
-| `ak-py/src/agentkernel/api/mcp/akmcp.py` | Executor uses the client; `AgentService` import removed |
+| `ak-py/src/agentkernel/api/a2a/a2a.py` | Executor uses `RestHandler.request`; `AgentService` import removed |
+| `ak-py/src/agentkernel/api/mcp/akmcp.py` | Executor uses `RestHandler.request`; `AgentService` import removed |
 | `ak-py/src/agentkernel/deployment/aws/containerized/ecs_io_handler.py` | Runs the check before starting threads |
 | `ak-py/pyproject.toml`, `ak-py/uv.lock` | `a2a-sdk[http-server]>=0.3.6,<1`, then re-lock |
 | `examples/k8s/openai-queue-mode/**`, `.github/workflows/chart-test.yaml` | See [§7](#7-k8s-example-and-ci) |
 
-### 1. `QueueRequestClient` (`pipeline/request_client.py`, new)
+### 1. `RestHandler.request` (`pipeline/request_handler.py`)
 
 ```python
 class QueuedReply(BaseModel):
@@ -71,106 +70,85 @@ class ReplyTimeoutError(TimeoutError):
     def __init__(self, request_id: str, retry_count: int, delay: float): ...  # all three kept as attributes
 
 
-class QueueRequestClient:
-    """Puts one chat request on the input queue and waits for its whole reply in the response store."""
-
-    DEFAULT_BUDGET: ClassVar[tuple[int, float]] = (60, 1.0)
-
-    def __init__(
-        self,
-        transport: Optional[QueueTransport] = None,
-        response_store: Optional[ResponseStore] = None,
-        budget: Optional[tuple[int, float]] = None,
-    ): ...
+class RestHandler(AgentRESTRequestHandler):
+    ...  # the routes and seams it has today, unchanged
 
     async def request(self, body: BaseRunRequest, protocol: str) -> QueuedReply: ...
-
-    @classmethod
-    def budget_for(cls, response_store_config: Optional[_ResponseStoreConfig]) -> tuple[int, float]: ...
-
-    @staticmethod
-    async def wait_for_record(store: ResponseStore, request_id: str, retry_count: int, delay: float) -> Optional[dict]: ...
-
-    @staticmethod
-    def protocol_of(attributes: Mapping[str, Any]) -> Optional[str]: ...
 ```
 
 **Rules**
 
-1. **It uses only the existing plug-in points.** It holds a `QueueTransport` and a `ResponseStore`,
-   so any built-in or bring-your-own backend works. When one isn't passed in, it is built on first use
-   with `QueueTransportFactory.create()` or `ResponseStoreFactory.create()`. The budget comes from
-   `budget_for(AKConfig.get().execution.response_store)`. Explicit constructor arguments mean config
-   is never read (the #503 seam pattern). No new ABC or factory is needed: the two factories already
-   resolve dotted-path BYO backends (`transport/base.py:123`, `response_store/factory.py:47-48`).
+1. **It goes through the handler's own seams.** The transport and store come from `get_transport()`
+   and `get_response_store()`, built on first use with `QueueTransportFactory.create()` or
+   `ResponseStoreFactory.create()`. The budget comes from `_response_retry_config()`. A subclass that
+   overrides any of them changes `request` too. No new ABC or factory is needed: the two factories
+   already resolve dotted-path BYO backends (`transport/base.py:123`, `response_store/factory.py:47-48`).
+   **Why a method, not a new class:** `RestHandler` already owns those three lazy pieces, and a
+   separate client would copy all of them.
 2. **The message envelope.** `request()` makes a fresh `uuid4` request id and calls
-   `RequestProducer(transport).enqueue(body, request_id, attributes={ATTR_PROTOCOL: protocol})`.
+   `RequestProducer(self.get_transport()).enqueue(body, request_id, attributes={ATTR_PROTOCOL: protocol})`.
    The producer sets the body to `model_dump(exclude_none=True)` (`producer.py:45`), uses the
    **session id as the group id**, and uses the **request id as the dedup id**
-   (`producer.py:47-48`). The send runs in `asyncio.to_thread`, as REST does
-   (`request_handler.py:139`).
-3. **It validates before enqueueing** and raises `ValueError` without sending anything when:
+   (`producer.py:47-48`). The send runs in `asyncio.to_thread`, as the REST route does. It does not
+   go through `_enqueue_request`, which `ThreadRequestHandler` overrides to stamp the thread marker.
+3. **It validates before enqueueing** (`_validate_protocol_request`) and raises `ValueError` without
+   sending anything when:
    - `body.session_id` is empty: `"No session_id is provided in the request"`;
    - `body.prompt` is empty: `"No prompt provided in the request"`;
    - `protocol` is empty: `"protocol is required"`.
 
    The first two messages match `ChatService._validate` word for word (`core/chat_service.py:785`, `:788`).
-4. **The wait.** `wait_for_record` is the body of `RestHandler._await_response_record`, moved as is
-   (`request_handler.py:89-97`):
+4. **The wait.** `request()` waits with `_await_response_record`, the loop the REST routes use:
    - The first read happens straight after the enqueue.
    - Every read is `asyncio.to_thread(store.get_record, request_id, True)`, so the record is
      deleted when it is read.
    - It sleeps `delay` seconds between reads, and not after the last one.
    - It returns the record, or `None` once the budget is spent. The longest wait is
      `(retry_count - 1) * delay`.
-5. **The budget.** `budget_for(None)` returns `DEFAULT_BUDGET`, which is 60 reads 1 s apart, about
-   59 s. Otherwise it returns `(retry_count, delay)` from the block (`core/config.py:514-515`); at
-   the block defaults that is 5 reads 5 s apart, about 20 s. The 60 × 1 default **moves** here from
-   `request_handler.py:22`; it is not copied.
-6. **The timeout.** When `wait_for_record` returns `None`, `request()` raises
+5. **The budget.** `_response_retry_config()` returns `_DEFAULT_RESPONSE_RETRY`, 60 reads 1 s apart
+   (about 59 s), when there is no `execution.response_store` block. Otherwise it returns
+   `(retry_count, delay)` from the block (`core/config.py:514-515`); at the block defaults that is
+   5 reads 5 s apart, about 20 s.
+6. **The timeout.** When `_await_response_record` returns `None`, `request()` raises
    `ReplyTimeoutError(request_id, retry_count, delay)`. A reply that arrives later stays in the
    store until the backend's TTL removes it. The in-memory store keeps it until the process exits
    (`response_store/in_memory.py:18-20`). REST's 504 leaves the same leftover today.
 7. **The reply.** `QueuedReply.from_record` reads `status_code` as
-   `int(record.get("status_code") or 200)`, the same missing-status rule REST uses
-   (`request_handler.py:117`), and keeps `record["body"]` as is.
+   `int(record.get("status_code") or 200)`, the same missing-status rule REST uses, and keeps
+   `record["body"]` as is.
 8. **Errors.** An exception from the transport or the store reaches the caller unchanged. Only a
    spent budget becomes `ReplyTimeoutError`. A reply with status ≥ 400 is returned, not raised; the
-   caller checks `is_error`.
-9. **Concurrency.** Each surface uses one client for every request it is handling at once, all on
-   the server's event loop.
+   caller checks `is_error`. Nothing raises `HTTPException`, and `request()` always waits,
+   whatever `execution.mode` is (the REST_ASYNC route returns a request id instead).
+9. **Concurrency.** Each surface holds one `RestHandler` for every request it is handling at once,
+   all on the server's event loop.
    - Lazy construction happens on the event-loop thread, before the first `to_thread` hand-off, so
      two requests cannot both build one.
    - `QueueTransport.send` must already be safe to call from any thread (`transport/base.py:10`).
-   - Stores are already shared across worker threads in exactly this way by `RestHandler`
-     (`request_handler.py:45-47`).
+   - Stores are already shared across worker threads in exactly this way by the REST routes.
 10. **Cost per request.** One send plus at most `retry_count` store reads, each on the default
     executor. That is the same as a REST_SYNC request today.
-11. **`protocol_of(attributes)`** returns the `protocol` value only when it is a non-empty `str`,
-    and `None` otherwise. This is the same rule as `IntegrationDelivery.integration_of`
-    (`integration_delivery.py:33-41`), and it lives on the class that owns the "someone is waiting
-    on the store" contract. Runners and the response handler call it; nothing else reads
-    `ATTR_PROTOCOL` directly.
-12. **Exports.** `QueueRequestClient`, `QueuedReply` and `ReplyTimeoutError` join
-    `pipeline/__init__.py`'s `_LAZY_EXPORTS` and its `TYPE_CHECKING` mirror. The module imports
-    only `core` and `pipeline` modules, and never FastAPI.
+11. **Exports.** `QueuedReply` and `ReplyTimeoutError` join `pipeline/__init__.py`'s
+    `_LAZY_EXPORTS` and its `TYPE_CHECKING` mirror, pointing at `.request_handler`. `api` imports
+    `request_handler` lazily, inside `get_client` and the executors.
 
-**REST borrows the loop** (`pipeline/request_handler.py`)
+**REST does not change** (`pipeline/request_handler.py`)
 
-- Delete `_DEFAULT_RESPONSE_RETRY` (`:19-22`).
-- `RestHandler._response_retry_config()` returns
-  `QueueRequestClient.budget_for(self._config.execution.response_store)`.
-- `RestHandler._await_response_record(request_id)` returns
-  `await QueueRequestClient.wait_for_record(self.get_response_store(), request_id, *self._response_retry_config())`.
+- `_DEFAULT_RESPONSE_RETRY`, `_response_retry_config` and `_await_response_record` stay as they
+  are; `request()` calls them.
 - Not changed: `get_transport`, `get_response_store`, `_enqueue_request` (which
   `ThreadRequestHandler` overrides at `integration/thread/thread_chat.py:258`), `_effective_mode`,
-  `_build_sync_response`, the 504 detail, and every route. REST does **not** stamp `protocol`; its
-  replies keep using mode routing.
+  `_build_sync_response`, the 504 detail, and every route. The REST routes do **not** stamp
+  `protocol`; their replies keep using mode routing.
 
 ### 2. The `protocol` attribute
 
 - `pipeline/envelope.py` adds `ATTR_PROTOCOL = "protocol"`, commented as: *a caller is waiting for
   one whole reply in the response store; deliver it there whatever `execution.mode` is.*
+- `QueueMessage.protocol_of(attributes)` (a static method in `envelope.py`) returns the `protocol`
+  value only when it is a non-empty `str`, and `None` otherwise. This is the same rule as
+  `IntegrationDelivery.integration_of` (`integration_delivery.py:33-41`). Runners and the response
+  handler call it; nothing else reads `ATTR_PROTOCOL` directly.
 - The values are `A2A.PROTOCOL = "a2a"` and `MCP.PROTOCOL = "mcp"`. Only whether the attribute is
   present matters for routing; the value shows up in logs. The name avoids the `reply_` prefix,
   which already means integration reply context (`envelope.py:20`).
@@ -200,19 +178,20 @@ class QueueRequestClient:
    nor in a branched mode (only STREAM and ASYNC branch, `:72-83`). The protocol branch makes that
    explicit and independent of the mode.
 6. A message without the attribute takes exactly the code path it takes today.
-7. The runners import `QueueRequestClient` from the same package (`pipeline` → `pipeline`), which
-   is allowed.
+7. The runners read the tag through `QueueMessage.protocol_of`, which sits beside `ATTR_PROTOCOL`,
+   so the worker side never imports `request_handler` or FastAPI. The REST layer stamps the tag;
+   the runners only read it.
 
 ### 3. A2A executor (`api/a2a/a2a.py`)
 
 ```python
 class A2A:
     PROTOCOL = "a2a"
-    _client: Optional["QueueRequestClient"] = None
+    _client: Optional["RestHandler"] = None
 
     @classmethod
-    def get_client(cls) -> "QueueRequestClient":
-        """The surface's one client. Imported here: api imports pipeline lazily."""
+    def get_client(cls) -> "RestHandler":
+        """The surface's one RestHandler. Imported here: api imports pipeline lazily."""
 
     class Executor(AgentExecutor):
         ERROR_MESSAGE = "Sorry, Agent Kernel encountered an error while processing your request"  # today's text, a2a.py:51
@@ -255,10 +234,10 @@ and calls `A2A.get_client().request(body, protocol=A2A.PROTOCOL)`.
 ```python
 class MCP:
     PROTOCOL = "mcp"
-    _client: Optional["QueueRequestClient"] = None
+    _client: Optional["RestHandler"] = None
 
     @classmethod
-    def get_client(cls) -> "QueueRequestClient": ...  # same lazy pattern as A2A
+    def get_client(cls) -> "RestHandler": ...  # same lazy pattern as A2A
 
     class Executor:
         ERROR_MESSAGE = "The agent could not process the request"
@@ -504,9 +483,9 @@ All intentional; the reason is given for each.
 | A2A or agent MCP on a non-queue entry point | `RESTAPI.run` or `ECSIOHandler.run` | the process exits with `AKConfigError` | the error message |
 | Broker + A2A/MCP + no shared store | `IOHandler._validate_topology` | the process exits with `AKConfigError` | the error message |
 | Empty agent registry in the IO process | `IOHandler._warn_if_no_agents` | empty catalog; agent routes return 404 | one warning |
-| Empty prompt or session | `QueueRequestClient.request` (nothing is sent) | A2A: generic message + `InternalError`; MCP: `ToolError` | the `ValueError` |
+| Empty prompt or session | `RestHandler.request` (nothing is sent) | A2A: generic message + `InternalError`; MCP: `ToolError` | the `ValueError` |
 | Transport send fails | `request()` → the executor's `except Exception` | the generic error | the exception and traceback |
-| Store read fails | `wait_for_record` → the executor | the generic error | the exception and traceback |
+| Store read fails | `_await_response_record` → the executor | the generic error | the exception and traceback |
 | Agent run fails inside ChatService (400/500) | the runner stores an error record | the generic error | the status and `reply.error` |
 | Runner gives up after `max_receive_count` | `AgentRunner.on_permanent_failure` sends a 500 | the generic error | the runner's error log |
 | Output message gives up | `ResponseHandler.on_permanent_failure` writes a 500 record | the generic error | the response handler's error log |
@@ -525,9 +504,8 @@ The suite runs with `cd ak-py && uv run pytest`. CI installs every extra except 
 
 | File | What it asserts |
 |---|---|
-| `tests/test_pipeline_request_client.py` | Message envelope: attributes `{request_id, protocol}`, `group_id == session_id`, `dedup_id == request_id`, body is `model_dump(exclude_none=True)`. `budget_for(None) == (60, 1.0)`, and the block's values when one is set. Exactly `retry_count` reads and `retry_count - 1` sleeps, the first read before any sleep (patch `agentkernel.pipeline.request_client.asyncio.sleep`). `ReplyTimeoutError` carries the request id and budget. Reads pass `get_and_delete=True`. `QueuedReply.from_record`: missing status → 200, `is_error` at 400, and `result`/`media_type`/`error` for dict and non-dict bodies. `protocol_of` accepts only a non-empty `str`. Empty session, prompt or protocol raises `ValueError` with nothing sent. Transport and store are built through the factories only when not injected. |
-| `tests/test_pipeline_protocol_routing.py` | `AgentRunner` forwards `protocol` and `STATUS_CODE`. `StreamAgentRunner` turns a tagged message into **one** output message with a status (no chunks), even with `resolve_type` patched to `"nats"` and no `USER_ID`. `RealtimeAgentRunner` sends a tagged message down the single-reply path and never calls `RealtimeConnectionPool.dispatch` (patch `RealtimeConnectionPool.initialize`). Tagged permanent failures on both runners give a 500 error body. `ResponseHandler` stores a tagged message as a record in all five modes. A tagged output permanent failure stores a 500 record in all five modes. A message carrying both `integration` and `protocol` is delivered as integration traffic. An untagged STREAM/ASYNC message still broadcasts. |
-| `tests/test_api_a2a.py` | Every row of the [A2A outcome table](#3-a2a-executor-apia2aa2apy), using a fake client set on `A2A._client` and a real `EventQueue` and `RequestContext`. The body sent is `prompt=get_user_input()`, `agent=<executor's agent>`, `session_id=context_id`, `protocol="a2a"`. The three existing `ValueError` checks still fire. `get_client()` builds once and reuses. Importing `agentkernel.api.a2a.a2a` leaves `agentkernel.pipeline.request_client` out of `sys.modules` (the `test_aws_lazy_exports.py` pattern). An autouse fixture saves and restores `A2A._cards`, `_executors`, `_built` and `_client`. |
+| `tests/test_pipeline_protocol_routing.py` | `AgentRunner` forwards `protocol` and `STATUS_CODE`. `StreamAgentRunner` turns a tagged message into **one** output message with a status (no chunks), even with `resolve_type` patched to `"nats"` and no `USER_ID`. `RealtimeAgentRunner` sends a tagged message down the single-reply path and never calls `RealtimeConnectionPool.dispatch` (patch `RealtimeConnectionPool.initialize`). Tagged permanent failures on both runners give a 500 error body. `ResponseHandler` stores a tagged message as a record in all five modes. A tagged output permanent failure stores a 500 record in all five modes. A message carrying both `integration` and `protocol` is delivered as integration traffic. An untagged STREAM/ASYNC message still broadcasts. `QueueMessage.protocol_of` accepts only a non-empty `str`, and importing the runner and response handler leaves `agentkernel.pipeline.request_handler` out of `sys.modules`. |
+| `tests/test_api_a2a.py` | Every row of the [A2A outcome table](#3-a2a-executor-apia2aa2apy), using a fake client set on `A2A._client` and a real `EventQueue` and `RequestContext`. The body sent is `prompt=get_user_input()`, `agent=<executor's agent>`, `session_id=context_id`, `protocol="a2a"`. The three existing `ValueError` checks still fire. `get_client()` builds once and reuses. Importing `agentkernel.api.a2a.a2a` leaves `agentkernel.pipeline.request_handler` out of `sys.modules` (the `test_aws_lazy_exports.py` pattern). An autouse fixture saves and restores `A2A._cards`, `_executors`, `_built` and `_client`. |
 | `tests/test_protocol_pipeline_roundtrip.py` | End to end on `InMemoryTransport` + `InMemoryResponseStore`, with `AKConfig._reset()` and both `reset()`s per test (the `test_integration_roundtrip.py` fixture). A pump thread named `agent-runner-pump` drains INPUT through `AgentRunner.process` and OUTPUT through `ResponseHandler.process`. A `DummyRunner` records `threading.current_thread().name` and a per-session counter in `nv_cache`. **A2A:** `RESTAPI.build_app(handlers=[])` with `a2a.enabled`, called through `BaseClient` + `RestTransport` over `httpx.ASGITransport`; `message:send` returns the agent's text. **MCP:** `fastmcp.Client(MCP.get())` with `expose_agents`; `call_tool` returns the text. Both assert that the agent ran on the pump thread, and that the same session id sent twice reaches the same session (counter 2). One case runs in `stream` mode through `StreamAgentRunner` and still gets the whole reply. |
 
 **Changed test files**
@@ -539,7 +517,7 @@ The suite runs with `cd ak-py && uv run pytest`. CI installs every extra except 
 | `tests/test_api_http.py` | New class `TestUnqueuedProtocolRefusal`. Each case raises `AKConfigError`: `RESTAPI.run(handlers=[...])` with A2A on; the same with MCP + `expose_agents`; `RESTAPI.run()` with `resolve_type` patched to `"sqs"`; a `RESTAPI` subclass. MCP without `expose_agents` serves (patch `agentkernel.api.http.uvicorn`). `RESTAPI.run()` on `in_memory` with A2A on still hands off to `IOHandler.run`. A table test covers `agent_protocol_surfaces`. Config is patched as the file does now (`agentkernel.api.http.AKConfig`). |
 | `tests/test_pipeline_io_handler.py` | `_cfg` gains `a2a`/`mcp` flags. Broker + A2A + no or `in_memory` store raises in `async`, `stream`, `realtime` and `rest_sync`. A shared store passes in every mode. `in_memory` passes. An empty registry logs the warning (caplog) and `run` proceeds; a non-empty registry and MCP without `expose_agents` log nothing. |
 | `tests/test_ecs_io_handler.py` | With A2A on, `ECSIOHandler.run` raises `AKConfigError`, and the stubbed `ThreadRunner.run` (`_stub_thread_runner`, `:15-19`) is never called. |
-| `tests/test_pipeline_request_handler.py` | `_response_retry_config()` returns `(60, 1.0)` with no block and the block's values when set. `_await_response_record` hands the handler's own `get_response_store()` and `_response_retry_config()` to `QueueRequestClient.wait_for_record`, so a subclass override is still honoured. The existing cases run unchanged. |
+| `tests/test_pipeline_request_handler.py` | `_response_retry_config()` returns `(60, 1.0)` with no block and the block's values when set, and `_await_response_record` honours a subclass's store and budget. New `TestProtocolRequest` for `RestHandler.request`: message envelope (attributes `{request_id, protocol}`, `group_id == session_id`, `dedup_id == request_id`, body is `model_dump(exclude_none=True)`); exactly `retry_count` reads and `retry_count - 1` sleeps, the first read before any sleep (patch `agentkernel.pipeline.request_handler.asyncio.sleep`); reads pass `get_and_delete=True`; `ReplyTimeoutError` carries the request id and budget; an error status is returned; empty session, prompt or protocol raises `ValueError` with nothing sent; `rest_async` still waits; transport and store are built once through the factories. New `TestQueuedReply`: missing status → 200, `is_error` at 400, and `result`/`media_type`/`error` for dict and non-dict bodies. The existing cases run unchanged. |
 
 **Coverage of the riskiest consumer.** `ResponseHandler` and the two runner subclasses change shape
 the most. `test_pipeline_protocol_routing.py` covers every branch they gain, and the existing

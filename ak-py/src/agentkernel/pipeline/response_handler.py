@@ -11,7 +11,6 @@ from ..core.util.factory import AKConfigError
 from .consumer import ConsumerLoop
 from .envelope import ATTR_REALTIME, ATTR_REQUEST_ID, ATTR_STATUS_CODE, ATTR_USER_ID, QueueMessage, QueueName
 from .integration_delivery import IntegrationDelivery
-from .request_client import QueueRequestClient
 from .response_store.base import ResponseStore
 from .response_store.factory import ResponseStoreFactory
 from .transport.base import QueueTransport, QueueTransportFactory
@@ -72,7 +71,7 @@ class ResponseHandler:
             status_code = int(message.attributes.get(ATTR_STATUS_CODE, "200"))
             self._integration_delivery.deliver(integration, message.attributes, body, status_code, session_id=message.group_id)
             return
-        if QueueRequestClient.protocol_of(message.attributes):
+        if QueueMessage.protocol_of(message.attributes):
             self._store_response(message)
             return
 
@@ -107,7 +106,7 @@ class ResponseHandler:
 
             request_id = message.attributes.get(ATTR_REQUEST_ID)
             error_text = f"Failed to process message after {max_receive_count} retries"
-            if QueueRequestClient.protocol_of(message.attributes):
+            if QueueMessage.protocol_of(message.attributes):
                 self._store_failure_record(message, request_id, error_text)
                 return
             mode = AKConfig.get().execution.mode

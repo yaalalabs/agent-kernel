@@ -33,7 +33,7 @@ class _QueueClient:
     """Answers every MCP request with the body a runner stores for ``reply``."""
 
     def __init__(self, reply):
-        from agentkernel.pipeline.request_client import QueuedReply
+        from agentkernel.pipeline.request_handler import QueuedReply
 
         _status, body = ResponseBuilder.build_response(200, "s1", rest_api_mode=False, result=reply)
         self._reply = QueuedReply(request_id="r1", body=body)

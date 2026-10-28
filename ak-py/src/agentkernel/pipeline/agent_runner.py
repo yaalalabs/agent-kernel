@@ -10,7 +10,6 @@ from .consumer import ConsumerLoop
 from .envelope import ATTR_ENDPOINT_URL, ATTR_PROTOCOL, ATTR_REQUEST_ID, ATTR_STATUS_CODE, ATTR_THREAD, ATTR_USER_ID, QueueMessage, QueueName
 from .integration_delivery import IntegrationDelivery
 from .realtime_pool import RealtimeConnectionPool
-from .request_client import QueueRequestClient
 from .thread_runner import ThreadRunner
 from .transport.base import QueueTransport, QueueTransportFactory
 
@@ -267,7 +266,7 @@ class StreamAgentRunner(AgentRunner):
     def _wants_single_reply(message: QueueMessage) -> bool:
         """Whether this message's consumer takes one whole reply rather than chunks."""
         is_integration = IntegrationDelivery.integration_of(message.attributes) is not None  # Slack, WhatsApp, ...
-        is_protocol = QueueRequestClient.protocol_of(message.attributes) is not None  # A2A, MCP
+        is_protocol = QueueMessage.protocol_of(message.attributes) is not None  # A2A, MCP
         return is_integration or is_protocol
 
 
@@ -285,7 +284,7 @@ class RealtimeAgentRunner(AgentRunner):
         return [pool.get_task()]
 
     def process(self, message: QueueMessage) -> None:
-        if QueueRequestClient.protocol_of(message.attributes):
+        if QueueMessage.protocol_of(message.attributes):
             return super().process(message)
 
         body = BaseRunRequest.model_validate(json.loads(message.body))
@@ -295,7 +294,7 @@ class RealtimeAgentRunner(AgentRunner):
 
     def on_permanent_failure(self, message: QueueMessage) -> None:
         """Tell the room its input failed, as a marked error chunk its edge can deliver. Catches own exceptions."""
-        if QueueRequestClient.protocol_of(message.attributes):
+        if QueueMessage.protocol_of(message.attributes):
             return super().on_permanent_failure(message)
 
         self._log.error(f"Permanent failure for message {message.message_id}")

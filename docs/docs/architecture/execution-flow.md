@@ -64,7 +64,7 @@ graph TD
 - An interactive or stateful client that manages agent and session lifecycle itself (REPL-like)
   uses `AgentService`.
 - A server-side protocol surface whose caller waits for one whole reply (A2A, MCP) enqueues
-  through `QueueRequestClient` with its own `protocol` value, so the agent runs on the agent runner.
+  through `RestHandler.request` with its own `protocol` value, so the agent runs on the agent runner.
 - Cross-cutting behavior that must apply to every run regardless of surface goes in a `Runtime`
   pre/post hook, not in a service layer.
 - Entry surfaces never call `Runtime` directly.

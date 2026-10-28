@@ -12,7 +12,7 @@ from ...core.model import BaseRunRequest
 from ...core.runtime import Runtime
 
 if TYPE_CHECKING:  # pragma: no cover: annotation only; api reaches pipeline lazily
-    from ...pipeline.request_client import QueueRequestClient
+    from ...pipeline.request_handler import RestHandler
 
 
 class MCP:
@@ -42,9 +42,9 @@ class MCP:
     """
     Tool built flag
     """
-    _client: Optional["QueueRequestClient"] = None
+    _client: Optional["RestHandler"] = None
     """
-    The surface's one queue client, built on first use
+    The surface's one queue client (the pipeline's ``RestHandler``), built on first use
     """
 
     class Executor:
@@ -79,7 +79,7 @@ class MCP:
             A failed run, a timeout or any other error raises ``ToolError`` with a fixed message;
             the details go to this executor's log only.
             """
-            from ...pipeline.request_client import ReplyTimeoutError
+            from ...pipeline.request_handler import ReplyTimeoutError
 
             await ctx.info(f"Executing agent '{self.agent_name}' with prompt: {prompt} with session_id: {session_id}")
             body = BaseRunRequest(prompt=prompt, agent=self.agent_name, session_id=session_id)
@@ -106,15 +106,16 @@ class MCP:
             return reply.result
 
     @classmethod
-    def get_client(cls) -> "QueueRequestClient":
-        """The surface's one queue client, built on first use.
+    def get_client(cls) -> "RestHandler":
+        """The surface's one queue client, built on first use: a ``RestHandler``, whose ``request`` is
+        the REST chat route's "enqueue, then wait" without the HTTP.
 
         Imported here, not at module scope: ``api`` reaches ``pipeline`` lazily, as ``RESTAPI.run`` does.
         """
         if cls._client is None:
-            from ...pipeline.request_client import QueueRequestClient
+            from ...pipeline.request_handler import RestHandler
 
-            cls._client = QueueRequestClient()
+            cls._client = RestHandler()
         return cls._client
 
     @classmethod
