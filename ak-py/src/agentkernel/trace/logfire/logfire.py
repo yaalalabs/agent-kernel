@@ -78,3 +78,11 @@ class Logfire(BaseTrace):
         from .pydanticai import LogfirePydanticAIRunner
 
         return LogfirePydanticAIRunner()
+
+    def maf(self) -> Runner:
+        """
+        Returns the Logfire Microsoft Agent Framework runner instance.
+        """
+        from .maf import LogfireMAFRunner
+
+        return LogfireMAFRunner()
