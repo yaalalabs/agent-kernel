@@ -795,6 +795,21 @@ def test_permission_config_warnings_fire_once_per_profile(monkeypatch, caplog):
     assert not any("quiet" in m for m in messages)
 
 
+def test_read_only_fs_warning_names_each_permitted_ecosystems_installer(monkeypatch, caplog):
+    # A node-only profile must not get pip advice; an unknown ecosystem is pointed at the guide's table.
+    docker = _SandboxDockerConfig(package_installers={"node": ["npm", "install"], "deb": ["apt-get", "install"]})
+    profiles = {
+        "node": _SandboxProfileConfig(type="docker", docker=docker, policy=_permits(ecosystems=["node", "deb"], fs_allow_write=["/workspace"])),
+    }
+    _use_profiles(monkeypatch, profiles)
+    with caplog.at_level("WARNING", logger="ak.sandbox"):
+        ExecutionManager.get()
+    [message] = [r.getMessage() for r in caplog.records if r.name == "ak.sandbox" and "read-only" in r.getMessage()]
+    assert "node: [npm, install, --cache, /workspace/.npm]" in message
+    assert "deb: an installer prefix that writes into the workdir" in message and "Installer prefixes per posture" in message
+    assert "pip" not in message and "PYTHONPATH" not in message
+
+
 @pytest.mark.asyncio
 async def test_agent_side_validation_uses_the_profiles_provider_block(monkeypatch):
     docker = _SandboxDockerConfig(package_installers={"python": ["pip", "install"], "node": ["npm", "install"]})

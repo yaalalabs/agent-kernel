@@ -37,6 +37,13 @@ class ExecutionManager:
 
     _REGISTRY_KEY = "sandbox"  # key under the AK session's non-volatile cache
 
+    # Installer prefix for a read-only root filesystem, per built-in ecosystem (the sandbox guide's
+    # "Installer prefixes per posture" table); any other ecosystem is pointed at that table.
+    _READ_ONLY_FS_INSTALLERS: ClassVar[dict[str, str]] = {
+        "python": "[pip, install, --target, /workspace/site] with /workspace/site on the image's PYTHONPATH",
+        "node": "[npm, install, --cache, /workspace/.npm]",
+    }
+
     def __init__(self, config: Any) -> None:
         """Build the manager from the ``sandbox`` config section: the broker client (via the
         factory) and the principal resolver. Use :meth:`get`, not this constructor."""
@@ -70,11 +77,19 @@ class ExecutionManager:
             if profile_cfg.type in ("docker", "kubernetes") and (policy.fs_allow_read or policy.fs_allow_write):
                 self._log.warning(
                     "Sandbox profile %s permits package installs with a filesystem policy, so the %s root filesystem is "
-                    "read-only; configure an installer prefix with --target pointing into the workdir, and put that path "
-                    "on the image's PYTHONPATH",
+                    "read-only and installs must write into the workdir; configure package_installers for that posture: %s",
                     name,
                     profile_cfg.type,
+                    "; ".join(self._read_only_fs_hint(ecosystem) for ecosystem in policy.package_install.ecosystems),
                 )
+
+    @classmethod
+    def _read_only_fs_hint(cls, ecosystem: str) -> str:
+        """The read-only-root installer advice for one ecosystem."""
+        installer = cls._READ_ONLY_FS_INSTALLERS.get(ecosystem)
+        if installer is None:
+            return f"{ecosystem}: an installer prefix that writes into the workdir (see 'Installer prefixes per posture' in the sandbox guide)"
+        return f"{ecosystem}: {installer}"
 
     @staticmethod
     def _build_resolver(config: Any) -> PrincipalResolver:

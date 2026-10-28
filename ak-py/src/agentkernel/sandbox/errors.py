@@ -12,6 +12,11 @@ from typing import Optional
 class SandboxError(Exception):
     """Base class for all sandbox capability errors."""
 
+    @classmethod
+    def from_message(cls, message: str) -> "SandboxError":
+        """Rebuild an error from its ``str()``, e.g. a completion's error carried over the wire."""
+        return cls(message)
+
 
 class SandboxConfigError(SandboxError):
     """Unknown profile/type/flavor, or a required config block is missing."""
@@ -24,19 +29,36 @@ class SandboxCapabilityError(SandboxError):
     provider class name plus the missing capability) or ``SandboxCapabilityError(capability)``.
     """
 
+    # The two message forms; from_message parses them back.
+    _SUBJECT_SEPARATOR = " does not support capability: "
+    _BARE_PREFIX = "unsupported capability: "
+
     def __init__(self, *args: str) -> None:
         """Accept ``(subject, capability)`` or ``(capability,)`` and build the message."""
         self.subject: Optional[str] = None
         self.capability: str = ""
         if len(args) == 2:
             self.subject, self.capability = args[0], args[1]
-            message = f"{self.subject} does not support capability: {self.capability}"
+            message = f"{self.subject}{self._SUBJECT_SEPARATOR}{self.capability}"
         elif len(args) == 1:
             self.capability = args[0]
-            message = f"unsupported capability: {self.capability}"
+            message = f"{self._BARE_PREFIX}{self.capability}"
         else:
             message = ""
         super().__init__(message)
+
+    @classmethod
+    def from_message(cls, message: str) -> "SandboxCapabilityError":
+        """Rebuild from the message either constructor form produces, restoring ``subject`` and
+        ``capability``, so the message is not wrapped a second time. Any other text is kept verbatim."""
+        subject, separator, capability = message.partition(cls._SUBJECT_SEPARATOR)
+        if separator:
+            return cls(subject, capability)
+        if message.startswith(cls._BARE_PREFIX):
+            return cls(message[len(cls._BARE_PREFIX) :])
+        exc = cls()
+        exc.args = (message,)
+        return exc
 
 
 class SandboxPolicyError(SandboxError):

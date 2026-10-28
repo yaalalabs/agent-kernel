@@ -163,7 +163,7 @@ class QueueExecutionBroker(ExecutionBroker):
             raise SandboxTimeoutError(completion.error or "sandbox execution timed out")
         exc_cls = getattr(sandbox_errors, completion.error_type or "", None)
         if isinstance(exc_cls, type) and issubclass(exc_cls, sandbox_errors.SandboxError):
-            raise exc_cls(completion.error or "sandbox execution failed")
+            raise exc_cls.from_message(completion.error or "sandbox execution failed")
         raise ExecutionBrokerError(completion.error or "sandbox execution failed")
 
     async def result(self, task_id: str) -> Optional[ExecutionCompletion]:

@@ -41,6 +41,7 @@ from agentkernel.sandbox.broker.wire import BrokerWireCodec
 from agentkernel.sandbox.broker.worker import BrokerWorkerCore
 from agentkernel.sandbox.errors import (
     ExecutionBrokerError,
+    SandboxCapabilityError,
     SandboxConfigError,
     SandboxPermissionDeniedError,
     SandboxPolicyError,
@@ -375,6 +376,16 @@ class TestQueueBrokerClient:
         _store_completion(_completion("failed", error="profile 'default' does not permit", error_type="SandboxPermissionDeniedError"))
         with pytest.raises(SandboxPermissionDeniedError, match="does not permit"):
             await broker.submit(_request(), wait=5)
+
+    @pytest.mark.asyncio
+    async def test_capability_error_round_trips_without_double_wrapping(self):
+        broker = _queue_broker()
+        original = SandboxCapabilityError("DockerSandbox", "package_ecosystem:node")
+        _store_completion(_completion("failed", error=str(original), error_type="SandboxCapabilityError"))
+        with pytest.raises(SandboxCapabilityError) as excinfo:
+            await broker.submit(_request(), wait=5)
+        assert str(excinfo.value) == str(original)  # not "unsupported capability: DockerSandbox does not support ..."
+        assert (excinfo.value.subject, excinfo.value.capability) == ("DockerSandbox", "package_ecosystem:node")
 
     @pytest.mark.asyncio
     async def test_oversized_request_rejected_at_submit(self):
