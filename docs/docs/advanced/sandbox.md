@@ -667,7 +667,8 @@ bring-your-own provider can reuse it the same way.
 `install_packages` used to take only `packages`. A subclass whose override lacks `ecosystem`
 and/or `timeout` keeps working for one more release: the broker worker calls it through a
 compatibility shim with only the keywords it accepts, and logs a one-time deprecation warning
-naming the missing ones. Without `timeout`, the backstop is the install's only timer; without
+naming the missing ones. Without `timeout`, the worker enforces the install's timeout itself (no
+grace); without
 `ecosystem`, the override only gets `python` installs, and requests for any other ecosystem fail
 with `SandboxCapabilityError`. Update the override to
 `install_packages(self, packages, ecosystem="python", timeout=None)`.

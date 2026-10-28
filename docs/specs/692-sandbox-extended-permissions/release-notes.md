@@ -93,7 +93,9 @@ See [Sandbox → Language runtimes](https://kernel.yaala.ai/docs/advanced/sandbo
   (`package_install.timeout` for installs, otherwise `policy.timeout`). The broker worker's outer timer
   fires at that timeout plus 10 seconds. A hung handle is therefore reported up to 10 seconds later
   than before, and the worker logs one warning per handle class whose timeout the backstop had to
-  enforce, so a custom provider that ignores `timeout` is visible.
+  enforce, so a custom provider that ignores `timeout` is visible. The grace applies only where the
+  handle is passed the timeout: file uploads and downloads, and legacy install overrides without
+  `timeout`, keep the exact `policy.timeout` limit enforced by the worker.
 - **`e2b` and `daytona` installs now have a timeout**, passed to the SDK's native command timeout.
   Before, they had none. Their install command is now built with `shlex.join`, which gives the same
   string as before for any valid spec.
@@ -120,7 +122,7 @@ A subclass whose `install_packages` override lacks `ecosystem` and/or `timeout` 
 **for one minor release**. The worker calls it through a compatibility shim with only the keywords
 it accepts, and logs one deprecation warning per class naming the missing ones. Without `ecosystem`,
 only `python` installs work; any other ecosystem fails with `SandboxCapabilityError`. Without
-`timeout`, the worker's backstop is the only timer. The shim is removed in the following minor
+`timeout`, the worker enforces the install's timeout itself, with no grace. The shim is removed in the following minor
 release. During the deprecation window the `SandboxProviderContract` test suite skips its
 undeclared-ecosystem check for an override that lacks `ecosystem`, so such overrides still pass it.
 
