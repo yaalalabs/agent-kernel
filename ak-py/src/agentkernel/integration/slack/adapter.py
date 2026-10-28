@@ -8,6 +8,7 @@ handing Bolt's own response back for the host to return.
 
 import base64
 import contextvars
+import json
 import logging
 import os
 import re
@@ -47,6 +48,15 @@ NAME = "slack"
 
 ACTION_PREFIX = "ak_decision:"
 """Marks a Block Kit button as a decision on a paused run; the listener matches on it."""
+REASON_PREFIX = "ak_decision_reason:"
+"""Marks a button that opens the reason modal instead of deciding outright.
+
+The prefix is what tells the inbound half to open a modal, so the press handler reads the button
+that arrived rather than re-deriving whether this deployment collects reasons.
+"""
+MODAL_CALLBACK_ID = "ak_decision_reason_modal"
+REASON_BLOCK_ID = "ak_reason"
+REASON_INPUT_ID = "ak_reason_input"
 BLOCK_PREFIX = "ak_pause:"
 """Prefixes the ``block_id`` of an actions block, which Slack asks to be unique per message."""
 MAX_BLOCKS = 50
@@ -57,6 +67,7 @@ BUTTON_STYLES = {"approved": "primary", "denied": "danger"}
 
 _events: contextvars.ContextVar[List[dict]] = contextvars.ContextVar("ak_slack_events")
 _presses: contextvars.ContextVar[List[dict]] = contextvars.ContextVar("ak_slack_presses")
+_submissions: contextvars.ContextVar[List[dict]] = contextvars.ContextVar("ak_slack_submissions")
 
 
 class SlackInboundAdapter(InboundAdapter):
@@ -97,6 +108,29 @@ class SlackInboundAdapter(InboundAdapter):
             if collected is not None:
                 collected.append(body)
 
+        @self._app.action(re.compile(f"^{re.escape(REASON_PREFIX)}"))
+        async def _open_reason_modal(ack, body, client):
+            """Ask why, instead of recording the denial from the press alone.
+
+            The one Slack call this adapter makes inside a listener. ``views_open`` must land
+            within the same three seconds as the acknowledgement, because
+            ``process_before_response=True`` holds the response until this returns; a failure is
+            logged and leaves the pause open with its buttons live, since nothing was decided.
+            """
+            await ack()
+            try:
+                await client.views_open(trigger_id=body["trigger_id"], view=self._reason_modal(body))
+            except Exception as e:
+                self._log.error(f"Could not open the Slack reason modal: {e}")
+
+        @self._app.view(MODAL_CALLBACK_ID)
+        async def _collect_submission(ack, body):
+            """Collect a submitted reason. Does no work, for the reason given above."""
+            await ack()
+            collected = _submissions.get(None)
+            if collected is not None:
+                collected.append(body)
+
     async def parse(self, raw: Request) -> InboundParseResult:
         """Run Bolt's dispatch and normalize whatever message events it produced.
 
@@ -115,13 +149,14 @@ class SlackInboundAdapter(InboundAdapter):
             )
             return InboundParseResult()
 
-        events_token, presses_token = _events.set([]), _presses.set([])
+        events_token, presses_token, submissions_token = _events.set([]), _presses.set([]), _submissions.set([])
         try:
             response = await self._handler.handle(raw)
-            events, presses = _events.get(), _presses.get()
+            events, presses, submissions = _events.get(), _presses.get(), _submissions.get()
         finally:
             _events.reset(events_token)
             _presses.reset(presses_token)
+            _submissions.reset(submissions_token)
 
         requests = []
         for event in events:
@@ -130,6 +165,10 @@ class SlackInboundAdapter(InboundAdapter):
                 requests.append(inbound)
         for press in presses:
             decision = self._decision_from_press(press)
+            if decision is not None:
+                requests.append(decision)
+        for submission in submissions:
+            decision = self._decision_from_modal(submission)
             if decision is not None:
                 requests.append(decision)
         return InboundParseResult(requests=requests, response=response)
@@ -168,6 +207,82 @@ class SlackInboundAdapter(InboundAdapter):
             agent=self._agent,
             user_id=user,
             group_id=channel,
+            reply_context=reply_context,
+        )
+
+    def _reason_modal(self, body: dict) -> dict:
+        """The modal a denial opens, carrying everything the submission will need back.
+
+        A ``view_submission`` arrives with no channel and no message of its own, so
+        ``private_metadata`` carries the whole return address. Without it the submitted denial
+        could not resolve its session, compose its deduplicating request id, or be delivered back
+        to the conversation it came from.
+
+        The reason is optional. Collecting one is the point of the modal, but a denial must stay
+        possible: holding the decision hostage to a sentence would leave a run paused because
+        someone had nothing to type.
+
+        :param body: The ``block_actions`` payload of the press that opened it.
+        :return: The Slack view to open.
+        """
+        action = next(iter(body.get("actions") or []), {})
+        container, message = body.get("container") or {}, body.get("message") or {}
+        message_ts = container.get("message_ts") or message.get("ts")
+        metadata = {
+            "value": action.get("value"),
+            "channel": (body.get("channel") or {}).get("id"),
+            "ts": message_ts,
+            "thread_ts": container.get("thread_ts") or message.get("thread_ts") or message_ts,
+            "user": (body.get("user") or {}).get("id"),
+        }
+        return {
+            "type": "modal",
+            "callback_id": MODAL_CALLBACK_ID,
+            "private_metadata": json.dumps(metadata),
+            "title": {"type": "plain_text", "text": "Deny this request"},
+            "submit": {"type": "plain_text", "text": "Submit"},
+            "close": {"type": "plain_text", "text": "Cancel"},
+            "blocks": [
+                {
+                    "type": "input",
+                    "block_id": REASON_BLOCK_ID,
+                    "optional": True,
+                    "label": {"type": "plain_text", "text": "Reason"},
+                    "element": {"type": "plain_text_input", "action_id": REASON_INPUT_ID, "multiline": True},
+                }
+            ],
+        }
+
+    def _decision_from_modal(self, body: dict) -> Optional[InboundRequest]:
+        """A submitted reason, as the denial it completes.
+
+        :param body: The ``view_submission`` payload.
+        :return: The decision as a request, or None when the metadata does not parse.
+        """
+        view = body.get("view") or {}
+        try:
+            metadata = json.loads(view.get("private_metadata") or "")
+        except ValueError:
+            self._log.warning("Ignoring a modal submission whose private_metadata does not parse")
+            return None
+
+        parsed = self._parse_action_value(metadata.get("value"))
+        if parsed is None or not metadata.get("channel") or not metadata.get("thread_ts"):
+            return None
+
+        interruption_id, status = parsed
+        reason = ((view.get("state") or {}).get("values", {}).get(REASON_BLOCK_ID, {}).get(REASON_INPUT_ID, {}) or {}).get("value")
+        user = metadata.get("user")
+        reply_context = {"channel": metadata["channel"], "thread_ts": metadata["thread_ts"]}
+        if user:
+            reply_context["user"] = user
+        return InboundRequest(
+            session_id=metadata["thread_ts"],
+            request_id=f"{NAME}:{metadata['channel']}:{metadata['ts']}:{interruption_id}:{status}",
+            requests=[AgentResumeRequestAny(decisions=[ResumeDecision(id=interruption_id, status=status, message=reason or None)])],
+            agent=self._agent,
+            user_id=user,
+            group_id=metadata["channel"],
             reply_context=reply_context,
         )
 
@@ -323,6 +438,7 @@ class SlackOutboundAdapter(OutboundAdapter):
     MAX_CHUNKS = 5
     TRUNCATION_NOTICE = "Response is truncated due to size restrictions in Slack"
     UNPRESSABLE_NOTICE = "These cannot be answered here, because the message is at Slack's block limit: {ids}"
+    DENY_COLLECTS_REASON = True
 
     _log = logging.getLogger("ak.integration.slack")
 
@@ -404,17 +520,20 @@ class SlackOutboundAdapter(OutboundAdapter):
             self._log.warning(f"{len(unpressable)} interruption(s) did not fit Slack's {MAX_BLOCKS}-block message and were rendered without buttons")
         return blocks, unpressable
 
-    @staticmethod
-    def _button(interruption_id: str, verb: str) -> dict:
+    def _button(self, interruption_id: str, verb: str) -> dict:
         """One decision button. ``value`` is the payload; ``action_id`` only selects the listener.
+
+        A denial carries :data:`REASON_PREFIX` when this adapter collects reasons, which is what
+        tells the press handler to open a modal rather than record the decision outright.
 
         :param interruption_id: The interruption this button answers.
         :param verb: The decision it records.
         :return: The Block Kit button element.
         """
+        prefix = REASON_PREFIX if verb == "denied" and self.DENY_COLLECTS_REASON else ACTION_PREFIX
         button = {
             "type": "button",
-            "action_id": f"{ACTION_PREFIX}{verb}",
+            "action_id": f"{prefix}{verb}",
             "text": {"type": "plain_text", "text": BUTTON_LABELS[verb]},
             "value": f"{interruption_id}:{verb}",
         }

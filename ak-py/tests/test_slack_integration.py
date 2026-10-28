@@ -30,6 +30,10 @@ from agentkernel.integration.slack.adapter import (  # noqa: E402
     ACTION_PREFIX,
     BLOCK_PREFIX,
     MAX_BLOCKS,
+    MODAL_CALLBACK_ID,
+    REASON_BLOCK_ID,
+    REASON_INPUT_ID,
+    REASON_PREFIX,
     SlackInboundAdapter,
     SlackOutboundAdapter,
 )
@@ -332,6 +336,12 @@ def _paused(*interruption_ids):
     )
 
 
+def _submission(reason, value="call_9f2b:denied"):
+    metadata = {"value": value, "channel": "C9", "ts": "111.222", "thread_ts": "000.111", "user": "U123"}
+    state = {"values": {REASON_BLOCK_ID: {REASON_INPUT_ID: {"value": reason}}}}
+    return {"view": {"private_metadata": json.dumps(metadata), "state": state}}
+
+
 def _press(value="call_9f2b:approved", channel="C9", message_ts="111.222", thread_ts="000.111", user="U123"):
     return {
         "actions": [{"action_id": f"{ACTION_PREFIX}approved", "value": value}],
@@ -354,7 +364,7 @@ class TestPauseRendering:
         actions = [b for b in blocks if b["type"] == "actions"]
         assert [b["block_id"] for b in actions] == [f"{BLOCK_PREFIX}call_a", f"{BLOCK_PREFIX}call_b"]
         assert [e["value"] for e in actions[0]["elements"]] == ["call_a:approved", "call_a:denied"]
-        assert [e["action_id"] for e in actions[0]["elements"]] == [f"{ACTION_PREFIX}approved", f"{ACTION_PREFIX}denied"]
+        assert [e["action_id"] for e in actions[0]["elements"]] == [f"{ACTION_PREFIX}approved", f"{REASON_PREFIX}denied"]
         assert [e.get("style") for e in actions[0]["elements"]] == ["primary", "danger"]
         assert any("refund_order" in str(b) for b in blocks if b["type"] == "section")
 
@@ -422,3 +432,64 @@ class TestPressParsing:
         press = _press(thread_ts=None)
         press["container"] = {"message_ts": "111.222"}
         assert _inbound()._decision_from_press(press).session_id == "111.222"
+
+
+class TestDenialReason:
+    """Denying in Slack opens a modal, and the submitted reason rides the decision."""
+
+    def test_the_deny_button_opens_a_modal_when_reasons_are_collected(self):
+        adapter = _outbound()
+
+        assert adapter._button("call_a", "denied")["action_id"] == f"{REASON_PREFIX}denied"
+        assert adapter._button("call_a", "approved")["action_id"] == f"{ACTION_PREFIX}approved"
+
+    def test_an_adapter_that_collects_no_reason_decides_from_the_press(self):
+        adapter = _outbound()
+        adapter.DENY_COLLECTS_REASON = False
+
+        assert adapter._button("call_a", "denied")["action_id"] == f"{ACTION_PREFIX}denied"
+
+    def test_the_modal_carries_the_whole_return_address(self):
+        """A view_submission has no channel and no message of its own."""
+        view = _inbound()._reason_modal(_press(value="call_9f2b:denied"))
+
+        assert view["callback_id"] == MODAL_CALLBACK_ID
+        assert json.loads(view["private_metadata"]) == {
+            "value": "call_9f2b:denied",
+            "channel": "C9",
+            "ts": "111.222",
+            "thread_ts": "000.111",
+            "user": "U123",
+        }
+        [block] = view["blocks"]
+        assert block["optional"] is True, "a denial must stay possible for someone with nothing to type"
+
+    def test_a_submission_becomes_a_denial_carrying_its_reason(self):
+        request = _inbound()._decision_from_modal(_submission("Customer was already refunded."))
+
+        [resume] = request.requests
+        [decision] = resume.decisions
+        assert (decision.id, decision.status) == ("call_9f2b", "denied")
+        assert decision.message == "Customer was already refunded."
+        assert request.session_id == "000.111"
+        assert request.request_id == "slack:C9:111.222:call_9f2b:denied"
+        assert request.reply_context == {"channel": "C9", "thread_ts": "000.111", "user": "U123"}
+
+    def test_a_submission_with_no_reason_still_denies(self):
+        [decision] = _inbound()._decision_from_modal(_submission(None)).requests[0].decisions
+
+        assert (decision.status, decision.message) == ("denied", None)
+
+    def test_a_submission_and_a_press_share_one_request_id(self):
+        """The same decision answered either way must deduplicate against itself."""
+        pressed = _inbound()._decision_from_press(_press(value="call_9f2b:denied"))
+        submitted = _inbound()._decision_from_modal(_submission("why"))
+
+        assert pressed.request_id == submitted.request_id
+
+    @pytest.mark.parametrize("metadata", ["", "not-json", '{"channel": "C9"}'])
+    def test_a_submission_whose_metadata_does_not_parse_is_ignored(self, metadata):
+        body = _submission("why")
+        body["view"]["private_metadata"] = metadata
+
+        assert _inbound()._decision_from_modal(body) is None
