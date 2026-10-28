@@ -13,6 +13,7 @@ resources they get:
 ```yaml
 sandbox:
   enabled: true
+  default_profile: builder
   profiles:
     builder:
       type: docker
@@ -39,8 +40,10 @@ What ships with it:
 - **Configurable installers.** `docker`, `kubernetes`, `e2b` and `daytona` take `package_installers`
   (the installer argv per ecosystem, default `pip install`) and `package_rules` (ecosystem → dotted
   path of a `PackageSpecRule`).
-- **Validated package specs.** Every request is checked before it is submitted, and again in the worker:
-  no installer options, URLs, local paths, VCS specs or archive files. `python` accepts registry
+- **Validated package specs.** Every request is checked before it is submitted, and again in the worker,
+  against a baseline: no installer options, URLs or local paths. The built-in `python` and `node` rules
+  also reject VCS specs and archive files; any other ecosystem, and a custom provider's install
+  override, gets only the baseline unless it adds its own rules. `python` accepts registry
   names with extras and version specifiers. `node` accepts `name` or `@scope/name`, optionally
   `@version`. A bring-your-own `PackageSpecRule` (`from agentkernel.sandbox import PackageSpecRule`)
   can narrow a built-in grammar, for example to a package-name allowlist, but never loosen it.
@@ -86,7 +89,9 @@ See [Sandbox → Language runtimes](https://kernel.yaala.ai/docs/advanced/sandbo
   `run_code`, `run_command` or install is killed together with its child processes. The kill uses an
   environment marker and a `/proc` scan, so it works on images without `pkill` (including the default
   `python:3.12-slim`, where the old kill did nothing). It no longer touches same-named processes
-  from earlier executions. It never runs in an `attach_to` container or pod. `local_subprocess` now
+  from earlier executions. It never runs in an `attach_to` container or pod. The kill needs `/bin/sh`
+  and `cat` in the image: a Kubernetes pod without `/bin/sh` (or whose shell probe stays
+  inconclusive) runs its commands untagged, so its timed-out work is not killed. `local_subprocess` now
   reliably kills its process group, and `ec2_ssm` cancels its command, because the worker's own timer
   now fires 10 seconds after the handle's (below).
 - **The worker's timer is now a backstop.** Each operation's handle enforces its effective timeout

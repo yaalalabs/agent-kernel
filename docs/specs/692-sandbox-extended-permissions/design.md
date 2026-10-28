@@ -226,15 +226,16 @@ check also runs agent-side before a request is submitted.
       it.
     - It matches the marker, not the process name. A name match misses the children and would also kill same-named
       processes left by earlier execs, such as a background `python` server.
-    - The kill needs only `/bin/sh` and `/proc`, so it works on images without procps. The mechanism is
+    - The kill needs only `/bin/sh`, `cat` and `/proc`, so it works on images without procps. The mechanism is
       `ProcessKiller` in `spec.md`.
     - It is best-effort: a process that clears its environment (`env -i`) escapes, a pod without `/bin/sh` cannot be
       killed, and an `attach_to` environment is never killed because the framework does not own it.
     - For `install_packages` the effective timeout is `package_install.timeout`, or `policy.timeout` when it is unset.
     - The worker's outer `asyncio.wait_for` becomes a backstop: effective timeout plus a fixed grace period. It cannot
       fire before the handle's own timer, so the kill finishes before the session lock is released.
-    - The grace period is an internal constant of 5-10 seconds (the exact value is set in `spec.md`), long enough for a
-      kill to complete. It is not configurable; a config field is added only if a deployment later needs one.
+    - The grace period is an internal constant of 10 seconds (set in `spec.md`). It must exceed the shell probe
+      timeout plus the kill timeout, because a pod's first exec can spend both outside its own timeout. It is not
+      configurable; a config field is added only if a deployment later needs one.
     - `execute_code` moves to the same rule, which fixes its existing gap (see Motivation).
     - If the backstop does fire, the handle kills on cancellation too, not only on `TimeoutError`.
 - New class `PackageInstaller`, shared by the four implementing providers. Its single responsibility is turning a

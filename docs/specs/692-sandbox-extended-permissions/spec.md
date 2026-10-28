@@ -417,7 +417,8 @@ class PackageInstaller:
   - The pattern excludes `@`, so direct references (`name @ url`) and markers (`;`) are also rejected.
 - **`node` rule.**
   - It accepts `name`, `@scope/name`, and either one followed by `@<version-or-range>`. The pattern is:
-    `^(?:@[A-Za-z0-9][A-Za-z0-9._~-]*/)?[A-Za-z0-9][A-Za-z0-9._~-]*(?:@[A-Za-z0-9.^~<>=*|+_-]+)?$`
+    `^(?:@[A-Za-z0-9][A-Za-z0-9._~-]*/)?[A-Za-z0-9][A-Za-z0-9._~-]*(?:@[A-Za-z0-9^~<>=*|+_-][A-Za-z0-9.^~<>=*|+_-]*)?$`
+  - The version may not start with `.`: npm-package-arg reads `name@.` and `name@..` as a local directory.
   - Before the pattern, it rejects these explicitly:
     - the protocol prefixes `github:`, `git+`, `file:`, `link:` and `npm:`;
     - a `.tgz`, `.tar.gz` or `.tar` suffix (npm-package-arg treats each as a local file);
@@ -633,9 +634,10 @@ checks read the instance capabilities, not the class attribute. These five lines
       - otherwise `languages: …`. On a provider whose config block declares `language_runtimes` (`docker`,
         `kubernetes`; read by `_runtime_languages`, config-only) these are the runtime keys when `policy.languages`
         is unset, and the policy entries the map declares when it is set, so the agent is never offered a language
-        that would fail. If none of the permitted languages is declared, `run_code unavailable (no permitted
-        language is in the provider's language_runtimes)`. Elsewhere it is `policy.languages` when set, and nothing
-        when unset;
+        that would fail. A built-in fixed-language provider (`local_subprocess`: `python`, `bash`; `e2b`, `daytona`,
+        `ec2_ssm`: `python`; held in `_FIXED_LANGUAGES`) is narrowed the same way against its fixed languages. If
+        none of the permitted languages is declared, `run_code unavailable (the provider declares none of the
+        permitted languages)`. For a dotted-path provider it is `policy.languages` when set, and nothing when unset;
       - `package installs: python, node` or `package installs not permitted`, but **only when some profile permits
         installs** (so `install_packages` is registered); otherwise it would describe a tool the agent lacks.
       - A profile with nothing to say adds no `;` part.
