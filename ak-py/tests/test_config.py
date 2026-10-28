@@ -4,7 +4,9 @@ import sys
 import pytest
 from pydantic import ValidationError
 
-from agentkernel.core.config import AKConfig, _ScheduleConfig, _SecretConfig, _ThreadStoreConfig, _ThreadValkeyConfig
+from agentkernel.core.config import AKConfig, _ExecutionConfig, _ScheduleConfig, _SecretConfig, _ThreadStoreConfig, _ThreadValkeyConfig
+from agentkernel.core.model import ExecutionMode, ReplyMessageType
+from agentkernel.core.util.factory import AKConfigError
 
 
 @pytest.fixture(autouse=True)
@@ -459,3 +461,72 @@ class TestA2UIConfig:
 
         assert config.a2ui.enabled is True
         assert config.a2ui.agents == ["expenses"]
+
+
+_MODES = [None, "rest_sync", "rest_async", "async", "realtime"]
+_REJECTED_PAIRS = {("rest_async", "delta"), ("realtime", "complete")}
+
+
+class TestExecutionMessageType:
+    @pytest.mark.parametrize("mode", _MODES)
+    @pytest.mark.parametrize("message_type", [None, "complete", "delta"])
+    def test_mode_message_type_matrix(self, mode, message_type):
+        data = {k: v for k, v in (("mode", mode), ("message_type", message_type)) if v is not None}
+        if (mode, message_type) in _REJECTED_PAIRS:
+            with pytest.raises(AKConfigError) as exc:
+                _ExecutionConfig(**data)
+            assert "execution.mode" in str(exc.value)
+            assert "execution.message_type" in str(exc.value)
+        else:
+            _ExecutionConfig(**data)
+
+    @pytest.mark.parametrize(
+        "mode, expected",
+        [
+            (None, ReplyMessageType.COMPLETE),
+            ("rest_sync", ReplyMessageType.COMPLETE),
+            ("rest_async", ReplyMessageType.COMPLETE),
+            ("async", ReplyMessageType.COMPLETE),
+            ("realtime", ReplyMessageType.DELTA),
+        ],
+    )
+    def test_resolved_message_type_default(self, mode, expected):
+        config = _ExecutionConfig(mode=mode)
+        assert config.message_type is None
+        assert config.resolved_message_type == expected
+
+    @pytest.mark.parametrize(
+        "mode, message_type, is_websocket, is_delta, is_sse",
+        [
+            (None, None, False, False, False),
+            (None, "delta", False, True, True),
+            ("rest_sync", "complete", False, False, False),
+            ("rest_sync", "delta", False, True, True),
+            ("rest_async", "complete", False, False, False),
+            ("async", "complete", True, False, False),
+            ("async", "delta", True, True, False),
+            ("realtime", None, False, False, False),
+            ("realtime", "delta", False, False, False),
+        ],
+    )
+    def test_predicates(self, mode, message_type, is_websocket, is_delta, is_sse):
+        config = _ExecutionConfig(mode=mode, message_type=message_type)
+        assert config.is_websocket is is_websocket
+        assert config.is_delta is is_delta
+        assert config.is_sse is is_sse
+
+    def test_rejected_pair_from_yaml_raises_ak_config_error(self, tmp_path, monkeypatch):
+        cfg_path = tmp_path / "config.yaml"
+        cfg_path.write_text("execution:\n  mode: rest_async\n  message_type: delta\n")
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", str(cfg_path))
+        with pytest.raises(AKConfigError):
+            AKConfig.get()
+
+    def test_env_vars_load_async_delta(self, monkeypatch):
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+        monkeypatch.setenv("AK_EXECUTION__MODE", "async")
+        monkeypatch.setenv("AK_EXECUTION__MESSAGE_TYPE", "delta")
+        execution = AKConfig.get().execution
+        assert execution.mode == ExecutionMode.ASYNC
+        assert execution.message_type == ReplyMessageType.DELTA
+        assert execution.is_websocket and execution.is_delta

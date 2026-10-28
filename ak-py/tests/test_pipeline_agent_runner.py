@@ -4,6 +4,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from agentkernel.core.config import _ExecutionConfig
 from agentkernel.core.util.factory import AKConfigError
 from agentkernel.pipeline.agent_runner import AgentRunner, StreamAgentRunner
 from agentkernel.pipeline.envelope import ATTR_INTEGRATION, QueueMessage, QueueName
@@ -21,13 +22,14 @@ def _reset_state():
     ThreadRunner.shutdown_event.clear()
 
 
-class _FakeCfg:
-    class execution:
-        mode = None
+def _cfg(mode=None, message_type=None):
+    class _Cfg:
+        execution = _ExecutionConfig(mode=mode, message_type=message_type)
 
-        class queues:
-            class input:
-                max_receive_count = 3
+    return _Cfg
+
+
+_FakeCfg = _cfg()
 
 
 def _input_msg(dedup_id="d1", attributes=None, receive_count=1):
@@ -146,11 +148,7 @@ class TestRunSignalHandlers:
         """A standalone runner container is PID 1: run() must install the SIGTERM/SIGINT drain
         handlers itself (IOHandler is not there to do it in the two-process topology)."""
 
-        class _Cfg:
-            class execution:
-                mode = None
-
-        monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _Cfg))
+        monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _FakeCfg))
         monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "sqs"))
         monkeypatch.setattr(QueueTransportFactory, "create", classmethod(lambda cls: MagicMock()))
         started = []
@@ -191,12 +189,27 @@ class TestStreamAgentRunner:
         assert "status_code" not in first.attributes
 
     def test_user_id_required_on_broker_transport(self, monkeypatch):
-        """Broker STREAM chunks are WebSocket-delivered, so the WS-entered marker (the
-        authenticated USER_ID attribute) must be present."""
+        """async + delta chunks over a broker are WebSocket-delivered, so the WS-entered marker
+        (the authenticated USER_ID attribute) must be present."""
+        monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _cfg("async", "delta")))
         monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "kafka"))
         runner = StreamAgentRunner(transport=InMemoryTransport(), chat_service=MagicMock())
         with pytest.raises(ValueError, match="user_id"):
             runner.process(_input_msg(attributes={"request_id": "r1"}))
+
+    def test_rest_sync_delta_needs_no_user_id_on_broker_transport(self, monkeypatch):
+        """rest_sync + delta chunks go to the response store for SSE: a REST-entered message
+        carries no USER_ID and is valid."""
+        monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _cfg("rest_sync", "delta")))
+        monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "kafka"))
+        chat_service = MagicMock()
+        chat_service.process_stream_chat_sync.return_value = iter([json.dumps({"delta": "hi"})])
+        transport = InMemoryTransport()
+
+        StreamAgentRunner(transport=transport, chat_service=chat_service).process(_input_msg(attributes={"request_id": "r1"}))
+
+        [chunk] = _fetch_output(transport)
+        assert json.loads(chunk.body) == {"delta": "hi"}
 
     def test_permanent_failure_sends_error_chunk(self, monkeypatch):
         monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _FakeCfg))

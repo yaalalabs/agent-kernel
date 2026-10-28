@@ -112,9 +112,9 @@ class A2UIPostHookFactory:
             config = getattr(AKConfig.get(), "a2ui", None)
             if not (config and config.enabled):
                 return NoOpA2UIPostHook()
-            if getattr(AKConfig.get().execution, "mode", None) == "stream":
+            if getattr(AKConfig.get().execution, "is_delta", False):
                 cls._log.warning(
-                    "a2ui.enabled is true but execution.mode is 'stream': the A2UI hook runs on "
+                    "a2ui.enabled is true but execution.message_type is delta: the A2UI hook runs on "
                     "Runtime.run and is never called for a streamed run, so no reply will be "
                     "labelled. Label streamed payloads with an on_stream_event hook instead."
                 )

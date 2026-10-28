@@ -55,7 +55,7 @@ class ResponseStore(ABC):
         """Whether this store can buffer and stream per-request chunks (the local SSE path).
 
         The pipeline checks this capability instead of concrete store types, so a
-        bring-your-own store can take part in STREAM delivery by implementing
+        bring-your-own store can take part in SSE (rest_sync + delta) delivery by implementing
         ``add_chunk``/``stream``/``close_stream`` and returning True here.
         """
         return False

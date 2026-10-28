@@ -19,7 +19,6 @@ from fastapi import FastAPI
 
 from ...auth.handler import AuthValidator
 from ...core.config import AKConfig
-from ...core.model import ExecutionMode
 from ...core.util.factory import AKConfigError
 from ..thread_runner import ThreadRunner
 from ..transport.base import QueueTransportFactory
@@ -88,9 +87,9 @@ class WebSocketGateway:
                 "a standalone WebSocket gateway cannot run on the in_memory transport (the queue is "
                 "process-local): run the single-process topology instead, IOHandler.run(auth_validator=...)"
             )
-        if config.execution.mode not in (ExecutionMode.ASYNC, ExecutionMode.STREAM):
+        if not config.execution.is_websocket:
             raise AKConfigError(
-                f"the WebSocket gateway serves ASYNC/STREAM modes; execution.mode is {config.execution.mode}: "
+                f"the WebSocket gateway serves execution.mode async; execution.mode is {config.execution.mode}: "
                 "replies in REST modes go to the response store and would never reach a WebSocket client"
             )
         if not config.websocket_api.push_auth_token:

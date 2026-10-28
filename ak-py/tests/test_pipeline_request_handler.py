@@ -77,13 +77,17 @@ def dummy_agent():
     Runtime.current().deregister(agent)
 
 
-def _configure(monkeypatch, mode=None):
+def _configure(monkeypatch, mode=None, message_type=None):
     """Point AKConfig at real defaults (in_memory transport) with a fast response-wait budget."""
     monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
     if mode:
         monkeypatch.setenv("AK_EXECUTION__MODE", mode)
     else:
         monkeypatch.delenv("AK_EXECUTION__MODE", raising=False)
+    if message_type:
+        monkeypatch.setenv("AK_EXECUTION__MESSAGE_TYPE", message_type)
+    else:
+        monkeypatch.delenv("AK_EXECUTION__MESSAGE_TYPE", raising=False)
     monkeypatch.setenv("AK_EXECUTION__RESPONSE_STORE__RETRY_COUNT", "100")
     monkeypatch.setenv("AK_EXECUTION__RESPONSE_STORE__DELAY", "0.05")
     AKConfig._reset()
@@ -196,7 +200,7 @@ class TestRestAsync:
 
 class TestStreamSSE:
     def test_stream_yields_sse_chunks(self, monkeypatch, dummy_agent, workers):
-        _configure(monkeypatch, mode="stream")
+        _configure(monkeypatch, mode="rest_sync", message_type="delta")
         workers(stream=True)
 
         with _client().stream("POST", CHAT, json={"prompt": "hello", "session_id": "s1", "agent": AGENT_NAME}) as response:
@@ -373,20 +377,9 @@ class TestWebSocketModeGuards:
         # Nothing was enqueued: the input queue stays empty.
         assert InMemoryTransport().create_consumer(QueueName.INPUT).fetch(1, 0.05) == []
 
-    def test_stream_without_a_chunk_streaming_store_rejects_rest_chat(self, monkeypatch):
-        """Broker STREAM topologies pair a shared store with WS delivery: the SSE route has
-        nothing to drain, so the request must be refused before it is enqueued."""
-        _configure(monkeypatch, mode="stream")
-
-        class _NoChunkStore:
-            def supports_chunk_streaming(self):
-                return False
-
-        handler = RequestHandler()
-        handler._response_store = _NoChunkStore()
-        app = FastAPI()
-        app.include_router(handler.get_router())
-        response = TestClient(app).post(CHAT, json={"prompt": "hi", "session_id": "s1"})
+    def test_async_delta_mode_rejects_rest_chat(self, monkeypatch):
+        _configure(monkeypatch, mode="async", message_type="delta")
+        response = _client().post(CHAT, json={"prompt": "hi", "session_id": "s1"})
         assert response.status_code == 400
         assert "/ws" in response.json()["detail"]["error"]
 
@@ -430,7 +423,7 @@ class TestStreamErrorFrames:
     BACKEND_DETAIL = "redis://cache.internal:6379 read timed out after 5.0s (pool=3, db=0)"
 
     def _frames(self, monkeypatch, exception):
-        _configure(monkeypatch, mode="stream")
+        _configure(monkeypatch, mode="rest_sync", message_type="delta")
 
         def _raise(self, request_id, chunk_timeout=None):
             raise exception

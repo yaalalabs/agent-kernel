@@ -12,7 +12,7 @@ import pytest
 from fastapi import APIRouter
 
 from agentkernel.api.handler import RESTRequestHandler
-from agentkernel.core.config import AKConfig
+from agentkernel.core.config import AKConfig, _ExecutionConfig, _ResponseStoreConfig
 from agentkernel.core.model import ExecutionMode
 from agentkernel.core.util.factory import AKConfigError
 from agentkernel.pipeline.io_handler import IOHandler
@@ -31,10 +31,7 @@ def _restore_signals_and_shutdown_state():
     AKConfig._reset()
 
 
-def _cfg(mode=None, response_store_type=None, push_auth_token=None):
-    class _ResponseStore:
-        type = response_store_type
-
+def _cfg(mode=None, response_store_type=None, push_auth_token=None, message_type=None):
     class _WebSocketAPI:
         pass
 
@@ -42,58 +39,81 @@ def _cfg(mode=None, response_store_type=None, push_auth_token=None):
 
     class _Cfg:
         websocket_api = _WebSocketAPI
-
-        class execution:
-            response_store = _ResponseStore() if response_store_type is not None else None
+        execution = _ExecutionConfig(
+            mode=mode,
+            message_type=message_type,
+            response_store=_ResponseStoreConfig(type=response_store_type) if response_store_type is not None else None,
+        )
 
         class api:
             host = "127.0.0.1"
             port = 8000
             max_file_size = 10 * 1024 * 1024
 
-    _Cfg.execution.mode = mode
     return _Cfg
+
+
+def _store(chunk_capable: bool) -> MagicMock:
+    store = MagicMock()
+    store.supports_chunk_streaming.return_value = chunk_capable
+    return store
 
 
 class TestTopologyValidation:
     def test_async_on_in_memory_without_validator_rejected(self):
-        """The in_memory transport co-hosts the gateway here, so ASYNC needs the validator."""
-        with pytest.raises(AKConfigError, match="ASYNC.*auth_validator"):
-            IOHandler._validate_topology(ExecutionMode.ASYNC, "in_memory", _cfg(ExecutionMode.ASYNC))
+        with pytest.raises(AKConfigError, match="auth_validator"):
+            IOHandler._validate_topology("in_memory", _cfg(ExecutionMode.ASYNC))
+
+    def test_async_delta_on_in_memory_without_validator_rejected(self):
+        with pytest.raises(AKConfigError, match="auth_validator"):
+            IOHandler._validate_topology("in_memory", _cfg(ExecutionMode.ASYNC, message_type="delta"))
 
     def test_async_on_in_memory_with_validator_passes(self):
-        IOHandler._validate_topology(ExecutionMode.ASYNC, "in_memory", _cfg(ExecutionMode.ASYNC), auth_validator=MagicMock())
+        IOHandler._validate_topology("in_memory", _cfg(ExecutionMode.ASYNC), auth_validator=MagicMock())
 
     def test_websocket_modes_over_broker_need_no_validator_here(self):
-        """On broker transports the gateway is its own process: the IO handler only pushes."""
-        IOHandler._validate_topology(ExecutionMode.ASYNC, "kafka", _cfg(ExecutionMode.ASYNC, response_store_type="redis", push_auth_token="s3cret"))
-        IOHandler._validate_topology(ExecutionMode.STREAM, "nats", _cfg(ExecutionMode.STREAM, response_store_type="redis", push_auth_token="s3cret"))
+        # Broker topologies authenticate at the standalone gateway, not in this process.
+        IOHandler._validate_topology("kafka", _cfg(ExecutionMode.ASYNC, response_store_type="redis", push_auth_token="s3cret"))
+        IOHandler._validate_topology("nats", _cfg(ExecutionMode.ASYNC, response_store_type="redis", push_auth_token="s3cret", message_type="delta"))
 
     def test_websocket_modes_over_broker_without_push_token_rejected(self):
         with pytest.raises(AKConfigError, match="push_auth_token"):
-            IOHandler._validate_topology(ExecutionMode.ASYNC, "kafka", _cfg(ExecutionMode.ASYNC, response_store_type="redis"))
+            IOHandler._validate_topology("kafka", _cfg(ExecutionMode.ASYNC, response_store_type="redis"))
 
     def test_broker_without_shared_response_store_rejected(self):
         with pytest.raises(AKConfigError, match="shared response store"):
-            IOHandler._validate_topology(ExecutionMode.REST_SYNC, "sqs", _cfg(ExecutionMode.REST_SYNC))
+            IOHandler._validate_topology("sqs", _cfg(ExecutionMode.REST_SYNC))
 
     def test_broker_default_mode_without_shared_response_store_rejected(self):
-        """Unset mode is REST_SYNC, so the REST-scoped store requirement applies."""
+        # An unset mode runs as REST_SYNC through the pipeline, so it needs the shared store too.
         with pytest.raises(AKConfigError, match="shared response store"):
-            IOHandler._validate_topology(None, "sqs", _cfg())
+            IOHandler._validate_topology("sqs", _cfg())
 
     def test_broker_with_shared_response_store_passes(self):
-        IOHandler._validate_topology(ExecutionMode.REST_SYNC, "sqs", _cfg(ExecutionMode.REST_SYNC, response_store_type="redis"))
+        IOHandler._validate_topology("sqs", _cfg(ExecutionMode.REST_SYNC, response_store_type="redis"))
 
     def test_websocket_modes_over_broker_need_no_response_store(self):
-        """The store requirement is REST-scoped (spec §10): WS replies push to the gateway pods."""
-        IOHandler._validate_topology(ExecutionMode.ASYNC, "kafka", _cfg(ExecutionMode.ASYNC, push_auth_token="s3cret"))
+        # WebSocket modes push replies to the gateway pods; the response store is never touched.
+        IOHandler._validate_topology("kafka", _cfg(ExecutionMode.ASYNC, push_auth_token="s3cret"))
         IOHandler._validate_topology(
-            ExecutionMode.STREAM, "nats", _cfg(ExecutionMode.STREAM, response_store_type="in_memory", push_auth_token="s3cret")
+            "nats", _cfg(ExecutionMode.ASYNC, response_store_type="in_memory", push_auth_token="s3cret", message_type="delta")
         )
 
     def test_in_memory_topology_passes(self):
-        IOHandler._validate_topology(ExecutionMode.STREAM, "in_memory", _cfg(ExecutionMode.STREAM))
+        IOHandler._validate_topology("in_memory", _cfg(ExecutionMode.REST_SYNC, message_type="delta"))
+
+    def test_sse_over_broker_with_a_store_that_cannot_stream_chunks_rejected(self, monkeypatch):
+        monkeypatch.setattr("agentkernel.pipeline.io_handler.ResponseStoreFactory.create", lambda: _store(chunk_capable=False))
+        with pytest.raises(AKConfigError, match="rest_sync with message_type delta"):
+            IOHandler._validate_topology("nats", _cfg(ExecutionMode.REST_SYNC, response_store_type="redis", message_type="delta"))
+
+    def test_sse_over_broker_with_a_chunk_streaming_store_passes(self, monkeypatch):
+        monkeypatch.setattr("agentkernel.pipeline.io_handler.ResponseStoreFactory.create", lambda: _store(chunk_capable=True))
+        IOHandler._validate_topology("nats", _cfg(ExecutionMode.REST_SYNC, response_store_type="redis", message_type="delta"))
+
+    def test_sse_over_broker_with_an_in_memory_store_keeps_the_shared_store_error(self):
+        with pytest.raises(AKConfigError, match="shared response store"):
+            IOHandler._validate_topology("nats", _cfg(ExecutionMode.REST_SYNC, response_store_type="in_memory", message_type="delta"))
 
 
 class TestRequestHandlerValidation:
@@ -270,6 +290,52 @@ class TestRealtimeWebSocket:
 
         assert not [h for h in captured["handlers"] if isinstance(h, (PipelineWebSocketHandler, PushEndpointHandler))]
         assert "auth_validator ignored" in caplog.text
+
+
+class TestMessageTypeTopology:
+    """Runner selection and WebSocket co-hosting under the mode / message_type pair (#641)."""
+
+    @staticmethod
+    def _run(monkeypatch, mode, message_type=None, auth_validator=None):
+        captured = {}
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+        monkeypatch.setenv("AK_EXECUTION__MODE", mode)
+        if message_type:
+            monkeypatch.setenv("AK_EXECUTION__MESSAGE_TYPE", message_type)
+        AKConfig._reset()
+        runners = {name: MagicMock(name=name) for name in ("AgentRunner", "StreamAgentRunner", "RealtimeAgentRunner")}
+        for name, runner in runners.items():
+            monkeypatch.setattr(f"agentkernel.pipeline.io_handler.{name}", runner)
+        monkeypatch.setattr("agentkernel.api.http.RESTAPI.build_app", classmethod(lambda cls, handlers=None: captured.update(handlers=handlers)))
+        monkeypatch.setattr("agentkernel.pipeline.io_handler.uvicorn.Server", MagicMock())
+        monkeypatch.setattr(IOHandler, "_install_signal_handlers", classmethod(lambda cls, server: None))
+        monkeypatch.setattr(ThreadRunner, "run", staticmethod(lambda tasks, max_workers=None, exit_on_shutdown=True: None))
+        IOHandler.run(auth_validator=auth_validator)
+        selected = [name for name, runner in runners.items() if runner.called]
+        return captured["handlers"], selected
+
+    def test_rest_sync_delta_streams_without_co_hosting_the_websocket(self, monkeypatch, caplog):
+        from agentkernel.pipeline.ws.endpoint import PushEndpointHandler
+        from agentkernel.pipeline.ws.handler import PipelineWebSocketHandler
+
+        with caplog.at_level("WARNING"):
+            handlers, selected = self._run(monkeypatch, "rest_sync", "delta", auth_validator=MagicMock())
+
+        assert selected == ["StreamAgentRunner"]
+        assert not [h for h in handlers if isinstance(h, (PipelineWebSocketHandler, PushEndpointHandler))]
+        assert "auth_validator ignored" in caplog.text
+
+    def test_async_delta_selects_the_stream_runner(self, monkeypatch):
+        _, selected = self._run(monkeypatch, "async", "delta", auth_validator=MagicMock())
+        assert selected == ["StreamAgentRunner"]
+
+    def test_async_complete_selects_the_plain_runner(self, monkeypatch):
+        _, selected = self._run(monkeypatch, "async", auth_validator=MagicMock())
+        assert selected == ["AgentRunner"]
+
+    def test_realtime_selects_the_realtime_runner_not_the_stream_runner(self, monkeypatch):
+        _, selected = self._run(monkeypatch, "realtime")
+        assert selected == ["RealtimeAgentRunner"]
 
 
 class TestNestedDrainCoordination:

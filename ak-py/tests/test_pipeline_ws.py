@@ -1,6 +1,6 @@
 """Gateway-tier WebSocket delivery (#495 §9): the local socket registry, the shared connection
 store, the /ws route, the push endpoint, store-lookup delivery, the gateway entry point, and the
-end-to-end gates: single-process ASYNC/STREAM over in_memory plus cross-"pod" delivery between
+end-to-end gates: single-process async (complete and delta replies) over in_memory plus cross-"pod" delivery between
 two gateway apps."""
 
 import asyncio
@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 from agentkernel.auth.handler import AuthValidator, ValidationResult
+from agentkernel.core.config import _ExecutionConfig, _QueuesConfig
 from agentkernel.core.model import ExecutionMode
 from agentkernel.core.session.in_memory import InMemoryWSConnectionStore
 from agentkernel.core.util.factory import AKConfigError
@@ -49,27 +50,15 @@ def _reset_state():
     PipelineWebSocketHandler._custom_routes.clear()
 
 
-def _use_config(monkeypatch, mode=None, chat_route=None, push_auth_token=None, push_port=None, api_port=8000, transport_type="in_memory"):
+def _use_config(
+    monkeypatch, mode=None, chat_route=None, push_auth_token=None, push_port=None, api_port=8000, transport_type="in_memory", message_type=None
+):
     class _WebSocketAPI:
         pass
 
     _WebSocketAPI.chat_route = chat_route
     _WebSocketAPI.push_auth_token = push_auth_token
     _WebSocketAPI.push_port = push_port
-
-    class _Input:
-        url = None
-        max_receive_count = 3
-
-    class _Output:
-        max_receive_count = 3
-
-    class _Queues:
-        input = _Input
-        output = _Output
-
-    # `type` is mandatory inside a declared queues block, so the fake carries one too.
-    _Queues.type = transport_type
 
     class _Api:
         host = "127.0.0.1"
@@ -80,10 +69,8 @@ def _use_config(monkeypatch, mode=None, chat_route=None, push_auth_token=None, p
         websocket_api = _WebSocketAPI
         api = _Api
 
-        class execution:
-            queues = _Queues
+        execution = _ExecutionConfig(mode=mode, message_type=message_type, queues=_QueuesConfig(type=transport_type))
 
-    _Cfg.execution.mode = mode
     monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _Cfg))
     return _Cfg
 
@@ -336,8 +323,8 @@ class TestPushEndpoint:
         assert socket_.frames == [{"result": "ok", "type": "CHAT_RESPONSE"}]
 
 
-def _ws_app(monkeypatch, mode=None, chat_route=None):
-    _use_config(monkeypatch, mode=mode, chat_route=chat_route)
+def _ws_app(monkeypatch, mode=None, chat_route=None, message_type=None):
+    _use_config(monkeypatch, mode=mode, chat_route=chat_route, message_type=message_type)
     registry = LocalConnectionRegistry()
     transport = InMemoryTransport()
     store = _store()
@@ -546,7 +533,7 @@ class TestWebSocketGateway:
 
     def test_rest_modes_are_rejected(self, monkeypatch):
         config = _use_config(monkeypatch, mode=ExecutionMode.REST_SYNC, push_auth_token="s3cret")
-        with pytest.raises(AKConfigError, match="ASYNC/STREAM"):
+        with pytest.raises(AKConfigError, match="serves execution.mode async"):
             WebSocketGateway._validate(_Validator(), "nats", config)
 
     def test_missing_push_token_is_rejected(self, monkeypatch):
@@ -555,8 +542,10 @@ class TestWebSocketGateway:
             WebSocketGateway._validate(_Validator(), "nats", config)
 
     def test_valid_config_passes_validation(self, monkeypatch):
-        config = _use_config(monkeypatch, mode=ExecutionMode.STREAM, push_auth_token="s3cret")
-        WebSocketGateway._validate(_Validator(), "nats", config)
+        WebSocketGateway._validate(_Validator(), "nats", _use_config(monkeypatch, mode=ExecutionMode.ASYNC, push_auth_token="s3cret"))
+        WebSocketGateway._validate(
+            _Validator(), "nats", _use_config(monkeypatch, mode=ExecutionMode.ASYNC, message_type="delta", push_auth_token="s3cret")
+        )
 
     def test_push_port_differing_from_api_port_is_rejected(self, monkeypatch):
         """The built-in gateway serves /ws and /internal/push on one server bound to api.port:
@@ -597,7 +586,7 @@ def _drain(transport, queue, process, expect, timeout=5.0):
 
 
 class TestEndToEndOverInMemory:
-    """The iteration's first verify gate: single-process ASYNC and STREAM over in_memory."""
+    """The iteration's first verify gate: single-process async (complete and delta) over in_memory."""
 
     def test_async_chat_reply_reaches_the_websocket(self, monkeypatch):
         app, registry, transport, store = _ws_app(monkeypatch, mode=ExecutionMode.ASYNC)
@@ -620,7 +609,7 @@ class TestEndToEndOverInMemory:
         assert reply == {"result": "hello from agent", "session_id": "s1", "type": "CHAT_RESPONSE"}
 
     def test_stream_chunks_reach_the_websocket_in_order(self, monkeypatch):
-        app, registry, transport, store = _ws_app(monkeypatch, mode=ExecutionMode.STREAM)
+        app, registry, transport, store = _ws_app(monkeypatch, mode=ExecutionMode.ASYNC, message_type="delta")
 
         chunks = [{"delta": "he", "session_id": "s1"}, {"delta": "llo", "session_id": "s1"}, {"done": True, "session_id": "s1"}]
         chat_service = MagicMock()
