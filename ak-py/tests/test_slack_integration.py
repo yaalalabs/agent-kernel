@@ -28,6 +28,7 @@ from agentkernel.integration.adapter.producer import IntegrationProducer  # noqa
 from agentkernel.integration.adapter.webhook import WebhookRESTRequestHandler  # noqa: E402
 from agentkernel.integration.slack.adapter import (  # noqa: E402
     ACTION_PREFIX,
+    BLOCK_ID_LIMIT,
     BLOCK_PREFIX,
     MAX_BLOCKS,
     MODAL_CALLBACK_ID,
@@ -352,21 +353,40 @@ def _press(value="call_9f2b:approved", channel="C9", message_ts="111.222", threa
 
 
 class TestPauseRendering:
-    """A paused run drawn as Block Kit buttons."""
+    """A paused run drawn as Block Kit, each question beside the controls that answer it."""
 
     @pytest.mark.asyncio
-    async def test_each_interruption_gets_an_actions_block(self):
+    async def test_every_question_is_followed_by_its_own_controls(self):
         adapter, posted = _outbound(), AsyncMock()
         with patch.object(SlackOutboundAdapter, "_client", return_value=MagicMock(chat_postMessage=posted)):
             await adapter.deliver_paused(_paused("call_a", "call_b"), {"channel": "C9", "thread_ts": "000.111"})
 
         blocks = posted.await_args.kwargs["blocks"]
-        actions = [b for b in blocks if b["type"] == "actions"]
-        assert [b["block_id"] for b in actions] == [f"{BLOCK_PREFIX}call_a", f"{BLOCK_PREFIX}call_b"]
-        assert [e["value"] for e in actions[0]["elements"]] == ["call_a:approved", "call_a:denied"]
-        assert [e["action_id"] for e in actions[0]["elements"]] == [f"{ACTION_PREFIX}approved", f"{REASON_PREFIX}denied"]
-        assert [e.get("style") for e in actions[0]["elements"]] == ["primary", "danger"]
-        assert any("refund_order" in str(b) for b in blocks if b["type"] == "section")
+        assert [b["type"] for b in blocks] == ["section", "section", "actions", "section", "actions", "section"]
+        assert blocks[2]["block_id"] == f"{BLOCK_PREFIX}call_a" and blocks[4]["block_id"] == f"{BLOCK_PREFIX}call_b"
+        assert "A-10294" in blocks[1]["text"]["text"], "the controls sit under the question they answer"
+        assert [e["value"] for e in blocks[2]["elements"]] == ["call_a:approved", "call_a:denied"]
+        assert [e["action_id"] for e in blocks[2]["elements"]] == [f"{ACTION_PREFIX}approved", f"{REASON_PREFIX}denied"]
+        assert [e.get("style") for e in blocks[2]["elements"]] == ["primary", "danger"]
+
+    @pytest.mark.asyncio
+    async def test_the_buttons_need_no_label_beyond_the_verb(self):
+        adapter, posted = _outbound(), AsyncMock()
+        with patch.object(SlackOutboundAdapter, "_client", return_value=MagicMock(chat_postMessage=posted)):
+            await adapter.deliver_paused(_paused("call_a", "call_b"), {"channel": "C9"})
+
+        actions = [b for b in posted.await_args.kwargs["blocks"] if b["type"] == "actions"]
+        assert [[e["text"]["text"] for e in b["elements"]] for b in actions] == [["Approve", "Deny"], ["Approve", "Deny"]]
+
+    @pytest.mark.asyncio
+    async def test_the_opening_and_closing_lines_wrap_the_questions(self):
+        adapter, posted = _outbound(), AsyncMock()
+        with patch.object(SlackOutboundAdapter, "_client", return_value=MagicMock(chat_postMessage=posted)):
+            await adapter.deliver_paused(_paused("call_a"), {"channel": "C9"})
+
+        blocks = posted.await_args.kwargs["blocks"]
+        assert "Approval needed" in blocks[0]["text"]["text"]
+        assert "paused until someone approves" in blocks[-1]["text"]["text"]
 
     @pytest.mark.asyncio
     async def test_a_third_verb_is_offered_when_the_adapter_declares_it(self):
@@ -379,15 +399,16 @@ class TestPauseRendering:
         assert [e["text"]["text"] for e in actions["elements"]] == ["Approve", "Deny", "Cancel"]
 
     @pytest.mark.asyncio
-    async def test_interruptions_past_the_block_budget_are_named_instead_of_dropped(self):
+    async def test_questions_past_the_block_budget_are_counted_instead_of_dropped(self):
         adapter, posted = _outbound(), AsyncMock()
         with patch.object(SlackOutboundAdapter, "_client", return_value=MagicMock(chat_postMessage=posted)):
-            await adapter.deliver_paused(_paused(*[f"call_{n}" for n in range(MAX_BLOCKS + 5)]), {"channel": "C9"})
+            await adapter.deliver_paused(_paused(*[f"call_{n}" for n in range(MAX_BLOCKS)]), {"channel": "C9"})
 
         blocks = posted.await_args.kwargs["blocks"]
         assert len(blocks) <= MAX_BLOCKS, "Slack refuses a message over its block budget"
+        drawn = len([b for b in blocks if b["type"] == "actions"])
         [notice] = [b for b in blocks if b["type"] == "context"]
-        assert "call_49" in notice["elements"][0]["text"], "an interruption without buttons must still be named"
+        assert str(MAX_BLOCKS - drawn) in notice["elements"][0]["text"], "a question left out must still be accounted for"
 
     @pytest.mark.asyncio
     async def test_a_question_wanting_a_value_gets_no_buttons(self):
@@ -403,10 +424,11 @@ class TestPauseRendering:
 
         blocks = posted.await_args.kwargs["blocks"]
         assert not [b for b in blocks if b["type"] == "actions"], "Approve answers nothing when the agent asked for a value"
-        assert any("Which warehouse?" in str(b) for b in blocks)
+        assert "Which warehouse?" in blocks[1]["text"]["text"]
+        assert blocks[2]["type"] == "context", "the note sits against the question it is about"
 
     @pytest.mark.asyncio
-    async def test_a_mixed_pause_keeps_the_approval_buttons_and_names_the_question(self):
+    async def test_a_mixed_pause_puts_each_note_against_its_own_question(self):
         adapter, posted = _outbound(), AsyncMock()
         reply = AgentPausedReplyAny(
             run_id="01JD7K2MX4",
@@ -421,9 +443,36 @@ class TestPauseRendering:
             await adapter.deliver_paused(reply, {"channel": "C9"})
 
         blocks = posted.await_args.kwargs["blocks"]
-        assert [b["block_id"] for b in blocks if b["type"] == "actions"] == [f"{BLOCK_PREFIX}call_a"]
-        [notice] = [b for b in blocks if b["type"] == "context"]
-        assert "call_q" in notice["elements"][0]["text"], "with buttons on screen, the question without them has to be named"
+        assert [b["type"] for b in blocks] == ["section", "section", "actions", "section", "context", "section"]
+        assert "Which warehouse?" in blocks[3]["text"]["text"], "the note follows the question it belongs to"
+
+    @pytest.mark.asyncio
+    async def test_the_acknowledgement_is_cleared_before_the_pause(self):
+        client = MagicMock(chat_postMessage=AsyncMock(), chat_update=AsyncMock())
+        with patch.object(SlackOutboundAdapter, "_client", return_value=client):
+            context = {"channel": "C9", "thread_ts": "000.111", "user": "U123", "ack_ts": "ack-1", "ack_channel": "C9"}
+            await _outbound().deliver_paused(_paused("call_a"), context)
+
+        assert client.chat_update.call_args.kwargs == {"channel": "C9", "ts": "ack-1", "text": "Hi <@U123>,"}
+        assert (
+            client.chat_postMessage.call_args.kwargs["thread_ts"] == "000.111"
+        ), "a press carries this as its session id, so the pause stays in the run's own thread"
+
+    @pytest.mark.asyncio
+    async def test_an_identifier_too_long_for_slack_loses_its_buttons(self, caplog):
+        adapter, posted = _outbound(), AsyncMock()
+        too_long = "x" * BLOCK_ID_LIMIT
+
+        with caplog.at_level(logging.WARNING, logger="ak.integration.slack"):
+            with patch.object(SlackOutboundAdapter, "_client", return_value=MagicMock(chat_postMessage=posted)):
+                await adapter.deliver_paused(_paused("call_a", too_long), {"channel": "C9"})
+
+        blocks = posted.await_args.kwargs["blocks"]
+        assert [b["block_id"] for b in blocks if b["type"] == "actions"] == [
+            f"{BLOCK_PREFIX}call_a"
+        ], "Slack rejects the whole message over its id budget"
+        assert [b["type"] for b in blocks] == ["section", "section", "actions", "section", "context", "section"]
+        assert "block_id" in caplog.text, "the reason belongs in the log, not in front of the user"
 
 
 class TestPressParsing:

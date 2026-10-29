@@ -33,11 +33,7 @@ NAME = "telegram"
 HTTP_TIMEOUT = 30.0
 
 CALLBACK_PREFIX = "akhitl:"
-"""What marks an inline-keyboard press as a decision on a paused run.
-
-Specific rather than short: an application may already ship its own inline keyboards, and a
-two-letter prefix would turn its presses into decisions.
-"""
+"""Marks an inline-keyboard press as a decision; long enough not to claim an app's own keyboards."""
 CALLBACK_LIMIT = 64
 """Telegram's ``callback_data`` budget, in bytes — a multibyte character costs more than one."""
 VERB_CODES = {"approved": "a", "denied": "d", "cancelled": "c"}
@@ -70,8 +66,8 @@ class _TelegramClient:
     async def send_message(self, chat_id: str, chunks: List[str], reply_markup: Optional[dict] = None) -> None:
         """Send each chunk as its own message, in order.
 
-        ``reply_markup`` rides on the last chunk alone, so a keyboard sits under the end of a split
-        reply instead of repeating under every piece of it.
+        ``reply_markup`` rides the last chunk alone, so a keyboard does not repeat under every
+        piece of a split reply.
         """
         async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
             for index, chunk in enumerate(chunks):
@@ -219,9 +215,8 @@ class TelegramInboundAdapter(InboundAdapter):
     def _decision(self, callback_query: dict, chat_id: Any, data: str, sender: Optional[str]) -> Optional[InboundRequest]:
         """A press on a pause button, as the decision it carries.
 
-        The request id is composed from the press rather than taken from ``update_id``, which
-        Telegram mints per update: on that id a second click on the same button would be a new
-        request, reach a pause already answered, and earn the user an error for pressing twice.
+        The request id is composed from the press, not the per-update ``update_id``, so a second
+        click deduplicates instead of reaching a pause already answered.
 
         :param callback_query: The press, carrying the message it was attached to.
         :param chat_id: The conversation, which is the session.
@@ -370,7 +365,6 @@ class TelegramOutboundAdapter(OutboundAdapter):
 
     name = NAME
     MESSAGE_LIMIT = 4096
-    UNPRESSABLE_NOTICE = "These cannot be answered from Telegram, because their ids exceed the button size limit: {ids}"
 
     _log = _log
 
@@ -385,44 +379,62 @@ class TelegramOutboundAdapter(OutboundAdapter):
         await self._client.send_message(reply_context["chat_id"], self.split_reply(str(reply)))
 
     async def deliver_paused(self, reply: AgentPausedReplyAny, reply_context: Dict[str, str]) -> None:
-        """Send the pause with an inline keyboard, so it can be answered by pressing."""
-        decidable, typed = self._decidable(reply)
-        rows, unpressable = self._rows(decidable)
-        text = self.format_pause(reply)
-        if unpressable:
-            text = f"{text}\n\n{self.UNPRESSABLE_NOTICE.format(ids=', '.join(unpressable))}"
-        if typed and rows:
-            text = f"{text}\n\n{self.TYPED_ANSWER_NOTICE.format(ids=', '.join(typed))}"
-        markup = {"inline_keyboard": rows} if rows else None
-        await self._client.send_message(reply_context["chat_id"], self.split_reply(text), reply_markup=markup)
+        """Send each question as its own message, with the keyboard that answers it.
 
-    def _rows(self, interruptions: List[PausedInterruption]) -> tuple[list, List[str]]:
-        """One row of buttons per interruption, in the verbs this adapter offers.
+        A keyboard renders at the foot of its own message, so this is the only arrangement where
+        a row sits with its question. The opening and closing lines ride the first and last, so a
+        one-question pause stays one message. Many questions mean many messages, and Telegram
+        rate-limits a chat: a rejected send is retried, resending what already landed.
 
-        An interruption whose callback data will not fit Telegram's budget gets no row — the ids
-        are the framework's own, so their length is not Agent Kernel's to bound — and is named
-        back to the caller. Saying so in the message matters: the pause text shows an
-        interruption's id only when the framework named nothing else, so two gated calls to the
-        same tool read alike and a reader could not tell which one has no buttons.
-
-        :param interruptions: The interruptions a press can answer, from :meth:`_decidable`.
-        :return: The keyboard rows, and the ids of the interruptions that could not get one.
+        :param reply: The paused reply to draw.
+        :param reply_context: The delivery coordinates resolved at the edge.
         """
-        rows, unpressable = [], []
-        for interruption in interruptions:
-            row = [
-                {"text": BUTTON_LABELS[verb], "callback_data": f"{CALLBACK_PREFIX}{VERB_CODES[verb]}:{interruption.id}"} for verb in self.DECISIONS
-            ]
-            oversized = [button for button in row if len(button["callback_data"].encode()) > CALLBACK_LIMIT]
-            if oversized:
-                self._log.warning(
-                    f"Interruption '{interruption.id}' needs {len(oversized[0]['callback_data'].encode())} bytes of callback_data, "
-                    f"over Telegram's {CALLBACK_LIMIT}; rendering it without buttons"
-                )
-                unpressable.append(interruption.id)
-                continue
-            rows.append(row)
-        return rows, unpressable
+        chat_id = reply_context["chat_id"]
+        opening, closing = self._pause_template(reply)
+        if not reply.interruptions:
+            await self._client.send_message(chat_id, self.split_reply(f"{opening}{closing}"))
+            return
+
+        last = len(reply.interruptions) - 1
+        for position, interruption in enumerate(reply.interruptions):
+            row, notice = self._row(interruption)
+            text = self._format_interruption(interruption)
+            if notice:
+                text = f"{text}\n\n{notice}"
+            if position == 0:
+                text = f"{opening}{text}"
+            if position == last:
+                text = f"{text}{closing}"
+            markup = {"inline_keyboard": [row]} if row else None
+            await self._client.send_message(chat_id, self.split_reply(text), reply_markup=markup)
+
+    def _row(self, interruption: PausedInterruption) -> tuple[list, Optional[str]]:
+        """One question's buttons, or the note that stands in for them.
+
+        The buttons go when :meth:`_decidable` rejects the question, or when its callback payload
+        is over budget: the ids are the framework's own, so their length is not ours to bound.
+
+        :param interruption: The question to draw.
+        :return: Its keyboard row, and the note to append when there is none.
+        """
+        if not self._decidable(interruption):
+            return [], self.TYPED_ANSWER_NOTICE
+
+        row = [
+            {
+                "text": BUTTON_LABELS[verb],
+                "callback_data": f"{CALLBACK_PREFIX}{VERB_CODES[verb]}:{interruption.id}",
+            }
+            for verb in self.DECISIONS
+        ]
+        oversized = [button for button in row if len(button["callback_data"].encode()) > CALLBACK_LIMIT]
+        if oversized:
+            self._log.warning(
+                f"Interruption '{interruption.id}' needs {len(oversized[0]['callback_data'].encode())} bytes of callback_data, "
+                f"over Telegram's {CALLBACK_LIMIT}; rendering it without buttons"
+            )
+            return [], self.UNPRESSABLE_NOTICE
+        return row, None
 
     async def deliver_error(self, message: str, reply_context: Dict[str, str]) -> None:
         try:

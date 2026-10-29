@@ -579,7 +579,13 @@ Platform --poll-----> PollerRunner ---------------> (same adapter surface) -----
   `MESSAGE_LIMIT`/`MAX_CHUNKS` and `DECISIONS`/`DECIDABLE_KINDS`/`DENY_COLLECTS_REASON`. `deliver_paused` is
   concrete, not abstract: the default renders `format_pause(reply)` through `deliver`, and
   overriding it is how Slack and Telegram declare they can draw a pause with real controls
-  (#609). Instances are factory-cached and shared across consumer threads, and
+  (#609). Both overrides put each question's controls **against that question** rather than
+  gathering the rows under the whole text, by the only means their platform allows: Slack emits a
+  section plus an actions block per interruption, Telegram sends one message per interruption
+  (its keyboard is attached to a message and always renders at its foot). `_pause_template(reply)`
+  hands back the chosen wording's two halves so either can place the opening and closing lines
+  itself, and `_decidable(interruption)` is the shared rule that an `input_required` question gets
+  no controls. Instances are factory-cached and shared across consumer threads, and
   each call runs on its own event loop: no per-message state on `self`, loop-bound clients per call.
 - **`IntegrationAdapterFactory`** resolves only the **outbound** half, by the `integration`
   attribute: a built-in short name (overridable per platform via `<platform>.outbound_adapter`), or

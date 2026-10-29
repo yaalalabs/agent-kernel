@@ -117,10 +117,8 @@ class IntegrationDelivery:
     def _paused_reply(self, body: dict, session_id: Optional[str], integration: str) -> Optional[AgentPausedReplyAny]:
         """Rebuild the paused reply from the pause keys ``ResponseBuilder`` promoted onto the body.
 
-        Rebuilding the model rather than passing the raw dict keeps the content a validator
-        produced, so every host delivers the same pause. Returning ``None`` rather than raising
-        lets the caller fall back to text: a body that does not reconstruct is still a reply
-        someone is waiting for.
+        Rebuilt rather than passed through as a dict, so every host delivers the same pause.
+        Returns ``None`` rather than raising, so the caller can fall back to text.
 
         :param body: The decoded output body, carrying ``run_id``, ``agent`` and ``interruptions``.
         :param session_id: The session, for a body that carries none of its own.

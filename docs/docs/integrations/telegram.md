@@ -241,7 +241,7 @@ await self._send_message(
 ## Approving a Paused Run
 
 When an agent stops to ask a human — a gated tool, a confirmation — the pause is posted to the same
-chat with a row of buttons per question that needs a yes or no:
+chat with a keyboard under it:
 
 ```
 ⏸ Approval needed
@@ -253,6 +253,12 @@ This run is paused until someone approves it.
 
 [ ✓ Approve ]  [ ✗ Deny ]
 ```
+
+**A pause holding several questions is sent as several messages**, one per question, each with the
+keyboard that answers it. A Telegram keyboard is attached to a message and always renders at its
+foot, so there is no way to put a row beside its question inside one message — and matching rows to
+paragraphs by eye is how the wrong refund gets approved. The opening and closing lines ride on the
+first and last question, so the common pause, which holds one question, is still one message.
 
 Nothing is configured for this. A press parses into exactly the decision a REST client would send
 and travels the same queue, so the agent cannot tell the two apart. See
@@ -267,9 +273,8 @@ and a `PreHook` is where you check it.
 :::note Telegram's 64-byte button budget
 A button carries `akhitl:<verb>:<interruption id>` in `callback_data`, which Telegram caps at **64
 bytes**. The interruption id is the agent framework's own, so Agent Kernel cannot shorten it. A
-question whose id does not fit renders with no buttons, is named in the message so nobody is left
-guessing which one lost them, and is logged with its byte count. Answer that one over another
-surface.
+question whose id does not fit renders with no keyboard, says so in its own message, and is logged
+with its byte count. Answer that one over another surface.
 :::
 
 The buttons stay on the message after a decision. Pressing the same one again is deduplicated and

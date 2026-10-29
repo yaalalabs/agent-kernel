@@ -23,7 +23,7 @@ def restart_service(name: str) -> str:
     :param name: The service to restart, e.g. "checkout-api".
     :return: Confirmation of the restart.
     """
-    return f"{name} was restarted."
+    return f"{name} was restarted (simulated)."
 
 
 general_agent = OpenAIAgent(

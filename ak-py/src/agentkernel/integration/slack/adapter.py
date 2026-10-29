@@ -50,11 +50,7 @@ NAME = "slack"
 ACTION_PREFIX = "ak_decision:"
 """Marks a Block Kit button as a decision on a paused run; the listener matches on it."""
 REASON_PREFIX = "ak_decision_reason:"
-"""Marks a button that opens the reason modal instead of deciding outright.
-
-The prefix is what tells the inbound half to open a modal, so the press handler reads the button
-that arrived rather than re-deriving whether this deployment collects reasons.
-"""
+"""Marks a button that opens the reason modal instead of deciding outright."""
 MODAL_CALLBACK_ID = "ak_decision_reason_modal"
 REASON_BLOCK_ID = "ak_reason"
 REASON_INPUT_ID = "ak_reason_input"
@@ -62,6 +58,9 @@ BLOCK_PREFIX = "ak_pause:"
 """Prefixes the ``block_id`` of an actions block, which Slack asks to be unique per message."""
 MAX_BLOCKS = 50
 """Slack's per-message block budget."""
+BLOCK_ID_LIMIT = 255
+VALUE_LIMIT = 2000
+"""Slack's caps on a ``block_id`` and a button ``value``; over either, it rejects the whole message."""
 DECISION_VERBS = ("approved", "denied", "cancelled")
 BUTTON_LABELS = {"approved": "Approve", "denied": "Deny", "cancelled": "Cancel"}
 BUTTON_STYLES = {"approved": "primary", "denied": "danger"}
@@ -98,11 +97,10 @@ class SlackInboundAdapter(InboundAdapter):
 
         @self._app.action(re.compile(f"^{re.escape(ACTION_PREFIX)}"))
         async def _collect_press(ack, body):
-            """Collect a decision press, doing no work of its own.
+            """Collect a decision press. :meth:`parse` does the work, where no clock is running.
 
             ``process_before_response=True`` holds the HTTP response until this returns, so
-            Slack's three seconds cover the whole listener and not merely the time before
-            ``ack()``. Parsing happens in :meth:`parse`, where no clock is running.
+            Slack's three seconds cover the whole listener, not merely the time before ``ack()``.
             """
             await ack()
             collected = _presses.get(None)
@@ -113,10 +111,8 @@ class SlackInboundAdapter(InboundAdapter):
         async def _open_reason_modal(ack, body, client):
             """Ask why, instead of recording the denial from the press alone.
 
-            The one Slack call this adapter makes inside a listener. ``views_open`` must land
-            within the same three seconds as the acknowledgement, because
-            ``process_before_response=True`` holds the response until this returns; a failure is
-            logged and leaves the pause open with its buttons live, since nothing was decided.
+            The one Slack call made inside a listener, so ``views_open`` has to land in the same
+            three seconds. A failure leaves the pause live: nothing was decided.
             """
             await ack()
             try:
@@ -177,12 +173,9 @@ class SlackInboundAdapter(InboundAdapter):
     def _decision_from_press(self, body: dict) -> Optional[InboundRequest]:
         """A Block Kit button press, as the decision it carries.
 
-        The request id is composed from the press rather than from Slack's ``action_ts``, which is
-        minted per click: on that id a second press of one button would be a new request, reach a
-        pause already answered, and earn the user an error for pressing twice.
-
-        The session is the thread, not the message: the pause was posted into the thread the turn
-        opened, so answering it continues that same conversation.
+        The request id is composed from the press, not Slack's per-click ``action_ts``, so a
+        second press deduplicates instead of reaching a pause already answered. The session is
+        the thread the pause was posted into.
 
         :param body: The ``block_actions`` payload.
         :return: The decision as a request, or None when the payload does not carry one.
@@ -214,14 +207,8 @@ class SlackInboundAdapter(InboundAdapter):
     def _reason_modal(self, body: dict) -> dict:
         """The modal a denial opens, carrying everything the submission will need back.
 
-        A ``view_submission`` arrives with no channel and no message of its own, so
-        ``private_metadata`` carries the whole return address. Without it the submitted denial
-        could not resolve its session, compose its deduplicating request id, or be delivered back
-        to the conversation it came from.
-
-        The reason is optional. Collecting one is the point of the modal, but a denial must stay
-        possible: holding the decision hostage to a sentence would leave a run paused because
-        someone had nothing to type.
+        A ``view_submission`` carries no channel and no message, so ``private_metadata`` carries
+        the whole return address. The reason is optional: a denial must stay possible.
 
         :param body: The ``block_actions`` payload of the press that opened it.
         :return: The Slack view to open.
@@ -291,8 +278,7 @@ class SlackInboundAdapter(InboundAdapter):
     def _parse_action_value(cls, value: Optional[str]) -> Optional[tuple[str, str]]:
         """Read a button's ``<interruption id>:<verb>`` value back into the pair it encodes.
 
-        Split from the right, because a framework's interruption id may itself contain a colon
-        while a verb never does.
+        Split from the right: an interruption id may contain a colon, a verb never does.
 
         :param value: The pressed button's value.
         :return: The interruption id and the decision's status, or None when either is missing.
@@ -438,7 +424,7 @@ class SlackOutboundAdapter(OutboundAdapter):
     MESSAGE_LIMIT = 3000
     MAX_CHUNKS = 5
     TRUNCATION_NOTICE = "Response is truncated due to size restrictions in Slack"
-    UNPRESSABLE_NOTICE = "These cannot be answered here, because the message is at Slack's block limit: {ids}"
+    OVERFLOW_NOTICE = "{count} more question(s) did not fit in this message and cannot be answered here."
     DENY_COLLECTS_REASON = True
 
     _log = logging.getLogger("ak.integration.slack")
@@ -479,60 +465,91 @@ class SlackOutboundAdapter(OutboundAdapter):
         )
 
     async def deliver_paused(self, reply: AgentPausedReplyAny, reply_context: Dict[str, str]) -> None:
-        """Post the pause with a row of buttons per decidable interruption, so it can be answered by pressing.
+        """Post the pause with each question's controls directly beneath it.
 
-        The budget passed to :meth:`_action_blocks` holds a block back for each notice that could
-        follow, so a pause with more interruptions than the message can carry is still able to say
-        so.
+        Posted in the run's own thread, unlike :meth:`deliver`: a press carries the pause
+        message's ``thread_ts`` as its session id, so moving it would resume the wrong session.
+
+        :param reply: The paused reply to draw.
+        :param reply_context: The delivery coordinates resolved at the edge.
         """
-        decidable, typed = self._decidable(reply)
-        blocks = self.split_reply(self.format_pause(reply))
-        actions, unpressable = self._action_blocks(decidable, MAX_BLOCKS - len(blocks) - (2 if typed else 1))
-        blocks.extend(actions)
-        if unpressable:
-            blocks.append(self._notice(self.UNPRESSABLE_NOTICE.format(ids=", ".join(unpressable))))
-        if typed and actions:
-            blocks.append(self._notice(self.TYPED_ANSWER_NOTICE.format(ids=", ".join(typed))))
+        client = self._client()
+        if reply_context.get("ack_ts"):
+            await client.chat_update(
+                channel=reply_context.get("ack_channel") or reply_context["channel"],
+                ts=reply_context["ack_ts"],
+                text=f"Hi <@{reply_context.get('user')}>,",
+            )
 
-        await self._client().chat_postMessage(
+        await client.chat_postMessage(
             channel=reply_context["channel"],
             thread_ts=reply_context.get("thread_ts"),
             text="Approval needed",
-            blocks=blocks,
+            blocks=self._pause_blocks(reply),
         )
+
+    def _pause_blocks(self, reply: AgentPausedReplyAny) -> list:
+        """The pause as Block Kit: every question followed by whatever answers it.
+
+        Slack takes 50 blocks per message. Two are held back for the closing line and a possible
+        overflow notice; questions past what is left are counted rather than dropped silently.
+
+        :param reply: The paused reply to draw.
+        :return: The blocks to post.
+        """
+        opening, closing = self._pause_template(reply)
+        blocks = self.split_reply(opening.strip())
+        budget = MAX_BLOCKS - 2
+        skipped = 0
+
+        for interruption in reply.interruptions:
+            question = self._question_blocks(interruption)
+            if len(blocks) + len(question) > budget:
+                skipped += 1
+                continue
+            blocks.extend(question)
+
+        if skipped:
+            self._log.warning(f"{skipped} interruption(s) did not fit Slack's {MAX_BLOCKS}-block message and were left out")
+            blocks.append(self._notice(self.OVERFLOW_NOTICE.format(count=skipped)))
+        blocks.extend(self.split_reply(closing.strip()))
+        return blocks
+
+    def _question_blocks(self, interruption: PausedInterruption) -> list:
+        """One question, and the controls or the note that goes under it.
+
+        A note stands in when :meth:`_decidable` rejects the question, or when its id would blow
+        Slack's ``block_id``/``value`` budget — which costs the **whole** message, not one row.
+
+        :param interruption: The question to draw.
+        :return: Its section blocks, followed by its actions block or its note.
+        """
+        blocks = self.split_reply(self._format_interruption(interruption))
+        if not self._decidable(interruption):
+            blocks.append(self._notice(self.TYPED_ANSWER_NOTICE))
+            return blocks
+
+        block_id = f"{BLOCK_PREFIX}{interruption.id}"
+        longest_value = max((len(f"{interruption.id}:{verb}") for verb in self.DECISIONS), default=0)
+        if len(block_id) > BLOCK_ID_LIMIT or longest_value > VALUE_LIMIT:
+            self._log.warning(
+                f"Interruption '{interruption.id}' needs a {len(block_id)}-character block_id and a "
+                f"{longest_value}-character value, over Slack's {BLOCK_ID_LIMIT}/{VALUE_LIMIT}; rendering it without buttons"
+            )
+            blocks.append(self._notice(self.UNPRESSABLE_NOTICE))
+            return blocks
+
+        blocks.append({"type": "actions", "block_id": block_id, "elements": [self._button(interruption.id, verb) for verb in self.DECISIONS]})
+        return blocks
 
     @staticmethod
     def _notice(text: str) -> dict:
-        """A line of small print under the controls.
+        """A line of small print, placed under the question it is about.
 
         :param text: What it says.
         :return: The context block to append.
         """
         return {"type": "context", "elements": [{"type": "mrkdwn", "text": text}]}
-
-    def _action_blocks(self, interruptions: List[PausedInterruption], budget: int) -> tuple[list, List[str]]:
-        """One actions block per interruption, for as many as the message has room for.
-
-        Slack takes 50 blocks per message and the pause text has already used some. An
-        interruption past the budget is named back to the caller rather than dropped silently:
-        the pause text shows an interruption's id only when the framework named nothing else, so
-        two gated calls to the same tool read alike and a reader could not tell which lost its
-        buttons.
-
-        :param interruptions: The interruptions a press can answer, from :meth:`_decidable`.
-        :param budget: How many blocks are left for controls.
-        :return: The actions blocks, and the ids of the interruptions that did not fit.
-        """
-        blocks, unpressable = [], []
-        for interruption in interruptions:
-            if len(blocks) >= budget:
-                unpressable.append(interruption.id)
-                continue
-            elements = [self._button(interruption.id, verb) for verb in self.DECISIONS]
-            blocks.append({"type": "actions", "block_id": f"{BLOCK_PREFIX}{interruption.id}", "elements": elements})
-        if unpressable:
-            self._log.warning(f"{len(unpressable)} interruption(s) did not fit Slack's {MAX_BLOCKS}-block message and were rendered without buttons")
-        return blocks, unpressable
 
     def _button(self, interruption_id: str, verb: str) -> dict:
         """One decision button. ``value`` is the payload; ``action_id`` only selects the listener.

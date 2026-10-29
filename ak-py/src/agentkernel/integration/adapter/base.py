@@ -18,7 +18,7 @@ import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 from pydantic import BaseModel, Field
 
@@ -192,7 +192,8 @@ class OutboundAdapter(ABC):
     DECISIONS: tuple[str, ...] = ("approved", "denied")
     DECIDABLE_KINDS: tuple[str, ...] = ("tool_call", "confirmation")
     DENY_COLLECTS_REASON: bool = False
-    TYPED_ANSWER_NOTICE: str = "These need a typed answer, which cannot be sent from here: {ids}"
+    TYPED_ANSWER_NOTICE: str = "This needs a typed answer, which cannot be sent from here."
+    UNPRESSABLE_NOTICE: str = "This cannot be answered here."
     PAUSE_APPROVAL_TEXT: str = "⏸ Approval needed\n\n{body}\n\nThis run is paused until someone approves it."
     PAUSE_INPUT_TEXT: str = "⏸ Input needed\n\n{body}\n\nThis run is paused until someone answers."
 
@@ -216,8 +217,7 @@ class OutboundAdapter(ABC):
     async def deliver_paused(self, reply: AgentPausedReplyAny, reply_context: Dict[str, str]) -> None:
         """Send a run that has stopped to wait for a human.
 
-        Concrete rather than abstract, like :meth:`deliver_chunk`: overriding it is how an adapter
-        declares it can draw a pause with the platform's controls. The default renders it as text.
+        Concrete, not abstract: overriding it is how an adapter declares it can draw controls.
 
         :param reply: The paused reply, carrying the interruptions a human must answer.
         :param reply_context: The delivery coordinates resolved at the edge.
@@ -225,36 +225,42 @@ class OutboundAdapter(ABC):
         await self.deliver(AgentReplyText(response=self.format_pause(reply)), reply_context)
 
     def format_pause(self, reply: AgentPausedReplyAny) -> str:
-        """Render a pause as readable text, for a platform with no controls to draw it with.
+        """Render a whole pause as text, for a platform with no controls to draw it with.
 
-        The template is chosen for the message, not per interruption: a pause asking only for
-        values says an answer is needed, anything else says approval is. No reply instruction is
-        offered, because nothing maps a typed word onto a decision.
+        No reply instruction is offered: nothing maps a typed word onto a decision.
 
         :param reply: The paused reply to render.
         :return: The text to deliver.
         """
-        body = "\n\n".join(self._format_interruption(i) for i in reply.interruptions)
-        kinds = {i.kind for i in reply.interruptions}
-        template = self.PAUSE_INPUT_TEXT if kinds == {"input_required"} else self.PAUSE_APPROVAL_TEXT
-        return template.format(body=body)
+        body = "\n\n".join(self._format_interruption(interruption) for interruption in reply.interruptions)
+        opening, closing = self._pause_template(reply)
+        return f"{opening}{body}{closing}"
 
     @classmethod
-    def _decidable(cls, reply: AgentPausedReplyAny) -> tuple[List[PausedInterruption], List[str]]:
-        """Split the interruptions into the ones a control can answer and the ids of the rest.
+    def _pause_template(cls, reply: AgentPausedReplyAny) -> Tuple[str, str]:
+        """The chosen template's two halves, either side of the questions.
 
-        An `input_required` pause wants a **value** — a choice, a sentence — so a decision verb
-        answers nothing: the resume carries no message and no payload, and the framework is handed
-        an empty answer to a real question. Those get no controls, and the caller names them in
-        the message when the same pause drew controls for something else, since otherwise a reader
-        cannot tell which question lost them.
+        Chosen per message, not per interruption. Handed back in halves so a platform that puts
+        its controls beside each question can place the lines itself.
 
-        :param reply: The paused reply to draw.
-        :return: The interruptions to draw controls for, and the ids of the ones that need typing.
+        :param reply: The paused reply to render.
+        :return: What goes before the questions, and what goes after.
         """
-        decidable = [i for i in reply.interruptions if i.kind in cls.DECIDABLE_KINDS]
-        typed = [i.id for i in reply.interruptions if i.kind not in cls.DECIDABLE_KINDS]
-        return decidable, typed
+        kinds = {i.kind for i in reply.interruptions}
+        template = cls.PAUSE_INPUT_TEXT if kinds == {"input_required"} else cls.PAUSE_APPROVAL_TEXT
+        opening, _, closing = template.partition("{body}")
+        return opening, closing
+
+    @classmethod
+    def _decidable(cls, interruption: PausedInterruption) -> bool:
+        """Whether a decision verb can answer this interruption.
+
+        An `input_required` question wants a value, so a verb would resume it with no answer.
+
+        :param interruption: The question to check.
+        :return: True when a control can answer it.
+        """
+        return interruption.kind in cls.DECIDABLE_KINDS
 
     @classmethod
     def _format_interruption(cls, interruption: PausedInterruption) -> str:
@@ -275,8 +281,7 @@ class OutboundAdapter(ABC):
     def _format_arguments(arguments: Optional[str]) -> List[str]:
         """The call's arguments as indented ``key: value`` lines.
 
-        The framework hands these over as a JSON string; neither parsing nor an object shape is
-        guaranteed, so both fall back to showing it as it arrived.
+        A JSON string from the framework; neither parsing nor an object shape is guaranteed.
 
         :param arguments: The JSON-encoded arguments, when the framework supplied any.
         :return: The lines to show, empty when there are none.

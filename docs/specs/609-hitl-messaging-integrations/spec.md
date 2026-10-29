@@ -40,15 +40,28 @@ Rules:
    wording would read as several questions when there is one message.
 4. `AgentPausedReplyAny` is an `AgentReplyAny` subclass, so it is already in the `AgentReply` union
    and `deliver`'s signature needs no change.
-5. **Only `tool_call` and `confirmation` get controls**, per the design's non-goal. A shared
-   `_decidable(reply)` on the base splits the interruptions into the ones a verb can answer
-   (`DECIDABLE_KINDS`) and the ids of the rest: `status` is ignored for `input_required`, so a
-   press there would resume the framework with no answer to a real question. An overriding adapter
-   draws rows for the first list and, **when it drew any**, appends the shared
-   `TYPED_ANSWER_NOTICE` naming the second — the same reason the over-budget notice exists, since
-   a reader of a mixed message cannot otherwise tell which question lost its controls. A pause that
-   is all `input_required` draws nothing and needs no notice: its closing line already says an
-   answer is wanted.
+5. **Only `tool_call` and `confirmation` get controls**, per the design's non-goal. `status` is
+   ignored for `input_required`, so a press there would resume the framework with no answer to a
+   real question. `_decidable(interruption)` on the base is the shared rule, and the platform
+   shows `TYPED_ANSWER_NOTICE` where that question's controls would have been.
+6. **Each question's controls go against that question**, never a block of questions followed by a
+   block of rows. Unlabelled rows in the same order as the paragraphs above them is how the wrong
+   gated call gets approved, and nothing in the message would flag it. The two platforms reach the
+   same arrangement by different means, because Block Kit and an inline keyboard are not the same
+   thing:
+   - **Slack interleaves inside one message.** Block Kit is a flat list, so each question is its
+     own section with its actions block directly beneath it.
+   - **Telegram sends one message per question.** Its keyboard is attached to a message and always
+     renders at its foot, so no arrangement inside a single message can work. The opening and
+     closing lines ride on the first and last question, so a pause holding one question is still
+     exactly one message. A pause holding many sends many, and Telegram rate-limits a chat: a
+     rejected send raises like any delivery, and the retry resends the messages that already
+     landed. Pauses in practice hold one to three questions.
+
+   Neither numbers anything, and no notice names anything: each sits against the question it is
+   about. `_pause_template(reply)` hands back the chosen template's two halves so both can place
+   the opening and closing lines themselves, while the wording stays in one constant.
+   `format_pause` remains the whole-message renderer for the five platforms with no controls.
 
 Rendered shape (the exact text is the implementer's, this fixes the parts tests assert):
 
@@ -65,6 +78,14 @@ This run is paused until someone approves it.
 - `tool_name` on its own line; `arguments` parsed from its JSON string and listed as key/value
   pairs, falling back to the raw string when it does not parse.
 - `interruption.message` is included verbatim when the framework set it.
+- **A pause holding more than one interruption numbers them `1.`, `2.` …**, and a platform that
+  draws controls puts the same number on the button (`Approve 2`). Without it the rows are
+  identical and position is the only cue — on Telegram the keyboard is not even beside the text it
+  belongs to, and approving the wrong refund is one slip away. A pause holding one is left
+  unnumbered: there is nothing to tell it apart from. The shared `_marked(reply)` is where the
+  numbers come from, so the text and the controls cannot disagree, and the markers are **positions**
+  rather than ids, so a pause carrying the same id twice still numbers both.
+- A notice naming interruptions names their markers, falling back to the id for a lone one.
 - No reply instruction, per the design.
 
 ### `IntegrationDelivery` — the PAUSED branch
@@ -115,15 +136,20 @@ def _paused_reply(body: dict, session_id: Optional[str]) -> Optional[AgentPaused
 **Outbound.** `SlackOutboundAdapter` sets `DENY_COLLECTS_REASON = True` and adds:
 
 ```python
-async def deliver_paused(self, reply, reply_context) -> None:
-    decidable, typed = self._decidable(reply)                  # input_required gets no buttons
-    blocks = self.split_reply(self.format_pause(reply))        # existing section blocks
-    for interruption in decidable:
-        blocks.append(self._actions_block(interruption))        # one per interruption
-    await self._client().chat_postMessage(channel=..., thread_ts=..., text="Approval needed", blocks=blocks)
+def _pause_blocks(self, reply) -> list:
+    opening, closing = self._pause_template(reply)
+    blocks = self.split_reply(opening.strip())
+    for interruption in reply.interruptions:
+        blocks.extend(self._question_blocks(interruption))      # its text, then its controls
+    blocks.extend(self.split_reply(closing.strip()))
+    return blocks
 ```
 
-- One `actions` block per interruption a press can answer, one button per verb in `DECISIONS`.
+- One `actions` block per interruption a press can answer, one button per verb in `DECISIONS`,
+  placed immediately after that interruption's own section block.
+- `_question_blocks(interruption)` owns the three outcomes for one question: its actions block, the
+  typed-answer note, or the note that Slack's identifier budget took its controls away. Each note
+  is a context block under its own question, so none of them names anything.
 - `value = f"{interruption.id}:{verb}"` — the payload, as the design fixes it.
 - `action_id = f"{ACTION_PREFIX}{verb}"` where `ACTION_PREFIX = "ak_decision:"` — constant per verb,
   and the only thing the listener matches on. Slack documents no uniqueness rule for `action_id`;
@@ -134,6 +160,17 @@ async def deliver_paused(self, reply, reply_context) -> None:
 - A denial renders with `action_id` prefix `ak_decision_reason:` instead when
   `DENY_COLLECTS_REASON`, so the inbound half knows to open a modal from the button alone and reads
   no policy of its own.
+- **The block budget is per question now**, since text and controls share it: two blocks are held
+  back for the closing line and an overflow notice, and questions past what is left are counted in
+  `OVERFLOW_NOTICE` rather than dropped silently.
+- **The acknowledgement is cleared** with the same `chat_update` `deliver` uses, but the pause is
+  posted in the run's own thread, **not** under the acknowledgement the way `deliver` posts. A press
+  carries the pause message's `thread_ts` as its `session_id`, so moving the message would resume a
+  session holding no paused run.
+- **`block_id` and `value` are bounded too.** Slack caps a `block_id` at 255 characters and a button
+  `value` at 2000, and rejects the whole message over either, so one long framework id would cost
+  the pause rather than one row. An interruption over budget renders without buttons and is named,
+  exactly as the block budget degrades.
 - **The block budget is bounded explicitly.** Slack takes 50 blocks per message and 25 elements per
   actions block. `DECISIONS` holds at most three verbs, so an actions block can never overflow; the
   message can. `split_reply` contributes up to `MAX_CHUNKS + 1` section blocks (6), so at most
@@ -204,7 +241,7 @@ attached to the **last** chunk only, so the keyboard sits under the final messag
 Every existing caller passes nothing and sends exactly what it sends today.
 
 **Outbound.** `TelegramOutboundAdapter.deliver_paused` renders the text through `format_pause` and
-`split_reply`, and builds one keyboard row per interruption a press can answer:
+`split_reply`, and sends one message per interruption, each carrying the row that answers it:
 
 ```python
 CALLBACK_PREFIX = "akhitl:"   # not "ak:" — see below
@@ -224,12 +261,9 @@ if len(data.encode()) > CALLBACK_LIMIT:
 - The budget is checked in **bytes**, not characters.
 - `VERB_CODES` is a wire format: a code is never reused for another verb, because a message can
   outlive the deploy that rendered it.
-- An over-budget interruption contributes no row; the others still get theirs, and the message
-  appends `UNPRESSABLE_NOTICE` naming its id. The notice is required, not cosmetic: `format_pause`
-  shows an id only when the framework named nothing else, so without it two gated calls to the same
-  tool are indistinguishable and the reader cannot tell which one has no buttons.
-- If no interruption fits, the message is sent with no `reply_markup` and is exactly the default
-  text delivery.
+- An over-budget interruption's message carries `UNPRESSABLE_NOTICE` and no `reply_markup`; the
+  others still get their keyboards. The notice names nothing, because it is in the message its
+  question is in.
 
 **Inbound.** `_from_callback_query` (`:174`) branches on the prefix:
 
@@ -311,11 +345,12 @@ is not `str(reply)`. The contract builds a two-interruption `AgentPausedReplyAny
 
 **`tests/test_slack_integration.py`** — extends the existing file, which builds the adapter via
 `object.__new__` with a stubbed client:
-- `deliver_paused` posts section blocks plus one `actions` block per interruption, with the expected
-  `value` and `action_id`;
-- an `input_required` interruption gets no actions block, and in a mixed pause its id is named in a
-  context block while its sibling keeps its buttons;
+- `deliver_paused` posts one message whose blocks alternate section and actions, each actions block
+  directly after the section it answers, with the expected `value` and `action_id`;
+- an `input_required` interruption gets a context note where its actions block would be, in the
+  position its own section leaves it;
 - `DECISIONS` of three verbs renders three buttons;
+- the acknowledgement is cleared, and the pause still posts to the original `thread_ts`;
 - a `block_actions` payload parses to one `InboundRequest` carrying `AgentResumeRequestAny`, the
   thread-derived `session_id`, the composite `request_id` and `user.id` as `user_id`;
 - a denial press opens a modal and enqueues nothing; the `view_submission` that follows carries the
@@ -323,11 +358,11 @@ is not `str(reply)`. The contract builds a two-interruption `AgentPausedReplyAny
 - `ack` is awaited before `views_open` (assert call order on the stub).
 
 **`tests/test_telegram_integration.py`** — extends the existing file:
-- `deliver_paused` sends `reply_markup` on the last chunk only;
-- an over-budget interruption renders no row while its siblings do, and an all-over-budget pause
-  sends no `reply_markup` at all;
-- an `input_required` interruption gets no row, and in a mixed pause its id is named in the text
-  while its sibling keeps its buttons;
+- one question is one message, carrying the opening line, the question and the closing line;
+- several questions are several messages, each with its own keyboard, and `reply_markup` still
+  rides the last chunk of a split question;
+- an over-budget interruption's message carries the notice and no keyboard while its siblings keep
+  theirs; an `input_required` one carries the typed-answer notice the same way;
 - a `callback_query` carrying `akhitl:a:<id>` parses to a decision with the composite `request_id`,
   while one carrying other data keeps today's text behaviour and its `update_id` request id.
 

@@ -158,10 +158,18 @@ conversation with a row of buttons per question that needs a yes or no:
 refund_order
   order_id: A-10294
 
-This run is paused until someone approves it.
+[ Approve ]  [ Deny ]
+
+refund_order
+  order_id: B-20571
 
 [ Approve ]  [ Deny ]
+
+This run is paused until someone approves it.
 ```
+
+Each question carries its own controls, directly beneath it, so there is nothing to match up by
+eye and nothing to number.
 
 **Deny opens a modal** that asks for an optional reason, which reaches the agent as the decision's
 message, so the model can tell the customer *why* rather than just *no*. Approve sends straight

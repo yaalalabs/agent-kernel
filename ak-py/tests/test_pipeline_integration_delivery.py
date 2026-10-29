@@ -5,7 +5,8 @@ import sys
 
 import pytest
 
-from agentkernel.core.model import AgentReplyText
+from agentkernel.core.event import PausedInterruption
+from agentkernel.core.model import AgentPausedReplyAny, AgentReplyText
 from agentkernel.core.util.factory import AKConfigError
 from agentkernel.integration.adapter.base import OutboundAdapter
 from agentkernel.integration.adapter.factory import IntegrationAdapterFactory
@@ -190,6 +191,37 @@ def test_a_malformed_paused_body_is_delivered_as_text(adapter, caplog, overrides
     [(reply, _)] = adapter.delivered
     assert reply == AgentReplyText(response=body["result"]), "a reply someone is waiting for is never lost"
     assert "does not reconstruct" in caplog.text
+
+
+def _pause(*kinds):
+    return AgentPausedReplyAny(
+        run_id="01JD7K2MX4",
+        session_id="s1",
+        agent="support",
+        interruptions=[PausedInterruption(id=f"call_{n}", kind=kind, tool_name="refund_order") for n, kind in enumerate(kinds, 1)],
+    )
+
+
+def test_every_question_is_rendered_in_order():
+    text = _TextOnlyOutboundAdapter().format_pause(_pause("tool_call", "input_required"))
+
+    assert text.count("refund_order") == 2, "a platform with no controls still has to show every question"
+    assert text.startswith("⏸ Approval needed"), "one closing line per message, chosen from the kinds present"
+
+
+def test_the_template_is_handed_back_in_halves_for_a_platform_that_places_them_itself():
+    reply = _pause("tool_call")
+    opening, closing = _TextOnlyOutboundAdapter._pause_template(reply)
+
+    assert "Approval needed" in opening and "paused until someone approves" in closing
+    assert _TextOnlyOutboundAdapter().format_pause(reply).startswith(opening), "one template owns the wording"
+
+
+def test_only_a_verdict_question_can_be_answered_by_a_control():
+    gated, asked = _pause("tool_call", "input_required").interruptions
+
+    assert _TextOnlyOutboundAdapter._decidable(gated)
+    assert not _TextOnlyOutboundAdapter._decidable(asked), "a verb would resume with no answer to a real question"
 
 
 def test_an_error_status_wins_over_a_paused_body(adapter):
