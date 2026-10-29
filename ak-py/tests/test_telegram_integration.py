@@ -8,11 +8,12 @@ from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from agentkernel.core.config import AKConfig
-from agentkernel.core.event import PausedInterruption
-from agentkernel.core.model import AgentPausedReplyAny, AgentReplyText, AgentRequestText, AgentResumeRequestAny
+from agentkernel.core.model import AgentReplyText, AgentRequestText
 from agentkernel.integration.adapter.factory import IntegrationAdapterFactory
 from agentkernel.integration.adapter.producer import IntegrationProducer
 from agentkernel.integration.adapter.webhook import WebhookRESTRequestHandler
+from agentkernel.core.event import PausedInterruption
+from agentkernel.core.model import AgentPausedReplyAny, AgentResumeRequestAny
 from agentkernel.integration.telegram.adapter import (
     CALLBACK_LIMIT,
     CALLBACK_PREFIX,
