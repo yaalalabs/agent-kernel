@@ -1,8 +1,7 @@
 """Telegram Bot API inbound/outbound adapter pair (spec #524 §9).
 
 The adapter parses the whole update object rather than just its ``message``, so Telegram's
-``update_id`` — the id it retries with — becomes the deduplication key. A press on a pause button
-is the one exception: see :meth:`TelegramInboundAdapter._decision`.
+``update_id`` — the id it retries with — becomes the deduplication key.
 """
 
 import base64
@@ -14,35 +13,13 @@ import httpx
 from fastapi import HTTPException, Request
 
 from ...core.config import AKConfig
-from ...core.model import (
-    AgentPausedReplyAny,
-    AgentReply,
-    AgentRequest,
-    AgentRequestFile,
-    AgentRequestImage,
-    AgentRequestText,
-    AgentResumeRequestAny,
-    ResumeDecision,
-)
+from ...core.model import AgentReply, AgentRequest, AgentRequestFile, AgentRequestImage, AgentRequestText
 from ...core.multimodal.storage import AttachmentStorageManager
 from ..adapter.base import ATTACHMENTS_DISABLED_ERROR, SESSION_CACHE_ERROR, InboundAdapter, InboundParseResult, InboundRequest, OutboundAdapter
 from ..adapter.routes import BUILTIN_WEBHOOK_ROUTES
 
 NAME = "telegram"
 HTTP_TIMEOUT = 30.0
-
-CALLBACK_PREFIX = "akhitl:"
-"""What marks an inline-keyboard press as a decision on a paused run.
-
-Specific rather than short: an application may already ship its own inline keyboards, and a
-two-letter prefix would turn its presses into decisions.
-"""
-CALLBACK_LIMIT = 64
-"""Telegram's ``callback_data`` budget, in bytes — a multibyte character costs more than one."""
-VERB_CODES = {"approved": "a", "denied": "d", "cancelled": "c"}
-"""A wire format: a code is never reused for another verb, because a message outlives a deploy."""
-VERBS_BY_CODE = {code: verb for verb, code in VERB_CODES.items()}
-BUTTON_LABELS = {"approved": "✓ Approve", "denied": "✗ Deny", "cancelled": "⊘ Cancel"}
 
 _log = logging.getLogger("ak.integration.telegram")
 
@@ -66,18 +43,11 @@ class _TelegramClient:
     def webhook_secret(self) -> str:
         return self._webhook_secret
 
-    async def send_message(self, chat_id: str, chunks: List[str], reply_markup: Optional[dict] = None) -> None:
-        """Send each chunk as its own message, in order.
-
-        ``reply_markup`` rides on the last chunk alone, so a keyboard sits under the end of a split
-        reply instead of repeating under every piece of it.
-        """
+    async def send_message(self, chat_id: str, chunks: List[str]) -> None:
+        """Send each chunk as its own message, in order."""
         async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
-            for index, chunk in enumerate(chunks):
-                payload: Dict[str, Any] = {"chat_id": chat_id, "text": chunk}
-                if reply_markup and index == len(chunks) - 1:
-                    payload["reply_markup"] = reply_markup
-                response = await client.post(f"{self._base_url}/sendMessage", json=payload)
+            for chunk in chunks:
+                response = await client.post(f"{self._base_url}/sendMessage", json={"chat_id": chat_id, "text": chunk})
                 response.raise_for_status()
                 _log.debug(f"Message sent successfully: {response.json()}")
 
@@ -202,7 +172,7 @@ class TelegramInboundAdapter(InboundAdapter):
         return await self._build(chat_id, update_id, text, message, str(sender_id) if sender_id is not None else None)
 
     async def _from_callback_query(self, callback_query: dict, update_id: Any) -> Optional[InboundRequest]:
-        """An inline keyboard press: a decision when the data is ours, otherwise the message text."""
+        """An inline keyboard press: its data is the message text."""
         chat_id = (callback_query.get("message") or {}).get("chat", {}).get("id")
         data = callback_query.get("data")
         self._log.debug(f"Processing callback query {callback_query.get('id')}: {data}")
@@ -210,52 +180,7 @@ class TelegramInboundAdapter(InboundAdapter):
         if not chat_id or not data:
             return None
         sender_id = (callback_query.get("from") or {}).get("id")
-        sender = str(sender_id) if sender_id is not None else None
-        if data.startswith(CALLBACK_PREFIX):
-            return self._decision(callback_query, chat_id, data, sender)
-        return await self._build(chat_id, update_id, data, None, sender)
-
-    def _decision(self, callback_query: dict, chat_id: Any, data: str, sender: Optional[str]) -> Optional[InboundRequest]:
-        """A press on a pause button, as the decision it carries.
-
-        The request id is composed from the press rather than taken from ``update_id``, which
-        Telegram mints per update: on that id a second click on the same button would be a new
-        request, reach a pause already answered, and earn the user an error for pressing twice.
-
-        :param callback_query: The press, carrying the message it was attached to.
-        :param chat_id: The conversation, which is the session.
-        :param data: The callback data, already known to carry this adapter's prefix.
-        :param sender: Who pressed, so a pre-hook can decide whether they may.
-        :return: The decision as a request, or None when the data does not parse.
-        """
-        parsed = self._parse_callback_data(data)
-        if parsed is None:
-            return None
-        interruption_id, status = parsed
-        message_id = (callback_query.get("message") or {}).get("message_id")
-        session_id = str(chat_id)
-        return InboundRequest(
-            session_id=session_id,
-            request_id=f"{NAME}:{session_id}:{message_id}:{interruption_id}:{status}",
-            requests=[AgentResumeRequestAny(decisions=[ResumeDecision(id=interruption_id, status=status)])],
-            agent=self._agent,
-            user_id=sender,
-            reply_context={"chat_id": session_id},
-        )
-
-    @staticmethod
-    def _parse_callback_data(data: str) -> Optional[tuple[str, str]]:
-        """Read ``akhitl:<verb code>:<interruption id>`` back into the pair it encodes.
-
-        :param data: The callback data carrying this adapter's prefix.
-        :return: The interruption id and the decision's status, or None when either is missing.
-        """
-        code, _, interruption_id = data[len(CALLBACK_PREFIX) :].partition(":")
-        status = VERBS_BY_CODE.get(code)
-        if not status or not interruption_id:
-            _log.warning(f"Ignoring a press whose callback data does not parse: {data}")
-            return None
-        return interruption_id, status
+        return await self._build(chat_id, update_id, data, None, str(sender_id) if sender_id is not None else None)
 
     async def _build(self, chat_id: Any, update_id: Any, text: str, message: Optional[dict], sender_id: Optional[str]) -> Optional[InboundRequest]:
         session_id = str(chat_id)
@@ -369,7 +294,6 @@ class TelegramOutboundAdapter(OutboundAdapter):
 
     name = NAME
     MESSAGE_LIMIT = 4096
-    UNPRESSABLE_NOTICE = "These cannot be answered from Telegram, because their ids exceed the button size limit: {ids}"
 
     _log = _log
 
@@ -382,43 +306,6 @@ class TelegramOutboundAdapter(OutboundAdapter):
 
     async def deliver(self, reply: AgentReply, reply_context: Dict[str, str]) -> None:
         await self._client.send_message(reply_context["chat_id"], self.split_reply(str(reply)))
-
-    async def deliver_paused(self, reply: AgentPausedReplyAny, reply_context: Dict[str, str]) -> None:
-        """Send the pause with an inline keyboard, so it can be answered by pressing."""
-        rows, unpressable = self._rows(reply)
-        text = self.format_pause(reply)
-        if unpressable:
-            text = f"{text}\n\n{self.UNPRESSABLE_NOTICE.format(ids=', '.join(unpressable))}"
-        markup = {"inline_keyboard": rows} if rows else None
-        await self._client.send_message(reply_context["chat_id"], self.split_reply(text), reply_markup=markup)
-
-    def _rows(self, reply: AgentPausedReplyAny) -> tuple[list, List[str]]:
-        """One row of buttons per interruption, in the verbs this adapter offers.
-
-        An interruption whose callback data will not fit Telegram's budget gets no row — the ids
-        are the framework's own, so their length is not Agent Kernel's to bound — and is named
-        back to the caller. Saying so in the message matters: the pause text shows an
-        interruption's id only when the framework named nothing else, so two gated calls to the
-        same tool read alike and a reader could not tell which one has no buttons.
-
-        :param reply: The paused reply to draw.
-        :return: The keyboard rows, and the ids of the interruptions that could not get one.
-        """
-        rows, unpressable = [], []
-        for interruption in reply.interruptions:
-            row = [
-                {"text": BUTTON_LABELS[verb], "callback_data": f"{CALLBACK_PREFIX}{VERB_CODES[verb]}:{interruption.id}"} for verb in self.DECISIONS
-            ]
-            oversized = [button for button in row if len(button["callback_data"].encode()) > CALLBACK_LIMIT]
-            if oversized:
-                self._log.warning(
-                    f"Interruption '{interruption.id}' needs {len(oversized[0]['callback_data'].encode())} bytes of callback_data, "
-                    f"over Telegram's {CALLBACK_LIMIT}; rendering it without buttons"
-                )
-                unpressable.append(interruption.id)
-                continue
-            rows.append(row)
-        return rows, unpressable
 
     async def deliver_error(self, message: str, reply_context: Dict[str, str]) -> None:
         try:
