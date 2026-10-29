@@ -114,6 +114,7 @@ can't stream yet:
 | LangGraph | ✅ |
 | Google ADK | ✅ |
 | Pydantic AI | ✅ |
+| Claude Agent SDK | ✅ |
 | Microsoft Agent Framework | ✅ |
 | CrewAI | ❌ (framework adapter does not implement streaming yet) |
 | Smolagents | ❌ (framework adapter does not implement streaming yet) |

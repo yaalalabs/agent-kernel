@@ -29,6 +29,7 @@ Use this skill to add new tools, agents, or handoffs to an existing Agent Kernel
    - `from agentkernel.smolagents import SmolagentsModule` → **Smolagents**
    - `from agentkernel.pydanticai import PydanticAIModule` → **Pydantic AI**
    - `from agentkernel.maf import MAFModule` → **Microsoft Agent Framework**
+   - `from agentkernel.claude import ClaudeModule` → **Claude Agent SDK**
 
 2. **Existing agents** — List every agent already defined (names, roles, instructions).
 
@@ -161,6 +162,14 @@ tools = MAFToolBuilder.bind([lookup_order, existing_tool_1])
 agent = Agent(client, name="support", description="...", instructions="...", tools=tools)
 ```
 
+**Claude Agent SDK:**
+```python
+from agentkernel.claude import ClaudeToolBuilder
+
+tools = ClaudeToolBuilder.bind([lookup_order, existing_tool_1])
+agent = ClaudeAgentSpec(name="support", description="...", options=ClaudeAgentOptions(...), tools=tools)
+```
+
 > **Gotcha:** Always add the new tool to the **existing** `bind()` call for that agent. Don't create a second `bind()`.
 
 ---
@@ -262,6 +271,27 @@ support_agent = Agent(
 )
 ```
 
+**Claude Agent SDK:**
+```python
+from agentkernel.claude import ClaudeAgentSpec, ClaudeToolBuilder
+from claude_agent_sdk import ClaudeAgentOptions
+
+support_agent = ClaudeAgentSpec(
+    name="support",
+    description="Specialist for customer support and order inquiries",
+    options=ClaudeAgentOptions(
+        model="sonnet",
+        system_prompt="You help customers with order lookups, returns, and general support questions.",
+        tools=[],                   # no built-in Claude Code tools on the server
+        setting_sources=[],
+        permission_mode="dontAsk",
+    ),
+    tools=ClaudeToolBuilder.bind([lookup_order]),
+)
+```
+
+> **Gotcha (Claude Agent SDK):** Match the existing agents' `tools=[]` / `setting_sources=[]` / `permission_mode` lockdown; the SDK's defaults give the model Bash and file tools on the host. Tools bound with `ClaudeToolBuilder` are approved automatically.
+
 > **Gotcha (Pydantic AI):** Always pass `name=` (AK registers by name eagerly; Pydantic AI otherwise infers it lazily at first run) **and** `description=` (Pydantic AI's description is optional but is what AK reports as the agent description / A2A summary). The provider key for the model string (e.g. `OPENAI_API_KEY`) must be set at import time — Pydantic AI resolves the provider at construction.
 
 **Microsoft Agent Framework:**
@@ -293,7 +323,7 @@ OpenAIModule([triage_agent, math_agent, general_agent])
 OpenAIModule([triage_agent, math_agent, general_agent, support_agent])
 ```
 
-This applies to all frameworks — `LangGraphModule`, `CrewAIModule`, `GoogleADKModule`, `SmolagentsModule`, `PydanticAIModule`, `MAFModule` work the same way.
+This applies to all frameworks — `LangGraphModule`, `CrewAIModule`, `GoogleADKModule`, `SmolagentsModule`, `PydanticAIModule`, `MAFModule`, `ClaudeModule` work the same way.
 
 #### 4c. Structured Output (Optional)
 
@@ -314,6 +344,8 @@ class OrderStatus(BaseModel):
 | CrewAI | `CrewAIModule([agent], output_pydantic={"support": OrderStatus})` — or `output_json={...}`; keyed by agent `role` |
 | Google ADK | `LlmAgent(..., output_schema=OrderStatus)` |
 | Smolagents | No schema parameter — have the agent pass a dict or Pydantic instance to `final_answer` |
+| Pydantic AI | `Agent(..., output_type=OrderStatus)` |
+| Claude Agent SDK | `ClaudeAgentOptions(..., output_format={"type": "json_schema", "schema": OrderStatus.model_json_schema()})` |
 
 > **Gotcha (CrewAI):** CrewAI puts the output schema on the `Task`, not the `Agent` — and Agent Kernel builds the task internally per run, so the schema is passed to the `CrewAIModule` constructor keyed by agent role.
 
@@ -397,6 +429,28 @@ triage_agent = ToolCallingAgent(
     managed_agents=[math_agent, general_agent, support_agent],  # Add here
 )
 ```
+
+**Claude Agent SDK:**
+
+Add the new agent as a native `AgentDefinition` in the triage agent's `ClaudeAgentOptions.agents`. The triage agent
+delegates to it through its `Agent` tool, and Agent Kernel serves any bound tool from the triage agent's session:
+
+```python
+triage_agent = ClaudeAgentSpec(
+    name="triage",
+    description="Routes requests to specialists",
+    options=ClaudeAgentOptions(
+        model="sonnet", system_prompt="Route requests to the right specialist...", tools=[],
+        setting_sources=[], permission_mode="dontAsk",
+        agents={
+            "math": AgentDefinition(description="Math questions", prompt="Answer math questions.", tools=[]),
+            "support": AgentDefinition(description="Support questions", prompt="Answer support questions.", tools=[]),  # Add here
+        },
+    ),
+)
+```
+
+> **Gotcha (Claude Agent SDK):** List `tools=` on every subagent (`tools=[]` for none): one that lists none inherits every tool of the session. A tool a subagent lists is served from the triage agent's session, so the triage agent can call it too. Subagent steps are not streamed; the subagent's answer arrives as the result of the parent's `Agent` tool call.
 
 ---
 

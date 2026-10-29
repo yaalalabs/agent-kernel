@@ -42,6 +42,9 @@ class _FakeTrace(BaseTrace):
     def maf(self):
         return None
 
+    def claude(self):
+        return None
+
 
 def _config(enabled, type_=None):
     cfg = Mock()
@@ -97,6 +100,8 @@ def test_trace_langfuse_missing_extra_raises_friendly_import_error(monkeypatch):
 def test_trace_openllmetry_missing_extra_raises_friendly_import_error(monkeypatch):
     monkeypatch.setitem(sys.modules, "traceloop", None)
     monkeypatch.setitem(sys.modules, "traceloop.sdk", None)
+    for name in [n for n in list(sys.modules) if n.startswith("agentkernel.trace.openllmetry")]:
+        monkeypatch.delitem(sys.modules, name, raising=False)  # a cached import would hide the missing extra
     with patch.object(AKConfig, "get", return_value=_config(True, "openllmetry")):
         with pytest.raises(ImportError) as exc_info:
             Trace.get()
@@ -121,3 +126,8 @@ def test_trace_cloudwatch_missing_extra_raises_friendly_import_error(monkeypatch
         with pytest.raises(ImportError) as exc_info:
             Trace.get()
     assert "agentkernel[cloudwatch]" in str(exc_info.value)
+
+
+def test_trace_disabled_claude_returns_none():
+    with patch.object(AKConfig, "get", return_value=_config(False)):
+        assert Trace.get().claude() is None

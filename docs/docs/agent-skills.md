@@ -62,7 +62,7 @@ These skills are bundled with the `agentkernel` PyPI package and help you build 
 
 ### ak-init
 
-Interactively scaffold a new Agent Kernel project. Covers all supported frameworks (OpenAI Agents SDK, CrewAI, LangGraph, Google ADK, Smolagents) and all deployment modes (CLI, REST API, AWS Lambda, Azure Functions, containerized).
+Interactively scaffold a new Agent Kernel project. Covers all supported frameworks (OpenAI Agents SDK, CrewAI, LangGraph, Google ADK, Smolagents, Pydantic AI, Claude Agent SDK) and all deployment modes (CLI, REST API, AWS Lambda, Azure Functions, containerized).
 
 **Example prompts:**
 - *"Create a new agent project using CrewAI for AWS Lambda"*
@@ -121,7 +121,7 @@ When a contributor opens the repository in a coding assistant (Copilot, Claude C
 | Skill | What It Teaches Your Coding Assistant |
 |---|---|
 | `ak-dev-architecture` | Core abstractions (`Session`, `Agent`, `Runner`, `Module`, `Runtime`, `AgentService`, `ChatService`), design principles, the house patterns every new feature follows (pluggable by default, reuse of existing configuration over new knobs, classes over script-style functions), adapter pattern, messaging integrations (the `integration/adapter` seam: `InboundAdapter`/`OutboundAdapter`, `WebhookRESTRequestHandler`, `PollerRunner`), execution flow, the unified queue execution pipeline (`agentkernel.pipeline`: `QueueMessage`/`QueueTransport`/`ConsumerLoop`, the `in_memory` transport, `RequestProducer`, `AgentRunner`/`ResponseHandler`/`RequestHandler`/`IOHandler`, the `RESTAPI.run` delegation rule, and the relocation shims), and the AWS ECS containerized deployment classes (`ECSIOHandler`, `ECSOutputConsumer`, `ECSAgentRunner`, `ECSStreamAgentRunner`, `ECSSQSConsumer`, `RawQueueConsumer`, `ThreadRunner`), everything needed to understand the codebase |
-| `ak-dev-new-framework-integration` | Step-by-step guide to add a new agent framework adapter (beyond OpenAI, CrewAI, LangGraph, Google ADK, Smolagents): subclass creation, dependency wiring, exports, tests |
+| `ak-dev-new-framework-integration` | Step-by-step guide to add a new agent framework adapter (beyond OpenAI, CrewAI, LangGraph, Google ADK, Smolagents, Pydantic AI, Claude Agent SDK): subclass creation, dependency wiring, exports, tests |
 | `ak-dev-new-messaging-integration` | How to add a new messaging platform integration (beyond Slack, WhatsApp, Messenger, Instagram, Telegram, Teams, Gmail): writing the `InboundAdapter`/`OutboundAdapter` pair, hosting it (`WebhookRESTRequestHandler` or `PollerRunner`), webhook verification, attachments, configuration, and examples |
 | `ak-dev-new-knowledgebase-integration` | How to add a new knowledge base backend (beyond ChromaDB, Neo4j, Starburst, Open Knowledge Format): declare capabilities, implement the matching `KnowledgeBase` operations, reuse `DocumentStore` for document-shaped backends, wire dependencies, add contract tests/docs/examples |
 | `ak-dev-new-guardrail-provider` | How to add a new content safety provider (beyond OpenAI, Bedrock, Walled AI): input/output guardrails, factory registration, configuration |

@@ -72,6 +72,7 @@ class Runner(ABC):
 | `LangGraphRunner` | LangGraph | ✅ (`astream_events`) |
 | `GoogleADKRunner` | Google ADK | ✅ (SSE streaming mode) |
 | `PydanticAIRunner` | Pydantic AI | ✅ (`run_stream_events`) |
+| `ClaudeRunner` | Claude Agent SDK | ✅ (partial messages) |
 | `MAFRunner` | Microsoft Agent Framework | ✅ (`agent.run(..., stream=True)`) |
 | `CrewAIRunner` | CrewAI | ❌ raises `NotImplementedError` |
 | `SmolagentsRunner` | Smolagents | ❌ raises `NotImplementedError` |
@@ -240,6 +241,7 @@ context is set, a runner:
 | Smolagents | **Round-trips (filtered)** | `agent.run(..., additional_args=ctx)` — which smolagents **also appends to the task prompt** ([caveat](../frameworks/smolagents.md#per-run-contextstate)) | `agent.state` **restricted to pre-seeded keys** — brand-new keys are dropped |
 | LangGraph | **Declared channels only** | spread into the graph input alongside `messages` (written last, so a caller key cannot replace it) | only keys the graph's state schema declares as channels (prebuilt agents drop unknown keys) |
 | CrewAI | **Unsupported** | not injected | none — a set context is **ignored**, with one warning logged per runner |
+| Claude Agent SDK | **Full round-trip, adapter tools only** | `ToolContext.get().framework_context` — the SDK has no native context slot of its own, so the adapter fills this `ToolContext` field; tools mutate the returned dict in place ([details](../frameworks/claude-agent-sdk.md#per-run-contextstate)) | the same dict, in full — but only for tools bound through `ClaudeToolBuilder`, never Claude's built-in tools or an external MCP server |
 
 Because of this divergence, tool authors who want a context write to be portable across every
 framework should **pre-seed every key they intend to write** before the run.
@@ -271,7 +273,8 @@ context, the input). The same keys are also rejected at declaration: each adapte
 `RESERVED_RUN_OPTIONS`, and `run_options` raises `ValueError` naming the key and the reason. Unknown
 keys are not validated and reach the SDK. OpenAI, ADK, Pydantic AI, Microsoft Agent Framework and smolagents raise `TypeError` for
 an unknown keyword on the first run; LangGraph and CrewAI drop one silently (`ainvoke` ignores unknown
-keywords, and `Crew` is a Pydantic model that ignores extra fields), so check the spelling there. The
+keywords, and `Crew` is a Pydantic model that ignores extra fields), so check the spelling there. The Claude Agent SDK adapter rejects a key that is not a `ClaudeAgentOptions`
+field at declaration. The
 one guarded case is LangGraph: a `RunnableConfig` key declared at the top level (`recursion_limit`,
 `callbacks`, ...) is rejected with a message pointing to `config={...}`.
 
@@ -294,6 +297,7 @@ Two adapters share an object with the caller rather than a key, and merge deeper
 | Microsoft Agent Framework | `agent.run` (including `stream=True`) — model settings are nested in `options` | `messages`, `session`, `stream` | native function-invocation configuration on the client | native middleware on the agent or client |
 | CrewAI | the per-run `Crew(...)` constructor (`verbose=False` is an overridable default; `max_rpm` is a forwarded rate limit) | `agents`, `tasks`, `memory` | `max_iter` on the native `Agent` (needs nothing from Agent Kernel) | `step_callback` / `task_callback` |
 | Smolagents | `agent.run` | `task`, `reset`, `additional_args`, `stream`, `return_full_result` | `max_steps` | `step_callbacks` on the agent constructor (needs nothing from Agent Kernel) |
+| Claude Agent SDK | the run's `ClaudeAgentOptions` (any field; others are rejected) | `resume`, `session_id`, `continue_conversation`, `fork_session`, `resume_session_at`, `resume_drops_turn`, `session_store`, `session_store_flush`, `enable_file_checkpointing`, `include_partial_messages`, and the `ak` entry of `mcp_servers` | `max_turns` (and `max_budget_usd`) | native `hooks` |
 
 **Computed per run.** `Module.run_options(agent, [factory], **options)` also takes one optional positional
 argument after the agent, a `RunOptionsFactory`: `(agent, session, requests) -> mapping`, sync or async. The runner
@@ -371,7 +375,7 @@ except Exception as e:
 
 - Runners execute framework-specific agent logic and expose both `run()` and `stream()`
 - Each framework has its own Runner implementation
-- OpenAI Agents SDK, LangGraph, Google ADK, Pydantic AI, and Microsoft Agent Framework support native token streaming (as AK `StreamEvent`s); the CrewAI and Smolagents adapters do not implement it yet
+- OpenAI Agents SDK, LangGraph, Google ADK, Pydantic AI, Microsoft Agent Framework, and the Claude Agent SDK support native token streaming (as AK `StreamEvent`s); the CrewAI and Smolagents adapters do not implement it yet
 - Runners convert typed requests/replies and manage framework session state
 - Runners inject the reserved `framework_context` into the native call and write the produced state back on success (fidelity varies per framework)
 - Always use async/await, and prefer `Runtime.run()`/`AgentService` over calling runners directly

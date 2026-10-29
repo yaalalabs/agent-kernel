@@ -32,7 +32,7 @@ openllmetry = [
     "traceloop-sdk>=0.61.0",
 ]
 logfire = [
-    "logfire>=3.0",
+    "logfire>=4.31.0",
 ]
 cloudwatch = [
     "opentelemetry-sdk>=1.30.0",
@@ -61,6 +61,10 @@ pydanticai = [
 ]
 maf = [
     "agent-framework-core>=1.20.0,<2",
+]
+claude = [
+    "claude-agent-sdk>=0.2.165,<0.3",
+    "openinference-instrumentation-claude-agent-sdk>=0.1.20",
 ]
 cli = [
     

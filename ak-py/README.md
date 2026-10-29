@@ -8,7 +8,7 @@ Agent Kernel is a lightweight **AI agent runtime** and adapter layer for buildin
 ## Features
 
 - **Unified API**: Common abstractions (Agent, Runner, Session, Module, Runtime) across frameworks
-- **Multi-Framework Support**: OpenAI Agents SDK, CrewAI, LangGraph, Google ADK, Smolagents, Pydantic AI, and Microsoft Agent Framework
+- **Multi-Framework Support**: OpenAI Agents SDK, CrewAI, LangGraph, Google ADK, Smolagents, Pydantic AI, Microsoft Agent Framework, and the Claude Agent SDK
 - **Session Management**: Built-in session abstraction with pluggable storage backends
 - **Knowledge Bases**: Unified, capability-declaring `KnowledgeBase` interface with ChromaDB, Neo4j, Starburst/Trino and Open Knowledge Format bundle (local directory or S3) backends via `KnowledgeBuilder`
 - **Sandbox**: Execute agent-generated code and shell commands in an isolated, permission-bounded environment with pluggable providers (`local_subprocess`, `docker`, `kubernetes`, `e2b`, `daytona`, `ec2_ssm`), workload profiles, policy enforcement, per-user identity, and a queue-decoupled broker for long-running executions
@@ -1974,6 +1974,7 @@ Sessions maintain state across agent interactions. Framework adapters manage the
 - `"adk"` — Google ADK session data
 - `"pydanticai"` — Pydantic AI session data (message history)
 - `"maf"` — Microsoft Agent Framework session data (`AgentSession` snapshot)
+- `"claude"` — Claude Agent SDK session data (each agent's Claude session id and transcript)
 
 Access the session in your runner:
 

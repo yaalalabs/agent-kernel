@@ -67,6 +67,8 @@ e2e:
     - type: cli
       path: examples/cli/smolagents-run-options
     - type: cli
+      path: examples/cli/claude
+    - type: cli
       path: examples/cli/custom-evaluator
     - type: cli
       path: examples/cli/opik-evaluator
@@ -111,6 +113,8 @@ e2e:
       path: examples/api/a2ui-openai
     - type: api
       path: examples/api/adk
+    - type: api
+      path: examples/api/claude
     - type: api
       path: examples/api/multimodal/openai
     - type: api

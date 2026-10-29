@@ -348,6 +348,7 @@ pip install "agentkernel[adk]"        # For Google ADK
 pip install "agentkernel[smolagents]" # For Smolagents
 pip install "agentkernel[pydanticai]" # For Pydantic AI (add a provider, e.g. pydantic-ai-slim[openai])
 pip install "agentkernel[maf]"        # For Microsoft Agent Framework (add a provider, e.g. agent-framework-openai)
+pip install "agentkernel[claude]"     # For Claude Agent SDK (Claude models only; ANTHROPIC_API_KEY or Bedrock/Vertex)
 ```
 
 Or in `pyproject.toml`:

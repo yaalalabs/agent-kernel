@@ -203,3 +203,11 @@ class CloudWatch(BaseTrace):
         from .maf import CloudWatchMAFRunner
 
         return CloudWatchMAFRunner(self)
+
+    def claude(self) -> Runner:
+        """
+        Returns the CloudWatch Claude Agent SDK runner instance.
+        """
+        from .claude import CloudWatchClaudeRunner
+
+        return CloudWatchClaudeRunner(self)

@@ -38,7 +38,8 @@ ak-py/src/agentkernel/trace/<provider>/
 ├── adk.py               # Traced Google ADK runner
 ├── smolagents.py        # Traced Smolagents runner
 ├── pydanticai.py        # Traced Pydantic AI runner
-└── maf.py               # Traced Microsoft Agent Framework runner
+├── maf.py               # Traced Microsoft Agent Framework runner
+└── claude.py            # Traced Claude Agent SDK runner
 ```
 
 ### 2. Implement the Main Trace Class
@@ -102,6 +103,21 @@ class <Provider>(BaseTrace):
         from .smolagents import <Provider>SmolagentsRunner
 
         return <Provider>SmolagentsRunner(self._client)
+
+    def pydanticai(self) -> Runner:
+        from .pydanticai import <Provider>PydanticAIRunner
+
+        return <Provider>PydanticAIRunner(self._client)
+
+    def maf(self) -> Runner:
+        from .maf import <Provider>MAFRunner
+
+        return <Provider>MAFRunner(self._client)
+
+    def claude(self) -> Runner:
+        from .claude import <Provider>ClaudeRunner
+
+        return <Provider>ClaudeRunner(self._client)
 ```
 
 ### 3. Implement Framework-Specific Traced Runners
@@ -163,7 +179,7 @@ class <Provider>LangGraphRunner(LangGraphRunner):
             return await super().run(agent, session, requests)
 ```
 
-Follow the same pattern for CrewAI, Google ADK, Smolagents, Pydantic AI, and Microsoft Agent Framework runners (see `trace/langfuse/smolagents.py` and `trace/openllmetry/smolagents.py` for reference).
+Follow the same pattern for CrewAI, Google ADK, Smolagents, Pydantic AI, Microsoft Agent Framework, and Claude Agent SDK runners (see `trace/langfuse/smolagents.py` and `trace/openllmetry/smolagents.py` for reference).
 
 ### 4. Update the `__init__.py`
 
@@ -174,7 +190,7 @@ from .<provider> import <Provider>
 
 ### 5. Update the BaseTrace Interface
 
-Add the new provider as a recognized option. The `BaseTrace` class (`trace/base.py`) already defines the interface — your implementation just needs to conform to it. No changes to `base.py` are needed unless you're adding a new framework. Note that `init()` and all seven framework methods (`openai`, `langgraph`, `crewai`, `adk`, `smolagents`, `pydanticai`, `maf`) are declared `@abstractmethod` on `BaseTrace`, so every new provider must implement all eight — otherwise the class cannot be instantiated.
+Add the new provider as a recognized option. The `BaseTrace` class (`trace/base.py`) already defines the interface — your implementation just needs to conform to it. No changes to `base.py` are needed unless you're adding a new framework. Note that `init()` and the framework methods (`openai`, `langgraph`, `crewai`, `adk`, `smolagents`, `pydanticai`, `maf`, `claude`) are declared `@abstractmethod` on `BaseTrace`, so every new provider must implement all nine — otherwise the class cannot be instantiated. Adding a framework this way is a breaking change for bring-your-own tracers, as it was for each earlier framework. The Claude Agent SDK's model calls run inside the Claude Code CLI subprocess, so Python LLM instrumentation cannot see them: use the SDK's own instrumentor where one exists (OpenInference `ClaudeAgentSDKInstrumentor`, `logfire.instrument_claude_agent_sdk()`), otherwise the outer span only.
 
 ### 6. Register with the Trace Factory
 
@@ -300,7 +316,7 @@ This means tracing is **transparent** — users don't change their agent code, t
 ## Checklist
 
 - [ ] `ak-py/src/agentkernel/trace/<provider>/` directory with `__init__.py` and main class
-- [ ] Traced runners for each framework (OpenAI, LangGraph, CrewAI, ADK, Smolagents, Pydantic AI, Microsoft Agent Framework)
+- [ ] Traced runners for each framework (OpenAI, LangGraph, CrewAI, ADK, Smolagents, Pydantic AI, Microsoft Agent Framework, Claude Agent SDK)
 - [ ] Registration in `trace/trace.py` factory
 - [ ] Configuration via `type: "<provider>"` in `config.yaml`
 - [ ] Optional dependencies in `pyproject.toml`

@@ -82,3 +82,11 @@ class LangFuse(BaseTrace):
         from .maf import LangFuseMAFRunner
 
         return LangFuseMAFRunner(self._client)
+
+    def claude(self) -> Runner:
+        """
+        Returns the Langfuse Claude Agent SDK runner instance.
+        """
+        from .claude import LangFuseClaudeRunner
+
+        return LangFuseClaudeRunner(self._client)

@@ -59,3 +59,10 @@ class BaseTrace(ABC):
         Initialize Microsoft Agent Framework instrumentation
         """
         raise NotImplementedError
+
+    @abstractmethod
+    def claude(self) -> Runner:
+        """
+        Initialize Claude Agent SDK instrumentation.
+        """
+        raise NotImplementedError

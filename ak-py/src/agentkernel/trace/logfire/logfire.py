@@ -86,3 +86,11 @@ class Logfire(BaseTrace):
         from .maf import LogfireMAFRunner
 
         return LogfireMAFRunner()
+
+    def claude(self) -> Runner:
+        """
+        Returns the Logfire Claude Agent SDK runner instance.
+        """
+        from .claude import LogfireClaudeRunner
+
+        return LogfireClaudeRunner()

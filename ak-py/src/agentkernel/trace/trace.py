@@ -126,3 +126,11 @@ class Trace(BaseTrace):
         if self._instance is not None:
             return self._instance.maf()
         return None
+
+    def claude(self) -> Runner | None:
+        """
+        Returns the Claude Agent SDK trace runner instance.
+        """
+        if self._instance is not None:
+            return self._instance.claude()
+        return None

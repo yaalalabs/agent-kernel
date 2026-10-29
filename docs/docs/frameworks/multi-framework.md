@@ -247,13 +247,17 @@ it round-trips is not the same in every framework** (see the
   (smolagents) or **declared as state channels** (LangGraph); other keys are silently dropped. On
   smolagents the context is also **appended to the model prompt** — see
   [Smolagents](./smolagents.md#per-run-contextstate).
+- The **Claude Agent SDK** round-trips the whole dict, but only for tools bound through
+  `ClaudeToolBuilder` — read and mutated via `ToolContext.get().framework_context`, which only this adapter fills, since the SDK has no
+  native context slot of its own. It never reaches a Claude built-in tool or an external MCP server — see
+  [Claude Agent SDK](./claude-agent-sdk.md#per-run-contextstate).
 - **CrewAI** does not support it at all — a set context is ignored with a warning.
 
 To write context **portably across all frameworks in a multi-framework app**, **pre-seed every key
 you intend to write** into `framework_context` before the run, and don't rely on brand-new keys
-surviving. Tools should write through their framework's native context/state mechanism — not by
-mutating the dict read from `ToolContext.get().session`, which the runner's write-back overwrites on
-every framework except CrewAI (see the
+surviving. Tools should write through their framework's native context/state mechanism — on Claude
+that means `ToolContext.get().framework_context` (it is `None` on the other frameworks), not by mutating the dict read from `ToolContext.get().session`,
+which the runner's write-back overwrites on every framework except CrewAI (see the
 [warning in Session](../core-concepts/session.md#framework-context--per-run-state)). Where a
 framework can't round-trip a value, write it from application code or from a post-hook that runs
 after the runner; on CrewAI, where the runner never writes back, a direct session write from a tool
