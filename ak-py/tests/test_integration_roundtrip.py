@@ -6,7 +6,6 @@ the adapter that produced the request — with the reply context intact.
 """
 
 import json
-from typing import Any, Optional
 
 import pytest
 from fastapi import FastAPI, Request

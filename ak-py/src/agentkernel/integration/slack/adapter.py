@@ -11,7 +11,6 @@ import contextvars
 import logging
 import os
 import traceback
-from typing import Any
 
 import httpx
 from fastapi import Request

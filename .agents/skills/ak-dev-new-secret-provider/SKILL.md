@@ -2,7 +2,7 @@
 name: ak-dev-new-secret-provider
 description: >
   Step-by-step guide for adding a new built-in secret provider to Agent Kernel's secret-resolution
-  capability (beyond env and aws_ssm). Use this skill when you need a new managed secret store
+  capability (beyond env, aws_ssm and kubernetes). Use this skill when you need a new managed secret store
   (e.g. AWS Secrets Manager, Azure Key Vault, GCP Secret Manager, HashiCorp Vault) addressable by a
   short `secret.provider.type` name. Covers the SecretProvider contract, addressing, factory
   registration, configuration, optional dependencies, the SecretProviderContract test suite,
@@ -26,6 +26,7 @@ Resolution* section covers the manager, cache and resolution order this guide bu
 | Provider | `type` value | Addressing | Extra |
 |---|---|---|---|
 | Environment (default) | `env` | the key **is** the variable name, read verbatim | — (stdlib) |
+| Kubernetes Secrets mounted as files | `kubernetes` | `<mount_path>/<secret-name>/<KEY>`, one file per key; same key in two Secrets is an error | — (stdlib) |
 | AWS SSM Parameter Store | `aws_ssm` | `/ak/{prefix}/{key.lower()}`, `GetParameter(WithDecryption=True)` | `agentkernel[aws]` |
 | Bring-your-own | dotted path, e.g. `myapp.secrets.VaultProvider` | whatever the subclass implements | the user's own |
 
@@ -144,6 +145,10 @@ carries `boto3` for any AWS backend). Match the extra name to the `require_extra
   environment-always-wins assertions to include it.
 
 ### 6. Deployment Wiring (Cloud Stores)
+
+For a store the pod reads from the filesystem, the Helm analog is a volume mount, not an IAM grant:
+see `secretStore` in `ak-deployment/ak-k8s/chart` (`kubernetes` provider), which mounts only into the
+agent-executing tier and fails the render on an unusable value.
 
 If the backend is a cloud store the Terraform modules can grant, mirror `ssm_enabled` in
 `ak-deployment/ak-aws/{serverless,containerized}` (`variables.tf`, `state.tf`,

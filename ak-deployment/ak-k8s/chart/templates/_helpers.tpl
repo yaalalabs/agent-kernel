@@ -162,3 +162,62 @@ count is the ceiling past which an extra replica holds no partition at all), or 
 {{- 10 }}
 {{- end }}
 {{- end }}
+
+{{/*
+Kubernetes Secrets mounted for the application's `secret.provider.type: kubernetes`. These
+definitions own the base path, the per-Secret path and the volume names so that the volumes and
+the volumeMounts cannot drift apart.
+*/}}
+{{- define "agent-kernel.secretStoreMountPath" -}}/var/run/secrets/agentkernel{{- end }}
+
+{{/* "runner" | "io" | "": the one tier that executes agents in this release. */}}
+{{- define "agent-kernel.secretStoreTier" -}}
+{{- if .Values.agentRunner.enabled }}runner
+{{- else if and .Values.ioHandler.enabled (eq .Values.transport.type "in_memory") }}io
+{{- end }}
+{{- end }}
+
+{{/* Fails the render on an unusable secretStore; renders nothing. Included from configmap-env.yaml. */}}
+{{- define "agent-kernel.secretStoreValidate" -}}
+{{- if .Values.secretStore.enabled }}
+{{- if not (include "agent-kernel.secretStoreTier" .) }}
+{{- fail "secretStore.enabled needs an agent-executing tier: agentRunner.enabled, or ioHandler.enabled with transport.type in_memory" }}
+{{- end }}
+{{- if empty .Values.secretStore.secrets }}
+{{- fail "secretStore.secrets must list at least one Secret when secretStore.enabled" }}
+{{- end }}
+{{- $seen := dict }}
+{{- range .Values.secretStore.secrets }}
+{{- if not (kindIs "map" .) }}
+{{- fail (printf "secretStore.secrets entries must be objects with a name, e.g. '- name: %v'" .) }}
+{{- end }}
+{{- $name := required "secretStore.secrets[].name is required" .name }}
+{{- if not (kindIs "string" $name) }}
+{{- fail (printf "secretStore.secrets[].name must be a string, got %v: quote names such as \"true\" or \"123\"" $name) }}
+{{- end }}
+{{- if hasKey $seen $name }}
+{{- fail (printf "secretStore.secrets lists '%s' more than once" $name) }}
+{{- end }}
+{{- $_ := set $seen $name true }}
+{{- end }}
+{{- end }}
+{{- end }}
+
+{{/* One `secret` volume per listed Secret. */}}
+{{- define "agent-kernel.secretStoreVolumes" -}}
+{{- range $i, $s := .Values.secretStore.secrets }}
+- name: ak-secret-{{ $i }}
+  secret:
+    secretName: {{ $s.name | quote }}
+    optional: false
+{{- end }}
+{{- end }}
+
+{{/* One read-only mount per listed Secret. */}}
+{{- define "agent-kernel.secretStoreVolumeMounts" -}}
+{{- range $i, $s := .Values.secretStore.secrets }}
+- name: ak-secret-{{ $i }}
+  mountPath: {{ include "agent-kernel.secretStoreMountPath" $ }}/{{ $s.name }}
+  readOnly: true
+{{- end }}
+{{- end }}

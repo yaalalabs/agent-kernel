@@ -147,7 +147,7 @@ OpenAIModule([agent]).run_options(
 ```
 
 Every keyword is a keyword argument of that framework's native run call (LangGraph's `config`, ADK's
-`plugins` and `run_config`, Pydantic AI's `usage_limits`, CrewAI's `step_callback`, smolagents'
+`plugins` and `run_config`, Pydantic AI's `usage_limits`, Microsoft Agent Framework's `options`, CrewAI's `step_callback`, smolagents'
 `max_steps`). Repeated calls merge, the later call winning per key. A key the adapter populates
 itself (`session`, `context`, `input`, ...) raises `ValueError` at declaration. See
 [Runner → Per-agent native run options](./runner.md#native-run-options) for the merge rule and the

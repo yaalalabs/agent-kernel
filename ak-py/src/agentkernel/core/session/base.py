@@ -1,7 +1,6 @@
 from abc import ABC, abstractmethod
 from collections import OrderedDict
 from threading import RLock
-from typing import Any
 
 from ..base import Session
 from ..util.factory import AKConfigError

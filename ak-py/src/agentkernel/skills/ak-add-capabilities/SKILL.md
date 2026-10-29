@@ -6,7 +6,7 @@ description: >
   A2A server, AG-UI server, pre/post hooks, multimodal support, conversation thread support,
   scheduled tasks (deferred and recurring chat execution), the sandbox capability
   (isolated code execution), and secret resolution (environment first, then AWS SSM
-  Parameter Store or a custom provider). Session
+  Parameter Store, Kubernetes Secrets mounted into the pod, or a custom provider). Session
   persistence supports Redis, DynamoDB (AWS), Cosmos DB (Azure), and Firestore (GCP).
   Conversation threads support in-memory, Redis, Valkey, DynamoDB (AWS), Firestore (GCP),
   and Cosmos DB (Azure) backends. Generates configuration and code changes needed.
@@ -45,7 +45,7 @@ Which capability would you like to add?
 10. **Sandbox** — Isolated code/command execution with pluggable providers, workload profiles, policy, and per-user identity
 11. **AG-UI Server** — Stream any agent to an AG-UI-compliant frontend (text, tool calls, reasoning, shared state)
 12. **Scheduled Tasks** — Deferred and recurring chat execution (a `schedule` block on a chat request, management routes, agent tools)
-13. **Secret Resolution** — Read API keys through `SecretManager` (environment first, then AWS SSM Parameter Store or a custom provider)
+13. **Secret Resolution** — Read API keys through `SecretManager` (environment first, then AWS SSM Parameter Store, Kubernetes Secrets mounted into the pod, or a custom provider)
 14. **Human in the Loop** — Pause a run for a person's approval or answer and resume from their decision (a gated tool or an interrupt, a `resume` block on the next request)
 15. **A2UI** — Let an agent answer with an interface instead of prose: its JSON reply is labelled so the client receives a document, not a string
 
@@ -553,7 +553,7 @@ a2a:
 
 #### AG-UI Server
 
-Stream any streaming-capable agent (OpenAI Agents SDK, LangGraph, Google ADK, Pydantic AI — not
+Stream any streaming-capable agent (OpenAI Agents SDK, LangGraph, Google ADK, Pydantic AI, Microsoft Agent Framework — not
 CrewAI or Smolagents) to a frontend over the [AG-UI protocol](https://github.com/ag-ui-protocol/ag-ui):
 text, tool calls, reasoning, and an optional shared JSON state, all as one typed event stream.
 
@@ -593,6 +593,33 @@ RESTAPI.run(handlers=[AGUIRequestHandler(authoriser=MyAuthoriser())])
 4. Routes are served under `agui.prefix`: `GET {prefix}/agents`, `POST {prefix}/{agent_name}`, and
    `POST {prefix}` when `default_agent` is set. See `examples/api/agui` for a full demo including a
    React/Vite frontend.
+
+5. **Optional — run the agent off the web tier.** `AGUIRequestHandler` runs the agent inside the
+   SSE request, so a slow model holds a web connection and the run cannot be retried. Mount
+   `AGUIPipelineRequestHandler` instead to put the run on the queue pipeline; the frontend does not
+   change, because the routes and the events are identical:
+```python
+from agentkernel.agui import AGUIPipelineRequestHandler
+from agentkernel.pipeline import IOHandler
+
+IOHandler.run(handlers=[AGUIPipelineRequestHandler(authoriser=MyAuthoriser())])
+```
+   It needs a response store that can stream chunks — `in_memory` locally, `redis` or `valkey` on a
+   broker transport — and refuses to start otherwise, naming the setting to change. On a broker it
+   also needs a shared session store (`redis`, `valkey`, `dynamodb`, `cosmosdb` or `firestore`),
+   since the runner reads the conversation in another process, and — when `multimodal.enabled` — a
+   shared attachment store (`redis` or `dynamodb`), since the edge offloads the bytes and the runner
+   resolves them:
+```yaml
+session:
+  type: valkey                 # not in_memory: the runner is a different process
+execution:
+  response_store:
+    type: valkey               # dynamodb cannot stream chunks
+multimodal:
+  enabled: true                # only if you accept attachments
+  storage_type: redis          # not in_memory/session_cache: the runner must read what the edge wrote
+```
 
 ---
 
@@ -715,10 +742,11 @@ module.run_options(agent, options_for, max_turns=25, hooks=ProgressHooks())
 | LangGraph | `ainvoke` / `astream_events` (`config` is deep-merged: `configurable.thread_id` stays the session id, `callbacks` lists concatenate) | `config["recursion_limit"]` | `config["callbacks"]` | `input`, `version`, `stream_mode`, `output_keys`, `print_mode`, `config.configurable.thread_id`, and any `RunnableConfig` key at the top level |
 | Google ADK | the per-run `App` (`plugins`), the per-run `Runner(...)` constructor (services) and `run_async` (`run_config`; copied with `streaming_mode=SSE` in stream mode) | `RunConfig(max_llm_calls=...)` | `plugins=[BasePlugin()]` | `agent`, `app`, `app_name`, `node`, `session_service`, `auto_create_session`, `user_id`, `session_id`, `new_message`, `state_delta`, `invocation_id`, `yield_user_message` |
 | Pydantic AI | `agent.run` / `run_stream_events` (`event_stream_handler` is dropped in stream mode with one warning) | `UsageLimits(request_limit=...)` | `event_stream_handler` | `user_prompt`, `message_history`, `deps` |
+| Microsoft Agent Framework | `agent.run` (including `stream=True`); model settings nest inside `options` | native function-invocation configuration on the client | native middleware on the agent or client | `messages`, `session`, `stream` |
 | CrewAI | the per-run `Crew(...)` constructor (`verbose=False` is an overridable default; agents resolve by `role`; `max_rpm` is a forwarded rate limit) | `max_iter` on the native `Agent` (needs nothing from Agent Kernel) | `step_callback` / `task_callback` | `agents`, `tasks`, `memory` |
 | smolagents | `agent.run` | `max_steps` | `step_callbacks` on the agent constructor (needs nothing from Agent Kernel) | `task`, `reset`, `additional_args`, `stream`, `return_full_result` |
 
-Worked demos: `examples/cli/<framework>-run-options` for each of the six frameworks, and
+Worked demos: `examples/cli/<framework>-run-options` for each of the seven frameworks, and
 `examples/cli/openai-dynamic-run-options` for options computed per run.
 
 **Streaming event hook (optional):** override `on_stream_event` on a `PostHook` to inspect or modify every event a streamed run produces while `execution.mode: stream` is active. Unlike `on_run` it sees the whole stream — message and reasoning text, tool call names, arguments and results, and the boundaries that pair them. Return the event to pass it on, a modified event of the same `type` to rewrite it, `None` to drop it, or a list to emit several events in its place (a list is emitted as-is and ends the chain for that event, so `return event` and `return [event]` differ). Raise `StreamHalt` to end the run: Agent Kernel closes any open boundary, emits one error chunk, and does not store the session. Only called when streaming; regular `on_run()` still handles the non-streaming path.
@@ -762,9 +790,9 @@ class AppendCart(PostHook):
 
 Use `session.get_framework_context()` / `set_framework_context(dict)` / `clear_framework_context()` —
 these accessors are for hooks only. Tools must use their framework's native handle instead
-(`RunContextWrapper.context` on OpenAI, `RunContext.deps` on Pydantic AI, `tool_context.state` on ADK,
+(`RunContextWrapper.context` on OpenAI, `RunContext.deps` on Pydantic AI, `ctx.session.state["ak_context"]` on MAF, `tool_context.state` on ADK,
 ...) since a tool writing through `ToolContext.get().session` writes to a different object than the one
-the run is carrying. Round-trip fidelity is framework-dependent (full for OpenAI/Pydantic AI, partial for
+the run is carrying. Round-trip fidelity is framework-dependent (full for OpenAI/Pydantic AI/MAF, partial for
 ADK/smolagents/LangGraph, unsupported for CrewAI) — see the framework's page under `docs/docs/frameworks/`
 for specifics.
 
@@ -1259,8 +1287,8 @@ needed, so it is declared where the framework declares it. Agent Kernel answers 
 `status: "PAUSED"` and the pending interruptions; the next request carries a `resume` block instead
 of a prompt.
 
-**Ask:** Which framework is the agent on? Only four can pause — OpenAI Agents SDK, LangGraph, Pydantic
-AI and Google ADK. CrewAI and smolagents report `supports_pause = False` rather than pretending.
+**Ask:** Which framework is the agent on? Five can pause — OpenAI Agents SDK, LangGraph, Pydantic AI,
+Google ADK and Microsoft Agent Framework. CrewAI and smolagents report `supports_pause = False` rather than pretending.
 
 **Important:** the pause is written into the **session**, so a durable one needs a shared session
 backend. With `session.type: in_memory` the record lives in one process and the replica receiving the
@@ -1287,6 +1315,11 @@ def ask_size(ctx: RunContext, q: str) -> str:
 # Google ADK — a result, or a verdict
 LongRunningFunctionTool(func=ask_address)
 FunctionTool(func=issue_refund, require_confirmation=True)
+
+# Microsoft Agent Framework — a verdict only (no payload, no prompt beside it; answer every approval together)
+@tool(approval_mode="always_require")
+def issue_refund(order_id: str) -> str: ...
+# or: MAFToolBuilder.bind([issue_refund], approval_mode="always_require")
 ```
 
 **Answering it:**
@@ -1399,7 +1432,8 @@ back to `os.environ`** — hand it to the SDK explicitly. The capability is alwa
 flag); the default `env` provider costs nothing.
 
 **Ask:** Which provider — `env` (default; the process environment), `aws_ssm` (AWS SSM Parameter
-Store; needs the `aws` extra and `secret.prefix`), or a dotted path to your own `SecretProvider`
+Store; needs the `aws` extra and `secret.prefix`), `kubernetes` (Kubernetes Secrets mounted into the
+pod as files; no extra), or a dotted path to your own `SecretProvider`
 subclass?
 
 **1. Install the extra (aws_ssm only):**
@@ -1413,7 +1447,9 @@ pip install "agentkernel[aws]"
 ```yaml
 secret:
   provider:
-    type: aws_ssm              # env (default) | aws_ssm | my_pkg.secrets.MyProvider
+    type: aws_ssm              # env (default) | aws_ssm | kubernetes | my_pkg.secrets.MyProvider
+    # kubernetes:
+    #   mount_path: /var/run/secrets/agentkernel   # only for Secrets mounted outside the Helm chart
   prefix: myproduct-dev-agents # required by aws_ssm; AWS Terraform injects AK_SECRET__PREFIX when ssm_enabled = true
   cache_ttl: 300               # seconds a provider hit is cached; 0 disables caching (rotation-pickup window)
 ```
@@ -1421,6 +1457,11 @@ secret:
 With `aws_ssm`, the key `OPENAI_API_KEY` is read from the SSM parameter
 `/ak/{prefix}/openai_api_key` (key lowercased, `GetParameter` with decryption). `prefix` must be a single
 path segment. Create the parameters yourself as `SecureString`.
+
+With `kubernetes`, the key is the file `<mount_path>/<secret-name>/OPENAI_API_KEY`, found across every
+mounted Secret (the same key in two Secrets is an error). Data keys must be named exactly like the AK key
+(`OPENAI_API_KEY`). On the Helm chart, set `secretStore.enabled: true` and list the Secrets in
+`secretStore.secrets`; see `examples/k8s/openai-queue-mode`.
 
 **3. Resolve secrets in agent code instead of reading `os.environ`:**
 
@@ -1442,7 +1483,8 @@ failed — credentials, network, IAM; never masked by `default`), `ValueError` (
 `SecretManager.current().invalidate(key)` / `.clear()` to drop cached values. A custom provider
 subclasses `agentkernel.secret.SecretProvider`, implements `get_secret(key) -> str | None`
 (return `None` on a miss), and can be checked with the `agentkernel.secret.testing.SecretProviderContract`
-pytest suite. See `examples/cli/openai-secret` (env) and `examples/aws-serverless/openai` (aws_ssm).
+pytest suite. See `examples/cli/openai-secret` (env), `examples/aws-serverless/openai` (aws_ssm) and
+`examples/k8s/openai-queue-mode` (kubernetes).
 
 #### A2UI
 

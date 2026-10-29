@@ -195,3 +195,11 @@ class CloudWatch(BaseTrace):
         from .pydanticai import CloudWatchPydanticAIRunner
 
         return CloudWatchPydanticAIRunner(self)
+
+    def maf(self) -> Runner:
+        """
+        Returns the CloudWatch MAF runner instance.
+        """
+        from .maf import CloudWatchMAFRunner
+
+        return CloudWatchMAFRunner(self)

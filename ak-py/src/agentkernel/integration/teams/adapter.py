@@ -15,7 +15,6 @@ import json
 import logging
 import mimetypes
 import re
-from typing import Any
 from urllib.parse import urlparse
 
 import httpx

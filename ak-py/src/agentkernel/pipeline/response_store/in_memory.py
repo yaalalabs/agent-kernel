@@ -3,7 +3,6 @@ import threading
 from collections.abc import Generator
 from typing import Any, ClassVar
 
-from ...core.config import AKConfig
 from .base import ResponseStore
 
 
@@ -26,6 +25,11 @@ class InMemoryResponseStore(ResponseStore):
     _chunks: ClassVar[dict[str, "queue.Queue[dict]"]] = {}
     # Sentinel put by close_stream to unblock and terminate a pending stream() consumer.
     _CLOSE_SENTINEL: ClassVar[dict[str, Any]] = {}
+
+    @property
+    def shared(self) -> bool:
+        # Class-level state: another process gets its own copy of every dict above.
+        return False
 
     def supports_chunk_streaming(self) -> bool:
         return True
@@ -76,12 +80,7 @@ class InMemoryResponseStore(ResponseStore):
             store's ``retry_count * delay`` budget.
         :raises TimeoutError: When no chunk arrives within ``chunk_timeout``.
         """
-        if chunk_timeout is None:
-            response_store_config = AKConfig.get().execution.response_store
-            if response_store_config is not None:
-                chunk_timeout = response_store_config.retry_count * response_store_config.delay
-            else:
-                chunk_timeout = 60.0  # matches the request handler's default local wait budget (60 x 1s)
+        chunk_timeout = self._chunk_timeout(chunk_timeout)
         with self._lock:
             chunk_queue = self._chunks.setdefault(request_id, queue.Queue())
         try:
