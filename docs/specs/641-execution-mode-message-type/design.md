@@ -79,7 +79,8 @@ and the valid alternatives.
   - `IOHandler.run(auth_validator=...)` logs the existing "auth_validator ignored" warning
     (`io_handler.py:108-113`) instead of co-hosting `/ws`.
   - On a broker transport (`sqs`, `kafka`, `nats`) it needs a shared response store that can hold
-    chunks: Redis or Valkey once #755 merges. DynamoDB cannot (`response_store/base.py:54`).
+    chunks: Redis or Valkey (`response_store/redis_like.py:74`, since #755). DynamoDB cannot
+    (`response_store/base.py:66`).
     - Otherwise `IOHandler` fails at startup with `AKConfigError`. The error names the configured
       `rest_sync + delta` and both fixes: a chunk-capable response store, or `async + delta`. Today
       this is a 400 on every request (`request_handler.py:304`).
@@ -89,8 +90,11 @@ and the valid alternatives.
 - `rest_sync + delta` on AWS Lambda fails at router init. The error names the configured
   `rest_sync + delta` and suggests `async + delta`, the only streaming option on Lambda. API Gateway
   REST cannot stream (`rest_lambda.py:299-315`).
-- Messaging webhooks (`LambdaWebhookHost`, `webhook_host.py:92`) keep requiring a REST mode, and
-  also require `message_type: complete`. Platform adapters deliver whole messages.
+- On AWS Lambda, messaging webhooks (`LambdaWebhookHost`, `webhook_host.py:92`) keep requiring a
+  REST mode, and also require `message_type: complete`. Lambda has no REST `delta` option (above), so
+  this rules out nothing that would work there.
+  - Elsewhere there is no such check: one `rest_sync + delta` process serves SSE on the chat route
+    and webhooks on the integration routes, with webhook replies delivered whole (next bullet).
 - Non-realtime integration messages always run and deliver as whole replies, whatever
   `message_type` is. This covers webhook and poller entry points. `StreamAgentRunner` hands them to
   the whole-reply path (`agent_runner.py:217`), and `ResponseHandler` routes them to
@@ -143,8 +147,9 @@ and the valid alternatives.
   (`containerized/modules/agent-runner/main.tf:39`, `modules/rest-service/main.tf:43`,
   `serverless/state.tf:633`, `:649`, `:738`).
   - `execution_mode` validation (`serverless/variables.tf:61`, `containerized/variables.tf:267`)
-    drops `stream`. Its `error_message` names the same two replacements, so `terraform plan` fails
-    before anything is deployed.
+    drops `stream`. Its `error_message` names `async` with `message_type = "delta"`, so
+    `terraform plan` fails before anything is deployed. It names only that replacement: `stream` was
+    always WebSocket on AWS, and Lambda and ECS reject `rest_sync + delta`.
   - The WebSocket conditions `contains(["async","stream"], …)` (`containerized/state.tf:25`,
     `containerized/variables.tf:66-307`, `serverless/state.tf:39`, `serverless/variables.tf:124-335`)
     become `execution_mode == "async"` once `stream` is gone.

@@ -52,7 +52,7 @@ declared by the application rather than inferred from the queue URLs a deploymen
 | `kafka` | ✅ (`pip install agentkernel[kafka]`) | Kubernetes / on-prem two-process topology |
 | `nats` (recommended on-prem) | ✅ (`pip install agentkernel[nats]`) | Kubernetes / on-prem two-process topology |
 
-hoDelivery sub-modes (`execution.mode` + `execution.message_type`):
+Delivery sub-modes (`execution.mode` + `execution.message_type`):
 
 | Mode | Message type | What the caller does | How they get the response |
 |------|--------------|---------------------|---------------------------|

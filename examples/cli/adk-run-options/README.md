@@ -44,7 +44,7 @@ Run stats: llm_calls=2, tool_calls=1, max_llm_calls=20
 
 | Path | Mode | What you get |
 |---|---|---|
-| Agent Kernel stream events (`PostHook.on_stream_event`) | `execution.message_type: delta` only | framework-agnostic `ToolCallStart`, `TextDelta`, ... for what the adapter maps |
+| Agent Kernel stream events (`PostHook.on_stream_event`) | `execution.message_type: delta` on a streamed surface (SSE or WebSocket); the CLI never streams | framework-agnostic `ToolCallStart`, `TextDelta`, ... for what the adapter maps |
 | Native plugins through run options (this demo) | any mode, including `rest_sync` | ADK's full plugin surface: run, agent, model and tool callbacks |
 
 Per-agent callbacks (`before_model_callback=` on the `Agent` itself) were always reachable; plugins are

@@ -206,7 +206,9 @@ each reply chunk from the Response Handler on its authenticated `/internal/push`
 The connection table rides the session store, which values-dev already puts on Valkey.
 
 Switch the running release to `async` + `delta` with the gateway enabled (config unchanged:
-each override is one env var away):
+each override is one env var away). `execution.messageType` only reaches the pods from a chart
+that renders it: until a release publishes one, run `deploy/deploy.sh local` with the same flags,
+or the published chart silently drops the override and replies arrive whole:
 
 ```bash
 k3d image import -c ak ak-example-ws-gateway:dev    # kind: kind load docker-image ...

@@ -532,7 +532,8 @@ Run from `ak-py/`: `uv run pytest`. CI also runs `chart-test.yaml`, and `terrafo
   - `async + delta` on `in_memory` without a validator raises.
   - `rest_sync + delta` on `nats` with a `redis` store type raises check 4 when
     `ResponseStoreFactory.create` is patched to return a store without chunk capability. It passes
-    when the patched store has it, so the test survives #755 giving Redis the capability.
+    when the patched store has it, so the test does not depend on which built-in stores have the
+    capability (Redis and Valkey do, since #755).
   - `realtime` selects `RealtimeAgentRunner`, not `StreamAgentRunner`.
 - **`tests/test_pipeline_request_handler.py`**: `rest_sync + delta` serves `text/event-stream` (the
   existing SSE tests at `:199`, `:379`, `:433` move to it). `async + delta` gets the `async` 400 on

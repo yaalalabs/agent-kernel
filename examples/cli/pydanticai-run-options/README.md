@@ -41,7 +41,7 @@ Run stats: llm_calls=2, tool_calls=1, request_limit=10
 
 | Path | Mode | What you get |
 |---|---|---|
-| Agent Kernel stream events (`PostHook.on_stream_event`) | `execution.message_type: delta` only | framework-agnostic `ToolCallStart`, `TextDelta`, ... for what the adapter maps |
+| Agent Kernel stream events (`PostHook.on_stream_event`) | `execution.message_type: delta` on a streamed surface (SSE or WebSocket); the CLI never streams | framework-agnostic `ToolCallStart`, `TextDelta`, ... for what the adapter maps |
 | Native `event_stream_handler` through run options (this demo) | run mode (`rest_sync`, the CLI) | Pydantic AI's own event stream plus the run's `RunContext` and usage |
 
 ## Running

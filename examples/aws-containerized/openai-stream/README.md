@@ -143,8 +143,10 @@ back to the right client.
 
 `config.yaml` sets `execution.mode: async` and `execution.message_type: delta`. There is no REST
 response store in WebSocket (`async`) mode — replies are always pushed over the connection, never
-polled. Removing `message_type` (or setting it to `complete`) delivers the full agent reply as one
-`CHAT_RESPONSE` message instead — see [`openai-websocket`](../openai-websocket).
+polled. `deploy/main.tf` also sets `message_type = "delta"`, which Terraform injects as
+`AK_EXECUTION__MESSAGE_TYPE` and which overrides `config.yaml`. To deliver the full agent reply as
+one `CHAT_RESPONSE` message instead, remove `message_type` (or set it to `complete`) in both files —
+see [`openai-websocket`](../openai-websocket).
 
 ## Prerequisites
 

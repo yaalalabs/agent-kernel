@@ -104,7 +104,7 @@ export const FEATURE_TABS: FeatureTab[] = [
       {
         title: "REST, WebSocket & Streaming",
         description:
-          "A FastAPI server with sync, async and SSE streaming modes, a WebSocket gateway for push delivery, and multipart uploads for attachments.",
+          "A FastAPI server with sync and async modes, whole or token-by-token replies over SSE or WebSocket, a WebSocket gateway for push delivery, and multipart uploads for attachments.",
         tags: ["REST", "SSE", "WebSocket", "Multipart"],
         docs: "/docs/api/rest-api",
         example: "api/openai",

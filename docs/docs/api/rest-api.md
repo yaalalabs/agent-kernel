@@ -423,7 +423,12 @@ if __name__ == "__main__":
 
 ## Streaming
 
-Set `execution.mode: rest_sync` and `execution.message_type: delta` in `config.yaml` (or `AK_EXECUTION__MODE=rest_sync` and `AK_EXECUTION__MESSAGE_TYPE=delta`) to enable streaming. With this combination, `POST /api/v1/chat` and `POST /api/v1/chat-multipart` return a `text/event-stream` (SSE) response instead of JSON; no other code changes are required. Every other mode and message type combination answers with JSON.
+Set `execution.mode: rest_sync` and `execution.message_type: delta` in `config.yaml` (or `AK_EXECUTION__MODE=rest_sync` and `AK_EXECUTION__MESSAGE_TYPE=delta`) to enable streaming. With this combination, `POST /api/v1/chat` and `POST /api/v1/chat-multipart` return a `text/event-stream` (SSE) response instead of JSON; no other code changes are required. Other combinations don't stream on the REST chat route: `rest_sync` and `rest_async` with `complete` answer with JSON, and `async` rejects it with a 400 that points to `/ws`.
+
+On the queue pipeline with a broker transport (`sqs`, `kafka`, `nats`):
+
+- Only `POST /api/v1/chat` streams. `/api/v1/chat-multipart` is not registered, because of broker message-size limits.
+- SSE needs a shared response store that can hold chunks (Redis or Valkey). Otherwise startup fails with an error naming both fixes: such a store, or `async` with `message_type: delta`.
 
 `execution.mode: stream` was removed and now fails when the configuration loads; use `rest_sync` with `message_type: delta` for SSE.
 
