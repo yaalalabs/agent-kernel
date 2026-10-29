@@ -8,12 +8,11 @@ from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from agentkernel.core.config import AKConfig
-from agentkernel.core.model import AgentReplyText, AgentRequestText
+from agentkernel.core.event import PausedInterruption
+from agentkernel.core.model import AgentPausedReplyAny, AgentReplyText, AgentRequestText, AgentResumeRequestAny
 from agentkernel.integration.adapter.factory import IntegrationAdapterFactory
 from agentkernel.integration.adapter.producer import IntegrationProducer
 from agentkernel.integration.adapter.webhook import WebhookRESTRequestHandler
-from agentkernel.core.event import PausedInterruption
-from agentkernel.core.model import AgentPausedReplyAny, AgentResumeRequestAny
 from agentkernel.integration.telegram.adapter import (
     CALLBACK_LIMIT,
     CALLBACK_PREFIX,
@@ -370,6 +369,35 @@ class TestPauseRendering:
         await adapter.deliver_paused(_paused("x" * CALLBACK_LIMIT), {"chat_id": str(CHAT_ID)})
 
         assert adapter._client.send_message.await_args.kwargs["reply_markup"] is None
+
+    @pytest.mark.asyncio
+    async def test_a_question_wanting_a_value_gets_no_buttons(self):
+        adapter = _outbound()
+
+        await adapter.deliver_paused(_paused("call_q", kind="input_required"), {"chat_id": str(CHAT_ID)})
+
+        assert adapter._client.send_message.await_args.kwargs["reply_markup"] is None, "Approve answers nothing when the agent asked for a value"
+        assert "answers" in "".join(adapter._client.send_message.await_args.args[1])
+
+    @pytest.mark.asyncio
+    async def test_a_mixed_pause_keeps_the_approval_buttons_and_names_the_question(self):
+        adapter = _outbound()
+        reply = AgentPausedReplyAny(
+            run_id="01JD7K2MX4",
+            session_id=str(CHAT_ID),
+            agent="helper",
+            interruptions=[
+                PausedInterruption(id="call_a", kind="tool_call", tool_name="refund_order"),
+                PausedInterruption(id="call_q", kind="input_required", message="Which warehouse?"),
+            ],
+        )
+
+        await adapter.deliver_paused(reply, {"chat_id": str(CHAT_ID)})
+
+        rows = adapter._client.send_message.await_args.kwargs["reply_markup"]["inline_keyboard"]
+        assert [row[0]["callback_data"] for row in rows] == [f"{CALLBACK_PREFIX}a:call_a"]
+        text = "".join(adapter._client.send_message.await_args.args[1])
+        assert "call_q" in text, "with buttons on screen, the question without them has to be named"
 
     @pytest.mark.asyncio
     async def test_a_cancelled_verb_is_offered_when_the_adapter_declares_it(self):

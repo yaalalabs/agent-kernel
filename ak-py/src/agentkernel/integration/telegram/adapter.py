@@ -14,6 +14,7 @@ import httpx
 from fastapi import HTTPException, Request
 
 from ...core.config import AKConfig
+from ...core.event import PausedInterruption
 from ...core.model import (
     AgentPausedReplyAny,
     AgentReply,
@@ -385,14 +386,17 @@ class TelegramOutboundAdapter(OutboundAdapter):
 
     async def deliver_paused(self, reply: AgentPausedReplyAny, reply_context: Dict[str, str]) -> None:
         """Send the pause with an inline keyboard, so it can be answered by pressing."""
-        rows, unpressable = self._rows(reply)
+        decidable, typed = self._decidable(reply)
+        rows, unpressable = self._rows(decidable)
         text = self.format_pause(reply)
         if unpressable:
             text = f"{text}\n\n{self.UNPRESSABLE_NOTICE.format(ids=', '.join(unpressable))}"
+        if typed and rows:
+            text = f"{text}\n\n{self.TYPED_ANSWER_NOTICE.format(ids=', '.join(typed))}"
         markup = {"inline_keyboard": rows} if rows else None
         await self._client.send_message(reply_context["chat_id"], self.split_reply(text), reply_markup=markup)
 
-    def _rows(self, reply: AgentPausedReplyAny) -> tuple[list, List[str]]:
+    def _rows(self, interruptions: List[PausedInterruption]) -> tuple[list, List[str]]:
         """One row of buttons per interruption, in the verbs this adapter offers.
 
         An interruption whose callback data will not fit Telegram's budget gets no row — the ids
@@ -401,11 +405,11 @@ class TelegramOutboundAdapter(OutboundAdapter):
         interruption's id only when the framework named nothing else, so two gated calls to the
         same tool read alike and a reader could not tell which one has no buttons.
 
-        :param reply: The paused reply to draw.
+        :param interruptions: The interruptions a press can answer, from :meth:`_decidable`.
         :return: The keyboard rows, and the ids of the interruptions that could not get one.
         """
         rows, unpressable = [], []
-        for interruption in reply.interruptions:
+        for interruption in interruptions:
             row = [
                 {"text": BUTTON_LABELS[verb], "callback_data": f"{CALLBACK_PREFIX}{VERB_CODES[verb]}:{interruption.id}"} for verb in self.DECISIONS
             ]

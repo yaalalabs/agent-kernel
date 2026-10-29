@@ -22,6 +22,7 @@ from slack_bolt.async_app import AsyncApp
 from slack_sdk.web.async_client import AsyncWebClient
 
 from ...core.config import AKConfig
+from ...core.event import PausedInterruption
 from ...core.model import (
     AgentPausedReplyAny,
     AgentReply,
@@ -478,16 +479,20 @@ class SlackOutboundAdapter(OutboundAdapter):
         )
 
     async def deliver_paused(self, reply: AgentPausedReplyAny, reply_context: Dict[str, str]) -> None:
-        """Post the pause with a row of buttons per interruption, so it can be answered by pressing.
+        """Post the pause with a row of buttons per decidable interruption, so it can be answered by pressing.
 
-        The budget passed to :meth:`_action_blocks` holds one block back for the overflow notice,
-        so a pause with more interruptions than the message can carry is still able to say so.
+        The budget passed to :meth:`_action_blocks` holds a block back for each notice that could
+        follow, so a pause with more interruptions than the message can carry is still able to say
+        so.
         """
+        decidable, typed = self._decidable(reply)
         blocks = self.split_reply(self.format_pause(reply))
-        actions, unpressable = self._action_blocks(reply, MAX_BLOCKS - len(blocks) - 1)
+        actions, unpressable = self._action_blocks(decidable, MAX_BLOCKS - len(blocks) - (2 if typed else 1))
         blocks.extend(actions)
         if unpressable:
-            blocks.append({"type": "context", "elements": [{"type": "mrkdwn", "text": self.UNPRESSABLE_NOTICE.format(ids=", ".join(unpressable))}]})
+            blocks.append(self._notice(self.UNPRESSABLE_NOTICE.format(ids=", ".join(unpressable))))
+        if typed and actions:
+            blocks.append(self._notice(self.TYPED_ANSWER_NOTICE.format(ids=", ".join(typed))))
 
         await self._client().chat_postMessage(
             channel=reply_context["channel"],
@@ -496,7 +501,16 @@ class SlackOutboundAdapter(OutboundAdapter):
             blocks=blocks,
         )
 
-    def _action_blocks(self, reply: AgentPausedReplyAny, budget: int) -> tuple[list, List[str]]:
+    @staticmethod
+    def _notice(text: str) -> dict:
+        """A line of small print under the controls.
+
+        :param text: What it says.
+        :return: The context block to append.
+        """
+        return {"type": "context", "elements": [{"type": "mrkdwn", "text": text}]}
+
+    def _action_blocks(self, interruptions: List[PausedInterruption], budget: int) -> tuple[list, List[str]]:
         """One actions block per interruption, for as many as the message has room for.
 
         Slack takes 50 blocks per message and the pause text has already used some. An
@@ -505,12 +519,12 @@ class SlackOutboundAdapter(OutboundAdapter):
         two gated calls to the same tool read alike and a reader could not tell which lost its
         buttons.
 
-        :param reply: The paused reply to draw.
+        :param interruptions: The interruptions a press can answer, from :meth:`_decidable`.
         :param budget: How many blocks are left for controls.
         :return: The actions blocks, and the ids of the interruptions that did not fit.
         """
         blocks, unpressable = [], []
-        for interruption in reply.interruptions:
+        for interruption in interruptions:
             if len(blocks) >= budget:
                 unpressable.append(interruption.id)
                 continue

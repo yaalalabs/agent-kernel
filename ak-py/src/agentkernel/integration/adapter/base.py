@@ -190,7 +190,9 @@ class OutboundAdapter(ABC):
     ERROR_MESSAGE: str = "Sorry, there was an error processing your request."
 
     DECISIONS: tuple[str, ...] = ("approved", "denied")
+    DECIDABLE_KINDS: tuple[str, ...] = ("tool_call", "confirmation")
     DENY_COLLECTS_REASON: bool = False
+    TYPED_ANSWER_NOTICE: str = "These need a typed answer, which cannot be sent from here: {ids}"
     PAUSE_APPROVAL_TEXT: str = "⏸ Approval needed\n\n{body}\n\nThis run is paused until someone approves it."
     PAUSE_INPUT_TEXT: str = "⏸ Input needed\n\n{body}\n\nThis run is paused until someone answers."
 
@@ -236,6 +238,23 @@ class OutboundAdapter(ABC):
         kinds = {i.kind for i in reply.interruptions}
         template = self.PAUSE_INPUT_TEXT if kinds == {"input_required"} else self.PAUSE_APPROVAL_TEXT
         return template.format(body=body)
+
+    @classmethod
+    def _decidable(cls, reply: AgentPausedReplyAny) -> tuple[List[PausedInterruption], List[str]]:
+        """Split the interruptions into the ones a control can answer and the ids of the rest.
+
+        An `input_required` pause wants a **value** — a choice, a sentence — so a decision verb
+        answers nothing: the resume carries no message and no payload, and the framework is handed
+        an empty answer to a real question. Those get no controls, and the caller names them in
+        the message when the same pause drew controls for something else, since otherwise a reader
+        cannot tell which question lost them.
+
+        :param reply: The paused reply to draw.
+        :return: The interruptions to draw controls for, and the ids of the ones that need typing.
+        """
+        decidable = [i for i in reply.interruptions if i.kind in cls.DECIDABLE_KINDS]
+        typed = [i.id for i in reply.interruptions if i.kind not in cls.DECIDABLE_KINDS]
+        return decidable, typed
 
     @classmethod
     def _format_interruption(cls, interruption: PausedInterruption) -> str:

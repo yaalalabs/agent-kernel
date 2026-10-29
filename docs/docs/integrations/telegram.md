@@ -117,6 +117,7 @@ curl "https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getWebhookInfo"
 - **Multi-modal support** - Send and analyze images, PDFs, and document files alongside text
 - **Typing indicator** - Visual feedback while processing
 - **Inline keyboards** - Interactive button-based interactions
+- **Approvals in the chat** - A run that pauses for a human arrives with Approve and Deny buttons
 - **Markdown formatting** - Rich text formatting in responses
 - **Session management** - Per-chat conversation context with memory
 - **Automatic message splitting** - Long responses split to respect Telegram's 4096 character limit
@@ -224,6 +225,9 @@ async def _send_message_with_keyboard(self, chat_id: int, text: str):
     await self._send_message(chat_id, text, reply_markup=reply_markup)
 ```
 
+Your `callback_data` is yours: Agent Kernel reads only presses prefixed `akhitl:` (see below) and
+hands every other callback query to the normal message path, exactly as before.
+
 ### Markdown Formatting
 
 ```python
@@ -233,6 +237,43 @@ await self._send_message(
     parse_mode="Markdown"
 )
 ```
+
+## Approving a Paused Run
+
+When an agent stops to ask a human — a gated tool, a confirmation — the pause is posted to the same
+chat with a row of buttons per question that needs a yes or no:
+
+```
+⏸ Approval needed
+
+refund_order
+  order_id: A-10294
+
+This run is paused until someone approves it.
+
+[ ✓ Approve ]  [ ✗ Deny ]
+```
+
+Nothing is configured for this. A press parses into exactly the decision a REST client would send
+and travels the same queue, so the agent cannot tell the two apart. See
+[Human in the Loop](../advanced/human-in-the-loop.md) for the full picture, including the one kind of question that gets no buttons: one asking for a value rather than a verdict.
+
+:::caution Anyone who can see the message can press it
+Agent Kernel ships no approver policy. Group membership is not an approval list — if it matters who
+decides, enforce it yourself: the presser's Telegram user id reaches the run as `acting_user_id`,
+and a `PreHook` is where you check it.
+:::
+
+:::note Telegram's 64-byte button budget
+A button carries `akhitl:<verb>:<interruption id>` in `callback_data`, which Telegram caps at **64
+bytes**. The interruption id is the agent framework's own, so Agent Kernel cannot shorten it. A
+question whose id does not fit renders with no buttons, is named in the message so nobody is left
+guessing which one lost them, and is logged with its byte count. Answer that one over another
+surface.
+:::
+
+The buttons stay on the message after a decision. Pressing the same one again is deduplicated and
+changes nothing; pressing one on a pause that has already been answered gets the usual error reply.
 
 ## Supported Message Types
 

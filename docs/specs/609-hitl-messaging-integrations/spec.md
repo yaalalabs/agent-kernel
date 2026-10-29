@@ -40,6 +40,15 @@ Rules:
    wording would read as several questions when there is one message.
 4. `AgentPausedReplyAny` is an `AgentReplyAny` subclass, so it is already in the `AgentReply` union
    and `deliver`'s signature needs no change.
+5. **Only `tool_call` and `confirmation` get controls**, per the design's non-goal. A shared
+   `_decidable(reply)` on the base splits the interruptions into the ones a verb can answer
+   (`DECIDABLE_KINDS`) and the ids of the rest: `status` is ignored for `input_required`, so a
+   press there would resume the framework with no answer to a real question. An overriding adapter
+   draws rows for the first list and, **when it drew any**, appends the shared
+   `TYPED_ANSWER_NOTICE` naming the second — the same reason the over-budget notice exists, since
+   a reader of a mixed message cannot otherwise tell which question lost its controls. A pause that
+   is all `input_required` draws nothing and needs no notice: its closing line already says an
+   answer is wanted.
 
 Rendered shape (the exact text is the implementer's, this fixes the parts tests assert):
 
@@ -107,13 +116,14 @@ def _paused_reply(body: dict, session_id: Optional[str]) -> Optional[AgentPaused
 
 ```python
 async def deliver_paused(self, reply, reply_context) -> None:
+    decidable, typed = self._decidable(reply)                  # input_required gets no buttons
     blocks = self.split_reply(self.format_pause(reply))        # existing section blocks
-    for interruption in reply.interruptions:
+    for interruption in decidable:
         blocks.append(self._actions_block(interruption))        # one per interruption
     await self._client().chat_postMessage(channel=..., thread_ts=..., text="Approval needed", blocks=blocks)
 ```
 
-- One `actions` block per interruption, one button per verb in `DECISIONS`.
+- One `actions` block per interruption a press can answer, one button per verb in `DECISIONS`.
 - `value = f"{interruption.id}:{verb}"` — the payload, as the design fixes it.
 - `action_id = f"{ACTION_PREFIX}{verb}"` where `ACTION_PREFIX = "ak_decision:"` — constant per verb,
   and the only thing the listener matches on. Slack documents no uniqueness rule for `action_id`;
@@ -194,7 +204,7 @@ attached to the **last** chunk only, so the keyboard sits under the final messag
 Every existing caller passes nothing and sends exactly what it sends today.
 
 **Outbound.** `TelegramOutboundAdapter.deliver_paused` renders the text through `format_pause` and
-`split_reply`, and builds one keyboard row per interruption:
+`split_reply`, and builds one keyboard row per interruption a press can answer:
 
 ```python
 CALLBACK_PREFIX = "akhitl:"   # not "ak:" — see below
@@ -303,6 +313,8 @@ is not `str(reply)`. The contract builds a two-interruption `AgentPausedReplyAny
 `object.__new__` with a stubbed client:
 - `deliver_paused` posts section blocks plus one `actions` block per interruption, with the expected
   `value` and `action_id`;
+- an `input_required` interruption gets no actions block, and in a mixed pause its id is named in a
+  context block while its sibling keeps its buttons;
 - `DECISIONS` of three verbs renders three buttons;
 - a `block_actions` payload parses to one `InboundRequest` carrying `AgentResumeRequestAny`, the
   thread-derived `session_id`, the composite `request_id` and `user.id` as `user_id`;
@@ -314,6 +326,8 @@ is not `str(reply)`. The contract builds a two-interruption `AgentPausedReplyAny
 - `deliver_paused` sends `reply_markup` on the last chunk only;
 - an over-budget interruption renders no row while its siblings do, and an all-over-budget pause
   sends no `reply_markup` at all;
+- an `input_required` interruption gets no row, and in a mixed pause its id is named in the text
+  while its sibling keeps its buttons;
 - a `callback_query` carrying `akhitl:a:<id>` parses to a decision with the composite `request_id`,
   while one carrying other data keeps today's text behaviour and its `update_id` request id.
 

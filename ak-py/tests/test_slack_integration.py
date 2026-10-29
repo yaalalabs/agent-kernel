@@ -389,6 +389,42 @@ class TestPauseRendering:
         [notice] = [b for b in blocks if b["type"] == "context"]
         assert "call_49" in notice["elements"][0]["text"], "an interruption without buttons must still be named"
 
+    @pytest.mark.asyncio
+    async def test_a_question_wanting_a_value_gets_no_buttons(self):
+        adapter, posted = _outbound(), AsyncMock()
+        reply = AgentPausedReplyAny(
+            run_id="01JD7K2MX4",
+            session_id="000.111",
+            agent="helper",
+            interruptions=[PausedInterruption(id="call_q", kind="input_required", message="Which warehouse?")],
+        )
+        with patch.object(SlackOutboundAdapter, "_client", return_value=MagicMock(chat_postMessage=posted)):
+            await adapter.deliver_paused(reply, {"channel": "C9"})
+
+        blocks = posted.await_args.kwargs["blocks"]
+        assert not [b for b in blocks if b["type"] == "actions"], "Approve answers nothing when the agent asked for a value"
+        assert any("Which warehouse?" in str(b) for b in blocks)
+
+    @pytest.mark.asyncio
+    async def test_a_mixed_pause_keeps_the_approval_buttons_and_names_the_question(self):
+        adapter, posted = _outbound(), AsyncMock()
+        reply = AgentPausedReplyAny(
+            run_id="01JD7K2MX4",
+            session_id="000.111",
+            agent="helper",
+            interruptions=[
+                PausedInterruption(id="call_a", kind="tool_call", tool_name="refund_order"),
+                PausedInterruption(id="call_q", kind="input_required", message="Which warehouse?"),
+            ],
+        )
+        with patch.object(SlackOutboundAdapter, "_client", return_value=MagicMock(chat_postMessage=posted)):
+            await adapter.deliver_paused(reply, {"channel": "C9"})
+
+        blocks = posted.await_args.kwargs["blocks"]
+        assert [b["block_id"] for b in blocks if b["type"] == "actions"] == [f"{BLOCK_PREFIX}call_a"]
+        [notice] = [b for b in blocks if b["type"] == "context"]
+        assert "call_q" in notice["elements"][0]["text"], "with buttons on screen, the question without them has to be named"
+
 
 class TestPressParsing:
     """A press on a pause button, as the decision it carries."""

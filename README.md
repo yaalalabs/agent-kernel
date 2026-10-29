@@ -144,7 +144,7 @@ Let a run stop to ask a person something — approve this tool, answer this ques
 - **Nothing to enable** — declare a gated tool or an interrupt the way your framework already does; Agent Kernel returns HTTP 202 with `status: "PAUSED"` and the pending interruptions.
 - **Answer instead of prompting** — send a `resume` block with `approved`, `denied`, or `cancelled` per interruption, plus the human's own words or a structured value.
 - **Four frameworks pause** — OpenAI Agents SDK, LangGraph, Pydantic AI, and Google ADK; the others say they can't rather than pretending.
-- **Every surface** — REST, streaming, WebSocket, and AG-UI's interrupt outcome; durable across restarts on any shared session backend.
+- **Every surface** — REST, streaming, WebSocket, and AG-UI's interrupt outcome, plus Approve and Deny buttons in Slack and Telegram; durable across restarts on any shared session backend.
 
 [Learn more →](https://kernel.yaala.ai/docs/advanced/human-in-the-loop)
 

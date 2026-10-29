@@ -1304,6 +1304,14 @@ curl -X POST http://localhost:8000/api/v1/chat -H "Content-Type: application/jso
 }'
 ```
 
+**If the agent is behind a Slack or Telegram integration, the pause is answered by pressing a
+button** — no extra code and no config: a press becomes the same decision the `curl` above sends.
+Slack's Deny opens a short form for the reason. Say two things when you set that up: Slack needs
+**Interactivity & Shortcuts** turned on with the same Request URL as its event subscription, or the
+buttons do nothing; and anyone who can see the message can press, since Agent Kernel ships no
+approver policy (the presser's id reaches the run as `acting_user_id`, for a `PreHook` to check).
+Every other platform gets the pause as readable text.
+
 A decision takes `status` (`approved` | `denied` | `cancelled` — "nobody decided", which never reaches
 the model as a refusal), an optional `message` for the human's own words, and an optional `payload`
 for a structured answer. `run_id` is optional: the run resolves from the interruption ids.

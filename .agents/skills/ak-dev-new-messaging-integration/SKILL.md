@@ -131,7 +131,7 @@ Rules the adapter must hold to:
 1. **Never execute.** No `ChatService`, `AgentService` or `Runtime` import. The only side effects allowed are platform API calls and attachment storage.
 2. **Read only your own config block**, `AKConfig.get().<platform>`.
 3. **`verify` before `parse`, `parse` before enqueue.** `verify` is concrete and a no-op on the base: override it only when verification is separable from parsing. (Slack and Teams verify inside their SDK's dispatch, so theirs stays the default.)
-4. **`request_id` is the platform's message id** wherever one exists; that is what makes a webhook retry deduplicate instead of running the agent twice. Synthesize a stable one only when the platform gives you none (Slack: `f"slack:{channel}:{ts}"`).
+4. **`request_id` is the platform's message id** wherever one exists; that is what makes a webhook retry deduplicate instead of running the agent twice. Synthesize a stable one only when the platform gives you none (Slack: `f"slack:{channel}:{ts}"`). A press on a pause control is the exception: it is keyed `<platform>:<conversation>:<message id>:<interruption id>:<verb>`, never the platform's per-click id (Slack's `action_ts`, Telegram's `CallbackQuery.id`), so that pressing the same button twice deduplicates instead of reaching a pause the first press already resolved.
 5. **An ignored delivery returns an empty request list**, never an exception.
 6. **Override `missing_verification_settings()`** when `verify` skips its check for an unset secret
    (return e.g. `["<platform>.webhook_secret"]` while it is empty). `LambdaWebhookHost` refuses such an
@@ -166,6 +166,10 @@ class <Platform>OutboundAdapter(OutboundAdapter):
         """Raising hands the message back for retry, then deliver_error."""
         await self._client.send(reply_context["to"], self.split_reply(str(reply)))
 
+    async def deliver_paused(self, reply: AgentPausedReplyAny, reply_context: Dict[str, str]) -> None:
+        """Optional. Override only to draw the pause with the platform's own controls."""
+        await self._client.send(reply_context["to"], self.split_reply(self.format_pause(reply)), buttons=self._buttons(reply))
+
     async def deliver_error(self, message: str, reply_context: Dict[str, str]) -> None:
         try:
             await self._client.send(reply_context["to"], [message])
@@ -173,7 +177,8 @@ class <Platform>OutboundAdapter(OutboundAdapter):
             self._log.error(f"Could not deliver the <Platform> error message: {e}")
 ```
 
-- The reply always arrives as an `AgentReplyText`: the Agent Runner serializes the typed reply to its string form before the output queue.
+- The reply reaching `deliver` always arrives as an `AgentReplyText`: the Agent Runner serializes the typed reply to its string form before the output queue.
+- **A paused run arrives at `deliver_paused` instead**, and keeps its type: `AgentPausedReplyAny` carries the interruptions as structure, which is what a platform needs to draw a control per interruption. `deliver_paused` is concrete, not abstract — the base renders `format_pause(reply)` through `deliver`, so a platform with no interactive UI needs nothing. Override it only to draw buttons, and declare what they offer with the `DECISIONS` tuple (`("approved", "denied")` by default; add `"cancelled"` if the platform has room) and `DENY_COLLECTS_REASON` (whether denying opens a prompt for a reason). Both are class attributes like `MESSAGE_LIMIT`, so an application retunes them by subclassing and pointing `<platform>.outbound_adapter` at the subclass; neither is configuration. Draw controls only for what `_decidable(reply)` hands back: an `input_required` interruption wants a **value**, so a decision verb would resume the framework with no answer, and the base's `TYPED_ANSWER_NOTICE` names those ids in the message whenever the same pause did draw controls.
 - Outbound adapters are **cached and shared across consumer threads**, and each call runs on its own event loop. Keep no per-message state on `self`, and build loop-bound clients (an `httpx.AsyncClient`) per call.
 - `deliver_error` receives `OutboundAdapter.ERROR_MESSAGE`, not the raw exception: raw error text is logged, never sent to a platform user.
 
@@ -296,7 +301,7 @@ Create `examples/api/<platform>/` with:
 
 Two files:
 
-1. `ak-py/tests/test_integration_adapter_contract.py` — add a `IntegrationAdapterContract` subclass for the platform. The contract covers the invariants the queue hop needs: stable identifiers, an ignorable delivery that is not an error, a flat reply context inside its budget, and a clean round trip through `IntegrationProducer`.
+1. `ak-py/tests/test_integration_adapter_contract.py` — add a `IntegrationAdapterContract` subclass for the platform. The contract covers the invariants the queue hop needs: stable identifiers, an ignorable delivery that is not an error, a flat reply context inside its budget, a clean round trip through `IntegrationProducer`, and that a paused run reaches the platform as readable text rather than serialized JSON.
 2. `ak-py/tests/test_<platform>_integration.py` — the platform's own parsing and formatting. Build the adapter via `object.__new__` with a stubbed API client (see `test_whatsapp_integration.py`), and cover: message parsing, ignored deliveries, rejection paths (oversized, unsupported media, download failure), verification, reply chunking and acknowledgement.
 
 ### 14. Add Documentation
@@ -320,6 +325,7 @@ Then the features page: the `MESSAGING_PLATFORMS` list in `docs/src/pages/featur
 - [ ] Attachments offloaded with `AttachmentStorageManager.offload`, never inlined
 - [ ] `reply_context` flat, string-valued, inside the 8 KB budget
 - [ ] `MESSAGE_LIMIT` (and `MAX_CHUNKS`) set to the platform's limits
+- [ ] `deliver_paused` overridden if the platform has interactive controls, with `DECISIONS` and `DENY_COLLECTS_REASON` set to match, and the press parsed back in the inbound half as an `AgentResumeRequestAny`
 - [ ] Package `__init__.py` and public alias at `ak-py/src/agentkernel/<platform>.py`
 - [ ] Registered in `IntegrationAdapterFactory._BUILTIN_NAMES` and `_builtin`
 - [ ] A `WebhookRoute` in `integration/adapter/routes.py::BUILTIN_WEBHOOK_ROUTES`, with the adapter's paths read from it

@@ -221,7 +221,44 @@ values, so approve and deny are a boolean `payload`; and there is no field for a
 for a prompt sent beside a decision. Agent Kernel does not invent a private encoding for either —
 use the REST surface when you need them. See [AG-UI Server](../api/agui-server.md).
 
+## From a messaging platform
+
+A run that pauses in a Slack or Telegram conversation is delivered with buttons on it, and pressing
+one continues the run. There is nothing to configure: a press parses into exactly the decision a
+REST client would send, travels the same queue as every other message from that conversation, and
+the agent cannot tell the two apart.
+
+| Platform | A pause arrives as |
+|---|---|
+| Slack | Block Kit buttons, one row per question. **Deny** opens a short form asking why, and the reason reaches the agent as the decision's `message` |
+| Telegram | An inline keyboard, one row per question |
+| WhatsApp, Messenger, Instagram, Teams, Gmail | Readable text naming what is being asked. Nothing to press — answer over another surface |
+
+Four things to know before you ship it:
+
+- **Anyone who can see the message can press.** Agent Kernel ships no approver policy: channel
+  membership is not an approval list. The presser's platform user id travels with the decision as
+  `acting_user_id`, so a `PreHook` is where you check it.
+- **The buttons offer approve and deny, not cancel.** `cancelled` means
+  [nobody decided](#why-cancelled-is-not-denied), and a button somebody pressed is not that. Add it
+  if your flow wants it, by subclassing the outbound adapter and setting `DECISIONS`.
+- **An `input_required` question gets no buttons.** It wants a value, not a verdict, and a decision
+  verb would resume the run with no answer at all. The question is still shown, and named in the
+  message when its siblings drew buttons, so you can answer it over another surface.
+- **The buttons stay after a decision.** Nothing is edited out: a resumed run's reply is
+  indistinguishable from a run a hook stopped, so editing on that guess could strip the controls
+  off a pause that is still open. Pressing the same button again is deduplicated and changes
+  nothing; pressing one on a pause that has already been answered gets the usual error reply.
+
+Slack needs one switch the other platforms do not: **Interactivity & Shortcuts**, with its Request
+URL set to the same `/slack/events` URL as your event subscription. Without it the buttons render
+and the press goes nowhere. See [Slack](../integrations/slack.md) and
+[Telegram](../integrations/telegram.md).
+
 ## A runnable example
+
+[`examples/api/slack/`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/slack)
+is the messaging version: one gated tool, approved or denied from the channel.
 
 [`examples/api/hitl/`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/hitl) runs
 two agents side by side — an OpenAI one that can only be approved or denied, and a LangGraph one that
