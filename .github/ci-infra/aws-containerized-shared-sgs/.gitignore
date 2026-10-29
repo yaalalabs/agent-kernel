@@ -1,0 +1,4 @@
+.terraform/
+
+# Auto-injected by scripts/deploy/inject_dependencies.py (listed under deployment_base in .github/integration-test-config.yaml)
+backend.tf

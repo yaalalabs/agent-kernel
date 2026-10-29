@@ -94,6 +94,14 @@ class Logfire(BaseTrace):
 
         return LogfirePydanticAIRunner()
 
+    def maf(self) -> Runner:
+        """
+        Returns the Logfire Microsoft Agent Framework runner instance.
+        """
+        from .maf import LogfireMAFRunner
+
+        return LogfireMAFRunner()
+
     def fetch_spans(self, query: TraceQuery) -> list[FetchedSpan]:
         """
         Fetches spans back from Logfire through the SQL Query API (needs ``LOGFIRE_READ_TOKEN``, resolved

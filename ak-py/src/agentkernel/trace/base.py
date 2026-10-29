@@ -54,6 +54,13 @@ class BaseTrace(ABC):
         """
         raise NotImplementedError
 
+    @abstractmethod
+    def maf(self) -> Runner:
+        """
+        Initialize Microsoft Agent Framework instrumentation
+        """
+        raise NotImplementedError
+
     def fetch_spans(self, query: TraceQuery) -> list[FetchedSpan]:
         """
         Fetch spans back from the tracing provider's cloud, oldest first.

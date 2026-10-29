@@ -93,6 +93,14 @@ class LangFuse(BaseTrace):
 
         return LangFusePydanticAIRunner(self._client)
 
+    def maf(self) -> Runner:
+        """
+        Returns the Langfuse MAF runner instance.
+        """
+        from .maf import LangFuseMAFRunner
+
+        return LangFuseMAFRunner(self._client)
+
     def fetch_spans(self, query: TraceQuery) -> list[FetchedSpan]:
         """
         Fetches observations back from Langfuse with the same client used for sending.

@@ -203,6 +203,14 @@ class CloudWatch(BaseTrace):
 
         return CloudWatchPydanticAIRunner(self)
 
+    def maf(self) -> Runner:
+        """
+        Returns the CloudWatch MAF runner instance.
+        """
+        from .maf import CloudWatchMAFRunner
+
+        return CloudWatchMAFRunner(self)
+
     def fetch_spans(self, query: TraceQuery) -> list[FetchedSpan]:
         """
         Fetches spans back from the aws/spans log group through CloudWatch Logs Insights (needs Transaction Search).

@@ -347,6 +347,7 @@ pip install "agentkernel[langgraph]"  # For LangGraph
 pip install "agentkernel[adk]"        # For Google ADK
 pip install "agentkernel[smolagents]" # For Smolagents
 pip install "agentkernel[pydanticai]" # For Pydantic AI (add a provider, e.g. pydantic-ai-slim[openai])
+pip install "agentkernel[maf]"        # For Microsoft Agent Framework (add a provider, e.g. agent-framework-openai)
 ```
 
 Or in `pyproject.toml`:

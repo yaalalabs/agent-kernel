@@ -150,6 +150,14 @@ class OpenLLMetry(BaseTrace):
 
         return OpenLLMetryPydanticAIRunner()
 
+    def maf(self) -> Runner:
+        """
+        Returns the OpenLLMetry MAF runner instance.
+        """
+        from .maf import OpenLLMetryMAFRunner
+
+        return OpenLLMetryMAFRunner()
+
     def fetch_spans(self, query: TraceQuery) -> list[FetchedSpan]:
         """
         Fetches spans back from Traceloop through the warehouse REST API (same ``TRACELOOP_API_KEY``, resolved

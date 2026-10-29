@@ -208,8 +208,10 @@ Two things worth knowing, both LangGraph's behaviour rather than Agent Kernel's:
 
 - **Streaming.** With `execution.mode: stream`, the pause arrives as a `run_paused` event and the
   stream ends normally rather than with an error — a pause is an outcome, not a failure.
-- **The other two frameworks.** Pydantic AI pauses on both `CallDeferred` and `requires_approval`,
-  and Google ADK on long-running tools and confirmations. Like LangGraph, both carry a structured
-  answer back; OpenAI and ADK reject a prompt sent alongside a decision, and say so.
+- **The other three frameworks.** Pydantic AI pauses on both `CallDeferred` and `requires_approval`,
+  Google ADK on long-running tools and confirmations, and Microsoft Agent Framework on a tool declared
+  with `approval_mode="always_require"`. Like LangGraph, Pydantic AI and ADK carry a structured answer
+  back. Microsoft Agent Framework does not: its approval carries only a verdict, so a payload is refused.
+  OpenAI, ADK and Microsoft Agent Framework all reject a prompt sent alongside a decision, and say so.
 - **AG-UI.** A pause ends the run with an interrupt outcome, and the client resumes with
   `RunAgentInput.resume`.

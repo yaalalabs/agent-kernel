@@ -324,6 +324,9 @@ module "ecs_service" {
   subnet_ids         = var.subnet_ids
   security_group_ids = [local.ecs_service_security_group_id]
 
+  # The service security group above (provided or created by this module) carries all the rules; skip the upstream module's own empty one
+  create_security_group = false
+
   health_check_grace_period_seconds = var.rest_service.health_check_grace_period_seconds
 
   load_balancer = {

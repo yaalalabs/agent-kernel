@@ -49,6 +49,18 @@ class ResponseStore(ABC):
         """
         pass
 
+    @property
+    def shared(self) -> bool:
+        """Whether a process other than the writer can read what this store holds.
+
+        Distinct from ``supports_chunk_streaming``: that says the store *can* carry a stream,
+        this says a second process can *read* it. A topology that runs the agent in another
+        process needs both, and the in-memory store answers True to the first while failing
+        this one. Defaults True because every backend but that one is an external service;
+        a bring-your-own store overrides it when its state lives in the writing process.
+        """
+        return True
+
     # -- optional chunk-streaming capability (local SSE delivery) ---------------------------
 
     def supports_chunk_streaming(self) -> bool:
@@ -59,6 +71,24 @@ class ResponseStore(ABC):
         ``add_chunk``/``stream``/``close_stream`` and returning True here.
         """
         return False
+
+    @staticmethod
+    def _chunk_timeout(chunk_timeout: Optional[float] = None) -> float:
+        """Resolve how long ``stream`` waits for each next chunk.
+
+        Shared by every chunk-streaming store so the budget cannot drift between them. An
+        explicit value wins; otherwise the response store's own ``retry_count * delay`` is
+        reused rather than introducing a second knob for the same wait.
+
+        :param chunk_timeout: Caller-supplied budget, or None to derive one.
+        :return: Seconds to wait for each chunk.
+        """
+        if chunk_timeout is not None:
+            return chunk_timeout
+        response_store_config = AKConfig.get().execution.response_store
+        if response_store_config is not None:
+            return response_store_config.retry_count * response_store_config.delay
+        return 60.0  # matches the request handler's default local wait budget (60 x 1s)
 
     def add_chunk(self, request_id: str, chunk: Dict) -> None:
         """Append one streaming chunk for a request. Chunk-streaming stores only."""

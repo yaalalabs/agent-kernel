@@ -50,6 +50,9 @@ class _FakeTrace(BaseTrace):
     def pydanticai(self):
         return None
 
+    def maf(self):
+        return None
+
 
 def _config(enabled, type_=None):
     cfg = Mock()
