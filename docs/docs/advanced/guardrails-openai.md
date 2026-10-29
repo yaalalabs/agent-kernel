@@ -704,4 +704,4 @@ guardrail:
 ## Examples
 
 Working example in the repository:
-- [OpenAI Guardrails Example](https://github.com/yaalalabs/agent-kernel/tree/main/examples/cli/guardrail/openai)
+- [OpenAI Guardrails Example](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/guardrail/openai)
