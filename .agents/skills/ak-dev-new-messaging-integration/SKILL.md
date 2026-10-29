@@ -51,6 +51,7 @@ ak-py/src/agentkernel/integration/<platform>/
 ```python
 # ak-py/src/agentkernel/integration/<platform>/adapter.py
 import logging
+from typing import Any
 
 from fastapi import HTTPException, Request
 

@@ -28,7 +28,7 @@ shopping_graph = create_react_agent(
 )
 ```
 
-The default `AgentState` of `create_react_agent` (`messages`, `remaining_steps`, `structured_response`)
+The default `AgentState` of `create_react_agent` (`messages`, `remaining_steps`)
 has no `cart` channel, so LangGraph **silently drops** the key: a seeded `cart` would be injected on the
 way in but never come back on the way out, so it would not persist. Extending `AgentState` with a
 `cart` channel and passing it as `state_schema`, as this demo does, is what makes the round-trip real.
