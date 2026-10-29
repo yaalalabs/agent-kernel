@@ -7,7 +7,6 @@ consumers executing the agents), talking through in-cluster NATS JetStream with 
 sessions and responses. A Kafka variant is one values switch away.
 
 ```
-app_agents.py           the agents, loaded by both the io and runner images
 app_io_handler.py       agents + IOHandler.run()            the io image's entry point
 app_agent_runner.py     agents + AgentRunner.run()          the runner image's entry point
 app_ws_gateway.py       WebSocketGateway.run(validator)     the gateway image's entry point
@@ -155,9 +154,10 @@ and `mcp` blocks in the baked-in config. They go through the queue exactly like 
 request: the io handler enqueues, the agent runner executes, and the reply waits in Valkey until
 the waiting caller reads it. Two consequences:
 
-- The agents are loaded in both processes (`app_agents.py`). The runner executes them; the io
-  handler builds the A2A cards and the MCP agent tools from them. An io handler without them
-  logs a warning at startup and serves an empty A2A catalog and no MCP agent tools.
+- Both entry points define and register the same agents, so keep the two copies in sync. The
+  runner executes them; the io handler builds the A2A cards and the MCP agent tools from them.
+  An io handler without them logs a warning at startup and serves an empty A2A catalog and no
+  MCP agent tools.
 - A reply is picked up by polling the response store, so it takes at least about one
   `execution.response_store.delay` (1 s here), however fast the agent is.
 
