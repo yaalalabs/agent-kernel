@@ -2,6 +2,8 @@ import asyncio
 import base64
 import json
 import logging
+import threading
+import time
 import uuid
 from typing import Dict, Optional
 
@@ -10,7 +12,8 @@ from livekit import api, rtc
 from ...core.config import AKConfig
 from ...core.model import AgentReply, AgentRequestText, StreamChunk
 from ...core.realtime import EDGE_SAMPLE_RATE
-from ..adapter.base import StatefulEdgeAdapter
+from ...pipeline.envelope import ATTR_REALTIME_END
+from ..adapter.base import StatefulEdgeAdapter, TranscriptLine
 
 _log = logging.getLogger("ak.integration.livekit")
 
@@ -19,6 +22,26 @@ INTEGRATION_NAME = "livekit"
 # far faster than the edge produces, so this only bites when the broker is slow or down, where
 # dropping the oldest frame beats growing the queue without bound.
 _MAX_PENDING_REQUESTS = 64
+
+
+class _CaptionSegment:
+    """One agent's caption text between two boundaries (``done``, a speaker change, an interrupt or an error).
+
+    Opened by the segment's first text delta: its deltas are written to one LiveKit text stream as they
+    are paced with the audio, and closing it sends the whole text once more, marked final.
+    """
+
+    def __init__(self, participant: "LiveKitEdgeGateway._AgentParticipant", track_sid: str):
+        self.participant = participant
+        self.track_sid = track_sid
+        self.segment_id = uuid.uuid4().hex
+        self.writer = None
+        self.parts: list[str] = []
+        # Set when its stream could not be opened or written: the rest of the segment is skipped.
+        self.failed = False
+
+    def attributes(self, transcribed_track: str, segment: str, final: str, final_value: bool) -> Dict[str, str]:
+        return {transcribed_track: self.track_sid, segment: self.segment_id, final: "true" if final_value else "false"}
 
 
 class LiveKitEdgeGateway(StatefulEdgeAdapter):
@@ -48,6 +71,22 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
     PLAYOUT_WAIT_SECONDS: float = 2.0
     # How long LiveKit may take to confirm an ACTIVE_ATTRIBUTE update; nothing waits on it but a warning.
     ATTRIBUTE_TIMEOUT_SECONDS: float = 5.0
+    # How long a stopping gateway waits for the frames it already staged to reach the queue before it
+    # sends the end-of-session control behind them.
+    SESSION_END_TIMEOUT_SECONDS: float = 2.0
+    # How long a stopping gateway lets queued captions finish before it cancels the caption task.
+    CAPTION_DRAIN_SECONDS: float = 1.0
+    # How long a stopping gateway waits for queued hooks to finish. A hook is application code and may
+    # block; after this the gateway stops waiting, so a stuck hook cannot hold up stop() or the drain.
+    HOOKS_CLOSE_TIMEOUT_SECONDS: float = 5.0
+    # How long send_text() blocks a calling thread for the gateway's own loop to stage the request.
+    SEND_TEXT_TIMEOUT_SECONDS: float = 5.0
+    # LiveKit's transcription conventions (https://docs.livekit.io/agents/build/text/), so standard
+    # LiveKit client components show the captions.
+    TRANSCRIPTION_TOPIC = "lk.transcription"
+    ATTR_TRANSCRIBED_TRACK = "lk.transcribed_track_id"
+    ATTR_SEGMENT = "lk.segment_id"
+    ATTR_FINAL = "lk.transcription_final"
 
     class _AgentParticipant:
         """One agent participant in the room: its own connection, identity and published audio track."""
@@ -140,6 +179,10 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
 
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._connected = False
+        # A team announced while the first participant is still joining waits here until it is in the room.
+        # The announcement arrives on another thread than start() runs on, hence the lock.
+        self._team_lock = threading.Lock()
+        self._pending_team: Optional[tuple[str, list[str]]] = None
         # Bounded staging queue drained by one sender task, so inbound frames never spawn an
         # unbounded task per frame: a slow or unreachable broker applies backpressure here.
         self._pending: Optional["asyncio.Queue"] = None
@@ -147,6 +190,21 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
         # Accumulated from TextDelta chunks; published as one chat message when the turn ends.
         self._transcript: list[str] = []
         self._interrupted = False
+        # The line being spoken, separate from the chat buffer above: a line is split at every handoff,
+        # the chat text is not on a gateway with a single participant.
+        self._line_parts: list[str] = []
+        self._line_message_id: Optional[str] = None
+        # The open caption segment of the agent speaking, if any.
+        self._caption: Optional[_CaptionSegment] = None
+        # Caption I/O runs in one task on the gateway's loop, fed through this queue, so delivery never waits on it.
+        self._caption_queue: Optional["asyncio.Queue"] = None
+        self._caption_task: Optional[asyncio.Task] = None
+        # The human's identity and audio track, once their track has been subscribed.
+        self._caller_identity: Optional[str] = None
+        self._caller_track_sid: Optional[str] = None
+        # Set once the gateway is closing: no more frames are staged, and the end control is sent once.
+        self._ending = False
+        self._end_sent = False
 
     def _single_participant(self, token: Optional[str]) -> _AgentParticipant:
         if token:
@@ -176,6 +234,7 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
         self._init_producer()
         self._pending = asyncio.Queue(maxsize=_MAX_PENDING_REQUESTS)
         self._sender_task = asyncio.create_task(self._drain_requests())
+        self._start_captions()
 
         try:
             for index, participant in enumerate(self._participants):
@@ -184,9 +243,14 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
         except Exception:
             await self._release()
             raise
-        self._connected = True
+        with self._team_lock:
+            self._connected = True
+            pending, self._pending_team = self._pending_team, None
+        self._mark_ready()
         _log.info("LiveKit WebRTC connection established; AI audio published.")
         self._show_speaking()
+        if pending is not None:
+            self._show_team(*pending)
 
         await self._stop_event.wait()
         # One participant's room dropping ends the gateway; the others must not stay behind in the room.
@@ -218,7 +282,13 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
         _log.info("LiveKitEdgeGateway disconnected successfully")
 
     async def _release(self) -> None:
-        """Stop the sender task and the background work, and take every agent participant out of the room."""
+        """Tell the pool the session is over, stop the sender and the background work, and leave the room.
+
+        Every agent participant is taken out of the room, and the hooks still queued run before their
+        worker stops, for at most :attr:`HOOKS_CLOSE_TIMEOUT_SECONDS`.
+        """
+        await self._send_session_end()
+        await self._drain_captions(self.CAPTION_DRAIN_SECONDS)
         if self._sender_task:
             self._sender_task.cancel()
             self._sender_task = None
@@ -229,6 +299,31 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
                 await participant.leave()
             except Exception:
                 _log.exception(f"Failed to disconnect agent participant {participant.identity or participant.agent}")
+        try:
+            await asyncio.wait_for(asyncio.to_thread(self._close_hooks), timeout=self.HOOKS_CLOSE_TIMEOUT_SECONDS)
+        except asyncio.TimeoutError:
+            _log.warning(f"Edge hooks did not finish within {self.HOOKS_CLOSE_TIMEOUT_SECONDS}s; not waiting for them")
+
+    async def _send_session_end(self) -> None:
+        """Send the end-of-session control, once, behind the frames already staged.
+
+        The pool closes the session's native connection at once on it, instead of after its idle
+        timeout. A gateway that never connected sent nothing the pool could hold, so it sends nothing.
+        If the control cannot be sent the connection ends by idle eviction, as it would without it.
+        """
+        if self._end_sent or self._producer is None or not self._connected:
+            return
+        self._end_sent = True
+        self._ending = True
+        if self._pending is not None and self._sender_task is not None:
+            try:
+                await asyncio.wait_for(self._pending.join(), timeout=self.SESSION_END_TIMEOUT_SECONDS)
+            except asyncio.TimeoutError:
+                _log.warning(f"Staged input for session {self.session_id} was not all sent within {self.SESSION_END_TIMEOUT_SECONDS}s")
+        try:
+            await asyncio.to_thread(self._producer.enqueue, self.name, self._enqueue_end(), {ATTR_REALTIME_END: "true"})
+        except Exception as e:
+            _log.warning(f"Could not send the end-of-session control for session {self.session_id}: {e}")
 
     # -- inbound: room -> queue --------------------------------------------------------------
 
@@ -240,14 +335,28 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
             publication.set_subscribed(False)
             return
         _log.info(f"Subscribed to audio track from {participant.identity}")
+        self._caller_identity = participant.identity
+        self._caller_track_sid = getattr(publication, "sid", None) or getattr(track, "sid", None)
         asyncio.create_task(self._greet(participant.identity))
         asyncio.create_task(self._process_incoming_audio(track))
 
     async def _greet(self, participant_identity: str) -> None:
         """Kick off the conversation once a participant's mic appears."""
+        prompt = self.opening_prompt(participant_identity)
+        if not prompt:
+            return
         _log.info(f"Triggering auto-greeting for {participant_identity}")
-        prompt = f"A user named {participant_identity} just connected their microphone. Say a very short hello to them and confirm you are connected!"
         self._stage_request(AgentRequestText(prompt=prompt))
+
+    def opening_prompt(self, participant_identity: str) -> Optional[str]:
+        """What the conversation is asked to say when a caller's microphone appears; ``None`` sends nothing.
+
+        Called on every caller track subscription, a rejoin after a page reload included. Override it
+        to open a conversation with words of its own.
+
+        :param participant_identity: The identity of the participant whose microphone appeared.
+        """
+        return f"A user named {participant_identity} just connected their microphone. Say a very short hello to them and confirm you are connected!"
 
     def _handle_chat_message(self, data_packet: "rtc.DataPacket") -> None:
         if data_packet.topic not in ("chat", "lk-chat-topic", "lk-chat", ""):
@@ -266,6 +375,9 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
                 return
             _log.info(f"Text chat received from {data_packet.participant.identity}: {text}")
             self._stage_request(AgentRequestText(prompt=text))
+            # A typed message is a caller line too: without the hook a server reading the transcript never sees it.
+            speaker = getattr(data_packet.participant, "identity", None) or "user"
+            self._dispatch_hook(self.on_transcript, TranscriptLine(speaker=speaker, role="user", text=text, at=time.time(), typed=True))
         except Exception as e:
             _log.error(f"Failed to process chat: {e}")
 
@@ -298,19 +410,57 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
         if buffer:
             self._stage_request(self._enqueue_audio(buffer))
 
-    def _stage_request(self, request) -> None:
+    def _stage_request(self, request) -> bool:
         """Stage one request for the sender task, tagged for this livekit session.
 
         Staging (rather than spawning a fire-and-forget task per frame) bounds what a stalled
         broker can accumulate; a full queue drops the frame with a warning instead of growing.
+
+        :return: Whether the request was queued.
         """
-        if self._producer is None or self._pending is None:
-            return
+        if self._producer is None or self._pending is None or self._ending:
+            return False
 
         try:
             self._pending.put_nowait(self._enqueue(request))
+            return True
         except asyncio.QueueFull:
             _log.warning(f"Realtime input queue is full for session {self.session_id}; dropping a frame (broker slow or unreachable?)")
+            return False
+
+    def send_text(self, text: str) -> bool:
+        """Stage ``text`` as a caller text message, as if typed in the room: for server code saying something
+        into the call from outside it (a nudge, a team update), not from the caller. Needs a reference to this
+        gateway instance; it does not reach a gateway in another process. Safe to call from any thread.
+
+        :return: Whether it was queued, not whether the native session has it. ``False`` on no loop yet, ending,
+            a full queue, or a timeout (then best-effort cancelled, but a retry can still double-stage it).
+        """
+        if self._loop is None:
+            return False
+        try:
+            running = asyncio.get_running_loop()
+        except RuntimeError:
+            running = None
+        if running is self._loop:
+            return self._stage_request(AgentRequestText(prompt=text))
+        stage = self._stage_text(text)
+        try:
+            future = asyncio.run_coroutine_threadsafe(stage, self._loop)
+        except RuntimeError:
+            # The gateway's loop has closed under a stopping gateway: dropping is the contract, not an
+            # exception into the caller's thread. Close the coroutine so it is not left un-awaited.
+            stage.close()
+            return False
+        try:
+            return future.result(timeout=self.SEND_TEXT_TIMEOUT_SECONDS)
+        except Exception as e:
+            future.cancel()  # best-effort: too late if staging already started, but costs nothing to try
+            _log.error(f"Could not stage text for session {self.session_id}: {e}")
+            return False
+
+    async def _stage_text(self, text: str) -> bool:
+        return self._stage_request(AgentRequestText(prompt=text))
 
     async def _drain_requests(self) -> None:
         """Send staged inbound requests to the input queue, one at a time, off the room loop.
@@ -325,6 +475,8 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
                 await asyncio.to_thread(self._producer.enqueue, self.name, inbound)
             except Exception as e:
                 _log.error(f"Failed to enqueue request for session {self.session_id}: {e}")
+            finally:
+                self._pending.task_done()
 
     # -- outbound: queue -> room -------------------------------------------------------------
 
@@ -332,13 +484,17 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
         """Play one streamed ``StreamChunk`` back to the room, through the agent participant speaking.
 
         Audio deltas play immediately; transcript deltas are accumulated and published as one
-        chat message when the turn's ``done`` chunk arrives; a barge-in ``Interrupt`` clears
-        playback and drops the partial transcript; an ``AgentChanged`` hands the voice to that
-        agent's participant; an error chunk is surfaced to the room so it is never left silent.
+        chat message when the turn's ``done`` chunk arrives, and written to a live caption as they
+        come; a barge-in ``Interrupt`` clears playback and drops the partial transcript; an
+        ``AgentChanged`` hands the voice to that agent's participant; an error chunk is surfaced to
+        the room so it is never left silent. Finished lines, speaker changes and errors are also
+        handed to the :meth:`on_transcript`, :meth:`on_agent_changed` and :meth:`on_error` hooks.
         """
         if chunk.error:
             # A model/turn failure arrives as a terminal error chunk. Drop any half-accumulated
             # transcript so a stale sentence is not published, then tell the user.
+            self._flush_line(interrupted=True)
+            self._close_caption()
             self._transcript.clear()
             self._interrupted = False
             self._clear_playback()
@@ -346,7 +502,7 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
             return
 
         event = chunk.event
-        if event is not None and event.type != "agent_changed":
+        if event is not None and event.type not in ("agent_changed", "input_transcript"):
             await self._catch_up_speaker()
         if event is not None:
             if event.type == "audio_delta":
@@ -362,17 +518,31 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
                     await self._run_on_room(source.capture_frame(frame))
             elif event.type == "text_delta":
                 self._transcript.append(event.content)
+                if not self._interrupted:
+                    self._line_parts.append(event.content)
+                    self._line_message_id = event.message_id or self._line_message_id
+                    self._caption_delta(event.content)
             elif event.type == "interrupt":
                 # Barge-in: stop buffered AI audio and don't publish a half-said sentence.
                 _log.info("Barge-in detected: clearing buffered AI audio")
+                self._flush_line(interrupted=True)
+                self._close_caption()
                 self._interrupted = True
                 self._clear_playback()
+            elif event.type == "input_transcript":
+                await self._deliver_caller_line(event.content, event.message_id)
             elif event.type == "agent_changed":
+                # The line of the agent that was speaking ends before the speaker changes.
+                self._flush_line()
+                self._close_caption()
+                self._dispatch_hook(self.on_agent_changed, event.agent, event.previous_agent or self._speaking_agent)
                 if event.agents:
                     self._show_team(event.agent, event.agents)
                 await self._change_speaker(event.agent)
 
         if chunk.done:
+            self._flush_line()
+            self._close_caption()
             transcript = "".join(self._transcript).strip()
             self._transcript.clear()
             if self._interrupted:
@@ -381,6 +551,151 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
             elif transcript:
                 _log.info(f"AI response: {transcript}")
                 await self._publish_text(transcript)
+
+    # -- lines and captions ------------------------------------------------------------------
+
+    def _flush_line(self, interrupted: bool = False) -> None:
+        """Hand the agent line assembled so far to :meth:`on_transcript`, and start the next one.
+
+        :param interrupted: The caller cut the agent off: the text is what was delivered.
+        """
+        text = "".join(self._line_parts).strip()
+        message_id, self._line_message_id = self._line_message_id, None
+        self._line_parts.clear()
+        if not text:
+            return
+        speaker = self._speaking_agent or self.agent or "agent"
+        self._dispatch_hook(
+            self.on_transcript,
+            TranscriptLine(speaker=speaker, role="agent", text=text, at=time.time(), message_id=message_id, interrupted=interrupted),
+        )
+
+    async def _deliver_caller_line(self, text: str, message_id: Optional[str]) -> None:
+        """One finished line of the caller: a line for the hook, and a caption attributed to them."""
+        speaker = self._caller_identity or "user"
+        self._dispatch_hook(self.on_transcript, TranscriptLine(speaker=speaker, role="user", text=text, at=time.time(), message_id=message_id))
+        listener = self._participants[0]
+        if listener.room is None:
+            return
+        attributes = {
+            self.ATTR_TRANSCRIBED_TRACK: self._caller_track_sid or "",
+            self.ATTR_SEGMENT: uuid.uuid4().hex,
+            self.ATTR_FINAL: "true",
+        }
+        self._enqueue_caption(("caller", listener, text, attributes))
+
+    def _caption_delta(self, text: str) -> None:
+        """Queue one paced text delta for the speaking agent's live caption, opening its segment on the first."""
+        if self._caption is None:
+            participant = self._active
+            if participant.room is None or participant.track is None:
+                return  # the first second of a call: no track to attribute the caption to yet
+            self._caption = _CaptionSegment(participant, getattr(participant.track, "sid", None) or "")
+        self._enqueue_caption(("delta", self._caption, text))
+
+    def _close_caption(self) -> None:
+        """Queue the end of the open caption segment: its stream is closed, then its whole text is sent once, marked final."""
+        segment, self._caption = self._caption, None
+        if segment is not None:
+            self._enqueue_caption(("close", segment))
+
+    # -- caption I/O: one ordered queue, drained on the gateway's own loop ------------------------
+
+    def _start_captions(self) -> None:
+        """Create the caption queue and the one task that drains it. Called on the gateway's loop."""
+        self._caption_queue = asyncio.Queue()
+        self._caption_task = asyncio.create_task(self._run_captions())
+
+    def _enqueue_caption(self, operation: tuple) -> None:
+        """Hand a caption operation to the caption task, without waiting for any caption I/O.
+
+        Called from the Response Handler's thread, which delivers audio for every room in the process: a caption
+        write is a LiveKit call that waits for the server, and must never hold that thread. Dropped when the gateway
+        is not running.
+        """
+        queue, loop = self._caption_queue, self._loop
+        if queue is None or loop is None:
+            return
+        try:
+            loop.call_soon_threadsafe(queue.put_nowait, operation)
+        except RuntimeError:
+            pass  # the gateway's loop has closed
+
+    async def _run_captions(self) -> None:
+        assert self._caption_queue is not None
+        while True:
+            operation = await self._caption_queue.get()
+            try:
+                await self._perform_caption(operation)
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                _log.warning(f"Could not publish a caption for session {self.session_id}: {e}")
+            finally:
+                self._caption_queue.task_done()
+
+    async def _perform_caption(self, operation: tuple) -> None:
+        kind = operation[0]
+        if kind == "caller":
+            await self._write_caller_caption(*operation[1:])
+        elif kind == "delta":
+            await self._write_agent_caption(*operation[1:])
+        else:
+            await self._finish_agent_caption(operation[1])
+
+    async def _write_caller_caption(self, listener: _AgentParticipant, text: str, attributes: Dict[str, str]) -> None:
+        # send_text cannot name the sender, and the caller's words must show as theirs: a one-message text
+        # stream attributed to the caller's identity does.
+        writer = await listener.room.local_participant.stream_text(
+            topic=self.TRANSCRIPTION_TOPIC, attributes=attributes, sender_identity=self._caller_identity
+        )
+        await writer.write(text)
+        await writer.aclose()
+
+    async def _write_agent_caption(self, segment: _CaptionSegment, text: str) -> None:
+        """Write one delta; a segment whose stream failed is skipped from then on, with one warning."""
+        if segment.failed:
+            return
+        participant = segment.participant
+        try:
+            if segment.writer is None:
+                segment.writer = await participant.room.local_participant.stream_text(
+                    topic=self.TRANSCRIPTION_TOPIC,
+                    attributes=segment.attributes(self.ATTR_TRANSCRIBED_TRACK, self.ATTR_SEGMENT, self.ATTR_FINAL, False),
+                    sender_identity=participant.identity,
+                )
+            await segment.writer.write(text)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            segment.failed = True
+            _log.warning(f"Caption stream failed for session {self.session_id}; the rest of this segment is not captioned: {e}")
+            return
+        segment.parts.append(text)
+
+    async def _finish_agent_caption(self, segment: _CaptionSegment) -> None:
+        if segment.failed or segment.writer is None:
+            return
+        await segment.writer.aclose()
+        await segment.participant.room.local_participant.send_text(
+            "".join(segment.parts),
+            topic=self.TRANSCRIPTION_TOPIC,
+            attributes=segment.attributes(self.ATTR_TRANSCRIBED_TRACK, self.ATTR_SEGMENT, self.ATTR_FINAL, True),
+        )
+
+    async def _drain_captions(self, timeout: float) -> None:
+        """Let the queued caption operations finish, for at most ``timeout`` seconds; then stop the caption task."""
+        task, queue = self._caption_task, self._caption_queue
+        self._caption_task = None
+        await asyncio.sleep(0)  # operations handed over with call_soon_threadsafe are put on the queue first
+        if queue is not None and task is not None:
+            try:
+                await asyncio.wait_for(queue.join(), timeout)
+            except asyncio.TimeoutError:
+                _log.warning(f"Captions for session {self.session_id} were not all sent within {timeout}s")
+        if task is not None:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
 
     async def _change_speaker(self, agent: str) -> None:
         """Make the participant of ``agent`` the one heard.
@@ -473,6 +788,12 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
         :param agents: Every agent the conversation can hand off to, the starting one first.
         """
         self._by_agent.setdefault(starting, self._participants[0])
+        with self._team_lock:
+            if not self._connected:
+                # The participant that hears the human is still joining. The team joins once it is in, not
+                # alongside it: joins that overlap have timed out and dropped the room.
+                self._pending_team = (starting, agents)
+                return
         missing = [name for name in agents if name not in self._by_agent and name not in self._joining]
         if not missing or self._loop is None:
             return
@@ -559,7 +880,8 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
             await self._publish_text(text)
 
     async def deliver_error(self, message: str, reply_context: Dict[str, str]) -> None:
-        """Surface a failure to the room so the user is never left silent."""
+        """Surface a failure to the room so the user is never left silent, and to :meth:`on_error`."""
+        self._dispatch_hook(self.on_error, message)
         await self._publish_text(message)
 
     async def _publish_text(self, text: str, participant: Optional[_AgentParticipant] = None) -> None:

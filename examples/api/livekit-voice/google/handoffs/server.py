@@ -1,91 +1,97 @@
 import logging
 
-from google.adk.agents import Agent as GoogleAgent
-from google.genai import types
-
 from agentkernel.framework.adk import GoogleADKModule, GoogleADKToolBuilder
 from agentkernel.integration.adapter import GatewayRunner
 from agentkernel.integration.livekit import LiveKitEdgeGateway
 from agentkernel.pipeline import IOHandler
+from google.adk.agents import Agent as GoogleAgent
+from google.adk.models import Gemini
+from google.genai import types
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s.%(msecs)03d %(levelname)s %(name)s: %(message)s", datefmt="%H:%M:%S"
 )
+# One line per 100 ms of microphone audio at INFO; warnings and errors still show.
+logging.getLogger("ak.integration.producer").setLevel(logging.WARNING)
+
+
+class _HideResumptionHandles(logging.Filter):
+    """ADK logs a new Gemini session-resumption handle every few seconds; the line says nothing you act on."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return "Update session resumption handle" not in record.getMessage()
+
+
+for _handler in logging.getLogger().handlers:
+    _handler.addFilter(_HideResumptionHandles())
 _log = logging.getLogger(__name__)
 
 MODEL = "gemini-3.1-flash-live-preview"
 
 
-def voice(name: str) -> types.GenerateContentConfig:
-    return types.GenerateContentConfig(
+def voice(name: str) -> Gemini:
+    return Gemini(
+        model=MODEL,
         speech_config=types.SpeechConfig(
             voice_config=types.VoiceConfig(prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=name))
-        )
+        ),
     )
 
 
-def get_latest_invoice(account_id: str) -> str:
-    """Get the latest invoice for a customer account."""
+def find_venues(city: str) -> str:
+    """Find venues in a city that can host a team offsite."""
     return (
-        f"Account {account_id}: the October invoice is $64.90, due on the 28th. "
-        "It includes the $49.90 monthly plan and a one-off $15 router replacement fee."
+        f"Venues in {city}: a lakeside lodge at $210 per person per night (spa, boat trips), "
+        "a city-centre hotel at $140 per person per night (meeting rooms), "
+        "and a countryside hostel at $75 per person per night (basic, shared rooms)."
     )
 
 
-def check_outage(postcode: str) -> str:
-    """Check whether there is a known network outage in a postcode area."""
-    if postcode.strip().upper().startswith("SW1"):
-        return f"There is a known fibre outage in {postcode}. Engineers are on site; service is expected back by 6pm today."
-    return f"There are no known outages in {postcode}."
+def estimate_total(people: int, nights: int, price_per_person_per_night: int) -> str:
+    """Work out the total cost of a stay, adding travel and food."""
+    stay = people * nights * price_per_person_per_night
+    extras = people * 120 + people * nights * 45
+    return f"Stay ${stay}, travel and food ${extras}, total ${stay + extras} for {people} people over {nights} nights."
 
 
-def book_technician(account_id: str, day: str) -> str:
-    """Book a technician visit for a customer account on a given day."""
-    return f"A technician is booked for account {account_id} on {day}, between 8am and 12pm. The reference is TEC-4821."
-
-
-billing = GoogleAgent(
-    name="billing",
-    model=MODEL,
-    description="Handles invoices, charges, payments and refunds.",
+budget = GoogleAgent(
+    name="budget",
+    model=voice("Charon"),
+    description="Cautious budget controller who challenges plans and checks the cost.",
     instruction=(
-        "You are Acme Internet's billing specialist, taking over a call from the front desk. Introduce yourself in a few "
-        "words and answer the caller's billing question straight away; the account number may already be in the "
-        "conversation, so do not ask for it again. Keep answers short and spoken."
+        "You are Ben, a cautious budget controller, in a voice call with the person who asked for help and with your "
+        "colleague Maya, the planner. Keep every turn short and spoken. When Maya hands over her pitch, work out its "
+        "real total with your tool, say the number out loud, and challenge her: name one thing to cut or swap and "
+        "why. Address her by name, then transfer to planner so she can answer. "
+        "When she revises the plan, check the new total and either push back once more or accept. "
+        "After at most three turns each, stop debating and transfer to planner so she can report to the person."
     ),
-    tools=GoogleADKToolBuilder.bind([get_latest_invoice]),
-    generate_content_config=voice("Charon"),
+    tools=GoogleADKToolBuilder.bind([estimate_total]),
 )
 
-tech_support = GoogleAgent(
-    name="tech_support",
-    model=MODEL,
-    description="Handles internet connection problems, outages and technician visits.",
+# The planner is the root, so it takes the person's first words. The budget controller is its sub-agent: ADK lets
+# it transfer back to its parent, which is how the two keep passing the turn between them.
+planner = GoogleAgent(
+    name="planner",
+    model=voice("Aoede"),
+    description="Enthusiastic organiser who proposes ambitious plans for a team offsite.",
     instruction=(
-        "You are Acme Internet's technical support specialist, taking over a call from the front desk. Introduce "
-        "yourself in a few words and help with the connection problem straight away, using what the caller has already "
-        "said. Check for an outage before suggesting a technician visit. Keep answers short and spoken."
+        "You are Maya, an enthusiastic offsite planner, in a voice call with the person who asked for help and with "
+        "your colleague Ben, the budget controller. Keep every turn short and spoken. When the person tells you what "
+        "they want, ask for the team size, nights and city if you do not have them. Then look up venues and pitch "
+        "the best experience, not the cheapest. Then transfer to budget so Ben can respond. "
+        "You and Ben work the plan out between you, without waiting for the person: when Ben challenges your "
+        "pitch, answer him directly in a sentence or two, revise the plan, and transfer back to budget. "
+        "After at most three turns each, stop and speak to the person: give the agreed plan and total, say where you "
+        "and Ben still disagree, and ask what they think. Never ask the person to settle a point you can settle with Ben."
     ),
-    tools=GoogleADKToolBuilder.bind([check_outage, book_technician]),
-    generate_content_config=voice("Puck"),
+    tools=GoogleADKToolBuilder.bind([find_venues]),
+    sub_agents=[budget],
 )
 
-supervisor = GoogleAgent(
-    name="supervisor",
-    model=MODEL,
-    description="Greets callers, answers general questions and routes them to the right team.",
-    instruction=(
-        "You are the front desk of Acme Internet's support line, speaking with a caller. Keep every answer short and "
-        "spoken. Greet the caller, ask how you can help and, if they have not given it, their account number. "
-        "Answer general questions yourself."
-    ),
-    sub_agents=[billing, tech_support],
-    generate_content_config=voice("Aoede"),
-)
+GoogleADKModule([planner])
 
-GoogleADKModule([supervisor])
-
-gateway = LiveKitEdgeGateway(session_id="room_01", agent_name="supervisor")
+gateway = LiveKitEdgeGateway(session_id="room_01", agent_name="planner")
 
 
 if __name__ == "__main__":
