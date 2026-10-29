@@ -1425,7 +1425,7 @@ resource "aws_lambda_function_event_invoke_config" "grading" {
   `deploy_aws_resources`).
 - `outputs.tf`: `agent_invoke_url` (`module.serverless_agents.agent_invoke_url`, the name
   `run_single_test.py` `test_aws_deployment` reads), `results_table_name`.
-- `providers.tf`: the same file as the other `aws-serverless` examples (aws `>= 6.11.0, < 6.69.0`, kreuzwerker/docker `3.6.2`, ECR registry
+- `providers.tf`: the same file as the other `aws-serverless` examples (aws `6.70.0`, kreuzwerker/docker `3.6.2`, ECR registry
   auth). There is no `backend.tf`.
 - `terraform.tfvars`: `region = "us-east-2"`, `prefix = "ak-oai-lf-eval-dev-examples"`.
 - `deploy.sh [local]`: builds one package per Lambda from its `pyproject.toml` extra (`uv export --extra
