@@ -23,7 +23,7 @@ from typing import Optional, Union
 
 from pydantic import BaseModel
 
-from ..errors import ExecutionBrokerError, SandboxTimeoutError
+from ..errors import ExecutionBrokerError, SandboxPermissionDeniedError, SandboxTimeoutError
 from ..model import SandboxResult, SandboxTask
 from .base import BoundedCompletionStore, ExecutionBroker, ExecutionCompletion, ExecutionRequest
 from .worker import BrokerWorkerCore
@@ -134,6 +134,10 @@ class ThreadBroker(ExecutionBroker):
             result, session = await self._worker.run(request)
         except SandboxTimeoutError as exc:
             self._complete(request, "timed_out", error=str(exc))
+            self._deliver_exception(response, exc)
+        except SandboxPermissionDeniedError as exc:
+            # The guard already logged this denial; no generic warning.
+            self._complete(request, "failed", error=str(exc))
             self._deliver_exception(response, exc)
         except Exception as exc:  # noqa: BLE001 — terminal guarantee: every task ends with a completion
             logger.warning("Sandbox task %s failed: %s", request.task_id, exc)

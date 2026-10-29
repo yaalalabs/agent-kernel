@@ -1353,8 +1353,9 @@ before they design the question.
 **What it does:** Lets agents execute code and shell commands in an isolated, permission-bounded
 environment. When enabled, agents automatically gain sandbox tools (`run_code`, `run_command`,
 `write_sandbox_file`, `read_sandbox_file`, `check_sandbox_task`, `list_sandbox_sessions`,
-`new_sandbox_session`, `destroy_sandbox_session`) and the usage guidance is injected into their
-system prompt — the agent's own instructions need not mention the sandbox.
+`new_sandbox_session`, `destroy_sandbox_session`, plus `install_packages` when a profile's policy
+permits package installs) and the usage guidance is injected into their system prompt — the
+agent's own instructions need not mention the sandbox.
 
 **Ask:** Which provider — `local_subprocess` (no isolation; dev/test only), `docker`
 (container isolation; needs the `sandbox-docker` extra and a Docker daemon), or another
@@ -1403,11 +1404,22 @@ sandbox:
         memory_mb: 512
         timeout: 30.0
         strict: true           # fail closed when the provider can't enforce a dimension
+        languages: [python]    # optional: run_code allowlist (omit = provider-declared; [] = no run_code)
+        package_install:       # optional: permits install_packages (omit = installs denied)
+          ecosystems: [python]
+          timeout: 300         # an install's own wall clock; omit = policy.timeout
       docker:
         image: python:3.12-slim
+        # package_installers: {python: [pip, install]}   # default; declaring it replaces the map
+        # language_runtimes: {python: [python, -c]}      # default; add e.g. node: [node, -e] if the image has it
   broker:
     flavor: thread
 ```
+
+Package installs are off unless a profile declares `package_install`, and are rejected on an
+`environment: attached` or `scope: per_call` profile. `network_egress: deny` blocks all egress, so installs in this
+example only work from packages or an offline repository baked into the image (set the matching
+offline `package_installers` prefix); use `network_egress: allow` to install from the public registry.
 
 **3. No agent code changes needed** — the tools and prompt guidance attach automatically. Keep
 the agent's instructions about *what* to do; the sandbox usage is injected.

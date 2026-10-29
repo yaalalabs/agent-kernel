@@ -1,10 +1,14 @@
 """``kubernetes`` provider — pod-per-sandbox via the Kubernetes Python client (``kubernetes`` extra).
 
 Each sandbox is a pod running ``sleep infinity`` as PID 1; executions are exec calls through the
-stream API (which inherit the container's ``/workspace`` working directory), and files
+stream API (which inherit the container's ``/workspace`` working directory; code runs through
+the language's interpreter argv from ``language_runtimes`` with the code appended), and files
 travel as single-member tars framed in base64 over the exec channels (``head -c N`` gives
 the remote pipeline its EOF, since a WebSocket exec cannot half-close stdin). The SDK is
-synchronous, so every call runs in ``asyncio.to_thread``.
+synchronous, so every call runs in ``asyncio.to_thread``. A timed-out or cancelled exec is
+killed by its environment marker (``ProcessKiller``), which needs ``/bin/sh`` in the image:
+the first exec on each pod probes for it (bounded, cached once definite), and a shell-less pod
+runs its argv directly, with no kill.
 
 ``close()`` leaves the pod running (that is what makes reattach work); ``destroy()``
 deletes the pod and its per-pod NetworkPolicy. The security boundary is the credential:
@@ -20,13 +24,15 @@ import asyncio
 import base64
 import io
 import ipaddress
+import json
 import logging
 import posixpath
 import shlex
 import tarfile
+import threading
 import time
 import uuid
-from typing import Any, Optional
+from typing import Any, ClassVar, Optional
 
 import kubernetes
 import kubernetes.client
@@ -36,6 +42,8 @@ import kubernetes.stream
 from ..base import Sandbox, SandboxProvider
 from ..errors import SandboxCapabilityError, SandboxError, SandboxGoneError, SandboxPolicyError, SandboxProvisionError, SandboxTimeoutError
 from ..model import IsolationTier, SandboxCapabilities, SandboxPolicy, SandboxPrincipal, SandboxResult
+from ..packages import PackageInstaller
+from .process import ProcessKiller
 
 logger = logging.getLogger("ak.sandbox.provider")
 
@@ -47,6 +55,9 @@ _MANAGED_LABELS = {"app.kubernetes.io/managed-by": "agent-kernel", "agentkernel.
 _NAME_LABEL = "agentkernel.io/sandbox-name"
 
 _TERMINAL_PHASES = ("Succeeded", "Failed")
+
+# kubernetes.stream.ws_client.ERROR_CHANNEL: where the API server writes the exec's final status.
+_ERROR_CHANNEL = 3
 
 
 def _safe_rel(path: str) -> str:
@@ -63,26 +74,55 @@ def _safe_rel(path: str) -> str:
 class KubernetesSandbox(Sandbox):
     """Handle to one running sandbox pod; executions are stream-API exec calls inside it."""
 
-    def __init__(self, api: Any, namespace: str, pod_name: str) -> None:
-        """Bind the handle to a pod; the id is ``<namespace>/<pod>`` (the ``attach_to`` format)."""
+    # Container-runtime wording for a missing /bin/sh in an exec's failure status (containerd, CRI-O);
+    # it counts only alongside "/bin/sh" itself, so e.g. "container not found" stays inconclusive.
+    _NO_SHELL_MARKERS: ClassVar[tuple[str, ...]] = ("no such file or directory", "executable file not found", "not found")
+
+    def __init__(
+        self,
+        api: Any,
+        namespace: str,
+        pod_name: str,
+        *,
+        capabilities: SandboxCapabilities,
+        installer: PackageInstaller,
+        runtimes: dict[str, list[str]],
+        kill_enabled: bool,
+        shell_cache: dict[str, bool],
+        probe_misses: dict[str, int],
+    ) -> None:
+        """Bind the handle to a pod; the id is ``<namespace>/<pod>`` (the ``attach_to`` format).
+        ``capabilities`` are the provider instance's; ``runtimes`` is its ``language_runtimes``
+        map; ``kill_enabled`` is False for an ``attach_to`` pod: the framework does not own it,
+        so it neither tags nor kills its execs. ``shell_cache`` is the provider's per-pod
+        record of whether the pod has ``/bin/sh``, shared by every handle to the pod;
+        ``probe_misses`` is its per-pod count of inconclusive probes."""
         self.id = f"{namespace}/{pod_name}"
         self._api = api
         self._namespace = namespace
         self._pod = pod_name
+        self._capabilities = capabilities
+        self._installer = installer
+        self._runtimes = runtimes
+        self._kill_enabled = kill_enabled
+        self._shell_cache = shell_cache
+        self._probe_misses = probe_misses
 
     async def execute_code(self, code: str, language: str = "python", timeout: float | None = None) -> SandboxResult:
-        """Exec the language interpreter with the code (``python -c`` in v1)."""
-        if language not in KubernetesSandboxProvider.capabilities.languages:
+        """Exec the language's configured interpreter argv with the code appended (default ``python -c``)."""
+        if language not in self._capabilities.languages:
             raise SandboxCapabilityError(self.__class__.__name__, f"language:{language}")
-        return await self._exec(["python", "-c", code], timeout)
+        return await self._exec([*self._runtimes[language], code], timeout)
 
     async def execute_command(self, command: str, timeout: float | None = None) -> SandboxResult:
         """Exec a shell command via ``/bin/sh -c``."""
         return await self._exec(["/bin/sh", "-c", command], timeout)
 
-    async def install_packages(self, packages: list[str]) -> SandboxResult:
-        """Exec ``pip install`` for the given packages."""
-        return await self._exec(["pip", "install", *packages], None)
+    async def install_packages(self, packages: list[str], ecosystem: str = "python", timeout: float | None = None) -> SandboxResult:
+        """Exec the ecosystem's validated installer argv (e.g. ``pip install <packages>``)."""
+        if ecosystem not in self._capabilities.package_ecosystems:
+            raise SandboxCapabilityError(self.__class__.__name__, f"package_ecosystem:{ecosystem}")
+        return await self._exec(self._installer.argv(packages, ecosystem), timeout)
 
     async def upload_file(self, path: str, content: bytes) -> None:
         """Ship the file as a single-member tar on exec stdin, base64-framed for the text
@@ -115,9 +155,18 @@ class KubernetesSandbox(Sandbox):
         """Leave the pod running so a later ``attach`` can reconnect. Idempotent."""
         return None
 
-    async def _exec(self, argv: list[str], timeout: float | None, stdin_data: Optional[str] = None) -> SandboxResult:
-        """Run one exec through the stream API in a thread under ``asyncio.wait_for``; on
-        expiry make a best-effort kill of the exec'd process and raise ``SandboxTimeoutError``."""
+    async def _exec(self, argv: list[str], timeout: float | None, stdin_data: Optional[str] = None, *, kill: bool = True) -> SandboxResult:
+        """Run one exec through the stream API in a thread under ``asyncio.wait_for``. On
+        expiry kill the exec'd process and raise ``SandboxTimeoutError``; on cancellation kill
+        it and re-raise. A killable exec on a pod with a shell is launched through
+        ``ProcessKiller.wrap`` (the stream API has no per-exec environment) so it carries a
+        fresh marker. ``kill=False`` is the kill's (or the shell probe's) own exec, so it never
+        triggers another."""
+        marker = ProcessKiller.new_marker() if kill and self._kill_enabled and await self._has_shell() else None
+        command = ProcessKiller.wrap(argv, marker) if marker else argv
+        # Set when the caller stops waiting (timeout or cancellation): the thread cannot be cancelled,
+        # so it stops streaming and closes the WebSocket itself within one update() tick.
+        stop = threading.Event()
 
         def run() -> tuple[str, str, int]:
             try:
@@ -125,7 +174,7 @@ class KubernetesSandbox(Sandbox):
                     self._api.connect_get_namespaced_pod_exec,
                     self._pod,
                     self._namespace,
-                    command=argv,
+                    command=command,
                     stdout=True,
                     stderr=True,
                     stdin=stdin_data is not None,
@@ -145,28 +194,102 @@ class KubernetesSandbox(Sandbox):
                 resp.write_stdin(stdin_data)
             stdout_parts: list[str] = []
             stderr_parts: list[str] = []
-            while resp.is_open():
+            while resp.is_open() and not stop.is_set():
                 resp.update(timeout=1)
                 if resp.peek_stdout():
                     stdout_parts.append(resp.read_stdout())
                 if resp.peek_stderr():
                     stderr_parts.append(resp.read_stderr())
             resp.close()
-            exit_code = resp.returncode
+            # Read the status ourselves: the client's ``returncode`` consumes it and drops the message.
+            exit_code, message = self._exit_status(resp.read_channel(_ERROR_CHANNEL))
+            if exit_code is None:
+                stderr_parts.append(
+                    f"exec failed before the process started: {message}" if message else "exec ended without a status from the API server"
+                )
             return "".join(stdout_parts), "".join(stderr_parts), exit_code if exit_code is not None else -1
 
         try:
             stdout, stderr, exit_code = await asyncio.wait_for(asyncio.to_thread(run), timeout=timeout)
         except asyncio.TimeoutError as exc:
-            await self._best_effort_kill(argv[0])
+            stop.set()
+            if marker:
+                await self._kill(marker)
             raise SandboxTimeoutError(f"kubernetes exec exceeded timeout {timeout}s") from exc
+        except asyncio.CancelledError:
+            stop.set()
+            if marker:
+                await self._kill(marker)
+            raise
         return SandboxResult(stdout=stdout, stderr=stderr, exit_code=exit_code)
 
-    async def _best_effort_kill(self, interpreter: str) -> None:
-        """Kill the timed-out exec'd process by interpreter name. Safe because the
-        concurrency contract allows at most one in-flight execution per sandbox."""
+    @staticmethod
+    def _exit_status(raw: str) -> tuple[Optional[int], str]:
+        """Parse an exec's status channel into ``(exit_code, message)``: ``0`` on Success, the
+        message of the ``details.causes`` entry whose ``reason`` is ``ExitCode`` on a Failure
+        carrying one (client-go's remotecommand selects it the same way), else ``None`` with the
+        status message (empty when there is no parseable status)."""
         try:
-            await self._exec(["sh", "-c", f"pkill -9 {posixpath.basename(interpreter)}"], None)
+            status = json.loads(raw)
+        except (TypeError, ValueError):
+            return None, ""
+        if not isinstance(status, dict):
+            return None, ""
+        if status.get("status") == "Success":
+            return 0, ""
+        try:
+            causes = status["details"]["causes"]
+            return next(int(cause["message"]) for cause in causes if cause.get("reason") == "ExitCode"), ""
+        except (KeyError, TypeError, ValueError, AttributeError, StopIteration):
+            return None, str(status.get("message") or "")
+
+    async def _has_shell(self) -> bool:
+        """Whether the pod can run ``/bin/sh`` (the launcher and the kill scan need it), probed once per pod
+        under ``SHELL_PROBE_TIMEOUT_SECONDS``.
+
+        A definite answer is cached on the provider: exit 0, or ``/bin/sh`` reported missing
+        (exit 126/127, or a status naming ``/bin/sh`` as not found). Anything else (a raise, the
+        probe's timeout, another failure) is inconclusive: this exec runs unwrapped and the next one
+        probes again, until ``SHELL_PROBE_MAX_INCONCLUSIVE`` misses cache "no shell" for the pod."""
+        has_shell = self._shell_cache.get(self.id)
+        if has_shell is not None:
+            return has_shell
+        try:
+            probe = await asyncio.wait_for(
+                self._exec(list(ProcessKiller.SHELL_PROBE), None, kill=False), timeout=ProcessKiller.SHELL_PROBE_TIMEOUT_SECONDS
+            )
+        except Exception as exc:  # noqa: BLE001 — the probe only decides whether to tag; it never fails the exec
+            return self._probe_missed(f"failed: {str(exc) or type(exc).__name__}")
+        if probe.exit_code == 0:
+            self._shell_cache[self.id] = True
+            return True
+        stderr = probe.stderr.lower()
+        if probe.exit_code in (126, 127) or (probe.exit_code == -1 and "/bin/sh" in stderr and any(m in stderr for m in self._NO_SHELL_MARKERS)):
+            self._shell_cache[self.id] = False
+            logger.info("Pod %s has no /bin/sh; its timed-out executions cannot be killed", self.id)
+            return False
+        return self._probe_missed(f"was inconclusive (exit {probe.exit_code}): {probe.stderr}")
+
+    def _probe_missed(self, detail: str) -> bool:
+        """Count one inconclusive probe (always False: this exec runs unwrapped); the last one allowed
+        caches "no shell" so the pod stops paying for a probe on every exec."""
+        misses = self._probe_misses.get(self.id, 0) + 1
+        self._probe_misses[self.id] = misses
+        logger.warning("Shell probe in pod %s %s", self.id, detail)
+        if misses >= ProcessKiller.SHELL_PROBE_MAX_INCONCLUSIVE:
+            self._shell_cache[self.id] = False
+            logger.warning(
+                "Shell probe in pod %s was inconclusive %s times; no longer probing, so its timed-out executions will not be killed",
+                self.id,
+                misses,
+            )
+        return False
+
+    async def _kill(self, marker: str) -> None:
+        """Best-effort, time-bounded kill of the processes carrying the exec's marker; earlier
+        execs' processes (e.g. background servers) carry other markers and survive."""
+        try:
+            await asyncio.wait_for(self._exec(ProcessKiller.argv(marker), None, kill=False), timeout=ProcessKiller.KILL_TIMEOUT_SECONDS)
         except Exception as exc:  # noqa: BLE001 — the kill is best-effort by contract
             logger.warning("Best-effort kill in pod %s failed: %s", self.id, exc)
 
@@ -177,9 +300,9 @@ class KubernetesSandboxProvider(SandboxProvider):
     capabilities = SandboxCapabilities(
         isolation=IsolationTier.CONTAINER,
         shell=True,
-        languages=["python"],
+        languages=["python"],  # the default; each instance declares its language_runtimes keys
         files=True,
-        package_install=True,
+        package_ecosystems=["python"],  # the default; each instance declares its package_installers keys
         stateful=False,
         attach=True,
         provisions=True,
@@ -199,11 +322,32 @@ class KubernetesSandboxProvider(SandboxProvider):
         self._networking_api: Optional[Any] = None
         # Impersonating client pairs cached per (user, groups) subject (the ec2_ssm pattern).
         self._subject_apis: dict[tuple[str, tuple[str, ...]], tuple[Any, Any]] = {}
+        self._installer = PackageInstaller.from_config(config)
+        self._runtimes = dict(config.language_runtimes)
+        overrides: dict[str, Any] = {"languages": list(self._runtimes), "package_ecosystems": self._installer.ecosystems}
         if config.network_policy:
             # Instance-level capability override (#503): whether NetworkPolicy is actually
             # enforced depends on the cluster CNI, which the provider cannot detect; the
             # operator asserts it per instance. The class default stays honest (False).
-            self.capabilities = type(self).capabilities.model_copy(update={"policy_network": True})
+            overrides["policy_network"] = True
+        self.capabilities = type(self).capabilities.derive(**overrides)
+        self._kill_enabled = not config.attach_to
+        self._shell_pods: dict[str, bool] = {}  # '<namespace>/<pod>' -> whether it has /bin/sh
+        self._shell_probe_misses: dict[str, int] = {}  # '<namespace>/<pod>' -> inconclusive probes so far
+
+    def _handle(self, api: Any, namespace: str, pod_name: str) -> "KubernetesSandbox":
+        """Wrap a pod in a handle carrying this instance's capabilities, installer and runtimes."""
+        return KubernetesSandbox(
+            api,
+            namespace,
+            pod_name,
+            capabilities=self.capabilities,
+            installer=self._installer,
+            runtimes=self._runtimes,
+            kill_enabled=self._kill_enabled,
+            shell_cache=self._shell_pods,
+            probe_misses=self._shell_probe_misses,
+        )
 
     def _apis(self) -> tuple[Any, Any]:
         """Return the lazily created ``(CoreV1Api, NetworkingV1Api)`` pair."""
@@ -272,7 +416,7 @@ class KubernetesSandboxProvider(SandboxProvider):
         except Exception:
             await self._cleanup(name, namespace)  # no orphan from a failed create
             raise
-        return KubernetesSandbox(core, namespace, name)
+        return self._handle(core, namespace, name)
 
     def _pod_manifest(self, name: str, namespace: str, policy: SandboxPolicy) -> dict:
         """Build the pod manifest: hardened securityContext defaults under the config
@@ -282,8 +426,8 @@ class KubernetesSandboxProvider(SandboxProvider):
         container: dict = {
             "name": "sandbox",
             "image": self._config.image,
-            # sleep runs as PID 1 directly: under `sh -c` PID 1 would be `sh`, and the
-            # timeout path's best-effort `pkill sh` could kill it and take down the pod.
+            # sleep runs as PID 1 directly, so PID 1 is never `sh`; the timeout path's
+            # marker kill (ProcessKiller) also skips PID 1 as a second guard.
             "command": ["sleep", "infinity"],
             "workingDir": WORKDIR,
             "securityContext": container_sc,
@@ -382,13 +526,15 @@ class KubernetesSandboxProvider(SandboxProvider):
             pod = await asyncio.to_thread(core.read_namespaced_pod, name, namespace)
         except kubernetes.client.rest.ApiException as exc:
             if exc.status == 404:
+                self._forget_pod(f"{namespace}/{name}")  # deleted elsewhere: drop its cached probe state
                 raise SandboxGoneError(f"sandbox pod '{namespace}/{name}' no longer exists") from exc
             raise
         if getattr(pod.metadata, "deletion_timestamp", None) is not None or getattr(pod.status, "phase", None) in _TERMINAL_PHASES:
+            self._forget_pod(f"{namespace}/{name}")
             raise SandboxGoneError(f"sandbox pod '{namespace}/{name}' is terminating or terminated")
         if getattr(pod.status, "phase", None) == "Pending":
             await self._wait_running(core, name, namespace)  # the same bounded wait as create
-        return KubernetesSandbox(core, namespace, name)
+        return self._handle(core, namespace, name)
 
     async def destroy(self, sandbox_id: str) -> None:
         """Delete the pod and its NetworkPolicy if one exists. Idempotent; 404s are no-ops.
@@ -396,6 +542,12 @@ class KubernetesSandboxProvider(SandboxProvider):
         principal here, and the idle sweep destroys with no user in context either)."""
         namespace, name = self._parse_id(sandbox_id)
         await self._cleanup(name, namespace)
+        self._forget_pod(f"{namespace}/{name}")
+
+    def _forget_pod(self, pod_id: str) -> None:
+        """Drop a gone pod's cached shell-probe answer and inconclusive-probe count."""
+        self._shell_pods.pop(pod_id, None)
+        self._shell_probe_misses.pop(pod_id, None)
 
     def _parse_id(self, sandbox_id: str) -> tuple[str, str]:
         """Split ``<namespace>/<pod>``; a bare pod name uses the configured namespace."""

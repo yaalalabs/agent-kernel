@@ -859,12 +859,12 @@ function CoreFeatures() {
       icon: <MdTerminal />,
       title: "Sandboxed Code Execution",
       description:
-        "Agents run code, shell commands, and file operations in isolated sandboxes. The Execution Broker routes every execution to a pluggable, policy-governed provider, in-process or over a queue to a separate worker fleet.",
+        "Agents run code, shell commands, file operations, and permitted package installs in isolated sandboxes. The Execution Broker routes every execution to a pluggable, policy-governed provider, in-process or over a queue to a separate worker fleet.",
       highlights: [
         "local_subprocess, docker, kubernetes, e2b, daytona, ec2_ssm",
         "Queue broker over SQS, Kafka, or NATS for long-running executions",
         "Session-persistent workspaces",
-        "Fail-closed network, filesystem, CPU, and memory policies",
+        "Fail-closed network, filesystem, CPU, and memory policies; per-profile language and package-install permissions; configurable language runtimes on Docker and Kubernetes",
         "Agent or end-user identity",
       ],
       link: "/docs/advanced/sandbox",

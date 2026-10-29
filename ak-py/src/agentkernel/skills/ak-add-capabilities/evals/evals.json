@@ -457,6 +457,20 @@
       ]
     },
     {
+      "id": "cap-sandbox-package-install",
+      "name": "Permit package installs in a docker sandbox",
+      "input": "Let my agent pip install Python packages in its docker sandbox",
+      "expected_outputs": [
+        "sandbox:",
+        "type: docker",
+        "package_install:",
+        "ecosystems:"
+      ],
+      "must_not_contain": [
+        "environment: attached"
+      ]
+    },
+    {
       "id": "cap-schedule-basic",
       "name": "Add scheduling capability",
       "input": "Add scheduling support so my agent can defer chats and schedule follow-up work",

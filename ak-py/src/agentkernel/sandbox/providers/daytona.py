@@ -2,7 +2,8 @@
 
 The SDK is synchronous, so every call runs in ``asyncio.to_thread``. Executions are
 ``process.code_run`` / ``process.exec``; files travel via ``fs.upload_file`` /
-``fs.download_file``; ``install_packages`` is a ``pip install`` exec.
+``fs.download_file``; ``install_packages`` execs the validated installer command from
+``package_installers``.
 
 The sandbox base is configurable: ``daytona.image`` launches from a container image,
 ``daytona.snapshot`` from a named Daytona snapshot (mutually exclusive; neither = Daytona's
@@ -21,8 +22,8 @@ import asyncio
 import logging
 import math
 import os
-import shlex
-from typing import Any, Optional
+import time
+from typing import Any, Callable, Optional
 
 from daytona import (
     CreateSandboxFromImageParams,
@@ -31,11 +32,12 @@ from daytona import (
     DaytonaConfig,
     Resources,
 )
-from daytona.common.errors import DaytonaError
+from daytona.common.errors import DaytonaError, DaytonaTimeoutError
 
 from ..base import Sandbox, SandboxProvider
-from ..errors import SandboxCapabilityError, SandboxConfigError, SandboxGoneError
+from ..errors import SandboxCapabilityError, SandboxConfigError, SandboxError, SandboxGoneError, SandboxTimeoutError
 from ..model import IsolationTier, SandboxCapabilities, SandboxPolicy, SandboxPrincipal, SandboxResult
+from ..packages import PackageInstaller
 
 logger = logging.getLogger("ak.sandbox.provider")
 
@@ -45,26 +47,49 @@ _DEFAULT_IMAGE = "python:3.12-slim"
 class DaytonaSandbox(Sandbox):
     """Handle to one running Daytona sandbox; every SDK call runs in a thread."""
 
-    def __init__(self, sandbox: Any) -> None:
-        """Bind the handle to the SDK sandbox object; the Daytona sandbox id is the sandbox id."""
+    def __init__(self, sandbox: Any, *, capabilities: SandboxCapabilities, installer: PackageInstaller) -> None:
+        """Bind the handle to the SDK sandbox object; the Daytona sandbox id is the sandbox id.
+        ``capabilities`` are the provider instance's."""
         self.id = sandbox.id
         self._sandbox = sandbox
+        self._capabilities = capabilities
+        self._installer = installer
 
     async def execute_code(self, code: str, language: str = "python", timeout: float | None = None) -> SandboxResult:
         """Run the code via ``process.code_run``; a non-zero exit is data on the response."""
-        if language not in DaytonaSandboxProvider.capabilities.languages:
+        if language not in self._capabilities.languages:
             raise SandboxCapabilityError(self.__class__.__name__, f"language:{language}")
-        response = await asyncio.to_thread(self._sandbox.process.code_run, code, timeout=int(timeout) if timeout else None)
-        return _to_result(response)
+        return await self._run(self._sandbox.process.code_run, code, timeout, "code execution")
 
     async def execute_command(self, command: str, timeout: float | None = None) -> SandboxResult:
         """Run a shell command via ``process.exec``."""
-        response = await asyncio.to_thread(self._sandbox.process.exec, command, timeout=int(timeout) if timeout else None)
+        return await self._run(self._sandbox.process.exec, command, timeout, "command")
+
+    async def install_packages(self, packages: list[str], ecosystem: str = "python", timeout: float | None = None) -> SandboxResult:
+        """Run the ecosystem's validated installer command via ``process.exec``, under its native timeout."""
+        if ecosystem not in self._capabilities.package_ecosystems:
+            raise SandboxCapabilityError(self.__class__.__name__, f"package_ecosystem:{ecosystem}")
+        return await self.execute_command(self._installer.command(packages, ecosystem), timeout)
+
+    async def _run(self, call: Callable[..., Any], source: str, timeout: float | None, what: str) -> SandboxResult:
+        """Run ``code_run`` / ``exec`` in a thread under the SDK's native timeout (whole seconds,
+        rounded up); its ``DaytonaTimeoutError`` is mapped by ``_timeout_error``."""
+        started = time.monotonic()
+        try:
+            response = await asyncio.to_thread(call, source, timeout=math.ceil(timeout) if timeout else None)
+        except DaytonaTimeoutError as exc:
+            raise self._timeout_error(exc, started, timeout, what) from exc
         return _to_result(response)
 
-    async def install_packages(self, packages: list[str]) -> SandboxResult:
-        """Install packages with pip via ``process.exec``."""
-        return await self.execute_command("pip install " + " ".join(shlex.quote(p) for p in packages))
+    @staticmethod
+    def _timeout_error(exc: DaytonaTimeoutError, started: float, timeout: float | None, what: str) -> SandboxError:
+        """``SandboxTimeoutError`` when the call ran for its whole timeout (the execution's own limit
+        surfaces as the SDK's read timeout). The SDK maps every HTTP timeout to ``DaytonaTimeoutError``,
+        including a connect timeout seconds into the call; those are not the execution's timeout and
+        stay a plain ``SandboxError`` carrying the SDK's message (the e2b handle's rule)."""
+        if timeout is not None and time.monotonic() - started >= timeout:
+            return SandboxTimeoutError(f"daytona {what} exceeded timeout {timeout}s")
+        return SandboxError(f"daytona {what} failed: {exc}")
 
     async def upload_file(self, path: str, content: bytes) -> None:
         """Upload the bytes to the sandbox filesystem."""
@@ -103,7 +128,7 @@ class DaytonaSandboxProvider(SandboxProvider):
         shell=True,
         languages=["python"],
         files=True,
-        package_install=True,
+        package_ecosystems=["python"],  # the default; each instance declares its package_installers keys
         stateful=False,
         attach=True,
         principal_user=False,
@@ -114,10 +139,17 @@ class DaytonaSandboxProvider(SandboxProvider):
 
     def __init__(self, config, idle_timeout: Optional[float] = None) -> None:
         """Store the config and the profile's idle_timeout (mapped to auto_stop_interval);
-        the Daytona client is created lazily on first use."""
+        the Daytona client is created lazily on first use. The installer sets this instance's
+        package ecosystems."""
         super().__init__(config)
         self._idle_timeout = idle_timeout
         self._client_instance: Optional[Daytona] = None
+        self._installer = PackageInstaller.from_config(config)
+        self.capabilities = type(self).capabilities.derive(package_ecosystems=self._installer.ecosystems)
+
+    def _handle(self, sandbox: Any) -> DaytonaSandbox:
+        """Wrap an SDK sandbox in a handle carrying this instance's capabilities and installer."""
+        return DaytonaSandbox(sandbox, capabilities=self.capabilities, installer=self._installer)
 
     def _client(self) -> Daytona:
         """Return the lazily created Daytona client, keyed from the configured env variable."""
@@ -133,7 +165,7 @@ class DaytonaSandboxProvider(SandboxProvider):
         idle timeout passed through as ``auto_stop_interval``."""
         params = self._create_params(policy)
         sandbox = await asyncio.to_thread(self._client().create, params)
-        return DaytonaSandbox(sandbox)
+        return self._handle(sandbox)
 
     def _create_params(self, policy: SandboxPolicy) -> Any:
         """Map the config's base (``image`` / ``snapshot``) and the ``SandboxPolicy`` onto
@@ -180,7 +212,7 @@ class DaytonaSandboxProvider(SandboxProvider):
             sandbox = await asyncio.to_thread(self._client().get, sandbox_id)
         except DaytonaError as exc:
             raise SandboxGoneError(f"daytona sandbox '{sandbox_id}' no longer exists") from exc
-        return DaytonaSandbox(sandbox)
+        return self._handle(sandbox)
 
     async def destroy(self, sandbox_id: str) -> None:
         """Delete the sandbox. Idempotent; an already-gone sandbox is a no-op."""

@@ -10,7 +10,10 @@ import asyncio
 import base64
 import importlib
 import io
+import itertools
+import json
 import shlex
+import subprocess
 import sys
 import tarfile
 import threading
@@ -33,11 +36,19 @@ from agentkernel.core.config import (
 from agentkernel.core.session.in_memory import InMemorySessionStore
 from agentkernel.sandbox.broker.base import ExecutionRequest
 from agentkernel.sandbox.broker.worker import BrokerWorkerCore
-from agentkernel.sandbox.errors import SandboxCapabilityError, SandboxGoneError, SandboxPolicyError, SandboxProvisionError, SandboxTimeoutError
+from agentkernel.sandbox.errors import (
+    SandboxCapabilityError,
+    SandboxError,
+    SandboxGoneError,
+    SandboxPolicyError,
+    SandboxProvisionError,
+    SandboxTimeoutError,
+)
 from agentkernel.sandbox.factory import SandboxProviderFactory
 from agentkernel.sandbox.manager import ExecutionManager
 from agentkernel.sandbox.model import SandboxPolicy, SandboxPrincipal, SandboxSession
 from agentkernel.sandbox.providers.local_subprocess import LocalSubprocessSandboxProvider
+from agentkernel.sandbox.providers.process import ProcessKiller
 from agentkernel.sandbox.testing import FAIL_MARKER, SandboxProviderContract
 
 
@@ -194,14 +205,16 @@ class FakeContainer:
         self.id = container_id
         self.status = "running"
         self.exec_calls = []
+        self.exec_envs = []  # the environment= of each exec_run, aligned with exec_calls
         self.exec_threads = []
         self.files: dict[str, bytes] = {}
         self.removed = False
         self.started = False
         self.exec_delay = 0.0
 
-    def exec_run(self, cmd, workdir=None, demux=True):
+    def exec_run(self, cmd, workdir=None, demux=True, environment=None):
         self.exec_calls.append((list(cmd), workdir))
+        self.exec_envs.append(environment)
         self.exec_threads.append(threading.current_thread())
         if self.exec_delay:
             time.sleep(self.exec_delay)
@@ -331,6 +344,11 @@ async def test_docker_execute_call_shape_and_to_thread(docker_env):
         await sandbox.execute_code("echo hi", "bash")  # undeclared language
 
 
+def _docker_marker(container, index):
+    """The ProcessKiller marker the index-th exec carried in its environment."""
+    return container.exec_envs[index][ProcessKiller.MARKER_ENV]
+
+
 @pytest.mark.asyncio
 async def test_docker_timeout_raises_and_best_effort_kills(docker_env):
     module, _client = docker_env
@@ -343,7 +361,142 @@ async def test_docker_timeout_raises_and_best_effort_kills(docker_env):
         await sandbox.execute_code("while True: pass", timeout=0.05)
     container.exec_delay = 0.0
     await asyncio.sleep(0.6)  # let the abandoned exec thread finish recording
-    assert any(call[0][0] == "pkill" for call in container.exec_calls)
+    assert ProcessKiller.argv(_docker_marker(container, 0)) in [call[0] for call in container.exec_calls]
+
+
+@pytest.mark.asyncio
+async def test_docker_install_uses_installer_timeout_and_kill(docker_env):
+    module, _client = docker_env
+    provider = _docker_provider(module)
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    container = sandbox._container
+    container.exec_delay = 0.3
+    with pytest.raises(SandboxTimeoutError):
+        await sandbox.install_packages(["requests"], timeout=0.05)
+    assert container.exec_calls[0][0] == ["pip", "install", "requests"]
+    assert container.exec_calls[-1][0] == ProcessKiller.argv(_docker_marker(container, 0))
+    assert container.exec_envs[-1] is None  # the kill itself is untagged, so it never matches itself
+
+
+@pytest.mark.asyncio
+async def test_docker_cancellation_kills_and_reraises(docker_env):
+    module, _client = docker_env
+    provider = _docker_provider(module)
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    container = sandbox._container
+    container.exec_delay = 0.3
+    task = asyncio.create_task(sandbox.execute_code("while True: pass"))
+    await asyncio.sleep(0.05)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert [call[0] for call in container.exec_calls].count(ProcessKiller.argv(_docker_marker(container, 0))) == 1
+
+
+@pytest.mark.asyncio
+async def test_docker_attach_to_timeout_sends_no_kill(docker_env):
+    # The framework does not own an attach_to container, so its execs are neither tagged nor killed.
+    module, client = docker_env
+    existing = FakeContainer("pre-existing")
+    client.containers.by_id["pre-existing"] = existing
+    provider = _docker_provider(module, _SandboxDockerConfig(attach_to="pre-existing"))
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    existing.exec_delay = 0.3
+    with pytest.raises(SandboxTimeoutError):
+        await sandbox.execute_code("while True: pass", timeout=0.05)
+    assert [call[0][0] for call in existing.exec_calls] == ["python"]  # no kill exec
+    assert existing.exec_envs == [None]  # and no marker
+
+
+@pytest.mark.asyncio
+async def test_docker_package_installers_declare_instance_ecosystems(docker_env):
+    module, _client = docker_env
+    config = _SandboxDockerConfig(package_installers={"python": ["pip", "install"], "node": ["npm", "install"]})
+    provider = _docker_provider(module, config)
+    assert provider.capabilities.package_ecosystems == ["python", "node"]
+    assert module.DockerSandboxProvider.capabilities.package_ecosystems == ["python"]  # the class stays the default
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    container = sandbox._container
+
+    await sandbox.install_packages(["lodash"], ecosystem="node")
+    assert container.exec_calls[-1][0] == ["npm", "install", "lodash"]
+    with pytest.raises(SandboxCapabilityError, match="package_ecosystem:deb"):
+        await sandbox.install_packages(["curl"], ecosystem="deb")
+    with pytest.raises(ValueError):
+        await sandbox.install_packages(["-r"])  # rejected by the installer before any exec
+    assert len(container.exec_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_docker_empty_package_installers_declare_no_installs(docker_env):
+    module, _client = docker_env
+    provider = _docker_provider(module, _SandboxDockerConfig(package_installers={}))
+    assert provider.capabilities.package_install is False
+    assert provider.capabilities.package_ecosystems == []
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    with pytest.raises(SandboxCapabilityError):
+        await sandbox.install_packages(["requests"])
+
+
+@pytest.mark.asyncio
+async def test_docker_language_runtimes_drive_exec_argv_and_instance_languages(docker_env):
+    module, _client = docker_env
+    config = _SandboxDockerConfig(language_runtimes={"python": ["python3", "-c"], "node": ["node", "-e"]})
+    provider = _docker_provider(module, config)
+    assert provider.capabilities.languages == ["python", "node"]
+    assert module.DockerSandboxProvider.capabilities.languages == ["python"]  # the class stays the default
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    container = sandbox._container
+
+    await sandbox.execute_code("console.log(1)", "node")
+    await sandbox.execute_code("print(1)")
+    assert [call[0] for call in container.exec_calls] == [["node", "-e", "console.log(1)"], ["python3", "-c", "print(1)"]]
+    with pytest.raises(SandboxCapabilityError, match="language:bash"):
+        await sandbox.execute_code("echo hi", "bash")
+    assert len(container.exec_calls) == 2  # rejected before any exec
+
+
+@pytest.mark.asyncio
+async def test_docker_worker_mismatch_warning_reads_the_runtime_map(docker_env, monkeypatch, caplog):
+    # policy.languages permits a language the instance's language_runtimes lacks: the worker warns
+    # once per (provider, profile) naming only that language. 'node' is declared by the runtime map
+    # (not by the class), so a regression that read class capabilities would flag it too.
+    docker = _SandboxDockerConfig(language_runtimes={"python": ["python", "-c"], "node": ["node", "-e"]})
+    profile = _SandboxProfileConfig(type="docker", docker=docker)
+    sandbox_cfg = _SandboxConfig(enabled=True, broker=_ExecutionBrokerConfig(flavor="embedded"), profiles={"default": profile})
+
+    class _Cfg:
+        sandbox = sandbox_cfg
+        multimodal = None
+
+    monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _Cfg))
+    request = ExecutionRequest(
+        task_id="t",
+        operation="execute_code",
+        payload={"code": "print(1)"},
+        profile="default",
+        principal=SandboxPrincipal(subject="agent"),
+        policy=SandboxPolicy(languages=["python", "node", "ruby"]),
+        sandbox_session=SandboxSession(sandbox_session_id="s", profile="default", provider_type="docker", created_at=1.0, last_used_at=1.0),
+        ak_session_id="ak-1",
+        agent="a",
+    )
+    core = BrokerWorkerCore()
+    with caplog.at_level("WARNING", logger="ak.sandbox.broker"):
+        for _ in range(2):
+            completion = await core.process(request)
+            assert completion.error is None and completion.result.stdout == "fake stdout"
+    records = [r for r in caplog.records if r.name == "ak.sandbox.broker" and "does not declare it" in r.getMessage()]
+    assert len(records) == 1
+    message = records[0].getMessage()
+    assert "language 'ruby'" in message
+    assert "'node'" not in message and "language 'python'" not in message
 
 
 @pytest.mark.asyncio
@@ -597,6 +750,17 @@ async def test_ssm_waits_out_unregistered_invocation(ssm_env):
 
 
 @pytest.mark.asyncio
+async def test_ssm_language_check_reads_instance_capabilities(ssm_env):
+    module, _fake = ssm_env
+    provider = _ssm_provider(module)
+    provider.capabilities = provider.capabilities.derive(languages=[])  # an instance override
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    with pytest.raises(SandboxCapabilityError, match="language:python"):
+        await sandbox.execute_code("print(1)")
+
+
+@pytest.mark.asyncio
 async def test_ssm_unregistered_invocation_still_times_out(ssm_env):
     """A never-registered invocation ends as SandboxTimeoutError, not an infinite wait."""
     module, fake = ssm_env
@@ -767,6 +931,10 @@ class FakeE2BNotFound(Exception):
     pass
 
 
+class FakeE2BTimeout(Exception):
+    pass
+
+
 class FakeCommandExit(Exception):
     def __init__(self, stdout, stderr, exit_code):
         super().__init__(f"exit {exit_code}")
@@ -791,6 +959,8 @@ def e2b_env(monkeypatch):
         kill_calls: list = []
         next_execution: FakeExecution = FakeExecution()
         next_command_error: Exception | None = None
+        next_code_error: Exception | None = None
+        error_delay: float = 0.0  # seconds a call runs before raising next_*_error (a native timeout takes its full timeout)
 
         def __init__(self, sandbox_id):
             self.sandbox_id = sandbox_id
@@ -801,6 +971,7 @@ def e2b_env(monkeypatch):
             async def run(cmd, timeout=None):
                 self.command_calls.append((cmd, timeout))
                 if FakeAsyncSandbox.next_command_error is not None:
+                    await asyncio.sleep(FakeAsyncSandbox.error_delay)
                     raise FakeAsyncSandbox.next_command_error
                 return types.SimpleNamespace(stdout="cmd out", stderr="", exit_code=0)
 
@@ -817,6 +988,9 @@ def e2b_env(monkeypatch):
 
         async def run_code(self, code, timeout=None):
             self.run_calls.append((code, timeout))
+            if FakeAsyncSandbox.next_code_error is not None:
+                await asyncio.sleep(FakeAsyncSandbox.error_delay)
+                raise FakeAsyncSandbox.next_code_error
             return FakeAsyncSandbox.next_execution
 
         @classmethod
@@ -841,7 +1015,7 @@ def e2b_env(monkeypatch):
             del cls.instances[sandbox_id]
             return True
 
-    exceptions_mod = types.SimpleNamespace(NotFoundException=FakeE2BNotFound)
+    exceptions_mod = types.SimpleNamespace(NotFoundException=FakeE2BNotFound, TimeoutException=FakeE2BTimeout)
     handle_mod = types.SimpleNamespace(CommandExitException=FakeCommandExit)
     for name, mod in {
         "e2b": types.SimpleNamespace(exceptions=exceptions_mod),
@@ -855,6 +1029,7 @@ def e2b_env(monkeypatch):
     module = importlib.import_module("agentkernel.sandbox.providers.e2b")
     monkeypatch.setattr(module, "AsyncSandbox", FakeAsyncSandbox)
     monkeypatch.setattr(module, "NotFoundException", FakeE2BNotFound)
+    monkeypatch.setattr(module, "TimeoutException", FakeE2BTimeout)
     monkeypatch.setattr(module, "CommandExitException", FakeCommandExit)
     monkeypatch.setenv("E2B_API_KEY", "e2b-test-key")
     return module, FakeAsyncSandbox
@@ -952,6 +1127,68 @@ async def test_e2b_command_nonzero_exit_is_result_not_exception(e2b_env):
 
 
 @pytest.mark.asyncio
+async def test_e2b_install_passes_timeout_and_checks_ecosystem(e2b_env):
+    module, _fake_cls = e2b_env
+    provider = _e2b_provider(module)
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    await sandbox.install_packages(["numpy>=1"], timeout=30)
+    assert sandbox._sandbox.command_calls[-1] == ("pip install 'numpy>=1'", 30)  # shlex.join, native SDK timeout
+    with pytest.raises(SandboxCapabilityError, match="package_ecosystem:node"):
+        await sandbox.install_packages(["lodash"], ecosystem="node")
+
+
+@pytest.mark.asyncio
+async def test_e2b_native_timeout_raises_sandbox_timeout(e2b_env):
+    # The handle's native SDK timeout fires before the worker's backstop, so it must surface as
+    # SandboxTimeoutError (a timed_out completion), never as the SDK's own exception.
+    module, fake_cls = e2b_env
+    provider = _e2b_provider(module)
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    try:
+        fake_cls.error_delay = 0.05  # the native timeout fires once the call has run for its timeout
+        fake_cls.next_code_error = FakeE2BTimeout("deadline exceeded")
+        with pytest.raises(SandboxTimeoutError):
+            await sandbox.execute_code("while True: pass", timeout=0.05)
+        fake_cls.next_command_error = FakeE2BTimeout("deadline exceeded")
+        with pytest.raises(SandboxTimeoutError):
+            await sandbox.execute_command("sleep 60", timeout=0.05)
+        with pytest.raises(SandboxTimeoutError):
+            await sandbox.install_packages(["numpy"], timeout=0.05)
+    finally:
+        fake_cls.error_delay = 0.0
+        fake_cls.next_code_error = None
+        fake_cls.next_command_error = None
+
+
+@pytest.mark.asyncio
+async def test_e2b_non_execution_timeout_is_not_a_timed_out_result(e2b_env):
+    # The SDK's TimeoutException also covers sandbox-lifetime expiry and request timeouts. Raised
+    # before the call's own timeout elapsed (or with none), it is not the execution's timeout.
+    module, fake_cls = e2b_env
+    provider = _e2b_provider(module)
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    expired = FakeE2BTimeout("This error is likely due to sandbox timeout")
+    try:
+        fake_cls.next_code_error = expired
+        fake_cls.next_command_error = expired
+        for call in (
+            lambda: sandbox.execute_code("print(1)", timeout=5),
+            lambda: sandbox.execute_code("print(1)"),
+            lambda: sandbox.execute_command("echo hi", timeout=5),
+            lambda: sandbox.execute_command("echo hi"),
+        ):
+            with pytest.raises(SandboxError, match="likely due to sandbox timeout") as info:
+                await call()
+            assert not isinstance(info.value, SandboxTimeoutError)
+    finally:
+        fake_cls.next_code_error = None
+        fake_cls.next_command_error = None
+
+
+@pytest.mark.asyncio
 async def test_e2b_file_roundtrip(e2b_env):
     module, _fake_cls = e2b_env
     provider = _e2b_provider(module)
@@ -1003,6 +1240,10 @@ class FakeDaytonaError(Exception):
     pass
 
 
+class FakeDaytonaTimeoutError(FakeDaytonaError):
+    pass
+
+
 @pytest.fixture
 def daytona_env(monkeypatch):
     """Import the provider module against a fake daytona SDK and return (module, client)."""
@@ -1034,6 +1275,7 @@ def daytona_env(monkeypatch):
             self.files_store = {}
             self.next_exit_code = 0
             self.next_result = "daytona out"
+            self.next_error = None
 
             outer = self
 
@@ -1043,11 +1285,15 @@ def daytona_env(monkeypatch):
             def code_run(code, params=None, *, timeout=None):
                 outer.code_calls.append((code, params, timeout))
                 outer.exec_threads.append(threading.current_thread())
+                if outer.next_error is not None:
+                    raise outer.next_error
                 return types.SimpleNamespace(exit_code=outer.next_exit_code, result=outer.next_result)
 
             def exec_(command, *, cwd=None, env=None, timeout=None):
                 outer.exec_calls.append((command, cwd, env, timeout))
                 outer.exec_threads.append(threading.current_thread())
+                if outer.next_error is not None:
+                    raise outer.next_error
                 return types.SimpleNamespace(exit_code=outer.next_exit_code, result=outer.next_result)
 
             def upload_file(src, dst, timeout=1800):
@@ -1083,7 +1329,7 @@ def daytona_env(monkeypatch):
             FakeDaytonaClient.delete_calls.append(sandbox.id)
             FakeDaytonaClient.instances.pop(sandbox.id, None)
 
-    errors_mod = types.SimpleNamespace(DaytonaError=FakeDaytonaError)
+    errors_mod = types.SimpleNamespace(DaytonaError=FakeDaytonaError, DaytonaTimeoutError=FakeDaytonaTimeoutError)
     sdk_mod = types.SimpleNamespace(
         Daytona=FakeDaytonaClient,
         DaytonaConfig=FakeDaytonaConfig,
@@ -1106,6 +1352,7 @@ def daytona_env(monkeypatch):
         "CreateSandboxFromImageParams": FakeImageParams,
         "Resources": FakeResources,
         "DaytonaError": FakeDaytonaError,
+        "DaytonaTimeoutError": FakeDaytonaTimeoutError,
     }.items():
         monkeypatch.setattr(module, attr, value)
     monkeypatch.setenv("DAYTONA_API_KEY", "daytona-test-key")
@@ -1348,6 +1595,71 @@ def test_factory_passes_profile_idle_timeout_to_daytona(daytona_env):
     assert provider._idle_timeout == 90
 
 
+@pytest.mark.asyncio
+async def test_daytona_install_passes_timeout_and_checks_ecosystem(daytona_env):
+    from agentkernel.core.config import _SandboxDaytonaConfig
+
+    module, _client_cls = daytona_env
+    config = _SandboxDaytonaConfig(target="us", package_installers={"python": ["pip", "install"], "node": ["npm", "install"]})
+    provider = _daytona_provider(module, config)
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    await sandbox.install_packages(["@types/node"], ecosystem="node", timeout=30)
+    command, _cwd, _env, timeout = sandbox._sandbox.exec_calls[-1]
+    assert command == "npm install @types/node" and timeout == 30
+    with pytest.raises(SandboxCapabilityError, match="package_ecosystem:deb"):
+        await sandbox.install_packages(["curl"], ecosystem="deb")
+
+
+def _daytona_clock(monkeypatch, module, elapsed):
+    """Make every call through the daytona handle appear to run for ``elapsed`` seconds."""
+    ticks = itertools.count(step=elapsed)
+    monkeypatch.setattr(module, "time", types.SimpleNamespace(monotonic=lambda: next(ticks)))
+
+
+@pytest.mark.asyncio
+async def test_daytona_native_timeout_raises_sandbox_timeout(daytona_env, monkeypatch):
+    # The SDK's native timeout fires before the worker's backstop, so it must surface as
+    # SandboxTimeoutError (a timed_out completion), never as DaytonaTimeoutError.
+    module, _client_cls = daytona_env
+    _daytona_clock(monkeypatch, module, elapsed=5)
+    provider = _daytona_provider(module)
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    sandbox._sandbox.next_error = FakeDaytonaTimeoutError("timed out")
+    with pytest.raises(SandboxTimeoutError):
+        await sandbox.execute_code("while True: pass", timeout=5)
+    with pytest.raises(SandboxTimeoutError):
+        await sandbox.execute_command("sleep 60", timeout=5)
+    with pytest.raises(SandboxTimeoutError):
+        await sandbox.install_packages(["numpy"], timeout=5)
+
+
+@pytest.mark.asyncio
+async def test_daytona_early_sdk_timeout_is_not_an_execution_timeout(daytona_env, monkeypatch):
+    # The SDK maps any HTTP timeout (e.g. a connect timeout) to DaytonaTimeoutError; one that fires
+    # before the execution's own timeout is a machinery failure, not a timed_out execution.
+    module, _client_cls = daytona_env
+    _daytona_clock(monkeypatch, module, elapsed=1)
+    provider = _daytona_provider(module)
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    sandbox._sandbox.next_error = FakeDaytonaTimeoutError("connect timeout")
+    with pytest.raises(SandboxError, match="daytona command failed: connect timeout") as excinfo:
+        await sandbox.execute_command("echo hi", timeout=5)
+    assert not isinstance(excinfo.value, SandboxTimeoutError)
+
+
+@pytest.mark.asyncio
+async def test_daytona_sub_second_timeout_rounds_up_not_to_zero(daytona_env):
+    module, _client_cls = daytona_env
+    provider = _daytona_provider(module)
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    await sandbox.install_packages(["requests"], timeout=0.5)
+    assert sandbox._sandbox.exec_calls[-1][3] == 1  # int() would give 0, which the SDK may read as "no timeout"
+
+
 # --------------------------------------------------------------------------- #
 # kubernetes — mocked Kubernetes client (no cluster)
 # --------------------------------------------------------------------------- #
@@ -1378,7 +1690,12 @@ class FakeK8sCluster:
         self.pod_creates: list[dict] = []
         self.pod_deletes: list[tuple[str, str]] = []
         self.netpol_deletes: list[tuple[str, str]] = []
-        self.exec_calls: list[tuple[str, list, int]] = []  # (pod, command, thread ident)
+        self.exec_calls: list[tuple[str, list, int]] = []  # (pod, command, thread ident); command unwrapped
+        self.exec_markers: list = []  # the ProcessKiller marker each exec was wrapped with (None = unwrapped)
+        self.shell_probes: list[str] = []  # pod of each ProcessKiller.SHELL_PROBE exec (kept out of exec_calls)
+        self.has_shell = True  # False = a shell-less image: the probe fails
+        self.streaming: set[str] = set()  # executables whose exec stream stays open until closed (long-running)
+        self.abandoned: list[list] = []  # commands whose stream the provider closed before the process finished
         self.headers_log: list[tuple[str, dict]] = []  # (operation, request headers) for impersonation asserts
         self.api_clients: list = []  # every FakeApiClient the provider constructed
         self.default_phase = "Running"
@@ -1390,12 +1707,18 @@ class FakeK8sCluster:
         pod = self.pods.get((namespace, name))
         if pod is None:
             raise FakeApiException(404)
-        self.exec_calls.append((name, kwargs["command"], threading.get_ident()))
+        if tuple(kwargs["command"]) == ProcessKiller.SHELL_PROBE:
+            self.shell_probes.append(name)
+            return _FakeExecClient(pod, kwargs["command"], False, self)
+        command, marker = _unwrap_marker(kwargs["command"])
+        self.exec_calls.append((name, command, threading.get_ident()))
+        self.exec_markers.append(marker)
         self.headers_log.append(("exec", dict(headers or {})))
-        return _FakeExecClient(pod, kwargs["command"], kwargs.get("stdin", False), self)
+        return _FakeExecClient(pod, command, kwargs.get("stdin", False), self)
 
-    @staticmethod
-    def _default_exec(pod, command, stdin_data):
+    def _default_exec(self, pod, command, stdin_data):
+        if tuple(command) == ProcessKiller.SHELL_PROBE:
+            return ("", "", 0) if self.has_shell else ("", "/bin/sh: not found", 127)
         if command[0] == "python" and command[1] == "-c":
             code = command[2]
             return ("", "simulated failure", 1) if FAIL_MARKER in code else (code, "", 0)
@@ -1419,10 +1742,20 @@ class FakeK8sCluster:
                     info.size = len(pod.files[rel])
                     tar.addfile(info, io.BytesIO(pod.files[rel]))
                 return base64.b64encode(buf.getvalue()).decode(), "", 0
-            if shell_cmd.startswith("pkill"):
+            if shell_cmd.startswith("for p in /proc/"):  # the ProcessKiller scan
                 return "", "", 0
             return ("", "simulated failure", 1) if FAIL_MARKER in shell_cmd else (shell_cmd, "", 0)
         return "", f"unknown command {command}", 127
+
+
+_WRAP_PREFIX = ProcessKiller.wrap([], "m")[:4]
+
+
+def _unwrap_marker(command):
+    """Strip ProcessKiller.wrap's launcher: (inner argv, marker), or (command, None) when unwrapped."""
+    if command[:4] == _WRAP_PREFIX:
+        return command[5:], command[4]
+    return command, None
 
 
 class _FakeExecClient:
@@ -1434,9 +1767,22 @@ class _FakeExecClient:
         self._stdin: list[str] = []
         self._stdout = ""
         self._stderr = ""
-        self.returncode = None
+        self._status = None  # the handler's third value: an exit code, a raw status dict, or None (no status)
         self._open = True
         self._ran = False
+
+    def read_channel(self, channel):
+        # The JSON status the API server writes on the error channel (3) when the exec ends.
+        assert channel == 3
+        if self._status is None:
+            return ""
+        if isinstance(self._status, dict):
+            return json.dumps(self._status)
+        if self._status == 0:
+            return json.dumps({"status": "Success"})
+        return json.dumps(
+            {"status": "Failure", "reason": "NonZeroExitCode", "details": {"causes": [{"reason": "ExitCode", "message": str(self._status)}]}}
+        )
 
     def write_stdin(self, data):
         self._stdin.append(data)
@@ -1445,9 +1791,12 @@ class _FakeExecClient:
         return self._open
 
     def update(self, timeout=None):
+        if self._command[0] in self._cluster.streaming:
+            time.sleep(0.02)  # one quiet tick of a still-running process; the stream stays open
+            return
         if not self._ran and (not self._needs_stdin or self._stdin):
             stdin_data = "".join(self._stdin) if self._needs_stdin else None
-            self._stdout, self._stderr, self.returncode = self._cluster.exec_handler(self._pod, self._command, stdin_data)
+            self._stdout, self._stderr, self._status = self._cluster.exec_handler(self._pod, self._command, stdin_data)
             self._ran = True
             self._open = False
 
@@ -1466,6 +1815,8 @@ class _FakeExecClient:
         return err
 
     def close(self):
+        if self._open and not self._ran:
+            self._cluster.abandoned.append(self._command)
         self._open = False
 
 
@@ -1614,7 +1965,7 @@ async def test_k8s_pod_manifest_shape(k8s_env):
     assert spec["securityContext"] == {"fsGroup": 2000}
     assert spec["volumes"] == [{"name": "workspace", "emptyDir": {}}]
     container = spec["containers"][0]
-    # sleep must be PID 1 directly: under `sh -c` the timeout path's `pkill sh` could kill PID 1.
+    # sleep must be PID 1 directly, so PID 1 is never `sh` (ProcessKiller also skips PID 1).
     assert container["image"] == "hardened:1" and container["command"] == ["sleep", "infinity"]
     assert container["workingDir"] == "/workspace"
     assert container["env"] == [{"name": "PYTHONUNBUFFERED", "value": "1"}]
@@ -1672,7 +2023,324 @@ async def test_k8s_exec_timeout_kills_and_raises(k8s_env):
     cluster.exec_handler = slow_handler
     with pytest.raises(SandboxTimeoutError):
         await sandbox.execute_code("while True: pass", timeout=0.05)
-    assert cluster.exec_calls[-1][1] == ["sh", "-c", "pkill -9 python"]  # the best-effort kill
+    assert _kill_calls(cluster, "python") == [cluster.exec_calls[-1]]  # the best-effort kill
+
+
+def _slow_python(cluster, seconds=1.0):
+    """Make python execs block, so a timeout or cancellation hits them mid-flight."""
+    default_handler = cluster.exec_handler
+
+    def slow_handler(pod, command, stdin_data):
+        if command[0] in ("python", "pip"):
+            time.sleep(seconds)
+        return default_handler(pod, command, stdin_data)
+
+    cluster.exec_handler = slow_handler
+
+
+def _kill_calls(cluster, executable):
+    """The kill execs aimed at the markers of the execs of ``executable``."""
+    markers = {m for (_, command, _), m in zip(cluster.exec_calls, cluster.exec_markers) if m and command[0] == executable}
+    return [call for call in cluster.exec_calls if any(call[1] == ProcessKiller.argv(m) for m in markers)]
+
+
+@pytest.mark.asyncio
+async def test_k8s_install_timeout_kills_the_installer(k8s_env):
+    module, cluster = k8s_env
+    provider = _k8s_provider(module)
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    _slow_python(cluster)
+    with pytest.raises(SandboxTimeoutError):
+        await sandbox.install_packages(["requests"], timeout=0.05)
+    assert len(_kill_calls(cluster, "pip")) == 1
+
+
+@pytest.mark.asyncio
+async def test_k8s_cancellation_kills_once_and_reraises(k8s_env):
+    module, cluster = k8s_env
+    provider = _k8s_provider(module)
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    _slow_python(cluster)
+    task = asyncio.create_task(sandbox.execute_code("while True: pass"))
+    await asyncio.sleep(0.05)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert len(_kill_calls(cluster, "python")) == 1  # the kill's own exec never triggers another kill
+
+
+@pytest.mark.asyncio
+async def test_k8s_attach_to_timeout_sends_no_kill(k8s_env):
+    module, cluster = k8s_env
+    cluster.pods[("default", "app-pod")] = _FakeK8sPod("app-pod", "default", {})
+    provider = _k8s_provider(module, _SandboxKubernetesConfig(attach_to="default/app-pod"))
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    _slow_python(cluster)
+    with pytest.raises(SandboxTimeoutError):
+        await sandbox.execute_code("while True: pass", timeout=0.05)
+    assert _kill_calls(cluster, "python") == []
+    assert set(cluster.exec_markers) == {None}  # attach_to execs are never tagged
+
+
+@pytest.mark.asyncio
+async def test_k8s_shell_probe_runs_once_per_pod(k8s_env):
+    module, cluster = k8s_env
+    provider = _k8s_provider(module)
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    await sandbox.execute_code("print(1)")
+    await sandbox.execute_command("echo hi")
+    reattached = await provider.attach(sandbox.id, principal=principal, policy=policy)
+    await reattached.execute_code("print(2)")
+    pod = sandbox.id.split("/")[1]
+    assert cluster.shell_probes == [pod]  # cached on the provider, shared by every handle to the pod
+    assert all(cluster.exec_markers)  # a pod with a shell tags every exec
+
+    await provider.destroy(sandbox.id)
+    assert sandbox.id not in provider._shell_pods  # a destroyed pod's answer is dropped
+
+
+@pytest.mark.asyncio
+async def test_k8s_shell_less_pod_runs_unwrapped_without_kill(k8s_env):
+    module, cluster = k8s_env
+    cluster.has_shell = False
+    provider = _k8s_provider(module)
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    assert (await sandbox.execute_code("print(1)")).exit_code == 0
+    assert cluster.exec_calls[-1][1] == ["python", "-c", "print(1)"]
+    _slow_python(cluster)
+    with pytest.raises(SandboxTimeoutError):
+        await sandbox.execute_code("while True: pass", timeout=0.05)
+    assert set(cluster.exec_markers) == {None}  # never wrapped in the /bin/sh launcher
+    assert _kill_calls(cluster, "python") == []
+    assert len(cluster.shell_probes) == 1  # the negative answer is cached too
+
+
+@pytest.mark.asyncio
+async def test_k8s_timed_out_exec_stops_its_stream_thread(k8s_env):
+    # The worker thread cannot be cancelled; on timeout it must stop streaming and close the socket itself.
+    module, cluster = k8s_env
+    provider = _k8s_provider(module)
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    cluster.streaming.add("python")
+    with pytest.raises(SandboxTimeoutError):
+        await sandbox.execute_code("while True: pass", timeout=0.1)
+    deadline = time.monotonic() + 1.5
+    while not cluster.abandoned and time.monotonic() < deadline:
+        await asyncio.sleep(0.02)
+    assert cluster.abandoned == [["python", "-c", "while True: pass"]]
+
+
+@pytest.mark.asyncio
+async def test_k8s_attach_to_a_gone_pod_drops_its_shell_answer(k8s_env):
+    module, cluster = k8s_env
+    provider = _k8s_provider(module)
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    await sandbox.execute_code("print(1)")
+    assert sandbox.id in provider._shell_pods
+    namespace, name = sandbox.id.split("/")
+    del cluster.pods[(namespace, name)]  # deleted outside this provider (another replica, activeDeadlineSeconds)
+    with pytest.raises(SandboxGoneError):
+        await provider.attach(sandbox.id, principal=principal, policy=policy)
+    assert sandbox.id not in provider._shell_pods
+
+
+@pytest.mark.asyncio
+async def test_k8s_attach_to_never_probes_for_a_shell(k8s_env):
+    module, cluster = k8s_env
+    cluster.pods[("default", "app-pod")] = _FakeK8sPod("app-pod", "default", {})
+    provider = _k8s_provider(module, _SandboxKubernetesConfig(attach_to="default/app-pod"))
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    await sandbox.execute_code("print(1)")
+    assert cluster.shell_probes == []
+
+
+@pytest.mark.asyncio
+async def test_k8s_exec_without_an_exit_code_is_a_failed_result(k8s_env):
+    # A missing executable comes back as a failure status the client cannot parse into an exit code.
+    module, cluster = k8s_env
+    provider = _k8s_provider(module)
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    default_handler = cluster.exec_handler
+
+    def missing_interpreter(pod, command, stdin_data):
+        if command[0] == "python":
+            return "", "", {"status": "Failure", "message": 'exec: "python": executable file not found in $PATH'}
+        return default_handler(pod, command, stdin_data)
+
+    cluster.exec_handler = missing_interpreter
+    result = await sandbox.execute_code("print(1)")
+    assert result.exit_code == -1
+    assert 'exec failed before the process started: exec: "python": executable file not found' in result.stderr  # the status's own message
+
+
+@pytest.mark.asyncio
+async def test_k8s_exec_without_any_status_is_a_failed_result(k8s_env):
+    module, cluster = k8s_env
+    provider = _k8s_provider(module)
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    default_handler = cluster.exec_handler
+    cluster.exec_handler = lambda pod, command, stdin_data: ("", "", None) if command[0] == "python" else default_handler(pod, command, stdin_data)
+    result = await sandbox.execute_code("print(1)")
+    assert result.exit_code == -1
+    assert "exec ended without a status from the API server" in result.stderr
+
+
+@pytest.mark.parametrize(
+    "status,expected",
+    [
+        ({"status": "Success"}, (0, "")),
+        ({"status": "Failure", "details": {"causes": [{"reason": "ExitCode", "message": "3"}]}}, (3, "")),
+        # The ExitCode cause is selected by reason, not position.
+        ({"status": "Failure", "details": {"causes": [{"reason": "Other", "message": "7"}, {"reason": "ExitCode", "message": "2"}]}}, (2, "")),
+        ({"status": "Failure", "message": "boom", "details": {"causes": [{"reason": "Other", "message": "oops"}]}}, (None, "boom")),
+        ({"status": "Failure", "message": "boom", "details": {"causes": [{"reason": "ExitCode", "message": "x"}]}}, (None, "boom")),
+        ({"status": "Failure", "message": "boom"}, (None, "boom")),
+    ],
+)
+def test_k8s_exit_status_selects_the_exit_code_cause_by_reason(k8s_env, status, expected):
+    module, _ = k8s_env
+    assert module.KubernetesSandbox._exit_status(json.dumps(status)) == expected
+
+
+def _probe_answers(cluster, *answers):
+    """Answer successive shell probes with ``answers`` (handler tuples), then the default handler."""
+    default_handler = cluster.exec_handler
+    pending = list(answers)
+
+    def handler(pod, command, stdin_data):
+        if tuple(command) == ProcessKiller.SHELL_PROBE and pending:
+            return pending.pop(0)
+        return default_handler(pod, command, stdin_data)
+
+    cluster.exec_handler = handler
+
+
+@pytest.mark.asyncio
+async def test_k8s_shell_probe_transient_failure_is_not_cached(k8s_env):
+    module, cluster = k8s_env
+    _probe_answers(cluster, ("", "", {"status": "Failure", "message": "container not running"}))
+    provider = _k8s_provider(module)
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    await sandbox.execute_code("print(1)")
+    await sandbox.execute_code("print(2)")
+    assert len(cluster.shell_probes) == 2  # the inconclusive answer was not cached, so the next exec probed again
+    assert cluster.exec_markers == [None, cluster.exec_markers[1]] and cluster.exec_markers[1]  # unwrapped, then tagged
+    assert provider._shell_pods == {sandbox.id: True}
+
+
+@pytest.mark.asyncio
+async def test_k8s_shell_probe_not_found_status_is_cached(k8s_env):
+    # A runtime that reports a missing /bin/sh as a status with no exit code (containerd's wording).
+    module, cluster = k8s_env
+    _probe_answers(cluster, ("", "", {"status": "Failure", "message": 'exec: "/bin/sh": stat /bin/sh: no such file or directory'}))
+    provider = _k8s_provider(module)
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    await sandbox.execute_code("print(1)")
+    await sandbox.execute_code("print(2)")
+    assert len(cluster.shell_probes) == 1
+    assert set(cluster.exec_markers) == {None}
+    assert provider._shell_pods == {sandbox.id: False}
+
+
+@pytest.mark.asyncio
+async def test_k8s_shell_probe_not_found_status_without_bin_sh_is_inconclusive(k8s_env):
+    # "not found" about something other than /bin/sh (here the container) must not turn kills off for good.
+    module, cluster = k8s_env
+    _probe_answers(cluster, ("", "", {"status": "Failure", "message": 'container not found ("sandbox")'}))
+    provider = _k8s_provider(module)
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    await sandbox.execute_code("print(1)")
+    await sandbox.execute_code("print(2)")
+    assert len(cluster.shell_probes) == 2  # probed again
+    assert provider._shell_pods == {sandbox.id: True}
+
+
+@pytest.mark.asyncio
+async def test_k8s_shell_probe_gives_up_after_max_inconclusive(k8s_env, caplog):
+    module, cluster = k8s_env
+    inconclusive = ("", "", {"status": "Failure", "message": "container not running"})
+    _probe_answers(cluster, *[inconclusive] * (ProcessKiller.SHELL_PROBE_MAX_INCONCLUSIVE + 1))
+    provider = _k8s_provider(module)
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    with caplog.at_level("WARNING", logger="ak.sandbox.provider"):
+        for i in range(ProcessKiller.SHELL_PROBE_MAX_INCONCLUSIVE + 1):
+            await sandbox.execute_code(f"print({i})")
+    assert len(cluster.shell_probes) == ProcessKiller.SHELL_PROBE_MAX_INCONCLUSIVE  # the last exec did not probe
+    assert set(cluster.exec_markers) == {None}
+    assert provider._shell_pods == {sandbox.id: False}
+    assert len([r for r in caplog.records if "no longer probing" in r.getMessage()]) == 1
+
+    await provider.destroy(sandbox.id)
+    assert sandbox.id not in provider._shell_probe_misses  # a destroyed pod's count is dropped
+
+
+@pytest.mark.asyncio
+async def test_k8s_shell_probe_is_bounded_by_its_own_timeout(k8s_env, monkeypatch):
+    module, cluster = k8s_env
+    monkeypatch.setattr(ProcessKiller, "SHELL_PROBE_TIMEOUT_SECONDS", 0.05)
+    default_handler = cluster.exec_handler
+
+    def hanging_probe(pod, command, stdin_data):
+        if tuple(command) == ProcessKiller.SHELL_PROBE:
+            time.sleep(0.5)
+        return default_handler(pod, command, stdin_data)
+
+    cluster.exec_handler = hanging_probe
+    provider = _k8s_provider(module)
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    started = time.monotonic()
+    assert (await sandbox.execute_code("print(1)")).exit_code == 0
+    assert time.monotonic() - started < 0.4  # the probe gave up at its own bound, not when the exec finished
+    assert cluster.exec_markers == [None]  # ran unwrapped
+    assert sandbox.id not in provider._shell_pods  # a timed-out probe is not an answer
+
+
+def test_k8s_instance_capabilities_compose_in_one_derive(k8s_env):
+    module, _cluster = k8s_env
+    config = _SandboxKubernetesConfig(
+        network_policy=True,
+        package_installers={"python": ["pip", "install"], "node": ["npm", "install"]},
+        language_runtimes={"python": ["python", "-c"], "node": ["node", "-e"]},
+    )
+    caps = _k8s_provider(module, config).capabilities
+    assert caps.policy_network is True
+    assert caps.package_ecosystems == ["python", "node"] and caps.package_install is True
+    assert caps.languages == ["python", "node"]
+    class_caps = module.KubernetesSandboxProvider.capabilities
+    assert class_caps.policy_network is False and class_caps.package_ecosystems == ["python"] and class_caps.languages == ["python"]
+
+
+@pytest.mark.asyncio
+async def test_k8s_language_runtimes_drive_exec_argv_and_instance_languages(k8s_env):
+    module, cluster = k8s_env
+    config = _SandboxKubernetesConfig(language_runtimes={"python": ["python3", "-c"], "node": ["node", "-e"]})
+    provider = _k8s_provider(module, config)
+    assert provider.capabilities.languages == ["python", "node"]
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    calls_before = len(cluster.exec_calls)
+
+    await sandbox.execute_code("console.log(1)", "node")
+    await sandbox.execute_code("print(1)")
+    assert [call[1] for call in cluster.exec_calls[calls_before:]] == [["node", "-e", "console.log(1)"], ["python3", "-c", "print(1)"]]
+    with pytest.raises(SandboxCapabilityError, match="language:bash"):
+        await sandbox.execute_code("echo hi", "bash")
+    assert len(cluster.exec_calls) == calls_before + 2  # rejected before any exec
 
 
 @pytest.mark.asyncio
@@ -1878,3 +2546,48 @@ async def test_k8s_worker_admits_user_mode_and_fails_closed_without_one(k8s_env,
     core._check_principal(provider, _request(_user_principal()))  # admitted
     with pytest.raises(SandboxPolicyError, match="requires user identity"):
         core._check_principal(provider, _request(SandboxPrincipal(mode="agent", subject="agent")))
+
+
+# --------------------------------------------------------------------------- #
+# ProcessKiller — the procps-free kill shared by docker and kubernetes
+# --------------------------------------------------------------------------- #
+
+
+def test_process_killer_argv_shape():
+    marker = ProcessKiller.new_marker()
+    assert len(marker) == 32 and marker != ProcessKiller.new_marker()  # fixed-length, fresh per exec
+    argv = ProcessKiller.argv(marker)
+    assert argv[:2] == ["/bin/sh", "-c"]
+    script = argv[2]
+    assert f"AK_EXEC_ID={marker}" in script and "/environ" in script  # matches the marker, not a name
+    assert '[ "$pid" = 1 ]' in script and '[ "$pid" = "$$" ]' in script  # PID 1 and the scanner are skipped
+    assert "pkill" not in script and "ps " not in script  # procps-free
+    assert ProcessKiller.environment(marker) == {"AK_EXEC_ID": marker}
+    assert ProcessKiller.wrap(["pip", "install", "x"], marker)[-4:] == [marker, "pip", "install", "x"]
+
+
+def test_process_killer_timeout_fits_inside_the_backstop():
+    # The kill must finish while the worker's per-session lock is still held, even on a pod's first
+    # exec, which also spends the shell probe outside its own timeout.
+    assert ProcessKiller.SHELL_PROBE_TIMEOUT_SECONDS + ProcessKiller.KILL_TIMEOUT_SECONDS < BrokerWorkerCore.BACKSTOP_GRACE_SECONDS
+
+
+@pytest.mark.skipif(not Path("/proc/self/environ").exists(), reason="needs a Linux /proc")
+def test_process_killer_kills_the_tagged_target_and_spares_a_same_named_bystander():
+    # The target is launched through wrap() (the kubernetes launcher) on the host /bin/sh; the
+    # bystander is the same program with no marker, like a background server from an earlier exec.
+    loop = ["/bin/sh", "-c", "while :; do sleep 1; done"]
+    marker = ProcessKiller.new_marker()
+    target = subprocess.Popen(ProcessKiller.wrap(loop, marker))
+    bystander = subprocess.Popen(loop)
+    try:
+        time.sleep(0.2)  # let the launcher exec into the loop
+        scanner = subprocess.run(ProcessKiller.argv(marker), timeout=60)
+        assert scanner.returncode == 0  # the scanner did not kill itself
+        assert target.wait(timeout=5) == -9
+        assert bystander.poll() is None  # same name, no marker: untouched
+    finally:
+        for proc in (target, bystander):
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait()

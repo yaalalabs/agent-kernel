@@ -100,10 +100,12 @@ class QueueExecutionBroker(ExecutionBroker):
             effective_wait = 0.0
         else:
             effective_wait = wait if wait is not None else self._config.wait_timeout
+        # The ceiling is the max *effective* timeout the worker supports, so the backstop grace is not added.
         ceiling = self._config.worker_timeout_ceiling
-        if ceiling is not None and request.policy.timeout > ceiling:
+        effective_timeout = request.policy.effective_timeout(request.operation)
+        if ceiling is not None and effective_timeout > ceiling:
             raise SandboxPolicyError(
-                f"policy timeout {request.policy.timeout}s exceeds the provisioned worker's timeout ceiling "
+                f"{request.operation} timeout {effective_timeout}s exceeds the provisioned worker's timeout ceiling "
                 f"(sandbox.broker.worker_timeout_ceiling={ceiling}s)"
             )
         body = BrokerWireCodec.encode_request(request)
@@ -161,7 +163,7 @@ class QueueExecutionBroker(ExecutionBroker):
             raise SandboxTimeoutError(completion.error or "sandbox execution timed out")
         exc_cls = getattr(sandbox_errors, completion.error_type or "", None)
         if isinstance(exc_cls, type) and issubclass(exc_cls, sandbox_errors.SandboxError):
-            raise exc_cls(completion.error or "sandbox execution failed")
+            raise exc_cls.from_message(completion.error or "sandbox execution failed")
         raise ExecutionBrokerError(completion.error or "sandbox execution failed")
 
     async def result(self, task_id: str) -> Optional[ExecutionCompletion]:

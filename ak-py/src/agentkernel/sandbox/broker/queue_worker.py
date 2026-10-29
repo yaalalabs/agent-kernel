@@ -31,9 +31,11 @@ from ...pipeline.response_store.base import ResponseStore
 from ...pipeline.response_store.factory import ResponseStoreFactory
 from ...pipeline.thread_runner import ThreadRunner
 from ...pipeline.transport.base import QueueTransport, QueueTransportFactory
+from ...pipeline.transport.in_memory import DEFAULT_ACK_WAIT_SECONDS
 from ..errors import SandboxConfigError
 from ..factory import SandboxProviderFactory
 from ..model import SandboxSession
+from ..packages import PackageSpecRuleFactory
 from .base import ExecutionCompletion
 from .queue import check_store_pairing
 from .wire import BrokerWireCodec
@@ -56,6 +58,7 @@ class QueueBrokerWorker:
         config = sandbox_config if sandbox_config is not None else AKConfig.get().sandbox
         self._broker = self._validated_broker(config)
         transport_type = QueueTransportFactory.resolve_type(self._broker.queue)
+        self._warn_redelivery_window(config, transport_type)
         self._transport: QueueTransport = QueueTransportFactory.create(queues_config=self._broker.queue, config_path="sandbox.broker.queue")
         self._store: ResponseStore = ResponseStoreFactory.create(
             response_store_config=self._broker.response_store,
@@ -71,8 +74,8 @@ class QueueBrokerWorker:
 
     @staticmethod
     def _validated_broker(config: Any) -> Any:
-        """The startup fail-fasts: enabled, the right flavor, both blocks, and the
-        in_memory pairing rule (shared with the client via ``check_store_pairing``)."""
+        """The startup fail-fasts: enabled, the right flavor, both blocks, the in_memory
+        pairing rule (shared with the client via ``check_store_pairing``), and every package rule."""
         if not config.enabled:
             raise SandboxConfigError("QueueBrokerWorker requires sandbox.enabled: true")
         broker = config.broker
@@ -83,7 +86,41 @@ class QueueBrokerWorker:
         if broker.response_store is None:
             raise SandboxConfigError("the 'queue' broker flavor requires the sandbox.broker.response_store block")
         check_store_pairing(broker.queue, broker.response_store)
+        # Resolve every package rule now, so an unresolvable one kills the worker at startup.
+        PackageSpecRuleFactory.validate_config(config)
         return broker
+
+    @staticmethod
+    def _warn_redelivery_window(config: Any, transport_type: str) -> None:
+        """Warn once per profile at startup when a request can outlive the transport's redelivery
+        window: provisioning, the largest effective timeout and the backstop grace must all fit, or
+        a still-running execution is redelivered and runs twice. Checked only for the transports
+        whose window is AK config (``in_memory``, ``nats``); an SQS visibility timeout or a Kafka
+        consumer setting lives outside it."""
+        queue = config.broker.queue
+        if transport_type == "in_memory":
+            window = queue.in_memory.ack_wait if queue.in_memory is not None else DEFAULT_ACK_WAIT_SECONDS
+        elif transport_type == "nats" and queue.nats is not None:
+            window = queue.nats.ack_wait
+        else:
+            return
+        for name, profile in config.profiles.items():
+            policy = profile.policy
+            install_timeout = policy.package_install.timeout if policy.package_install is not None else None
+            provisioning = profile.kubernetes.create_timeout if profile.type == "kubernetes" and profile.kubernetes is not None else 0.0
+            required = provisioning + max(policy.timeout, install_timeout or 0.0) + BrokerWorkerCore.BACKSTOP_GRACE_SECONDS
+            if required >= window:
+                logger.warning(
+                    "Sandbox profile %s can run for up to %ss (provisioning + largest effective timeout + %ss backstop), "
+                    "but sandbox.broker.queue.%s.ack_wait is %ss; a still-running execution will be redelivered and run "
+                    "twice. Raise ack_wait above %ss",
+                    name,
+                    required,
+                    BrokerWorkerCore.BACKSTOP_GRACE_SECONDS,
+                    transport_type,
+                    window,
+                    required,
+                )
 
     # -- lifecycle ------------------------------------------------------------ #
 

@@ -6,8 +6,9 @@
 #
 # Three profiles show what Daytona enforces (unlike local_subprocess, which enforces none
 # of these, and unlike docker, which cannot enforce resource limits as cleanly):
-#   - default : a per-session cloud workspace; files persist across turns, and Daytona's
-#               native auto-stop reclaims the sandbox after idle_timeout.
+#   - default : a per-session cloud workspace; files persist across turns, Daytona's
+#               native auto-stop reclaims the sandbox after idle_timeout, and
+#               install_packages is permitted (installs are off unless a profile opts in).
 #   - offline : `network_egress: deny` — Daytona ENFORCES this (network_block_all), so
 #               outbound requests genuinely fail.
 #   - small   : cpu/memory limits — Daytona ENFORCES these via container Resources.
@@ -17,6 +18,9 @@ sandbox:
     default:
       type: daytona
       idle_timeout: 21600 # 6 hours -> Daytona auto_stop_interval (native, rounded up to minutes)
+      policy:
+        package_install:
+          ecosystems: [python] # -> install_packages runs the default `pip install` (daytona.package_installers) in the sandbox
       daytona:
         image: python:3.12-slim # container image (or `snapshot: <name>` — mutually exclusive; omit both for Daytona's default)
         env_vars:

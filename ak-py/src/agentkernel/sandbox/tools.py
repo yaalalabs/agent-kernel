@@ -3,7 +3,8 @@
 Registered on every agent (via ``SystemToolFactory``) when ``sandbox.enabled`` is true:
 execution (``run_code``/``run_command``), workspace files (``write_sandbox_file``/
 ``read_sandbox_file``), task polling (``check_sandbox_task``), and session lifecycle
-(``list_sandbox_sessions``/``new_sandbox_session``/``destroy_sandbox_session``). All of
+(``list_sandbox_sessions``/``new_sandbox_session``/``destroy_sandbox_session``), plus
+``install_packages`` when at least one profile's policy permits package installs. All of
 them return JSON strings,
 results carry a ``sandbox_session_id``, and machinery errors are caught and returned as
 ``{"error": ...}`` strings — tools never raise into the framework.
@@ -17,6 +18,7 @@ from ..core.config import AKConfig
 from ..core.model import SystemTool
 from .manager import ExecutionManager
 from .model import SandboxResult, SandboxTask
+from .packages import PackageSpecRuleFactory
 
 _log = logging.getLogger("ak.sandbox.tools")
 
@@ -111,6 +113,35 @@ async def run_command(command: str, sandbox_session_id: Optional[str] = None, pr
         return _outcome_json(outcome)
     except Exception as exc:  # noqa: BLE001 — tools never raise into the framework
         _log.warning("run_command failed: %s", exc)
+        return _error_json(exc, sandbox_session_id)
+
+
+async def install_packages(
+    packages: list[str], ecosystem: str = "python", sandbox_session_id: Optional[str] = None, profile: Optional[str] = None
+) -> str:
+    """
+    Install packages into the sandbox, when the profile permits it, and return the installer's outcome as a JSON string.
+
+    Args:
+        packages: Registry package specs to install (e.g. ["requests==2.31.0"]); no URLs, paths, or installer options.
+        ecosystem: Package ecosystem the specs belong to (default "python"; e.g. "node").
+        sandbox_session_id: Reuse an existing sandbox session; omit for the default session.
+        profile: Workload profile to run under; omit for the configured default.
+
+    Returns:
+        JSON with stdout, stderr, exit_code, and sandbox_session_id; or
+        {"task_id", "status": "pending", "sandbox_session_id"} when installation continues
+        in the background; or {"error": ...} when it is not permitted, a spec is rejected, or the sandbox fails.
+    """
+    manager = ExecutionManager.get()
+    if manager is None:
+        return _DISABLED
+    try:
+        wait = AKConfig.get().sandbox.broker.wait_timeout
+        outcome = await manager.install_packages(packages, ecosystem=ecosystem, profile=profile, sandbox_session_id=sandbox_session_id, wait=wait)
+        return _outcome_json(outcome)
+    except Exception as exc:  # noqa: BLE001 — tools never raise into the framework
+        _log.warning("install_packages failed: %s", exc)
         return _error_json(exc, sandbox_session_id)
 
 
@@ -283,10 +314,21 @@ async def destroy_sandbox_session(sandbox_session_id: str) -> str:
 # across separate commands. Config-derived only: no provider import at registration time.
 _NO_PERSISTENT_SHELL_TYPES = {"ec2_ssm"}
 
+# Built-in providers whose languages are fixed by the provider class, not declared in config
+# (docker/kubernetes declare theirs in language_runtimes). Config-derived only, like the set
+# above; a test keeps it equal to each class's capabilities.languages.
+_FIXED_LANGUAGES: dict[str, list[str]] = {
+    "local_subprocess": ["python", "bash"],
+    "e2b": ["python"],
+    "daytona": ["python"],
+    "ec2_ssm": ["python"],
+}
 
-def _profiles_text(config: Any) -> str:
+
+def _profiles_text(config: Any, installs: bool) -> str:
     """Render the configured workload profiles for the tool guidance (config-derived only —
-    provider capabilities are not imported at registration time)."""
+    provider capabilities are not imported at registration time). ``installs`` is whether any
+    profile permits package installs (i.e. whether ``install_packages`` is registered)."""
     lines = []
     for name, prof in config.profiles.items():
         marker = " (default)" if name == config.default_profile else ""
@@ -302,8 +344,54 @@ def _profiles_text(config: Any) -> str:
                 "change or `sudo su` does NOT carry to the next command. Chain state-dependent steps in "
                 "one command (e.g. `cd /app && ./run.sh`)"
             )
+        detail += _permissions_text(prof.policy, installs, _runtime_languages(prof))
         lines.append(f"- '{name}'{marker}: {detail}")
     return "\n".join(lines) if lines else "- (none configured)"
+
+
+def _permissions_text(policy: Any, installs: bool, runtimes: Optional[list[str]] = None) -> str:
+    """The profile's permissions for the guidance: run_code languages, then package installs.
+    ``runtimes`` is the languages the provider can run, from ``_runtime_languages`` (None for a
+    dotted-path provider): they are the languages when the policy names none, and narrow the policy's
+    list otherwise, so for a built-in provider the agent is never told about a language that would
+    fail; a dotted-path provider's policy list is shown as is. The install part appears only when
+    ``installs`` (some profile permits them, so the tool exists); otherwise it would describe a tool
+    the agent does not have. Empty when there is nothing to say."""
+    parts = []
+    if policy.languages == []:
+        parts.append("run_code disabled (command-only profile)")
+    else:
+        languages = (
+            policy.languages
+            if runtimes is None
+            else runtimes if policy.languages is None else [lang for lang in policy.languages if lang in runtimes]
+        )
+        if languages:
+            parts.append(f"languages: {', '.join(languages)}")
+        elif languages is not None:
+            parts.append("run_code unavailable (the provider declares none of the permitted languages)")
+    if installs:
+        if policy.package_install is not None:
+            parts.append(f"package installs: {', '.join(policy.package_install.ecosystems)}")
+        else:
+            parts.append("package installs not permitted")
+    return "; " + "; ".join(parts) if parts else ""
+
+
+def _runtime_languages(prof: Any) -> Optional[list[str]]:
+    """The languages the profile's provider can run, config-derived (no provider import): the
+    ``language_runtimes`` keys when its config block declares that map (``docker``, ``kubernetes``),
+    else a built-in provider's fixed languages; None for a dotted-path provider (unknown here)."""
+    runtimes = getattr(getattr(prof, prof.type, None), "language_runtimes", None)
+    if runtimes is not None:
+        return list(runtimes)
+    fixed = _FIXED_LANGUAGES.get(prof.type)
+    return list(fixed) if fixed is not None else None
+
+
+def _installs_permitted(config: Any) -> bool:
+    """Whether any profile permits package installs (config-derived; no provider import)."""
+    return any(prof.policy.package_install is not None for prof in config.profiles.values())
 
 
 def get_sandbox_tools() -> list[SystemTool]:
@@ -315,8 +403,19 @@ def get_sandbox_tools() -> list[SystemTool]:
     learn about the sandbox automatically — agent authors never describe these tools in
     their own instructions. The remaining tools carry empty descriptions; their LLM-facing
     schemas come from the function docstrings when the tools are bound.
+
+    Resolves every configured package rule first, so an unresolvable rule fails agent
+    construction with ``SandboxConfigError``.
     """
     config = AKConfig.get().sandbox
+    PackageSpecRuleFactory.validate_config(config)
+    installs = _installs_permitted(config)
+    install_line = (
+        "- install_packages(packages, ecosystem, sandbox_session_id, profile): install registry packages "
+        "into the sandbox on a profile that permits it.\n"
+        if installs
+        else ""
+    )
     guidance = (
         "[Sandbox execution]\n"
         "You have access to an isolated sandbox where you can execute code you write, run shell commands, "
@@ -325,6 +424,7 @@ def get_sandbox_tools() -> list[SystemTool]:
         "Available tools:\n"
         "- run_code(code, language, sandbox_session_id, profile): execute code; returns stdout, stderr, exit_code.\n"
         "- run_command(command, sandbox_session_id, profile): execute a shell command.\n"
+        f"{install_line}"
         "- write_sandbox_file(path, content, sandbox_session_id, profile): write a text file into the sandbox workspace.\n"
         "- read_sandbox_file(path, sandbox_session_id, profile): read a text file from the sandbox workspace.\n"
         "- check_sandbox_task(task_id): poll a long-running execution that returned status 'pending'; "
@@ -341,12 +441,14 @@ def get_sandbox_tools() -> list[SystemTool]:
         "listing before creating a new session so you never duplicate an existing environment.\n"
         'If a tool result contains an "error" field the operation FAILED: report the error to the user; '
         "never describe a failed or unattempted operation as done.\n"
+        "If a result says an action is not permitted by the profile, report it to the user; do not work "
+        "around it with run_command or run_code.\n"
         'If a result contains a "notice" field (e.g. the sandbox was reset after an idle timeout and its '
         "workspace was discarded), tell the user before continuing.\n"
-        f"Available workload profiles (pass as profile=):\n{_profiles_text(config)}\n"
+        f"Available workload profiles (pass as profile=):\n{_profiles_text(config, installs)}\n"
         f"stdout/stderr and file reads are truncated at {config.tool_output_max_chars} characters."
     )
-    return [
+    tools = [
         SystemTool(name="run_code", description=guidance, func=run_code),
         SystemTool(name="run_command", description="", func=run_command),
         SystemTool(name="write_sandbox_file", description="", func=write_sandbox_file),
@@ -356,3 +458,6 @@ def get_sandbox_tools() -> list[SystemTool]:
         SystemTool(name="new_sandbox_session", description="", func=new_sandbox_session),
         SystemTool(name="destroy_sandbox_session", description="", func=destroy_sandbox_session),
     ]
+    if installs:
+        tools.append(SystemTool(name="install_packages", description="", func=install_packages))
+    return tools
