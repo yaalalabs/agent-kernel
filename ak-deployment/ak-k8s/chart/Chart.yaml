@@ -14,10 +14,12 @@ description: >-
   and an optional WebSocket gateway tier, with condition-gated Valkey and NATS backing
   services. Guide: https://kernel.yaala.ai/docs/deployment/onprem-kubernetes
 type: application
-version: 0.1.0
-# The Agent Kernel release the templates were written against; the publish workflow overrides
-# both versions with the release tag.
-appVersion: "0.8.1"
+# Both versions are the Agent Kernel release the chart ships with:
+# scripts/update_chart_versions.py pins them to each release before the tag is cut, and
+# publish-chart.yaml stamps them from the tag at package time as well, so a checkout renders
+# the same chart labels and NOTES as the published artifact.
+version: 0.9.5
+appVersion: "0.9.5"
 kubeVersion: ">=1.29.0-0"
 home: https://github.com/yaalalabs/agent-kernel
 sources:

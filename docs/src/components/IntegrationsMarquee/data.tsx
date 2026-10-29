@@ -1,5 +1,5 @@
 import React from "react";
-import { FaAws } from "react-icons/fa";
+import { FaAws, FaMicrosoft } from "react-icons/fa";
 import { VscAzure } from "react-icons/vsc";
 import { TbPlugConnected } from "react-icons/tb";
 import {
@@ -74,6 +74,7 @@ export const INTEGRATION_ROWS: IntegrationRow[] = [
       { name: "Google ADK", role: "Framework", href: "/docs/frameworks/google-adk", logo: "/img/integrations/adk.png" },
       { name: "Smolagents", role: "Framework", href: "/docs/frameworks/smolagents", logo: "/img/integrations/smolagents.svg" },
       { name: "Pydantic AI", role: "Framework", href: "/docs/frameworks/pydantic-ai", icon: <SiPydantic /> },
+      { name: "Microsoft Agent Framework", role: "Framework", href: "/docs/next/frameworks/microsoft-agents", icon: <FaMicrosoft /> },
       { name: "Claude Code", role: "Agent skills", href: SKILLS, icon: <SiClaude /> },
       { name: "Cursor", role: "Agent skills", href: SKILLS, icon: <SiCursor /> },
       { name: "Codex", role: "Agent skills", href: SKILLS, logo: "/img/integrations/openai.svg", mono: true },
@@ -128,7 +129,7 @@ export const INTEGRATION_ROWS: IntegrationRow[] = [
       { name: "Azure API Management", role: "Gateway", href: "/docs/deployment/azure-serverless", icon: <VscAzure /> },
       { name: "Google Cloud Run", role: "Serverless & containers", href: "/docs/deployment/gcp-serverless", icon: <SiGooglecloud /> },
       { name: "GCP API Gateway", role: "Gateway", href: "/docs/deployment/gcp-serverless", icon: <SiGooglecloud /> },
-      { name: "Kubernetes", role: "On-prem", href: K8S, icon: <SiKubernetes /> },
+      { name: "Kubernetes", role: "On-prem", href: K8S, icon: <SiKubernetes />, title: "Kubernetes: on-prem deployment and mounted Secrets" },
       { name: "Helm", role: "Chart", href: K8S, icon: <SiHelm /> },
       { name: "KEDA", role: "Autoscaling", href: K8S, logo: "/img/integrations/keda.svg" },
       { name: "Terraform", role: "Infrastructure as code", href: "/docs/deployment/overview", icon: <SiTerraform /> },

@@ -156,6 +156,19 @@ When [conversation threads](../advanced/threads.md) are enabled by mounting `Age
 
 **`GET /api/v1/threads/{session_id}`** returns a single thread with its paginated message history (`limit`, `cursor`). A message's `content` is text and carries no other key; one recording a [paused run](../advanced/human-in-the-loop.md) or the decision answering it carries the object itself plus a `media_type` naming its format (see [Message Content](../advanced/threads.md#message-content)).
 
+A message's `content` is text, exactly as before — unless the reply was labelled (see [A2UI](../advanced/a2ui.md)), in which case it is the payload object with `media_type` beside it, the same shape `result` has on a live reply. The key is absent on every unlabelled message:
+
+```json
+{
+  "messages": [
+    {"role": "user", "content": "Show me the refund form"},
+    {"role": "assistant", "content": {"version": "v1.0", "createSurface": {"...": "..."}}, "media_type": "application/a2ui+json"},
+    {"role": "assistant", "content": "Anything else?"}
+  ],
+  "next_cursor": null
+}
+```
+
 On the thread handler's chat routes, `user_id` is **required**; the default handler's routes are unaffected. An optional `Authoriser` can protect the read routes by resolving the Bearer token to a `user_id`; requests for another user's thread then return 403. Without an `Authoriser`, the routes are open.
 
 ## Error Handling
@@ -446,7 +459,7 @@ with httpx.stream("POST", "http://localhost:8000/api/v1/chat", json={
             print(line.removeprefix("data:").strip())
 ```
 
-**Framework support:** OpenAI Agents SDK, Google ADK, LangGraph, and Pydantic AI support token streaming. CrewAI and smolagents declare `supports_streaming = False` and raise `NotImplementedError` when `execution.mode: stream` is used; use `rest_sync` for those frameworks instead.
+**Framework support:** OpenAI Agents SDK, Google ADK, LangGraph, Pydantic AI, and Microsoft Agent Framework support token streaming. CrewAI and smolagents declare `supports_streaming = False` and raise `NotImplementedError` when `execution.mode: stream` is used; use `rest_sync` for those frameworks instead.
 
 For WebSocket-based streaming on AWS Lambda (serverless), see the [AWS Serverless deployment guide](/docs/deployment/aws-serverless#websocket-configuration) and the [streaming-openai example](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/streaming-openai).
 

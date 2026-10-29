@@ -91,6 +91,13 @@ thread:
   type: in_memory     # in_memory | redis | valkey | dynamodb | firestore | cosmosdb
 ```
 
+:::caution Custom thread stores
+A message's `content` is a JSON object, not a string, when the reply was labelled (see
+[A2UI](a2ui.md)). Every built-in backend serialises the whole `ThreadMessage` as one blob and is
+unaffected, but a bring-your-own `ThreadStore` that writes `message.content` into a typed text
+column must be updated to accept an object.
+:::
+
 ## Chat Request Fields
 
 | Field | Required | Applied | Description |
@@ -165,9 +172,10 @@ in the previous page (`null` on the last page).
 
 ### Message Content
 
-A message's `content` is normally the text of the turn, and carries no other key. A turn whose content
-is structured — a [paused run](human-in-the-loop.md) and the decision answering it — stores the object
-itself with a sibling `media_type` naming its format. The pause is an `assistant` message holding
+A message's `content` is normally the text of the turn, and carries no other key. A message whose
+content is structured stores the object itself with a sibling `media_type` naming its format: a reply
+the agent labelled (see [A2UI](a2ui.md)), a [paused run](human-in-the-loop.md), or the decision
+answering it. The pause is an `assistant` message holding
 `run_id`, `agent` and `interruptions`; the decision is a `user` message holding the `resume` block that
 was sent, with the prompt beside it when the turn carried both.
 

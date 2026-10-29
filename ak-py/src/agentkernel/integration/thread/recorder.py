@@ -7,7 +7,7 @@ import json
 import logging
 from typing import Any, List, Optional
 
-from ...core.model import AgentPausedReplyAny, AgentRequest, BaseChatRequest
+from ...core.model import AgentPausedReplyAny, AgentReplyAny, AgentRequest, BaseChatRequest
 from .manager import ConversationThreadManager
 from .model import HITL_MEDIA_TYPE, ThreadAttachment
 
@@ -84,45 +84,59 @@ class ThreadRecorder:
         resume = {"resume": req.resume.model_dump(mode="json")}
         return ({"prompt": req.prompt, **resume} if req.prompt else resume), HITL_MEDIA_TYPE
 
-    def post_run(self, req: BaseChatRequest, result: Any) -> None:
+    def post_run(self, req: BaseChatRequest, result: Any, media_type: Optional[str] = None) -> None:
         """Thread work done after a successful agent run: append the assistant message.
+
+        ``media_type`` is how the queue runner hands over a label it holds *beside* the result
+        rather than on it: ``ResponseBuilder`` put both in the response body, and the runner has
+        only that body. The direct handler holds the reply itself and passes nothing.
 
         :param req: The originating chat request
         :param result: The agent's reply, in whichever form the caller holds it
+        :param media_type: The reply's label when the caller holds it separately from the result
         :return: None
         """
-        content, media_type = self._as_thread_message(result)
-        self._manager.append_message(req.session_id, "assistant", content, media_type=media_type)
+        content, label = self._as_thread_message(result, media_type)
+        self._manager.append_message(req.session_id, "assistant", content, media_type=label)
 
     @staticmethod
-    def _as_thread_message(result: Any) -> tuple[Any, Optional[str]]:
+    def _as_thread_message(result: Any, media_type: Optional[str] = None) -> tuple[Any, Optional[str]]:
         """Render a reply as the (content, media_type) pair the thread store holds.
 
         **A paused run is stored as the object its reply derived**, so history carries the question
         rather than a string of it. That branch is checked first because ``AgentPausedReplyAny`` is an
-        ``AgentReplyAny`` subclass: left to the branches below it would fall through to ``str(result)``
-        and be stored as text, which is what made a pause unbranchable in history.
+        ``AgentReplyAny`` subclass carrying no label of its own: left to the branches below it would
+        fall through to ``str(result)`` and be stored as text.
 
         The callers pass three different things, which is what makes a single ``str()`` wrong. The
         direct handlers pass an ``AgentReply``, whose ``__str__`` already yields JSON, and the
         streaming one passes the accumulated text; but the queue runner has only the response body
-        it just built, so for a labelled reply it passes a dict — and ``str()`` on a dict is a
-        Python repr, not JSON. Left alone, the same agent would record one encoding in
-        single-process mode and another through the queue, permanently.
+        it just built, so for a labelled reply it passes a dict with the label in a sibling key —
+        and ``str()`` on a dict is a Python repr, not JSON. Left alone, the same agent would record
+        one encoding in single-process mode and another through the queue, permanently.
 
-        The dict branch deliberately mirrors ``AgentReplyAny.__str__``'s own call, including its
-        ``default=str`` fallback, rather than using ``PayloadCodec.encode``. For JSON-safe content
-        the two agree; they part on a value that reached ``content`` through one of the documented
-        bypasses, where ``default=str`` renders a datetime as the reply's ``__str__`` does and the
-        codec renders it as ISO 8601. Matching the reply exactly is the point — the alternative is
-        two stores holding the same reply in two encodings, which is invisible until someone diffs
-        them.
+        **A labelled reply is stored as the object**, so replayed history has the shape the live
+        reply had. Everything else keeps the encoding it had, byte for byte: the label is the
+        switch, exactly as on every other surface.
+
+        The unlabelled dict branch deliberately mirrors ``AgentReplyAny.__str__``'s own call,
+        including its ``default=str`` fallback, rather than using ``PayloadCodec.encode``. For
+        JSON-safe content the two agree; they part on a value that reached ``content`` through one
+        of the documented bypasses, where ``default=str`` renders a datetime as the reply's
+        ``__str__`` does and the codec renders it as ISO 8601. Matching the reply exactly is the
+        point — the alternative is two stores holding the same reply in two encodings, which is
+        invisible until someone diffs them.
 
         :param result: An AgentReply, a plain string, or the response body's ``result`` value.
+        :param media_type: The label when the caller holds it separately from the result.
         :return: The thread message content, and its label when the reply carried one.
         """
         if isinstance(result, AgentPausedReplyAny):
             return result.content, HITL_MEDIA_TYPE
+        if isinstance(result, AgentReplyAny) and result.media_type:
+            return result.content, result.media_type
+        if media_type and isinstance(result, (dict, list)):
+            return result, media_type
         if isinstance(result, str):
             return result, None
         if isinstance(result, (dict, list)):
