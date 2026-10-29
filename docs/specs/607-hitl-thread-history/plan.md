@@ -45,8 +45,10 @@ Expect merge conflicts with PR #817 in three files — `model.py`, `recorder.py`
 - **Steps:**
   1. Add `_as_user_message` and call it from `pre_run` (*spec.md § what is recorded*) — the decision
      dict built as one literal so `prompt` precedes `resume`.
-  2. Rename `_as_thread_content` → `_as_thread_message`, return a `(content, label)` pair, add the
-     `AgentPausedReplyAny` branch **first**, and give `post_run` its `media_type` parameter.
+  2. Add the `AgentPausedReplyAny` branch to `_as_thread_message`, **first**, ahead of its existing
+     ones. (Written before #763 merged, when this step also had to perform the
+     `_as_thread_content` → `_as_thread_message` rename and add `post_run`'s `media_type`
+     parameter; both arrived with that PR instead.)
   3. Update the callers the rename breaks: `TestThreadContentEncoding`
      (`tests/test_thread_integration.py:288-337`, five cases) and
      `tests/test_cross_surface_parity.py:139-144`. Same expected encodings, now paired with `None`.

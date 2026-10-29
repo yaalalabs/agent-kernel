@@ -107,19 +107,18 @@ def _as_thread_message(result: Any) -> tuple[Any, Optional[str]]:
 - **The `AgentPausedReplyAny` branch is first**, before the `str`/`dict` branches, for the same
   reason #606 put pause detection before reply mapping in every adapter: the subclass would
   otherwise fall through to `str(result)` and be stored as text.
-- **Every other branch is unchanged**, byte for byte. `_as_thread_content` is renamed to
-  `_as_thread_message` and returns a tuple; its three existing branches keep their exact encodings,
-  including the `default=str` fallback that matches `AgentReplyAny.__str__` rather than
-  `PayloadCodec.encode`.
+- **Every other branch is unchanged**, byte for byte — including the `default=str` fallback that
+  matches `AgentReplyAny.__str__` rather than `PayloadCodec.encode`. The `(content, media_type)`
+  pair and the `_as_thread_content` → `_as_thread_message` rename arrived with #763; this change
+  adds one branch in front of them.
 - **Neither method reads `ResumeDecision.status`.** `approved`, `denied` and `cancelled` reach the
   store inside the payload and nowhere else, so what is stored never depends on what a decision
   meant; rendering "nobody decided" is the client's job.
-- **`post_run` gains no `media_type` parameter.** An earlier draft of this spec added one as a seam
-  for #817, which needs a label held beside the result. No caller in #607 would pass it — all four
-  recording sites hand over an `AgentPausedReplyAny` — and a parameter nothing reads is a defect
-  rather than future-proofing (`ak-dev-code-quality`, *Configuration fields*). It also bought less
-  than it looked: the two changes' bodies differ regardless, so the merge conflict is the same size
-  either way. #817 adds the parameter together with the branch that reads it.
+- **`post_run`'s `media_type` parameter is #763's, and no caller in this change passes it.** All
+  four recording sites hand over an `AgentPausedReplyAny`, whose label comes from the branch above;
+  the parameter carries a label the *queue* holds beside a labelled A2UI reply. Written originally
+  as a seam for #817 and dropped again while it had no reader, it came back with that PR's merge,
+  which is where its reader is.
 - `media_type` is **not** read from `AgentPausedReplyAny.media_type`: that field is unset on a paused
   reply (only a post-hook sets one) and setting it would change the REST `202` body — see
   *Behavioural changes*, non-change 2.
@@ -273,8 +272,9 @@ and `AK_*` env vars are unaffected.
 6. **The thread read route returns `content` as an object with a sibling `media_type` for the two new
    message kinds.** Intentional. For every other message the response is byte-identical, because
    `to_wire()` omits an unset `media_type`.
-7. **`ThreadRecorder._as_thread_content` is renamed and its return type changes.** Intentional; it is
-   a private static method with no caller outside the class and three test files.
+7. **`ThreadRecorder._as_thread_message` gains a branch, ahead of its existing ones.** Intentional;
+   it is a private static method, and the ordering is what keeps a paused reply — an `AgentReplyAny`
+   subclass carrying no label of its own — from falling through to `str(result)`.
 
 **Non-changes**, stated so a reviewer can confirm them:
 
@@ -314,8 +314,8 @@ Run with `cd ak-py && uv run pytest`.
 
 | File | What changes |
 |---|---|
-| `tests/test_thread_integration.py:290-339` (`TestThreadContentEncoding`) | All five tests call `ThreadRecorder._as_thread_content(...)` and compare to a string. They move to `_as_thread_message(...)` and compare to a `(content, label)` pair; the four existing encodings keep their exact expected strings with `None` as the label. |
-| `tests/test_cross_surface_parity.py:139-144` | `test_thread_history_records_the_same_bytes_from_either_path` calls `_as_thread_content` twice; same rename, same assertion. |
+| `tests/test_thread_integration.py` (`TestThreadContentEncoding`) | **Unchanged by this spec.** #763 rewrote these cases around the `(content, label)` pair and they cover the labelled-reply branches; this change adds its own cases beside them rather than touching them. |
+| `tests/test_cross_surface_parity.py` | Gains the four-site pause parity case; #763's labelled-reply case is untouched. |
 | `tests/test_thread_integration.py:97-138` (`TestThreadRecorder`) | Two `append_message.assert_called_once_with(...)` calls gain `media_type=None`. The recorded message is unchanged; the recorder now passes the argument explicitly. |
 | `tests/test_thread_integration.py:417+` (`TestThreadPauseAndResume`) | Extended rather than changed — the two existing cases (the `202`, the promptless resume) keep passing. |
 

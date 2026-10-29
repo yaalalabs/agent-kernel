@@ -20,6 +20,7 @@ same branch it renders a live one with.
   is given (`manager.py:140`) — there is no empty-content guard — so every approval writes a blank
   user bubble.
 - **A pause records as a JSON string.** `post_run` renders the reply through `_as_thread_content`
+  (since renamed `_as_thread_message` by #763)
   (`recorder.py:67,70`), whose final branch is `str(result)`. For an `AgentPausedReplyAny` that is
   `AgentReplyAny.__str__`'s JSON dump of the derived `content` — correct JSON, but typed as text, so
   a client must sniff a string to discover it is holding a pause.
@@ -119,7 +120,7 @@ unmodified.** The recorder reshapes nothing, interprets nothing, and branches on
 - `pre_run` must record this payload instead of `req.prompt` when the request carries a `resume`
   block, and must not write an empty-content message.
 - Every reply that is not a paused reply keeps the exact encoding it has today, byte for byte. The
-  label is the switch; nothing else about `_as_thread_content`'s existing branches changes.
+  label is the switch; nothing else about that method's existing branches changes.
 - `post_run` must accept the pause's structure from a caller that holds it separately from `result`
   (the queue runner), since that caller has only the response body.
 
@@ -248,11 +249,22 @@ rejects, and a decision carrying words. Timestamps and ids abbreviated; `attachm
 
 ## Note on PR #817
 
-PR #817 (`feature/763-a2ui-threads`, open against `develop`) adds `content: str | JSONPayload`,
-`media_type`, the agreement validator, the wire-rendering method, and the `post_run` /
-`append_message` / `_record_thread_reply` label plumbing, for A2UI's `application/a2ui+json`
-payloads. This design is written against `develop` as it stands and does not depend on that PR; if
-it merges first, the model-level requirements above are already satisfied and this change reduces to
-the recorder branches, the SSE fix and the queue forwarding. The overlap is in three files —
-`integration/thread/model.py`, `integration/thread/recorder.py`, `pipeline/agent_runner.py` — and is
-expected to resolve as ordinary merge conflicts.
+This design was written against `develop` before #817 (`feat: a2ui threads support`, #763) merged,
+and deliberately did not depend on it: it specifies `content: str | JSONPayload`, `media_type`, the
+agreement validator and the wire-rendering method as its own, because a design that waits on an open
+PR cannot be reviewed.
+
+**#817 has since merged**, so the model-level requirements above arrived with it and this change is
+what sits on top: the recorder's two human-in-the-loop shapes, the SSE fix, and the queue
+reconstruction. The overlap resolved as expected in the three predicted files
+(`integration/thread/model.py`, `integration/thread/recorder.py`, `pipeline/agent_runner.py`) plus
+the two test files and two dev skills. Two details from that merge are worth reading as part of this
+design rather than as merge trivia:
+
+- **`_as_thread_message` checks `AgentPausedReplyAny` before #763's labelled-reply branch.** A
+  paused reply is an `AgentReplyAny` subclass whose own `media_type` is unset, so the labelled
+  branch would miss it and it would fall through to `str(result)` — the exact defect this change
+  exists to fix. The A2UI post-hook only ever labels an `AgentReplyText`, so the two cannot collide
+  today; the ordering is what keeps that true if it ever could.
+- **`post_run`'s `media_type` parameter is #763's**, carrying a label the queue holds beside a
+  labelled reply. No site in this change passes it: a pause's label comes from the branch above.
