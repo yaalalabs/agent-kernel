@@ -1,6 +1,6 @@
 """Langfuse runners flush the client after every run on AWS Lambda, through LangFuse.flush_on_lambda.
 
-Each of the six runners carries its own ``finally``, so every one is tested. Runners are built with
+Each of the seven runners carries its own ``finally``, so every one is tested. Runners are built with
 ``object.__new__`` so their constructors don't install framework instrumentation globally; ``run`` needs only
 the client and the parent runner's ``run``, which is patched.
 """
@@ -23,6 +23,7 @@ _RUNNERS = [
     ("adk", "LangFuseADKRunner"),
     ("smolagents", "LangFuseSmolagentsRunner"),
     ("pydanticai", "LangFusePydanticAIRunner"),
+    ("maf", "LangFuseMAFRunner"),
 ]
 
 

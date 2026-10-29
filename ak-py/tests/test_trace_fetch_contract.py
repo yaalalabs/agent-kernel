@@ -44,6 +44,9 @@ class InMemoryTrace(BaseTrace):
     def pydanticai(self):
         return None
 
+    def maf(self):
+        return None
+
     def fetch_spans(self, query: TraceQuery) -> list[FetchedSpan]:
         return FetchedSpan.oldest_first(span for span in self.spans if query.matches(span))[-query.limit :]
 
