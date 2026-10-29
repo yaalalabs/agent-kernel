@@ -31,5 +31,5 @@ triage_agent = Agent(
 
 OpenAIModule([triage_agent, support_agent])
 
-# Runs each queued request; the Langfuse runner traces it and flushes the spans before the Lambda freezes
+# Agent Kernel: runs each queued request; the Langfuse runner traces it and flushes the spans before the Lambda freezes
 handler = ServerlessAgentRunner.handle

@@ -11,6 +11,8 @@ from opik.evaluation.metrics.score_result import ScoreResult
 from .case import TraceEvaluationCase
 
 
+# Agent Kernel: AKEvaluator is the evaluator contract, AKTestConfig names the judge model and AKEvaluationResult holds
+# the verdict. AK's built-in evaluators need an expected answer, which production traffic lacks, so this one is our own
 class OpikTraceEvaluator(AKEvaluator):
     """Scores one reference-free metric of a production trace with an Opik LLM judge."""
 

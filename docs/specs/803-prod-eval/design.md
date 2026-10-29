@@ -507,8 +507,11 @@ graph LR
 
 ### Docs
 
-- The example's `README.md`: the flow, architecture, routes, the code, metrics, the table, how to swap
-  metrics or the store, deploy, traffic and test.
+- The example's `README.md` opens with what Agent Kernel does and what the example writes (a two-column
+  table and the core of `grade_session`), then the flow, architecture, routes, the code, metrics, the table,
+  how to swap metrics or the store, deploy, traffic and test.
+- The example's code marks every place it relies on Agent Kernel with an `Agent Kernel:` comment, so
+  `grep -rn "Agent Kernel:"` lists them.
 - `docs/docs/examples/overview.md`: list the example.
 - `docs/docs/advanced/traceability.md` §Fetching Spans Back: link the example.
 - `docs/src/pages/features.tsx` "Pluggable Evaluators" card: no change; it covers the test framework's

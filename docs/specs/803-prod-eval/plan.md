@@ -240,7 +240,8 @@ The example runs in queue mode (`queue_mode = true`, `execution_mode = "rest_syn
 
 ### Iteration 14: Docs and skills for Phases 2–3
 
-- **Example docs:** `README.md`: the flow (send, wait, `/eval`, wait, `/check`), architecture (agent →
+- **Example docs:** `README.md`: what Agent Kernel does vs. what the example writes (table, the core of
+  `grade_session`, the `grep -rn "Agent Kernel:"` command), the flow (send, wait, `/eval`, wait, `/check`), architecture (agent →
   Langfuse → `/eval` → `START_GRADE` → DynamoDB → `/check`), the code, the metrics, the table schema, how to
   swap metrics or the store, required variables, deploy, `simulate_traffic.py` plus the `curl` calls to `/eval` and `/check`, and test.
 - **User docs:**

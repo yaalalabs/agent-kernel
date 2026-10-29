@@ -28,6 +28,7 @@ execution:
     # often, and the wait stays under API Gateway's 29 s limit
     retry_count: 10
     delay: 3
+# Agent Kernel: traces every request to Langfuse; the agent has no tracing code
 trace:
   enabled: true
   type: langfuse

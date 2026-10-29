@@ -1,12 +1,39 @@
 # Agent Kernel OpenAI Agents with Langfuse Trace Evaluation in AWS Serverless (Lambda)
 
-This example evaluates an agent on its real traffic. An OpenAI Agents SDK agent runs on AWS Lambda in queue
-mode with Langfuse tracing. When you call `/eval`, the request-handler Lambda reads a session's traces back with
-`Trace.get().fetch_traces(...)`, grades each request with four Opik LLM judges, and stores one row per trace in DynamoDB.
+This example grades an agent on its real traffic. An OpenAI Agents SDK agent runs on AWS Lambda with Langfuse
+tracing. When you call `/eval`, the example reads the session's traces back through Agent Kernel, scores each
+request with four Opik LLM judges, and stores one row per request in DynamoDB.
 
-It uses only public Agent Kernel API: `Trace.fetch_traces`, `FetchedTrace`, `SpanStatus`, `SpanUsage`,
-the `AKEvaluator` ABC with `AKEvaluationCase`, `AKEvaluationResult`, `AKMetricNotSupported` and `AKTestConfig`,
-`Lambda`, `ServerlessAgentRunner` and `ResponseHandler`.
+## What Agent Kernel does, and what the example writes
+
+| Agent Kernel | The example |
+|---|---|
+| Traces every request to Langfuse from `config.yaml` (`trace.type: langfuse`) and flushes the spans before the Lambda freezes. The agent has no tracing code. | The agent itself (`lambda_agent_runner.py`). |
+| Reads the traces back with one call, `Trace.get().fetch_traces(session_id=..., last=...)`. Each `FetchedTrace` already holds the request, the answer, the tool spans, the agents that ran and the token usage. The example never calls Langfuse's own API. | `TraceCase` (`evaluator/case.py`): turns a `FetchedTrace` into the text the judges read. |
+| Defines how an evaluator looks: `AKEvaluator`, its input `AKEvaluationCase`, its verdict `AKEvaluationResult`, and the judge model in `AKTestConfig` (`AK_TEST__LLM__*`). | `OpikTraceEvaluator` (`evaluator/opik_evaluator.py`): the judges. AK's built-in evaluators need an expected answer, which production traffic doesn't have, so the example writes its own. |
+| Serves the API on Lambda (`Lambda.register`, `Lambda.handler`) and runs the agent in queue mode. | When grading runs (`/eval`), where results go (DynamoDB) and how they are read (`/check`). |
+
+Every place the code relies on Agent Kernel has a comment starting with `Agent Kernel:`, so you can list them:
+
+```bash
+grep -rn "Agent Kernel:" --include=*.py --include=*.yaml .
+```
+
+The heart of it is `SessionGrader.grade_session` (`evaluator/grader.py`), shortened here:
+
+```python
+traces = Trace.get().fetch_traces(session_id=session_id, last=self.FETCH_WINDOW)  # Agent Kernel
+for trace in traces:
+    case = TraceCase.from_trace(trace)
+    evaluation_case = case.to_evaluation_case(OpikTraceEvaluator.THRESHOLD)
+    results = [evaluator.evaluate_by_llm(evaluation_case) for evaluator in self._evaluators
+               if evaluator.applies_to(evaluation_case)]
+    self._store.save_results(case, results)
+```
+
+`fetch_traces` returns the same `FetchedTrace` shape for Langfuse, Logfire, OpenLLMetry and CloudWatch, so the
+grading code doesn't depend on the tracer's own API. What each tracer records still differs a little (see
+"Changing the metrics or the store").
 
 ## The flow
 

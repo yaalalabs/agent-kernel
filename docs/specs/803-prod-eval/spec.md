@@ -1035,6 +1035,12 @@ There is no unit-test suite in the example; `lambda_test.py` is its only test (Â
 5. **Opik loads only in the grading invocation.** `api.py` imports `grader.py` inside `grade`, and
    `grader.py` imports `opik_evaluator.py` at its top, so `/chat`, `/eval` and `/check` never import Opik or
    litellm.
+6. **What Agent Kernel does is marked in the code.** Each place the example relies on AK starts its comment
+   with `Agent Kernel:`: the `trace:` block in `config.yaml`, the agent runner's `handler`, the
+   `fetch_traces` call and `AKTestConfig.get()` in `grader.py`, `TraceEvaluationCase` and
+   `TraceCase.from_trace` in `case.py`, and `OpikTraceEvaluator` in `opik_evaluator.py` (which also says why
+   it isn't an AK built-in: those need `expected`). `grep -rn "Agent Kernel:"` lists them, and the README
+   tells readers to run it.
 
 ### The agent and the wiring (`lambda_*.py`, `config.yaml`)
 

@@ -14,6 +14,7 @@ class ToolCall(BaseModel):
     failed: bool = False
 
 
+# Agent Kernel: AKEvaluationCase is the input every AKEvaluator scores
 class TraceEvaluationCase(AKEvaluationCase):
     """What the judges read: the AK evaluation case plus the trace's transcript."""
 
@@ -44,6 +45,7 @@ class TraceCase(BaseModel):
     @classmethod
     def from_trace(cls, trace: FetchedTrace) -> "TraceCase":
         """Builds the case from a fetched trace that has a root span."""
+        # Agent Kernel: FetchedTrace already gives the request, answer, tool spans, agents and token usage
         tool_calls = [
             ToolCall(
                 name=span.name or "unknown",

@@ -18,11 +18,12 @@ class SessionGrader:
 
     def __init__(self):
         self._store = EvaluationStore()
-        config = AKTestConfig.get()  # the judge model, from AK_TEST__LLM__*
+        config = AKTestConfig.get()  # Agent Kernel: the judge model, from AK_TEST__LLM__*
         self._evaluators = [OpikTraceEvaluator(config, metric) for metric in OpikTraceEvaluator.METRICS]
 
     def grade_session(self, session_id: str) -> int:
         """Grades every trace of the session and returns how many were stored."""
+        # Agent Kernel: reads the session's traces back from the configured tracer, one FetchedTrace per request
         traces = Trace.get().fetch_traces(session_id=session_id, last=self.FETCH_WINDOW)
         graded = 0
         for trace in traces:
