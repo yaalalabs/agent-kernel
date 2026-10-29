@@ -34,6 +34,7 @@ from agentkernel.pipeline.transport.in_memory import InMemoryTransport
 
 AGENT_NAME = "thread-pipeline-agent"
 CHAT = RequestHandler.CHAT_PATH
+MEDIA_TYPE = "application/a2ui+json"
 
 
 class EchoNaming(ThreadNamingStrategy):
@@ -258,9 +259,12 @@ def _open_thread(manager, session_id="s1"):
 
 
 class TestRunnerRecording:
-    def _runner(self, status_code=200, result="ok:hello"):
+    def _runner(self, status_code=200, result="ok:hello", media_type=None):
         chat_service = MagicMock()
-        chat_service.process_chat_request.return_value = (status_code, {"result": result, "session_id": "s1"})
+        body = {"result": result, "session_id": "s1"}
+        if media_type:
+            body["media_type"] = media_type
+        chat_service.process_chat_request.return_value = (status_code, body)
         return AgentRunner(transport=InMemoryTransport(), chat_service=chat_service)
 
     def test_reply_is_appended_for_a_marked_message(self, monkeypatch):
@@ -271,11 +275,11 @@ class TestRunnerRecording:
 
         assert [(m.role, m.content) for m in manager.get_messages("s1").messages] == [("user", "hello"), ("assistant", "ok:hello")]
 
-    def test_a_labelled_reply_is_recorded_as_json_not_a_python_repr(self, monkeypatch):
-        """The runner holds the response body's ``result``, which for a labelled reply is a dict.
+    def test_an_unlabelled_dict_is_recorded_as_json_not_a_python_repr(self, monkeypatch):
+        """A dict reaching the runner without a label is still text, and must not be a Python repr.
 
-        ``str()`` on a dict is a Python repr — single quotes, ``None`` for null — so the same agent
-        would record one encoding here and another through the direct handler, permanently.
+        ``str()`` on a dict gives single quotes and ``None`` for null — so the same agent would
+        record one encoding here and another through the direct handler, permanently.
         """
         manager = _configure(monkeypatch)
         _open_thread(manager)
@@ -283,9 +287,26 @@ class TestRunnerRecording:
 
         self._runner(result=content).process(_marked_message())
 
-        recorded = manager.get_messages("s1").messages[-1].content
-        assert json.loads(recorded) == content
-        assert "'" not in recorded
+        recorded = manager.get_messages("s1").messages[-1]
+        assert json.loads(recorded.content) == content
+        assert "'" not in recorded.content
+        assert recorded.media_type is None
+
+    def test_a_labelled_reply_is_recorded_as_an_object_with_its_label(self, monkeypatch):
+        """The label rides in a sibling key of the response body, not on the ``result`` the runner holds.
+
+        Dropping it here is what left replayed history unlabelled while the live reply carried a
+        payload (#763), so this is the assertion that pins the queue half of the fix.
+        """
+        manager = _configure(monkeypatch)
+        _open_thread(manager)
+        content = {"version": "v1.0", "createSurface": {"surfaceId": "s1", "title": None}}
+
+        self._runner(result=content, media_type=MEDIA_TYPE).process(_marked_message())
+
+        recorded = manager.get_messages("s1").messages[-1]
+        assert recorded.content == content
+        assert recorded.media_type == MEDIA_TYPE
 
     def test_an_unmarked_message_records_nothing(self, monkeypatch):
         manager = _configure(monkeypatch)

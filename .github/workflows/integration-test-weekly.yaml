@@ -175,6 +175,9 @@ jobs:
       request_handler_security_group_id: ${{ steps.base-outputs.outputs.request_handler_security_group_id }}
       agent_runner_security_group_id: ${{ steps.base-outputs.outputs.agent_runner_security_group_id }}
       response_handler_security_group_id: ${{ steps.base-outputs.outputs.response_handler_security_group_id }}
+      containerized_alb_security_group_id: ${{ steps.containerized-sgs.outputs.containerized_alb_security_group_id }}
+      containerized_ecs_service_security_group_id: ${{ steps.containerized-sgs.outputs.containerized_ecs_service_security_group_id }}
+      containerized_agent_runner_security_group_id: ${{ steps.containerized-sgs.outputs.containerized_agent_runner_security_group_id }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -203,6 +206,21 @@ jobs:
         run: |
           python3 scripts/deploy/inject_dependencies.py
           python3 .github/scripts/get_base_outputs.py \
+            --base-path ${{ fromJson(needs.setup.outputs.deployment-base).path }} \
+            --deploy-dir ${{ fromJson(needs.setup.outputs.deployment-base).deploy_dir }}
+
+      # aws-containerized has no long-lived base deployment (ECS running all week is too expensive),
+      # so its security groups come from a separate SG-only stack in the base VPC. It is never
+      # destroyed by CI: re-applying is a no-op, and recreates the SGs if they were deleted (#823).
+      # continue-on-error: if this fails, the outputs are empty, run_single_test.py skips empty SG
+      # flags, and the aws-containerized examples fall back to creating their own SGs instead of
+      # the whole weekly matrix (every cloud) being skipped.
+      - name: Apply shared aws-containerized security groups
+        id: containerized-sgs
+        continue-on-error: true
+        run: |
+          python3 .github/scripts/deploy_containerized_shared_sgs.py \
+            --vpc-id "${{ steps.base-outputs.outputs.vpc_id }}" \
             --base-path ${{ fromJson(needs.setup.outputs.deployment-base).path }} \
             --deploy-dir ${{ fromJson(needs.setup.outputs.deployment-base).deploy_dir }}
 
@@ -318,8 +336,7 @@ jobs:
             ARGS+=(--vpc-id "${{ needs.get-base-outputs.outputs.vpc_id }}" --private-subnet-ids '${{ needs.get-base-outputs.outputs.private_subnet_ids }}')
           fi
           # aws-serverless deploys also reuse the base's request handler security group (#716; also
-          # shared by the authorizer/WebSocket connection handler tier. aws-containerized needs its
-          # own SG variables and is Phase 2, not wired here).
+          # shared by the authorizer/WebSocket connection handler tier).
           if [[ "${{ matrix.type }}" == "aws-serverless" ]]; then
             ARGS+=(--request-handler-security-group-id "${{ needs.get-base-outputs.outputs.request_handler_security_group_id }}")
           fi
@@ -329,6 +346,15 @@ jobs:
           # aws-serverless example is queue_mode = false and only has a request handler tier.
           if [[ "${{ matrix.path }}" == "examples/aws-serverless/scalable-openai" || "${{ matrix.path }}" == "examples/aws-serverless/schedule-openai" ]]; then
             ARGS+=(--agent-runner-security-group-id "${{ needs.get-base-outputs.outputs.agent_runner_security_group_id }}" --response-handler-security-group-id "${{ needs.get-base-outputs.outputs.response_handler_security_group_id }}")
+          fi
+          # aws-containerized deploys reuse the shared ALB and ECS service security groups (#823).
+          # Only openai-dynamodb-scalable and openai-schedule (the two queue-mode examples in the
+          # weekly matrix) have an agent runner tier, so only they also get the shared agent runner SG.
+          if [[ "${{ matrix.type }}" == "aws-containerized" ]]; then
+            ARGS+=(--alb-security-group-id "${{ needs.get-base-outputs.outputs.containerized_alb_security_group_id }}" --ecs-service-security-group-id "${{ needs.get-base-outputs.outputs.containerized_ecs_service_security_group_id }}")
+          fi
+          if [[ "${{ matrix.path }}" == "examples/aws-containerized/openai-dynamodb-scalable" || "${{ matrix.path }}" == "examples/aws-containerized/openai-schedule" ]]; then
+            ARGS+=(--agent-runner-security-group-id "${{ needs.get-base-outputs.outputs.containerized_agent_runner_security_group_id }}")
           fi
           python .github/scripts/run_single_test.py "${ARGS[@]}"
 
@@ -376,6 +402,12 @@ jobs:
           fi
           if [[ "${{ matrix.path }}" == "examples/aws-serverless/scalable-openai" || "${{ matrix.path }}" == "examples/aws-serverless/schedule-openai" ]]; then
             ARGS+=(--agent-runner-security-group-id "${{ needs.get-base-outputs.outputs.agent_runner_security_group_id }}" --response-handler-security-group-id "${{ needs.get-base-outputs.outputs.response_handler_security_group_id }}")
+          fi
+          if [[ "${{ matrix.type }}" == "aws-containerized" ]]; then
+            ARGS+=(--alb-security-group-id "${{ needs.get-base-outputs.outputs.containerized_alb_security_group_id }}" --ecs-service-security-group-id "${{ needs.get-base-outputs.outputs.containerized_ecs_service_security_group_id }}")
+          fi
+          if [[ "${{ matrix.path }}" == "examples/aws-containerized/openai-dynamodb-scalable" || "${{ matrix.path }}" == "examples/aws-containerized/openai-schedule" ]]; then
+            ARGS+=(--agent-runner-security-group-id "${{ needs.get-base-outputs.outputs.containerized_agent_runner_security_group_id }}")
           fi
           python .github/scripts/run_single_test.py "${ARGS[@]}"
       - name: Upload test results

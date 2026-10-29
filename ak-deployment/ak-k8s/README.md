@@ -396,6 +396,7 @@ The chart is pushed as an OCI artifact to `oci://ghcr.io/yaalalabs/charts` by th
 `publish-chart` workflow, which the release pipeline (`publish.yaml`) dispatches for every
 release tag once the GitHub release exists (it can also be dispatched by hand to republish a
 tag). The tag minus its `v` is the chart version; the same release run pins the install
-commands in the examples, the docs site, and the bundled `ak-cloud-deploy` skill to it with
-`scripts/update_chart_versions.py`, and the workflow attaches the `images.txt` manifest to the
-GitHub release.
+commands in the examples, the docs site, and the bundled `ak-cloud-deploy` skill to it, and
+`Chart.yaml`'s own `version` and `appVersion` keys, with `scripts/update_chart_versions.py`
+(`helm package` stamps both from the tag as well), and the workflow attaches the `images.txt`
+manifest to the GitHub release.
