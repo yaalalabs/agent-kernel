@@ -239,6 +239,28 @@ class _RedisLikeDriver(BaseDriver):
         self._log.debug(f"RPUSH {key}")
         self.client.rpush(key, value)
 
+    def rpush_with_expiry(self, key: str, value: Any, ttl: int) -> None:
+        """
+        Appends a value to the list stored at the given key and sets the key's TTL, atomically.
+
+        Two commands in one pipeline rather than ``rpush`` followed by ``expire_in``: RPUSH on a
+        missing key creates it with no expiry, so anything that interrupts the pair — a dropped
+        connection, a failover, a killed process — would leave the key alive forever. Callers that
+        create a key whose whole purpose is to expire need the pair to be indivisible.
+
+        :param key: The list key.
+        :param value: The value to append.
+        :param ttl: TTL in seconds; a non-positive value falls back to a plain append, since a
+            raw ``EXPIRE key 0`` would delete the key.
+        """
+        if ttl <= 0:
+            return self.rpush(key, value)
+        self._log.debug(f"RPUSH {key} + EXPIRE {ttl}")
+        pipeline = self.client.pipeline()
+        pipeline.rpush(key, value)
+        pipeline.expire(name=key, time=ttl)
+        pipeline.execute()
+
     def lpop(self, key: str) -> Optional[str]:
         """
         Removes and returns the first element of the list, decoded to a string.
@@ -251,6 +273,22 @@ class _RedisLikeDriver(BaseDriver):
         if item is None:
             return None
         return item.decode() if isinstance(item, (bytes, bytearray)) else item
+
+    def blpop(self, key: str, timeout: float) -> Optional[str]:
+        """
+        Removes and returns the first element of the list, blocking until one arrives.
+
+        :param key: The list key.
+        :param timeout: Maximum seconds to block. Clamped above zero, because redis reads a
+            timeout of 0 as "block forever", which would hang the caller past any budget.
+        :return: The popped element, or None if the timeout expired first.
+        """
+        self._log.debug(f"BLPOP {key}")
+        item = self.client.blpop([key], timeout=max(timeout, 0.001))
+        if item is None:
+            return None
+        value = item[1]
+        return value.decode() if isinstance(value, (bytes, bytearray)) else value
 
     def llen(self, key: str) -> int:
         """
@@ -337,9 +375,23 @@ class _RedisLikeDriver(BaseDriver):
 
         :param key: The key to set the TTL for.
         """
-        if self._ttl > 0:
-            self._log.debug(f"EXPIRE {key} {self._ttl}")
-            self.client.expire(name=key, time=self._ttl)
+        self.expire_in(key, self._ttl)
+
+    def expire_in(self, key: str, ttl: int) -> None:
+        """
+        Applies an explicit TTL to the given key, ignoring the configured one.
+
+        For state whose lifetime is its own, not the store's: the response store's chunk
+        close-marker must die in minutes even where records are kept for a week, and must still
+        expire where the configured TTL is 0 (keep forever). No-op when ``ttl <= 0``, since a
+        raw ``EXPIRE key 0`` would delete the key.
+
+        :param key: The key to set the TTL for.
+        :param ttl: TTL in seconds.
+        """
+        if ttl > 0:
+            self._log.debug(f"EXPIRE {key} {ttl}")
+            self.client.expire(name=key, time=ttl)
 
     def clear_prefix(self) -> None:
         """Deletes all keys matching the configured prefix pattern."""

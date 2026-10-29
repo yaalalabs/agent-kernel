@@ -150,7 +150,7 @@ This adapter **cannot pause**, and reports it rather than pretending: its runner
 a run on this framework is refused by `Runtime` with a message naming the runner.
 
 The framework's own human-in-the-loop facility does not intersect what Agent Kernel wraps — see
-[Human in the Loop](../advanced/human-in-the-loop.md) for the four adapters that do pause.
+[Human in the Loop](../advanced/human-in-the-loop.md) for the five adapters that do pause.
 
 ## Features
 

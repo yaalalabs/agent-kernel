@@ -8,13 +8,13 @@ Agent Kernel is a lightweight **AI agent runtime** and adapter layer for buildin
 ## Features
 
 - **Unified API**: Common abstractions (Agent, Runner, Session, Module, Runtime) across frameworks
-- **Multi-Framework Support**: OpenAI Agents SDK, CrewAI, LangGraph, Google ADK, Smolagents, and Pydantic AI
+- **Multi-Framework Support**: OpenAI Agents SDK, CrewAI, LangGraph, Google ADK, Smolagents, Pydantic AI, and Microsoft Agent Framework
 - **Session Management**: Built-in session abstraction with pluggable storage backends
 - **Knowledge Bases**: Unified, capability-declaring `KnowledgeBase` interface with ChromaDB, Neo4j, Starburst/Trino and Open Knowledge Format bundle (local directory or S3) backends via `KnowledgeBuilder`
 - **Sandbox**: Execute agent-generated code and shell commands in an isolated, permission-bounded environment with pluggable providers (`local_subprocess`, `docker`, `kubernetes`, `e2b`, `daytona`, `ec2_ssm`), workload profiles, policy enforcement, per-user identity, and a queue-decoupled broker for long-running executions
 - **Secret Resolution**: `SecretManager` resolves API keys and passwords environment-first, falling back to a pluggable provider (`env`, `aws_ssm` for AWS SSM Parameter Store, `kubernetes` for Kubernetes Secrets mounted into the pod, or your own) with a TTL'd process cache
 - **Scheduled Tasks**: Deferred and recurring chat execution (`schedule.at`/`schedule.cron`) with a management REST API, five agent-facing tools, and pluggable provider (`local`, `eventbridge`) and store (`in_memory`, `redis`, `valkey`, `dynamodb`) backends
-- **Human in the Loop**: Pause a run for a person's approval or answer and resume from their decision — `status: "PAUSED"` with HTTP 202, a `resume` block carrying `approved`/`denied`/`cancelled` decisions, supported on OpenAI Agents SDK, LangGraph, Pydantic AI and Google ADK over REST, streaming and AG-UI
+- **Human in the Loop**: Pause a run for a person's approval or answer and resume from their decision — `status: "PAUSED"` with HTTP 202, a `resume` block carrying `approved`/`denied`/`cancelled` decisions, supported on OpenAI Agents SDK, LangGraph, Pydantic AI, Google ADK and Microsoft Agent Framework over REST, streaming and AG-UI
 - **Flexible Deployment**: Interactive CLI, REST API, serverless, or containerized deployment — see the "Multi-Cloud Deployment" section below
 - **Pluggable Architecture**: Easy to extend with custom framework adapters
 - **MCP Server**: Built-in Model Context Protocol server for exposing agents as MCP tools and exposing any custom tool
@@ -1049,10 +1049,13 @@ Configure the REST API server (if using the API module).
 Mounting `AGUIRequestHandler` (from `agentkernel.agui`, requires the `agentkernel[agui]` extra — `pip
 install "agentkernel[agui]"`) is what enables the [AG-UI protocol](https://github.com/ag-ui-protocol/ag-ui)
 surface; the `agui` block only parameterizes it, and it never switches the surface on by itself.
+Mount `AGUIPipelineRequestHandler` through `IOHandler.run(handlers=[...])` instead to run the agent
+on the queue pipeline rather than inside the SSE request; same routes and events, and it refuses to
+start unless the configured stores can serve a run from the runner process.
 `AGUIRequestHandler` refuses to construct without an `Authoriser` or `AuthValidator` — AG-UI runs
 agents on a caller's behalf and has no anonymous mode. Only agents whose runner declares
-`supports_streaming = True` are reachable (currently OpenAI Agents SDK, LangGraph, Google ADK, and
-Pydantic AI — not CrewAI or Smolagents). See `examples/api/agui`.
+`supports_streaming = True` are reachable (currently OpenAI Agents SDK, LangGraph, Google ADK, Pydantic AI
+and Microsoft Agent Framework — not CrewAI or Smolagents). See `examples/api/agui`.
 
 - **Agents**
   - **Field**: `agui.agents`
@@ -1970,6 +1973,7 @@ Sessions maintain state across agent interactions. Framework adapters manage the
 - `"openai"` — OpenAI Agents SDK session data
 - `"adk"` — Google ADK session data
 - `"pydanticai"` — Pydantic AI session data (message history)
+- `"maf"` — Microsoft Agent Framework session data (`AgentSession` snapshot)
 
 Access the session in your runner:
 

@@ -24,9 +24,11 @@ from agentkernel.core.base import Session
 from agentkernel.core.config import AKConfig
 from agentkernel.core.model import AgentReplyText, AgentRequestText
 from agentkernel.core.util.factory import AKConfigError
+from agentkernel.framework.maf.maf import MAFRunner
 from agentkernel.framework.smolagents.smolagents import SmolagentsRunner
 from agentkernel.trace.cloudwatch import cloudwatch as cloudwatch_mod
 from agentkernel.trace.cloudwatch.cloudwatch import CloudWatch
+from agentkernel.trace.cloudwatch.maf import CloudWatchMAFRunner
 from agentkernel.trace.cloudwatch.sigv4 import SigV4Session
 from agentkernel.trace.cloudwatch.smolagents import CloudWatchSmolagentsRunner
 
@@ -296,6 +298,24 @@ async def test_runner_wraps_the_run_in_a_session_span(recorder):
 
 
 @pytest.mark.asyncio
+async def test_maf_runner_wraps_the_run_in_a_session_span(recorder):
+    provider, spans, _ = recorder
+    tracer = CloudWatch()
+    tracer.init()
+
+    reply = AgentReplyText(response="hi", prompt="q")
+    with patch.object(MAFRunner, "run", AsyncMock(return_value=reply)):
+        result = await _run(CloudWatchMAFRunner(tracer))
+
+    assert result is reply
+    (span,) = spans.get_finished_spans()
+    assert span.name == "Agent Kernel MAF"
+    assert span.attributes["session.id"] == "s1"
+    assert span.attributes["input.value"] == "q"
+    assert span.attributes["output.value"] == "hi"
+
+
+@pytest.mark.asyncio
 async def test_runner_records_the_error_on_the_span(recorder):
     provider, spans, _ = recorder
     tracer = CloudWatch()
@@ -385,6 +405,7 @@ def test_runners_subclass_their_framework_base_and_activate_instrumentation(reco
 
     assert isinstance(tracer.langgraph(), LangGraphRunner)
     assert isinstance(tracer.smolagents(), SmolagentsRunner)
+    assert isinstance(tracer.maf(), MAFRunner)  # MAF emits its own OpenTelemetry spans; no instrumentation to activate
 
 
 def test_crewai_runner_activates_crewai_and_litellm_instrumentation(recorder):

@@ -159,6 +159,99 @@ def test_shell_pin_needs_the_chart_reference():
         temp_path.unlink()
 
 
+def _write_named(directory: Path, name: str, content: str) -> Path:
+    path = directory / name
+    path.write_text(content)
+    return path
+
+
+def test_update_chart_yaml_version_fields():
+    """The chart's own Chart.yaml gets its version and appVersion keys pinned along with the install
+    commands in its description; dependency versions and kubeVersion are not chart versions."""
+    content = f"""apiVersion: v2
+name: agent-kernel
+description: >-
+  Install with Helm:
+  helm pull {CHART} --version 0.9.0 --untar
+  helm install ak {CHART} --version 0.9.0
+type: application
+version: 0.1.0
+# The publish workflow also stamps both versions from the release tag.
+appVersion: "0.8.1"
+kubeVersion: ">=1.29.0-0"
+dependencies:
+  - name: valkey
+    version: 0.11.0
+    repository: https://valkey-io.github.io/valkey-helm/
+"""
+    with tempfile.TemporaryDirectory() as tmp:
+        chart_yaml = _write_named(Path(tmp), "Chart.yaml", content)
+
+        was_modified, num_updates = update_chart_versions(chart_yaml, "0.9.5")
+
+        assert was_modified, "File should be modified"
+        assert num_updates == 4, f"Expected 4 updates, got {num_updates}"
+        result = chart_yaml.read_text()
+        assert "\nversion: 0.9.5\n" in result, f"version key not pinned:\n{result}"
+        assert '\nappVersion: "0.9.5"\n' in result, "appVersion keeps its quotes"
+        assert result.count("--version 0.9.5") == 2
+        assert "    version: 0.11.0\n" in result, "dependency versions are not ours to touch"
+        assert 'kubeVersion: ">=1.29.0-0"' in result
+        assert "0.8.1" not in result and "0.9.0" not in result and "version: 0.1.0" not in result
+        print("✅ test_update_chart_yaml_version_fields passed")
+
+
+def test_update_chart_yaml_single_quoted_values():
+    """Single-quoted version values are valid YAML too: they are pinned and keep their quote style.
+    The chart's name alone qualifies the file; its description need not carry an install command."""
+    content = "apiVersion: v2\nname: agent-kernel\nversion: '0.1.0'\nappVersion: '0.8.1'\n"
+    with tempfile.TemporaryDirectory() as tmp:
+        chart_yaml = _write_named(Path(tmp), "Chart.yaml", content)
+
+        was_modified, num_updates = update_chart_versions(chart_yaml, "0.9.5")
+
+        assert was_modified and num_updates == 2, f"Expected 2 updates, got {num_updates}"
+        assert chart_yaml.read_text() == "apiVersion: v2\nname: agent-kernel\nversion: '0.9.5'\nappVersion: '0.9.5'\n"
+        print("✅ test_update_chart_yaml_single_quoted_values passed")
+
+
+def test_chart_yaml_fields_need_the_chart_name():
+    """Another chart's Chart.yaml keeps its own version and appVersion even when its description
+    tells users to install the Agent Kernel chart; only that install command is repinned."""
+    content = f"""apiVersion: v2
+name: agent-kernel-wrapper
+description: Wraps {CHART} --version 0.9.0 for our cluster.
+version: 0.1.0
+appVersion: "0.8.1"
+"""
+    with tempfile.TemporaryDirectory() as tmp:
+        chart_yaml = _write_named(Path(tmp), "Chart.yaml", content)
+
+        was_modified, num_updates = update_chart_versions(chart_yaml, "0.9.5")
+
+        assert was_modified and num_updates == 1, f"Expected 1 update, got {num_updates}"
+        result = chart_yaml.read_text()
+        assert f"Wraps {CHART} --version 0.9.5 for our cluster." in result
+        assert 'version: 0.1.0\nappVersion: "0.8.1"\n' in result, "another chart's own versions are not ours to touch"
+        print("✅ test_chart_yaml_fields_need_the_chart_name passed")
+
+
+def test_version_keys_only_pinned_in_chart_yaml():
+    """A values file that names the chart gets its install command pinned, but a top-level
+    version key in any other file is not a chart version and stays as it is."""
+    content = f"# helm install ak {CHART} --version 0.9.0\nversion: 0.1.0\nimage:\n  tag: dev\n"
+    with tempfile.TemporaryDirectory() as tmp:
+        values_yaml = _write_named(Path(tmp), "values.yaml", content)
+
+        was_modified, num_updates = update_chart_versions(values_yaml, "0.9.5")
+
+        assert was_modified and num_updates == 1, f"Expected 1 update, got {num_updates}"
+        result = values_yaml.read_text()
+        assert f"# helm install ak {CHART} --version 0.9.5\n" in result
+        assert "\nversion: 0.1.0\n" in result, "version keys outside Chart.yaml are untouched"
+        print("✅ test_version_keys_only_pinned_in_chart_yaml passed")
+
+
 def test_find_files_globs_and_excludes():
     """Only .md/.yaml/.yml/.sh files are scanned, and excluded path segments are skipped."""
     with tempfile.TemporaryDirectory() as tmp:
@@ -216,6 +309,10 @@ if __name__ == "__main__":
     test_skips_local_paths_other_charts_and_placeholders()
     test_update_deploy_script_pin()
     test_shell_pin_needs_the_chart_reference()
+    test_update_chart_yaml_version_fields()
+    test_update_chart_yaml_single_quoted_values()
+    test_chart_yaml_fields_need_the_chart_name()
+    test_version_keys_only_pinned_in_chart_yaml()
     test_find_files_globs_and_excludes()
     test_find_files_accepts_single_file()
     test_semver_validation()

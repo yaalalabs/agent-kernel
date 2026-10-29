@@ -28,3 +28,15 @@ variable "private_subnet_ids" {
   description = "List of private subnet IDs for ECS deployment"
   type        = list(string)
 }
+
+variable "alb_security_group_id" {
+  description = "ALB security group ID. If not provided, a new one will be created"
+  type        = string
+  default     = null
+}
+
+variable "ecs_service_security_group_id" {
+  description = "ECS service security group ID. If not provided, a new one will be created"
+  type        = string
+  default     = null
+}

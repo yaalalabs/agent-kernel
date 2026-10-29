@@ -65,7 +65,7 @@ export const SOURCES: ArchCard[] = [
 export const DESTINATIONS: ArchCard[] = [
   {
     title: "Agent frameworks",
-    chips: pick("OpenAI Agents SDK", "LangGraph", "CrewAI", "Google ADK", "Smolagents", "Pydantic AI"),
+    chips: pick("OpenAI Agents SDK", "LangGraph", "CrewAI", "Google ADK", "Smolagents", "Pydantic AI", "Microsoft Agent Framework"),
   },
   {
     title: "Memory & knowledge",

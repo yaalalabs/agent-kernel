@@ -36,7 +36,7 @@ Most agent frameworks help you build a *prototype*. **Agent Kernel is the platfo
 
 |  | Agent Kernel |
 |---|---|
-| 🔌 **Framework-Agnostic** | Run OpenAI Agents SDK, LangGraph, CrewAI, and Google ADK side by side. Swap with 2 import lines. |
+| 🔌 **Framework-Agnostic** | Run OpenAI Agents SDK, LangGraph, CrewAI, Google ADK, Smolagents, Pydantic AI, and Microsoft Agent Framework side by side. Swap with 2 import lines. |
 | ☁️ **Cloud-Agnostic** | The same agent code ships to AWS Lambda/ECS, Azure Functions/Container Apps, GCP Cloud Run, or on-prem. |
 | 🔁 **Queue-Pipeline Execution** | Every chat request runs through a queued pipeline: in-process by default (zero services, full retry/FIFO/dedup semantics locally), SQS, Kafka, and NATS JetStream transports for distributed deployments; a Helm chart ships the topology to any Kubernetes cluster. |
 | 🛡️ **Compliant by Default** | Built-in guardrails (OpenAI, AWS Bedrock), PII detection, full audit traces, jailbreak prevention. |
@@ -98,7 +98,7 @@ That's it. Same code deploys to AWS Lambda, ECS, Azure Functions, or Container A
 ### 🧩 Works with the Frameworks You Already Use
 
 <p align="center">
-  <b>OpenAI Agents SDK</b> &nbsp;•&nbsp; <b>LangGraph</b> &nbsp;•&nbsp; <b>CrewAI</b> &nbsp;•&nbsp; <b>Google ADK</b> &nbsp;•&nbsp; <b>Smolagents</b> &nbsp;•&nbsp; <b>Pydantic AI</b>
+  <b>OpenAI Agents SDK</b> &nbsp;•&nbsp; <b>LangGraph</b> &nbsp;•&nbsp; <b>CrewAI</b> &nbsp;•&nbsp; <b>Google ADK</b> &nbsp;•&nbsp; <b>Smolagents</b> &nbsp;•&nbsp; <b>Pydantic AI</b> &nbsp;•&nbsp; <b>Microsoft Agent Framework</b>
 </p>
 
 No rewrites. No re-learning. Bring your agents — Agent Kernel handles the platform layer.
@@ -109,7 +109,7 @@ Enterprises can't ship agents they can't audit. Agent Kernel makes compliance th
 
 - **Guardrails** — OpenAI and AWS Bedrock guardrails for PII detection, jailbreak prevention, content moderation.
 - **Pre/Post Execution Hooks** — Inject policy checks, RAG context, redaction, or moderation around every agent call.
-- **Framework-Native Run Options**: Pass each framework's own run arguments and lifecycle hooks (OpenAI `RunHooks` and `RunConfig`, LangGraph callbacks, ADK plugins, Pydantic AI usage limits) per agent through `Module.run_options`, statically or computed per run by a factory, with the keys Agent Kernel owns kept safe.
+- **Framework-Native Run Options**: Pass each framework's own run arguments and lifecycle hooks (OpenAI `RunHooks` and `RunConfig`, LangGraph callbacks, ADK plugins, Pydantic AI usage limits, Microsoft Agent Framework `options`) per agent through `Module.run_options`, statically or computed per run by a factory, with the keys Agent Kernel owns kept safe.
 - **Full Traceability** — Every agent action, tool call, and LLM invocation logged with configurable verbosity.
 - **Observability** — LangFuse, OpenLLMetry, Pydantic Logfire, and AWS CloudWatch tracing with a single config line.
 - **Secret Resolution** — Resolve API keys from the environment locally and from AWS SSM Parameter Store or mounted Kubernetes Secrets in production via `SecretManager`, with only `config.yaml` changing.
@@ -143,7 +143,7 @@ Let a run stop to ask a person something — approve this tool, answer this ques
 
 - **Nothing to enable** — declare a gated tool or an interrupt the way your framework already does; Agent Kernel returns HTTP 202 with `status: "PAUSED"` and the pending interruptions.
 - **Answer instead of prompting** — send a `resume` block with `approved`, `denied`, or `cancelled` per interruption, plus the human's own words or a structured value.
-- **Four frameworks pause** — OpenAI Agents SDK, LangGraph, Pydantic AI, and Google ADK; the others say they can't rather than pretending.
+- **Five frameworks pause** — OpenAI Agents SDK, LangGraph, Pydantic AI, Google ADK, and Microsoft Agent Framework; the others say they can't rather than pretending.
 - **Every surface** — REST, streaming, WebSocket, and AG-UI's interrupt outcome; durable across restarts on any shared session backend.
 
 [Learn more →](https://kernel.yaala.ai/docs/advanced/human-in-the-loop)
