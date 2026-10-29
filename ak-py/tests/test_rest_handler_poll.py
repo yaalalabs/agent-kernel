@@ -12,6 +12,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from agentkernel.core.config import _ExecutionConfig, _InputQueueConfig, _QueuesConfig, _ResponseStoreConfig
 from agentkernel.core.model import ExecutionMode
 from agentkernel.deployment.common.rest_handler import RestHandler
 
@@ -31,10 +32,11 @@ class _FakeRestHandler(RestHandler):
 @pytest.fixture
 def client_and_store():
     config = Mock()
-    config.execution.mode = ExecutionMode.REST_ASYNC
-    config.execution.queues.input.url = "https://sqs.example/input"
-    config.execution.response_store.retry_count = 1
-    config.execution.response_store.delay = 0
+    config.execution = _ExecutionConfig(
+        mode=ExecutionMode.REST_ASYNC,
+        queues=_QueuesConfig(type="sqs", input=_InputQueueConfig(url="https://sqs.example/input")),
+        response_store=_ResponseStoreConfig(type="dynamodb", retry_count=1, delay=0),
+    )
     config.api.max_file_size = 10_000_000
 
     store = Mock()
