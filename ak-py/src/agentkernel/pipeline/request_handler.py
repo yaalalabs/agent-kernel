@@ -17,6 +17,7 @@ from .producer import RequestProducer
 from .response_store.base import ResponseStore
 from .response_store.factory import ResponseStoreFactory
 from .transport.base import QueueTransport, QueueTransportFactory
+
 _DEFAULT_RESPONSE_RETRY = (60, 1.0)
 
 
