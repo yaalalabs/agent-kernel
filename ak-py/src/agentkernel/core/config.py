@@ -689,6 +689,12 @@ class _RealtimeConfig(BaseModel):
 
 
 class _ExecutionConfig(BaseModel):
+    STREAM_MIGRATION_MESSAGE: ClassVar[str] = (
+        "execution.mode 'stream' was removed. For SSE over REST set execution.mode: rest_sync and "
+        "execution.message_type: delta; for chunks over WebSocket set execution.mode: async and "
+        "execution.message_type: delta (env: AK_EXECUTION__MODE, AK_EXECUTION__MESSAGE_TYPE)"
+    )
+
     mode: Optional[ExecutionMode] = Field(
         default=None,
         description=(
@@ -720,6 +726,14 @@ class _ExecutionConfig(BaseModel):
         default_factory=_RealtimeConfig,
         description="Realtime execution playback pacing (used only when execution.mode is realtime)",
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_legacy_stream(cls, data: Any) -> Any:
+        """Fail the removed ``stream`` mode with the migration message instead of a bare enum error."""
+        if isinstance(data, dict) and data.get("mode") == "stream":
+            raise AKConfigError(cls.STREAM_MIGRATION_MESSAGE)
+        return data
 
     @model_validator(mode="after")
     def _check_message_type(self) -> "_ExecutionConfig":

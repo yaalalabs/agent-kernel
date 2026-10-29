@@ -165,7 +165,7 @@ class ECSOutputConsumer(ECSSQSConsumer):
         Push an output message to the client over WebSocket.
 
         :param record: boto3 SQS record
-        :param message_type: Envelope type to broadcast with (CHAT_RESPONSE for ASYNC, STREAM_CHUNK for STREAM)
+        :param message_type: Envelope type to broadcast with (CHAT_RESPONSE for complete, STREAM_CHUNK for delta)
         :raises ValueError: If endpoint_url or user_id is missing.
         """
         message_attributes = SQSHandler.get_message_custom_attributes(record)

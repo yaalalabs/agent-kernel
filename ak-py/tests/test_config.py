@@ -530,3 +530,33 @@ class TestExecutionMessageType:
         assert execution.mode == ExecutionMode.ASYNC
         assert execution.message_type == ReplyMessageType.DELTA
         assert execution.is_websocket and execution.is_delta
+
+    @staticmethod
+    def _assert_stream_migration(exc_info):
+        assert exc_info.type is AKConfigError
+        message = str(exc_info.value)
+        assert message == _ExecutionConfig.STREAM_MIGRATION_MESSAGE
+        assert "execution.mode: rest_sync and execution.message_type: delta" in message
+        assert "execution.mode: async and execution.message_type: delta" in message
+
+    def test_stream_mode_from_yaml_raises_migration_error(self, tmp_path, monkeypatch):
+        cfg_path = tmp_path / "config.yaml"
+        cfg_path.write_text("execution:\n  mode: stream\n")
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", str(cfg_path))
+        with pytest.raises(AKConfigError) as exc:
+            AKConfig.get()
+        self._assert_stream_migration(exc)
+
+    def test_stream_mode_from_env_raises_migration_error(self, monkeypatch):
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+        monkeypatch.setenv("AK_EXECUTION__MODE", "stream")
+        with pytest.raises(AKConfigError) as exc:
+            AKConfig.get()
+        self._assert_stream_migration(exc)
+
+    def test_uppercase_stream_fails_as_unknown_mode(self):
+        with pytest.raises(ValidationError):
+            _ExecutionConfig(mode="STREAM")
+
+    def test_execution_mode_has_no_stream_member(self):
+        assert "stream" not in {m.value for m in ExecutionMode}
