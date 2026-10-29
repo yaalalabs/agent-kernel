@@ -26,7 +26,7 @@ triage_agent = Agent(
 
 OpenAIModule([triage_agent, math_agent, history_agent])
 
-# Dispatches to ECSStreamAgentRunner per config.yaml's execution.mode: stream
+# Dispatches to ECSStreamAgentRunner per config.yaml's execution.mode: async + message_type: delta
 handler = ECSAgentRunner.run
 
 if __name__ == "__main__":

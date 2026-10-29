@@ -7,7 +7,8 @@ session:
     prefix: "ak:openai:streaming:example:"
     url: "redis://ak-openai-serverless-dev-examples-redis.qaandw.0001.apse2.cache.amazonaws.com:6379"
 execution:
-  mode: stream
+  mode: async
+  message_type: delta
   queues:
     # The transport every component of this deployment runs on. Mandatory: the queue URLs
     # below are injected per component, so only this declaration tells each process which

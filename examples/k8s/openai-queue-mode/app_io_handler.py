@@ -5,7 +5,7 @@ requests to the input queue, consumes the output queue, and serves replies from 
 store; agents run in the other process (app_agent_runner.py), so no modules are registered
 here.
 
-For WebSocket execution modes (async/stream) the chart adds a separate gateway Deployment
+For the WebSocket execution mode (async) the chart adds a separate gateway Deployment
 running WebSocketGateway.run(auth_validator=...); the io handler's API stays plain REST.
 """
 

@@ -20,7 +20,7 @@ GoogleADKModule([weather_agent]).run_options(
    `run_async`. Agent Kernel splits them for you and writes the keys it owns (`agent`, `app_name`,
    `session_service`, `user_id`, `session_id`, `new_message`, ...) last.
 2. **Stream mode.** The adapter's stream mapping depends on ADK's partial (SSE) events, so in
-   `execution.mode: stream` your `RunConfig` is copied with `streaming_mode=SSE`. One warning is
+   `execution.message_type: delta` your `RunConfig` is copied with `streaming_mode=SSE`. One warning is
    logged per runner when your value differed; your object is never mutated. In run mode it is passed
    as is.
 3. **Reserved keys.** `agent`, `app`, `app_name`, `node`, `session_service`, `auto_create_session`,
@@ -44,7 +44,7 @@ Run stats: llm_calls=2, tool_calls=1, max_llm_calls=20
 
 | Path | Mode | What you get |
 |---|---|---|
-| Agent Kernel stream events (`PostHook.on_stream_event`) | `execution.mode: stream` only | framework-agnostic `ToolCallStart`, `TextDelta`, ... for what the adapter maps |
+| Agent Kernel stream events (`PostHook.on_stream_event`) | `execution.message_type: delta` only | framework-agnostic `ToolCallStart`, `TextDelta`, ... for what the adapter maps |
 | Native plugins through run options (this demo) | any mode, including `rest_sync` | ADK's full plugin surface: run, agent, model and tool callbacks |
 
 Per-agent callbacks (`before_model_callback=` on the `Agent` itself) were always reachable; plugins are

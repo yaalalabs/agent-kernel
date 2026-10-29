@@ -206,7 +206,7 @@ Two things worth knowing, both LangGraph's behaviour rather than Agent Kernel's:
 
 ## What else is possible
 
-- **Streaming.** With `execution.mode: stream`, the pause arrives as a `run_paused` event and the
+- **Streaming.** With `execution.message_type: delta`, the pause arrives as a `run_paused` event and the
   stream ends normally rather than with an error — a pause is an outcome, not a failure.
 - **The other two frameworks.** Pydantic AI pauses on both `CallDeferred` and `requires_approval`,
   and Google ADK on long-running tools and confirmations. Like LangGraph, both carry a structured

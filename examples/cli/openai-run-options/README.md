@@ -44,7 +44,7 @@ Run stats: llm_calls=2, tool_calls=1, filter_runs=2, max_turns=25
 
 | Path | Mode | What you get |
 |---|---|---|
-| Agent Kernel stream events (`PostHook.on_stream_event`) | `execution.mode: stream` only | framework-agnostic `ToolCallStart`, `TextDelta`, ... for what the adapter maps |
+| Agent Kernel stream events (`PostHook.on_stream_event`) | `execution.message_type: delta` only | framework-agnostic `ToolCallStart`, `TextDelta`, ... for what the adapter maps |
 | Native hooks through run options (this demo) | any mode, including `rest_sync` | the SDK's full lifecycle: `on_agent_start`, `on_llm_start`, `on_tool_start`, handoffs |
 
 ## Notes

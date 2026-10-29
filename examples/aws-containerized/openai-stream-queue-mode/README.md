@@ -1,23 +1,23 @@
 # Agent Kernel running OpenAI Agents SDK based agents in AWS ECS over WebSocket (queue mode, streaming)
 
 This package demonstrates Agent Kernel's queue-based, scalable containerized architecture
-exposed over a **WebSocket API in STREAM execution mode** — the agent's reply is delivered
+exposed over a **WebSocket API with `async` + `delta`** — the agent's reply is delivered
 token-by-token as a sequence of `STREAM_CHUNK` messages instead of one final `CHAT_RESPONSE`.
 
 - `openai-websocket` (direct WebSocket mode, `async`) — see that example for the auth/wire-protocol
   basics of non-streaming WebSocket mode
-- `openai-stream` (direct WebSocket mode, `stream`) — see that example if you don't need
+- `openai-stream` (direct WebSocket mode, `async` + `delta`) — see that example if you don't need
   the Agent Runner to scale independently of ingress; same wire protocol, single ECS service
 - `openai-websocket-scalable` (queue-based WebSocket mode, `async`) — see that example for the
   two-image / autoscaling pattern this one reuses unchanged
 
 Chat frames are enqueued to SQS and processed by a separately-scalable Agent Runner service, same
-as `openai-websocket-scalable` — the only difference is `execution.mode: stream` in `config.yaml`
-(and `execution_mode = "stream"` in `deploy/main.tf`): the agent's reply is delivered as a sequence
+as `openai-websocket-scalable` — the only difference is `execution.message_type: delta` in `config.yaml`
+(and `message_type = "delta"` in `deploy/main.tf`): the agent's reply is delivered as a sequence
 of `STREAM_CHUNK` messages, one per stream event, instead of a single `CHAT_RESPONSE` once the
 agent finishes.
 
-No application code changes are needed to go from `async` to `stream` — both `app_rest_service.py`
+No application code changes are needed to go from complete to delta replies — both `app_rest_service.py`
 and `app_agent_runner.py` are identical apart from the custom echo route (`openai-websocket-scalable`'s
 `app_rest_service.py` registers one via `@AWSWebsocketAPI.register`; this one registers none); only
 `config.yaml` and `deploy/main.tf` differ.
@@ -103,14 +103,15 @@ matching `email` is `test1@test.com`/`test2@test.com`.
 
 ## Execution mode
 
-`config.yaml` sets `execution.mode: stream`. There is no REST response store in WebSocket
-modes — replies are always pushed over the connection, never polled.
+`config.yaml` sets `execution.mode: async` and `execution.message_type: delta`. There is no REST
+response store in WebSocket (`async`) mode — replies are always pushed over the connection, never
+polled.
 
 ## Agent Runner Auto Scaling
 
 Enabled in `deploy/main.tf` via `scaling_config`, identical mechanism to
 `openai-websocket-scalable`: a target-tracking policy scales the Agent Runner service on
-`BacklogPerTask` (queue depth / running tasks) — note that in STREAM mode the Output Queue sees
+`BacklogPerTask` (queue depth / running tasks) — note that with delta replies the Output Queue sees
 many more messages per request (one per chunk instead of one per reply), so size
 `backlog_target`/queue throughput accordingly. See the [containerized deployment
 README](../../../ak-deployment/ak-aws/containerized/README.md#agent-runner-autoscaling) for

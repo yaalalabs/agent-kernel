@@ -1,6 +1,7 @@
 # Mounting AGUIRequestHandler in app.py is what turns AG-UI on; this block only
-# parameterizes it. There is no `execution: mode: stream` here — AG-UI always
-# delivers a run as a stream of events, so it does not consult execution mode.
+# parameterizes it. There is no `execution: message_type: delta` here — AG-UI always
+# delivers a run as a stream of events, so it does not consult the execution mode
+# or message type.
 agui:
   default_agent: planner # also serves POST /agui, in addition to POST /agui/planner
   # agents: [planner]    # omitted = every streaming-capable agent is reachable

@@ -1,15 +1,15 @@
 # Agent Kernel running OpenAI Agents SDK based agents in AWS ECS over WebSocket (no queue, streaming)
 
 This package demonstrates Agent Kernel running agents built with the OpenAI Agents SDK, deployed
-on AWS ECS and exposed over a **WebSocket API in direct (non-queue), STREAM execution mode** —
+on AWS ECS and exposed over a **WebSocket API in direct (non-queue) mode, with `async` + `delta`** —
 the agent runs inline in the same container that handles the WebSocket connection, and its reply
 is delivered token-by-token as a sequence of `STREAM_CHUNK` messages instead of one final
 `CHAT_RESPONSE`.
 
 - `openai-websocket` (direct WebSocket mode, `async`) — see that example for the auth/wire-protocol
-  basics of non-streaming direct mode; this one is identical except for `execution.mode` and the
-  streamed reply
-- `openai-stream-queue-mode` (queue-based WebSocket mode, `stream`) — see that example if you need the Agent
+  basics of non-streaming direct mode; this one is identical except for `execution.message_type` and
+  the streamed reply
+- `openai-stream-queue-mode` (queue-based WebSocket mode, `async` + `delta`) — see that example if you need the Agent
   Runner to scale independently of ingress; this one trades that horizontal scalability for lower
   latency and a single container to operate
 
@@ -21,9 +21,9 @@ Unlike the queue-based streaming example, there is only **one** ECS service here
 - pushes each stream event straight back over the same connection as its own `STREAM_CHUNK`
   message, terminated by a chunk with `"done": true`.
 
-No application code changes are needed to go from `async` to `stream` in direct mode — `app.py` is
-identical to `openai-websocket`'s; only `config.yaml` (`execution.mode: stream`) and
-`deploy/main.tf` (`execution_mode = "stream"`) differ.
+No application code changes are needed to go from complete to delta replies in direct mode — `app.py`
+is identical to `openai-websocket`'s; only `config.yaml` (`execution.message_type: delta`) and
+`deploy/main.tf` (`message_type = "delta"`) differ.
 
 ## Deployed Resources
 
@@ -141,9 +141,10 @@ back to the right client.
 
 ## Execution mode
 
-`config.yaml` sets `execution.mode: stream`. There is no REST response store in WebSocket modes —
-replies are always pushed over the connection, never polled. Setting it back to `async` delivers
-the full agent reply as one `CHAT_RESPONSE` message instead — see [`openai-websocket`](../openai-websocket).
+`config.yaml` sets `execution.mode: async` and `execution.message_type: delta`. There is no REST
+response store in WebSocket (`async`) mode — replies are always pushed over the connection, never
+polled. Removing `message_type` (or setting it to `complete`) delivers the full agent reply as one
+`CHAT_RESPONSE` message instead — see [`openai-websocket`](../openai-websocket).
 
 ## Prerequisites
 
