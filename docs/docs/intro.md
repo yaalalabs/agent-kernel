@@ -12,11 +12,13 @@ slug: /
 
 🔀 **Realtime multi-agent handoffs** - A voice call moves between agents with the OpenAI Agents SDK's handoffs or Google ADK's transfers, and in LiveKit every agent appears as its own participant, with only the active one unmuted. [Learn more →](./integrations/livekit.md#multi-agent-handoffs)
 
-🙋 **Human in the Loop** - Let a run pause for a person's approval or answer, and resume from their decision minutes or hours later, on any replica. Works on OpenAI, LangGraph, Pydantic AI and Google ADK, over REST, streaming and AG-UI. [Learn more →](./advanced/human-in-the-loop.md)
+🙋 **Human in the Loop** - Let a run pause for a person's approval or answer, and resume from their decision minutes or hours later, on any replica. Works on OpenAI, LangGraph, Pydantic AI, Google ADK and Microsoft Agent Framework, over REST, streaming and AG-UI. [Learn more →](./advanced/human-in-the-loop.md)
 
 🎙️ **LiveKit Voice Integration** - Connect OpenAI Agents SDK and Google ADK agents to LiveKit WebRTC rooms through the realtime execution pipeline. [Learn more →](./integrations/livekit.md)
 
-🎛️ **Per-agent native run options** - Pass each framework's own run arguments (OpenAI `RunHooks`, `RunConfig` and `max_turns`, LangGraph `config`, ADK `plugins`, Pydantic AI `usage_limits`, CrewAI `step_callback`, smolagents `max_steps`) through `Module.run_options`, statically or computed per run by a factory, with the keys Agent Kernel owns kept safe. [Learn more →](./core-concepts/runner.md#native-run-options)
+🪟 **Microsoft Agent Framework** - Run agents built with Microsoft Agent Framework (the successor to AutoGen and Semantic Kernel) through `MAFModule`, with token streaming, sessions, portable tools, structured output, and framework context round-trips. [Learn more →](./frameworks/microsoft-agents.md)
+
+🎛️ **Per-agent native run options** - Pass each framework's own run arguments (OpenAI `RunHooks`, `RunConfig` and `max_turns`, LangGraph `config`, ADK `plugins`, Pydantic AI `usage_limits`, CrewAI `step_callback`, smolagents `max_steps`, Microsoft Agent Framework `options`) through `Module.run_options`, statically or computed per run by a factory, with the keys Agent Kernel owns kept safe. [Learn more →](./core-concepts/runner.md#native-run-options)
 
 ☸️ **On-Prem Kubernetes** - Official Helm chart that runs the queue pipeline on any cluster (bare metal, EKS, or a laptop k3d), with NATS, Kafka, or SQS as the broker, KEDA autoscaling, a sandbox worker tier, and air-gapped installs. [Learn more →](/docs/deployment/onprem-kubernetes)
 
@@ -151,7 +153,7 @@ Easily extend Agent Kernel with custom framework adapters, memory back-ends, and
 - **Sandbox**: Execute agent-generated code and shell commands in an isolated, permission-bounded environment, with pluggable providers (`local_subprocess`, `docker`, `e2b`, `daytona`, `ec2_ssm`), workload profiles, policy enforcement, and per-user identity. [Learn more →](/docs/advanced/sandbox)
 - **Conversation Threads**: Persistent, named threads with auto-naming and REST read APIs
 - **Secret Resolution**: Resolve API keys and passwords through `SecretManager` — environment first, then a managed store (`env`, AWS SSM Parameter Store, Kubernetes Secrets mounted into the pod, or your own provider) — with only `config.yaml` changing between laptop and production. [Learn more →](./advanced/secrets.md)
-- **Structured Output**: Typed/JSON agent replies (`AgentReplyAny`) across OpenAI, LangGraph, ADK, CrewAI, Smolagents, and Pydantic AI
+- **Structured Output**: Typed/JSON agent replies (`AgentReplyAny`) across OpenAI, LangGraph, ADK, CrewAI, Smolagents, Pydantic AI, and Microsoft Agent Framework
 - **Agent Testing Capability**: Built in Agent test framework so that you can write automated tests easily
 - **Governance**: Input/output guardrails with OpenAI Guardrails, AWS Bedrock Guardrails, and Walled AI (including PII redaction)
 
@@ -214,6 +216,7 @@ Agent Kernel currently supports:
 - **LangGraph** - Graph-based agent orchestration
 - **Google ADK** - Google's Agent Development Kit
 - **Smolagents** - Hugging Face's lightweight agentic framework
+- **Microsoft Agent Framework** - Microsoft's unified successor to AutoGen and Semantic Kernel (MAF)
 
 ### Flexible Deployment
 

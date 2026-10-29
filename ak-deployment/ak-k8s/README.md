@@ -195,10 +195,10 @@ them, and io/runner pods roll without dropping a single connection.
 
 `execution.mode: stream` was removed. The chart validates neither `execution.mode` nor
 `execution.messageType`, so `--set execution.mode=stream` still renders, but the pods fail at
-config load with a migration message: use `mode: async` with `messageType: delta`. SSE
-(`mode: rest_sync` with `messageType: delta`) is not a substitute on a broker transport: it needs a
-shared response store that can stream chunks, none of the shared stores can today, so the
-io-handler fails at startup.
+config load with a migration message: use `mode: async` with `messageType: delta` for chunks over
+WebSocket. SSE (`mode: rest_sync` with `messageType: delta`) needs no gateway tier, but on a broker
+transport it needs a shared response store that can stream chunks (`redis` or `valkey`); with any
+other store the io-handler fails at startup.
 
 The WebSocket HTTPRoute carries raised timeouts (`gateway.websocket.requestTimeout: 0s`
 disables them) and must never have request buffering enabled: Envoy Gateway deadlocks

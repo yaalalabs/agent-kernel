@@ -9,7 +9,7 @@ from ..core.model import StreamChunk
 from ..core.util.async_bridge import run_async_sync
 from ..core.util.factory import AKConfigError
 from .consumer import ConsumerLoop
-from .envelope import ATTR_REALTIME, ATTR_REQUEST_ID, ATTR_STATUS_CODE, ATTR_USER_ID, QueueMessage, QueueName
+from .envelope import ATTR_AGUI, ATTR_REALTIME, ATTR_REQUEST_ID, ATTR_STATUS_CODE, ATTR_USER_ID, QueueMessage, QueueName
 from .integration_delivery import IntegrationDelivery
 from .response_store.base import ResponseStore
 from .response_store.factory import ResponseStoreFactory
@@ -68,6 +68,12 @@ class ResponseHandler:
             self._integration_delivery.deliver(integration, message.attributes, body, status_code, session_id=message.group_id)
             return
 
+        # AG-UI chunks always go to the response store, whatever the app's execution mode is: the
+        # caller is holding an SSE socket in the edge process, which drains the store.
+        if message.attributes.get(ATTR_AGUI):
+            self._store_chunk(message)
+            return
+
         execution = AKConfig.get().execution
         if execution.is_websocket:
             kind = WebSocketHandlerABC.MessageType.STREAM_CHUNK if execution.is_delta else WebSocketHandlerABC.MessageType.CHAT_RESPONSE
@@ -95,6 +101,16 @@ class ResponseHandler:
 
             request_id = message.attributes.get(ATTR_REQUEST_ID)
             error_text = f"Failed to process message after {max_receive_count} retries"
+
+            if message.attributes.get(ATTR_AGUI):
+                if request_id:
+                    store = self._get_store()
+                    if store.supports_chunk_streaming():
+                        store.add_chunk(request_id, StreamChunk(error=error_text, done=True).model_dump(exclude_none=True))
+                    else:
+                        self._log.warning("Cannot deliver permanent-failure AG-UI chunk: response store does not support chunk streaming")
+                return
+
             execution = AKConfig.get().execution
 
             if execution.is_delta:
@@ -232,7 +248,8 @@ class ResponseHandler:
         store = self._get_store()
         if not store.supports_chunk_streaming():
             raise AKConfigError(
-                "rest_sync + delta (SSE) delivery requires a chunk-streaming response store (in_memory, or a BYO store with the capability)"
+                "rest_sync + delta (SSE) and AG-UI delivery require a chunk-streaming response store (in_memory, redis, valkey, "
+                "or a BYO store with the capability)"
             )
         store.add_chunk(request_id, json.loads(message.body))
 

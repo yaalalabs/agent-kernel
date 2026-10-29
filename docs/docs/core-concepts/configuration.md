@@ -709,7 +709,7 @@ Unset `mode` runs as `rest_sync`.
 
 **Message Types** (`execution.message_type`, env `AK_EXECUTION__MESSAGE_TYPE`) choose how the reply is delivered:
 - `complete` - One message carrying the whole reply: a JSON body for `rest_sync`, a stored reply for `rest_async`, one `CHAT_RESPONSE` for `async`
-- `delta` - One message per `StreamChunk` as it is produced: SSE (`text/event-stream`) on `POST /api/v1/chat` for `rest_sync`, one `STREAM_CHUNK` WebSocket message per chunk (ending with `done: true`) for `async`. Requires a streaming-capable framework (OpenAI Agents SDK, LangGraph, Google ADK, Pydantic AI)
+- `delta` - One message per `StreamChunk` as it is produced: SSE (`text/event-stream`) on `POST /api/v1/chat` for `rest_sync`, one `STREAM_CHUNK` WebSocket message per chunk (ending with `done: true`) for `async`. Requires a streaming-capable framework (OpenAI Agents SDK, LangGraph, Google ADK, Pydantic AI, Microsoft Agent Framework)
 
 Unset `message_type` resolves to `delta` for `realtime` and `complete` otherwise. `rest_async` + `delta` and `realtime` + `complete` are rejected when the configuration loads (`AKConfigError`).
 

@@ -15,6 +15,7 @@ const FRAMEWORKS = [
   { id: "adk", label: "Google ADK" },
   { id: "smolagents", label: "Smolagents" },
   { id: "pydanticai", label: "Pydantic AI" },
+  { id: "maf", label: "Microsoft Agent Framework" },
 ];
 
 const FRAMEWORK_DATA = {
@@ -47,6 +48,11 @@ const FRAMEWORK_DATA = {
     installation: `# 1. Install the CLI (provider-agnostic core)\npip install agentkernel[pydanticai]\n\n# 2. Install the model provider you want\npip install "pydantic-ai-slim[openai]"`,
     usage: `from pydantic_ai import Agent\nfrom agentkernel.cli import CLI\nfrom agentkernel.pydanticai import PydanticAIModule\n\nagent = Agent(\n    model="openai:gpt-4o-mini",\n    name="assistant",\n    description="A helpful assistant.",\n    instructions="You are a helpful assistant.",\n)\n\nPydanticAIModule([agent])\n\nif __name__ == "__main__":\n    CLI.main()`,
     docLink: "/docs/frameworks/pydantic-ai",
+  },
+  maf: {
+    installation: `# 1. Install the CLI (provider-agnostic core)\npip install agentkernel[maf]\n\n# 2. Install the model provider you want\npip install agent-framework-openai`,
+    usage: `from agent_framework import Agent\nfrom agent_framework.openai import OpenAIChatClient\nfrom agentkernel.cli import CLI\nfrom agentkernel.maf import MAFModule\n\nagent = Agent(\n    OpenAIChatClient(model="gpt-4.1-mini"),\n    name="assistant",\n    description="A helpful assistant.",\n    instructions="You are a helpful assistant.",\n)\n\nMAFModule([agent])\n\nif __name__ == "__main__":\n    CLI.main()`,
+    docLink: "/docs/next/frameworks/microsoft-agents",
   },
 };
 

@@ -75,6 +75,15 @@ topology.
 :::
 
 :::note
+[AG-UI](../integrations/agui.md#running-the-agent-off-the-web-tier) runs on the pipeline through
+`AGUIPipelineRequestHandler`, which joins the handler list rather than replacing the chat route:
+`IOHandler.run(handlers=[AGUIPipelineRequestHandler(authoriser=...)])`. The edge keeps the caller's
+SSE connection and drains the reply from the response store, so it needs a store that can stream
+chunks (the table below) whatever the transport. `AGUIRequestHandler` remains the direct-execution
+handler.
+:::
+
+:::note
 The **sandbox queue broker** (`sandbox.broker.flavor: queue`) rides these same transports
 with its own queue configuration: `sandbox.broker.queue` reuses the `execution.queues`
 shape, and sandbox executions travel a separate input/output queue pair to a
@@ -375,11 +384,23 @@ and is then dropped with an error log: bounded, never a crash loop.
 No single process serves SSE and WebSocket together: `rest_sync` with `message_type: delta`
 serves SSE only, and `async` (either message type) serves `/ws` only, its REST chat route
 answering `400`. On the `in_memory` transport `async` needs `IOHandler.run(auth_validator=...)`.
-SSE on a broker transport needs a response store that can stream chunks, or `IOHandler` fails at
-startup; today only the `in_memory` store can, and it cannot be shared across processes, so SSE
-effectively runs single-process for now. `async` with `delta` on a broker requires the
-authenticated user id on the queue message (`USER_ID`); a message without it is retried, then
-fails permanently.
+`async` with `delta` on a broker requires the authenticated user id on the queue message
+(`USER_ID`); a message without it is retried, then fails permanently.
+
+SSE (`rest_sync` with `delta`) on a broker takes two things from the response store, not one — the
+store must be able to stream chunks, **and** a second process must be able to read what the runner
+wrote:
+
+| Store | Streams chunks | Readable from another process | SSE on a broker |
+|---|---|---|---|
+| `in_memory` | yes | no — class-level state | no (works on the `in_memory` transport, one process) |
+| `redis`, `valkey` | yes | yes | **yes** |
+| `dynamodb` | no — no blocking read | yes | no |
+
+`redis` and `valkey` gained chunk streaming in #710. A store that cannot stream chunks fails
+`IOHandler` at startup on a broker. A process-local store is refused per request with a `400`: it
+reports that it can stream chunks, but the edge and the agent runner would hold separate copies and
+the request would hang until it timed out.
 
 ---
 

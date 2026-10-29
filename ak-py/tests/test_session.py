@@ -1,8 +1,10 @@
 import asyncio
+import logging
 
 import pytest
 
 from agentkernel.core.base import Session
+from agentkernel.core.session.serde import BinarySerde
 
 
 def test_session_init():
@@ -72,6 +74,29 @@ def test_session_clear():
     assert session.get_volatile_cache().get("vkey1") is None
     assert len(session.get_non_volatile_cache().keys()) == 0
     assert session.get_non_volatile_cache().get("nvkey1") is None
+
+
+def test_session_data_access_does_not_log(caplog):
+    session = Session("test-session")
+    caplog.set_level(logging.DEBUG)
+    session.set("key1", "value1")
+    session.get("key1")
+    session.delete("key1")
+    session.delete("missing")
+    session.clear()
+    assert [record for record in caplog.records if record.name.startswith("ak.core.session")] == []
+
+
+def test_binary_serde_logs_type_not_value(caplog):
+    session = Session("test-session")
+    session.get_non_volatile_cache().set("walledai_pii_mapping", {"<EMAIL_1>": "jane@example.com"})
+    caplog.set_level(logging.DEBUG, logger="ak.core.session.binaryserde")
+
+    restored = BinarySerde.loads(BinarySerde.dumps(session.get_non_volatile_cache()))
+
+    assert restored.get("walledai_pii_mapping") == {"<EMAIL_1>": "jane@example.com"}
+    messages = [record.getMessage() for record in caplog.records if record.name == "ak.core.session.binaryserde"]
+    assert messages == ["dumped: KeyValueCache", "loads: <class 'bytes'>", "loaded: KeyValueCache"]
 
 
 @pytest.mark.asyncio

@@ -32,9 +32,17 @@ def ask(state):
     ...
 ```
 
-Four frameworks can pause: **OpenAI Agents SDK**, **LangGraph**, **Pydantic AI** and **Google ADK**.
-CrewAI and smolagents cannot, and say so rather than pretending — their runners report
-`supports_pause = False`.
+```python
+from agent_framework import tool
+
+@tool(approval_mode="always_require")        # Microsoft Agent Framework
+def issue_refund(order_id: str) -> str:
+    ...
+```
+
+Five frameworks can pause: **OpenAI Agents SDK**, **LangGraph**, **Pydantic AI**, **Google ADK** and
+**Microsoft Agent Framework**. CrewAI and smolagents cannot, and say so rather than pretending — their
+runners report `supports_pause = False`.
 
 Two of them need one more line of setup, because the pause is part of the agent's own declaration
 rather than something Agent Kernel can switch on: Pydantic AI needs `DeferredToolRequests` among its
@@ -121,9 +129,9 @@ turned down.
 ### Answering one question at a time
 
 A pause can hold several interruptions. You may answer some now and the rest later — the remainder
-comes back as another paused reply with a fresh `run_id`. Pydantic AI is the exception: it requires
-every deferred call resolved together, and Agent Kernel refuses a partial resume **before** calling
-it, naming the ids you missed.
+comes back as another paused reply with a fresh `run_id`. Pydantic AI and Microsoft Agent Framework are
+the exceptions: both need every pending call resolved together, and Agent Kernel refuses a partial
+resume **before** calling the framework, naming the ids you missed.
 
 ## Durability: the one thing to get right
 
@@ -159,13 +167,13 @@ Three limits worth knowing, none of them hidden:
 The frameworks genuinely differ, and Agent Kernel does not paper over it. A rejection is raised
 where it can still reach you, rather than being flattened into "something went wrong".
 
-| | OpenAI | LangGraph | Pydantic AI | Google ADK |
-|---|---|---|---|---|
-| A structured `payload` | **rejected** | yes | on an approval, an **object** only | on a confirmation, **rejected** |
-| A `prompt` beside a decision | **rejected** | yes | yes | **rejected** |
-| A second pause in one session | **appends** | replaces | replaces | replaces |
-| `cancelled` distinguishable from `denied` | yes | yes | yes | **no, on a confirmation** |
-| Detects a stale resume | **no** | n/a — re-pauses | yes, refuses | no |
+| | OpenAI | LangGraph | Pydantic AI | Google ADK | Microsoft Agent Framework |
+|---|---|---|---|---|---|
+| A structured `payload` | **rejected** | yes | on an approval, an **object** only | on a confirmation, **rejected** | **rejected** |
+| A `prompt` beside a decision | **rejected** | yes | yes | **rejected** | **rejected** |
+| A second pause in one session | **appends** | replaces | replaces | replaces | replaces |
+| `cancelled` distinguishable from `denied` | yes | yes | yes | **no, on a confirmation** | **no** |
+| Detects a stale resume | **no** | n/a — re-pauses | yes, refuses | no | yes, refuses |
 
 Replacement stops at the framework boundary. One session can be shared by agents on different
 frameworks — you send the session id and name the agent per request — so a LangGraph question never
@@ -200,6 +208,12 @@ a turn following a function response is routed back to the agent that made the c
 change which agent handles the next turn in a multi-agent app; and ADK sessions grow, because that
 setting also gates agent-state event emission. ADK's own note applies too — a tool may run more than
 once when resuming.
+
+**Microsoft Agent Framework can only approve or reject.** A MAF approval carries a verdict and nothing
+else, so a payload is refused, and both `denied` and `cancelled` reach the model as MAF's own "rejected by
+user" — the human's `message` has no channel there. A prompt beside the decisions is refused too: MAF would
+place it between the tool calls and their results, an order model APIs reject. A new prompt while a pause
+is outstanding is refused, naming the run to resume, because MAF would otherwise drop the pending calls.
 
 ## Streaming
 

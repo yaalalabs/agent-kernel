@@ -301,16 +301,39 @@ class RequestHandler(RestHandler):
                 status_code=400,
                 detail={"error": "ASYNC mode delivers responses over the WebSocket route: connect to /ws instead", "session_id": body.session_id},
             )
+        if self._config.execution.is_sse and not self._store_can_serve_sse():
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "SSE (execution.mode rest_sync with message_type delta) needs a response store that can stream "
+                    "chunks and is shared with the response handler; this topology's store cannot",
+                    "session_id": body.session_id,
+                },
+            )
+
+    def _store_can_serve_sse(self) -> bool:
+        """Whether the configured response store can carry this route's chunks back to the caller.
+
+        Two predicates, because chunk streaming and cross-process visibility are different facts
+        and SSE on a broker needs both: ``InMemoryResponseStore`` streams chunks but holds them in
+        class-level state, so the edge and the Response Handler would hold separate copies.
+
+        :return: True when the store can stream chunks and the runner's writes are readable here.
+        """
+        store = self.get_response_store()
+        if not store.supports_chunk_streaming():
+            return False
+        return store.shared or QueueTransportFactory.resolve_type() == "in_memory"
 
     async def _run_chat_stream(self, body: BaseRunRequest) -> StreamingResponse:
-        """Enqueue and serve the chunks over SSE; IOHandler._validate_topology has vouched for the store."""
+        """Enqueue and serve the chunks over SSE; _reject_unroutable has vouched for the store."""
         request_id = str(uuid.uuid4())
         self._log.info(f"[STREAM REQUEST] session_id={body.session_id}, request_id={request_id}")
         await asyncio.to_thread(self._enqueue_request, body, request_id)
         return StreamingResponse(self._sse_stream(request_id, body.session_id), media_type="text/event-stream")
 
     async def _sse_stream(self, request_id: str, session_id: Optional[str]) -> AsyncGenerator[str, None]:
-        store = self.get_response_store()  # chunk-streaming capable: checked by IOHandler._validate_topology at startup
+        store = self.get_response_store()  # chunk-streaming capable: checked by _reject_unroutable
         chunk_iterator = store.stream(request_id)
         try:
             while True:
@@ -333,12 +356,13 @@ class RequestHandler(RestHandler):
             yield f"data: {json.dumps(error_chunk)}\n\n"
         finally:
             # Deterministically release the per-request chunk state, including when the client
-            # disconnects mid-stream. close_stream is synchronous and non-blocking, so it runs
-            # even under task cancellation; a plain chunk_iterator.close() would raise
-            # "generator already executing" whenever the generator is mid-fetch in the worker
-            # thread (its sentinel unblocks that fetch and the generator returns on its own).
+            # disconnects mid-stream. Offloaded because close_stream blocks on a redis-like store
+            # (two to four round trips, seconds on a reconnect) and this runs on the event loop;
+            # the await still completes under task cancellation. A plain chunk_iterator.close()
+            # would raise "generator already executing" whenever the generator is mid-fetch in the
+            # worker thread (its sentinel unblocks that fetch and the generator returns on its own).
             if store.supports_chunk_streaming():
-                store.close_stream(request_id)
+                await asyncio.to_thread(store.close_stream, request_id)
 
     async def run_multipart_chat(
         self,

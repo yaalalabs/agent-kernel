@@ -2,10 +2,17 @@
 # This file defines which tests run on nightly vs weekly schedules and their execution order
 
 # Deployment base infrastructure - always deployed but not part of test matrix
+# Keep examples/aws-serverless/openai FIRST: generate_test_matrix.py exposes only the first entry as
+# the workflow's deployment-base (deployed by deploy-openai, outputs read by get-base-outputs).
 deployment_base:
   - type: aws-serverless
     path: examples/aws-serverless/openai
     deploy_dir: deploy
+  # Shared SGs reused by the weekly aws-containerized examples (#823). Applied by get-base-outputs
+  # via deploy_containerized_shared_sgs.py; listed here so inject_dependencies.py generates its backend.tf
+  - type: aws-containerized
+    path: .github/ci-infra/aws-containerized-shared-sgs
+    deploy_dir: .
 
 nightly:
   # Tests that run daily

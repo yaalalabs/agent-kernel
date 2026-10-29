@@ -287,7 +287,7 @@ there the payload is the tool's return value and any shape passes through.
 A prompt sent alongside a decision is **native** here: supplying the deferred results is precisely
 what lifts the framework's own guard against a new prompt while tool calls are outstanding.
 
-Of the four, this is the adapter that **detects a stale resume** itself, refusing a new question
+Like the Microsoft Agent Framework adapter, this one **detects a stale resume** itself, refusing a new question
 while a decision is outstanding.
 
 See [Human in the Loop](../advanced/human-in-the-loop.md).

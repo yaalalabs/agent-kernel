@@ -76,7 +76,7 @@ it has always carried when it is not, so nothing changes for a client that has n
 | REST | yes |
 | WebSocket | yes |
 | Async mode | yes |
-| Conversation threads | the live reply; stored history is not labelled |
+| Conversation threads | yes, live and on reload — stored history keeps the payload and its label |
 | Streaming / AG-UI | yes, with your own `on_stream_event` hook — see below |
 | MCP | yes, as `structuredContent` with the label in `_meta` |
 | A2A | not yet; it arrives with the `a2a-sdk` 1.x port |

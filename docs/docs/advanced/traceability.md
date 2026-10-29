@@ -476,8 +476,11 @@ Logfire configures the global OpenTelemetry tracer provider, and each non-stream
 | OpenAI Agents SDK | Full — native `logfire.instrument_openai_agents()` |
 | CrewAI | Full — OpenInference CrewAI + LiteLLM instrumentors |
 | Google ADK | Full — OpenInference Google ADK instrumentor |
+| Microsoft Agent Framework | Session span, plus MAF's own OpenTelemetry agent and chat spans (MAF instruments itself; Agent Kernel activates nothing extra) |
 | LangGraph | Session span only |
 | Smolagents | Session span only |
+
+Microsoft Agent Framework's own spans carry **metadata only** by default (operation names, token counts, durations). To include prompts, completions, tool arguments and tool results in them, set MAF's `ENABLE_SENSITIVE_DATA=true`, and only when the backend receiving the spans is secured for that data.
 
 ## Getting Started with AWS CloudWatch
 
@@ -558,8 +561,11 @@ Streaming runs (`execution.message_type: delta`) are not wrapped in a session sp
 | CrewAI | Full — OpenInference CrewAI + LiteLLM instrumentors |
 | Google ADK | Full — OpenInference Google ADK instrumentor |
 | Pydantic AI | Full — Pydantic AI instrumentation + OpenInference span processor |
+| Microsoft Agent Framework | Session span, plus MAF's own OpenTelemetry agent and chat spans (MAF instruments itself; Agent Kernel activates nothing extra) |
 | LangGraph | Session span only |
 | Smolagents | Session span only |
+
+Microsoft Agent Framework's own spans carry **metadata only** by default (operation names, token counts, durations). To include prompts, completions, tool arguments and tool results in them, set MAF's `ENABLE_SENSITIVE_DATA=true`, and only when the backend receiving the spans is secured for that data.
 
 X-Ray rejects spans larger than 200 KB. If your prompts or replies are very large, cap attribute sizes with `OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT`.
 

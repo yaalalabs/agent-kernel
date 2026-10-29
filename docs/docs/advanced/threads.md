@@ -91,6 +91,13 @@ thread:
   type: in_memory     # in_memory | redis | valkey | dynamodb | firestore | cosmosdb
 ```
 
+:::caution Custom thread stores
+A message's `content` is a JSON object, not a string, when the reply was labelled (see
+[A2UI](a2ui.md)). Every built-in backend serialises the whole `ThreadMessage` as one blob and is
+unaffected, but a bring-your-own `ThreadStore` that writes `message.content` into a typed text
+column must be updated to accept an object.
+:::
+
 ## Chat Request Fields
 
 | Field | Required | Applied | Description |

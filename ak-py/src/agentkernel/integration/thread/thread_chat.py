@@ -377,7 +377,7 @@ class ThreadRESTRequestHandler(AuthorisedRESTRequestHandler):
             except ValueError as e:
                 raise HTTPException(status_code=400, detail=str(e))
             body = thread.model_dump(mode="json", exclude={"messages"})
-            body["messages"] = [message.model_dump(mode="json") for message in page.messages]
+            body["messages"] = [message.to_wire() for message in page.messages]
             body["next_cursor"] = page.next_cursor
             return body
 
