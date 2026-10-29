@@ -20,6 +20,7 @@ from agentkernel.integration.thread import (
     ThreadNamingStrategy,
     ThreadRecorder,
 )
+from agentkernel.integration.thread.model import HITL_MEDIA_TYPE
 from agentkernel.integration.thread.store.in_memory import InMemoryThreadStore
 
 MEDIA_TYPE = "application/a2ui+json"
@@ -135,7 +136,7 @@ class TestThreadRecorder:
         assert out_requests is rebuilt
         assert out_attachments is attachments
         manager.get_or_create_thread.assert_called_once_with(session_id="s1", user_id="u1", group_id="g1", name="Chat", first_prompt="hi")
-        manager.append_message.assert_called_once_with("s1", "user", "hi", attachments=attachments)
+        manager.append_message.assert_called_once_with("s1", "user", "hi", attachments=attachments, media_type=None)
 
     def test_post_run_appends_assistant_message(self):
         manager = MagicMock()
@@ -218,6 +219,50 @@ class TestAgentThreadRequestHandler:
 
         messages = thread_enabled.get_messages("s1").messages
         assert [(m.role,) for m in messages] == [("user",)]
+
+    @pytest.mark.asyncio
+    async def test_a_streamed_run_that_pauses_records_the_pause(self, thread_enabled, registered_agent):
+        """astream carries no reply, so the pause is rebuilt from the terminal RunPaused event."""
+        from agentkernel.core.event import PausedInterruption, RunPaused
+
+        event = RunPaused(
+            run_id="run-1",
+            agent=registered_agent.name,
+            interruptions=[PausedInterruption(id="i1", kind="input_required", payload={"question": "which card?"})],
+        )
+        handler = AgentThreadRequestHandler()
+        handler.chat_service = FakeChatService(chunks=[StreamChunk(event=event), StreamChunk(done=True)])
+
+        gen = await handler._stream_with_recording(BaseRunRequest(prompt="refund it", session_id="s1", user_id="u1", agent=registered_agent.name))
+        _ = [frame async for frame in gen]
+
+        pause = thread_enabled.get_messages("s1").messages[1]
+        assert (pause.role, pause.media_type) == ("assistant", HITL_MEDIA_TYPE)
+        assert pause.content == {
+            "run_id": "run-1",
+            "session_id": "s1",
+            "agent": registered_agent.name,
+            "interruptions": [
+                {"id": "i1", "kind": "input_required", "tool_name": None, "arguments": None, "message": None, "payload": {"question": "which card?"}}
+            ],
+        }
+
+    @pytest.mark.asyncio
+    async def test_text_streamed_before_a_pause_is_not_recorded_beside_it(self, thread_enabled, registered_agent):
+        """Parity: the non-streaming path returns the pause, never the partial message before it."""
+        from agentkernel.core.event import PausedInterruption, RunPaused
+
+        event = RunPaused(run_id="run-1", agent=registered_agent.name, interruptions=[PausedInterruption(id="i1", kind="tool_call")])
+        handler = AgentThreadRequestHandler()
+        handler.chat_service = FakeChatService(chunks=[StreamChunk(delta="Let me check"), StreamChunk(event=event), StreamChunk(done=True)])
+
+        gen = await handler._stream_with_recording(BaseRunRequest(prompt="refund it", session_id="s1", user_id="u1", agent=registered_agent.name))
+        _ = [frame async for frame in gen]
+
+        messages = thread_enabled.get_messages("s1").messages
+        assert [m.role for m in messages] == ["user", "assistant"]
+        assert messages[1].media_type == HITL_MEDIA_TYPE
+        assert "Let me check" not in str(messages[1].content)
 
     @pytest.mark.asyncio
     async def test_scheduled_request_is_acknowledged_without_recording(self, thread_enabled, registered_agent):
@@ -443,6 +488,82 @@ class TestThreadContentEncoding:
         assert ThreadRecorder._as_thread_message(reply) == ThreadRecorder._as_thread_message(content, MEDIA_TYPE) == (content, MEDIA_TYPE)
 
 
+class TestThreadMessageModel:
+    """The payload-or-text pair on ThreadMessage (issue #607).
+
+    The label is the switch everywhere else in the codebase — `build_response` puts a payload in
+    `result` as an object only when one is set — so the model enforces the pair rather than
+    documenting it, and the wire rendering keeps an unlabelled message byte-identical to what it
+    was before the field existed.
+    """
+
+    def test_text_needs_no_label(self):
+        message = ThreadMessage(role="user", content="hello")
+
+        assert message.content == "hello"
+        assert message.media_type is None
+
+    def test_a_payload_is_stored_as_an_object(self):
+        message = ThreadMessage(role="assistant", content={"interruptions": []}, media_type=HITL_MEDIA_TYPE)
+
+        assert message.content == {"interruptions": []}
+        assert message.media_type == "application/json"
+
+    def test_a_label_over_text_is_refused(self):
+        with pytest.raises(ValidationError, match="carries its payload as an object"):
+            ThreadMessage(role="user", content="hello", media_type=HITL_MEDIA_TYPE)
+
+    def test_an_object_without_a_label_is_refused(self):
+        with pytest.raises(ValidationError, match="an unlabelled message carries text"):
+            ThreadMessage(role="user", content={"decisions": []})
+
+    def test_a_payload_is_normalised_on_construction(self):
+        """The same JSONPayload annotation AgentReplyAny.content uses, so both normalise once."""
+        import datetime
+
+        when = datetime.datetime(2026, 10, 20, 9, 30, tzinfo=datetime.timezone.utc)
+        message = ThreadMessage(role="user", content={"at": when}, media_type=HITL_MEDIA_TYPE)
+
+        assert message.content == {"at": "2026-10-20T09:30:00Z"}
+
+    def test_a_payload_with_no_json_form_is_refused(self):
+        with pytest.raises(ValidationError, match="NaN"):
+            ThreadMessage(role="user", content={"ratio": float("nan")}, media_type=HITL_MEDIA_TYPE)
+
+    def test_to_wire_omits_an_unset_label(self):
+        """A message written before this field existed reads back exactly as it did."""
+        wire = ThreadMessage(role="user", content="hello").to_wire()
+
+        assert "media_type" not in wire
+        assert list(wire) == ["message_id", "role", "content", "timestamp", "attachments"]
+
+    def test_to_wire_keeps_a_set_label_beside_its_payload(self):
+        wire = ThreadMessage(role="assistant", content={"a": 1}, media_type=HITL_MEDIA_TYPE).to_wire()
+
+        assert wire["content"] == {"a": 1}
+        assert wire["media_type"] == "application/json"
+
+    def test_to_wire_keeps_an_attachment_s_unset_fields(self):
+        """exclude_none would recurse and drop these; the exclusion names one field instead."""
+        message = ThreadMessage(role="user", content="see this", attachments=[ThreadAttachment(attachment_id="a1")])
+
+        assert message.to_wire()["attachments"] == [{"attachment_id": "a1", "name": None, "mime_type": None}]
+
+    def test_the_label_sits_between_content_and_timestamp(self):
+        """Field order is key order in model_dump_json, and all four recording paths must agree."""
+        message = ThreadMessage(role="assistant", content={"a": 1}, media_type=HITL_MEDIA_TYPE)
+
+        assert list(message.model_dump()) == ["message_id", "role", "content", "media_type", "timestamp", "attachments"]
+
+    def test_a_pre_change_message_round_trips(self):
+        """Stored JSON written before this change still loads: the new key is simply absent."""
+        stored = '{"message_id": "m1", "role": "user", "content": "hi", "timestamp": "2026-01-01T00:00:00Z", "attachments": []}'
+
+        message = ThreadMessage.model_validate_json(stored)
+
+        assert (message.content, message.media_type) == ("hi", None)
+
+
 class TestThreadPauseAndResume:
     """
     The thread routes carry a pause like every other surface (issue #606).
@@ -488,6 +609,123 @@ class TestThreadPauseAndResume:
         body = await handler._run_with_recording(req)
 
         assert body["result"] == "agent says hi"
+
+    @pytest.mark.asyncio
+    async def test_a_decision_is_recorded_as_its_payload_not_an_empty_message(self, thread_enabled, registered_agent):
+        """`prompt` is "" on a resume-only request, which is what used to reach the store."""
+        from agentkernel.core.model import ResumeDecision, ResumeSpec
+
+        handler = AgentThreadRequestHandler()
+        handler.chat_service = FakeChatService()
+        req = BaseRunRequest(
+            session_id="s1",
+            user_id="u1",
+            agent=registered_agent.name,
+            resume=ResumeSpec(run_id="run-1", decisions=[ResumeDecision(id="i1", status="approved")]),
+        )
+
+        await handler._run_with_recording(req)
+
+        decision = thread_enabled.get_messages("s1").messages[0]
+        assert decision.role == "user"
+        assert decision.media_type == HITL_MEDIA_TYPE
+        assert decision.content == {
+            "resume": {"run_id": "run-1", "decisions": [{"id": "i1", "status": "approved", "message": None, "payload": None}]}
+        }
+
+    @pytest.mark.asyncio
+    async def test_a_decision_sent_with_words_is_one_message_carrying_both(self, thread_enabled, registered_agent):
+        """The words belong to the decision, so they ride in the same message — prompt first."""
+        from agentkernel.core.model import ResumeDecision, ResumeSpec
+
+        handler = AgentThreadRequestHandler()
+        handler.chat_service = FakeChatService()
+        req = BaseRunRequest(
+            prompt="Use the card ending 4242 if store credit fails.",
+            session_id="s1",
+            user_id="u1",
+            agent=registered_agent.name,
+            resume=ResumeSpec(decisions=[ResumeDecision(id="i1", payload="Store credit")]),
+        )
+
+        await handler._run_with_recording(req)
+
+        messages = thread_enabled.get_messages("s1").messages
+        assert len([m for m in messages if m.role == "user"]) == 1
+        assert list(messages[0].content) == ["prompt", "resume"]
+        assert messages[0].content["prompt"] == "Use the card ending 4242 if store credit fails."
+
+    @pytest.mark.asyncio
+    async def test_the_three_statuses_are_recorded_identically(self, thread_enabled, registered_agent):
+        """The recorder never branches on what a decision meant; rendering that is the client's job."""
+        from agentkernel.core.model import ResumeDecision, ResumeSpec
+
+        handler = AgentThreadRequestHandler()
+        handler.chat_service = FakeChatService()
+        for index, status in enumerate(("approved", "denied", "cancelled")):
+            req = BaseRunRequest(
+                session_id=f"s{index}",
+                user_id="u1",
+                agent=registered_agent.name,
+                resume=ResumeSpec(decisions=[ResumeDecision(id="i1", status=status)]),
+            )
+            await handler._run_with_recording(req)
+
+        shapes = [
+            (message.role, message.media_type, list(message.content), list(message.content["resume"]))
+            for index in range(3)
+            for message in [thread_enabled.get_messages(f"s{index}").messages[0]]
+        ]
+        assert len(set(map(str, shapes))) == 1
+
+    @pytest.mark.asyncio
+    async def test_a_paused_reply_is_recorded_as_its_own_content(self, thread_enabled, registered_agent):
+        from agentkernel.core.event import PausedInterruption
+        from agentkernel.core.model import AgentPausedReplyAny
+
+        reply = AgentPausedReplyAny(
+            run_id="run-1",
+            session_id="s1",
+            agent=registered_agent.name,
+            interruptions=[PausedInterruption(id="i1", kind="tool_call", tool_name="issue_refund", arguments='{"order_id": "ORD-1001"}')],
+        )
+        handler = AgentThreadRequestHandler()
+        handler.chat_service = FakeChatService(reply=reply)
+        req = BaseRunRequest(prompt="refund ORD-1001", session_id="s1", user_id="u1", agent=registered_agent.name)
+
+        await handler._run_with_recording(req)
+
+        pause = thread_enabled.get_messages("s1").messages[1]
+        assert pause.role == "assistant"
+        assert pause.media_type == HITL_MEDIA_TYPE
+        assert pause.content == reply.content
+        assert pause.content["interruptions"][0]["tool_name"] == "issue_refund"
+
+    @pytest.mark.asyncio
+    async def test_a_rejected_decision_leaves_its_message_and_no_reply(self, thread_enabled, registered_agent):
+        """Recording happens before the run, so the outcome is not knowable at write time."""
+        from agentkernel.core.model import ResumeDecision, ResumeSpec
+
+        class RejectingChatService(FakeChatService):
+            async def execute(self, req, requests=None):
+                raise ValueError("No paused run in session 's1' matches this resume")
+
+        handler = AgentThreadRequestHandler()
+        handler.chat_service = RejectingChatService()
+        req = BaseRunRequest(
+            session_id="s1",
+            user_id="u1",
+            agent=registered_agent.name,
+            resume=ResumeSpec(decisions=[ResumeDecision(id="stale-id", status="approved")]),
+        )
+
+        with pytest.raises(HTTPException) as exc:
+            await handler._run_with_recording(req)
+
+        assert exc.value.status_code == 400
+        assert "No paused run" in exc.value.detail["error"]
+        messages = thread_enabled.get_messages("s1").messages
+        assert [m.role for m in messages] == ["user"]
 
     @pytest.mark.asyncio
     async def test_the_queue_route_accepts_a_resume_without_a_prompt(self, thread_enabled, registered_agent):

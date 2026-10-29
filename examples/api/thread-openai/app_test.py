@@ -26,6 +26,16 @@ class APITestClient:
         async with httpx.AsyncClient(timeout=30.0) as client:
             return await client.post(f"{self.url}/api/v1/chat", json=payload)
 
+    async def resume(self, session_id, interruption_id, user_id, status="approved"):
+        payload = {
+            "session_id": session_id,
+            "agent": "assistant",
+            "user_id": user_id,
+            "resume": {"decisions": [{"id": interruption_id, "status": status}]},
+        }
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            return await client.post(f"{self.url}/api/v1/chat", json=payload)
+
     async def get(self, path, token=None):
         headers = {"Authorization": f"Bearer {token}"} if token is not None else {}
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -161,3 +171,40 @@ async def test_thread_rename_via_chat(http_client):
     thread = resp.json()
     assert thread["name"] == "My renamed thread"
     assert thread["name_locked"] is True  # renamed threads opt out of automatic naming
+
+
+@pytest.mark.asyncio
+async def test_a_pause_and_its_decision_are_in_the_thread(http_client):
+    """The whole point of #607: reopening a thread shows what was asked and what was decided."""
+    print("test_a_pause_and_its_decision_are_in_the_thread")
+    session_id = str(uuid.uuid4())
+
+    paused = await http_client.chat("Email a summary to anne@example.com", session_id=session_id, user_id="alice")
+    assert paused.status_code == 202
+    body = paused.json()
+    assert body["status"] == "PAUSED"
+    interruption = body["interruptions"][0]
+    assert interruption["tool_name"] == "send_summary_email"
+
+    resumed = await http_client.resume(session_id, interruption["id"], user_id="alice")
+    assert resumed.status_code == 200
+
+    thread = (await http_client.get(f"/api/v1/threads/{session_id}", token=ALICE_TOKEN)).json()
+    roles = [m["role"] for m in thread["messages"]]
+    assert roles == ["user", "assistant", "user", "assistant"]
+
+    question, decision = thread["messages"][1], thread["messages"][2]
+    assert question["media_type"] == "application/json"
+    assert question["content"]["interruptions"][0]["tool_name"] == "send_summary_email"
+    assert decision["media_type"] == "application/json"
+    assert decision["content"]["resume"]["decisions"][0]["status"] == "approved"
+
+    # An ordinary turn after the resume still works, and is recorded as plain text.
+    follow_up = await http_client.chat(
+        "Thanks — what is the capital of France?", session_id=session_id, user_id="alice"
+    )
+    assert follow_up.status_code == 200
+
+    thread = (await http_client.get(f"/api/v1/threads/{session_id}", token=ALICE_TOKEN)).json()
+    assert [m["role"] for m in thread["messages"]][-2:] == ["user", "assistant"]
+    assert "media_type" not in thread["messages"][-1]

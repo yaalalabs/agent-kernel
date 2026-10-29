@@ -24,7 +24,8 @@ from ...api.handler import AgentRESTRequestHandler, AuthorisedRESTRequestHandler
 from ...auth.authoriser import Authoriser
 from ...core import Config
 from ...core.chat_service import ChatService, RequestBuilder, ResponseBuilder
-from ...core.model import BaseChatRequest, BaseRunRequest, ExecutionMode, StreamChunk
+from ...core.event import RunPaused
+from ...core.model import AgentPausedReplyAny, BaseChatRequest, BaseRunRequest, ExecutionMode, StreamChunk
 from ...core.service import AgentService
 from ...pipeline.envelope import ATTR_THREAD
 from ...pipeline.producer import RequestProducer
@@ -150,6 +151,10 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
         end. A halted/errored stream (error chunk, no raise) or an empty one must not
         record a blank assistant message in the thread.
 
+        A run that pauses records the pause and nothing else, even when text streamed before it:
+        the non-streaming path returns the paused reply rather than that partial message, so
+        recording both here would make the same agent produce different history on two surfaces.
+
         :param req: The chat request
         :return: Async generator yielding SSE-formatted frames
         :raises ValueError: If validation fails, no agent is available, or pre_run rejects
@@ -167,14 +172,24 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
         async def _stream():
             deltas: List[str] = []
             error_seen = False
+            paused: Optional[AgentPausedReplyAny] = None
             try:
                 async for chunk in chunks:
                     if chunk.error:
                         error_seen = True
                     if chunk.delta:
                         deltas.append(chunk.delta)
+                    if isinstance(chunk.event, RunPaused):
+                        paused = AgentPausedReplyAny(
+                            run_id=chunk.event.run_id,
+                            session_id=session_id,
+                            agent=chunk.event.agent,
+                            interruptions=chunk.event.interruptions,
+                        )
                     yield ResponseBuilder.stream_chunk(chunk, session_id, sse_format=True)
-                if not error_seen and deltas:
+                if paused is not None:
+                    recorder.post_run(req, paused)
+                elif not error_seen and deltas:
                     recorder.post_run(req, "".join(deltas))
             except Exception as e:
                 error_chunk = StreamChunk(error=str(e), done=True)

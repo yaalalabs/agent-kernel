@@ -15,7 +15,11 @@ export type Line =
   | { kind: "agent"; id: string; text: string }
   | { kind: "tool"; id: string; name: string }
   | { kind: "error"; id: string; text: string }
-  | { kind: "pause"; id: string; interrupt: Interrupt; agent: string; settled?: string };
+  | { kind: "pause"; id: string; interrupt: Interrupt; agent: string; settled?: string; staged?: Staged };
+
+/** An answer held until every question in the same pause has one — a resume that leaves one
+ * unanswered makes LangGraph re-ask it under a new id. */
+export type Staged = { verdict: Verdict; settled: string };
 
 /**
  * What the client sends back for one interrupt.

@@ -50,17 +50,31 @@ export default function App() {
     void run({ prompt: text });
   }
 
-  async function decide(lineId: string, interruptId: string, verdict: Verdict, settled: string) {
+  async function decide(lineId: string, verdict: Verdict, settled: string) {
     // Answer goes back to the agent that asked, not the one selected now — switching the picker
     // while a pause is open would otherwise post it to an agent the record does not belong to, which
     // Agent Kernel rejects as an agent mismatch.
     const asked = lines.find((line) => line.id === lineId && line.kind === "pause");
     if (asked?.kind !== "pause") return;
 
-    // Retire the question only once the run accepted the decision. A failed resume leaves the pause
-    // in place precisely so it can be answered again, which a card with no buttons left cannot do.
-    if (!(await run({ agent: asked.agent, resume: [{ interruptId, verdict }] }))) return;
-    setLines((current) => current.map((line) => (line.id === lineId && line.kind === "pause" ? { ...line, settled } : line)));
+    const staged: Line[] = lines.map((line) =>
+      line.id === lineId && line.kind === "pause" ? { ...line, staged: { verdict, settled } } : line,
+    );
+    setLines(staged);
+
+    // Nothing is sent until every open card for this agent has an answer; then they go together.
+    const open = staged.filter((line) => line.kind === "pause" && line.agent === asked.agent && !line.settled);
+    const answers = open.flatMap((line) => (line.kind === "pause" && line.staged ? [{ line, staged: line.staged }] : []));
+    if (answers.length < open.length) return;
+
+    // Retire the questions only once the run accepted them. A failed resume leaves the pause in
+    // place precisely so it can be answered again, which a card with no buttons left cannot do.
+    const resume = answers.map(({ line, staged: answer }) => ({ interruptId: line.interrupt.id, verdict: answer.verdict }));
+    if (!(await run({ agent: asked.agent, resume }))) return;
+    const settledById = new Map(answers.map(({ line, staged: answer }) => [line.id, answer.settled]));
+    setLines((current) =>
+      current.map((line) => (line.kind === "pause" && settledById.has(line.id) ? { ...line, settled: settledById.get(line.id) } : line)),
+    );
   }
 
   return (
@@ -116,7 +130,15 @@ export default function App() {
               );
             case "pause":
               return (
-                <Approval key={line.id} lineId={line.id} interrupt={line.interrupt} settled={line.settled} busy={running} onDecide={decide} />
+                <Approval
+                  key={line.id}
+                  lineId={line.id}
+                  interrupt={line.interrupt}
+                  settled={line.settled}
+                  staged={line.staged?.settled}
+                  busy={running}
+                  onDecide={decide}
+                />
               );
           }
         })}

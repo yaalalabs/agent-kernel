@@ -79,22 +79,25 @@ class RefundPlan(TypedDict):
     note: str
 
 
-def ask_preferences(state: RefundPlan) -> Dict[str, Any]:
-    """Ask two questions in a row: one a choice, one free text.
+def ask_method(state: RefundPlan) -> Dict[str, Any]:
+    """Ask which way the refund goes.
 
-    The second `interrupt()` is reached only once the first has an answer, so the run pauses twice
-    and the client answers one question per turn. LangGraph **re-runs this node from the top** on
-    resume — the first `interrupt()` then returns the stored answer instead of pausing again — which
-    is why anything with a side effect belongs after the questions, never before them.
+    LangGraph re-runs the node from the top on resume, returning the stored answer instead of
+    pausing again, so anything with a side effect belongs after the question.
     """
-    method = interrupt(
-        {
-            "question": "How should the refund be returned?",
-            "options": ["Original card", "Store credit", "Bank transfer"],
-        }
-    )
-    note = interrupt({"question": "Anything you want said to the customer? (free text)"})
-    return {"method": method, "note": note}
+    return {
+        "method": interrupt(
+            {
+                "question": "How should the refund be returned?",
+                "options": ["Original card", "Store credit", "Bank transfer"],
+            }
+        )
+    }
+
+
+def ask_note(state: RefundPlan) -> Dict[str, Any]:
+    """Ask what to tell the customer. A sentence, because `confirm` works the answer in verbatim."""
+    return {"note": interrupt({"question": "What should we tell the customer? (a sentence, or leave blank)"})}
 
 
 def confirm(state: RefundPlan) -> Dict[str, Any]:
@@ -112,11 +115,16 @@ def confirm(state: RefundPlan) -> Dict[str, Any]:
     return {"messages": [reply]}
 
 
+# Both question nodes fan out from START, so they interrupt in the same superstep and the human is
+# asked both at once. Two interrupt() calls in one node would ask them one after the other.
 _graph = StateGraph(RefundPlan)
-_graph.add_node("ask_preferences", ask_preferences)
+_graph.add_node("ask_method", ask_method)
+_graph.add_node("ask_note", ask_note)
 _graph.add_node("confirm", confirm)
-_graph.add_edge(START, "ask_preferences")
-_graph.add_edge("ask_preferences", "confirm")
+_graph.add_edge(START, "ask_method")
+_graph.add_edge(START, "ask_note")
+_graph.add_edge("ask_method", "confirm")
+_graph.add_edge("ask_note", "confirm")
 _graph.add_edge("confirm", END)
 
 LangGraphModule([_graph.compile(name="planner")])

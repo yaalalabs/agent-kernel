@@ -1,10 +1,11 @@
 import json
 import logging
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from ..core.chat_service import ChatService
 from ..core.config import AKConfig
-from ..core.model import BaseRunRequest, ExecutionMode, StreamChunk
+from ..core.event import PausedInterruption
+from ..core.model import AgentPausedReplyAny, BaseRunRequest, ExecutionMode, StreamChunk
 from ..core.util.factory import AKConfigError
 from .consumer import ConsumerLoop
 from .envelope import ATTR_AGUI, ATTR_ENDPOINT_URL, ATTR_REQUEST_ID, ATTR_STATUS_CODE, ATTR_THREAD, ATTR_USER_ID, QueueMessage, QueueName
@@ -66,10 +67,9 @@ class AgentRunner:
         # the status travels to the output message as the STATUS_CODE attribute (spec §12.6).
         status_code, agent_response = self._chat_service.process_chat_request(req=body, requests=body.requests)
         self._send_to_output(message, agent_response, status_code)
-        body_is_dict = isinstance(agent_response, dict)
-        result = agent_response.get("result") if body_is_dict else agent_response
-        media_type = agent_response.get("media_type") if body_is_dict else None
-        self._record_thread_reply(message, body, status_code, result, media_type)
+
+        media_type = agent_response.get("media_type") if isinstance(agent_response, dict) else None
+        self._record_thread_reply(message, body, status_code, self._reply_to_record(agent_response, body.session_id), media_type)
 
         self._log.info(f"[AGENT DONE] request_id={request_id}, status_code={status_code}")
 
@@ -200,6 +200,47 @@ class AgentRunner:
     # -- shared plumbing --------------------------------------------------------------------
 
     @classmethod
+    def _reply_to_record(cls, agent_response: Any, session_id: str) -> Any:
+        """
+        Pick what the thread recorder should store for one response.
+
+        A paused run is the exception: its reply never reaches this process, so `result` holds the
+        serialised pause rather than something the agent said. The body carries the pause keys
+        beside it — `ResponseBuilder` promotes them so a client can branch without parsing `result`
+        — and this is such a client.
+
+        :param agent_response: The response body the chat service built, or a non-dict reply.
+        :param session_id: The request's session, for a body that carries none of its own.
+        :return: The paused reply, the body's `result`, or the response itself.
+        """
+        if not isinstance(agent_response, dict):
+            return agent_response
+        if agent_response.get("status") == "PAUSED":
+            return cls._paused_reply(agent_response, session_id)
+        return agent_response.get("result")
+
+    @staticmethod
+    def _paused_reply(source: dict, session_id: str) -> AgentPausedReplyAny:
+        """Rebuild the reply a paused run produced from the pause keys its source carries.
+
+        Neither runner holds the reply itself — one has the response body `ResponseBuilder` built,
+        the other a streamed event — but both carry the keys it was built from, because a client
+        has to branch on a pause without parsing `result`. Rebuilding the model rather than
+        assembling a dict keeps the recorded content coming from `AgentPausedReplyAny`'s own
+        validator, which is what makes every surface store the same bytes for the same pause.
+
+        :param source: The response body or the streamed event, holding the pause keys.
+        :param session_id: The request's session, used when the source carries none of its own.
+        :return: The paused reply the thread recorder stores.
+        """
+        return AgentPausedReplyAny(
+            run_id=source["run_id"],
+            session_id=source.get("session_id") or session_id,
+            agent=source["agent"],
+            interruptions=[PausedInterruption(**interruption) for interruption in source["interruptions"]],
+        )
+
+    @classmethod
     def _record_thread_reply(cls, message: QueueMessage, body: BaseRunRequest, status_code: int, result, media_type: Optional[str] = None) -> None:
         """Append the assistant message to the conversation thread this request belongs to.
 
@@ -317,17 +358,24 @@ class StreamAgentRunner(AgentRunner):
         chunk_count = 0
         deltas: list[str] = []
         error_seen = False
+        paused: Optional[AgentPausedReplyAny] = None
         for raw_chunk in self._chat_service.process_stream_chat_sync(req=body, requests=body.requests):
             chunk = json.loads(raw_chunk)
             if chunk.get("error"):
                 error_seen = True
             if chunk.get("delta"):
                 deltas.append(chunk["delta"])
+            event = chunk.get("event") or {}
+            if event.get("type") == "run_paused":
+                paused = self._paused_reply(event, body.session_id)
             # Retry attempts get distinct chunk dedup ids so a redelivery's chunks never collide.
             self._send_to_output(message, chunk, status_code=None, dedup_suffix=f"{message.receive_count}-{chunk_count}")
             chunk_count += 1
 
-        if not error_seen and deltas:
+        if paused is not None:
+            # 202, not the 200 the ordinary branch records under: a paused run has not completed.
+            self._record_thread_reply(message, body, 202, paused)
+        elif not error_seen and deltas:
             self._record_thread_reply(message, body, 200, "".join(deltas))
 
         self._log.info(f"[STREAM AGENT DONE] request_id={request_id}, chunks={chunk_count}")
