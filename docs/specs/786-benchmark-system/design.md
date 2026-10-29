@@ -1,396 +1,504 @@
-# #786: Benchmark system for throughput, latency, scaling and cost
+# #786: Benchmark system for throughput, latency, scaling, resource usage and cost
 
-A benchmark runner that deploys Agent Kernel in queue mode on each host, drives it with many concurrent clients, and
-records **throughput, latency (with per-stage traces), scaling and cost** to CSVs and graphs. Phase 1 records and
-reports only. Phase 2 adds percentiles, SLA thresholds and an after-run pass/fail check. The runner is a separate
-project under `benchmarks/`. It is pluggable in two directions: one **client driver** per execution mode, and per
-platform a **host** composed from small, reusable implementations (deployer, scaling info fetchers, trace collector,
-transport collector, cost parts). The only change to AK itself is an opt-in **pipeline trace logger** that replaces
-today's stage-style INFO lines.
+A benchmark runner that deploys Agent Kernel in queue mode on each host, drives it with many concurrent clients under
+open load, and records **throughput, latency (with per-stage traces), scaling, worker CPU / memory and cost** to CSVs
+and graphs. Phase 1 only records and reports; phase 2 adds SLA thresholds and an after-run pass/fail check. The runner
+is pluggable in two directions: one **client driver** per execution mode, and per platform a **host** composed from
+small reusable implementations (deployer, fetchers, collectors, cost parts). The only change to AK itself is a `TRACE`
+log level with per-stage trace points on the request path.
 
 ## Terminology
 
-- **Load:** what the benchmark controls: the number of concurrent clients. Each client has its own session and its
-  own user identity.
-- **Load step N:** N clients start at the same moment. N is never requests per second.
+- **Load:** what the benchmark controls: the number of concurrent clients, each with its own session. Throughput,
+  latency, scaling, resource usage and cost are the outputs.
+- **Load step N:** N clients start at the same moment. Default steps `1, 10, 100, 1000`. N is never requests per
+  second.
+- **Open load:** a client never waits for a response before sending its next request.
 - **Test type:**
   - **burst:** each client sends one request (N requests at once).
-  - **steady:** each client loops send → wait for response → send for a configured time (about N in flight).
-- **Step timeline:** `before` (no load) → `load` → `cool-down` (no load, ends by the [step-end rule](#step-timeline)).
-- **Time window:** the sampling interval (e.g. 1 s). One row per window in the per-window CSV.
+  - **steady:** each client sends at a fixed per-client rate for a configured time, without waiting for responses.
+- **Step timeline:** `before` (no load) → `load` → `cool-down` (no load, ends by the step-end rule).
+- **Time window:** the sampling interval (e.g. 1 s). One row per window in the per-time-window CSV.
 - **Tx / Rx:** requests sent / responses received per second, both counted on the client.
-- **Tier:** one independently scaled part of a deployment (ECS agent runner, a Lambda function, a K8s Deployment).
+- **Client timeout:** how long the client waits for a response before recording the request as `timeout`.
+- **Tier:** one separately deployed and scaled part of a deployment (an ECS service, a Lambda function, a K8s
+  Deployment).
 - **Scale up / scale down:** adding / removing workers (horizontal only). Worker size is fixed per run.
-- **Host:** a named bundle of per-platform implementations (e.g. `ecs`, `lambda`, `eks`, `baremetal`, `local`).
+- **Host:** a named bundle of per-platform implementations (`local`, `ecs`, `lambda`, `eks`, `baremetal`). Each host
+  names its platform (`aws`, `k8s`, none for `local`).
+- **Percentiles:** p0 / p25 / p50 / p75 / p100 only, linear interpolation (numpy `method='linear'`).
 - **Billed cost:** the cloud bill for a run. **Estimated cost:** usage × list prices, splittable per step.
 
 ## Motivation
 
-- AK has no performance numbers for its queue pipeline. Nothing in the repo measures throughput, latency, scaling or
-  cost, so there is no baseline to set SLAs from (phase 2, #468).
-- Stage timings inside AK are only visible as ad-hoc INFO lines with different wording per path:
+- AK has no performance numbers for its queue pipeline. Nothing in the repo measures throughput, latency, scaling,
+  resource usage or cost, so there is no baseline to set SLAs from (phase 2, #468).
+- Stage timings inside AK are only visible as ad-hoc INFO lines, worded differently per path and placed inconsistently:
   - `[REQUEST START]`, `[ENQUEUED]`, `[WAITING]`, `[RESPONSE FOUND]`, `[STREAM REQUEST]`
-    (`ak-py/src/agentkernel/pipeline/request_handler.py:136,141,146,160,318`).
-  - `[AGENT START]`/`[AGENT DONE]` (`pipeline/agent_runner.py:49,57`), where `[AGENT DONE]` is logged after the output
-    send; ECS logs `[AGENT START]` at dequeue (`deployment/aws/containerized/akagentrunner.py:135`).
-  - `[OUTPUT START]`/`[OUTPUT DONE]` exist only on some paths (`containerized/akoutputconsumer.py:63,74,83`,
-    `pipeline/response_handler.py:231,262`, `pipeline/integration_delivery.py:104`), and some carry no `request_id`.
-  - The ECS WebSocket enqueue (`containerized/core/api/websocket_api.py:335-351`), the Lambda WebSocket enqueue
-    (`serverless/core/router/ws_lambda.py:367-410`) and the Lambda agent runner and response handler have no stage
-    line.
-  - They share the `ak` logger level, so they can't be switched on for a benchmark alone.
+    (`ak-py/src/agentkernel/pipeline/request_handler.py:136,141,146,160,330`); `[ENQUEUED]` also in
+    `pipeline/ws/handler.py:246` and `integration/adapter/producer.py:90`.
+  - `[AGENT START]` / `[AGENT DONE]` (`pipeline/agent_runner.py:63,74`) and their stream twins (`:315,333`).
+  - ECS logs `[AGENT START]` at dequeue and `[AGENT DONE]` after the output send
+    (`deployment/aws/containerized/akagentrunner.py:135,154`).
+  - `[OUTPUT DONE]` sometimes carries only `user_id` (`pipeline/response_handler.py:280`) or the SQS message id
+    (`deployment/aws/containerized/akoutputconsumer.py:74`).
+  - The Lambda handlers (`deployment/aws/serverless/`) have no stage lines at all.
+  - All share the `ak` logger level, and the formatter prints local time with no zone
+    (`core/logger.py:42`), so lines from different hosts can't be compared on one clock.
+- `logging.ak.level` rejects anything below `DEBUG`: `_LogLevelConfig.level` pattern is
+  `^(INFO|DEBUG|ERROR|WARNING|CRITICAL)$` (`core/config.py:655-659`).
 - An LLM call takes 1-10 s and varies a lot, which would hide what AK itself does. A fixed-delay mock agent is needed.
-  - A pre-hook that returns a reply stops the run before the framework runner (`core/runtime.py:242-246`, `:401-405`),
-    so the mock needs no AK code change.
-- Hosts scale and bill in very different ways (ECS target tracking, KEDA/HPA, Lambda + SQS), so worker counts and
-  cost need per-platform code. GCP and Azure come later. See `research/platform-scaling-and-cost.md`.
+  - An agent pre-hook that returns a reply halts the run before the framework runner (`core/runtime.py:242-246`,
+    `:401-405`), so the mock needs no AK code change.
+- Hosts scale and bill in very different ways (ECS target tracking, KEDA / HPA, Lambda + SQS event source mapping),
+  so worker counts, resource usage and cost need per-platform code. GCP and Azure come later. See
+  `research/platform-scaling-and-cost.md` and `research/resource-usage.md`.
 - The benchmarked deployments need non-default settings:
-  - ECS autoscaling is off by default with `min_count = 0` (`ak-deployment/ak-aws/containerized/variables.tf:394-412`).
-  - KEDA is off by default in the chart (`ak-deployment/ak-k8s/chart/values.yaml:347-349`).
-  - The Lambda agent runner handles a batch of 10 one after another under a 45 s timeout
-    (`ak-aws/serverless/variables.tf:376-381,493`, `deployment/aws/serverless/core/sqs_consumer.py:42`).
+  - ECS agent-runner autoscaling is off by default with `min_count = 0`
+    (`ak-deployment/ak-aws/containerized/variables.tf:394-410`); the IO service runs a fixed `desired_count = 1`
+    (`:373`).
+  - KEDA is off by default in the chart (`ak-deployment/ak-k8s/chart/values.yaml:347-349`), and the EKS and
+    bare-metal values files default to `transport.type: nats` (`values-eks.yaml:19-20`,
+    `values-baremetal.yaml:15-16`).
+  - The Lambda agent runner gets SQS batches of 10 (`ak-aws/serverless/variables.tf:493`), handles the records one
+    after another (`deployment/aws/serverless/core/sqs_consumer.py:42`), under a 45 s timeout (`variables.tf:381`).
 
 ## Requirements
 
 ### Principle: record and report only
 
 - The benchmark **records** results (CSVs) and **reports** them (graphs). People read the graphs and decide.
-- It doesn't flag or judge results: no warnings, thresholds, alerts or pass/fail in phase 1.
-- It doesn't act on results: no early stop, no load or deployment changes mid-run.
+- Phase 1 doesn't flag or judge results: no warnings like "Rx below Tx", no thresholds, alerts or pass/fail.
+- It doesn't act on results: no early stop, no load, deployment or scaling changes mid-run.
+- The only actions are the planned steps of a run: deploy → run → collect → plot → tear down.
 - The run flow may read recorded data to know where it is (e.g. the [step-end rule](#step-timeline)). That's flow
   control, not judging.
-- Errors and timeouts are a `status` on the request row. A timeout (the client stops waiting) never fails the run.
-- A collector that fails (API error, missing permission) leaves its columns empty and writes an entry to the run log.
-  The run carries on.
-- Phase 2's only exception: an after-run SLA check (see [Phase 2](#phase-2-sla-numbers)).
+- Errors and timeouts are a `status` on the request row. A timeout never fails the run.
+- **Only exception (phase 1):** at the end of each step, if any request got no response within the client timeout,
+  the run log gets a `WARNING`: "responses for `<count>` requests were not received within the timeout of
+  `<client timeout>`". Log only; the run carries on.
+- A collector or fetcher that fails (API error, missing permission, source switched off) leaves its columns empty and
+  writes a run-log entry. The run carries on.
+- Phase 2 adds an after-run SLA pass/fail check (see [Phase 2](#phase-2-sla-numbers-and-tuning)).
 
 ### Scope (phase 1)
 
-- Queue execution mode only (`Request Handler → Input Queue → Agent Runner → Output Queue → Response Handler`).
-- Delivery: **WebSocket complete** only (today's `execution.mode: async`, #641's `async` + `complete`).
+- Queue execution pipeline only (`Request Handler → Input Queue → Agent Runner → Output Queue → Response Handler`).
+  Non-queue execution is out of scope.
+- Delivery: **WebSocket complete** only (today's `execution.mode: async`; after #641, `async` + `complete`).
+  - Config naming follows whichever naming is live when built.
+  - `rest_sync` is never benchmarked: its blocking call breaks open load.
 - Hosts:
 
-  | Host | Platform | Transport | Log backend |
-  |---|---|---|---|
-  | `local` | one local AK process (`IOHandler`, `in_memory`) | `in_memory` | the process's own log file |
-  | `ecs` | AWS ECS Fargate (`ak-aws/containerized`) | SQS | CloudWatch Logs |
-  | `lambda` | AWS Lambda (`ak-aws/serverless`) | SQS | CloudWatch Logs |
-  | `eks` | EKS (`ak-k8s` chart) | Kafka | CloudWatch Logs (Container Insights) or pod logs |
-  | `baremetal` | bare-metal K8s (`ak-k8s` chart) | Kafka | pod logs |
+  | Host | Platform | Deploy source | Transport | Log backend |
+  |---|---|---|---|---|
+  | `local` | none | AK already running (`in_memory`) | `in_memory` | local process logs |
+  | `ecs` | `aws` | Terraform `ak-aws/containerized` | SQS | CloudWatch Logs |
+  | `lambda` | `aws` | Terraform `ak-aws/serverless` | SQS | CloudWatch Logs |
+  | `eks` | `k8s` | Helm `ak-k8s` | Kafka | open (Q8) |
+  | `baremetal` | `k8s` | Helm `ak-k8s` | Kafka | pod logs / Loki |
 
-- Build order: `local` baseline → `ecs` → scaling on `ecs` → `lambda` → `eks` → `baremetal` → cost.
+- GCP, Azure and NATS are out of scope, but the interfaces must allow them.
+- Build order:
+  1. `local` baseline.
+  2. AWS, WebSocket complete: `ecs`, then `lambda`.
+  3. `eks`, right after the AWS hosts.
+  4. `baremetal`.
 
 ### Benchmark project
 
-- Lives in a new top-level `benchmarks/` directory with its own `pyproject.toml` (uv), like `e2e/`. It is not part of
-  the `agentkernel` package.
-  - It depends on `agentkernel` from the repo path, for `TraceStage`/`PipelineTraceParser` and for the benchmarked app.
-  - Cloud SDKs (`boto3`, `kubernetes`) and plotting/data libraries are dependencies of this project only.
-- Components are classes with one responsibility each. Entry point: a `BenchCLI` class with a `run` method.
-- **Its own config file**, not `AKConfig` (departure from house pattern 2, because this is not AK runtime config): a
-  Pydantic `BenchConfig` loaded from `bench.yaml` with CLI overrides.
+- A standalone project in a new top-level `benchmarks/` directory with its own `pyproject.toml` (uv), like `e2e/`.
+  Not part of the `agentkernel` package.
+  - Depends on `agentkernel` for `TraceStage` and the trace-line parser, and for the benchmarked app.
+  - Cloud SDKs (`boto3`, `kubernetes`), `psutil`, data and plotting libraries are dependencies of this project only.
+- Components are classes with one responsibility each.
+- **Its own config file**, not `AKConfig`. Departure from the "reuse existing configuration" house pattern, because
+  these are benchmark settings, not AK runtime config. Holds: hosts, modes, test types, load steps, per-client rate,
+  steady load time, before window, maximum cool-down, client timeout, time window size, agent delay, fetcher order /
+  on-off, Lambda Insights on-off, bare-metal `$/node-hour`, price overrides.
+- Registries follow AK's factory shape: built-in short names, dotted-path bring-your-own, unknown name → error naming
+  the built-ins.
 
 ### Selecting what to run (CLI)
 
-- `ak-bench run` with:
-  - `--host <name>` (repeatable; default: every host in the config) and `--mode <name>` (repeatable; default: every
-    mode in the config). This covers all × all, one host, one mode on one host, one mode on all hosts.
-  - `--test-type burst|steady|scaling` (repeatable; default from config: `burst` and `steady`).
-  - `--steps 1,10,100,1000` to override the load steps.
-  - `--skip-deploy` / `--skip-teardown` to reuse an existing deployment.
-- `ak-bench plot --run-id <id>`: re-plot from existing CSVs, no re-run.
-- `ak-bench collect-scaling --run-id <id>`: re-run the after-run scaling fetchers, refill the CSVs, re-plot.
-- `ak-bench collect-cost --run-id <id>`: fetch the billed cost later, fill the cost CSV, re-plot.
-- Each run writes to its own folder: `results/<run-id>/<host>/<mode>/`. Cross-host and cross-mode comparison graphs go
-  to `results/<run-id>/comparison/`.
+- One CLI. `run` with:
+  - `--host <name>` and `--mode <name>` (each repeatable; default: all). Covers all × all, one host, one mode on one
+    host, one mode on all hosts.
+  - `--mode` takes AK's execution-mode config value (e.g. `--mode async`), the same name used in the results folders.
+  - `--steps` to override the load steps; test types from config (default both).
+  - Skip deploy / teardown to reuse an existing deployment.
+- `plot --run-id <id>`: re-plot from existing CSVs, no re-run. Graphs are written back into the same `graphs/`
+  folders.
+- `collect-scaling --run-id <id>` / `collect-resources --run-id <id>`: re-run the after-run fetchers, refill the CSVs,
+  re-plot.
+- `collect-cost --run-id <id>`: fetch the billed cost later (~1 day after), fill the cost CSV, re-plot.
+- Each run writes to its own folder, `results/<run-id>/`, so runs never overwrite each other.
 
 ### Run flow
 
-- For each selected host × mode: **deploy → fetch prices → run tests → collect → write CSVs → plot → tear down**.
-  - Teardown runs even when an earlier stage raised, unless `--skip-teardown` is given.
-  - Every resource the deployer creates carries the tag/label `ak-bench-run-id=<run-id>`.
-- The run metadata (`metadata.json`) records the resolved `BenchConfig`, the deployer's
-  `deployed_settings()` (autoscaling settings, worker size, batch size, timeouts, partitions), the agent delay, the
-  AK version and git commit, and the start/end of every step part.
+- For each selected host × mode: **deploy → fetch prices → record run metadata → run test types → collect → write
+  CSVs → plot → tear down**.
+  - Every resource the deployer creates carries the tag / label `ak-bench-run-id=<run-id>`.
+- **Run metadata** (`run-metadata.json`), recorded before the first step. Recorded only, never compared:
+  - run: run id, start time, host, platform, execution mode, region, AK version and git commit;
+  - per tier: worker size, min / max workers, autoscaling settings (target, cooldowns, HPA `behavior`, KEDA polling
+    interval, Lambda event source mapping mode / max concurrency);
+  - transport type and settings (batch size, Kafka partitions); session store type and capacity;
+  - resource usage sources: which fetchers ran, Container Insights (standard / enhanced), Lambda Insights on / off,
+    metrics-server resolution;
+  - front door (API Gateway WebSocket, ALB, Envoy Gateway, none);
+  - benchmark settings: agent delay, load steps, test types, per-client rate, steady load time, before window, maximum
+    cool-down, client timeout, time window size, percentile method.
+  - Host-side values come from the deployer; a value a host doesn't have stays empty.
 
 ### Load generation
 
-- One shared, mode-independent **load generator** (Python asyncio, one process). It:
-  - starts N clients at the same moment for a step, each with its own session id and user identity;
-  - records `sent`, `first_chunk` and `complete` timestamps per request from the client clock (UTC, microseconds);
-  - sets the `request_id` itself for every request (WebSocket allows it: `pipeline/ws/handler.py:228`; the Lambda WS
-    path requires it: `ws_lambda.py:386-387`);
-  - applies a per-request timeout (config). A timed-out request is recorded with `status = timeout` and stops being
-    waited for.
-- **Unique user per client.** WebSocket replies are pushed to every connection of the reply's `user_id`
-  (`pipeline/response_handler.py:251-262`, `serverless/akresponsehandler.py:99-124`), so clients must not share one.
-  The benchmarked app's auth validator accepts benchmark tokens that carry a per-client `userId`.
-- Burst steps also record the time to answer all N (first send → last response or timeout).
+- One shared, mode-independent **load generator** (Python asyncio). It:
+  - starts N clients at the same moment, each with its own session;
+  - sends on a schedule (burst: once; steady: the per-client rate) and **never waits for a response before sending**;
+    receiving runs separately and matches responses to requests by `request_id`;
+  - sets the `request_id` itself (the WS handler accepts a client id, `pipeline/ws/handler.py:228`; the Lambda WS
+    path requires one, `deployment/aws/serverless/core/router/ws_lambda.py:386-387`);
+  - records scheduled send, sent, first chunk and complete times per request from the client clock;
+  - stops waiting for a request after the client timeout and records `status = timeout`.
+- Burst steps also record the **time to answer all N** (first send → last response or timeout).
+- The load generator's own health (CPU, event-loop lag) is not recorded (decided).
 
 ### Client drivers (pluggable execution modes)
 
-- `ClientDriver` ABC, one instance per client: `connect(endpoint, identity)`, `send(request)`, an async iterator of
-  response events (`first_chunk`, `complete`, `error`, each with a client timestamp), `close()`.
-- Every driver emits the same events. For a mode with no chunks, `first_chunk = complete`.
-- `ClientDriverFactory`: built-in short name `ws_complete` (phase 1), dotted-path bring-your-own via `resolve_dotted`,
-  unknown name → error naming the built-ins.
-- Later drivers (`ws_delta`, `rest_sync`, `rest_async`) are new classes plus a factory branch, with no harness change.
+- `ClientDriver` ABC: connect → send → receive response events → close.
+- Every driver reports the same timing events (sent, first chunk, complete), so every mode has the same columns. For a
+  mode with no chunks, first chunk = complete.
+- Driver factory: built-in short name for WebSocket complete (phase 1), dotted-path bring-your-own. The mode (and,
+  after #641, the message type) is a config value.
+- Later drivers (WebSocket delta with time to first chunk, `rest_async`) are new classes plus a factory branch, with
+  no harness change.
 
 ### Test types and load steps
 
-- `burst` and `steady` run the configured steps (default `1, 10, 100, 1000`) one after another, in that order.
-- `steady`: configured load duration per step (default open, see [Open questions](#open-questions)); each client sends
-  its next request only after the previous one completed or timed out.
-- `scaling` (three phases, low → high → low, e.g. 10 → 1000 → 10, with configured hold times): optional, see
-  [Open questions](#open-questions). Load levels and holds are recorded with the results.
+- `burst` and `steady` both run the configured steps one after another (1 → 10 → 100 → 1000). Which types run is
+  config (default both).
+- Each step starts only after the previous one has ended, so it starts from the minimum workers.
+- Steady: per-client rate and load time are config values and recorded with the results.
 
 ### Step timeline
 
-- Every step of every test type is recorded in three parts:
+- Every step of both test types has three parts:
   1. **before:** no load for a configured time (e.g. 2 min). Records the starting worker counts and idle cost.
-  2. **load:** burst: first send → last response or timeout. steady: first send → configured time is up.
+  2. **load:** burst: send N → last response or timeout. Steady: first send → configured time is up.
   3. **cool-down:** no load. Ends when **all three** hold in the same poll:
-     - every request of the step completed or timed out (client);
-     - input and output queues hold nothing, counting in-flight messages (SQS: waiting and not-visible both 0, only
-       polls ≥ 60 s after the step's last send; Kafka: consumer-group lag 0 on both topics);
-     - every tier's running count, read from the host's primary fetcher, is back at its count at the end of `before`.
+     - every request of the step has a response or timed out (client);
+     - input and output queues hold nothing, counting in-flight messages (TransportCollector):
+       - SQS: `ApproximateNumberOfMessages` and `ApproximateNumberOfMessagesNotVisible` both 0, counting only polls
+         ≥ 60 s after the step's last send;
+       - Kafka: consumer-group lag 0 on both topics (AK commits after processing, `pipeline/transport/kafka.py:104`);
+     - every tier's running count, from the host's **primary** scaling fetcher, is back at its count at the end of
+       `before`.
   - A condition with no source on the host counts as met (`local`: only the first applies).
-  - **Maximum cool-down** (config, default 45 min from the end of `load`, overridable per host): the step ends anyway
-    and records `cooldown_max_reached = true`.
-- The next step starts only after the previous one ended.
-- The primary fetcher is also polled during the cool-down when it is not `live` (Lambda's metric). Those polled
-  values decide the step end only; the recorded counts come from the after-run fetch.
+  - **Maximum cool-down** (config, default 45 min from the end of `load`, settable per host): the step ends anyway and
+    records `cooldown_max_reached = true`.
+  - A non-live primary fetcher (Lambda's metric) is still polled during the cool-down for this check only; the
+    recorded counts come from the after-run fetch.
+- A step's graphs span the start of `before` to the end of `cool-down`.
 
 ### Throughput and latency
 
-- Per window: Tx, Rx, errors, timeouts, and the average latency of requests completed in the window. Client side only.
-- Per request: end-to-end latency (`complete − sent`) and status.
+- Throughput: per window, Tx, Rx, errors and timeouts, counted on the client. Needs nothing from the backend.
+- Latency: per request, end-to-end (`complete − sent`) and status. Per window: percentiles of the requests completed in
+  it.
 - **Latency traces:** per request, the AK stage timestamps from the trace logs, joined to the client times by
   `request_id`.
-  - The host's `TraceCollector` fetches the trace lines after the run (log backends lag) and returns
-    `{request_id: {stage: timestamp}}`.
-  - Parsing uses AK's `PipelineTraceParser`. Only fetching is per log backend.
-  - Derived per request: request handler time, input-queue wait, runner pickup, agent run, output-queue wait, response
-    handler time, push → client receive.
+  - A `TraceCollector` per log backend (not per host) fetches the trace lines after the run and returns
+    `{request_id: {stage: ts}}`. Parsing is shared and lives in AK.
+  - Per request, one duration per `TraceStage` value (previous stage → this stage), plus `CLIENT_RECEIVED`
+    (`RESPONSE_DELIVERED` → client received). Empty when either point is missing.
+  - Percentiles are computed over requests, never per worker first.
 
 ### Scaling
 
-- Worker counts per tier, per count type (`desired` / `running` / `pending`) and per fetcher, sampled into windows.
-- `ScalingInfoFetcher` ABC: one class per *way* of reading worker counts on one platform, not one per cloud and not one
-  per deployment type.
-  - `name` (registry name, used in CSV columns, e.g. `aws.ecs_api`), `live` flag, one `fetch(run, deployment, start,
-    end) -> ScalingInfo` method.
+- Horizontal scaling only, recorded for every step of both test types, per tier.
+- `ScalingInfoFetcher` ABC: one class per **way** of reading worker counts on one platform (not one per cloud, not one
+  per deployment type).
+  - `name` (registry name, used in CSV columns), `live` flag, one `fetch(run, deployment, start, end) -> ScalingInfo`.
   - `live = True`: polled every few seconds during the run. `live = False`: called once after the run after a
-    configured wait, and again by `collect-scaling`.
-  - `ScalingInfo` = count samples `(ts, tier, count_type, value)` + optional worker spans `(tier, worker, started,
-    stopped, extra)`.
-  - A fetcher loops over the deployer's `Deployment.resources` (tier → resource ids), so adding a tier changes only
-    the deployer.
-  - Generic fetchers take constructor parameters (e.g. one CloudWatch metric fetcher given a namespace, metric and
+    configured wait (Q6), and again by `collect-scaling`.
+  - `ScalingInfo` = count samples `(ts, tier, desired|running|pending, value)` + optional worker spans
+    `(tier, worker, started, stopped, extra)`.
+  - Loops over the deployer's `Deployment.resources` (tier → resource ids), so adding a tier changes only the
+    deployer.
+  - Generic fetchers take constructor parameters (e.g. one CloudWatch metric fetcher given namespace, metric,
     dimension).
-- A host lists one or more fetchers; the first is the **primary** (used for the step-end rule and the comparison
-  graphs). The config can reorder or disable fetchers per run. All enabled fetchers are recorded side by side, never
-  reconciled.
-- Fetchers in phase 1:
+- A host lists one or more fetchers; the first is the **primary** (step-end rule). Config can reorder or disable them.
+  All enabled fetchers are recorded side by side, never reconciled. The harness never branches on host kind.
+- Phase 1 fetchers:
 
-  | Fetcher | `live` | Bound to |
-  |---|---|---|
-  | `aws.ecs_api` | yes | `ecs` (primary) |
-  | `aws.ecs_scaling_activities` | no | `ecs` |
-  | `aws.cloudwatch_metric.ConcurrentExecutions` | no | `lambda` (primary) |
-  | `aws.lambda_log_streams` | no | written, not bound; bound by hand in the host registry if the metric falls short |
-  | `k8s.api` | yes | `eks`, `baremetal` (primary) |
+  | Fetcher | `live` | Gives | Bound to |
+  |---|---|---|---|
+  | `aws.ecs_api` (`DescribeServices` + `DescribeTasks`) | yes | desired, running, spans | `ecs` (primary) |
+  | `aws.ecs_scaling_activities` | no | desired (exact decision times) | `ecs` |
+  | `aws.cloudwatch_metric.ConcurrentExecutions` (`Maximum`, 60 s) | no | running | `lambda` (primary) |
+  | `aws.lambda_log_streams` (one span per log stream) | no | running, spans | written, not bound; bound by hand if needed |
+  | `k8s.api` | yes | desired, running, pending, spans | `eks`, `baremetal` (primary) |
 
-- Derived numbers per step, per tier and per fetcher (summary CSV), from `t_load_up` (first send) and `t_load_down`
-  (end of load):
+- Queue depth per window (input and output separately) from the host's `TransportCollector`, chosen by transport
+  (`sqs`, `kafka`; none for `in_memory`).
+- Derived per step, per tier and per fetcher (summary CSV), from `t_load_up` (first send) and `t_load_down` (end of
+  load):
   - scale up: decision delay, first new worker, scale-up done, backlog drained, latency recovered;
   - scale down: scale-down start, scale-down done;
-  - counts: `workers_before_up`, `workers_peak`, `workers_before_down`, `workers_after_down`, and the rate (workers
-    per minute) over each scaling window;
-  - a count with no source stays empty; a step that didn't scale records from → to as the same number.
-  - "latency recovered" uses a fixed measurement rule recorded with the results (proposal: ≤ 1.2× the before-part
-    average for 3 consecutive windows). It is not a pass/fail threshold.
-- Queue depth per window from the host's `TransportCollector`, chosen by transport (`sqs`, `kafka`; `in_memory` has
-  none).
+  - counts: `workers_before_up`, `workers_peak`, `workers_before_down`, `workers_after_down`;
+  - rate in workers / min over each scaling window;
+  - a count with no source stays empty; a step that didn't scale records e.g. 1 → 1.
+  - "Latency recovered" uses a fixed measurement rule recorded with the results (Q4); not a pass/fail threshold.
+
+### Resource usage (CPU and memory)
+
+- CPU and memory of every tier's workers over the whole step timeline, every step of both test types. Per worker where
+  the platform gives it, otherwise per tier.
+- `ResourceUsageFetcher` ABC, separate from `ScalingInfoFetcher` (different sources and delays; scaling must work with
+  no usage source).
+  - Same shape: `name`, `live`, `fetch(run, deployment, start, end) -> ResourceUsage`.
+  - **`ResourceSample`: one reading** of one metric for one worker (or whole tier) at one time:
+    - `ts`: when the reading was taken.
+    - `tier`: which tier it belongs to (a key of `Deployment.resources`, e.g. `runner`).
+    - `worker`: task id, pod name or Lambda log stream; `None` when the source only gives a whole-tier value.
+    - `metric`: what was read: `cpu_pct`, `mem_pct`, `mem_mb` or `cpu_time_ms`.
+    - `stat`: `value` for a single raw reading; `min` / `avg` / `max` when the source already aggregated it (ECS
+      service metrics across tasks; Lambda readings reduced per log stream × window in the query).
+    - `value`: the number.
+    - Examples: `(10:04:00, runner, task-1a2b, cpu_pct, value, 37.5)` from Container Insights;
+      `(10:04:00, runner, None, cpu_pct, max, 81.0)` from the ECS service metrics.
+  - **`ResourceUsage`: everything one `fetch()` call returns**: a list of `ResourceSample`s across every tier, worker,
+    metric and time in `[start, end]`. A wrapper rather than a bare list so per-fetch details (e.g. what the source
+    was missing) can be added later without changing the signature, same as `ScalingInfo`.
+  - The shared resource collector turns the samples into the per-window percentile columns, the summary columns and
+    `resource-usage.csv`. Fetchers never compute percentiles; the only reduction inside a fetcher is the Lambda
+    query's per log stream × window step, to stay under the Logs Insights row limit.
+  - Units: CPU as % of one worker's allocation; memory in MiB and as %.
+  - Shares the CloudWatch metric / Logs Insights helpers with the scaling fetchers and TraceCollector.
+- Phase 1 fetchers:
+
+  | Fetcher | `live` | Gives | Bound to |
+  |---|---|---|---|
+  | `aws.ecs_service_metrics` (`AWS/ECS` CPU / memory, per service) | no | min / avg / max per tier | `ecs` |
+  | `aws.ecs_container_insights` (performance log events, `Type = "Task"`) | no | per task | `ecs` |
+  | `aws.lambda_report_memory` (`REPORT` `Max Memory Used`) | no | memory per environment | `lambda` |
+  | `aws.lambda_insights` (Lambda Insights extension) | no | CPU time and memory per environment | `lambda`, on by default |
+  | `k8s.metrics_api` (`metrics.k8s.io` PodMetrics) | yes | per pod | `eks`, `baremetal` |
+  | `local.process` (`psutil`) | yes | per AK process | `local` |
+
+- Lambda Insights: the deployer adds the layer when on (the `layers` variable exists on every function,
+  `ak-aws/serverless/variables.tf:309,328,349`, ...); a per-run config value switches it off.
+- Lambda Logs Insights queries reduce in the query (per log stream × window), not by fetching raw invocations.
 
 ### Cost
 
 - Two numbers per run:
-  - **billed:** the cloud bill filtered by the run tag. Whole run only, filled later by `collect-cost`. Empty where
-    there is no bill (bare metal).
-  - **estimated:** usage × price table. Available at the end of the run and split per step.
-- Per step (first send → end of cool-down): estimated cost by component, requests by status, cost per 1M successful
-  requests, cost per hour of the load part (steady), and the idle cost of the before part kept separate.
-- Cost model per host: `idle_cost_per_hour` and `cost_per_1m_messages` by component, for the agent delay used.
+  - **billed:** AWS Cost Explorer `GetCostAndUsage` filtered by the run tag, grouped by service. Whole run only,
+    filled later by `collect-cost`. Empty where there is no bill (bare metal).
+  - **estimated:** usage × price table. Available at the end of the run and split per step. Per-step costs, cost per
+    1M and the cost model use it; the billed number checks it.
+- Per step (first send → end of cool-down): total by component, requests by status, cost per 1M successful requests,
+  cost per hour of the load part (steady), idle cost of `before` kept separate.
+- Cost model per host: `idle_cost_per_hour` and `cost_per_1m_messages` by component, for the agent delay used. LLM
+  token cost excluded.
 - Per-platform parts, all ABCs:
-  - `UsageSource`: one per billed thing (Fargate, Lambda, SQS, API Gateway WebSocket, ALB, K8s nodes, ...).
-    `usage(run, deployment, start, end) -> list[UsageItem]` with time ranges.
-  - `BillingReader`: one per cloud (AWS: Cost Explorer). Returns `None` where there's no bill.
-  - `PriceSource`: one per cloud (AWS: Price List Query API; bare metal: `$/node-hour` from the config).
-- Prices are fetched at the start of each run and saved as `price_table.json` (region, fetch date, overrides). Usage is
-  saved separately, so a run can be re-priced.
-- LLM token cost is out of scope (the mock agent makes no LLM call).
+  - `UsageSource`: one per billed thing (Fargate, Lambda, SQS, API Gateway WebSocket, ALB, K8s nodes, ...), returns
+    quantities with time ranges.
+  - `BillingReader`: one per cloud (AWS: Cost Explorer). Returns `None` where there is no bill.
+  - `PriceSource`: one per cloud (AWS: Price List Query API `GetProducts`; bare metal: `$/node-hour` from config).
+- Prices are fetched at the start of each run and saved as `price_table.json` (region, fetch date, overrides). Nobody
+  edits prices by hand. Usage is stored separately, so a run can be re-priced.
 
 ### Hosts
 
-- A `Host` is a dataclass bundle: deployer, scaling fetchers (ordered), trace collector, transport collector (or
-  none), usage sources, billing reader (or none), price source (or none).
-- `HostRegistry` maps a name to a factory that builds the bundle from the `BenchConfig`. Built-in names: `local`,
-  `ecs`, `lambda`, `eks`, `baremetal`. A dotted path to a bring-your-own host factory is accepted.
-- The harness never calls a cloud API and never branches on platform or host kind. It only sees the ABCs and their
-  return types.
+- A `Host` is a bundle: platform name, deployer, scaling fetchers (ordered), resource usage fetchers, trace collector,
+  transport collector (or none), usage sources, billing reader (or none), price source (or none).
+- A host registry maps names to bundles; a new host or platform is a registration, not a harness change.
+- Code is grouped in folders by cloud (`platforms/aws/`, `platforms/k8s/`, ...), one file per implementation. No
+  per-cloud "benchmarker" classes.
+- The harness (load generator, timing, CSVs, derived numbers, plots) never calls a cloud API; it only sees the ABCs
+  and their common return types.
+- `Deployer`: `deploy() -> Deployment(endpoint(url, auth), resources: {tier: resource ids})`, `teardown()`,
+  `deployed_settings() -> dict` (for the run metadata).
 - Built-in bundles:
 
-  | Host | Deployer | Fetchers (primary first) | Trace collector | Transport | Usage / billing / prices |
-  |---|---|---|---|---|---|
-  | `local` | none (AK already running) | none | local log file | none | none |
-  | `ecs` | Terraform `ak-aws/containerized` | `aws.ecs_api`, `aws.ecs_scaling_activities` | CloudWatch Logs | `sqs` | Fargate, SQS, ALB / Cost Explorer / AWS Price List |
-  | `lambda` | Terraform `ak-aws/serverless` | `aws.cloudwatch_metric.ConcurrentExecutions` | CloudWatch Logs | `sqs` | Lambda, SQS, API Gateway WS / Cost Explorer / AWS Price List |
-  | `eks` | Helm `ak-k8s` | `k8s.api` | open (CloudWatch Logs or pod logs) | `kafka` | K8s nodes, EKS control plane / Cost Explorer / AWS Price List |
-  | `baremetal` | Helm `ak-k8s` | `k8s.api` | pod logs | `kafka` | K8s nodes / none / config `$/node-hour` |
+  | Host | Scaling fetchers (primary first) | Resource fetchers | Transport | Usage / billing / prices |
+  |---|---|---|---|---|
+  | `local` | none | `local.process` | none | none |
+  | `ecs` | `aws.ecs_api`, `aws.ecs_scaling_activities` | `aws.ecs_container_insights`, `aws.ecs_service_metrics` | `sqs` | Fargate, SQS, ALB / Cost Explorer / AWS Price List |
+  | `lambda` | `aws.cloudwatch_metric.ConcurrentExecutions` | `aws.lambda_insights`, `aws.lambda_report_memory` | `sqs` | Lambda, SQS, API Gateway WS / Cost Explorer / AWS Price List |
+  | `eks` | `k8s.api` | `k8s.metrics_api` | `kafka` | K8s nodes, EKS control plane / Cost Explorer / AWS Price List |
+  | `baremetal` | `k8s.api` | `k8s.metrics_api` | `kafka` | K8s nodes / none / config `$/node-hour` |
 
-- Benchmark deployment settings (set by the deployers, recorded in the metadata):
+- Benchmark deployment settings, applied by the deployers and recorded in the metadata:
   - `ecs`: `scaling_config.enabled = true`, `min_count >= 1`.
-  - `eks`, `baremetal`: `keda.enabled: true`.
-  - `lambda`: `batch_size × agent delay` must stay under the agent runner timeout; the deployer refuses to start
-    otherwise (a config error, not a result judgement).
-  - every host: `execution.mode: async`, `logging.pipeline_trace.enabled: true`, the mock agent.
+  - `eks`, `baremetal`: `keda.enabled: true`, `transport.type: kafka`.
+  - `lambda`: zip packaging (Lambda Insights layer); `batch_size × agent delay` stays under the agent runner timeout.
+  - every host: queue mode, WebSocket delivery, `logging.ak.level: TRACE`, the mock agent.
 
 ### Mock agent
 
-- A `MockAgentPreHook(PreHook)` in the benchmarked app (`benchmarks/app/`), the first pre-hook on the agent.
-  - Waits a fixed delay with `await asyncio.sleep(delay)` (config, recorded: start with 0 ms and 500 ms).
-  - Returns `AgentReplyAny(content={"echo": <prompt>})`. The prompt carries the client's `request_id`, so the reply is
-    matched to its request even when the push carries no id.
-  - Keeps no per-request state on `self`.
-- Consequences of the pre-hook approach (verified, accepted for phase 1 unless [Q1](#open-questions) decides
-  otherwise):
-  - The session is loaded but **not stored**: a halted `Runtime.run` returns before `sessions().store()`
-    (`core/runtime.py:401-405` vs `:427`). The session-store write is not part of the measured latency or cost.
-  - Agent pre-hooks run before the system pre-hooks (`core/runtime.py:242`), so guardrails, multimodal and sandbox
-    hooks are skipped.
-  - In stream mode a halt yields an error chunk (`core/runtime.py:462-467`), so the pre-hook can't serve the later
-    `ws_delta` driver.
-- The same app image is used on every host. A real-LLM run is an optional final check, not part of phase 1.
+- A benchmark pre-hook in the benchmarked app, the **first** pre-hook on the agent (agent pre-hooks run before the
+  system ones, `core/runtime.py:242`). No AK code change.
+  - Waits a fixed delay with `await asyncio.sleep(delay)` (config, recorded; planned 0 ms then 500 ms).
+  - Returns `AgentReplyAny(content={"echo": <prompt>})`. The prompt carries the client's `request_id`.
+  - Keeps no per-request state on `self`; does no timing (stage times come from the trace logs).
+- Everything around the LLM call runs as normal: request handler, queues, agent runner, ChatService, session load,
+  response handler, WebSocket push.
+- Verified consequences of the pre-hook approach:
+  - The halted turn is **not stored**: `Runtime.run` returns at `core/runtime.py:405`, before
+    `self.sessions().store(session)` at `:427`. So session history doesn't grow during steady traffic, and the
+    session-store write isn't in the measured latency or cost.
+  - System pre-hooks (guardrails, multimodal, sandbox) are skipped.
+- The same app is used on every host. A real-LLM run is an optional final realism check.
 
-### AK change: pipeline trace logging (`ak-py`)
+### AK change: `TRACE` log level and trace points (`ak-py`)
 
-- New module `agentkernel/core/pipeline_trace.py` with:
-  - `TraceStage`, a `str` enum: `REQUEST_RECEIVED`, `INPUT_ENQUEUED`, `AGENT_RECEIVED`, `AGENT_START`,
-    `AGENT_FIRST_CHUNK`, `AGENT_DONE`, `OUTPUT_ENQUEUED`, `OUTPUT_RECEIVED`, `RESPONSE_DELIVERED`,
-    `RESPONSE_POLL_START`, `RESPONSE_FOUND`.
-  - `PipelineTrace.log(stage, request_id, message=None)`: the one call an AK developer writes per trace point.
-  - The line formatter and `PipelineTraceParser` side by side, so the format and parser change together.
-- Line format, one fixed format on every host:
-  `2026-10-21T08:15:12.345678Z AK_TRACE stage=AGENT_START request_id=<id> message="<text>"`.
-  - The timestamp is the log record's creation time, UTC, microseconds. `message` comes last, quoted, omitted when
-    empty.
-- **Off by default.** `PipelineTrace.log` returns at once when off, so nothing is formatted.
-  - On: a dedicated logger `ak.pipeline_trace` with its own stream handler and formatter, `propagate = False`, its
-    own level (INFO), independent of `logging.ak.level`. Turning it on changes no other log output.
-  - Not a custom TRACE level on the main logger, and not named `ak.trace` (used by the tracing providers).
-- **Configuration:** one new field, `logging.pipeline_trace.enabled` (default `false`,
-  `AK_LOGGING__PIPELINE_TRACE__ENABLED`), in the existing `logging` block (`core/config.py:663-665`).
-  - Why an explicit flag: tracing writes extra log lines on every request (a real cost the user must opt into), and no
-    existing config can stand in for "this is a benchmark run".
-  - Read once by `AKLogger.configure_from_config` (`core/logger.py:85-98`), which already runs on the first
-    `AKConfig.get()` (`core/config.py:1089-1095`).
-  - Existing YAML and `AK_*` env vars are unaffected.
-- **Trace points:** every stage on every code path a phase-1 host runs for WebSocket complete and delta: shared
-  `pipeline/` (request handler, WS handler, agent runner, response handler), ECS (WS enqueue, agent runner, output
-  consumer), Lambda (WS queue-mode handler, agent runner, response handler).
-- **The existing stage-style INFO lines on the request path are replaced** by trace calls (moved where the stage sits
-  elsewhere, e.g. `AGENT_DONE` before the output send). Per-chunk debug lines, `[OUTPUT STORE]` and lines without a
-  `request_id` off the request path stay as normal logs.
-  - No test, doc, dev skill, example or deployment file references the replaced lines (checked by grep on
-    2026-10-25).
-- Trace lines carry no worker information. Worker counts come only from the fetchers.
+- **A normal Python log level, no separate logger library:** `TRACE = 5` registered with `logging.addLevelName` in
+  `core/logger.py`, written through AK's existing loggers.
+  - `TRACE` written → all levels written. At `DEBUG` and above, trace lines are dropped by the level check before
+    formatting.
+  - `"TRACE"` added to the `_LogLevelConfig.level` pattern (`core/config.py:658`). `AKLogger.resolve_level` reads
+    `logging.getLevelNamesMapping()` (`core/logger.py:23`), so it resolves with no other change.
+  - Benchmark runs set `logging.ak.level: TRACE`. **No other new configuration.**
+  - Departure noted: Python's logging HOWTO advises against custom levels in libraries; taken on purpose so the normal
+    level hierarchy works.
+- **`TraceStage`**, a `str` enum in `core/logger.py`: `REQUEST_RECEIVED`, `INPUT_ENQUEUED`, `AGENT_RECEIVED`,
+  `AGENT_START`, `AGENT_FIRST_CHUNK` (delta only), `AGENT_DONE`, `OUTPUT_ENQUEUED`, `OUTPUT_RECEIVED`,
+  `RESPONSE_DELIVERED` (`rest_sync` stages: Q10).
+- **One call per trace point:** `log.log(TRACE, "stage=%s request_id=%s", stage, request_id)`, with an optional
+  quoted `message` last. `%`-style args so nothing is formatted when off.
+- **Line format**, same on every host:
+  `2026-10-21T08:15:12.345Z - ak.pipeline.agent_runner - TRACE - stage=AGENT_DONE request_id=<id> message="..."`.
+  - Timestamp = the log record's creation time, **UTC, millisecond precision**, ISO 8601 with `Z`.
+  - The formatter change (`core/logger.py:42`) applies to **every** AK log line, not only `TRACE`.
+- **Parser** in `core/logger.py` next to `TraceStage`, so format and parser change together. The benchmark imports it.
+- **Trace points on every code path a phase-1 host runs:** shared `pipeline/` (request handler, WS handler, agent
+  runner, response handler), ECS containerized handlers, and the Lambda serverless handlers.
+  - Each stage is logged exactly where named (e.g. `AGENT_DONE` before the output send, `AGENT_RECEIVED` at
+    dequeue).
+- **Existing stage-style INFO lines on the request path are converted** to trace calls (moved where they sit
+  elsewhere). Per-chunk debug lines, `[OUTPUT STORE]` and off-path lines without a `request_id` stay as normal logs.
+- Trace lines carry no worker id. Worker counts come only from the fetchers.
 
 ### Results
 
-- **requests.csv:** one row per request: run id, host, mode, test type, step, client id, session id, request id,
-  sent, first chunk, complete, latency, status, and one column per trace stage.
-- **windows.csv:** one row per window: test type, step, step part, Tx, Rx, errors, timeouts, avg latency, queue depth
-  per queue (waiting / in flight), and one column per tier × count type × fetcher (e.g.
-  `runner.running.aws.ecs_api`).
-- **summary.csv:** one row per test type × step: avg latency, avg Tx/Rx, error and timeout rates, time to answer all
-  N (burst), `cooldown_max_reached`, and the scaling numbers per tier × fetcher (with the fetcher named).
-- **cost.csv:** per-step estimated cost by component, run totals (estimated, billed), cost model numbers, price
-  table version.
-- Plus `metadata.json`, `price_table.json`, `usage.json`, `run.log`, `plots/`.
+- Folder layout `results/<run-id>/<platform>/<host>/<mode>/<test type>/step-<N>/` (`local` has no platform level).
+  - `<mode>` is the execution-mode config value (e.g. `async`).
+  - `step-<N>` zero-padded to the digits of the largest step.
+  - Only what ran gets a folder.
+- Per run: `run.log` (incl. the missing-responses warnings).
+- Per host × mode: `run-metadata.json`, `price_table.json`, `cost.csv` (whole-run estimated and billed, cost model).
+- Per test type: `summary.csv` (one row per step), `cost-per-step.csv`, `graphs/`.
+- Per step:
+  - `per-request.csv`: request id, session id, client id, scheduled send, sent, first chunk, complete, latency, status,
+    raw stage timestamps, and one `<STAGE>_s` duration column per `TraceStage` value plus `CLIENT_RECEIVED_s`.
+  - `per-time-window.csv`: step part, Tx, Rx, errors, timeouts, latency percentiles, each queue's depth, worker counts
+    per tier × count type × fetcher (e.g. `runner.running.aws.ecs_api`), CPU / memory per tier × metric × stat ×
+    fetcher.
+  - `resource-usage.csv`: raw per-worker samples in long form (`ts, tier, worker, metric, value, fetcher`).
+  - `graphs/`.
+- Summary per step: percentiles of end-to-end latency and each stage duration (with the row count used), min / avg /
+  max of per-window Tx / Rx, error and timeout counts, time to answer all N (burst), `cooldown_max_reached`, scaling
+  numbers and CPU / memory per tier per fetcher (fetcher named).
+- How each measurement is summarized:
+  - per-request times, per-worker CPU / memory: p0 / p25 / p50 / p75 / p100. No avg column.
+  - ECS service metrics: min / avg / max (all AWS gives).
+  - Tx / Rx: min / avg / max of per-window values.
+  - counts, times, costs: the value itself.
 
 ### Graphs (PNG)
 
-- Per host × mode:
-  - raw: latency per request vs send time (scatter); Tx/Rx per second over the whole run;
-  - aggregate: avg latency per step; avg Tx/Rx per step;
-  - latency trace breakdown: average time per stage per step (stacked);
-  - per step, on one time axis: Tx/Rx, worker counts (one line per fetcher), queue depth; burst steps add responses
-    received so far (0 → N);
-  - scaling: worker counts and avg latency over time with the load changes marked;
-  - cost per step by component.
-- Comparison: avg latency per step per host (same mode); scale-up/down times per host labelled from → to; cost per 1M
-  messages per host (stacked by component); idle cost per host; monthly cost vs message volume per host; estimated vs
-  billed per run.
+- Comparing the steps of one host × mode × test type (`<test type>/graphs/`):
+  1. `01-latency-per-step.png`: end-to-end latency percentiles per step, timeouts counted under each step.
+  2. `02-stage-times-per-step.png`: the per-step stage-times graph for every step, one panel per step, same y scale.
+  3. `03-resource-usage-per-step.png`: CPU % and memory percentiles per step, one row of panels per tier.
+- One step (`step-<N>/graphs/`):
+  1. `01-stage-times.png`: one box per stage (p25-p75, line at p50, whiskers p0 / p100).
+  2. `02-stage-breakdown.png`: stacked stage times for the fastest, average and slowest real request (completed
+     requests only).
+  3. `03-timeline.png`: before → load → cool-down on one time axis, one panel each. Steady: Tx / Rx, latency
+     percentiles per window, input queue, output queue, workers per tier. Burst: responses received so far, workers per
+     tier.
+  4. `04-every-request.png` (steady only): every request's latency vs send time, per-window percentiles, timeouts on
+     the timeout line.
+  5. `05-resource-usage.png`: CPU % and memory percentiles per window, one row of panels per tier.
+- Rules:
+  - every aggregate of a per-request measurement shows all five percentiles; box with whiskers to p0 / p100
+    (`whis=(0, 100)`) on category axes, bands (p0-p100 light, p25-p75 dark) and a p50 line otherwise;
+  - each tier, pipeline stage and queue shown separately, never summed; whole-system values (Tx, Rx, end-to-end
+    latency, totals) not split;
+  - separate panels, never two y-axes; no threshold or pass/fail lines;
+  - estimated vs billed cost per run, drawn by `collect-cost`.
+- No cross-host or cross-mode comparison graphs.
 
-### Phase 2: SLA numbers
+### Phase 2: SLA numbers and tuning
 
-- Computed from the phase-1 CSVs without re-running: p50/p95/p99 latency per step (and time to first chunk once
-  `ws_delta` exists).
-- SLA thresholds in a separate `sla.yaml` (latency percentiles per step, min throughput, max error/timeout rate, max
-  scale-up/down time, max cost per 1M messages), chosen from phase-1 results.
-- `ak-bench sla-check --run-id <id>`: after the run only, writes `sla.csv` (one row per SLA number: measured value,
-  threshold, pass/fail) and a per-host performance report. Nothing changes during a run.
-- Tuning AK to meet the SLAs is follow-up work tracked under #468, not part of this design.
+- Computed from the phase-1 CSVs without re-running.
+- SLA thresholds chosen from phase-1 values: latency percentiles per step, minimum Tx / Rx, maximum error / timeout
+  rate, maximum scale-up / scale-down time, maximum cost per 1M messages.
+- After-run SLA check: compares measured values to thresholds and records pass/fail per SLA number. Nothing changes
+  during a run.
+- A performance test report per host. Tuning AK to meet the SLAs is tracked under #468.
 
 ```mermaid
 graph LR
-    CLI["BenchCLI"] --> ORCH["RunOrchestrator<br/>(per host × mode)"]
-    ORCH --> HOST["Host bundle<br/>(HostRegistry)"]
+    CLI["CLI"] --> ORCH["Run orchestrator<br/>(per host × mode)"]
+    ORCH --> HOST["Host bundle<br/>(host registry)"]
     HOST --> DEP["Deployer"]
     HOST --> SF["ScalingInfoFetchers"]
+    HOST --> RF["ResourceUsageFetchers"]
     HOST --> TC["TraceCollector"]
     HOST --> TR["TransportCollector"]
     HOST --> COST["UsageSources / BillingReader / PriceSource"]
-    ORCH --> LG["LoadGenerator + StepRunner"]
-    LG --> DRV["ClientDriver<br/>(ClientDriverFactory)"]
-    DRV -->|WebSocket| AK["AK app (mock agent,<br/>pipeline trace on)"]
-    ORCH --> SHARED["Shared: ScalingCollector, StepEndCheck,<br/>CostEstimator, CSV writers, Plotter"]
+    ORCH --> LG["Load generator + step runner"]
+    LG --> DRV["ClientDriver"]
+    DRV -->|WebSocket| AK["AK app<br/>(mock pre-hook, TRACE on)"]
+    ORCH --> SHARED["Shared: collectors, step-end check,<br/>derived numbers, cost estimate, CSVs, plots"]
 ```
 
 ## Non-goals
 
-- Automatic flagging (Rx below Tx, saturation), alerts, early stops, or load/deployment changes based on results.
-- Non-queue (direct) execution.
-- `ws_delta`, `rest_sync` and `rest_async` drivers in phase 1 (the design supports them; they are added later).
-- GCP, Azure and NATS hosts (the interfaces must allow them; nothing is built).
-- Vertical scaling (worker size changes during a run).
+- Flagging (Rx below Tx, saturation), alerts, early stops, or load / deployment changes based on results.
+- Preventing or working around bottlenecks outside AK's workers (load generator, API Gateway quotas, ALB, Kafka
+  partitions, node capacity).
+- Recording the load generator's own health.
+- Comparing hosts with each other (no cross-host graphs).
+- Non-queue execution; `rest_sync` in any round.
+- WebSocket delta and `rest_async` drivers in phase 1 (designed for, added later).
+- WebSocket connect part and front-door scaling (later).
+- Repeated runs with spread across runs (later).
+- GCP, Azure and NATS hosts (interfaces allow them; nothing built).
+- Vertical scaling.
 - LLM latency and token cost.
-- Preventing or working around bottlenecks outside AK (load generator, ALB, API Gateway quotas, Kafka partitions).
-  See `research/reading-the-results.md`.
-- Running the benchmark in CI. It is run by hand against real cloud accounts.
-- Tuning AK (phase 2 follow-up under #468).
+- Running the benchmark in CI.
 
 ## Open questions
 
-- **Q1. Mock agent: pre-hook or mock `Runner`?** The pre-hook skips the session-store write (`core/runtime.py:405`
-  vs `:427`) and can't serve `ws_delta` (stream halt = error chunk, `:466`). A bring-your-own `Module`/`Runner` pair
-  that sleeps and echoes would exercise the session write and real stream chunks, at the cost of a little more code
-  in `benchmarks/app/`. Recommendation: a mock `Runner`. This design keeps the agreed pre-hook until decided.
-- **Q2.** Is the separate three-phase `scaling` test still needed now that every load step records scaling?
-- **Q3.** Defaults for the steady load duration (e.g. 10 min) and the `before` window (e.g. 2 min).
-- **Q4.** The "latency recovered" rule (proposal: ≤ 1.2× before-part average for 3 consecutive windows).
-- **Q5.** ECS: keep `aws.ecs_api` alone, or also `aws.ecs_scaling_activities`? Lambda: stay on
-  `ConcurrentExecutions` or bind `aws.lambda_log_streams`? Both decided after the first runs.
-- **Q6.** Lambda step end: whether `ConcurrentExecutions` has no datapoint (rather than 0) in idle minutes, and the
-  metric delay after which a missing minute counts as 0 (to be measured).
-- **Q7.** How long the after-run step waits before querying metrics and logs, per log backend.
-- **Q8.** EKS: pre-existing cluster or a Terraform step before the Helm deploy; and its trace log backend
-  (CloudWatch Container Insights vs pod logs).
-- **Q9.** Whether to enable hourly Cost Explorer granularity on the benchmark account, and the bare-metal `$/node-hour`.
-- **Q10.** Whether the existing Terraform `tags` variables (`ak-aws/containerized/variables.tf:71`,
-  `ak-aws/serverless/variables.tf:70`) reach every billed resource, and how the chart applies a run label to every
-  resource. Untagged resources become fixed allocations in the cost file.
-- **Q11.** `ws_delta` (later): trace every chunk or only the first (`AGENT_FIRST_CHUNK`) and the last (`AGENT_DONE`).
-- **Q12.** Final names: `pipeline_trace` module, `PipelineTrace`, logger `ak.pipeline_trace`, config
-  `logging.pipeline_trace.enabled`, CLI `ak-bench`.
+- **Q1.** Default per-client send rate for steady traffic, steady load time (e.g. 10 min) and `before` window (e.g.
+  2 min).
+- **Q2.** Default client timeout (about 15 min suggested).
+- **Q3.** Is the separate three-phase scaling test (low → high → low) still needed now that every step records
+  scaling?
+- **Q4.** "Latency recovered" rule (proposal: ≤ 1.2× the before-part value for 3 consecutive windows).
+- **Q5.** ECS: keep `aws.ecs_api` alone or with `aws.ecs_scaling_activities`. Lambda: stay on `ConcurrentExecutions`
+  or bind `aws.lambda_log_streams`. Both decided after the first runs.
+- **Q6.** Lambda step end: whether `ConcurrentExecutions` has no datapoint (rather than 0) in idle minutes; and how
+  long the after-run fetchers wait per log backend.
+- **Q7.** When WebSocket delta is added: whether the results folders get a message-type level under the mode.
+- **Q8.** EKS (decided when EKS is built, right after the AWS hosts): pre-existing cluster or a Terraform step before
+  Helm; and its log backend for the TraceCollector.
+- **Q9.** Two workers can save the same session concurrently when one client has several requests in flight (AK's
+  session locks are per process). With the pre-hook no turn is stored, but the session load still happens; confirm
+  this has no side effect.
+- **Q10.** `rest_sync` stages (`RESPONSE_POLL_START`, `RESPONSE_FOUND`): keep as trace stages, or leave `[WAITING]` /
+  `[RESPONSE FOUND]` as normal logs.
+- **Q11.** WebSocket replies are broadcast to every connection of the message's `user_id`
+  (`pipeline/response_handler.py:269-277`). If benchmark clients share a user, each receives everyone's replies.
+  Proposal: one user identity per client.
+- **Q12.** Whether converting the stage INFO lines affects anything relying on them (docs, dashboards, habits).
+- **Q13.** Hourly Cost Explorer granularity on the benchmark account; the bare-metal `$/node-hour`; whether the
+  Terraform tags and chart labels reach every billed resource (untagged ones become fixed allocations).
+- **Q14.** WebSocket delta (later): trace every chunk or only the first and last.
+- **Q15.** Final names: `TraceStage`, CLI name, config file name.
