@@ -7,7 +7,6 @@ import threading
 from contextlib import contextmanager
 from typing import Iterator
 
-from botocore.session import Session as BotocoreSession
 from opentelemetry import baggage, context
 from opentelemetry import trace as trace_api
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
@@ -19,6 +18,7 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from ...core import Runner, Session
 from ...core.util.factory import AKConfigError
 from ..base import BaseTrace
+from ..fetch import FetchedSpan, TraceQuery
 from .sigv4 import SigV4Session
 
 """
@@ -120,6 +120,14 @@ class CloudWatch(BaseTrace):
         return detected.merge(Resource(defaults))
 
     @staticmethod
+    def region() -> str | None:
+        """
+        The AWS region from AWS_REGION. There is no fallback to AWS_DEFAULT_REGION or a profile, so a missing
+        AWS_REGION fails loudly instead of sending spans to an unexpected region.
+        """
+        return os.environ.get("AWS_REGION")
+
+    @staticmethod
     def _exporter() -> OTLPSpanExporter:
         """
         Exports to the endpoint OTEL_EXPORTER_OTLP_TRACES_ENDPOINT or OTEL_EXPORTER_OTLP_ENDPOINT names, defaulting
@@ -133,8 +141,7 @@ class CloudWatch(BaseTrace):
                 return OTLPSpanExporter()
             return OTLPSpanExporter(session=SigV4Session(match["region"]))
 
-        botocore_session = BotocoreSession()
-        region = os.environ.get("AWS_REGION") or botocore_session.get_config_variable("region")
+        region = CloudWatch.region()
         if not region:
             raise AKConfigError(
                 "trace.type: cloudwatch needs an AWS region to reach the X-Ray OTLP endpoint; set AWS_REGION, "
@@ -145,7 +152,7 @@ class CloudWatch(BaseTrace):
         domain = "amazonaws.com.cn" if region.startswith("cn-") else "amazonaws.com"
         return OTLPSpanExporter(
             endpoint=f"https://xray.{region}.{domain}/v1/traces",
-            session=SigV4Session(region, botocore_session=botocore_session),
+            session=SigV4Session(region),
         )
 
     def openai(self) -> Runner:
@@ -203,3 +210,11 @@ class CloudWatch(BaseTrace):
         from .maf import CloudWatchMAFRunner
 
         return CloudWatchMAFRunner(self)
+
+    def fetch_spans(self, query: TraceQuery) -> list[FetchedSpan]:
+        """
+        Fetches spans back from the aws/spans log group through CloudWatch Logs Insights (needs Transaction Search).
+        """
+        from .fetch import CloudWatchTraceFetcher
+
+        return CloudWatchTraceFetcher().fetch_spans(query)

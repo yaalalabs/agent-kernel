@@ -6,6 +6,7 @@ from langfuse import Langfuse, propagate_attributes
 from ...core import Session
 from ...core.model import AgentReply, AgentRequest
 from ...framework.smolagents.smolagents import SmolagentsRunner
+from .langfuse import LangFuse
 
 
 class LangFuseSmolagentsRunner(SmolagentsRunner):
@@ -27,8 +28,11 @@ class LangFuseSmolagentsRunner(SmolagentsRunner):
         :param requests: The requests to the agent.
         :return: The result of the agent's execution.
         """
-        with propagate_attributes(session_id=session.id, tags=["agentkernel"]):
-            with self._client.start_as_current_observation(name="Agent Kernel Smolagents", as_type="span") as span:
-                result = await super().run(agent, session, requests)
-                span.update(input=result.prompt, output=str(result))
+        try:
+            with propagate_attributes(session_id=session.id, tags=["agentkernel"]):
+                with self._client.start_as_current_observation(name="Agent Kernel Smolagents", as_type="span") as span:
+                    result = await super().run(agent, session, requests)
+                    span.update(input=result.prompt, output=str(result))
+        finally:
+            LangFuse.flush_on_lambda(self._client)
         return result

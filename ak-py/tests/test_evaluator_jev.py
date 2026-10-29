@@ -13,13 +13,13 @@ import httpx2
 import pytest
 from typesafe_sdk import TypeSafeAuthenticationError, TypeSafeError
 
-from agentkernel.test.config import AKTestConfig
-from agentkernel.test.core.evaluator import (
+from agentkernel.test import (
     AKEvaluationCase,
     AKEvaluationError,
     AKMetricNotSupported,
     AKMissingInput,
 )
+from agentkernel.test.config import AKTestConfig
 from agentkernel.test.core.evaluator.jev import (
     _DEFAULT_CRITERIA,
     _DEFAULT_INSTRUCTIONS,

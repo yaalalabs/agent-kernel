@@ -1,0 +1,33 @@
+logging:
+  ak:
+    level: INFO
+session:
+  type: redis
+  redis:
+    prefix: "ak:openai-langfuse:example:"
+    url: "redis://ak-openai-serverless-dev-examples-redis.rhjs7r.0001.use2.cache.amazonaws.com:6379"
+execution:
+  mode: rest_sync
+  queues:
+    # The transport every component of this deployment runs on. Mandatory: the queue URLs
+    # below are injected per component, so only this declaration tells each process which
+    # transport it is on.
+    type: sqs
+    input:
+      # url injected via AK_EXECUTION__QUEUES__INPUT__URL
+      max_receive_count: 3
+    output:
+      # url injected via AK_EXECUTION__QUEUES__OUTPUT__URL
+      max_receive_count: 3
+  response_store:
+    type: redis
+    redis:
+      prefix: "ak:openai-langfuse:response:"
+      url: "redis://ak-openai-serverless-dev-examples-redis.rhjs7r.0001.use2.cache.amazonaws.com:6379"
+    # Poll every 3 s for up to 27 s: a reply is returned soon after it is stored, the store isn't read too
+    # often, and the wait stays under API Gateway's 29 s limit
+    retry_count: 10
+    delay: 3
+trace:
+  enabled: true
+  type: langfuse

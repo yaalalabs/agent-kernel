@@ -4,7 +4,7 @@
 import re
 
 import litellm
-from agentkernel.test.core.evaluator import (
+from agentkernel.test import (
     AKEvaluationCase,
     AKEvaluationError,
     AKEvaluationResult,

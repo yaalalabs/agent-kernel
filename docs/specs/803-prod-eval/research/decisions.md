@@ -42,9 +42,44 @@ requirements only. Each line names the decision; the design section it shaped is
   creates through the AK module: a DynamoDB table with TTL (`ak-deployment/ak-aws/serverless/state.tf:335`)
   and an inline role policy (`state.tf:434`). The test step makes only HTTP calls.
 - **When is a trace complete?** No provider says. The job grades a trace only when its root span finished
-  at least 2 minutes ago and every span's parent is present. Remaining risk: a leaf span arriving more
-  than 2 minutes late, which affects only that trace's scores. [§Evaluation run]
+  at least 2 minutes ago (the parent check was dropped in the follow-up below). Remaining risk: a span arriving
+  more than 2 minutes late, which affects only that trace's scores. [§Evaluation run]
 - **Session index projection:** `INCLUDE` (`progress`, `error`, `updated_at`), so the index holds no
   second copy of `spans_gz`. [§Table]
 - **Where trace config lives:** `config.yaml` (`trace.enabled`, `trace.type`), not Lambda environment
   variables. [§Deployment]
+
+## Follow-up: whole traces and span status
+
+Taken while simplifying what the example writes. The rule behind most of them: AK maps each provider's fields
+onto neutral ones but doesn't patch over a provider's own mistakes, and user code trusts what the fetcher returns.
+
+- **Span kind:** the example uses `span.kind` and no longer re-classifies with `OTelSpanClassifier`. Fixing it in
+  the Langfuse fetcher (fall back to the classifier when the type is `SPAN`) was rejected: a `kinds=[TOOL]` query
+  could no longer filter by `type=TOOL` server side and would page through every span in the window. Accepted
+  risk: a tool span Langfuse labels `SPAN` is missing from the transcript; check with one live run.
+  [§Span kinds]
+- **Trace assembly in AK:** `Trace.fetch_traces` and `FetchedTrace` take over the grouping, the root finding and
+  the usage sum, because every trace evaluator needs them. `fetch_spans` (the renamed `fetch`) stays. [§Public API]
+- **Single pass, partial traces:** `fetch_traces` fetches the window's spans once and groups them. Two passes (find
+  the trace ids, then fetch each trace whole) always return whole traces but cost a second call, and one request
+  per trace id on Langfuse. A partial trace at the window's edge is fine: a tracer's own UI shows the same while
+  spans are landing. [§Result model: `FetchedTrace`]
+- **Filters:** `fetch_traces` reuses `TraceQuery`; `kinds` and `name` select single spans, so they raise
+  `ValueError` and users filter `trace.spans`.
+- **A trace with no root is returned with `root=None`**, not dropped: dropping hides data silently, and a caller
+  summing cost over a window still wants those spans. The example skips it (counted as `no_root`); the next
+  `/eval` fetches it again.
+- **Traceloop root:** AK's Traceloop runners add no wrapper span, so `trace.user_input` / `trace.output` are
+  empty there. No wrapper is added; documented.
+- **Fetch limit check dropped:** a demo session never reaches the default 1000 spans, so the example no longer
+  raises on a full result.
+- **`status: SpanStatus`, not `failed: bool`:** `level` is Langfuse's own field. `UNSET` / `OK` / `ERROR` follow
+  the OTel span status, and each fetcher maps its provider's field onto it.
+- **Readiness stays the caller's:** AK returns what the tracer has stored. The settle time, the `pending` /
+  `unfinished` states and the retry loop stay in the example; `spans_missing_parent` and the fetch limit check
+  went.
+- **Opik judges stay in the example:** an attempt to move the four reference-free judges into AK's Opik
+  evaluator was reverted. `OpikTraceEvaluator` stays in the example, and AK's evaluator is unchanged.
+- **Not changed:** the Langfuse fetcher's kind mapping, the Traceloop runners, the async self-invoke in `api.py`,
+  the DynamoDB store, `_as_text`, and `lambda_test.py`.

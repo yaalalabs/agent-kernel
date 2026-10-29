@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import threading
 from contextvars import ContextVar
 from typing import Any, Dict, Optional
@@ -9,6 +10,7 @@ from traceloop.sdk import Traceloop
 
 from ...core import Runner
 from ..base import BaseTrace
+from ..fetch import FetchedSpan, TraceQuery
 
 """
 Thread-safe context variable to store association properties per request.
@@ -155,3 +157,14 @@ class OpenLLMetry(BaseTrace):
         from .maf import OpenLLMetryMAFRunner
 
         return OpenLLMetryMAFRunner()
+
+    def fetch_spans(self, query: TraceQuery) -> list[FetchedSpan]:
+        """
+        Fetches spans back from Traceloop through the warehouse REST API (same ``TRACELOOP_API_KEY``, resolved
+        through the secret manager).
+        """
+        from ...secret import SecretManager
+        from .fetch import TraceloopTraceFetcher
+
+        api_key = SecretManager.current().get("TRACELOOP_API_KEY", None)
+        return TraceloopTraceFetcher(api_key, base_url=os.environ.get("TRACELOOP_BASE_URL")).fetch_spans(query)
