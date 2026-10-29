@@ -13,15 +13,17 @@ turn open past the platform's delivery timeout.
 """
 
 import base64
+import json
 import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 from pydantic import BaseModel, Field
 
-from ...core.model import AgentReply, AgentRequestUnion, AgentRequestVoice, StreamChunk
+from ...core.event import PausedInterruption
+from ...core.model import AgentPausedReplyAny, AgentReply, AgentReplyText, AgentRequestUnion, AgentRequestVoice, StreamChunk
 
 if TYPE_CHECKING:  # typing only; producer.py imports this module
     from .producer import IntegrationProducer
@@ -187,6 +189,14 @@ class OutboundAdapter(ABC):
     TRUNCATION_NOTICE: str = "The response was truncated because it exceeds this platform's size limit."
     ERROR_MESSAGE: str = "Sorry, there was an error processing your request."
 
+    DECISIONS: tuple[str, ...] = ("approved", "denied")
+    DECIDABLE_KINDS: tuple[str, ...] = ("tool_call", "confirmation")
+    DENY_COLLECTS_REASON: bool = False
+    TYPED_ANSWER_NOTICE: str = "This needs a typed answer, which cannot be sent from here."
+    UNPRESSABLE_NOTICE: str = "This cannot be answered here."
+    PAUSE_APPROVAL_TEXT: str = "⏸ Approval needed\n\n{body}\n\nThis run is paused until someone approves it."
+    PAUSE_INPUT_TEXT: str = "⏸ Input needed\n\n{body}\n\nThis run is paused until someone answers."
+
     @abstractmethod
     async def deliver(self, reply: AgentReply, reply_context: Dict[str, str]) -> None:
         """Send the agent reply to the platform.
@@ -198,9 +208,93 @@ class OutboundAdapter(ABC):
         Raising hands the message back to the consumer loop, which retries it up to
         ``execution.queues.output.max_receive_count`` and then calls :meth:`deliver_error`.
 
+        A run that stopped to wait for a human arrives through :meth:`deliver_paused` instead.
+
         :param reply: The agent's reply.
         :param reply_context: The delivery coordinates resolved at the edge.
         """
+
+    async def deliver_paused(self, reply: AgentPausedReplyAny, reply_context: Dict[str, str]) -> None:
+        """Send a run that has stopped to wait for a human.
+
+        Concrete, not abstract: overriding it is how an adapter declares it can draw controls.
+
+        :param reply: The paused reply, carrying the interruptions a human must answer.
+        :param reply_context: The delivery coordinates resolved at the edge.
+        """
+        await self.deliver(AgentReplyText(response=self.format_pause(reply)), reply_context)
+
+    def format_pause(self, reply: AgentPausedReplyAny) -> str:
+        """Render a whole pause as text, for a platform with no controls to draw it with.
+
+        No reply instruction is offered: nothing maps a typed word onto a decision.
+
+        :param reply: The paused reply to render.
+        :return: The text to deliver.
+        """
+        body = "\n\n".join(self._format_interruption(interruption) for interruption in reply.interruptions)
+        opening, closing = self._pause_template(reply)
+        return f"{opening}{body}{closing}"
+
+    @classmethod
+    def _pause_template(cls, reply: AgentPausedReplyAny) -> Tuple[str, str]:
+        """The chosen template's two halves, either side of the questions.
+
+        Chosen per message, not per interruption. Handed back in halves so a platform that puts
+        its controls beside each question can place the lines itself.
+
+        :param reply: The paused reply to render.
+        :return: What goes before the questions, and what goes after.
+        """
+        kinds = {i.kind for i in reply.interruptions}
+        template = cls.PAUSE_INPUT_TEXT if kinds == {"input_required"} else cls.PAUSE_APPROVAL_TEXT
+        opening, _, closing = template.partition("{body}")
+        return opening, closing
+
+    @classmethod
+    def _decidable(cls, interruption: PausedInterruption) -> bool:
+        """Whether a decision verb can answer this interruption.
+
+        An `input_required` question wants a value, so a verb would resume it with no answer.
+
+        :param interruption: The question to check.
+        :return: True when a control can answer it.
+        """
+        return interruption.kind in cls.DECIDABLE_KINDS
+
+    @classmethod
+    def _format_interruption(cls, interruption: PausedInterruption) -> str:
+        """One interruption as the lines naming what is waiting.
+
+        :param interruption: The interruption to render.
+        :return: Its lines, falling back to the id when the framework named nothing.
+        """
+        lines: List[str] = []
+        if interruption.tool_name:
+            lines.append(interruption.tool_name)
+        lines.extend(cls._format_arguments(interruption.arguments))
+        if interruption.message:
+            lines.append(interruption.message)
+        return "\n".join(lines) if lines else interruption.id
+
+    @staticmethod
+    def _format_arguments(arguments: Optional[str]) -> List[str]:
+        """The call's arguments as indented ``key: value`` lines.
+
+        A JSON string from the framework; neither parsing nor an object shape is guaranteed.
+
+        :param arguments: The JSON-encoded arguments, when the framework supplied any.
+        :return: The lines to show, empty when there are none.
+        """
+        if not arguments:
+            return []
+        try:
+            parsed = json.loads(arguments)
+        except (TypeError, ValueError):
+            return [f"  {arguments}"]
+        if not isinstance(parsed, dict):
+            return [f"  {parsed}"]
+        return [f"  {key}: {value}" for key, value in parsed.items()]
 
     async def deliver_chunk(self, chunk: StreamChunk, reply_context: Dict[str, str]) -> None:
         """Send a real-time streaming chunk to the platform.

@@ -105,6 +105,7 @@ Encapsulates framework-specific execution logic:
   - Each adapter's `resume()` mirrors its own `run()` envelope — same `ToolContext`, same framework-context load/store, same resolved run options — and writes/clears the record **inside the `try` after a successful call**, never in a `finally`. Framework-specific rejections go **above the `try`**, because the adapter's blanket `except Exception` would otherwise flatten them into a generic reply.
   - **Clearing is the adapter's alone — `Runtime` does not tidy up afterwards.** It cannot tell a failure from an ordinary reply, since an adapter reports framework failures as `AgentReplyText`, so a fallback there would delete the record on a transient error and leave the human's decision unappliable. The record surviving *is* the retry signal. An adapter that forgets to clear leaves a phantom pause; one that clears too early loses a retry.
   - **A replacing adapter supersedes only its own framework's records**, via `PausedRunState.clear_for_runner(session, self.name)`. One session can be shared by agents on different frameworks — the client sends the session id and names the agent per request — and a framework session is keyed by runner name, so those pauses are independent. `PausedRun.runner` is what makes that possible; `add` derives it from `Agent.current()` when the caller omits it, so the scoping cannot be lost by forgetting to pass it. It is **stored** rather than resolved from `agent` through the registry because the record outlives the agent: a redeploy that rebinds a name to another framework would otherwise resolve to the wrong adapter, which `Runtime` now refuses as its sixth failure mode.
+  - **Deciding from a messaging platform** (#609) adds no new seam: a button press parses into the same `AgentResumeRequestAny` a REST caller sends, so it rides the ordinary `InboundRequest.requests` list and the pipeline cannot tell the two apart. The platform half is `OutboundAdapter.deliver_paused` and the per-platform parsing in the Messaging Integrations section below. AK ships **no approver policy** — anyone who can see the message can press — but the presser's identity reaches the run as `acting_user_id`, so an application enforces policy in a `PreHook`.
   - What each framework can carry back differs and is not smoothed over: OpenAI appends a second paused run (its `RunState` is a self-contained snapshot) and refuses both a structured answer and a prompt; LangGraph, Pydantic AI, ADK and MAF replace; LangGraph and Pydantic AI accept a prompt beside a decision, OpenAI and ADK reject it.
 - Each framework implements its own Runner (e.g., `OpenAIRunner`, `LangGraphRunner`, `CrewAIRunner`, `GoogleADKRunner`, `SmolagentsRunner`, `PydanticAIRunner`, `MAFRunner`)
 - Runners handle: creating `ToolContext`, converting request models to framework-native formats, invoking the framework's execution API, converting responses back to `AgentReply`
@@ -558,6 +559,7 @@ Platform --poll-----> PollerRunner ---------------> (same adapter surface) -----
                                     AgentRunner (platform-agnostic, ChatService) <------+
                                                      |
                     output queue --> ResponseHandler --dispatch on `integration`--> OutboundAdapter.deliver
+                                                                       (paused run --> OutboundAdapter.deliver_paused)
 ```
 
 - **`InboundAdapter`** (`adapter/base.py`): `name`, `source`, `webhook_path`, optional
@@ -571,9 +573,19 @@ Platform --poll-----> PollerRunner ---------------> (same adapter surface) -----
   `request_id` (the platform's own message id, and the `dedup_id` — this is what makes a webhook
   retry safe), the prebuilt `requests` list, and a flat string-valued `reply_context`.
 - **`OutboundAdapter`**: `deliver(reply, reply_context)`, `deliver_error(message, reply_context)`,
-  `acknowledge(reply_context) -> dict` (edge-side typing/read/"thinking" feedback, whose return
-  value is merged into the reply context), and a shared `split_reply` chunker driven by
-  `MESSAGE_LIMIT`/`MAX_CHUNKS`. Instances are factory-cached and shared across consumer threads, and
+  `deliver_paused(reply, reply_context)`, `acknowledge(reply_context) -> dict` (edge-side
+  typing/read/"thinking" feedback, whose return value is merged into the reply context), and the
+  shared `split_reply` chunker and `format_pause` renderer driven by
+  `MESSAGE_LIMIT`/`MAX_CHUNKS` and `DECISIONS`/`DECIDABLE_KINDS`/`DENY_COLLECTS_REASON`. `deliver_paused` is
+  concrete, not abstract: the default renders `format_pause(reply)` through `deliver`, and
+  overriding it is how Slack and Telegram declare they can draw a pause with real controls
+  (#609). Both overrides put each question's controls **against that question** rather than
+  gathering the rows under the whole text, by the only means their platform allows: Slack emits a
+  section plus an actions block per interruption, Telegram sends one message per interruption
+  (its keyboard is attached to a message and always renders at its foot). `_pause_template(reply)`
+  hands back the chosen wording's two halves so either can place the opening and closing lines
+  itself, and `_decidable(interruption)` is the shared rule that an `input_required` question gets
+  no controls. Instances are factory-cached and shared across consumer threads, and
   each call runs on its own event loop: no per-message state on `self`, loop-bound clients per call.
 - **`IntegrationAdapterFactory`** resolves only the **outbound** half, by the `integration`
   attribute: a built-in short name (overridable per platform via `<platform>.outbound_adapter`), or

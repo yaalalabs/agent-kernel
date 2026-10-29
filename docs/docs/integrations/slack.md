@@ -19,6 +19,7 @@ The `SlackInboundAdapter` class handles simple conversations with agents of your
 - **File Size Validation**: Automatic validation and rejection of oversized files
 - **Media Type Filtering**: Rejects audio/video files that cannot be processed
 - **Webhook Challenge Handling**: Automatic handling of Slack's URL verification process
+- **Approvals in the Channel**: A run that pauses for a human arrives as a message with Approve and Deny buttons
 
 :::info Current Limitation
 Currently, passed images and files are not added to the chat history. So all questions have to be asked with the message sent along with the attachments. Follow up questions, which require re-analysis of the file/image cannot be answered by the LLM.
@@ -42,7 +43,21 @@ Enable the following event subscriptions in your Slack app:
 - `message.channels` - Channel messages mentioning the bot  
 - `app_mention` - When the bot is mentioned with @
 
-### 3. Configure OAuth Scopes
+### 3. Enable Interactivity
+
+Button presses do not arrive over Event Subscriptions. If you want
+[approvals in the channel](#approving-a-paused-run), turn on **Interactivity & Shortcuts** and set
+its Request URL to the **same** URL as your event subscription:
+
+```
+https://your-domain.com:port/slack/events
+```
+
+One endpoint serves both: Slack's Bolt SDK dispatches events and interactivity payloads through the
+same handler, so there is no second route to mount and no extra scope to grant. Leave this off and a
+pause still renders — the buttons appear and nothing happens when they are pressed.
+
+### 4. Configure OAuth Scopes
 
 When you subscribe to events, some OAuth scopes are automatically added. In addition to that, these minimum scopes need to be added for the bot to function. These can be set up in "OAuth & Permissions":
 
@@ -52,7 +67,7 @@ When you subscribe to events, some OAuth scopes are automatically added. In addi
 - `files:read` - Read uploaded files
 - `app_mentions:read` - Read app mentions
 
-### 4. Install App to Workspace
+### 5. Install App to Workspace
 
 After configuring scopes and events, install the app to your workspace to generate the bot token.
 
@@ -132,6 +147,47 @@ requires `multimodal.enabled: true` with a shared `storage_type` (`in_memory`, `
 see it.
 :::
 
+## Approving a Paused Run
+
+When an agent stops to ask a human — a gated tool, a confirmation — the pause is posted to the same
+conversation with a row of buttons per question that needs a yes or no:
+
+```
+⏸ Approval needed
+
+refund_order
+  order_id: A-10294
+
+[ Approve ]  [ Deny ]
+
+refund_order
+  order_id: B-20571
+
+[ Approve ]  [ Deny ]
+
+This run is paused until someone approves it.
+```
+
+Each question carries its own controls, directly beneath it, so there is nothing to match up by
+eye and nothing to number.
+
+**Deny opens a modal** that asks for an optional reason, which reaches the agent as the decision's
+message, so the model can tell the customer *why* rather than just *no*. Approve sends straight
+through.
+
+Nothing is configured for this. A press parses into exactly the decision a REST client would send
+and travels the same queue, so the agent cannot tell the two apart. See
+[Human in the Loop](../advanced/human-in-the-loop.md) for the full picture, including the one kind of question that gets no buttons: one asking for a value rather than a verdict.
+
+:::caution Anyone who can see the message can press it
+Agent Kernel ships no approver policy. Channel membership is not an approval list — if it matters
+who decides, enforce it yourself: the presser's Slack user id reaches the run as `acting_user_id`,
+and a `PreHook` is where you check it.
+:::
+
+The buttons stay on the message after a decision. Pressing the same one again is deduplicated and
+changes nothing; pressing one on a pause that has already been answered gets the usual error reply.
+
 ## Configuration Options
 
 ### Custom Acknowledgment Messages and Agent
@@ -165,6 +221,10 @@ For more advanced Slack integrations, you can extend the `RESTRequestHandler` cl
 - Slack requires HTTPS endpoints for production
 - Use a reverse proxy like nginx for SSL termination
 - For development, use tunneling services that provide HTTPS
+
+**Buttons appear but pressing them does nothing:**
+- Enable **Interactivity & Shortcuts** and set its Request URL to your `/slack/events` URL
+- Check the server logs: an interactivity payload reaching the endpoint is logged like any event
 
 **Event delivery issues:**
 - Check your webhook URL is accessible from the internet

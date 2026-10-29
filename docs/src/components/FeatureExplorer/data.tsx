@@ -279,8 +279,8 @@ export const FEATURE_TABS: FeatureTab[] = [
       {
         title: "Human in the Loop",
         description:
-          "Pause a run for a person's approval or answer and resume from their decision later, on any replica. Works on OpenAI, LangGraph, Pydantic AI, Google ADK and Microsoft Agent Framework, over REST, streaming and AG-UI.",
-        tags: ["Approvals", "Pause & resume", "AG-UI"],
+          "Pause a run for a person's approval or answer and resume from their decision later, on any replica. Works on OpenAI, LangGraph, Pydantic AI, Google ADK and Microsoft Agent Framework, over REST, streaming, AG-UI and Slack or Telegram buttons.",
+        tags: ["Approvals", "Pause & resume", "AG-UI", "Slack & Telegram"],
         docs: "/docs/advanced/human-in-the-loop",
         example: "api/hitl",
       },

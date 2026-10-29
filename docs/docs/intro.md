@@ -12,7 +12,7 @@ slug: /
 
 🔀 **Realtime multi-agent handoffs** - A voice call moves between agents with the OpenAI Agents SDK's handoffs or Google ADK's transfers, and in LiveKit every agent appears as its own participant, with only the active one unmuted. [Learn more →](./integrations/livekit.md#multi-agent-handoffs)
 
-🙋 **Human in the Loop** - Let a run pause for a person's approval or answer, and resume from their decision minutes or hours later, on any replica. Works on OpenAI, LangGraph, Pydantic AI, Google ADK and Microsoft Agent Framework, over REST, streaming and AG-UI. [Learn more →](./advanced/human-in-the-loop.md)
+🙋 **Human in the Loop** - Let a run pause for a person's approval or answer, and resume from their decision minutes or hours later, on any replica. Works on OpenAI, LangGraph, Pydantic AI, Google ADK and Microsoft Agent Framework, over REST, streaming, AG-UI, and from a Slack or Telegram message with buttons on it. [Learn more →](./advanced/human-in-the-loop.md)
 
 🎙️ **LiveKit Voice Integration** - Connect OpenAI Agents SDK and Google ADK agents to LiveKit WebRTC rooms through the realtime execution pipeline. [Learn more →](./integrations/livekit.md)
 
