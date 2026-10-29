@@ -141,8 +141,9 @@ jobs:
         if: inputs.environment == 'production'
         run: |
           # The skill's pin went out with the version bump commit above; this covers the
-          # examples, the docs site source, the chart README and Chart.yaml description, and
-          # the root README (rendered on the chart's GHCR package page).
+          # examples, the docs site source, the chart README, Chart.yaml (its description pins
+          # and its version/appVersion keys), and the root README (rendered on the chart's
+          # GHCR package page).
           if git diff --quiet -- examples/ docs/docs/ ak-deployment/ README.md; then
             echo "No Helm chart version reference changes"
           else
