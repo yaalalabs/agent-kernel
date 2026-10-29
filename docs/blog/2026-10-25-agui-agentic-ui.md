@@ -114,7 +114,7 @@ if __name__ == "__main__":
 
 Mounting `AGUIPipelineRequestHandler` is what turns AG-UI on. There is no flag to forget. The agent runs on Agent Kernel's queue pipeline: on your laptop that is still one process with nothing else to install, and pointing the config at a broker, plus a Redis or Valkey store for the replies, moves the runs off the web tier without touching this code or your frontend.
 
-### 3. Turn on shared state
+### 3. Configure AG-UI
 
 ```yaml
 # config.yaml
@@ -147,7 +147,7 @@ curl -N -X POST http://localhost:8000/agui \
       }'
 ```
 
-Watch the events stream in: `RUN_STARTED`, a tool call to `update_agui_state`, a `STATE_SNAPSHOT` carrying the new task list, the reply text arriving in pieces, and finally `RUN_FINISHED`. That stream is everything your frontend needs.
+Watch the events stream in: `RUN_STARTED`, a tool call to `update_agui_state`, the reply text arriving in pieces, a `STATE_SNAPSHOT` carrying the new task list, and finally `RUN_FINISHED`. That stream is everything your frontend needs.
 
 ### 5. Put a UI on it
 
@@ -168,5 +168,3 @@ Agent Kernel is open source under Apache 2.0.
 - Runnable example with a React frontend: [`examples/api/agui`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/agui)
 - Human-in-the-loop over AG-UI: [`examples/api/hitl`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/hitl)
 - GitHub: https://github.com/yaalalabs/agent-kernel
-
-`pip install "agentkernel[agui]"` and let your users see what their agent is doing.
