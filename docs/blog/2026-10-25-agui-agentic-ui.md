@@ -65,13 +65,13 @@ AG-UI in Agent Kernel follows the same rules as everything else in the kernel.
 
 **One handler, not a new server.** AG-UI mounts alongside your chat API. Same sessions, same memory, same deployment.
 
-**Scales off the web tier.** Runs go through Agent Kernel's queue pipeline. Put SQS, Kafka or NATS behind it, with Redis or Valkey to carry the replies back, and agent runs move to their own workers while the web tier just holds the connection and streams the events back. The frontend never knows the difference.
+**Scales off the web tier.** Runs go through Agent Kernel's queue pipeline. Put SQS, Kafka or NATS behind it, with Redis or Valkey for the replies and the sessions, and agent runs move to their own workers while the web tier just holds the connection and streams the events back. The frontend never knows the difference.
 
 **Secure by default.** AG-UI has no anonymous mode. You plug in your own authoriser. Agent Kernel refuses to start the surface without one, because every run executes an agent on a real user's behalf.
 
 **Client context stays out of the prompt.** The frontend can attach context to a run: the page the user is on, their local time, a selected record. Agent Kernel never pastes that into the system prompt. The agent has to *ask* for it through a read-only tool, so it reads that context as tool output, not as instructions.
 
-**Everything still applies.** Sessions, memory, hooks, tracing, multimodal attachments: a run over AG-UI goes through the same runtime as any other request. Users can even drop an image or a PDF into the conversation.
+**Everything still applies.** Sessions, memory, hooks, tracing, multimodal attachments: a run over AG-UI goes through the same runtime as any other request. Turn on multimodal support and users can even drop an image or a PDF into the conversation.
 
 **People stay in the loop.** When an agent needs approval before it acts (*"may I issue this refund?"*), the run pauses cleanly and the frontend gets the question. The user clicks approve or deny, and the agent carries on from exactly where it stopped.
 
@@ -112,7 +112,7 @@ if __name__ == "__main__":
     IOHandler.run(handlers=[AGUIPipelineRequestHandler(authoriser=DemoAuth())])
 ```
 
-Mounting `AGUIPipelineRequestHandler` is what turns AG-UI on. There is no flag to forget. The agent runs on Agent Kernel's queue pipeline: on your laptop that is still one process with nothing else to install, and pointing the config at a broker, plus a Redis or Valkey store for the replies, moves the runs off the web tier without touching this code or your frontend.
+Mounting `AGUIPipelineRequestHandler` is what turns AG-UI on. There is no flag to forget. The agent runs on Agent Kernel's queue pipeline: on your laptop that is still one process with nothing else to install, and pointing the config at a broker, with shared storage such as Redis for replies and sessions, moves the runs off the web tier without touching this code or your frontend. The [AG-UI docs](https://kernel.yaala.ai/docs/integrations/agui) list every setting a broker needs.
 
 ### 3. Configure AG-UI
 
