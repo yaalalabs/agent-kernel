@@ -17,7 +17,7 @@ session:
 execution:
   mode: rest_sync
 
-# Mounting AGUIRequestHandler in app.py is what turns AG-UI on; this block only parameterizes it.
+# Mounting AGUIPipelineRequestHandler in app.py is what turns AG-UI on; this block only parameterizes it.
 # AG-UI always delivers a run as a stream of events, so it does not consult `execution.mode`.
 agui:
   default_agent: support # also serves POST /agui, in addition to POST /agui/support
