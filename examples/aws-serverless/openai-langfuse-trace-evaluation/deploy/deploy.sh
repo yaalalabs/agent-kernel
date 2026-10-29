@@ -8,7 +8,7 @@ set -eo pipefail # exit if any command in this script fails
 #
 # Pass `local` as the first argument to install agentkernel from ../../../ak-py/dist instead of PyPI. The
 # local wheel is force-reinstalled with --no-index: it carries the same version as a published release, and
-# the example needs the local code (Trace.fetch, the Langfuse flush on Lambda).
+# the example needs the local code (Trace.fetch_traces, the Langfuse flush on Lambda).
 #
 # Packages are installed with --compile-bytecode: uv skips the .pyc files by default, and Lambda's read-only
 # /var/task would make every cold start compile each imported module again.

@@ -971,22 +971,23 @@ against each provider after a real agent run, and tick off `research/provider-re
 
 Phases 2 and 3 add no Agent Kernel core code beyond the `agentkernel.test` re-exports (§Phase 1 consumer
 changes). Everything below lives in `examples/aws-serverless/openai-langfuse-trace-evaluation/` and uses only
-public AK API: `Trace.get().fetch_traces(...)`, `FetchedTrace`, `FetchedSpan`, `SpanStatus`, `SpanUsage`,
-`AKEvaluator`, `AKEvaluationCase`, `AKEvaluationResult`, `AKMetricNotSupported`, `AKTestConfig`, `Lambda`,
+public AK API: `Trace.get().fetch_traces(...)`, `FetchedTrace`, `SpanStatus`, `SpanUsage`, `AKEvaluator`,
+`AKEvaluationCase`, `AKEvaluationResult`, `AKMetricNotSupported`, `AKTestConfig`, `Lambda`,
 `ServerlessAgentRunner` and `ResponseHandler`.
 
 The example is an AK serverless deployment in queue mode, with three Lambdas:
 
-- **Request handler** (`lambda_request_handler.py`): `Lambda.handler`. It serves `POST /api/v1/chat` (enqueues
-  the request on the input SQS queue and polls the Redis response store for the reply) and three custom
-  routes: `POST /api/v1/eval` prepares one session's traces and starts grading the ready ones in an
-  asynchronous self-invocation, `GET /api/v1/check` reports whether every request of that session has been
-  graded, and `POST /grade` is the internal route that self-invocation calls.
+- **Request handler** (`lambda_request_handler.py`): its `handler` runs the grading for a `START_GRADE` event
+  and passes every other event to `Lambda.handler`, which serves `POST /api/v1/chat` (enqueues the request on
+  the input SQS queue and polls the Redis response store for the reply) and two custom routes:
+  `POST /api/v1/eval` invokes the function asynchronously with `START_GRADE`, and `GET /api/v1/check` returns
+  the session's graded rows.
 - **Agent runner** (`lambda_agent_runner.py`): `ServerlessAgentRunner.handle` runs the agent on each queued
   request; its Langfuse runner traces the run and flushes before the sandbox freezes (Phase 1).
 - **Response handler** (`lambda_response_handler.py`): `ResponseHandler.handle` stores each reply.
 
-Nothing runs on a schedule.
+Nothing runs on a schedule. The example grades 3 requests, so it is kept simple: no retries, no progress
+states, no leases and no re-run step.
 
 ### Example layout
 
@@ -997,18 +998,18 @@ examples/aws-serverless/openai-langfuse-trace-evaluation/
 ├── uv.lock
 ├── build.sh                    # test venv: uv sync --all-extras (or the local ak-py wheel with `local`)
 ├── config.yaml                 # AKConfig: Redis session, rest_sync over SQS, Redis response store, trace langfuse
-├── lambda_request_handler.py   # /chat (built in), /eval, /check, /grade → EvaluationAPI; handler = Lambda.handler
+├── lambda_request_handler.py   # /eval, /check → EvaluationAPI; handler: START_GRADE or Lambda.handler
 ├── lambda_agent_runner.py      # the agent; handler = ServerlessAgentRunner.handle
 ├── lambda_response_handler.py  # handler = ResponseHandler.handle
 ├── simulate_traffic.py         # TrafficSimulator: 3 questions under one session id
 ├── evaluator/
 │   ├── __init__.py
-│   ├── api.py                  # EvaluationAPI: /eval, /check and /grade
-│   ├── job.py                  # TraceEvaluationJob, PrepareSummary, GradeSummary
+│   ├── api.py                  # EvaluationAPI: /eval, /check and the START_GRADE entry point
+│   ├── grader.py               # SessionGrader: fetch, judge, store
 │   ├── case.py                 # ToolCall, TraceCase, TraceEvaluationCase
 │   ├── opik_evaluator.py       # OpikTraceEvaluator (not opik.py, which would shadow the SDK)
-│   └── store.py                # EvaluationStore, Progress, TraceProgress, SessionProgress
-├── lambda_test.py              # weekly integration test, with its EvaluationClient helper
+│   └── store.py                # EvaluationStore
+├── lambda_test.py              # weekly integration test
 └── deploy/
     ├── main.tf  variables.tf  outputs.tf  providers.tf  terraform.tfvars
     ├── deploy.sh
@@ -1023,16 +1024,17 @@ There is no unit-test suite in the example; `lambda_test.py` is its only test (�
 1. **No AK core changes.** If the example needs something AK lacks, it is raised as a design.md open
    question, not patched in core inside this change.
 2. **Classes, not scripts.** Each component below is a class. `lambda_request_handler.py` builds one
-   `EvaluationAPI` and registers three one-line route functions with `@Lambda.register`, each delegating to
-   the API's method of the same purpose; `lambda_agent_runner.py` builds the agent. The only other
-   module-level function is the agent's tool.
-3. **Configuration from the environment only.** `EvaluationAPI.from_env()` and
-   `TraceEvaluationJob.from_env()` are the only places that read environment variables; the other
-   classes take constructor parameters.
-4. **Every write is idempotent and conditional where it can race**, and a trace's `graded` row is written in
-   one `PutItem`, after all its metrics are judged (§`evaluator/store.py`).
-5. **One bad trace or metric never fails the run; any other error fails it** and is reported through the
-   `/eval` response or the Lambda logs (§Phases 2–3 error handling).
+   `EvaluationAPI`, registers two one-line route functions with `@Lambda.register`, and defines `handler`
+   (the `START_GRADE` check). The only other module-level function is the agent's tool.
+3. **Each class builds what it needs in `__init__`.** No factories and no injected dependencies: the
+   example has no unit tests to inject into. `EvaluationStore()` reads `RESULTS_TABLE`; `SessionGrader()`
+   reads the judge model through `AKTestConfig.get()`.
+4. **No fault tolerance beyond what the 3-request demo needs.** No retries, no progress state, nothing
+   caught in the grading: an error ends the grading invocation and shows up as a missing row
+   (§Phases 2–3 error handling).
+5. **Opik loads only in the grading invocation.** `api.py` imports `grader.py` inside `grade`, and
+   `grader.py` imports `opik_evaluator.py` at its top, so `/chat`, `/eval` and `/check` never import Opik or
+   litellm.
 
 ### The agent and the wiring (`lambda_*.py`, `config.yaml`)
 
@@ -1050,18 +1052,18 @@ OpenAIModule([triage_agent, support_agent])
 handler = ServerlessAgentRunner.handle
 
 # lambda_request_handler.py
-api = EvaluationAPI.from_env()
+api = EvaluationAPI()
 
 @Lambda.register("/eval", method="POST")
 def start_evaluation(event, context): return api.start_evaluation(event, context)
 
 @Lambda.register("/check", method="GET")
-def check_progress(event, context): return api.check_progress(event, context)
+def check_results(event, context): return api.check_results(event, context)
 
-@Lambda.register("/grade", method="POST")    # internal: /eval invokes it; not exposed by API Gateway
-def grade_traces(event, context): return api.grade_traces(event, context)
-
-handler = Lambda.handler
+def handler(event, context):
+    if event.get("action") == EvaluationAPI.START_GRADE:   # a plain Lambda event: not reachable through the API
+        return api.grade(event)
+    return Lambda.handler(event, context)
 
 # lambda_response_handler.py
 handler = ResponseHandler.handle
@@ -1070,6 +1072,9 @@ handler = ResponseHandler.handle
 - `get_order_status` is a module-level function because the OpenAI Agents SDK's `@function_tool` turns a
   function into the tool. It returns `"Shipped, arriving Friday"` for `A-1001` and `"Order <id> not found"`
   for any other id, so the traffic includes one tool result the agent must report honestly.
+- `handler` checks `START_GRADE` before `Lambda.handler` because the REST router can't route an event with no
+  path (`deployment/aws/serverless/aklambda.py:70-82`). An API Gateway event carries the request body as a
+  string under `body`, never a top-level `action`, so only the function's own invoke reaches `api.grade`.
 - `config.yaml`:
   - `session: {type: redis, redis: {prefix, url}}` on the base deployment's Redis cluster.
   - `execution: {mode: rest_sync, queues: {type: sqs, input: {max_receive_count: 3}, output:
@@ -1088,18 +1093,14 @@ class TrafficSimulator:
         "Can you check order A-9999 for me?",      # tool returns "not found"
         "Write me a poem about the ocean.",        # off-topic: should decline, no tool
     )
-    MAX_ATTEMPTS = 3
     TIMEOUT = 30.0
-    RETRY_WAIT = 5.0
-    RETRY_STATUSES = frozenset({429, 502, 503})
     WARM_UP_QUESTION = "Hello"
 
-    def __init__(self, chat_url: str, session_id: str | None = None, transport: httpx.BaseTransport | None = None): ...
+    def __init__(self, chat_url: str, session_id: str | None = None): ...
     @property
     def session_id(self) -> str: ...                 # the given id, or one uuid4 generated in __init__
     def send_questions(self) -> list[str]: ...       # one POST per question, all under session_id; the replies
     def warm_up(self) -> None: ...                   # one question under a throwaway session; result ignored
-    def _send_question(self, client: httpx.Client, question: str) -> str: ...
     @classmethod
     def chat_url_from_env(cls, deploy_dir: Path) -> str: ...   # AK_TEST_ENDPOINT, else terraform output
     @classmethod
@@ -1110,21 +1111,16 @@ if __name__ == "__main__":
 ```
 
 - `send_questions()`: POST `{"prompt": q, "session_id": self.session_id, "agent": "triage"}` to `chat_url` for
-  each question in order, and return each response's `result` (`""` when absent). Each question is its own
-  request, so each becomes its own trace.
-- Retries (`_send_question`): up to `MAX_ATTEMPTS`, `RETRY_WAIT` seconds apart, only for failures that mean
-  the request never reached the agent: `httpx.ConnectError` / `ConnectTimeout` and statuses `429`, `502`,
-  `503`. A `504` or a read timeout is not retried: the request may already be queued, and resending it would
-  run the agent twice and leave an extra trace. After the last attempt, `raise_for_status()`.
+  each question in order, `raise_for_status()`, and return each response's `result` (`""` when absent). Each
+  question is its own request, so each becomes its own trace. No retries.
 - `warm_up()`: posts `WARM_UP_QUESTION` under `warm-up-<uuid4>`, ignoring the reply and any `httpx.HTTPError`,
-  so cold starts hit it rather than the graded requests.
+  so Lambda cold starts (which can outlast API Gateway's 29 s) hit it rather than the graded requests.
 - It knows nothing about `/eval` or `/check`.
 - `chat_url_from_env(deploy_dir)`: `os.getenv("AK_TEST_ENDPOINT")`, or `terraform -chdir=<deploy_dir> output
-  -raw agent_invoke_url` when the variable is unset. A failing or empty output raises `RuntimeError`.
+  -raw agent_invoke_url` (`check=True`) when the variable is unset.
 - `cli`: flags `--endpoint` (overrides `chat_url_from_env(<example>/deploy)`) and `--session-id` (default:
   generated). Sends, prints each question with its reply and then the session id, and returns `0`. The README
   shows the `curl` calls to `/eval` and `/check` for that id.
-- `transport` lets a caller inject an `httpx` transport (e.g. `httpx.MockTransport`).
 
 ### `evaluator/case.py`
 
@@ -1135,372 +1131,168 @@ class ToolCall(BaseModel):
     output: str | None = None
     failed: bool = False
 
-class TraceEvaluationCase(AKEvaluationCase):
+class TraceEvaluationCase(AKEvaluationCase):         # what the judges read
     transcript: str
     tool_call_count: int = 0
 
 class TraceCase(BaseModel):
     trace_id: str
-    provider: str                             # the tracer the spans came from (root.provider)
     session_id: str | None = None
-    root_name: str | None = None
     started_at: datetime
     ended_at: datetime | None = None
     user_input: str = ""
     output: str = ""
     tool_calls: list[ToolCall] = []
     agents: list[str] = []
-    usage: SpanUsage = SpanUsage()            # summed over the trace's spans
-    span_count: int
-    spans: list[FetchedSpan] = []             # kept for EvaluationStore's spans_gz
+    usage: SpanUsage = SpanUsage()                   # summed over the trace's spans
 
     @property
-    def is_finished(self) -> bool: ...        # ended_at is not None and output != "" (the run ended)
-    def has_settled(self, now: datetime, settle_time: timedelta) -> bool: ...   # ended_at <= now - settle_time
-    def is_ready_to_grade(self, now: datetime, settle_time: timedelta) -> bool: ...   # finished and settled
-    @property
-    def latency_ms(self) -> int | None: ...   # root start → end; None while it hasn't ended
+    def latency_ms(self) -> int | None: ...          # root start → end; None while it hasn't ended
     @classmethod
-    def from_trace(cls, trace: FetchedTrace) -> "TraceCase": ...   # needs trace.root; ValueError otherwise
+    def from_trace(cls, trace: FetchedTrace) -> "TraceCase": ...
     def build_transcript(self) -> str: ...
     def to_evaluation_case(self, threshold: float) -> TraceEvaluationCase: ...
     @staticmethod
     def _as_text(value: Any) -> str | None: ...
 ```
 
-- `from_trace` reads a `FetchedTrace` that has a root; the job skips the others (`root is None`), so grouping spans,
-  finding the single parentless root and summing usage are AK's (`fetch_traces`), not the example's:
-  - It raises `ValueError` when `trace.root` or `trace.started_at` is `None`.
-  - `provider`, `root_name`: from the root span. `session_id`: `trace.session_id`.
-  - `user_input`, `output`, `started_at`, `ended_at`: from the trace (its root span), text through `_as_text`
-    (`""` when `None`).
-  - Tool calls: `trace.tool_spans`, oldest first; `name` = `span.name or "unknown"`, `input` / `output` through
-    `_as_text`, `failed` = `span.status == SpanStatus.ERROR`. The example trusts `span.kind`: it doesn't
-    re-classify spans, so a tool span a provider labels as a plain span is missing from the transcript
-    (design.md §Trace case).
-  - `agents`: `trace.agent_names`. `usage`: `trace.usage`. `span_count`: `len(trace.spans)`. `spans`: `trace.spans`.
-  - There is no `missing_parents`: the settle time is what waits for late spans.
-- `_as_text`: Langfuse returns `input`/`output` as strings that are often JSON. A string that decodes to a
-  JSON string is unwrapped; any other string is kept; `None` stays `None`; anything else is `json.dumps`-ed.
+- `from_trace(trace)`, for a trace with a root span (the grader skips the others): `trace_id`, `session_id`,
+  `started_at`, `ended_at`, `user_input`, `output` (both through `_as_text`, `""` when absent), `agents =
+  trace.agent_names`, `usage = trace.usage`, and one `ToolCall` per `trace.tool_spans` (oldest first) with
+  `failed = span.status == SpanStatus.ERROR`.
 - `build_transcript()`:
   ```
   User request:
   <user_input>
 
   Tool calls:
-  1. get_order_status({"order_id": "A-1001"}) -> "Shipped, arriving Friday" [failed]   # "[failed]" only when failed
-  (none)                                                                                  # when there are no tool calls
+  1. <name>(<input>) -> <json.dumps(output)>[ [failed]]
+  ...                                   # "(none)" when there are no tool calls
 
   Final answer:
   <output>
   ```
-  Each call line is `f"{n}. {name}({input or ''}) -> {json.dumps(output)}"`.
-- `to_evaluation_case(threshold)`: `user_input`, `actual=output`, `context=[call.output for call in
-  tool_calls if call.output]` or `None`, `transcript=build_transcript()`, `tool_call_count`, `threshold`.
+- `to_evaluation_case(threshold)`: `user_input`, `actual = output`, `context` = the tool calls' non-empty
+  outputs (`None` when there are none), `transcript`, `tool_call_count`, `threshold`.
+- `_as_text(value)`: `None` stays `None`; a string that decodes as a JSON string is unwrapped (Langfuse often
+  returns JSON-encoded strings); any other string is returned as is; anything else is `json.dumps`-ed.
 
 ### `evaluator/opik_evaluator.py`
 
 ```python
-os.environ.setdefault("OPIK_TRACK_DISABLE", "True")   # before any Opik metric is built, as AK's own evaluator does
+os.environ.setdefault("OPIK_TRACK_DISABLE", "True")   # before any Opik import, as AK's own Opik evaluator does
 
 class OpikTraceEvaluator(AKEvaluator):
     THRESHOLD = 0.5
-    MAX_ATTEMPTS = 2
     METRICS = ("task_completion", "tool_correctness", "answer_relevance", "hallucination")
     _LOWER_IS_BETTER = {"hallucination"}
-    _JUDGE_CLASSES: dict[str, tuple[type[BaseMetric], dict]]   # metric → (Opik class, extra kwargs)
+    _JUDGE_CLASSES: dict[str, tuple[type[BaseMetric], dict]] = {
+        "task_completion": (AgentTaskCompletionJudge, {}),
+        "tool_correctness": (AgentToolCorrectnessJudge, {}),
+        "answer_relevance": (AnswerRelevance, {"require_context": False}),
+        "hallucination": (Hallucination, {}),
+    }
 
-    def __init__(self, config: AKTestConfig, metric: str): ...   # ValueError for an unknown metric
-    @classmethod
-    def for_all_metrics(cls, config: AKTestConfig) -> list["OpikTraceEvaluator"]: ...
+    def __init__(self, config: AKTestConfig, metric: str): ...   # builds the metric's judge
     @property
-    def metric(self) -> str: ...
-    @property
-    def higher_is_better(self) -> bool: ...                       # False for hallucination
+    def higher_is_better(self) -> bool: ...
     def applies_to(self, case: TraceEvaluationCase) -> bool: ...  # tool_correctness needs tool_call_count > 0
-    def evaluate_by_score(self, case: AKEvaluationCase) -> AKEvaluationResult: ...  # raises AKMetricNotSupported
-    def evaluate_by_llm(self, case: AKEvaluationCase) -> AKEvaluationResult: ...
-    def _build_judge(self) -> BaseMetric: ...                     # built once, lazily
+    def evaluate_by_score(self, case: AKEvaluationCase) -> AKEvaluationResult: ...   # AKMetricNotSupported
+    def evaluate_by_llm(self, case: TraceEvaluationCase) -> AKEvaluationResult: ...
     def _run_judge(self, case: TraceEvaluationCase) -> ScoreResult: ...
 ```
 
-- Metric table (judge built as `cls(model=f"{config.llm.provider}/{config.llm.model}", track=False, **kwargs)`):
-
-  | `metric` | Opik class, extra kwargs | `_run_judge` call | `higher_is_better` |
-  |---|---|---|---|
-  | `task_completion` | `AgentTaskCompletionJudge` | `score(output=case.transcript)` | true |
-  | `tool_correctness` | `AgentToolCorrectnessJudge` | `score(output=case.transcript)` | true |
-  | `answer_relevance` | `AnswerRelevance`, `require_context=False` | `score(input=case.user_input, output=case.actual)` | true |
-  | `hallucination` | `Hallucination` | `score(input=case.user_input, output=case.actual, context=case.context)` | false |
-
-  - The two agent judges take one `output` string only (Opik 2.2 signature `score(self, output: str, **ignored_kwargs)`),
-    so the transcript carries the request, the tool calls and the answer.
-- `evaluate_by_llm(case)`:
-  1. Up to `MAX_ATTEMPTS` calls of `_run_judge`. An exception, or a `ScoreResult` with `scoring_failed` or
-     `value is None`, counts as a failed attempt and is logged as a warning.
-  2. On success: `score = float(value)`; `passed = score >= case.threshold` (or `score < case.threshold`
-     when `higher_is_better` is false); `reason` = the judge's reason.
-  3. After the last failed attempt: no `score` or `passed`, and `reason="<metric> failed after <n> attempts:
-     <error>"`. No exception escapes.
-  4. Always: `metric`, `evaluator="opik"`, `threshold=case.threshold`, `mode="llm"`, `metadata` =
-     `{"higher_is_better": ..., "opik_metric": "<class name>", "attempts": n}`.
-- The broad `except Exception` in step 1 is deliberate: Opik and litellm raise many unrelated types
-  (`MetricComputationError`, `litellm.RateLimitError`, `openai.APIError`, …), and rule 5 needs all of them
-  contained.
+- The judge is built in `__init__`: `judge_class(model=f"{config.llm.provider}/{config.llm.model}",
+  track=False, **judge_kwargs)`.
+- `_run_judge`: `task_completion` and `tool_correctness` score `output=case.transcript`; `answer_relevance`
+  scores `input`, `output`; `hallucination` scores `input`, `output`, `context`.
+- `evaluate_by_llm`: one judge call. A raised exception propagates; a result with `scoring_failed` or a `None`
+  value raises `RuntimeError("<metric> judge failed: <reason>")`. Otherwise an `AKEvaluationResult` with
+  `evaluator="opik"`, `mode="llm"`, `score`, `threshold`, `passed` (`score >= threshold`, or
+  `score < threshold` for `hallucination`), the judge's `reason`, and `metadata={"higher_is_better": ...}`.
 
 ### `evaluator/store.py`
 
 ```python
-class Progress(StrEnum):
-    PENDING = "pending"          # finished, not ready yet
-    GRADING = "grading"          # ready and claimed for the judges
-    GRADED = "graded"            # every metric judged and stored; final
-    FAILED = "failed"            # grading raised; error recorded; retried by the next /eval
-    UNFINISHED = "unfinished"    # root span settled without output; final, never graded
-
-class TraceProgress(BaseModel):
-    progress: Progress
-    updated_at: datetime
-
-class SessionProgress(BaseModel):
-    counts: dict[Progress, int] = {}
-    errors: list[dict[str, str]] = []    # {"trace_id", "error"} per failed row
-
 class EvaluationStore:
-    MAX_FIELD_CHARS = 4_096          # characters per input/output/reason field
-    MAX_STORED_TOOL_CALLS = 25       # tool calls stored on the trace row
-    MAX_ITEM_BYTES = 380_000         # DynamoDB's 400 KB item cap minus headroom
+    MAX_FIELD_CHARS = 4_096
     ROW_TTL = timedelta(days=90)
     SESSION_INDEX = "session_id-index"
-    TRUNCATION_MARKER = "…[truncated]"
-    _BATCH_GET_MAX_KEYS = 100
-    _BATCH_GET_RETRY_WAITS = (0.5, 1.0, 2.0)
-    _NUMBER_BYTES = 21               # DynamoDB's documented upper bound for a number
 
-    def __init__(self, table: Any): ...                             # a boto3 dynamodb Table resource
+    def __init__(self): ...                          # boto3.resource("dynamodb").Table(os.environ["RESULTS_TABLE"])
+    def save_results(self, case: TraceCase, results: list[AKEvaluationResult]) -> None: ...
+    def list_session_results(self, session_id: str) -> list[dict]: ...
     @classmethod
-    def for_table(cls, table_name: str) -> "EvaluationStore": ...  # boto3.resource("dynamodb").Table(name)
-    def read_progress(self, trace_ids: list[str]) -> dict[str, TraceProgress]: ...
-    def write_progress(self, case: TraceCase, progress: Progress, now: datetime,
-                       lease_expired_before: datetime) -> bool: ...
-    def save_results(self, case: TraceCase, results: list[AKEvaluationResult], now: datetime) -> None: ...
-    def mark_failed(self, trace_ids: list[str], error: str, now: datetime) -> None: ...
-    def count_session_progress(self, session_id: str) -> SessionProgress: ...
-    def _batch_get_with_retries(self, request: dict) -> list[dict]: ...
-    def _build_trace_row(self, case: TraceCase, progress: Progress, now: datetime) -> dict: ...
-    def _build_metric_column(self, result: AKEvaluationResult) -> dict: ...
-    def _shrink_to_item_limit(self, row: dict) -> dict: ...
+    def _to_dynamodb_attributes(cls, attributes: dict) -> dict: ...  # drops None, numbers → Decimal
     @classmethod
-    def _to_dynamodb_attributes(cls, attributes: dict) -> dict: ...  # drops None; numbers → Decimal(str(value))
-    @classmethod
-    def _truncate(cls, text: str | None) -> str | None: ...
-    @staticmethod
-    def _to_utc_iso(value: datetime) -> str: ...                     # UTC ISO 8601, always with microseconds
-    @classmethod
-    def _item_bytes(cls, row: dict) -> int: ...                      # DynamoDB-sized bytes of a whole item
+    def _truncate(cls, text: str | None) -> str | None: ...          # cut at MAX_FIELD_CHARS + "…[truncated]"
 ```
 
-- `read_progress`: de-duplicates the ids, then `table.meta.client.batch_get_item` with `ConsistentRead=True`,
-  in chunks of `_BATCH_GET_MAX_KEYS` keys `{"trace_id": id}`, projecting `trace_id`, `progress` and
-  `updated_at`; traces with no row are absent from the result. `UnprocessedKeys` are retried after 0.5 s,
-  1 s and 2 s waits, then raise `RuntimeError("DynamoDB left keys unprocessed after 3 retries")` (an
-  infrastructure error under rule 5).
-- `_build_trace_row(case, progress, now)`: the attributes every row has: `trace_id`, `session_id`, `progress`,
-  `updated_at` (`_to_utc_iso`), `expires_at` (epoch seconds, `now + ROW_TTL`), and the trace summary:
-  `provider` (`case.provider`), `root_name`, `started_at`, `latency_ms`, `input`, `output` (both cut),
-  `tool_calls` (the first `MAX_STORED_TOOL_CALLS` calls as maps of `name`, `input`, `output`, `failed`, each
-  text cut; `tool_calls_truncated=True` when it drops any), `tool_call_count` and `tool_error_count` (over
-  every call), `agents`, `span_count`, `input_tokens`, `output_tokens`, `total_tokens`, `cost`.
-  - Through `_to_dynamodb_attributes`: `None` values are omitted rather than written (boto3 would store them
-    as DynamoDB `NULL`), so `session_id` is omitted when `None` and the sparse `session_id-index` skips the
-    row; numbers become `Decimal(str(value))`.
-  - `updated_at` always carries microseconds, so the strings sort by time: the grading lease compares them
-    as strings in a condition expression.
-- `write_progress(case, progress, now, lease_expired_before)`: `table.put_item` of
-  `_shrink_to_item_limit(_build_trace_row(...))` with
-  `ConditionExpression="attribute_not_exists(trace_id) OR #p IN (:pending, :failed) OR (#p = :grading AND #u < :expired)"`
-  (`:expired` = `lease_expired_before`). So a new, `pending` or `failed` row, or a `grading` row whose lease
-  has expired, is overwritten; `graded` and `unfinished` rows stay final, and of two concurrent `/eval`s only
-  one claims a trace. A `ConditionalCheckFailedException` is logged and returns `False`; any other
-  `ClientError` propagates. Returns `True` on a write.
-- `save_results`: one `table.put_item` of the whole row with `progress = graded`, unconditional. A single
-  `PutItem` is atomic, so the row turns `graded` with every metric column in it at once.
-  - Attributes: `_build_trace_row(case, GRADED, now)`, plus `evaluated_at` (= `updated_at`), `passed` (`True`
-    when every scored result passed, `False` when one failed, omitted when none scored) and `metric_errors`
-    (count of results with no `score`, written even when `0`).
-  - One attribute per result, named by `result.metric` (`task_completion`, `tool_correctness`,
-    `answer_relevance`, `hallucination`), built by `_build_metric_column`: a map of `evaluator`, `score`,
-    `threshold`, `passed`, `reason` (cut), `higher_is_better`, `attempts`, `None`s omitted.
-  - Then `spans_gz` or `spans_truncated` (below).
-  - Size budget for the trace row. A per-field limit alone can't keep an item under 400 KB: strings
-    are cut by characters (up to 4 bytes each in UTF-8), and the number of tool calls has no bound.
-    1. Text fields, including each metric's `reason`, are cut with `_truncate`; `tool_calls` keeps the first
-       `MAX_STORED_TOOL_CALLS`.
-    2. `_item_bytes(row)` measures the whole item: the UTF-8 bytes of each attribute name and string value,
-       binary lengths, 1 byte for a bool or null, `_NUMBER_BYTES` per number, and for lists and maps 3 bytes
-       plus 1 per element (plus the key's bytes in a map), recursing.
-    3. `_shrink_to_item_limit`: while over `MAX_ITEM_BYTES`, tool calls are dropped from the end (setting
-       `tool_calls_truncated`), then `input` and `output` are cut by halves (each ending in
-       `TRUNCATION_MARKER`), until it fits or nothing is left to cut. Metric attributes are never dropped:
-       four cut reasons stay under 70 KB even at 4 bytes per character. `write_progress` applies it too.
-    4. `spans_gz` = `gzip.compress(json.dumps([span.model_dump(mode="json") for span in case.spans]).encode())`.
-       It is attached as Binary only when `_item_bytes(row) + len("spans_gz") + len(spans_gz)` is ≤
-       `MAX_ITEM_BYTES`. Otherwise it is omitted and `spans_truncated=True`.
-  - Without the budget, an oversized trace would make `put_item` raise `ValidationException` and fail the
-    trace.
-  - `_truncate`: the first `MAX_FIELD_CHARS` characters plus `TRUNCATION_MARKER` when longer.
-- `mark_failed(trace_ids, error, now)`: per id, `table.update_item` setting `progress = failed`, `error` (cut)
-  and `updated_at`, with `ConditionExpression="#p = :grading"`; a `ConditionalCheckFailedException` is logged
-  and swallowed (the row moved on meanwhile), any other `ClientError` propagates.
-- `count_session_progress(session_id)`: `table.query` on `SESSION_INDEX` with `session_id = :s`, projecting
-  `trace_id`, `progress` and `error`, following `LastEvaluatedKey`: counts per `Progress` and the errors of
-  `failed` rows. Index reads are eventually consistent, so only `/check` uses it. A row with an unknown
-  `progress` is logged and skipped. The index projects only `progress`, `error` and `updated_at` (plus the
-  keys), so it doesn't hold a second copy of every row's `spans_gz` (§Deployment).
+- `save_results`: one `PutItem` of:
 
-### `evaluator/job.py`
+  | Attribute | Value |
+  |---|---|
+  | `trace_id`, `session_id` | from the case |
+  | `evaluated_at` | now, ISO 8601 UTC |
+  | `expires_at` | now + `ROW_TTL`, epoch seconds (the table's TTL attribute) |
+  | `started_at`, `latency_ms` | from the case |
+  | `input`, `output` | truncated |
+  | `agents` | list of names |
+  | `tool_calls` | list of maps `name`, `input`, `output` (truncated), `failed` |
+  | `input_tokens`, `output_tokens`, `total_tokens`, `cost` | `case.usage` |
+  | `passed` | every result passed |
+  | one per metric (`task_completion`, ...) | map `score`, `threshold`, `passed`, `reason` (truncated), `higher_is_better` |
+
+  `None` values are dropped (boto3 would store DynamoDB `NULL`s) and numbers become `Decimal`. A re-run
+  overwrites the same `trace_id`, so a second grading is idempotent.
+- `list_session_results`: one `Query` on `SESSION_INDEX` (`KeyConditionExpression=Key("session_id").eq(...)`)
+  returning `Items`. One page is enough for a demo session's 3 rows. The index is eventually consistent; the
+  test reads it 3 minutes after the writes.
+
+### `evaluator/grader.py`
 
 ```python
-class PrepareSummary(BaseModel):
-    session_id: str
-    spans_fetched: int = 0
-    found: int = 0               # traces with a root span
-    no_root: int = 0             # traces with no single root span: no row
-    already_graded: int = 0      # row already graded
-    grading: int = 0             # claimed by this call, or still within an earlier call's lease
-    pending: int = 0
-    unfinished: int = 0
-    grading_ids: list[str] = []  # claimed by this call; sent to grade in the invoke payload
+class SessionGrader:
+    FETCH_WINDOW = timedelta(hours=1)                # the demo grades within minutes of its requests
 
-class GradeSummary(BaseModel):
-    session_id: str
-    graded: int = 0
-    failed: int = 0
-    metric_errors: int = 0
-
-class TraceEvaluationJob:
-    FETCH_WINDOW = timedelta(hours=24)
-    SETTLE_TIME = timedelta(minutes=2)
-    GRADING_LEASE = timedelta(minutes=15)   # above the grading invocation's 10-minute Lambda timeout
-
-    def __init__(self, trace: Trace, store: EvaluationStore,
-                 evaluator_factory: Callable[[], list[OpikTraceEvaluator]],
-                 clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc)): ...
-    @classmethod
-    def from_env(cls) -> "TraceEvaluationJob": ...
-    def prepare_traces(self, session_id: str) -> PrepareSummary: ...
-    def grade_traces(self, session_id: str, trace_ids: list[str]) -> GradeSummary: ...
-    def _fetch_traces(self, **filters) -> list[FetchedTrace]: ...
-    @staticmethod
-    def _build_cases(traces: list[FetchedTrace]) -> tuple[list[TraceCase], int]: ...   # cases, no_root count
-    def _advance_progress(self, case: TraceCase, current: TraceProgress | None, now: datetime) -> tuple[Progress, bool]: ...
-    def _next_progress(self, case: TraceCase, current: TraceProgress | None, now: datetime) -> Progress | None: ...
-    def _run_evaluators(self, case: TraceCase) -> list[AKEvaluationResult]: ...
-    @staticmethod
-    def _pass_threshold() -> float: ...     # OpikTraceEvaluator.THRESHOLD, imported lazily
+    def __init__(self): ...                          # an EvaluationStore and one OpikTraceEvaluator per metric
+    def grade_session(self, session_id: str) -> int: ...
 ```
 
-- `job.py` imports `OpikTraceEvaluator` under `TYPE_CHECKING` only, because Opik and litellm load slowly.
-- `from_env()`: `Trace.get()` (reads `config.yaml` / `AK_TRACE__*`; `LangFuse.init()` checks the Langfuse keys),
-  `EvaluationStore.for_table(os.environ["RESULTS_TABLE"])`, and as `evaluator_factory` a function that imports
-  `OpikTraceEvaluator` and returns `OpikTraceEvaluator.for_all_metrics(AKTestConfig.get())` (reads
-  `AK_TEST__LLM__*`). `_run_evaluators` calls the factory once, on the first grade, and keeps the list;
-  `prepare_traces` never calls it, so `/eval` doesn't load Opik or litellm.
-- `_fetch_traces(**filters)`: `trace.fetch_traces(last=FETCH_WINDOW, **filters)`, with `session_id=` in
-  `prepare_traces` and `trace_ids=` in `grade_traces`. The fetch keeps at most the newest 1000 spans (the
-  default `limit`, which logs a warning when reached); there is no truncation check of its own. A provider or
-  HTTP error propagates.
-- `_build_cases(traces)`: `TraceCase.from_trace` for each trace with a root, sorted oldest first by
-  `started_at`; a trace with `root is None` counts as `no_root` (no row; the next `/eval` fetches it again).
-- `_next_progress(case, current, now)`: the design's `prepare` table (design.md §Evaluation run). `None` means
-  "leave the row as it is":
-  - `current` is `graded` or `unfinished` → `None`;
-  - `current` is `grading` and `current.updated_at >= now - GRADING_LEASE` → `None` (an earlier `/eval`'s
-    grading invocation may still be running);
-  - otherwise (no row, `pending`, `failed`, or `grading` with an expired lease): `case.has_settled(now,
-    SETTLE_TIME)` but not `case.is_finished` → `UNFINISHED`; not `case.is_ready_to_grade(now, SETTLE_TIME)` →
-    `PENDING` (still running, recently ended, or partly ingested); else `GRADING`. A span that lands after
-    `SETTLE_TIME` is not detected.
-- `_advance_progress(case, current, now)`: `None` from `_next_progress` → `(current.progress, False)`.
-  Otherwise `store.write_progress(case, next, now, now - GRADING_LEASE)`; on success `(next, next == GRADING)`
-  (the second value: this call claimed it). When the conditional write is refused (a concurrent `/eval`
-  wrote the row between the read and the write), it re-reads the row and returns `(that progress, False)`.
-- `prepare_traces(session_id)`: `now = clock()`; `traces = _fetch_traces(session_id=...)`;
-  `cases, no_root = _build_cases(traces)`; `spans_fetched` = the spans over all traces, `found = len(cases)`;
-  `current = store.read_progress([c.trace_id for c in cases])`; for each case, `_advance_progress`. Counts each
-  case under its resulting `progress` (`already_graded` for `graded`) and lists only the ones this call
-  claimed in `grading_ids`; logs the summary and returns it. Exceptions propagate.
-- `grade_traces(session_id, trace_ids)`:
-  1. `grading_ids` = the `trace_ids` whose row `store.read_progress(trace_ids)` reports as `grading` (a
-     consistent read: the rows were written moments ago); none → log and return an empty summary.
-  2. `cases, _ = _build_cases(_fetch_traces(trace_ids=grading_ids))`: by trace id, not by session, so a
-     long session's oldest traces can't fall outside the fetch limit. An exception here →
-     `store.mark_failed(grading_ids, error, clock())`, where `error = f"{type(e).__name__}: {e}"`; return the
-     summary with `failed = len(grading_ids)`.
-  3. Ids with no case in the fetch → `store.mark_failed(missing, "trace not found in the fetch", clock())`,
-     counted as `failed`. This includes a trace whose root left `FETCH_WINDOW` between `/eval` and grading;
-     that gap is seconds, and such a trace is past the window any later `/eval` would fetch.
-  4. For each case, oldest first, inside its own `try`: `results = _run_evaluators(case)`;
-     `store.save_results(case, results, clock())`; `graded += 1`; `metric_errors +=` the results with
-     `score is None`. An exception → logged with the trace id, `store.mark_failed([case.trace_id], error,
-     clock())`, `failed += 1`, and the loop goes on.
-  5. Logs the summary and returns it.
-  - Nothing is re-raised except an exception from `store.mark_failed` itself, which leaves those rows
-    `grading` until their lease expires and a later `/eval` claims them again (AWS's automatic retry is off,
-    §Deployment).
-- `_run_evaluators(case)`: `evaluation_case = case.to_evaluation_case(_pass_threshold())`; one
-  `evaluate_by_llm` per evaluator that `applies_to` it.
-- Overlap: `/eval` called while a grading invocation is still running leaves its `grading` rows alone until the
-  lease (15 minutes, above the 10-minute Lambda timeout) expires, so a trace is not judged twice by
-  overlapping runs. Two concurrent `/eval`s race on the conditional write, and only one claims each trace.
+- `__init__`: `EvaluationStore()` and
+  `[OpikTraceEvaluator(AKTestConfig.get(), m) for m in OpikTraceEvaluator.METRICS]`.
+- `grade_session(session_id)`:
+  1. `traces = Trace.get().fetch_traces(session_id=session_id, last=FETCH_WINDOW)`.
+  2. For each trace: `root is None` → log a warning and skip. Else `case = TraceCase.from_trace(trace)`,
+     `evaluation_case = case.to_evaluation_case(OpikTraceEvaluator.THRESHOLD)`, run `evaluate_by_llm` on
+     every evaluator that `applies_to(evaluation_case)`, then `store.save_results(case, results)`.
+  3. Log and return the number of rows written.
+- Nothing is caught. The fetch keeps at most the newest 1000 spans, which a demo session never reaches.
+- Readiness is the caller's job: it waits about 2 minutes after the last request before `/eval`
+  (design.md §Grading).
 
 ### `evaluator/api.py`
 
 ```python
 class EvaluationAPI:
-    GRADE_ROUTE = "grade"
-    MAX_ERRORS_SHOWN = 10
+    START_GRADE = "START_GRADE"
 
-    def __init__(self, store: EvaluationStore, lambda_client: Any,
-                 job_factory: Callable[[], TraceEvaluationJob]): ...
-    @classmethod
-    def from_env(cls) -> "EvaluationAPI": ...
+    def __init__(self): ...                          # an EvaluationStore and boto3.client("lambda")
     def start_evaluation(self, event: dict, context: Any) -> tuple[int, dict]: ...   # POST /eval
-    def check_progress(self, event: dict, context: Any) -> tuple[int, dict]: ...     # GET /check
-    def grade_traces(self, event: dict, context: Any) -> tuple[int, dict]: ...       # POST /grade (internal)
-    def _get_job(self) -> TraceEvaluationJob: ...                                    # built once per sandbox, on first use
+    def check_results(self, event: dict, context: Any) -> tuple[int, dict]: ...      # GET /check
+    @staticmethod
+    def grade(event: dict) -> dict: ...              # the START_GRADE invocation
 ```
 
-- `from_env()`: `EvaluationStore.for_table(os.environ["RESULTS_TABLE"])`, `boto3.client("lambda")`, and
-  `TraceEvaluationJob.from_env` as the factory. Nothing heavy is built at import: `Trace.get()` and the
-  Opik metrics are created on first use, so `/chat` cold starts don't pay for them.
-- `start_evaluation(event, context)`:
-  1. `body = json.loads(event.get("body") or "{}")`; invalid JSON → `(400, {"error": "request body is not
-     valid JSON"})`; a body that isn't an object, or a missing/empty `session_id` string → `(400, {"error":
-     "session_id is required"})`.
-  2. `summary = self._get_job().prepare_traces(session_id)`.
-  3. When `summary.grading_ids`: `lambda_client.invoke(FunctionName=context.function_name,
-     InvocationType="Event", Payload=json.dumps(grade_request))`, where `grade_request` is an API Gateway-shaped
-     event `{"httpMethod": "POST", "path": <this event's path with the "eval" suffix replaced by "grade">,
-     "body": json.dumps({"session_id": ..., "trace_ids": summary.grading_ids})}`. `Lambda.handler` routes it to
-     `/grade` like any request; the judges run bound by the Lambda timeout rather than API Gateway's 29 s.
-  4. `(202, summary.model_dump(mode="json"))`.
-  - An exception in 2 or 3 propagates; `Lambda.handler` turns it into
-    `500 {"error": "Custom handler error: <message>"}` (`deployment/aws/serverless/aklambda.py:84-90`).
-  - Building the job on the first `/eval` (`Trace.get()`) adds to that request's cold path, still well inside
-    API Gateway's 29 s.
-- `check_progress(event, context)`:
-  1. `params = event.get("queryStringParameters") or {}`; missing `session_id` → `(400, {"error": "session_id
-     is required"})`; `expected` that isn't a positive integer → `(400, {"error": "expected must be a positive
-     integer"})`.
-  2. `progress = store.count_session_progress(session_id)`.
-  3. `(200, {"session_id", "expected", "pending", "grading", "graded", "failed", "unfinished",
-     "errors": progress.errors[:MAX_ERRORS_SHOWN], "complete": graded >= expected})`, each count `0` when absent.
-     `>=`, not `==`: a retried chat request can leave one trace more than the requests counted.
-- `grade_traces(event, context)`: `body = json.loads(event["body"])`; `(200,
-  self._get_job().grade_traces(body["session_id"], body["trace_ids"]).model_dump(mode="json"))`.
-- `/grade` is not in the module's `gateway_endpoints`, so API Gateway never routes to it; only the
-  self-invocation reaches it.
+- `start_evaluation`: `session_id = json.loads(event.get("body") or "{}").get("session_id")`; missing → `(400,
+  {"error": "session_id is required"})`. Else `lambda_client.invoke(FunctionName=context.function_name,
+  InvocationType="Event", Payload=json.dumps({"action": START_GRADE, "session_id": session_id}))` and
+  `(202, {"session_id": ..., "status": "grading started"})`.
+- `check_results`: `session_id` from `queryStringParameters`; missing → `400`. Else `(200, {"session_id",
+  "graded": len(rows), "results": rows})`, with the rows' `Decimal`s turned into floats for JSON.
+- `grade(event)`: `{"graded": SessionGrader().grade_session(event["session_id"])}`. The grader is
+  built per invocation; a warm container rebuilds it, which costs nothing next to the judge calls.
+- There is no `/grade` route; `START_GRADE` is not an API Gateway event.
 
 ### Deployment (`deploy/`)
 
@@ -1583,10 +1375,9 @@ resource "aws_dynamodb_table" "results" {
     type = "S"
   }
   global_secondary_index {
-    name               = "session_id-index"
-    hash_key           = "session_id"
-    projection_type    = "INCLUDE"                  # /check reads only these; ALL would copy spans_gz
-    non_key_attributes = ["progress", "error", "updated_at"]
+    name            = "session_id-index"
+    hash_key        = "session_id"
+    projection_type = "ALL"                        # /check returns whole rows
   }
   ttl {
     attribute_name = "expires_at"
@@ -1602,7 +1393,7 @@ resource "aws_iam_role_policy" "evaluation" {
     Statement = [
       {
         Effect   = "Allow"
-        Action   = ["dynamodb:PutItem", "dynamodb:UpdateItem", "dynamodb:BatchGetItem", "dynamodb:Query"]
+        Action   = ["dynamodb:PutItem", "dynamodb:Query"]
         Resource = [aws_dynamodb_table.results.arn, "${aws_dynamodb_table.results.arn}/index/*"]
       },
     ]
@@ -1611,7 +1402,7 @@ resource "aws_iam_role_policy" "evaluation" {
 
 resource "aws_lambda_function_event_invoke_config" "grading" {
   function_name          = module.serverless_agents.request_handler_lambda_function_name
-  maximum_retry_attempts = 0                       # the next /eval re-claims a killed grading once its lease expires
+  maximum_retry_attempts = 0                       # a failed grading shows up as missing rows
 }
 ```
 
@@ -1622,9 +1413,8 @@ resource "aws_lambda_function_event_invoke_config" "grading" {
   runner and response handler need no table access.
 - The self-invoke needs no statement here: the module attaches the AWS-managed `AWSLambdaRole` policy
   (`lambda:InvokeFunction` on `*`) to the request handler's role (`modules/request-handler/main.tf:17-20`).
-- `aws_lambda_function_event_invoke_config.grading`: `maximum_retry_attempts = 0`. AWS would otherwise retry a
-  killed grading invocation up to twice, overlapping with the next `/eval`, which already re-claims leftover
-  `grading` rows once their lease expires (design.md §Evaluation run).
+- `aws_lambda_function_event_invoke_config.grading`: `maximum_retry_attempts = 0`, so AWS doesn't re-run a
+  failed grading and pay for its judge calls again (rule 4).
 - Network: the Lambdas run in the base VPC like the other `aws-serverless` examples, and reach Langfuse, OpenAI, Redis, SQS,
   DynamoDB and the Lambda API through the same egress path those examples use.
 - `variables.tf`: `region`, `prefix`, `is_production` (default `false`), `openai_api_key`,
@@ -1657,7 +1447,7 @@ resource "aws_lambda_function_event_invoke_config" "grading" {
 dependencies = []
 
 [project.optional-dependencies]   # one set per Lambda; deploy.sh installs each with `uv export --extra <name>`
-request_handler  = ["agentkernel[aws,redis,langfuse,opik]>=0.9.5", "boto3>=1.40.0", "langfuse>=4.7.0"]
+request_handler  = ["agentkernel[aws,redis,langfuse]>=0.9.5", "boto3>=1.40.0", "langfuse>=4.7.0", "opik>=1.9.0"]
 agent_runner     = ["agentkernel[aws,openai,redis,langfuse]>=0.9.5", "langfuse>=4.7.0"]
 response_handler = ["agentkernel[aws,redis]>=0.9.5"]
 
@@ -1665,12 +1455,15 @@ response_handler = ["agentkernel[aws,redis]>=0.9.5"]
 dev = ["agentkernel[test]>=0.9.5", "httpx>=0.27.0", "black==26.5.1", "isort>=5.0.0"]
 ```
 
-- The request handler serves `/eval` and `/check` and runs the grading, so it carries Opik; only the agent
-  runner needs the OpenAI Agents SDK. `boto3` is pinned because container images don't include the Lambda
-  runtime's copy.
+- `opik` is the example's own dependency: the example writes `OpikTraceEvaluator` itself, so it doesn't lean
+  on AK's `opik` extra (which stays, for AK's built-in Opik test evaluator). `build.sh local` reinstalls
+  `agentkernel[aws,openai,redis,langfuse,test]`, without `opik`, for the same reason. The floor is `1.9.0`,
+  the first release with `AgentTaskCompletionJudge` and `AgentToolCorrectnessJudge` (1.8.0 lacks them,
+  checked by import).
+- Only the agent runner needs the OpenAI Agents SDK. `boto3` is pinned because container images don't
+  include the Lambda runtime's copy.
 - `langfuse>=4.7.0` raises the `langfuse` extra's `>=4.2.0` floor: older SDKs use Langfuse's slow
-  ingestion path (up to 15 minutes), which the job's 2-minute `SETTLE_TIME` assumes away (design.md
-  §Evaluation run).
+  ingestion path (up to 15 minutes), longer than the 2 minutes the caller waits before `/eval`.
 - `[tool.pytest.ini_options]`: `pythonpath = ["."]`, `log_cli = true` at `INFO`, so the live test shows its
   progress.
 - The minimum `agentkernel` version is the first release that contains Phase 1 (`fetch_traces` and `usage`),
@@ -1709,80 +1502,52 @@ dev = ["agentkernel[test]>=0.9.5", "httpx>=0.27.0", "black==26.5.1", "isort>=5.0
 
 ## Phases 2–3 error handling
 
+The example handles only bad input; every other failure shows up as fewer than 3 rows in `/check`, with
+the cause in the request handler's CloudWatch logs.
+
 | Situation | What happens |
 |---|---|
-| `/eval` with a missing or empty `session_id`, a non-object body, or invalid JSON | `400`; nothing written or invoked |
-| `/check` with a missing `session_id`, or `expected` not a positive integer | `400` |
-| `/check` before any `/eval` for the session | `200`, every count `0`, `complete = false` |
-| Langfuse keys missing or wrong | `LangFuse.init()` raises when the job is built on the first `/eval` (`trace/langfuse/langfuse.py:43-46`) → `/eval` returns `500` with the error |
-| Langfuse fetch fails (HTTP error, rate limit) in `prepare_traces` | Propagates from `fetch_traces` (Phase 1 does no retries) → `/eval` returns `500` with the error |
-| DynamoDB or IAM error in `prepare_traces` (`read_progress`, `write_progress`, or the self-invoke) | `/eval` returns `500` with the error; rows written before it stay, and the next `/eval` continues from them |
-| Two `/eval`s for one session at once | The conditional `write_progress` lets only one claim each trace; the other reports the row it lost to |
-| A trace has no single root span (`root is None`) | `no_root`: not a request, no row; the next `/eval` fetches it again |
-| A root span that ended at least `SETTLE_TIME` ago without output | `unfinished` row: never graded; `/check` reports it and `graded < expected` |
-| A trace still running, or whose root ended less than `SETTLE_TIME` ago | `pending` row; a later `/eval` moves it to `grading` (or `unfinished`) |
-| A trace not readable at all yet | No row; a later `/eval` finds it |
-| A judge call fails twice | That metric's column is stored with `score`/`passed` omitted and the error in `reason`; `metric_errors` counts it; the row still turns `graded` |
-| Fetch error in `grade_traces` | Every `grading` row of the payload → `failed` with the error; the next `/eval` retries them |
-| A `grading` id missing from the fetch | That row → `failed` with `"trace not found in the fetch"` |
-| Any other error while grading one trace (DynamoDB, unexpected exception) | That row → `failed` with the error; the other traces are still graded; the next `/eval` retries it |
-| `failed` rows at the end of the weekly test | The test fails with the counts and the rows' `errors` from `/check` |
-| The grading invocation times out (10 minutes) or runs out of memory, or the `failed` write itself fails | Rows stay `grading` (no automatic retry); once `GRADING_LEASE` (15 minutes) has passed, the next `/eval` claims them again |
+| `/eval` or `/check` with no `session_id` | `400` |
+| `/eval` with a body that isn't JSON | `json.loads` raises → `Lambda.handler` returns `500` |
+| The async invoke fails (IAM, throttling) | `/eval` returns `500` with the error |
+| `/check` before the grading wrote anything | `200`, `graded: 0` |
+| Langfuse keys missing or wrong, or the fetch fails | The grading invocation raises; no rows |
+| The traces aren't readable yet when the grading fetches | The fetch returns fewer traces; fewer rows |
+| A trace has no root span | Logged and skipped; no row |
+| A judge call raises or its result is `scoring_failed` | The grading invocation raises; that trace and the ones after it get no row |
+| DynamoDB error on `PutItem` | Same as a judge error |
+| The grading invocation takes over 3 minutes (the test's wait) or times out (10 minutes) | The traces not yet saved have no row when `/check` runs |
+| Any of the above in the weekly test | `graded < 3` → the test fails |
 
-- Concurrency: each invocation is single-threaded, so the job, store and evaluators hold no locks.
-  Sessions are independent. Overlap within a session is covered in §`evaluator/job.py`.
-- Cost per `/eval`: one Langfuse fetch of ~`ceil(spans / 100)` requests, one `BatchGetItem` per 100
-  traces and one conditional put per trace whose `progress` changes. Per grading invocation: one
-  `BatchGetItem`, one fetch per grading trace id (Langfuse takes one trace id per request), then per graded
-  trace three or four judge calls (one more per failed attempt) and one put. `/check`: one `Query` per page.
+- No automatic retry (`maximum_retry_attempts = 0`) and no manual re-run step. Calling `/eval` again re-grades
+  the whole session and overwrites its rows by `trace_id`.
+- Concurrency: each invocation is single-threaded; two `/eval` calls for one session just grade it twice, and
+  the later `PutItem` per trace wins.
+- Cost per grading: one Langfuse fetch of ~`ceil(spans / 100)` requests, then per trace three or four judge
+  calls and one put. `/check`: one `Query`.
 
 ## Phases 2–3 testing
 
 There are no unit tests in the example: everything is exercised end to end by the weekly integration test.
 
 **Weekly integration test, `lambda_test.py`** (`AK_TEST_ENDPOINT` from the pipeline,
-`.github/scripts/run_single_test.py:761-781`). Only HTTP calls, so it needs no AWS credentials:
+`.github/scripts/run_single_test.py:941-969`). Only HTTP calls, so it needs no AWS credentials:
 
 ```python
-WARM_UP_WAIT = 120     # s: lets the warm-up run finish even if the gateway times out
-INITIAL_WAIT = 150     # s: the job's SETTLE_TIME (2 minutes) plus 30 s
-ROUNDS = 3             # /eval calls, the first one included
-ROUND_INTERVAL = 30    # s between rounds
-POLL_INTERVAL = 10     # s between /check calls
-POLL_TIMEOUT = 180     # s per round
+WARM_UP_WAIT = 120     # s: lets the warm-up run finish even if the gateway timed out
+INGEST_WAIT = 120      # s: time for Langfuse to store the traces
+GRADING_WAIT = 180     # s: time for the grading invocation to judge and store every trace
 EXPECTED = len(TrafficSimulator.QUESTIONS)
-
-class EvaluationClient:                      # test helper, like APITestClient in openai-auth/lambda_test.py:15
-    def __init__(self, chat_url: str): ...   # eval_url / check_url: the trailing "/chat" replaced
-    async def start_evaluation(self, session_id: str) -> tuple[int, dict]: ...   # POST /eval; status code and body
-    async def wait_until_graded(self, session_id: str, expected: int, timeout: float = POLL_TIMEOUT,
-                                poll_interval: float = POLL_INTERVAL) -> dict: ...   # polls GET /check
 ```
 
-- Session-scoped async fixtures (one event loop for the module): `chat_url = os.getenv("AK_TEST_ENDPOINT")`,
-  skipping the test when it is unset; `simulator = TrafficSimulator(chat_url, session_id=str(uuid4()))`;
-  `client = EvaluationClient(chat_url)`.
-- `EvaluationClient.__init__` raises `ValueError` when `chat_url` (trailing `/` stripped) doesn't end in `/chat`.
-- `wait_until_graded` logs each `/check` response and returns as soon as `complete` is true or `grading == 0`;
-  at the timeout it returns the last response. A non-2xx `/check` raises.
+- Fixture `chat_url = os.getenv("AK_TEST_ENDPOINT")` (trailing `/` stripped), skipping the test when unset.
 - `test_every_request_is_graded`:
-  1. `simulator.warm_up()` (in a thread, since it is synchronous), then `await asyncio.sleep(WARM_UP_WAIT)`, so
-     every Lambda is warm before the graded requests.
-  2. `replies = simulator.send_questions()` (in a thread); `EXPECTED` non-empty replies.
-  3. `await asyncio.sleep(INITIAL_WAIT)` (design.md §Evaluation run).
-  4. Up to `ROUNDS` grading rounds:
-     ```python
-     for round_number in range(1, ROUNDS + 1):
-         code, body = await client.start_evaluation(simulator.session_id)
-         assert code == 202, f"/eval failed: {body.get('error')}"
-         progress = await client.wait_until_graded(simulator.session_id, expected=EXPECTED)
-         if progress["complete"]:
-             break
-         # not all graded: the next /eval queues pending, failed and leftover grading traces
-         await asyncio.sleep(ROUND_INTERVAL)
-     ```
-  5. Assert `progress["complete"]`, with the message `"<graded> of 3 requests graded after <ROUNDS> rounds
-     (<pending> pending, <failed> failed, <grading> still grading, <unfinished> unfinished): <errors>"`.
+  1. `simulator.warm_up()`, then `time.sleep(WARM_UP_WAIT)`.
+  2. `replies = simulator.send_questions()`; assert every reply is non-empty.
+  3. `time.sleep(INGEST_WAIT)`.
+  4. `httpx.post(.../eval, {"session_id"})`; assert `202`.
+  5. `time.sleep(GRADING_WAIT)`.
+  6. `httpx.get(.../check?session_id=...)`; assert `graded == EXPECTED`.
   - Judge outcomes are not asserted, only that every request was graded and stored.
 
 **Run:**
@@ -1792,5 +1557,5 @@ cd examples/aws-serverless/openai-langfuse-trace-evaluation
 ./build.sh local                                           # test venv with every extra
 cd deploy && ./deploy.sh local && cd ..
 uv run python simulate_traffic.py                          # 3 questions; prints the session id
-AK_TEST_ENDPOINT=$(terraform -chdir=deploy output -raw agent_invoke_url) uv run pytest lambda_test.py
+AK_TEST_ENDPOINT=$(terraform -chdir=deploy output -raw agent_invoke_url) uv run --no-sync pytest lambda_test.py
 ```

@@ -1,6 +1,6 @@
 # Queue mode: the request handler enqueues each /chat request, the agent runner runs the agent (and sends its
-# Langfuse traces), and the response handler stores the reply. The request handler also serves /eval and /check
-# and runs the grading in an asynchronous self-invocation.
+# Langfuse traces), and the response handler stores the reply. The request handler also serves /eval and /check,
+# and runs the grading when /eval invokes it asynchronously with START_GRADE.
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
   version = "0.9.5"
@@ -20,7 +20,7 @@ module "serverless_agents" {
   create_redis_cluster        = false
   create_redis_response_store = false
 
-  # POST /api/v1/eval starts grading a session; GET /api/v1/check reports its progress
+  # POST /api/v1/eval starts grading a session; GET /api/v1/check returns its graded rows
   gateway_endpoints = [
     { path = "eval", method = "POST" },
     { path = "check", method = "GET" },
@@ -89,7 +89,7 @@ module "serverless_agents" {
   }
 }
 
-# One row per trace: its grading progress, its summary and, once graded, one column per metric
+# One row per graded trace: its summary and one column per metric
 resource "aws_dynamodb_table" "results" {
   name         = "${var.prefix}-trace-evaluations"
   billing_mode = "PAY_PER_REQUEST"
@@ -106,10 +106,9 @@ resource "aws_dynamodb_table" "results" {
   }
 
   global_secondary_index {
-    name               = "session_id-index"
-    hash_key           = "session_id"
-    projection_type    = "INCLUDE" # /check reads only these; ALL would copy every row's spans_gz
-    non_key_attributes = ["progress", "error", "updated_at"]
+    name            = "session_id-index"
+    hash_key        = "session_id"
+    projection_type = "ALL" # /check returns whole rows
   }
 
   ttl {
@@ -128,14 +127,14 @@ resource "aws_iam_role_policy" "evaluation" {
     Statement = [
       {
         Effect   = "Allow"
-        Action   = ["dynamodb:PutItem", "dynamodb:UpdateItem", "dynamodb:BatchGetItem", "dynamodb:Query"]
+        Action   = ["dynamodb:PutItem", "dynamodb:Query"]
         Resource = [aws_dynamodb_table.results.arn, "${aws_dynamodb_table.results.arn}/index/*"]
       },
     ]
   })
 }
 
-# No automatic retry of the grading invocation (a request-handler self-invoke): the next /eval re-queues a killed grading
+# No automatic retry of the grading invocation: if it fails, its traces have no row and /check shows fewer graded
 resource "aws_lambda_function_event_invoke_config" "grading" {
   function_name          = module.serverless_agents.request_handler_lambda_function_name
   maximum_retry_attempts = 0

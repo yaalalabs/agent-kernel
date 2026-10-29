@@ -1,9 +1,9 @@
 import json
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any
 
 from agentkernel.test import AKEvaluationCase
-from agentkernel.trace import FetchedSpan, FetchedTrace, SpanStatus, SpanUsage
+from agentkernel.trace import FetchedTrace, SpanStatus, SpanUsage
 from pydantic import BaseModel
 
 
@@ -25,9 +25,7 @@ class TraceCase(BaseModel):
     """The facts of one request (one trace), gathered from its spans."""
 
     trace_id: str
-    provider: str  # the tracer the spans came from
     session_id: str | None = None
-    root_name: str | None = None
     started_at: datetime
     ended_at: datetime | None = None
     user_input: str = ""
@@ -35,21 +33,6 @@ class TraceCase(BaseModel):
     tool_calls: list[ToolCall] = []
     agents: list[str] = []
     usage: SpanUsage = SpanUsage()  # summed over the trace's spans
-    span_count: int
-    spans: list[FetchedSpan] = []  # kept for EvaluationStore's spans_gz
-
-    @property
-    def is_finished(self) -> bool:
-        """The run itself ended: the root span has an end time and an output."""
-        return self.ended_at is not None and self.output != ""
-
-    def has_settled(self, now: datetime, settle_time: timedelta) -> bool:
-        """The root span ended at least ``settle_time`` ago, so its output and late spans have had time to land."""
-        return self.ended_at is not None and self.ended_at <= now - settle_time
-
-    def is_ready_to_grade(self, now: datetime, settle_time: timedelta) -> bool:
-        """Finished and settled."""
-        return self.is_finished and self.has_settled(now, settle_time)
 
     @property
     def latency_ms(self) -> int | None:
@@ -60,10 +43,7 @@ class TraceCase(BaseModel):
 
     @classmethod
     def from_trace(cls, trace: FetchedTrace) -> "TraceCase":
-        """Builds the case from a fetched trace, which must have a root span."""
-        root = trace.root
-        if root is None or trace.started_at is None:
-            raise ValueError(f"trace {trace.trace_id} has no root span with a start time")
+        """Builds the case from a fetched trace that has a root span."""
         tool_calls = [
             ToolCall(
                 name=span.name or "unknown",
@@ -75,9 +55,7 @@ class TraceCase(BaseModel):
         ]
         return cls(
             trace_id=trace.trace_id,
-            provider=root.provider,
             session_id=trace.session_id,
-            root_name=root.name,
             started_at=trace.started_at,
             ended_at=trace.ended_at,
             user_input=cls._as_text(trace.user_input) or "",
@@ -85,8 +63,6 @@ class TraceCase(BaseModel):
             tool_calls=tool_calls,
             agents=trace.agent_names,
             usage=trace.usage,
-            span_count=len(trace.spans),
-            spans=trace.spans,
         )
 
     def build_transcript(self) -> str:

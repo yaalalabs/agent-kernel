@@ -138,8 +138,8 @@ Phase 1 (iterations 1–7) lands first: the example in Phases 2–3 (iterations 
 
 All files are under `examples/aws-serverless/openai-langfuse-trace-evaluation/` unless a path says otherwise.
 The example runs in queue mode (`queue_mode = true`, `execution_mode = "rest_sync"`) with three Lambdas:
-`lambda_request_handler.py` (ingress plus `/eval`, `/check` and the internal `/grade`), `lambda_agent_runner.py`
-(the agent) and `lambda_response_handler.py`. It has no unit-test suite; `lambda_test.py` is its only test.
+`lambda_request_handler.py` (ingress plus `/eval`, `/check` and the `START_GRADE` self-invocation),
+`lambda_agent_runner.py` (the agent) and `lambda_response_handler.py`. It has no unit-test suite; `lambda_test.py` is its only test.
 
 ### Before merge: owner tasks (not code)
 
@@ -160,7 +160,7 @@ The example runs in queue mode (`queue_mode = true`, `execution_mode = "rest_syn
      `ResponseHandler.handle` (spec §The agent and the wiring).
   3. `TrafficSimulator` and its CLI (spec §`simulate_traffic.py`).
   4. `main.tf` with `module "serverless_agents"` (no `gateway_endpoints` yet), plus variables, outputs
-     (`agent_invoke_url`), providers and backend (spec §Deployment).
+     (`agent_invoke_url`) and providers (spec §Deployment).
   5. `deploy.sh` building `dist_request_handler`, `dist_agent_runner` and `dist_response_handler`.
 - **Verify:** `cd deploy && ./deploy.sh local`; `uv run python simulate_traffic.py`; the 3 traces (root,
   agents, tool, generations) show in the Langfuse UI under the printed session id within a minute, without
@@ -169,37 +169,37 @@ The example runs in queue mode (`queue_mode = true`, `execution_mode = "rest_syn
 ### Iteration 9: Phase 2: trace cases and the Opik evaluator
 
 - **Goal:** a trace's spans become a `TraceCase`, and each of the four metrics scores it.
-- **Files:** `evaluator/{__init__,case,opik_evaluator}.py`, `ak-py/src/agentkernel/test/__init__.py`.
+- **Files:** `evaluator/{__init__,case,opik_evaluator}.py`, `pyproject.toml`, `uv.lock`,
+  `ak-py/src/agentkernel/test/__init__.py`.
 - **Steps:**
   1. `ToolCall`, `TraceCase`, `TraceEvaluationCase` (spec §`evaluator/case.py`).
-  2. `OpikTraceEvaluator` with the metric table, the pass rules and the two-attempt rule (spec
-     §`evaluator/opik_evaluator.py`).
-  3. Export `AKEvaluator`, `AKEvaluationCase`, `AKEvaluationResult`, `AKEvaluationError`, `AKMetricNotSupported`
+  2. `OpikTraceEvaluator` with the metric table and the pass rules; one judge call per metric, no retry
+     (spec §`evaluator/opik_evaluator.py`).
+  3. Add `opik>=1.9.0` (the first release with the agent judges) to the example's `request_handler` extra (not AK's `opik` extra); `uv lock`
+     (spec §`pyproject.toml`).
+  4. Export `AKEvaluator`, `AKEvaluationCase`, `AKEvaluationResult`, `AKEvaluationError`, `AKMetricNotSupported`
      and `AKMissingInput` from `agentkernel.test`, so the example imports them from the public package.
 - **Verify:** `./build.sh local`; the evaluator is exercised end to end in iteration 12.
 
 ### Iteration 10: Phase 3: the DynamoDB store
 
-- **Goal:** each found trace has one row with its `progress`; a graded trace's row gets a column per
-  metric in one atomic write, within the whole-item size budget; a session's rows can be counted by
-  `progress`.
+- **Goal:** a graded trace is one row with a column per metric; a session's rows can be listed.
 - **Files:** `evaluator/store.py`.
 - **Steps:**
-  1. `Progress`, `TraceProgress`, `SessionProgress` and `EvaluationStore`, including `read_progress`,
-     `write_progress`, `save_results`, `mark_failed` and `count_session_progress` (spec §`evaluator/store.py`).
+  1. `EvaluationStore` with `save_results` and `list_session_results` (spec §`evaluator/store.py`).
 - **Verify:** exercised end to end in iteration 12.
 
-### Iteration 11: The evaluation run and the API
+### Iteration 11: The grading and the API
 
-- **Goal:** `/eval` sets every found trace's `progress` and starts grading the ready ones asynchronously,
-  `grade` judges them, and `/check` counts the session's traces by `progress`.
-- **Files:** `evaluator/{job,api}.py`, `lambda_request_handler.py`.
+- **Goal:** `/eval` starts a `START_GRADE` self-invocation that grades the session, and `/check` returns its
+  rows.
+- **Files:** `evaluator/{grader,api}.py`, `lambda_request_handler.py`.
 - **Steps:**
-  1. `PrepareSummary`, `GradeSummary` and `TraceEvaluationJob` with `prepare_traces` and `grade_traces`
-     (`FETCH_WINDOW`, `SETTLE_TIME`, `GRADING_LEASE`) (spec §`evaluator/job.py`).
-  2. `EvaluationAPI` with `from_env`, `start_evaluation`, `check_progress` and `grade_traces` (spec §`evaluator/api.py`).
-  3. `lambda_request_handler.py`: register `/eval` (POST), `/check` (GET) and the internal `/grade` (POST) with
-     `Lambda.register`; keep `handler = Lambda.handler` (spec §The agent and the wiring).
+  1. `SessionGrader` with `grade_session` (spec §`evaluator/grader.py`).
+  2. `EvaluationAPI` with `start_evaluation`, `check_results` and `grade` (spec §`evaluator/api.py`).
+  3. `lambda_request_handler.py`: register `/eval` (POST) and `/check` (GET) with `Lambda.register`; `handler`
+     sends `START_GRADE` events to `api.grade` and everything else to `Lambda.handler` (spec §The agent and
+     the wiring).
 - **Verify:** exercised end to end in iteration 12.
 
 ### Iteration 12: Evaluation infrastructure
@@ -208,19 +208,18 @@ The example runs in queue mode (`queue_mode = true`, `execution_mode = "rest_syn
   Lambda's DynamoDB permissions.
 - **Files:** `deploy/{main.tf,outputs.tf,deploy.sh}`.
 - **Steps:**
-  1. `gateway_endpoints`, the request handler's `timeout`, `memory_size` and evaluation environment
+  1. `gateway_endpoints`, the request handler's 10-minute `timeout`, `memory_size` and evaluation environment
      variables on `module "serverless_agents"` (spec §Deployment).
-  2. `aws_dynamodb_table.results` (with the `INCLUDE`-projected `session_id-index`),
-     `aws_iam_role_policy.evaluation`, `aws_lambda_function_event_invoke_config.grading`
+  2. `aws_dynamodb_table.results` (with the `ALL`-projected `session_id-index`),
+     `aws_iam_role_policy.evaluation` (`PutItem`, `Query`), `aws_lambda_function_event_invoke_config.grading`
      (`maximum_retry_attempts = 0`) and the `results_table_name` output.
   3. `deploy.sh` also copies `evaluator/` into the request handler package (`dist_request_handler`).
 - **Verify:**
   - `terraform validate`; `./deploy.sh local`.
-  - `uv run python simulate_traffic.py`, wait 2.5 minutes (the job's settle time), then
-    `curl -X POST .../eval` with the printed session id → `202` with `grading: 3`; poll
-    `curl ".../check?session_id=...&expected=3"` until `complete` is `true`; the table holds 3 `graded`
-    rows with their metric columns.
-  - `/check` for an unknown session id → every count `0`, `complete` false.
+  - `uv run python simulate_traffic.py`, wait 2 minutes, then `curl -X POST .../eval` with the printed
+    session id → `202`; wait 3 minutes; `curl ".../check?session_id=..."` → `graded: 3`, each row with its
+    metric columns.
+  - `/check` for an unknown session id → `graded: 0`.
 
 ### Iteration 13: Weekly integration test and CI wiring
 
@@ -228,22 +227,22 @@ The example runs in queue mode (`queue_mode = true`, `execution_mode = "rest_syn
 - **Files:** `lambda_test.py`, `.github/integration-test-config.yaml`,
   `.github/workflows/integration-test-weekly.yaml`.
 - **Steps:**
-  1. `lambda_test.py` with the `EvaluationClient` helper and `test_every_request_is_graded`, including the
-     grading rounds (spec §Phases 2–3 testing → weekly integration test).
+  1. `lambda_test.py` with `test_every_request_is_graded`: warm up, send, wait, one `/eval`, wait 3 minutes,
+     one `/check` (spec §Phases 2–3 testing).
   2. The weekly config entry and the three `TF_VAR_langfuse_*` env entries on Deploy, Test and Destroy
      (spec §Consumer changes).
   3. Needs the owner task above (CI Langfuse project and secrets).
 - **Verify:**
   - `python3 .github/scripts/validate_integration_config.py`.
-  - Locally: `AK_TEST_ENDPOINT=... uv run pytest lambda_test.py` against iteration 12's deployment.
+  - Locally: `AK_TEST_ENDPOINT=... uv run --no-sync pytest lambda_test.py` against iteration 12's deployment.
   - A manual `workflow_dispatch` of Weekly Integration Tests passes the new matrix entry, including
     Destroy.
 
 ### Iteration 14: Docs and skills for Phases 2–3
 
-- **Example docs:** `README.md`: architecture (agent → Langfuse → `/eval` → DynamoDB → `/check`), the
-  evaluation run and its fault handling, the metrics, the table schema, how to swap metrics or the store,
-  required variables, deploy, `simulate_traffic.py` plus the `curl` calls to `/eval` and `/check`, and test.
+- **Example docs:** `README.md`: the flow (send, wait, `/eval`, wait, `/check`), architecture (agent →
+  Langfuse → `/eval` → `START_GRADE` → DynamoDB → `/check`), the code, the metrics, the table schema, how to
+  swap metrics or the store, required variables, deploy, `simulate_traffic.py` plus the `curl` calls to `/eval` and `/check`, and test.
 - **User docs:**
   - `docs/docs/examples/overview.md` §AWS Serverless Examples: list the example.
   - `docs/docs/advanced/traceability.md` §Fetching Spans Back: one line linking the example as the
@@ -282,16 +281,15 @@ the fetcher returns. Branch `feature/803-prod-eval-implementation` is unpublishe
 ### Iteration 16: Example cleanup
 
 - **Goal:** the example builds its `TraceCase` from a `FetchedTrace` and holds no trace-assembly code.
-- **Files:** `evaluator/{case,job}.py` and `README.md` of `openai-langfuse-trace-evaluation`.
+- **Files:** `evaluator/{case,grader}.py` and `README.md` of `openai-langfuse-trace-evaluation`.
 - **Steps:**
   1. `case.py`: remove `_span_kind`, `_sum_usage`, `spans_missing_parent` and the root finding; add
      `TraceCase.from_trace`; a tool call is failed when `status == ERROR`. Keep the provider-specific name and
      result readers.
-  2. `job.py`: call `fetch_traces(last=FETCH_WINDOW, ...)` by `session_id` in `prepare_traces` and by `trace_ids`
-     in `grade_traces`; skip `root is None` and count it in `PrepareSummary.no_root`; remove `FETCH_LIMIT` and its check. Keep `SETTLE_TIME`, the progress states and the "not found"
-     handling in `/grade`.
-  3. Update the README ("The evaluation run", the "public AK API" line).
-- **Verify:** `./build.sh local`; `AK_TEST_ENDPOINT=... uv run pytest lambda_test.py` against a deployment.
+  2. `grader.py`: call `fetch_traces(session_id=..., last=FETCH_WINDOW)` in `grade_session`; skip
+     `root is None`; remove `FETCH_LIMIT` and its check.
+  3. Update the README ("The flow", the "public AK API" line).
+- **Verify:** `./build.sh local`; `AK_TEST_ENDPOINT=... uv run --no-sync pytest lambda_test.py` against a deployment.
 
 ### Iteration 17: Docs and skills
 

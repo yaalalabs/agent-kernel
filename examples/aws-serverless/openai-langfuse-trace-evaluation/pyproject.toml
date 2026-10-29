@@ -8,12 +8,14 @@ dependencies = []
 
 [project.optional-dependencies]
 # Per-Lambda dependency sets; deploy.sh installs each package with `uv export --extra <name>`.
-# The request handler serves /eval and /check and runs the grading, so it carries Opik; only the agent
-# runner needs the OpenAI Agents SDK. langfuse>=4.7.0 takes Langfuse's fast ingestion path.
+# The request handler serves /eval and /check and runs the grading. The example writes its own Opik
+# evaluator, so it declares opik itself. Only the agent runner needs the OpenAI Agents SDK.
+# langfuse>=4.7.0 takes Langfuse's fast ingestion path.
 request_handler = [
-    "agentkernel[aws,redis,langfuse,opik]>=0.9.5",
+    "agentkernel[aws,redis,langfuse]>=0.9.5",
     "boto3>=1.40.0",
     "langfuse>=4.7.0",
+    "opik>=1.9.0",  # the first release with the agent judges (AgentTaskCompletionJudge, AgentToolCorrectnessJudge)
 ]
 agent_runner = [
     "agentkernel[aws,openai,redis,langfuse]>=0.9.5",

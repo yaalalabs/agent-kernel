@@ -41,11 +41,12 @@ requirements only. Each line names the decision; the design section it shaped is
 - **CI role permissions:** none new. Terraform creates only resource types the weekly run already
   creates through the AK module: a DynamoDB table with TTL (`ak-deployment/ak-aws/serverless/state.tf:335`)
   and an inline role policy (`state.tf:434`). The test step makes only HTTP calls.
-- **When is a trace complete?** No provider says. The job grades a trace only when its root span finished
-  at least 2 minutes ago (the parent check was dropped in the follow-up below). Remaining risk: a span arriving
-  more than 2 minutes late, which affects only that trace's scores. [§Evaluation run]
-- **Session index projection:** `INCLUDE` (`progress`, `error`, `updated_at`), so the index holds no
-  second copy of `spans_gz`. [§Table]
+- **When is a trace complete?** No provider says. The caller waits about 2 minutes after its last request
+  before calling `/eval`; the grader itself doesn't check readiness. Remaining risk: a span arriving later
+  than that, which affects only that trace's scores. [§Grading] (Superseded 2026-10-29: the earlier
+  per-trace 2-minute settle check and progress states were removed to keep the example simple.)
+- **Session index projection:** `ALL`, since `/check` returns whole rows and rows no longer store the spans.
+  [§Table] (Superseded 2026-10-29: was `INCLUDE` of `progress`, `error`, `updated_at`.)
 - **Where trace config lives:** `config.yaml` (`trace.enabled`, `trace.type`), not Lambda environment
   variables. [§Deployment]
 

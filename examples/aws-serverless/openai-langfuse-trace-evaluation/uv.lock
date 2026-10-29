@@ -36,9 +36,6 @@ openai = [
     { name = "openai-guardrails" },
     { name = "openinference-instrumentation-openai-agents" },
 ]
-opik = [
-    { name = "opik" },
-]
 redis = [
     { name = "redis" },
 ]
@@ -267,9 +264,10 @@ agent-runner = [
     { name = "langfuse" },
 ]
 request-handler = [
-    { name = "agentkernel", extra = ["aws", "langfuse", "opik", "redis"] },
+    { name = "agentkernel", extra = ["aws", "langfuse", "redis"] },
     { name = "boto3" },
     { name = "langfuse" },
+    { name = "opik" },
 ]
 response-handler = [
     { name = "agentkernel", extra = ["aws", "redis"] },
@@ -287,10 +285,11 @@ dev = [
 requires-dist = [
     { name = "agentkernel", extras = ["aws", "openai", "redis", "langfuse"], marker = "extra == 'agent-runner'", specifier = ">=0.9.5" },
     { name = "agentkernel", extras = ["aws", "redis"], marker = "extra == 'response-handler'", specifier = ">=0.9.5" },
-    { name = "agentkernel", extras = ["aws", "redis", "langfuse", "opik"], marker = "extra == 'request-handler'", specifier = ">=0.9.5" },
+    { name = "agentkernel", extras = ["aws", "redis", "langfuse"], marker = "extra == 'request-handler'", specifier = ">=0.9.5" },
     { name = "boto3", marker = "extra == 'request-handler'", specifier = ">=1.40.0" },
     { name = "langfuse", marker = "extra == 'agent-runner'", specifier = ">=4.7.0" },
     { name = "langfuse", marker = "extra == 'request-handler'", specifier = ">=4.7.0" },
+    { name = "opik", marker = "extra == 'request-handler'", specifier = ">=1.9.0" },
 ]
 provides-extras = ["request-handler", "agent-runner", "response-handler"]
 
