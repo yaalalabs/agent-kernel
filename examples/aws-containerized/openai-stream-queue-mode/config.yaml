@@ -8,7 +8,8 @@ session:
     table_name: "ak-oai-ws-q-dev-stream-session_store"
 
 execution:
-  mode: stream
+  mode: async
+  message_type: delta
   queues:
     # The transport every component of this deployment runs on. Mandatory: the queue URLs
     # below are injected per component, so only this declaration tells each process which

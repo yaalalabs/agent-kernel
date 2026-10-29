@@ -2,7 +2,7 @@
 
 This example deploys **Agent Kernel** on AWS using the `yaalalabs/ak-serverless/aws` Terraform module with **event streaming over WebSocket**.
 
-Instead of buffering the full agent response and sending it once (async mode), stream mode forwards each stream event as a separate `STREAM_CHUNK` message through the WebSocket connection as soon as it is produced.
+Instead of buffering the full agent response and sending it once (`async` with the default `complete` message type), `async` + `delta` forwards each stream event as a separate `STREAM_CHUNK` message through the WebSocket connection as soon as it is produced.
 
 The deployment exposes:
 
@@ -47,7 +47,8 @@ Project dependencies are declared in `pyproject.toml`:
 
 ```yaml
 execution:
-  mode: stream
+  mode: async
+  message_type: delta
 ```
 
 This tells Agent Kernel to dispatch to `ServerlessStreamAgentRunner` and instructs the response handler to broadcast each chunk individually rather than storing a single final response.

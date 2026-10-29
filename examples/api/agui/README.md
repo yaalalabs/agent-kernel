@@ -100,8 +100,9 @@ That switches the agent onto that model and asks for a reasoning *summary* — t
 adapter maps, so a reasoning model alone still renders nothing. With it set, ask for something worth
 planning and the dimmed thinking block fills in above the answer, on its own message id.
 
-There is no `execution: mode: stream` in `config.yaml`, and that is deliberate: AG-UI delivers every
-run as a stream by definition, so this surface does not consult the execution mode.
+There is no `execution: message_type: delta` in `config.yaml`, and that is deliberate: AG-UI delivers
+every run as a stream by definition, so this surface does not consult the execution mode or message
+type.
 
 ## Authorization
 

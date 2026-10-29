@@ -9,7 +9,7 @@ an `output_type` agent.
 import pytest
 
 from agentkernel.a2ui.hook import A2UIPostHook, A2UIPostHookFactory, NoOpA2UIPostHook
-from agentkernel.core.config import AKConfig
+from agentkernel.core.config import AKConfig, _ExecutionConfig
 from agentkernel.core.model import AgentReplyAny, AgentReplyImage, AgentReplyText
 
 AGENT_NAME = "expenses"
@@ -22,11 +22,8 @@ class _Agent:
         self.name = name
 
 
-def _configure(monkeypatch, enabled: bool = True, agents=None, mode: str = "rest_sync"):
+def _configure(monkeypatch, enabled: bool = True, agents=None, mode: str = "rest_sync", message_type=None):
     class _A2UI:
-        pass
-
-    class _Execution:
         pass
 
     class _Cfg:
@@ -34,9 +31,8 @@ def _configure(monkeypatch, enabled: bool = True, agents=None, mode: str = "rest
 
     _A2UI.enabled = enabled
     _A2UI.agents = agents
-    _Execution.mode = mode
     _Cfg.a2ui = _A2UI
-    _Cfg.execution = _Execution
+    _Cfg.execution = _ExecutionConfig(mode=mode, message_type=message_type)
     monkeypatch.setattr(AKConfig, "get", classmethod(lambda cls: _Cfg))
 
 
@@ -176,15 +172,26 @@ class TestFactory:
 
         assert isinstance(A2UIPostHookFactory.get(), NoOpA2UIPostHook)
 
-    def test_streaming_mode_warns_that_the_hook_will_not_fire(self, monkeypatch, caplog):
+    @pytest.mark.parametrize("mode", ["rest_sync", "async"])
+    def test_delta_replies_warn_that_the_hook_will_not_fire(self, monkeypatch, caplog, mode):
         """`on_run` is never called for a streamed run, so the block would silently do nothing."""
-        _configure(monkeypatch, enabled=True, mode="stream")
+        _configure(monkeypatch, enabled=True, mode=mode, message_type="delta")
 
         with caplog.at_level("WARNING", logger="ak.a2ui.hook"):
             hook = A2UIPostHookFactory.get()
 
         assert isinstance(hook, A2UIPostHook)
+        assert "execution.message_type is delta" in caplog.text
         assert "never called for a streamed run" in caplog.text
+
+    @pytest.mark.parametrize("mode, message_type", [("rest_sync", None), ("async", "complete"), ("realtime", None)])
+    def test_complete_replies_and_realtime_do_not_warn(self, monkeypatch, caplog, mode, message_type):
+        _configure(monkeypatch, enabled=True, mode=mode, message_type=message_type)
+
+        with caplog.at_level("WARNING", logger="ak.a2ui.hook"):
+            A2UIPostHookFactory.get()
+
+        assert "never called for a streamed run" not in caplog.text
 
     @pytest.mark.asyncio
     async def test_the_no_op_returns_the_reply_untouched(self):

@@ -196,7 +196,7 @@ deploy/deploy.sh \
 The chat request is byte-for-byte the same as under NATS: the transport is infrastructure,
 not API.
 
-## WebSocket streaming (async / stream modes)
+## WebSocket streaming (async mode)
 
 The REST modes above need no gateway tier. For token streaming, the third image
 (`ak-example-ws-gateway`, from `app_ws_gateway.py`) runs the WebSocket gateway: it
@@ -205,14 +205,16 @@ verification off, demo only), enqueues chat frames straight to the transport, an
 each reply chunk from the Response Handler on its authenticated `/internal/push` endpoint.
 The connection table rides the session store, which values-dev already puts on Valkey.
 
-Switch the running release to stream mode with the gateway enabled (config unchanged: the
-mode override is one env var away):
+Switch the running release to `async` + `delta` with the gateway enabled (config unchanged:
+each override is one env var away). `execution.messageType` only reaches the pods from a chart
+that renders it: until a release publishes one, run `deploy/deploy.sh local` with the same flags,
+or the published chart silently drops the override and replies arrive whole:
 
 ```bash
 k3d image import -c ak ak-example-ws-gateway:dev    # kind: kind load docker-image ...
 
 deploy/deploy.sh \
-  --set execution.mode=stream \
+  --set execution.mode=async --set execution.messageType=delta \
   --set wsGateway.enabled=true --set wsGateway.replicaCount=1 \
   --set wsGateway.image.repository=ak-example-ws-gateway \
   --set wsGateway.auth.token="$(openssl rand -hex 16)"

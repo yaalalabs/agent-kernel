@@ -4,8 +4,9 @@ from typing import Any, ClassVar, Dict, List, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
-from .model import ExecutionMode
+from .model import ExecutionMode, ReplyMessageType
 from .util.config_yaml_util import YamlBaseSettingsModified
+from .util.factory import AKConfigError
 
 
 def _get_ak_version() -> str:
@@ -688,12 +689,26 @@ class _RealtimeConfig(BaseModel):
 
 
 class _ExecutionConfig(BaseModel):
+    STREAM_MIGRATION_MESSAGE: ClassVar[str] = (
+        "execution.mode 'stream' was removed. For SSE over REST set execution.mode: rest_sync and "
+        "execution.message_type: delta; for chunks over WebSocket set execution.mode: async and "
+        "execution.message_type: delta (env: AK_EXECUTION__MODE, AK_EXECUTION__MESSAGE_TYPE)"
+    )
+
     mode: Optional[ExecutionMode] = Field(
         default=None,
         description=(
-            "Execution mode: rest_sync for synchronous REST, rest_async for asynchronous REST, "
-            "stream for token streaming over WebSocket, async for whole-reply WebSocket delivery, "
-            "realtime for persistent realtime sockets (e.g. the LiveKit voice gateway)"
+            "Invocation mode: rest_sync (REST, wait for the reply), rest_async (REST, submit then "
+            "poll), async (WebSocket only), realtime (persistent realtime sockets, e.g. the LiveKit voice "
+            "gateway). Unset runs as rest_sync."
+        ),
+    )
+    message_type: Optional[ReplyMessageType] = Field(
+        default=None,
+        description=(
+            "Reply delivery: complete (one message with the whole reply) or delta (one message per "
+            "chunk: SSE under rest_sync, WebSocket chunks under async). Unset resolves to delta for "
+            "realtime and complete otherwise."
         ),
     )
     # The default carries the transport type explicitly: `type` is mandatory inside a declared
@@ -711,6 +726,61 @@ class _ExecutionConfig(BaseModel):
         default_factory=_RealtimeConfig,
         description="Realtime execution playback pacing (used only when execution.mode is realtime)",
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_legacy_stream(cls, data: Any) -> Any:
+        """Fail the removed ``stream`` mode with the migration message instead of a bare enum error."""
+        if isinstance(data, dict) and data.get("mode") == "stream":
+            raise AKConfigError(cls.STREAM_MIGRATION_MESSAGE)
+        return data
+
+    @model_validator(mode="after")
+    def _check_message_type(self) -> "_ExecutionConfig":
+        """Reject the mode / message_type pairs no transport can deliver.
+
+        Only config-only rules live here; rules that depend on the transport, response store or
+        host run at startup in the entry point that owns them.
+        """
+        if self.message_type is None:
+            return self
+        if self.mode == ExecutionMode.REST_ASYNC and self.message_type == ReplyMessageType.DELTA:
+            raise AKConfigError(
+                "execution.mode rest_async with execution.message_type delta is not supported: polling returns one "
+                "stored reply. Use message_type complete, or mode rest_sync (SSE) or async (WebSocket) with delta"
+            )
+        if self.mode == ExecutionMode.REALTIME and self.message_type == ReplyMessageType.COMPLETE:
+            raise AKConfigError(
+                "execution.mode realtime with execution.message_type complete is not supported: realtime always "
+                "streams. Leave message_type unset or set it to delta"
+            )
+        return self
+
+    @property
+    def resolved_message_type(self) -> ReplyMessageType:
+        """``message_type`` if set, else ``DELTA`` for realtime and ``COMPLETE`` otherwise."""
+        if self.message_type is not None:
+            return self.message_type
+        return ReplyMessageType.DELTA if self.mode == ExecutionMode.REALTIME else ReplyMessageType.COMPLETE
+
+    @property
+    def is_websocket(self) -> bool:
+        """Replies are delivered over WebSocket (``async`` mode)."""
+        return self.mode == ExecutionMode.ASYNC
+
+    @property
+    def is_delta(self) -> bool:
+        """Replies are token-streamed as chunks by ``StreamAgentRunner``.
+
+        False for realtime even though its resolved message type is ``DELTA``: realtime has its own
+        runner and delivery, so a voice turn must never reach the token-streaming path.
+        """
+        return self.resolved_message_type == ReplyMessageType.DELTA and self.mode != ExecutionMode.REALTIME
+
+    @property
+    def is_sse(self) -> bool:
+        """Delta replies streamed over REST as SSE (``rest_sync`` or unset mode)."""
+        return self.is_delta and not self.is_websocket
 
 
 class _SandboxIdentityConfig(BaseModel):

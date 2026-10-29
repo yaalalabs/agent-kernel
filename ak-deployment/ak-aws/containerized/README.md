@@ -146,7 +146,7 @@ module "containerized_agents" {
 
   # Enable queue mode
   queue_mode     = true
-  execution_mode = "rest_async"  # rest_sync | rest_async | async | stream | realtime
+  execution_mode = "rest_async"  # rest_sync | rest_async | async | realtime
 
   # Queue configuration
   queue_config = {
@@ -404,6 +404,11 @@ create_dynamodb_schedule_table = true
 
 ## Deployment Modes
 
+| Name | Description | Type | Default | Required |
+|------|-------------|------|---------|:--------:|
+| `execution_mode` | Execution mode: `rest_sync` (client waits on the same HTTP connection), `rest_async` (client polls a separate GET endpoint; requires `queue_mode = true`), `async` (WebSocket only; `message_type` picks one message per reply or one per chunk), or `realtime` (persistent model sockets behind a stateful edge such as the LiveKit gateway). `stream` was removed and fails at `terraform plan`: use `async` with `message_type = "delta"`. | `string` | `"rest_sync"` | no |
+| `message_type` | Reply delivery: `complete` (whole reply) or `delta` (one message per chunk). `null` leaves Agent Kernel's default (`delta` for `realtime`, `complete` otherwise). Injected as `AK_EXECUTION__MESSAGE_TYPE` into both the REST service and the agent runner whenever non-null, in every mode, so the two containers always agree. For chunked replies use `delta` with `async` (WebSocket chunks): in queue mode `ECSIOHandler` refuses `rest_sync` + `delta` at startup (its REST container has no SSE route), and Agent Kernel rejects `rest_async` + `delta` and `realtime` + `complete` at config load. Terraform validates the value only; Agent Kernel checks the combination at startup. | `string` | `null` | no |
+
 ### Non-Queue Mode (Default)
 
 Direct synchronous execution. The REST service contains both request handling and agent logic.
@@ -466,7 +471,7 @@ curl -X GET ".../chat?request_id=..."
 # Returns the stored response body directly, e.g.: {"...": "..."}
 ```
 
-### WebSocket Mode - Async (`async`) and Stream (`stream`)
+### WebSocket Mode (`async`)
 
 Creates a **WebSocket API Gateway** that proxies frames to the ECS ingress service over a
 dedicated VPC Link (V1) and an internal NLB that fronts the same internal ALB — WebSocket
@@ -481,12 +486,14 @@ Both `queue_mode` settings are supported:
 - `queue_mode = false` — the ingress service runs the agent inline and pushes the reply
   itself. No queues and no agent-runner service.
 
-Modes:
+Message types (`message_type`):
 
-- `async` — the full response is delivered in one WebSocket message once the agent finishes.
-- `stream` — the agent's stream events are pushed as they're generated, each as its own
-  `STREAM_CHUNK` WebSocket message. Every chunk carries `event`; `delta` appears only on a
-  `text_delta`, so a client must test for the key rather than assume it. With `queue_mode = false`, the ingress service streams
+- `complete` (or `null`) — the full response is delivered in one `CHAT_RESPONSE` WebSocket
+  message once the agent finishes.
+- `delta` — the agent's stream events are pushed as they're generated, each as its own
+  `STREAM_CHUNK` WebSocket message, ending with a chunk carrying `done: true`. Every chunk
+  carries `event`; the `delta` key appears only on a `text_delta`, so a client must test for
+  the key rather than assume it. With `queue_mode = false`, the ingress service streams
   the agent inline and broadcasts each chunk directly over the connection. With
   `queue_mode = true`, `ECSStreamAgentRunner` fans out each chunk as its own Output Queue
   message and `ECSOutputConsumer` broadcasts every one as a `STREAM_CHUNK`.
@@ -499,7 +506,7 @@ Modes:
 - A DynamoDB `websocket-connections` table (hash `user_id`, range `connection_id`, GSI `connection_id-index`, TTL `expiry_time`)
 - IAM for the REST service task role: `execute-api:ManageConnections` + connections-table access
 
-**Not used in WebSocket modes:** the DynamoDB response store and `gateway_endpoints`
+**Not used in WebSocket mode:** the DynamoDB response store and `gateway_endpoints`
 (rejected by validation) — responses are pushed over the connection instead of stored.
 Authentication is handled in-app on `$connect` (bearer token with a `userId` claim);
 there is no API Gateway authorizer.
@@ -509,6 +516,7 @@ there is no API Gateway authorizer.
 ```hcl
 queue_mode     = true          # or false to run the agent inline in the ingress service
 execution_mode = "async"
+message_type   = "delta"       # one STREAM_CHUNK per chunk; omit for one CHAT_RESPONSE per reply
 
 # Optional route customization
 ws_chat_route = "conversation"
@@ -526,7 +534,7 @@ the app as `x-ws-*` request headers.
 ### Realtime Mode (`realtime`)
 
 Used for external persistent WebRTC/WebSocket integrations like the LiveKit Voice Gateway.
-Unlike `async` and `stream`, this mode **does not create an AWS API Gateway WebSocket**.
+Unlike `async`, this mode **does not create an AWS API Gateway WebSocket**.
 Instead, the ingress service acts as a background worker running an infinite loop to maintain
 a connection to the external realtime provider (e.g., LiveKit Cloud).
 
@@ -549,10 +557,10 @@ queue_mode     = true   # or false for the single-container topology
 execution_mode = "realtime"
 ```
 
-> **App contract**: WebSocket modes assume the container image supports the same
-> `AK_EXECUTION__MODE = async|stream` behavior as the serverless deployment, exposes
-> an HTTP ingress route for forwarded frames, reads the `x-ws-*` headers, and reads
-> `AK_WEBSOCKET_API__ENDPOINT_URL` for `PostToConnection`. Verify these before use.
+> **App contract**: WebSocket mode assumes the container image supports the same
+> `AK_EXECUTION__MODE = async` behavior (with either `AK_EXECUTION__MESSAGE_TYPE`) as the
+> serverless deployment, exposes an HTTP ingress route for forwarded frames, reads the `x-ws-*`
+> headers, and reads `AK_WEBSOCKET_API__ENDPOINT_URL` for `PostToConnection`. Verify these before use.
 
 ## Auto Scaling
 
@@ -650,12 +658,12 @@ See [examples/aws-containerized/](../../examples/aws-containerized/) for complet
 - **openai-websocket-scalable** - OpenAI agent over a WebSocket API in queue mode: the REST/IO
   service enqueues chat frames and pushes responses, while a separately-scalable Agent Runner
   service processes them from SQS
-- **openai-stream** - OpenAI agent over a WebSocket API in direct (non-queue), STREAM execution
-  mode: the reply is delivered token-by-token as `STREAM_CHUNK` messages instead of one final
-  `CHAT_RESPONSE`
-- **openai-stream-queue-mode** - OpenAI agent over a WebSocket API in queue-based STREAM execution
-  mode: the Agent Runner streams token-by-token chunks onto the Output Queue so it can scale
-  independently of ingress
+- **openai-stream** - OpenAI agent over a WebSocket API in direct (non-queue) mode with
+  `execution_mode = "async"` and `message_type = "delta"`: the reply is delivered token-by-token as
+  `STREAM_CHUNK` messages instead of one final `CHAT_RESPONSE`
+- **openai-stream-queue-mode** - OpenAI agent over a WebSocket API in queue mode with
+  `execution_mode = "async"` and `message_type = "delta"`: the Agent Runner streams
+  token-by-token chunks onto the Output Queue so it can scale independently of ingress
 
 ## Migration
 
@@ -696,7 +704,7 @@ output "agent_runner_security_group_id" # Agent Runner security group ID (queue 
 output "api_gateway_cloudwatch_log_group_arn"   # API Gateway log group ARN (null when logging disabled)
 output "api_gateway_cloudwatch_log_group_name"  # API Gateway log group name (null when logging disabled)
 
-# WebSocket mode only (`execution_mode = "async"` or `"stream"`) — null otherwise
+# WebSocket mode only (`execution_mode = "async"`) — null otherwise
 output "websocket_api_endpoint_url"       # WebSocket API Gateway connect URL (wss://...)
 output "websocket_api_id"                 # WebSocket API Gateway ID
 output "websocket_api_execution_arn"      # WebSocket API Gateway execution ARN

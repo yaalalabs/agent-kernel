@@ -110,7 +110,7 @@ class PydanticAIRunner(BaseRunner):
         filtered = dict(options)
         if filtered.pop("event_stream_handler", None) is not None and not self._event_stream_handler_warned:
             _log.warning(
-                "Pydantic AI event_stream_handler is ignored in Agent Kernel stream mode; the runner's own stream events "
+                "Pydantic AI event_stream_handler is ignored in Agent Kernel streamed runs; the runner's own stream events "
                 "carry the same information"
             )
             self._event_stream_handler_warned = True

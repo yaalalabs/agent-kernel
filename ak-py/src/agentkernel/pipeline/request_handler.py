@@ -260,7 +260,7 @@ class RequestHandler(RestHandler):
         return router
 
     async def run_chat(self, body: BaseRunRequest):
-        """POST /api/v1/chat: enqueue; SSE stream in STREAM mode, JSON otherwise."""
+        """POST /api/v1/chat: enqueue; SSE stream for rest_sync + delta, JSON otherwise."""
         # Direct-mode parity: same validation messages and error shape as ChatService._validate
         # (ValueError -> HTTPException(400, detail={"error": ...})).
         if not body.session_id:
@@ -269,7 +269,7 @@ class RequestHandler(RestHandler):
             raise HTTPException(status_code=400, detail={"error": "No prompt provided in the request", "session_id": body.session_id})
 
         self._reject_unroutable(body)
-        if self._effective_mode() == ExecutionMode.STREAM:
+        if self._config.execution.is_sse:
             return await self._run_chat_stream(body)
         return await self.enqueue_and_wait(body)
 
@@ -283,7 +283,7 @@ class RequestHandler(RestHandler):
         first.
 
         :param body: The chat request; only its session_id reaches the error detail.
-        :raises HTTPException: 400 when the mode or the response store cannot serve this route.
+        :raises HTTPException: 400 when the mode cannot serve this route.
         """
         mode = self._effective_mode()
         if mode == ExecutionMode.REALTIME:
@@ -296,16 +296,17 @@ class RequestHandler(RestHandler):
                     "session_id": body.session_id,
                 },
             )
-        if mode == ExecutionMode.ASYNC:
+        if self._config.execution.is_websocket:
             raise HTTPException(
                 status_code=400,
                 detail={"error": "ASYNC mode delivers responses over the WebSocket route: connect to /ws instead", "session_id": body.session_id},
             )
-        if mode == ExecutionMode.STREAM and not self._store_can_serve_sse():
+        if self._config.execution.is_sse and not self._store_can_serve_sse():
             raise HTTPException(
                 status_code=400,
                 detail={
-                    "error": "STREAM responses on this topology are delivered over the WebSocket route: connect to /ws instead",
+                    "error": "SSE (execution.mode rest_sync with message_type delta) needs a response store that can stream "
+                    "chunks and is shared with the response handler; this topology's store cannot",
                     "session_id": body.session_id,
                 },
             )
@@ -332,7 +333,7 @@ class RequestHandler(RestHandler):
         return StreamingResponse(self._sse_stream(request_id, body.session_id), media_type="text/event-stream")
 
     async def _sse_stream(self, request_id: str, session_id: Optional[str]) -> AsyncGenerator[str, None]:
-        store = self.get_response_store()  # chunk-streaming capable: checked in _run_chat_stream before enqueue
+        store = self.get_response_store()  # chunk-streaming capable: checked by _reject_unroutable
         chunk_iterator = store.stream(request_id)
         try:
             while True:

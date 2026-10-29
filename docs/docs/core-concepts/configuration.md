@@ -79,7 +79,8 @@ websocket_api:
 
 # Execution configuration (for AWS serverless and containerized deployments)
 execution:
-  mode: rest_sync  # Execution mode: rest_sync, rest_async, stream, or async (WebSocket)
+  mode: rest_sync  # Execution mode: rest_sync, rest_async, async (WebSocket), or realtime. Unset runs as rest_sync
+  message_type: complete  # Reply delivery: complete (one whole reply) or delta (one message per chunk). Unset: delta for realtime, complete otherwise
   queues:
     type: sqs  # Queue transport: in_memory | sqs | kafka | nats, or a dotted path to a QueueTransport subclass. Mandatory whenever this block is declared
     input:
@@ -336,6 +337,7 @@ Alternatively, use `config.json`:
   },
   "execution": {
     "mode": "rest_sync",
+    "message_type": "complete",
     "queues": {
       "type": "sqs",
       "input": {
@@ -663,7 +665,8 @@ export AK_GUARDRAIL__OUTPUT__VERSION=1  # AWS Bedrock guardrail version
 
 ```bash
 # Execution mode
-export AK_EXECUTION__MODE=rest_sync  # Options: 'rest_sync', 'rest_async', 'stream', 'async'
+export AK_EXECUTION__MODE=rest_sync  # Options: 'rest_sync', 'rest_async', 'async', 'realtime'
+export AK_EXECUTION__MESSAGE_TYPE=complete  # Options: 'complete', 'delta' (unset: delta for realtime, complete otherwise)
 
 # Queue configuration
 export AK_EXECUTION__QUEUES__INPUT__URL=https://sqs.us-east-1.amazonaws.com/123456789012/agent-input
@@ -699,8 +702,18 @@ export AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TTL=604800
 **Execution Modes**:
 - `rest_sync` - Synchronous REST: sends request to queue and immediately waits for response from response store (requires queues and response_store)
 - `rest_async` - Asynchronous REST: submits request to queue and returns immediately with request_id, then poll for response from response store (requires queues and response_store)
-- `stream` - Event streaming: SSE on the built-in REST server (local, containerized, Cloud Run, Container Apps), or WebSocket `STREAM_CHUNK` push on AWS serverless (queues optional, response_store not used). Requires a streaming-capable framework (OpenAI Agents SDK, LangGraph, Google ADK, Pydantic AI, Microsoft Agent Framework)
 - `async` - WebSocket mode for real-time bidirectional communication on AWS serverless (queues optional, response_store not used)
+- `realtime` - Persistent realtime sockets, such as the [LiveKit](../integrations/livekit) voice gateway; always streams
+
+Unset `mode` runs as `rest_sync`.
+
+**Message Types** (`execution.message_type`, env `AK_EXECUTION__MESSAGE_TYPE`) choose how the reply is delivered:
+- `complete` - One message carrying the whole reply: a JSON body for `rest_sync`, a stored reply for `rest_async`, one `CHAT_RESPONSE` for `async`
+- `delta` - One message per `StreamChunk` as it is produced: SSE (`text/event-stream`) on `POST /api/v1/chat` for `rest_sync`, one `STREAM_CHUNK` WebSocket message per chunk (ending with `done: true`) for `async`. Requires a streaming-capable framework (OpenAI Agents SDK, LangGraph, Google ADK, Pydantic AI, Microsoft Agent Framework)
+
+Unset `message_type` resolves to `delta` for `realtime` and `complete` otherwise. `rest_async` + `delta` and `realtime` + `complete` are rejected when the configuration loads (`AKConfigError`).
+
+`execution.mode: stream` was removed and fails on load with a migration message. For SSE over REST use `mode: rest_sync` with `message_type: delta`; for chunks over WebSocket use `mode: async` with `message_type: delta`.
 
 **Notes**:
 - Queues and response_store are required for `rest_sync` and `rest_async` modes
@@ -898,7 +911,8 @@ guardrail:
 
 # Execution configuration (for AWS serverless and containerized deployments)
 execution:
-  mode: "rest_sync"             # Execution mode: 'rest_sync', 'rest_async', 'stream', or 'async'
+  mode: "rest_sync"             # Execution mode: 'rest_sync', 'rest_async', 'async', or 'realtime'
+  message_type: "complete"      # Reply delivery: 'complete' or 'delta' (unset: delta for realtime, complete otherwise)
   queues:                       # Queue transport + coordinates for queue-based execution
     type: "sqs"                 # in_memory | sqs | kafka | nats, or a dotted path to a QueueTransport subclass - mandatory whenever this block is declared
     input:
@@ -1143,7 +1157,7 @@ Example validation errors:
 export AK_SESSION__TYPE=invalid_storage  # Must be 'in_memory', 'redis', 'valkey', 'dynamodb', 'cosmosdb', or 'firestore'
 export AK_A2A__TASK_STORE_TYPE=invalid   # Must be 'in_memory' or 'redis'
 export AK_TRACE__TYPE=invalid_tracer     # Must be 'langfuse', 'openllmetry', 'logfire', 'cloudwatch', or a dotted BaseTrace path
-export AK_EXECUTION__MODE=invalid        # Must be 'rest_sync', 'rest_async', 'stream', or 'async'
+export AK_EXECUTION__MODE=invalid        # Must be 'rest_sync', 'rest_async', 'async', or 'realtime' ('stream' was removed)
 ```
 
 ## Best Practices
@@ -1165,7 +1179,7 @@ export AK_EXECUTION__MODE=invalid        # Must be 'rest_sync', 'rest_async', 's
 - Support for nested configuration using underscore delimiter
 - Built-in validation ensures configuration integrity
 - Flexible session storage options (in-memory, Redis, Valkey, DynamoDB, Cosmos DB, Firestore)
-- Execution modes (`rest_sync`, `rest_async`, `stream`, `async`) and queue settings live under `execution`
+- Execution modes (`rest_sync`, `rest_async`, `async`, `realtime`), the reply `message_type` (`complete`, `delta`) and queue settings live under `execution`
 - Optional multimodal and conversation-thread features via their own config blocks
 - Optional A2A and MCP functionality with granular control
 - DynamoDB recommended for non-performance-critical deployments

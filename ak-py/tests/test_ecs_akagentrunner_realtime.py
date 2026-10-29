@@ -6,6 +6,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from agentkernel.core.base import Session
+from agentkernel.core.config import _ExecutionConfig, _InputQueueConfig, _QueuesConfig
+from agentkernel.core.model import ExecutionMode
 from agentkernel.core.realtime import RealtimeRunner
 from agentkernel.core.runtime import Runtime
 from agentkernel.core.session.in_memory import InMemorySessionStore
@@ -70,7 +72,12 @@ def test_permanent_failure_emits_a_marked_error_chunk_for_the_live_edge(monkeypa
     monkeypatch.setattr(
         ECSRealtimeAgentRunner,
         "_config",
-        SimpleNamespace(execution=SimpleNamespace(queues=SimpleNamespace(input=SimpleNamespace(max_receive_count=3)))),
+        SimpleNamespace(
+            execution=_ExecutionConfig(
+                mode=ExecutionMode.REALTIME,
+                queues=_QueuesConfig(type="sqs", input=_InputQueueConfig(max_receive_count=3)),
+            )
+        ),
     )
 
     ECSRealtimeAgentRunner.on_permanent_failure(_make_record([{"type": "text", "prompt": "hi"}]))

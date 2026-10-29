@@ -2,6 +2,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from agentkernel.core.config import _ExecutionConfig, _ResponseStoreConfig
+from agentkernel.core.util.factory import AKConfigError
 from agentkernel.deployment.aws.serverless.core.router import RESTLambdaRouter
 
 DEFAULT_METHOD = "POST"  # must be same as _default_agent_registered_method in LambdaRouter
@@ -106,18 +108,25 @@ def test_dispatch_raises_for_unknown_route_with_env_vars(router, monkeypatch):
     assert "GET" in msg
 
 
-def test_handle_stream_returns_400_not_raises():
-    """Test that _handle_stream returns a 400 tuple instead of raising ValueError."""
-    from agentkernel.deployment.aws.serverless.core.router.rest_lambda import DefaultEndpointsHandler
+def _router_with_execution(monkeypatch, input_queue_url, **execution):
+    """Build a real RESTLambdaRouter (no DefaultEndpointsHandler stub) over the given execution config."""
+    module = "agentkernel.deployment.aws.serverless.core.router.rest_lambda"
+    config = MagicMock()
+    config.execution = _ExecutionConfig(response_store=_ResponseStoreConfig(type="dynamodb"), **execution)
+    monkeypatch.setattr(f"{module}.AKConfig.get", lambda: config)
+    monkeypatch.setattr(f"{module}.ResponseStoreFactory.create", lambda: MagicMock())
+    monkeypatch.setattr(f"{module}.ChatService", MagicMock())
+    monkeypatch.setattr(f"{module}.SQSHandler.get_input_queue_url", lambda: input_queue_url)
+    return RESTLambdaRouter()
 
-    event = {"httpMethod": "POST", "path": "/"}
-    result = DefaultEndpointsHandler._handle_stream(MagicMock(), event, context=None)
 
-    assert result == (
-        400,
-        {
-            "error": (
-                "SSE streaming requires a Lambda Function URL with InvokeMode: RESPONSE_STREAM. " "Use streaming_handler as your Lambda entry point."
-            )
-        },
-    )
+@pytest.mark.parametrize("input_queue_url", [None, "https://sqs.us-east-1.amazonaws.com/123/input"])
+def test_rest_sync_delta_is_refused_at_router_init(monkeypatch, input_queue_url):
+    """The Lambda REST router does not stream responses, so SSE fails at cold start, direct or queued."""
+    with pytest.raises(AKConfigError, match="rest_sync with message_type delta"):
+        _router_with_execution(monkeypatch, input_queue_url, mode="rest_sync", message_type="delta")
+
+
+@pytest.mark.parametrize("input_queue_url", [None, "https://sqs.us-east-1.amazonaws.com/123/input"])
+def test_rest_sync_complete_builds_the_router(monkeypatch, input_queue_url):
+    _router_with_execution(monkeypatch, input_queue_url, mode="rest_sync", message_type="complete")

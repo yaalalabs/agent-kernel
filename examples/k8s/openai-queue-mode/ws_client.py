@@ -1,10 +1,10 @@
-"""Minimal WebSocket client for the README's stream-mode walkthrough.
+"""Minimal WebSocket client for the README's async + delta walkthrough.
 
 Connects to the gateway, authenticates with a demo JWT accepted by app_ws_gateway.py's
 validator (signature verification is off there, so any signing key works), sends one chat
 frame, and prints every frame until the reply completes: CHAT_QUEUED acknowledges the enqueue,
-then STREAM_CHUNK frames arrive (the one carrying ``done: true`` is the last) in stream mode,
-or a single CHAT_RESPONSE frame in async mode.
+then STREAM_CHUNK frames arrive (the one carrying ``done: true`` is the last) with message_type
+delta, or a single CHAT_RESPONSE frame with the default (complete).
 
     uv run python ws_client.py [ws://localhost:18001/ws] [prompt]
 """

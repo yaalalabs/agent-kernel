@@ -9,9 +9,10 @@ module "serverless_agents" {
   region               = var.region
   is_production        = var.is_production
 
-  # Execution mode - stream delivers each token chunk directly via WebSocket
+  # async + delta delivers each token chunk directly via WebSocket
   queue_mode     = true
-  execution_mode = "stream"
+  execution_mode = "async"
+  message_type   = "delta"
 
   # Memory DB Config
   create_redis_cluster = true

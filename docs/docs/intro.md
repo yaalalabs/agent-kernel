@@ -93,7 +93,7 @@ Agent Kernel provides pre-built execution capabilities:
   - GCP Cloud Run (always-on)
 - **Scalable Queue Mode (AWS)**: SQS-backed decoupling of request handling and agent execution, with retries, DLQs, and backlog-based auto-scaling on Lambda and ECS
 - **Event Streaming**: SSE streaming on the REST API, and WebSocket streaming on AWS serverless. Each frame carries one typed stream event — a text delta, the agent's reasoning, a tool call, or a message boundary
-- **WebSocket Delivery (AWS)**: real-time push of full responses (`async` mode) or per-event chunks (`stream` mode)
+- **WebSocket Delivery (AWS)**: real-time push (`async` mode) of full responses (`message_type: complete`) or per-event chunks (`message_type: delta`)
 - **MCP Server** for Model Context Protocol tool publishing
 - **A2A Server** for Agent-to-Agent communication
 - **AG-UI Server** for streaming any agent (text, tool calls, reasoning, shared state) to an AG-UI-compliant frontend
@@ -279,7 +279,7 @@ You can:
 - Test locally with the CLI
 - Deploy to **AWS Lambda**, **Azure Functions**, or **GCP Cloud Run** with one line-change (multi-cloud!)
 - Deploy to **AWS ECS/Fargate**, **Azure Container Apps**, or **GCP Cloud Run (always-on)** for containerized workloads
-- Expose as a REST API, with SSE event streaming via `execution.mode: stream`
+- Expose as a REST API, with SSE event streaming via `execution.message_type: delta`
 - Scale out with SQS-backed queue mode and WebSocket delivery on AWS
 - Integrate with MCP, A2A, or AG-UI protocols
 

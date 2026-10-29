@@ -39,7 +39,8 @@ OpenAIModule([weather_agent]).run_options(
    trace metadata. The CLI session id is a UUID, so the first `Run stats:` line below shows the static limit
    and the `quick:` turn shows the tighter one.
 5. **Errors.** A factory that raises, returns a non-mapping, or names a reserved key fails that run the way a
-   framework error does: a user-facing error reply in `rest_sync`, a propagated exception in `stream`.
+   framework error does: a user-facing error reply with `message_type: complete`, a propagated exception
+   with `delta`.
    Nothing is cached, so the failure repeats on every run until the factory is fixed.
 
 ## Example session

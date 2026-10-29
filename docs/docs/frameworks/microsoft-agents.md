@@ -189,8 +189,8 @@ content, so text-based consumers (chat integrations, logging) work unchanged. Se
 [Reply Types](../core-concepts/runner#structured-replies) for how structured replies are surfaced,
 and [Execution Hooks](../integrations/hooks#structured-replies-in-hooks) for how hooks receive them.
 
-Structured output applies to non-streaming runs (`execution.mode: rest_sync`, the default, and the CLI). In stream mode the answer is
-streamed as text.
+Structured output applies to non-streaming runs (`execution.message_type: complete`, the default, and the CLI). With
+`message_type: delta` the answer is streamed as text.
 
 ## Streaming
 

@@ -209,7 +209,7 @@ See [examples/api/openai_structured](https://github.com/yaalalabs/agent-kernel/t
 
 ### Streaming Hooks (`on_stream_event`)
 
-When the application runs in streaming mode (`execution.mode: stream`), or over the AG-UI surface, the agent reply arrives as a sequence of typed **events** rather than one final reply. Post-execution hooks see every one of them — message and reasoning text, tool call names, arguments and results, and the boundaries that pair them — by overriding `on_stream_event`.
+When the application streams replies (`execution.message_type: delta`), or over the AG-UI surface, the agent reply arrives as a sequence of typed **events** rather than one final reply. Post-execution hooks see every one of them — message and reasoning text, tool call names, arguments and results, and the boundaries that pair them — by overriding `on_stream_event`.
 
 The cheapest useful case needs no bookkeeping at all. A tool's return value arrives whole, in one event, on every adapter:
 
@@ -440,7 +440,7 @@ paths report progress:
 
 | Path | Mode | What you see |
 |------|------|--------------|
-| `PostHook.on_stream_event` (below) | `execution.mode: stream` only | framework-agnostic `StreamEvent`s for what the adapter maps |
+| `PostHook.on_stream_event` (below) | `execution.message_type: delta` only (and AG-UI) | framework-agnostic `StreamEvent`s for what the adapter maps |
 | native hooks through `run_options` | any mode, including `rest_sync` | the framework's full lifecycle, in its own types |
 
 ### Hook Execution Order

@@ -5,7 +5,7 @@ import threading
 from typing import Optional
 
 from ..core.config import AKConfig
-from ..core.model import ExecutionMode, StreamChunk
+from ..core.model import StreamChunk
 from ..core.util.async_bridge import run_async_sync
 from ..core.util.factory import AKConfigError
 from .consumer import ConsumerLoop
@@ -19,8 +19,8 @@ from .ws.base import WebSocketHandlerABC
 
 class ResponseHandler:
     """Pipeline Response Handler (spec #495 §8): consumes the output queue and delivers replies:
-    response store in REST modes, local chunk stream for the REST-entered in-process STREAM
-    path, WebSocket push for ASYNC/STREAM. Push targets come from the shared connection store
+    response store in REST modes, chunk stream for ``rest_sync + delta`` (SSE), WebSocket push
+    in async mode (whole replies or chunks). Push targets come from the shared connection store
     (wherever the user's sockets are right now), delivered to the owning gateway pod: in-process
     on the ``in_memory`` transport, pod-to-pod HTTP otherwise.
 
@@ -74,18 +74,14 @@ class ResponseHandler:
             self._store_chunk(message)
             return
 
-        mode = AKConfig.get().execution.mode
-        if mode == ExecutionMode.STREAM:
-            # No USER_ID attribute means the request entered over REST (spec §2 invariant): its
-            # chunks are drained by the Request Handler's SSE generator from the chunk-streaming
-            # store. WS-entered requests always carry the authenticated user id.
-            if not message.attributes.get(ATTR_USER_ID):
-                self._store_chunk(message)
-                return
-            self._broadcast(message, WebSocketHandlerABC.MessageType.STREAM_CHUNK)
+        execution = AKConfig.get().execution
+        if execution.is_websocket:
+            kind = WebSocketHandlerABC.MessageType.STREAM_CHUNK if execution.is_delta else WebSocketHandlerABC.MessageType.CHAT_RESPONSE
+            self._broadcast(message, kind)
             return
-        if mode == ExecutionMode.ASYNC:
-            self._broadcast(message, WebSocketHandlerABC.MessageType.CHAT_RESPONSE)
+        if execution.is_sse:
+            # Drained by the Request Handler's SSE generator from the chunk-streaming store.
+            self._store_chunk(message)
             return
         self._store_response(message)
 
@@ -115,23 +111,22 @@ class ResponseHandler:
                         self._log.warning("Cannot deliver permanent-failure AG-UI chunk: response store does not support chunk streaming")
                 return
 
-            mode = AKConfig.get().execution.mode
+            execution = AKConfig.get().execution
 
-            if mode == ExecutionMode.STREAM:
+            if execution.is_delta:
                 error_chunk = StreamChunk(error=error_text, done=True).model_dump(exclude_none=True)
                 if message.group_id:
                     error_chunk["session_id"] = message.group_id
-                if not message.attributes.get(ATTR_USER_ID):
-                    if request_id:
-                        store = self._get_store()
-                        if store.supports_chunk_streaming():
-                            store.add_chunk(request_id, error_chunk)
-                        else:
-                            self._log.warning("Cannot deliver permanent-failure stream chunk: response store does not support chunk streaming")
-                    return
-                self._broadcast_error(message, error_chunk, WebSocketHandlerABC.MessageType.STREAM_CHUNK)
+                if execution.is_websocket:
+                    self._broadcast_error(message, error_chunk, WebSocketHandlerABC.MessageType.STREAM_CHUNK)
+                elif request_id:
+                    store = self._get_store()
+                    if store.supports_chunk_streaming():
+                        store.add_chunk(request_id, error_chunk)
+                    else:
+                        self._log.warning("Cannot deliver permanent-failure stream chunk: response store does not support chunk streaming")
                 return
-            if mode == ExecutionMode.ASYNC:
+            if execution.is_websocket:
                 error_payload = {"error": error_text, "request_id": request_id}
                 if message.group_id:
                     error_payload["session_id"] = message.group_id
@@ -253,7 +248,8 @@ class ResponseHandler:
         store = self._get_store()
         if not store.supports_chunk_streaming():
             raise AKConfigError(
-                "local STREAM delivery requires a chunk-streaming response store (in_memory, redis, valkey, or a BYO store with the capability)"
+                "rest_sync + delta (SSE) and AG-UI delivery require a chunk-streaming response store (in_memory, redis, valkey, "
+                "or a BYO store with the capability)"
             )
         store.add_chunk(request_id, json.loads(message.body))
 

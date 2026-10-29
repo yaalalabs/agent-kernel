@@ -12,7 +12,7 @@ class InMemoryResponseStore(ResponseStore):
     handler and the response handler share it across instances. ``get_message`` returns
     ``record["body"]``, matching the Redis/Valkey/DynamoDB stores' contract; ``get_record``
     additionally exposes the full record (``status_code`` included) for the pipeline request
-    handler. ``add_chunk``/``stream`` carry STREAM-mode chunks to the local SSE generator.
+    handler. ``add_chunk``/``stream`` carry delta-reply chunks to the local SSE generator.
 
     Not durable and not shared across processes: multi-process queue modes must use a shared
     backend (enforced at IOHandler startup). Records are expected to be consumed with
@@ -67,7 +67,7 @@ class InMemoryResponseStore(ResponseStore):
             self._chunks.pop(request_id, None)
 
     def add_chunk(self, request_id: str, chunk: Dict[str, Any]) -> None:
-        """Append one STREAM-mode chunk for the request (consumed by ``stream``)."""
+        """Append one delta-reply chunk for the request (consumed by ``stream``)."""
         with self._lock:
             chunk_queue = self._chunks.setdefault(request_id, queue.Queue())
         chunk_queue.put(chunk)

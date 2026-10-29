@@ -181,15 +181,15 @@ class AgentRunner:
 
     @classmethod
     def run(cls) -> None:
-        """Two-process container entry point. Dispatches to StreamAgentRunner in STREAM mode."""
+        """Two-process container entry point. Dispatches to StreamAgentRunner for delta replies."""
         if QueueTransportFactory.resolve_type() == "in_memory":
             raise AKConfigError("the in_memory transport runs in-process: start IOHandler (single-process topology) instead of AgentRunner")
         # cls check avoids redirect loops when StreamAgentRunner.run() is reached via inheritance.
         if cls is AgentRunner:
-            mode = AKConfig.get().execution.mode
-            if mode == ExecutionMode.REALTIME:
+            execution = AKConfig.get().execution
+            if execution.mode == ExecutionMode.REALTIME:
                 return RealtimeAgentRunner.run()
-            if mode == ExecutionMode.STREAM:
+            if execution.is_delta:
                 return StreamAgentRunner.run()
         # A standalone runner container is usually PID 1: without these handlers SIGTERM never
         # arrives and pod/task stop hangs until SIGKILL instead of draining in-flight runs.
@@ -293,11 +293,11 @@ class AgentRunner:
 
 
 class StreamAgentRunner(AgentRunner):
-    """STREAM-mode sibling: fans out each streamed chunk as its own output message (spec #495 §8).
+    """Delta-reply sibling: fans out each streamed chunk as its own output message (spec #495 §8).
 
-    On broker transports the chunks are pushed over WebSocket, so the USER_ID attribute (the
-    WS-entered marker, spec #495 §2) is required; the in_memory transport also serves
-    REST-entered chunks from the local response store over SSE, where no user is needed.
+    Under ``async + delta`` on a broker transport the chunks are pushed over WebSocket, so the
+    USER_ID attribute (the WS-entered marker, spec #495 §2) is required. Under ``rest_sync + delta``
+    the chunks go to the response store and are served over SSE, where no user is needed.
     """
 
     _log = logging.getLogger("ak.pipeline.stream_agent_runner")
@@ -309,8 +309,8 @@ class StreamAgentRunner(AgentRunner):
         body = BaseRunRequest.model_validate(json.loads(message.body))
 
         request_id = self._resolve_request_metadata(message, body)
-        if not message.attributes.get(ATTR_USER_ID) and QueueTransportFactory.resolve_type() != "in_memory":
-            raise ValueError("user_id is required in queue message attributes for STREAM mode over a broker transport")
+        if not message.attributes.get(ATTR_USER_ID) and AKConfig.get().execution.is_websocket and QueueTransportFactory.resolve_type() != "in_memory":
+            raise ValueError("user_id is required in queue message attributes for async + delta over a broker transport")
 
         self._log.info(f"[STREAM AGENT START] request_id={request_id} (receive_count={message.receive_count})")
 

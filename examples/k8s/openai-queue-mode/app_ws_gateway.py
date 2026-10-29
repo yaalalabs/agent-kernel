@@ -1,7 +1,7 @@
 """The WebSocket gateway process: owns client sockets and nothing else.
 
-This is the entry point behind the chart's ws-gateway Deployment (async/stream execution
-modes). It authenticates each /ws handshake with the validator below, enqueues chat frames
+This is the entry point behind the chart's ws-gateway Deployment (async execution mode,
+either message type). It authenticates each /ws handshake with the validator below, enqueues chat frames
 directly to the transport, and receives reply pushes from the Response Handler on
 /internal/push; agents run in app_agent_runner.py and REST stays on app_io_handler.py.
 """

@@ -2,9 +2,10 @@
 SSE streaming test for the Pydantic AI streaming example.
 
 The shared `agentkernel.test` JSON request/response client cannot drive Server-Sent Events, so this
-test starts `app.py` (which runs with `execution.mode: stream` from config.yaml) and consumes the
-`text/event-stream` body directly with httpx: it POSTs to /api/v1/chat and asserts the frame
-contract, stated here rather than by reference so this file stands on its own:
+test starts `app.py` (which runs with `execution.mode: rest_sync` and `execution.message_type: delta`
+from config.yaml) and consumes the `text/event-stream` body directly with httpx: it POSTs to
+/api/v1/chat and asserts the frame contract, stated here rather than by reference so this file
+stands on its own:
 
 - Every frame echoes the request's session_id, and none carries an `error`.
 - Every frame but the last carries an `event` — the typed stream event it was built from. The last

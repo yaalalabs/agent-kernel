@@ -9,7 +9,7 @@ from pydantic import ConfigDict
 from ..auth.authoriser import Authoriser
 from ..core import Config
 from ..core.chat_service import ChatService
-from ..core.model import BaseChatRequest, BaseRunRequest, ExecutionMode
+from ..core.model import BaseChatRequest, BaseRunRequest
 from ..core.runtime import Runtime
 
 
@@ -78,7 +78,7 @@ class AgentRESTRequestHandler(RESTRequestHandler):
     API routers that expose endpoints to interact with Agent Kernel.
     Endpoints:
     - GET /api/v1/agents: List available agents
-    - POST /api/v1/chat: Run an agent (streams SSE when execution.mode=stream, otherwise returns JSON)
+    - POST /api/v1/chat: Run an agent (streams SSE when execution.message_type is delta, otherwise returns JSON)
     - POST /api/v1/chat-multipart: Same as /api/v1/chat but accepts multipart form data with file/image uploads
     """
 
@@ -103,7 +103,7 @@ class AgentRESTRequestHandler(RESTRequestHandler):
         return {"agents": list(Runtime.current().agents().keys())}
 
     async def run(self, body: BaseRunRequest):
-        if Config.get().execution.mode == ExecutionMode.STREAM:
+        if Config.get().execution.is_sse:
             try:
                 gen = await self.chat_service.process_stream_chat_async(req=body, sse_format=True)
                 return StreamingResponse(gen, media_type="text/event-stream")
@@ -134,7 +134,7 @@ class AgentRESTRequestHandler(RESTRequestHandler):
             files=files,
             images=images,
         )
-        if Config.get().execution.mode == ExecutionMode.STREAM:
+        if Config.get().execution.is_sse:
             try:
                 gen = await self.chat_service.process_stream_chat_async(req=req, sse_format=True)
                 return StreamingResponse(gen, media_type="text/event-stream")

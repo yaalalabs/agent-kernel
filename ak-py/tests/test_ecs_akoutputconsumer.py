@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from agentkernel.core.model import ExecutionMode
+from agentkernel.core.model import ExecutionMode, ReplyMessageType
 from agentkernel.deployment.aws.containerized.akoutputconsumer import ECSOutputConsumer
 from agentkernel.deployment.aws.core.websocket_service import AWSWebSocketHandler
 
@@ -39,13 +39,15 @@ def _reset_websocket_handler():
 
 
 @pytest.fixture
-def _stream_mode(monkeypatch):
-    monkeypatch.setattr(ECSOutputConsumer._config.execution, "mode", ExecutionMode.STREAM)
+def _async_delta_mode(monkeypatch):
+    monkeypatch.setattr(ECSOutputConsumer._config.execution, "mode", ExecutionMode.ASYNC)
+    monkeypatch.setattr(ECSOutputConsumer._config.execution, "message_type", ReplyMessageType.DELTA)
 
 
 @pytest.fixture
 def _async_mode(monkeypatch):
     monkeypatch.setattr(ECSOutputConsumer._config.execution, "mode", ExecutionMode.ASYNC)
+    monkeypatch.setattr(ECSOutputConsumer._config.execution, "message_type", None)
 
 
 def test_broadcast_via_websocket_raises_when_endpoint_url_missing():
@@ -74,7 +76,7 @@ def test_broadcast_via_websocket_uses_given_message_type():
     assert kwargs["endpoint_url"] == "https://example.execute-api.us-east-1.amazonaws.com/prod"
 
 
-def test_process_message_stream_mode_broadcasts_stream_chunk(_stream_mode):
+def test_process_message_async_delta_broadcasts_stream_chunk(_async_delta_mode):
     record = _make_record({"delta": "token", "done": False})
     mock_ws_handler = MagicMock()
     mock_store = MagicMock()
@@ -116,7 +118,7 @@ def test_on_permanent_failure_async_mode_broadcasts_system_response(_async_mode)
     assert kwargs["message"]["session_id"] == "session-1"
 
 
-def test_on_permanent_failure_stream_mode_broadcasts_error_chunk(_stream_mode):
+def test_on_permanent_failure_async_delta_broadcasts_error_chunk(_async_delta_mode):
     record = _make_record({"delta": "token"})
     mock_ws_handler = MagicMock()
 
@@ -131,7 +133,7 @@ def test_on_permanent_failure_stream_mode_broadcasts_error_chunk(_stream_mode):
     assert kwargs["message"]["session_id"] == "session-1"
 
 
-def test_on_permanent_failure_stream_mode_warns_when_endpoint_url_missing(_stream_mode, caplog):
+def test_on_permanent_failure_async_delta_warns_when_endpoint_url_missing(_async_delta_mode, caplog):
     record = _make_record({"delta": "token"}, endpoint_url=None)
     mock_ws_handler = MagicMock()
 

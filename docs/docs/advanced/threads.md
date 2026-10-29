@@ -43,7 +43,7 @@ sequenceDiagram
 - **Pluggable storage**: in-memory, Redis, Valkey, DynamoDB, Firestore, or Cosmos DB.
 - **Optional, pluggable authorization**: you supply an `Authoriser` that validates a Bearer token against
   *your* authentication provider; Agent Kernel never authenticates users itself.
-- **Streaming included**: with `execution.mode: stream`, the user message is recorded before the stream
+- **Streaming included**: with `execution.message_type: delta`, the user message is recorded before the stream
   starts and the assistant message is assembled from the streamed deltas on completion.
 
 :::caution Platform scope

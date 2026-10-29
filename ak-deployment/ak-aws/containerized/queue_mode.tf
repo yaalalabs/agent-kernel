@@ -68,6 +68,7 @@ module "agent_runner" {
   queue_config   = var.queue_config
   scaling_config = var.scaling_config
   execution_mode = var.execution_mode
+  message_type   = var.message_type
 
   default_image_uri = module.docker_image[0].docker_image_uri
 

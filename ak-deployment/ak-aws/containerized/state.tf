@@ -21,8 +21,8 @@ locals {
   service_name                 = "${var.prefix}-service"
   container_name               = "${var.prefix}-app"
 
-  # True for both WebSocket modes: "async" (full-response) and "stream" (chunk-per-message).
-  is_websocket_mode = contains(["async", "stream"], var.execution_mode)
+  # WebSocket is "async" only; message_type picks full-response (complete) or chunk-per-message (delta).
+  is_websocket_mode = var.execution_mode == "async"
 
   api_base_segment              = try(trim(var.api_base_path, "/"), "")
   api_base_segment_with_version = "/${join("/", compact([local.api_base_segment, var.api_version]))}"

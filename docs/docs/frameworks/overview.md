@@ -39,14 +39,14 @@ Not every Agent Kernel capability is available on every framework:
 
 | Capability | OpenAI Agents | CrewAI | LangGraph | Google ADK | Smolagents | Pydantic AI | MAF |
 |------------|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| Token streaming (`execution.mode: stream`) | ✅ | ❌ | ✅ | ✅ | ❌ | ✅ | ✅ |
+| Token streaming (`execution.message_type: delta`) | ✅ | ❌ | ✅ | ✅ | ❌ | ✅ | ✅ |
 | Structured output (`AgentReplyAny`) | ✅ `output_type` | ✅ module-level `output_pydantic`/`output_json` | ✅ `response_format` | ✅ `output_schema` | ✅ dict/Pydantic `final_answer` | ✅ `output_type` | ✅ `options["response_format"]` |
 | Portable tools (`ToolBuilder`) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Multimodal attachments | ✅ | ✅* | ✅* | ✅ | ✅* | ✅* | ✅* |
 | Hooks / guardrails / sessions / deployments | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Native multi-provider models | ⚠️ OpenAI-first | via LiteLLM | via LangChain | via LiteLLM | via LiteLLM | ✅ many providers + `FallbackModel` | ✅ Provider packages |
 
-\* Multimodal preprocessing (the attachment pre-hook and `analyze_attachments` tool) is framework-agnostic; direct image/file input via the REST API is currently documented for OpenAI Agents SDK and Google ADK. CrewAI and Smolagents raise `NotImplementedError` for streaming; use the default synchronous mode (or `rest_sync` on AWS) with those frameworks.
+\* Multimodal preprocessing (the attachment pre-hook and `analyze_attachments` tool) is framework-agnostic; direct image/file input via the REST API is currently documented for OpenAI Agents SDK and Google ADK. CrewAI and Smolagents raise `NotImplementedError` for streaming; keep the default `message_type: complete` with those frameworks.
 
 ## Choosing a Framework
 

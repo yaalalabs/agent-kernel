@@ -24,7 +24,7 @@ module "containerized_agents" {
 
   # WebSocket without a queue: REST service handles connect/disconnect and runs the agent inline.
   queue_mode     = false
-  execution_mode = "async" # "async" (full reply) | "stream" (token-by-token)
+  execution_mode = "async" # full reply; message_type = "delta" streams token-by-token
   ws_chat_route  = "chat"
 
   # Custom routes beyond chat — registered via @AWSWebsocketAPI.register(...) in app.py.

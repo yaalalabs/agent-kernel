@@ -101,8 +101,8 @@ AWS ECS/Fargate deployment examples:
 - **`openai-dynamodb-scalable/`** - OpenAI agents on AWS ECS with SQS queue mode for scalable, asynchronous request processing and DynamoDB response storage; the OpenAI key is read from SSM Parameter Store (`ssm_enabled`, `secret.provider.type: aws_ssm`)
 - **`openai-websocket/`** - OpenAI agents on AWS ECS over a WebSocket API in direct (non-queue) mode: one service authenticates `$connect`, runs the agent inline, and pushes the reply back over the same connection
 - **`openai-websocket-scalable/`** - OpenAI agents on AWS ECS over a WebSocket API in queue mode: the REST/IO service enqueues chat frames and pushes responses, while a separately-scalable Agent Runner service processes them from SQS
-- **`openai-stream/`** - OpenAI agents on AWS ECS over a WebSocket API in direct (non-queue), STREAM execution mode: the reply is delivered token-by-token as `STREAM_CHUNK` messages instead of one final `CHAT_RESPONSE`
-- **`openai-stream-queue-mode/`** - OpenAI agents on AWS ECS over a WebSocket API in queue-based STREAM execution mode: the Agent Runner streams token-by-token chunks onto the Output Queue so it can scale independently of ingress
+- **`openai-stream/`** - OpenAI agents on AWS ECS over a WebSocket API in direct (non-queue) mode with `execution.mode: async` and `execution.message_type: delta`: the reply is delivered token-by-token as `STREAM_CHUNK` messages instead of one final `CHAT_RESPONSE`
+- **`openai-stream-queue-mode/`** - OpenAI agents on AWS ECS over a WebSocket API in queue mode with `execution.mode: async` and `execution.message_type: delta`: the Agent Runner streams token-by-token chunks onto the Output Queue so it can scale independently of ingress
 - **`openai-schedule/`** - Deferred and recurring chats on AWS ECS: EventBridge Scheduler owns the timers and delivers each occurrence into the Input Queue, with a DynamoDB schedule store and the `/api/v1/schedules` management routes on the REST service
 
 ### 📁 AWS Serverless Examples (`/examples/aws-serverless`)
@@ -114,7 +114,7 @@ AWS Lambda serverless deployment examples:
 - **`langgraph/`** - LangGraph agents running on AWS Lambda
 - **`openai/`** - OpenAI agents running on AWS Lambda, with the OpenAI key read from SSM Parameter Store (`ssm_enabled`, `secret.provider.type: aws_ssm`)
 - **`websocket-openai/`** - OpenAI agents with WebSocket API for real-time bidirectional communication
-- **`streaming-openai/`** - OpenAI agents with WebSocket event streaming (`execution.mode: stream`)
+- **`streaming-openai/`** - OpenAI agents with WebSocket event streaming (`execution.mode: async` with `execution.message_type: delta`)
 - **`schedule-openai/`** - Deferred and recurring chats on AWS Lambda: EventBridge Scheduler delivers each occurrence into the Input Queue for the agent-runner Lambda, backed by a DynamoDB schedule store
 - **`slack-openai/`** - Slack messaging integration on AWS Lambda: webhooks are served by the request-handler Lambda and replies are delivered by the response-handler Lambda
 

@@ -96,7 +96,7 @@ weather_agent = Agent(
 
 # The declaration. Both keywords are `agent.run`'s own arguments: model settings nest inside `options`, and
 # `function_invocation_kwargs` is forwarded to every tool call. Agent Kernel copies them into the call and writes
-# the keys it owns (`session`, `stream`) last; both apply in run mode and in stream mode.
+# the keys it owns (`session`, `stream`) last; both apply in run mode and on a streamed run.
 MAFModule([weather_agent]).run_options(
     weather_agent,
     options={"max_tokens": MAX_TOKENS},
