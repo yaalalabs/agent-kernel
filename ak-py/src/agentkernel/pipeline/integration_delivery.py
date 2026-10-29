@@ -1,7 +1,10 @@
 import logging
 from typing import TYPE_CHECKING, Any, Dict, Mapping, Optional
 
-from ..core.model import AgentReplyText
+from pydantic import ValidationError
+
+from ..core.event import PausedInterruption
+from ..core.model import AgentPausedReplyAny, AgentReplyText
 from ..core.util.async_bridge import run_async_sync
 from .envelope import ATTR_INTEGRATION, ATTR_REQUEST_ID, REPLY_CONTEXT_PREFIX
 
@@ -100,8 +103,40 @@ class IntegrationDelivery:
             )
             run_async_sync(adapter.deliver_error(adapter.ERROR_MESSAGE, reply_context))
             return
+
+        if body.get("status") == "PAUSED":
+            paused = self._paused_reply(body, session_id, integration)
+            if paused is not None:
+                run_async_sync(adapter.deliver_paused(paused, reply_context))
+                self._log.info(f"[OUTPUT PAUSED] Delivered a pause to {integration}: session_id={session_id}, request_id={request_id}")
+                return
+
         run_async_sync(adapter.deliver(AgentReplyText(response=str(body.get("result", ""))), reply_context))
         self._log.info(f"[OUTPUT DONE] Delivered to {integration}: session_id={session_id}, request_id={request_id}")
+
+    def _paused_reply(self, body: dict, session_id: Optional[str], integration: str) -> Optional[AgentPausedReplyAny]:
+        """Rebuild the paused reply from the pause keys ``ResponseBuilder`` promoted onto the body.
+
+        Rebuilding the model rather than passing the raw dict keeps the content a validator
+        produced, so every host delivers the same pause. Returning ``None`` rather than raising
+        lets the caller fall back to text: a body that does not reconstruct is still a reply
+        someone is waiting for.
+
+        :param body: The decoded output body, carrying ``run_id``, ``agent`` and ``interruptions``.
+        :param session_id: The session, for a body that carries none of its own.
+        :param integration: The adapter name, for the warning.
+        :return: The paused reply, or None when the body does not reconstruct.
+        """
+        try:
+            return AgentPausedReplyAny(
+                run_id=body["run_id"],
+                session_id=body.get("session_id") or session_id or "",
+                agent=body["agent"],
+                interruptions=[PausedInterruption(**interruption) for interruption in body["interruptions"]],
+            )
+        except (KeyError, TypeError, ValidationError) as e:
+            self._log.warning(f"Body for {integration} claims status=PAUSED but does not reconstruct ({e}); delivering it as text instead")
+            return None
 
     def deliver_permanent_failure(self, integration: str, attributes: Mapping[str, Any], session_id: Optional[str] = None) -> None:
         """Tell the platform user that their message failed for good.

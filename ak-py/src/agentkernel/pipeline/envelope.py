@@ -13,6 +13,7 @@ ATTR_ENDPOINT_URL = "endpoint_url"
 ATTR_STATUS_CODE = "status_code"
 ATTR_INTEGRATION = "integration"
 ATTR_THREAD = "thread"
+ATTR_AGUI = "agui"
 # Marks an output message as a realtime stream chunk (audio/transcript/interrupt/done), so the
 # Response Handler routes it to the integration adapter's deliver_chunk instead of guessing from
 # the body shape.

@@ -12,6 +12,7 @@ from agentkernel.integration.adapter.factory import IntegrationAdapterFactory
 from agentkernel.pipeline.integration_delivery import IntegrationDelivery
 
 ADAPTER_NAME = "byo_pkg.RecordingOutboundAdapter"
+TEXT_ONLY_ADAPTER_NAME = "byo_pkg.TextOnlyOutboundAdapter"
 _log = logging.getLogger("ak.test.integration_delivery")
 
 
@@ -23,6 +24,7 @@ class _RecordingOutboundAdapter(OutboundAdapter):
     def __init__(self):
         self.delivered = []
         self.errors = []
+        self.paused = []
         self.fail_with = None
 
     async def deliver(self, reply, reply_context):
@@ -33,12 +35,44 @@ class _RecordingOutboundAdapter(OutboundAdapter):
     async def deliver_error(self, message, reply_context):
         self.errors.append((message, dict(reply_context)))
 
+    async def deliver_paused(self, reply, reply_context):
+        self.paused.append((reply, dict(reply_context)))
+
+
+class _TextOnlyOutboundAdapter(_RecordingOutboundAdapter):
+    """An adapter that renders no controls, so the inherited deliver_paused is what runs."""
+
+    name = TEXT_ONLY_ADAPTER_NAME
+    deliver_paused = OutboundAdapter.deliver_paused
+
+
+def _paused_body(**overrides):
+    body = {
+        "status": "PAUSED",
+        "run_id": "01JD7K2MX4",
+        "agent": "support",
+        "session_id": "s1",
+        "interruptions": [{"id": "call_9f2b41d7c8e0", "kind": "tool_call", "tool_name": "refund_order", "arguments": '{"order_id": "A-10294"}'}],
+        "result": '{"run_id": "01JD7K2MX4", "interruptions": [...]}',
+    }
+    body.update(overrides)
+    return body
+
 
 @pytest.fixture
 def adapter():
     fake = _RecordingOutboundAdapter()
     IntegrationAdapterFactory.reset()
     IntegrationAdapterFactory._cache[ADAPTER_NAME] = fake
+    yield fake
+    IntegrationAdapterFactory.reset()
+
+
+@pytest.fixture
+def text_only_adapter():
+    fake = _TextOnlyOutboundAdapter()
+    IntegrationAdapterFactory.reset()
+    IntegrationAdapterFactory._cache[TEXT_ONLY_ADAPTER_NAME] = fake
     yield fake
     IntegrationAdapterFactory.reset()
 
@@ -113,6 +147,56 @@ def test_delivery_failure_propagates(adapter):
 
     with pytest.raises(ConnectionError, match="platform down"):
         IntegrationDelivery(_log).deliver(ADAPTER_NAME, _attrs(), {"result": "hi"}, 200)
+
+
+def test_a_paused_body_reaches_deliver_paused(adapter):
+    IntegrationDelivery(_log).deliver(ADAPTER_NAME, _attrs(), _paused_body(), 202, session_id="s1")
+
+    [(reply, context)] = adapter.paused
+    assert reply.run_id == "01JD7K2MX4"
+    assert reply.agent == "support"
+    assert [i.id for i in reply.interruptions] == ["call_9f2b41d7c8e0"]
+    assert reply.interruptions[0].tool_name == "refund_order"
+    assert context == {"channel": "C9", "thread_ts": "111.222"}
+    assert adapter.delivered == [] and adapter.errors == []
+
+
+def test_a_paused_body_falls_back_to_text_for_an_adapter_that_renders_no_controls(text_only_adapter):
+    IntegrationDelivery(_log).deliver(TEXT_ONLY_ADAPTER_NAME, _attrs(integration=TEXT_ONLY_ADAPTER_NAME), _paused_body(), 202, session_id="s1")
+
+    [(reply, _)] = text_only_adapter.delivered
+    assert "refund_order" in reply.response and "A-10294" in reply.response
+    assert "run_id" not in reply.response, "the serialised object is what the readable text replaces"
+
+
+@pytest.mark.parametrize(
+    "overrides, reason",
+    [
+        ({"run_id": None}, "a missing key"),
+        ({"interruptions": "not-a-list"}, "interruptions that are not a list"),
+        ({"interruptions": [{"id": "x", "kind": "nonsense"}]}, "a kind outside the Literal"),
+        ({"interruptions": [{"kind": "tool_call"}]}, "an interruption missing its id"),
+    ],
+)
+def test_a_malformed_paused_body_is_delivered_as_text(adapter, caplog, overrides, reason):
+    body = _paused_body(**overrides)
+    if overrides.get("run_id") is None:
+        del body["run_id"]
+
+    with caplog.at_level(logging.WARNING, logger=_log.name):
+        IntegrationDelivery(_log).deliver(ADAPTER_NAME, _attrs(), body, 202, session_id="s1")
+
+    assert adapter.paused == [], f"{reason} must not reach deliver_paused"
+    [(reply, _)] = adapter.delivered
+    assert reply == AgentReplyText(response=body["result"]), "a reply someone is waiting for is never lost"
+    assert "does not reconstruct" in caplog.text
+
+
+def test_an_error_status_wins_over_a_paused_body(adapter):
+    IntegrationDelivery(_log).deliver(ADAPTER_NAME, _attrs(), _paused_body(error="boom"), 500, session_id="s1")
+
+    assert adapter.errors == [(_RecordingOutboundAdapter.ERROR_MESSAGE, {"channel": "C9", "thread_ts": "111.222"})]
+    assert adapter.paused == [] and adapter.delivered == []
 
 
 def test_deliver_permanent_failure(adapter):

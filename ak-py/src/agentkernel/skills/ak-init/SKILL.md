@@ -30,6 +30,7 @@ Ask the user the following questions (adapt based on context):
    - **Google ADK** (Google's Agent Development Kit)
    - **Smolagents** (lightweight agent framework with managed-agent routing)
    - **Pydantic AI** (provider-agnostic — native OpenAI/Anthropic/Google/Bedrock/… support with `FallbackModel` failover)
+   - **Microsoft Agent Framework** (Microsoft's unified successor to AutoGen and Semantic Kernel — works with any MAF chat client: OpenAI, Azure OpenAI, Anthropic, …)
 
 2. **Agent purpose**: What should your agent(s) do? (e.g., "customer support bot", "code review assistant", "data analysis agent")
 
@@ -118,6 +119,7 @@ target-version = ["py312"]
 - API mode: `agentkernel[<framework>,api]`
 - Smolagents framework extra: `smolagents`
 - Pydantic AI framework extra: `pydanticai` (installs the provider-agnostic `pydantic-ai-slim` core only — also add a provider, e.g. `pydantic-ai-slim[openai]`)
+- Microsoft Agent Framework extra: `maf` (installs the provider-agnostic `agent-framework-core` only — also add a provider package, e.g. `agent-framework-openai`)
 - With messaging: add `slack`, `whatsapp`, etc.
 - With session store: add `redis`, `aws` (for DynamoDB), `azure` (for Cosmos DB)
 - With tracing: add `langfuse`, `openllmetry`, `logfire`, or `cloudwatch`
@@ -293,6 +295,29 @@ from pydantic_ai import Agent
 )
 
 PydanticAIModule([<agent_name>])
+
+if __name__ == "__main__":
+    CLI.main()
+```
+
+**For Microsoft Agent Framework**:
+
+```python
+from agent_framework import Agent
+from agent_framework.openai import OpenAIChatClient
+from agentkernel.cli import CLI  # or RESTAPI, Lambda
+from agentkernel.maf import MAFModule, MAFToolBuilder
+
+# Swap the client for any other MAF provider (install its package, e.g. agent-framework-anthropic).
+<agent_name> = Agent(
+    OpenAIChatClient(model="gpt-4.1-mini"),
+    name="<name>",                # required — AK registers agents by name immediately
+    description="<short description>",  # set it — AK reports this as the agent description / A2A summary
+    instructions="<instructions>",
+    tools=MAFToolBuilder.bind([]),
+)
+
+MAFModule([<agent_name>])
 
 if __name__ == "__main__":
     CLI.main()
