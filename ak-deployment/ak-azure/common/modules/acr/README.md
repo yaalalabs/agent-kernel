@@ -247,7 +247,7 @@ No changes detected in source files
 
 ## 🔗 Related Modules
 
-- [Container App Module](../../containerized/) - For complete Container Apps deployments
+- [Container App Module](../../../containerized/) - For complete Container Apps deployments
 
 ---
 

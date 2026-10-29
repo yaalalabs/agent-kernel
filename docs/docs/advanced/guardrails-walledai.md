@@ -155,4 +155,4 @@ export WALLED_API_KEY=your-walledai-api-key
 - [Walled AI Documentation](https://walled.ai/)
 - [Guardrails Overview](./guardrails)
 - [Configuration Guide](../core-concepts/configuration)
-- [Working Example](https://github.com/yaalalabs/agent-kernel/tree/main/examples/cli/guardrail/walledai)
+- [Working Example](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/guardrail/walledai)

@@ -323,8 +323,8 @@ python debug_response_store.py --clear
 
 - **[ROOT_CAUSE_ANALYSIS.md](ROOT_CAUSE_ANALYSIS.md)** - Deep dive into CMD override issue
 - **[COMMAND_OVERRIDE.md](../../ak-deployment/ak-aws/containerized/COMMAND_OVERRIDE.md)** - Command override usage
-- **[Serverless Reference](../aws-serverless/scalable-openai/)** - Lambda implementation
-- **[Queue Mode Guide](../../docs/queue-mode-guide.md)** - Queue architecture details
+- **[Serverless Reference](../../aws-serverless/scalable-openai/)** - Lambda implementation
+- **[Queue Mode Guide](../../../docs/docs/advanced/queue-mode-guide.md)** - Queue architecture details
    ```
 
 3. Build and deploy:

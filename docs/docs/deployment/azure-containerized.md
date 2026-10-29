@@ -39,7 +39,7 @@ graph TB
 
 ## Deployment
 
-Refer to [example Azure Container Apps implementation](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/azure-containerized/crewai) which leverages Agent Kernel's [terraform module](https://registry.terraform.io/modules/yaalalabs/ak-containerized/azurerm) for Container Apps deployment.
+Refer to [example Azure Container Apps implementation](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/azure-containerized/openai-cosmos) which leverages Agent Kernel's [terraform module](https://registry.terraform.io/modules/yaalalabs/ak-containerized/azurerm) for Container Apps deployment.
 
 The module is provider-agnostic — it does not configure the `azurerm` provider itself, so your root `main.tf` must configure it and pass it into the module explicitly:
 

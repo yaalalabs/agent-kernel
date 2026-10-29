@@ -347,10 +347,10 @@ guardrail:
 
 - **[Configuration Guide](../core-concepts/configuration)** - Complete config reference
 - **[Hooks Documentation](../integrations/hooks)** - Custom validation logic
-- **[Examples](https://github.com/yaalalabs/agent-kernel/tree/main/examples/cli/guardrail)** - Working code examples
+- **[Examples](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/guardrail)** - Working code examples
 
 ## Support
 
 - **Issues**: [GitHub Issues](https://github.com/yaalalabs/agent-kernel/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/yaalalabs/agent-kernel/discussions)
-- **Examples**: [Repository Examples](https://github.com/yaalalabs/agent-kernel/tree/main/examples)
+- **Examples**: [Repository Examples](https://github.com/yaalalabs/agent-kernel/tree/develop/examples)

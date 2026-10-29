@@ -303,7 +303,7 @@ logging:
     level: DEBUG
 ```
 
-For more information, see the [Configuration documentation](../../../../docs/docs/core-concepts/configuration.md).
+For more information, see the [Configuration documentation](../../../../../docs/docs/core-concepts/configuration.md).
 
 ## API Rate Limits
 
@@ -395,4 +395,4 @@ Key differences between Messenger and WhatsApp integrations:
 - [Send API Reference](https://developers.facebook.com/docs/messenger-platform/reference/send-api)
 - [Webhook Reference](https://developers.facebook.com/docs/messenger-platform/webhooks)
 - [Platform Policy](https://developers.facebook.com/docs/messenger-platform/policy-overview)
-- [Agent Kernel Documentation](../../../docs/)
+- [Agent Kernel Documentation](../../../../../docs/docs/)

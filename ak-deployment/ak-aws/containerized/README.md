@@ -641,7 +641,7 @@ scaling_config = {
 
 ## Examples
 
-See [examples/aws-containerized/](../../examples/aws-containerized/) for complete examples:
+See [examples/aws-containerized/](../../../examples/aws-containerized/) for complete examples:
 
 - **openai-dynamodb-scalable** - Production-ready OpenAI agent with auto-scaling
 - **openai-websocket** - OpenAI agent over a WebSocket API in direct (non-queue) mode: one ECS
