@@ -525,6 +525,19 @@ mcp:
 
 3. No code changes needed. The MCP server endpoint is automatically available.
 
+4. Know how agent tools run: through the queue pipeline, never on the HTTP request thread. Each call
+   is enqueued, the agent runner executes it, and the reply is read back from the response store.
+   - Start the app with `RESTAPI.run()` (no handlers: one process on the in-memory queue) or
+     `IOHandler.run(handlers=[...])`. With `expose_agents: true`, `RESTAPI.run(handlers=[...])`,
+     `RESTAPI.run()` on SQS/Kafka/NATS, `AWSRestAPI`/`AWSWebsocketAPI` and `ECSIOHandler` refuse to start.
+   - Split deployment (SQS/Kafka/NATS): import the same agent modules in the IO process as in the
+     agent runner (tools are built from the IO process's registry), configure a shared
+     `execution.response_store` (redis, valkey or dynamodb) in every execution mode, and set
+     `mcp.stateless_http: true` when more than one IO replica serves `/mcp`.
+   - A reply takes at least one `execution.response_store.delay` (1 s without a `response_store`
+     block); failures reach the client as a fixed message, with details in the logs only.
+   - Tools you add yourself to `MCP.get()` are your own code and still run in the IO process.
+
 ---
 
 #### A2A Server
@@ -548,6 +561,18 @@ a2a:
 ```
 
 3. No code changes needed. The A2A well-known endpoint is automatically available at `/.well-known/agent.json`.
+
+4. Know how A2A calls run: through the queue pipeline, never on the HTTP request thread. Each
+   `message:send` is enqueued (the A2A `context_id` is the session), the agent runner executes it,
+   and the reply is read back from the response store.
+   - Start the app with `RESTAPI.run()` (no handlers: one process on the in-memory queue) or
+     `IOHandler.run(handlers=[...])`. `RESTAPI.run(handlers=[...])`, `RESTAPI.run()` on
+     SQS/Kafka/NATS, `AWSRestAPI`/`AWSWebsocketAPI` and `ECSIOHandler` refuse to start with `a2a.enabled`.
+   - Split deployment (SQS/Kafka/NATS): import the same agent modules in the IO process as in the
+     agent runner (cards are built from the IO process's registry), and configure a shared
+     `execution.response_store` (redis, valkey or dynamodb) in every execution mode.
+   - A reply takes at least one `execution.response_store.delay` (1 s without a `response_store`
+     block). `message:stream` is refused: the cards declare `streaming: false`.
 
 ---
 

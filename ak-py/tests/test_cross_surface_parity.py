@@ -8,14 +8,17 @@ The fixture deliberately carries a `datetime` and a `Decimal`. Parity on a paylo
 risk proves nothing — those two are exactly the values the encoders rendered three different ways,
 and one of them crashed on.
 
-A2A is absent because it does not import against the pinned SDK; it joins when the port issue adds
-the data part.
+A2A still sits out: it carries a structured payload as JSON text rather than a data part, and it
+joins when the a2a-sdk 1.x port (#762) adds the data part.
+
+MCP runs over the body a runner stores (`ResponseBuilder.build_response`), because since #780 that body
+is what the queue carries to the MCP executor.
 """
 
 import datetime
 import decimal
 import json
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -24,6 +27,20 @@ from agentkernel.core.event import DataMessage
 from agentkernel.core.model import AgentReplyAny, StreamChunk
 
 MEDIA_TYPE = "application/a2ui+json"
+
+
+class _QueueClient:
+    """Answers every MCP request with the body a runner stores for ``reply``."""
+
+    def __init__(self, reply):
+        from agentkernel.pipeline.request_handler import QueuedReply
+
+        _status, body = ResponseBuilder.build_response(200, "s1", rest_api_mode=False, result=reply)
+        self._reply = QueuedReply(request_id="r1", body=body)
+
+    async def request(self, body, protocol):
+        return self._reply
+
 
 RAW_CONTENT = {
     "version": "v1.0",
@@ -98,19 +115,18 @@ def test_agui_carries_the_same_pair(labelled_reply):
 
 
 @pytest.mark.asyncio
-async def test_mcp_carries_the_same_pair(labelled_reply):
+async def test_mcp_carries_the_same_pair(labelled_reply, monkeypatch):
     from agentkernel.api.mcp.akmcp import MCP
 
-    with patch("agentkernel.api.mcp.akmcp.AgentService") as service_cls:
-        service_cls.return_value.run_multi = AsyncMock(return_value=labelled_reply)
-        result = await MCP.Executor("expenses").execute("s1", "hi", AsyncMock())
+    monkeypatch.setattr(MCP, "_client", _QueueClient(labelled_reply))
+    result = await MCP.Executor("expenses").execute("s1", "hi", AsyncMock())
 
     assert result.structured_content == EXPECTED_CONTENT
     assert result.meta == {"media_type": MEDIA_TYPE}
 
 
 @pytest.mark.asyncio
-async def test_an_array_payload_is_reshaped_only_by_mcp():
+async def test_an_array_payload_is_reshaped_only_by_mcp(monkeypatch):
     """The one place parity cannot hold, and the only place it is allowed not to.
 
     A2UI on v0.9.1 is a sequence, so a reply may carry an array. Every surface here carries it
@@ -128,9 +144,8 @@ async def test_an_array_payload_is_reshaped_only_by_mcp():
 
     assert rest == stream["event"]["content"] == agui.value == content
 
-    with patch("agentkernel.api.mcp.akmcp.AgentService") as service_cls:
-        service_cls.return_value.run_multi = AsyncMock(return_value=reply)
-        mcp = await MCP.Executor("expenses").execute("s1", "hi", AsyncMock())
+    monkeypatch.setattr(MCP, "_client", _QueueClient(reply))
+    mcp = await MCP.Executor("expenses").execute("s1", "hi", AsyncMock())
 
     assert mcp.structured_content == {"result": content}
     assert mcp.meta == {"media_type": MEDIA_TYPE, "fastmcp": {"wrap_result": True}}

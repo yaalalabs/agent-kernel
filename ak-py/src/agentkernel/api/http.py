@@ -1,4 +1,5 @@
 import logging
+from typing import Optional
 
 import uvicorn
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
@@ -107,6 +108,7 @@ class RESTAPI:
 
         handlers = handlers if handlers is not None else cls.get_default_handlers()
         cls._reject_pipeline_only_handlers(handlers)
+        cls.reject_unqueued_protocols()
 
         host = AKConfig.get().api.host
         port = AKConfig.get().api.port
@@ -128,6 +130,43 @@ class RESTAPI:
                 f"{', '.join(offenders)} require the queue pipeline: serve them with "
                 "IOHandler.run(handlers=[...]) instead of RESTAPI.run([...]), which builds a bare "
                 "API with no runner to drain what they enqueue"
+            )
+
+    @staticmethod
+    def agent_protocol_surfaces(config: Optional[AKConfig] = None) -> list[str]:
+        """The protocol surfaces that run agents for their callers: A2A, and MCP when it exposes agents.
+
+        An MCP server serving only the application's own tools runs no agent, so it is not one.
+
+        :param config: The configuration to read; defaults to ``AKConfig.get()``.
+        :return: ``["A2A"]`` when ``a2a.enabled``, plus ``["MCP"]`` when ``mcp.enabled`` and ``mcp.expose_agents``.
+        """
+        config = config or AKConfig.get()
+        surfaces = []
+        if config.a2a.enabled:
+            surfaces.append("A2A")
+        if config.mcp.enabled and config.mcp.expose_agents:
+            surfaces.append("MCP")
+        return surfaces
+
+    @classmethod
+    def reject_unqueued_protocols(cls) -> None:
+        """Refuse to serve A2A or agent MCP from an entry point that starts no agent runner.
+
+        Their executors put each request on the input queue and wait for the runner's reply (#780),
+        so on a bare API every call would wait out its budget and fail. Called by ``run`` past the
+        ``cls is RESTAPI`` hand-off, so subclasses are covered, and by ``ECSIOHandler.run`` before
+        it starts any thread.
+
+        :raises AKConfigError: If ``agent_protocol_surfaces()`` is non-empty.
+        """
+        surfaces = cls.agent_protocol_surfaces()
+        if surfaces:
+            from ..core.util.factory import AKConfigError
+
+            raise AKConfigError(
+                f"{' and '.join(surfaces)} run agents on the queue pipeline's agent runner, which this entry point does not start: "
+                "serve them with IOHandler.run(handlers=[...]), or a plain RESTAPI.run() on the in_memory transport"
             )
 
     @classmethod

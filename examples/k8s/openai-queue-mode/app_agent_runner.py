@@ -1,7 +1,8 @@
 """The runner process: consumes the input queue and executes the agents.
 
 This is the entry point behind the chart's agent-runner Deployment. It registers the agent
-modules and starts the consumer threads; the REST side lives in app_io_handler.py.
+modules and starts the consumer threads; the REST, A2A and MCP side lives in app_io_handler.py,
+which registers the same agents. Keep the two copies in sync.
 """
 
 from agentkernel.openai import OpenAIModule

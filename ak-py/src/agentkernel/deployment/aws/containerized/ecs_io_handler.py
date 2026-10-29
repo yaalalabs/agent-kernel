@@ -2,6 +2,7 @@ import logging
 from typing import Optional
 
 from ....api.handler import RESTRequestHandler
+from ....api.http import RESTAPI
 from ....auth.handler import AuthValidator
 from ....core.config import AKConfig, ExecutionMode
 from ...common import ThreadRunner
@@ -42,8 +43,12 @@ class ECSIOHandler:
             always served (the chat route is the queue producer, not a replaceable default).
             Mounting an optional surface is the application's job here, as it is on the pipeline's
             ``IOHandler``.
+        :raises AKConfigError: If A2A or agent-exposing MCP is enabled: their executors need the queue
+            pipeline's agent runner, which ECS does not support for them yet (#780).
         :raises ValueError: If WebSocket mode is configured without an ``auth_validator``.
         """
+        # Before any thread starts: inside the rest-api thread the same refusal would come too late.
+        RESTAPI.reject_unqueued_protocols()
         mode = cls._config.execution.mode
         cls._log.info(f"ECSIOHandler starting — mode={mode}")
 

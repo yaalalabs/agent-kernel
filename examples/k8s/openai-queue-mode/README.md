@@ -2,15 +2,16 @@
 
 Deploys OpenAI Agents SDK based agents as the Agent Kernel two-process pipeline on a
 Kubernetes micro-cluster, using [the Helm chart](../../../ak-deployment/ak-k8s/): an
-`io-handler` Deployment (REST API + Response Handler) and an `agent-runner` Deployment (the
+`io-handler` Deployment (REST, A2A and MCP + Response Handler) and an `agent-runner` Deployment (the
 consumers executing the agents), talking through in-cluster NATS JetStream with Valkey for
 sessions and responses. A Kafka variant is one values switch away.
 
 ```
-app_io_handler.py       IOHandler.run()                     the io image's entry point
+app_io_handler.py       agents + IOHandler.run()            the io image's entry point
 app_agent_runner.py     agents + AgentRunner.run()          the runner image's entry point
 app_ws_gateway.py       WebSocketGateway.run(validator)     the gateway image's entry point
 ws_client.py            demo client for the WebSocket walkthrough (runs on your machine)
+protocol_client.py      demo A2A + MCP client (runs on your machine, and in CI's kind smoke)
 config.nats.yaml        baked in as config.yaml by package.sh (default)
 config.kafka.yaml       the Kafka variant
 deploy/Dockerfile.*     one image per component, python:3.12-slim + staged dependencies
@@ -145,6 +146,33 @@ curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable=traefik --disable=ser
 The chart install is identical to the baremetal instructions in
 [ak-deployment/ak-k8s/README.md](../../../ak-deployment/ak-k8s/README.md); the dev-flavor
 walkthrough above also works on k3s unchanged (k3s ships a local-path StorageClass).
+
+## A2A and MCP
+
+The io handler also serves A2A (`/a2a/triage`) and MCP (`/mcp/`), both turned on by the `a2a`
+and `mcp` blocks in the baked-in config. They go through the queue exactly like a REST chat
+request: the io handler enqueues, the agent runner executes, and the reply waits in Valkey until
+the waiting caller reads it. Two consequences:
+
+- Both entry points define and register the same agents, so keep the two copies in sync. The
+  runner executes them; the io handler builds the A2A cards and the MCP agent tools from them.
+  An io handler without them logs a warning at startup and serves an empty A2A catalog and no
+  MCP agent tools.
+- A reply is picked up by polling the response store, so it takes at least about one
+  `execution.response_store.delay` (1 s here), however fast the agent is.
+
+`mcp.stateless_http` is on because outside the dev flavor the chart runs two io-handler
+replicas, and a stateful MCP session would be pinned to one of them. A2A answers `message:send`
+only: the cards declare `streaming: false`, so `message:stream` is refused.
+
+With the port-forward from the walkthrough running:
+
+```bash
+uv run python protocol_client.py http://localhost:8000
+```
+
+It prints both replies and exits non-zero when either is empty or an error. CI's kind smoke runs
+it right after the chat request.
 
 ## Secrets
 
