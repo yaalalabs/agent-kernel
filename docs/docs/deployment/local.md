@@ -100,7 +100,7 @@ Previously an AWS-only mode, now identical locally.
 
 ### Streaming locally
 
-Set `execution.mode: stream` in `config.yaml` (or `AK_EXECUTION__MODE=stream`) and the same endpoint returns a Server-Sent Events stream of token chunks, handy for testing streaming UIs locally. See [REST API: Streaming](../api/rest-api#streaming).
+Set `execution.message_type: delta` in `config.yaml` (or `AK_EXECUTION__MESSAGE_TYPE=delta`), with `execution.mode` unset or `rest_sync`, and the same endpoint returns a Server-Sent Events stream of token chunks, handy for testing streaming UIs locally. See [REST API: Streaming](../api/rest-api#streaming).
 
 ## Configuration
 

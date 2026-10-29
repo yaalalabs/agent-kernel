@@ -42,7 +42,7 @@ On startup you'll see the pipeline boot:
 
 ```
 ak.api.http - INFO - in_memory queue transport resolved: starting the single-process pipeline topology
-ak.pipeline.io_handler - INFO - IOHandler starting: mode=rest_sync, transport=in_memory, topology=single-process
+ak.pipeline.io_handler - INFO - IOHandler starting: mode=rest_sync, message_type=complete, transport=in_memory, topology=single-process, websocket=off
 ```
 
 ## 1. Synchronous REST (`mode: rest_sync`, the default)

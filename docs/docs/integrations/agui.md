@@ -85,8 +85,8 @@ agui:
 Both tool blocks are **opt-in**. Mounting the handler without either yields no agent-facing tools;
 setting `enabled: true` without mounting the handler attaches the tools to every agent for nothing.
 
-There is no `execution.mode: stream` here. AG-UI delivers every run as a stream by definition, so this
-surface does not consult the execution mode.
+There is no `execution.message_type: delta` here. AG-UI delivers every run as a stream by definition, so this
+surface does not consult the execution mode or message type.
 
 ## Shared state
 

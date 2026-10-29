@@ -81,7 +81,7 @@ The request enters through one of the execution surfaces:
 - **Thread handler**: the same REST routes served by `AgentThreadRequestHandler` with conversation-thread recording, plus the thread read routes
 - **AWS Lambda**: API Gateway event routed by the `Lambda` handler
 - **SQS queue**: in queue mode, a request message consumed by the agent-runner Lambda or ECS consumer threads
-- **WebSocket**: a message on the configured chat route via AWS API Gateway WebSocket (async/stream modes)
+- **WebSocket**: a message on the configured chat route via AWS API Gateway WebSocket (`async` mode)
 - **MCP/A2A**: protocol-specific request against the mounted `/mcp` or `/a2a` routes
 - **Messaging platforms**: webhook events from Slack, WhatsApp, Messenger, Instagram, Telegram, Teams, or Gmail
 
@@ -160,9 +160,9 @@ sequenceDiagram
     API-->>User: JSON response
 ```
 
-## Streaming Flow (`execution.mode: stream`)
+## Streaming Flow (`execution.message_type: delta`)
 
-With `execution.mode: stream`, the REST API switches `POST /api/v1/chat` (and `/chat-multipart`) to a Server-Sent Events response, driven by `Runtime.stream()`:
+With `execution.message_type: delta` (and `execution.mode` unset or `rest_sync`), the REST API switches `POST /api/v1/chat` (and `/chat-multipart`) to a Server-Sent Events response, driven by `Runtime.stream()`:
 
 ```mermaid
 sequenceDiagram
@@ -199,8 +199,9 @@ must therefore test for the key rather than assume every non-terminal frame has 
 
 - If a pre-hook halts (e.g., an input guardrail trips), the stream yields a single `StreamChunk` with `error` set and `done: true`.
 - `delta` is populated only when `event` is a `TextDelta`; every other event type (message/step boundaries, tool calls, reasoning) carries `event` alone, with no `delta` key in the wire frame.
-- **Framework support**: OpenAI Agents SDK, LangGraph, and Google ADK stream natively. CrewAI and Smolagents declare `supports_streaming = False` and raise `NotImplementedError` in stream mode.
-- On AWS serverless and AWS ECS containerized, the same `StreamChunk`s are delivered as WebSocket `STREAM_CHUNK` messages instead of SSE; see below.
+- **Framework support**: OpenAI Agents SDK, LangGraph, and Google ADK stream natively. CrewAI and Smolagents declare `supports_streaming = False` and raise `NotImplementedError` with `message_type: delta`.
+- With `execution.mode: async` and `message_type: delta` (on AWS serverless and AWS ECS containerized), the same `StreamChunk`s are delivered as WebSocket `STREAM_CHUNK` messages instead of SSE; see below.
+- `execution.mode: stream` was removed: use `rest_sync` with `message_type: delta` for SSE, or `async` with `message_type: delta` for WebSocket chunks.
 
 ## The Queue Pipeline Abstraction
 
@@ -216,7 +217,7 @@ graph TB
         RH["Request Handler<br/>terminates REST / WS,<br/>validates, assigns request_id,<br/>enqueues the envelope"]
         IQ[/"Input Queue<br/>FIFO per session_id,<br/>deduplication,<br/>bounded redelivery"/]
         AR["Agent Runner<br/>ChatService → Runtime.run<br/>(hooks, framework, session),<br/>forwards reply + status_code"]
-        OQ[/"Output Queue<br/>same guarantees;<br/>one message per reply,<br/>or per chunk in stream mode"/]
+        OQ[/"Output Queue<br/>same guarantees;<br/>one message per reply,<br/>or per chunk with message_type delta"/]
         RESP["Response Handler<br/>delivers the reply"]
         RH --> IQ --> AR --> OQ --> RESP
     end
@@ -228,11 +229,11 @@ graph TB
         KN["kafka · nats<br/>(on-prem / Kubernetes)"]
     end
 
-    subgraph DELIV["Pluggable: reply delivery: execution.mode"]
+    subgraph DELIV["Pluggable: reply delivery: execution.mode + message_type"]
         direction LR
         RS[("Response store<br/>in-memory · Redis · Valkey · DynamoDB<br/>rest_sync / rest_async")]
-        SSE["SSE bridge<br/>stream (REST surface)"]
-        WS["WebSocket push<br/>async / stream (AWS)"]
+        SSE["SSE bridge<br/>rest_sync + delta (REST surface)"]
+        WS["WebSocket push<br/>async, complete or delta (AWS)"]
     end
 
     TRANS -.->|backs| IQ
@@ -255,7 +256,7 @@ What the abstraction fixes, and what it leaves open:
   error reply, so the caller never hangs.
 - **Pluggable**: the queue transport (`in_memory` default; `sqs` on AWS via the deployment
   adapters; `kafka`/`nats` for on-prem / Kubernetes), the response store backend, and the reply
-  delivery path per `execution.mode`.
+  delivery path per `execution.mode` and `execution.message_type`.
 - **Shared machinery**: the Agent Runner and Response Handler are both driven by `ConsumerLoop`
  : one implementation of batch fetch, receive-count checking, and the
   permanent-failure-then-acknowledge flow, reused by every transport (the ECS `ECSSQSConsumer`
@@ -295,8 +296,8 @@ sequenceDiagram
 ```
 
 - `rest_sync` (and unset mode) waits server-side; `rest_async` returns `202 ACCEPTED` +
-  `request_id` for polling; `stream` fans each token out as its own output-queue message and the
-  request handler bridges them to the open SSE response.
+  `request_id` for polling; `rest_sync` with `message_type: delta` fans each token out as its own
+  output-queue message and the request handler bridges them to the open SSE response.
 - Failed messages are redelivered up to `max_receive_count`, then a permanent-failure error is
   delivered so the caller never hangs. Duplicate `request_id`s are dropped within the dedup window.
 - Surfaces mounted with explicit handlers (the thread handler, messaging integrations, custom
@@ -348,7 +349,7 @@ sequenceDiagram
 
 ## WebSocket Flow (AWS Serverless)
 
-In `async` and `stream` modes, clients hold a WebSocket connection to API Gateway. Connection IDs are recorded in DynamoDB by a connection-handler Lambda, and replies are pushed back through the still-open socket:
+In `async` mode (either message type), clients hold a WebSocket connection to API Gateway. Connection IDs are recorded in DynamoDB by a connection-handler Lambda, and replies are pushed back through the still-open socket:
 
 ```mermaid
 sequenceDiagram
@@ -367,11 +368,11 @@ sequenceDiagram
     Client->>WSGW: {"route": "chat", "prompt": ..., "session_id": ...}
     WSGW->>RH: route event
     RH->>AR: via Input Queue (or direct when queues disabled)
-    alt async mode
+    alt message_type complete
         AR->>RSH: full reply via Output Queue
         RSH->>WSGW: PostToConnection CHAT_RESPONSE
         WSGW-->>Client: {"type": "CHAT_RESPONSE", "result": ..., "session_id": ...}
-    else stream mode
+    else message_type delta
         loop each event
             AR->>RSH: one SQS message per StreamChunk
             RSH->>WSGW: PostToConnection STREAM_CHUNK
@@ -417,13 +418,16 @@ shared session backend. See [Human in the Loop](../advanced/human-in-the-loop.md
 
 ## Mode Selection Cheat Sheet
 
-| `execution.mode` | Transport | Reply delivery | Queues | Response store | Available on |
-|------------------|-----------|----------------|--------|----------------|--------------|
-| *(unset)* / default | HTTP | JSON on the same connection | - | - | Everywhere `RESTAPI`/CLI runs |
-| `rest_sync` | HTTP | JSON on the same connection (server polls store) | Required | Required | AWS Lambda, AWS ECS |
-| `rest_async` | HTTP | Client polls with `request_id` | Required | Required | AWS Lambda, AWS ECS |
-| `async` | WebSocket | Single `CHAT_RESPONSE` push | Optional | Not used | AWS Lambda, AWS ECS |
-| `stream` | SSE (REST) or WebSocket (AWS serverless, AWS ECS) | Event-level `StreamChunk`s — every frame carries `event`, `delta` only on `text_delta` | Optional (WebSocket path) | Not used | REST API surfaces; AWS Lambda WebSocket; AWS ECS WebSocket |
+| `execution.mode` | `execution.message_type` | Transport | Reply delivery | Queues | Response store | Available on |
+|------------------|-------------------------|-----------|----------------|--------|----------------|--------------|
+| *(unset)* / default | `complete` (default) | HTTP | JSON on the same connection | - | - | Everywhere `RESTAPI`/CLI runs |
+| *(unset)* / `rest_sync` | `delta` | SSE (REST) | Event-level `StreamChunk`s — every frame carries `event`, `delta` only on `text_delta` | - | - | REST API surfaces (not AWS Lambda or AWS ECS) |
+| `rest_sync` | `complete` | HTTP | JSON on the same connection (server polls store) | Required | Required | AWS Lambda, AWS ECS |
+| `rest_async` | `complete` only | HTTP | Client polls with `request_id` | Required | Required | AWS Lambda, AWS ECS |
+| `async` | `complete` | WebSocket | Single `CHAT_RESPONSE` push | Optional | Not used | AWS Lambda, AWS ECS |
+| `async` | `delta` | WebSocket | One `STREAM_CHUNK` per `StreamChunk`, ending with `done: true` | Optional | Not used | AWS Lambda, AWS ECS |
+
+`rest_async` with `delta` and `realtime` with `complete` fail when the configuration loads.
 
 ## Multimodal Flow
 

@@ -50,7 +50,7 @@ The Runtime:
 
 ## The stream() Pipeline
 
-`Runtime.stream(agent, session, requests)` is the streaming counterpart (used when `execution.mode: stream`). It shares the same pre-hook pipeline, then:
+`Runtime.stream(agent, session, requests)` is the streaming counterpart (used when `execution.message_type: delta`). It shares the same pre-hook pipeline, then:
 
 - Iterates `agent.runner.stream(...)`. Adapters that still yield raw token strings (rather than typed `StreamEvent`s) have those strings normalised into a synthesized `MessageStart`/`TextDelta`/`MessageEnd` sequence.
 - Passes **every** event through each post-hook's `on_stream_event()`. A hook may pass it, rewrite it in place, return `None` to drop it, or return a list to emit several events in its place; a returned list is emitted as-is and ends the chain for that event.

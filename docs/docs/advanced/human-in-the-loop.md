@@ -203,7 +203,7 @@ once when resuming.
 
 ## Streaming
 
-With `execution.mode: stream` a pause arrives as a `run_paused` event and the stream ends
+With `execution.message_type: delta` a pause arrives as a `run_paused` event and the stream ends
 **normally** — never through `StreamChunk.error`. Any open boundary (a tool call, a message) is
 closed first, so a frontend does not render the gated call as work still in progress forever.
 

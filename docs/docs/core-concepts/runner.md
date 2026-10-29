@@ -58,7 +58,7 @@ class Runner(ABC):
 
     @abstractmethod
     async def stream(self, agent: "Agent", session: Session, requests: list[AgentRequest]) -> AsyncGenerator[StreamEvent, None]:
-        """Yield AK stream events for streaming execution (execution.mode: stream)."""
+        """Yield AK stream events for streaming execution (execution.message_type: delta)."""
 ```
 
 - `run()` takes a **list of typed requests** (`AgentRequestText`, `AgentRequestImage`, `AgentRequestFile`, `AgentRequestAny`), not a raw prompt string, and returns an `AgentReply`.
@@ -129,7 +129,7 @@ per-framework truncation behavior — see each framework's page for streaming fi
 
 ## Streaming Execution
 
-When `execution.mode: stream` is configured, the pipeline calls `Runner.stream()` instead of `run()`:
+When `execution.message_type: delta` is configured, the pipeline calls `Runner.stream()` instead of `run()`:
 
 ```python
 async for event in runner.stream(agent, session, requests):
@@ -279,7 +279,7 @@ Two adapters share an object with the caller rather than a key, and merge deeper
   the runner's entries winning (`configurable.thread_id` stays the session id), list-valued keys
   (`callbacks`, `tags`) concatenate with the runner's entries first (a tracing runner's handler is
   kept), everything else is the caller's.
-- **ADK `run_config`** in stream mode is copied with `streaming_mode=SSE`, because the stream mapping
+- **ADK `run_config`** in a streamed run is copied with `streaming_mode=SSE`, because the stream mapping
   depends on partial events; one warning is logged per runner when the caller explicitly set a
   different `streaming_mode`.
 
@@ -288,7 +288,7 @@ Two adapters share an object with the caller rather than a key, and merge deeper
 | OpenAI | `Runner.run` / `run_streamed` | `starting_agent`, `input`, `session`, `context`, `conversation_id`, `previous_response_id`, `auto_previous_response_id` (the SDK rejects the last three alongside the session the runner passes) | `max_turns` | `hooks=RunHooks()` |
 | LangGraph | `ainvoke` / `astream_events` | `input`, `version`, `stream_mode`, `output_keys`, `print_mode`, `config.configurable.thread_id`, and any `RunnableConfig` key at the top level | `config["recursion_limit"]` | `config["callbacks"]` |
 | Google ADK | the per-run `App` (`plugins`), the per-run `Runner(...)` constructor (`memory_service`, `artifact_service`, `credential_service`, `plugin_close_timeout`) and `run_async` (`run_config`) | `agent`, `app`, `app_name`, `node`, `session_service`, `auto_create_session`, `user_id`, `session_id`, `new_message`, `state_delta`, `invocation_id`, `yield_user_message` | `RunConfig(max_llm_calls=...)` | `plugins=[BasePlugin()]` |
-| Pydantic AI | `agent.run` / `run_stream_events` | `user_prompt`, `message_history`, `deps` | `UsageLimits(request_limit=...)` | `event_stream_handler` (run mode; dropped with one warning in stream mode) |
+| Pydantic AI | `agent.run` / `run_stream_events` | `user_prompt`, `message_history`, `deps` | `UsageLimits(request_limit=...)` | `event_stream_handler` (`run()`; dropped with one warning in `stream()`) |
 | CrewAI | the per-run `Crew(...)` constructor (`verbose=False` is an overridable default; `max_rpm` is a forwarded rate limit) | `agents`, `tasks`, `memory` | `max_iter` on the native `Agent` (needs nothing from Agent Kernel) | `step_callback` / `task_callback` |
 | Smolagents | `agent.run` | `task`, `reset`, `additional_args`, `stream`, `return_full_result` | `max_steps` | `step_callbacks` on the agent constructor (needs nothing from Agent Kernel) |
 
@@ -320,7 +320,7 @@ session. A factory that raises, returns a non-mapping or names a reserved key fa
 a framework error does: a user-facing error reply in `run`, a propagated exception in `stream`.
 Nothing is cached, so the failure repeats until the factory is fixed.
 
-**Progress: two paths.** In `execution.mode: stream`, [`PostHook.on_stream_event`](../integrations/hooks.md#streaming-hooks-on_stream_event)
+**Progress: two paths.** With `execution.message_type: delta`, [`PostHook.on_stream_event`](../integrations/hooks.md#streaming-hooks-on_stream_event)
 sees Agent Kernel's framework-agnostic `StreamEvent`s for whatever the adapter maps. Native hooks
 through run options work in **any** mode, including `rest_sync`, and expose the framework's full
 lifecycle (LLM start, agent start, handoffs). A native hook's callbacks run inside the Agent Kernel

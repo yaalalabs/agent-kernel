@@ -72,7 +72,7 @@ fixture.
 | `test_multimodal_source_forms.py` | `MultimodalPreHook` attachment source-form classification (spec #523 §8): bare base64 and base64 `data:` URIs are described/stored/stripped; `http(s)://`/`s3://` and non-base64 `data:` URIs are retained undescribed; empty `data:` payloads are dropped |
 | `test_thread_source_forms.py` | The same source forms through `ConversationThreadManager.store_attachments` (issue #669): base64 stored as bytes and replaced by an `AgentRequestAttachmentRef`; a remote reference recorded by `url` with empty `data` and its request passed through unreplaced; mixed/multiple attachments keeping order; plus an end-to-end guard that a URL image survives `MultimodalPreHook` to the agent |
 | `test_multimodal_tools.py` | `analyze_attachments` content routing per stored-record shape: a remote record's `url` is sent as-is (an image as `image_url`, anything else named in text) and never wrapped as base64; a stored record's base64 becomes a `data:` URI, a PDF a `file` part, any other type a `[Document: ...]` line; plus the two early returns that never reach the store or the LLM |
-| `test_config.py` | AKConfig loading, env vars |
+| `test_config.py` | AKConfig loading, env vars; the `execution.mode` × `message_type` matrix, defaults and the four `_ExecutionConfig` predicates, and the removed `mode: stream` failing with `STREAM_MIGRATION_MESSAGE` from YAML and env (#641) |
 | `test_test_config.py` | AKTestConfig (Test framework config) loading, defaults |
 | `test_tool.py` | ToolContext, cache |
 | `test_tool_openai.py` | OpenAI ToolBuilder |
@@ -108,7 +108,7 @@ fixture.
 | `test_integration_poller_runner.py` | `PollerRunner`: hosting a pull-based inbound adapter — enqueue-then-`mark_handled` ordering, a failing poll costing one iteration, shutdown within one interval, and the topology rejections both ways |
 | `test_attachment_offload.py` | `AttachmentStorageManager.offload`: image/file requests rewritten to refs in place, other requests kept in order, the caller's message when multimodal is disabled, `session_cache` refused for an attachment but not for a text-only list |
 | `test_thread_integration.py` | Thread integration: `ThreadRecorder` ordering/enforcement, `AgentThreadRequestHandler` recording + no-phantom-thread prechecks, stream accumulation, end-to-end read-back |
-| `test_thread_pipeline_recording.py` | Thread recording split across the queue: `ThreadRequestHandler` marking the message and committing the user message (and offloading attachments) before enqueue, its rejections leaving no phantom thread (missing `user_id`, unavailable agent, ASYNC mode, STREAM without a chunk-streaming store), deferred requests staying unmarked, `AgentRunner`/`StreamAgentRunner` appending the reply only for a marked message and only after the output send, a thread-store failure never retrying the run, `IOHandler.run(request_handler=...)` replacing rather than joining the chat route and refusing a non-`RequestHandler`, and the end-to-end read-back |
+| `test_thread_pipeline_recording.py` | Thread recording split across the queue: `ThreadRequestHandler` marking the message and committing the user message (and offloading attachments) before enqueue, its rejections leaving no phantom thread (missing `user_id`, unavailable agent, `async` mode), deferred requests staying unmarked, `AgentRunner`/`StreamAgentRunner` appending the reply only for a marked message and only after the output send, a thread-store failure never retrying the run, `IOHandler.run(request_handler=...)` replacing rather than joining the chat route and refusing a non-`RequestHandler`, and the end-to-end read-back |
 | `test_thread_router.py` | Thread read routes (`ThreadRESTRequestHandler`): pagination, `Authoriser` 401/403 semantics |
 | `test_authoriser_shared.py` | Shared `Authoriser` in `agentkernel.auth`: package-export identity, guard that the thread package no longer exposes it, `AuthValidatorAuthoriser` adapter, `AuthorisedRESTRequestHandler` inheritance |
 | `test_akagentrunner_stream.py` | Serverless `ServerlessStreamAgentRunner` (SQS streaming) |
@@ -119,11 +119,11 @@ fixture.
 | `test_lambda_webhook_host.py` | `LambdaWebhookHost` / `LambdaWebhookGuard`: the host's `handle`/`challenge` registered with `Lambda.register` and reached through `Lambda.handler` (a rejected delivery keeps its 403), one reused event loop never set as the thread's current loop, every cold-start guard at host construction (transport, mode, base-path variables, per-adapter `missing_verification_settings`, non-webhook handlers), and the `test_integration_webhook_handler.py` cases replayed through the host |
 | `test_lambda_webhook_parity.py` | Every built-in webhook adapter answers the same through `LambdaWebhookHost` as through the FastAPI route: status, body bytes and enqueued message, for valid, unauthentic, ignored and handshake deliveries (Meta/Telegram from the contract subclasses, Slack and Teams HTTP-level) |
 | `test_authorizer_webhook_bypass.py` | `WebhookRouteMatcher` (method + path only, strips the base path exactly as the router does, fails closed without it) and `APIGatewayAuthorizer(bypass=...)` (exact-`methodArn` Allow with principal `integration:<name>`, validator never called, spoofed headers and undeclared methods still validated, a raising bypass falling through) |
-| `test_ws_lambda_stream.py` | WebSocket Lambda router in `stream` mode |
+| `test_ws_lambda_stream.py` | WebSocket Lambda router with `async` + `delta` |
 | `test_cli_tester.py` | CLI test framework |
 | `test_auth_handler.py` | Auth handler |
 | `test_akauthorizer.py` | AWS Lambda authorizer |
-| `test_lambda_router.py` | Lambda routing |
+| `test_lambda_router.py` | Lambda routing; the REST router refusing `rest_sync` + `delta` at init, with and without queues (#641) |
 | `test_aws_lazy_exports.py` | Lazy exports and import isolation (the `sys.modules` pattern): `agentkernel.aws` resolves every export without loading the containerized package; touching `Lambda` loads neither FastAPI, Starlette nor the webhook host; the authorizer and `WebhookRouteMatcher` load neither FastAPI nor `slack_bolt`; importing `WebhookRESTRequestHandler` loads neither `agentkernel.api.http` nor `uvicorn` (#760) |
 | `test_packaging_extras.py` | Static `pyproject.toml` guard: the six webhook platform extras ship `fastapi`, `slack` ships `aiohttp`, `gmail` stays fastapi-free (#760) |
 | `test_sqs_handler.py` | AWS SQSHandler config, client, message sending |
@@ -149,7 +149,7 @@ fixture.
 | `test_pipeline_response_handler.py` | Pipeline `ResponseHandler` delivery paths: REST records, the `USER_ID`-presence WS routing marker, `STREAM_CHUNK`/`CHAT_RESPONSE` pushes, missing-attribute retries, permanent-failure frames/records |
 | `test_pipeline_integration_delivery.py` | `IntegrationDelivery` (#760): the return-address helpers (`integration_of` accepts only a non-empty `str`), reply-context stripping, result text vs the generic `ERROR_MESSAGE` for status >= 400, non-dict and missing bodies, failures propagating, and the lazy `agentkernel.integration` import |
 | `test_pipeline_io_handler.py` | `IOHandler.run()` topology validation and fail-fasts (ASYNC-on-`in_memory` without a validator, broker WS modes without a push token, broker + non-shared response store), signal handlers, graceful-drain exit code |
-| `test_pipeline_ws.py` | The gateway tier: `LocalConnectionRegistry`, `PodPushWebSocketHandler` store-lookup delivery + stale-connection cleanup, `/internal/push` auth, the native `/ws` route (1008 closes, chat enqueue attributes, custom routes), `WebSocketGateway` fail-fasts, single-process ASYNC/STREAM end-to-end over `in_memory`, and cross-"pod" delivery between two gateway apps sharing one connection store |
+| `test_pipeline_ws.py` | The gateway tier: `LocalConnectionRegistry`, `PodPushWebSocketHandler` store-lookup delivery + stale-connection cleanup, `/internal/push` auth, the native `/ws` route (1008 closes, chat enqueue attributes, custom routes), `WebSocketGateway` fail-fasts, single-process `async` and `async` + `delta` end-to-end over `in_memory`, and cross-"pod" delivery between two gateway apps sharing one connection store |
 | `test_session_connection_store.py` | The `WSConnectionStore` contract over the in-memory/redis-like/DynamoDB implementations, plus `SessionStore.get_connection_store()` per backend (store-less backends raise actionably) |
 | `test_sandbox.py` | Sandbox core: model/capabilities, error hierarchy, config, provider contract, manager + factory + embedded broker, agent surface (system tools + task-completion pre-hook), `agents` scoping |
 | `test_sandbox_broker.py` | Broker flavors (embedded/thread) end-to-end, thread loop-identity contract, wait-policy promotion + late-completion recovery (including the bounded `result_summary` outcome on `check_sandbox_task`), completion ingestion |
@@ -298,6 +298,26 @@ def test_redis_session_store(monkeypatch):
     store = SessionStoreBuilder.build()
     assert isinstance(store, RedisSessionStore)
 ```
+
+Never hand-build the `execution` block (`SimpleNamespace`, a plain class, or a `Mock`'s auto
+attributes) when the code under test reads it: call sites read the `_ExecutionConfig` properties
+(`is_websocket`, `is_delta`, `is_sse`, `resolved_message_type`), which a plain stub lacks
+(`AttributeError`) and a `Mock` answers truthily (every test silently takes the SSE path). Build a
+real `_ExecutionConfig` and set the nested blocks the test needs on it:
+
+```python
+from agentkernel.core.config import _ExecutionConfig, _QueuesConfig, _ResponseStoreConfig
+
+config = Mock()
+config.execution = _ExecutionConfig(
+    mode=ExecutionMode.ASYNC,
+    message_type="delta",
+    queues=_QueuesConfig(type="sqs"),
+    response_store=_ResponseStoreConfig(type="dynamodb"),
+)
+```
+
+Stubs that only feed `queues` to a transport test reach no mode branch and can stay as they are.
 
 ### Session Context Tests
 

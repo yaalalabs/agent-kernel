@@ -266,8 +266,8 @@ sequenceDiagram
 
 - Each `StreamChunk` carries `delta`, `event`, `done`, `error`, and `session_id` fields. `delta` is populated only when `event` is a `TextDelta`; every other event type (message/step boundaries, tool calls, reasoning) is carried in `event` alone.
 - Post-hooks see **every** event via `on_stream_event()` — tool arguments and results included — and can rewrite one in place, return `None` to drop it, or return a list to emit several in its place. Raising `StreamHalt` ends the run.
-- Delivery depends on the surface: the REST API serves chunks as **Server-Sent Events** (`text/event-stream`); AWS serverless and AWS ECS containerized WebSocket modes push each chunk as a separate `STREAM_CHUNK` WebSocket message (optionally through SQS queues).
-- OpenAI Agents SDK, LangGraph, and Google ADK stream natively; CrewAI and Smolagents declare `supports_streaming = False` and do not support token streaming (their runners raise `NotImplementedError` in stream mode).
+- Delivery depends on the mode: `rest_sync` serves chunks as **Server-Sent Events** (`text/event-stream`) on the REST API; `async` pushes each chunk as a separate `STREAM_CHUNK` WebSocket message on AWS serverless and AWS ECS containerized (optionally through SQS queues).
+- OpenAI Agents SDK, LangGraph, and Google ADK stream natively; CrewAI and Smolagents declare `supports_streaming = False` and do not support token streaming (their runners raise `NotImplementedError` with `execution.message_type: delta`).
 
 See [Execution Flow](./execution-flow) for the full request lifecycle including the queue-based and WebSocket paths.
 
@@ -372,8 +372,8 @@ The activation rule: a bare `RESTAPI.run()` (no explicit handlers) runs the pipe
 constructed with explicit handlers (the thread handler, messaging integrations, custom handlers)
 and the `AgentService` clients (CLI, A2A, MCP) keep their direct execution paths. The client
 receives the reply either by **polling** the response store (`rest_sync` waits server-side,
-`rest_async` polls with a `request_id`), by **SSE** (`stream` on the REST surface), or by
-**WebSocket push** (`async`/`stream` on AWS today).
+`rest_async` polls with a `request_id`), by **SSE** (`rest_sync` with `message_type: delta` on the REST
+surface), or by **WebSocket push** (`async`, with `message_type` `complete` or `delta`, on AWS today).
 
 This decouples request ingestion from agent execution so each scales, fails, and recovers on its
 own terms.

@@ -80,7 +80,7 @@ weather_agent = Agent(
 )
 
 # The declaration. `plugins` goes to the per-run ADK Runner constructor; `run_config` goes to run_async.
-# In Agent Kernel stream mode the RunConfig is copied with streaming_mode=SSE (logged once); in run mode
+# In an Agent Kernel streamed run the RunConfig is copied with streaming_mode=SSE (logged once); in run mode
 # it is passed as is.
 GoogleADKModule([weather_agent]).run_options(
     weather_agent,

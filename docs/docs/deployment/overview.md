@@ -55,19 +55,22 @@ graph TB
 
 ## Execution Modes
 
-Independently of *where* you deploy, `execution.mode` selects *how* requests are processed and replies delivered. Chat execution always runs on the [queue pipeline](../architecture/overview#the-queue-execution-pipeline): in-process with the default `in_memory` transport on every server flavor, over durable SQS queues on AWS Lambda/ECS, or over Kafka/NATS on-prem or Kubernetes via the [Helm chart](./onprem-kubernetes). WebSocket delivery runs on API Gateway on AWS and on the pipeline's own [WebSocket gateway tier](../advanced/queue-mode-guide#websocket-delivery-on-the-pipeline-asyncstream) everywhere else.
+Independently of *where* you deploy, `execution.mode` selects *how* requests are processed and replies delivered, and `execution.message_type` (`AK_EXECUTION__MESSAGE_TYPE`) selects whether a reply arrives whole (`complete`) or as one message per chunk (`delta`). Chat execution always runs on the [queue pipeline](../architecture/overview#the-queue-execution-pipeline): in-process with the default `in_memory` transport on every server flavor, over durable SQS queues on AWS Lambda/ECS, or over Kafka/NATS on-prem or Kubernetes via the [Helm chart](./onprem-kubernetes). WebSocket delivery runs on API Gateway on AWS and on the pipeline's own [WebSocket gateway tier](../advanced/queue-mode-guide#websocket-delivery-on-the-pipeline-async) everywhere else.
 
-| Mode | Transport | How the client gets the reply | Queues | Response store | Supported on |
-|------|-----------|-------------------------------|--------|----------------|--------------|
-| `rest_sync` (also when `mode` is unset) | HTTP | JSON on the same connection (server awaits the store internally) | `in_memory` / SQS FIFO / Kafka / NATS | In-memory / DynamoDB / Redis / Valkey | All server flavors (in-process); AWS Lambda, AWS ECS (SQS); Kubernetes (Kafka/NATS/SQS) |
-| `rest_async` | HTTP | `202 ACCEPTED` + `request_id`, client polls | `in_memory` / SQS FIFO / Kafka / NATS | In-memory / DynamoDB / Redis / Valkey | All server flavors (in-process); AWS Lambda, AWS ECS (SQS); Kubernetes (Kafka/NATS/SQS) |
-| `async` | WebSocket | Single `CHAT_RESPONSE` push when the agent finishes | Any transport | Not used | AWS Lambda, AWS ECS (API Gateway); Kubernetes and self-hosted (the pipeline's gateway tier) |
-| `stream` | SSE or WebSocket | One `StreamChunk` per stream event as they are generated | `in_memory` (SSE path) / any broker (WebSocket path) | Not used | REST API surfaces (SSE); AWS Lambda, AWS ECS (API Gateway WebSocket); Kubernetes and self-hosted (the pipeline's gateway tier) |
+| Mode | Message type | Transport | How the client gets the reply | Queues | Response store | Supported on |
+|------|--------------|-----------|-------------------------------|--------|----------------|--------------|
+| `rest_sync` (also when `mode` is unset) | `complete` (default) | HTTP | JSON on the same connection (server awaits the store internally) | `in_memory` / SQS FIFO / Kafka / NATS | In-memory / DynamoDB / Redis / Valkey | All server flavors (in-process); AWS Lambda, AWS ECS (SQS); Kubernetes (Kafka/NATS/SQS) |
+| `rest_sync` (also when `mode` is unset) | `delta` | SSE | One `StreamChunk` per stream event as they are generated, ending with the done chunk | `in_memory` | In-memory (must stream chunks) | REST API surfaces (in-process); not AWS Lambda or the ECS IO container |
+| `rest_async` | `complete` only | HTTP | `202 ACCEPTED` + `request_id`, client polls | `in_memory` / SQS FIFO / Kafka / NATS | In-memory / DynamoDB / Redis / Valkey | All server flavors (in-process); AWS Lambda, AWS ECS (SQS); Kubernetes (Kafka/NATS/SQS) |
+| `async` | `complete` (default) | WebSocket | Single `CHAT_RESPONSE` push when the agent finishes | Any transport | Not used | AWS Lambda, AWS ECS (API Gateway); Kubernetes and self-hosted (the pipeline's gateway tier) |
+| `async` | `delta` | WebSocket | One `STREAM_CHUNK` per stream event, ending with `done: true` | Any transport | Not used | AWS Lambda, AWS ECS (API Gateway); Kubernetes and self-hosted (the pipeline's gateway tier) |
+
+`rest_async` with `delta` is rejected when the configuration loads. `execution.mode: stream` was removed: for SSE over REST use `rest_sync` with `message_type: delta`; for chunks over WebSocket use `async` with `message_type: delta`. SSE on a broker transport (SQS, Kafka, NATS) needs a response store that can stream chunks, and today only the single-process in-memory store can, so SSE runs single-process for now.
 
 Surfaces mounted with explicit handlers (the thread handler, messaging integrations, custom handlers) execute inline rather than through the pipeline.
 
 :::note
-AWS ECS supports `execution_mode = "stream"` for WebSocket mode in both direct and queue-backed topologies: in direct mode the chat route broadcasts each chunk inline via `ChatService.process_stream_chat_async`; in queue mode `ECSAgentRunner.run()` dispatches to `ECSStreamAgentRunner`, which fans out one Output Queue message per chunk instead of one for the full reply. See [AWS Containerized](./aws-containerized) for details.
+AWS ECS supports `execution_mode = "async"` with `message_type = "delta"` for WebSocket streaming in both direct and queue-backed topologies: in direct mode the chat route broadcasts each chunk inline via `ChatService.process_stream_chat_async`; in queue mode `ECSAgentRunner.run()` dispatches to `ECSStreamAgentRunner`, which fans out one Output Queue message per chunk instead of one for the full reply. See [AWS Containerized](./aws-containerized) for details.
 :::
 
 **Protocol support by flavor:**
@@ -76,14 +79,14 @@ AWS ECS supports `execution_mode = "stream"` for WebSocket mode in both direct a
 |--------|-----------|---------------|-------------------------------|------------|
 | Local REST API / self-hosted | ✅ | ✅ | - | ✅ in-process (`in_memory`) |
 | AWS Lambda | ✅ | - (use WebSocket) | ✅ | ✅ SQS |
-| AWS ECS Fargate | ✅ | - | ✅ (`async` and `stream`) | ✅ SQS |
+| AWS ECS Fargate | ✅ | - | ✅ (`async`, `complete` or `delta`) | ✅ SQS |
 | Azure Functions | ✅ | - | - | - (per-invocation, inline) |
 | Azure Container Apps | ✅ | ✅ | - | ✅ in-process (`in_memory`) |
 | GCP Cloud Run (both flavors) | ✅ | ✅ | - | ✅ in-process (`in_memory`) |
-| Kubernetes (Helm chart) | ✅ | - | ✅ (`async` and `stream`, ws-gateway tier) | ✅ NATS / Kafka / SQS |
+| Kubernetes (Helm chart) | ✅ | - | ✅ (`async`, `complete` or `delta`, ws-gateway tier) | ✅ NATS / Kafka / SQS |
 
 :::info
-SSE streaming is served by the built-in FastAPI `RESTAPI` server, so it is available anywhere that server runs (local, ECS single-container REST, Azure Container Apps, GCP Cloud Run). AWS Lambda delivers streaming over **WebSocket** instead, since API Gateway REST endpoints don't support SSE responses from standard Lambda integrations. CrewAI and Smolagents don't support token streaming; use `rest_sync` with those frameworks.
+SSE streaming is served by the built-in FastAPI `RESTAPI` server, so it is available anywhere that server runs (local, ECS single-container REST, Azure Container Apps, GCP Cloud Run). AWS Lambda delivers streaming over **WebSocket** instead, since API Gateway REST endpoints don't support SSE responses from standard Lambda integrations. CrewAI and Smolagents don't support token streaming; keep `message_type: complete` with those frameworks.
 :::
 
 ## Quick Comparison
@@ -120,7 +123,7 @@ graph LR
     OQ --> RSH[Response Handler]
     RSH --> RS[(Response Store)]
     RS -.->|rest_sync / rest_async| RH
-    RSH -.->|"async / stream (API Gateway on AWS, ws-gateway on Kubernetes)"| WS[WebSocket push]
+    RSH -.->|"async (API Gateway on AWS, ws-gateway on Kubernetes)"| WS[WebSocket push]
 
     style RH fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
     style AR fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
@@ -132,7 +135,7 @@ graph LR
 | Request handler | `RequestHandler` on the rest-api thread | Request Handler Lambda | `ECSQueueRequestHandler` thread in the IO container | `RequestHandler` thread in the io-handler Deployment |
 | Agent runner | `AgentRunner` worker threads (same process) | Agent Runner Lambda (SQS event source mapping) | `ECSAgentRunner` service, a pool of long-poll consumer threads | `AgentRunner` consumer threads in the agent-runner Deployment |
 | Response handler | `ResponseHandler` worker thread (same process) | Response Handler Lambda | `ECSOutputConsumer` thread pool in the IO container | `ResponseHandler` thread pool in the io-handler Deployment |
-| Reply delivery | Response store (in-memory), or SSE bridging (`stream`) | Response store, or WebSocket push (`async`/`stream`) | Response store, or WebSocket push (`async`/`stream`) | Response store (Valkey/Redis), or ws-gateway push (`async`/`stream`) |
+| Reply delivery | Response store (in-memory), or SSE bridging (`rest_sync` + `delta`) | Response store, or WebSocket push (`async`) | Response store, or WebSocket push (`async`) | Response store (Valkey/Redis), or ws-gateway push (`async`) |
 | Scaling | `no_of_consumers` threads | Automatic per SQS batch | Backlog-per-task target tracking | KEDA on queue depth (Kafka lag / NATS pending / SQS length) |
 
 See [AWS Serverless](./aws-serverless), [AWS Containerized](./aws-containerized), [On-Prem / Kubernetes](./onprem-kubernetes), and the [Queue Mode Guide](../advanced/queue-mode-guide) for full component walkthroughs.
@@ -188,7 +191,7 @@ terraform init && terraform apply
 
 - ECS Fargate + Application Load Balancer
 - Optional two-container scalable queue mode with backlog-based auto-scaling
-- Optional WebSocket mode (`async`/`stream`) for real-time, connection-based interactions
+- Optional WebSocket mode (`async`, with `message_type` `complete` or `delta`) for real-time, connection-based interactions
 - Consistent performance, lower latency
 
 [Learn more →](./aws-containerized)
@@ -254,7 +257,7 @@ helm install ak oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.9.5 -f v
 ```
 
 - io-handler + agent-runner Deployments over Kafka/NATS JetStream (or SQS on EKS)
-- Optional WebSocket gateway tier (`async`/`stream`), KEDA queue-depth autoscaling
+- Optional WebSocket gateway tier (`async`, `complete` or `delta`), KEDA queue-depth autoscaling
 - Baremetal, EKS, and dev/micro-cluster flavors as values files
 
 [Learn more →](./onprem-kubernetes)
@@ -265,7 +268,7 @@ helm install ak oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.9.5 -f v
 - **Small web app** → **REST API**: simple, self-hosted
 - **Variable traffic on AWS** → **AWS Lambda**: auto-scales, pay per use; add queue mode for backpressure and retries
 - **High traffic / long-running agents on AWS** → **AWS ECS in queue mode**: consistent performance, backlog-based auto-scaling
-- **Real-time UX on AWS** → **WebSocket mode**: `async` for push delivery, `stream` for token streaming: both on Lambda or ECS
+- **Real-time UX on AWS** → **WebSocket mode** (`async`): `message_type: complete` for push delivery, `delta` for token streaming: both on Lambda or ECS
 - **Variable traffic on Azure** → **Azure Functions**; **high traffic** → **Azure Container Apps** (KEDA scaling, SSE streaming)
 - **Variable traffic on GCP** → **Cloud Run scale-to-zero**; **high traffic** → **Cloud Run always-on**
 - **On-prem, existing Kubernetes, or cloud-portable** → **the Helm chart**: NATS-backed queue mode with KEDA autoscaling; Kafka where the organization standardizes on it

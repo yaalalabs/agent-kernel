@@ -52,14 +52,18 @@ declared by the application rather than inferred from the queue URLs a deploymen
 | `kafka` | ✅ (`pip install agentkernel[kafka]`) | Kubernetes / on-prem two-process topology |
 | `nats` (recommended on-prem) | ✅ (`pip install agentkernel[nats]`) | Kubernetes / on-prem two-process topology |
 
-Delivery sub-modes (`execution.mode`):
+hoDelivery sub-modes (`execution.mode` + `execution.message_type`):
 
-| Mode | What the caller does | How they get the response |
-|------|---------------------|---------------------------|
-| **REST Sync** (also when unset) | POST → wait | Same HTTP response (server awaits the response store) |
-| **REST Async** | POST → get a `request_id` | Later GET with the `request_id` |
-| **Stream** | POST or WebSocket frame | SSE token chunks (REST surface); WebSocket `STREAM_CHUNK` frames (the pipeline's `/ws` route, or API Gateway on AWS) |
-| **Async** | WebSocket frame | WebSocket `CHAT_RESPONSE` push (the pipeline's `/ws` route, or API Gateway on AWS) |
+| Mode | Message type | What the caller does | How they get the response |
+|------|--------------|---------------------|---------------------------|
+| **REST Sync** (also when unset) | `complete` (default) | POST → wait | Same HTTP response (server awaits the response store) |
+| **REST Sync** (also when unset) | `delta` | POST once | SSE token chunks on the same response (REST surface) |
+| **REST Async** | `complete` only | POST → get a `request_id` | Later GET with the `request_id` |
+| **Async** | `complete` (default) | WebSocket frame | WebSocket `CHAT_RESPONSE` push (the pipeline's `/ws` route, or API Gateway on AWS) |
+| **Async** | `delta` | WebSocket frame | WebSocket `STREAM_CHUNK` frames, ending with `done: true` (the pipeline's `/ws` route, or API Gateway on AWS) |
+
+`execution.mode: stream` was removed: use REST Sync with `delta` for SSE, or Async with `delta` for
+WebSocket chunks.
 
 :::note
 [Conversation-thread](./threads) recording works in queue mode through `ThreadRequestHandler`,
@@ -90,7 +94,8 @@ transports remain the production choice for multi-process deployments.
 
 ```yaml
 execution:
-  mode: rest_sync          # rest_sync (default when unset) | rest_async | stream
+  mode: rest_sync          # rest_sync (default when unset) | rest_async
+  message_type: complete   # complete (default) | delta for SSE under rest_sync
   queues:
     type: in_memory        # mandatory in a declared queues block
     input:
@@ -121,14 +126,15 @@ On startup:
 
 ```
 ak.api.http - INFO - in_memory queue transport resolved: starting the single-process pipeline topology
-ak.pipeline.io_handler - INFO - IOHandler starting: mode=rest_sync, transport=in_memory, topology=single-process
+ak.pipeline.io_handler - INFO - IOHandler starting: mode=rest_sync, message_type=complete, transport=in_memory, topology=single-process, websocket=off
 ```
 
-All three REST delivery modes work locally: `rest_sync`, `rest_async` accept-then-poll, and
-`stream` over SSE: switchable per run with `AK_EXECUTION__MODE`. The WebSocket modes work
+All three REST delivery options work locally: `rest_sync`, `rest_async` accept-then-poll, and
+`rest_sync` with `message_type: delta` over SSE: switchable per run with `AK_EXECUTION__MODE` and
+`AK_EXECUTION__MESSAGE_TYPE`. The WebSocket mode (`async`, either message type) works
 locally too: boot with `IOHandler.run(auth_validator=...)` instead of `RESTAPI.run()` (the gateway
 handlers are co-hosted in the single process) and see
-[WebSocket Delivery on the Pipeline](#websocket-delivery-on-the-pipeline-asyncstream). See
+[WebSocket Delivery on the Pipeline](#websocket-delivery-on-the-pipeline-async). See
 [`examples/api/openai`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/openai)
 for curl walkthroughs of each, and [Local Deployment](../deployment/local) for the local flow
 diagram.
@@ -268,9 +274,9 @@ Three things to know:
 
 ---
 
-## WebSocket Delivery on the Pipeline (Async/Stream)
+## WebSocket Delivery on the Pipeline (Async)
 
-On AWS, the WebSocket modes lean on API Gateway plus a DynamoDB connections table. The pipeline
+On AWS, WebSocket delivery leans on API Gateway plus a DynamoDB connections table. The pipeline
 ports that model to Kubernetes with a dedicated **WebSocket Gateway** tier: gateway pods own the
 client sockets, a **shared connection store** (on your session backend) is the connections-table
 analogue, and an authenticated pod-to-pod push endpoint is the `PostToConnection` analogue. The
@@ -306,8 +312,8 @@ The flow:
    user id: no return address travels on the message, and no REST hop is involved.
 3. Whichever pod's Response Handler consumes the reply looks the user up in the connection
    store and POSTs one frame per connection to the owning gateway pod's `/internal/push`:
-   full replies as `CHAT_RESPONSE` frames in `async` mode, one `STREAM_CHUNK` frame per token
-   chunk in `stream` mode (terminated by a chunk with `done: true`). On the `in_memory`
+   full replies as `CHAT_RESPONSE` frames with `message_type: complete`, one `STREAM_CHUNK` frame
+   per token chunk with `message_type: delta` (terminated by a chunk with `done: true`). On the `in_memory`
    transport the recorded endpoint is the sentinel `local` and delivery short-circuits
    in-process.
 
@@ -344,7 +350,8 @@ websocket_api:
   push_auth_token: <shared-secret>   # authenticates pod-to-pod pushes; the chart provisions it as a Secret
   # push_port: 8000                  # optional; defaults to api.port
 execution:
-  mode: async                        # or stream
+  mode: async
+  message_type: delta                # or complete (the default): one CHAT_RESPONSE per reply
   queues:
     type: nats                       # any broker transport; in_memory co-hosts in IOHandler instead
 ```
@@ -365,10 +372,14 @@ deletes the stale mapping and keeps delivering to the user's other connections, 
 `GoneException`; a reply that reaches no connection at all retries up to `max_receive_count`
 and is then dropped with an error log: bounded, never a crash loop.
 
-On broker transports the REST chat routes refuse the WebSocket-delivered modes explicitly:
-`async` always answers over `/ws`, and `stream` answers over `/ws` whenever the shared response
-store cannot stream chunks (SSE `stream` remains available on the single-process `in_memory`
-topology, where WebSocket co-hosting is optional).
+No single process serves SSE and WebSocket together: `rest_sync` with `message_type: delta`
+serves SSE only, and `async` (either message type) serves `/ws` only, its REST chat route
+answering `400`. On the `in_memory` transport `async` needs `IOHandler.run(auth_validator=...)`.
+SSE on a broker transport needs a response store that can stream chunks, or `IOHandler` fails at
+startup; today only the `in_memory` store can, and it cannot be shared across processes, so SSE
+effectively runs single-process for now. `async` with `delta` on a broker requires the
+authenticated user id on the queue message (`USER_ID`); a message without it is retried, then
+fails permanently.
 
 ---
 
@@ -385,7 +396,7 @@ graph TB
     AR -->|SendMessage| OQ[/Output SQS FIFO Queue/]
     OQ -->|Event Source Mapping| RSH[Response Handler Lambda]
     RSH -->|rest_sync / rest_async| RS[(DynamoDB / Redis / Valkey<br/>Response Store)]
-    RSH -->|"async / stream (WebSocket)"| WS[WebSocket API Gateway<br/>PostToConnection]
+    RSH -->|"async (WebSocket)"| WS[WebSocket API Gateway<br/>PostToConnection]
     RS -.->|poll| RH
     IQ -. "visibility timeout retries,<br/>DLQ after maxReceiveCount" .- IQ
 
@@ -394,12 +405,12 @@ graph TB
     style RSH fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
 ```
 
-In `stream` mode the Agent Runner Lambda (`ServerlessStreamAgentRunner`) sends **one output-queue message per token chunk**, and the Response Handler broadcasts each as a `STREAM_CHUNK` WebSocket message.
+With `execution_mode = "async"` and `message_type = "delta"` the Agent Runner Lambda (`ServerlessStreamAgentRunner`) sends **one output-queue message per token chunk**, and the Response Handler broadcasts each as a `STREAM_CHUNK` WebSocket message.
 
 - **Messaging-integration dispatch.** A message with an `integration` attribute keeps its return
   address (`integration` plus the `reply_*` context) through both queues. The Response Handler
   delivers it to the platform before looking at the execution mode, so it never reaches the response
-  store or the WebSocket, and `stream` mode runs it as one reply.
+  store or the WebSocket, and under `message_type: delta` it still runs as one reply.
 - **Webhooks in.** A `LambdaWebhookHost(WebhookRESTRequestHandler(...))`, registered with
   `Lambda.register`, serves a platform's webhook route on the Request Handler Lambda, in
   `rest_sync`/`rest_async` with the `sqs` transport. See
@@ -549,19 +560,20 @@ graph TB
 ```
 
 :::note
-**WebSocket delivery is available on ECS in both `async` and `stream` modes**: see
-[WebSocket (Async/Stream) Mode in ECS](#websocket-asyncstream-mode-in-ecs) below. `rest_sync` and
-`rest_async` always deliver replies through the response store; `async`/`stream` always push over
-the WebSocket connection instead.
+**WebSocket delivery is available on ECS in `async` mode, with `message_type` `complete` or
+`delta`**: see [WebSocket (Async) Mode in ECS](#websocket-async-mode-in-ecs) below. `rest_sync` and
+`rest_async` always deliver replies through the response store; `async` always pushes over
+the WebSocket connection instead. `ECSIOHandler` refuses `rest_sync` with `message_type: delta`
+(SSE) at startup: use `async` with `delta` for streaming on ECS.
 :::
 
 ### Python Class Hierarchy
 
 | Class | Container | Role |
 |-------|-----------|------|
-| `ECSIOHandler` | IO container | Entrypoint: starts Thread 1 + Thread 2 via `ThreadRunner`; Thread 1 is `AWSRestAPI` (`rest_sync`/`rest_async`) or `AWSWebsocketAPI` (`async`/`stream`), selected by `execution.mode` |
+| `ECSIOHandler` | IO container | Entrypoint: starts Thread 1 + Thread 2 via `ThreadRunner`; Thread 1 is `AWSRestAPI` (`rest_sync`/`rest_async`) or `AWSWebsocketAPI` (`async`), selected by `execution.mode` |
 | `ECSQueueRequestHandler` | IO container / Thread 1 (REST modes) | FastAPI: `POST /api/v1/chat` enqueues; `GET /api/v1/chat?request_id=...&session_id=...` polls (query params only, no path segment) |
-| `ECSWebSocketRequestHandler` / `ECSWebSocketSystemRequestHandler` | IO container / Thread 1 (WebSocket modes) | Chat + custom routes, and `$connect`/`$disconnect`/`$default` respectively: see [WebSocket (Async/Stream) Mode in ECS](#websocket-asyncstream-mode-in-ecs) |
+| `ECSWebSocketRequestHandler` / `ECSWebSocketSystemRequestHandler` | IO container / Thread 1 (WebSocket mode) | Chat + custom routes, and `$connect`/`$disconnect`/`$default` respectively: see [WebSocket (Async) Mode in ECS](#websocket-async-mode-in-ecs) |
 | `ECSOutputConsumer` | IO container / Thread 2 | Extends `ECSSQSConsumer`; runs `output.no_of_consumers` (default 2) threads polling Output Queue → response store |
 | `ECSAgentRunner` | Agent Runner container | Extends `ECSSQSConsumer`; runs `input.no_of_consumers` (default 5) threads polling Input Queue, running the agent, sending to Output Queue |
 | `ECSSQSConsumer` | both | Extends `RawQueueConsumer`; spins up `num_consumers` poll-loop threads via `ThreadRunner`. Since #495 its batch/retry/permanent-failure machinery is the shared `ConsumerLoop` (`agentkernel.pipeline.consumer`) bound to the SQS classmethod surface: public behavior unchanged |
@@ -606,9 +618,10 @@ Identical infrastructure to REST Sync. The difference is purely in `ECSQueueRequ
   nothing is there yet (`session_id` is optional and used only for logging, not validated
   against the stored reply).
 
-### WebSocket (Async/Stream) Mode in ECS
+### WebSocket (Async) Mode in ECS
 
-Set `execution_mode = "async"` or `"stream"` (with `queue_mode = true`) to combine the queue
+Set `execution_mode = "async"` (with `queue_mode = true`, and `message_type = "delta"` for
+chunk-by-chunk delivery) to combine the queue
 pipeline above with a WebSocket API Gateway instead of an HTTP API:
 
 1. Client connects to `wss://<endpoint>/<stage>?token=<jwt>`. Thread 1 runs `AWSWebsocketAPI`
@@ -616,17 +629,17 @@ pipeline above with a WebSocket API Gateway instead of an HTTP API:
    (mandatory) and stores `user_id` ↔ `connection_id` in a DynamoDB connections table.
 2. A `chat` frame (`{"route": "chat", "body": {...}}`) is enqueued to the Input Queue exactly
    like REST Async: the framework never runs the agent inline in this mode.
-3. `ECSAgentRunner` processes it in `async` mode exactly as in REST modes, then forwards the
-   connection's `endpoint_url` as a custom SQS attribute to the Output Queue. In `stream` mode,
+3. `ECSAgentRunner` processes it with `message_type: complete` exactly as in REST modes, then forwards the
+   connection's `endpoint_url` as a custom SQS attribute to the Output Queue. With `message_type: delta`,
    `ECSAgentRunner.run()` dispatches to `ECSStreamAgentRunner` instead (re-checking
-   `execution.mode` on every call, mirroring `ECSIOHandler.run`'s dispatch): it runs the agent via
+   `execution.message_type` on every call, mirroring `ECSIOHandler.run`'s dispatch): it runs the agent via
    `ChatService.process_stream_chat_sync()` and sends **one Output Queue message per streamed
    chunk** (each carrying the forwarded `endpoint_url`), instead of one message for the full
    reply.
-4. `ECSOutputConsumer` branches on `execution.mode`: `async` pushes a `CHAT_RESPONSE` over the
-   WebSocket connection via `PostToConnection`; `stream` pushes each Output Queue message as its
+4. `ECSOutputConsumer` branches on `execution.mode` and `message_type`: `complete` pushes a `CHAT_RESPONSE` over the
+   WebSocket connection via `PostToConnection`; `delta` pushes each Output Queue message as its
    own `STREAM_CHUNK` (using the forwarded `endpoint_url` + `user_id`), terminated by a chunk with
-   `"done": true`. Neither mode falls back to the response store: that path only runs for
+   `"done": true`. Neither message type falls back to the response store: that path only runs for
    `rest_sync`/`rest_async`.
 5. Custom routes (registered with `AWSWebsocketAPI.register`) bypass the queue entirely: they
    are answered directly by Thread 1, the same as chat frames in direct (non-queue) WebSocket
@@ -634,7 +647,7 @@ pipeline above with a WebSocket API Gateway instead of an HTTP API:
 
 Direct (non-queue) WebSocket mode works the same way minus the queue hop: `chat` runs the agent
 inline via `ChatService` and the reply is pushed immediately, no `ECSAgentRunner` or Output Queue
-involved. In `stream` mode, direct-mode chat runs
+involved. With `message_type: delta`, direct-mode chat runs
 `ChatService.process_stream_chat_async()` and broadcasts each chunk as it's produced instead of
 waiting for the full reply.
 
@@ -747,7 +760,7 @@ this automatically. See the [AWS Containerized deployment docs](../deployment/aw
 | `sqs` | ✅ | Two-process topology on AWS, wire-compatible with the Lambda/ECS adapters below |
 | `kafka` | ✅ | confluent-kafka client, per-session ordering by record key, DLQ topics, Strimzi-provisioned clusters. Needs the `kafka` extra and an `execution.queues.kafka` block; see the notes below |
 | `nats` (recommended on-prem) | ✅ | JetStream work-queue streams, partitioned per-session ordering, server-side delivery counts and dedup. Needs the `nats` extra and an `execution.queues.nats` block |
-| WebSocket delivery (`async`/`stream`) | ✅ | Gateway tier (`WebSocketGateway.run(auth_validator=...)`; co-hosted by `IOHandler` on `in_memory`) + session-backed shared connection store; see [WebSocket Delivery on the Pipeline](#websocket-delivery-on-the-pipeline-asyncstream) |
+| WebSocket delivery (`async`, `complete` or `delta`) | ✅ | Gateway tier (`WebSocketGateway.run(auth_validator=...)`; co-hosted by `IOHandler` on `in_memory`) + session-backed shared connection store; see [WebSocket Delivery on the Pipeline](#websocket-delivery-on-the-pipeline-async) |
 | Kubernetes Helm chart (baremetal + EKS) | ✅ | Two-Deployment topology (io-handler + agent-runner, optional ws-gateway), KEDA queue-depth autoscaling, NACK/Strimzi-provisioned brokers; see [On-Prem / Kubernetes](../deployment/onprem-kubernetes) |
 
 **AWS deployment components:**
@@ -761,4 +774,4 @@ this automatically. See the [AWS Containerized deployment docs](../deployment/aw
 | DynamoDB Response Store | ✅ serverless stack | ✅ containerized stack |
 | Thread management | N/A | ✅ `ThreadRunner` (`deployment/common/thread_runner.py`) |
 | WebSocket Mode (`async`) | ✅ `modules/websocket-api-gateway/` + `modules/ws-connection-handler/` | ✅ WebSocket API Gateway + VPC Link V1/NLB + DynamoDB connections table (`api_gateway_ws.tf`); direct and queue variants both supported |
-| Streaming Mode (`stream`) | ✅ `ServerlessStreamAgentRunner` → one SQS message per chunk → WebSocket `STREAM_CHUNK` | ✅ `ECSStreamAgentRunner` → one SQS message per chunk → WebSocket `STREAM_CHUNK` (queue mode); `ChatService.process_stream_chat_async` inline (direct mode) |
+| Streaming (`async` + `message_type: delta`) | ✅ `ServerlessStreamAgentRunner` → one SQS message per chunk → WebSocket `STREAM_CHUNK` | ✅ `ECSStreamAgentRunner` → one SQS message per chunk → WebSocket `STREAM_CHUNK` (queue mode); `ChatService.process_stream_chat_async` inline (direct mode) |

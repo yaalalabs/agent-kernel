@@ -140,15 +140,17 @@ retry, dedup, permanent-failure replies) are identical over all of them:
   topics as CRs.
 - **`sqs`**: no broker to operate; the EKS option via Pod Identity.
 
-## WebSocket Modes (async / stream)
+## WebSocket Mode (async)
 
-Enabling `wsGateway` adds the gateway tier for `async` and `stream` execution modes: gateway
+Enabling `wsGateway` adds the gateway tier for the `async` execution mode, with either message
+type (the chart's `execution.messageType` value, injected as `AK_EXECUTION__MESSAGE_TYPE`:
+`complete` for one reply, `delta` for token chunks): gateway
 pods own the client sockets, enqueue chat frames directly to the transport, and receive each
 reply or token chunk from the Response Handler on an authenticated internal push endpoint,
 addressed through a shared connection store on the session backend. Replies reach all of a
 user's connections on whichever gateway pod holds them, and io/runner pods roll without
 dropping a single connection. See the
-[WebSocket delivery section of the Queue Mode Guide](../advanced/queue-mode-guide#websocket-delivery-on-the-pipeline-asyncstream)
+[WebSocket delivery section of the Queue Mode Guide](../advanced/queue-mode-guide#websocket-delivery-on-the-pipeline-async)
 for the mechanism and the
 [chart README](https://github.com/yaalalabs/agent-kernel/tree/develop/ak-deployment/ak-k8s)
 for the values.

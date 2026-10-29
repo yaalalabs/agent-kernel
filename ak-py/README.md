@@ -738,10 +738,26 @@ Configure queue-backed and serverless execution behavior.
 
 - **Execution Mode**
   - **Field**: `execution.mode`
-  - **Options**: `rest_sync`, `rest_async`, `stream`, `async`
-  - **Default**: `None`
-  - **Description**: Selects the execution mode used for queue-backed and serverless request handling
+  - **Options**: `rest_sync`, `rest_async`, `async`, `realtime`
+  - **Default**: `None` (runs as `rest_sync`)
+  - **Description**: How a request is invoked: `rest_sync` (REST, wait for the reply), `rest_async`
+    (REST, submit then poll), `async` (WebSocket only), `realtime` (persistent realtime sockets, e.g.
+    the LiveKit voice gateway). `stream` was removed and fails at config load with `AKConfigError`:
+    set `mode: rest_sync` with `message_type: delta` for SSE over REST, or `mode: async` with
+    `message_type: delta` for chunks over WebSocket
   - **Environment Variable**: `AK_EXECUTION__MODE`
+
+- **Message Type**
+  - **Field**: `execution.message_type`
+  - **Options**: `complete`, `delta`
+  - **Default**: `None` (resolves to `delta` for `realtime`, `complete` otherwise)
+  - **Description**: How much of the reply each delivered message carries. `complete` sends the whole
+    reply in one message (JSON under `rest_sync`, one `CHAT_RESPONSE` under `async`); `delta` sends one
+    message per chunk (SSE under `rest_sync`, one `STREAM_CHUNK` per chunk ending with `done: true`
+    under `async`). `rest_async` + `delta` and `realtime` + `complete` fail at config load. AWS
+    Lambda (REST router init) and the ECS queue-mode `ECSIOHandler` (startup) refuse `rest_sync` +
+    `delta`; use `async` + `delta` there
+  - **Environment Variable**: `AK_EXECUTION__MESSAGE_TYPE`
 
 - **Queues**
   - **Field**: `execution.queues`
@@ -1096,7 +1112,7 @@ Labels a JSON reply as [A2UI](https://a2ui.org/) so a client receives the docume
 its format named, instead of a JSON string it has to parse a second time. Agent Kernel supplies the
 media type and nothing else — the component catalog belongs in your agent's instructions, because it
 has to match the components your frontend implements. The block does not reach a streamed run
-(`execution.mode: stream`) or an agent configured with a framework `output_type`; both are told to
+(`execution.message_type: delta`) or an agent configured with a framework `output_type`; both are told to
 write their own post-hook. See `examples/api/a2ui-openai`.
 
 - **Enabled**

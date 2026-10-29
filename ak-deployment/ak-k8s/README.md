@@ -99,6 +99,7 @@ uses):
 | Variable | Source |
 |---|---|
 | `AK_EXECUTION__MODE` | `execution.mode` |
+| `AK_EXECUTION__MESSAGE_TYPE` | `execution.messageType` (only when set) |
 | `AK_EXECUTION__QUEUES__TYPE` | `transport.type` |
 | `AK_EXECUTION__QUEUES__NATS__*` / `__KAFKA__*` | `transport.nats.*` / `transport.kafka.*` connection values |
 | `AK_EXECUTION__QUEUES__INPUT__URL` / `__OUTPUT__URL` | `transport.sqs.*` (sqs transport) |
@@ -170,13 +171,14 @@ bounded retry, dedup, permanent-failure replies) are identical over all of them.
 Sizing rule: `replicas * transport.input.noOfConsumers <= partitions`, or extra consumers
 find no free partition.
 
-## WebSocket delivery (`async` / `stream` modes)
+## WebSocket delivery (`async` mode)
 
-Enable the gateway tier for WebSocket modes on a broker transport:
+Enable the gateway tier for `async` mode on a broker transport, with either message type:
 
 ```yaml
 execution:
-  mode: stream
+  mode: async
+  messageType: delta   # one STREAM_CHUNK per chunk; omit (or complete) for one CHAT_RESPONSE per reply
 wsGateway:
   enabled: true
   auth:
@@ -190,6 +192,13 @@ must be a shared store such as `valkey`). Response Handlers on the io pods resol
 current connections and POST each frame to the owning pod's `/internal/push`, authenticated
 by the shared token; replies reach all of a user's connections on whichever gateway pod holds
 them, and io/runner pods roll without dropping a single connection.
+
+`execution.mode: stream` was removed. The chart validates neither `execution.mode` nor
+`execution.messageType`, so `--set execution.mode=stream` still renders, but the pods fail at
+config load with a migration message: use `mode: async` with `messageType: delta`. SSE
+(`mode: rest_sync` with `messageType: delta`) is not a substitute on a broker transport: it needs a
+shared response store that can stream chunks, none of the shared stores can today, so the
+io-handler fails at startup.
 
 The WebSocket HTTPRoute carries raised timeouts (`gateway.websocket.requestTimeout: 0s`
 disables them) and must never have request buffering enabled: Envoy Gateway deadlocks

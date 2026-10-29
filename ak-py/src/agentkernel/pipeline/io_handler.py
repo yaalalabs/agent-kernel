@@ -95,7 +95,8 @@ class IOHandler:
                 )
         ws_cohosted = single_process and auth_validator is not None and execution.is_websocket
         cls._log.info(
-            f"IOHandler starting: mode={mode}, message_type={execution.resolved_message_type}, transport={transport_type}, "
+            f"IOHandler starting: mode={(mode or ExecutionMode.REST_SYNC).value}, message_type={execution.resolved_message_type.value}, "
+            f"transport={transport_type}, "
             f"topology={'single-process' if single_process else 'multi-process'}, websocket={'co-hosted' if ws_cohosted else 'off'}"
         )
 

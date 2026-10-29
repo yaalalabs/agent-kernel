@@ -12,10 +12,10 @@ Three topologies are supported:
 |------|-----------|-------------|----------|
 | **Simple REST** | One (runs `RESTAPI`) | `queue_mode = false` (default) in Terraform; app entrypoint `RESTAPI.run` | Moderate traffic, simplest setup |
 | **Scalable queue mode** | Two (IO container + Agent Runner service) | `queue_mode = true`, `execution_mode = "rest_sync"` or `"rest_async"` in Terraform; entrypoints `ECSIOHandler.run` + `ECSAgentRunner.run`; `execution.queues.*` config | High throughput, long-running agents, backpressure control |
-| **WebSocket mode** | One (direct) or two (queue, same split as above) | `execution_mode = "async"` or `"stream"` in Terraform | Real-time, bidirectional, connection-based interactions |
+| **WebSocket mode** | One (direct) or two (queue, same split as above) | `execution_mode = "async"` in Terraform (`message_type = "delta"` for chunks) | Real-time, bidirectional, connection-based interactions |
 
 :::note Protocol support
-ECS containers serve JSON REST by default. **SSE event streaming** (`execution.mode: stream`) is available in the **Simple REST** topology (single container running `RESTAPI`) with streaming-capable frameworks. **WebSocket mode** is also available on ECS via a WebSocket API Gateway — see [WebSocket Mode](#websocket-mode) below — as either `execution_mode = "async"` (one `CHAT_RESPONSE` push per reply) or `"stream"` (one `STREAM_CHUNK` push per stream event).
+ECS containers serve JSON REST by default. **SSE event streaming** (`execution.mode: rest_sync` with `execution.message_type: delta`) is available in the **Simple REST** topology (single container running `RESTAPI`) with streaming-capable frameworks; `ECSIOHandler` refuses it at startup. **WebSocket mode** is also available on ECS via a WebSocket API Gateway — see [WebSocket Mode](#websocket-mode) below — as `execution_mode = "async"` with either `message_type = "complete"` (one `CHAT_RESPONSE` push per reply, the default) or `message_type = "delta"` (one `STREAM_CHUNK` push per stream event). `execution_mode = "stream"` was removed and fails at `terraform plan`; use `execution_mode = "async"` with `message_type = "delta"`.
 :::
 
 ## Simple REST Architecture
@@ -427,7 +427,8 @@ module "containerized_agents" {
   }
 
   queue_mode     = false          # or true for the two-container queue variant
-  execution_mode = "async"        # "stream" delivers the reply as STREAM_CHUNK messages instead
+  execution_mode = "async"
+  message_type   = "complete"     # "delta" delivers the reply as STREAM_CHUNK messages instead
   ws_chat_route  = "chat"         # optional, defaults to "chat"
   ws_routes = [                   # every @AWSWebsocketAPI.register(...) route, declared here too
     { route = "status" },
@@ -444,13 +445,13 @@ internal NLB + VPC Link V1, a DynamoDB connections table (hash `user_id`, range
 (`execute-api:ManageConnections` + connections-table CRUD/Query). The DynamoDB response store
 is simply never created in WebSocket mode — replies are always pushed over the connection
 instead of stored. `gateway_endpoints` specifically has a Terraform validation rule rejecting
-it in `async`/`stream` modes.
+it in `async` mode.
 
 For the full examples see [examples/aws-containerized/openai-websocket](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/openai-websocket)
 (direct mode, async), [examples/aws-containerized/openai-websocket-scalable](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/openai-websocket-scalable)
 (queue mode, async), [examples/aws-containerized/openai-stream](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/openai-stream)
-(direct mode, stream), and [examples/aws-containerized/openai-stream-queue-mode](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/openai-stream-queue-mode)
-(queue mode, stream).
+(direct mode, async + delta), and [examples/aws-containerized/openai-stream-queue-mode](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/openai-stream-queue-mode)
+(queue mode, async + delta).
 
 ## Advantages
 

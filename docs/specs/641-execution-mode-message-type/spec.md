@@ -309,7 +309,9 @@ The validation checks the value only. Combination rules stay in Python (design: 
 
 - `variables.tf`:
   - `:56-62`: `execution_mode` drops `stream` from the condition and the description (`:58`). The
-    `error_message` adds: "'stream' was removed: use rest_sync or async with message_type = \"delta\"".
+    `error_message` adds: "'stream' was removed: use async with message_type = \"delta\"". The hint
+    names `async` only: `stream` was always WebSocket on AWS, and Lambda and ECS queue mode refuse
+    `rest_sync + delta` at startup (§5, §6).
   - `:65-66`: the non-queue condition drops `stream`.
   - The WebSocket conditions at `:124`, `:139`, `:150`, `:204`, `:214`, `:224`, `:235`, `:240`, `:253`,
     `:258`, `:263`, `:293`, `:314`, `:334` replace `contains(["async", "stream"], var.execution_mode)`
@@ -535,9 +537,9 @@ Run from `ak-py/`: `uv run pytest`. CI also runs `chart-test.yaml`, and `terrafo
 - **`tests/test_pipeline_request_handler.py`**: `rest_sync + delta` serves `text/event-stream` (the
   existing SSE tests at `:199`, `:379`, `:433` move to it). `async + delta` gets the `async` 400 on
   `POST /api/v1/chat`.
-- **`tests/test_pipeline_response_handler.py`**: `async + delta` broadcasts `STREAM_CHUNK` with and
-  without `USER_ID`. `rest_sync + delta` stores chunks with and without `USER_ID`. Permanent
-  failure covers both.
+- **`tests/test_pipeline_response_handler.py`**: `async + delta` broadcasts `STREAM_CHUNK` when
+  `USER_ID` is present, and a chunk without it raises for retry without reaching the chunk store.
+  `rest_sync + delta` stores chunks with and without `USER_ID`. Permanent failure covers both.
 - **`tests/test_lambda_router.py`**: `rest_sync + delta` makes `RESTLambdaRouter()` raise
   `AKConfigError`, with and without queues. `test_handle_stream_returns_400_not_raises` (`:109`) is
   deleted with `_handle_stream`.
