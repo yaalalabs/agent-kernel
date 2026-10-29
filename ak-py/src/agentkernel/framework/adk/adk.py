@@ -920,25 +920,21 @@ class GoogleADKRunner(BaseRunner):
 
 
 class GoogleADKRealtimeRunner(BaseRealtimeRunner):
-    """Runs a live conversation on ADK's ``Runner.run_live()`` behind the realtime pool.
-
-    ADK owns the agent graph, tools, transfers and session state. This class sends caller
-    audio/text, maps ADK events onto the pool's events, and starts a fresh ``run_live()``
-    attempt after a transient transport drop (``RESTART_DELAYS_SECONDS``).
-    """
+    """ADK live runner: sends input, maps events, and restarts a dead run on the same session."""
 
     input_sample_rate = 16000
     output_sample_rate = 24000
 
-    # The one run_live setting an agent's run_options may name; the Runner constructor options are
-    # GoogleADKRunner.RUNNER_CONSTRUCTOR_OPTIONS.
     LIVE_OPTIONS: ClassVar[frozenset[str]] = frozenset({"run_config"})
-    # Options that belong to ADK's App, not its Runner: plugins and the per-agent prompt/tool cache (which
-    # stops every handoff from re-sending an uncached prompt).
     APP_OPTIONS: ClassVar[frozenset[str]] = frozenset({"plugins", "context_cache_config"})
-    # Delays before starting a dropped live run again, in order. Only a transport drop retries;
-    # terminal failures are surfaced to the caller. Empty disables restart.
     RESTART_DELAYS_SECONDS: ClassVar[tuple[float, ...]] = (0.5, 1.0, 2.0)
+    RESTART_HEALTH_SECONDS: ClassVar[float] = 30.0
+    MAX_TOTAL_RESTARTS: ClassVar[int] = 20
+    STALL_TIMEOUT_SECONDS: ClassVar[float] = 5.0
+    HANDOVER_STALL_TIMEOUT_SECONDS: ClassVar[float] = 10.0
+    NO_SPEECH_TIMEOUT_SECONDS: ClassVar[float] = 15.0
+    MAX_STALL_RESTARTS: ClassVar[int] = 2
+    FILLER_BARGE_INS: ClassVar[frozenset[str]] = frozenset({"and", "uh", "um", "mhm", "hmm", "mm", "er", "ah", "oh", "hm"})
 
     def __init__(self):
         super().__init__(FRAMEWORK)
@@ -947,21 +943,24 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
         self._runner: Runner | None = None
         self._queue: LiveRequestQueue | None = None
         self._listen_task: asyncio.Task | None = None
-        # What a restart needs: the ADK session and the run options of the connection. The ADK
-        # session already holds the conversation and any tool results, so a restarted run is seeded
-        # with them and does not repeat a tool call.
         self._session_id: str | None = None
         self._live_options: dict[str, Any] = {}
         self._restart_attempt = 0
-        # True once disconnect() runs; the listener suppresses its error callback then so a normal
-        # shutdown does not surface as a failure.
+        self._total_restarts = 0
+        self._run_started_at = 0.0
+        self._awaiting_model_since: float | None = None
+        self._awaiting_speech_since: float | None = None
+        self._stall_restarts = 0
+        self._speech_restarts = 0
+        self._handover_pending = False
+        self._handover_to: str | None = None
+        self._tools_running = 0
+        self._last_client_words = ""
+        self._last_client_at = 0.0
+        self._watch_task: asyncio.Task | None = None
         self._closing = False
-        # The agent whose turn it is, or None before the first speaker of a root that does not
-        # speak, and every agent announced so far.
         self._speaker: str | None = None
         self._roster: list[str] = []
-        # One AK tool context for the whole connection, found the same way a non-realtime run's is
-        # (GoogleADKToolBuilder._wrap, by id from the ADK session state).
         self._tool_context: AKToolContext | None = None
 
     # -- the agent graph ----------------------------------------------------------------------
@@ -979,11 +978,7 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
 
     @classmethod
     def _speaking(cls, root: Any) -> list[LlmAgent]:
-        """Every ``LlmAgent`` that can speak under ``root``, ``root`` first when it is one, nearest first.
-
-        The agents are those of a workflow's nodes and every agent's ``sub_agents``, from ADK's public
-        fields. An agent in ``single_turn`` mode is called, not spoken to, so it is not listed.
-        """
+        """Speaking LlmAgents under root, nearest first."""
         found: list[LlmAgent] = []
         seen: set[int] = set()
         pending = [root] if isinstance(root, LlmAgent) else cls._workflow_nodes(root)
@@ -1004,14 +999,7 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
         return list(getattr(graph, "nodes", None) or [])
 
     def _check_graph(self, agent: AKBaseAgent, root: Any) -> None:
-        """Reject, before anything opens, a graph ADK cannot run live, naming the agent.
-
-        ``ParallelAgent`` and ``LoopAgent`` raise ``NotImplementedError`` under ``run_live()``. A node
-        of a workflow left in ``single_turn`` mode runs outside the live connection, so the caller
-        would hear nothing from it. ADK defaults a root LlmAgent and ordinary sub-agents to chat;
-        only workflow nodes need an explicit live mode. A root that is neither an agent nor a
-        workflow cannot be driven.
-        """
+        """Reject graphs ADK cannot run live."""
         if not isinstance(root, (BaseAgent, Workflow)):
             raise TypeError(f"Agent '{agent.name}' wraps {type(root).__name__}; realtime mode runs an ADK LlmAgent or Workflow")
         pending = [root]
@@ -1049,8 +1037,7 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
         try:
             adk_session = GoogleADKRunner._session(session)
             await adk_session.create_session(app_name=APP_NAME, user_id=USER_ID, session_id=session.id)
-            # One AK tool context for the whole connection; GoogleADKToolBuilder's wrapper finds it by
-            # id from the ADK session state. ``requests`` is empty: live input is not one AgentRequest.
+            # The wrapper finds this context by id from the ADK session state.
             self._tool_context = AKToolContext(Runtime.current(), agent, session, [])
             self._tool_context.__enter__()
             await adk_session.update_session_state(self._tool_context.id, agent.name, {"ak_tool_context": self._tool_context.id})
@@ -1062,17 +1049,15 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
             self._session_id = session.id
             self._live_options = dict(live_options)
             self._restart_attempt = 0
+            self._total_restarts = 0
             self._start_live()
+            self._watch_task = asyncio.create_task(self._watch_stalls())
         except (Exception, asyncio.CancelledError):
-            # The pool does not disconnect a connection whose connect failed, so what is open is closed here.
             await self.disconnect()
             raise
 
     def _split_options(self, agent: AKBaseAgent, options: Mapping[str, Any]) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
-        """The agent's run options, split between the ``App``, the ``Runner`` constructor and ``run_live()``.
-
-        :raises ValueError: Naming the agent and every key that is neither, with the reason when the adapter owns it.
-        """
+        """Split options between App, Runner and run_live."""
         remaining = dict(options)
         app_options = {key: remaining.pop(key) for key in self.APP_OPTIONS if key in remaining}
         constructor_options, other = GoogleADKRunner._split_run_options(remaining)
@@ -1087,8 +1072,10 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
         return dict(constructor_options), dict(other), app_options
 
     def _start_live(self) -> None:
-        """Start one ``run_live()`` stream on a fresh request queue, consuming it at once."""
+        """Start a fresh run_live stream."""
         assert self._runner is not None and self._session_id is not None
+        self._run_started_at = time.monotonic()
+        self._tools_running = 0
         queue, self._queue = self._queue, LiveRequestQueue()
         if queue is not None:
             queue.close()
@@ -1098,7 +1085,6 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
             live_request_queue=self._queue,
             **self._live_options,
         )
-        # Consuming starts before any input is accepted, so ADK's first event is never missed.
         self._listen_task = asyncio.create_task(self._listen(events))
 
     @staticmethod
@@ -1119,6 +1105,10 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
         if not self._restartable(error):
             return False
         while self._restart_attempt < len(self.RESTART_DELAYS_SECONDS):
+            if self._total_restarts >= self.MAX_TOTAL_RESTARTS:
+                self._log.error("Giving up on the ADK live run: restart limit reached")
+                return False
+            self._total_restarts += 1
             delay = self.RESTART_DELAYS_SECONDS[self._restart_attempt]
             self._restart_attempt += 1
             self._log.warning(
@@ -1129,6 +1119,8 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
                 return False
             try:
                 self._start_live()
+                if self._awaiting_model_since is not None:
+                    self._awaiting_model_since = time.monotonic()
                 return True
             except Exception as next_error:  # noqa: BLE001 - each failed start is the next attempt's reason
                 error = next_error
@@ -1137,14 +1129,65 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
                     return False
         return False
 
+    async def _watch_stalls(self) -> None:
+        """Restart after no event or no spoken output; keep the same ADK session."""
+        while not self._closing:
+            await asyncio.sleep(0.25)
+            if self._closing or self._tools_running:
+                continue
+            now = time.monotonic()
+            event_timeout = self.HANDOVER_STALL_TIMEOUT_SECONDS if self._handover_pending else self.STALL_TIMEOUT_SECONDS
+            speech_timeout = (
+                max(self.NO_SPEECH_TIMEOUT_SECONDS, self.HANDOVER_STALL_TIMEOUT_SECONDS) if self._handover_pending else self.NO_SPEECH_TIMEOUT_SECONDS
+            )
+            no_event = self._awaiting_model_since is not None and now - self._awaiting_model_since >= event_timeout
+            no_speech = self._awaiting_speech_since is not None and now - self._awaiting_speech_since >= speech_timeout
+            if not (no_event or no_speech):
+                continue
+            reason = "no model event" if no_event else "no spoken output"
+            timeout = event_timeout if no_event else speech_timeout
+            attempts = self._stall_restarts if no_event else self._speech_restarts
+            if self._total_restarts >= self.MAX_TOTAL_RESTARTS:
+                await self._callback("error", {"message": "ADK live run stalled: restart limit reached"})
+                return
+            self._total_restarts += 1
+            self._awaiting_model_since = None
+            self._awaiting_speech_since = None
+            if attempts >= self.MAX_STALL_RESTARTS:
+                what = "the handover" if self._handover_pending else "the client turn"
+                await self._callback("error", {"message": f"ADK live run stalled ({reason}) during {what}"})
+                return
+            if no_event:
+                self._stall_restarts += 1
+            else:
+                self._speech_restarts += 1
+            self._log.warning(
+                "ADK live run stalled (%s) for %.1fs (%s); restarting (attempt %s/%s)",
+                reason,
+                timeout,
+                "handover" if self._handover_pending else "client turn",
+                attempts + 1,
+                self.MAX_STALL_RESTARTS,
+            )
+            task, self._listen_task = self._listen_task, None
+            await self._cancel_and_wait(task)
+            try:
+                self._start_live()
+                self._awaiting_model_since = time.monotonic()
+                self._awaiting_speech_since = time.monotonic()
+            except Exception as e:  # noqa: BLE001 - a failed restart is surfaced as a terminal error
+                self._log.error(f"Could not restart the stalled ADK live run: {e}")
+                await self._callback("error", {"message": f"ADK live run failed: {e}"})
+                return
+
     async def _listen(self, events: AsyncGenerator[Event, None]) -> None:
-        """Report ADK's events to the pool, in order. The pool paces audio and emits chunks."""
+        """Report ADK events to the pool in order."""
         try:
-            # run_live() is an async generator: closed here when listening stops (a cancel included),
-            # not left half-run for the loop's shutdown to close twice.
             async with contextlib.aclosing(events) as stream:
                 async for event in stream:
-                    self._restart_attempt = 0  # an event means the restarted run is healthy
+                    # Only a long-lived run earns a fresh restart budget.
+                    if time.monotonic() - self._run_started_at >= self.RESTART_HEALTH_SECONDS:
+                        self._restart_attempt = 0
                     if await self._handle_event(event):
                         return
         except asyncio.CancelledError:
@@ -1157,11 +1200,10 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
                 await self._callback("error", {"message": f"ADK live run failed: {e}"})
             return
         if not self._closing:
-            # A clean end is the live run closing under us, not a turn finishing: the connection is over.
             await self._callback("error", {"message": "ADK live run ended"})
 
     async def _handle_event(self, event: Event) -> bool:
-        """Map one ADK event onto the pool's events; ``True`` ends the listening (the connection failed)."""
+        """Map one ADK event to pool events; True ends the listener."""
         if event.error_code or event.error_message:
             detail = ": ".join(value for value in (event.error_code, event.error_message) if value)
             await self._callback("error", {"message": f"ADK live run failed: {detail}"})
@@ -1169,24 +1211,53 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
         if event.actions and event.actions.requested_tool_confirmations:
             await self._refuse_confirmation(event)
             return True
+        # Tool wall time is not model silence.
+        calls = [call for call in event.get_function_calls() if getattr(call, "name", None) != "transfer_to_agent"]
+        responses = event.get_function_responses()
+        self._tools_running = max(0, self._tools_running + len(calls) - len(responses))
         if event.author == "user":
-            # ADK labels the caller's transcribed speech with the user author: partial pieces, then one finished aggregate.
             transcription = event.input_transcription
             if transcription is not None and transcription.finished and (transcription.text or "").strip():
+                self._awaiting_model_since = time.monotonic()
+                self._awaiting_speech_since = time.monotonic()
+                self._stall_restarts = 0
+                self._speech_restarts = 0
+                self._handover_pending = False
+                self._handover_to = None
+                self._last_client_words = transcription.text.strip()
+                self._last_client_at = time.monotonic()
                 await self._callback("input_transcript", {"text": transcription.text.strip(), "message_id": event.id})
+            if responses and not self._tools_running:
+                self._awaiting_model_since = time.monotonic()
+                self._awaiting_speech_since = time.monotonic()
             return False
+        if self._handover_pending and self._handover_to and event.author != self._handover_to:
+            # The old agent may still be finishing its tail; keep the handover grace.
+            self._awaiting_model_since = time.monotonic()
+            self._awaiting_speech_since = time.monotonic()
+            self._stall_restarts = 0
+        else:
+            # A model event is progress.
+            self._awaiting_model_since = None
+            self._stall_restarts = 0
+            self._handover_pending = False
+            self._handover_to = None
         if event.interrupted:
-            await self._callback("interrupt", {})
+            if self._is_filler_barge_in():
+                self._log.info("Ignoring barge-in for microphone filler %r", self._last_client_words)
+            else:
+                await self._callback("interrupt", {})
 
+        audio_heard = False
         output = event.output_transcription
         if output is not None and output.text and not output.finished and event.partial:
-            # ADK follows the partial deltas with one aggregate marked finished; only the deltas are reported.
             await self._speaker_changed(event.author)
             await self._callback("transcript_delta", {"delta": output.text, "message_id": event.id})
 
         for part in (event.content.parts if event.content and event.content.parts else []):
             blob = part.inline_data
             if blob is not None and blob.data and (blob.mime_type or "").startswith("audio/"):
+                audio_heard = True
                 await self._speaker_changed(event.author)
                 self._check_output_rate(blob.mime_type)
                 await self._callback("audio_delta", {"delta": base64.b64encode(blob.data).decode("utf-8"), "message_id": event.id})
@@ -1195,11 +1266,34 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
                 await self._callback("transcript_delta", {"delta": part.text, "message_id": event.id})
 
         if event.actions and event.actions.transfer_to_agent:
-            # The agent's turn ends with the transfer; the next agent's turn follows on its own connection.
+            # The next agent follows on its own connection.
+            self._awaiting_model_since = time.monotonic()
+            self._awaiting_speech_since = time.monotonic()
+            self._stall_restarts = 0
+            self._speech_restarts = 0
+            self._handover_pending = True
+            self._handover_to = event.actions.transfer_to_agent
             await self._callback("done", {"status": "transferred"})
         elif event.turn_complete:
+            self._awaiting_speech_since = None
+            self._speech_restarts = 0
+            self._restart_attempt = 0  # a completed turn is proof the restarted run is healthy
             await self._callback("done", {"status": "completed"})
+        if responses and not self._tools_running:
+            self._awaiting_model_since = time.monotonic()
+            self._awaiting_speech_since = time.monotonic()
+            self._handover_pending = False
+            self._handover_to = None
+        if audio_heard:
+            # Audio keeps the no-speech clock alive until turn_complete.
+            self._awaiting_speech_since = time.monotonic()
+            self._stall_restarts = 0
         return False
+
+    def _is_filler_barge_in(self) -> bool:
+        """Whether the interrupt came right after a one-word microphone noise such as "and" or "mhm"."""
+        word = self._last_client_words.strip().lower().strip(".,!?;:")
+        return bool(word) and time.monotonic() - self._last_client_at <= 1.5 and word in self.FILLER_BARGE_INS
 
     def _check_output_rate(self, mime_type: str) -> None:
         """Fail on audio that is not at the rate the pool resamples from, instead of playing it at the wrong speed."""
@@ -1208,11 +1302,7 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
             raise RuntimeError(f"ADK produced audio at {rate} Hz; the realtime adapter expects {self.output_sample_rate} Hz ({mime_type})")
 
     async def _speaker_changed(self, agent: str) -> None:
-        """Report a change of speaker once, when ADK's output names an agent other than the current one.
-
-        The first speaker of a workflow root carries the whole roster; later, an agent the roster did
-        not hold is added to it and the roster rides on that change.
-        """
+        """Report a speaker change and the roster when it grows."""
         if agent == self._speaker:
             return
         data: dict[str, Any] = {"agent": agent, "previous_agent": self._speaker}
@@ -1224,12 +1314,7 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
         await self._callback("agent_changed", data)
 
     async def _refuse_confirmation(self, event: Event) -> None:
-        """Fail the connection for a tool that asked for a human's confirmation.
-
-        There is no decision route on this edge and ADK's live flow refuses such a call itself, so
-        nothing is approved or resumed: the connection ends with a message naming the tool, instead
-        of the model being told "needs confirmation" with nobody able to answer.
-        """
+        """Fail the connection when a tool needs human confirmation."""
         names = sorted({response.name for response in event.get_function_responses() if response.name}) or ["a tool"]
         await self._callback(
             "error", {"message": f"Tool(s) {', '.join(names)} of agent '{event.author}' require confirmation, which a realtime session cannot get"}
@@ -1242,12 +1327,20 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
     async def send_text(self, text: str) -> None:
         if self._queue is not None:
             self._queue.send_content(types.Content(role="user", parts=[types.Part(text=text)]))
+            self._awaiting_model_since = time.monotonic()
+            self._awaiting_speech_since = time.monotonic()
+            self._stall_restarts = 0
+            self._speech_restarts = 0
+            self._handover_pending = False
+            self._handover_to = None
 
     async def disconnect(self) -> None:
         self._closing = True
         queue, self._queue = self._queue, None
         if queue is not None:
             queue.close()
+        watch, self._watch_task = self._watch_task, None
+        await self._cancel_and_wait(watch)
         task, self._listen_task = self._listen_task, None
         await self._cancel_and_wait(task)
         runner, self._runner = self._runner, None

@@ -336,6 +336,32 @@ async def test_an_interruption_is_reported(native):
 
 
 @pytest.mark.asyncio
+async def test_a_microphone_filler_does_not_cut_the_agent_off(native):
+    """Live, "and" and "Mhm" were detected as turns and stopped the agent mid-sentence."""
+    coordinator, billing = team()
+    with Runtime(InMemorySessionStore()):
+        runner, seen, run = await open_call([coordinator, billing])
+        await run.events.put(_heard("and", True))
+        await run.events.put(model_event("coordinator", interrupted=True))
+        await wait_until(lambda: any(kind == "input_transcript" for kind, _ in seen))
+        await asyncio.sleep(0.05)
+        assert not any(kind == "interrupt" for kind, _ in seen)
+        await runner.disconnect()
+
+
+@pytest.mark.asyncio
+async def test_real_words_still_interrupt_the_agent(native):
+    coordinator, billing = team()
+    with Runtime(InMemorySessionStore()):
+        runner, seen, run = await open_call([coordinator, billing])
+        await run.events.put(_heard("wait, stop", True))
+        await run.events.put(model_event("coordinator", interrupted=True))
+        await wait_until(lambda: any(kind == "interrupt" for kind, _ in seen))
+        await runner.disconnect()
+    assert any(kind == "interrupt" for kind, _ in seen)
+
+
+@pytest.mark.asyncio
 async def test_only_partial_transcription_deltas_are_reported_not_the_finished_aggregate(native):
     coordinator, billing = team()
     with Runtime(InMemorySessionStore()):
@@ -453,6 +479,149 @@ def test_only_transport_drops_are_restarted():
     assert runner._restartable(ConnectionError("1006 abnormal closure"))
     assert runner._restartable(TimeoutError("socket timed out"))
     assert not runner._restartable(ValueError("ADK produced audio at 16000 Hz"))
+
+
+@pytest.mark.asyncio
+async def test_only_a_completed_turn_resets_the_restart_budget():
+    runner = GoogleADKRealtimeRunner()
+
+    async def collect(kind, data):
+        pass
+
+    runner._callback = collect
+    runner._restart_attempt = 2
+    await runner._handle_event(model_event("coordinator", content=types.Content(parts=[types.Part(text="still alive")])))
+    assert runner._restart_attempt == 2  # one event is not a healthy run
+    await runner._handle_event(model_event("coordinator", turn_complete=True))
+    assert runner._restart_attempt == 0
+
+
+@pytest.mark.asyncio
+async def test_the_connection_has_a_total_restart_cap():
+    runner = GoogleADKRealtimeRunner()
+    runner._runner = object()
+    runner._session_id = "call"
+    runner._total_restarts = runner.MAX_TOTAL_RESTARTS
+
+    assert await runner._restart(ConnectionError("1006 abnormal closure")) is False
+
+
+@pytest.mark.asyncio
+async def test_a_client_turn_with_no_model_event_reopens_the_live_run(monkeypatch, native):
+    """Gemini can accept a turn and then stay silent with the socket open; the watchdog starts a new run."""
+    monkeypatch.setattr(GoogleADKRealtimeRunner, "STALL_TIMEOUT_SECONDS", 0.05)
+    coordinator, billing = team()
+    with Runtime(InMemorySessionStore()):
+        runner, _, run = await open_call([coordinator, billing])
+        await run.events.put(_heard("are you there", True))
+        await wait_until(lambda: len(run.calls) >= 2)
+        await runner.disconnect()
+    assert len(run.calls) >= 2
+    assert run.calls[0]["session_id"] == run.calls[1]["session_id"]
+    assert run.calls[0]["live_request_queue"] is not run.calls[1]["live_request_queue"]
+
+
+@pytest.mark.asyncio
+async def test_a_turn_with_no_audible_output_reopens_the_live_run(monkeypatch, native):
+    """Tool/control events count as progress for the no-event watchdog, but not for the no-speech watchdog."""
+    monkeypatch.setattr(GoogleADKRealtimeRunner, "NO_SPEECH_TIMEOUT_SECONDS", 0.1)
+    coordinator, billing = team()
+    with Runtime(InMemorySessionStore()):
+        runner, _, run = await open_call([coordinator, billing])
+        await runner.send_text("please answer")
+        await run.events.put(model_event("coordinator", content=types.Content(parts=[types.Part(text="only text, no voice")])))
+        await wait_until(lambda: len(run.calls) >= 2)
+        await runner.disconnect()
+    assert len(run.calls) >= 2
+
+
+@pytest.mark.asyncio
+async def test_a_completed_turn_with_audio_stops_the_no_speech_watchdog(monkeypatch, native):
+    monkeypatch.setattr(GoogleADKRealtimeRunner, "NO_SPEECH_TIMEOUT_SECONDS", 0.1)
+    coordinator, billing = team()
+    with Runtime(InMemorySessionStore()):
+        runner, _, run = await open_call([coordinator, billing])
+        await runner.send_text("please answer")
+        audio = model_event("coordinator", turn_complete=True)
+        audio.content = types.Content(parts=[types.Part(inline_data=types.Blob(data=b"\x01\x02", mime_type="audio/pcm;rate=24000"))])
+        await run.events.put(audio)
+        await asyncio.sleep(0.2)
+        assert len(run.calls) == 1
+        await runner.disconnect()
+
+
+@pytest.mark.asyncio
+async def test_audio_that_never_completes_the_turn_still_rearms_the_no_speech_watchdog(monkeypatch, native):
+    """A socket that dies after some audio must not leave the turn unfinished forever."""
+    monkeypatch.setattr(GoogleADKRealtimeRunner, "NO_SPEECH_TIMEOUT_SECONDS", 0.1)
+    coordinator, billing = team()
+    with Runtime(InMemorySessionStore()):
+        runner, _, run = await open_call([coordinator, billing])
+        await runner.send_text("please answer")
+        await run.events.put(audio_event("coordinator"))
+        await wait_until(lambda: len(run.calls) >= 2)
+        await runner.disconnect()
+    assert len(run.calls) >= 2
+
+
+@pytest.mark.asyncio
+async def test_a_handover_that_never_speaks_reopens_the_live_run(monkeypatch, native):
+    """A transfer gets the longer handover grace, then the receiving agent is expected to make progress."""
+    monkeypatch.setattr(GoogleADKRealtimeRunner, "STALL_TIMEOUT_SECONDS", 0.05)
+    monkeypatch.setattr(GoogleADKRealtimeRunner, "HANDOVER_STALL_TIMEOUT_SECONDS", 0.2)
+    coordinator, billing = team()
+    with Runtime(InMemorySessionStore()):
+        runner, _, run = await open_call([coordinator, billing])
+        await run.events.put(Event(author="coordinator", invocation_id="i", actions=EventActions(transfer_to_agent="billing")))
+        await asyncio.sleep(0.1)
+        assert len(run.calls) == 1  # still inside the handover grace
+        await wait_until(lambda: len(run.calls) >= 2)
+        await runner.disconnect()
+    assert len(run.calls) >= 2
+
+
+@pytest.mark.asyncio
+async def test_the_old_agents_tail_audio_does_not_end_the_handover_grace(monkeypatch, native):
+    """A handoff can be followed by the old agent's queued audio; only the receiving agent ends the wait."""
+    monkeypatch.setattr(GoogleADKRealtimeRunner, "STALL_TIMEOUT_SECONDS", 0.05)
+    monkeypatch.setattr(GoogleADKRealtimeRunner, "HANDOVER_STALL_TIMEOUT_SECONDS", 0.2)
+    coordinator, billing = team()
+    with Runtime(InMemorySessionStore()):
+        runner, _, run = await open_call([coordinator, billing])
+        await run.events.put(Event(author="coordinator", invocation_id="i", actions=EventActions(transfer_to_agent="billing")))
+        await asyncio.sleep(0.12)
+        await run.events.put(model_event("coordinator", content=types.Content(parts=[types.Part(text="one last thing")])))
+        await asyncio.sleep(0.12)
+        assert len(run.calls) == 1  # the old agent's tail reset the handover clock
+        await wait_until(lambda: len(run.calls) >= 2)
+        await runner.disconnect()
+    assert len(run.calls) >= 2
+
+
+@pytest.mark.asyncio
+async def test_a_running_tool_is_not_mistaken_for_model_silence(monkeypatch, native):
+    """A tool can run longer than the first-token budget; only its response starts the watchdog clock."""
+    monkeypatch.setattr(GoogleADKRealtimeRunner, "STALL_TIMEOUT_SECONDS", 0.05)
+    coordinator, billing = team()
+    with Runtime(InMemorySessionStore()):
+        runner, _, run = await open_call([coordinator, billing])
+        await run.events.put(
+            model_event(
+                "coordinator",
+                content=types.Content(parts=[types.Part(function_call=types.FunctionCall(id="t1", name="slow", args={}))]),
+            )
+        )
+        await asyncio.sleep(0.2)
+        assert len(run.calls) == 1
+        await run.events.put(
+            model_event(
+                "coordinator",
+                content=types.Content(parts=[types.Part(function_response=types.FunctionResponse(id="t1", name="slow", response={}))]),
+            )
+        )
+        await wait_until(lambda: len(run.calls) >= 2)
+        await runner.disconnect()
+    assert len(run.calls) >= 2
 
 
 def test_a_run_option_the_adapter_owns_is_rejected_by_name(native):
