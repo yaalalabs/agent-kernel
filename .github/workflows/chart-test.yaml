@@ -74,9 +74,10 @@ jobs:
             fi
           done
           echo "--- websocket mode"
-          helm template smoke "$CHART_DIR" -f "$CHART_DIR/values-baremetal.yaml" \
-            --set execution.mode=stream --set wsGateway.enabled=true \
-            --set wsGateway.auth.token=render --set keda.enabled=true > /dev/null
+          out=$(helm template smoke "$CHART_DIR" -f "$CHART_DIR/values-baremetal.yaml" \
+            --set execution.mode=async --set execution.messageType=delta --set wsGateway.enabled=true \
+            --set wsGateway.auth.token=render --set keda.enabled=true)
+          grep -q 'AK_EXECUTION__MESSAGE_TYPE: "delta"' <<<"$out"
           echo "--- kafka mode"
           helm template smoke "$CHART_DIR" \
             --set transport.type=kafka --set kafka.enabled=true --set nats.enabled=false \
@@ -113,7 +114,7 @@ jobs:
           grep -q 'mountPath: /var/run/secrets/agentkernel/slack-credentials' <<<"$io"
           echo "--- secretStore: websocket tier never mounts"
           ws=$(helm template smoke "$CHART_DIR" -f "$CHART_DIR/values-baremetal.yaml" "${STORE[@]}" \
-            --set execution.mode=stream --set wsGateway.enabled=true --set wsGateway.auth.token=render \
+            --set execution.mode=async --set wsGateway.enabled=true --set wsGateway.auth.token=render \
             --show-only templates/deployment-ws-gateway.yaml)
           if grep -q '/var/run/secrets/agentkernel' <<<"$ws"; then echo "ws-gateway must not mount"; exit 1; fi
           echo "--- secretStore: expected failures"

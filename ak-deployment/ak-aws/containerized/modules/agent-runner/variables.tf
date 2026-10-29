@@ -197,6 +197,12 @@ variable "ssm_enabled" {
 
 variable "execution_mode" {
   type        = string
-  description = "Execution mode (rest_sync, rest_async, async, stream). Injected as AK_EXECUTION__MODE in WebSocket modes so the runner knows whether to emit a full response (async) or one chunk per stream event (stream)."
+  description = "Execution mode (rest_sync, rest_async, async, realtime). Injected as AK_EXECUTION__MODE in async and realtime modes so the runner pushes over WebSocket or dispatches to the realtime runner."
   default     = "rest_sync"
+}
+
+variable "message_type" {
+  type        = string
+  description = "Reply message type ('complete' or 'delta'); injected as AK_EXECUTION__MESSAGE_TYPE when non-null so the runner emits a full response or one chunk per stream event"
+  default     = null
 }

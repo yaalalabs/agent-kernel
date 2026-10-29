@@ -13,6 +13,9 @@ metadata:
     {{- include "agent-kernel.labels" (dict "root" . "component" "config") | nindent 4 }}
 data:
   AK_EXECUTION__MODE: {{ .Values.execution.mode | quote }}
+  {{- with .Values.execution.messageType }}
+  AK_EXECUTION__MESSAGE_TYPE: {{ . | quote }}
+  {{- end }}
   AK_LOGGING__AK__LEVEL: {{ .Values.logging.level | quote }}
   {{- /*
   The chat pipeline's queues and response store are emitted only when some pipeline tier runs

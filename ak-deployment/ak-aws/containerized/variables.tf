@@ -63,8 +63,8 @@ variable "gateway_endpoints" {
     error_message = "Each gateway_endpoints object must have non-empty 'path', 'method', and 'overwrite_path' fields, and 'method' must be one of: GET, POST, PUT, DELETE, PATCH, ANY, $default."
   }
   validation {
-    condition     = !contains(["async", "stream"], var.execution_mode) || length(var.gateway_endpoints) == 0
-    error_message = "'gateway_endpoints' cannot be defined in 'async' or 'stream' (websocket) execution modes."
+    condition     = var.execution_mode != "async" || length(var.gateway_endpoints) == 0
+    error_message = "'gateway_endpoints' cannot be defined in the 'async' (websocket) execution mode."
   }
 }
 
@@ -261,30 +261,40 @@ variable "queue_mode" {
 
 variable "execution_mode" {
   type        = string
-  description = "Execution mode: 'rest_sync' (client waits on same HTTP connection), 'rest_async' (client polls a separate GET endpoint), 'async' (WebSocket, full response in one message), 'stream' (WebSocket, token-by-token), or 'realtime' (persistent model sockets behind a stateful edge such as the LiveKit gateway). Every mode supports queue_mode = true; all but 'rest_async' also support queue_mode = false, running the agent inline in the ingress service. 'rest_async' requires queue_mode = true (it needs the response store) and is rejected when queue_mode = false."
+  description = "Execution mode: 'rest_sync' (client waits on same HTTP connection), 'rest_async' (client polls a separate GET endpoint), 'async' (WebSocket only; message_type picks one message per reply or one per chunk), or 'realtime' (persistent model sockets behind a stateful edge such as the LiveKit gateway). Every mode supports queue_mode = true; all but 'rest_async' also support queue_mode = false, running the agent inline in the ingress service. 'rest_async' requires queue_mode = true (it needs the response store) and is rejected when queue_mode = false."
   default     = "rest_sync"
   validation {
-    condition     = contains(["rest_sync", "rest_async", "async", "stream", "realtime"], var.execution_mode)
-    error_message = "execution_mode must be one of: rest_sync, rest_async, async, stream, realtime."
+    condition     = contains(["rest_sync", "rest_async", "async", "realtime"], var.execution_mode)
+    error_message = "execution_mode must be one of: rest_sync, rest_async, async, realtime. 'stream' was removed: use async with message_type = \"delta\"."
   }
   validation {
-    condition     = var.queue_mode || contains(["rest_sync", "async", "stream", "realtime"], var.execution_mode)
-    error_message = "execution_mode must be rest_sync, async, stream, or realtime when queue_mode is false. (rest_async requires queue_mode = true.)"
+    condition     = var.queue_mode || contains(["rest_sync", "async", "realtime"], var.execution_mode)
+    error_message = "execution_mode must be rest_sync, async, or realtime when queue_mode is false. (rest_async requires queue_mode = true.)"
   }
 }
 
-# WebSocket configuration (async / stream execution modes)
+variable "message_type" {
+  type        = string
+  description = "Reply delivery: 'complete' (whole reply) or 'delta' (chunks: SSE under rest_sync, WebSocket under async). null leaves it to Agent Kernel's default (delta for realtime, complete otherwise). Injected as AK_EXECUTION__MESSAGE_TYPE."
+  default     = null
+  validation {
+    condition     = contains(["complete", "delta"], coalesce(var.message_type, "complete")) # null passes
+    error_message = "message_type must be null, 'complete' or 'delta'."
+  }
+}
+
+# WebSocket configuration (async execution mode)
 
 variable "ws_chat_route" {
   type        = string
-  description = "WebSocket default chat route name. Only used in 'async'/'stream' modes."
+  description = "WebSocket default chat route name. Only used in 'async' mode."
   default     = "chat"
   validation {
-    condition     = !contains(["async", "stream"], var.execution_mode) || (var.ws_chat_route != null && length(trimspace(var.ws_chat_route)) > 0)
+    condition     = var.execution_mode != "async" || (var.ws_chat_route != null && length(trimspace(var.ws_chat_route)) > 0)
     error_message = "ws_chat_route must not be null, empty, or whitespace-only."
   }
   validation {
-    condition     = !contains(["async", "stream"], var.execution_mode) || (var.ws_chat_route != null && can(regex("^[a-zA-Z0-9_-]+$", var.ws_chat_route)))
+    condition     = var.execution_mode != "async" || (var.ws_chat_route != null && can(regex("^[a-zA-Z0-9_-]+$", var.ws_chat_route)))
     error_message = "ws_chat_route must contain only alphanumeric characters, hyphens (-), and underscores (_). Note: '$' prefix is reserved for predefined routes."
   }
 }
@@ -293,18 +303,18 @@ variable "ws_routes" {
   type = list(object({
     route = string
   }))
-  description = "List of custom WebSocket routes beyond the default chat route. Only allowed in 'async'/'stream' modes."
+  description = "List of custom WebSocket routes beyond the default chat route. Only allowed in 'async' mode."
   default     = []
   validation {
-    condition     = contains(["async", "stream"], var.execution_mode) || length(var.ws_routes) == 0
-    error_message = "'ws_routes' can only be defined in 'async' or 'stream' (websocket) execution modes."
+    condition     = var.execution_mode == "async" || length(var.ws_routes) == 0
+    error_message = "'ws_routes' can only be defined in the 'async' (websocket) execution mode."
   }
   validation {
-    condition     = !contains(["async", "stream"], var.execution_mode) || alltrue([for r in var.ws_routes : r.route != null && length(trimspace(r.route)) > 0])
+    condition     = var.execution_mode != "async" || alltrue([for r in var.ws_routes : r.route != null && length(trimspace(r.route)) > 0])
     error_message = "Routes in 'ws_routes' must not be null, empty, or whitespace-only."
   }
   validation {
-    condition     = !contains(["async", "stream"], var.execution_mode) || alltrue([for r in var.ws_routes : r.route != null && can(regex("^[a-zA-Z0-9_-]+$", r.route))])
+    condition     = var.execution_mode != "async" || alltrue([for r in var.ws_routes : r.route != null && can(regex("^[a-zA-Z0-9_-]+$", r.route))])
     error_message = "Routes in 'ws_routes' must contain only alphanumeric characters, hyphens (-), and underscores (_)."
   }
 }

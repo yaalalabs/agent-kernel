@@ -59,9 +59,11 @@ secretStore:
   # - name: slack-credentials
 
 execution:
-  # rest_sync (wait for the reply) | rest_async (accept, then poll) | async | stream
-  # (async and stream deliver over WebSocket and need wsGateway.enabled).
+  # rest_sync (wait for the reply) | rest_async (accept, then poll) | async | realtime
+  # (async delivers over WebSocket and needs wsGateway.enabled).
   mode: rest_sync
+  # complete (default) or delta; async + delta pushes chunks over WebSocket
+  # messageType: delta
 
 logging:
   level: INFO
@@ -182,7 +184,7 @@ agentRunner:
 
 # The WebSocket gateway tier: owns client sockets, enqueues chat frames directly to the
 # transport, and receives reply pushes from Response Handlers on its /internal/push endpoint.
-# Required for async and stream execution modes on a broker transport.
+# Required for the async execution mode on a broker transport.
 wsGateway:
   enabled: false
   replicaCount: 2
