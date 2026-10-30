@@ -423,7 +423,9 @@ labels). Then two numbers are recorded:
   - Cost Explorer refreshes at least once every 24 h (some data can arrive later), so this is a **separate, later
     step** (`collect-cost --run-id …`) that fills in the cost CSV after the run. It fits the existing "re-plot from
     existing CSVs" option. Each Cost Explorer API request costs $0.01.
-  - Daily granularity is enough for a run's total, since every run has its own tag. Hourly granularity (opt-in, about
+  - Daily granularity is enough for a run's total, since every run has its own tag: only that run's resources
+    carry its tag value, so the run's billed cost is the sum of the daily rows for that value over the days the run
+    covered (two days if it crosses midnight). Not using hourly (decided 2026-10-29). Hourly granularity (opt-in, about
     $0.01 per 1,000 usage records per month) only helps if we want the cost per phase of a run, and hourly data is kept
     for **14 days** only, so `collect-cost` must run within that window.
   - Shared or long-lived resources (EKS control plane, NAT gateway, a long-lived MSK cluster) can be tagged, but if
@@ -512,7 +514,6 @@ Nobody edits prices by hand when a provider changes them.
 - Whether the separate three-phase scaling test is still needed now that every load step records scaling.
 
 - The tolerance and window count for "latency recovered" (proposal: ≤ 1.2× baseline avg for 3 consecutive windows).
-- Whether to enable hourly Cost Explorer granularity on the benchmark account.
 - The $/node-hour figure for the bare-metal cluster.
 - Not verified: whether the fixed 3 / 15 datapoint rule still applies to custom metrics (like `BacklogPerTask`) after
   AWS's June 2026 faster-scaling launch. AWS only describes the change for the built-in CPU/memory metrics. Check the

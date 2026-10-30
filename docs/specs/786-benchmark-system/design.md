@@ -95,15 +95,14 @@ log level with per-stage trace points on the request path.
   | `local` | none | AK already running (`in_memory`) | `in_memory` | local process logs |
   | `ecs` | `aws` | Terraform `ak-aws/containerized` | SQS | CloudWatch Logs |
   | `lambda` | `aws` | Terraform `ak-aws/serverless` | SQS | CloudWatch Logs |
-  | `eks` | `k8s` | Helm `ak-k8s` | Kafka | open (Q8) |
+  | `eks` | `k8s` | Helm `ak-k8s` | Kafka | decided later (L1) |
   | `baremetal` | `k8s` | Helm `ak-k8s` | Kafka | pod logs / Loki |
 
 - GCP, Azure and NATS are out of scope, but the interfaces must allow them.
-- Build order:
-  1. `local` baseline.
-  2. AWS, WebSocket complete: `ecs`, then `lambda`.
-  3. `eks`, right after the AWS hosts.
-  4. `baremetal`.
+- Build order: AWS with WebSocket complete comes first, before anything else.
+  1. `lambda`, WebSocket complete.
+  2. `ecs`, WebSocket complete.
+  3. Only then the rest: `eks` right after the AWS hosts, then `baremetal` and `local`.
 
 ### Benchmark project
 
@@ -118,6 +117,22 @@ log level with per-stage trace points on the request path.
   on-off, Lambda Insights on-off, bare-metal `$/node-hour`, price overrides.
 - Registries follow AK's factory shape: built-in short names, dotted-path bring-your-own, unknown name → error naming
   the built-ins.
+
+```mermaid
+graph LR
+    CLI["CLI"] --> ORCH["Run orchestrator<br/>(per host × mode)"]
+    ORCH --> HOST["Host bundle<br/>(host registry)"]
+    HOST --> DEP["Deployer"]
+    HOST --> SF["ScalingInfoFetchers"]
+    HOST --> RF["ResourceUsageFetchers"]
+    HOST --> TC["TraceCollector"]
+    HOST --> TR["TransportCollector"]
+    HOST --> COST["UsageSources / BillingReader / PriceSource"]
+    ORCH --> LG["Load generator + step runner"]
+    LG --> DRV["ClientDriver"]
+    DRV -->|WebSocket| AK["AK app<br/>(mock pre-hook, TRACE on)"]
+    ORCH --> SHARED["Shared: collectors, step-end check,<br/>derived numbers, cost estimate, CSVs, plots"]
+```
 
 ### Selecting what to run (CLI)
 
@@ -221,7 +236,7 @@ log level with per-stage trace points on the request path.
   per deployment type).
   - `name` (registry name, used in CSV columns), `live` flag, one `fetch(run, deployment, start, end) -> ScalingInfo`.
   - `live = True`: polled every few seconds during the run. `live = False`: called once after the run after a
-    configured wait (Q6), and again by `collect-scaling`.
+    configured wait (R3), and again by `collect-scaling`.
   - `ScalingInfo` = count samples `(ts, tier, desired|running|pending, value)` + optional worker spans
     `(tier, worker, started, stopped, extra)`.
   - Loops over the deployer's `Deployment.resources` (tier → resource ids), so adding a tier changes only the
@@ -296,8 +311,36 @@ log level with per-stage trace points on the request path.
 - Two numbers per run:
   - **billed:** AWS Cost Explorer `GetCostAndUsage` filtered by the run tag, grouped by service. Whole run only,
     filled later by `collect-cost`. Empty where there is no bill (bare metal).
+    - The tag is set **at deploy time**: the deployer puts `ak-bench-run-id=<run-id>` on every resource it creates
+      (Terraform `default_tags`, Helm labels). Each run gets a new value.
+    - Cost Explorer records every charge with the tags of the resource it came from, and the query returns **only
+      charges from resources carrying this run's tag value**. Nothing from other runs or other workloads on the
+      account is included.
+    - Daily granularity is enough: the run's billed cost is the sum of the daily rows for that tag value over the
+      run's days (two days if it crosses midnight). Hourly granularity is not used.
+    - Account prerequisite: `ak-bench-run-id` is activated once as a cost allocation tag (management account);
+      otherwise the tag filter returns nothing. Costs only show for periods when the tag was on the resource.
   - **estimated:** usage × price table. Available at the end of the run and split per step. Per-step costs, cost per
     1M and the cost model use it; the billed number checks it.
+    - Each `UsageSource` returns billed quantities with time ranges; the shared estimate multiplies them by the
+      run's `price_table.json` and keeps the part that falls inside the step.
+    - Every billed thing works the same way: **AWS charges a price per unit, we measure how many units were used,
+      cost = units × price**. Only the unit differs per service. Example (all prices and amounts are fake):
+
+      | Service | How AWS bills it | What we measured (source) | Calculation | Cost |
+      |---|---|---|---|---|
+      | SQS | $0.50 per 1M requests | 2M requests (`SqsUsageSource`) | 2 × $0.50 | $1.00 |
+      | Lambda requests | $0.20 per 1M invocations | 3M invocations (`REPORT` lines) | 3 × $0.20 | $0.60 |
+      | Lambda compute | $0.00002 per GB-second | 500,000 GB-s = memory (GB) × billed seconds, summed over the `REPORT` lines | 500,000 × $0.00002 | $10.00 |
+      | API Gateway WebSocket messages | $1.00 per 1M messages | 4M messages | 4 × $1.00 | $4.00 |
+      | Fargate vCPU | $0.04 per vCPU-hour | 10 vCPU-hours = 10 tasks × 0.5 vCPU × 2 h (`aws.ecs_api` task start / stop) | 10 × $0.04 | $0.40 |
+      | Fargate memory | $0.004 per GB-hour | 20 GB-hours = 10 tasks × 1 GB × 2 h | 20 × $0.004 | $0.08 |
+
+      - The real prices per unit come from AWS's Price List API and are saved in the run's `price_table.json`.
+      - **Per step:** the same calculation, counting only the units used inside the step's time range (first send →
+        end of cool-down). The step's cost is the sum of its rows.
+      - **Cost per 1M successful requests:** step cost ÷ (`ok` requests in millions). E.g. $16.08 for 2M `ok`
+        requests = $8.04 per 1M.
 - Per step (first send → end of cool-down): total by component, requests by status, cost per 1M successful requests,
   cost per hour of the load part (steady), idle cost of `before` kept separate.
 - Cost model per host: `idle_cost_per_hour` and `cost_per_1m_messages` by component, for the agent delay used. LLM
@@ -316,7 +359,43 @@ log level with per-stage trace points on the request path.
   transport collector (or none), usage sources, billing reader (or none), price source (or none).
 - A host registry maps names to bundles; a new host or platform is a registration, not a harness change.
 - Code is grouped in folders by cloud (`platforms/aws/`, `platforms/k8s/`, ...), one file per implementation. No
-  per-cloud "benchmarker" classes.
+  per-cloud "benchmarker" classes (`AWSBenchmarker`, `KubernetesBenchmarker`), because cloud, compute type and
+  transport vary independently:
+  - `lambda` and `ecs` are both AWS but read worker counts from different places; one AWS class would fill up with
+    `if variant == ...` branches.
+  - `eks` reads worker counts from Kubernetes but its bill from AWS, so it would belong in both classes.
+  - Queue depth depends on the transport (SQS, Kafka), not the cloud.
+  - Example: each host picks its parts; the AWS ones are shared, so `eks` adds no new AWS code:
+
+    ```python
+    HOSTS = {
+        "lambda": Host(
+            platform="aws",
+            deployer=TerraformDeployer("ak-aws/serverless"),
+            scaling_fetchers=[CloudWatchMetricScalingInfoFetcher("AWS/Lambda", "ConcurrentExecutions", "FunctionName")],
+            usage_sources=[LambdaUsageSource(), SqsUsageSource(), ApiGatewayWsUsageSource()],
+            billing=CostExplorerBillingReader(),     # shared AWS part
+            prices=AwsPriceListPriceSource(),        # shared AWS part
+            transport=SqsTransportCollector(),       # chosen by transport, not cloud
+        ),
+        "eks": Host(
+            platform="k8s",
+            deployer=HelmDeployer(),
+            scaling_fetchers=[K8sApiScalingInfoFetcher()],   # worker counts from Kubernetes
+            usage_sources=[K8sNodeUsageSource()],
+            billing=CostExplorerBillingReader(),     # bill from AWS: same class as lambda
+            prices=AwsPriceListPriceSource(),
+            transport=KafkaTransportCollector(),
+        ),
+    }
+    ```
+
+    Class names are placeholders (Q8).
+- No per-host classes either (`LambdaBenchmarker`, `EcsBenchmarker`): a host is a registry entry that picks existing
+  implementations, not a class with its own code. A class per host would copy the shared parts into every host:
+  - `lambda` and `ecs` would each carry their own SQS queue depth, SQS usage, Cost Explorer and price list code.
+  - `eks` and `baremetal` would each carry the same Helm deployer, `k8s.api` and `k8s.metrics_api` fetchers.
+  - A new host would be a new class; as a bundle it's one registry entry built from existing parts.
 - The harness (load generator, timing, CSVs, derived numbers, plots) never calls a cloud API; it only sees the ABCs
   and their common return types.
 - `Deployer`: `deploy() -> Deployment(endpoint(url, auth), resources: {tier: resource ids})`, `teardown()`,
@@ -357,8 +436,8 @@ log level with per-stage trace points on the request path.
 
 - **A normal Python log level, no separate logger library:** `TRACE = 5` registered with `logging.addLevelName` in
   `core/logger.py`, written through AK's existing loggers.
-  - `TRACE` written → all levels written. At `DEBUG` and above, trace lines are dropped by the level check before
-    formatting.
+  - `TRACE` is the lowest level, so selecting it writes **every** level: `TRACE`, `DEBUG`, `INFO`, `WARNING`,
+    `ERROR` and `CRITICAL`. At `DEBUG` and above, trace lines are dropped by the level check before formatting.
   - `"TRACE"` added to the `_LogLevelConfig.level` pattern (`core/config.py:658`). `AKLogger.resolve_level` reads
     `logging.getLevelNamesMapping()` (`core/logger.py:23`), so it resolves with no other change.
   - Benchmark runs set `logging.ak.level: TRACE`. **No other new configuration.**
@@ -366,7 +445,7 @@ log level with per-stage trace points on the request path.
     level hierarchy works.
 - **`TraceStage`**, a `str` enum in `core/logger.py`: `REQUEST_RECEIVED`, `INPUT_ENQUEUED`, `AGENT_RECEIVED`,
   `AGENT_START`, `AGENT_FIRST_CHUNK` (delta only), `AGENT_DONE`, `OUTPUT_ENQUEUED`, `OUTPUT_RECEIVED`,
-  `RESPONSE_DELIVERED` (`rest_sync` stages: Q10).
+  `RESPONSE_DELIVERED` (`rest_sync` stages: Q5).
 - **One call per trace point:** `log.log(TRACE, "stage=%s request_id=%s", stage, request_id)`, with an optional
   quoted `message` last. `%`-style args so nothing is formatted when off.
 - **Line format**, same on every host:
@@ -442,22 +521,6 @@ log level with per-stage trace points on the request path.
   during a run.
 - A performance test report per host. Tuning AK to meet the SLAs is tracked under #468.
 
-```mermaid
-graph LR
-    CLI["CLI"] --> ORCH["Run orchestrator<br/>(per host × mode)"]
-    ORCH --> HOST["Host bundle<br/>(host registry)"]
-    HOST --> DEP["Deployer"]
-    HOST --> SF["ScalingInfoFetchers"]
-    HOST --> RF["ResourceUsageFetchers"]
-    HOST --> TC["TraceCollector"]
-    HOST --> TR["TransportCollector"]
-    HOST --> COST["UsageSources / BillingReader / PriceSource"]
-    ORCH --> LG["Load generator + step runner"]
-    LG --> DRV["ClientDriver"]
-    DRV -->|WebSocket| AK["AK app<br/>(mock pre-hook, TRACE on)"]
-    ORCH --> SHARED["Shared: collectors, step-end check,<br/>derived numbers, cost estimate, CSVs, plots"]
-```
-
 ## Non-goals
 
 - Flagging (Rx below Tx, saturation), alerts, early stops, or load / deployment changes based on results.
@@ -476,29 +539,51 @@ graph LR
 
 ## Open questions
 
+Decisions needed before `spec.md`.
+
 - **Q1.** Default per-client send rate for steady traffic, steady load time (e.g. 10 min) and `before` window (e.g.
   2 min).
 - **Q2.** Default client timeout (about 15 min suggested).
 - **Q3.** Is the separate three-phase scaling test (low → high → low) still needed now that every step records
   scaling?
-- **Q4.** "Latency recovered" rule (proposal: ≤ 1.2× the before-part value for 3 consecutive windows).
-- **Q5.** ECS: keep `aws.ecs_api` alone or with `aws.ecs_scaling_activities`. Lambda: stay on `ConcurrentExecutions`
-  or bind `aws.lambda_log_streams`. Both decided after the first runs.
-- **Q6.** Lambda step end: whether `ConcurrentExecutions` has no datapoint (rather than 0) in idle minutes; and how
-  long the after-run fetchers wait per log backend.
-- **Q7.** When WebSocket delta is added: whether the results folders get a message-type level under the mode.
-- **Q8.** EKS (decided when EKS is built, right after the AWS hosts): pre-existing cluster or a Terraform step before
-  Helm; and its log backend for the TraceCollector.
-- **Q9.** Two workers can save the same session concurrently when one client has several requests in flight (AK's
-  session locks are per process). With the pre-hook no turn is stored, but the session load still happens; confirm
-  this has no side effect.
-- **Q10.** `rest_sync` stages (`RESPONSE_POLL_START`, `RESPONSE_FOUND`): keep as trace stages, or leave `[WAITING]` /
+- **Q4.** "Latency recovered" rule (proposal: ≤ 1.2× a baseline latency for 3 consecutive windows). The `before`
+  part has no load, so the baseline has to come from elsewhere (e.g. p50 of steady step 1), or the number is dropped
+  in favour of "backlog drained".
+- **Q5.** `rest_sync` stages (`RESPONSE_POLL_START`, `RESPONSE_FOUND`): keep as trace stages, or leave `[WAITING]` /
   `[RESPONSE FOUND]` as normal logs.
-- **Q11.** WebSocket replies are broadcast to every connection of the message's `user_id`
+- **Q6.** WebSocket replies are broadcast to every connection of the message's `user_id`
   (`pipeline/response_handler.py:269-277`). If benchmark clients share a user, each receives everyone's replies.
   Proposal: one user identity per client.
-- **Q12.** Whether converting the stage INFO lines affects anything relying on them (docs, dashboards, habits).
-- **Q13.** Hourly Cost Explorer granularity on the benchmark account; the bare-metal `$/node-hour`; whether the
-  Terraform tags and chart labels reach every billed resource (untagged ones become fixed allocations).
-- **Q14.** WebSocket delta (later): trace every chunk or only the first and last.
-- **Q15.** Final names: `TraceStage`, CLI name, config file name.
+- **Q7.** Whether converting the stage INFO lines affects anything relying on them (docs, dashboards, habits).
+- **Q8.** Final names: `TraceStage`, CLI name, config file name.
+
+## Decided later
+
+Parked on purpose; decided when that part is built.
+
+- **L1.** EKS (right after the AWS hosts): pre-existing cluster or a Terraform step before Helm; its log backend for
+  the TraceCollector.
+- **L2.** WebSocket delta: whether the results folders get a message-type level under the mode.
+- **L3.** WebSocket delta: trace every chunk or only the first (`AGENT_FIRST_CHUNK`) and last (`AGENT_DONE`).
+- **L4.** Bare metal: the `$/node-hour` figure for the cost estimate.
+
+## Check on the first runs
+
+Answered by looking at real data, not by a decision. Each has a fallback already in the design.
+
+- **R1.** Scaling fetchers: ECS keeps `aws.ecs_api` alone or adds `aws.ecs_scaling_activities` (and whether its
+  "Setting desired count to N" wording is stable enough to parse); Lambda stays on `ConcurrentExecutions` or binds
+  `aws.lambda_log_streams`.
+- **R2.** Lambda step end: whether `ConcurrentExecutions` has no datapoint (rather than 0) in idle minutes, and the
+  metric delay to allow for.
+- **R3.** How long the after-run fetchers wait per log backend (ingestion delay).
+- **R4.** Lambda Insights: whether its events carry `duration` / `function_name`, and whether its log stream is one
+  per execution environment (fallbacks: `cpu_time_ms` only, per-tier values).
+- **R5.** ECS: Container Insights `Type = "Task"` events exist for Fargate tasks (only non-AWS examples so far).
+- **R6.** ECS: whether target tracking on a custom metric still uses the 3 / 15 one-minute datapoint rule after AWS's
+  June 2026 faster-scaling change (check the CloudWatch alarms the policy creates).
+- **R7.** Cost: the run tag / label reaches every billed resource; anything untagged or shared is listed as a fixed
+  allocation.
+- **R8.** Sessions: one client can have several requests in flight, handled by different workers, and AK's session
+  locks are per process. The pre-hook doesn't save the turn (`core/runtime.py:405` before `:427`), but confirm on the
+  first steady-traffic runs that concurrent work on one session has no side effect.
