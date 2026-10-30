@@ -9,18 +9,20 @@ log level with per-stage trace points on the request path.
 
 ## Terminology
 
-- **Load:** what the benchmark controls: the number of concurrent clients, each with its own session. Throughput,
-  latency, scaling, resource usage and cost are the outputs.
-- **Load step N:** N clients start at the same moment. Default steps `1, 10, 100, 1000`. N is never requests per
-  second.
+- **Load:** what the benchmark controls: the number of concurrent clients. Each client is its own user, with its own
+  user identity and session. Throughput, latency, scaling, resource usage and cost are the outputs.
+- **Load step N:** N clients (N users) start at the same moment. Steps are set in config before a run; default
+  `1, 10, 100, 1000`. N is never requests per second.
 - **Open load:** a client never waits for a response before sending its next request.
 - **Test type:**
   - **burst:** each client sends one request (N requests at once).
-  - **steady:** each client sends at a fixed per-client rate for a configured time, without waiting for responses.
+  - **steady:** each client sends at a fixed per-client rate (default 1 request every 5 s) for a configured time
+    (default 5 min), without waiting for responses.
 - **Step timeline:** `before` (no load) → `load` → `cool-down` (no load, ends by the step-end rule).
 - **Time window:** the sampling interval (e.g. 1 s). One row per window in the per-time-window CSV.
 - **Tx / Rx:** requests sent / responses received per second, both counted on the client.
-- **Client timeout:** how long the client waits for a response before recording the request as `timeout`.
+- **Client timeout:** how long the client waits for a response before recording the request as `timeout` (default
+  5 min). Separate from the steady load time.
 - **Tier:** one separately deployed and scaled part of a deployment (an ECS service, a Lambda function, a K8s
   Deployment).
 - **Scale up / scale down:** adding / removing workers (horizontal only). Worker size is fixed per run.
@@ -111,10 +113,10 @@ log level with per-stage trace points on the request path.
   - Depends on `agentkernel` for `TraceStage` and the trace-line parser, and for the benchmarked app.
   - Cloud SDKs (`boto3`, `kubernetes`), `psutil`, data and plotting libraries are dependencies of this project only.
 - Components are classes with one responsibility each.
-- **Its own config file**, not `AKConfig`. Departure from the "reuse existing configuration" house pattern, because
-  these are benchmark settings, not AK runtime config. Holds: hosts, modes, test types, load steps, per-client rate,
-  steady load time, before window, maximum cool-down, client timeout, time window size, agent delay, fetcher order /
-  on-off, Lambda Insights on-off, bare-metal `$/node-hour`, price overrides.
+- **Its own config file**, `ak-bench.yaml`, not `AKConfig`. Departure from the "reuse existing configuration" house
+  pattern, because these are benchmark settings, not AK runtime config. Holds: hosts, modes, test types, load steps,
+  per-client rate, steady load time, before window, maximum cool-down, client timeout, time window size, agent delay,
+  fetcher order / on-off, Lambda Insights on-off, bare-metal `$/node-hour`, price overrides.
 - Registries follow AK's factory shape: built-in short names, dotted-path bring-your-own, unknown name → error naming
   the built-ins.
 
@@ -136,7 +138,7 @@ graph LR
 
 ### Selecting what to run (CLI)
 
-- One CLI. `run` with:
+- One CLI, `ak-bench`. `ak-bench run` with:
   - `--host <name>` and `--mode <name>` (each repeatable; default: all). Covers all × all, one host, one mode on one
     host, one mode on all hosts.
   - `--mode` takes AK's execution-mode config value (e.g. `--mode async`), the same name used in the results folders.
@@ -169,7 +171,8 @@ graph LR
 ### Load generation
 
 - One shared, mode-independent **load generator** (Python asyncio). It:
-  - starts N clients at the same moment, each with its own session;
+  - starts N clients at the same moment, each with its own user identity and session. Clients never share a user:
+    AK pushes a WebSocket reply to every connection of the reply's `user_id` (`pipeline/response_handler.py:269-277`);
   - sends on a schedule (burst: once; steady: the per-client rate) and **never waits for a response before sending**;
     receiving runs separately and matches responses to requests by `request_id`;
   - sets the `request_id` itself (the WS handler accepts a client id, `pipeline/ws/handler.py:228`; the Lambda WS
@@ -194,12 +197,13 @@ graph LR
 - `burst` and `steady` both run the configured steps one after another (1 → 10 → 100 → 1000). Which types run is
   config (default both).
 - Each step starts only after the previous one has ended, so it starts from the minimum workers.
-- Steady: per-client rate and load time are config values and recorded with the results.
+- Steady: per-client rate (default 1 request every 5 s) and load time (default 5 min) are config values and recorded
+  with the results.
 
 ### Step timeline
 
 - Every step of both test types has three parts:
-  1. **before:** no load for a configured time (e.g. 2 min). Records the starting worker counts and idle cost.
+  1. **before:** no load for a configured time (default 2 min). Records the starting worker counts and idle cost.
   2. **load:** burst: send N → last response or timeout. Steady: first send → configured time is up.
   3. **cool-down:** no load. Ends when **all three** hold in the same poll:
      - every request of the step has a response or timed out (client);
@@ -225,7 +229,7 @@ graph LR
   `request_id`.
   - A `TraceCollector` per log backend (not per host) fetches the trace lines after the run and returns
     `{request_id: {stage: ts}}`. Parsing is shared and lives in AK.
-  - Per request, one duration per `TraceStage` value (previous stage → this stage), plus `CLIENT_RECEIVED`
+  - Per request, one duration per request-path `TraceStage` value (previous stage → this stage), plus `CLIENT_RECEIVED`
     (`RESPONSE_DELIVERED` → client received). Empty when either point is missing.
   - Percentiles are computed over requests, never per worker first.
 
@@ -259,12 +263,11 @@ graph LR
   (`sqs`, `kafka`; none for `in_memory`).
 - Derived per step, per tier and per fetcher (summary CSV), from `t_load_up` (first send) and `t_load_down` (end of
   load):
-  - scale up: decision delay, first new worker, scale-up done, backlog drained, latency recovered;
+  - scale up: decision delay, first new worker, scale-up done, backlog drained;
   - scale down: scale-down start, scale-down done;
   - counts: `workers_before_up`, `workers_peak`, `workers_before_down`, `workers_after_down`;
   - rate in workers / min over each scaling window;
   - a count with no source stays empty; a step that didn't scale records e.g. 1 → 1.
-  - "Latency recovered" uses a fixed measurement rule recorded with the results (Q4); not a pass/fail threshold.
 
 ### Resource usage (CPU and memory)
 
@@ -390,7 +393,6 @@ graph LR
     }
     ```
 
-    Class names are placeholders (Q8).
 - No per-host classes either (`LambdaBenchmarker`, `EcsBenchmarker`): a host is a registry entry that picks existing
   implementations, not a class with its own code. A class per host would copy the shared parts into every host:
   - `lambda` and `ecs` would each carry their own SQS queue depth, SQS usage, Cost Explorer and price list code.
@@ -445,20 +447,26 @@ graph LR
     level hierarchy works.
 - **`TraceStage`**, a `str` enum in `core/logger.py`: `REQUEST_RECEIVED`, `INPUT_ENQUEUED`, `AGENT_RECEIVED`,
   `AGENT_START`, `AGENT_FIRST_CHUNK` (delta only), `AGENT_DONE`, `OUTPUT_ENQUEUED`, `OUTPUT_RECEIVED`,
-  `RESPONSE_DELIVERED` (`rest_sync` stages: Q5).
-- **One call per trace point:** `log.log(TRACE, "stage=%s request_id=%s", stage, request_id)`, with an optional
+  `RESPONSE_DELIVERED`; `rest_sync` only: `RESPONSE_POLL_START`, `RESPONSE_FOUND` (traced like the rest, but `rest_sync`
+  isn't benchmarked, so they get no duration column and no point in the stage graphs).
+- **One call per trace point:** `log.log(TRACE, "[%s] request_id=%s", stage, request_id)`, with an optional
   quoted `message` last. `%`-style args so nothing is formatted when off.
 - **Line format**, same on every host:
-  `2026-10-21T08:15:12.345Z - ak.pipeline.agent_runner - TRACE - stage=AGENT_DONE request_id=<id> message="..."`.
+  `2026-10-21T08:15:12.345Z - ak.pipeline.agent_runner - TRACE - [AGENT_DONE] request_id=<id> message="..."`.
   - Timestamp = the log record's creation time, **UTC, millisecond precision**, ISO 8601 with `Z`.
+  - Stage in square brackets first. **Only trace lines carry the stage in `[...]`.**
   - The formatter change (`core/logger.py:42`) applies to **every** AK log line, not only `TRACE`.
 - **Parser** in `core/logger.py` next to `TraceStage`, so format and parser change together. The benchmark imports it.
 - **Trace points on every code path a phase-1 host runs:** shared `pipeline/` (request handler, WS handler, agent
   runner, response handler), ECS containerized handlers, and the Lambda serverless handlers.
   - Each stage is logged exactly where named (e.g. `AGENT_DONE` before the output send, `AGENT_RECEIVED` at
     dequeue).
-- **Existing stage-style INFO lines on the request path are converted** to trace calls (moved where they sit
-  elsewhere). Per-chunk debug lines, `[OUTPUT STORE]` and off-path lines without a `request_id` stay as normal logs.
+- **Trace lines are added next to the existing stage-style INFO lines, not in place of them:**
+  - The INFO lines on the request path stay at `INFO` with their text but **drop their `[...]` tag** (e.g.
+    `[AGENT DONE] request_id=...` → `Agent done: request_id=...`), so normal logs still show them.
+  - The trace call for the matching stage goes where the stage is (which may differ from where the INFO line sits).
+  - At `TRACE` both show. Nothing in the repo matches on the old tags (no docs, metric filters or dashboards).
+  - Per-chunk debug lines, `[OUTPUT STORE]` and off-path lines without a `request_id` are left as they are.
 - Trace lines carry no worker id. Worker counts come only from the fetchers.
 
 ### Results
@@ -472,7 +480,8 @@ graph LR
 - Per test type: `summary.csv` (one row per step), `cost-per-step.csv`, `graphs/`.
 - Per step:
   - `per-request.csv`: request id, session id, client id, scheduled send, sent, first chunk, complete, latency, status,
-    raw stage timestamps, and one `<STAGE>_s` duration column per `TraceStage` value plus `CLIENT_RECEIVED_s`.
+    raw stage timestamps, and one `<STAGE>_s` duration column per request-path `TraceStage` value (not the
+    `rest_sync`-only ones) plus `CLIENT_RECEIVED_s`.
   - `per-time-window.csv`: step part, Tx, Rx, errors, timeouts, latency percentiles, each queue's depth, worker counts
     per tier × count type × fetcher (e.g. `runner.running.aws.ecs_api`), CPU / memory per tier × metric × stat ×
     fetcher.
@@ -539,23 +548,7 @@ graph LR
 
 ## Open questions
 
-Decisions needed before `spec.md`.
-
-- **Q1.** Default per-client send rate for steady traffic, steady load time (e.g. 10 min) and `before` window (e.g.
-  2 min).
-- **Q2.** Default client timeout (about 15 min suggested).
-- **Q3.** Is the separate three-phase scaling test (low → high → low) still needed now that every step records
-  scaling?
-- **Q4.** "Latency recovered" rule (proposal: ≤ 1.2× a baseline latency for 3 consecutive windows). The `before`
-  part has no load, so the baseline has to come from elsewhere (e.g. p50 of steady step 1), or the number is dropped
-  in favour of "backlog drained".
-- **Q5.** `rest_sync` stages (`RESPONSE_POLL_START`, `RESPONSE_FOUND`): keep as trace stages, or leave `[WAITING]` /
-  `[RESPONSE FOUND]` as normal logs.
-- **Q6.** WebSocket replies are broadcast to every connection of the message's `user_id`
-  (`pipeline/response_handler.py:269-277`). If benchmark clients share a user, each receives everyone's replies.
-  Proposal: one user identity per client.
-- **Q7.** Whether converting the stage INFO lines affects anything relying on them (docs, dashboards, habits).
-- **Q8.** Final names: `TraceStage`, CLI name, config file name.
+None. Q1-Q8 were resolved on 2026-10-30; `spec.md` can start.
 
 ## Decided later
 

@@ -50,23 +50,15 @@ File and class layout for these interfaces: to be specified in `spec.md`.
   memory setting). The number of workers stays the same. This is usually called **scale up / scale down**.
 - **The benchmark tracks horizontal scaling only.** Worker size is a fixed deployment setting for each run, and it's
   saved in the run metadata next to the autoscaling settings.
-- **Naming in these docs:** "scale up" / "scale down" (scale-up phase, scale-up time, etc.) mean **adding / removing
+- **Naming in these docs:** "scale up" / "scale down" (scale-up time, scale-down time, etc.) mean **adding / removing
   workers**, i.e. horizontal scale out / scale in. They don't mean vertical scaling.
 
-### Test shape: three phases
+### Scale-down delay per platform
 
-Each scaling test is one run with three phases. In each phase **the benchmark changes the load**, and **the platform
-scales in response**: raising the load triggers scale-up, lowering it triggers scale-down. The load levels and hold
-times are parameters, recorded with the results.
-
-| Phase                 | What the benchmark does          | What the platform does   | Hold                                             |
-|-----------------------|----------------------------------|--------------------------|--------------------------------------------------|
-| 1. Baseline           | low load (e.g. 10 clients)       | stays at its min workers | until worker count and latency are steady (e.g. 2–3 min) |
-| 2. Scale-up phase     | raises load suddenly (e.g. 1000) | adds workers             | long enough for scale-up to finish (e.g. 10 min) |
-| 3. Scale-down phase   | lowers load back to baseline (10) | removes the extra workers | longer than the platform's scale-down delay + margin (e.g. ≥ 25 min on ECS, ≥ 10 min on K8s) |
-
-The scale-down phase must outlast the platform's scale-down delay, otherwise scale-down never completes inside the
-run. What sets that delay:
+There's no separate scaling test. Scaling is measured inside every load step, over its
+[timeline](#load-step-tests-scaling-per-step): the load starts (scale up), the load stops (scale down). A step's
+cool-down has to outlast the platform's scale-down delay, otherwise scale-down never completes inside the step. What
+sets that delay:
 
 - **ECS:** target tracking only scales down after **15 consecutive one-minute datapoints** below target (so ~15 min after
   the load drops), then each scale-down step is followed by `scale_in_cooldown` (`scaling_config`; our Terraform default is 120 s, the
@@ -145,7 +137,7 @@ Worker counts are recorded **per tier** and **per scaling info fetcher** (below)
   `desired_count` (default 1) with no autoscaling, so its count is recorded but stays flat.
 - **Lambda:** every function scales on its own: request handler, agent runner, response handler (and the WebSocket
   connection handler). Each is recorded as its own tier.
-- **Local (`in_memory`):** one process, nothing scales. There are no fetchers and the scaling test isn't run locally.
+- **Local (`in_memory`):** one process, nothing scales. There are no fetchers and no scaling is recorded locally.
 
 ### Scaling info fetchers (pluggable)
 
@@ -240,8 +232,8 @@ Fetchers per host (✓ = available now, later = when the platform is added), pri
   description text; if a description can't be parsed, only the `aws.ecs_api` desired count is used.
 - **ECS scale-down:** target tracking only starts scaling in ~15 min after the load drops, then waits
   `scale_in_cooldown` (120 s in our Terraform) between steps. `aws.ecs_api` doesn't wait for or detect this; it keeps
-  polling through the whole scale-down phase (≥ 25 min, see [Test shape](#test-shape-three-phases)), and the shared code
-  reads "scale-down start" and "scale-down done" from the recorded counts afterwards. If the phase is too short,
+  polling through the whole cool-down (see [Scale-down delay](#scale-down-delay-per-platform)), and the shared code
+  reads "scale-down start" and "scale-down done" from the recorded counts afterwards. If the cool-down hits its maximum,
   "scale-down done" stays empty and `workers_after_down` shows where it stopped.
 
 #### Lambda: `ConcurrentExecutions` bound, log streams written but not bound
@@ -279,18 +271,15 @@ Fetchers per host (✓ = available now, later = when the platform is added), pri
 
 ### Derived numbers (written to the summary CSV)
 
-Scale up, measured from `t_load_up` (the moment the benchmark raises the load, start of phase 2):
+Scale up, measured from `t_load_up` (the step's first send):
 
 - **Decision delay:** `t_load_up` → first increase in desired workers (empty where no source gives `desired`).
 - **First new worker:** `t_load_up` → first increase in running workers (or the first span started after
   `t_load_up`, for sources with spans).
-- **Scale-up done:** `t_load_up` → running worker count reaches its peak for the scale-up phase.
+- **Scale-up done:** `t_load_up` → running worker count reaches its peak in the step.
 - **Backlog drained:** `t_load_up` → queue depth back to the baseline level.
-- **Latency recovered:** `t_load_up` → windowed avg latency back within a fixed tolerance of the baseline avg (e.g.
-  ≤ 1.2× for 3 consecutive windows). If it never recovers, the value is left empty. The tolerance is a fixed
-  measurement rule recorded with the results, not a pass/fail threshold.
 
-Scale down, measured from `t_load_down` (the moment the benchmark lowers the load, start of phase 3):
+Scale down, measured from `t_load_down` (the end of the step's load part):
 
 - **Scale-down start:** `t_load_down` → first decrease in desired/running workers.
 - **Scale-down done:** `t_load_down` → running workers back to the baseline count.
@@ -302,7 +291,7 @@ Worker counts (from → to), recorded per tier, count type (desired / running) a
 | Number                 | Scale up                                                  | Scale down                                           |
 |------------------------|-----------------------------------------------------------|------------------------------------------------------|
 | **From**               | `workers_before_up`: count at `t_load_up` (end of baseline) | `workers_before_down`: count at `t_load_down`        |
-| **To**                 | `workers_peak`: highest count in the scale-up phase       | `workers_after_down`: count at the end of the scale-down phase |
+| **To**                 | `workers_peak`: highest count in the step                 | `workers_after_down`: count at the end of the cool-down      |
 | **Change**             | `peak − before_up` workers added                          | `before_down − after_down` workers removed           |
 | **Rate**               | workers added ÷ (scale-up done − first new worker), as workers/min | workers removed ÷ (scale-down done − scale-down start), as workers/min |
 
@@ -324,11 +313,8 @@ Worker counts (from → to), recorded per tier, count type (desired / running) a
     - Lambda: see the Lambda note under [Platform notes](#platform-notes-that-will-show-up-in-the-numbers).
 - A count that has no source on a platform stays empty (e.g. `desired` on Lambda, see
   [Scaling info fetchers](#scaling-info-fetchers-pluggable)).
-- `workers_after_down` can be above the baseline count if scale-down didn't finish inside the phase; then
+- `workers_after_down` can be above the baseline count if scale-down didn't finish inside the cool-down; then
   "scale-down done" is empty and the "to" count shows where it stopped.
-
-The "backlog drained" time is the cleanest signal (it needs no tolerance); "latency recovered" is what the requirement
-literally says, so both are kept.
 
 ### Platform notes that will show up in the numbers
 
@@ -367,10 +353,10 @@ the worker size (task vCPU/memory, pod resource requests/limits, Lambda memory).
 
 ### Graphs
 
-- Worker count over time (desired / running, one line per scaling info fetcher) with the start of the scale-up and
-  scale-down phases marked.
+- Worker count over time (desired / running, one line per scaling info fetcher) with the start and end of the step's
+  load marked.
 - Avg latency and queue depth over time on the same time axis.
-- Tx/Rx over time across the whole scaling test.
+- Tx/Rx over time across the whole step.
 
 ## Cost
 
@@ -384,7 +370,7 @@ target (cost models).
 | Source | the cloud's bill (AWS Cost Explorer, filtered by the run tag) | usage × price table, computed by the benchmark |
 | Accuracy | exact: what is paid, incl. discounts, free tier, Savings Plans | close: list prices |
 | Available | ~1 day after the run (`collect-cost` step) | at the end of the run |
-| Split by time | whole run only (daily, or hourly if enabled) | any window: per step, per phase |
+| Split by time | whole run only (daily, or hourly if enabled) | any window: per step, per step part |
 | Bare metal | none (no bill) | yes ($/node-hour) |
 | What-if ("cost of 1M messages?") | no | yes: the cost model is built from it |
 
@@ -426,7 +412,7 @@ labels). Then two numbers are recorded:
   - Daily granularity is enough for a run's total, since every run has its own tag: only that run's resources
     carry its tag value, so the run's billed cost is the sum of the daily rows for that value over the days the run
     covered (two days if it crosses midnight). Not using hourly (decided 2026-10-29). Hourly granularity (opt-in, about
-    $0.01 per 1,000 usage records per month) only helps if we want the cost per phase of a run, and hourly data is kept
+    $0.01 per 1,000 usage records per month) only helps if we want the cost per step of a run, and hourly data is kept
     for **14 days** only, so `collect-cost` must run within that window.
   - Shared or long-lived resources (EKS control plane, NAT gateway, a long-lived MSK cluster) can be tagged, but if
     they're shared across runs or used by other things, their cost must be listed as a fixed allocation instead. The
@@ -510,10 +496,6 @@ Nobody edits prices by hand when a provider changes them.
   event, which suggests idle minutes are missing. If so, a missing datapoint has to be read as 0, but only for minutes
   old enough that their data would have arrived (a configurable metric delay; value to be measured on the first
   Lambda runs).
-- Load-step tests: the default length of the steady-traffic load part (e.g. 10 min) and of the "before" window.
-- Whether the separate three-phase scaling test is still needed now that every load step records scaling.
-
-- The tolerance and window count for "latency recovered" (proposal: ≤ 1.2× baseline avg for 3 consecutive windows).
 - The $/node-hour figure for the bare-metal cluster.
 - Not verified: whether the fixed 3 / 15 datapoint rule still applies to custom metrics (like `BacklogPerTask`) after
   AWS's June 2026 faster-scaling launch. AWS only describes the change for the built-in CPU/memory metrics. Check the
