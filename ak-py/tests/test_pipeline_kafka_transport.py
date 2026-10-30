@@ -10,7 +10,7 @@ is what murmur2 hashing achieves in practice and keeps the semantics assertions 
 import logging
 import time
 from collections import deque
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import pytest
 from confluent_kafka import KafkaError, KafkaException, TopicPartition
@@ -81,7 +81,7 @@ class FakeTopicMetadata:
 
 
 class FakeClusterMetadata:
-    def __init__(self, topics: Dict[str, FakeTopicMetadata]):
+    def __init__(self, topics: dict[str, FakeTopicMetadata]):
         self.topics = topics
 
 
@@ -89,16 +89,16 @@ class FakeCluster:
     """Per-partition append-only logs, fetch positions, and committed offsets."""
 
     def __init__(self):
-        self.logs: Dict[str, Dict[int, List[FakeMessage]]] = {}
-        self.positions: Dict[tuple, int] = {}  # (consumer id, topic, partition) -> next index
-        self.committed: Dict[tuple, int] = {}  # (group, topic, partition) -> next offset
-        self.partition_overrides: Dict[Optional[bytes], int] = {}
-        self._key_partitions: Dict[tuple, int] = {}
-        self.injected: List[FakeMessage] = []  # records handed to the next consume() verbatim
-        self.topic_partitions: Dict[str, int] = {}  # topic -> partition count reported by metadata
-        self.metadata_error: Optional[Exception] = None
+        self.logs: dict[str, dict[int, list[FakeMessage]]] = {}
+        self.positions: dict[tuple, int] = {}  # (consumer id, topic, partition) -> next index
+        self.committed: dict[tuple, int] = {}  # (group, topic, partition) -> next offset
+        self.partition_overrides: dict[bytes | None, int] = {}
+        self._key_partitions: dict[tuple, int] = {}
+        self.injected: list[FakeMessage] = []  # records handed to the next consume() verbatim
+        self.topic_partitions: dict[str, int] = {}  # topic -> partition count reported by metadata
+        self.metadata_error: Exception | None = None
 
-    def partition_for(self, topic: str, key: Optional[bytes]) -> int:
+    def partition_for(self, topic: str, key: bytes | None) -> int:
         if key in self.partition_overrides:
             return self.partition_overrides[key]
         if (topic, key) not in self._key_partitions:
@@ -112,15 +112,15 @@ class FakeCluster:
         log.append(record)
         return record
 
-    def records(self, topic: str) -> List[FakeMessage]:
+    def records(self, topic: str) -> list[FakeMessage]:
         return [record for partition in self.logs.get(topic, {}).values() for record in partition]
 
 
 class FakeProducer:
-    def __init__(self, cluster: FakeCluster, config: Dict[str, Any]):
+    def __init__(self, cluster: FakeCluster, config: dict[str, Any]):
         self.cluster, self.config = cluster, config
-        self._callbacks: List[tuple] = []
-        self.delivery_error: Optional[FakeError] = None
+        self._callbacks: list[tuple] = []
+        self.delivery_error: FakeError | None = None
         self.dropped = False  # when True, produce never fires its callback (unconfirmed delivery)
 
     def produce(self, topic, value=None, key=None, headers=None, on_delivery=None):
@@ -147,12 +147,12 @@ class FakeProducer:
 
 
 class FakeConsumer:
-    def __init__(self, cluster: FakeCluster, config: Dict[str, Any]):
+    def __init__(self, cluster: FakeCluster, config: dict[str, Any]):
         self.cluster, self.config = cluster, config
         self.group = config["group.id"]
-        self.topics: List[str] = []
+        self.topics: list[str] = []
         self.closed = False
-        self.commit_error: Optional[Exception] = None
+        self.commit_error: Exception | None = None
         self.on_revoke = self.on_lost = None
         self._id = id(self)
 
@@ -167,7 +167,7 @@ class FakeConsumer:
 
         # Like librdkafka, one call can return several records from the same partition: this is
         # what makes the transport's per-partition buffering observable.
-        batch: List[FakeMessage] = []
+        batch: list[FakeMessage] = []
         for topic in self.topics:
             for partition, log in self.cluster.logs.get(topic, {}).items():
                 position_key = (self._id, topic, partition)
@@ -210,7 +210,7 @@ def _transport(**overrides) -> KafkaTransport:
     return KafkaTransport(**kwargs)
 
 
-def _headers(record) -> Dict[str, str]:
+def _headers(record) -> dict[str, str]:
     return {name: value.decode() for name, value in record.headers() or []}
 
 

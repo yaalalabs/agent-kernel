@@ -10,7 +10,7 @@ import json
 import logging
 import uuid
 from threading import RLock
-from typing import Any, ClassVar, Dict, Optional
+from typing import Any, ClassVar, Optional
 
 from ..core.config import AKConfig
 from ..core.model import BaseChatRequest, ScheduleSpec
@@ -112,11 +112,11 @@ class ScheduleManager:
 
     def create(
         self,
-        user_id: Optional[str],
-        prompt: Optional[str],
+        user_id: str | None,
+        prompt: str | None,
         spec: ScheduleSpec,
-        agent: Optional[str] = None,
-        session_id: Optional[str] = None,
+        agent: str | None = None,
+        session_id: str | None = None,
     ) -> ScheduledTask:
         """Validate, store and register a new scheduled task.
 
@@ -167,7 +167,7 @@ class ScheduleManager:
         self._log.info(f"Created scheduled task {task.task_id} for user {user_id}")
         return self._store.update(task.model_copy(update={"provider_ref": provider_ref, "updated_at": utc_now_iso()}))
 
-    def get_task(self, task_id: str, user_id: Optional[str] = None) -> Optional[ScheduledTask]:
+    def get_task(self, task_id: str, user_id: str | None = None) -> ScheduledTask | None:
         """Load a task by id, optionally enforcing ownership.
 
         :param task_id: Identifier of the task.
@@ -181,7 +181,7 @@ class ScheduleManager:
         self._check_ownership(task, user_id)
         return task
 
-    def list_tasks(self, user_id: Optional[str] = None, limit: Optional[int] = None, cursor: Optional[str] = None) -> ScheduledTaskPage:
+    def list_tasks(self, user_id: str | None = None, limit: int | None = None, cursor: str | None = None) -> ScheduledTaskPage:
         """Return a page of scheduled tasks, most-recently updated first.
 
         :param user_id: Filter by owning user id; unfiltered when omitted.
@@ -195,7 +195,7 @@ class ScheduleManager:
         tasks, next_offset = self._store.list(user_id=user_id, limit=page_size, offset=offset)
         return ScheduledTaskPage(tasks=tasks, next_cursor=encode_cursor(next_offset))
 
-    def update(self, task_id: str, amendment: Dict[str, Any], user_id: Optional[str] = None) -> ScheduledTask:
+    def update(self, task_id: str, amendment: dict[str, Any], user_id: str | None = None) -> ScheduledTask:
         """Amend a task's occurrence rule, prompt, or paused/active state.
 
         The amendment carries the full amendable representation (PUT semantics): the occurrence
@@ -230,7 +230,7 @@ class ScheduleManager:
         self._log.info(f"Amended scheduled task {task_id} (status {amended.status.value})")
         return amended
 
-    def cancel(self, task_id: str, user_id: Optional[str] = None) -> ScheduledTask:
+    def cancel(self, task_id: str, user_id: str | None = None) -> ScheduledTask:
         """Cancel a task: deregister its occurrences and record the cancellation.
 
         The record survives as the audit trail, so cancellation is a status transition rather
@@ -264,7 +264,7 @@ class ScheduleManager:
         self._log.info(f"Cancelled scheduled task {task_id}")
         return cancelled
 
-    def record_trigger(self, task_id: str, user_id: Optional[str], request_id: Optional[str] = None, occurred_at: Optional[str] = None) -> None:
+    def record_trigger(self, task_id: str, user_id: str | None, request_id: str | None = None, occurred_at: str | None = None) -> None:
         """Record that an occurrence of a task fired, and complete a one-time task.
 
         Never raises: the occurrence fields are advisory bookkeeping, and a store that cannot
@@ -293,7 +293,7 @@ class ScheduleManager:
         except Exception as exc:
             self._log.error(f"Failed to record trigger of scheduled task {task_id}: {exc}")
 
-    def _owns_occurrence(self, task: ScheduledTask, user_id: Optional[str]) -> bool:
+    def _owns_occurrence(self, task: ScheduledTask, user_id: str | None) -> bool:
         """Check that a run claiming to be a task's occurrence is entitled to say so.
 
         The trigger metadata (``scheduled_task_id``) rides on the ordinary chat request that
@@ -394,7 +394,7 @@ class ScheduleManager:
             f"but the configured queue transport is '{transport_type}'; use the 'redis', 'valkey' or 'dynamodb' store"
         )
 
-    def _require_amendable_task(self, task_id: str, user_id: Optional[str]) -> ScheduledTask:
+    def _require_amendable_task(self, task_id: str, user_id: str | None) -> ScheduledTask:
         """Load a task that a mutation may still be applied to.
 
         :param task_id: Identifier of the task.
@@ -413,7 +413,7 @@ class ScheduleManager:
         return task
 
     @staticmethod
-    def _check_ownership(task: ScheduledTask, user_id: Optional[str]) -> None:
+    def _check_ownership(task: ScheduledTask, user_id: str | None) -> None:
         """Enforce that a resolved user owns the task.
 
         :param task: The task being accessed.
@@ -424,7 +424,7 @@ class ScheduleManager:
             raise PermissionError(f"Scheduled task {task.task_id} is not owned by user {user_id}")
 
     @staticmethod
-    def _apply_amendment(previous: ScheduledTask, amendment: Dict[str, Any]) -> ScheduledTask:
+    def _apply_amendment(previous: ScheduledTask, amendment: dict[str, Any]) -> ScheduledTask:
         """Build the amended task from the previous record and the amendment.
 
         The occurrence rule is replaced as a unit: an amendment naming any of at/cron/timezone/

@@ -12,7 +12,6 @@ deploy/main.tf): with a TTL, API Gateway answers a request that has no Authoriza
 
 import hmac
 import os
-from typing import Optional
 
 from agentkernel.auth import AuthValidator, ValidationContext, ValidationResult
 from agentkernel.aws import APIGatewayAuthorizer
@@ -25,7 +24,7 @@ class DemoValidator(AuthValidator):
     def __init__(self) -> None:
         self._token = os.environ["DEMO_AUTH_TOKEN"]
 
-    def validate(self, token: str, context: Optional[ValidationContext] = None) -> ValidationResult:
+    def validate(self, token: str, context: ValidationContext | None = None) -> ValidationResult:
         return ValidationResult(is_valid=hmac.compare_digest(token, self._token), subject="demo-user")
 
 

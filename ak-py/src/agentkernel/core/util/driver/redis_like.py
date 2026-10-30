@@ -8,7 +8,7 @@ the client library via ``_from_url``, ``_error_class``, and ``_backend_name``.
 from __future__ import annotations
 
 from abc import abstractmethod
-from typing import Any, Optional
+from typing import Any
 
 from .base import BaseDriver
 
@@ -182,7 +182,7 @@ class _RedisLikeDriver(BaseDriver):
         self._log.debug(f"HSET {key} field={field}")
         self.client.hset(name=key, key=field, value=value)
 
-    def hget(self, key: str, field: str) -> Optional[bytes]:
+    def hget(self, key: str, field: str) -> bytes | None:
         """
         Retrieves a field from the hash stored at the given key.
 
@@ -261,7 +261,7 @@ class _RedisLikeDriver(BaseDriver):
         pipeline.expire(name=key, time=ttl)
         pipeline.execute()
 
-    def lpop(self, key: str) -> Optional[str]:
+    def lpop(self, key: str) -> str | None:
         """
         Removes and returns the first element of the list, decoded to a string.
 
@@ -274,7 +274,7 @@ class _RedisLikeDriver(BaseDriver):
             return None
         return item.decode() if isinstance(item, (bytes, bytearray)) else item
 
-    def blpop(self, key: str, timeout: float) -> Optional[str]:
+    def blpop(self, key: str, timeout: float) -> str | None:
         """
         Removes and returns the first element of the list, blocking until one arrives.
 

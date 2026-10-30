@@ -1,20 +1,20 @@
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional
+from typing import Any
 
 from pydantic import BaseModel
 
 
 class ValidationContext(BaseModel):
-    path: Optional[str] = None
-    http_method: Optional[str] = None
-    headers: Optional[Dict[str, Any]] = None
+    path: str | None = None
+    http_method: str | None = None
+    headers: dict[str, Any] | None = None
 
 
 class ValidationResult(BaseModel):
     is_valid: bool
-    subject: Optional[str] = "user"
-    claims: Optional[Dict[str, Any]] = None
-    error_msg: Optional[str] = None
+    subject: str | None = "user"
+    claims: dict[str, Any] | None = None
+    error_msg: str | None = None
 
 
 class AuthValidator(ABC):
@@ -23,7 +23,7 @@ class AuthValidator(ABC):
     There are some basic built-in cryptographic validation helpers which can be used if needed."""
 
     @abstractmethod
-    def validate(self, token: str, context: Optional[ValidationContext] = None) -> ValidationResult:
+    def validate(self, token: str, context: ValidationContext | None = None) -> ValidationResult:
         """Main validation entry point. This is where the custom logic has to be written.
         :param token: The authentication token to validate
         :param context: Optional validation context containing request metadata
@@ -48,8 +48,8 @@ class AuthValidator(ABC):
         return hmac.compare_digest(expected, signature)
 
     def _validate_rs256_jwt(
-        self, token: str, public_key: str, audience: Optional[str] = None, issuer: Optional[str] = None, options: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
+        self, token: str, public_key: str, audience: str | None = None, issuer: str | None = None, options: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         """Basic RS256 JWT validation.
         :param token: The JWT token to validate
         :param public_key: The RSA public key for signature verification

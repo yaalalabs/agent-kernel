@@ -3,7 +3,7 @@ import threading
 import time
 import uuid
 from collections import deque
-from typing import Any, ClassVar, Deque, Dict, List, Optional, Tuple
+from typing import Any, ClassVar
 
 from ..envelope import QueueMessage, QueueName
 from .base import QueueTransport, TransportConsumer
@@ -32,15 +32,15 @@ class _InMemoryQueue:
         self._dedup_window = dedup_window
         self._lock = threading.Lock()
         self._ready_cond = threading.Condition(self._lock)
-        self._groups: Dict[str, Deque[QueueMessage]] = {}
-        self._ready: Deque[str] = deque()
+        self._groups: dict[str, deque[QueueMessage]] = {}
+        self._ready: deque[str] = deque()
         self._ready_set: set[str] = set()
-        self._in_flight: Dict[str, Tuple[QueueMessage, float]] = {}  # group -> (message, redelivery deadline)
-        self._message_group: Dict[int, str] = {}  # id(message) -> group, while in flight
-        self._dedup: Dict[str, float] = {}  # dedup_id -> expiry
+        self._in_flight: dict[str, tuple[QueueMessage, float]] = {}  # group -> (message, redelivery deadline)
+        self._message_group: dict[int, str] = {}  # id(message) -> group, while in flight
+        self._dedup: dict[str, float] = {}  # dedup_id -> expiry
         self._synthetic_group_counter = itertools.count()
 
-    def send(self, message: QueueMessage) -> Optional[dict]:
+    def send(self, message: QueueMessage) -> dict | None:
         """Enqueue a copy of the message; returns None when dropped by the dedup window."""
         now = time.monotonic()
         with self._ready_cond:
@@ -59,7 +59,7 @@ class _InMemoryQueue:
             self._ready_cond.notify_all()
             return {"message_id": stored.message_id}
 
-    def fetch(self, batch_size: int, wait_seconds: float) -> List[QueueMessage]:
+    def fetch(self, batch_size: int, wait_seconds: float) -> list[QueueMessage]:
         """Deliver the heads of up to ``batch_size`` distinct groups, blocking up to ``wait_seconds``."""
         deadline = time.monotonic() + wait_seconds
         with self._ready_cond:
@@ -67,7 +67,7 @@ class _InMemoryQueue:
                 now = time.monotonic()
                 self._requeue_expired(now)
 
-                batch: List[QueueMessage] = []
+                batch: list[QueueMessage] = []
                 while self._ready and len(batch) < batch_size:
                     group = self._ready.popleft()
                     self._ready_set.discard(group)
@@ -159,7 +159,7 @@ class InMemoryTransportConsumer(TransportConsumer):
     def __init__(self, queue: _InMemoryQueue):
         self._queue = queue
 
-    def fetch(self, batch_size: int, wait_seconds: float) -> List[QueueMessage]:
+    def fetch(self, batch_size: int, wait_seconds: float) -> list[QueueMessage]:
         return self._queue.fetch(batch_size, wait_seconds)
 
     def ack(self, message: QueueMessage) -> None:
@@ -178,7 +178,7 @@ class InMemoryTransport(QueueTransport):
     ``ack_wait``/``dedup_window``; later instances reuse the existing queues.
     """
 
-    _queues: ClassVar[Dict[QueueName, _InMemoryQueue]] = {}
+    _queues: ClassVar[dict[QueueName, _InMemoryQueue]] = {}
     _queues_lock: ClassVar[threading.Lock] = threading.Lock()
 
     def __init__(self, ack_wait: float = DEFAULT_ACK_WAIT_SECONDS, dedup_window: float = DEFAULT_DEDUP_WINDOW_SECONDS):

@@ -2,7 +2,7 @@
 
 import decimal
 import time
-from typing import Any, Optional
+from typing import Any
 
 import boto3
 from boto3.dynamodb.conditions import Key as DDBKey
@@ -77,8 +77,8 @@ class DynamoDBDriver(BaseDriver):
         self,
         table_name: str,
         partition_key: str,
-        sort_key: Optional[str] = None,
-        region: Optional[str] = None,
+        sort_key: str | None = None,
+        region: str | None = None,
         ttl: int = 0,
     ):
         """
@@ -152,7 +152,7 @@ class DynamoDBDriver(BaseDriver):
             self._log.error("Failed to put item into table %s: %s", self._table_name, e)
             raise
 
-    def get(self, pk_value: Any, sk_value: Any = None) -> Optional[dict]:
+    def get(self, pk_value: Any, sk_value: Any = None) -> dict | None:
         """
         Get a single item by key.
 

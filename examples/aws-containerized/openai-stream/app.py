@@ -1,5 +1,3 @@
-from typing import Optional
-
 import jwt
 from agentkernel.auth import AuthValidator, ValidationContext, ValidationResult
 from agentkernel.aws import AWSWebsocketAPI
@@ -33,7 +31,7 @@ OpenAIModule([triage_agent, math_agent, history_agent])
 
 # Validates the `?token=` query string on the WebSocket $connect handshake
 class CustomAuthValidator(AuthValidator):
-    def validate(self, token: str, context: Optional[ValidationContext] = None) -> ValidationResult:
+    def validate(self, token: str, context: ValidationContext | None = None) -> ValidationResult:
         """Validate JWT token and return validation result.
 
         WARNING: Signature verification is disabled here for demo purposes only.

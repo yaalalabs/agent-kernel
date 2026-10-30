@@ -16,7 +16,8 @@ import contextvars
 import logging
 import threading
 import warnings
-from typing import Any, AsyncGenerator, Coroutine, Generator, Optional
+from collections.abc import AsyncGenerator, Coroutine, Generator
+from typing import Any
 
 _log = logging.getLogger("ak.core.async_bridge")
 
@@ -69,7 +70,7 @@ def iterate_async_sync(agen: AsyncGenerator) -> Generator[Any, None, None]:
         yield from _pump(runner.get_loop(), agen)
 
 
-def _open_loop() -> Optional[asyncio.AbstractEventLoop]:
+def _open_loop() -> asyncio.AbstractEventLoop | None:
     """Return a loop this thread already has, or None when it has none worth reusing.
 
     `asyncio.get_event_loop()` does not simply look one up. On a worker thread with no loop it

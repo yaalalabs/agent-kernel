@@ -41,7 +41,7 @@ A Runner:
 
 ```python
 from abc import ABC, abstractmethod
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
 from agentkernel.core import Session
 from agentkernel.core.event import StreamEvent
 from agentkernel.core.model import AgentReply, AgentRequest

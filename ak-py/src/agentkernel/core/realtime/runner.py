@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import asyncio
 from abc import abstractmethod
-from collections.abc import AsyncGenerator
-from typing import TYPE_CHECKING, Any, Callable
+from collections.abc import AsyncGenerator, Callable
+from typing import TYPE_CHECKING, Any
 
 from ..base import Agent, Runner, Session
 from ..event import StreamEvent

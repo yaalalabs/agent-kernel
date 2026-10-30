@@ -26,7 +26,7 @@ import random
 import threading
 import time
 import zlib
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import nats
 from nats.errors import TimeoutError as NatsTimeoutError
@@ -59,8 +59,8 @@ class _NatsLoop:
     this situation.
     """
 
-    _loop: Optional[asyncio.AbstractEventLoop] = None
-    _thread: Optional[threading.Thread] = None
+    _loop: asyncio.AbstractEventLoop | None = None
+    _thread: threading.Thread | None = None
     _lock = threading.Lock()
 
     @classmethod
@@ -105,7 +105,7 @@ class NatsTransportConsumer(TransportConsumer):
     neither converge on the same partition nor starve any of them.
     """
 
-    def __init__(self, subscriptions: Dict[int, Any], request_timeout: float, retry_backoff: float, stream: str):
+    def __init__(self, subscriptions: dict[int, Any], request_timeout: float, retry_backoff: float, stream: str):
         self._subscriptions = subscriptions
         self._request_timeout = request_timeout
         self._retry_backoff = retry_backoff
@@ -113,13 +113,13 @@ class NatsTransportConsumer(TransportConsumer):
         self._partitions = sorted(subscriptions)
         self._cursor = random.randrange(len(self._partitions)) if self._partitions else 0
 
-    def fetch(self, batch_size: int, wait_seconds: float) -> List[QueueMessage]:
+    def fetch(self, batch_size: int, wait_seconds: float) -> list[QueueMessage]:
         if not self._partitions:
             return []
 
         idle_wait = max(wait_seconds / len(self._partitions), MIN_PARTITION_FETCH_SECONDS)
         deadline = time.monotonic() + wait_seconds
-        messages: List[QueueMessage] = []
+        messages: list[QueueMessage] = []
 
         for _ in range(len(self._partitions)):
             if len(messages) >= batch_size or time.monotonic() >= deadline:
@@ -175,7 +175,7 @@ class NatsTransportConsumer(TransportConsumer):
 
     # -- internals ---------------------------------------------------------------------------
 
-    def _fetch_partition(self, partition: int, batch_size: int, wait_seconds: float) -> List[QueueMessage]:
+    def _fetch_partition(self, partition: int, batch_size: int, wait_seconds: float) -> list[QueueMessage]:
         subscription = self._subscriptions[partition]
         try:
             raw = _NatsLoop.run(subscription.fetch(batch=max(batch_size, 1), timeout=wait_seconds), wait_seconds + self._request_timeout)
@@ -208,12 +208,12 @@ class NatsTransport(QueueTransport):
     on) or verified and reported as missing (when it is off, which is the production posture).
     """
 
-    _connections: Dict[str, Any] = {}
+    _connections: dict[str, Any] = {}
     _connections_lock = threading.Lock()
     # Streams whose provisioning has *completed*, plus one lock per stream so concurrent callers
     # for the same stream queue up instead of racing (see _ensure_provisioned).
     _provisioned: set = set()
-    _provision_locks: Dict[str, threading.Lock] = {}
+    _provision_locks: dict[str, threading.Lock] = {}
     _provisioned_lock = threading.Lock()
 
     def __init__(
@@ -230,7 +230,7 @@ class NatsTransport(QueueTransport):
         max_age: float = 86400.0,
         request_timeout: float = 10.0,
         auto_provision: bool = False,
-        max_deliver: Optional[Dict[QueueName, int]] = None,
+        max_deliver: dict[QueueName, int] | None = None,
         config_path: str = "execution.queues",
     ):
         # config_path names the queues block this transport was built from (#503 seam:
@@ -275,12 +275,12 @@ class NatsTransport(QueueTransport):
             _log.info(f"Stream {self._streams[queue]} dropped a duplicate publish (dedup_id={message.dedup_id})")
         return {"MessageId": f"{self._streams[queue]}:{getattr(ack, 'seq', '')}"}
 
-    def subject_for(self, queue: QueueName, group_id: Optional[str]) -> str:
+    def subject_for(self, queue: QueueName, group_id: str | None) -> str:
         """The partition subject a session's messages travel on."""
         partition = self.partition_for(group_id)
         return f"{self._prefixes[queue]}.{partition}.{_subject_token(group_id)}"
 
-    def partition_for(self, group_id: Optional[str]) -> int:
+    def partition_for(self, group_id: str | None) -> int:
         """Map a session to a partition with a hash that is stable across processes.
 
         Deliberately not Python's ``hash()``: string hashing is salted per interpreter, so two pods
@@ -446,7 +446,7 @@ class NatsTransport(QueueTransport):
                 self._connections[self._url] = client
             return client
 
-    def _server_list(self) -> List[str]:
+    def _server_list(self) -> list[str]:
         """Split the configured URL into servers, tolerating spaces around the commas.
 
         ``url`` is documented as comma-separated for a cluster, and writing it with spaces after the
@@ -465,7 +465,7 @@ class NatsTransport(QueueTransport):
             cls._provision_locks.clear()
 
 
-def _subject_token(group_id: Optional[str]) -> str:
+def _subject_token(group_id: str | None) -> str:
     """Make a session id safe as a single subject token (no dots, spaces, or wildcards)."""
     if not group_id:
         return "_"

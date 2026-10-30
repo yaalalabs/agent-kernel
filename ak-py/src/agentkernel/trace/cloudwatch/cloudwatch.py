@@ -4,8 +4,8 @@ import logging
 import os
 import re
 import threading
+from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import Iterator
 
 from botocore.session import Session as BotocoreSession
 from opentelemetry import baggage, context

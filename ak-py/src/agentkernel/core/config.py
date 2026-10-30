@@ -1,6 +1,6 @@
 import importlib.metadata
 from threading import RLock
-from typing import Any, ClassVar, Dict, List, Optional
+from typing import Any, ClassVar, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -61,11 +61,11 @@ class _FirestoreConfig(BaseModel):
         default="ak_sessions",
         description="Firestore collection name for session storage. Each document ID is a session_id.",
     )
-    project_id: Optional[str] = Field(
+    project_id: str | None = Field(
         default=None,
         description="GCP project ID. If null, inferred from Application Default Credentials.",
     )
-    database_id: Optional[str] = Field(
+    database_id: str | None = Field(
         default=None,
         description="Firestore database ID. If null, defaults to '(default)' database for backward compatibility.",
     )
@@ -77,7 +77,7 @@ class _FirestoreConfig(BaseModel):
 
 
 class _SessionConnectionStoreConfig(BaseModel):
-    table_name: Optional[str] = Field(
+    table_name: str | None = Field(
         default=None,
         description="DynamoDB only: name of the EXISTING WebSocket connections table (partition key 'user_id', "
         "sort key 'connection_id', GSI 'connection_id-index' on connection_id, TTL attribute 'expiry_time'); "
@@ -95,12 +95,12 @@ class _SessionStoreConfig(BaseModel):
         default="in_memory",
         description="Session store backend: a built-in short name (in_memory, redis, valkey, dynamodb, cosmosdb, firestore) or a dotted path to a SessionStore subclass",
     )
-    cache: Optional[_SessionCacheConfig] = None
-    redis: Optional[_RedisConfig] = None
-    valkey: Optional[_ValkeyConfig] = None
-    dynamodb: Optional[_DynamoDBConfig] = None
-    cosmosdb: Optional[_CosmosDBConfig] = None
-    firestore: Optional[_FirestoreConfig] = None
+    cache: _SessionCacheConfig | None = None
+    redis: _RedisConfig | None = None
+    valkey: _ValkeyConfig | None = None
+    dynamodb: _DynamoDBConfig | None = None
+    cosmosdb: _CosmosDBConfig | None = None
+    firestore: _FirestoreConfig | None = None
     connection_store: _SessionConnectionStoreConfig = Field(
         description="The WebSocket gateway's connection store, provided on this session backend (spec #495 §9)",
         default_factory=_SessionConnectionStoreConfig,
@@ -120,15 +120,15 @@ class _APIConfig(BaseModel):
 
 
 class _WebSocketAPIConfig(BaseModel):
-    endpoint_url: Optional[str] = Field(default=None, description="WebSocket API endpoint URL")
-    chat_route: Optional[str] = Field(default=None, description="WebSocket chat route")
-    connection_table: Optional[_DynamoDBConfig] = Field(default=None, description="DynamoDB configuration for storing WebSocket connections")
-    push_auth_token: Optional[str] = Field(
+    endpoint_url: str | None = Field(default=None, description="WebSocket API endpoint URL")
+    chat_route: str | None = Field(default=None, description="WebSocket chat route")
+    connection_table: _DynamoDBConfig | None = Field(default=None, description="DynamoDB configuration for storing WebSocket connections")
+    push_auth_token: str | None = Field(
         default=None,
         description="Shared secret authenticating pod-to-pod pushes to the pipeline's internal push endpoint "
         "(required for WebSocket modes on a broker transport; unused by API-Gateway-based deployments)",
     )
-    push_port: Optional[int] = Field(
+    push_port: int | None = Field(
         default=None,
         description="Port other pods push WebSocket deliveries to (defaults to api.port). Only for custom "
         "gateways that mount PushEndpointHandler on their own separate listener; the built-in WebSocketGateway "
@@ -138,7 +138,7 @@ class _WebSocketAPIConfig(BaseModel):
 
 class _A2AConfig(BaseModel):
     enabled: bool = Field(default=False, description="Enable A2A")
-    agents: List[str] = Field(default=["*"], description="List of agent names to enable A2A")
+    agents: list[str] = Field(default=["*"], description="List of agent names to enable A2A")
     url: str = Field(default="http://localhost:8000/a2a", description="A2A URL")
     task_store_type: str = Field(default="in_memory", pattern="^(in_memory|redis)$")
 
@@ -146,7 +146,7 @@ class _A2AConfig(BaseModel):
 class _MCPConfig(BaseModel):
     enabled: bool = Field(default=False, description="Enable MCP")
     expose_agents: bool = Field(default=False, description="Expose agents as MCP tools")
-    agents: List[str] = Field(default=["*"], description="List of agent names to expose as MCP tool")
+    agents: list[str] = Field(default=["*"], description="List of agent names to expose as MCP tool")
     stateless_http: bool = Field(
         default=False,
         description="Run MCP in stateless HTTP mode. Each request is independent (no Mcp-Session-Id). "
@@ -279,7 +279,7 @@ class _MultimodalConfig(BaseModel):
         default=False,
         description="Enable multimodal memory for images and files.",
     )
-    agents: Optional[list[str]] = Field(
+    agents: list[str] | None = Field(
         default=None,
         description="Agent names the multimodal tools and system-prompt guidance attach to; omitted = all agents",
     )
@@ -301,8 +301,8 @@ class _MultimodalConfig(BaseModel):
             "while other remote attachment types are only named by their address"
         ),
     )
-    redis: Optional[_MultimodalStorageRedisConfig] = None
-    dynamodb: Optional[_MultimodalStorageDynamoDBConfig] = None
+    redis: _MultimodalStorageRedisConfig | None = None
+    dynamodb: _MultimodalStorageDynamoDBConfig | None = None
 
 
 class _ThreadRedisConfig(_RedisConfig):
@@ -350,20 +350,18 @@ class _ThreadStoreConfig(BaseModel):
         description="Thread store backend: a built-in short name (in_memory, redis, valkey, dynamodb, cosmosdb, firestore) or a dotted path to a ThreadStore subclass",
     )
     naming: _ThreadNamingConfig = Field(default_factory=_ThreadNamingConfig, description="Auto-naming settings for the built-in naming strategies")
-    redis: Optional[_ThreadRedisConfig] = None
-    valkey: Optional[_ThreadValkeyConfig] = None
-    dynamodb: Optional[_ThreadDynamoDBConfig] = None
-    firestore: Optional[_ThreadFirestoreConfig] = None
-    cosmosdb: Optional[_ThreadCosmosDBConfig] = None
+    redis: _ThreadRedisConfig | None = None
+    valkey: _ThreadValkeyConfig | None = None
+    dynamodb: _ThreadDynamoDBConfig | None = None
+    firestore: _ThreadFirestoreConfig | None = None
+    cosmosdb: _ThreadCosmosDBConfig | None = None
 
 
 # Connection details only, and Terraform-provisioned: the eventbridge provider requires all three.
 class _ScheduleEventBridgeConfig(BaseModel):
-    group_name: Optional[str] = Field(default=None, description="EventBridge Scheduler schedule-group name the schedules are created in")
-    role_arn: Optional[str] = Field(
-        default=None, description="Execution role ARN EventBridge Scheduler assumes to deliver triggers to the input queue"
-    )
-    queue_arn: Optional[str] = Field(default=None, description="Input queue ARN used as the schedule target")
+    group_name: str | None = Field(default=None, description="EventBridge Scheduler schedule-group name the schedules are created in")
+    role_arn: str | None = Field(default=None, description="Execution role ARN EventBridge Scheduler assumes to deliver triggers to the input queue")
+    queue_arn: str | None = Field(default=None, description="Input queue ARN used as the schedule target")
 
 
 class _ScheduleProviderConfig(BaseModel):
@@ -371,7 +369,7 @@ class _ScheduleProviderConfig(BaseModel):
         default="local",
         description="Schedule provider: a built-in short name (local, eventbridge) or a dotted path to a ScheduleProvider subclass",
     )
-    eventbridge: Optional[_ScheduleEventBridgeConfig] = None
+    eventbridge: _ScheduleEventBridgeConfig | None = None
 
 
 class _ScheduleStoreRedisConfig(_RedisConfig):
@@ -399,9 +397,9 @@ class _ScheduleStoreConfig(BaseModel):
         default="in_memory",
         description="Scheduled task store backend: a built-in short name (in_memory, redis, valkey, dynamodb) or a dotted path to a ScheduleStore subclass",
     )
-    redis: Optional[_ScheduleStoreRedisConfig] = None
-    valkey: Optional[_ScheduleStoreValkeyConfig] = None
-    dynamodb: Optional[_ScheduleStoreDynamoDBConfig] = None
+    redis: _ScheduleStoreRedisConfig | None = None
+    valkey: _ScheduleStoreValkeyConfig | None = None
+    dynamodb: _ScheduleStoreDynamoDBConfig | None = None
 
 
 class _ScheduleConfig(BaseModel):
@@ -413,7 +411,7 @@ class _ScheduleConfig(BaseModel):
         default_factory=_ScheduleProviderConfig, description="Backend that fires the triggers at their scheduled times"
     )
     store: _ScheduleStoreConfig = Field(default_factory=_ScheduleStoreConfig, description="Backend that persists the scheduled task records")
-    agents: Optional[list[str]] = Field(
+    agents: list[str] | None = Field(
         default=None,
         description="Agent names the schedule tools and system-prompt guidance attach to; omitted = all agents",
     )
@@ -434,20 +432,20 @@ class _OKFDatabaseConfig(BaseModel):
     uri: str = Field(
         description="Bundle location passed to the resolved store: a filesystem path, an s3://bucket/prefix URI, or the store's own location string"
     )
-    description: Optional[str] = Field(
+    description: str | None = Field(
         default=None,
         description="Human-readable description of this bundle, surfaced to the agent in its instructions and through get_schemas",
     )
-    refresh_seconds: Optional[float] = Field(
+    refresh_seconds: float | None = Field(
         default=300.0,
         description="How stale the bundle manifest may get before the next operation re-walks the store; null disables automatic refresh",
     )
-    consumer: Optional[list[str]] = Field(default=None, description="Agent names granted read access to this bundle")
-    producer: Optional[list[str]] = Field(
+    consumer: list[str] | None = Field(default=None, description="Agent names granted read access to this bundle")
+    producer: list[str] | None = Field(
         default=None,
         description="Agent names granted read and write access, instructed to add new knowledge to this bundle",
     )
-    curator: Optional[list[str]] = Field(
+    curator: list[str] | None = Field(
         default=None,
         description="Agent names granted read and write access, instructed to review and maintain existing knowledge in this bundle",
     )
@@ -480,10 +478,10 @@ class _GuardrailParamConfig(BaseModel):
         description="Guardrail backend: a built-in short name (openai, bedrock, walledai) or a dotted path to an InputGuardrail/OutputGuardrail subclass",
     )
     pii: bool = Field(default=True, description="Enable PII redaction/unmasking (WalledAI only)")
-    config_path: Optional[str] = Field(default=None, description="Path to guardrail configuration file (OpenAI only)")
-    model: Optional[str] = Field(default="gpt-4o-mini", description="LLM model name to use for guardrail (OpenAI only)")
-    id: Optional[str] = Field(default=None, description="AWS Bedrock guardrail ID (Bedrock only)")
-    version: Optional[str] = Field(default="DRAFT", description="AWS Bedrock guardrail version (Bedrock only)")
+    config_path: str | None = Field(default=None, description="Path to guardrail configuration file (OpenAI only)")
+    model: str | None = Field(default="gpt-4o-mini", description="LLM model name to use for guardrail (OpenAI only)")
+    id: str | None = Field(default=None, description="AWS Bedrock guardrail ID (Bedrock only)")
+    version: str | None = Field(default="DRAFT", description="AWS Bedrock guardrail version (Bedrock only)")
 
 
 class _GuardrailConfig(BaseModel):
@@ -500,7 +498,7 @@ class _ResponseStoreValkeyConfig(_ValkeyConfig):
 
 
 class _ResponseStoreDynamoDBConfig(_DynamoDBConfig):
-    table_name: Optional[str] = Field(
+    table_name: str | None = Field(
         default=None,
         description="DynamoDB table name for session storage.",
     )
@@ -513,9 +511,9 @@ class _ResponseStoreConfig(BaseModel):
     )
     retry_count: int = Field(default=5, description="Number of retry attempts for response store reads")
     delay: float = Field(default=5, description="Delay in seconds between response store reads retry attempts")
-    redis: Optional[_ResponseStoreRedisConfig] = None
-    valkey: Optional[_ResponseStoreValkeyConfig] = None
-    dynamodb: Optional[_ResponseStoreDynamoDBConfig] = None
+    redis: _ResponseStoreRedisConfig | None = None
+    valkey: _ResponseStoreValkeyConfig | None = None
+    dynamodb: _ResponseStoreDynamoDBConfig | None = None
 
 
 class _InputQueueConfig(BaseModel):
@@ -580,7 +578,7 @@ class _KafkaQueueConfig(BaseModel):
         default=5.0,
         description="Seconds to wait for topic metadata during the startup partition-capacity check (the check is skipped on timeout)",
     )
-    client_config: Dict[str, Any] = Field(
+    client_config: dict[str, Any] = Field(
         default_factory=dict,
         description="Passthrough settings merged into the confluent-kafka producer and consumer configs (SASL, TLS, tuning)",
     )
@@ -637,10 +635,10 @@ class _QueuesConfig(BaseModel):
     )
     input: _InputQueueConfig = Field(default_factory=_InputQueueConfig, description="Input queue configuration for queue execution mode")
     output: _OutputQueueConfig = Field(default_factory=_OutputQueueConfig, description="Output queue configuration for queue execution mode")
-    in_memory: Optional[_InMemoryQueueConfig] = Field(default=None, description="in_memory transport settings")
-    kafka: Optional[_KafkaQueueConfig] = Field(default=None, description="kafka transport settings")
-    nats: Optional[_NatsQueueConfig] = Field(default=None, description="nats transport settings")
-    batch_size: Optional[int] = Field(
+    in_memory: _InMemoryQueueConfig | None = Field(default=None, description="in_memory transport settings")
+    kafka: _KafkaQueueConfig | None = Field(default=None, description="kafka transport settings")
+    nats: _NatsQueueConfig | None = Field(default=None, description="nats transport settings")
+    batch_size: int | None = Field(
         default=None,
         description=(
             "NOT used in serverless deployments"
@@ -653,7 +651,7 @@ class _QueuesConfig(BaseModel):
 
 
 class _LogLevelConfig(BaseModel):
-    level: Optional[str] = Field(
+    level: str | None = Field(
         default=None,
         pattern="^(INFO|DEBUG|ERROR|WARNING|CRITICAL)$",
         description="Log level. Options: INFO, DEBUG, ERROR, WARNING, CRITICAL",
@@ -688,7 +686,7 @@ class _RealtimeConfig(BaseModel):
 
 
 class _ExecutionConfig(BaseModel):
-    mode: Optional[ExecutionMode] = Field(
+    mode: ExecutionMode | None = Field(
         default=None,
         description=(
             "Execution mode: rest_sync for synchronous REST, rest_async for asynchronous REST, "
@@ -699,11 +697,11 @@ class _ExecutionConfig(BaseModel):
     # The default carries the transport type explicitly: `type` is mandatory inside a declared
     # queues block, and a config that declares no block at all still runs single-process on the
     # in-process pipeline, whose topology needs no queue coordinates.
-    queues: Optional[_QueuesConfig] = Field(
+    queues: _QueuesConfig | None = Field(
         default_factory=lambda: _QueuesConfig(type="in_memory"),
         description="Queue transport and queue settings for queue-based execution",
     )
-    response_store: Optional[_ResponseStoreConfig] = Field(
+    response_store: _ResponseStoreConfig | None = Field(
         default=None,
         description="Response storage configuration for async execution mode",
     )
@@ -730,20 +728,20 @@ class _SandboxPolicyConfig(BaseModel):
     network_allow: list[str] = Field(default_factory=list, description="Domains and/or CIDRs permitted when network_egress is 'allowlist'")
     fs_allow_read: list[str] = Field(default_factory=list, description="Filesystem paths the sandbox may read; empty uses the provider default")
     fs_allow_write: list[str] = Field(default_factory=list, description="Filesystem paths the sandbox may write; empty uses the provider default")
-    cpu: Optional[float] = Field(default=None, description="CPU core limit for the sandbox; None leaves it to the provider default")
-    memory_mb: Optional[int] = Field(default=None, description="Memory limit in megabytes; None leaves it to the provider default")
+    cpu: float | None = Field(default=None, description="CPU core limit for the sandbox; None leaves it to the provider default")
+    memory_mb: int | None = Field(default=None, description="Memory limit in megabytes; None leaves it to the provider default")
     timeout: float = Field(default=120.0, description="Per-execution wall-clock timeout in seconds")
     strict: bool = Field(default=True, description="Fail closed when a policy dimension cannot be enforced by the selected provider")
 
 
 class _SandboxLocalSubprocessConfig(BaseModel):
-    workdir: Optional[str] = Field(default=None, description="Base directory for per-sandbox working directories; None uses the system temp location")
+    workdir: str | None = Field(default=None, description="Base directory for per-sandbox working directories; None uses the system temp location")
 
 
 class _SandboxDockerConfig(BaseModel):
     image: str = Field(default="python:3.12-slim", description="Container image used to create sandboxes")
     runtime: str = Field(default="docker", description="Container runtime to invoke (e.g. docker, nvidia)")
-    attach_to: Optional[str] = Field(default=None, description="Existing container id to attach to instead of creating one (mode 3)")
+    attach_to: str | None = Field(default=None, description="Existing container id to attach to instead of creating one (mode 3)")
 
 
 class _SandboxE2BConfig(BaseModel):
@@ -753,12 +751,12 @@ class _SandboxE2BConfig(BaseModel):
 
 class _SandboxDaytonaConfig(BaseModel):
     api_key_env: str = Field(default="DAYTONA_API_KEY", description="Name of the environment variable holding the Daytona API key")
-    target: Optional[str] = Field(default=None, description="Daytona target/region; None uses the SDK default")
-    image: Optional[str] = Field(
+    target: str | None = Field(default=None, description="Daytona target/region; None uses the SDK default")
+    image: str | None = Field(
         default=None,
         description="Container image for the sandbox (e.g. 'python:3.12-slim' or a registry image). Mutually exclusive with 'snapshot'; when neither is set Daytona uses its default snapshot.",
     )
-    snapshot: Optional[str] = Field(
+    snapshot: str | None = Field(
         default=None,
         description="Named Daytona snapshot to launch from. Mutually exclusive with 'image'; when neither is set Daytona uses its default snapshot.",
     )
@@ -773,25 +771,25 @@ class _SandboxDaytonaConfig(BaseModel):
 
 
 class _SandboxBedrockAgentCoreConfig(BaseModel):
-    region: Optional[str] = Field(default=None, description="AWS region for the Bedrock AgentCore code interpreter; None uses the boto3 default")
+    region: str | None = Field(default=None, description="AWS region for the Bedrock AgentCore code interpreter; None uses the boto3 default")
     network_mode: str = Field(default="sandbox", description="AgentCore session network mode (e.g. 'sandbox', 'public')")
 
 
 class _SandboxKubernetesConfig(BaseModel):
     namespace: str = Field(default="default", description="Kubernetes namespace for sandbox pods")
     image: str = Field(default="python:3.12-slim", description="Container image used for launched sandbox pods")
-    attach_to: Optional[str] = Field(default=None, description="Existing '<namespace>/<pod>' to exec into instead of launching a pod (mode 3)")
-    kubeconfig: Optional[str] = Field(default=None, description="Path to a kubeconfig file; None uses in-cluster or default configuration")
-    service_account: Optional[str] = Field(
+    attach_to: str | None = Field(default=None, description="Existing '<namespace>/<pod>' to exec into instead of launching a pod (mode 3)")
+    kubeconfig: str | None = Field(default=None, description="Path to a kubeconfig file; None uses in-cluster or default configuration")
+    service_account: str | None = Field(
         default=None,
         description="ServiceAccount assigned to sandbox pods; bind it to the (read-only) RBAC role that is the execution's security boundary",
     )
-    image_pull_secrets: List[str] = Field(default_factory=list, description="imagePullSecrets names for the sandbox pod")
-    labels: Dict[str, str] = Field(default_factory=dict, description="Extra labels merged onto sandbox pods")
-    node_selector: Dict[str, str] = Field(default_factory=dict, description="nodeSelector for sandbox pods")
-    env: Dict[str, str] = Field(default_factory=dict, description="Environment variables set in the sandbox container")
-    security_context: Dict[str, Any] = Field(default_factory=dict, description="Pod-level securityContext overlay")
-    container_security_context: Dict[str, Any] = Field(
+    image_pull_secrets: list[str] = Field(default_factory=list, description="imagePullSecrets names for the sandbox pod")
+    labels: dict[str, str] = Field(default_factory=dict, description="Extra labels merged onto sandbox pods")
+    node_selector: dict[str, str] = Field(default_factory=dict, description="nodeSelector for sandbox pods")
+    env: dict[str, str] = Field(default_factory=dict, description="Environment variables set in the sandbox container")
+    security_context: dict[str, Any] = Field(default_factory=dict, description="Pod-level securityContext overlay")
+    container_security_context: dict[str, Any] = Field(
         default_factory=dict, description="Container-level securityContext overlay (over the hardened defaults)"
     )
     network_policy: bool = Field(
@@ -803,8 +801,8 @@ class _SandboxKubernetesConfig(BaseModel):
 
 
 class _SandboxEC2SSMConfig(BaseModel):
-    region: Optional[str] = Field(default=None, description="AWS region for SSM; None uses the boto3 default")
-    attach_to: Optional[str] = Field(default=None, description="EC2 instance id to run commands against via SSM (attach-only)")
+    region: str | None = Field(default=None, description="AWS region for SSM; None uses the boto3 default")
+    attach_to: str | None = Field(default=None, description="EC2 instance id to run commands against via SSM (attach-only)")
 
 
 class _ExecutionBrokerConfig(BaseModel):
@@ -826,16 +824,16 @@ class _ExecutionBrokerConfig(BaseModel):
     )
     response_ttl: int = Field(default=86400, description="TTL in seconds for stored task completions and broker-side session-inventory records")
     sweep_interval: int = Field(default=300, description="Interval in seconds between broker-side idle-session sweeps")
-    worker_timeout_ceiling: Optional[float] = Field(
+    worker_timeout_ceiling: float | None = Field(
         default=None,
         description="Max effective execution timeout (s) the provisioned worker supports; terraform output — 840 in serverless mode, null in server_based. None = no ceiling.",
     )
-    queue: Optional[_QueuesConfig] = Field(
+    queue: _QueuesConfig | None = Field(
         default=None,
         description="Sandbox broker queues for the 'queue' flavor; reuses the execution.queues shape "
         "(input carries execution requests to the worker, output carries completions back to the response store)",
     )
-    response_store: Optional[_ResponseStoreConfig] = Field(
+    response_store: _ResponseStoreConfig | None = Field(
         default=None,
         description="Response storage for the 'queue' flavor (required by it); reuses the execution response store model. "
         "Its ttl fields are overridden by response_ttl, and retry_count/delay are unused (queue-flavor waits are deadline-driven)",
@@ -861,15 +859,13 @@ class _SandboxProfileConfig(BaseModel):
         default_factory=_SandboxPolicyConfig, description="Execution policy (network, filesystem, resources, timeout)"
     )
     params: dict[str, Any] = Field(default_factory=dict, description="Arbitrary parameters passed to a dotted-path provider")
-    local_subprocess: Optional[_SandboxLocalSubprocessConfig] = Field(default=None, description="Configuration for the 'local_subprocess' provider")
-    docker: Optional[_SandboxDockerConfig] = Field(default=None, description="Configuration for the 'docker' provider")
-    e2b: Optional[_SandboxE2BConfig] = Field(default=None, description="Configuration for the 'e2b' provider")
-    daytona: Optional[_SandboxDaytonaConfig] = Field(default=None, description="Configuration for the 'daytona' provider")
-    bedrock_agentcore: Optional[_SandboxBedrockAgentCoreConfig] = Field(
-        default=None, description="Configuration for the 'bedrock_agentcore' provider"
-    )
-    kubernetes: Optional[_SandboxKubernetesConfig] = Field(default=None, description="Configuration for the 'kubernetes' provider")
-    ec2_ssm: Optional[_SandboxEC2SSMConfig] = Field(default=None, description="Configuration for the 'ec2_ssm' provider")
+    local_subprocess: _SandboxLocalSubprocessConfig | None = Field(default=None, description="Configuration for the 'local_subprocess' provider")
+    docker: _SandboxDockerConfig | None = Field(default=None, description="Configuration for the 'docker' provider")
+    e2b: _SandboxE2BConfig | None = Field(default=None, description="Configuration for the 'e2b' provider")
+    daytona: _SandboxDaytonaConfig | None = Field(default=None, description="Configuration for the 'daytona' provider")
+    bedrock_agentcore: _SandboxBedrockAgentCoreConfig | None = Field(default=None, description="Configuration for the 'bedrock_agentcore' provider")
+    kubernetes: _SandboxKubernetesConfig | None = Field(default=None, description="Configuration for the 'kubernetes' provider")
+    ec2_ssm: _SandboxEC2SSMConfig | None = Field(default=None, description="Configuration for the 'ec2_ssm' provider")
 
 
 class _A2UIConfig(BaseModel):
@@ -880,7 +876,7 @@ class _A2UIConfig(BaseModel):
         default=False,
         description="Enable the A2UI capability; when False no hook runs and no reply is labelled",
     )
-    agents: Optional[list[str]] = Field(
+    agents: list[str] | None = Field(
         default=None,
         description="Agent names whose JSON replies are labelled as A2UI; omitted = all agents",
     )
@@ -890,12 +886,12 @@ class _SandboxConfig(BaseModel):
     enabled: bool = Field(
         default=False, description="Enable the sandbox capability; when False it is inert (no tools, no hook behavior, no provider imports)"
     )
-    agents: Optional[list[str]] = Field(
+    agents: list[str] | None = Field(
         default=None,
         description="Agent names the sandbox tools and system-prompt guidance attach to; omitted = all agents",
     )
     default_profile: str = Field(default="default", description="Profile name used when a caller does not specify one")
-    principal_resolver: Optional[str] = Field(
+    principal_resolver: str | None = Field(
         default=None, description="Dotted path to a PrincipalResolver mapping the session/agent to a SandboxPrincipal"
     )
     tool_output_max_chars: int = Field(default=8000, description="Maximum characters of tool output returned to the agent before truncation")
@@ -905,30 +901,30 @@ class _SandboxConfig(BaseModel):
     )
     # Single-backend sugar: when profiles is empty and type is set, a model_validator
     # synthesizes profiles[default_profile] from the top-level fields below.
-    type: Optional[str] = Field(
+    type: str | None = Field(
         default=None, description="Single-backend sugar: provider short name or dotted path used to synthesize the default profile"
     )
-    scope: Optional[str] = Field(
+    scope: str | None = Field(
         default=None,
         pattern="^(per_call|per_session|per_runtime)$",
         description="Single-backend sugar: scope for the synthesized default profile",
     )
-    environment: Optional[str] = Field(
+    environment: str | None = Field(
         default=None,
         pattern="^(managed|attached)$",
         description="Single-backend sugar: environment lifecycle for the synthesized default profile",
     )
-    local_subprocess: Optional[_SandboxLocalSubprocessConfig] = Field(
+    local_subprocess: _SandboxLocalSubprocessConfig | None = Field(
         default=None, description="Single-backend sugar: 'local_subprocess' provider configuration"
     )
-    docker: Optional[_SandboxDockerConfig] = Field(default=None, description="Single-backend sugar: 'docker' provider configuration")
-    e2b: Optional[_SandboxE2BConfig] = Field(default=None, description="Single-backend sugar: 'e2b' provider configuration")
-    daytona: Optional[_SandboxDaytonaConfig] = Field(default=None, description="Single-backend sugar: 'daytona' provider configuration")
-    bedrock_agentcore: Optional[_SandboxBedrockAgentCoreConfig] = Field(
+    docker: _SandboxDockerConfig | None = Field(default=None, description="Single-backend sugar: 'docker' provider configuration")
+    e2b: _SandboxE2BConfig | None = Field(default=None, description="Single-backend sugar: 'e2b' provider configuration")
+    daytona: _SandboxDaytonaConfig | None = Field(default=None, description="Single-backend sugar: 'daytona' provider configuration")
+    bedrock_agentcore: _SandboxBedrockAgentCoreConfig | None = Field(
         default=None, description="Single-backend sugar: 'bedrock_agentcore' provider configuration"
     )
-    kubernetes: Optional[_SandboxKubernetesConfig] = Field(default=None, description="Single-backend sugar: 'kubernetes' provider configuration")
-    ec2_ssm: Optional[_SandboxEC2SSMConfig] = Field(default=None, description="Single-backend sugar: 'ec2_ssm' provider configuration")
+    kubernetes: _SandboxKubernetesConfig | None = Field(default=None, description="Single-backend sugar: 'kubernetes' provider configuration")
+    ec2_ssm: _SandboxEC2SSMConfig | None = Field(default=None, description="Single-backend sugar: 'ec2_ssm' provider configuration")
 
     @model_validator(mode="after")
     def _synthesize_default_profile(self) -> "_SandboxConfig":
@@ -998,7 +994,7 @@ class _AGUIStateConfig(BaseModel):
     """Opt-in for the AG-UI shared-state tools (`get_agui_state` / `update_agui_state`)."""
 
     enabled: bool = Field(default=False, description="Expose the AG-UI state tools to agents")
-    agents: Optional[list[str]] = Field(default=None, description="Agent names the tools attach to; omitted = all agents")
+    agents: list[str] | None = Field(default=None, description="Agent names the tools attach to; omitted = all agents")
 
 
 class _AGUIClientContextConfig(BaseModel):
@@ -1008,16 +1004,16 @@ class _AGUIClientContextConfig(BaseModel):
         default=False,
         description="Expose the read-only AG-UI client-context tools (forwarded props and context) to agents",
     )
-    agents: Optional[list[str]] = Field(default=None, description="Agent names the tools attach to; omitted = all agents")
+    agents: list[str] | None = Field(default=None, description="Agent names the tools attach to; omitted = all agents")
 
 
 class _AGUIConfig(BaseModel):
     """Parameterizes a mounted AGUIRequestHandler. Mounting the handler is what enables AG-UI;
     this block never switches the surface on. The two nested blocks do switch on agent-facing tools."""
 
-    agents: Optional[list[str]] = Field(default=None, description="Agent names reachable over AG-UI; omitted = all streaming-capable agents")
+    agents: list[str] | None = Field(default=None, description="Agent names reachable over AG-UI; omitted = all streaming-capable agents")
     prefix: str = Field(default="/agui", description="Route prefix for the AG-UI surface")
-    default_agent: Optional[str] = Field(default=None, description="Agent served on the bare prefix route")
+    default_agent: str | None = Field(default=None, description="Agent served on the bare prefix route")
     state: _AGUIStateConfig = Field(default_factory=_AGUIStateConfig)
     client_context: _AGUIClientContextConfig = Field(default_factory=_AGUIClientContextConfig)
 
@@ -1045,18 +1041,18 @@ class AKConfig(YamlBaseSettingsModified):
     teams: _TeamsConfig = Field(description="Microsoft Teams related configurations", default_factory=_TeamsConfig)
     gmail: _GmailConfig = Field(description="Gmail related configurations", default_factory=_GmailConfig)
     multimodal: _MultimodalConfig = Field(description="Multimodal attachment memory configurations", default_factory=_MultimodalConfig)
-    thread: Optional[_ThreadStoreConfig] = Field(
+    thread: _ThreadStoreConfig | None = Field(
         default=None,
         description="Conversation Thread Support configurations (store backend, naming). The feature is served by mounting AgentThreadRequestHandler; this block only parameterizes it.",
     )
 
     agui: _AGUIConfig = Field(description="AG-UI integration configurations", default_factory=_AGUIConfig)
-    schedule: Optional[_ScheduleConfig] = Field(
+    schedule: _ScheduleConfig | None = Field(
         default=None,
         description="Scheduling capability configurations (trigger provider, task store, tool scoping). Absent = the capability is disabled.",
     )
 
-    okf: Optional[_OKFConfig] = Field(
+    okf: _OKFConfig | None = Field(
         default=None,
         description="Open Knowledge Format capability configurations (bundles and the agents that consume, produce, or curate them). Absent = the capability is disabled.",
     )

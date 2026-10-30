@@ -22,7 +22,7 @@ import logging
 import math
 import os
 import shlex
-from typing import Any, Optional
+from typing import Any
 
 from daytona import (
     CreateSandboxFromImageParams,
@@ -112,12 +112,12 @@ class DaytonaSandboxProvider(SandboxProvider):
         policy_resources=True,  # cpu/memory -> Resources on an image-based sandbox
     )
 
-    def __init__(self, config, idle_timeout: Optional[float] = None) -> None:
+    def __init__(self, config, idle_timeout: float | None = None) -> None:
         """Store the config and the profile's idle_timeout (mapped to auto_stop_interval);
         the Daytona client is created lazily on first use."""
         super().__init__(config)
         self._idle_timeout = idle_timeout
-        self._client_instance: Optional[Daytona] = None
+        self._client_instance: Daytona | None = None
 
     def _client(self) -> Daytona:
         """Return the lazily created Daytona client, keyed from the configured env variable."""

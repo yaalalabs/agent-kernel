@@ -6,7 +6,7 @@ OPENAI_API_KEY becomes the parameter /ak/{prefix}/openai_api_key.
 
 import logging
 from threading import Lock
-from typing import Any, Optional
+from typing import Any
 
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
@@ -30,7 +30,7 @@ class AWSSMSecretProvider(SecretProvider):
     def __init__(self, prefix: str) -> None:
         """:raises AKConfigError: If prefix is empty, or still contains '/' after stripping."""
         self._prefix = self._normalize_prefix(prefix)
-        self._client: Optional[Any] = None
+        self._client: Any | None = None
         self._client_lock = Lock()
 
     @classmethod
@@ -49,7 +49,7 @@ class AWSSMSecretProvider(SecretProvider):
                     self._client = boto3.client("ssm")
         return self._client
 
-    def get_secret(self, key: str) -> Optional[str]:
+    def get_secret(self, key: str) -> str | None:
         """Read /ak/{prefix}/{key.lower()}; a missing parameter is a miss, any other failure raises.
 
         :raises SecretError: If SSM rejected or failed the call for any reason other than

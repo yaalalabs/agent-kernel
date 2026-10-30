@@ -196,8 +196,6 @@ directory laid out as `<dir>/<secret-name>/<KEY>` or flat `<dir>/<KEY>`. A missi
 Set `secret.provider.type` to a dotted path to a `SecretProvider` subclass:
 
 ```python
-from typing import Optional
-
 from agentkernel.secret import SecretProvider
 from agentkernel.secret.errors import SecretError
 
@@ -207,7 +205,7 @@ class VaultSecretProvider(SecretProvider):
     def create(cls, config) -> "VaultSecretProvider":
         return cls(mount=config.prefix)  # receives the whole `secret` block
 
-    def get_secret(self, key: str) -> Optional[str]:
+    def get_secret(self, key: str) -> str | None:
         ...  # return the value, None on a miss, or raise SecretError on a backend failure
 ```
 

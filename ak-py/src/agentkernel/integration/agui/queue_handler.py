@@ -1,9 +1,9 @@
 """Queue-mode AG-UI: run the agent on the pipeline instead of inside the SSE request (spec #710)."""
 
 import asyncio
-import json
 import logging
-from typing import Any, AsyncGenerator, Optional
+from collections.abc import AsyncGenerator
+from typing import Any
 from uuid import uuid4
 
 from fastapi import Request
@@ -53,7 +53,7 @@ class AGUIPipelineRequestHandler(AGUIRequestHandler):
 
     requires_pipeline = True
 
-    def __init__(self, authoriser: Optional[Authoriser] = None, auth_validator: Optional[AuthValidator] = None):
+    def __init__(self, authoriser: Authoriser | None = None, auth_validator: AuthValidator | None = None):
         """
         :param authoriser: Authoriser for the AG-UI routes.
         :param auth_validator: Wrapped as an Authoriser when `authoriser` is omitted.
@@ -175,8 +175,8 @@ class AGUIPipelineRequestHandler(AGUIRequestHandler):
         yield encoder.encode(RunStartedEvent(thread_id=run_input.thread_id, run_id=run_input.run_id, parent_run_id=run_input.parent_run_id))
 
         chunks = self._store.stream(request_id)
-        error: Optional[str] = None
-        paused: Optional[Any] = None
+        error: str | None = None
+        paused: Any | None = None
         try:
             while True:
                 # The store's stream is a blocking iterator; a worker thread keeps the event loop free.

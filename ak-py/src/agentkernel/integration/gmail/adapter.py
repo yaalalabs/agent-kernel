@@ -15,7 +15,7 @@ import pickle
 import threading
 from collections import OrderedDict
 from email.mime.text import MIMEText
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -186,7 +186,7 @@ class GmailInboundAdapter(PollingInboundAdapter):
         """Authenticate eagerly, so a bad token fails at startup rather than on the first poll."""
         self._service.authenticate()
 
-    async def poll(self) -> List[Any]:
+    async def poll(self) -> list[Any]:
         """Return the ids of unread messages that pass the filters and have not been handled."""
         client = self._service.client
         if client is None:
@@ -261,7 +261,7 @@ class GmailInboundAdapter(PollingInboundAdapter):
             else f"From: {sender}\nSubject: {subject}\n\n{body}"
         )
 
-        requests: List[AgentRequest] = [AgentRequestText(prompt=prompt), *attachments]
+        requests: list[AgentRequest] = [AgentRequestText(prompt=prompt), *attachments]
         requests, _ = AttachmentStorageManager.offload(
             session_id,
             requests,
@@ -311,7 +311,7 @@ class GmailInboundAdapter(PollingInboundAdapter):
             self._log.warning(f"Error checking email filters: {e}")
             return True
 
-    def _thread_history(self, thread_id: Optional[str], current_message_id: str) -> str:
+    def _thread_history(self, thread_id: str | None, current_message_id: str) -> str:
         """The recent messages in the same thread, oldest first, excluding the current one."""
         if not thread_id:
             return ""
@@ -335,7 +335,7 @@ class GmailInboundAdapter(PollingInboundAdapter):
             return ""
 
     @staticmethod
-    def _header(headers: list, name: str) -> Optional[str]:
+    def _header(headers: list, name: str) -> str | None:
         """Read one header value, case-insensitively."""
         for header in headers:
             if header["name"].lower() == name.lower():
@@ -372,9 +372,9 @@ class GmailInboundAdapter(PollingInboundAdapter):
             self._log.warning(f"Error decoding {what}: {e}")
             return ""
 
-    def _attachments(self, message_id: str, payload: dict) -> List[AgentRequest]:
+    def _attachments(self, message_id: str, payload: dict) -> list[AgentRequest]:
         """Download the message's attachments as image/file requests."""
-        attachments: List[AgentRequest] = []
+        attachments: list[AgentRequest] = []
         try:
             for part in payload.get("parts", []):
                 filename = part.get("filename")
@@ -434,7 +434,7 @@ class GmailOutboundAdapter(OutboundAdapter):
     def __init__(self):
         self._service = _GmailService()
 
-    async def deliver(self, reply: AgentReply, reply_context: Dict[str, str]) -> None:
+    async def deliver(self, reply: AgentReply, reply_context: dict[str, str]) -> None:
         """Send the reply into the original thread, then mark the message read.
 
         The order matters: an unread message is what the poller picks up, so marking it read
@@ -442,13 +442,13 @@ class GmailOutboundAdapter(OutboundAdapter):
         """
         self._send(str(reply), reply_context)
 
-    async def deliver_error(self, message: str, reply_context: Dict[str, str]) -> None:
+    async def deliver_error(self, message: str, reply_context: dict[str, str]) -> None:
         try:
             self._send(message, reply_context)
         except Exception as e:
             self._log.error(f"Could not deliver the Gmail error message: {e}")
 
-    def _send(self, text: str, reply_context: Dict[str, str]) -> None:
+    def _send(self, text: str, reply_context: dict[str, str]) -> None:
         """Compose and send one threaded reply, then take the original out of the unread query."""
         client = self._service.client
         if client is None:
@@ -487,7 +487,7 @@ class GmailOutboundAdapter(OutboundAdapter):
             lines.append(client_name)
         return f"{body}\n\n" + "\n".join(lines) if lines else body
 
-    def _mark_read(self, message_id: Optional[str]) -> None:
+    def _mark_read(self, message_id: str | None) -> None:
         """Take the message out of the unread query the poller runs."""
         if not message_id:
             return

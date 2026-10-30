@@ -2,7 +2,6 @@
 
 import json
 from copy import deepcopy
-from typing import Optional
 
 from ...core.base import Session
 from ...core.model import SystemTool
@@ -25,7 +24,7 @@ class AGUIState:
     """
 
     @staticmethod
-    def read_state(session: Session) -> Optional[dict]:
+    def read_state(session: Session) -> dict | None:
         """Read the live shared-state object off a session.
 
         :param session: Session the run is using.
@@ -34,7 +33,7 @@ class AGUIState:
         return session.get_non_volatile_cache().get(AGUI_STATE_KEY)
 
     @staticmethod
-    def snapshot_state(session: Session) -> Optional[dict]:
+    def snapshot_state(session: Session) -> dict | None:
         """Deep-copy the shared state, for comparing before and after a run.
 
         A deep copy and not the object itself: `update_agui_state` mutates the stored dict in place,
@@ -56,7 +55,7 @@ class AGUIState:
         session.get_non_volatile_cache().set(AGUI_STATE_KEY, state)
 
     @staticmethod
-    def read_forwarded_props(session: Session) -> Optional[dict]:
+    def read_forwarded_props(session: Session) -> dict | None:
         """Read the `forwardedProps` sent with this run.
 
         :param session: Session the run is using.
@@ -65,7 +64,7 @@ class AGUIState:
         return session.get_volatile_cache().get(AGUI_FORWARDED_PROPS_KEY)
 
     @staticmethod
-    def read_context(session: Session) -> Optional[list]:
+    def read_context(session: Session) -> list | None:
         """Read the context entries sent with this run.
 
         :param session: Session the run is using.

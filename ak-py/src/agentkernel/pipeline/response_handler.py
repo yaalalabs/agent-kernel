@@ -2,7 +2,6 @@ import asyncio
 import json
 import logging
 import threading
-from typing import Optional
 
 from ..core.config import AKConfig
 from ..core.model import ExecutionMode, StreamChunk
@@ -32,9 +31,9 @@ class ResponseHandler:
 
     def __init__(
         self,
-        transport: Optional[QueueTransport] = None,
-        response_store: Optional[ResponseStore] = None,
-        ws_handler: Optional[WebSocketHandlerABC] = None,
+        transport: QueueTransport | None = None,
+        response_store: ResponseStore | None = None,
+        ws_handler: WebSocketHandlerABC | None = None,
     ):
         self._transport = transport or QueueTransportFactory.create()
         self._response_store = response_store

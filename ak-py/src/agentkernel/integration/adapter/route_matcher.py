@@ -1,6 +1,7 @@
 import logging
 import os
-from typing import Any, Dict, Iterable, Mapping, Optional, Tuple
+from collections.abc import Iterable, Mapping
+from typing import Any
 
 from ...core.util.factory import AKConfigError
 from .routes import BUILTIN_WEBHOOK_ROUTES, WebhookRoute
@@ -19,21 +20,21 @@ class WebhookRouteMatcher:
 
     _log = logging.getLogger("ak.integration.route_matcher")
 
-    def __init__(self, routes: Iterable[WebhookRoute], base_path: Optional[str] = None):
+    def __init__(self, routes: Iterable[WebhookRoute], base_path: str | None = None):
         """
         :param routes: The routes to let through: POST on each webhook_path, GET on each challenge_path.
         :param base_path: The prefix API Gateway serves them under, e.g. "/api/v1". None derives it from
             API_BASE_PATH and API_VERSION, which the ak-serverless module sets on the authorizer Lambda.
         """
         self._base_path = base_path if base_path is not None else self._base_path_from_env()
-        self._routes: Dict[Tuple[str, str], str] = {}
+        self._routes: dict[tuple[str, str], str] = {}
         for route in routes:
             self._routes[("POST", self._normalize(route.webhook_path))] = route.name
             if route.challenge_path:
                 self._routes[("GET", self._normalize(route.challenge_path))] = route.name
 
     @classmethod
-    def for_integrations(cls, *names: str, base_path: Optional[str] = None) -> "WebhookRouteMatcher":
+    def for_integrations(cls, *names: str, base_path: str | None = None) -> "WebhookRouteMatcher":
         """A matcher for built-in integrations, by name: for_integrations("slack", "whatsapp").
 
         :param names: Built-in integration names.
@@ -52,7 +53,7 @@ class WebhookRouteMatcher:
             )
         return cls([BUILTIN_WEBHOOK_ROUTES[name] for name in names], base_path=base_path)
 
-    def __call__(self, event: Mapping[str, Any]) -> Optional[str]:
+    def __call__(self, event: Mapping[str, Any]) -> str | None:
         """The name of the integration whose route this authorizer event targets, else None.
 
         Mirrors RESTLambdaRouter.dispatch: the method upper-cased, the base path removed with

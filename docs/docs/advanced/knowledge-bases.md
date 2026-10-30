@@ -566,7 +566,7 @@ optional, and which of them you implement is fixed by the `KnowledgeCapabilities
 returning an empty result, so the declaration and the implemented set must agree.
 
 ```python
-from typing import Any, Iterable, List, Mapping
+from collections.abc import Iterable
 from agentkernel.knowledgebase import KnowledgeBase, KnowledgeCapabilities, Record
 
 
@@ -597,7 +597,7 @@ class MyBackend(KnowledgeBase):
         for record in records:
             self._client.store(record["text"], record.get("metadata", {}))
 
-    def search(self, query: str, limit: int = 3, **kwargs) -> List[Record]:
+    def search(self, query: str, limit: int = 3, **kwargs) -> list[Record]:
         # Return the most relevant records for the query
         raw = self._client.search(query, top_k=limit)
         return [{"text": r.text, "metadata": r.meta} for r in raw]

@@ -6,7 +6,7 @@ not installed. Neither imports any concrete provider or broker at module load â€
 imported only when a profile/flavor selects it.
 """
 
-from typing import Any, ClassVar, Optional
+from typing import Any, ClassVar
 
 from pydantic import BaseModel, ConfigDict
 
@@ -41,7 +41,7 @@ class SandboxProviderFactory:
     _cache: ClassVar[dict[tuple[str, str], SandboxProvider]] = {}
 
     @classmethod
-    def get(cls, profile_name: Optional[str] = None) -> Optional[SandboxProvider]:
+    def get(cls, profile_name: str | None = None) -> SandboxProvider | None:
         """Return the provider for ``profile_name`` (default profile when omitted).
 
         Returns ``None`` when the capability is disabled; raises ``SandboxConfigError`` for

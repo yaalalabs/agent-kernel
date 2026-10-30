@@ -2,7 +2,6 @@
 
 import logging
 import os
-from typing import Optional
 
 from ..errors import KnowledgePathError
 from .base import DocumentStore
@@ -19,7 +18,7 @@ class LocalDocumentStore(DocumentStore):
     from serving a file outside it.
     """
 
-    def __init__(self, root: str, writable: Optional[bool] = None) -> None:
+    def __init__(self, root: str, writable: bool | None = None) -> None:
         """
         Open a directory as a document store.
 

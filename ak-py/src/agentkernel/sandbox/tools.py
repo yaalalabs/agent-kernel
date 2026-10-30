@@ -11,7 +11,7 @@ results carry a ``sandbox_session_id``, and machinery errors are caught and retu
 
 import json
 import logging
-from typing import Any, Optional, Union
+from typing import Any
 
 from ..core.config import AKConfig
 from ..core.model import SystemTool
@@ -28,19 +28,19 @@ def _max_chars() -> int:
     return AKConfig.get().sandbox.tool_output_max_chars
 
 
-def _default_session_echo(sandbox_session_id: Optional[str], profile: Optional[str]) -> str:
+def _default_session_echo(sandbox_session_id: str | None, profile: str | None) -> str:
     """The sandbox_session_id a caller can reuse when it did not pass one explicitly."""
     if sandbox_session_id:
         return sandbox_session_id
     return f"default:{profile or AKConfig.get().sandbox.default_profile}"
 
 
-def _error_json(exc: Exception, sandbox_session_id: Optional[str]) -> str:
+def _error_json(exc: Exception, sandbox_session_id: str | None) -> str:
     """Serialize a machinery error into the tool ``{"error": ...}`` JSON contract."""
     return json.dumps({"error": str(exc), "sandbox_session_id": sandbox_session_id or ""})
 
 
-def _outcome_json(outcome: Union[SandboxResult, SandboxTask]) -> str:
+def _outcome_json(outcome: SandboxResult | SandboxTask) -> str:
     """Serialize an execute outcome: a pending-task handle for a promoted ``SandboxTask``,
     or stdout/stderr/exit_code (truncated) for a ``SandboxResult``. A machinery ``notice``
     (idle reset, self-heal recreation) is passed through when present."""
@@ -61,7 +61,7 @@ def _outcome_json(outcome: Union[SandboxResult, SandboxTask]) -> str:
     return json.dumps(payload)
 
 
-async def run_code(code: str, language: str = "python", sandbox_session_id: Optional[str] = None, profile: Optional[str] = None) -> str:
+async def run_code(code: str, language: str = "python", sandbox_session_id: str | None = None, profile: str | None = None) -> str:
     """
     Execute code in an isolated sandbox and return the outcome as a JSON string.
 
@@ -88,7 +88,7 @@ async def run_code(code: str, language: str = "python", sandbox_session_id: Opti
         return _error_json(exc, sandbox_session_id)
 
 
-async def run_command(command: str, sandbox_session_id: Optional[str] = None, profile: Optional[str] = None) -> str:
+async def run_command(command: str, sandbox_session_id: str | None = None, profile: str | None = None) -> str:
     """
     Execute a shell command in an isolated sandbox and return the outcome as a JSON string.
 
@@ -114,7 +114,7 @@ async def run_command(command: str, sandbox_session_id: Optional[str] = None, pr
         return _error_json(exc, sandbox_session_id)
 
 
-async def write_sandbox_file(path: str, content: str, sandbox_session_id: Optional[str] = None, profile: Optional[str] = None) -> str:
+async def write_sandbox_file(path: str, content: str, sandbox_session_id: str | None = None, profile: str | None = None) -> str:
     """
     Write a UTF-8 text file into the sandbox workspace.
 
@@ -138,7 +138,7 @@ async def write_sandbox_file(path: str, content: str, sandbox_session_id: Option
         return _error_json(exc, sandbox_session_id)
 
 
-async def read_sandbox_file(path: str, sandbox_session_id: Optional[str] = None, profile: Optional[str] = None) -> str:
+async def read_sandbox_file(path: str, sandbox_session_id: str | None = None, profile: str | None = None) -> str:
     """
     Read a UTF-8 text file from the sandbox workspace.
 
@@ -192,7 +192,7 @@ async def check_sandbox_task(task_id: str) -> str:
         return _error_json(exc, None)
 
 
-async def new_sandbox_session(name: Optional[str] = None, profile: Optional[str] = None) -> str:
+async def new_sandbox_session(name: str | None = None, profile: str | None = None) -> str:
     """
     Create a fresh, empty sandbox session and return its system-assigned id.
 

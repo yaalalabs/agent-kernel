@@ -1,5 +1,5 @@
 import logging
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 import uvicorn
 
@@ -39,11 +39,11 @@ class IOHandler:
     @classmethod
     def run(
         cls,
-        auth_validator: Optional[AuthValidator] = None,
-        handlers: Optional[list[RESTRequestHandler]] = None,
-        pollers: Optional[list["PollerRunner"]] = None,
-        gateways: Optional[list["GatewayRunner"]] = None,
-        request_handler: Optional[RequestHandler] = None,
+        auth_validator: AuthValidator | None = None,
+        handlers: list[RESTRequestHandler] | None = None,
+        pollers: list["PollerRunner"] | None = None,
+        gateways: list["GatewayRunner"] | None = None,
+        request_handler: RequestHandler | None = None,
     ) -> None:
         """Boot the pipeline topology this configuration implies and serve until shutdown.
 
@@ -193,7 +193,7 @@ class IOHandler:
         ThreadRunner.install_shutdown_signal_handlers(cls._log, on_shutdown_signal=_stop_uvicorn)
 
     @classmethod
-    def _validate_request_handler(cls, request_handler: Optional[RequestHandler]) -> None:
+    def _validate_request_handler(cls, request_handler: RequestHandler | None) -> None:
         """Refuse a chat-route handler that does not enqueue.
 
         The route this substitutes for is the pipeline's queue producer. A direct-execution
@@ -215,7 +215,7 @@ class IOHandler:
         )
 
     @classmethod
-    def _validate_topology(cls, mode: Optional[ExecutionMode], transport_type: str, config, auth_validator: Optional[AuthValidator] = None) -> None:
+    def _validate_topology(cls, mode: ExecutionMode | None, transport_type: str, config, auth_validator: AuthValidator | None = None) -> None:
         """Fail fast on unsupported/incoherent topology combinations (spec §9, §10)."""
         if mode == ExecutionMode.ASYNC and transport_type == "in_memory" and auth_validator is None:
             raise AKConfigError(

@@ -1,7 +1,7 @@
 """PollerRunner: hosting a pull-based inbound adapter, and how it drains."""
 
 import threading
-from typing import Any, Dict, List
+from typing import Any
 
 import pytest
 
@@ -22,13 +22,13 @@ class FakePollingAdapter(PollingInboundAdapter):
     name = "byo_pkg.FakeOutboundAdapter"
     poll_interval = 0.01
 
-    def __init__(self, batches: List[List[str]] = None, fail_on_poll: bool = False):
+    def __init__(self, batches: list[list[str]] = None, fail_on_poll: bool = False):
         self._batches = batches if batches is not None else [["m1", "m2"]]
         self._fail_on_poll = fail_on_poll
         self.polls = 0
-        self.handled: List[str] = []
+        self.handled: list[str] = []
 
-    async def poll(self) -> List[Any]:
+    async def poll(self) -> list[Any]:
         self.polls += 1
         if self._fail_on_poll:
             raise RuntimeError("gmail unreachable")
@@ -56,10 +56,10 @@ class FakePollingAdapter(PollingInboundAdapter):
 class FakeOutboundAdapter(OutboundAdapter):
     name = "byo_pkg.FakeOutboundAdapter"
 
-    async def deliver(self, reply: AgentReply, reply_context: Dict[str, str]) -> None:  # pragma: no cover
+    async def deliver(self, reply: AgentReply, reply_context: dict[str, str]) -> None:  # pragma: no cover
         raise AssertionError("a poller never delivers")
 
-    async def deliver_error(self, message: str, reply_context: Dict[str, str]) -> None:  # pragma: no cover
+    async def deliver_error(self, message: str, reply_context: dict[str, str]) -> None:  # pragma: no cover
         raise AssertionError("a poller never delivers")
 
 

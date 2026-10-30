@@ -8,7 +8,7 @@ a reply context that survives the queue as flat strings inside its budget — le
 platform's own parsing and formatting to its per-platform tests.
 """
 
-from typing import Any, Optional
+from typing import Any
 
 import pytest
 
@@ -47,11 +47,11 @@ class IntegrationAdapterContract:
         """The request id ``valid_delivery`` must resolve to."""
         raise NotImplementedError
 
-    def ignorable_delivery(self) -> Optional[Any]:
+    def ignorable_delivery(self) -> Any | None:
         """A raw delivery the adapter legitimately ignores, or None if it has none."""
         return None
 
-    def unauthentic_delivery(self) -> Optional[Any]:
+    def unauthentic_delivery(self) -> Any | None:
         """A raw delivery whose verification must fail, or None if the adapter cannot verify."""
         return None
 

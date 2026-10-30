@@ -1,5 +1,4 @@
 import logging
-from typing import List
 
 from a2a.server.apps.rest.rest_adapter import RESTAdapter
 from a2a.server.request_handlers import DefaultRequestHandler
@@ -38,7 +37,7 @@ class A2ARESTRequestHandler:
 
         @router.get("/catalog")
         def list_cards():
-            cards: List[BaseModel] = A2A.get_cards() or []
+            cards: list[BaseModel] = A2A.get_cards() or []
             result = []
             for c in cards:
                 result.append(c.model_dump())
@@ -47,7 +46,7 @@ class A2ARESTRequestHandler:
         return router
 
     @classmethod
-    def get_agent_routers(cls) -> List[APIRouter]:
+    def get_agent_routers(cls) -> list[APIRouter]:
         agents = A2A.get_agent_names()
         routers = []
         for agent in agents:

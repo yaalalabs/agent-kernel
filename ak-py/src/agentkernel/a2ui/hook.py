@@ -20,7 +20,6 @@ other owns the labelling, never both.
 
 import json
 import logging
-from typing import Optional
 
 from ..core.base import Agent, Session
 from ..core.config import AKConfig
@@ -65,7 +64,7 @@ class A2UIPostHook(PostHook):
         :return: True when `a2ui.agents` is unset or names this agent.
         """
         config = getattr(AKConfig.get(), "a2ui", None)
-        agents: Optional[list[str]] = getattr(config, "agents", None) if config else None
+        agents: list[str] | None = getattr(config, "agents", None) if config else None
         return agents is None or agent.name in agents
 
     def name(self) -> str:

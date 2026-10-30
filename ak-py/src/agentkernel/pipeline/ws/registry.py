@@ -11,7 +11,7 @@ delivers frames pushed by Response Handlers), and the in-process short-circuit o
 import asyncio
 import logging
 import threading
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Optional
 
 from .base import WebSocketConnectionStoreABC
 
@@ -40,8 +40,8 @@ class LocalConnectionRegistry(WebSocketConnectionStoreABC):
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._user_connections: Dict[str, Dict[str, Tuple[Any, Optional[asyncio.AbstractEventLoop]]]] = {}
-        self._connection_users: Dict[str, str] = {}
+        self._user_connections: dict[str, dict[str, tuple[Any, asyncio.AbstractEventLoop | None]]] = {}
+        self._connection_users: dict[str, str] = {}
 
     @classmethod
     def instance(cls) -> "LocalConnectionRegistry":
@@ -64,18 +64,18 @@ class LocalConnectionRegistry(WebSocketConnectionStoreABC):
         user_id: str,
         connection_id: str,
         websocket: Any = None,
-        loop: Optional[asyncio.AbstractEventLoop] = None,
+        loop: asyncio.AbstractEventLoop | None = None,
     ) -> None:
         """Register a connection, keeping the socket and the loop it must be written on."""
         with self._lock:
             self._user_connections.setdefault(user_id, {})[connection_id] = (websocket, loop)
             self._connection_users[connection_id] = user_id
 
-    def get_connections(self, user_id: str) -> List[str]:
+    def get_connections(self, user_id: str) -> list[str]:
         with self._lock:
             return list(self._user_connections.get(user_id, {}))
 
-    def get_user_id(self, connection_id: str) -> Optional[str]:
+    def get_user_id(self, connection_id: str) -> str | None:
         with self._lock:
             return self._connection_users.get(connection_id)
 
@@ -95,7 +95,7 @@ class LocalConnectionRegistry(WebSocketConnectionStoreABC):
 
     # -- delivery ---------------------------------------------------------------------------
 
-    def socket(self, connection_id: str) -> Tuple[Any, Optional[asyncio.AbstractEventLoop]]:
+    def socket(self, connection_id: str) -> tuple[Any, asyncio.AbstractEventLoop | None]:
         """The socket and loop registered for ``connection_id`` (``(None, None)`` when absent)."""
         with self._lock:
             user_id = self._connection_users.get(connection_id)

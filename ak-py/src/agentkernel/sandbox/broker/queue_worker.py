@@ -22,7 +22,7 @@ import json
 import logging
 import threading
 import time
-from typing import Any, Optional
+from typing import Any
 
 from ...core.config import AKConfig
 from ...pipeline.consumer import ConsumerLoop
@@ -49,7 +49,7 @@ _INVENTORY_PREFIX = "session:"
 class QueueBrokerWorker:
     """Blocking sandbox execution worker (the ``AgentRunner`` analogue for the sandbox broker)."""
 
-    def __init__(self, sandbox_config: Optional[Any] = None) -> None:
+    def __init__(self, sandbox_config: Any | None = None) -> None:
         """Validate the configuration and build the transport, store, and engine, all
         fail-fast: a misconfigured worker must die at startup, not on its first message.
         ``sandbox_config`` defaults to ``AKConfig.get().sandbox`` (injectable for tests)."""
@@ -249,7 +249,7 @@ class QueueBrokerWorker:
             ak_session_id = "unknown"
             try:
                 request = BrokerWireCodec.decode_request(message.body)
-                task_id: Optional[str] = request.task_id
+                task_id: str | None = request.task_id
                 session = request.sandbox_session
                 ak_session_id = request.ak_session_id
             except Exception:  # noqa: BLE001 — an undecodable body still gets a placeholder completion

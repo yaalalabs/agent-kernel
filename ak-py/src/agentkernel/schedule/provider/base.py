@@ -7,7 +7,7 @@ record, its validation, and its ownership rules belong to the manager.
 
 import logging
 from abc import ABC, abstractmethod
-from typing import ClassVar, Optional
+from typing import ClassVar
 
 from ...core.config import AKConfig, _ScheduleProviderConfig
 from ...core.util.factory import AKConfigError, require_extra, resolve_dotted
@@ -29,7 +29,7 @@ class ScheduleProvider(ABC):
     # Queue transports this provider can deliver to; None means transport-agnostic. The manager
     # fails fast at construction when the configured transport is not in the set, so an
     # undeliverable pairing surfaces at startup instead of at the first occurrence.
-    supported_transports: ClassVar[Optional[frozenset[str]]] = None
+    supported_transports: ClassVar[frozenset[str] | None] = None
 
     @classmethod
     def from_config(cls, provider_config: _ScheduleProviderConfig) -> "ScheduleProvider":
@@ -78,7 +78,7 @@ class ScheduleProvider(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def get(self, provider_ref: str) -> Optional[dict]:
+    def get(self, provider_ref: str) -> dict | None:
         """Return the backend's own view of a registration, for diagnostics.
 
         :param provider_ref: The reference returned by :meth:`create`.

@@ -1,6 +1,7 @@
 import asyncio
 import os
-from typing import Any, Awaitable, Callable, ClassVar, Coroutine, Dict, Mapping, Optional
+from collections.abc import Awaitable, Callable, Coroutine, Mapping
+from typing import Any, ClassVar
 
 from starlette.requests import Request
 
@@ -33,9 +34,9 @@ class LambdaWebhookHost:
     # One per execution environment, shared by every host and reused across warm
     # invocations, like uvicorn's single loop on the other surfaces. Never made the thread's
     # current loop, so run_async_sync elsewhere in the process sees what it saw before.
-    _loop: ClassVar[Optional[asyncio.AbstractEventLoop]] = None
+    _loop: ClassVar[asyncio.AbstractEventLoop | None] = None
 
-    def __init__(self, handler: WebhookRESTRequestHandler, translator: Optional[LambdaEventTranslator] = None):
+    def __init__(self, handler: WebhookRESTRequestHandler, translator: LambdaEventTranslator | None = None):
         """Check the deployment can serve the handler, so a broken one fails its Lambda init loudly
         instead of dropping deliveries later.
 
@@ -47,7 +48,7 @@ class LambdaWebhookHost:
         self._handler = LambdaWebhookGuard().check(handler)
         self._translator = translator or LambdaEventTranslator()
 
-    def handle(self, event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+    def handle(self, event: dict[str, Any], context: Any) -> dict[str, Any]:
         """Serve one platform delivery (the router's ``(event, context)`` contract).
 
         :param event: The API Gateway REST (v1) proxy event.
@@ -56,7 +57,7 @@ class LambdaWebhookHost:
         """
         return self._run(self._respond(self._handler.handle, event))
 
-    def challenge(self, event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+    def challenge(self, event: dict[str, Any], context: Any) -> dict[str, Any]:
         """Answer the platform's subscription handshake (the router's ``(event, context)`` contract).
 
         :param event: The API Gateway REST (v1) proxy event.
@@ -65,7 +66,7 @@ class LambdaWebhookHost:
         """
         return self._run(self._respond(self._handler.challenge, event))
 
-    async def _respond(self, endpoint: Callable[[Request], Awaitable[Any]], event: Mapping[str, Any]) -> Dict[str, Any]:
+    async def _respond(self, endpoint: Callable[[Request], Awaitable[Any]], event: Mapping[str, Any]) -> dict[str, Any]:
         """Translate the event, call the endpoint, and translate its answer or its exception.
 
         Every failure becomes a proxy response: an unhandled exception would reach

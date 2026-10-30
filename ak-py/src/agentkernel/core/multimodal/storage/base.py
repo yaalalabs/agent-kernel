@@ -7,7 +7,7 @@ AttachmentData dataclass used across all storage backends.
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import ClassVar, Optional
+from typing import ClassVar
 
 # Constants
 ATTACHMENT_KEY_PREFIX = "attachment:"
@@ -35,7 +35,7 @@ class AttachmentData:
     mime_type: str
     description: str
     timestamp: float
-    url: Optional[str] = None
+    url: str | None = None
 
 
 class AttachmentStore(ABC):
@@ -61,7 +61,7 @@ class AttachmentStore(ABC):
         pass
 
     @abstractmethod
-    def get(self, attachment_id: str) -> Optional[dict]:
+    def get(self, attachment_id: str) -> dict | None:
         """
         Retrieve full attachment data by ID.
         :param attachment_id: Attachment ID

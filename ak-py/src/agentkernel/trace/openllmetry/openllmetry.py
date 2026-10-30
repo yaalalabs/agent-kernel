@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import threading
 from contextvars import ContextVar
-from typing import Any, Dict, Optional
+from typing import Any
 
 from traceloop.sdk import Traceloop
 
@@ -13,12 +13,12 @@ from ..base import BaseTrace
 """
 Thread-safe context variable to store association properties per request.
 """
-_association_properties: ContextVar[Dict[str, Any]] = ContextVar("association_properties", default={})
+_association_properties: ContextVar[dict[str, Any]] = ContextVar("association_properties", default={})
 
 """
 Thread-safe context variable for span tracking
 """
-_current_span: ContextVar[Optional[Any]] = ContextVar("current_span", default=None)
+_current_span: ContextVar[Any | None] = ContextVar("current_span", default=None)
 
 
 class TraceloopContext:
@@ -29,7 +29,7 @@ class TraceloopContext:
     _init_lock = threading.Lock()
     _initialized = False
 
-    def __init__(self, app_name: Optional[str] = None, association_properties: Optional[Dict[str, Any]] = None):
+    def __init__(self, app_name: str | None = None, association_properties: dict[str, Any] | None = None):
         """
         Initialize Traceloop context.
 
@@ -74,7 +74,7 @@ class TraceloopContext:
         return False
 
     @staticmethod
-    def set_association_properties(properties: Dict[str, Any]):
+    def set_association_properties(properties: dict[str, Any]):
         """
         Update multiple association properties in the current context.
         :param properties: Dictionary of properties to add/update

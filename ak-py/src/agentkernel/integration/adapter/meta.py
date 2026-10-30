@@ -9,7 +9,6 @@ import base64
 import hashlib
 import hmac
 import logging
-from typing import List, Optional, Tuple
 
 import httpx
 from fastapi import HTTPException, Request
@@ -17,7 +16,7 @@ from fastapi import HTTPException, Request
 _log = logging.getLogger("ak.integration.meta")
 
 
-async def verify_signature(request: Request, app_secret: Optional[str]) -> None:
+async def verify_signature(request: Request, app_secret: str | None) -> None:
     """Reject a delivery whose HMAC does not match the app secret.
 
     No app secret configured means no check, which is the behaviour these integrations have
@@ -40,7 +39,7 @@ async def verify_signature(request: Request, app_secret: Optional[str]) -> None:
         raise HTTPException(status_code=403, detail="Invalid signature")
 
 
-async def answer_challenge(request: Request, verify_token: Optional[str]) -> int:
+async def answer_challenge(request: Request, verify_token: str | None) -> int:
     """Answer Meta's subscription handshake by echoing its challenge.
 
     :param request: The incoming GET request carrying hub.mode, hub.verify_token, hub.challenge.
@@ -67,7 +66,7 @@ class MetaSendAPIClient:
     only difference is Messenger's ``messaging_type`` field.
     """
 
-    def __init__(self, base_url: str, access_token: str, message_fields: Optional[dict] = None, log: Optional[logging.Logger] = None):
+    def __init__(self, base_url: str, access_token: str, message_fields: dict | None = None, log: logging.Logger | None = None):
         """
         :param base_url: The platform's Graph base URL.
         :param access_token: Page (Messenger) or business (Instagram) access token.
@@ -82,7 +81,7 @@ class MetaSendAPIClient:
     def _headers(self) -> dict:
         return {"Authorization": f"Bearer {self._access_token}", "Content-Type": "application/json"}
 
-    async def send_message(self, recipient_id: str, chunks: List[str]) -> None:
+    async def send_message(self, recipient_id: str, chunks: list[str]) -> None:
         """Send each chunk as its own message, in order."""
         async with httpx.AsyncClient() as client:
             for chunk in chunks:
@@ -105,7 +104,7 @@ class MetaSendAPIClient:
         except Exception as e:
             self._log.warning(f"Failed to send sender action '{action}': {e}")
 
-    async def download_attachment(self, url: str, max_file_size: int) -> Optional[Tuple[str, str, str]]:
+    async def download_attachment(self, url: str, max_file_size: int) -> tuple[str, str, str] | None:
         """Stream one attachment by URL, aborting as soon as it exceeds ``max_file_size``.
 
         Streamed rather than buffered because the limit has to be enforced *during* the transfer:

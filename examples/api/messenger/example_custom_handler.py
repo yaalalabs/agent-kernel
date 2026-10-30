@@ -6,7 +6,6 @@ built-in normalisation. Nothing here runs the agent — that happens on the far 
 """
 
 import logging
-from typing import Optional
 
 from agentkernel.integration.adapter import WebhookRESTRequestHandler
 from agentkernel.integration.adapter.base import InboundRequest
@@ -45,7 +44,7 @@ SHORTHAND = {
 class CustomMessengerInboundAdapter(MessengerInboundAdapter):
     """Messenger adapter with command handling and message preprocessing."""
 
-    async def _to_request(self, event: dict) -> Optional[InboundRequest]:
+    async def _to_request(self, event: dict) -> InboundRequest | None:
         sender_id = event.get("sender", {}).get("id")
         text = (event.get("message", {}).get("text") or "").strip()
 

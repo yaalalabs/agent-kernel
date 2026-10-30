@@ -121,6 +121,8 @@ worth knowing that aren't spelled out there:
 
 - Formatting is black + isort at **line length 150** (`ak-py/pyproject.toml`), not black's
   default of 88 — don't "fix" long lines that are within the configured limit.
+- Ruff runs only the pyupgrade typing rules (`list[str]`, `X | None`, `collections.abc` imports),
+  not as a general linter; the rule is in `ak-dev-code-quality`.
 - `make lint-check-all` is the exact command `code-quality.yml` runs in CI — run it before
   considering a change to `ak-py/` or `examples/` done.
 

@@ -17,7 +17,6 @@ import io
 import logging
 import posixpath
 import tarfile
-from typing import Optional
 
 import docker
 
@@ -141,7 +140,7 @@ class DockerSandboxProvider(SandboxProvider):
     def __init__(self, config) -> None:
         """Store the config; the Docker client is created lazily on first use."""
         super().__init__(config)
-        self._client_instance: Optional["docker.DockerClient"] = None
+        self._client_instance: "docker.DockerClient | None" = None
 
     def _client(self):
         """Return the lazily created Docker client (``docker.from_env()``)."""

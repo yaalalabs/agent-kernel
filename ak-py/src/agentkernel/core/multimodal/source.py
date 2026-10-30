@@ -10,7 +10,6 @@ class of bug this module exists to prevent.
 """
 
 from dataclasses import dataclass
-from typing import Optional
 
 from ..model import AgentRequest, AgentRequestFile, AgentRequestImage
 
@@ -46,7 +45,7 @@ class AttachmentSource:
     """Classifier for the source form of an attachment carried on a request."""
 
     @staticmethod
-    def extract(req: AgentRequest) -> Optional[ExtractedAttachment]:
+    def extract(req: AgentRequest) -> ExtractedAttachment | None:
         """
         Extract attachment data from a request if it is an image or file, and classify its source.
 
@@ -68,7 +67,7 @@ class AttachmentSource:
         return None
 
     @staticmethod
-    def resolve(source: str, declared_mime: Optional[str], default_mime: str) -> Optional[tuple[str, str, bool]]:
+    def resolve(source: str, declared_mime: str | None, default_mime: str) -> tuple[str, str, bool] | None:
         """
         Resolve one attachment source string into its bytes, its mime type, and whether those bytes are base64.
 

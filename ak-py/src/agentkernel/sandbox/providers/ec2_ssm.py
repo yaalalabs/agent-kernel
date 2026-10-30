@@ -30,7 +30,7 @@ import asyncio
 import logging
 import re
 import shlex
-from typing import Any, Optional
+from typing import Any
 
 import boto3
 from botocore.credentials import AssumeRoleCredentialFetcher as _AssumeRoleCredentialFetcher
@@ -76,7 +76,7 @@ class EC2SSMEnvironment(AttachedEnvironment):
     An ``AttachedEnvironment``, not a sandbox: the instance exists and keeps running independently
     of the framework, so ``close()`` (inherited) releases nothing."""
 
-    def __init__(self, instance_id: str, ssm_client: Any, run_as: Optional[str] = None) -> None:
+    def __init__(self, instance_id: str, ssm_client: Any, run_as: str | None = None) -> None:
         """Bind the handle to the instance id (the sandbox id) and the resolved SSM client."""
         self.id = instance_id
         self._ssm = ssm_client
@@ -180,7 +180,7 @@ class EC2SSMSandboxProvider(AttachedEnvironmentProvider):
     def __init__(self, config) -> None:
         """Store the config; boto3 clients are created lazily per identity mode."""
         super().__init__(config)
-        self._agent_client: Optional[Any] = None
+        self._agent_client: Any | None = None
         # user-mode: one auto-refreshing assumed-role client per (subject, role_arn), so a
         # long-lived session re-assumes transparently near token expiry instead of issuing an
         # sts:AssumeRole + new client on every execution.
@@ -204,7 +204,7 @@ class EC2SSMSandboxProvider(AttachedEnvironmentProvider):
             raise _map_instance_error(exc, sandbox_id)
         return EC2SSMEnvironment(sandbox_id, ssm_client, run_as)
 
-    def _resolve_client(self, principal: SandboxPrincipal) -> tuple[Any, Optional[str]]:
+    def _resolve_client(self, principal: SandboxPrincipal) -> tuple[Any, str | None]:
         """Map the principal onto an SSM client (spec §PrincipalResolver): agent mode uses the
         default boto3 chain (cached); user mode assumes ``credentials["role_arn"]`` and carries
         ``credentials["run_as"]`` onto the handle."""
@@ -228,7 +228,7 @@ class EC2SSMSandboxProvider(AttachedEnvironmentProvider):
         return client, run_as
 
     @staticmethod
-    def _assumed_role_client(region: Optional[str], role_arn: str, subject: str) -> Any:
+    def _assumed_role_client(region: str | None, role_arn: str, subject: str) -> Any:
         """Build an SSM client whose credentials come from an auto-refreshing
         ``sts:AssumeRole`` provider: the role is assumed on first use and re-assumed
         transparently as the temporary credentials near expiry, so a cached client stays

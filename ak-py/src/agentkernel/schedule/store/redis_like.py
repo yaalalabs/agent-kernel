@@ -12,7 +12,6 @@ refreshed on every write of the record it belongs to.
 """
 
 import logging
-from typing import List, Optional, Tuple
 
 from ...core.util.driver.redis_like import _RedisLikeDriver
 from ...core.util.pagination import DEFAULT_PAGE_SIZE, paginate
@@ -54,7 +53,7 @@ class _RedisLikeScheduleStore(ScheduleStore):
         self._log.debug(f"Storing scheduled task {task.task_id} for user {task.user_id}")
         return self._write(task)
 
-    def get(self, task_id: str) -> Optional[ScheduledTask]:
+    def get(self, task_id: str) -> ScheduledTask | None:
         payload = self._driver.get(self._task_key(task_id))
         if payload is None:
             return None
@@ -75,9 +74,9 @@ class _RedisLikeScheduleStore(ScheduleStore):
             self._driver.srem(user_index_key, task_id)
         self._driver.srem(self._all_index_key(), task_id)
 
-    def list(self, user_id: Optional[str] = None, limit: int = DEFAULT_PAGE_SIZE, offset: int = 0) -> Tuple[List[ScheduledTask], Optional[int]]:
+    def list(self, user_id: str | None = None, limit: int = DEFAULT_PAGE_SIZE, offset: int = 0) -> tuple[list[ScheduledTask], int | None]:
         index_key = self._all_index_key() if user_id is None else self._user_index_key(user_id)
-        tasks: List[ScheduledTask] = []
+        tasks: list[ScheduledTask] = []
         for task_id in self._driver.smembers(index_key):
             task = self.get(task_id)
             # A member without a document is a task whose TTL elapsed ahead of the index set.
@@ -89,7 +88,7 @@ class _RedisLikeScheduleStore(ScheduleStore):
         tasks.sort(key=lambda task: task.updated_at, reverse=True)
         return paginate(tasks, limit, offset)
 
-    def record_trigger(self, task_id: str, request_id: Optional[str], occurred_at: str, completed: bool) -> None:
+    def record_trigger(self, task_id: str, request_id: str | None, occurred_at: str, completed: bool) -> None:
         task = self.get(task_id)
         if task is None:
             self._log.warning(f"Ignoring trigger record for unknown scheduled task {task_id}")

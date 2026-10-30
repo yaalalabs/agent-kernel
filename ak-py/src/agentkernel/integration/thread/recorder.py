@@ -5,7 +5,7 @@ around a ChatService execution-core run.
 
 import json
 import logging
-from typing import Any, List, Optional
+from typing import Any
 
 from ...core.model import AgentReplyAny, AgentRequest, BaseChatRequest
 from .manager import ConversationThreadManager
@@ -29,7 +29,7 @@ class ThreadRecorder:
         """
         self._manager = manager
 
-    def pre_run(self, req: BaseChatRequest, requests: List[AgentRequest]) -> tuple[List[AgentRequest], List[ThreadAttachment]]:
+    def pre_run(self, req: BaseChatRequest, requests: list[AgentRequest]) -> tuple[list[AgentRequest], list[ThreadAttachment]]:
         """Thread work done before the agent runs: enforce user_id, store attachment
         bytes, create/load the thread, append the user message, and return the rebuilt
         request list in which stored attachments are replaced by in-band
@@ -57,7 +57,7 @@ class ThreadRecorder:
         self._manager.append_message(req.session_id, "user", req.prompt, attachments=attachments)
         return requests, attachments
 
-    def post_run(self, req: BaseChatRequest, result: Any, media_type: Optional[str] = None) -> None:
+    def post_run(self, req: BaseChatRequest, result: Any, media_type: str | None = None) -> None:
         """Thread work done after a successful agent run: append the assistant message.
 
         ``media_type`` is how the queue runner hands over a label it holds *beside* the result
@@ -73,7 +73,7 @@ class ThreadRecorder:
         self._manager.append_message(req.session_id, "assistant", content, media_type=label)
 
     @staticmethod
-    def _as_thread_message(result: Any, media_type: Optional[str] = None) -> tuple[Any, Optional[str]]:
+    def _as_thread_message(result: Any, media_type: str | None = None) -> tuple[Any, str | None]:
         """Render a reply as the (content, media_type) pair the thread store holds.
 
         The callers pass three different things, which is what makes a single ``str()`` wrong. The

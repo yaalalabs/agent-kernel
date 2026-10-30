@@ -6,7 +6,6 @@ built-in normalisation. Nothing here runs the agent — that happens on the far 
 """
 
 import logging
-from typing import Optional
 
 from agentkernel.integration.adapter import WebhookRESTRequestHandler
 from agentkernel.integration.adapter.base import InboundRequest
@@ -39,7 +38,7 @@ SHORTHAND = {"u": "you", "r": "are", "ur": "your", "pls": "please", "thx": "than
 class CustomWhatsAppInboundAdapter(WhatsAppInboundAdapter):
     """WhatsApp adapter with command handling and message preprocessing."""
 
-    async def _to_request(self, message: dict) -> Optional[InboundRequest]:
+    async def _to_request(self, message: dict) -> InboundRequest | None:
         text = self._text_of(message)
 
         # Commands are answered here and never reach the agent.

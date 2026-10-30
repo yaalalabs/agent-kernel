@@ -9,7 +9,7 @@ placeholders through its context attributes at fire time.
 import datetime
 import logging
 import threading
-from typing import Any, ClassVar, Optional, Tuple
+from typing import Any, ClassVar
 
 import boto3
 from botocore.exceptions import ClientError
@@ -53,11 +53,11 @@ class EventBridgeScheduleProvider(ScheduleProvider):
     supported transport.
     """
 
-    supported_transports: ClassVar[Optional[frozenset[str]]] = frozenset({"sqs"})
+    supported_transports: ClassVar[frozenset[str] | None] = frozenset({"sqs"})
 
     # Constructor settings that must come from the ``schedule.provider.eventbridge`` block. All
     # three are Terraform-provisioned, and without them a schedule cannot be registered at all.
-    _REQUIRED_CONFIG_SETTINGS: ClassVar[Tuple[str, ...]] = ("group_name", "role_arn", "queue_arn")
+    _REQUIRED_CONFIG_SETTINGS: ClassVar[tuple[str, ...]] = ("group_name", "role_arn", "queue_arn")
 
     _log = logging.getLogger("ak.schedule.provider.eventbridge")
 
@@ -71,7 +71,7 @@ class EventBridgeScheduleProvider(ScheduleProvider):
         self._group_name = group_name
         self._role_arn = role_arn
         self._queue_arn = queue_arn
-        self._client: Optional[Any] = None
+        self._client: Any | None = None
         self._client_lock = threading.Lock()
 
     @classmethod
@@ -138,7 +138,7 @@ class EventBridgeScheduleProvider(ScheduleProvider):
         self._log.info(f"Deleting EventBridge schedule {name}")
         self._call("delete_schedule", tolerate_missing=True, Name=name, GroupName=group_name)
 
-    def get(self, provider_ref: str) -> Optional[dict]:
+    def get(self, provider_ref: str) -> dict | None:
         """Return Scheduler's own view of a schedule.
 
         :param provider_ref: The schedule ARN returned by :meth:`create`.
@@ -237,7 +237,7 @@ class EventBridgeScheduleProvider(ScheduleProvider):
             day_of_month = CRON_ANY_DAY
         return f"{minute} {hour} {day_of_month} {month} {day_of_week} {CRON_EVERY}"
 
-    def _reference_parts(self, provider_ref: Optional[str], task_id: Optional[str] = None) -> Tuple[str, str]:
+    def _reference_parts(self, provider_ref: str | None, task_id: str | None = None) -> tuple[str, str]:
         """Resolve the group and name a registration lives under from its stored reference.
 
         The reference is read rather than rebuilt from config so that renaming the configured group
@@ -259,7 +259,7 @@ class EventBridgeScheduleProvider(ScheduleProvider):
             return self._group_name, self._schedule_name(task_id)
         raise ScheduleError("Cannot address an EventBridge schedule without a provider reference")
 
-    def _call(self, operation: str, tolerate_missing: bool = False, **kwargs) -> Optional[dict]:
+    def _call(self, operation: str, tolerate_missing: bool = False, **kwargs) -> dict | None:
         """Invoke a Scheduler operation, mapping its failures onto ``ScheduleError``.
 
         :param operation: Name of the boto3 ``scheduler`` client method.

@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Any, List, Optional
+from typing import Any
 
 from ...core.config import AKConfig
 from ...core.util.factory import AKConfigError, require_extra, resolve_dotted
@@ -48,10 +48,10 @@ class TransportConsumer(ABC):
     # prompt. Transports whose long polls are expensive to slice (SQS bills every receive call)
     # override this with their native long-poll ceiling, accepting a drain that may wait one
     # full poll.
-    fetch_wait_slice_seconds: Optional[float] = None
+    fetch_wait_slice_seconds: float | None = None
 
     @abstractmethod
-    def fetch(self, batch_size: int, wait_seconds: float) -> List[QueueMessage]:
+    def fetch(self, batch_size: int, wait_seconds: float) -> list[QueueMessage]:
         """Fetch up to ``batch_size`` messages, blocking up to ``wait_seconds`` (long poll).
 
         :return: A list of normalized message envelopes (possibly empty).
@@ -103,7 +103,7 @@ class QueueTransportFactory:
     _BUILTIN_TYPES = ("in_memory", "sqs", "kafka", "nats")
 
     @staticmethod
-    def resolve_type(queues_config: Optional[Any] = None) -> str:
+    def resolve_type(queues_config: Any | None = None) -> str:
         """Resolve the transport type the application declared.
 
         Only the block's ``type`` decides, which is why the field is mandatory inside a
@@ -120,7 +120,7 @@ class QueueTransportFactory:
         return queues.type
 
     @classmethod
-    def create(cls, queues_config: Optional[Any] = None, config_path: str = "execution.queues") -> QueueTransport:
+    def create(cls, queues_config: Any | None = None, config_path: str = "execution.queues") -> QueueTransport:
         """Create the configured transport (send side).
 
         ``queues_config=None`` reads ``execution.queues`` (the default path, unchanged); an
@@ -204,7 +204,7 @@ class QueueTransportFactory:
         return resolve_dotted(transport_type, base=QueueTransport)()
 
     @classmethod
-    def create_consumer(cls, queue: QueueName, queues_config: Optional[Any] = None, config_path: str = "execution.queues") -> TransportConsumer:
+    def create_consumer(cls, queue: QueueName, queues_config: Any | None = None, config_path: str = "execution.queues") -> TransportConsumer:
         """Create a consumer for the given queue on the configured transport.
 
         ``queues_config`` threads an explicit block through (#503 seam); ``None`` keeps the

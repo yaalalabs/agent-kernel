@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Dict
+from typing import Any
 
 from ....core.config import AKConfig
 from ....core.model import ExecutionMode, StreamChunk
@@ -53,7 +53,7 @@ class ECSOutputConsumer(ECSSQSConsumer):
         return cls._websocket_handler
 
     @classmethod
-    def process_message(cls, record: Dict[str, Any]) -> None:
+    def process_message(cls, record: dict[str, Any]) -> None:
         """
         Process one Output Queue message: push over WebSocket (ASYNC) or write to the Response Store.
 
@@ -83,7 +83,7 @@ class ECSOutputConsumer(ECSSQSConsumer):
         cls._log.info(f"[OUTPUT DONE] Stored response — session_id={message['session_id']} " f"request_id={message['request_id']}")
 
     @classmethod
-    def on_permanent_failure(cls, record: Dict[str, Any]) -> None:
+    def on_permanent_failure(cls, record: dict[str, Any]) -> None:
         """
         Handle an output message that exceeded ``max_receive_count``: push an error over
         WebSocket (ASYNC), or write an error entry to the Response Store so the waiting
@@ -143,7 +143,7 @@ class ECSOutputConsumer(ECSSQSConsumer):
             cls._log.exception("Failed to handle permanent-failure output message")
 
     @classmethod
-    def _construct_message_for_store(cls, record: Dict[str, Any], body: Any = None, status_code: int | None = None) -> Dict[str, Any]:
+    def _construct_message_for_store(cls, record: dict[str, Any], body: Any = None, status_code: int | None = None) -> dict[str, Any]:
         """
         Build the dict to write into the Response Store.
 
@@ -170,7 +170,7 @@ class ECSOutputConsumer(ECSSQSConsumer):
         }
 
     @classmethod
-    def _broadcast_via_websocket(cls, record: Dict[str, Any], message_type: AWSWebSocketHandler.MessageType) -> None:
+    def _broadcast_via_websocket(cls, record: dict[str, Any], message_type: AWSWebSocketHandler.MessageType) -> None:
         """
         Push an output message to the client over WebSocket.
 

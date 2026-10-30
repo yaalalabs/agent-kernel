@@ -137,7 +137,7 @@ When a contributor opens the repository in a coding assistant (Copilot, Claude C
 | `ak-dev-write-spec` | How to spec a planned change under `docs/specs/<issue-number>-<short-title>/` in three ordered stages: a concise point-form design spec (`design.md`) reviewed first, then a detailed implementation spec (`spec.md`), then a concise iteration-by-iteration plan (`plan.md`) the PR review checks the code against — plus an optional `research/` subfolder preserving the supporting investigation the design cites |
 | `ak-dev-review-pr` | Given a PR number or URL, fetch it with the GitHub CLI, review the delta against the architecture/code-quality/testing skills, dedupe findings, and post a single batched review with inline comments |
 | `ak-dev-testing-conventions` | Pytest patterns, async testing, mocking external services, pluggable `AKEvaluator` test backends, CI/CD test workflows |
-| `ak-dev-code-quality` | Formatting with `black`/`isort`, Python style rules (classes over script-style functions, configuration-field rules), commit conventions, PR checklist, review workflow |
+| `ak-dev-code-quality` | Formatting with `black`/`isort`, ruff typing rules, Python style rules (classes over script-style functions, configuration-field rules), commit conventions, PR checklist, review workflow |
 
 ### How Contributors Benefit
 

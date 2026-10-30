@@ -2,8 +2,6 @@
 import-path preservation, the AuthValidatorAuthoriser adapter, and the extracted
 AuthorisedRESTRequestHandler hierarchy."""
 
-from typing import Optional
-
 from agentkernel.auth import Authoriser, AuthValidatorAuthoriser
 from agentkernel.auth.handler import AuthValidator, ValidationContext, ValidationResult
 
@@ -11,10 +9,10 @@ from agentkernel.auth.handler import AuthValidator, ValidationContext, Validatio
 class _StubValidator(AuthValidator):
     """AuthValidator double returning a canned ValidationResult."""
 
-    def __init__(self, result: Optional[ValidationResult]):
+    def __init__(self, result: ValidationResult | None):
         self._result = result
 
-    def validate(self, token: str, context: Optional[ValidationContext] = None) -> ValidationResult:
+    def validate(self, token: str, context: ValidationContext | None = None) -> ValidationResult:
         return self._result
 
 

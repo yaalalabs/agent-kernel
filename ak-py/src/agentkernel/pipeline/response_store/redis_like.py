@@ -10,7 +10,8 @@ This module must not import ``redis`` or ``valkey``; the concrete subclasses sup
 
 import json
 import threading
-from typing import ClassVar, Iterator, Optional, Set
+from collections.abc import Iterator
+from typing import ClassVar
 
 from ...core.util.driver.redis_like import _RedisLikeDriver
 from .base import ResponseStore
@@ -42,7 +43,7 @@ class RedisLikeResponseStore(ResponseStore):
     Subclasses construct ``self._driver`` and nothing else.
     """
 
-    _live_streams: ClassVar[Set[str]] = set()
+    _live_streams: ClassVar[set[str]] = set()
     _live_lock: ClassVar[threading.Lock] = threading.Lock()
 
     _driver: _RedisLikeDriver
@@ -102,7 +103,7 @@ class RedisLikeResponseStore(ResponseStore):
         """
         self._driver.rpush_with_expiry(self._chunk_key(request_id), json.dumps(chunk), self._chunk_list_ttl())
 
-    def stream(self, request_id: str, chunk_timeout: Optional[float] = None) -> Iterator[dict]:
+    def stream(self, request_id: str, chunk_timeout: float | None = None) -> Iterator[dict]:
         """Yield the request's chunks in order until its done chunk.
 
         Registers the key as live for as long as this generator exists, so ``close_stream`` can

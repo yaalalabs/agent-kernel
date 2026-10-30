@@ -1,5 +1,5 @@
 import logging
-from typing import ClassVar, Optional
+from typing import ClassVar
 
 from .base import AttachmentStore
 
@@ -52,7 +52,7 @@ class InMemoryAttachmentStore(AttachmentStore):
         self._log.debug(f"Saved attachment: {attachment_id}")
         return attachment_id
 
-    def get(self, attachment_id: str) -> Optional[dict]:
+    def get(self, attachment_id: str) -> dict | None:
         """
         Retrieves an attachment by its ID.
         :param attachment_id: Attachment ID.

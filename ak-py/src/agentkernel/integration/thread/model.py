@@ -8,7 +8,7 @@ a reference (attachment_id) into the existing multimodal AttachmentStore.
 
 import datetime
 import uuid
-from typing import Any, List, Literal, Optional, Union
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -23,8 +23,8 @@ class ThreadAttachment(BaseModel):
     """Reference to an attachment stored in the multimodal AttachmentStore."""
 
     attachment_id: str
-    name: Optional[str] = None
-    mime_type: Optional[str] = None
+    name: str | None = None
+    mime_type: str | None = None
 
 
 class ThreadMessage(BaseModel):
@@ -46,10 +46,10 @@ class ThreadMessage(BaseModel):
 
     message_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     role: Literal["user", "assistant"]
-    content: Union[str, JSONPayload]
-    media_type: Optional[str] = None
+    content: str | JSONPayload
+    media_type: str | None = None
     timestamp: datetime.datetime = Field(default_factory=_utc_now)
-    attachments: List[ThreadAttachment] = Field(default_factory=list)
+    attachments: list[ThreadAttachment] = Field(default_factory=list)
 
     @field_validator("media_type", mode="before")
     @classmethod
@@ -107,25 +107,25 @@ class Thread(BaseModel):
 
     session_id: str
     user_id: str
-    group_id: Optional[str] = None
+    group_id: str | None = None
     name: str = ""
     # True once the name was explicitly supplied (thread_name at creation or a
     # rename) — automatic naming strategies must never overwrite it.
     name_locked: bool = False
     created_at: datetime.datetime = Field(default_factory=_utc_now)
     updated_at: datetime.datetime = Field(default_factory=_utc_now)
-    messages: List[ThreadMessage] = Field(default_factory=list)
+    messages: list[ThreadMessage] = Field(default_factory=list)
 
 
 class MessagePage(BaseModel):
     """A page of thread messages with an opaque cursor to the next page."""
 
-    messages: List[ThreadMessage] = Field(default_factory=list)
-    next_cursor: Optional[str] = None
+    messages: list[ThreadMessage] = Field(default_factory=list)
+    next_cursor: str | None = None
 
 
 class ThreadPage(BaseModel):
     """A page of thread metadata with an opaque cursor to the next page."""
 
-    threads: List[Thread] = Field(default_factory=list)
-    next_cursor: Optional[str] = None
+    threads: list[Thread] = Field(default_factory=list)
+    next_cursor: str | None = None
