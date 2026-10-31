@@ -25,6 +25,7 @@ Redis and available on AWS ElastiCache as a native engine. Agent Kernel selects 
     ```bash
     ./build.sh
     export OPENAI_API_KEY=<OPENAI_API_KEY>
+    export AK_SECRET__PROVIDER__TYPE=env  # config.yaml reads secrets from SSM on AWS; use the environment locally
     ```
 
 3. Run the agent locally:
@@ -48,19 +49,23 @@ The AWS deployment provisions the following resources:
 
 ## AWS Deployment Steps
 
-1. Configure environment variables:
-    ```bash
-    export TF_VAR_openai_api_key=<OPENAI_API_KEY>
-    ```
-
-2. Set the VPC and subnets to deploy into in `deploy/terraform.tfvars` (`vpc_id`,
+1. Set the VPC and subnets to deploy into in `deploy/terraform.tfvars` (`vpc_id`,
    `private_subnet_ids`), and optionally `request_handler_security_group_id` to reuse an existing
    request handler Lambda security group, then run the deployment script:
     ```bash
     cd deploy && ./deploy.sh # ./deploy.sh local if dependencies are built locally
     ```
 
-3. Tear down when finished:
+    Terraform creates `/ak/<prefix>/openai_api_key` holding the placeholder `REPLACE_ME` (`ssm_enabled` and
+    `ssm_secret_keys` in `deploy/main.tf`; `config.yaml` selects the `aws_ssm` secret provider). Overwrite it
+    with your key, where `<prefix>` is `prefix` in `deploy/terraform.tfvars`:
+    ```bash
+    aws ssm put-parameter --name "/ak/<prefix>/openai_api_key" \
+        --type SecureString --value "$OPENAI_API_KEY" --overwrite
+    ```
+    A Lambda execution environment reads the key when it starts, so set it before the first request.
+
+2. Tear down when finished:
     ```bash
     cd deploy && terraform destroy
     ```

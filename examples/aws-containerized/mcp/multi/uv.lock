@@ -39,6 +39,9 @@ api = [
     { name = "httpx" },
     { name = "uvicorn" },
 ]
+aws = [
+    { name = "boto3" },
+]
 mcp = [
     { name = "fastmcp" },
 ]
@@ -233,7 +236,7 @@ name = "api-mcp-multi"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
-    { name = "agentkernel", extra = ["api", "mcp", "openai", "redis", "smolagents"] },
+    { name = "agentkernel", extra = ["api", "aws", "mcp", "openai", "redis", "smolagents"] },
     { name = "smolagents" },
 ]
 
@@ -247,7 +250,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "agentkernel", extras = ["api", "smolagents", "openai", "mcp", "redis"], specifier = ">=0.9.5" },
+    { name = "agentkernel", extras = ["api", "aws", "smolagents", "openai", "mcp", "redis"], specifier = ">=0.9.5" },
     { name = "smolagents" },
 ]
 

@@ -13,6 +13,12 @@ module "containerized_agents" {
   vpc_id             = var.vpc_id
   private_subnet_ids = var.private_subnet_ids
 
+  # Secret resolution: grants ssm:GetParameter on /ak/<prefix>/* and injects AK_SECRET__PREFIX, so the app
+  # resolves OPENAI_API_KEY from /ak/<prefix>/<key lowercased> (config.yaml `secret:` block)
+  # Terraform creates each parameter holding REPLACE_ME; overwrite it with the real value after the first apply.
+  ssm_enabled     = true
+  ssm_secret_keys = ["OPENAI_API_KEY"]
+
   # ---- REST Service Configuration ----
   # Serves chat ingress (enqueue + poll) and the schedule management routes.
   rest_service = {
@@ -25,9 +31,6 @@ module "containerized_agents" {
     container_port                = 8000
     health_check_endpoint         = "/health"
     command                       = ["python", "app_rest_service.py"]
-    environment_variables = {
-      OPENAI_API_KEY = var.openai_api_key
-    }
   }
 
   # ---- Agent Memory (Session Store) ----
@@ -103,9 +106,6 @@ module "containerized_agents" {
     desired_count     = 1
     package_path      = "../dist-agent-runner"
     command           = ["python", "app_agent_runner.py"]
-    environment_variables = {
-      OPENAI_API_KEY = var.openai_api_key
-    }
   }
 
   # ---- Agent Runner Auto Scaling ----

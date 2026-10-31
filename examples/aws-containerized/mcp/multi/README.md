@@ -54,13 +54,13 @@ module "containered_agents" {
   # Enable MCP server
   enable_mcp_server = true  # MCP endpoint => /<api_base_path>/<api_version>/mcp
 
-  # REST service (container build, networking, and runtime env vars)
+  # OPENAI_API_KEY is read from SSM (/ak/<prefix>/openai_api_key) via config.yaml's aws_ssm secret provider
+  ssm_enabled = true
+
+  # REST service (container build and networking)
   rest_service = {
     package_path   = "../dist"
     container_port = 8000
-    environment_variables = {
-      OPENAI_API_KEY = var.openai_api_key
-    }
   }
 }
 ```
@@ -157,6 +157,8 @@ mcp:
 ## Running the Server
 
 ```bash
+export OPENAI_API_KEY=<OPENAI_API_KEY>
+export AK_SECRET__PROVIDER__TYPE=env  # config.yaml reads secrets from SSM on AWS; use the environment locally
 python server.py
 ```
 

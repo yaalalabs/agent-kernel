@@ -281,3 +281,8 @@ output "schedule_table_arn" {
   description = "DynamoDB schedule store table ARN"
   value       = local.dynamodb_schedule_table_arn
 }
+
+output "ssm_secret_parameter_names" {
+  description = "SSM parameters created from ssm_secret_keys, each holding REPLACE_ME until overwritten with the real value"
+  value       = [for parameter in aws_ssm_parameter.secret_placeholder : parameter.name]
+}

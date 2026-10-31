@@ -46,6 +46,13 @@ module "serverless_agents" {
     }
   }
 
+  # Secret resolution: grants ssm:GetParameter on /ak/<prefix>/* and injects AK_SECRET__PREFIX, so the app
+  # resolves SLACK_BOT_TOKEN, SLACK_SIGNING_SECRET and OPENAI_API_KEY from /ak/<prefix>/<key lowercased>
+  # (config.yaml `secret:` block)
+  # Terraform creates each parameter holding REPLACE_ME; overwrite it with the real value after the first apply.
+  ssm_enabled     = true
+  ssm_secret_keys = ["OPENAI_API_KEY", "SLACK_BOT_TOKEN", "SLACK_SIGNING_SECRET"]
+
   request_handler = {
     function_name        = "rqh-func"
     function_description = "Chat ingress and the Slack Events API webhook"
@@ -55,10 +62,6 @@ module "serverless_agents" {
     memory_size          = 512
     timeout              = 30
     security_group_id    = var.request_handler_security_group_id
-    environment_variables = {
-      "SLACK_BOT_TOKEN"      = var.slack_bot_token
-      "SLACK_SIGNING_SECRET" = var.slack_signing_secret
-    }
   }
 
   agent_runner = {
@@ -70,9 +73,6 @@ module "serverless_agents" {
     package_type         = "Image"
     package_path         = "../dist_agent_runner"
     security_group_id    = var.agent_runner_security_group_id
-    environment_variables = {
-      "OPENAI_API_KEY" = var.openai_api_key
-    }
   }
 
   response_handler = {
@@ -84,10 +84,6 @@ module "serverless_agents" {
     package_type         = "LocalZip"
     package_path         = "../dist_response_handler.zip"
     security_group_id    = var.response_handler_security_group_id
-    environment_variables = {
-      "SLACK_BOT_TOKEN"      = var.slack_bot_token
-      "SLACK_SIGNING_SECRET" = var.slack_signing_secret
-    }
   }
 
   # ---- Queue configuration ----

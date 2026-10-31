@@ -88,6 +88,8 @@ export AK_TEAMS__APP_PASSWORD="your-azure-client-secret"
 export AK_TEAMS__TENANT_ID="your-tenant-id"
 ```
 
+> **Secret providers:** these credentials can also live in your configured secret provider (AWS SSM Parameter Store, mounted Kubernetes Secrets) instead of the environment; see [Framework-owned credentials](../advanced/secrets.md#framework-owned-credentials).
+
 Every key is settable either way: `teams.agent` is also `AK_TEAMS__AGENT`, and so on.
 
 ## Features

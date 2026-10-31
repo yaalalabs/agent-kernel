@@ -25,7 +25,7 @@ from ..thread_runner import ThreadRunner
 from ..transport.base import QueueTransportFactory
 from .endpoint import PushEndpointHandler
 from .handler import PipelineWebSocketHandler
-from .push import default_connection_store
+from .push import default_connection_store, push_auth_token
 from .registry import LocalConnectionRegistry
 
 
@@ -93,7 +93,7 @@ class WebSocketGateway:
                 f"the WebSocket gateway serves ASYNC/STREAM modes; execution.mode is {config.execution.mode}: "
                 "replies in REST modes go to the response store and would never reach a WebSocket client"
             )
-        if not config.websocket_api.push_auth_token:
+        if not push_auth_token(config):
             raise AKConfigError(
                 "the WebSocket gateway requires websocket_api.push_auth_token: Response Handlers " "authenticate their pushes to this pod with it"
             )

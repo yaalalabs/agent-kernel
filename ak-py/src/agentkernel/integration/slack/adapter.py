@@ -9,7 +9,6 @@ handing Bolt's own response back for the host to return.
 import base64
 import contextvars
 import logging
-import os
 import traceback
 from typing import Any, Dict, List, Optional
 
@@ -22,6 +21,7 @@ from slack_sdk.web.async_client import AsyncWebClient
 from ...core.config import AKConfig
 from ...core.model import AgentReply, AgentRequest, AgentRequestAny, AgentRequestFile, AgentRequestImage, AgentRequestText
 from ...core.multimodal.storage import AttachmentStorageManager
+from ...secret import SecretManager
 from ..adapter.base import (
     ATTACHMENTS_DISABLED_ERROR,
     SESSION_CACHE_ERROR,
@@ -50,7 +50,11 @@ class SlackInboundAdapter(InboundAdapter):
         self._max_file_size = config.api.max_file_size
         self._bot_id: Optional[str] = None
 
+        # Passed explicitly so both resolve through the secret provider; Bolt would read only the environment.
+        secrets = SecretManager.current()
         self._app = AsyncApp(
+            token=secrets.get("SLACK_BOT_TOKEN", default=None),
+            signing_secret=secrets.get("SLACK_SIGNING_SECRET", default=None),
             process_before_response=True,
         )
         self._handler = AsyncSlackRequestHandler(self._app)
@@ -283,4 +287,4 @@ class SlackOutboundAdapter(OutboundAdapter):
     @staticmethod
     def _client() -> AsyncWebClient:
         """A fresh client per call: each delivery runs on its own event loop."""
-        return AsyncWebClient(token=os.environ.get("SLACK_BOT_TOKEN"))
+        return AsyncWebClient(token=SecretManager.current().get("SLACK_BOT_TOKEN", default=None))

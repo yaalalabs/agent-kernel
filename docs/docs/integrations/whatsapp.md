@@ -85,6 +85,8 @@ export AK_WHATSAPP__PHONE_NUMBER_ID="your test or business whatsapp phone number
 export AK_WHATSAPP__API_VERSION="v21.0"  # Optional, defaults to v24.0
 ```
 
+> **Secret providers:** these credentials can also live in your configured secret provider (AWS SSM Parameter Store, mounted Kubernetes Secrets) instead of the environment; see [Framework-owned credentials](../advanced/secrets.md#framework-owned-credentials).
+
 ### Webhook Verification
 
 The handler automatically responds to WhatsApp's webhook verification challenge via `<hosted URL>/whatsapp/webhook` (e.g., `http://localhost:8000/whatsapp/webhook`). When you configure the webhook URL in Meta's developer portal, WhatsApp will send a GET request to verify the endpoint. The handler processes this automatically.

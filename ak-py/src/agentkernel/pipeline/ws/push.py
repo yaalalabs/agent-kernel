@@ -18,6 +18,7 @@ from ...core.builder import SessionStoreBuilder
 from ...core.config import AKConfig
 from ...core.session.base import WSConnectionStore
 from ...core.util.factory import AKConfigError
+from ...secret import SecretManager
 from ..transport.base import QueueTransportFactory
 from .base import WebSocketHandlerABC
 from .registry import LocalConnectionRegistry
@@ -28,6 +29,8 @@ LOCAL_ENDPOINT = "local"
 # The gateway push endpoint's path and auth header (see ws/endpoint.py).
 PUSH_PATH = "/internal/push"
 PUSH_TOKEN_HEADER = "x-ak-push-token"
+# The secret key websocket_api.push_auth_token falls back to: the field's own environment variable name.
+PUSH_AUTH_TOKEN_KEY = "AK_WEBSOCKET_API__PUSH_AUTH_TOKEN"
 
 _log = logging.getLogger("ak.pipeline.ws.push")
 
@@ -70,6 +73,17 @@ def _self_ip() -> str:
         return socket.gethostbyname(socket.gethostname())
     except OSError:
         return "127.0.0.1"
+
+
+def push_auth_token(config: AKConfig) -> Optional[str]:
+    """The shared secret authenticating pushes to a gateway pod's push endpoint.
+
+    ``websocket_api.push_auth_token`` when configured, else the secret provider's entry for
+    ``AK_WEBSOCKET_API__PUSH_AUTH_TOKEN``, so the token can live in a managed store.
+
+    :raises SecretError: If the secret provider failed.
+    """
+    return config.websocket_api.push_auth_token or SecretManager.current().get(PUSH_AUTH_TOKEN_KEY, default=None)
 
 
 def default_connection_store() -> WSConnectionStore:
@@ -170,7 +184,7 @@ class PodPushWebSocketHandler(WebSocketHandlerABC):
                 raise LookupError(f"connection '{connection_id}' has no local socket")
             return
 
-        token = self._config.websocket_api.push_auth_token
+        token = push_auth_token(self._config)
         if not token:
             raise AKConfigError("pushing WebSocket deliveries to a gateway pod requires websocket_api.push_auth_token")
 

@@ -28,4 +28,21 @@ Because this is designed for production AWS deployments (AWS ECS), the pipeline 
 
 
 ### Production AWS Deployment
-1. Ensure you have your `OPENAI_API_KEY`, `AK_LIVEKIT__URL`, `AK_LIVEKIT__API_KEY`, and `AK_LIVEKIT__API_SECRET` set in your environment.
+1. Pass the LiveKit URL to Terraform and deploy from `deploy/`:
+    ```bash
+    export TF_VAR_livekit_url="wss://your-project.livekit.cloud"
+    ./deploy.sh
+    ```
+   The deployment sets `ssm_enabled = true` and `ssm_secret_keys`, so Terraform creates the OpenAI key and the LiveKit
+   API key and secret as SSM parameters holding `REPLACE_ME`; `config.yaml` selects the `aws_ssm` secret provider.
+
+2. Overwrite the placeholders, where `<prefix>` is `prefix` in `deploy/terraform.tfvars`, then restart both services,
+   which started with the placeholders:
+    ```bash
+    for pair in "openai_api_key=$OPENAI_API_KEY" "ak_livekit__api_key=$LIVEKIT_API_KEY" "ak_livekit__api_secret=$LIVEKIT_API_SECRET"; do
+      aws ssm put-parameter --name "/ak/<prefix>/${pair%%=*}" --type SecureString --value "${pair#*=}" --overwrite
+    done
+    for service in <prefix>-service <prefix>-agent-runner; do
+      aws ecs update-service --cluster <prefix> --service "$service" --force-new-deployment
+    done
+    ```

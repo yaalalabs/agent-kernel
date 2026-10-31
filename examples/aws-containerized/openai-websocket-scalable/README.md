@@ -167,7 +167,6 @@ details on tuning `backlog_target` and cooldowns.
 
 1. Configure environment variables:
     ```bash
-    export TF_VAR_openai_api_key=<OPENAI_API_KEY>
     export TF_VAR_vpc_id=<VPC_ID>
     export TF_VAR_private_subnet_ids='["subnet-xxx","subnet-yyy"]'
     ```
@@ -178,6 +177,16 @@ details on tuning `backlog_target` and cooldowns.
     ```bash
     cd deploy && ./deploy.sh          # ./deploy.sh local for a locally built agentkernel wheel
     ```
+
+    Terraform creates `/ak/<prefix>/openai_api_key` holding the placeholder `REPLACE_ME` (`ssm_enabled` and
+    `ssm_secret_keys` in `deploy/main.tf`; `config.yaml` selects the `aws_ssm` secret provider). Overwrite it
+    with your key, where `<prefix>` is `prefix` in `deploy/terraform.tfvars`:
+    ```bash
+    aws ssm put-parameter --name "/ak/<prefix>/openai_api_key" \
+        --type SecureString --value "$OPENAI_API_KEY" --overwrite
+    ```
+    The agent runner started with the placeholder, so force a new deployment to pick the key up:
+    `aws ecs update-service --cluster <prefix> --service <prefix>-agent-runner --force-new-deployment`.
 
     This builds **two** separate Docker images — `dist-rest-service/` (`app_rest_service.py`) and
     `dist-agent-runner/` (`app_agent_runner.py`) — then runs `terraform apply`.

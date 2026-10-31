@@ -11,6 +11,12 @@ module "serverless_agents" {
   product_display_name                    = "Agent Kernel OpenAI Multimodal with DynamoDB"
   region                                  = var.region
 
+  # Secret resolution: grants ssm:GetParameter on /ak/<prefix>/* and injects AK_SECRET__PREFIX, so the app
+  # resolves OPENAI_API_KEY from /ak/<prefix>/<key lowercased> (config.yaml `secret:` block)
+  # Terraform creates each parameter holding REPLACE_ME; overwrite it with the real value after the first apply.
+  ssm_enabled     = true
+  ssm_secret_keys = ["OPENAI_API_KEY"]
+
   # Request handler configuration
   request_handler = {
     function_description = "Agent Kernel OpenAI Multimodal with DynamoDB"
@@ -20,8 +26,5 @@ module "serverless_agents" {
     package_type         = "Image"
     memory_size          = 2048
     timeout              = 60
-    environment_variables = {
-      "OPENAI_API_KEY" = var.openai_api_key
-    }
   }
 }

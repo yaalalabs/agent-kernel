@@ -10,6 +10,7 @@ from livekit import api, rtc
 from ...core.config import AKConfig
 from ...core.model import AgentReply, AgentRequestText, StreamChunk
 from ...core.realtime import EDGE_SAMPLE_RATE
+from ...secret import SecretManager
 from ..adapter.base import StatefulEdgeAdapter
 
 _log = logging.getLogger("ak.integration.livekit")
@@ -116,9 +117,10 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
         self._input_batch_ms = config.execution.realtime.input_batch_ms
         self._input_batch_bytes = int(EDGE_SAMPLE_RATE * 2 * (self._input_batch_ms / 1000))
 
-        # Kept to give each agent of the team a token of its own when the conversation announces it.
-        self._api_key = api_key or config.livekit.api_key
-        self._api_secret = api_secret or config.livekit.api_secret
+        # Kept to give each agent of the team a token of its own when the conversation announces it. An
+        # empty field falls back to the secret provider, keyed by the field's own AK_* name.
+        self._api_key = api_key or config.livekit.api_key or SecretManager.current().get("AK_LIVEKIT__API_KEY", default="")
+        self._api_secret = api_secret or config.livekit.api_secret or SecretManager.current().get("AK_LIVEKIT__API_SECRET", default="")
         # The participant that hears the human; it speaks for the starting agent.
         self._participants = [self._single_participant(token)]
         # Each agent's participant, once it is in the room.

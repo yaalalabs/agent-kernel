@@ -20,7 +20,6 @@ The API key is read from the environment variable named by ``api_key_env``.
 import asyncio
 import logging
 import math
-import os
 import shlex
 from typing import Any, Optional
 
@@ -33,6 +32,7 @@ from daytona import (
 )
 from daytona.common.errors import DaytonaError
 
+from ...secret import SecretManager
 from ..base import Sandbox, SandboxProvider
 from ..errors import SandboxCapabilityError, SandboxConfigError, SandboxGoneError
 from ..model import IsolationTier, SandboxCapabilities, SandboxPolicy, SandboxPrincipal, SandboxResult
@@ -120,11 +120,11 @@ class DaytonaSandboxProvider(SandboxProvider):
         self._client_instance: Optional[Daytona] = None
 
     def _client(self) -> Daytona:
-        """Return the lazily created Daytona client, keyed from the configured env variable."""
+        """Return the lazily created Daytona client, keyed by the secret api_key_env names."""
         if self._client_instance is None:
-            api_key = os.environ.get(self._config.api_key_env)
+            api_key = SecretManager.current().get(self._config.api_key_env, default=None)
             if not api_key:
-                raise SandboxConfigError(f"daytona provider requires the {self._config.api_key_env} environment variable")
+                raise SandboxConfigError(f"daytona provider requires {self._config.api_key_env} (an environment variable or a secret provider entry)")
             self._client_instance = Daytona(DaytonaConfig(api_key=api_key, target=self._config.target))
         return self._client_instance
 

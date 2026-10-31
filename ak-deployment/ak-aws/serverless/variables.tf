@@ -186,8 +186,23 @@ variable "enable_scheduling" {
 
 variable "ssm_enabled" {
   type        = bool
-  description = "Grant the agent runner Lambda (or the request handler Lambda when `queue_mode = false`, since it then runs the agent) read access to /ak/<prefix>/* in SSM Parameter Store and inject AK_SECRET__PREFIX there, so the application's `secret.provider.type: aws_ssm` can resolve secrets. Terraform does not create the parameters."
+  description = "Grant every Lambda that resolves framework credentials read access to /ak/<prefix>/* in SSM Parameter Store and inject AK_SECRET__PREFIX there, so the application's `secret.provider.type: aws_ssm` can resolve secrets: the request handler (it runs the agent when `queue_mode = false`, and verifies messaging-integration webhooks), plus the agent runner and the response handler (which delivers integration replies) when `queue_mode = true`. The WebSocket connection handler never gets it. Terraform does not create the parameters."
   default     = false
+}
+
+variable "ssm_secret_keys" {
+  type        = list(string)
+  description = "Secret keys (environment-variable-style names such as OPENAI_API_KEY) to create as SecureString parameters at /ak/<prefix>/<key lowercased>, the path the aws_ssm secret provider reads. Each is created holding the placeholder REPLACE_ME and Terraform ignores later value changes, so overwrite it with the real value after the first apply. Creating one fails if the parameter already exists: import it instead. Requires ssm_enabled."
+  default     = []
+
+  validation {
+    condition     = alltrue([for key in var.ssm_secret_keys : can(regex("^[A-Z][A-Z0-9_]*$", key))])
+    error_message = "ssm_secret_keys entries must be environment-variable-style names matching ^[A-Z][A-Z0-9_]*$ (e.g. OPENAI_API_KEY)."
+  }
+  validation {
+    condition     = length(var.ssm_secret_keys) == 0 || var.ssm_enabled
+    error_message = "ssm_secret_keys requires ssm_enabled = true: without it no tier can read the parameters."
+  }
 }
 
 variable "private_subnet_cidrs" {

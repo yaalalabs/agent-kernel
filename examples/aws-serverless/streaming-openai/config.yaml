@@ -19,3 +19,8 @@ execution:
     output:
       # url: "https://sqs.<region>.amazonaws.com/<account-id>/<output-queue-name>"
       max_receive_count: 3
+
+secret:
+  provider:
+    type: aws_ssm
+  # prefix is injected by Terraform as AK_SECRET__PREFIX

@@ -147,6 +147,16 @@ and entrypoint under `data/`, plus the `Dockerfile.agent_runner` it copies in as
 Terraform to build. Pass `local` (`./deploy.sh local`) to install `agentkernel` from
 `../../../ak-py/dist` instead of PyPI.
 
+Terraform creates `/ak/<prefix>/openai_api_key` holding the placeholder `REPLACE_ME` (`ssm_enabled` and
+`ssm_secret_keys` in `deploy/main.tf`; `config.yaml` selects the `aws_ssm` secret provider). Overwrite it
+with your key, where `<prefix>` is `prefix` in `deploy/terraform.tfvars`, before the first request (the
+agent runner reads it when an execution environment starts):
+
+```bash
+aws ssm put-parameter --name "/ak/<prefix>/openai_api_key" \
+    --type SecureString --value "$OPENAI_API_KEY" --overwrite
+```
+
 ### Why the agent runner is an image
 
 Lambda caps a zip-deployed function at **250 MB unzipped**. The agent runner carries

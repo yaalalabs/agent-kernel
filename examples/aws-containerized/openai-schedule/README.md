@@ -161,8 +161,19 @@ cd deploy
 ./deploy.sh                # packages both images, terraform init + apply, waits for ECS stability
 ```
 
-`deploy.sh` prompts for `openai_api_key`, `vpc_id` and `private_subnet_ids` unless you add them to
+`deploy.sh` prompts for `vpc_id` and `private_subnet_ids` unless you add them to
 `terraform.tfvars` or pass them as `-var` flags.
+
+Terraform creates `/ak/<prefix>/openai_api_key` holding the placeholder `REPLACE_ME` (`ssm_enabled` and
+`ssm_secret_keys` in `deploy/main.tf`; `config.yaml` selects the `aws_ssm` secret provider). Overwrite it
+with your key, where `<prefix>` is `prefix` in `deploy/terraform.tfvars`, then roll the agent runner, which
+started with the placeholder:
+
+```bash
+aws ssm put-parameter --name "/ak/<prefix>/openai_api_key" \
+    --type SecureString --value "$OPENAI_API_KEY" --overwrite
+aws ecs update-service --cluster <prefix> --service <prefix>-agent-runner --force-new-deployment
+```
 
 Take the `agent_invoke_url` output; everything below assumes:
 

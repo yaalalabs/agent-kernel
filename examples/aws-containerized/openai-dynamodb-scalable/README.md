@@ -61,12 +61,6 @@ Both modes use the same 2-image architecture (REST Service + Agent Runner) with 
     export TF_VAR_prefix="ak-oai-scl-ecs-dev-scalable"
     export TF_VAR_region="us-east-1"
     ```
-    Then store the OpenAI API key in SSM Parameter Store (see [Secrets from SSM Parameter Store](#secrets-from-ssm-parameter-store)).
-    The key never passes through Terraform:
-    ```bash
-    aws ssm put-parameter --name "/ak/$TF_VAR_prefix/openai_api_key" \
-        --type SecureString --value "$OPENAI_API_KEY" --overwrite
-    ```
 
 2. Build the deployment packages:
     ```bash
@@ -78,10 +72,20 @@ Both modes use the same 2-image architecture (REST Service + Agent Runner) with 
     cd deploy && ./deploy.sh
     ```
 
+4. Overwrite the `REPLACE_ME` placeholder Terraform created with your key (see
+   [Secrets from SSM Parameter Store](#secrets-from-ssm-parameter-store)), then roll the agent runner,
+   which started with the placeholder:
+    ```bash
+    aws ssm put-parameter --name "/ak/$TF_VAR_prefix/openai_api_key" \
+        --type SecureString --value "$OPENAI_API_KEY" --overwrite
+    aws ecs update-service --cluster "$TF_VAR_prefix" --service "$TF_VAR_prefix-agent-runner" --force-new-deployment
+    ```
+
 ## Secrets from SSM Parameter Store
 
-The deployment sets `ssm_enabled = true`, which, because this is queue mode, grants only the agent
-runner task role `ssm:GetParameter` (and nothing else) on `/ak/<prefix>/*` and injects `AK_SECRET__PREFIX`.
+The deployment sets `ssm_enabled = true`, which grants the agent runner and REST service task roles
+`ssm:GetParameter` (and nothing else) on `/ak/<prefix>/*` and injects `AK_SECRET__PREFIX` (the REST service
+needs it only for messaging-integration credentials, which this example has none of).
 `config.yaml` declares `secret.provider.type: aws_ssm`, and `app_agent_runner.py` resolves the key
 at startup (`app_rest_service.py` never calls the model, so it needs no key):
 
@@ -93,8 +97,12 @@ set_default_openai_key(SecretManager.current().get("OPENAI_API_KEY"))
   for local runs); the deployment does not inject one, so on ECS the key comes from SSM.
 - **Naming:** the key is the SDK's own variable name, lowercased under the deployment prefix —
   `OPENAI_API_KEY` → `/ak/<prefix>/openai_api_key`.
-- **Terraform does not create the parameter.** Create it as a `SecureString` with the AWS-managed
-  `alias/aws/ssm` key, as shown above.
+- **Terraform creates the parameter, not its value.** `ssm_secret_keys = ["OPENAI_API_KEY"]` makes the
+  module create a `SecureString` (AWS-managed `alias/aws/ssm` key) holding `REPLACE_ME`, and its
+  `ignore_changes` keeps later applies from writing that back over your key. The provider still reads the
+  parameter on every refresh, so after the next plan the real value is also in Terraform state: keep the
+  state backend encrypted and access-restricted. A parameter that already exists makes the create fail —
+  import it instead: `terraform import 'module.containerized_agents.aws_ssm_parameter.secret_placeholder["OPENAI_API_KEY"]' /ak/<prefix>/openai_api_key`.
 - **Rotation:** overwrite the parameter with `aws ssm put-parameter ... --overwrite`. The key is
   handed to the SDK once, when an agent runner task starts, so roll the service to pick it up:
   ```bash

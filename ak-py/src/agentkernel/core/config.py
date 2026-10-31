@@ -126,7 +126,8 @@ class _WebSocketAPIConfig(BaseModel):
     push_auth_token: Optional[str] = Field(
         default=None,
         description="Shared secret authenticating pod-to-pod pushes to the pipeline's internal push endpoint "
-        "(required for WebSocket modes on a broker transport; unused by API-Gateway-based deployments)",
+        "(required for WebSocket modes on a broker transport; unused by API-Gateway-based deployments). When unset, "
+        "resolved through SecretManager as AK_WEBSOCKET_API__PUSH_AUTH_TOKEN (the environment, then the configured secret provider)",
     )
     push_port: Optional[int] = Field(
         default=None,
@@ -173,9 +174,18 @@ class _WhatsAppConfig(BaseModel):
         default="",
         description="The message to send as an acknowledgement when a WhatsApp message is received",
     )
-    verify_token: str = Field(default="", description="WhatsApp webhook verify token")
-    access_token: str = Field(default="", description="WhatsApp Business API access token")
-    app_secret: str = Field(default="", description="WhatsApp app secret for signature verification")
+    verify_token: str = Field(
+        default="",
+        description="WhatsApp webhook verify token. When empty, resolved through SecretManager as AK_WHATSAPP__VERIFY_TOKEN (the environment, then the configured secret provider)",
+    )
+    access_token: str = Field(
+        default="",
+        description="WhatsApp Business API access token. When empty, resolved through SecretManager as AK_WHATSAPP__ACCESS_TOKEN (the environment, then the configured secret provider)",
+    )
+    app_secret: str = Field(
+        default="",
+        description="WhatsApp app secret for signature verification. When empty, resolved through SecretManager as AK_WHATSAPP__APP_SECRET (the environment, then the configured secret provider)",
+    )
     phone_number_id: str = Field(default="", description="WhatsApp Business phone number ID")
     api_version: str = Field(default="v24.0", description="WhatsApp API version")
     outbound_adapter: str = Field(
@@ -186,9 +196,18 @@ class _WhatsAppConfig(BaseModel):
 
 class _MessengerConfig(BaseModel):
     agent: str = Field(default="", description="Default agent to use for Facebook Messenger interactions")
-    verify_token: str = Field(default="", description="Facebook Messenger webhook verify token")
-    access_token: str = Field(default="", description="Facebook Page access token")
-    app_secret: str = Field(default="", description="Facebook app secret for signature verification")
+    verify_token: str = Field(
+        default="",
+        description="Facebook Messenger webhook verify token. When empty, resolved through SecretManager as AK_MESSENGER__VERIFY_TOKEN (the environment, then the configured secret provider)",
+    )
+    access_token: str = Field(
+        default="",
+        description="Facebook Page access token. When empty, resolved through SecretManager as AK_MESSENGER__ACCESS_TOKEN (the environment, then the configured secret provider)",
+    )
+    app_secret: str = Field(
+        default="",
+        description="Facebook app secret for signature verification. When empty, resolved through SecretManager as AK_MESSENGER__APP_SECRET (the environment, then the configured secret provider)",
+    )
     api_version: str = Field(default="v24.0", description="Facebook Graph API version")
     outbound_adapter: str = Field(
         default="",
@@ -198,9 +217,18 @@ class _MessengerConfig(BaseModel):
 
 class _InstagramConfig(BaseModel):
     agent: str = Field(default="", description="Default agent to use for Instagram interactions")
-    verify_token: str = Field(default="", description="Instagram webhook verify token")
-    access_token: str = Field(default="", description="Instagram Business access token")
-    app_secret: str = Field(default="", description="Instagram app secret for signature verification")
+    verify_token: str = Field(
+        default="",
+        description="Instagram webhook verify token. When empty, resolved through SecretManager as AK_INSTAGRAM__VERIFY_TOKEN (the environment, then the configured secret provider)",
+    )
+    access_token: str = Field(
+        default="",
+        description="Instagram Business access token. When empty, resolved through SecretManager as AK_INSTAGRAM__ACCESS_TOKEN (the environment, then the configured secret provider)",
+    )
+    app_secret: str = Field(
+        default="",
+        description="Instagram app secret for signature verification. When empty, resolved through SecretManager as AK_INSTAGRAM__APP_SECRET (the environment, then the configured secret provider)",
+    )
     instagram_account_id: str = Field(default="", description="Instagram Business Account ID (IGSID)")
     api_version: str = Field(default="v21.0", description="Instagram Graph API version")
     outbound_adapter: str = Field(
@@ -211,8 +239,14 @@ class _InstagramConfig(BaseModel):
 
 class _TelegramConfig(BaseModel):
     agent: str = Field(default="", description="Default agent to use for Telegram")
-    bot_token: str = Field(default="", description="Telegram bot token from BotFather")
-    webhook_secret: str = Field(default="", description="Optional secret token for webhook security")
+    bot_token: str = Field(
+        default="",
+        description="Telegram bot token from BotFather. When empty, resolved through SecretManager as AK_TELEGRAM__BOT_TOKEN (the environment, then the configured secret provider)",
+    )
+    webhook_secret: str = Field(
+        default="",
+        description="Optional secret token for webhook security. When empty, resolved through SecretManager as AK_TELEGRAM__WEBHOOK_SECRET (the environment, then the configured secret provider)",
+    )
     api_version: str = Field(default="bot", description="Telegram Bot API version prefix")
     outbound_adapter: str = Field(
         default="",
@@ -227,7 +261,10 @@ class _TeamsConfig(BaseModel):
         description="The message to send as an acknowledgement when a Teams message is received",
     )
     app_id: str = Field(default="", description="Azure Bot / Entra ID application (client) ID")
-    app_password: str = Field(default="", description="Azure Bot / Entra ID application client secret")
+    app_password: str = Field(
+        default="",
+        description="Azure Bot / Entra ID application client secret. When empty, resolved through SecretManager as AK_TEAMS__APP_PASSWORD (the environment, then the configured secret provider)",
+    )
     tenant_id: str = Field(
         default="",
         description="Entra ID tenant that owns the bot's app registration. Required only for a single-tenant registration, whose channel tokens must be issued by its own tenant; leave empty for a multi-tenant bot. Also the fallback tenant for the app-only token used to download attachments whose URL is not pre-authenticated, when the incoming activity carries none",
@@ -258,8 +295,14 @@ class _LiveKitConfig(BaseModel):
 
     agent: str = Field(default="", description="Default agent to use for LiveKit interactions")
     url: str = Field(default="", description="LiveKit server WebSocket URL")
-    api_key: str = Field(default="", description="LiveKit API Key")
-    api_secret: str = Field(default="", description="LiveKit API Secret")
+    api_key: str = Field(
+        default="",
+        description="LiveKit API Key. When empty, resolved through SecretManager as AK_LIVEKIT__API_KEY (the environment, then the configured secret provider)",
+    )
+    api_secret: str = Field(
+        default="",
+        description="LiveKit API Secret. When empty, resolved through SecretManager as AK_LIVEKIT__API_SECRET (the environment, then the configured secret provider)",
+    )
 
 
 class _MultimodalStorageRedisConfig(_RedisConfig):
@@ -747,12 +790,20 @@ class _SandboxDockerConfig(BaseModel):
 
 
 class _SandboxE2BConfig(BaseModel):
-    api_key_env: str = Field(default="E2B_API_KEY", description="Name of the environment variable holding the E2B API key")
+    api_key_env: str = Field(
+        default="E2B_API_KEY",
+        description="Secret key (an environment-variable-style name) holding the E2B API key, resolved through SecretManager: "
+        "the environment first, then the configured secret provider",
+    )
     template: str = Field(default="base", description="E2B sandbox template to launch")
 
 
 class _SandboxDaytonaConfig(BaseModel):
-    api_key_env: str = Field(default="DAYTONA_API_KEY", description="Name of the environment variable holding the Daytona API key")
+    api_key_env: str = Field(
+        default="DAYTONA_API_KEY",
+        description="Secret key (an environment-variable-style name) holding the Daytona API key, resolved through SecretManager: "
+        "the environment first, then the configured secret provider",
+    )
     target: Optional[str] = Field(default=None, description="Daytona target/region; None uses the SDK default")
     image: Optional[str] = Field(
         default=None,

@@ -4,3 +4,8 @@ multimodal:
   redis:
     url: redis://ak-mm-redis-dev-examples-redis.dirnvi.0001.use1.cache.amazonaws.com:6379
     prefix: "ak:mm:redis:"
+
+secret:
+  provider:
+    type: aws_ssm
+  # prefix is injected by Terraform as AK_SECRET__PREFIX

@@ -1252,7 +1252,8 @@ passed through Terraform as environment variables. One variable, `false` by defa
 
 | Variable | Description | Type | Default |
 |---|---|---|---|
-| `ssm_enabled` | Grant the Lambda that runs the agent (the agent runner when `queue_mode = true`, otherwise the request handler; never the response or WebSocket connection handler) `ssm:GetParameter` (and nothing else) on `arn:aws:ssm:<region>:<account>:parameter/ak/<prefix>/*` and inject `AK_SECRET__PREFIX = <prefix>` | `bool` | `false` |
+| `ssm_enabled` | Grant the Lambdas that resolve framework credentials (the request handler; plus the agent runner and the response handler when `queue_mode = true`; never the WebSocket connection handler) `ssm:GetParameter` (and nothing else) on `arn:aws:ssm:<region>:<account>:parameter/ak/<prefix>/*` and inject `AK_SECRET__PREFIX = <prefix>` | `bool` | `false` |
+| `ssm_secret_keys` | Secret keys (e.g. `OPENAI_API_KEY`) to create as `SecureString` parameters at `/ak/<prefix>/<key lowercased>`, each holding `REPLACE_ME` with `ignore_changes` on its value. Requires `ssm_enabled` | `list(string)` | `[]` |
 
 ```hcl
 ssm_enabled = true
@@ -1267,14 +1268,30 @@ secret:
     type: aws_ssm
 ```
 
-Terraform does not create the parameters either, so the key never passes through Terraform state. Create
-each one yourself as a `SecureString` (AWS-managed `alias/aws/ssm` key), named after the key lowercased
-under the prefix:
+**Placeholder parameters.** List the keys in `ssm_secret_keys` and the module creates each
+`/ak/<prefix>/<key lowercased>` as a `SecureString` (AWS-managed `alias/aws/ssm` key) holding `REPLACE_ME`,
+with `lifecycle { ignore_changes = [value] }`. After the first apply, overwrite it with the real value:
+
+```hcl
+ssm_enabled     = true
+ssm_secret_keys = ["OPENAI_API_KEY"]
+```
 
 ```bash
 aws ssm put-parameter --name "/ak/<prefix>/openai_api_key" \
     --type SecureString --value "$OPENAI_API_KEY" --overwrite
 ```
+
+- Restart anything that read the placeholder before you overwrote it: an ECS service (`aws ecs
+  update-service --cluster <prefix> --service <service> --force-new-deployment`), or a Lambda execution
+  environment that already served a request.
+- The real value never passes through a Terraform input, but the provider reads the parameter on every
+  refresh, so it is recorded in Terraform state after the next plan or apply. Keep the state backend
+  encrypted and access-restricted.
+- Creating a parameter that already exists fails. Adopt one you created yourself with
+  `terraform import 'module.<name>.aws_ssm_parameter.secret_placeholder["OPENAI_API_KEY"]' /ak/<prefix>/openai_api_key`.
+- `terraform destroy` deletes the parameters, values included. Leave `ssm_secret_keys` empty to create and
+  own them yourself instead.
 
 Do not also inject the key as an environment variable: a set, non-empty environment variable always wins
 over SSM.

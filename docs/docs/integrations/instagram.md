@@ -92,6 +92,8 @@ export AK_INSTAGRAM__APP_SECRET="your_app_secret"  # Optional but recommended
 export AK_INSTAGRAM__API_VERSION="v21.0"  # Optional, defaults to v21.0
 ```
 
+> **Secret providers:** these credentials can also live in your configured secret provider (AWS SSM Parameter Store, mounted Kubernetes Secrets) instead of the environment; see [Framework-owned credentials](../advanced/secrets.md#framework-owned-credentials).
+
 ### 4. Set Up Your Webhook
 
 **For local development**, use a tunneling service to expose your local server:

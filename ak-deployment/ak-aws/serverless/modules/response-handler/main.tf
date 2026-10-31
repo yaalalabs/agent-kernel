@@ -206,6 +206,31 @@ resource "aws_iam_role_policy_attachment" "response_handler_websocket_api_attach
   policy_arn = aws_iam_policy.response_handler_websocket_api_policy[0].arn
 }
 
+# Secret resolution: read-only access to this deployment's SSM parameters (AWSSMSecretProvider), for the
+# platform credentials messaging-integration delivery uses
+resource "aws_iam_policy" "response_handler_ssm_secret_policy" {
+  count = var.ssm_enabled ? 1 : 0
+  name  = "${var.prefix}-${local.response_handler_function_name}-ssm-secret"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "ReadAKSecrets"
+        Effect   = "Allow"
+        Action   = ["ssm:GetParameter"]
+        Resource = "arn:aws:ssm:${var.region}:${var.account_id}:parameter/ak/${var.prefix}/*"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "response_handler_ssm_secret_attachment" {
+  count      = var.ssm_enabled ? 1 : 0
+  role       = aws_iam_role.response_handler_lambda_role.name
+  policy_arn = aws_iam_policy.response_handler_ssm_secret_policy[0].arn
+}
+
 # Response Handler Lambda Function
 module "response_handler_lambda" {
   source  = "terraform-aws-modules/lambda/aws"
@@ -252,6 +277,10 @@ module "response_handler_lambda" {
     } : {},
     var.websocket_connections_dynamodb != null ? {
       AK_WEBSOCKET_API__CONNECTION_TABLE__TABLE_NAME = var.websocket_connections_dynamodb.table_name
+    } : {},
+    # Secret resolution scope; `secret.provider.type` comes from the app's config.yaml
+    var.ssm_enabled ? {
+      AK_SECRET__PREFIX = var.prefix
     } : {},
     {
       AK_EXECUTION__QUEUES__OUTPUT__MAX_RECEIVE_COUNT = tostring(local.output_queue_consumer_max_receive_count)

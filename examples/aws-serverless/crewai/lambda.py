@@ -4,8 +4,13 @@ os.environ["CREWAI_TRACING_ENABLED"] = "false"
 
 from agentkernel.aws import Lambda
 from agentkernel.crewai import CrewAIModule
+from agentkernel.secret import SecretManager
 
-from crewai import Agent
+from crewai import LLM, Agent
+
+# OPENAI_API_KEY from the environment when set, else from SSM (/ak/<prefix>/openai_api_key). The value is
+# handed to the CrewAI LLM in memory; it is never written back to os.environ.
+openai_key = SecretManager.current().get("OPENAI_API_KEY")
 
 math_agent = Agent(
     role="math",
@@ -14,7 +19,7 @@ math_agent = Agent(
          If prompted for anything else, refuse to answer.",
     verbose=False,
     tracing=False,
-    model="openai/gpt-4.1-mini",
+    llm=LLM(model="openai/gpt-4.1-mini", api_key=openai_key),
 )
 
 history_agent = Agent(
@@ -23,7 +28,7 @@ history_agent = Agent(
     backstory="You provide assistance with historical queries. Explain important events and context clearly.",
     verbose=False,
     tracing=False,
-    model="openai/gpt-4.1-mini",
+    llm=LLM(model="openai/gpt-4.1-mini", api_key=openai_key),
 )
 
 CrewAIModule([math_agent, history_agent])

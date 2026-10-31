@@ -153,10 +153,11 @@ agent-executing tier and fails the render on an unusable value.
 If the backend is a cloud store the Terraform modules can grant, mirror `ssm_enabled` in
 `ak-deployment/ak-aws/{serverless,containerized}` (`variables.tf`, `state.tf`,
 `modules/*/main.tf`). Use one `bool` defaulting to `false`, keep every resource `count`-gated so
-the default plan is empty, and attach a read-only grant scoped to the prefix only to the tier that
-runs the agent (agent runner in queue mode, request handler / REST service otherwise — never the
-response or WS connection handler). Keep injecting `AK_SECRET__PREFIX` from the module's own `prefix` so the path and the grant
-can't drift. Never create secret values in Terraform.
+the default plan is empty, and attach a read-only grant scoped to the prefix to the same tiers
+`ssm_enabled` reaches (request handler / REST service, plus the agent runner and the serverless response
+handler in queue mode — never the WS connection handler). Keep injecting `AK_SECRET__PREFIX` from the module's own `prefix` so the path and the grant
+can't drift. Never put a real secret value in Terraform: at most a placeholder the user overwrites, as
+`ssm_secret_keys` does (`REPLACE_ME` with `ignore_changes = [value]`).
 
 ### 7. Documentation
 

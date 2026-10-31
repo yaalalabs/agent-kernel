@@ -6,6 +6,7 @@ from typing import Any, Iterable, List, Mapping
 
 from neo4j import GraphDatabase
 
+from ..secret import SecretManager
 from .base import KnowledgeBase
 from .errors import KnowledgeError
 from .model import KnowledgeCapabilities
@@ -47,7 +48,7 @@ class Neo4jManager(KnowledgeBase):
 
         self.uri = uri or os.getenv("NEO4J_URI", "bolt://localhost:7687")
         self.user = user or os.getenv("NEO4J_USERNAME", "neo4j")
-        self.password = password or os.getenv("NEO4J_PASSWORD", "password")
+        self.password = password or SecretManager.current().get("NEO4J_PASSWORD", default="password")
         self.database = database
         self.driver = None
         self.name = name

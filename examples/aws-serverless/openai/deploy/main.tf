@@ -22,7 +22,9 @@ module "serverless_agents" {
 
   # Secret resolution: grants ssm:GetParameter on /ak/<prefix>/* and injects AK_SECRET__PREFIX, so the
   # agent runner resolves OPENAI_API_KEY from /ak/<prefix>/openai_api_key (config.yaml `secret:` block)
-  ssm_enabled = true
+  # Terraform creates each parameter holding REPLACE_ME; overwrite it with the real value after the first apply.
+  ssm_enabled     = true
+  ssm_secret_keys = ["OPENAI_API_KEY"]
 
   # Response Store Config - reuses the same Redis cluster created above
   create_redis_response_store = true

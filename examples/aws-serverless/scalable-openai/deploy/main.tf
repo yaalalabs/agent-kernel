@@ -39,6 +39,12 @@ module "serverless_agents" {
     }
   ]
 
+  # Secret resolution: grants ssm:GetParameter on /ak/<prefix>/* and injects AK_SECRET__PREFIX, so the app
+  # resolves OPENAI_API_KEY from /ak/<prefix>/<key lowercased> (config.yaml `secret:` block)
+  # Terraform creates each parameter holding REPLACE_ME; overwrite it with the real value after the first apply.
+  ssm_enabled     = true
+  ssm_secret_keys = ["OPENAI_API_KEY"]
+
   # Request handler configuration
   request_handler = {
     function_name        = "rqh-func"
@@ -49,9 +55,6 @@ module "serverless_agents" {
     memory_size          = 256
     timeout              = 45
     security_group_id    = var.request_handler_security_group_id
-    environment_variables = {
-      "OPENAI_API_KEY" = var.openai_api_key
-    }
   }
 
   # Agent runner configuration
@@ -64,9 +67,6 @@ module "serverless_agents" {
     package_type         = "Image"
     ecr_image_uri        = var.agent_runner_ecr_image_uri
     security_group_id    = var.agent_runner_security_group_id
-    environment_variables = {
-      "OPENAI_API_KEY" = var.openai_api_key
-    }
   }
 
   # Response handler configuration

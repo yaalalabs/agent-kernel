@@ -32,20 +32,25 @@ The `deploy/deploy.sh` script builds the Docker image, pushes it to ECR, and the
 
 ## Deployment Steps
 
-1. Configure environment variables:
-    ```bash
-    export TF_VAR_openai_api_key=<OPENAI_API_KEY>
-    ```
-
-2. Update `deploy/terraform.tfvars` with your ECR repository details:
+1. Update `deploy/terraform.tfvars` with your ECR repository details:
     ```hcl
     ecr_image_uri = "<account-id>.dkr.ecr.<region>.amazonaws.com/<repo-name>:latest"
     ```
 
-3. Run the deployment script from the `deploy/` directory:
+2. Run the deployment script from the `deploy/` directory:
     ```bash
     cd deploy && ./deploy.sh  # ./deploy.sh local for local agentkernel build
     ```
+
+    Terraform creates `/ak/<prefix>/openai_api_key` holding the placeholder `REPLACE_ME` (`ssm_enabled` and
+    `ssm_secret_keys` in `deploy/main.tf`; `config.yaml` selects the `aws_ssm` secret provider). Overwrite it
+    with your key, where `<prefix>` is `prefix` in `deploy/terraform.tfvars`:
+    ```bash
+    aws ssm put-parameter --name "/ak/<prefix>/openai_api_key" \
+        --type SecureString --value "$OPENAI_API_KEY" --overwrite
+    ```
+    The service started with the placeholder, so force a new deployment to pick the key up:
+    `aws ecs update-service --cluster <prefix> --service <prefix>-service --force-new-deployment`.
 
     The script will:
     - Build the application deployment package with dependencies

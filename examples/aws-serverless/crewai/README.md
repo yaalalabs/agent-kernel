@@ -33,7 +33,6 @@ This demo deploys the following AWS resources:
 
 3. Configure environment variables:
     ```bash
-    export TF_VAR_openai_api_key=<OPENAI_API_KEY>
     export TF_VAR_vpc_id=<VPC_ID_FROM_OPENAI>
     export TF_VAR_private_subnet_ids='["<SUBNET_ID_1>", "<SUBNET_ID_2>"]'
     export TF_VAR_request_handler_security_group_id=<SG_FROM_OPENAI> # optional, reuses the openai deployment's security group
@@ -43,3 +42,12 @@ This demo deploys the following AWS resources:
     ```bash
     cd deploy && ./deploy.sh #./deploy.sh local if dependencies are built locally
     ```
+
+    Terraform creates `/ak/<prefix>/openai_api_key` holding the placeholder `REPLACE_ME` (`ssm_enabled` and
+    `ssm_secret_keys` in `deploy/main.tf`; `config.yaml` selects the `aws_ssm` secret provider). Overwrite it
+    with your key, where `<prefix>` is `prefix` in `deploy/terraform.tfvars`:
+    ```bash
+    aws ssm put-parameter --name "/ak/<prefix>/openai_api_key" \
+        --type SecureString --value "$OPENAI_API_KEY" --overwrite
+    ```
+    A Lambda execution environment reads the key when it starts, so set it before the first request.

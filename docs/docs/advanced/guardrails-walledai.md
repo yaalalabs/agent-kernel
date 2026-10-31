@@ -28,6 +28,8 @@ export WALLED_API_KEY=your-walledai-api-key
 export AK_LOGGING__AK__LEVEL=DEBUG
 ```
 
+> **Secret providers:** these credentials can also live in your configured secret provider (AWS SSM Parameter Store, mounted Kubernetes Secrets) instead of the environment; see [Framework-owned credentials](secrets.md#framework-owned-credentials).
+
 ## Configuration
 
 Configure Walled AI in your `config.yaml`:

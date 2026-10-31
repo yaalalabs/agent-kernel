@@ -29,6 +29,7 @@ from fastapi.responses import JSONResponse
 from ...core.config import AKConfig
 from ...core.model import AgentReply, AgentRequest, AgentRequestFile, AgentRequestImage, AgentRequestText
 from ...core.multimodal.storage import AttachmentStorageManager
+from ...secret import SecretManager
 from ..adapter.base import ATTACHMENTS_DISABLED_ERROR, SESSION_CACHE_ERROR, InboundAdapter, InboundParseResult, InboundRequest, OutboundAdapter
 from ..adapter.routes import BUILTIN_WEBHOOK_ROUTES
 
@@ -58,7 +59,8 @@ class _TeamsCredentials:
     def __init__(self):
         config = AKConfig.get().teams
         self._app_id = config.app_id
-        self._app_password = config.app_password
+        # An empty field falls back to the secret provider, keyed by the field's own AK_* name.
+        self._app_password = config.app_password or SecretManager.current().get("AK_TEAMS__APP_PASSWORD", default="")
         self._tenant_id = config.tenant_id
         if not self._app_id or not self._app_password:
             self._log.error("Teams configuration is incomplete. Please set app_id and app_password.")

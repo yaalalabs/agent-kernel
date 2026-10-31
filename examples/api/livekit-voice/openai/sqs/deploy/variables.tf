@@ -14,23 +14,8 @@ variable "is_production" {
   default     = false
 }
 
-variable "openai_api_key" {
-  description = "OpenAI API Key"
-  type        = string
-}
-
 variable "livekit_url" {
   description = "LiveKit URL"
-  type        = string
-}
-
-variable "livekit_api_key" {
-  description = "LiveKit API Key"
-  type        = string
-}
-
-variable "livekit_api_secret" {
-  description = "LiveKit API Secret"
   type        = string
 }
 

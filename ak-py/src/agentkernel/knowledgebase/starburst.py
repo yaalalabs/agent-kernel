@@ -6,15 +6,11 @@ from typing import Any, List, Mapping
 import trino
 import trino.exceptions
 
+from ..secret import SecretManager
 from .base import KnowledgeBase
 from .model import KnowledgeCapabilities
 
 logger = logging.getLogger("ak.StarburstManager")
-
-STARBURST_HOST = os.getenv("STARBURST_HOST", "")
-STARBURST_USER = os.getenv("STARBURST_USER", "")
-STARBURST_PASSWORD = os.getenv("STARBURST_PASSWORD", "")
-STARBURST_PORT = int(os.getenv("STARBURST_PORT", "443"))
 
 # A row limit on the outer query, which Trino only accepts at the end of the statement. Anchored
 # there because a LIMIT anywhere also matched one in a subquery, which bounds the subquery and
@@ -73,10 +69,11 @@ class StarburstManager(KnowledgeBase):
             name=name,
         )
 
-        self.host = host or STARBURST_HOST
-        self.port = port or STARBURST_PORT
-        self.user = user or STARBURST_USER
-        self.password = password or STARBURST_PASSWORD
+        # Read at construction, not import, so the password can come from the configured secret provider.
+        self.host = host or os.getenv("STARBURST_HOST", "")
+        self.port = port or int(os.getenv("STARBURST_PORT", "443"))
+        self.user = user or os.getenv("STARBURST_USER", "")
+        self.password = password or SecretManager.current().get("STARBURST_PASSWORD", default="")
         self.catalog = catalog
         self.db_schema = schema
         self.table_name = table_name

@@ -164,22 +164,36 @@ def _read_tfvar(deploy_path: Path, key: str) -> str | None:
 SSM_SEEDED_KEYS = ["OPENAI_API_KEY"]
 
 
-def seed_ssm_secrets(path: str, deploy_dir: str = 'deploy') -> bool:
-    """Write SSM_SEEDED_KEYS from the environment to SSM when the example resolves secrets from aws_ssm."""
+def _ssm_scope(path: str, deploy_dir: str):
+    """(prefix, region) for an example that resolves secrets from aws_ssm; None when it does not.
+
+    :raises ValueError: If the example uses aws_ssm but its terraform.tfvars has no prefix or region.
+    """
     import yaml
 
     config = yaml.safe_load((Path(path) / 'config.yaml').read_text()) or {}
     provider_type = ((config.get('secret') or {}).get('provider') or {}).get('type')
     if provider_type != 'aws_ssm':
-        print(f"⏭️  Skipping SSM seeding - {path} does not use the aws_ssm secret provider")
-        return True
-
+        return None
     deploy_path = Path(path) / deploy_dir
     prefix = _read_tfvar(deploy_path, 'prefix')
     region = _read_tfvar(deploy_path, 'region')
     if not (prefix and region):
-        print(f"❌ Could not resolve prefix/region from {deploy_path / 'terraform.tfvars'}")
+        raise ValueError(f"Could not resolve prefix/region from {deploy_path / 'terraform.tfvars'}")
+    return prefix, region
+
+
+def seed_ssm_secrets(path: str, deploy_dir: str = 'deploy') -> bool:
+    """Write SSM_SEEDED_KEYS from the environment to SSM when the example resolves secrets from aws_ssm."""
+    try:
+        scope = _ssm_scope(path, deploy_dir)
+    except ValueError as e:
+        print(f"❌ {e}")
         return False
+    if scope is None:
+        print(f"⏭️  Skipping SSM seeding - {path} does not use the aws_ssm secret provider")
+        return True
+    prefix, region = scope
 
     for key in SSM_SEEDED_KEYS:
         value = os.environ.get(key)
@@ -202,6 +216,60 @@ def seed_ssm_secrets(path: str, deploy_dir: str = 'deploy') -> bool:
             except subprocess.CalledProcessError as e:
                 print(f"❌ Failed to seed {name}: {e}")
                 return False
+    return True
+
+
+def adopt_seeded_ssm_parameters(deploy_path: Path, tf_env: dict) -> bool:
+    """Import the SSM parameters seed_ssm_secrets already wrote, so the apply adopts them instead of failing.
+
+    The AWS modules create a REPLACE_ME placeholder for each `ssm_secret_keys` entry, and creating a
+    parameter that already exists fails. Seeding has to run before the deploy (an ECS task reads its key
+    once, at startup), so every seeded parameter that is not yet in state is imported here; with
+    ignore_changes on its value, the apply then leaves the seeded value alone.
+    """
+    main_tf = deploy_path / 'main.tf'
+    if not main_tf.exists():
+        return True
+    for chunk in ('\n' + main_tf.read_text()).split('\nmodule "')[1:]:
+        module_name, _, body = chunk.partition('"')
+        match = re.search(r'^\s*ssm_secret_keys\s*=\s*\[([^\]]*)\]', body, re.MULTILINE)
+        if match:
+            keys = re.findall(r'"([^"]+)"', match.group(1))
+            break
+    else:
+        return True
+    prefix = _read_tfvar(deploy_path, 'prefix')
+    region = _read_tfvar(deploy_path, 'region')
+    if not (prefix and region):
+        print(f"❌ Could not resolve prefix/region from {deploy_path / 'terraform.tfvars'}")
+        return False
+
+    # A readable state, or none at all, says which parameters Terraform already tracks; an unreadable one
+    # (backend or auth error) is left to the apply to report.
+    in_state = subprocess.run(['terraform', 'state', 'list'], cwd=str(deploy_path), capture_output=True, text=True, env={**os.environ, **tf_env})
+    if in_state.returncode != 0 and 'No state file was found' not in in_state.stdout + in_state.stderr:
+        print(f"⚠️  Could not read Terraform state; not adopting SSM parameters.\n{in_state.stderr.strip()}")
+        return True
+    tracked = set(in_state.stdout.split()) if in_state.returncode == 0 else set()
+
+    for key in keys:
+        name = f"/ak/{prefix}/{key.lower()}"
+        address = f'module.{module_name}.aws_ssm_parameter.secret_placeholder["{key}"]'
+        if address in tracked:
+            continue
+        exists = subprocess.run(
+            ['aws', 'ssm', 'get-parameter', '--region', region, '--name', name, '--query', 'Parameter.Name', '--output', 'text'],
+            capture_output=True, text=True,
+        )
+        if exists.returncode != 0:
+            continue  # not seeded: the apply creates the placeholder
+        if not run_command(
+            ['terraform', 'import', '-input=false', address, name],
+            cwd=str(deploy_path),
+            description=f"Importing seeded SSM parameter {name}",
+            env=tf_env,
+        ):
+            return False
     return True
 
 
@@ -927,6 +995,9 @@ def deploy_aws_resources(path: str, deploy_dir: str = 'deploy', vpc_id: str = No
         description=f"Terraform init for {path}",
         env=tf_env
     ):
+        return False
+
+    if not adopt_seeded_ssm_parameters(deploy_path, tf_env):
         return False
 
     # Deploy

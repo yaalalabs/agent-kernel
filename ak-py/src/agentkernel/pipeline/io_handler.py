@@ -227,7 +227,9 @@ class IOHandler:
         if mode in (ExecutionMode.ASYNC, ExecutionMode.STREAM) and transport_type != "in_memory":
             # This process's Response Handler pushes replies to the gateway pods: it needs the
             # shared secret (and, checked at delivery setup, the shared connection store).
-            if not config.websocket_api.push_auth_token:
+            from .ws.push import push_auth_token
+
+            if not push_auth_token(config):
                 raise AKConfigError(
                     "WebSocket delivery over a broker transport needs websocket_api.push_auth_token: "
                     "the Response Handler authenticates its pushes to the gateway pods with it"

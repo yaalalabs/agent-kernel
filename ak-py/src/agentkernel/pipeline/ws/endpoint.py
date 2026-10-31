@@ -16,7 +16,7 @@ from pydantic import BaseModel
 
 from ...api.handler import RESTRequestHandler
 from ...core.config import AKConfig
-from .push import PUSH_PATH, PUSH_TOKEN_HEADER
+from .push import PUSH_PATH, PUSH_TOKEN_HEADER, push_auth_token
 from .registry import LocalConnectionRegistry
 
 
@@ -43,7 +43,7 @@ class PushEndpointHandler(RESTRequestHandler):
         A sync endpoint on purpose: FastAPI serves it on the threadpool, so the registry's
         ``run_coroutine_threadsafe`` delivery onto the uvicorn loop cannot deadlock.
         """
-        expected = self._config.websocket_api.push_auth_token
+        expected = push_auth_token(self._config)
         if not expected:
             # Fail closed: without a configured token nothing is allowed to push. Reached only
             # on the in_memory transport (broker topologies fail at startup without the token),

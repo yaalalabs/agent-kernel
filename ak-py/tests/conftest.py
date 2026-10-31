@@ -18,6 +18,20 @@ from typing import Any, Mapping
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _env_only_secret_manager(monkeypatch):
+    """Serve every test an environment-only ``SecretManager``.
+
+    Framework consumers resolve their credentials through ``SecretManager.current()``, which
+    otherwise builds from ``AKConfig.get()`` — a mock in many tests — and keeps whatever provider
+    the first test configured for the rest of the run. Tests of the manager itself reset it in
+    their own fixture.
+    """
+    from agentkernel.secret import EnvSecretProvider, SecretManager
+
+    monkeypatch.setattr(SecretManager, "_instance", SecretManager(EnvSecretProvider(), cache_ttl=0))
+
+
 class FakeChromaCollection:
     def __init__(self) -> None:
         self.queries: list[tuple[list[str], int]] = []

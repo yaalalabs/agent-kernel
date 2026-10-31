@@ -16,12 +16,17 @@ This demo deploys the following AWS resources:
 
 ## Deployment Steps
 
-1. Configure environment variables:
-    ```bash
-    export TF_VAR_openai_api_key=<OPENAI_API_KEY>
-    ```
-
-2. Navigate to the deployment directory and run the deployment script:
+1. Navigate to the deployment directory and run the deployment script:
     ```bash
     cd deploy && ./deploy.sh #./deploy.sh local if dependencies are built locally
     ```
+
+    Terraform creates `/ak/<prefix>/openai_api_key` holding the placeholder `REPLACE_ME` (`ssm_enabled` and
+    `ssm_secret_keys` in `deploy/main.tf`; `config.yaml` selects the `aws_ssm` secret provider). Overwrite it
+    with your key, where `<prefix>` is `prefix` in `deploy/terraform.tfvars`:
+    ```bash
+    aws ssm put-parameter --name "/ak/<prefix>/openai_api_key" \
+        --type SecureString --value "$OPENAI_API_KEY" --overwrite
+    ```
+    The service started with the placeholder, so force a new deployment to pick the key up:
+    `aws ecs update-service --cluster <prefix> --service <prefix>-service --force-new-deployment`.

@@ -11,6 +11,12 @@ module "serverless_agents" {
   private_subnet_ids   = var.private_subnet_ids
   product_display_name = "AK Langraph Serverless Example"
 
+  # Secret resolution: grants ssm:GetParameter on /ak/<prefix>/* and injects AK_SECRET__PREFIX, so the app
+  # resolves OPENAI_API_KEY from /ak/<prefix>/<key lowercased> (config.yaml `secret:` block)
+  # Terraform creates each parameter holding REPLACE_ME; overwrite it with the real value after the first apply.
+  ssm_enabled     = true
+  ssm_secret_keys = ["OPENAI_API_KEY"]
+
   # Request handler configuration
   request_handler = {
     function_name        = "langgraph-agents"
@@ -20,8 +26,5 @@ module "serverless_agents" {
     package_type         = "Image"
     memory_size          = 1024
     security_group_id    = var.request_handler_security_group_id
-    environment_variables = {
-      "OPENAI_API_KEY" = var.openai_api_key
-    }
   }
 }

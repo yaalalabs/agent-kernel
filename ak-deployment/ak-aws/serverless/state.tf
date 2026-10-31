@@ -613,7 +613,7 @@ module "request_handler" {
   # requires queue_mode anyway.
   account_id                     = data.aws_caller_identity.current.account_id
   enable_scheduling              = var.enable_scheduling
-  ssm_enabled                    = var.ssm_enabled && !var.queue_mode # in queue mode the agent runner owns secret reads
+  ssm_enabled                    = var.ssm_enabled # queue mode too: this Lambda verifies integration webhooks
   schedule_group_name            = local.schedule_group_name
   scheduler_execution_role_arn   = local.scheduler_execution_role_arn
   create_dynamodb_schedule_table = var.create_dynamodb_schedule_table
@@ -754,6 +754,8 @@ module "response_handler" {
   } : null
   websocket_api_execution_arn = local.websocket_api_enabled ? module.websocket_api_gateway[0].websocket_api_execution_arn : null
   websocket_mode              = local.websocket_api_enabled
+  account_id                  = data.aws_caller_identity.current.account_id
+  ssm_enabled                 = var.ssm_enabled # delivers integration replies, so it resolves the platform credentials
 
   depends_on = [module.websocket_api_gateway, module.queues, module.dynamodb_response_store]
 }

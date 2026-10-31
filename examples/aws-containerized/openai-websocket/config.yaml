@@ -9,3 +9,8 @@ execution:
   # "async": the full agent reply is pushed back as one CHAT_RESPONSE message.
   # "stream": each token is pushed back as a separate STREAM_CHUNK message.
   mode: async
+
+secret:
+  provider:
+    type: aws_ssm
+  # prefix is injected by Terraform as AK_SECRET__PREFIX

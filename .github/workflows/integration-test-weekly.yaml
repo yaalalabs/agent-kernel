@@ -302,7 +302,9 @@ jobs:
           echo "Waiting ${{ matrix.deploy_stagger }}s before deploy to avoid simultaneous VPC connector provisioning..."
           sleep ${{ matrix.deploy_stagger }}
 
-      # No-op unless the example's config.yaml uses the aws_ssm secret provider
+      # No-op unless the example's config.yaml uses the aws_ssm secret provider. Runs before the deploy, which
+      # imports the seeded parameters into state (the module would otherwise create REPLACE_ME placeholders),
+      # so terraform destroy also removes them.
       - name: Seed SSM secrets - ${{ matrix.path }}
         if: matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless'
         env:
