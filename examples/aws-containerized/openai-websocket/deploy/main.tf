@@ -14,12 +14,13 @@ module "containerized_agents" {
 
   create_dynamodb_memory_table = true
 
+  # Secret resolution: grants ssm:GetParameter on /ak/<prefix>/* and injects AK_SECRET__PREFIX, so the app
+  # resolves OPENAI_API_KEY from /ak/<prefix>/<key lowercased> (config.yaml `secret:` block)
+  ssm_enabled = true
+
   rest_service = {
     package_path   = "../dist"
     container_port = 8000
-    environment_variables = {
-      OPENAI_API_KEY = var.openai_api_key
-    }
   }
 
   # WebSocket without a queue: REST service handles connect/disconnect and runs the agent inline.

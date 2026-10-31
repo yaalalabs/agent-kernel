@@ -12,6 +12,7 @@ from fastapi import Request
 from ...core.config import AKConfig
 from ...core.model import AgentReply, AgentRequest, AgentRequestFile, AgentRequestImage, AgentRequestText
 from ...core.multimodal.storage import AttachmentStorageManager
+from ...secret import SecretManager
 from ..adapter.base import ATTACHMENTS_DISABLED_ERROR, SESSION_CACHE_ERROR, InboundAdapter, InboundParseResult, InboundRequest, OutboundAdapter
 from ..adapter.meta import MetaSendAPIClient, answer_challenge, verify_signature
 from ..adapter.routes import BUILTIN_WEBHOOK_ROUTES
@@ -24,12 +25,23 @@ _log = logging.getLogger("ak.integration.instagram")
 
 def _client() -> MetaSendAPIClient:
     config = AKConfig.get().instagram
-    if not all([config.access_token, config.verify_token]):
-        _log.error("Instagram configuration is incomplete. Please set access_token and verify_token.")
-        raise ValueError("Incomplete Instagram configuration.")
+    access_token = config.access_token or SecretManager.current().get("AK_INSTAGRAM__ACCESS_TOKEN", default="")
+    verify_token = config.verify_token or SecretManager.current().get("AK_INSTAGRAM__VERIFY_TOKEN", default="")
+    missing = [
+        SecretManager.current().describe(key, field)
+        for field, key, value in (
+            ("instagram.access_token", "AK_INSTAGRAM__ACCESS_TOKEN", access_token),
+            ("instagram.verify_token", "AK_INSTAGRAM__VERIFY_TOKEN", verify_token),
+        )
+        if not value
+    ]
+    if missing:
+        message = f"Incomplete Instagram configuration: set {'; '.join(missing)}."
+        _log.error(message)
+        raise ValueError(message)
     return MetaSendAPIClient(
         base_url=f"https://graph.instagram.com/{config.api_version or 'v21.0'}",
-        access_token=config.access_token,
+        access_token=access_token,
         log=_log,
     )
 
@@ -47,8 +59,8 @@ class InstagramInboundAdapter(InboundAdapter):
         config = AKConfig.get()
         self._agent = config.instagram.agent or None
         self._max_file_size = config.api.max_file_size
-        self._app_secret = config.instagram.app_secret
-        self._verify_token = config.instagram.verify_token
+        self._app_secret = config.instagram.app_secret or SecretManager.current().get("AK_INSTAGRAM__APP_SECRET", default="")
+        self._verify_token = config.instagram.verify_token or SecretManager.current().get("AK_INSTAGRAM__VERIFY_TOKEN", default="")
         self._api = _client()
 
     def missing_verification_settings(self) -> List[str]:

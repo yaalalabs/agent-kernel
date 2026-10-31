@@ -9,7 +9,6 @@ handing Bolt's own response back for the host to return.
 import base64
 import contextvars
 import logging
-import os
 import traceback
 from typing import Any, Dict, List, Optional
 
@@ -22,6 +21,7 @@ from slack_sdk.web.async_client import AsyncWebClient
 from ...core.config import AKConfig
 from ...core.model import AgentReply, AgentRequest, AgentRequestAny, AgentRequestFile, AgentRequestImage, AgentRequestText
 from ...core.multimodal.storage import AttachmentStorageManager
+from ...secret import SecretManager
 from ..adapter.base import (
     ATTACHMENTS_DISABLED_ERROR,
     SESSION_CACHE_ERROR,
@@ -50,7 +50,19 @@ class SlackInboundAdapter(InboundAdapter):
         self._max_file_size = config.api.max_file_size
         self._bot_id: Optional[str] = None
 
+        # Passed explicitly so both resolve through the secret provider; Bolt would read only the environment.
+        # Checked here too, because Bolt's own errors name only the environment variable.
+        secrets = SecretManager.current()
+        token = secrets.get("SLACK_BOT_TOKEN", default=None)
+        signing_secret = secrets.get("SLACK_SIGNING_SECRET", default=None)
+        missing = [secrets.describe(key) for key, value in (("SLACK_BOT_TOKEN", token), ("SLACK_SIGNING_SECRET", signing_secret)) if not value]
+        if missing:
+            message = f"Incomplete Slack configuration: set {'; '.join(missing)}."
+            self._log.error(message)
+            raise ValueError(message)
         self._app = AsyncApp(
+            token=token,
+            signing_secret=signing_secret,
             process_before_response=True,
         )
         self._handler = AsyncSlackRequestHandler(self._app)
@@ -283,4 +295,4 @@ class SlackOutboundAdapter(OutboundAdapter):
     @staticmethod
     def _client() -> AsyncWebClient:
         """A fresh client per call: each delivery runs on its own event loop."""
-        return AsyncWebClient(token=os.environ.get("SLACK_BOT_TOKEN"))
+        return AsyncWebClient(token=SecretManager.current().get("SLACK_BOT_TOKEN", default=None))

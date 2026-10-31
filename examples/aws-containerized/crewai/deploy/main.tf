@@ -28,6 +28,10 @@ module "containered_agents" {
     }
   ]
 
+  # Secret resolution: grants ssm:GetParameter on /ak/<prefix>/* and injects AK_SECRET__PREFIX, so the app
+  # resolves OPENAI_API_KEY from /ak/<prefix>/<key lowercased> (config.yaml `secret:` block)
+  ssm_enabled = true
+
   rest_service = {
     alb_security_group_id         = var.alb_security_group_id
     ecs_service_security_group_id = var.ecs_service_security_group_id
@@ -35,7 +39,6 @@ module "containered_agents" {
     container_port                = 8000
     # Environment variables passed to container
     environment_variables = {
-      OPENAI_API_KEY     = var.openai_api_key,
       CREWAI_STORAGE_DIR = "/tmp/crewai",
       EMBEDCHAIN_DB_PATH = "/tmp/crewai/embedchain.db",
       HOME               = "/tmp"

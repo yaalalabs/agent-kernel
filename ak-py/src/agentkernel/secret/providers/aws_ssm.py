@@ -68,6 +68,9 @@ class AWSSMSecretProvider(SecretProvider):
             raise SecretError(f"SSM GetParameter failed for '{path}': {type(exc).__name__}") from exc
         return response["Parameter"]["Value"]
 
+    def describe(self, key: str) -> Optional[str]:
+        return f"SSM parameter {self._compose_path(key)}"
+
     def _compose_path(self, key: str) -> str:
         return f"/ak/{self._prefix}/{key.lower()}"
 

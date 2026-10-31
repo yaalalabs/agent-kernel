@@ -38,6 +38,9 @@ class KubernetesSecretProvider(SecretProvider):
         """
         return cls(mount_path=config.provider.kubernetes.mount_path)
 
+    def describe(self, key: str) -> Optional[str]:
+        return f"a file named {key} in a Kubernetes Secret mounted under {self._mount_path}"
+
     def get_secret(self, key: str) -> Optional[str]:
         """Return the content of the one file named `key` under mount_path, or None if there is none.
 

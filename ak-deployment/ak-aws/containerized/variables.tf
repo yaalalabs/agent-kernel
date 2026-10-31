@@ -142,7 +142,7 @@ variable "enable_scheduling" {
 
 variable "ssm_enabled" {
   type        = bool
-  description = "Grant the agent runner task role (or the REST service task role when `queue_mode = false`, since it then runs the agent) read access to /ak/<prefix>/* in SSM Parameter Store and inject AK_SECRET__PREFIX there, so the application's `secret.provider.type: aws_ssm` can resolve secrets. Terraform does not create the parameters."
+  description = "Grant the REST service task role (it runs the agent when `queue_mode = false`, and verifies messaging-integration webhooks and delivers their replies) and, when `queue_mode = true`, the agent runner task role read access to /ak/<prefix>/* in SSM Parameter Store and inject AK_SECRET__PREFIX there, so the application's `secret.provider.type: aws_ssm` can resolve secrets. Terraform does not create the parameters."
   default     = false
 }
 

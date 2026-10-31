@@ -48,3 +48,8 @@ execution:
 #   storage_type: dynamodb
 #   dynamodb:
 #     table_name: ""   # injected via AK_MULTIMODAL__DYNAMODB__TABLE_NAME
+
+secret:
+  provider:
+    type: aws_ssm
+  # prefix is injected by Terraform as AK_SECRET__PREFIX

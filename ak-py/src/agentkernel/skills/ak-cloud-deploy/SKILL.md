@@ -306,11 +306,16 @@ Secret resolution (`ak-add-capabilities`) follows the same split: the app declar
 `SecretManager.current().get("OPENAI_API_KEY")`; Terraform grants read access and injects only the
 deployment scope. Terraform never sets `AK_SECRET__PROVIDER__TYPE`.
 
-- **AWS (serverless + containerized)**: `ssm_enabled = true` grants only the tier that runs the agent
-  (the agent runner when `queue_mode = true`; otherwise the serverless request handler / containerized
-  REST service) `ssm:GetParameter` on `arn:aws:ssm:<region>:<account>:parameter/ak/<prefix>/*` and
-  injects `AK_SECRET__PREFIX = <prefix>` (the module's own `prefix`). The response handler and
-  WebSocket connection handler never get SSM access, so resolve secrets in agent-runner code only.
+- **AWS (serverless + containerized)**: `ssm_enabled = true` grants every tier that resolves framework
+  credentials `ssm:GetParameter` on `arn:aws:ssm:<region>:<account>:parameter/ak/<prefix>/*` and
+  injects `AK_SECRET__PREFIX = <prefix>` (the module's own `prefix`): the serverless request handler /
+  containerized REST service always, plus the agent runner and (serverless) the response handler when
+  `queue_mode = true`. The WebSocket connection handler never gets SSM access.
+- **Framework credentials resolve the same way**: messaging tokens (`SLACK_BOT_TOKEN`,
+  `SLACK_SIGNING_SECRET`, and any empty `whatsapp`/`messenger`/`instagram`/`telegram`/`teams`/`livekit`
+  secret field under its `AK_*` name, e.g. `/ak/<prefix>/ak_telegram__bot_token`), `WALLED_API_KEY`, the
+  E2B/Daytona keys and the realtime model keys need no code — store them in SSM and drop them from
+  `environment_variables`. The full list is in the Secret Resolution docs.
 - **Terraform does not create the parameters** — create each one yourself as a `SecureString`
   (AWS-managed `alias/aws/ssm` key) at `/ak/<prefix>/<key lowercased>`, e.g.
   `aws ssm put-parameter --name /ak/<prefix>/openai_api_key --type SecureString --value sk-...`.
@@ -827,6 +832,8 @@ response_handler = {
   # ...
   environment_variables = { SLACK_BOT_TOKEN = var.slack_bot_token, SLACK_SIGNING_SECRET = var.slack_signing_secret }
 }
+# Or keep them out of the environment: ssm_enabled = true, `secret.provider.type: aws_ssm` in config.yaml,
+# and /ak/<prefix>/slack_bot_token + /ak/<prefix>/slack_signing_secret in SSM (examples/aws-serverless/slack-openai).
 ```
 
 - Package the request handler and the response handler with `agentkernel[aws,<platform>]`; keep the

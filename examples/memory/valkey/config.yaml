@@ -10,3 +10,8 @@ session:
     # Local default; on AWS the deployment injects AK_SESSION__VALKEY__URL and overrides this.
     # Use valkeys:// for SSL/TLS endpoints.
     url: "valkey://localhost:6379"
+
+secret:
+  provider:
+    type: aws_ssm
+  # prefix is injected by Terraform as AK_SECRET__PREFIX

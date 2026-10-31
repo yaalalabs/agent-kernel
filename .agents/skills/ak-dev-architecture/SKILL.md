@@ -32,7 +32,7 @@ metadata:
 3. **Config-driven behavior**: All runtime behavior is governed by `AKConfig` (Pydantic-based), loaded from YAML/JSON files and environment variables (`AK_` prefix, `__` for nesting).
 4. **Session lifecycle**: Sessions are async context managers providing concurrency-safe state management. Session stores are pluggable (in-memory, Redis, Valkey, DynamoDB, Cosmos DB, Firestore). Session stores also provide the WebSocket gateway's `WSConnectionStore` on their backend via `SessionStore.get_connection_store()` (spec #495 §9): the ABC lives beside `SessionStore` in `core/session/base.py`, and each store file carries (or explicitly declines) its implementation, encapsulating its database operations over the shared drivers: `InMemoryWSConnectionStore` (`in_memory.py`, process-wide class-level state), `RedisLikeWSConnectionStore` (`core/session/redis_like.py`, client-library-agnostic; constructed by the redis/valkey stores with their own drivers), `DynamoDBWSConnectionStore` (`dynamodb.py`, over an existing table named by `session.connection_store.table_name`, same schema as the AWS adapters' connections table); cosmosdb/firestore raise actionably, as does the base default (so pre-method BYO stores keep working until a WS mode is enabled). Kafka's retry/dedup bookkeeping keeps its own session-type factory in `pipeline/transport/bookkeeping.py` (Q5).
 5. **Plugin architecture**: Tools, hooks, guardrails, tracing providers, session stores, knowledge base backends, sandbox providers, and messaging integrations are all pluggable via well-defined interfaces. Backend-selection factories (guardrail, trace, session/thread/multimodal stores, sandbox provider, integration outbound adapter) share one shape via `core/util/factory.py` (`resolve_dotted`, `require_extra`, `AKConfigError`): built-ins resolved by `if/elif` + real imports, with a dotted-path "bring your own" branch on every surface.
-6. **Minimal coupling**: Integrations (Slack, WhatsApp, etc.), deployment adapters (AWS Lambda, Azure Functions, Google Cloud Run), and API layers (REST, MCP, A2A) depend on the core but the core never depends on them. The queue pipeline (`pipeline/`) imports only `core` and `api`; `deployment/` imports `pipeline`; modules relocated into `pipeline/` leave re-export shims at their old paths that must preserve existing patch targets (see the Queue Execution Pipeline section).
+6. **Minimal coupling**: Integrations (Slack, WhatsApp, etc.), deployment adapters (AWS Lambda, Azure Functions, Google Cloud Run), and API layers (REST, MCP, A2A) depend on the core but the core never depends on them. The queue pipeline (`pipeline/`) imports only `core`, `api` and the core-only `secret` package; `deployment/` imports `pipeline`; modules relocated into `pipeline/` leave re-export shims at their old paths that must preserve existing patch targets (see the Queue Execution Pipeline section).
 7. **Queue-pipeline execution** (#495): chat execution on server surfaces runs through one five-component pipeline: Request Handler → Input Queue → Agent Runner → Output Queue → Response Handler: with the queue transport (`execution.queues.type`: `in_memory` default, `sqs`, `kafka`, `nats`) and process topology selected by configuration.
 
 ## House Patterns for New Features
@@ -706,6 +706,28 @@ no `enabled` flag: selecting a provider other than `env` is the only opt-in. Not
 ever writes `os.environ` — callers hand the value to the SDK explicitly
 (`set_default_openai_key(SecretManager.current().get("OPENAI_API_KEY"))`).
 
+**Every framework-owned credential goes through it (#858)**, and `tests/test_secret_consumers.py`
+enforces it two ways: an AST scan fails on any `os.environ`/`os.getenv` read under `src/agentkernel/`
+(outside `secret/`) whose literal key looks like a credential (`KEY|TOKEN|SECRET|PASSWORD|...`) or whose key
+is computed, short of a reviewed allow-list; and a table of consumers asserts the three behaviours each must
+have (env wins without asking the provider, provider used when the env is unset, provider failure raises
+`SecretError`). Two shapes:
+- **Direct reads** keep their env name: `SecretManager.current().get("WALLED_API_KEY", default=None)` —
+  Walled AI, Slack (Bolt's `token`/`signing_secret` passed explicitly, since `AsyncApp` would read only the
+  env), Gmail client id/secret, Neo4j/Starburst passwords (Starburst's no longer at import time), the
+  E2B/Daytona `api_key_env` key, and the OpenAI/Gemini realtime runners (`AsyncOpenAI(api_key=...)`,
+  `genai.Client(api_key=...)`; `None` keeps the SDK's own lookup).
+- **Secret-valued `AKConfig` fields** fall back only when empty, keyed by the field's own env name, at the
+  point of use: `config.access_token or SecretManager.current().get("AK_WHATSAPP__ACCESS_TOKEN", default="")`.
+  Never inside `AKConfig` or a validator — `SecretManager` is built from `AKConfig`, so that would recurse.
+  Covered: whatsapp/messenger/instagram `verify_token`/`access_token`/`app_secret`, telegram
+  `bot_token`/`webhook_secret`, teams `app_password`, livekit `api_key`/`api_secret`, and
+  `websocket_api.push_auth_token` through `pipeline/ws/push.py::push_auth_token(config)` (one resolver for
+  its four readers). A new secret field gets the same fallback and a row in the consumer table.
+
+`tests/conftest.py` installs an env-only `SecretManager` per test (autouse), so consumers never build one
+from a mocked `AKConfig`; tests of the manager itself reset it in their own fixture.
+
 - **`SecretManager`** (`manager.py`): process-wide singleton (`current()`, `RLock` guards construction
   only, `reset()` for tests). Unlike `ScheduleManager.get()` it never returns `None`. `get(key,
   default=_UNSET)` raises `ValueError` on a malformed key, `SecretNotFoundError` on a miss without
@@ -715,7 +737,11 @@ ever writes `os.environ` — callers hand the value to the SDK explicitly
 - **`SecretProvider`** (`base.py`): the ABC — `get_secret(key) -> Optional[str]` (`None` = miss;
   raise `SecretError` only on backend failure) plus a `create(_SecretConfig)` classmethod that
   receives the **whole** `secret` block (so `secret.prefix` is shared across backends). Providers own
-  their addressing, never cache, never fall back, and must tolerate concurrent calls.
+  their addressing, never cache, never fall back, and must tolerate concurrent calls. `describe(key)`
+  (non-abstract, no I/O) names where the backend looks — `SSM parameter /ak/<prefix>/<key>` — and
+  `SecretManager.describe(key, field=None)` joins field → env var → that location into the "set ..."
+  phrase `SecretNotFoundError` and every consumer's missing-credential error use (#858 follow-up), so a
+  user on `aws_ssm` is told the exact parameter to create.
 - **`SecretCache`** (`cache.py`): TTL'd dict of provider hits only; lock-free reads of immutable
   `(value, expires_at)` tuples, write lock for set/evict/clear. `cache_ttl: 0` disables it.
 - **`SecretProviderFactory`** (`factory.py`): `get(config)` maps `env` / `kubernetes` / `aws_ssm`
@@ -750,11 +776,17 @@ secret:
 Terraform side (`ak-deployment/ak-aws/{serverless,containerized}/`): `ssm_enabled` (default `false`,
 `count`-gated) grants `ssm:GetParameter` only, on
 `arn:aws:ssm:<region>:<account>:parameter/ak/<prefix>/*`, and injects `AK_SECRET__PREFIX = var.prefix`,
-to the one tier that runs the agent: the agent runner in queue mode, otherwise the request handler
-Lambda (serverless) / REST service (containerized) — the root passes `var.ssm_enabled && !var.queue_mode`
-to the latter. The response handler and WS connection handler never get it. Terraform never sets
+to every tier that resolves framework credentials: the request handler Lambda (serverless) / REST service
+(containerized) always — in queue mode it still verifies messaging-integration webhooks, and the ECS REST
+service also delivers their replies — plus, in queue mode, the agent runner and (serverless) the response
+handler, which delivers integration replies (#858 widened this from "the agent tier only"). The WS
+connection handler never gets it. Terraform never sets
 `secret.provider.type` (the app's `config.yaml` does, like `thread.type`) and never creates the
-parameters. To add a provider, use the `ak-dev-new-secret-provider` skill.
+parameters — not even placeholders: an `aws_ssm_parameter` refreshes the decrypted value into state
+whatever `ignore_changes` says, and a placeholder value is a real-looking credential the adapters would
+cache for the life of the process. The weekly CI seeds the parameters before the deploy
+(`run_single_test.py --action seed-secrets`) and deletes them after a successful destroy
+(`--action delete-secrets`). To add a provider, use the `ak-dev-new-secret-provider` skill.
 
 ## Knowledge Bases (`ak-py/src/agentkernel/knowledgebase/`)
 
@@ -913,7 +945,8 @@ Rules that govern the package:
    messaging-integration webhook host and the pipeline `RequestHandler` family do, because a queue
    producer on a bare FastAPI app would enqueue into a queue no runner drains and the caller would
    still get its 200 (#524).
-2. **Coupling**: `pipeline` imports `core` and `api` only (api's pipeline imports are lazy inside
+2. **Coupling**: `pipeline` imports `core`, `api` and `secret` only (`secret` itself imports only `core`;
+   `ws/push.py` resolves the push token through it; api's pipeline imports are lazy inside
    `run()`); `deployment` imports `pipeline`; `integration/adapter` imports `pipeline`; nothing in
    `pipeline` imports `deployment` at runtime (typing-only imports allowed under `TYPE_CHECKING`,
    which is how `IOHandler` types its `pollers` parameter). **`pipeline` reaches `integration`

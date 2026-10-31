@@ -64,6 +64,7 @@ from ...core.event import (
 )
 from ...core.paused_run import PausedRun, PausedRunState
 from ...core.util.error_util import user_facing_error_message
+from ...secret import SecretManager
 from ...trace import Trace
 
 FRAMEWORK = "adk"
@@ -1165,7 +1166,9 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
         self._validate_transfers(root)
         # Opened before the socket, so a failure here leaves no live connection to clean up.
         await self._open_tool_session(session.id)
-        self._client = genai.Client()
+        # Resolved so the key can come from the secret provider; None leaves the SDK's own lookup
+        # (GEMINI_API_KEY, or Vertex AI from the environment).
+        self._client = genai.Client(api_key=SecretManager.current().get("GOOGLE_API_KEY", default=None))
         try:
             await self._open_socket(root)
         except Exception:

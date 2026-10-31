@@ -14,13 +14,14 @@ module "containerized_agents" {
 
   create_dynamodb_memory_table = true
 
+  # Secret resolution: grants ssm:GetParameter on /ak/<prefix>/* and injects AK_SECRET__PREFIX, so the app
+  # resolves OPENAI_API_KEY from /ak/<prefix>/<key lowercased> (config.yaml `secret:` block)
+  ssm_enabled = true
+
   # REST/IO service: authenticates $connect, enqueues chat, and pushes replies back over the connection (ECSIOHandler).
   rest_service = {
     package_path = "../dist-rest-service"
     command      = ["python", "app_rest_service.py"]
-    environment_variables = {
-      OPENAI_API_KEY = var.openai_api_key
-    }
   }
 
   # Queue mode + WebSocket
@@ -50,9 +51,6 @@ module "containerized_agents" {
     desired_count = 1
     package_path  = "../dist-agent-runner"
     command       = ["python", "app_agent_runner.py"]
-    environment_variables = {
-      OPENAI_API_KEY = var.openai_api_key
-    }
   }
 
   # Agent Runner auto scaling: scale on SQS backlog per task (BacklogPerTask metric).

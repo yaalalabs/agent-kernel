@@ -23,7 +23,8 @@ Because this is designed for production AWS deployments (AWS ECS), the pipeline 
   - Pushes the AI's audio response chunks to the Output SQS Queue.
 - **SQS Queues**: FIFO input and output queues (configured in `config.yaml`).
 
-The realtime model is pinned on the agent in `app_agent_runner.py` (`gemini-3.1-flash-live-preview`), and the LiveKit credential binding (`AK_LIVEKIT__*`) is injected by Terraform.
+The realtime model is pinned on the agent in `app_agent_runner.py` (`gemini-3.1-flash-live-preview`), Terraform injects only the LiveKit URL (`AK_LIVEKIT__URL`); the Gemini key and the LiveKit API key and secret are read from SSM
+Parameter Store at startup (`ssm_enabled = true` in `deploy/main.tf`, `secret.provider.type: aws_ssm` in `config.yaml`).
 
 ## Prerequisites
 
@@ -39,15 +40,17 @@ The `livekit` and `adk` extras are not on PyPI yet, so build the local `agentker
 # 1. Build the local wheel (must be Python 3.12 to match the container image).
 (cd ak-py && uv build --wheel)
 
-# 2. Supply the deployment inputs (or put them in deploy/terraform.tfvars).
-export TF_VAR_GOOGLE_API_KEY="..."
+# 2. Store the secrets in SSM, where <prefix> is `prefix` in deploy/terraform.tfvars.
+for pair in "google_api_key=$GOOGLE_API_KEY" "ak_livekit__api_key=$LIVEKIT_API_KEY" "ak_livekit__api_secret=$LIVEKIT_API_SECRET"; do
+  aws ssm put-parameter --name "/ak/<prefix>/${pair%%=*}" --type SecureString --value "${pair#*=}" --overwrite
+done
+
+# 3. Supply the deployment inputs (or put them in deploy/terraform.tfvars).
 export TF_VAR_livekit_url="wss://your-project.livekit.cloud"
-export TF_VAR_livekit_api_key="..."
-export TF_VAR_livekit_api_secret="..."
 export TF_VAR_vpc_id="vpc-..."
 export TF_VAR_private_subnet_ids='["subnet-aaa","subnet-bbb"]'
 
-# 3. Build the deployment packages and apply.
+# 4. Build the deployment packages and apply.
 cd examples/api/livekit-voice/google/sqs
 UV_PYTHON=3.12 ./deploy.sh local
 ```

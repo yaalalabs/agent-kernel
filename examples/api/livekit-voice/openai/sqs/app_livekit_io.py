@@ -11,6 +11,7 @@ gateway = LiveKitEdgeGateway(session_id="room_01")
 from fastapi import APIRouter
 from agentkernel.api.handler import RESTRequestHandler
 from agentkernel.core.config import AKConfig
+from agentkernel.secret import SecretManager
 from livekit import api
 
 class LiveKitTokenHandler(RESTRequestHandler):
@@ -21,8 +22,11 @@ class LiveKitTokenHandler(RESTRequestHandler):
 
     def get_token(self, participant_name: str = "user"):
         config = AKConfig.get()
+        # An empty livekit field falls back to the secret provider (SSM), as the gateway's own do.
+        api_key = config.livekit.api_key or SecretManager.current().get("AK_LIVEKIT__API_KEY")
+        api_secret = config.livekit.api_secret or SecretManager.current().get("AK_LIVEKIT__API_SECRET")
         token = (
-            api.AccessToken(config.livekit.api_key, config.livekit.api_secret)
+            api.AccessToken(api_key, api_secret)
             .with_identity(f"user-{participant_name}")
             .with_name(participant_name)
             .with_grants(api.VideoGrants(room_join=True, room="room_01"))

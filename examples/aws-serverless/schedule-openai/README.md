@@ -133,6 +133,15 @@ takes precedence.
 
 ## Deploy
 
+Store the OpenAI key in SSM Parameter Store, where `<prefix>` is `prefix` in `deploy/terraform.tfvars`.
+The deployment sets `ssm_enabled = true` and `config.yaml` selects the `aws_ssm` secret provider, so the
+agent runner reads the key from SSM at startup; no secret passes through Terraform:
+
+```bash
+aws ssm put-parameter --name "/ak/<prefix>/openai_api_key" \
+    --type SecureString --value "$OPENAI_API_KEY" --overwrite
+```
+
 Set the deployment identifiers in `deploy/terraform.tfvars`, then:
 
 ```bash

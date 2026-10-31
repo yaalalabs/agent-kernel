@@ -340,7 +340,7 @@ class TestGuards:
         monkeypatch.delenv("SLACK_SIGNING_SECRET", raising=False)
         from agentkernel.integration.slack.adapter import SlackInboundAdapter
 
-        with pytest.raises(ValueError, match="signing_secret"):
+        with pytest.raises(ValueError, match="SLACK_SIGNING_SECRET"):
             SlackInboundAdapter()
 
     def test_teams_without_its_app_id_fails_at_construction(self):

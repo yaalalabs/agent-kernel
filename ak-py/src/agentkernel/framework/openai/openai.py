@@ -52,6 +52,7 @@ from ...core.model import (
 )
 from ...core.paused_run import PausedRun, PausedRunState
 from ...core.util.error_util import user_facing_error_message
+from ...secret import SecretManager
 from ...trace import Trace
 
 FRAMEWORK = "openai"
@@ -695,7 +696,8 @@ class OpenAIRealtimeRunner(BaseRealtimeRunner):
         self._model = self._realtime_model(agent)
         # Checked before anything opens, so a graph that cannot run leaves nothing to clean up.
         self._validate_handoffs(getattr(agent, "agent", None))
-        self._client = AsyncOpenAI()
+        # Resolved so the key can come from the secret provider; None leaves the SDK's own lookup.
+        self._client = AsyncOpenAI(api_key=SecretManager.current().get("OPENAI_API_KEY", default=None))
 
         try:
             cm = self._client.realtime.connect(model=self._model)

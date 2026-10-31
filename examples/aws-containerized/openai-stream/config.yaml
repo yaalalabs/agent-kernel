@@ -7,3 +7,8 @@ session:
     table_name: "ak-oai-ws-str-dev-examples-session_store"
 execution:
   mode: stream
+
+secret:
+  provider:
+    type: aws_ssm
+  # prefix is injected by Terraform as AK_SECRET__PREFIX

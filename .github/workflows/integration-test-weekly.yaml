@@ -410,6 +410,20 @@ jobs:
             ARGS+=(--agent-runner-security-group-id "${{ needs.get-base-outputs.outputs.containerized_agent_runner_security_group_id }}")
           fi
           python .github/scripts/run_single_test.py "${ARGS[@]}"
+
+      # Removes what "Seed SSM secrets" wrote; no-op unless the example's config.yaml uses the aws_ssm
+      # secret provider. Kept whenever the deployment is kept, since it still reads the key.
+      - name: Delete SSM secrets - ${{ matrix.path }}
+        if: >-
+          !cancelled() &&
+          steps.destroy.outcome == 'success' &&
+          (matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless')
+        run: |
+          python .github/scripts/run_single_test.py \
+            --type ${{ matrix.type }} \
+            --path ${{ matrix.path }} \
+            --deploy-dir ${{ matrix.deploy_dir }} \
+            --action delete-secrets
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v6

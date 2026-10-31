@@ -331,7 +331,7 @@ sandbox:
   type: e2b
   e2b:
     template: base              # E2B sandbox template
-    # api_key_env: E2B_API_KEY  # env variable holding the API key
+    # api_key_env: E2B_API_KEY  # key holding the API key: the environment, then the configured secret provider
   broker:
     flavor: thread
 ```
@@ -353,7 +353,7 @@ sandbox:
     env_vars:                       # environment variables set inside the sandbox
       APP_ENV: demo
     # target: us                    # Daytona target/region; omitted = SDK default
-    # api_key_env: DAYTONA_API_KEY  # env variable holding the API key
+    # api_key_env: DAYTONA_API_KEY  # key holding the API key: the environment, then the configured secret provider
   broker:
     flavor: thread
 ```

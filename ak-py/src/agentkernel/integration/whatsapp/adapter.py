@@ -10,6 +10,7 @@ from fastapi import Request
 from ...core.config import AKConfig
 from ...core.model import AgentReply, AgentRequest, AgentRequestFile, AgentRequestImage, AgentRequestText
 from ...core.multimodal.storage import AttachmentStorageManager
+from ...secret import SecretManager
 from ..adapter.base import ATTACHMENTS_DISABLED_ERROR, SESSION_CACHE_ERROR, InboundAdapter, InboundParseResult, InboundRequest, OutboundAdapter
 from ..adapter.meta import answer_challenge, verify_signature
 from ..adapter.routes import BUILTIN_WEBHOOK_ROUTES
@@ -25,14 +26,25 @@ class _WhatsAppClient:
 
     def __init__(self):
         config = AKConfig.get().whatsapp
-        self._access_token = config.access_token
+        # An empty field falls back to the secret provider, keyed by the field's own AK_* name.
+        self._access_token = config.access_token or SecretManager.current().get("AK_WHATSAPP__ACCESS_TOKEN", default="")
         self._phone_number_id = config.phone_number_id
-        self._verify_token = config.verify_token
-        self._app_secret = config.app_secret
+        self._verify_token = config.verify_token or SecretManager.current().get("AK_WHATSAPP__VERIFY_TOKEN", default="")
+        self._app_secret = config.app_secret or SecretManager.current().get("AK_WHATSAPP__APP_SECRET", default="")
         self._base_url = f"https://graph.facebook.com/{config.api_version or 'v24.0'}"
-        if not all([self._access_token, self._phone_number_id, self._verify_token]):
-            self._log.error("WhatsApp configuration is incomplete. Please set access_token, phone_number_id, and verify_token.")
-            raise ValueError("Incomplete WhatsApp configuration.")
+        missing = [
+            SecretManager.current().describe(key, field) if key else field
+            for field, key, value in (
+                ("whatsapp.access_token", "AK_WHATSAPP__ACCESS_TOKEN", self._access_token),
+                ("whatsapp.phone_number_id", None, self._phone_number_id),
+                ("whatsapp.verify_token", "AK_WHATSAPP__VERIFY_TOKEN", self._verify_token),
+            )
+            if not value
+        ]
+        if missing:
+            message = f"Incomplete WhatsApp configuration: set {'; '.join(missing)}."
+            self._log.error(message)
+            raise ValueError(message)
 
     @property
     def app_secret(self) -> str:

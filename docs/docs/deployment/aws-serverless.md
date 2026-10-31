@@ -1252,7 +1252,7 @@ passed through Terraform as environment variables. One variable, `false` by defa
 
 | Variable | Description | Type | Default |
 |---|---|---|---|
-| `ssm_enabled` | Grant the Lambda that runs the agent (the agent runner when `queue_mode = true`, otherwise the request handler; never the response or WebSocket connection handler) `ssm:GetParameter` (and nothing else) on `arn:aws:ssm:<region>:<account>:parameter/ak/<prefix>/*` and inject `AK_SECRET__PREFIX = <prefix>` | `bool` | `false` |
+| `ssm_enabled` | Grant the Lambdas that resolve framework credentials (the request handler; plus the agent runner and the response handler when `queue_mode = true`; never the WebSocket connection handler) `ssm:GetParameter` (and nothing else) on `arn:aws:ssm:<region>:<account>:parameter/ak/<prefix>/*` and inject `AK_SECRET__PREFIX = <prefix>` | `bool` | `false` |
 
 ```hcl
 ssm_enabled = true

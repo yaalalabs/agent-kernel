@@ -72,8 +72,27 @@ class SecretManager:
         if value is not None:
             return value
         if default is _UNSET:
-            raise SecretNotFoundError(key)
+            raise SecretNotFoundError(key, self.describe(key))
         return default
+
+    def describe(self, key: str, field: Optional[str] = None) -> str:
+        """Every place `key` can be set, for an error message that tells the user what to create.
+
+        For example "whatsapp.access_token, the AK_WHATSAPP__ACCESS_TOKEN environment variable or SSM
+        parameter /ak/myapp-dev/ak_whatsapp__access_token".
+
+        :param key: An environment-variable-style name matching ^[A-Z][A-Z0-9_]*$.
+        :param field: The AKConfig field consulted before the secret fallback, if any.
+        :return: The places, in resolution order.
+        :raises ValueError: If `key` is malformed.
+        """
+        self._validate_key(key)
+        places = [field] if field else []
+        places.append(f"the {key} environment variable")
+        location = self._provider.describe(key)
+        if location:
+            places.append(location)
+        return places[0] if len(places) == 1 else f"{', '.join(places[:-1])} or {places[-1]}"
 
     def invalidate(self, key: str) -> None:
         """Drop the cached value for `key` so the next `get` re-resolves it.

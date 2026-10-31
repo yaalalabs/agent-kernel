@@ -35,10 +35,11 @@ This demo deploys the following AWS resources:
 
 ## Secrets from SSM Parameter Store
 
-The deployment sets `ssm_enabled = true`, which grants the agent runner Lambda — the only one that
-builds the agent — `ssm:GetParameter` (and nothing else) on `/ak/<prefix>/*` and injects
-`AK_SECRET__PREFIX` into it. The request and response handlers get no SSM access. `config.yaml` declares
-`secret.provider.type: aws_ssm`, and `lambda_agent_runner.py` resolves the key at startup:
+The deployment sets `ssm_enabled = true`, which grants the request handler, agent runner and response
+handler Lambdas `ssm:GetParameter` (and nothing else) on `/ak/<prefix>/*` and injects
+`AK_SECRET__PREFIX` into them (the request and response handlers need it only for messaging-integration
+credentials, which this example has none of). `config.yaml` declares `secret.provider.type: aws_ssm`, and
+`lambda_agent_runner.py` resolves the key at startup:
 
 ```python
 set_default_openai_key(SecretManager.current().get("OPENAI_API_KEY"))

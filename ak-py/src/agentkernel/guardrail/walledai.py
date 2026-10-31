@@ -17,6 +17,7 @@ from ..core.model import (
     AgentRequestText,
     AgentResumeRequestAny,
 )
+from ..secret import SecretManager
 from .guardrail import BaseGuardrailUtil, InputGuardrail, OutputGuardrail
 
 log = logging.getLogger("ak.guardrail.walledai")
@@ -85,9 +86,9 @@ class WalledAIGuardrailBase(BaseGuardrailUtil):
         Initialize Walled AI redact and protect clients.
         """
 
-        api_key = os.getenv("WALLED_API_KEY")
+        api_key = SecretManager.current().get("WALLED_API_KEY", default=None)
         if not api_key:
-            raise RuntimeError("WALLED_API_KEY environment variable is required for Walled AI guardrails.")
+            raise RuntimeError(f"Walled AI guardrails need WALLED_API_KEY: set {SecretManager.current().describe('WALLED_API_KEY')}.")
         self.redact_client = WalledRedact(api_key=api_key)
         self.protect_client = WalledProtect(api_key=api_key)
 

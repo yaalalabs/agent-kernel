@@ -65,6 +65,8 @@ export SLACK_SIGNING_SECRET=your_slack_signing_secret
 export SLACK_BOT_TOKEN=xoxb-your-bot-token
 ```
 
+> **Secret providers:** these credentials can also live in your configured secret provider (AWS SSM Parameter Store, mounted Kubernetes Secrets) instead of the environment; see [Framework-owned credentials](../advanced/secrets.md#framework-owned-credentials).
+
 ### Getting Credentials
 
 - **Signing Secret**: Found in your Slack app settings under "Basic Information" → "App Credentials"

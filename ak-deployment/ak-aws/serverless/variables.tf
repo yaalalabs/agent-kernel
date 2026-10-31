@@ -186,7 +186,7 @@ variable "enable_scheduling" {
 
 variable "ssm_enabled" {
   type        = bool
-  description = "Grant the agent runner Lambda (or the request handler Lambda when `queue_mode = false`, since it then runs the agent) read access to /ak/<prefix>/* in SSM Parameter Store and inject AK_SECRET__PREFIX there, so the application's `secret.provider.type: aws_ssm` can resolve secrets. Terraform does not create the parameters."
+  description = "Grant every Lambda that resolves framework credentials read access to /ak/<prefix>/* in SSM Parameter Store and inject AK_SECRET__PREFIX there, so the application's `secret.provider.type: aws_ssm` can resolve secrets: the request handler (it runs the agent when `queue_mode = false`, and verifies messaging-integration webhooks), plus the agent runner and the response handler (which delivers integration replies) when `queue_mode = true`. The WebSocket connection handler never gets it. Terraform does not create the parameters."
   default     = false
 }
 
