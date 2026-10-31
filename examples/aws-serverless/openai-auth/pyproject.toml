@@ -20,7 +20,7 @@ auth = [
     "annotated-types==0.7.0",
     "cffi==2.1.1",
     "cryptography==50.0.1",
-    "PyJWT>=2.13.0",
+    "PyJWT>=2.15.0",
     "pycparser==3.0",
     "pydantic==2.12.5",
     "pydantic-settings==2.15.0",
