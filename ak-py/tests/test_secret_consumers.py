@@ -299,10 +299,39 @@ CONSUMERS = [
 ]
 
 
-@pytest.fixture(params=CONSUMERS, ids=lambda consumer: f"{consumer.resolve.__qualname__.split('.')[0]}-{consumer.key}")
-def consumer(request, monkeypatch):
+# Consumers that refuse to start without their credential, so their error must say where to set it.
+REQUIRED = [
+    consumer
+    for consumer in CONSUMERS
+    if consumer.key
+    in {
+        "WALLED_API_KEY",
+        "SLACK_SIGNING_SECRET",
+        "AK_GMAIL__CLIENT_ID",
+        "AK_GMAIL__CLIENT_SECRET",
+        "E2B_API_KEY",
+        "DAYTONA_API_KEY",
+        "AK_WHATSAPP__ACCESS_TOKEN",
+        "AK_WHATSAPP__VERIFY_TOKEN",
+        "AK_MESSENGER__ACCESS_TOKEN",
+        "AK_MESSENGER__VERIFY_TOKEN",
+        "AK_INSTAGRAM__ACCESS_TOKEN",
+        "AK_INSTAGRAM__VERIFY_TOKEN",
+        "AK_TELEGRAM__BOT_TOKEN",
+        "AK_TEAMS__APP_PASSWORD",
+        "AK_LIVEKIT__API_KEY",
+        "AK_LIVEKIT__API_SECRET",
+    }
+    or consumer.resolve is _slack_inbound_token
+]
+
+
+def _consumer_id(consumer: Consumer) -> str:
+    return f"{consumer.resolve.__qualname__.split('.')[0]}-{consumer.key}"
+
+
+def _isolate(consumer: Consumer, monkeypatch):
     """Isolate the consumer's settings: no config file, its siblings set, its own key unset."""
-    consumer = request.param
     monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
     for name in {consumer.key, *consumer.siblings}:
         monkeypatch.delenv(name, raising=False)
@@ -311,6 +340,23 @@ def consumer(request, monkeypatch):
     AKConfig._reset()
     yield consumer
     AKConfig._reset()
+
+
+@pytest.fixture(params=CONSUMERS, ids=_consumer_id)
+def consumer(request, monkeypatch):
+    yield from _isolate(request.param, monkeypatch)
+
+
+@pytest.fixture(params=REQUIRED, ids=_consumer_id)
+def required_consumer(request, monkeypatch):
+    yield from _isolate(request.param, monkeypatch)
+
+
+class _LocatedSecretProvider(_DictSecretProvider):
+    """An empty provider that names where it looks, the way aws_ssm does."""
+
+    def describe(self, key):
+        return f"SSM parameter /ak/test/{key.lower()}"
 
 
 def _install(monkeypatch, provider: SecretProvider) -> None:
@@ -339,6 +385,34 @@ class TestFrameworkConsumers:
 
         with pytest.raises(SecretError, match=consumer.key):
             consumer.resolve(monkeypatch)
+
+    def test_a_missing_credential_names_where_to_set_it(self, required_consumer, monkeypatch):
+        _install(monkeypatch, _LocatedSecretProvider({}))
+
+        with pytest.raises(Exception) as exc_info:
+            required_consumer.resolve(monkeypatch)
+
+        message = str(exc_info.value)
+        assert f"the {required_consumer.key} environment variable" in message
+        assert f"SSM parameter /ak/test/{required_consumer.key.lower()}" in message
+
+    def test_the_push_token_errors_name_where_to_set_it(self, monkeypatch):
+        from agentkernel.pipeline.ws.push import push_auth_token_sources
+
+        _install(monkeypatch, _LocatedSecretProvider({}))
+
+        assert push_auth_token_sources() == (
+            "websocket_api.push_auth_token, the AK_WEBSOCKET_API__PUSH_AUTH_TOKEN environment variable "
+            "or SSM parameter /ak/test/ak_websocket_api__push_auth_token"
+        )
+
+    def test_the_webhook_guard_names_where_to_set_a_verification_secret(self, monkeypatch):
+        from agentkernel.deployment.aws.serverless.core.webhook_host import LambdaWebhookGuard
+
+        _install(monkeypatch, _LocatedSecretProvider({}))
+
+        assert "SSM parameter /ak/test/ak_whatsapp__app_secret" in LambdaWebhookGuard._sources("whatsapp.app_secret")
+        assert LambdaWebhookGuard._sources("a bring-your-own setting") == "a bring-your-own setting"
 
 
 class TestConfigFieldsResolveLazily:

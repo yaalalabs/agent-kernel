@@ -16,9 +16,7 @@ module "containerized_agents" {
 
   # Secret resolution: grants ssm:GetParameter on /ak/<prefix>/* and injects AK_SECRET__PREFIX, so the app
   # resolves OPENAI_API_KEY from /ak/<prefix>/<key lowercased> (config.yaml `secret:` block)
-  # Terraform creates each parameter holding REPLACE_ME; overwrite it with the real value after the first apply.
-  ssm_enabled     = true
-  ssm_secret_keys = ["OPENAI_API_KEY"]
+  ssm_enabled = true
 
   # REST/IO service (ECSIOHandler): auth, enqueue chat, push chunks over the connection
   rest_service = {

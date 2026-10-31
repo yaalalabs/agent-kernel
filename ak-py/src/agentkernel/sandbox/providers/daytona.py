@@ -124,7 +124,9 @@ class DaytonaSandboxProvider(SandboxProvider):
         if self._client_instance is None:
             api_key = SecretManager.current().get(self._config.api_key_env, default=None)
             if not api_key:
-                raise SandboxConfigError(f"daytona provider requires {self._config.api_key_env} (an environment variable or a secret provider entry)")
+                raise SandboxConfigError(
+                    f"daytona provider requires {self._config.api_key_env}: set {SecretManager.current().describe(self._config.api_key_env)}"
+                )
             self._client_instance = Daytona(DaytonaConfig(api_key=api_key, target=self._config.target))
         return self._client_instance
 

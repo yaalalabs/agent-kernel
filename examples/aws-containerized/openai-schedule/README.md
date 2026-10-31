@@ -153,6 +153,15 @@ through. Omit these entries and the routes exist inside the container but 404 at
 
 ## Deploy
 
+Store the OpenAI key in SSM Parameter Store, where `<prefix>` is `prefix` in `deploy/terraform.tfvars`.
+The deployment sets `ssm_enabled = true` and `config.yaml` selects the `aws_ssm` secret provider, so the
+agent runner reads the key from SSM at startup; no secret passes through Terraform:
+
+```bash
+aws ssm put-parameter --name "/ak/<prefix>/openai_api_key" \
+    --type SecureString --value "$OPENAI_API_KEY" --overwrite
+```
+
 Set the deployment identifiers in `deploy/terraform.tfvars`, then:
 
 ```bash
@@ -163,17 +172,6 @@ cd deploy
 
 `deploy.sh` prompts for `vpc_id` and `private_subnet_ids` unless you add them to
 `terraform.tfvars` or pass them as `-var` flags.
-
-Terraform creates `/ak/<prefix>/openai_api_key` holding the placeholder `REPLACE_ME` (`ssm_enabled` and
-`ssm_secret_keys` in `deploy/main.tf`; `config.yaml` selects the `aws_ssm` secret provider). Overwrite it
-with your key, where `<prefix>` is `prefix` in `deploy/terraform.tfvars`, then roll the agent runner, which
-started with the placeholder:
-
-```bash
-aws ssm put-parameter --name "/ak/<prefix>/openai_api_key" \
-    --type SecureString --value "$OPENAI_API_KEY" --overwrite
-aws ecs update-service --cluster <prefix> --service <prefix>-agent-runner --force-new-deployment
-```
 
 Take the `agent_invoke_url` output; everything below assumes:
 

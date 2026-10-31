@@ -27,9 +27,18 @@ def _client() -> MetaSendAPIClient:
     config = AKConfig.get().instagram
     access_token = config.access_token or SecretManager.current().get("AK_INSTAGRAM__ACCESS_TOKEN", default="")
     verify_token = config.verify_token or SecretManager.current().get("AK_INSTAGRAM__VERIFY_TOKEN", default="")
-    if not all([access_token, verify_token]):
-        _log.error("Instagram configuration is incomplete. Please set access_token and verify_token.")
-        raise ValueError("Incomplete Instagram configuration.")
+    missing = [
+        SecretManager.current().describe(key, field)
+        for field, key, value in (
+            ("instagram.access_token", "AK_INSTAGRAM__ACCESS_TOKEN", access_token),
+            ("instagram.verify_token", "AK_INSTAGRAM__VERIFY_TOKEN", verify_token),
+        )
+        if not value
+    ]
+    if missing:
+        message = f"Incomplete Instagram configuration: set {'; '.join(missing)}."
+        _log.error(message)
+        raise ValueError(message)
     return MetaSendAPIClient(
         base_url=f"https://graph.instagram.com/{config.api_version or 'v21.0'}",
         access_token=access_token,

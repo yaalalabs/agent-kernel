@@ -49,9 +49,7 @@ module "serverless_agents" {
   # Secret resolution: grants ssm:GetParameter on /ak/<prefix>/* and injects AK_SECRET__PREFIX, so the app
   # resolves SLACK_BOT_TOKEN, SLACK_SIGNING_SECRET and OPENAI_API_KEY from /ak/<prefix>/<key lowercased>
   # (config.yaml `secret:` block)
-  # Terraform creates each parameter holding REPLACE_ME; overwrite it with the real value after the first apply.
-  ssm_enabled     = true
-  ssm_secret_keys = ["OPENAI_API_KEY", "SLACK_BOT_TOKEN", "SLACK_SIGNING_SECRET"]
+  ssm_enabled = true
 
   request_handler = {
     function_name        = "rqh-func"

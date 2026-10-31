@@ -16,17 +16,14 @@ This demo deploys the following AWS resources:
 
 ## Deployment Steps
 
-1. Navigate to the deployment directory and run the deployment script:
-    ```bash
-    cd deploy && ./deploy.sh #./deploy.sh local if dependencies are built locally
-    ```
-
-    Terraform creates `/ak/<prefix>/openai_api_key` holding the placeholder `REPLACE_ME` (`ssm_enabled` and
-    `ssm_secret_keys` in `deploy/main.tf`; `config.yaml` selects the `aws_ssm` secret provider). Overwrite it
-    with your key, where `<prefix>` is `prefix` in `deploy/terraform.tfvars`:
+1. Store the OpenAI API key in SSM Parameter Store, where `<prefix>` is `prefix` in `deploy/terraform.tfvars`:
     ```bash
     aws ssm put-parameter --name "/ak/<prefix>/openai_api_key" \
         --type SecureString --value "$OPENAI_API_KEY" --overwrite
     ```
-    The service started with the placeholder, so force a new deployment to pick the key up:
-    `aws ecs update-service --cluster <prefix> --service <prefix>-service --force-new-deployment`.
+    The deployment sets `ssm_enabled = true` and `config.yaml` selects the `aws_ssm` secret provider, so the app reads the key from SSM at startup; no secret passes through Terraform.
+
+2. Navigate to the deployment directory and run the deployment script:
+    ```bash
+    cd deploy && ./deploy.sh #./deploy.sh local if dependencies are built locally
+    ```

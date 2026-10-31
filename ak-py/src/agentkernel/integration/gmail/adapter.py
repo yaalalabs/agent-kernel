@@ -78,9 +78,15 @@ class _GmailService:
         self._client_id = secrets.get("AK_GMAIL__CLIENT_ID", default=None)
         self._client_secret = secrets.get("AK_GMAIL__CLIENT_SECRET", default=None)
         self._redirect_uris = os.environ.get("AK_GMAIL__REDIRECT_URIS", "http://localhost").split(",")
-        if not (self._client_id and self._client_secret):
-            _log.error("Gmail credentials are not configured. Please set AK_GMAIL__CLIENT_ID and AK_GMAIL__CLIENT_SECRET.")
-            raise ValueError("Incomplete Gmail configuration.")
+        missing = [
+            secrets.describe(key)
+            for key, value in (("AK_GMAIL__CLIENT_ID", self._client_id), ("AK_GMAIL__CLIENT_SECRET", self._client_secret))
+            if not value
+        ]
+        if missing:
+            message = f"Incomplete Gmail configuration: set {'; '.join(missing)}."
+            _log.error(message)
+            raise ValueError(message)
         self._creds = None
         self._test_mode = False
         self._authenticated = False

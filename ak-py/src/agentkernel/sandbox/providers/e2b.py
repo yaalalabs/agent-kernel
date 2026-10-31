@@ -106,7 +106,9 @@ class E2BSandboxProvider(SandboxProvider):
         """Resolve the API key named by api_key_env (environment, then the secret provider); missing fails loud."""
         api_key = SecretManager.current().get(self._config.api_key_env, default=None)
         if not api_key:
-            raise SandboxConfigError(f"e2b provider requires {self._config.api_key_env} (an environment variable or a secret provider entry)")
+            raise SandboxConfigError(
+                f"e2b provider requires {self._config.api_key_env}: set {SecretManager.current().describe(self._config.api_key_env)}"
+            )
         return api_key
 
     async def create(self, *, principal: SandboxPrincipal, policy: SandboxPolicy) -> Sandbox:

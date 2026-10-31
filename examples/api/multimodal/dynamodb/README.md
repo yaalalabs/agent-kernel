@@ -33,20 +33,18 @@ This example demonstrates how to use Agent Kernel's `DynamoDBStorageDriver` to s
 
 ## Deployment Steps
 
-1. Navigate to the deployment directory and run the deployment script:
-    ```bash
-    cd deploy && ./deploy.sh
-    # or ./deploy.sh local if building from local source
-    ```
-
-    Terraform creates `/ak/<prefix>/openai_api_key` holding the placeholder `REPLACE_ME` (`ssm_enabled` and
-    `ssm_secret_keys` in `deploy/main.tf`; `config.yaml` selects the `aws_ssm` secret provider). Overwrite it
-    with your key, where `<prefix>` is `prefix` in `deploy/terraform.tfvars`:
+1. Store the OpenAI API key in SSM Parameter Store, where `<prefix>` is `prefix` in `deploy/terraform.tfvars`:
     ```bash
     aws ssm put-parameter --name "/ak/<prefix>/openai_api_key" \
         --type SecureString --value "$OPENAI_API_KEY" --overwrite
     ```
-    A Lambda execution environment reads the key when it starts, so set it before the first request.
+    The deployment sets `ssm_enabled = true` and `config.yaml` selects the `aws_ssm` secret provider, so the app reads the key from SSM at startup; no secret passes through Terraform.
+
+2. Navigate to the deployment directory and run the deployment script:
+    ```bash
+    cd deploy && ./deploy.sh
+    # or ./deploy.sh local if building from local source
+    ```
 
 ## Config options (`config.yaml`)
 

@@ -737,7 +737,11 @@ from a mocked `AKConfig`; tests of the manager itself reset it in their own fixt
 - **`SecretProvider`** (`base.py`): the ABC — `get_secret(key) -> Optional[str]` (`None` = miss;
   raise `SecretError` only on backend failure) plus a `create(_SecretConfig)` classmethod that
   receives the **whole** `secret` block (so `secret.prefix` is shared across backends). Providers own
-  their addressing, never cache, never fall back, and must tolerate concurrent calls.
+  their addressing, never cache, never fall back, and must tolerate concurrent calls. `describe(key)`
+  (non-abstract, no I/O) names where the backend looks — `SSM parameter /ak/<prefix>/<key>` — and
+  `SecretManager.describe(key, field=None)` joins field → env var → that location into the "set ..."
+  phrase `SecretNotFoundError` and every consumer's missing-credential error use (#858 follow-up), so a
+  user on `aws_ssm` is told the exact parameter to create.
 - **`SecretCache`** (`cache.py`): TTL'd dict of provider hits only; lock-free reads of immutable
   `(value, expires_at)` tuples, write lock for set/evict/clear. `cache_ttl: 0` disables it.
 - **`SecretProviderFactory`** (`factory.py`): `get(config)` maps `env` / `kubernetes` / `aws_ssm`
@@ -777,15 +781,12 @@ to every tier that resolves framework credentials: the request handler Lambda (s
 service also delivers their replies — plus, in queue mode, the agent runner and (serverless) the response
 handler, which delivers integration replies (#858 widened this from "the agent tier only"). The WS
 connection handler never gets it. Terraform never sets
-`secret.provider.type` (the app's `config.yaml` does, like `thread.type`) and never holds a real
-secret value: `ssm_secret_keys` (`ssm.tf`, `aws_ssm_parameter.secret_placeholder`, `for_each` over the
-keys, validated against the key pattern and requiring `ssm_enabled`) creates each
-`/ak/<prefix>/<key lowercased>` holding `REPLACE_ME` with `ignore_changes = [value]`, and the user
-overwrites it out of band. The provider still refreshes the real value into state (a known, documented
-trade-off of `value` + `ignore_changes`; `value_wo` would avoid it but needs Terraform >= 1.11). Creating
-over an existing parameter fails, so the weekly CI seeds first and `run_single_test.py`'s
-`adopt_seeded_ssm_parameters` imports the seeded ones before `deploy.sh`; destroy then deletes them. To add
-a provider, use the `ak-dev-new-secret-provider` skill.
+`secret.provider.type` (the app's `config.yaml` does, like `thread.type`) and never creates the
+parameters — not even placeholders: an `aws_ssm_parameter` refreshes the decrypted value into state
+whatever `ignore_changes` says, and a placeholder value is a real-looking credential the adapters would
+cache for the life of the process. The weekly CI seeds the parameters before the deploy
+(`run_single_test.py --action seed-secrets`) and deletes them after a successful destroy
+(`--action delete-secrets`). To add a provider, use the `ak-dev-new-secret-provider` skill.
 
 ## Knowledge Bases (`ak-py/src/agentkernel/knowledgebase/`)
 

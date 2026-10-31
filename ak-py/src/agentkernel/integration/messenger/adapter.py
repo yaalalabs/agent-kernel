@@ -23,9 +23,18 @@ def _client() -> MetaSendAPIClient:
     config = AKConfig.get().messenger
     access_token = config.access_token or SecretManager.current().get("AK_MESSENGER__ACCESS_TOKEN", default="")
     verify_token = config.verify_token or SecretManager.current().get("AK_MESSENGER__VERIFY_TOKEN", default="")
-    if not all([access_token, verify_token]):
-        _log.error("Facebook Messenger configuration is incomplete. Please set access_token and verify_token.")
-        raise ValueError("Incomplete Facebook Messenger configuration.")
+    missing = [
+        SecretManager.current().describe(key, field)
+        for field, key, value in (
+            ("messenger.access_token", "AK_MESSENGER__ACCESS_TOKEN", access_token),
+            ("messenger.verify_token", "AK_MESSENGER__VERIFY_TOKEN", verify_token),
+        )
+        if not value
+    ]
+    if missing:
+        message = f"Incomplete Facebook Messenger configuration: set {'; '.join(missing)}."
+        _log.error(message)
+        raise ValueError(message)
     return MetaSendAPIClient(
         base_url=f"https://graph.facebook.com/{config.api_version or 'v24.0'}",
         access_token=access_token,

@@ -14,9 +14,7 @@ module "containerized_agents" {
   # Secret resolution: grants ssm:GetParameter on /ak/<prefix>/* and injects AK_SECRET__PREFIX, so the app
   # resolves AK_LIVEKIT__API_KEY, AK_LIVEKIT__API_SECRET and OPENAI_API_KEY from /ak/<prefix>/<key lowercased>
   # (config.yaml `secret:` block)
-  # Terraform creates each parameter holding REPLACE_ME; overwrite it with the real value after the first apply.
-  ssm_enabled     = true
-  ssm_secret_keys = ["OPENAI_API_KEY", "AK_LIVEKIT__API_KEY", "AK_LIVEKIT__API_SECRET"]
+  ssm_enabled = true
 
   # IO Service (LiveKit Gateway): Connects out to LiveKit Cloud, pushes mic audio to SQS input queue.
   rest_service = {

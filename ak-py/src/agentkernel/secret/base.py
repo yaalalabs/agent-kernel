@@ -27,3 +27,11 @@ class SecretProvider(ABC):
         :raises SecretError: If the backend failed (as opposed to not holding the value).
         """
         raise NotImplementedError
+
+    def describe(self, key: str) -> Optional[str]:
+        """Where this backend looks for `key`, for error messages that tell the user what to create.
+
+        For example "SSM parameter /ak/myapp-dev/openai_api_key". None when the backend reads nothing
+        beyond the environment variable SecretManager always checks first. Must not perform I/O or raise.
+        """
+        return f"the '{key}' entry in {type(self).__name__}"

@@ -63,6 +63,7 @@ secret:
 | --- | --- |
 | `get(key)` | Resolve `key`; raises `SecretNotFoundError` when no layer has it. |
 | `get(key, default=None)` | Resolve `key`; returns `default` on a miss. A provider **failure** still raises `SecretError` — a default never masks it. |
+| `describe(key, field=None)` | Every place `key` can be set, in resolution order, for your own error messages: `field` (an `AKConfig` path) when given, the environment variable, then the provider's location — e.g. `the OPENAI_API_KEY environment variable or SSM parameter /ak/myapp-dev/openai_api_key`. |
 | `invalidate(key)` | Drop the cached value for `key` so the next `get` re-resolves it. |
 | `clear()` | Drop every cached value. |
 
@@ -71,7 +72,13 @@ Errors live in `agentkernel.secret.errors` and are re-exported from `agentkernel
 - **`SecretError`** — the backend failed (credentials, network, throttling, authorization). Never carries
   the value.
 - **`SecretNotFoundError`** (subclass of `SecretError`) — no layer had the key and no `default` was
-  supplied. Its `key` attribute names the missing key.
+  supplied. Its `key` attribute names the missing key, and its message names where to set it:
+  `secret 'OPENAI_API_KEY' not found: set the OPENAI_API_KEY environment variable or SSM parameter /ak/myapp-dev/openai_api_key`.
+
+The framework's own consumers word their missing-credential errors the same way, so a deployment on
+`aws_ssm` is told the exact parameter to create (`Incomplete WhatsApp configuration: set
+whatsapp.access_token, the AK_WHATSAPP__ACCESS_TOKEN environment variable or SSM parameter
+/ak/myapp-dev/ak_whatsapp__access_token.`).
 
 A required key resolved at module import time fails the process at startup rather than on the first model
 call. An optional one can degrade gracefully:
@@ -209,10 +216,13 @@ class VaultSecretProvider(SecretProvider):
 
     def get_secret(self, key: str) -> Optional[str]:
         ...  # return the value, None on a miss, or raise SecretError on a backend failure
+
+    def describe(self, key: str) -> Optional[str]:
+        return f"Vault secret {self.mount}/{key.lower()}"  # named in "not found" errors; no I/O
 ```
 
 A provider owns its own addressing, must tolerate concurrent calls, and never caches or falls back — the
-manager does both. `agentkernel.secret.testing.SecretProviderContract` is a reusable pytest contract suite for provider
+manager does both. `describe` is optional: without it, errors name `the '<KEY>' entry in <ClassName>`. `agentkernel.secret.testing.SecretProviderContract` is a reusable pytest contract suite for provider
 implementations.
 
 ## Framework-owned credentials
@@ -278,33 +288,9 @@ ssm_enabled = true
 ```
 
 **Terraform is only half of it.** The module never injects `secret.provider.type` — the application's
-`config.yaml` declares `secret.provider.type: aws_ssm`. Do not also inject the key as an environment
-variable, or it wins over SSM.
-
-**Placeholder parameters.** List the keys in `ssm_secret_keys` and the module creates each
-`/ak/<prefix>/<key lowercased>` as a `SecureString` (AWS-managed `alias/aws/ssm` key) holding `REPLACE_ME`,
-with `lifecycle { ignore_changes = [value] }`. After the first apply, overwrite it with the real value:
-
-```hcl
-ssm_enabled     = true
-ssm_secret_keys = ["OPENAI_API_KEY"]
-```
-
-```bash
-aws ssm put-parameter --name "/ak/<prefix>/openai_api_key" \
-    --type SecureString --value "$OPENAI_API_KEY" --overwrite
-```
-
-- Restart anything that read the placeholder before you overwrote it: an ECS service (`aws ecs
-  update-service --cluster <prefix> --service <service> --force-new-deployment`), or a Lambda execution
-  environment that already served a request.
-- The real value never passes through a Terraform input, but the provider reads the parameter on every
-  refresh, so it is recorded in Terraform state after the next plan or apply. Keep the state backend
-  encrypted and access-restricted.
-- Creating a parameter that already exists fails. Adopt one you created yourself with
-  `terraform import 'module.<name>.aws_ssm_parameter.secret_placeholder["OPENAI_API_KEY"]' /ak/<prefix>/openai_api_key`.
-- `terraform destroy` deletes the parameters, values included. Leave `ssm_secret_keys` empty to create and
-  own them yourself instead.
+`config.yaml` declares `secret.provider.type: aws_ssm`. Terraform also does not create the parameters, so
+the key never passes through Terraform state. Do not also inject the key as an environment variable, or it
+wins over SSM.
 
 **Running the same app locally.** `aws_ssm` refuses to build without `secret.prefix`, even when the
 environment already holds every key. Override the provider for local runs instead of editing `config.yaml`:

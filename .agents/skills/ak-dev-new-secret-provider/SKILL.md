@@ -55,6 +55,12 @@ tested IAM wiring and docs. Otherwise, document the dotted-path route in
 - **Tolerate concurrent calls.** The manager calls the provider outside any lock, and concurrent
   cold reads may each call it. Create SDK clients lazily behind a lock (the double-checked
   `client` property in `aws_ssm.py`).
+- **`describe(key) -> Optional[str]`** names where the backend looks for `key` (`SSM parameter
+  /ak/<prefix>/<key>`, `a file named <KEY> in a Kubernetes Secret mounted under <path>`), which
+  `SecretManager.describe` folds into `SecretNotFoundError` and every consumer's missing-credential
+  error so the user is told what to create. Pure string work: no I/O, never raises. Return `None`
+  only when the backend reads nothing beyond the environment (`EnvSecretProvider`); the inherited
+  default (`the '<KEY>' entry in <ClassName>`) is the fallback. The contract suite checks it.
 - **Return values verbatim.** Don't strip whitespace or parse JSON, because values are flat
   strings. Treat an empty value as absent (`EnvSecretProvider` returns `os.environ.get(key) or None`).
 - **`create(cls, config: _SecretConfig)`** receives the **whole** `secret` block, not just
@@ -89,6 +95,9 @@ class VaultSecretProvider(SecretProvider):
     def get_secret(self, key: str) -> Optional[str]:
         """:raises SecretError: If Vault failed for any reason other than not-found."""
         ...
+
+    def describe(self, key: str) -> Optional[str]:
+        return f"Vault secret {self._prefix}/{key.lower()}"
 ```
 
 Map exactly one backend error to `None` (the not-found code, like `ParameterNotFound` in
@@ -156,8 +165,8 @@ If the backend is a cloud store the Terraform modules can grant, mirror `ssm_ena
 the default plan is empty, and attach a read-only grant scoped to the prefix to the same tiers
 `ssm_enabled` reaches (request handler / REST service, plus the agent runner and the serverless response
 handler in queue mode — never the WS connection handler). Keep injecting `AK_SECRET__PREFIX` from the module's own `prefix` so the path and the grant
-can't drift. Never put a real secret value in Terraform: at most a placeholder the user overwrites, as
-`ssm_secret_keys` does (`REPLACE_ME` with `ignore_changes = [value]`).
+can't drift. Never create secret values in Terraform, placeholders included: the provider refreshes the
+real value into state.
 
 ### 7. Documentation
 

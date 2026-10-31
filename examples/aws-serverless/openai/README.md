@@ -20,17 +20,17 @@ This demo deploys the following AWS resources:
 
 ## Deployment Steps
 
-1. Navigate to the deployment directory and run the deployment script:
-    ```bash
-    cd deploy && ./deploy.sh #./deploy.sh local if dependencies are built locally
-    ```
-
-2. Overwrite the `REPLACE_ME` placeholder Terraform created with your key, where `<prefix>` is `prefix`
-   in `deploy/terraform.tfvars` (see [Secrets from SSM Parameter Store](#secrets-from-ssm-parameter-store)).
-   The agent runner reads it when an execution environment starts, so do this before the first request:
+1. Store the OpenAI API key in SSM Parameter Store, where `<prefix>` is `prefix` in
+   `deploy/terraform.tfvars` (see [Secrets from SSM Parameter Store](#secrets-from-ssm-parameter-store)).
+   The key never passes through Terraform:
     ```bash
     aws ssm put-parameter --name "/ak/<prefix>/openai_api_key" \
         --type SecureString --value "$OPENAI_API_KEY" --overwrite
+    ```
+
+2. Navigate to the deployment directory and run the deployment script:
+    ```bash
+    cd deploy && ./deploy.sh #./deploy.sh local if dependencies are built locally
     ```
 
 ## Secrets from SSM Parameter Store
@@ -49,12 +49,8 @@ set_default_openai_key(SecretManager.current().get("OPENAI_API_KEY"))
   for local runs); the deployment does not inject one, so on Lambda the key comes from SSM.
 - **Naming:** the key is the SDK's own variable name, lowercased under the deployment prefix —
   `OPENAI_API_KEY` → `/ak/<prefix>/openai_api_key`.
-- **Terraform creates the parameter, not its value.** `ssm_secret_keys = ["OPENAI_API_KEY"]` makes the
-  module create a `SecureString` (AWS-managed `alias/aws/ssm` key) holding `REPLACE_ME`, and its
-  `ignore_changes` keeps later applies from writing that back over your key. The provider still reads the
-  parameter on every refresh, so after the next plan the real value is also in Terraform state: keep the
-  state backend encrypted and access-restricted. A parameter that already exists makes the create fail —
-  import it instead: `terraform import 'module.serverless_agents.aws_ssm_parameter.secret_placeholder["OPENAI_API_KEY"]' /ak/<prefix>/openai_api_key`.
+- **Terraform does not create the parameter.** Create it as a `SecureString` with the AWS-managed
+  `alias/aws/ssm` key, as shown above.
 - **Rotation:** overwrite the parameter with `aws ssm put-parameter ... --overwrite`. The key is
   handed to the SDK once, when the agent runner starts, so new execution environments pick up the
   new value while warm ones keep the old one until Lambda recycles them. To switch over

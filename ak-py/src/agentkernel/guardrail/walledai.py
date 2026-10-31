@@ -88,7 +88,7 @@ class WalledAIGuardrailBase(BaseGuardrailUtil):
 
         api_key = SecretManager.current().get("WALLED_API_KEY", default=None)
         if not api_key:
-            raise RuntimeError("WALLED_API_KEY (an environment variable or a secret provider entry) is required for Walled AI guardrails.")
+            raise RuntimeError(f"Walled AI guardrails need WALLED_API_KEY: set {SecretManager.current().describe('WALLED_API_KEY')}.")
         self.redact_client = WalledRedact(api_key=api_key)
         self.protect_client = WalledProtect(api_key=api_key)
 

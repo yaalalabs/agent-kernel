@@ -36,8 +36,9 @@ class _TelegramClient:
         # An empty field falls back to the secret provider, keyed by the field's own AK_* name.
         self._bot_token = config.bot_token or SecretManager.current().get("AK_TELEGRAM__BOT_TOKEN", default="")
         if not self._bot_token:
-            _log.error("Telegram bot token is not configured. Please set bot_token.")
-            raise ValueError("Incomplete Telegram configuration.")
+            message = f"Incomplete Telegram configuration: set {SecretManager.current().describe('AK_TELEGRAM__BOT_TOKEN', 'telegram.bot_token')}."
+            _log.error(message)
+            raise ValueError(message)
         self._base_url = f"https://api.telegram.org/{config.api_version or 'bot'}{self._bot_token}"
         self._webhook_secret = config.webhook_secret or SecretManager.current().get("AK_TELEGRAM__WEBHOOK_SECRET", default="")
 

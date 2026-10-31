@@ -219,57 +219,32 @@ def seed_ssm_secrets(path: str, deploy_dir: str = 'deploy') -> bool:
     return True
 
 
-def adopt_seeded_ssm_parameters(deploy_path: Path, tf_env: dict) -> bool:
-    """Import the SSM parameters seed_ssm_secrets already wrote, so the apply adopts them instead of failing.
+def delete_ssm_secrets(path: str, deploy_dir: str = 'deploy') -> bool:
+    """Delete the parameters seed_ssm_secrets wrote, once the example's deployment is destroyed.
 
-    The AWS modules create a REPLACE_ME placeholder for each `ssm_secret_keys` entry, and creating a
-    parameter that already exists fails. Seeding has to run before the deploy (an ECS task reads its key
-    once, at startup), so every seeded parameter that is not yet in state is imported here; with
-    ignore_changes on its value, the apply then leaves the seeded value alone.
+    A parameter that is already gone is not an error: delete-parameters lists it as invalid and succeeds.
     """
-    main_tf = deploy_path / 'main.tf'
-    if not main_tf.exists():
-        return True
-    for chunk in ('\n' + main_tf.read_text()).split('\nmodule "')[1:]:
-        module_name, _, body = chunk.partition('"')
-        match = re.search(r'^\s*ssm_secret_keys\s*=\s*\[([^\]]*)\]', body, re.MULTILINE)
-        if match:
-            keys = re.findall(r'"([^"]+)"', match.group(1))
-            break
-    else:
-        return True
-    prefix = _read_tfvar(deploy_path, 'prefix')
-    region = _read_tfvar(deploy_path, 'region')
-    if not (prefix and region):
-        print(f"❌ Could not resolve prefix/region from {deploy_path / 'terraform.tfvars'}")
+    try:
+        scope = _ssm_scope(path, deploy_dir)
+    except ValueError as e:
+        print(f"❌ {e}")
         return False
-
-    # A readable state, or none at all, says which parameters Terraform already tracks; an unreadable one
-    # (backend or auth error) is left to the apply to report.
-    in_state = subprocess.run(['terraform', 'state', 'list'], cwd=str(deploy_path), capture_output=True, text=True, env={**os.environ, **tf_env})
-    if in_state.returncode != 0 and 'No state file was found' not in in_state.stdout + in_state.stderr:
-        print(f"⚠️  Could not read Terraform state; not adopting SSM parameters.\n{in_state.stderr.strip()}")
+    if scope is None:
+        print(f"⏭️  Skipping SSM cleanup - {path} does not use the aws_ssm secret provider")
         return True
-    tracked = set(in_state.stdout.split()) if in_state.returncode == 0 else set()
+    prefix, region = scope
 
-    for key in keys:
-        name = f"/ak/{prefix}/{key.lower()}"
-        address = f'module.{module_name}.aws_ssm_parameter.secret_placeholder["{key}"]'
-        if address in tracked:
-            continue
-        exists = subprocess.run(
-            ['aws', 'ssm', 'get-parameter', '--region', region, '--name', name, '--query', 'Parameter.Name', '--output', 'text'],
-            capture_output=True, text=True,
+    names = [f"/ak/{prefix}/{key.lower()}" for key in SSM_SEEDED_KEYS]
+    print(f"🧹 Deleting {', '.join(names)} (region {region})")
+    try:
+        subprocess.run(
+            ['aws', 'ssm', 'delete-parameters', '--region', region, '--names', *names],
+            check=True,
+            stdout=subprocess.DEVNULL,
         )
-        if exists.returncode != 0:
-            continue  # not seeded: the apply creates the placeholder
-        if not run_command(
-            ['terraform', 'import', '-input=false', address, name],
-            cwd=str(deploy_path),
-            description=f"Importing seeded SSM parameter {name}",
-            env=tf_env,
-        ):
-            return False
+    except subprocess.CalledProcessError as e:
+        print(f"❌ Failed to delete the SSM parameters: {e}")
+        return False
     return True
 
 
@@ -997,9 +972,6 @@ def deploy_aws_resources(path: str, deploy_dir: str = 'deploy', vpc_id: str = No
     ):
         return False
 
-    if not adopt_seeded_ssm_parameters(deploy_path, tf_env):
-        return False
-
     # Deploy
     return run_command(
         ['./deploy.sh', 'local'],
@@ -1079,7 +1051,7 @@ def main():
                        help='Type of test to run')
     parser.add_argument('--path', required=True, help='Path to the test')
     parser.add_argument('--deploy-dir', default='deploy', help='Deploy directory for AWS tests')
-    parser.add_argument('--action', choices=['deploy', 'test', 'destroy', 'seed-secrets'], default='test', help='Action to perform')
+    parser.add_argument('--action', choices=['deploy', 'test', 'destroy', 'seed-secrets', 'delete-secrets'], default='test', help='Action to perform')
     parser.add_argument('--vpc-id', default=None, help='VPC ID from base deployment')
     parser.add_argument('--private-subnet-ids', default=None, help='Private subnet IDs (JSON array) from base deployment')
     parser.add_argument('--request-handler-security-group-id', default=None, help='Request handler security group ID from base deployment; sets TF_VAR_request_handler_security_group_id (used for aws-serverless jobs)')
@@ -1099,6 +1071,12 @@ def main():
             success = seed_ssm_secrets(args.path, args.deploy_dir)
         else:
             print(f"⚠️  Seed-secrets action not applicable for type: {args.type}")
+            success = True
+    elif args.action == 'delete-secrets':
+        if args.type in ['aws-containerized', 'aws-serverless']:
+            success = delete_ssm_secrets(args.path, args.deploy_dir)
+        else:
+            print(f"⚠️  Delete-secrets action not applicable for type: {args.type}")
             success = True
     elif args.action == 'deploy':
         if args.type in ['aws-containerized', 'aws-serverless']:

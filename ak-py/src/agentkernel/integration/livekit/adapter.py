@@ -154,7 +154,12 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
         if token:
             return self._AgentParticipant(self.agent, None, token)
         if not (self._api_key and self._api_secret):
-            raise ValueError("Either 'token' or both 'api_key' and 'api_secret' must be provided in code or config")
+            secrets = SecretManager.current()
+            raise ValueError(
+                "Either 'token' or both 'api_key' and 'api_secret' must be provided in code or config: set "
+                f"{secrets.describe('AK_LIVEKIT__API_KEY', 'livekit.api_key')}; and "
+                f"{secrets.describe('AK_LIVEKIT__API_SECRET', 'livekit.api_secret')}"
+            )
         # The name the agent appears under in the room; cosmetic, unlike ``self.agent``.
         name = self.agent or "general"
         return self._AgentParticipant(self.agent, f"agent-{name}", self._mint_token(name))

@@ -54,6 +54,12 @@ class SecretProviderContract:
         assert provider.get_secret(_KEY_B) is None
         assert provider.get_secret(_KEY_A) == "value-a"
 
+    def test_contract_describe_names_the_key_without_io(self, provider):
+        """describe() feeds error messages, so it must answer for any valid key and mention it when it says anything."""
+        location = provider.describe(_KEY_A)
+
+        assert location is None or (isinstance(location, str) and _KEY_A.lower() in location.lower())
+
     def test_contract_environment_is_consulted_only_when_declared(self, provider, monkeypatch):
         monkeypatch.setenv(_KEY_ENV_ONLY, "from-environment")
 

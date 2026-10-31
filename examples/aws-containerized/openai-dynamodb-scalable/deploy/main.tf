@@ -42,9 +42,7 @@ module "containerized_agents" {
   # ---- Secret Resolution ----
   # Grants ssm:GetParameter on /ak/<prefix>/* and injects AK_SECRET__PREFIX, so the agent runner
   # resolves OPENAI_API_KEY from /ak/<prefix>/openai_api_key (config.yaml `secret:` block)
-  # Terraform creates each parameter holding REPLACE_ME; overwrite it with the real value after the first apply.
-  ssm_enabled     = true
-  ssm_secret_keys = ["OPENAI_API_KEY"]
+  ssm_enabled = true
 
   # ---- Queue Configuration ----
   # SQS queues for request/response handling

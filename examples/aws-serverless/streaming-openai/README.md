@@ -64,10 +64,9 @@ Terraform variables are declared in `deploy/variables.tf`:
 
 Provide values via `terraform.tfvars` (recommended) or via `-var` flags.
 
-The OpenAI key is not a Terraform variable. The deployment sets `ssm_enabled = true` and
-`ssm_secret_keys = ["OPENAI_API_KEY"]`, so Terraform creates `/ak/<prefix>/openai_api_key` holding the
-placeholder `REPLACE_ME`, and `config.yaml` selects the `aws_ssm` secret provider. After deploying, and
-before the first request, overwrite it with your key (`<prefix>` is `prefix` in `deploy/terraform.tfvars`):
+The OpenAI key is not a Terraform variable: store it in SSM Parameter Store, where `<prefix>` is
+`prefix` in `deploy/terraform.tfvars`. The deployment sets `ssm_enabled = true` and `config.yaml` selects
+the `aws_ssm` secret provider, so the agent runner reads it from SSM at startup:
 
 ```bash
 aws ssm put-parameter --name "/ak/<prefix>/openai_api_key" \

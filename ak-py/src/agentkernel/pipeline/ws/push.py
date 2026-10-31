@@ -86,6 +86,11 @@ def push_auth_token(config: AKConfig) -> Optional[str]:
     return config.websocket_api.push_auth_token or SecretManager.current().get(PUSH_AUTH_TOKEN_KEY, default=None)
 
 
+def push_auth_token_sources() -> str:
+    """Every place the push token can be set, for the errors raised when it is missing."""
+    return SecretManager.current().describe(PUSH_AUTH_TOKEN_KEY, "websocket_api.push_auth_token")
+
+
 def default_connection_store() -> WSConnectionStore:
     """The configured connection store: the session backend provides it (spec §9).
 
@@ -186,7 +191,7 @@ class PodPushWebSocketHandler(WebSocketHandlerABC):
 
         token = push_auth_token(self._config)
         if not token:
-            raise AKConfigError("pushing WebSocket deliveries to a gateway pod requires websocket_api.push_auth_token")
+            raise AKConfigError(f"pushing WebSocket deliveries to a gateway pod requires the push token: set {push_auth_token_sources()}")
 
         response = self.get_client(endpoint_url).post(
             f"{endpoint_url}{PUSH_PATH}",

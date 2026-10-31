@@ -49,23 +49,21 @@ The AWS deployment provisions the following resources:
 
 ## AWS Deployment Steps
 
-1. Set the VPC and subnets to deploy into in `deploy/terraform.tfvars` (`vpc_id`,
+1. Store the OpenAI API key in SSM Parameter Store, where `<prefix>` is `prefix` in `deploy/terraform.tfvars`:
+    ```bash
+    aws ssm put-parameter --name "/ak/<prefix>/openai_api_key" \
+        --type SecureString --value "$OPENAI_API_KEY" --overwrite
+    ```
+    The deployment sets `ssm_enabled = true` and `config.yaml` selects the `aws_ssm` secret provider, so the app reads the key from SSM at startup; no secret passes through Terraform.
+
+2. Set the VPC and subnets to deploy into in `deploy/terraform.tfvars` (`vpc_id`,
    `private_subnet_ids`), and optionally `request_handler_security_group_id` to reuse an existing
    request handler Lambda security group, then run the deployment script:
     ```bash
     cd deploy && ./deploy.sh # ./deploy.sh local if dependencies are built locally
     ```
 
-    Terraform creates `/ak/<prefix>/openai_api_key` holding the placeholder `REPLACE_ME` (`ssm_enabled` and
-    `ssm_secret_keys` in `deploy/main.tf`; `config.yaml` selects the `aws_ssm` secret provider). Overwrite it
-    with your key, where `<prefix>` is `prefix` in `deploy/terraform.tfvars`:
-    ```bash
-    aws ssm put-parameter --name "/ak/<prefix>/openai_api_key" \
-        --type SecureString --value "$OPENAI_API_KEY" --overwrite
-    ```
-    A Lambda execution environment reads the key when it starts, so set it before the first request.
-
-2. Tear down when finished:
+3. Tear down when finished:
     ```bash
     cd deploy && terraform destroy
     ```
