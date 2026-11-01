@@ -530,6 +530,11 @@ jobs:
     if: always() && (needs.e2e-messaging-deploy.result == 'success' || needs.e2e-messaging-deploy.result == 'skipped')
     runs-on: ubuntu-latest
     environment: ci-tests
+    # One run at a time: this job scales the shared e2e service down when it ends, which would
+    # cut off another run's tests mid-way.
+    concurrency:
+      group: e2e-messaging-test
+      cancel-in-progress: false
     defaults:
       run:
         shell: bash -e {0}
@@ -557,6 +562,11 @@ jobs:
           terraform_version: 1.14.3
           terraform_wrapper: false
 
+      # The e2e service idles at 0 tasks between runs so Fargate isn't billed all week; start
+      # one task for this run. The last step scales it back to 0.
+      - name: Scale e2e messaging service up
+        run: e2e/app/deploy/scale.sh up
+
       - name: Read webhook URL and probe endpoint
         id: webhook
         working-directory: e2e/app/deploy
@@ -564,14 +574,22 @@ jobs:
           terraform init -input=false
           url=$(terraform output -raw telegram_webhook_url)
           echo "telegram_webhook_url=$url" >> "$GITHUB_OUTPUT"
-          code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$url" -H "Content-Type: application/json" -d '{}')
-          echo "POST $url -> HTTP $code"
           # 200 (no webhook secret) or 403 (secret enforced) both prove a healthy container;
-          # 503 means no healthy ECS task behind the ALB.
-          if [[ "$code" == "503" || "$code" == "500" ]]; then
-            echo "e2e messaging service is not healthy — dispatch this workflow with provision_e2e_messaging enabled to (re)deploy it" >&2
-            exit 1
-          fi
+          # 5xx means no healthy ECS task behind the ALB yet. The task was just started, and the
+          # ALB needs a few passing health checks before it routes to it, so retry for 5 minutes.
+          deadline=$(( SECONDS + 300 ))
+          while :; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$url" -H "Content-Type: application/json" -d '{}' || true)
+            echo "POST $url -> HTTP $code"
+            if [[ "$code" != 5* && "$code" != "000" ]]; then
+              break
+            fi
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              echo "e2e messaging service is not healthy — dispatch this workflow with provision_e2e_messaging enabled to (re)deploy it" >&2
+              exit 1
+            fi
+            sleep 15
+          done
 
       - name: Install e2e test dependencies
         working-directory: e2e/tests
@@ -604,3 +622,9 @@ jobs:
           E2E_WHATSAPP_SENDER_NUMBER: ${{ vars.E2E_WHATSAPP_SENDER_NUMBER }}
           E2E_TEAMS_DIRECTLINE_SECRET: ${{ secrets.E2E_TEAMS_DIRECTLINE_SECRET }}
         run: uv run pytest -v -rs
+
+      # Runs even when an earlier step failed or the run was cancelled, so the service never
+      # stays up all week.
+      - name: Scale e2e messaging service down
+        if: always()
+        run: e2e/app/deploy/scale.sh down
