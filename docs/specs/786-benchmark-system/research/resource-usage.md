@@ -5,7 +5,7 @@ by the workers of each tier, read from the platform the same way worker counts a
 [scaling info fetchers](platform-scaling-and-cost.md#scaling-info-fetchers-pluggable).
 
 Status (2026-10-29): **agreed:** the fetchers each host binds (Lambda Insights included, on by default),
-p0 / p25 / p50 / p75 / p100 per window and per step (min / avg / max for the ECS service metrics, changed from
+p0 / p25 / p50 / p75 / p99 / p100 per window and per step (min / avg / max for the ECS service metrics, changed from
 min / avg / max everywhere on 2026-10-29), and separate graphs. Still open: see [Open points](#open-points).
 
 ## Design: resource usage fetchers (pluggable)
@@ -248,11 +248,11 @@ Less researched; to check before building.
 ## What's recorded
 
 - **Per-time-window CSV:** per tier × metric × stat × fetcher, e.g. `runner.cpu_pct.avg.aws.ecs_service_metrics`,
-  `runner.mem_mb.p50.aws.ecs_container_insights`. Per-worker sources are reduced to p0 / p25 / p50 / p75 / p100
+  `runner.mem_mb.p50.aws.ecs_container_insights`. Per-worker sources are reduced to p0 / p25 / p50 / p75 / p99 / p100
   across the tier's workers in each window. The ECS service metrics keep the min / avg / max AWS gives.
 - **Per-step `resource-usage.csv` (new):** the raw per-worker samples in long form
   (`ts, tier, worker, metric, value, fetcher`), since one column per worker doesn't fit the per-time-window file.
-- **Summary CSV (per test type, one row per step):** p0 / p25 / p50 / p75 / p100 of CPU % and memory per tier over
+- **Summary CSV (per test type, one row per step):** p0 / p25 / p50 / p75 / p99 / p100 of CPU % and memory per tier over
   the step's whole time period (before → load → cool-down), one set per fetcher, e.g.
   `runner.cpu_pct.p100.aws.ecs_container_insights`.
   - Worked out from all the raw samples in the step (every worker, every sample time): p0 = the lowest single
@@ -262,9 +262,9 @@ Less researched; to check before building.
   - Step N is N requests (burst) or N clients (steady traffic), so this row shows how usage changes with load.
 - **Graphs:** separate graphs, not panels in `03-timeline.png`:
   - `graphs/03-resource-usage-per-step.png` (comparing the steps): CPU % and memory against the load step,
-    p0 / p25 / p50 / p75 / p100, one row of panels per tier.
+    p0 / p25 / p50 / p75 / p99 / p100, one row of panels per tier.
   - `step-<N>/graphs/05-resource-usage.png` (one step): CPU % and memory over the step's timeline, p0 / p25 / p50 /
-    p75 / p100 across the tier's workers per time window, one row of panels per tier. Same time axis and before /
+    p75 / p99 / p100 across the tier's workers per time window, one row of panels per tier. Same time axis and before /
     load / cool-down shading as `03-timeline.png`.
   - Which fetcher a graph draws: for each metric, the first fetcher in the host's list that gives it (the per-worker
     one first: Container Insights before the ECS service metric, Lambda Insights before `REPORT` memory). The graph

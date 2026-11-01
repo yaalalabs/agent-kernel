@@ -16,8 +16,8 @@ log level with per-stage trace points on the request path.
 - **Open load:** a client never waits for a response before sending its next request.
 - **Test type:**
   - **burst:** each client sends one request (N requests at once).
-  - **steady:** each client sends at a fixed per-client rate (default 1 request every 5 s) for a configured time
-    (default 5 min), without waiting for responses.
+  - **steady:** each client sends with a random interval between requests (uniform between a configured min and
+    max, default 1 s and 5 s) for a configured time (default 5 min), without waiting for responses.
 - **Step timeline:** `before` (no load) → `load` → `cool-down` (no load, ends by the step-end rule), then the
   after-step wait and fetch of the data with history.
 - **Time window:** the sampling interval (e.g. 1 s). One row per window in the per-time-window CSV.
@@ -29,7 +29,7 @@ log level with per-stage trace points on the request path.
 - **Scale up / scale down:** adding / removing workers (horizontal only). Worker size is fixed per run.
 - **Host:** a named bundle of per-platform implementations (`local`, `ecs`, `lambda`, `eks`, `baremetal`). Each host
   names its platform (`aws`, `k8s`, none for `local`).
-- **Percentiles:** p0 / p25 / p50 / p75 / p100 only, linear interpolation (numpy `method='linear'`).
+- **Percentiles:** p0 / p25 / p50 / p75 / p99 / p100 only, linear interpolation (numpy `method='linear'`).
 - **Billed cost:** the cloud bill for a run. **Estimated cost:** usage × list prices, splittable per step.
 
 ## Motivation
@@ -50,7 +50,7 @@ log level with per-stage trace points on the request path.
     (`core/logger.py:42`), so lines from different hosts can't be compared on one clock.
 - `logging.ak.level` rejects anything below `DEBUG`: `_LogLevelConfig.level` pattern is
   `^(INFO|DEBUG|ERROR|WARNING|CRITICAL)$` (`core/config.py:655-659`).
-- An LLM call takes 1-10 s and varies a lot, which would hide what AK itself does. A fixed-delay mock agent is needed.
+- An LLM call takes 1-10 s and varies a lot, which would hide what AK itself does. A mock agent with a controlled delay is needed.
   - An agent pre-hook that returns a reply halts the run before the framework runner (`core/runtime.py:242-246`,
     `:401-405`), so the mock needs no AK code change.
 - Hosts scale and bill in very different ways (ECS target tracking, KEDA / HPA, Lambda + SQS event source mapping),
@@ -125,7 +125,7 @@ log level with per-stage trace points on the request path.
      `before` the runner reads the starting worker counts with a plain `fetch()` on the primary scaling fetcher
      (stores nothing, works on any host); the cool-down waits for these counts. Idle cost comes from this part.
   2. **load:** burst: send N → last response or timeout (≤ client timeout, default 5 min). Steady: first send →
-     configured time is up (default 5 min; 1 request every 5 s per client, never waiting). The client records sent /
+     configured time is up (default 5 min; a random 1-5 s gap between a client's sends, never waiting). The client records sent /
      received per request → Tx, Rx, end-to-end latency, errors, timeouts; request ids are stored as they're sent. AK
      writes trace lines, read after the step. Live tracking keeps polling; workers scale up.
   3. **cool-down:** no new requests; late replies are still recorded; workers scale down. Every poll runs the step-end
@@ -353,8 +353,8 @@ log level with per-stage trace points on the request path.
 - Components are classes with one responsibility each.
 - **Its own config file**, `ak-bench.yaml`, not `AKConfig`. Departure from the "reuse existing configuration" house
   pattern, because these are benchmark settings, not AK runtime config. Holds: hosts, modes, test types, load steps,
-  per-client rate, steady load time, before window (default 1 min), maximum cool-down, wait before the after-step
-  fetch (default 1 min), client timeout, time window size, agent delay, fetcher order / on-off, poll interval per
+  min / max send interval, steady load time, before window (default 1 min), maximum cool-down, wait before the
+  after-step fetch (default 1 min), client timeout, time window size, min / max agent delay, fetcher order / on-off, poll interval per
   live-tracked fetcher, Lambda Insights on-off, bare-metal `$/node-hour`, price overrides.
 - Registries follow AK's factory shape: built-in short names, dotted-path bring-your-own, unknown name → error naming
   the built-ins.
@@ -447,7 +447,7 @@ flowchart TD
   - resource usage sources: which fetchers ran, Container Insights (standard / enhanced), Lambda Insights on / off,
     metrics-server resolution;
   - front door (API Gateway WebSocket, ALB, Envoy Gateway, none);
-  - benchmark settings: agent delay, load steps, test types, per-client rate, steady load time, before window, maximum
+  - benchmark settings: min / max agent delay, load steps, test types, min / max send interval, steady load time, before window, maximum
     cool-down, wait before the after-step fetch, poll intervals, client timeout, time window size, percentile method.
   - Host-side values come from the deployer; a value a host doesn't have stays empty.
 
@@ -456,7 +456,8 @@ flowchart TD
 - One shared, mode-independent **load generator** (Python asyncio). It:
   - starts N clients at the same moment, each with its own user identity and session. Clients never share a user:
     AK pushes a WebSocket reply to every connection of the reply's `user_id` (`pipeline/response_handler.py:269-277`);
-  - sends on a schedule (burst: once; steady: the per-client rate) and **never waits for a response before sending**;
+  - sends on a schedule (burst: once; steady: a random gap between sends) and **never waits for a response before
+    sending**;
     receiving runs separately and matches responses to requests by `request_id`;
   - sets the `request_id` itself (the WS handler accepts a client id, `pipeline/ws/handler.py:228`; the Lambda WS
     path requires one, `deployment/aws/serverless/core/router/ws_lambda.py:386-387`);
@@ -487,8 +488,10 @@ flowchart TD
     finished step number.
 - Each step run starts only after the previous one has ended and its after-step fetch is done, so it starts from the
   minimum workers.
-- Steady: per-client rate (default 1 request every 5 s) and load time (default 5 min) are config values and recorded
-  with the results.
+- Steady: each gap between two sends of a client is random, uniform between a min and max send interval (defaults
+  1 s and 5 s, 3 s on average). Each client draws its own gaps. The next send is the previous **scheduled** send time
+  plus the gap, so the load stays open. Min / max interval and load time (default 5 min) are config values and
+  recorded with the results; min = max gives a fixed interval.
 
 ### Hosts
 
@@ -577,14 +580,15 @@ flowchart TD
 - Benchmark deployment settings, applied by the deployers and recorded in the metadata:
   - `ecs`: `scaling_config.enabled = true`, `min_count >= 1`.
   - `eks`, `baremetal`: `keda.enabled: true`, `transport.type: kafka`.
-  - `lambda`: zip packaging (Lambda Insights layer); `batch_size × agent delay` stays under the agent runner timeout.
+  - `lambda`: zip packaging (Lambda Insights layer); `batch_size × max agent delay` stays under the agent runner timeout.
   - every host: queue mode, WebSocket delivery, `logging.ak.level: TRACE`, the mock agent.
 
 ### Mock agent
 
 - A benchmark pre-hook in the benchmarked app, the **first** pre-hook on the agent (agent pre-hooks run before the
   system ones, `core/runtime.py:242`). No AK code change.
-  - Waits a fixed delay with `await asyncio.sleep(delay)` (config, recorded; planned 0 ms then 500 ms).
+  - Waits a random delay per request, `await asyncio.sleep(random.uniform(min_delay, max_delay))` (min / max are
+    config, recorded; defaults 1 s and 5 s; min = max gives a fixed delay).
   - Returns `AgentReplyAny(content={"echo": <prompt>})`. The prompt carries the client's `request_id`.
   - Keeps no per-request state on `self`; does no timing (stage times come from the trace logs).
 - Everything around the LLM call runs as normal: request handler, queues, agent runner, ChatService, session load,
@@ -653,7 +657,7 @@ flowchart TD
   max of per-window Tx / Rx, error and timeout counts, time to answer all N (burst), `cooldown_max_reached`, scaling
   numbers and CPU / memory per tier per fetcher (fetcher named).
 - How each measurement is summarized:
-  - per-request times, per-worker CPU / memory: p0 / p25 / p50 / p75 / p100. No avg column.
+  - per-request times, per-worker CPU / memory: p0 / p25 / p50 / p75 / p99 / p100. No avg column.
   - ECS service metrics: min / avg / max (all AWS gives).
   - Tx / Rx: min / avg / max of per-window values.
   - counts, times, costs: the value itself.
@@ -665,7 +669,7 @@ flowchart TD
   2. `02-stage-times-per-step.png`: the per-step stage-times graph for every step, one panel per step, same y scale.
   3. `03-resource-usage-per-step.png`: CPU % and memory percentiles per step, one row of panels per tier.
 - One step (`step-<N>/graphs/`):
-  1. `01-stage-times.png`: one box per stage (p25-p75, line at p50, whiskers p0 / p100).
+  1. `01-stage-times.png`: one box per stage (p25-p75, line at p50, whiskers p0 / p100, marker at p99).
   2. `02-stage-breakdown.png`: stacked stage times for the fastest, average and slowest real request (completed
      requests only).
   3. `03-timeline.png`: before → load → cool-down on one time axis, one panel each. Steady: Tx / Rx, latency
@@ -675,8 +679,9 @@ flowchart TD
      the timeout line.
   5. `05-resource-usage.png`: CPU % and memory percentiles per window, one row of panels per tier.
 - Rules:
-  - every aggregate of a per-request measurement shows all five percentiles; box with whiskers to p0 / p100
-    (`whis=(0, 100)`) on category axes, bands (p0-p100 light, p25-p75 dark) and a p50 line otherwise;
+  - every aggregate of a per-request measurement shows all six percentiles; box with whiskers to p0 / p100
+    (`whis=(0, 100)`) and a p99 marker on category axes, bands (p0-p100 light, p25-p75 dark), a p50 line and a dashed
+    p99 line otherwise;
   - each tier, pipeline stage and queue shown separately, never summed; whole-system values (Tx, Rx, end-to-end
     latency, totals) not split;
   - separate panels, never two y-axes; no threshold or pass/fail lines;

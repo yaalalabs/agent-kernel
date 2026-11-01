@@ -152,7 +152,7 @@ Added to the per-time-window CSV, next to Tx/Rx/errors:
 - **Pending workers** (K8s only): pods created but not scheduled, e.g. when bare-metal nodes are full.
 - **Queue depth:** input and output queue backlog, each queue in its own column (SQS
   `ApproximateNumberOfMessagesVisible`, Kafka consumer-group lag).
-- **Latency percentiles** (p0 / p25 / p50 / p75 / p100) of requests completed in that window.
+- **Latency percentiles** (p0 / p25 / p50 / p75 / p99 / p100) of requests completed in that window.
 
 Worker counts are recorded **per tier** and **per scaling info fetcher** (below). Which tiers scale depends on the host
 (checked against our Terraform):
@@ -376,7 +376,8 @@ Worker counts (from → to), recorded per tier, count type (desired / running) a
   - **How AK uses it (checked in the code):** the agent runner's SQS event source mapping has `batch_size = 10` and
     AK's `SQSConsumer` handles the records of a batch **one after another**, so one invocation with 10 messages and a
     2 s agent delay runs ~20 s. The agent runner timeout is 45 s by default (`ak-aws/serverless/variables.tf`, `agent_runner`),
-    so `batch_size × agent delay` has to stay under it (a 5 s delay with batch size 10 hits the timeout). Batch size, timeout and agent delay are saved in the
+    so `batch_size × maximum agent delay` has to stay under it (a 5 s delay with batch size 10 hits the timeout, and 5 s
+    is the default maximum agent delay). Batch size, timeout and the minimum and maximum agent delay are saved in the
     run metadata.
   - So the number of concurrent executions is much lower than the number of requests: each
     environment handles a batch of messages, then the next batch. Example: 1000 requests at once, 2 s each, batch
