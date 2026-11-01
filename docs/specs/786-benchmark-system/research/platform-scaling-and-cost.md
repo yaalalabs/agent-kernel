@@ -13,19 +13,36 @@ are coming later, so the platform-specific parts are kept behind interfaces and 
 
 ```
 Host (registered by name, e.g. "ecs", "lambda", "eks", "baremetal", later "cloud_run", "aca")
-├── Deployer            deploy() -> Deployment(endpoint(url, auth), resources: {tier: resource id}), teardown()
+├── Deployer            deploy() -> Deployment(endpoint(url, auth), resources: {tier: resource id},
+│                                  queues: {"input": ids, "output": ids}, logs: {component: log source})
+│                       teardown()
 │                       deployed_settings() -> dict  (autoscaling settings + worker size, saved in run metadata)
 ├── ScalingInfoFetchers one or more per host; each reads worker counts one way (see Scaling info fetchers below)
 ├── ResourceUsageFetchers one or more per host; each reads worker CPU / memory one way (see resource-usage.md)
-├── TraceCollector      stage_timestamps(run) -> {request_id: {stage: ts}}  (from the AK trace logs)
+├── TraceCollector      fetch(run, deployment, start, end) -> TraceInfo  (stage timestamps per request, from the AK trace logs)
 ├── UsageSources        one or more per host, one per billed thing (Fargate, Lambda, SQS, API Gateway, K8s nodes, ...)
 │                       usage(run, deployment, start, end) -> [UsageItem(component, unit, qty, start, end)]
 ├── BillingReader       billed(run) -> [CostItem(component, usd)] | None   (one per cloud; later step; None if no bill)
 ├── PriceSource         prices(region) -> PriceTable   (one per cloud; fetched per run, see Cost → Prices)
-└── TransportCollector  poll() -> {queue: QueueDepth(waiting, in_flight)}   (picked by transport: sqs, kafka, later pubsub, servicebus)
+└── TransportCollector  fetch(run, deployment, start, end) -> QueueInfo  (queue depth: waiting, in flight, per queue;
+                        picked by transport: sqs, kafka, later pubsub, servicebus)
 ```
 
-- **Shared, platform-independent code:** scaling-test orchestration, the poll loop and timestamps, turning scaling
+- **One base class for everything read from the platform during a step:** `ScalingInfoFetcher`,
+  `ResourceUsageFetcher`, `TraceCollector` and `TransportCollector` all extend the generic `InfoFetcher[T]`, so they
+  have the same methods and parameters:
+  - constructor parameters `live_track: bool = False` and `poll_interval_s`;
+  - `fetch(run, deployment, start, end) -> T`: the only method a platform subclass writes;
+  - `store(result: T, step)`: written once in each of the four family bases, since each stores a different type;
+  - `fetch_and_store(...)`: written once in `InfoFetcher`; calls `fetch()`, then `store()`.
+  - Each family base fixes `T`: `ScalingInfo`, `ResourceUsage`, `TraceInfo`, `QueueInfo` (dataclasses). A type
+    checker flags a subclass whose `fetch()` returns another type, and `fetch_and_store` raises a clear error if it
+    does at runtime.
+  - So the step runner calls all of them the same way (see
+    [Scaling info fetchers](#scaling-info-fetchers-pluggable)). The cost parts and the Deployer don't extend it: they
+    run once per run or after all steps, not inside a step.
+- **Shared, platform-independent code:** scaling-test orchestration, the step runner (live tracking, cool-down check, after-step fetch) and timestamps,
+  turning scaling
   source output into per-window worker counts, all derived numbers (scale-up/down times, idle cost, cost per 1M messages = usage × price table),
   CSV writing and graphs. It only sees the common return types above.
 - **Per-platform code:** only the API calls that fill those types. A field with no source on a platform (e.g. `desired`
@@ -73,15 +90,18 @@ sets that delay:
 ### Load-step tests: scaling per step
 
 The [load steps](../design.md) of both test types (burst and steady traffic) also record scaling, over each
-step's [timeline](../design.md): before → load → cool-down.
+step's [timeline](../design.md): before → load → cool-down → wait + fetch. The
+data covers the first three parts; the fourth waits for log ingestion (default 1 min) and then fetches the step's data
+with history. Live tracking runs from the start of "before" to the end of the cool-down.
 
 - The derived numbers below are computed per step, with `t_load_up` = first send of the step and `t_load_down` = end
   of the load part (steady traffic: the configured time is up; burst: the last response arrived or timed out).
-- **When the cool-down ends:** the shared poll loop checks three things during the cool-down, and the step ends when
+- **When the cool-down ends:** the step runner checks three things on every poll during the cool-down, and the step ends when
   all three hold in the same poll:
   1. **All requests settled (client):** every request sent in the step has a response or has timed out. This alone
      covers requests that completed normally.
   2. **Pipeline empty (TransportCollector):** both queues hold nothing, counting messages still being processed.
+     The queue ids come from `deployment.queues` (`{"input": ids, "output": ids}`, filled by the deployer).
      This covers requests the client gave up on (timed out) that are still inside AK, so they don't finish during
      the next step.
      - SQS: `ApproximateNumberOfMessages` (waiting) **and** `ApproximateNumberOfMessagesNotVisible` (received by a
@@ -99,10 +119,13 @@ step's [timeline](../design.md): before → load → cool-down.
     the input queue is empty as soon as the last requests are picked up, while those requests are still being
     processed. Checking only 3 (or 3 + waiting messages) would end the step too early and mix its last responses into
     the next step.
-  - ECS and K8s: the primary fetchers (`aws.ecs_api`, `k8s.api`) are live, so the end is seen within one poll.
-  - Lambda: the primary fetcher (`aws.cloudwatch_metric.ConcurrentExecutions`) is also **polled during the run**
-    for this, accepting the CloudWatch delay. Lambda sends metric data to CloudWatch in 1-minute intervals. The
-    recorded counts still come from the after-run call, which has the complete data. If the delay turns out too long,
+  - The check calls the primary fetcher's plain `fetch()` (reads, stores nothing), whether it's live-tracked or not.
+  - ECS and K8s: the primary fetchers (`aws.ecs_api`, `k8s.api`) read the current state, so the end is seen within
+    one poll.
+  - Lambda: the primary fetcher (`aws.cloudwatch_metric.ConcurrentExecutions`) isn't live-tracked, but the check
+    still calls its `fetch()` for the latest minutes, accepting the CloudWatch delay. Lambda sends metric data to
+    CloudWatch in 1-minute intervals. The recorded counts still come from its `fetch_and_store()` after the
+    cool-down, which has the complete data. If the delay turns out too long,
     the host can be switched to `aws.lambda_log_streams` by config (a manual choice, not automatic).
 - **Maximum cool-down time:** configurable, **default 45 min**, counted from `t_load_down`. If it's reached, the step
   ends, records `cooldown_max_reached = true`, "scale-down done" stays empty and `workers_after_down` shows where it
@@ -116,7 +139,8 @@ step's [timeline](../design.md): before → load → cool-down.
   - 45 min leaves room for an ECS scale-in that takes several activities, without cutting it off and losing the
     scale-down result. Waiting too long only costs time; ending too early loses data.
   - Can be set per host (e.g. lower for K8s / Lambda) once real scale-in times are known.
-- The steps are run one after another, so each step starts from the minimum workers.
+- The steps are run one after another (steady N, then burst N, then the next N; the next starts only after the
+  previous step's wait + fetch), so each step starts from the minimum workers.
 
 ### What to record (per time window, e.g. 1 s or 5 s)
 
@@ -148,13 +172,25 @@ class, `ScalingInfoFetcher`, so a new way can be added for any host without touc
 - **One fetcher = one way to read worker counts on one platform**, with a registry name (e.g. `aws.ecs_api`,
   `aws.cloudwatch_metric.ConcurrentExecutions`). A host lists one or more fetchers; the benchmark config can turn fetchers on or off per
   run.
-- **One method for all fetchers:** `fetch(run, deployment, start, end) -> ScalingInfo`, plus a `live` flag that says
-  when the harness calls it. Data is only available at different times, but the call is the same:
-  - **`live = True`:** management APIs (ECS, K8s, Azure Container Apps) only show the current state, so the shared poll
-    loop calls `fetch` every few seconds during the run with (last poll, now).
-  - **`live = False`:** monitoring metrics and logs keep history but arrive late, so `fetch` is called once after the
-    run with (run start, run end). This runs automatically at the end of the run after a configured wait, and can be
-    re-run later with `collect-scaling --run-id …`, which refills the CSVs and re-plots.
+- **Same methods and parameters for every fetcher:**
+  - `fetch(run, deployment, start, end) -> ScalingInfo`: the only method a subclass writes. It reads and stores
+    nothing.
+  - `store(...)`: written once in `ScalingInfoFetcher`; appends the result to the step's CSV files.
+    `fetch_and_store(...)`: written once in `InfoFetcher`, the base class of every fetcher (see
+    [Pluggable per-platform collectors](#pluggable-per-platform-collectors)); calls `fetch()`, then `store()`.
+  - Constructor parameters: `live_track: bool = False`, and `poll_interval_s` (how often a live-tracked fetcher is
+    polled; default from `ak-bench.yaml`, settable per fetcher, since sources differ: e.g. metrics-server updates
+    every 15 s, the ECS API has request rate limits).
+- **`live_track` only sorts the fetchers into two groups.** The runner reads it before each step; nothing inside a
+  fetcher depends on it. Data is available at different times, but the calls are the same:
+  - **`live_track = True`:** management APIs (ECS, K8s, Azure Container Apps) only show the current state, so a
+    background task calls `fetch_and_store` every `poll_interval_s` with (last poll, now), from the start of the
+    step's "before" part until the cool-down ends. Each poll covers only the new time, so nothing is stored twice.
+  - **`live_track = False`:** monitoring metrics and logs keep history but arrive late, so `fetch_and_store` is
+    called once per step with (step start, step end), after the cool-down and a configured wait for log ingestion
+    (default 1 min). It can be re-run later with `collect-scaling --run-id …`, which refills the CSVs and re-plots.
+  - **The host bundle always sets `live_track`** for each of its fetchers: a source with no history must be `True`.
+    The `False` default is never relied on.
 - **Not split by serverless / containerized:** the harness never checks what kind of host it is. A host is only ever
   one kind, the line between them is blurry (Fargate, Cloud Run, Azure Container Apps), and the fetching code depends
   on where the data comes from, not on the deployment type.
@@ -192,7 +228,7 @@ Class sketch and a worked example: to be specified in `spec.md`.
 
 Fetchers per host (✓ = available now, later = when the platform is added), primary first:
 
-| Host | Fetcher | `live` | Gives | Resolution |
+| Host | Fetcher | `live_track` | Gives | Resolution |
 |------|---------|--------|-------|------------|
 | ECS ✓ | `aws.ecs_api`: `DescribeServices` (`desiredCount`, `runningCount`) + `DescribeTasks` (task `createdAt` / `pullStartedAt` / `startedAt` / `stoppedAt`) | yes | desired, running, spans | poll interval; spans exact |
 | ECS ✓ | `aws.ecs_scaling_activities`: Application Auto Scaling `DescribeScalingActivities` (`StartTime`, "Setting desired count to N") | no | desired | exact |
@@ -213,7 +249,8 @@ Fetchers per host (✓ = available now, later = when the platform is added), pri
   - `ConcurrentExecutions` is "the number of active concurrent invocations at a given point in time". Lambda emits it
     for all functions, versions and aliases (no reserved concurrency needed), at 1-minute granularity, and AWS says to
     read it with the `Maximum` statistic.
-  - One `GetMetricData` call per run, one query per function (tier), period 60 s.
+  - One `GetMetricData` call per step (after the cool-down and wait, over (step start, step end)), one query per
+    function (tier), period 60 s; plus the end-of-step check's plain `fetch()` calls during the cool-down.
   - It gives `running` only: no `desired` and no worker spans. So the Lambda scaling times (first new worker,
     scale-up done, scale-down start/done) have 1-minute resolution.
   - Lambda doesn't report when an environment is shut down; the metric counts invocations in progress. "Scale-down
@@ -226,7 +263,7 @@ Fetchers per host (✓ = available now, later = when the platform is added), pri
   - Lambda doesn't report when an environment is shut down, so a span ends at the environment's last invocation.
     With this fetcher, "scale-down done" means "the extra environments stopped getting invocations".
 - `aws.ecs_api` keeps every task it has seen across polls (merged by task ARN), because stopped tasks only stay
-  visible in `DescribeTasks` for at least 1 hour after they stop. Polling during the run catches all of them.
+  visible in `DescribeTasks` for at least 1 hour after they stop. Live tracking through every step catches all of them.
 - `aws.ecs_scaling_activities` gives the exact time of each autoscaler decision (activity history is kept 6 weeks), so
   the decision delay isn't limited by the poll interval. The new desired count is parsed from the activity's
   description text; if a description can't be parsed, only the `aws.ecs_api` desired count is used.
@@ -369,7 +406,7 @@ target (cost models).
 |---|---|---|
 | Source | the cloud's bill (AWS Cost Explorer, filtered by the run tag) | usage × price table, computed by the benchmark |
 | Accuracy | exact: what is paid, incl. discounts, free tier, Savings Plans | close: list prices |
-| Available | ~1 day after the run (`collect-cost` step) | at the end of the run |
+| Available | ~1 day after all the steps have run (`collect-cost` step) | after all the steps have run |
 | Split by time | whole run only (daily, or hourly if enabled) | any window: per step, per step part |
 | Bare metal | none (no bill) | yes ($/node-hour) |
 | What-if ("cost of 1M messages?") | no | yes: the cost model is built from it |
@@ -403,6 +440,10 @@ labels). Then two numbers are recorded:
 
 - **Billed cost (authoritative, delayed):** AWS Cost Explorer `GetCostAndUsage` filtered by the run tag, grouped by
   service. Caveats:
+  - **All the steps together, never per step.** The tag is set once, at deploy time, and one deployment serves every
+    step of both test types (1 → 10 → 100 → 1000), so every charge of the run carries the same tag value and Cost
+    Explorer can't tell the steps apart. Its time grain (daily, or hourly) can't separate them either: steps are
+    minutes long and run back to back. So the billed cost is read once, after all the steps have run.
   - The tag must be activated as a cost allocation tag (management account). Tagged costs show from activation on;
     the management account can **backfill** up to 12 months (one backfill request per 24 h). Costs only appear for
     periods when the tag was actually on the resource.
@@ -417,7 +458,7 @@ labels). Then two numbers are recorded:
   - Shared or long-lived resources (EKS control plane, NAT gateway, a long-lived MSK cluster) can be tagged, but if
     they're shared across runs or used by other things, their cost must be listed as a fixed allocation instead. The
     automatic `aws:eks:cluster-name` tag doesn't cover the EKS control plane fee.
-- **Usage-based estimate (immediate):** computed at the end of the run from the usage the runner already sees, times
+- **Usage-based estimate (immediate):** computed after all the steps have run, from the usage the runner already stored, times
   a price table. Usage is recorded with timestamps, so the same estimate is also split **per step** (first send → end
   of cool-down), which gives the [per-step costs](../design.md). Cost Explorer can't split a run this finely
   (daily, or hourly if enabled), so per-step costs always come from the estimate; the billed total checks the
@@ -509,7 +550,8 @@ Nobody edits prices by hand when a provider changes them.
 - Which one fetcher to keep for ECS: `aws.ecs_api` alone, or with `aws.ecs_scaling_activities`.
 - Whether Lambda stays on `ConcurrentExecutions` or switches to `aws.lambda_log_streams`: decided after the first
   Lambda runs (see [Lambda: `ConcurrentExecutions` bound, log streams written but not bound](#lambda-concurrentexecutions-bound-log-streams-written-but-not-bound)).
-- How long the after-run scaling step (`live = False` fetchers) waits before querying metrics and logs (log ingestion delay differs per backend).
+- Whether the 1-min default wait before the after-cool-down fetch (`live_track = False` fetchers) is enough for each
+  log backend (log ingestion delay differs per backend). Checked on the first runs.
 
 ## Sources (checked 2026-10-20; GCP / Azure scaling fetchers checked 2026-10-22; Lambda metrics checked 2026-10-23)
 
