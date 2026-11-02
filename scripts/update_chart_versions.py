@@ -6,9 +6,11 @@ The examples, the docs site, the bundled ak-cloud-deploy skill, the chart's own 
 description, and the root README (what GitHub renders on the chart's GHCR package page) install
 the Agent Kernel chart from its OCI artifact: `oci://ghcr.io/yaalalabs/charts/agent-kernel
 --version X.Y.Z` in READMEs and docs pages, and a `CHART_VERSION="X.Y.Z"` variable in the
-examples' deploy/deploy.sh scripts. The publish workflow runs this script for each release so
-those pins track the chart version it is about to publish, the way update_terraform_versions.py
-tracks the Terraform module versions.
+examples' deploy/deploy.sh scripts. The chart's own Chart.yaml also carries the release in its
+version and appVersion keys, so a checkout renders the same chart labels as the published
+artifact. The publish workflow runs this script for each release so those pins track the chart
+version it is about to publish, the way update_terraform_versions.py tracks the Terraform module
+versions.
 """
 
 import argparse
@@ -32,6 +34,19 @@ CHART_VERSION_PATTERN = re.compile(rf"({re.escape(CHART_REF)}\s+--version\s+)({S
 # The example deploy scripts keep the pin in a variable beside the chart reference. Only shell
 # scripts that name the chart qualify, so an unrelated CHART_VERSION variable is left alone.
 SHELL_VERSION_PATTERN = re.compile(rf'^(\s*CHART_VERSION=")({SEMVER})(")', re.MULTILINE)
+
+# The chart's own Chart.yaml carries the release in its top-level version and appVersion keys
+# (publish-chart.yaml stamps both from the tag at package time as well, so a checkout renders the
+# same chart labels and NOTES as the published artifact). Only column-0 keys qualify: the indented
+# version keys under dependencies belong to the Valkey and NATS charts. Either YAML quote style is
+# accepted and, since only the version token is rewritten, kept as found.
+CHART_YAML_VERSION_PATTERN = re.compile(rf"""^((?:version|appVersion):[ \t]*['"]?)({SEMVER})(['"]?)[ \t]*(?:#.*)?$""", re.MULTILINE)
+
+# Which Chart.yaml is the chart's own: the one whose top-level name is the chart's. A wrapper chart
+# whose description tells users to install the Agent Kernel chart gets that install command
+# repinned like any other file, but its own version keys are not ours to touch.
+CHART_NAME = CHART_REF.rsplit("/", 1)[-1]
+CHART_NAME_PATTERN = re.compile(rf"""^name:[ \t]*['"]?{re.escape(CHART_NAME)}['"]?[ \t]*(?:#.*)?$""", re.MULTILINE)
 
 FILE_GLOBS = ("*.md", "*.yaml", "*.yml", "*.sh")
 FILE_SUFFIXES = tuple(glob[1:] for glob in FILE_GLOBS)
@@ -78,10 +93,13 @@ def find_files(directories: List[str], exclude_patterns: List[str] = None) -> Li
 
 def patterns_for(file_path: Path, content: str) -> List[re.Pattern]:
     """The pin patterns that apply to a file: the install-command form everywhere, plus the
-    CHART_VERSION variable in shell scripts that reference the chart."""
+    CHART_VERSION variable in shell scripts that reference the chart, plus the version and
+    appVersion keys in the chart's own Chart.yaml (the one named after it)."""
     patterns = [CHART_VERSION_PATTERN]
     if file_path.suffix == ".sh" and CHART_REF in content:
         patterns.append(SHELL_VERSION_PATTERN)
+    if file_path.name == "Chart.yaml" and CHART_NAME_PATTERN.search(content):
+        patterns.append(CHART_YAML_VERSION_PATTERN)
     return patterns
 
 
