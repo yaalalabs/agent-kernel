@@ -709,7 +709,6 @@ export AK_SESSION__DYNAMODB__TTL=604800
 ```bash
 export AK_SESSION__TYPE=cosmosdb
 export AK_SESSION__COSMOSDB__TABLE_NAME=sessions
-export AK_SESSION__COSMOSDB__TABLE_ENDPOINT=https://your-account.documents.azure.com:443/
 export AK_SESSION__COSMOSDB__CONNECTION_STRING="DefaultEndpointsProtocol=https;AccountName=your-account;AccountKey=...;TableEndpoint=https://your-account.table.cosmos.azure.com:443/;"
 export AK_SESSION__COSMOSDB__TTL=604800
 # Caching not recommended for Azure Functions (stateless invocations)

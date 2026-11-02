@@ -98,9 +98,6 @@ The second run reads the value from Redis. With `session.type: in_memory` it wou
 
 In a real application you do not write this code: configuring `session.type` is enough, because `Runtime` and the framework adapters create and use the store for you. The script exists only so you can verify your configuration.
 
-A complete runnable version, including a REST agent and a network-free test, lives at
-[`examples/memory/local-session`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/memory/local-session).
-
 ## Session memory vs. knowledge bases
 
 Session memory is **per conversation**. A knowledge base is **durable, shared, and retrieved on demand**.
@@ -151,7 +148,9 @@ from agentkernel.openai import OpenAIModule, OpenAIToolBuilder
 docs = ChromaManager(persist_path="./chroma", name="Docs").add_schema(
     {"description": "Product documentation, retrieved by meaning."}
 )
-docs.write([{"text": "Our product offers a 30-day free trial with no credit card required."}])
+docs.write(
+    [{"text": "Our product offers a 30-day free trial with no credit card required.", "metadata": {"source": "pricing-faq"}}]
+)
 
 agent = Agent(
     name="docs_assistant",
