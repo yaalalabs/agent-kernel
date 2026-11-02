@@ -34,10 +34,10 @@ A **session store** holds conversation history and framework state. Agent Kernel
 
 **Rules of thumb:**
 
-- **Just trying Agent Kernel?** Leave `in_memory` (the default). There is nothing to install or run.
-- **Local development that should survive a restart?** Use **Redis**. One Docker command is all the setup you need.
-- **Deploying to a cloud?** Use that cloud's managed store: DynamoDB on AWS, Cosmos DB on Azure, Firestore on GCP. They need no server for you to operate.
-- **Need to choose between Redis and Valkey?** They are wire-compatible. Pick Valkey if you want the open-source project or ElastiCache's Valkey engine; otherwise Redis.
+- **First run:** leave `in_memory` (the default). There is nothing to install or run.
+- **Local development that should survive a restart:** use **Redis** — one Docker command is all the setup you need.
+- **Deploying to a cloud:** use that cloud's managed store — DynamoDB on AWS, Cosmos DB on Azure, Firestore on GCP. They need no server for you to operate.
+- **Choosing between Redis and Valkey:** they are wire-compatible. Pick Valkey if you want the open-source project or ElastiCache's Valkey engine; otherwise Redis.
 
 ### Quick chooser
 
@@ -53,135 +53,9 @@ flowchart TD
     C -->|GCP serverless| I[firestore]
 ```
 
-## Beginner setup: in-memory (nothing to configure)
-
-This is the default. Nothing is persisted when the process stops:
-
-```yaml
-# config.yaml
-session:
-  type: in_memory
-```
-
-That is enough for a first local run. Move on when you need persistence.
-
-## Recommended local setup: Redis
-
-Redis gives you persistent, restart-safe memory with a single local container.
-
-**1. Start Redis:**
-
-```bash
-docker run --rm -p 6379:6379 redis:7
-```
-
-**2. Install the extra:**
-
-```bash
-pip install "agentkernel[redis]"
-```
-
-**3. Create `config.yaml`:**
-
-```yaml
-session:
-  type: redis
-  redis:
-    url: redis://localhost:6379
-    ttl: 604800          # sessions expire after 7 days
-    prefix: "ak:sessions:"
-```
-
-If your Redis requires a password, put it in the URL:
-
-```yaml
-session:
-  redis:
-    url: redis://:your-password@localhost:6379
-```
-
-**4. Run your app.** The framework adapters store and load the session automatically; there is no extra code to write.
-
-:::note Session caching is optional
-Add a process-local LRU cache only when the same session always reaches the same process (sticky sessions):
-
-```yaml
-session:
-  cache:
-    size: 256
-```
-
-Leave it out for stateless, multi-instance deployments.
-:::
-
-## Cloud-managed equivalents
-
-Swap only the `session` block; the rest of your application is unchanged.
-
-### AWS: DynamoDB
-
-```bash
-pip install "agentkernel[aws]"
-```
-
-```yaml
-session:
-  type: dynamodb
-  dynamodb:
-    table_name: agent-kernel-sessions
-    ttl: 604800          # 0 disables expiry
-```
-
-The table needs a partition key named `session_id` and a sort key named `key`. Agent Kernel's Terraform modules create it for you.
-
-### Azure: Cosmos DB
-
-```bash
-pip install "agentkernel[azure]"
-```
-
-```yaml
-session:
-  type: cosmosdb
-  cosmosdb:
-    connection_string: "DefaultEndpointsProtocol=https;AccountName=your-account;AccountKey=your-key;TableEndpoint=https://your-account.table.cosmos.azure.com:443/;"
-    table_name: sessions
-    ttl: 604800          # 0 disables expiry
-```
-
-The Cosmos DB Table API table uses `session_id` as the partition key and `key` as the row key.
-
-### GCP: Firestore
-
-```bash
-pip install "agentkernel[gcp]"
-```
-
-```yaml
-session:
-  type: firestore
-  firestore:
-    collection_name: ak_sessions   # default
-    project_id: my-project         # optional; inferred from credentials
-    ttl: 604800                    # 0 disables expiry
-```
-
-Enable a Firestore TTL policy on the collection for the `expiry_time` field so expired sessions are removed automatically.
-
-### AWS: Valkey
-
-```bash
-pip install "agentkernel[valkey]"
-```
-
-```yaml
-session:
-  type: valkey
-  valkey:
-    url: valkey://localhost:6379   # use valkeys:// for TLS
-    ttl: 604800
-    prefix: "ak:sessions:"
-```
+Setup steps, env vars, and YAML for every backend — including caching — are in the
+[Session](./session.md#storage-backends) reference; the [Configuration](./configuration.md#session-storage)
+page lists every field. This page only helps you pick.
 
 ## Small working example
 
@@ -310,14 +184,13 @@ For a complete walkthrough, see the [Knowledge Bases guide](../advanced/knowledg
 |---|---|---|
 | `unknown session store type 'X'` | Typo or unsupported name | Use one of `in_memory`, `redis`, `valkey`, `dynamodb`, `cosmosdb`, `firestore` |
 | `session.type: redis requires the 'redis' extra` | Optional SDK not installed | `pip install "agentkernel[redis]"` (or the matching extra) |
-| Connection refused / timeout | Server not running or wrong URL | Start the server and check the URL; put a password in the URL |
+| Connection refused / timeout (Redis, Valkey) | Server not running or wrong URL | Start the server and check the URL; put a password in the URL |
 | Sessions disappear between runs | `in_memory`, or a new process/instance | Use a persistent backend |
 | Works locally, not across pods | Process-local cache or `in_memory` | Remove `session.cache` and use a shared backend |
 | DynamoDB `ResourceNotFoundException` or key error | Table missing or wrong keys | Partition key `session_id`, sort key `key` |
-| Cosmos DB authentication or endpoint error | Connection string missing or wrong field | Set `session.cosmosdb.connection_string` and `table_name` |
+| Cosmos DB connection or table error | Wrong connection-string format | Use the Table API format (`DefaultEndpointsProtocol=...;AccountName=...;AccountKey=...;TableEndpoint=...`), see [Session](./session.md#cosmosdb-storage) |
 | Firestore documents never expire | No TTL policy | Add a TTL policy on `expiry_time` |
 | Configuration seems ignored | Wrong working directory | Run where `config.yaml` lives, or set `AK_CONFIG_PATH_OVERRIDE` |
-| `Session ... not found, creating new session` | First load of that session | Expected; the session is created on first use |
 
 Agent Kernel logs `Building '<type>' session store` when it builds the store, which is the quickest
 way to confirm which backend is active.
