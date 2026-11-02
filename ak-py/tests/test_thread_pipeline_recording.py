@@ -433,6 +433,16 @@ class TestStreamRunnerRecording:
         assert messages[-1].content["run_id"] == "run-1"
         assert "Let me check" not in str(messages[-1].content)
 
+    def test_a_stream_that_errors_after_pausing_records_nothing(self, monkeypatch):
+        """Same rule on the queue: the pause reported by a run that then failed is not recorded."""
+        manager = _configure(monkeypatch, mode="stream")
+        _open_thread(manager)
+        event = {"type": "run_paused", "run_id": "run-1", "agent": AGENT_NAME, "interruptions": [{"id": "i1", "kind": "input_required"}]}
+
+        self._stream_runner([{"event": event}, {"error": "session store unavailable", "done": True}]).process(_marked_message())
+
+        assert [m.role for m in manager.get_messages("s1").messages] == ["user"]
+
     def test_a_halted_stream_records_nothing(self, monkeypatch):
         manager = _configure(monkeypatch, mode="stream")
         _open_thread(manager)

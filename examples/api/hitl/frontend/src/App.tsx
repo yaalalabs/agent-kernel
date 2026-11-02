@@ -62,8 +62,8 @@ export default function App() {
     );
     setLines(staged);
 
-    // Nothing is sent until every open card for this agent has an answer; then they go together.
-    const open = staged.filter((line) => line.kind === "pause" && line.agent === asked.agent && !line.settled);
+    // Nothing is sent until every open card from the same run has an answer; then they go together.
+    const open = staged.filter((line) => line.kind === "pause" && line.runId === asked.runId && !line.settled);
     const answers = open.flatMap((line) => (line.kind === "pause" && line.staged ? [{ line, staged: line.staged }] : []));
     if (answers.length < open.length) return;
 

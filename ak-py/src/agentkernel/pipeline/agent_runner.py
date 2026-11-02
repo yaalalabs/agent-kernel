@@ -372,11 +372,12 @@ class StreamAgentRunner(AgentRunner):
             self._send_to_output(message, chunk, status_code=None, dedup_suffix=f"{message.receive_count}-{chunk_count}")
             chunk_count += 1
 
-        if paused is not None:
-            # 202, not the 200 the ordinary branch records under: a paused run has not completed.
-            self._record_thread_reply(message, body, 202, paused)
-        elif not error_seen and deltas:
-            self._record_thread_reply(message, body, 200, "".join(deltas))
+        if not error_seen:
+            if paused is not None:
+                # 202, not the 200 the ordinary branch records under: a paused run has not completed.
+                self._record_thread_reply(message, body, 202, paused)
+            elif deltas:
+                self._record_thread_reply(message, body, 200, "".join(deltas))
 
         self._log.info(f"[STREAM AGENT DONE] request_id={request_id}, chunks={chunk_count}")
 

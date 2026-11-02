@@ -179,10 +179,11 @@ answering it. The pause is an `assistant` message holding
 `run_id`, `agent` and `interruptions`; the decision is a `user` message holding the `resume` block that
 was sent, with the prompt beside it when the turn carried both.
 
-The two fields always agree: `media_type` present means `content` is an object, absent means it is text. A
-human's decision is a `user` message because a person sent it, so the `user`/`assistant` roles are
-unchanged — a client tells the two structured kinds apart by `role`, or by `interruptions` versus
-`decisions` inside the payload.
+The two fields always agree: `media_type` present means `content` is an object or an array, absent
+means it is text. A labelled reply may be either; a pause and a decision are always objects. A human's
+decision is a `user` message because a person sent it, so the `user`/`assistant` roles are unchanged —
+a client tells the two structured kinds apart by `role`, or by the keys they carry:
+`content.interruptions` for a pause, `content.resume.decisions` for a decision.
 
 ## Renaming Threads
 

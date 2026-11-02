@@ -248,6 +248,25 @@ class TestAgentThreadRequestHandler:
         }
 
     @pytest.mark.asyncio
+    async def test_a_stream_that_errors_after_pausing_records_nothing(self, thread_enabled, registered_agent):
+        """The pause the client saw was never persisted, so recording it would be unanswerable.
+
+        `ChatService.execute_stream` yields a failure raised after the pause as an error chunk rather
+        than letting it propagate — the session store in `Runtime.stream`'s tail is the realistic one
+        — so the recorder sees a pause and an error in the same stream.
+        """
+        from agentkernel.core.event import PausedInterruption, RunPaused
+
+        event = RunPaused(run_id="run-1", agent=registered_agent.name, interruptions=[PausedInterruption(id="i1", kind="tool_call")])
+        handler = AgentThreadRequestHandler()
+        handler.chat_service = FakeChatService(chunks=[StreamChunk(event=event), StreamChunk(error="session store unavailable", done=True)])
+
+        gen = await handler._stream_with_recording(BaseRunRequest(prompt="refund it", session_id="s1", user_id="u1", agent=registered_agent.name))
+        _ = [frame async for frame in gen]
+
+        assert [m.role for m in thread_enabled.get_messages("s1").messages] == ["user"]
+
+    @pytest.mark.asyncio
     async def test_text_streamed_before_a_pause_is_not_recorded_beside_it(self, thread_enabled, registered_agent):
         """Parity: the non-streaming path returns the pause, never the partial message before it."""
         from agentkernel.core.event import PausedInterruption, RunPaused

@@ -155,6 +155,12 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
         the non-streaming path returns the paused reply rather than that partial message, so
         recording both here would make the same agent produce different history on two surfaces.
 
+        A stream that errors records nothing at all, the pause included. `ChatService.execute_stream`
+        turns a failure raised *after* the pause into a final error chunk rather than letting it
+        propagate, and the failure that matters is the session store in `Runtime.stream`'s tail — so
+        the pause the client just saw was never persisted, and recording it would leave a question in
+        the thread that nothing can answer.
+
         :param req: The chat request
         :return: Async generator yielding SSE-formatted frames
         :raises ValueError: If validation fails, no agent is available, or pre_run rejects
@@ -187,10 +193,11 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
                             interruptions=chunk.event.interruptions,
                         )
                     yield ResponseBuilder.stream_chunk(chunk, session_id, sse_format=True)
-                if paused is not None:
-                    recorder.post_run(req, paused)
-                elif not error_seen and deltas:
-                    recorder.post_run(req, "".join(deltas))
+                if not error_seen:
+                    if paused is not None:
+                        recorder.post_run(req, paused)
+                    elif deltas:
+                        recorder.post_run(req, "".join(deltas))
             except Exception as e:
                 error_chunk = StreamChunk(error=str(e), done=True)
                 yield ResponseBuilder.stream_chunk(error_chunk, session_id, sse_format=True)
