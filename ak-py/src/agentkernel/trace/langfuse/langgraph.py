@@ -7,6 +7,7 @@ from langfuse.langchain import CallbackHandler
 from ...core import Session
 from ...core.model import AgentReply, AgentRequest
 from ...framework.langgraph.langgraph import LangGraphRunner
+from .langfuse import LangFuse
 
 
 class LangFuseLangGraph(LangGraphRunner):
@@ -46,8 +47,11 @@ class LangFuseLangGraph(LangGraphRunner):
         :param requests: The requests to the agent.
         :return: The result of the agent's execution.
         """
-        with propagate_attributes(session_id=session.id, tags=["agentkernel"]):
-            with self._client.start_as_current_observation(name="Agent Kernel LangGraph", as_type="span") as span:
-                result = await super().run(agent, session, requests)
-                span.update(input=result.prompt, output=str(result))
+        try:
+            with propagate_attributes(session_id=session.id, tags=["agentkernel"]):
+                with self._client.start_as_current_observation(name="Agent Kernel LangGraph", as_type="span") as span:
+                    result = await super().run(agent, session, requests)
+                    span.update(input=result.prompt, output=str(result))
+        finally:
+            LangFuse.flush_on_lambda(self._client)
         return result

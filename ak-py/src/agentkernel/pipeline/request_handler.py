@@ -127,13 +127,15 @@ class RestHandler(AgentRESTRequestHandler):
         try:
             if not body.session_id:
                 raise HTTPException(status_code=400, detail="session_id is required")
-            if not body.prompt:
+            if not body.prompt and body.resume is None:
                 raise HTTPException(status_code=400, detail="prompt is required")
 
             # Unique request_id, distinct from session_id.
             request_id = str(uuid.uuid4())
 
-            self._log.info(f"[REQUEST START] session_id={body.session_id}, request_id={request_id}, agent={body.agent}, prompt={body.prompt[:50]}")
+            self._log.info(
+                f"[REQUEST START] session_id={body.session_id}, request_id={request_id}, agent={body.agent}, prompt={(body.prompt or '')[:50]}"
+            )
 
             # Offload the sync send so it doesn't block the event loop.
             queue_result = await asyncio.to_thread(self._enqueue_request, body, request_id)
@@ -265,7 +267,7 @@ class RequestHandler(RestHandler):
         # (ValueError -> HTTPException(400, detail={"error": ...})).
         if not body.session_id:
             raise HTTPException(status_code=400, detail={"error": "No session_id is provided in the request"})
-        if not body.prompt:
+        if not body.prompt and body.resume is None:
             raise HTTPException(status_code=400, detail={"error": "No prompt provided in the request", "session_id": body.session_id})
 
         self._reject_unroutable(body)

@@ -599,7 +599,7 @@ Try different frameworks. Migrate painlessly. Focus on building great tools, not
 ## Learn More
 
 - **[Tool Documentation](https://yaalalabs.github.io/agent-kernel/docs/core-concepts/tools)** — Complete guide with more examples
-- **[Code Examples](https://github.com/yaalalabs/agent-kernel/tree/main/examples)** — Working examples for all frameworks
+- **[Code Examples](https://github.com/yaalalabs/agent-kernel/tree/develop/examples)** — Working examples for all frameworks
 - **[Join our Community](https://github.com/yaalalabs/agent-kernel)** — Questions? We're here to help
 
 Start building framework-agnostic tools today. Your future self will thank you.

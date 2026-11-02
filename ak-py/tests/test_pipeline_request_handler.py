@@ -193,6 +193,18 @@ class TestRestAsync:
         # get_and_delete semantics: a second poll no longer finds the record.
         assert client.get(CHAT, params={"request_id": request_id}).status_code == 404
 
+    def test_resume_without_prompt_is_enqueued(self, monkeypatch, dummy_agent):
+        """A human-in-the-loop decision carries no prompt; direct mode accepts it, so the pipeline must too."""
+        _configure(monkeypatch, mode="rest_async")
+        resume = {"decisions": [{"id": "call_1", "status": "approved"}]}
+
+        accepted = _client().post(CHAT, json={"session_id": "s1", "agent": AGENT_NAME, "resume": resume})
+
+        assert accepted.status_code == 200
+        assert accepted.json()["status"] == "ACCEPTED"
+        [message] = InMemoryTransport().create_consumer(QueueName.INPUT).fetch(1, 0.5)
+        assert json.loads(message.body)["resume"]["decisions"][0] == {"id": "call_1", "status": "approved"}
+
 
 class TestStreamSSE:
     def test_stream_yields_sse_chunks(self, monkeypatch, dummy_agent, workers):
