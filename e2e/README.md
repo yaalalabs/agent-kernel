@@ -247,9 +247,9 @@ download is exercised by the unit tests and by manual Teams verification instead
 
 ### 3. Deploy to AWS ECS
 
-The primary deploy path is the `e2e-messaging-deploy` job in the **Weekly Integration
+The primary deploy path is the `e2e-messaging-test` job in the **Weekly Integration
 Tests** workflow (`.github/workflows/integration-test-weekly.yaml`) — dispatch it
-manually with the `provision_e2e_messaging` input enabled. It must run on a Linux
+manually with the `provision_e2e_messaging` input enabled, and it deploys before testing. It must run on a Linux
 runner: the
 container image vendors Python dependencies at build time, and building from a Mac ships
 macOS native extensions that crash the linux/amd64 container.
@@ -276,8 +276,8 @@ Adjust `terraform.tfvars` (region, prefix) before the first apply if needed.
 
 Networking is not provisioned here: the deployment runs in the VPC, private subnets and NAT
 gateway of the weekly integration base deployment (`examples/aws-serverless/openai`), read
-from its remote state. That base must be deployed first (the `deploy-openai` job; the
-`e2e-messaging-deploy` job waits for it), and must not be destroyed while this deployment
+from its remote state. That base must be deployed first (the `deploy-openai` job), and
+must not be destroyed while this deployment
 exists — its VPC can't be deleted with the e2e ECS tasks still attached. To use a different
 VPC, set `vpc_id` and `private_subnet_ids`.
 
@@ -300,10 +300,10 @@ VPC, set `vpc_id` and `private_subnet_ids`.
 **Via GitHub Actions (default):** the `e2e-messaging-test` job in the Weekly Integration
 Tests workflow scales the service up to 1 task, probes the deployment, registers the
 Telegram webhook, runs the full pytest suite, then scales the service back to 0 (even when
-a step fails) — weekly on schedule, or on demand via workflow_dispatch. Deployment is a
-separate, optional job (`e2e-messaging-deploy`) that runs only when the workflow is
-dispatched with `provision_e2e_messaging` enabled; scheduled runs test the existing
-deployment as-is. The tests need these in the `ci-tests` environment, in addition to the
+a step fails) — weekly on schedule, or on demand via workflow_dispatch. Only when the
+workflow is dispatched with `provision_e2e_messaging` enabled does the same job first
+(re)deploy the app; scheduled runs test the existing deployment as-is. One run at a time:
+a second run waits for the first to finish. The tests need these in the `ci-tests` environment, in addition to the
 deploy secrets above: secrets `E2E_SLACK_USER_TOKEN`, `E2E_TELEGRAM_API_ID`,
 `E2E_TELEGRAM_API_HASH`, `E2E_TELEGRAM_SESSION`; variables `E2E_SLACK_CHANNEL_ID`,
 `E2E_TELEGRAM_BOT_USERNAME`.

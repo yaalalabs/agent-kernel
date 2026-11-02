@@ -30,6 +30,11 @@ cluster=$(read_tfvar prefix)
 
 services=$(aws ecs list-services --cluster "$cluster" --region "$region" --query 'serviceArns' --output text)
 if [[ -z "$services" || "$services" == "None" ]]; then
+	# Nothing is running, so `down` has nothing to do (e.g. CI cleanup after a failed first provisioning).
+	if [[ "$count" -eq 0 ]]; then
+		echo "No ECS service in cluster '${cluster}' (region ${region}); nothing to scale down"
+		exit 0
+	fi
 	echo "Could not find any ECS service in cluster '${cluster}' (region ${region}) — provision it first" >&2
 	exit 1
 fi
