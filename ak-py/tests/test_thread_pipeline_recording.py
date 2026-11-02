@@ -234,6 +234,18 @@ class TestEdgeRecording:
         assert ATTR_THREAD not in _enqueued().attributes
         assert manager.get_thread("s1") is None
 
+    def test_a_resume_without_a_prompt_reaches_the_queue(self, monkeypatch, dummy_agent):
+        """Unmocked through the inherited route: both guards must let a human-in-the-loop decision through."""
+        _configure(monkeypatch, mode="rest_async")
+        resume = {"decisions": [{"id": "call_1", "status": "approved"}]}
+
+        response = _client().post(CHAT, json={"session_id": "s1", "user_id": "u1", "agent": AGENT_NAME, "resume": resume})
+
+        assert response.status_code == 200
+        message = _enqueued()
+        assert message.attributes[ATTR_THREAD] == "1"
+        assert json.loads(message.body)["requests"] == [{"type": "resume", **resume}]
+
     def test_missing_prompt_keeps_the_pipeline_error_shape(self, monkeypatch, dummy_agent):
         _configure(monkeypatch, mode="rest_async")
 
