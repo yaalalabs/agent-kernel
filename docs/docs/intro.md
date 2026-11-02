@@ -132,7 +132,7 @@ Easily extend Agent Kernel with custom framework adapters, memory back-ends, and
   - **Volatile Cache**: Request-scoped temporary storage for RAG context, file content, and intermediate data
   - **Non-Volatile Cache**: Session-persistent storage for user preferences, metadata, and configurations
   
-  [Learn more about session management →](/docs/core-concepts/session) | [Advanced memory features →](/docs/architecture/memory-management)
+  [Learn more about session management →](/docs/core-concepts/session) | [Choose a memory backend →](./core-concepts/memory-backends.md) | [Advanced memory features →](/docs/architecture/memory-management)
 - **Execution Hooks**: Powerful pre and post-execution hooks for ultimate control
   - **Pre-execution hooks**: Guardrails, RAG context injection, input validation, authentication
   - **Post-execution hooks**: Response moderation, disclaimers, output filtering, analytics

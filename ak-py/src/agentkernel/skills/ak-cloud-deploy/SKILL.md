@@ -157,7 +157,7 @@ session:
   type: dynamodb
   dynamodb:
     table_name: ${DYNAMODB_MEMORY_TABLE}
-    region: ${AWS_REGION}
+    ttl: 604800          # 0 disables expiry
 ```
 
 #### Cosmos DB sessions (Azure)
@@ -177,9 +177,9 @@ dependencies = [
 session:
   type: cosmosdb
   cosmosdb:
-    endpoint: ${AZURE_COSMOS_ENDPOINT}
-    database_name: ${AZURE_COSMOS_DATABASE}
-    container_name: ${AZURE_COSMOS_CONTAINER}
+    connection_string: ${AZURE_COSMOS_CONNECTION_STRING}
+    table_name: ${AZURE_COSMOS_TABLE}
+    ttl: 604800          # 0 disables expiry
 ```
 
 #### Firestore sessions (GCP)

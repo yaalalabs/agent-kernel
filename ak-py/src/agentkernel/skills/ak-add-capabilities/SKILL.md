@@ -7,7 +7,7 @@ description: >
   scheduled tasks (deferred and recurring chat execution), the sandbox capability
   (isolated code execution), and secret resolution (environment first, then AWS SSM
   Parameter Store, Kubernetes Secrets mounted into the pod, or a custom provider). Session
-  persistence supports Redis, DynamoDB (AWS), Cosmos DB (Azure), and Firestore (GCP).
+  persistence supports Redis, Valkey, DynamoDB (AWS), Cosmos DB (Azure), and Firestore (GCP).
   Conversation threads support in-memory, Redis, Valkey, DynamoDB (AWS), Firestore (GCP),
   and Cosmos DB (Azure) backends. Generates configuration and code changes needed.
 license: Apache-2.0
@@ -272,7 +272,7 @@ export AWS_REGION="us-east-1"
 
 #### Session Persistence
 
-**Ask:** Which backend — Redis, DynamoDB (AWS), Cosmos DB (Azure), or Firestore (GCP)?
+**Ask:** Which backend — Redis, Valkey, DynamoDB (AWS), Cosmos DB (Azure), or Firestore (GCP)?
 
 **For Redis:**
 
@@ -287,11 +287,33 @@ dependencies = [
 ```yaml
 session:
   type: redis
-  cache: 256                    # LRU cache size (optional, improves performance)
+  cache:                        # Optional LRU cache; omit for stateless multi-instance deployments
+    size: 256
   redis:
     prefix: "ak:<project>:"    # Key prefix for namespacing
     url: "redis://localhost:6379"
     ttl: 3600                   # Session TTL in seconds (optional)
+```
+
+**For Valkey:**
+
+1. Update `pyproject.toml`:
+```toml
+dependencies = [
+    "agentkernel[openai,api,valkey]>=0.9.5",
+]
+```
+
+2. Update `config.yaml`:
+```yaml
+session:
+  type: valkey
+  cache:
+    size: 256
+  valkey:
+    prefix: "ak:<project>:"
+    url: "valkey://localhost:6379"   # use valkeys:// for SSL
+    ttl: 3600
 ```
 
 **For DynamoDB:**
@@ -307,14 +329,14 @@ dependencies = [
 ```yaml
 session:
   type: dynamodb
-  cache: 256
+  cache:
+    size: 256
   dynamodb:
     table_name: "<your-table-name>"
-    region: "us-east-1"
     ttl: 3600
 ```
 
-3. Create a DynamoDB table with partition key `session_id` (String) and sort key `key` (String). Enable TTL on `expiry_time` attribute.
+3. Create a DynamoDB table with partition key `session_id` (String) and sort key `key` (String). Enable TTL on `expiry_time` attribute. The AWS region comes from the standard boto3 environment/credential chain, not from this block.
 
 **For Cosmos DB:**
 
@@ -329,14 +351,15 @@ dependencies = [
 ```yaml
 session:
   type: cosmosdb
-  cache: 256
+  cache:
+    size: 256
   cosmosdb:
-    endpoint: "https://<account>.table.cosmos.azure.com:443/"
+    connection_string: "AccountEndpoint=https://<account>.documents.azure.com:443/;AccountKey=<key>;"
     table_name: "<your-table-name>"
     ttl: 3600
 ```
 
-3. Set `AZURE_COSMOS_KEY` environment variable.
+3. Take the connection string from the Azure Portal (Cosmos DB account → Keys) and keep it out of source control. The table uses `session_id` as the partition key and `key` as the row key.
 
 **For Firestore (GCP):**
 
@@ -351,7 +374,8 @@ dependencies = [
 ```yaml
 session:
   type: firestore
-  cache: 256
+  cache:
+    size: 256
   firestore:
     collection_name: "ak_sessions"
     project_id: "<your-gcp-project-id>"   # optional, inferred from ADC if omitted

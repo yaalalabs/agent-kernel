@@ -39,6 +39,10 @@ graph TB
     style C fill:#25c2a0,stroke:#fff,stroke-width:2px,color:#fff
 ```
 
+:::tip Not sure which backend to choose?
+See [Choosing a Memory Backend](./memory-backends.md) for a beginner-friendly comparison, recommended defaults, and a working example.
+:::
+
 ## What is a Session?
 
 A Session:
@@ -160,10 +164,11 @@ Persistent, high-performance storage for production deployments on AWS (ElastiCa
 ```bash
 export AK_SESSION__TYPE=redis
 export AK_SESSION__REDIS__URL=redis://localhost:6379
-export AK_SESSION__REDIS__PASSWORD=your-password
 export AK_SESSION__REDIS__TTL=604800  # 7 days in seconds
 export AK_SESSION__REDIS__PREFIX=ak:sessions:
 ```
+
+If your Redis requires a password, include it in the URL: `redis://:your-password@localhost:6379`.
 
 **Characteristics:**
 - ✅ Persistent across restarts
@@ -272,7 +277,6 @@ Serverless, fully-managed storage for Azure deployments:
 ```bash
 export AK_SESSION__TYPE=cosmosdb
 export AK_SESSION__COSMOSDB__TABLE_NAME=sessions
-export AK_SESSION__COSMOSDB__TABLE_ENDPOINT=https://your-account.documents.azure.com:443/
 export AK_SESSION__COSMOSDB__CONNECTION_STRING=AccountEndpoint=https://...;AccountKey=...
 export AK_SESSION__COSMOSDB__TTL=604800  # 7 days (0 to disable)
 ```
@@ -294,9 +298,9 @@ export AK_SESSION__COSMOSDB__TTL=604800  # 7 days (0 to disable)
 - Minimal operational overhead preferred
 
 **Requirements:**
-- Cosmos DB table with partition key `/session_id`
+- Cosmos DB Table API table with partition key `session_id` and row key `key`
 - Optional: TTL configured on the table
-- Appropriate Azure permissions (connection string or managed identity)
+- A Cosmos DB connection string (Azure Portal → Cosmos DB account → Keys)
 
 **Note**: Agent Kernel's Terraform modules automatically create the required Cosmos DB resources with proper configuration.
 
@@ -327,9 +331,9 @@ export AK_SESSION__FIRESTORE__TTL=604800                   # 7 days (0 to disabl
 
 **Note**: The GCP Terraform modules create the Firestore database and inject the `AK_SESSION__*` environment variables automatically when `create_firestore_db = true`. Requires the `agentkernel[gcp]` extra.
 
-### Session Caching (Redis, Valkey, DynamoDB & Cosmos DB)
+### Session Caching (Redis, Valkey, DynamoDB, Cosmos DB & Firestore)
 
-Redis, Valkey, DynamoDB, and Cosmos DB backends all support optional in-memory session caching for improved performance:
+Redis, Valkey, DynamoDB, Cosmos DB, and Firestore backends all support optional in-memory session caching for improved performance:
 
 ```bash
 # Enable in-memory session caching with LRU eviction
@@ -585,15 +589,21 @@ Configure session behavior via environment variables or configuration files.
 # ============================================
 # Storage Type Selection (Multi-Cloud)
 # ============================================
-export AK_SESSION__TYPE=redis  # Options: 'in_memory', 'redis', 'dynamodb' (AWS), 'cosmosdb' (Azure)
+export AK_SESSION__TYPE=redis  # in_memory | redis | valkey | dynamodb | cosmosdb | firestore
 
 # ============================================
 # Redis Configuration (AWS, Azure & GCP)
 # ============================================
-export AK_SESSION__REDIS__URL=redis://localhost:6379
-export AK_SESSION__REDIS__PASSWORD=your-password
+export AK_SESSION__REDIS__URL=redis://localhost:6379  # redis://:password@host:6379 to include a password
 export AK_SESSION__REDIS__TTL=604800  # 7 days in seconds
 export AK_SESSION__REDIS__PREFIX=ak:sessions:
+
+# ============================================
+# Valkey Configuration (AWS & self-hosted)
+# ============================================
+export AK_SESSION__VALKEY__URL=valkey://localhost:6379  # valkeys:// for SSL
+export AK_SESSION__VALKEY__TTL=604800  # 7 days in seconds
+export AK_SESSION__VALKEY__PREFIX=ak:sessions:
 
 # ============================================
 # DynamoDB Configuration (AWS)
@@ -604,13 +614,19 @@ export AK_SESSION__DYNAMODB__TTL=604800  # 7 days (0 to disable)
 # ============================================
 # Cosmos DB Configuration (Azure)
 # ============================================
+export AK_SESSION__COSMOSDB__CONNECTION_STRING="AccountEndpoint=https://...;AccountKey=..."
 export AK_SESSION__COSMOSDB__TABLE_NAME=sessions
-export AK_SESSION__COSMOSDB__TABLE_ENDPOINT=https://your-account.documents.azure.com:443/
-export AK_SESSION__COSMOSDB__CONNECTION_STRING=AccountEndpoint=https://...;AccountKey=...
 export AK_SESSION__COSMOSDB__TTL=604800  # 7 days (0 to disable)
 
 # ============================================
-# Session Caching (Redis, DynamoDB & Cosmos DB)
+# Firestore Configuration (GCP)
+# ============================================
+export AK_SESSION__FIRESTORE__COLLECTION_NAME=ak_sessions
+export AK_SESSION__FIRESTORE__PROJECT_ID=my-project  # optional; inferred from credentials if omitted
+export AK_SESSION__FIRESTORE__TTL=604800  # 7 days (0 to disable)
+
+# ============================================
+# Session Caching (Redis, Valkey, DynamoDB, Cosmos DB & Firestore)
 # ============================================
 export AK_SESSION__CACHE__SIZE=256  # Number of sessions to cache (0 to disable)
 ```
@@ -619,24 +635,32 @@ export AK_SESSION__CACHE__SIZE=256  # Number of sessions to cache (0 to disable)
 
 ```yaml
 session:
-  type: redis  # or 'in_memory' or 'dynamodb'
-  
+  type: redis  # in_memory | redis | valkey | dynamodb | cosmosdb | firestore
+
   redis:
     url: redis://localhost:6379
-    password: your-password
     ttl: 604800  # 7 days in seconds
     prefix: "ak:sessions:"
-  
+
+  valkey:
+    url: valkey://localhost:6379  # valkeys:// for SSL
+    ttl: 604800
+    prefix: "ak:sessions:"
+
   dynamodb:
     table_name: agent-kernel-sessions
     ttl: 604800  # 7 days in seconds (0 to disable)
-  
+
   cosmosdb:
+    connection_string: "AccountEndpoint=https://...;AccountKey=..."
     table_name: sessions
-    table_endpoint: https://your-account.documents.azure.com:443/
-    connection_string: AccountEndpoint=https://...;AccountKey=...
     ttl: 604800  # 7 days in seconds (0 to disable)
-  
+
+  firestore:
+    collection_name: ak_sessions
+    project_id: my-project  # optional; inferred from credentials if omitted
+    ttl: 604800  # 7 days in seconds (0 to disable)
+
   cache:
     size: 256  # Enable caching (0 to disable)
 ```
@@ -865,7 +889,7 @@ exists = session_manager.has_session("custom-id")
 Sessions are the foundation of conversational AI in Agent Kernel:
 
 - **Automatic Management**: Sessions are created and managed automatically in CLI and API modes
-- **Multi-Backend Support**: Choose between in-memory (dev), Redis (production), or DynamoDB (serverless)
+- **Multi-Backend Support**: Choose between in-memory (dev), Redis/Valkey (production), or DynamoDB, Cosmos DB, Firestore (serverless)
 - **Framework Agnostic**: Works seamlessly with OpenAI, CrewAI, LangGraph, ADK
 - **State Persistence**: Conversation history and context maintained across interactions
 - **Flexible Storage**: TTL-based expiration, caching, and high-availability options
@@ -873,17 +897,18 @@ Sessions are the foundation of conversational AI in Agent Kernel:
 
 **Quick Reference:**
 
-| Feature | In-Memory | Redis | DynamoDB |
-|---------|-----------|-------|----------|
-| **Persistence** | ❌ Lost on restart | ✅ Persistent | ✅ Persistent |
-| **Multi-Process** | ❌ Single process | ✅ Distributed | ✅ Distributed |
-| **Performance** | ⚡ Fastest | ⚡ Sub-millisecond | 🔄 ~10-20ms |
-| **Setup** | ✅ None required | 🔧 Redis server | 🔧 AWS account |
-| **Best For** | Development | Containerized prod | Serverless |
-| **Caching** | N/A | ✅ Optional | ✅ Optional |
+| Feature | In-Memory | Redis | Valkey | DynamoDB | Cosmos DB | Firestore |
+|---------|-----------|-------|--------|----------|-----------|-----------|
+| **Persistence** | ❌ Lost on restart | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Multi-Process** | ❌ Single process | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Performance** | ⚡ Fastest | ⚡ Sub-millisecond | ⚡ Sub-millisecond | 🔄 ~10-20ms | 🔄 ~10-20ms | 🔄 Higher latency |
+| **Setup** | ✅ None required | 🔧 Redis server | 🔧 Valkey server | 🔧 AWS account | 🔧 Azure account | 🔧 GCP account |
+| **Best For** | Development | Containerized prod | Containerized prod (open source) | Serverless (AWS) | Serverless (Azure) | Serverless (GCP) |
+| **Caching** | N/A | ✅ Optional | ✅ Optional | ✅ Optional | ✅ Optional | ✅ Optional |
 
 ## Related Documentation
 
+- **[Choosing a Memory Backend](./memory-backends.md)** - Beginner comparison, setup, and a working example
 - **[Memory Management](/docs/architecture/memory-management)** - Advanced caching and auxiliary memory features
 - **[Execution Hooks](/docs/integrations/hooks)** - Access and modify session state in hooks
 - **[Configuration](/docs/core-concepts/configuration)** - Complete configuration reference

@@ -347,8 +347,9 @@ For other frameworks, use their native tool binding mechanism.
 ```yaml
 # Session configuration (if not in-memory)
 session:
-  type: redis          # redis | dynamodb | cosmosdb
-  cache: 256           # LRU cache size (optional)
+  type: redis          # redis | valkey | dynamodb | cosmosdb | firestore
+  cache:               # Optional LRU cache; omit for stateless multi-instance deployments
+    size: 256
   redis:
     prefix: "ak:<project>:"
     url: "redis://localhost:6379"

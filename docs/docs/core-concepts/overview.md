@@ -132,7 +132,7 @@ session = Session(id="user-123")
 - Volatile and non-volatile caches
 - Context preservation
 
-[Learn more about Sessions →](./session)
+[Learn more about Sessions →](./session) | [Choose a memory backend →](./memory-backends.md)
 
 ### 5. **Module**
 
@@ -342,6 +342,8 @@ if __name__ == "__main__":
 Sessions and caches help with short- to medium-term conversational context, but many applications also need durable, cross-session knowledge that persists across conversations and agents. Examples include product manuals, user or customer profiles, organizational policies, or domain knowledge graphs.
 
 Agent Kernel's **Knowledge Base** support provides a unified way to connect multiple storage backends - vector stores, graph databases, SQL engines, and directories of markdown documents - and expose them to agents as callable tools. Each backend declares what it supports, and the agent is given tools for exactly those operations.
+
+For help deciding between session memory and a knowledge base, see [Choosing a Memory Backend](./memory-backends.md).
 
 ### Core Components
 
