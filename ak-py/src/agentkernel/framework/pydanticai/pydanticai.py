@@ -388,9 +388,7 @@ class PydanticAIRunner(BaseRunner):
         """
         if decision.status == "approved":
             return ToolApproved(override_args=decision.payload) if decision.payload is not None else ToolApproved()
-        if decision.status == "denied":
-            return ToolDenied(message=decision.message) if decision.message else ToolDenied()
-        return ToolDenied(message=self.CANCELLED_DECISION_MESSAGE)
+        return ToolDenied(message=self._rejection_text(decision))
 
     async def resume(
         self,

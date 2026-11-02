@@ -266,6 +266,30 @@ class Runner(ABC):
     "nobody decided" apart from "refused". Override per runner if a framework needs different
     phrasing."""
 
+    DENIED_DECISION_MESSAGE: str = (
+        "A human reviewer refused this request, so it was not carried out. Do not retry it, do not "
+        "ask for approval again, and do not report it as done."
+    )
+    """What the model is told when a human denies a paused run. The frameworks' own defaults do not
+    serve: the OpenAI SDK says only "not approved", which a model reads as approval still pending."""
+
+    DENIED_DECISION_REASON: str = "{refusal} The reviewer's reason: {reason}"
+    """How a human's own words are framed. They are quoted inside the refusal rather than standing
+    in for it, because a framework substitutes this text for the tool call's output: on their own
+    they read as what the tool returned, and the model reports the action as carried out."""
+
+    def _rejection_text(self, decision: ResumeDecision) -> str:
+        """What a refused tool call reports back to the model.
+
+        :param decision: The human's decision, denied or cancelled.
+        :return: The text to hand the framework in place of the call's output.
+        """
+        if decision.status == "cancelled":
+            return self.CANCELLED_DECISION_MESSAGE
+        if decision.message:
+            return self.DENIED_DECISION_REASON.format(refusal=self.DENIED_DECISION_MESSAGE, reason=decision.message)
+        return self.DENIED_DECISION_MESSAGE
+
     def __init__(self, name: str):
         """
         Initializes a Runner instance.

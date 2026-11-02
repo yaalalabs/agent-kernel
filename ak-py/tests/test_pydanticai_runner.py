@@ -1235,6 +1235,16 @@ class TestPydanticAIResumeEnvelope:
 
 
 class TestPydanticAIApprovals:
+    @pytest.mark.parametrize("message", [None, "not during business hours"])
+    def test_a_denial_never_reaches_the_model_as_a_bare_result(self, message):
+        """``ToolDenied.message`` is what the model sees, so it has to say the call was refused."""
+        denied = PydanticAIRunner()._approval(ResumeDecision(id="call-1", status="denied", message=message))
+
+        assert denied.message != message, "the human's words must not stand in for the call's output"
+        assert "refused" in denied.message
+        if message:
+            assert message in denied.message
+
     @pytest.mark.asyncio
     @pytest.mark.parametrize("status,expected", [("approved", "refunded 100"), ("denied", None), ("cancelled", None)])
     async def test_the_three_verbs_render_onto_the_approval_channel(self, status, expected):

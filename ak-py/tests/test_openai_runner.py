@@ -1285,10 +1285,10 @@ class TestOpenAIResume:
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
-        "status,expect_approved,expect_message",
-        [("approved", True, None), ("denied", False, "too expensive"), ("cancelled", False, None)],
+        "status,expect_approved",
+        [("approved", True), ("denied", False), ("cancelled", False)],
     )
-    async def test_the_three_verbs_reach_the_model_differently(self, status, expect_approved, expect_message):
+    async def test_the_three_verbs_reach_the_model_differently(self, status, expect_approved):
         """`denied` and `cancelled` must be distinguishable in what the model receives.
 
         The SDK has only approve and reject, so a bool would collapse them — and the model would
@@ -1311,7 +1311,37 @@ class TestOpenAIResume:
         else:
             assert state.approved == []
             sent = state.rejected[0][1]
-            assert (sent == expect_message) if expect_message else ("not a refusal" in sent)
+            if status == "denied":
+                assert "refused" in sent and "too expensive" in sent, "the reason is quoted inside the refusal"
+            else:
+                assert "not a refusal" in sent
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("message", [None, "not during business hours"])
+    async def test_a_denial_never_reaches_the_model_as_a_bare_result(self, message):
+        """``rejection_message`` *is* the call's output, so a refusal has to say it was refused.
+
+        Handed the human's bare words, the model reads them as what the tool returned and reports
+        the action as carried out. Handed nothing, it gets the SDK's "not approved", which reads as
+        approval still pending and earns the user a second confirmation prompt.
+        """
+        runner, session, agent = OpenAIRunner(), Session("s"), _mock_agent()
+        paused = await _pause_once(runner, session, agent)
+        record = PausedRunState.get(session, paused.run_id)
+        requests, decisions = _resume_requests("call-1", status="denied", message=message)
+        state = _FakeState([_approval_item()])
+
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner, patch("agentkernel.framework.openai.openai.RunState") as MockState:
+            MockState.from_json = AsyncMock(return_value=state)
+            MockRunner.run = AsyncMock(return_value=_done_result())
+
+            await runner.resume(agent, session, requests, decisions, record)
+
+        sent = state.rejected[0][1]
+        assert sent != message, "the human's words must not stand in for the call's output"
+        assert "refused" in sent and "not carried out" in sent
+        if message:
+            assert message in sent, "and the reason still has to reach the model"
 
     @pytest.mark.asyncio
     async def test_cancelled_does_not_read_as_a_refusal(self):

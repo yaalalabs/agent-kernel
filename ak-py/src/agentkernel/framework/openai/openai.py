@@ -351,9 +351,10 @@ class OpenAIRunner(BaseRunner):
         """
         Renders each decision onto the restored state.
 
-        `cancelled` reaches the model as a rejection carrying AK's own wording, because the SDK has
-        only approve and reject: without it, "nobody decided" would be indistinguishable from "the
-        human refused", which is the distinction the three-valued status exists to keep.
+        The SDK has only approve and reject, so both `denied` and `cancelled` reject — carrying
+        AK's own wording from :meth:`_rejection_text`, since `rejection_message` **becomes the
+        call's output**. Left to the SDK a refusal reads as approval still pending, and left to the
+        human's bare words it reads as what the tool returned.
 
         :param state: The restored state.
         :param decisions: The human's decisions, already validated against the record by Runtime.
@@ -369,10 +370,8 @@ class OpenAIRunner(BaseRunner):
                 )
             if decision.status == "approved":
                 state.approve(item)
-            elif decision.status == "denied":
-                state.reject(item, rejection_message=decision.message)
             else:
-                state.reject(item, rejection_message=self.CANCELLED_DECISION_MESSAGE)
+                state.reject(item, rejection_message=self._rejection_text(decision))
 
     async def resume(
         self,

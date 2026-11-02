@@ -126,6 +126,21 @@ distinction; see the table below.
 A boolean would collapse the two, and the model would confidently tell your customer they were
 turned down.
 
+### What a refusal actually says to the model
+
+On OpenAI and Pydantic AI the refusal text **becomes the gated call's output** — there is no
+separate "this was rejected" flag the model sees. So Agent Kernel sends a framed sentence, and
+quotes your `message` inside it rather than in place of it:
+
+> A human reviewer refused this request, so it was not carried out. Do not retry it, do not ask for
+> approval again, and do not report it as done. The reviewer's reason: not during business hours
+
+Neither half is cosmetic. With the framework's own default the OpenAI SDK says only "Tool execution
+was not approved", which a model reads as approval still *pending* — it replies by asking the human
+to confirm. With the bare reason and no frame, the model reads it as what the tool returned and
+reports the action as carried out. Override `DENIED_DECISION_MESSAGE` and `DENIED_DECISION_REASON`
+on your runner if you want different wording.
+
 ### Answering one question at a time
 
 A pause can hold several interruptions. You may answer some now and the rest later — the remainder
