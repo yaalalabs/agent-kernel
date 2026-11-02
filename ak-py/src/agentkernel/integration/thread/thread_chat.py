@@ -151,15 +151,11 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
         end. A halted/errored stream (error chunk, no raise) or an empty one must not
         record a blank assistant message in the thread.
 
-        A run that pauses records the pause and nothing else, even when text streamed before it:
-        the non-streaming path returns the paused reply rather than that partial message, so
-        recording both here would make the same agent produce different history on two surfaces.
-
-        A stream that errors records nothing at all, the pause included. `ChatService.execute_stream`
-        turns a failure raised *after* the pause into a final error chunk rather than letting it
-        propagate, and the failure that matters is the session store in `Runtime.stream`'s tail — so
-        the pause the client just saw was never persisted, and recording it would leave a question in
-        the thread that nothing can answer.
+        A run that pauses records the pause alone, not the text that streamed before it, so this
+        surface and the non-streaming one hold the same history. An errored stream records nothing
+        at all, the pause included: `ChatService.execute_stream` turns a failure raised after the
+        pause into an error chunk, and that failure is the one that never persisted the pause — so
+        recording it would leave a question in the thread that nothing can answer.
 
         :param req: The chat request
         :return: Async generator yielding SSE-formatted frames

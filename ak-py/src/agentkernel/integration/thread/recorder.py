@@ -62,19 +62,10 @@ class ThreadRecorder:
     def _as_user_message(req: BaseChatRequest) -> tuple[Any, Optional[str]]:
         """The turn as the request carried it: its text, or the decision it answered a pause with.
 
-        A resume-only request has no prompt — ``BaseChatRequest.prompt`` is ``str = ""`` precisely so a
-        decision can stand alone — so recording ``req.prompt`` wrote an empty message for every decision
-        a human made.
-
-        The validated ``ResumeSpec`` is nested whole under ``resume`` rather than flattened, so the
-        stored object remains exactly a ``ResumeSpec``: flattening would put a thread-owned ``prompt``
-        key inside Agent Kernel's own namespace, where a later ``ResumeSpec`` field could collide with
-        it and a reader could not tell the two apart. The pair is built as one literal because key
-        insertion order is key order in ``model_dump_json``, and ``prompt`` precedes ``resume`` on
-        ``BaseChatRequest`` itself.
-
-        Nothing here reads ``ResumeDecision.status``: approved, denied and cancelled reach the store
-        inside the payload and nowhere else, so what is stored never depends on what a decision meant.
+        A resume-only request has no prompt, so recording ``req.prompt`` alone wrote an empty message
+        for every decision a human made. The ``ResumeSpec`` is nested whole under ``resume`` rather
+        than flattened, so a thread-owned ``prompt`` key can never collide with one of its fields, and
+        the pair is one literal because insertion order is key order in ``model_dump_json``.
 
         :param req: The originating chat request.
         :return: The message content, and its label when the turn carried a decision.
@@ -103,10 +94,8 @@ class ThreadRecorder:
     def _as_thread_message(result: Any, media_type: Optional[str] = None) -> tuple[Any, Optional[str]]:
         """Render a reply as the (content, media_type) pair the thread store holds.
 
-        **A paused run is stored as the object its reply derived**, so history carries the question
-        rather than a string of it. That branch is checked first because ``AgentPausedReplyAny`` is an
-        ``AgentReplyAny`` subclass carrying no label of its own: left to the branches below it would
-        fall through to ``str(result)`` and be stored as text.
+        A paused run is checked first: ``AgentPausedReplyAny`` subclasses ``AgentReplyAny`` and carries
+        no label of its own, so the branches below would store the question as a string of itself.
 
         The callers pass three different things, which is what makes a single ``str()`` wrong. The
         direct handlers pass an ``AgentReply``, whose ``__str__`` already yields JSON, and the

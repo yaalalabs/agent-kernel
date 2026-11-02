@@ -17,9 +17,8 @@ from ...core.util.payload import JSONPayload
 HITL_MEDIA_TYPE = "application/json"
 """The label on a pause or a decision message: an object, not text.
 
-Deliberately not a vendor type. `application/a2ui+json` names an external standard; Agent Kernel
-owns none for pause/resume, and a `role` of `assistant` carrying `interruptions` or `user` carrying
-`decisions` already says which kind a message is. One constant because three writers set it.
+Not a vendor type: Agent Kernel owns no standard for pause/resume, and `role` plus the payload's
+own keys already say which kind a message is.
 """
 
 

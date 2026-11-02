@@ -204,10 +204,9 @@ class AgentRunner:
         """
         Pick what the thread recorder should store for one response.
 
-        A paused run is the exception: its reply never reaches this process, so `result` holds the
-        serialised pause rather than something the agent said. The body carries the pause keys
-        beside it — `ResponseBuilder` promotes them so a client can branch without parsing `result`
-        — and this is such a client.
+        A paused run is the exception: `result` holds the serialised pause, not something the agent
+        said. `ResponseBuilder` promotes the pause keys beside it so a client can branch without
+        parsing `result`, and this is such a client.
 
         :param agent_response: The response body the chat service built, or a non-dict reply.
         :param session_id: The request's session, for a body that carries none of its own.
@@ -223,11 +222,10 @@ class AgentRunner:
     def _paused_reply(source: dict, session_id: str) -> AgentPausedReplyAny:
         """Rebuild the reply a paused run produced from the pause keys its source carries.
 
-        Neither runner holds the reply itself — one has the response body `ResponseBuilder` built,
-        the other a streamed event — but both carry the keys it was built from, because a client
-        has to branch on a pause without parsing `result`. Rebuilding the model rather than
-        assembling a dict keeps the recorded content coming from `AgentPausedReplyAny`'s own
-        validator, which is what makes every surface store the same bytes for the same pause.
+        Neither runner holds the reply itself — one has a response body, the other a streamed event
+        — but both carry the keys it was built from. Rebuilding the model rather than assembling a
+        dict keeps the content coming from `AgentPausedReplyAny`'s own validator, so every surface
+        stores the same bytes for the same pause.
 
         :param source: The response body or the streamed event, holding the pause keys.
         :param session_id: The request's session, used when the source carries none of its own.
