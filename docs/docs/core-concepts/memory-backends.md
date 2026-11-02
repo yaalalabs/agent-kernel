@@ -39,6 +39,20 @@ A **session store** holds conversation history and framework state. Agent Kernel
 - **Deploying to a cloud?** Use that cloud's managed store: DynamoDB on AWS, Cosmos DB on Azure, Firestore on GCP. They need no server for you to operate.
 - **Need to choose between Redis and Valkey?** They are wire-compatible. Pick Valkey if you want the open-source project or ElastiCache's Valkey engine; otherwise Redis.
 
+### Quick chooser
+
+```mermaid
+flowchart TD
+    A[Should memory survive a restart?] -->|No| B[in_memory]
+    A -->|Yes| C{Where will you deploy?}
+    C -->|Local dev or containers| D{Prefer fully open source?}
+    D -->|No| E[redis]
+    D -->|Yes| F[valkey]
+    C -->|AWS serverless| G[dynamodb]
+    C -->|Azure serverless| H[cosmosdb]
+    C -->|GCP serverless| I[firestore]
+```
+
 ## Beginner setup: in-memory (nothing to configure)
 
 This is the default. Nothing is persisted when the process stops:
@@ -210,6 +224,9 @@ The second run reads the value from Redis. With `session.type: in_memory` it wou
 
 In a real application you do not write this code: configuring `session.type` is enough, because `Runtime` and the framework adapters create and use the store for you. The script exists only so you can verify your configuration.
 
+A complete runnable version, including a REST agent and a network-free test, lives at
+[`examples/memory/local-session`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/memory/local-session).
+
 ## Session memory vs. knowledge bases
 
 Session memory is **per conversation**. A knowledge base is **durable, shared, and retrieved on demand**.
@@ -285,6 +302,24 @@ okf:
 ```
 
 For a complete walkthrough, see the [Knowledge Bases guide](../advanced/knowledge-bases.md) and the runnable examples under `examples/cli/knowledgebase/openai/`.
+
+## Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| `unknown session store type 'X'` | Typo or unsupported name | Use one of `in_memory`, `redis`, `valkey`, `dynamodb`, `cosmosdb`, `firestore` |
+| `session.type: redis requires the 'redis' extra` | Optional SDK not installed | `pip install "agentkernel[redis]"` (or the matching extra) |
+| Connection refused / timeout | Server not running or wrong URL | Start the server and check the URL; put a password in the URL |
+| Sessions disappear between runs | `in_memory`, or a new process/instance | Use a persistent backend |
+| Works locally, not across pods | Process-local cache or `in_memory` | Remove `session.cache` and use a shared backend |
+| DynamoDB `ResourceNotFoundException` or key error | Table missing or wrong keys | Partition key `session_id`, sort key `key` |
+| Cosmos DB authentication or endpoint error | Connection string missing or wrong field | Set `session.cosmosdb.connection_string` and `table_name` |
+| Firestore documents never expire | No TTL policy | Add a TTL policy on `expiry_time` |
+| Configuration seems ignored | Wrong working directory | Run where `config.yaml` lives, or set `AK_CONFIG_PATH_OVERRIDE` |
+| `Session ... not found, creating new session` | First load of that session | Expected; the session is created on first use |
+
+Agent Kernel logs `Building '<type>' session store` when it builds the store, which is the quickest
+way to confirm which backend is active.
 
 ## Next steps
 

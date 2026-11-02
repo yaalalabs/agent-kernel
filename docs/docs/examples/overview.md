@@ -86,6 +86,17 @@ Sandbox capability examples (execute code/commands in an isolated, permission-bo
 - **`broker-kafka/`** - The queue broker flavor over Kafka: a two-process split where the worker runs read-only kubectl pods in a kind cluster via the kubernetes provider, with RBAC as the security boundary (requires Docker, kind, kubectl)
 - **`broker-nats/`** - The queue broker fully in-cluster: pipeline plus sandbox worker deployed by the ak-k8s Helm chart over NATS, with sandbox pods in a hardened namespace (requires a micro-cluster and Helm)
 
+### 📁 Memory Examples (`/examples/memory`)
+
+Session, cache, and memory-backend examples. See the [Choosing a Memory Backend](../core-concepts/memory-backends.md) guide for help picking one:
+
+- **`local-session/`** - A minimal REST API agent whose conversation memory follows `session.type`: in-memory by default, Redis or Valkey when configured, with a network-free session-store test
+- **`key-value-cache/`** - Volatile and non-volatile caches shared between hooks and agent tools
+- **`redis/`** - OpenAI agents on AWS Lambda with Redis sessions
+- **`valkey/`** - OpenAI agents on AWS Lambda with Valkey sessions
+- **`dynamodb/`** - OpenAI agents on AWS Lambda with DynamoDB sessions
+- **`cosmos/`** - OpenAI agents on Azure Functions with Cosmos DB sessions
+
 ### 📁 Containerized Examples (`/examples/containerized`)
 
 Docker-based deployment examples:

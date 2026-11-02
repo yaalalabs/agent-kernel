@@ -1,0 +1,3 @@
+# Default: no external service required, and sessions are lost on restart.
+session:
+  type: in_memory
