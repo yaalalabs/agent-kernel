@@ -144,7 +144,7 @@ pip install "agentkernel[azure]"
 session:
   type: cosmosdb
   cosmosdb:
-    connection_string: "AccountEndpoint=https://your-account.documents.azure.com:443/;AccountKey=your-key;"
+    connection_string: "DefaultEndpointsProtocol=https;AccountName=your-account;AccountKey=your-key;TableEndpoint=https://your-account.table.cosmos.azure.com:443/;"
     table_name: sessions
     ttl: 604800          # 0 disables expiry
 ```
@@ -277,6 +277,7 @@ from agentkernel.openai import OpenAIModule, OpenAIToolBuilder
 docs = ChromaManager(persist_path="./chroma", name="Docs").add_schema(
     {"description": "Product documentation, retrieved by meaning."}
 )
+docs.write([{"text": "Our product offers a 30-day free trial with no credit card required."}])
 
 agent = Agent(
     name="docs_assistant",

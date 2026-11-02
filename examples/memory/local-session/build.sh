@@ -10,5 +10,6 @@ fi
 if [[ ${1-} != "local" ]]; then
   uv sync --all-extras
 else
-  uv sync --find-links ../../../ak-py/dist --upgrade-package agentkernel --reinstall-package agentkernel || true
+  uv sync --all-extras
+  uv pip install --no-index --find-links ../../../ak-py/dist --reinstall-package agentkernel agentkernel
 fi

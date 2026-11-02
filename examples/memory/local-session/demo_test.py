@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 from agentkernel.core.builder import SessionStoreBuilder
 from agentkernel.core.config import AKConfig
+from agentkernel.core.session.in_memory import InMemorySessionStore
 
 EXAMPLE_DIR = Path(__file__).resolve().parent
 
@@ -34,13 +35,18 @@ def test_configured_store_round_trips_a_session():
 
 
 def test_in_memory_store_does_not_survive_a_new_store():
-    """Documents the trade-off: a fresh in_memory store starts empty."""
-    first = SessionStoreBuilder.build()
+    """Documents the trade-off: a fresh in_memory store starts empty.
+
+    Uses `InMemorySessionStore` directly rather than `SessionStoreBuilder.build()`, since the
+    configured backend in `config.yaml` may be a persistent one (Redis/Valkey) that this test
+    should not require a running server for.
+    """
+    first = InMemorySessionStore()
     session = first.new("local-session-test")
     session.set("greeting", "hello")
     first.store(session)
 
-    second = SessionStoreBuilder.build()
+    second = InMemorySessionStore()
     assert second.load("local-session-test").get("greeting") is None
 
 

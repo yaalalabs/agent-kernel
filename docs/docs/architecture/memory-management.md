@@ -402,7 +402,7 @@ export AK_SESSION__DYNAMODB__TABLE_NAME=agent-kernel-sessions
 export AK_SESSION__DYNAMODB__TTL=604800  # 7 days (0 to disable)
 
 # Cosmos DB configuration
-export AK_SESSION__COSMOSDB__CONNECTION_STRING="AccountEndpoint=https://...;AccountKey=..."
+export AK_SESSION__COSMOSDB__CONNECTION_STRING="DefaultEndpointsProtocol=https;AccountName=your-account;AccountKey=...;TableEndpoint=https://your-account.table.cosmos.azure.com:443/;"
 export AK_SESSION__COSMOSDB__TABLE_NAME=sessions
 export AK_SESSION__COSMOSDB__TTL=604800  # 7 days (0 to disable)
 

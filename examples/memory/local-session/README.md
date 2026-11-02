@@ -80,7 +80,7 @@ With `in_memory`, the agent has forgotten the earlier turn — that is expected.
    docker run --rm -p 6379:6379 redis:7
    ```
 
-2. In `config.yaml`, replace the `in_memory` block with the commented Redis block.
+2. In `config.yaml`, comment out the `in_memory` block and uncomment the Redis block.
 
 3. Repeat the two requests above. Stop and restart the server between them, and the agent now
    remembers the earlier turn because the session lives in Redis.

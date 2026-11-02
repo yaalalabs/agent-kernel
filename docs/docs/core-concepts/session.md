@@ -277,7 +277,7 @@ Serverless, fully-managed storage for Azure deployments:
 ```bash
 export AK_SESSION__TYPE=cosmosdb
 export AK_SESSION__COSMOSDB__TABLE_NAME=sessions
-export AK_SESSION__COSMOSDB__CONNECTION_STRING=AccountEndpoint=https://...;AccountKey=...
+export AK_SESSION__COSMOSDB__CONNECTION_STRING="DefaultEndpointsProtocol=https;AccountName=your-account;AccountKey=...;TableEndpoint=https://your-account.table.cosmos.azure.com:443/;"
 export AK_SESSION__COSMOSDB__TTL=604800  # 7 days (0 to disable)
 ```
 
@@ -614,7 +614,7 @@ export AK_SESSION__DYNAMODB__TTL=604800  # 7 days (0 to disable)
 # ============================================
 # Cosmos DB Configuration (Azure)
 # ============================================
-export AK_SESSION__COSMOSDB__CONNECTION_STRING="AccountEndpoint=https://...;AccountKey=..."
+export AK_SESSION__COSMOSDB__CONNECTION_STRING="DefaultEndpointsProtocol=https;AccountName=your-account;AccountKey=...;TableEndpoint=https://your-account.table.cosmos.azure.com:443/;"
 export AK_SESSION__COSMOSDB__TABLE_NAME=sessions
 export AK_SESSION__COSMOSDB__TTL=604800  # 7 days (0 to disable)
 
@@ -628,7 +628,7 @@ export AK_SESSION__FIRESTORE__TTL=604800  # 7 days (0 to disable)
 # ============================================
 # Session Caching (Redis, Valkey, DynamoDB, Cosmos DB & Firestore)
 # ============================================
-export AK_SESSION__CACHE__SIZE=256  # Number of sessions to cache (0 to disable)
+export AK_SESSION__CACHE__SIZE=256  # Number of sessions to cache; omit this var entirely to disable caching
 ```
 
 ### Configuration File (config.yaml)
@@ -652,7 +652,7 @@ session:
     ttl: 604800  # 7 days in seconds (0 to disable)
 
   cosmosdb:
-    connection_string: "AccountEndpoint=https://...;AccountKey=..."
+    connection_string: "DefaultEndpointsProtocol=https;AccountName=your-account;AccountKey=...;TableEndpoint=https://your-account.table.cosmos.azure.com:443/;"
     table_name: sessions
     ttl: 604800  # 7 days in seconds (0 to disable)
 
@@ -662,7 +662,7 @@ session:
     ttl: 604800  # 7 days in seconds (0 to disable)
 
   cache:
-    size: 256  # Enable caching (0 to disable)
+    size: 256  # Omit the whole `cache` block to disable caching; size: 0 raises an error
 ```
 
 ### Deployment-Specific Recommendations (Multi-Cloud)
@@ -710,7 +710,7 @@ export AK_SESSION__DYNAMODB__TTL=604800
 export AK_SESSION__TYPE=cosmosdb
 export AK_SESSION__COSMOSDB__TABLE_NAME=sessions
 export AK_SESSION__COSMOSDB__TABLE_ENDPOINT=https://your-account.documents.azure.com:443/
-export AK_SESSION__COSMOSDB__CONNECTION_STRING=AccountEndpoint=https://...;AccountKey=...
+export AK_SESSION__COSMOSDB__CONNECTION_STRING="DefaultEndpointsProtocol=https;AccountName=your-account;AccountKey=...;TableEndpoint=https://your-account.table.cosmos.azure.com:443/;"
 export AK_SESSION__COSMOSDB__TTL=604800
 # Caching not recommended for Azure Functions (stateless invocations)
 ```

@@ -479,7 +479,7 @@ export AK_SESSION__DYNAMODB__TABLE_NAME=agent-kernel-sessions  # DynamoDB table 
 export AK_SESSION__DYNAMODB__TTL=604800  # TTL in seconds (default: 604800 = 7 days, 0 to disable)
 
 # Cosmos DB configuration (requires the agentkernel[azure] extra)
-export AK_SESSION__COSMOSDB__CONNECTION_STRING="AccountEndpoint=https://...;AccountKey=..."  # required
+export AK_SESSION__COSMOSDB__CONNECTION_STRING="DefaultEndpointsProtocol=https;AccountName=your-account;AccountKey=...;TableEndpoint=https://your-account.table.cosmos.azure.com:443/;"  # required
 export AK_SESSION__COSMOSDB__TABLE_NAME=sessions  # Cosmos DB table name (required)
 export AK_SESSION__COSMOSDB__TTL=604800  # TTL in seconds (default: 604800 = 7 days, 0 to disable)
 
@@ -489,7 +489,7 @@ export AK_SESSION__FIRESTORE__PROJECT_ID=my-project  # optional; inferred from c
 export AK_SESSION__FIRESTORE__TTL=604800  # TTL in seconds (default: 604800 = 7 days, 0 to disable)
 
 # Optional process-local session cache (Redis, Valkey, DynamoDB, Cosmos DB, Firestore)
-export AK_SESSION__CACHE__SIZE=256  # Number of sessions to cache (0 to disable)
+export AK_SESSION__CACHE__SIZE=256  # Number of sessions to cache; omit this var entirely to disable caching
 ```
 
 :::note Valkey and the Redis-only surfaces
@@ -816,7 +816,7 @@ session:
     table_name: "agent-kernel-sessions"  # DynamoDB table name (required)
     ttl: 604800                 # Item TTL in seconds (7 days, 0 to disable)
   cosmosdb:                     # Cosmos DB-specific settings (requires the agentkernel[azure] extra)
-    connection_string: "AccountEndpoint=https://...;AccountKey=..."  # Cosmos DB connection string (required)
+    connection_string: "DefaultEndpointsProtocol=https;AccountName=your-account;AccountKey=...;TableEndpoint=https://your-account.table.cosmos.azure.com:443/;"  # Cosmos DB connection string (required)
     table_name: "sessions"      # Cosmos DB table name (required)
     ttl: 604800                 # Session TTL in seconds (7 days, 0 to disable)
   firestore:                    # Firestore-specific settings (requires the agentkernel[gcp] extra)
@@ -824,8 +824,8 @@ session:
     project_id: "my-project"    # GCP project ID (optional; inferred from credentials)
     database_id: "(default)"    # Firestore database ID (optional)
     ttl: 604800                 # Session TTL in seconds (7 days, 0 to disable)
-  cache:                        # Optional process-local session cache
-    size: 256                   # Number of sessions to cache (0 to disable)
+  cache:                        # Optional process-local session cache; omit this whole block to disable
+    size: 256                   # Number of sessions to cache (size: 0 raises an error — omit `cache` instead)
 
 # API server configuration
 api:
