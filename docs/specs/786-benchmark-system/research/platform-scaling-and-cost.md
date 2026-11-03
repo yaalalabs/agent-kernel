@@ -81,7 +81,7 @@ sets that delay:
   that KEDA creates, not by KEDA. The HPA's scale-down stabilization window is 300 s by default (configurable through
   the ScaledObject's `horizontalPodAutoscalerConfig.behavior`). KEDA's `cooldownPeriod` only applies when scaling to 0,
   so it doesn't matter here.
-- **Lambda:** concurrency falls as soon as invocations stop; the SQS pollers scale back down to the minimum (5) on their
+- **Lambda:** concurrency falls as soon as invocations stop; the SQS pollers scale back down on their
   own.
 
 ### Load-step tests: scaling per step
@@ -94,7 +94,7 @@ with history. Live tracking runs from the start of "before" to the end of the co
 - The derived numbers below are computed per step, with `t_load_up` = first send of the step and `t_load_down` = end
   of the load part (steady traffic: the configured time is up; burst: the last response arrived or timed out).
 - **When the cool-down ends:** the step runner checks three things on every poll during the cool-down, and the step ends when
-  all three hold in the same poll:
+  all three hold in the same poll. They're checked in this order (decided 2026-11-03, PR #877 review), and a later check only runs once the earlier ones hold:
   1. **All requests settled (client):** every request sent in the step has a response or has timed out. This alone
      covers requests that completed normally.
   2. **Pipeline empty (TransportCollector):** both queues hold nothing, counting messages still being processed.
@@ -175,8 +175,13 @@ class, `ScalingInfoFetcher`, so a new way can be added for any host without touc
 - **Same methods and parameters for every fetcher:**
   - `fetch(run, deployment, start, end) -> ScalingInfo`: the only method a subclass writes. It reads and stores
     nothing.
-  - `store(...)`: written once in `ScalingInfoFetcher`; appends the result to the step's CSV files.
-    `fetch_and_store(...)`: written once in `InfoFetcher`, the base class of every fetcher (see
+  - `store(...)`: written once in `ScalingInfoFetcher`; adds the result to the step's CSV files.
+  - **No duplicate rows** (decided 2026-11-03, PR #877 review): before writing a row, `store()` checks whether a row
+    with the same timestamp and key is already stored (resource usage: `ts, tier, worker, metric, stat, fetcher`;
+    worker counts: `ts, tier, count type, fetcher`; spans: `tier, worker, fetcher`). If so, the new row replaces it
+    instead of being added again. So re-running `collect-scaling` / `collect-resources` adds no duplicates, and late
+    data (e.g. a Logs Insights window that got more events) updates that window's value.
+  - `fetch_and_store(...)`: written once in `InfoFetcher`, the base class of every fetcher (see
     [Pluggable per-platform collectors](#pluggable-per-platform-collectors)); calls `fetch()`, then `store()`.
   - Constructor parameters: `live_track: bool = False`, and `poll_interval_s` (how often a live-tracked fetcher is
     polled; default from `ak-bench.yaml`, settable per fetcher, since sources differ: e.g. metrics-server updates
@@ -188,7 +193,7 @@ class, `ScalingInfoFetcher`, so a new way can be added for any host without touc
     step's "before" part until the cool-down ends. Each poll covers only the new time, so nothing is stored twice.
   - **`live_track = False`:** monitoring metrics and logs keep history but arrive late, so `fetch_and_store` is
     called once per step with (step start, step end), after the cool-down and a configured wait for log ingestion
-    (default 1 min). It can be re-run later with `collect-scaling --run-id …`, which refills the CSVs and re-plots.
+    (default 1 min). It can be re-run later with `collect-scaling --run-id …`, which refills the CSVs (no duplicates, see `store()` above) and re-plots.
   - **The host bundle always sets `live_track`** for each of its fetchers: a source with no history must be `True`.
     The `False` default is never relied on.
 - **Not split by serverless / containerized:** the harness never checks what kind of host it is. A host is only ever
@@ -330,14 +335,24 @@ Worker counts (from → to), recorded per tier, count type (desired / running) a
 | **From**               | `workers_before_up`: count at `t_load_up` (end of baseline) | `workers_before_down`: count at `t_load_down`        |
 | **To**                 | `workers_peak`: highest count in the step                 | `workers_after_down`: count at the end of the cool-down      |
 | **Change**             | `peak − before_up` workers added                          | `before_down − after_down` workers removed           |
-| **Rate**               | workers added ÷ (scale-up done − first new worker), as workers/min | workers removed ÷ (scale-down done − scale-down start), as workers/min |
+| **Rate**               | workers added ÷ (scale-up done − `t_load_up`), as workers/min | workers removed ÷ (scale-down done − `t_load_down`), as workers/min |
 
-- So each scaling result reads like "ECS runner: 2 → 18 tasks in 7.5 min (first new task at 4 min, ~4.6 tasks/min);
-  18 → 2 in 21 min".
-- **The rate is an average over the scaling window.**
-  - The "scaling window" is the time span while workers are being added (first new worker → scale-up done), or removed
-    (scale-down start → scale-down done). It is **not** the 1 s / 5 s time windows of the per-time-window CSV.
-  - Example above: 16 tasks added between minute 4 and minute 7.5, so 16 ÷ 3.5 min ≈ 4.6 tasks/min.
+- So each scaling result reads like "ECS runner: 2 → 18 tasks in 7.5 min (first new task at 4 min, ~2.1 tasks/min);
+  18 → 2 in 21 min (~0.8 tasks/min)".
+- **The rate is an average from the load change to the end of the scaling** (decided 2026-11-03, PR #877 review):
+  scale up from `t_load_up` (the step's first send) to scale-up done, scale down from `t_load_down` (end of the load)
+  to scale-down done. It is **not** the 1 s / 5 s time windows of the per-time-window CSV.
+  - It includes the time before the platform reacts; that part is also recorded on its own (decision delay, first
+    new worker).
+  - It can't divide by 0: scaling always finishes after the load change. (Measuring from the first new worker could:
+    on Lambda both times can fall in the same minute.)
+  - Example above: 16 tasks added, scale-up done 7.5 min after the first send, so 16 ÷ 7.5 min ≈ 2.1 tasks/min.
+  - A step that didn't scale has no scale-up / scale-down done time, so its rate stays empty.
+- **A time read from a 1-minute value counts at the end of that minute** (Lambda's `ConcurrentExecutions`):
+  CloudWatch labels each value with the start of its minute, but the count could have been reached at any moment in
+  that minute. So "10:01 → 61 workers" means "61 reached by 10:02:00". This applies to every time read from such a
+  value (first new worker, scale-up done, scale-down start / done). Otherwise scale-up could look finished at the same
+  moment as the first send. ECS and K8s counts come from live polls with exact times and need no such rule.
   - Platforms don't add workers evenly. They add them in steps, e.g. ECS goes 2 → 8 at minute 4, waits out the
     scale-out cooldown, then goes 8 → 18. The rate smooths these steps into one number, which hides the shape.
   - The step pattern itself is seen in the worker-count graph, not in this number. What sets the steps:

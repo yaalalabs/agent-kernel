@@ -49,7 +49,10 @@ class ResourceUsageFetcher(InfoFetcher[ResourceUsage]):
     name: str    # registry name, e.g. "aws.ecs_service_metrics"; used in the CSV column names
 
     def store(self, usage: ResourceUsage, step: StepResults) -> None:
-        """Appends the samples to the step's resource-usage.csv. Written once here, not per subclass."""
+        """Adds the samples to the step's resource-usage.csv; a row with the same key replaces the old one.
+
+        Written once here, not per subclass.
+        """
 
     # fetch(run, deployment, start, end) -> ResourceUsage: abstract, from InfoFetcher; each subclass writes it
 ```
@@ -112,7 +115,8 @@ class ResourceUsageFetcher(InfoFetcher[ResourceUsage]):
 - **Called the same way as the scaling fetchers:** `live_track = True` ones by the step's background task (every
   `poll_interval_s`, from the start of "before" until the cool-down ends), the others once per step after the
   cool-down and the configured wait (default 1 min). Re-runnable with a `collect-resources --run-id …` step like
-  `collect-scaling`.
+  `collect-scaling`; a re-run adds no duplicate rows (same timestamp and key → the new row replaces the old one, see
+  [scaling info fetchers](platform-scaling-and-cost.md#scaling-info-fetchers-pluggable)).
 - **A fetcher that fails** (no permission, Container Insights off) records empty columns and a run-log entry; the run
   carries on. Same rule as the scaling fetchers.
 

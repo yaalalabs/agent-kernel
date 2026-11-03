@@ -144,7 +144,7 @@ log level with per-stage trace points on the request path.
   6. Waits the configured time for log ingestion.
   7. Calls `fetch_and_store` once on each fetcher of the other group, for (step start, step end).
   8. Moves on to the next step.
-- **The step ends when all three hold in the same cool-down poll:**
+- **The step ends when all three hold in the same cool-down poll,** checked in this order (decided 2026-11-03, PR #877 review), and a later check only runs once the earlier ones hold:
   - every request of the step has a response or timed out (client);
   - input and output queues hold nothing, counting in-flight messages (`TransportCollector.fetch()`):
     - SQS: `ApproximateNumberOfMessages` and `ApproximateNumberOfMessagesNotVisible` both 0, counting only polls
@@ -249,7 +249,10 @@ log level with per-stage trace points on the request path.
   - scale up: decision delay, first new worker, scale-up done, backlog drained;
   - scale down: scale-down start, scale-down done;
   - counts: `workers_before_up`, `workers_peak`, `workers_before_down`, `workers_after_down`;
-  - rate in workers / min over each scaling window;
+  - rate in workers / min: workers added ÷ (scale-up done − `t_load_up`), workers removed ÷ (scale-down done −
+    `t_load_down`); never divides by 0, empty for a step that didn't scale (decided 2026-11-03);
+  - a time read from a 1-minute value (Lambda's metric) counts at the end of that minute: "10:01 → 61" = reached by
+    10:02:00;
   - a count with no source stays empty; a step that didn't scale records e.g. 1 → 1.
 
 ### Resource usage (CPU and memory)
@@ -362,7 +365,7 @@ graph LR
 - `plot --run-id <id>`: re-plot from existing CSVs, no re-run. Graphs are written back into the same `graphs/`
   folders.
 - `collect-scaling --run-id <id>` / `collect-resources --run-id <id>`: re-run the after-step fetchers, refill the CSVs,
-  re-plot.
+  re-plot. No duplicate rows: a row with the same timestamp and key replaces the old one (see [Hosts](#hosts)).
 - `collect-cost --run-id <id>`: fetch the billed cost later (~1 day after), fill the cost CSV, re-plot.
 - Each run writes to its own folder, `results/<run-id>/`, so runs never overwrite each other.
 
@@ -384,7 +387,7 @@ flowchart TD
     subgraph STEP["One step run: one test type (steady or burst) at one step number N"]
         B["<b>1 · before</b> (1 min, no load)<br/>idle baseline for the graphs<br/>at its end: read the starting worker counts (fetch only)"]
         L["<b>2 · Send requests</b> (this run's test type only)<br/>client stores per request: id, sent, received"]
-        C["<b>3 · Check cool-down</b>: over when, in one poll:<br/>all requests settled<br/>queues empty, incl. in flight<br/>workers back at the starting counts<br/>(max 45 min)"]
+        C["<b>3 · Check cool-down</b>: over when, in one poll, checked in order:<br/>1. all requests settled<br/>2. queues empty, incl. in flight<br/>3. workers back at the starting counts<br/>(max 45 min)"]
         W["<b>4 · Wait</b> (1 min)<br/>logs and metrics arrive late"]
         H["<b>5 · Fetch and store: data with history</b><br/>live_track = False · once per step<br/>fetch_and_store(step start, step end)<br/>latency stages from the logs (TraceCollector),<br/>ECS scaling activities, ConcurrentExecutions,<br/>Container / Lambda Insights, ECS service metrics"]
         LIVE[["<b>Live InfoFetchers, in the background</b><br/>live_track = True · no history: only 'what is it now',<br/>so it has to be polled while it happens<br/>one task per fetcher, every poll_interval_s:<br/>fetch_and_store(last poll, now)<br/>ECS / K8s API worker counts, K8s metrics and<br/>local process CPU + memory, queue depth"]]
@@ -531,6 +534,11 @@ flowchart TD
     anything is deployed, one bundle serves a separate deployment per execution mode, and the re-collect commands
     deploy nothing. So a fetcher stays stateless and works for any deployment;
   - `store(result: T, step)`: abstract, written once in each family base for its type;
+  - **No duplicate rows** (decided 2026-11-03, PR #877 review): before writing a row, `store()` checks whether a row
+    with the same timestamp and key is already stored (resource usage: `ts, tier, worker, metric, stat, fetcher`;
+    worker counts: `ts, tier, count type, fetcher`; spans: `tier, worker, fetcher`). If so, the new row replaces it
+    instead of being added again. So re-running `collect-scaling` / `collect-resources` adds no duplicates, and late
+    data (e.g. a Logs Insights window that got more events) updates that window's value.;
   - `fetch_and_store(...)`: written once in `InfoFetcher`; calls `fetch()`, then `store()`, and raises a clear error
     if `fetch()` returned another type.
   - Each family base fixes `T` (a dataclass): `ScalingInfo`, `ResourceUsage`, `TraceInfo`, `QueueInfo`. A type
