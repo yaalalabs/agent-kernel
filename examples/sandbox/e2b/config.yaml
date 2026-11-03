@@ -35,7 +35,7 @@ sandbox:
       type: e2b
       policy:
         network_egress: allowlist
-        network_allow: [pypi.org, files.pythonhosted.org] # -> E2B deny_out 0.0.0.0/0 + allow_out these (unverified until the live egress gate passes)
+        network_allow: [pypi.org, files.pythonhosted.org] # -> E2B deny_out 0.0.0.0/0 + allow_out these hosts
       e2b: {}
   broker:
     flavor: thread
