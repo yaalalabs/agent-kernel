@@ -397,7 +397,8 @@ fails with an error naming the entry's position and the rule it broke, never the
 `package_rules` maps an ecosystem to a dotted path of your own `PackageSpecRule`. For `python` and
 `node` it runs **after** the built-in rule, so it can narrow the grammar but never loosen it. For
 any other ecosystem key (say `deb`) it is the whole rule, and an ecosystem with neither a
-built-in rule nor a `package_rules` entry fails at process startup. A package-name allowlist
+built-in rule nor a `package_rules` entry fails at process startup, as does a `package_rules` key with no
+`package_installers` entry (so a typo cannot silently drop your rule). A package-name allowlist
 looks like this:
 
 ```python
