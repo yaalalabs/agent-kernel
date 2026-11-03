@@ -44,3 +44,26 @@ def test_websocket_mode_requires_auth_validator(monkeypatch):
 
     with pytest.raises(ValueError, match="auth_validator is required"):
         ECSIOHandler.run()
+
+
+@pytest.mark.parametrize("env", [{"AK_A2A__ENABLED": "true"}, {"AK_MCP__ENABLED": "true", "AK_MCP__EXPOSE_AGENTS": "true"}])
+def test_a2a_or_agent_mcp_is_refused_before_any_thread_starts(monkeypatch, env):
+    """ECS has no queue-mode A2A/MCP yet (#780 decision 2): refused here, not inside the rest-api thread."""
+    from agentkernel.core.config import AKConfig
+    from agentkernel.core.util.factory import AKConfigError
+
+    monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+    AKConfig._reset()
+    _set_mode(monkeypatch, ExecutionMode.REST_SYNC)
+    try:
+        with pytest.raises(AKConfigError, match="IOHandler.run"):
+            ECSIOHandler.run()
+    finally:
+        # Leave no A2A/MCP-enabled config cached for later tests.
+        for name in env:
+            monkeypatch.delenv(name)
+        AKConfig._reset()
+
+    ThreadRunner.run.assert_not_called()

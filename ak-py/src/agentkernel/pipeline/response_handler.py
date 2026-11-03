@@ -26,6 +26,10 @@ class ResponseHandler:
 
     The generalization of ECSOutputConsumer; response-store records additionally carry the
     ``status_code`` forwarded by the Agent Runner.
+
+    Integration traffic goes to its platform, then ``protocol`` traffic (A2A and MCP, #780) to the
+    response store, both before the mode is consulted: those callers are waiting for one whole
+    reply, wherever ``execution.mode`` would send everything else.
     """
 
     _log = logging.getLogger("ak.pipeline.response_handler")
@@ -67,6 +71,9 @@ class ResponseHandler:
             status_code = int(message.attributes.get(ATTR_STATUS_CODE, "200"))
             self._integration_delivery.deliver(integration, message.attributes, body, status_code, session_id=message.group_id)
             return
+        if QueueMessage.protocol_of(message.attributes):
+            self._store_response(message)
+            return
 
         # AG-UI chunks always go to the response store, whatever the app's execution mode is: the
         # caller is holding an SSE socket in the edge process, which drains the store.
@@ -105,6 +112,9 @@ class ResponseHandler:
 
             request_id = message.attributes.get(ATTR_REQUEST_ID)
             error_text = f"Failed to process message after {max_receive_count} retries"
+            if QueueMessage.protocol_of(message.attributes):
+                self._store_failure_record(message, request_id, error_text)
+                return
 
             if message.attributes.get(ATTR_AGUI):
                 if request_id:
@@ -138,14 +148,7 @@ class ResponseHandler:
                 self._broadcast_error(message, error_payload, WebSocketHandlerABC.MessageType.SYSTEM_RESPONSE)
                 return
 
-            if not request_id:
-                self._log.warning("Cannot store permanent-failure response: request_id missing")
-                return
-            error_payload = {"error": error_text, "request_id": request_id}
-            if message.group_id:
-                error_payload["session_id"] = message.group_id
-            self._get_store().add_message({"session_id": message.group_id, "request_id": request_id, "status_code": 500, "body": error_payload})
-            self._log.info(f"Stored permanent-failure error: request_id={request_id}")
+            self._store_failure_record(message, request_id, error_text)
         except Exception:
             self._log.exception("Failed to handle permanent-failure output message")
 
@@ -245,6 +248,17 @@ class ResponseHandler:
         }
         self._get_store().add_message(record)
         self._log.info(f"[OUTPUT DONE] Stored response: request_id={request_id}, status_code={record['status_code']}")
+
+    def _store_failure_record(self, message: QueueMessage, request_id: Optional[str], error_text: str) -> None:
+        """Store a 500 record for a caller polling the response store, so it never waits out its budget."""
+        if not request_id:
+            self._log.warning("Cannot store permanent-failure response: request_id missing")
+            return
+        error_payload = {"error": error_text, "request_id": request_id}
+        if message.group_id:
+            error_payload["session_id"] = message.group_id
+        self._get_store().add_message({"session_id": message.group_id, "request_id": request_id, "status_code": 500, "body": error_payload})
+        self._log.info(f"Stored permanent-failure error: request_id={request_id}")
 
     def _store_chunk(self, message: QueueMessage) -> None:
         request_id = message.attributes.get(ATTR_REQUEST_ID)

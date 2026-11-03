@@ -319,6 +319,9 @@ jobs:
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           TF_VAR_openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+          TF_VAR_langfuse_public_key: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+          TF_VAR_langfuse_secret_key: ${{ secrets.LANGFUSE_SECRET_KEY }}
+          TF_VAR_langfuse_base_url: ${{ vars.LANGFUSE_BASE_URL }}
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_SIGNING_SECRET: ${{ secrets.SLACK_SIGNING_SECRET }}
           ARM_SUBSCRIPTION_ID: ${{ vars.ARM_SUBSCRIPTION_ID }}
@@ -341,10 +344,11 @@ jobs:
             ARGS+=(--request-handler-security-group-id "${{ needs.get-base-outputs.outputs.request_handler_security_group_id }}")
           fi
           # The base deployment runs in queue_mode, so it also exposes an agent runner and response
-          # handler security group — but only scalable-openai and schedule-openai (the two
-          # queue-mode examples in the weekly matrix) have those tiers to reuse them on. Every other
-          # aws-serverless example is queue_mode = false and only has a request handler tier.
-          if [[ "${{ matrix.path }}" == "examples/aws-serverless/scalable-openai" || "${{ matrix.path }}" == "examples/aws-serverless/schedule-openai" ]]; then
+          # handler security group — but only scalable-openai, schedule-openai and
+          # openai-langfuse-trace-evaluation (the queue-mode examples in the weekly matrix) have those tiers
+          # to reuse them on. Every other aws-serverless example is queue_mode = false and only has a
+          # request handler tier.
+          if [[ "${{ matrix.path }}" == "examples/aws-serverless/scalable-openai" || "${{ matrix.path }}" == "examples/aws-serverless/schedule-openai" || "${{ matrix.path }}" == "examples/aws-serverless/openai-langfuse-trace-evaluation" ]]; then
             ARGS+=(--agent-runner-security-group-id "${{ needs.get-base-outputs.outputs.agent_runner_security_group_id }}" --response-handler-security-group-id "${{ needs.get-base-outputs.outputs.response_handler_security_group_id }}")
           fi
           # aws-containerized deploys reuse the shared ALB and ECS service security groups (#823).
@@ -365,6 +369,9 @@ jobs:
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           TF_VAR_openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+          TF_VAR_langfuse_public_key: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+          TF_VAR_langfuse_secret_key: ${{ secrets.LANGFUSE_SECRET_KEY }}
+          TF_VAR_langfuse_base_url: ${{ vars.LANGFUSE_BASE_URL }}
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_SIGNING_SECRET: ${{ secrets.SLACK_SIGNING_SECRET }}
           ARM_SUBSCRIPTION_ID: ${{ vars.ARM_SUBSCRIPTION_ID }}
@@ -386,6 +393,9 @@ jobs:
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           TF_VAR_openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+          TF_VAR_langfuse_public_key: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+          TF_VAR_langfuse_secret_key: ${{ secrets.LANGFUSE_SECRET_KEY }}
+          TF_VAR_langfuse_base_url: ${{ vars.LANGFUSE_BASE_URL }}
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_SIGNING_SECRET: ${{ secrets.SLACK_SIGNING_SECRET }}
           ARM_SUBSCRIPTION_ID: ${{ vars.ARM_SUBSCRIPTION_ID }}
@@ -400,7 +410,7 @@ jobs:
           if [[ "${{ matrix.type }}" == "aws-serverless" ]]; then
             ARGS+=(--request-handler-security-group-id "${{ needs.get-base-outputs.outputs.request_handler_security_group_id }}")
           fi
-          if [[ "${{ matrix.path }}" == "examples/aws-serverless/scalable-openai" || "${{ matrix.path }}" == "examples/aws-serverless/schedule-openai" ]]; then
+          if [[ "${{ matrix.path }}" == "examples/aws-serverless/scalable-openai" || "${{ matrix.path }}" == "examples/aws-serverless/schedule-openai" || "${{ matrix.path }}" == "examples/aws-serverless/openai-langfuse-trace-evaluation" ]]; then
             ARGS+=(--agent-runner-security-group-id "${{ needs.get-base-outputs.outputs.agent_runner_security_group_id }}" --response-handler-security-group-id "${{ needs.get-base-outputs.outputs.response_handler_security_group_id }}")
           fi
           if [[ "${{ matrix.type }}" == "aws-containerized" ]]; then

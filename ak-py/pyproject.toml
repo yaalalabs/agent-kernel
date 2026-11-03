@@ -30,9 +30,11 @@ langfuse = [
 ]
 openllmetry = [
     "traceloop-sdk>=0.61.0",
+    "httpx>=0.27.0",
 ]
 logfire = [
     "logfire>=3.0",
+    "httpx>=0.27.0",
 ]
 cloudwatch = [
     "opentelemetry-sdk>=1.30.0",
@@ -185,7 +187,7 @@ test = [
     "litellm>=1.89.2",
 ]
 a2a = [
-    "a2a-sdk[http-server]>=0.3.6",
+    "a2a-sdk[http-server]>=0.3.6,<1",
 ]
 mcp = [
     "fastmcp>=3.2.0,<4.0.0"
