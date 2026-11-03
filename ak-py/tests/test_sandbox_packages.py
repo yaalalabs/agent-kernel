@@ -313,3 +313,9 @@ def test_package_spec_rule_is_public():
     import agentkernel.sandbox as sandbox
 
     assert sandbox.PackageSpecRule is PackageSpecRule
+
+
+def test_package_rules_key_without_installer_rejected():
+    # A typo'd key would otherwise drop the operator's narrowing rule without a word.
+    with pytest.raises(ValueError, match="pyhton"):
+        _SandboxDockerConfig(package_rules={"pyhton": _ALLOWLIST})

@@ -778,6 +778,14 @@ class _SandboxProviderPackageConfig(BaseModel):
                 raise ValueError(f"package_installers[{ecosystem!r}] must be a non-empty argv prefix with no empty tokens")
         return value
 
+    @model_validator(mode="after")
+    def _rules_match_installers(self) -> "_SandboxProviderPackageConfig":
+        """A rule for an ecosystem with no installer never runs, so a typo'd key would silently drop a narrowing rule."""
+        orphans = sorted(set(self.package_rules) - set(self.package_installers))
+        if orphans:
+            raise ValueError(f"package_rules keys {orphans} have no package_installers entry")
+        return self
+
 
 class _SandboxProviderRuntimeConfig(BaseModel):
     """Language-runtime fields shared by the provider blocks that exec an interpreter argv."""
