@@ -1,7 +1,7 @@
 ---
 slug: /agui-agentic-ui
 title: "Your Agent Finally Has a Face: AG-UI in Agent Kernel"
-authors: [yaala]
+authors: [malitha]
 tags: [agent-kernel, ag-ui, agentic-ui, frontend, streaming, react, ai-agents, developer-experience]
 image: /img/blog/agui-banner.png
 description: Agent Kernel now speaks AG-UI, the open protocol between agents and the apps people actually use. Stream answers, reasoning, tool calls and shared state straight into your frontend, with one handler and a few lines of config.
