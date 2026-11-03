@@ -312,8 +312,12 @@ profiles:
   restating `python` (the same rule as `package_installers`).
 - **Command-only profiles.** `policy.languages: []` disables `run_code` for a profile while
   `run_command` keeps working.
-- **`docker`, `kubernetes` and `ec2_ssm` use argv runtimes.** Daytona's SDK fixes the language per
-  sandbox, so it runs `python` only. `local_subprocess` runs `python` and `bash`.
+- **`docker`, `kubernetes`, `ec2_ssm` and `daytona` use argv runtimes.** `local_subprocess` runs
+  `python` and `bash`.
+- **`daytona` runs `python` natively.** Daytona's SDK fixes `code_run`'s language per sandbox, so
+  `python` always runs via `code_run` and its argv is unused (default `python: [python3, -c]`). Every
+  other key, such as `node: [node, -e]`, is joined into one quoted shell command and run via
+  `process.exec`. The `image` or `snapshot` must ship each interpreter.
 - **`e2b` declares kernels, not argv.** Its block takes `languages` (default `[python]`), a list of
   E2B code-interpreter kernels: `python`, `javascript`, `typescript`, `r`, `java`, `bash`. `python` is
   required, and the `template` must ship the declared kernels (E2B's code-interpreter template does).
@@ -519,7 +523,7 @@ Providers available today:
 | `local_subprocess` | — (stdlib) | `none` | Runs on the host. Dev/test only. Shell + files + `python`/`bash`. |
 | `docker` | `sandbox-docker` | `container` | Container per sandbox (`sleep infinity`); code runs through `language_runtimes` (default `python -c`); files via archives; package installs (default installer `pip install`, configurable via `package_installers`). Maps `deny`→`network_mode: none`, cpu/memory→limits, fs→read-only rootfs + writable workdir. Requires a Docker daemon. |
 | `e2b` | `e2b` | `micro_vm` | Managed Firecracker micro-VMs on the E2B cloud (native async SDK). Stateful Jupyter-kernel execution (variables persist across calls) in the kernels listed in `languages` (default `python`); shell, files, package installs (default `pip install`, configurable via `package_installers`). Maps `deny`→no internet access, `allowlist`→deny-all `deny_out` + `allow_out` exceptions; the profile's `idle_timeout` becomes E2B's native auto-kill timeout. Needs `E2B_API_KEY` (name configurable via `api_key_env`). |
-| `daytona` | `daytona` | `container` | Container sandboxes on the Daytona cloud (sync SDK via `to_thread`). Shell, files, package installs (default `pip install`, configurable via `package_installers`). Maps `deny`→block-all, `allowlist`→CIDR allow list, cpu/memory→`Resources` (image-based sandbox); `idle_timeout` becomes Daytona's native `auto_stop_interval`. Needs `DAYTONA_API_KEY` (name configurable via `api_key_env`). |
+| `daytona` | `daytona` | `container` | Container sandboxes on the Daytona cloud (sync SDK via `to_thread`). Shell, files, `python` via native `code_run` plus extra languages via `language_runtimes`, package installs (default `pip install`, configurable via `package_installers`). Maps `deny`→block-all, `allowlist`→CIDR allow list, cpu/memory→`Resources` (image-based sandbox); `idle_timeout` becomes Daytona's native `auto_stop_interval`. Needs `DAYTONA_API_KEY` (name configurable via `api_key_env`). |
 | `ec2_ssm` | `aws` | `none` | **Attach-only** (requires `environment: attached`): executes on an existing EC2 instance via SSM Run Command — binds to `attach_to`, never provisions or disposes. Shell + code via `language_runtimes` (default `python3 -c`); no policy enforcement beyond the execution timeout. Supports **user identity** (`sts:AssumeRole` + optional `run_as` OS user). No persistent shell: each command is its own process, so cwd/env/`sudo su` do not carry across commands (`stateful=False`); chain dependent steps (`cd /app && ./run.sh`). |
 | `kubernetes` | `kubernetes` | `container` | Pod per sandbox (`sleep infinity`) via the Kubernetes API; exec over the stream API, code through `language_runtimes` (default `python -c`), files as tar streams, package installs (default `pip install`, configurable via `package_installers`). Hardened container defaults (no privilege escalation, seccomp `RuntimeDefault`, all capabilities dropped) under your `security_context` overlays. Maps cpu/memory→requests=limits, fs→read-only rootfs + emptyDir workdir, and egress→per-pod NetworkPolicies only when `network_policy: true` asserts the cluster CNI enforces them. Supports **user identity** via RBAC impersonation (see Identity). Pods carry `activeDeadlineSeconds = 2 × idle_timeout` as the orphan ceiling; the pod ServiceAccount's RBAC is the security boundary. |
 
@@ -576,6 +580,9 @@ sandbox:
     # snapshot: my-warm-snapshot    # ...OR a named Daytona snapshot (mutually exclusive)
     env_vars:                       # environment variables set inside the sandbox
       APP_ENV: demo
+    # language_runtimes:            # default {python: [python3, -c]}; python always runs via code_run
+    #   python: [python3, -c]
+    #   node: [node, -e]            # only if the image ships node
     # target: us                    # Daytona target/region; omitted = SDK default
     # api_key_env: DAYTONA_API_KEY  # env variable holding the API key
   broker:

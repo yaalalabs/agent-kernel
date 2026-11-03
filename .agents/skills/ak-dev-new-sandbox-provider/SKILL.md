@@ -267,8 +267,9 @@ subclasses `_SandboxProviderRuntimeConfig`. That mixin adds `language_runtimes` 
 interpreter argv prefix, default `{python: [python, -c]}`; declaring it replaces the default), with
 validators requiring a `python` key and non-empty argv prefixes. Its keys are the instance's
 `languages`, and `execute_code` runs `[*runtimes[language], code]`. A provider whose SDK picks the
-interpreter (`e2b`'s template kernel, `daytona`'s per-sandbox language) does not use it and keeps
-declaring `languages=["python"]`. Don't add your own runtime fields.
+interpreter per call (`e2b`'s template kernels) does not use it. A provider with a native Python
+runner but a shell exec (`daytona`) uses the mixin, keeps `python` on the native runner and execs the
+other keys. Don't add your own runtime fields.
 
 ### 6. Add the Optional Dependency Extra
 
