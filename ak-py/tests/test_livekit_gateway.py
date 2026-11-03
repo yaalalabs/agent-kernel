@@ -1152,7 +1152,13 @@ class TestTranscriptHooks:
         gateway = _Recorder.build("coordinator")
         gateway._loop = asyncio.get_running_loop()
 
-        for chunk in [_change("coordinator"), _text("I was about to"), StreamChunk(event=Interrupt()), _text(" never delivered"), StreamChunk(done=True)]:
+        for chunk in [
+            _change("coordinator"),
+            _text("I was about to"),
+            StreamChunk(event=Interrupt()),
+            _text(" never delivered"),
+            StreamChunk(done=True),
+        ]:
             await gateway.deliver_chunk(chunk, {})
 
         assert _lines(gateway) == [("coordinator", "agent", "I was about to", True)]
@@ -1416,9 +1422,7 @@ class TestOpeningPrompt:
         await gateway._greet("human-1")
 
         [staged] = [pending.get_nowait()]
-        assert staged.requests[0].prompt == (
-            "A user named human-1 just connected. Say a very short hello to them and confirm you are connected!"
-        )
+        assert staged.requests[0].prompt == ("A user named human-1 just connected. Say a very short hello to them and confirm you are connected!")
 
     @pytest.mark.asyncio
     async def test_none_stages_nothing(self):
