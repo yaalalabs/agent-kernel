@@ -4,7 +4,7 @@ How the [Resource usage](../design.md) requirement is measured: CPU and memory u
 by the workers of each tier, read from the platform the same way worker counts are read by the
 [scaling info fetchers](platform-scaling-and-cost.md#scaling-info-fetchers-pluggable).
 
-Status (2026-10-29): **agreed:** the fetchers each host binds (Lambda Insights included, on by default),
+Status (2026-10-29, Lambda memory only since 2026-11-02): **agreed:** the fetchers each host binds (Lambda Insights included, on by default),
 p0 / p25 / p50 / p75 / p99 / p100 per window and per step (min / avg / max for the ECS service metrics, changed from
 min / avg / max everywhere on 2026-10-29), and separate graphs. Still open: see [Open points](#open-points).
 
@@ -21,8 +21,7 @@ host lists one or more of them.
     empty columns.
   - Shared code is reused below the interface instead: the CloudWatch metrics and Logs Insights helpers are used by
     both kinds of fetcher.
-- **Name:** `ResourceUsageFetcher`, returning `ResourceUsage`. Not "usage source": that name is taken by the cost
-  [usage sources](platform-scaling-and-cost.md#how-the-cost-code-is-split) (billed quantities).
+- **Name:** `ResourceUsageFetcher`, returning `ResourceUsage`.
 
 ```python
 @dataclass
@@ -32,7 +31,7 @@ class ResourceSample:
     ts: datetime            # when the reading was taken
     tier: str               # which tier it's for: a key of Deployment.resources, e.g. "runner", "io"
     worker: str | None      # which worker: task id, pod name, Lambda log stream; None = one value for the whole tier
-    metric: str             # what was read: "cpu_pct" / "mem_pct" / "mem_mb" / "cpu_time_ms"
+    metric: str             # what was read: "cpu_pct" / "mem_pct" / "mem_mb"
     stat: str               # "value" = a raw reading; "min" / "avg" / "max" = the source already aggregated it
     value: float            # the number
 
@@ -107,7 +106,7 @@ class ResourceUsageFetcher(InfoFetcher[ResourceUsage]):
   a tier needs no change here.
 - **Per worker where the source has it, per tier where it doesn't.** `worker = None` marks a whole-tier value (e.g.
   the ECS service average).
-- **Units:** CPU as a % of what one worker has (task vCPU, pod request/limit, Lambda share), memory in MiB and as a %
+- **Units:** CPU as a % of what one worker has (task vCPU, pod request/limit; Lambda has no CPU, see [Lambda](#lambda)), memory in MiB and as a %
   of the worker's memory, so hosts with different worker sizes read the same way. The worker size is already in the
   run metadata.
 - **Called the same way as the scaling fetchers:** `live_track = True` ones by the step's background task (every
@@ -176,13 +175,17 @@ Three places have ECS CPU / memory. Bound: the first two.
 
 ## Lambda
 
-The standard `AWS/Lambda` metrics have no CPU or memory metric. Two sources:
+The standard `AWS/Lambda` metrics have no CPU or memory metric. Two sources, both **memory only**:
+
+- **No CPU on Lambda** (decided 2026-11-02). AWS gives no CPU utilization for Lambda: Lambda Insights only reports
+  CPU **time** (`cpu_total_time`, ms), and turning CPU time into a % would be our own calculation, not a number AWS
+  gives. So Lambda records memory only, and its CPU columns stay empty.
 
 ### 1. `aws.lambda_report_memory`: `REPORT` lines (memory only, free)
 
 - Every invocation ends with a `REPORT` line: `Duration`, `Billed Duration`, `Memory Size`, **`Max Memory Used`**.
 - Read with Logs Insights (`filter @type = "REPORT" | stats max(@maxMemoryUsed) by @logStream, bin(<window>)`), the
-  same helper and the same lines as the Lambda cost usage source (`lambda_usage.py`). `worker` = log stream (one per
+  shared Logs Insights helper. `worker` = log stream (one per
   execution environment, as in `aws.lambda_log_streams`).
 - Free, nothing to switch on.
 - **No CPU.**
@@ -190,7 +193,7 @@ The standard `AWS/Lambda` metrics have no CPU or memory metric. Two sources:
   invocations", so it's a high-water mark per environment, not the memory of that invocation.
 - `live_track = False`.
 
-### 2. `aws.lambda_insights`: Lambda Insights extension (CPU and memory)
+### 2. `aws.lambda_insights`: Lambda Insights extension (memory)
 
 - Lambda Insights is a CloudWatch extension added to the function as a **layer**. It writes **one performance log
   event per invocation** (embedded metric format, log group `/aws/lambda-insights`) and per-function metrics in the
@@ -203,9 +206,8 @@ The standard `AWS/Lambda` metrics have no CPU or memory metric. Two sources:
 - **Fields not in AWS's list:** a third-party example event (2023) also has `function_name`, `request_id`,
   `trace_id`, `duration`, `billed_duration`, `cold_start`, `timeout` and `shutdown_reason`. AWS's docs don't list
   them, so the fetcher must cope if one is missing:
-  - CPU %, per environment per window: `sum(cpu_total_time) / sum(duration) × 100` (CPU time as a share of the
-    time spent in invocations), worked out in the query. If `duration` is missing, record only `cpu_time_ms`
-    (`sum(cpu_total_time)` per window).
+  - Recorded: memory only (`used_memory_max` as `mem_mb`, `memory_utilization` as `mem_pct`). `cpu_total_time` is not
+    recorded (see [No CPU on Lambda](#lambda)).
   - `worker` = the event's log stream, if it's one per execution environment (as in the function's own log group).
     If it isn't, group by `function_name` and record a per-tier value (`worker = None`) instead.
   - Check both on the first Lambda run.
@@ -251,7 +253,7 @@ Less researched; to check before building.
   `runner.mem_mb.p50.aws.ecs_container_insights`. Per-worker sources are reduced to p0 / p25 / p50 / p75 / p99 / p100
   across the tier's workers in each window. The ECS service metrics keep the min / avg / max AWS gives.
 - **Per-step `resource-usage.csv` (new):** the raw per-worker samples in long form
-  (`ts, tier, worker, metric, value, fetcher`), since one column per worker doesn't fit the per-time-window file.
+  (`ts, tier, worker, metric, stat, value, fetcher`), since one column per worker doesn't fit the per-time-window file.
 - **Summary CSV (per test type, one row per step):** p0 / p25 / p50 / p75 / p99 / p100 of CPU % and memory per tier over
   the step's whole time period (before → load → cool-down), one set per fetcher, e.g.
   `runner.cpu_pct.p100.aws.ecs_container_insights`.
@@ -262,7 +264,7 @@ Less researched; to check before building.
   - Step N is N requests (burst) or N clients (steady traffic), so this row shows how usage changes with load.
 - **Graphs:** separate graphs, not panels in `03-timeline.png`:
   - `graphs/03-resource-usage-per-step.png` (comparing the steps): CPU % and memory against the load step,
-    p0 / p25 / p50 / p75 / p99 / p100, one row of panels per tier.
+    p0 / p25 / p50 / p75 / p99 / p100, one row of panels per tier (Lambda: memory only).
   - `step-<N>/graphs/05-resource-usage.png` (one step): CPU % and memory over the step's timeline, p0 / p25 / p50 /
     p75 / p99 / p100 across the tier's workers per time window, one row of panels per tier. Same time axis and before /
     load / cool-down shading as `03-timeline.png`.
@@ -275,7 +277,7 @@ Less researched; to check before building.
 
 ## Open points
 
-- Lambda Insights fields that aren't in AWS's docs (`duration`, `function_name`) and whether its log stream is one
+- Lambda Insights fields that aren't in AWS's docs (`function_name`) and whether its log stream is one
   per environment: check on the first Lambda run; the fallbacks are described above.
 - Fargate `Type = "Task"` events: confirmed only by non-AWS examples; check on the first ECS run.
 

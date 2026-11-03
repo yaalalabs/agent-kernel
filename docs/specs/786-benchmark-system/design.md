@@ -4,7 +4,7 @@ A benchmark runner that deploys Agent Kernel in queue mode on each host, drives 
 open load, and records **throughput, latency (with per-stage traces), scaling, worker CPU / memory and cost** to CSVs
 and graphs. Phase 1 only records and reports; phase 2 adds SLA thresholds and an after-run pass/fail check. The runner
 is pluggable in two directions: one **client driver** per execution mode, and per platform a **host** composed from
-small reusable implementations (deployer, fetchers, collectors, cost parts). The only change to AK itself is a `TRACE`
+small reusable implementations (deployer, fetchers, collectors, billing reader). The only change to AK itself is a `TRACE`
 log level with per-stage trace points on the request path.
 
 ## Terminology
@@ -30,7 +30,7 @@ log level with per-stage trace points on the request path.
 - **Host:** a named bundle of per-platform implementations (`local`, `ecs`, `lambda`, `eks`, `baremetal`). Each host
   names its platform (`aws`, `k8s`, none for `local`).
 - **Percentiles:** p0 / p25 / p50 / p75 / p99 / p100 only, linear interpolation (numpy `method='linear'`).
-- **Billed cost:** the cloud bill for a run. **Estimated cost:** usage × list prices, splittable per step.
+- **Billed cost:** the cloud bill for a run, for the whole run only.
 
 ## Motivation
 
@@ -73,7 +73,7 @@ log level with per-stage trace points on the request path.
 - The benchmark **records** results (CSVs) and **reports** them (graphs). People read the graphs and decide.
 - Phase 1 doesn't flag or judge results: no warnings like "Rx below Tx", no thresholds, alerts or pass/fail.
 - It doesn't act on results: no early stop, no load, deployment or scaling changes mid-run.
-- The only actions are the planned steps of a run: deploy → run → collect → plot → tear down.
+- The only actions are the planned steps of a run: deploy → run → plot → tear down, then `collect-cost` for the bill a day later.
 - The run flow may read recorded data to know where it is (e.g. the [step-end rule](#step-timeline)). That's flow
   control, not judging.
 - Errors and timeouts are a `status` on the request row. A timeout never fails the run.
@@ -123,7 +123,7 @@ log level with per-stage trace points on the request path.
   1. **before** (config, default 1 min): no requests. Live tracking starts here: the live-tracked fetchers and queue
      depth record idle worker counts (and, on `eks` / `baremetal` / `local`, idle CPU / memory). At the end of
      `before` the runner reads the starting worker counts with a plain `fetch()` on the primary scaling fetcher
-     (stores nothing, works on any host); the cool-down waits for these counts. Idle cost comes from this part.
+     (stores nothing, works on any host); the cool-down waits for these counts.
   2. **load:** burst: send N → last response or timeout (≤ client timeout, default 5 min). Steady: first send →
      configured time is up (default 5 min; a random 1-5 s gap between a client's sends, never waiting). The client records sent /
      received per request → Tx, Rx, end-to-end latency, errors, timeouts; request ids are stored as they're sent. AK
@@ -174,24 +174,21 @@ log level with per-stage trace points on the request path.
      - the other scaling fetchers (`aws.ecs_scaling_activities`, `aws.cloudwatch_metric.ConcurrentExecutions`);
      - the other resource usage fetchers (`aws.ecs_service_metrics`, `aws.ecs_container_insights`,
        `aws.lambda_insights`, `aws.lambda_report_memory`).
-  4. **After all steps (`collect` in the [run flow](#run-flow)):** `UsageSource`s × `price_table.json` → estimated
-     cost, per step.
-  5. **Later, by separate commands:** billed cost (`collect-cost`, ~1 day after); `collect-scaling` /
+  4. **Later, by separate commands:** billed cost (`collect-cost`, ~1 day after); `collect-scaling` /
      `collect-resources` re-run the after-step fetchers.
 - **Run timeline (one host × mode):**
 
   ```text
-  |= 1 set up =|======== 2 run test types ========|= 3 collect =|= 4 report =|┄ 5 ~1 day ┄|= 6 collect-cost =|
+  |= 1 set up =|======== 2 run test types ========|= 3 report =|┄ 4 ~1 day ┄|= 5 collect-cost =|
   ```
 
-  1. **Set up** (minutes): deploy with every resource tagged `ak-bench-run-id`, fetch prices, record the run metadata.
+  1. **Set up** (minutes): deploy with every resource tagged `ak-bench-run-id`, record the run metadata.
   2. **Run test types:** step numbers 1 → 10 → 100 → 1000; for each, a steady step run, then a burst step run. Every
      step run is the four-part step above, with its own live tracking and its own after-step fetch.
-  3. **Collect** (after all steps): estimated cost = usage × prices, per step.
-  4. **Report, tear down:** write the run-level CSVs (`summary.csv` and `cost-per-step.csv` per test type, `cost.csv`),
+  3. **Report, tear down:** write the run-level CSVs (`summary.csv` per test type),
      draw the graphs, tear the deployment down. Each step run already wrote its own CSVs.
-  5. **Wait** (~1 day): Cost Explorer catches up.
-  6. **`collect-cost`:** billed cost for the run tag; fills `cost.csv` and redraws the estimated vs billed graph.
+  4. **Wait** (~1 day): Cost Explorer catches up.
+  5. **`collect-cost`:** billed cost for the run tag; writes `cost.csv` and draws the billed cost graph.
 
 ### Throughput and latency
 
@@ -229,8 +226,11 @@ log level with per-stage trace points on the request path.
     deployer.
   - Generic fetchers take constructor parameters (e.g. one CloudWatch metric fetcher given namespace, metric,
     dimension).
-- A host lists one or more fetchers; the first is the **primary** (step-end rule). Config can reorder or disable them.
-  All enabled fetchers are recorded side by side, never reconciled. The harness never branches on host kind.
+- A host lists one or more fetchers in the host registry; the first is the **primary** (step-end rule). Every bound
+  fetcher runs; there is no config switch for fetchers. All are recorded side by side, never reconciled. The harness
+  never branches on host kind.
+- A fetcher can be written but not bound (`aws.lambda_log_streams`): the class exists, no step run uses it. Binding it
+  is a manual edit of the host registry.
 - Phase 1 fetchers:
 
   | Fetcher | `live_track` | Gives | Bound to |
@@ -257,7 +257,7 @@ log level with per-stage trace points on the request path.
 - CPU and memory of every tier's workers over the whole step timeline, every step of both test types. Per worker where
   the platform gives it, otherwise per tier.
 - `ResourceUsageFetcher` ABC, separate from `ScalingInfoFetcher` (different sources and delays; scaling must work with
-  no usage source).
+  no resource usage fetcher).
   - Extends `InfoFetcher[ResourceUsage]`, so the same methods and parameters as `ScalingInfoFetcher`: `name`,
     `live_track`, `poll_interval_s`, `fetch(run, deployment, start, end) -> ResourceUsage` (the only one a subclass
     writes), `store()` (once in `ResourceUsageFetcher`), `fetch_and_store()`.
@@ -265,7 +265,7 @@ log level with per-stage trace points on the request path.
     - `ts`: when the reading was taken.
     - `tier`: which tier it belongs to (a key of `Deployment.resources`, e.g. `runner`).
     - `worker`: task id, pod name or Lambda log stream; `None` when the source only gives a whole-tier value.
-    - `metric`: what was read: `cpu_pct`, `mem_pct`, `mem_mb` or `cpu_time_ms`.
+    - `metric`: what was read: `cpu_pct`, `mem_pct` or `mem_mb`.
     - `stat`: `value` for a single raw reading; `min` / `avg` / `max` when the source already aggregated it (ECS
       service metrics across tasks; Lambda readings reduced per log stream × window in the query).
     - `value`: the number.
@@ -278,6 +278,8 @@ log level with per-stage trace points on the request path.
     `resource-usage.csv`. Fetchers never compute percentiles; the only reduction inside a fetcher is the Lambda
     query's per log stream × window step, to stay under the Logs Insights row limit.
   - Units: CPU as % of one worker's allocation; memory in MiB and as %.
+  - **No CPU on Lambda:** AWS gives no Lambda CPU utilization (Lambda Insights only has CPU time), so Lambda records
+    memory only and its CPU columns stay empty.
   - Shares the CloudWatch metric / Logs Insights helpers with the scaling fetchers and TraceCollector.
 - Phase 1 fetchers:
 
@@ -286,7 +288,7 @@ log level with per-stage trace points on the request path.
   | `aws.ecs_service_metrics` (`AWS/ECS` CPU / memory, per service) | no | min / avg / max per tier | `ecs` |
   | `aws.ecs_container_insights` (performance log events, `Type = "Task"`) | no | per task | `ecs` |
   | `aws.lambda_report_memory` (`REPORT` `Max Memory Used`) | no | memory per environment | `lambda` |
-  | `aws.lambda_insights` (Lambda Insights extension) | no | CPU time and memory per environment | `lambda`, on by default |
+  | `aws.lambda_insights` (Lambda Insights extension) | no | memory per environment | `lambda`, on by default |
   | `k8s.metrics_api` (`metrics.k8s.io` PodMetrics) | yes | per pod | `eks`, `baremetal` |
   | `local.process` (`psutil`) | yes | per AK process | `local` |
 
@@ -296,9 +298,11 @@ log level with per-stage trace points on the request path.
 
 ### Cost
 
-- Two numbers per run:
+- One number per run:
   - **billed:** AWS Cost Explorer `GetCostAndUsage` filtered by the run tag, grouped by service. Whole run only,
-    filled later by `collect-cost`. Empty where there is no bill (bare metal).
+    filled later by `collect-cost`. Empty where there is no bill (bare metal, local).
+    - Metric: **`UnblendedCost`**, the usage at the rate AWS charged, **without discounts and credits** (those are
+      separate line items; `NetUnblendedCost` is the after-discount view, not used). Recorded with the billed cost.
     - The tag is set **at deploy time**: the deployer puts `ak-bench-run-id=<run-id>` on every resource it creates
       (Terraform `default_tags`, Helm labels). Each run gets a new value.
     - **All the steps together, never per step:** one deployment, tagged once, serves every step of both test types,
@@ -310,39 +314,11 @@ log level with per-stage trace points on the request path.
       run's days (two days if it crosses midnight). Hourly granularity is not used.
     - Account prerequisite: `ak-bench-run-id` is activated once as a cost allocation tag (management account);
       otherwise the tag filter returns nothing. Costs only show for periods when the tag was on the resource.
-  - **estimated:** usage × price table. Worked out after all the steps have run (`collect`) and split per step.
-    Per-step costs, cost per 1M and the cost model use it; the billed number checks it.
-    - Each `UsageSource` returns billed quantities with time ranges; the shared estimate multiplies them by the
-      run's `price_table.json` and keeps the part that falls inside the step.
-    - Every billed thing works the same way: **AWS charges a price per unit, we measure how many units were used,
-      cost = units × price**. Only the unit differs per service. Example (all prices and amounts are fake):
-
-      | Service | How AWS bills it | What we measured (source) | Calculation | Cost |
-      |---|---|---|---|---|
-      | SQS | $0.50 per 1M requests | 2M requests (`SqsUsageSource`) | 2 × $0.50 | $1.00 |
-      | Lambda requests | $0.20 per 1M invocations | 3M invocations (`REPORT` lines) | 3 × $0.20 | $0.60 |
-      | Lambda compute | $0.00002 per GB-second | 500,000 GB-s = memory (GB) × billed seconds, summed over the `REPORT` lines | 500,000 × $0.00002 | $10.00 |
-      | API Gateway WebSocket messages | $1.00 per 1M messages | 4M messages | 4 × $1.00 | $4.00 |
-      | Fargate vCPU | $0.04 per vCPU-hour | 10 vCPU-hours = 10 tasks × 0.5 vCPU × 2 h (`aws.ecs_api` task start / stop) | 10 × $0.04 | $0.40 |
-      | Fargate memory | $0.004 per GB-hour | 20 GB-hours = 10 tasks × 1 GB × 2 h | 20 × $0.004 | $0.08 |
-
-      - The real prices per unit come from AWS's Price List API and are saved in the run's `price_table.json`.
-      - **Per step:** the same calculation, counting only the units used inside the step's time range (first send →
-        end of cool-down; the `before` part is costed separately as idle cost). The step's cost is the sum of its
-        rows.
-      - **Cost per 1M successful requests:** step cost ÷ (`ok` requests in millions). E.g. $16.08 for 2M `ok`
-        requests = $8.04 per 1M.
-- Per step (first send → end of cool-down): total by component, requests by status, cost per 1M successful requests,
-  cost per hour of the load part (steady), idle cost of `before` kept separate.
-- Cost model per host: `idle_cost_per_hour` and `cost_per_1m_messages` by component, for the agent delay used. LLM
-  token cost excluded.
-- Per-platform parts, all ABCs:
-  - `UsageSource`: one per billed thing (Fargate, Lambda, SQS, API Gateway WebSocket, ALB, K8s nodes, ...), returns
-    quantities with time ranges.
-  - `BillingReader`: one per cloud (AWS: Cost Explorer). Returns `None` where there is no bill.
-  - `PriceSource`: one per cloud (AWS: Price List Query API `GetProducts`; bare metal: `$/node-hour` from config).
-- Prices are fetched at the start of each run and saved as `price_table.json` (region, fetch date, overrides). Nobody
-  edits prices by hand. Usage is stored separately, so a run can be re-priced.
+    - AWS's own billing rules (e.g. Fargate's 1-minute minimum, SQS billing per API request) are already in the
+      bill, so the benchmark doesn't model them.
+    - Covers set-up, every step, the waits after the steps and the time until tear-down. LLM token cost excluded
+      (mock agent).
+- Per-platform part: `BillingReader` ABC, one per cloud (AWS: Cost Explorer). Returns `None` where there is no bill.
 
 ### Benchmark project
 
@@ -354,8 +330,8 @@ log level with per-stage trace points on the request path.
 - **Its own config file**, `ak-bench.yaml`, not `AKConfig`. Departure from the "reuse existing configuration" house
   pattern, because these are benchmark settings, not AK runtime config. Holds: hosts, modes, test types, load steps,
   min / max send interval, steady load time, before window (default 1 min), maximum cool-down, wait before the
-  after-step fetch (default 1 min), client timeout, time window size, min / max agent delay, fetcher order / on-off, poll interval per
-  live-tracked fetcher, Lambda Insights on-off, bare-metal `$/node-hour`, price overrides.
+  after-step fetch (default 1 min), client timeout, time window size, min / max agent delay, poll interval per
+  live-tracked fetcher, Lambda Insights on-off.
 - Registries follow AK's factory shape: built-in short names, dotted-path bring-your-own, unknown name → error naming
   the built-ins.
 
@@ -365,14 +341,14 @@ graph LR
     ORCH --> HOST["Host bundle<br/>(host registry)"]
     HOST --> DEP["Deployer"]
     HOST --> IF["InfoFetchers (one base class)<br/>ScalingInfoFetchers, ResourceUsageFetchers,<br/>TraceCollector, TransportCollector"]
-    HOST --> COST["UsageSources / BillingReader / PriceSource"]
+    HOST --> COST["BillingReader"]
     ORCH --> SR["Step runner (per step)"]
     SR -->|"live_track = True: background,<br/>before → end of cool-down"| IF
     SR -->|"live_track = False: once,<br/>after cool-down + wait"| IF
     SR --> LG["Load generator"]
     LG --> DRV["ClientDriver"]
     DRV -->|WebSocket| AK["AK app<br/>(mock pre-hook, TRACE on)"]
-    ORCH --> SHARED["Shared: collectors, step-end check,<br/>derived numbers, cost estimate (after all steps), CSVs, plots"]
+    ORCH --> SHARED["Shared: collectors, step-end check,<br/>derived numbers, CSVs, plots"]
 ```
 
 ### Selecting what to run (CLI)
@@ -392,19 +368,18 @@ graph LR
 
 ### Run flow
 
-- For each selected host × mode: **deploy → fetch prices → record run metadata → run test types → collect → write
+- For each selected host × mode: **deploy → record run metadata → run test types → write
   run-level CSVs → plot → tear down**.
   - **Run test types:** every step stores its own data: live tracking from the start of `before` to the end of the
     cool-down, then the data with history after the cool-down and the configured wait (see
     [Step timeline](#step-timeline)).
-  - **Collect:** after all the steps: the estimated cost (usage × prices, per step).
   - Every resource the deployer creates carries the tag / label `ak-bench-run-id=<run-id>`.
 
 **The whole flow** (one host × mode):
 
 ```mermaid
 flowchart TD
-    DEP["<b>Deploy</b> (once per host × mode)<br/>returns the Deployment: endpoint, resources, queues, logs<br/>+ fetch prices, record run metadata"]
+    DEP["<b>Deploy</b> (once per host × mode)<br/>returns the Deployment: endpoint, resources, queues, logs<br/>+ record run metadata"]
 
     subgraph STEP["One step run: one test type (steady or burst) at one step number N"]
         B["<b>1 · before</b> (1 min, no load)<br/>idle baseline for the graphs<br/>at its end: read the starting worker counts (fetch only)"]
@@ -424,9 +399,8 @@ flowchart TD
     DEP --> B
     H --> MORE{"More step runs?"}
     MORE -- "yes: next step run, from the minimum workers<br/>order: 1 steady → 1 burst → 10 steady → 10 burst → …" --> B
-    MORE -- "no" --> COST["<b>Collect: estimated cost</b><br/>usage × prices, split per step"]
-    COST --> CSV["<b>Write run-level CSVs</b><br/>summary.csv, cost-per-step.csv (per test type), cost.csv<br/>(each step run already wrote its own CSVs)"] --> PLOT["Plot (PNG)"] --> DOWN["Tear down"]
-    DOWN -.-> BILL["<b>Billed cost</b>: ak-bench collect-cost, ~1 day later<br/>all steps together, never per step"]
+    MORE -- "no" --> CSV["<b>Write run-level CSVs</b><br/>summary.csv (per test type)<br/>(each step run already wrote its own CSVs)"] --> PLOT["Plot (PNG)"] --> DOWN["Tear down"]
+    DOWN -.-> BILL["<b>Billed cost</b>: ak-bench collect-cost, ~1 day later<br/>writes cost.csv, all steps together, never per step"]
 ```
 
 - **Live group (`live_track = True`):** sources with no history (ECS / K8s API counts, metrics-server, local process,
@@ -437,7 +411,7 @@ flowchart TD
   activities) can be asked later for any window, so they're read once per step, after the wait for ingestion.
 - **The cool-down check** calls `fetch()` only: it needs the current values to decide, and storing is the other
   two groups' job.
-- **Cost** is worked out after all the steps; the billed cost covers all the steps together, about a day later.
+- **Cost:** the billed cost covers all the steps together and is read about a day later (`collect-cost`).
 
 - **Run metadata** (`run-metadata.json`), recorded before the first step. Recorded only, never compared:
   - run: run id, start time, host, platform, execution mode, region, AK version and git commit;
@@ -483,7 +457,7 @@ flowchart TD
 - **Order (decided 2026-11-01):** step number by step number, each test type as its own step run: steady N, then
   burst N, then the next N (1 steady → 1 burst → 10 steady → 10 burst → …).
   - Never both loads in one step run: one would start on workers the other already scaled up, and the step's scaling,
-    resource usage, queue depth and cost couldn't be split between them.
+    resource usage and queue depth couldn't be split between them.
   - Both test types of a step number run close together in time, and a run stopped early still has both for every
     finished step number.
 - Each step run starts only after the previous one has ended and its after-step fetch is done, so it starts from the
@@ -496,7 +470,7 @@ flowchart TD
 ### Hosts
 
 - A `Host` is a bundle: platform name, deployer, scaling fetchers (ordered), resource usage fetchers, trace collector,
-  transport collector (or none), usage sources, billing reader (or none), price source (or none).
+  transport collector (or none), billing reader (or none).
 - A host registry maps names to bundles; a new host or platform is a registration, not a harness change.
 - Code is grouped in folders by cloud (`platforms/aws/`, `platforms/k8s/`, ...), one file per implementation. No
   per-cloud "benchmarker" classes (`AWSBenchmarker`, `KubernetesBenchmarker`), because cloud, compute type and
@@ -518,9 +492,7 @@ flowchart TD
                                LambdaReportMemoryResourceFetcher(live_track=False)],
             trace=CloudWatchLogsTraceCollector(live_track=False),
             transport=SqsTransportCollector(live_track=True),  # chosen by transport, not cloud
-            usage_sources=[LambdaUsageSource(), SqsUsageSource(), ApiGatewayWsUsageSource()],
             billing=CostExplorerBillingReader(),     # shared AWS part
-            prices=AwsPriceListPriceSource(),        # shared AWS part
         ),
         "eks": Host(
             platform="k8s",
@@ -529,16 +501,14 @@ flowchart TD
             resource_fetchers=[K8sMetricsApiResourceFetcher(live_track=True)],
             trace=...,                               # log backend decided when EKS is built (L1)
             transport=KafkaTransportCollector(live_track=True),
-            usage_sources=[K8sNodeUsageSource()],
             billing=CostExplorerBillingReader(),     # bill from AWS: same class as lambda
-            prices=AwsPriceListPriceSource(),
         ),
     }
     ```
 
 - No per-host classes either (`LambdaBenchmarker`, `EcsBenchmarker`): a host is a registry entry that picks existing
   implementations, not a class with its own code. A class per host would copy the shared parts into every host:
-  - `lambda` and `ecs` would each carry their own SQS queue depth, SQS usage, Cost Explorer and price list code.
+  - `lambda` and `ecs` would each carry their own SQS queue depth and Cost Explorer code.
   - `eks` and `baremetal` would each carry the same Helm deployer, `k8s.api` and `k8s.metrics_api` fetchers.
   - A new host would be a new class; as a bundle it's one registry entry built from existing parts.
 - The harness (load generator, timing, CSVs, derived numbers, plots) never calls a cloud API; it only sees the ABCs
@@ -565,17 +535,17 @@ flowchart TD
     if `fetch()` returned another type.
   - Each family base fixes `T` (a dataclass): `ScalingInfo`, `ResourceUsage`, `TraceInfo`, `QueueInfo`. A type
     checker flags a subclass whose `fetch()` returns anything else.
-  - So the step runner calls them all the same way. The cost parts and the `Deployer` don't extend it: they run once
+  - So the step runner calls them all the same way. The billing reader and the `Deployer` don't extend it: they run once
     per run or after all steps, not inside a step.
 - Built-in bundles:
 
-  | Host | Scaling fetchers (primary first) | Resource fetchers | Trace collector | Transport | Usage / billing / prices |
+  | Host | Scaling fetchers (primary first) | Resource fetchers | Trace collector | Transport | Billing |
   |---|---|---|---|---|---|
   | `local` | none | `local.process` | local process logs | none | none |
-  | `ecs` | `aws.ecs_api`, `aws.ecs_scaling_activities` | `aws.ecs_container_insights`, `aws.ecs_service_metrics` | CloudWatch Logs | `sqs` | Fargate, SQS, ALB / Cost Explorer / AWS Price List |
-  | `lambda` | `aws.cloudwatch_metric.ConcurrentExecutions` | `aws.lambda_insights`, `aws.lambda_report_memory` | CloudWatch Logs | `sqs` | Lambda, SQS, API Gateway WS / Cost Explorer / AWS Price List |
-  | `eks` | `k8s.api` | `k8s.metrics_api` | decided later (L1) | `kafka` | K8s nodes, EKS control plane / Cost Explorer / AWS Price List |
-  | `baremetal` | `k8s.api` | `k8s.metrics_api` | pod logs / Loki | `kafka` | K8s nodes / none / config `$/node-hour` |
+  | `ecs` | `aws.ecs_api`, `aws.ecs_scaling_activities` | `aws.ecs_container_insights`, `aws.ecs_service_metrics` | CloudWatch Logs | `sqs` | Cost Explorer |
+  | `lambda` | `aws.cloudwatch_metric.ConcurrentExecutions` | `aws.lambda_insights`, `aws.lambda_report_memory` | CloudWatch Logs | `sqs` | Cost Explorer |
+  | `eks` | `k8s.api` | `k8s.metrics_api` | decided later (L1) | `kafka` | Cost Explorer |
+  | `baremetal` | `k8s.api` | `k8s.metrics_api` | pod logs / Loki | `kafka` | none |
 
 - Benchmark deployment settings, applied by the deployers and recorded in the metadata:
   - `ecs`: `scaling_config.enabled = true`, `min_count >= 1`.
@@ -642,8 +612,8 @@ flowchart TD
   - `step-<N>` zero-padded to the digits of the largest step.
   - Only what ran gets a folder.
 - Per run: `run.log` (incl. the missing-responses warnings).
-- Per host × mode: `run-metadata.json`, `price_table.json`, `cost.csv` (whole-run estimated and billed, cost model).
-- Per test type: `summary.csv` (one row per step), `cost-per-step.csv`, `graphs/`.
+- Per host × mode: `run-metadata.json`, `cost.csv` (whole-run billed cost by service, written by `collect-cost`).
+- Per test type: `summary.csv` (one row per step), `graphs/`.
 - Per step:
   - `per-request.csv`: request id, session id, client id, scheduled send, sent, first chunk, complete, latency, status,
     raw stage timestamps, and one `<STAGE>_s` duration column per request-path `TraceStage` value (not the
@@ -651,7 +621,7 @@ flowchart TD
   - `per-time-window.csv`: step part, Tx, Rx, errors, timeouts, latency percentiles, each queue's depth, worker counts
     per tier × count type × fetcher (e.g. `runner.running.aws.ecs_api`), CPU / memory per tier × metric × stat ×
     fetcher.
-  - `resource-usage.csv`: raw per-worker samples in long form (`ts, tier, worker, metric, value, fetcher`).
+  - `resource-usage.csv`: raw per-worker samples in long form (`ts, tier, worker, metric, stat, value, fetcher`).
   - `graphs/`.
 - Summary per step: percentiles of end-to-end latency and each stage duration (with the row count used), min / avg /
   max of per-window Tx / Rx, error and timeout counts, time to answer all N (burst), `cooldown_max_reached`, scaling
@@ -667,7 +637,8 @@ flowchart TD
 - Comparing the steps of one host × mode × test type (`<test type>/graphs/`):
   1. `01-latency-per-step.png`: end-to-end latency percentiles per step, timeouts counted under each step.
   2. `02-stage-times-per-step.png`: the per-step stage-times graph for every step, one panel per step, same y scale.
-  3. `03-resource-usage-per-step.png`: CPU % and memory percentiles per step, one row of panels per tier.
+  3. `03-resource-usage-per-step.png`: CPU % and memory percentiles per step, one row of panels per tier
+     (Lambda: memory only).
 - One step (`step-<N>/graphs/`):
   1. `01-stage-times.png`: one box per stage (p25-p75, line at p50, whiskers p0 / p100, marker at p99).
   2. `02-stage-breakdown.png`: stacked stage times for the fastest, average and slowest real request (completed
@@ -677,7 +648,8 @@ flowchart TD
      tier.
   4. `04-every-request.png` (steady only): every request's latency vs send time, per-window percentiles, timeouts on
      the timeout line.
-  5. `05-resource-usage.png`: CPU % and memory percentiles per window, one row of panels per tier.
+  5. `05-resource-usage.png`: CPU % and memory percentiles per window, one row of panels per tier (Lambda:
+     memory only).
 - Rules:
   - every aggregate of a per-request measurement shows all six percentiles; box with whiskers to p0 / p100
     (`whis=(0, 100)`) and a p99 marker on category axes, bands (p0-p100 light, p25-p75 dark), a p50 line and a dashed
@@ -685,14 +657,14 @@ flowchart TD
   - each tier, pipeline stage and queue shown separately, never summed; whole-system values (Tx, Rx, end-to-end
     latency, totals) not split;
   - separate panels, never two y-axes; no threshold or pass/fail lines;
-  - estimated vs billed cost per run, drawn by `collect-cost`.
+  - billed cost per run by service, drawn by `collect-cost`.
 - No cross-host or cross-mode comparison graphs.
 
 ### Phase 2: SLA numbers and tuning
 
 - Computed from the phase-1 CSVs without re-running.
 - SLA thresholds chosen from phase-1 values: latency percentiles per step, minimum Tx / Rx, maximum error / timeout
-  rate, maximum scale-up / scale-down time, maximum cost per 1M messages.
+  rate, maximum scale-up / scale-down time.
 - After-run SLA check: compares measured values to thresholds and records pass/fail per SLA number. Nothing changes
   during a run.
 - A performance test report per host. Tuning AK to meet the SLAs is tracked under #468.
@@ -728,7 +700,6 @@ Parked on purpose; decided when that part is built.
   the TraceCollector.
 - **L2.** WebSocket delta: whether the results folders get a message-type level under the mode.
 - **L3.** WebSocket delta: trace every chunk or only the first (`AGENT_FIRST_CHUNK`) and last (`AGENT_DONE`).
-- **L4.** Bare metal: the `$/node-hour` figure for the cost estimate.
 
 ## Check on the first runs
 
@@ -740,8 +711,8 @@ Answered by looking at real data, not by a decision. Each has a fallback already
 - **R2.** Lambda step end: whether `ConcurrentExecutions` has no datapoint (rather than 0) in idle minutes, and the
   metric delay to allow for.
 - **R3.** Whether the 1-min default wait before the after-step fetch is enough for each log backend (ingestion delay).
-- **R4.** Lambda Insights: whether its events carry `duration` / `function_name`, and whether its log stream is one
-  per execution environment (fallbacks: `cpu_time_ms` only, per-tier values).
+- **R4.** Lambda Insights: whether its events carry `function_name`, and whether its log stream is one per execution
+  environment (fallback: per-tier values).
 - **R5.** ECS: Container Insights `Type = "Task"` events exist for Fargate tasks (only non-AWS examples so far).
 - **R6.** ECS: whether target tracking on a custom metric still uses the 3 / 15 one-minute datapoint rule after AWS's
   June 2026 faster-scaling change (check the CloudWatch alarms the policy creates).

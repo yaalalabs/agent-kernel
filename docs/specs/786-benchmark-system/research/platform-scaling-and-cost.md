@@ -2,7 +2,7 @@
 
 How the [Scaling](../design.md) and [Cost](../design.md) requirements are measured. Both follow the
 "record and report only" principle: the runner records timestamps, counts and dollars, and the graphs show them. The
-derived numbers below (scale-up time, cost per 1M messages) are fixed calculations over the recorded data, not
+derived numbers below (scale-up time, scale-down time) are fixed calculations over the recorded data, not
 pass/fail checks.
 
 ## Pluggable per-platform collectors
@@ -20,10 +20,7 @@ Host (registered by name, e.g. "ecs", "lambda", "eks", "baremetal", later "cloud
 ├── ScalingInfoFetchers one or more per host; each reads worker counts one way (see Scaling info fetchers below)
 ├── ResourceUsageFetchers one or more per host; each reads worker CPU / memory one way (see resource-usage.md)
 ├── TraceCollector      fetch(run, deployment, start, end) -> TraceInfo  (stage timestamps per request, from the AK trace logs)
-├── UsageSources        one or more per host, one per billed thing (Fargate, Lambda, SQS, API Gateway, K8s nodes, ...)
-│                       usage(run, deployment, start, end) -> [UsageItem(component, unit, qty, start, end)]
 ├── BillingReader       billed(run) -> [CostItem(component, usd)] | None   (one per cloud; later step; None if no bill)
-├── PriceSource         prices(region) -> PriceTable   (one per cloud; fetched per run, see Cost → Prices)
 └── TransportCollector  fetch(run, deployment, start, end) -> QueueInfo  (queue depth: waiting, in flight, per queue;
                         picked by transport: sqs, kafka, later pubsub, servicebus)
 ```
@@ -39,23 +36,23 @@ Host (registered by name, e.g. "ecs", "lambda", "eks", "baremetal", later "cloud
     checker flags a subclass whose `fetch()` returns another type, and `fetch_and_store` raises a clear error if it
     does at runtime.
   - So the step runner calls all of them the same way (see
-    [Scaling info fetchers](#scaling-info-fetchers-pluggable)). The cost parts and the Deployer don't extend it: they
-    run once per run or after all steps, not inside a step.
-- **Shared, platform-independent code:** scaling-test orchestration, the step runner (live tracking, cool-down check, after-step fetch) and timestamps,
+    [Scaling info fetchers](#scaling-info-fetchers-pluggable)). The billing reader and the Deployer don't extend it: they
+    run once per run or after the run, not inside a step.
+- **Shared, platform-independent code:** run orchestration, the step runner (live tracking, cool-down check, after-step fetch) and timestamps,
   turning scaling
-  source output into per-window worker counts, all derived numbers (scale-up/down times, idle cost, cost per 1M messages = usage × price table),
+  source output into per-window worker counts, all derived numbers (scale-up/down times),
   CSV writing and graphs. It only sees the common return types above.
 - **Per-platform code:** only the API calls that fill those types. A field with no source on a platform (e.g. `desired`
   on Lambda, `billed` on bare metal) is returned as empty and the column stays blank.
 - **Reuse within a platform family:** e.g. one K8s scaling info fetcher serves EKS, bare metal and later GKE/AKS (they
-  differ only in their cost parts); the AWS billing reader and price source are shared by Lambda, ECS and EKS, and
-  each host picks the usage sources for the things it's billed for.
+  differ only in their billing reader); the AWS billing reader is shared by Lambda, ECS and EKS.
 - **Adding GCP or Azure** = implement these for the new host and register it. No changes to the harness, CSVs
   or plots.
 - Worker counts come only from the platform side (APIs, metrics, logs). Nothing in AK or the benchmark pre-hook
   reports a worker id.
 
-File and class layout for these interfaces: to be specified in `spec.md`.
+File and class layout for these interfaces: to be specified in the implementation spec (written after this design is
+approved).
 
 ## Scaling
 
@@ -126,7 +123,7 @@ with history. Live tracking runs from the start of "before" to the end of the co
     still calls its `fetch()` for the latest minutes, accepting the CloudWatch delay. Lambda sends metric data to
     CloudWatch in 1-minute intervals. The recorded counts still come from its `fetch_and_store()` after the
     cool-down, which has the complete data. If the delay turns out too long,
-    the host can be switched to `aws.lambda_log_streams` by config (a manual choice, not automatic).
+    a person can bind `aws.lambda_log_streams` to the host in `hosts.py` instead (a manual choice, not automatic).
 - **Maximum cool-down time:** configurable, **default 45 min**, counted from `t_load_down`. If it's reached, the step
   ends, records `cooldown_max_reached = true`, "scale-down done" stays empty and `workers_after_down` shows where it
   stopped. Why 45 min:
@@ -151,7 +148,8 @@ Added to the per-time-window CSV, next to Tx/Rx/errors:
   were handling work in the window (that's what their metrics and logs count).
 - **Pending workers** (K8s only): pods created but not scheduled, e.g. when bare-metal nodes are full.
 - **Queue depth:** input and output queue backlog, each queue in its own column (SQS
-  `ApproximateNumberOfMessagesVisible`, Kafka consumer-group lag).
+  `ApproximateNumberOfMessages` waiting and `ApproximateNumberOfMessagesNotVisible` in flight, Kafka consumer-group
+  lag).
 - **Latency percentiles** (p0 / p25 / p50 / p75 / p99 / p100) of requests completed in that window.
 
 Worker counts are recorded **per tier** and **per scaling info fetcher** (below). Which tiers scale depends on the host
@@ -161,7 +159,8 @@ Worker counts are recorded **per tier** and **per scaling info fetcher** (below)
   `desired_count` (default 1) with no autoscaling, so its count is recorded but stays flat.
 - **Lambda:** every function scales on its own: request handler, agent runner, response handler (and the WebSocket
   connection handler). Each is recorded as its own tier.
-- **Local (`in_memory`):** one process, nothing scales. There are no fetchers and no scaling is recorded locally.
+- **Local (`in_memory`):** one process, nothing scales. There are no scaling fetchers and no scaling is recorded
+  locally (CPU / memory still comes from `local.process`).
 
 ### Scaling info fetchers (pluggable)
 
@@ -170,8 +169,9 @@ different resolution and delay. Each way is a separate plugin, a **scaling info 
 class, `ScalingInfoFetcher`, so a new way can be added for any host without touching the harness.
 
 - **One fetcher = one way to read worker counts on one platform**, with a registry name (e.g. `aws.ecs_api`,
-  `aws.cloudwatch_metric.ConcurrentExecutions`). A host lists one or more fetchers; the benchmark config can turn fetchers on or off per
-  run.
+  `aws.cloudwatch_metric.ConcurrentExecutions`). A host lists one or more fetchers in `hosts.py`, and every bound fetcher runs. A
+  fetcher can be written without being bound (e.g. `aws.lambda_log_streams`): it exists as a class but no step run
+  uses it. There's no config switch for fetchers.
 - **Same methods and parameters for every fetcher:**
   - `fetch(run, deployment, start, end) -> ScalingInfo`: the only method a subclass writes. It reads and stores
     nothing.
@@ -198,7 +198,7 @@ class, `ScalingInfoFetcher`, so a new way can be added for any host without touc
   came from:
   - **Count samples:** `(ts, tier, count type, value)`, count type = desired / running / pending.
   - **Worker spans** (optional, from fetchers that see individual workers): `(tier, worker, started, stopped)`, plus
-    extra fields where useful (e.g. ECS `pullStartedAt` for the cost estimate). The shared code turns spans into a
+    extra fields where useful (e.g. ECS `pullStartedAt`). The shared code turns spans into a
     running count at any window size, so these give exact times, not just poll-interval resolution.
 - **Which resources to watch:** a fetcher gets the per-tier resource ids from the deployer's `Deployment.resources`
   (ECS cluster and service names, K8s Deployment names, Lambda function names, ...), so it needs no extra config.
@@ -216,15 +216,15 @@ class, `ScalingInfoFetcher`, so a new way can be added for any host without touc
   disagree (different resolution and lag); that's shown, not reconciled.
 - **Candidates for now:** where a host lists two fetchers below, both are kept as candidates while the design is
   discussed. Each host will be finalized to one fetcher; until then both are recorded side by side.
-- **Primary fetcher:** the first fetcher in the host's list. The end-of-step check uses it. The benchmark
-  config can change the order. The summary CSV records which fetcher each number came from.
+- **Primary fetcher:** the first fetcher in the host's list in `hosts.py`. The end-of-step check uses it. The
+  summary CSV records which fetcher each number came from.
 - **Reuse across platforms:** generic fetchers take constructor parameters instead of being rewritten, e.g. one cloud
   metric fetcher per monitoring backend (CloudWatch, Cloud Monitoring, Azure Monitor) given the metric name, and one
   "distinct instance ids in the logs" fetcher per log backend given the id field. The log-based ones share the log
   fetching code with the TraceCollector for the same backend. One K8s fetcher serves EKS, bare metal, GKE and AKS.
 - **A count with no fetcher** on a platform (e.g. `desired` on Lambda) stays empty.
 
-Class sketch and a worked example: to be specified in `spec.md`.
+Class sketch and a worked example: to be specified in the implementation spec (written after this design is approved).
 
 Fetchers per host (✓ = available now, later = when the platform is added), primary first:
 
@@ -393,143 +393,52 @@ the worker size (task vCPU/memory, pod resource requests/limits, Lambda memory).
 
 - Worker count over time (desired / running, one line per scaling info fetcher) with the start and end of the step's
   load marked.
-- Avg latency and queue depth over time on the same time axis.
+- Latency percentiles per window and queue depth over time on the same time axis.
 - Tx/Rx over time across the whole step.
 
 ## Cost
 
-Two separate things: what a run **actually cost** (test costs), and an **estimate** of what running AK costs per
-target (cost models).
-
-### Two cost numbers per run: billed and estimated
-
-| | Billed | Estimated |
-|---|---|---|
-| Source | the cloud's bill (AWS Cost Explorer, filtered by the run tag) | usage × price table, computed by the benchmark |
-| Accuracy | exact: what is paid, incl. discounts, free tier, Savings Plans | close: list prices |
-| Available | ~1 day after all the steps have run (`collect-cost` step) | after all the steps have run |
-| Split by time | whole run only (daily, or hourly if enabled) | any window: per step, per step part |
-| Bare metal | none (no bill) | yes ($/node-hour) |
-| What-if ("cost of 1M messages?") | no | yes: the cost model is built from it |
-
-- **Per-step costs, cost per 1M requests and the cost model come from the estimate.** The billed number is the real
-  cost of the whole run and checks the estimate.
-- Both are recorded and graphed side by side (estimated vs. billed per run). A large gap means the estimate is
-  missing a usage source (e.g. NAT gateway, data transfer, CloudWatch Logs). Adding that source and recomputing old
-  runs works, because usage is stored separately from prices.
+What a run **actually cost**, read from the cloud's bill, for the whole run.
 
 ### How the cost code is split
 
-Same pattern as the scaling info fetchers: the cloud-specific code only **fetches numbers**, all the maths is shared.
+- **Billing reader:** one per cloud (AWS: Cost Explorer). Returns `None` where there's no bill (bare metal, local), and
+  the cost columns stay blank.
+- **Shared code:** writes the cost CSV and draws the cost graph. It never calls a cloud API.
+- Adding a cloud = its billing reader.
 
-- **Usage sources:** one small class per billed thing (Fargate tasks, Lambda, SQS, API Gateway WebSocket, ALB, K8s
-  nodes, ...), not one class per cloud, so no class fills up with `if lambda / if ecs` branches. Each host lists the
-  ones it's billed for (e.g. ECS = Fargate + SQS + ALB, Lambda = Lambda + SQS + API Gateway). Each returns quantities
-  with a time range (`usage(run, deployment, start, end)`), so the shared code can cut them per step. Most read data
-  the run already has (e.g. the ECS task spans from `aws.ecs_api`).
-- **Billing reader:** one per cloud (AWS: Cost Explorer). Returns `None` where there's no bill.
-- **Price source:** one per cloud, see [Prices](#prices-fetched-per-run-saved-with-the-results).
-- **Shared code:** usage × prices per component, per-step costs, cost per 1M successful requests, idle cost,
-  estimated vs. billed, CSVs and graphs. It never calls a cloud API.
-- Adding a cloud = its usage sources + billing reader + price source. Adding a billed service on an existing cloud =
-  one usage source. A provider changing **how** it bills something only changes that one usage source.
-
-### 1. Test costs (actual cost of each run)
+### Billed cost of each run
 
 **Tag everything.** Every resource the runner deploys gets a `ak-bench-run-id` tag (Terraform `default_tags`, Helm
-labels). Then two numbers are recorded:
+labels). The billed cost is AWS Cost Explorer `GetCostAndUsage` filtered by the run tag, grouped by service.
 
-- **Billed cost (authoritative, delayed):** AWS Cost Explorer `GetCostAndUsage` filtered by the run tag, grouped by
-  service. Caveats:
-  - **All the steps together, never per step.** The tag is set once, at deploy time, and one deployment serves every
-    step of both test types (1 → 10 → 100 → 1000), so every charge of the run carries the same tag value and Cost
-    Explorer can't tell the steps apart. Its time grain (daily, or hourly) can't separate them either: steps are
-    minutes long and run back to back. So the billed cost is read once, after all the steps have run.
-  - The tag must be activated as a cost allocation tag (management account). Tagged costs show from activation on;
-    the management account can **backfill** up to 12 months (one backfill request per 24 h). Costs only appear for
-    periods when the tag was actually on the resource.
-  - Cost Explorer refreshes at least once every 24 h (some data can arrive later), so this is a **separate, later
-    step** (`collect-cost --run-id …`) that fills in the cost CSV after the run. It fits the existing "re-plot from
-    existing CSVs" option. Each Cost Explorer API request costs $0.01.
-  - Daily granularity is enough for a run's total, since every run has its own tag: only that run's resources
-    carry its tag value, so the run's billed cost is the sum of the daily rows for that value over the days the run
-    covered (two days if it crosses midnight). Not using hourly (decided 2026-10-29). Hourly granularity (opt-in, about
-    $0.01 per 1,000 usage records per month) only helps if we want the cost per step of a run, and hourly data is kept
-    for **14 days** only, so `collect-cost` must run within that window.
-  - Shared or long-lived resources (EKS control plane, NAT gateway, a long-lived MSK cluster) can be tagged, but if
-    they're shared across runs or used by other things, their cost must be listed as a fixed allocation instead. The
-    automatic `aws:eks:cluster-name` tag doesn't cover the EKS control plane fee.
-- **Usage-based estimate (immediate):** computed after all the steps have run, from the usage the runner already stored, times
-  a price table. Usage is recorded with timestamps, so the same estimate is also split **per step** (first send → end
-  of cool-down), which gives the [per-step costs](../design.md). Cost Explorer can't split a run this finely
-  (daily, or hourly if enabled), so per-step costs always come from the estimate; the billed total checks the
-  estimate for the whole run.
-  - ECS/Fargate: task-seconds × (vCPU, GB). Fargate bills per second with a 1-minute minimum, from the **start of
-    the image pull** until the task stops, so use the task's `pullStartedAt` → `stoppedAt` (the `aws.ecs_api`
-    scaling info fetcher already records them in its worker spans), not `startedAt`.
-  - Lambda: GB-seconds from the `REPORT` log lines (`Billed Duration` × `Memory Size`), plus request count.
-  - SQS: SQS bills per **API request**, not per message: a batch of up to 10 messages is one request per 64 KB of
-    payload, and empty receives are billed too. CloudWatch's `NumberOfMessagesSent/Received/Deleted` count messages,
-    so they overcount when batching is used. Count requests from AK's own send/receive/delete calls (or divide by
-    the batch sizes used), plus `NumberOfEmptyReceives`.
-  - API Gateway WebSocket: messages (metered in 32 KB blocks; ping/pong not billed) + connection minutes.
-  - Session store (Redis/DynamoDB), ALB, NAT: hours/units used.
-  - EKS: node-hours + control plane hours. For pod-level cost, AWS **split cost allocation data for EKS** (in the
-    Cost and Usage Report) or OpenCost/Kubecost if installed.
-  - **Bare metal:** there's no bill, so cost is always this estimate: node-hours × a configured $/node-hour (hardware
-    amortisation + power/hosting), supplied in the benchmark config.
-
-Recording both lets the estimate be checked against the bill, which is also how the cost model gets validated.
-
-### 2. Cost models (estimated cost per target)
-
-Split every target's cost into a **fixed (idle)** part and a **variable (per-message)** part:
-
-```
-monthly_cost(N messages) = idle_cost_per_month + N × cost_per_message
-```
-
-- **Idle cost:** what the deployment costs with zero traffic: min replicas × hours, always-on infra (ALB, NAT, Redis,
-  MSK brokers, EKS control plane, Kafka nodes). Measured by leaving the deployment idle for a fixed window (e.g. 1 h)
-  and pricing the usage, or computed directly from the min-capacity settings. Lambda + SQS will be near zero apart from
-  the session store; ECS/EKS pay for min replicas.
-- **Cost per message (→ cost per 1M messages):** derived from the benchmark's own measurements, not guessed:
-  - Per-request services (SQS, API Gateway, DynamoDB, Lambda invocations): count of billed operations per message,
-    from the run's usage ÷ messages handled (e.g. SQS: send + receive + delete on both queues, divided by batching).
-  - Compute: for containers, worker-seconds per message at the measured saturation throughput (from the throughput
-    tests: messages/s per worker). For Lambda, GB-seconds per message.
-
-**Inputs and outputs:**
-
-- A **price table** per run (region + date it was fetched), saved with the run's results. See
-  [Prices](#prices-fetched-per-run-saved-with-the-results).
-- Cost CSV columns (per host × mode): `idle_cost_per_hour`, `cost_per_1m_messages`, broken down by component, plus
-  `test_cost_estimated`, `test_cost_billed` (filled later), and the price-table version.
-
-**Caveats to state with the numbers:**
-
-- With the mock agent, the model covers **AK infrastructure only**; LLM token costs are excluded.
-- The mock agent's delay is a cost driver for Lambda and containers (they're billed while waiting), so cost per message
-  is reported for the agent delay used, and the model takes agent duration as a parameter.
+- **Metric: `UnblendedCost`** (decided 2026-11-02): the usage at the rate AWS charged, **without discounts and
+  credits** (Cost Explorer shows those as their own line items; the after-discount view is `NetUnblendedCost`, not
+  used). The metric name is recorded with the run's billed cost.
+- **AWS's own billing rules are already in it** (e.g. Fargate's per-second billing with a 1-minute minimum, SQS
+  billing per API request including empty receives), so the benchmark doesn't model them.
+- **The whole run only, never per step.** The tag is set once, at deploy time, and one deployment serves every step of
+  both test types (1 → 10 → 100 → 1000), so every charge of the run carries the same tag value and Cost Explorer can't
+  tell the steps apart. Its time grain (daily, or hourly) can't separate them either: steps are minutes long and run
+  back to back. The total covers set-up, every step, the waits after the steps and the time until tear-down.
+- The tag must be activated as a cost allocation tag (management account). Tagged costs show from activation on; the
+  management account can **backfill** up to 12 months (one backfill request per 24 h). Costs only appear for periods
+  when the tag was actually on the resource.
+- Cost Explorer refreshes at least once every 24 h (some data can arrive later), so this is a **separate, later step**
+  (`collect-cost --run-id …`) that fills in the cost CSV after the run. It fits the existing "re-plot from existing
+  CSVs" option. Each Cost Explorer API request costs $0.01.
+- **Daily granularity** (decided 2026-10-29): every run has its own tag value, so the run's billed cost is the sum of
+  the daily rows for that value over the days the run covered (two days if it crosses midnight). Hourly isn't used.
+- Shared or long-lived resources (EKS control plane, NAT gateway, a long-lived MSK cluster) can be tagged, but if
+  they're shared across runs or used by other things, their cost must be listed as a fixed allocation instead. The automatic
+  `aws:eks:cluster-name` tag doesn't cover the EKS control plane fee.
+- **Output:** `cost.csv` per host × mode: the billed cost per service and in total, the metric name and the dates
+  covered.
+- With the mock agent, the cost covers **AK infrastructure only**; LLM token costs are excluded.
 
 ### Graphs
 
-- Test cost per run: estimated vs. billed.
-
-### Prices: fetched per run, saved with the results
-
-Nobody edits prices by hand when a provider changes them.
-
-- **Fetched at the start of each run** by the cloud's price source, from the provider's public price API (list
-  prices):
-  - AWS: Price List Query API, `GetProducts` (on-demand terms, `pricePerUnit`).
-  - GCP (later): Cloud Billing Pricing API (public SKUs and prices; needs an API key, no IAM permissions).
-  - Azure (later): Retail Prices API, `https://prices.azure.com/api/retail/prices` (no authentication).
-- **Saved with the run** (`results/<run-id>/<platform>/<host>/<mode>/price_table.json`, with fetch date and region; layout in [design.md](../design.md)). Old runs keep the
-  prices they ran with, and any run can be re-priced later with newer prices from its stored usage.
-- **Config file only for what has no API:** the bare-metal $/node-hour, and optional overrides (e.g. a negotiated
-  discount). An override is recorded in the saved price table.
-- The billed cost doesn't use the price table; it already has the real prices.
+- Billed cost per run, by service (drawn by `collect-cost`, once the bill is available).
 
 ## Open points
 
@@ -538,7 +447,6 @@ Nobody edits prices by hand when a provider changes them.
   event, which suggests idle minutes are missing. If so, a missing datapoint has to be read as 0, but only for minutes
   old enough that their data would have arrived (a configurable metric delay; value to be measured on the first
   Lambda runs).
-- The $/node-hour figure for the bare-metal cluster.
 - Not verified: whether the fixed 3 / 15 datapoint rule still applies to custom metrics (like `BacklogPerTask`) after
   AWS's June 2026 faster-scaling launch. AWS only describes the change for the built-in CPU/memory metrics. Check the
   CloudWatch alarms that the ECS policy creates once deployed.
@@ -582,14 +490,8 @@ Nobody edits prices by hand when a provider changes them.
 - Azure Functions monitoring reference (instance count metric, 30 s): https://learn.microsoft.com/en-us/azure/azure-functions/monitor-functions-reference
 - Azure Functions telemetry (`cloud_RoleInstance` queries): https://learn.microsoft.com/en-us/azure/azure-functions/analyze-telemetry-data
 - Cost allocation tag backfill: https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/cost-allocation-backfill.html
-- Cost Explorer hourly granularity: https://docs.aws.eu/cost-management/latest/userguide/ce-hourly-granularity.html
 - Cost Explorer pricing: https://aws.amazon.com/aws-cost-management/aws-cost-explorer/pricing/
-- SQS pricing: https://aws.amazon.com/sqs/pricing/
-- AWS Price List Query API (`GetProducts`, on-demand `pricePerUnit`): https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/using-price-list-query-api.html, https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_pricing_GetProducts.html
-- GCP Cloud Billing Pricing API (public prices, API key): https://docs.cloud.google.com/billing/docs/how-to/get-pricing-information-api
-- Azure Retail Prices API (unauthenticated): https://learn.microsoft.com/en-us/rest/api/cost-management/retail-prices/azure-retail-prices
+- Cost Explorer `UnblendedCost` vs `NetUnblendedCost` (discounts as separate line items; net = after discounts), checked 2026-11-02: https://docs.aws.amazon.com/cost-management/latest/userguide/ce-advanced.html, https://docs.aws.amazon.com/cost-management/latest/userguide/ce-exploring-data.html
 - SQS `GetQueueAttributes` (`ApproximateNumberOfMessages`, `ApproximateNumberOfMessagesNotVisible` = in flight, consistent only ≥ 1 min after producers stop): https://docs.aws.amazon.com/AWSSimpleQueueService/latest/APIReference/API_GetQueueAttributes.html
 - Fargate pricing: https://aws.amazon.com/fargate/pricing/
-- API Gateway pricing: https://aws.amazon.com/api-gateway/pricing/
-- EKS split cost allocation data: https://docs.aws.amazon.com/cur/latest/userguide/split-cost-allocation-data.md
 - EKS cost awareness (control plane tagging): https://docs.aws.amazon.com/eks/latest/best-practices/cost-opt-awareness.html
