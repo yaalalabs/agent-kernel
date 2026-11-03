@@ -11,8 +11,8 @@
 #               install_packages is permitted (installs are off unless a profile opts in).
 #   - offline : `network_egress: deny` — E2B ENFORCES this (allow_internet_access=false),
 #               so outbound requests genuinely fail.
-#   - pinned  : an allowlist — mapped to E2B deny_out all + allow_out exceptions. NOT yet verified as a
-#               hard limit for domain entries; use `deny` with packages baked into the template when you need one.
+#   - pinned  : an allowlist — mapped to E2B deny_out all + allow_out exceptions; E2B ENFORCES
+#               this, so only the listed hosts are reachable.
 sandbox:
   enabled: true
   profiles:
@@ -24,7 +24,8 @@ sandbox:
           ecosystems: [python] # -> install_packages runs the default `pip install` (e2b.package_installers) in the micro-VM
       e2b:
         {}
-        # template: base       # E2B template to launch; omitted = base
+        # template: code-interpreter-v1 # E2B template to launch (must ship the Jupyter kernels); omitted = code-interpreter-v1
+        # languages: [python, javascript] # E2B kernels run_code may use (python, javascript, typescript, r, java, bash); omitted = [python]
         # api_key_env: E2B_API_KEY
     offline:
       type: e2b

@@ -812,9 +812,29 @@ class _SandboxDockerConfig(_SandboxProviderPackageConfig, _SandboxProviderRuntim
     attach_to: Optional[str] = Field(default=None, description="Existing container id to attach to instead of creating one (mode 3)")
 
 
+_E2B_KERNELS = {"python", "javascript", "typescript", "r", "java", "bash"}  # run_code(language=...) values
+
+
 class _SandboxE2BConfig(_SandboxProviderPackageConfig):
     api_key_env: str = Field(default="E2B_API_KEY", description="Name of the environment variable holding the E2B API key")
-    template: str = Field(default="base", description="E2B sandbox template to launch")
+    # run_code needs the Jupyter server the code-interpreter template ships; `base` has none (port 49999 never opens)
+    template: str = Field(default="code-interpreter-v1", description="E2B sandbox template to launch; must ship the code-interpreter Jupyter server")
+    languages: list[str] = Field(
+        default_factory=lambda: ["python"],
+        description="E2B code-interpreter kernels run_code may use (python, javascript, typescript, r, java, bash); "
+        "the provider's declared languages. Declaring it replaces the default and must keep 'python'",
+    )
+
+    @field_validator("languages")
+    @classmethod
+    def _languages_are_e2b_kernels(cls, value: list[str]) -> list[str]:
+        """Python is mandatory under the provider contract; every entry must name an E2B kernel."""
+        if "python" not in value:
+            raise ValueError("e2b languages must include 'python'")
+        unknown = [lang for lang in value if lang not in _E2B_KERNELS]
+        if unknown:
+            raise ValueError(f"e2b languages {unknown} are not E2B kernels; choose from {sorted(_E2B_KERNELS)}")
+        return value
 
 
 class _SandboxDaytonaConfig(_SandboxProviderPackageConfig):

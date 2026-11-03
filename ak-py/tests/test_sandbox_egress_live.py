@@ -128,7 +128,7 @@ class EgressAllowlistContract:
     reason="AK_TEST_SANDBOX_EGRESS=1 and E2B_API_KEY not set: the live egress gate runs against a real e2b account",
 )
 class TestE2BEgressAllowlistLive(EgressAllowlistContract):
-    """The allowlist contract against a real E2B sandbox (default ``base`` template)."""
+    """The allowlist contract against a real E2B sandbox (default ``code-interpreter-v1`` template)."""
 
     def make_provider(self) -> SandboxProvider:
         from agentkernel.core.config import _SandboxE2BConfig

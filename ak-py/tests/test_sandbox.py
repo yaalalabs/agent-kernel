@@ -1146,15 +1146,17 @@ def test_guidance_lists_runtime_languages(monkeypatch):
 
 
 def test_guidance_narrows_policy_languages_for_fixed_language_providers(monkeypatch):
-    # e2b runs only python; a policy that also permits bash must not advertise bash to the agent.
+    # e2b declares only python by default; a policy that also permits bash must not advertise bash to the agent.
     profiles = {
         "e2b": _SandboxProfileConfig(type="e2b", e2b=_SandboxE2BConfig(), policy=_SandboxPolicyConfig(languages=["python", "bash"])),
+        "e2b_multi": _SandboxProfileConfig(type="e2b", e2b=_SandboxE2BConfig(languages=["python", "bash"])),
         "local": _SandboxProfileConfig(type="local_subprocess"),
         "byo": _SandboxProfileConfig(type=FAKE_DOTTED, policy=_SandboxPolicyConfig(languages=["python", "bash"])),
     }
     _install_sandbox_cfg(monkeypatch, _sandbox_cfg(profiles=profiles))
     lines = {line.split("'")[1]: line for line in get_sandbox_tools()[0].description.splitlines() if line.startswith("- '")}
     assert lines["e2b"].endswith("; languages: python")
+    assert lines["e2b_multi"].endswith("; languages: python, bash")  # the config-declared kernels
     assert lines["local"].endswith("; languages: python, bash")  # no policy: the provider's own languages
     assert lines["byo"].endswith("; languages: python, bash")  # a dotted-path provider's languages are unknown here
 

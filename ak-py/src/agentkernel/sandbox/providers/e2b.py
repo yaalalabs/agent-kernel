@@ -1,8 +1,9 @@
 """``e2b`` provider — managed Firecracker micro-VM sandboxes via the E2B cloud (``e2b`` extra).
 
 Uses the native async SDK (``e2b-code-interpreter``): ``AsyncSandbox.create`` /
-``AsyncSandbox.connect(id)``; ``run_code`` executes in a persistent Jupyter kernel
-(``stateful=True`` — variables survive across calls), ``commands.run`` covers shell and the
+``AsyncSandbox.connect(id)``; ``run_code`` executes in the language's persistent Jupyter kernel
+(``stateful=True`` — variables survive across calls; the config ``languages`` lists the kernels
+the template may use, default ``python``), ``commands.run`` covers shell and the
 validated installer command from ``package_installers``, and the sandbox filesystem backs the
 file operations.
 
@@ -53,7 +54,7 @@ class E2BSandbox(Sandbox):
             raise SandboxCapabilityError(self.__class__.__name__, f"language:{language}")
         started = time.monotonic()
         try:
-            execution = await self._sandbox.run_code(code, timeout=timeout)
+            execution = await self._sandbox.run_code(code, language=language, timeout=timeout)
         except TimeoutException as exc:
             raise self._timeout_error(exc, started, timeout, "code execution") from exc
         stderr = "".join(execution.logs.stderr)
@@ -115,7 +116,7 @@ class E2BSandboxProvider(SandboxProvider):
     capabilities = SandboxCapabilities(
         isolation=IsolationTier.MICRO_VM,
         shell=True,
-        languages=["python"],
+        languages=["python"],  # the default; each instance declares its config `languages`
         files=True,
         package_ecosystems=["python"],  # the default; each instance declares its package_installers keys
         stateful=True,  # Jupyter-kernel model — variables persist across execute_code calls
@@ -132,7 +133,7 @@ class E2BSandboxProvider(SandboxProvider):
         super().__init__(config)
         self._idle_timeout = idle_timeout
         self._installer = PackageInstaller.from_config(config)
-        self.capabilities = type(self).capabilities.derive(package_ecosystems=self._installer.ecosystems)
+        self.capabilities = type(self).capabilities.derive(package_ecosystems=self._installer.ecosystems, languages=list(config.languages))
 
     def _handle(self, sandbox: AsyncSandbox) -> E2BSandbox:
         """Wrap an SDK sandbox in a handle carrying this instance's capabilities and installer."""

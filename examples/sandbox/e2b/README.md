@@ -25,13 +25,13 @@ the fail-closed `strict` model in depth):
 | Policy | E2B mapping |
 |---|---|
 | `network_egress: deny` | `allow_internet_access: false` |
-| `network_egress: allowlist` | deny-all `deny_out` + `allow_out` exceptions (not yet verified as a hard limit for domain entries; see the [Sandbox guide](https://kernel.yaala.ai/docs/advanced/sandbox#policy-and-permissions)) |
+| `network_egress: allowlist` | deny-all `deny_out` + `allow_out` exceptions, so only the listed hosts are reachable |
 | `cpu` / `memory_mb` | *not enforceable* — fixed by the E2B tier (`policy_resources=False`); a non-default value fails closed under `strict` |
 
 The `config.yaml` defines three profiles: `default` (a per-session micro-VM workspace that
 permits `python` package installs),
 `offline` (`network_egress: deny`, so outbound requests genuinely fail), and `pinned` (an
-egress allowlist mapped to E2B deny-all `deny_out` + `allow_out` exceptions; not yet verified as a hard limit). Unlike `daytona`, E2B cannot enforce
+egress allowlist mapped to E2B deny-all `deny_out` + `allow_out` exceptions, so only the listed hosts are reachable). Unlike `daytona`, E2B cannot enforce
 cpu/memory limits (its tier fixes them), so this example does not include a resource profile.
 
 ## Prerequisites
@@ -41,7 +41,7 @@ An E2B account and API key (create one at https://e2b.dev). Export it before run
     export E2B_API_KEY=e2b_...
 
 (The variable name is configurable per profile via `e2b.api_key_env`; the E2B template is
-configurable via `e2b.template`, default `base`.)
+configurable via `e2b.template`, default `code-interpreter-v1`; it must ship the code-interpreter Jupyter server, so plain `base` cannot run code.)
 
 ## Run
 

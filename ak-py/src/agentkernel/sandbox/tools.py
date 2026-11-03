@@ -315,11 +315,10 @@ async def destroy_sandbox_session(sandbox_session_id: str) -> str:
 _NO_PERSISTENT_SHELL_TYPES = {"ec2_ssm"}
 
 # Built-in providers whose languages are fixed by the provider class, not declared in config
-# (docker/kubernetes/ec2_ssm declare theirs in language_runtimes). Config-derived only, like the set
-# above; a test keeps it equal to each class's capabilities.languages.
+# (docker/kubernetes/ec2_ssm declare theirs in language_runtimes, e2b in languages). Config-derived only,
+# like the set above; a test keeps it equal to each class's capabilities.languages.
 _FIXED_LANGUAGES: dict[str, list[str]] = {
     "local_subprocess": ["python", "bash"],
-    "e2b": ["python"],
     "daytona": ["python"],
 }
 
@@ -380,8 +379,10 @@ def _permissions_text(policy: Any, installs: bool, runtimes: Optional[list[str]]
 def _runtime_languages(prof: Any) -> Optional[list[str]]:
     """The languages the profile's provider can run, config-derived (no provider import): the
     ``language_runtimes`` keys when its config block declares that map (``docker``, ``kubernetes``, ``ec2_ssm``),
-    else a built-in provider's fixed languages; None for a dotted-path provider (unknown here)."""
-    runtimes = getattr(getattr(prof, prof.type, None), "language_runtimes", None)
+    or its ``languages`` list (``e2b``), else a built-in provider's fixed languages; None for a dotted-path
+    provider (unknown here)."""
+    block = getattr(prof, prof.type, None)
+    runtimes = getattr(block, "language_runtimes", None) or getattr(block, "languages", None)
     if runtimes is not None:
         return list(runtimes)
     fixed = _FIXED_LANGUAGES.get(prof.type)

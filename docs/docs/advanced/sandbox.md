@@ -269,7 +269,7 @@ image with a read-only root filesystem and no installer binaries.
 | Provider | `deny` | `allowlist` |
 |---|---|---|
 | `docker` | Enforced (`network_mode: none`). | Not enforceable; fails closed under `strict`. |
-| `e2b` | Enforced. | Mapped to a deny-all `deny_out` + `allow_out` exceptions; **not yet verified** as a hard limit for registry domains. |
+| `e2b` | Enforced. | Enforced: a deny-all `deny_out` + `allow_out` exceptions (verified by the live egress gate). |
 | `daytona` | Enforced. | Mapped to Daytona's CIDR allow list; **not yet verified** for domain entries such as `pypi.org`. |
 | `kubernetes` | Enforced only with `network_policy: true` (operator-asserted CNI support). | CIDR entries only, with `network_policy: true`; domain names fail closed under `strict`. |
 | `local_subprocess`, `ec2_ssm` | Not enforced. | Not enforced. |
@@ -279,8 +279,9 @@ image with a read-only root filesystem and no installer binaries.
 (a wheelhouse or npm cache) inside it (the offline installer prefixes are in the
 [posture table](#installer-prefixes-per-posture)). `deny` blocks all egress, so a sandbox under it
 cannot reach a network mirror; a mirror needs a policy that permits access to it.
-Do not rely on `allowlist` on `e2b` or `daytona` as a hard limit until the live egress gate
-(`ak-py/tests/test_sandbox_egress_live.py`) has passed against that provider.
+On `e2b`, `allowlist` is also a hard limit: it passes the live egress gate
+(`ak-py/tests/test_sandbox_egress_live.py`). Do not rely on it on `daytona` until the gate has
+passed against that provider.
 
 ### Language runtimes
 
@@ -311,9 +312,11 @@ profiles:
   restating `python` (the same rule as `package_installers`).
 - **Command-only profiles.** `policy.languages: []` disables `run_code` for a profile while
   `run_command` keeps working.
-- **Only `docker`, `kubernetes` and `ec2_ssm`.** `e2b` runs code in the kernel its `template` provides, and
-  Daytona's SDK fixes the language per sandbox, so both run `python` only. `local_subprocess`
-  runs `python` and `bash`.
+- **`docker`, `kubernetes` and `ec2_ssm` use argv runtimes.** Daytona's SDK fixes the language per
+  sandbox, so it runs `python` only. `local_subprocess` runs `python` and `bash`.
+- **`e2b` declares kernels, not argv.** Its block takes `languages` (default `[python]`), a list of
+  E2B code-interpreter kernels: `python`, `javascript`, `typescript`, `r`, `java`, `bash`. `python` is
+  required, and the `template` must ship the declared kernels (E2B's code-interpreter template does).
 - **`ec2_ssm` defaults to `python: [python3, -c]`**, since EC2 images often ship only `python3`. The
   argv is joined into one quoted shell command and sent over SSM, so each interpreter must be
   installed on the instance.
@@ -515,7 +518,7 @@ Providers available today:
 |---|---|---|---|
 | `local_subprocess` | — (stdlib) | `none` | Runs on the host. Dev/test only. Shell + files + `python`/`bash`. |
 | `docker` | `sandbox-docker` | `container` | Container per sandbox (`sleep infinity`); code runs through `language_runtimes` (default `python -c`); files via archives; package installs (default installer `pip install`, configurable via `package_installers`). Maps `deny`→`network_mode: none`, cpu/memory→limits, fs→read-only rootfs + writable workdir. Requires a Docker daemon. |
-| `e2b` | `e2b` | `micro_vm` | Managed Firecracker micro-VMs on the E2B cloud (native async SDK). Stateful Jupyter-kernel execution (variables persist across calls); shell, files, package installs (default `pip install`, configurable via `package_installers`). Maps `deny`→no internet access, `allowlist`→deny-all `deny_out` + `allow_out` exceptions; the profile's `idle_timeout` becomes E2B's native auto-kill timeout. Needs `E2B_API_KEY` (name configurable via `api_key_env`). |
+| `e2b` | `e2b` | `micro_vm` | Managed Firecracker micro-VMs on the E2B cloud (native async SDK). Stateful Jupyter-kernel execution (variables persist across calls) in the kernels listed in `languages` (default `python`); shell, files, package installs (default `pip install`, configurable via `package_installers`). Maps `deny`→no internet access, `allowlist`→deny-all `deny_out` + `allow_out` exceptions; the profile's `idle_timeout` becomes E2B's native auto-kill timeout. Needs `E2B_API_KEY` (name configurable via `api_key_env`). |
 | `daytona` | `daytona` | `container` | Container sandboxes on the Daytona cloud (sync SDK via `to_thread`). Shell, files, package installs (default `pip install`, configurable via `package_installers`). Maps `deny`→block-all, `allowlist`→CIDR allow list, cpu/memory→`Resources` (image-based sandbox); `idle_timeout` becomes Daytona's native `auto_stop_interval`. Needs `DAYTONA_API_KEY` (name configurable via `api_key_env`). |
 | `ec2_ssm` | `aws` | `none` | **Attach-only** (requires `environment: attached`): executes on an existing EC2 instance via SSM Run Command — binds to `attach_to`, never provisions or disposes. Shell + code via `language_runtimes` (default `python3 -c`); no policy enforcement beyond the execution timeout. Supports **user identity** (`sts:AssumeRole` + optional `run_as` OS user). No persistent shell: each command is its own process, so cwd/env/`sudo su` do not carry across commands (`stateful=False`); chain dependent steps (`cd /app && ./run.sh`). |
 | `kubernetes` | `kubernetes` | `container` | Pod per sandbox (`sleep infinity`) via the Kubernetes API; exec over the stream API, code through `language_runtimes` (default `python -c`), files as tar streams, package installs (default `pip install`, configurable via `package_installers`). Hardened container defaults (no privilege escalation, seccomp `RuntimeDefault`, all capabilities dropped) under your `security_context` overlays. Maps cpu/memory→requests=limits, fs→read-only rootfs + emptyDir workdir, and egress→per-pod NetworkPolicies only when `network_policy: true` asserts the cluster CNI enforces them. Supports **user identity** via RBAC impersonation (see Identity). Pods carry `activeDeadlineSeconds = 2 × idle_timeout` as the orphan ceiling; the pod ServiceAccount's RBAC is the security boundary. |
@@ -550,7 +553,8 @@ sandbox:
   enabled: true
   type: e2b
   e2b:
-    template: base              # E2B sandbox template
+    template: code-interpreter-v1  # E2B template; must ship the code-interpreter Jupyter server
+    # languages: [python, javascript]  # E2B kernels run_code may use; default [python]
     # api_key_env: E2B_API_KEY  # env variable holding the API key
   broker:
     flavor: thread
@@ -809,7 +813,7 @@ sandbox:
         package_rules: {}        # ecosystem -> dotted path of a PackageSpecRule
       e2b:
         api_key_env: E2B_API_KEY
-        template: base
+        template: code-interpreter-v1
         package_installers: {python: [pip, install]}
         package_rules: {}
       daytona:

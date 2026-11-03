@@ -996,8 +996,8 @@ def e2b_env(monkeypatch):
             self.commands = types.SimpleNamespace(run=run)
             self.files = types.SimpleNamespace(write=write, read=read)
 
-        async def run_code(self, code, timeout=None):
-            self.run_calls.append((code, timeout))
+        async def run_code(self, code, language=None, timeout=None):
+            self.run_calls.append((code, language, timeout))
             if FakeAsyncSandbox.next_code_error is not None:
                 await asyncio.sleep(FakeAsyncSandbox.error_delay)
                 raise FakeAsyncSandbox.next_code_error
@@ -1103,7 +1103,7 @@ async def test_e2b_run_code_maps_execution_to_result(e2b_env):
     sandbox = await provider.create(principal=principal, policy=policy)
 
     result = await sandbox.execute_code("print('hi')", timeout=30)
-    assert sandbox._sandbox.run_calls[0] == ("print('hi')", 30)
+    assert sandbox._sandbox.run_calls[0] == ("print('hi')", "python", 30)
     assert result.stdout == "e2b out" and result.exit_code == 0
 
     fake_cls.next_execution = type(fake_cls.next_execution)(
@@ -1115,6 +1115,32 @@ async def test_e2b_run_code_maps_execution_to_result(e2b_env):
 
     with pytest.raises(SandboxCapabilityError):
         await sandbox.execute_code("echo hi", "bash")  # undeclared language
+
+
+@pytest.mark.asyncio
+async def test_e2b_declared_languages_select_the_kernel(e2b_env):
+    from agentkernel.core.config import _SandboxE2BConfig
+
+    module, _fake_cls = e2b_env
+    provider = _e2b_provider(module, _SandboxE2BConfig(languages=["python", "javascript"]))
+    assert provider.capabilities.languages == ["python", "javascript"]
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+
+    await sandbox.execute_code("console.log(1)", "javascript")
+    assert sandbox._sandbox.run_calls[0] == ("console.log(1)", "javascript", None)
+    with pytest.raises(SandboxCapabilityError):
+        await sandbox.execute_code("print(1)", "r")  # an E2B kernel, but not declared
+
+
+@pytest.mark.parametrize("languages", [["javascript"], ["python", "node"]])
+def test_e2b_languages_require_python_and_known_kernels(languages):
+    from pydantic import ValidationError
+
+    from agentkernel.core.config import _SandboxE2BConfig
+
+    with pytest.raises(ValidationError):
+        _SandboxE2BConfig(languages=languages)
 
 
 @pytest.mark.asyncio

@@ -76,7 +76,10 @@ appended as the last argument:
 - `python` is required, and declaring `language_runtimes` replaces the default map rather than
   merging with it.
 - `policy.languages` still narrows per profile; `[]` keeps a profile command-only.
-- `e2b` and `daytona` stay Python-only: their SDKs choose the interpreter.
+- `e2b` takes a `languages` list of E2B kernels (`python`, `javascript`, `typescript`, `r`, `java`, `bash`;
+  default `[python]`) and passes the language to `run_code`. `daytona` stays Python-only.
+- `e2b.template` now defaults to `code-interpreter-v1` (was `base`, which has no Jupyter server, so `run_code`
+  failed with "port is not open"). Configs that set `template: base` explicitly must switch to run code.
 - No behaviour change for existing configs: the default map runs `python -c` as before (`python3 -c` on
   `ec2_ssm`, replacing its `python3` heredoc).
 - `e2b` `network_egress: allowlist` now sends a deny-all `deny_out` with the listed hosts as `allow_out`
