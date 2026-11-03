@@ -868,9 +868,15 @@ class _SandboxKubernetesConfig(_SandboxProviderPackageConfig, _SandboxProviderRu
     create_timeout: float = Field(default=120.0, description="Seconds to wait for a sandbox pod to reach Running before failing provisioning")
 
 
-class _SandboxEC2SSMConfig(BaseModel):
+class _SandboxEC2SSMConfig(_SandboxProviderRuntimeConfig):
     region: Optional[str] = Field(default=None, description="AWS region for SSM; None uses the boto3 default")
     attach_to: Optional[str] = Field(default=None, description="EC2 instance id to run commands against via SSM (attach-only)")
+    # EC2 images often ship only `python3`, so the default differs from the docker/kubernetes `python -c`.
+    language_runtimes: dict[str, list[str]] = Field(
+        default_factory=lambda: {"python": ["python3", "-c"]},
+        description="Language -> interpreter argv prefix installed on the instance; the code is appended as the last argument. "
+        "The keys are the provider's declared languages; declaring it replaces the default map and must keep a 'python' key",
+    )
 
 
 class _ExecutionBrokerConfig(BaseModel):

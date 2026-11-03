@@ -86,7 +86,7 @@ operations a profile does not permit, come back as `{"error": ...}` rather than 
 
 The injected guidance lists what each profile permits (languages, package installs) and tells
 the agent to report a denial to the user rather than work around it with `run_command`. On
-`docker` and `kubernetes` the listed languages are the `language_runtimes` keys, narrowed by
+`docker`, `kubernetes` and `ec2_ssm` the listed languages are the `language_runtimes` keys, narrowed by
 `policy.languages` (see [Language runtimes](#language-runtimes)).
 
 `tool_output_max_chars` (default `8000`) bounds how much stdout/stderr or file content is
@@ -285,8 +285,8 @@ Do not rely on `allowlist` on `e2b` or `daytona` as a hard limit until the live 
 ### Language runtimes
 
 Which languages `run_code` can use is decided in two places: the **provider** declares what the
-image can run, and the profile's `policy.languages` narrows that per profile. On `docker` and
-`kubernetes`, the provider block's `language_runtimes` declares the languages:
+image can run, and the profile's `policy.languages` narrows that per profile. On `docker`,
+`kubernetes` and `ec2_ssm`, the provider block's `language_runtimes` declares the languages:
 
 ```yaml
 profiles:
@@ -311,9 +311,12 @@ profiles:
   restating `python` (the same rule as `package_installers`).
 - **Command-only profiles.** `policy.languages: []` disables `run_code` for a profile while
   `run_command` keeps working.
-- **Only `docker` and `kubernetes`.** `e2b` runs code in the kernel its `template` provides, and
+- **Only `docker`, `kubernetes` and `ec2_ssm`.** `e2b` runs code in the kernel its `template` provides, and
   Daytona's SDK fixes the language per sandbox, so both run `python` only. `local_subprocess`
-  runs `python` and `bash`; `ec2_ssm` runs `python`.
+  runs `python` and `bash`.
+- **`ec2_ssm` defaults to `python: [python3, -c]`**, since EC2 images often ship only `python3`. The
+  argv is joined into one quoted shell command and sent over SSM, so each interpreter must be
+  installed on the instance.
 - **Permitted but not declared.** A `policy.languages` entry missing from `language_runtimes`
   passes the permission check, then fails with `SandboxCapabilityError`; the broker worker logs a
   one-time warning per provider and profile naming it.
@@ -514,7 +517,7 @@ Providers available today:
 | `docker` | `sandbox-docker` | `container` | Container per sandbox (`sleep infinity`); code runs through `language_runtimes` (default `python -c`); files via archives; package installs (default installer `pip install`, configurable via `package_installers`). Maps `deny`→`network_mode: none`, cpu/memory→limits, fs→read-only rootfs + writable workdir. Requires a Docker daemon. |
 | `e2b` | `e2b` | `micro_vm` | Managed Firecracker micro-VMs on the E2B cloud (native async SDK). Stateful Jupyter-kernel execution (variables persist across calls); shell, files, package installs (default `pip install`, configurable via `package_installers`). Maps `deny`→no internet access, `allowlist`→`allow_out` network rules; the profile's `idle_timeout` becomes E2B's native auto-kill timeout. Needs `E2B_API_KEY` (name configurable via `api_key_env`). |
 | `daytona` | `daytona` | `container` | Container sandboxes on the Daytona cloud (sync SDK via `to_thread`). Shell, files, package installs (default `pip install`, configurable via `package_installers`). Maps `deny`→block-all, `allowlist`→CIDR allow list, cpu/memory→`Resources` (image-based sandbox); `idle_timeout` becomes Daytona's native `auto_stop_interval`. Needs `DAYTONA_API_KEY` (name configurable via `api_key_env`). |
-| `ec2_ssm` | `aws` | `none` | **Attach-only** (requires `environment: attached`): executes on an existing EC2 instance via SSM Run Command — binds to `attach_to`, never provisions or disposes. Shell + `python` (heredoc); no policy enforcement beyond the execution timeout. Supports **user identity** (`sts:AssumeRole` + optional `run_as` OS user). No persistent shell: each command is its own process, so cwd/env/`sudo su` do not carry across commands (`stateful=False`); chain dependent steps (`cd /app && ./run.sh`). |
+| `ec2_ssm` | `aws` | `none` | **Attach-only** (requires `environment: attached`): executes on an existing EC2 instance via SSM Run Command — binds to `attach_to`, never provisions or disposes. Shell + code via `language_runtimes` (default `python3 -c`); no policy enforcement beyond the execution timeout. Supports **user identity** (`sts:AssumeRole` + optional `run_as` OS user). No persistent shell: each command is its own process, so cwd/env/`sudo su` do not carry across commands (`stateful=False`); chain dependent steps (`cd /app && ./run.sh`). |
 | `kubernetes` | `kubernetes` | `container` | Pod per sandbox (`sleep infinity`) via the Kubernetes API; exec over the stream API, code through `language_runtimes` (default `python -c`), files as tar streams, package installs (default `pip install`, configurable via `package_installers`). Hardened container defaults (no privilege escalation, seccomp `RuntimeDefault`, all capabilities dropped) under your `security_context` overlays. Maps cpu/memory→requests=limits, fs→read-only rootfs + emptyDir workdir, and egress→per-pod NetworkPolicies only when `network_policy: true` asserts the cluster CNI enforces them. Supports **user identity** via RBAC impersonation (see Identity). Pods carry `activeDeadlineSeconds = 2 × idle_timeout` as the orphan ceiling; the pod ServiceAccount's RBAC is the security boundary. |
 
 Additional providers (`bedrock_agentcore`) are planned in later iterations.
@@ -623,6 +626,9 @@ sandbox:
   ec2_ssm:
     attach_to: i-0123456789abcdef0  # existing instance id (or via AK_SANDBOX__... env override)
     # region: us-east-1             # omitted = boto3 default
+    # language_runtimes:            # interpreters installed on the instance; default python: [python3, -c]
+    #   python: [python3, -c]
+    #   node: [node, -e]
   broker:
     flavor: thread
 ```
