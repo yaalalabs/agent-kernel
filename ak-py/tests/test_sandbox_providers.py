@@ -1080,7 +1080,7 @@ async def test_e2b_network_policy_mapping(e2b_env):
         principal=principal,
         policy=SandboxPolicy(network_egress="allowlist", network_allow=["pypi.org", "10.0.0.0/8"]),
     )
-    assert fake_cls.create_calls[1]["network"] == {"allow_out": ["pypi.org", "10.0.0.0/8"]}
+    assert fake_cls.create_calls[1]["network"] == {"deny_out": ["0.0.0.0/0"], "allow_out": ["pypi.org", "10.0.0.0/8"]}
 
 
 @pytest.mark.asyncio

@@ -8,8 +8,8 @@ file operations.
 
 The profile's ``idle_timeout`` is passed as the sandbox ``timeout`` at create, so E2B
 auto-kills idle sandboxes natively (spec §Idle timeout). Policy mapping: ``deny`` egress
-becomes ``allow_internet_access=False``; an ``allowlist`` becomes the sandbox network
-``allow_out`` rules — both genuinely enforced by the E2B plane. cpu/memory are fixed by
+becomes ``allow_internet_access=False``; an ``allowlist`` becomes a deny-all ``deny_out`` with the
+listed entries as ``allow_out`` exceptions (E2B's allow rules win over deny). cpu/memory are fixed by
 the E2B tier (unenforceable → ``policy_resources=False``).
 
 The API key is read from the environment variable named by ``api_key_env`` and passed
@@ -31,6 +31,8 @@ from ..model import IsolationTier, SandboxCapabilities, SandboxPolicy, SandboxPr
 from ..packages import PackageInstaller
 
 logger = logging.getLogger("ak.sandbox.provider")
+
+_ALL_TRAFFIC = "0.0.0.0/0"  # == e2b.ALL_TRAFFIC; literal so the stubbed-SDK test fixture needs nothing extra
 
 
 class E2BSandbox(Sandbox):
@@ -119,7 +121,7 @@ class E2BSandboxProvider(SandboxProvider):
         stateful=True,  # Jupyter-kernel model — variables persist across execute_code calls
         attach=True,
         principal_user=False,
-        policy_network=True,  # deny -> allow_internet_access=False; allowlist -> network allow_out rules
+        policy_network=True,  # deny -> allow_internet_access=False; allowlist -> deny_out all + allow_out exceptions
         policy_filesystem=False,
         policy_resources=False,  # cpu/memory are fixed by the E2B tier
     )
@@ -152,7 +154,8 @@ class E2BSandboxProvider(SandboxProvider):
         if policy.network_egress == "deny":
             kwargs["allow_internet_access"] = False
         elif policy.network_egress == "allowlist":
-            kwargs["network"] = {"allow_out": list(policy.network_allow)}
+            # allow_out only punches holes in deny_out; without a deny-all nothing is blocked
+            kwargs["network"] = {"deny_out": [_ALL_TRAFFIC], "allow_out": list(policy.network_allow)}
         sandbox = await AsyncSandbox.create(**kwargs)
         return self._handle(sandbox)
 
