@@ -1243,6 +1243,24 @@ trace:
   type: cloudwatch
 ```
 
+**Fetching spans back (trace evaluation):**
+
+Every built-in tracer can read recorded spans back through one provider-neutral filter, so production traces can be
+evaluated offline:
+
+```python
+from datetime import timedelta
+
+from agentkernel.trace import SpanKind, Trace
+
+tool_calls = Trace.get().fetch_spans(last=timedelta(hours=6), kinds=[SpanKind.TOOL])
+traces = Trace.get().fetch_traces(session_id="session-123", last=timedelta(hours=24))
+```
+
+Spans are returned oldest first as `FetchedSpan` objects. See the
+[Traceability docs](https://kernel.yaala.ai/docs/advanced/traceability) and the `examples/aws-serverless/openai-langfuse-trace-evaluation`
+example. Custom tracers that override `fetch_spans` can be checked with `agentkernel.trace.testing.TraceFetchContract`.
+
 #### Test Configuration
 
 Configure test comparison modes for automated testing. Test configuration is separate from the application configuration: it is **not** part of `config.yaml`. It lives in its own `test-config.yaml` file and is only loaded when the testing utilities (`agentkernel.test`) are used — see the [Test Configuration (test-config.yaml)](#test-configuration-test-configyaml) section for file resolution, environment variables, and migration notes.

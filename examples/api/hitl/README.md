@@ -24,6 +24,10 @@ export OPENAI_API_KEY=sk-...
 uv run app.py
 ```
 
+`app.py` starts with `IOHandler.run(handlers=[AGUIPipelineRequestHandler(...)])`: the REST chat route
+is always served, AG-UI is mounted alongside it, and both run the agent on the queue pipeline. A
+`resume` request needs no `prompt`.
+
 Two surfaces are mounted, and the same pause can be answered from either:
 
 | | |
