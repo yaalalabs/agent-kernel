@@ -315,11 +315,10 @@ async def destroy_sandbox_session(sandbox_session_id: str) -> str:
 _NO_PERSISTENT_SHELL_TYPES = {"ec2_ssm"}
 
 # Built-in providers whose languages are fixed by the provider class, not declared in config
-# (docker/kubernetes/ec2_ssm declare theirs in language_runtimes, e2b in languages). Config-derived only,
+# (docker/kubernetes/ec2_ssm/daytona declare theirs in language_runtimes, e2b in languages). Config-derived only,
 # like the set above; a test keeps it equal to each class's capabilities.languages.
 _FIXED_LANGUAGES: dict[str, list[str]] = {
     "local_subprocess": ["python", "bash"],
-    "daytona": ["python"],
 }
 
 

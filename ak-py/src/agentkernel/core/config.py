@@ -837,8 +837,15 @@ class _SandboxE2BConfig(_SandboxProviderPackageConfig):
         return value
 
 
-class _SandboxDaytonaConfig(_SandboxProviderPackageConfig):
+class _SandboxDaytonaConfig(_SandboxProviderPackageConfig, _SandboxProviderRuntimeConfig):
     api_key_env: str = Field(default="DAYTONA_API_KEY", description="Name of the environment variable holding the Daytona API key")
+    # python always runs via the SDK's native code_run, so its argv here only declares the language.
+    language_runtimes: dict[str, list[str]] = Field(
+        default_factory=lambda: {"python": ["python3", "-c"]},
+        description="Language -> interpreter argv prefix the image/snapshot provides; the code is appended as the last argument "
+        "and run via process.exec ('python' always runs via native code_run, so its argv is unused). "
+        "The keys are the provider's declared languages; declaring it replaces the default map and must keep a 'python' key",
+    )
     target: Optional[str] = Field(default=None, description="Daytona target/region; None uses the SDK default")
     image: Optional[str] = Field(
         default=None,

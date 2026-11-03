@@ -1569,6 +1569,32 @@ async def test_daytona_execute_call_shape_and_to_thread(daytona_env):
 
 
 @pytest.mark.asyncio
+async def test_daytona_language_runtimes_exec_non_python_and_keep_code_run_for_python(daytona_env):
+    from agentkernel.core.config import _SandboxDaytonaConfig
+
+    module, _client_cls = daytona_env
+    config = _SandboxDaytonaConfig(language_runtimes={"python": ["python3", "-c"], "node": ["node", "-e"]})
+    provider = _daytona_provider(module, config)
+    assert provider.capabilities.languages == ["python", "node"]
+    assert module.DaytonaSandboxProvider.capabilities.languages == ["python"]  # the class stays the default
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    inner = sandbox._sandbox
+
+    code = "console.log('a b'); $(rm -rf /)"
+    result = await sandbox.execute_code(code, "node", timeout=10)
+    assert inner.exec_calls == [(shlex.join(["node", "-e", code]), None, None, 10)]  # one quoted argument, no shell expansion
+    assert result.stdout == "daytona out" and result.exit_code == 0
+
+    await sandbox.execute_code("print(1)")
+    assert inner.code_calls == [("print(1)", None, None)]  # python stays on native code_run
+    assert len(inner.exec_calls) == 1
+
+    with pytest.raises(SandboxCapabilityError, match="language:bash"):
+        await sandbox.execute_code("echo hi", "bash")
+
+
+@pytest.mark.asyncio
 async def test_daytona_file_roundtrip_and_missing_file(daytona_env):
     module, _client_cls = daytona_env
     provider = _daytona_provider(module)

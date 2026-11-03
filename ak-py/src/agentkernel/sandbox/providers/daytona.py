@@ -1,7 +1,9 @@
 """``daytona`` provider — container sandboxes on the Daytona cloud (``daytona`` extra).
 
-The SDK is synchronous, so every call runs in ``asyncio.to_thread``. Executions are
-``process.code_run`` / ``process.exec``; files travel via ``fs.upload_file`` /
+The SDK is synchronous, so every call runs in ``asyncio.to_thread``. Python code runs via
+``process.code_run``; any other language declared in ``language_runtimes`` runs its interpreter
+argv (code appended, shell-quoted) via ``process.exec``, as do commands (the SDK fixes
+``code_run``'s language per sandbox, so it cannot serve several); files travel via ``fs.upload_file`` /
 ``fs.download_file``; ``install_packages`` execs the validated installer command from
 ``package_installers``.
 
@@ -22,6 +24,7 @@ import asyncio
 import logging
 import math
 import os
+import shlex
 import time
 from typing import Any, Callable, Optional
 
@@ -47,19 +50,23 @@ _DEFAULT_IMAGE = "python:3.12-slim"
 class DaytonaSandbox(Sandbox):
     """Handle to one running Daytona sandbox; every SDK call runs in a thread."""
 
-    def __init__(self, sandbox: Any, *, capabilities: SandboxCapabilities, installer: PackageInstaller) -> None:
+    def __init__(self, sandbox: Any, *, capabilities: SandboxCapabilities, installer: PackageInstaller, runtimes: dict[str, list[str]]) -> None:
         """Bind the handle to the SDK sandbox object; the Daytona sandbox id is the sandbox id.
-        ``capabilities`` are the provider instance's."""
+        ``capabilities`` are the provider instance's; ``runtimes`` is its ``language_runtimes``."""
         self.id = sandbox.id
         self._sandbox = sandbox
         self._capabilities = capabilities
         self._installer = installer
+        self._runtimes = runtimes
 
     async def execute_code(self, code: str, language: str = "python", timeout: float | None = None) -> SandboxResult:
-        """Run the code via ``process.code_run``; a non-zero exit is data on the response."""
+        """Run Python via ``process.code_run`` and any other declared language's interpreter argv via
+        ``process.exec``; a non-zero exit is data on the response."""
         if language not in self._capabilities.languages:
             raise SandboxCapabilityError(self.__class__.__name__, f"language:{language}")
-        return await self._run(self._sandbox.process.code_run, code, timeout, "code execution")
+        if language == "python":
+            return await self._run(self._sandbox.process.code_run, code, timeout, "code execution")
+        return await self._run(self._sandbox.process.exec, shlex.join([*self._runtimes[language], code]), timeout, "code execution")
 
     async def execute_command(self, command: str, timeout: float | None = None) -> SandboxResult:
         """Run a shell command via ``process.exec``."""
@@ -126,7 +133,7 @@ class DaytonaSandboxProvider(SandboxProvider):
     capabilities = SandboxCapabilities(
         isolation=IsolationTier.CONTAINER,
         shell=True,
-        languages=["python"],
+        languages=["python"],  # the default; each instance declares its language_runtimes keys
         files=True,
         package_ecosystems=["python"],  # the default; each instance declares its package_installers keys
         stateful=False,
@@ -139,17 +146,18 @@ class DaytonaSandboxProvider(SandboxProvider):
 
     def __init__(self, config, idle_timeout: Optional[float] = None) -> None:
         """Store the config and the profile's idle_timeout (mapped to auto_stop_interval);
-        the Daytona client is created lazily on first use. The installer sets this instance's
-        package ecosystems."""
+        the Daytona client is created lazily on first use. ``language_runtimes`` sets this
+        instance's languages and the installer its package ecosystems."""
         super().__init__(config)
         self._idle_timeout = idle_timeout
         self._client_instance: Optional[Daytona] = None
         self._installer = PackageInstaller.from_config(config)
-        self.capabilities = type(self).capabilities.derive(package_ecosystems=self._installer.ecosystems)
+        self._runtimes = dict(config.language_runtimes)
+        self.capabilities = type(self).capabilities.derive(languages=list(self._runtimes), package_ecosystems=self._installer.ecosystems)
 
     def _handle(self, sandbox: Any) -> DaytonaSandbox:
-        """Wrap an SDK sandbox in a handle carrying this instance's capabilities and installer."""
-        return DaytonaSandbox(sandbox, capabilities=self.capabilities, installer=self._installer)
+        """Wrap an SDK sandbox in a handle carrying this instance's capabilities, installer and runtimes."""
+        return DaytonaSandbox(sandbox, capabilities=self.capabilities, installer=self._installer, runtimes=self._runtimes)
 
     def _client(self) -> Daytona:
         """Return the lazily created Daytona client, keyed from the configured env variable."""

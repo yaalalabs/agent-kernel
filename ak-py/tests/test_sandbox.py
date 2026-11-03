@@ -405,14 +405,19 @@ def test_config_provider_language_runtimes_defaults(model):
     assert model().language_runtimes == {"python": ["python", "-c"]}
 
 
-@pytest.mark.parametrize("model", [_SandboxE2BConfig, _SandboxDaytonaConfig])
-def test_config_sdk_native_providers_have_no_language_runtimes(model):
-    assert "language_runtimes" not in model.model_fields  # their SDK picks the interpreter, not an argv
+def test_config_sdk_native_providers_have_no_language_runtimes():
+    assert "language_runtimes" not in _SandboxE2BConfig.model_fields  # its SDK picks the kernel, not an argv
+
+
+def test_config_daytona_language_runtimes_default_python3():
+    assert _SandboxDaytonaConfig().language_runtimes == {"python": ["python3", "-c"]}
 
 
 def test_config_provider_language_runtimes_require_python():
     with pytest.raises(ValidationError, match="'python' runtime"):
         _SandboxDockerConfig(language_runtimes={"node": ["node", "-e"]})
+    with pytest.raises(ValidationError, match="'python' runtime"):
+        _SandboxDaytonaConfig(language_runtimes={"node": ["node", "-e"]})
     with pytest.raises(ValidationError, match="'python' runtime"):
         _SandboxKubernetesConfig(language_runtimes={"node": [""]})  # the python check runs first
 
@@ -1134,6 +1139,9 @@ def test_guidance_lists_runtime_languages(monkeypatch):
         "narrowed": _SandboxProfileConfig(type="docker", docker=docker, policy=_SandboxPolicyConfig(languages=["node", "ruby"])),
         "mismatched": _SandboxProfileConfig(type="docker", docker=docker, policy=_SandboxPolicyConfig(languages=["ruby"])),
         "plain": _SandboxProfileConfig(type="docker", docker=_SandboxDockerConfig()),
+        "daytona": _SandboxProfileConfig(
+            type="daytona", daytona=_SandboxDaytonaConfig(language_runtimes={"python": ["python3", "-c"], "node": ["node", "-e"]})
+        ),
         "byo": _SandboxProfileConfig(type=FAKE_DOTTED),
     }
     _install_sandbox_cfg(monkeypatch, _sandbox_cfg(profiles=profiles))
@@ -1142,6 +1150,7 @@ def test_guidance_lists_runtime_languages(monkeypatch):
     assert lines["narrowed"].endswith("; languages: node")  # ruby is permitted but not declared, so not offered
     assert lines["mismatched"].endswith("; run_code unavailable (the provider declares none of the permitted languages)")
     assert lines["plain"].endswith("; languages: python")  # the default runtime map
+    assert lines["daytona"].endswith("; languages: python, node")
     assert "languages" not in lines["byo"]  # no config-declared runtimes and no policy: nothing to say
 
 
