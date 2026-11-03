@@ -10,7 +10,7 @@ attach-only `ec2_ssm` provider is rejected at startup). Attached environments ar
 destroyed or recreated by the framework: destroying the session or idling out only drops
 the binding, and if the instance becomes unreachable the failure is surfaced instead of
 self-healing into a fresh sandbox. Commands are `ssm:SendCommand` (`AWS-RunShellScript`)
-invocations polled to completion; code runs through the `language_runtimes` interpreter argv (default `python3 -c`).
+invocations polled to completion; code is fed on stdin to the `language_runtimes` interpreter argv (default `python3 -`), so it stays out of the instance's process list.
 
 > **Warning:** isolation is **`none`**. Commands run directly on the instance with the SSM
 > agent's OS permissions, and every policy dimension except the execution timeout is

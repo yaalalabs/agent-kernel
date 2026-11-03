@@ -321,9 +321,10 @@ profiles:
 - **`e2b` declares kernels, not argv.** Its block takes `languages` (default `[python]`), a list of
   E2B code-interpreter kernels: `python`, `javascript`, `typescript`, `r`, `java`, `bash`. `python` is
   required, and the `template` must ship the declared kernels (E2B's code-interpreter template does).
-- **`ec2_ssm` defaults to `python: [python3, -c]`**, since EC2 images often ship only `python3`. The
-  argv is joined into one quoted shell command and sent over SSM, so each interpreter must be
-  installed on the instance.
+- **`ec2_ssm` feeds code on stdin, default `python: [python3, -]`.** The code goes to the argv
+  through a heredoc rather than as an argument, so it never appears in the shared instance's process
+  list. Each argv must read its program from stdin (`node: [node, -]`, `bash: [bash, -s]`), and each
+  interpreter must be installed on the instance. EC2 images often ship only `python3`.
 - **Permitted but not declared.** A `policy.languages` entry missing from `language_runtimes`
   passes the permission check, then fails with `SandboxCapabilityError`; the broker worker logs a
   one-time warning per provider and profile naming it.
@@ -524,7 +525,7 @@ Providers available today:
 | `docker` | `sandbox-docker` | `container` | Container per sandbox (`sleep infinity`); code runs through `language_runtimes` (default `python -c`); files via archives; package installs (default installer `pip install`, configurable via `package_installers`). Maps `deny`→`network_mode: none`, cpu/memory→limits, fs→read-only rootfs + writable workdir. Requires a Docker daemon. |
 | `e2b` | `e2b` | `micro_vm` | Managed Firecracker micro-VMs on the E2B cloud (native async SDK). Stateful Jupyter-kernel execution (variables persist across calls) in the kernels listed in `languages` (default `python`); shell, files, package installs (default `pip install`, configurable via `package_installers`). Maps `deny`→no internet access, `allowlist`→deny-all `deny_out` + `allow_out` exceptions; the profile's `idle_timeout` becomes E2B's native auto-kill timeout. Needs `E2B_API_KEY` (name configurable via `api_key_env`). |
 | `daytona` | `daytona` | `container` | Container sandboxes on the Daytona cloud (sync SDK via `to_thread`). Shell, files, `python` via native `code_run` plus extra languages via `language_runtimes`, package installs (default `pip install`, configurable via `package_installers`). Maps `deny`→block-all, `allowlist`→CIDR allow list, cpu/memory→`Resources` (image-based sandbox); `idle_timeout` becomes Daytona's native `auto_stop_interval`. Needs `DAYTONA_API_KEY` (name configurable via `api_key_env`). |
-| `ec2_ssm` | `aws` | `none` | **Attach-only** (requires `environment: attached`): executes on an existing EC2 instance via SSM Run Command — binds to `attach_to`, never provisions or disposes. Shell + code via `language_runtimes` (default `python3 -c`); no policy enforcement beyond the execution timeout. Supports **user identity** (`sts:AssumeRole` + optional `run_as` OS user). No persistent shell: each command is its own process, so cwd/env/`sudo su` do not carry across commands (`stateful=False`); chain dependent steps (`cd /app && ./run.sh`). |
+| `ec2_ssm` | `aws` | `none` | **Attach-only** (requires `environment: attached`): executes on an existing EC2 instance via SSM Run Command — binds to `attach_to`, never provisions or disposes. Shell + code via `language_runtimes` (default `python3 -`, code on stdin); no policy enforcement beyond the execution timeout. Supports **user identity** (`sts:AssumeRole` + optional `run_as` OS user). No persistent shell: each command is its own process, so cwd/env/`sudo su` do not carry across commands (`stateful=False`); chain dependent steps (`cd /app && ./run.sh`). |
 | `kubernetes` | `kubernetes` | `container` | Pod per sandbox (`sleep infinity`) via the Kubernetes API; exec over the stream API, code through `language_runtimes` (default `python -c`), files as tar streams, package installs (default `pip install`, configurable via `package_installers`). Hardened container defaults (no privilege escalation, seccomp `RuntimeDefault`, all capabilities dropped) under your `security_context` overlays. Maps cpu/memory→requests=limits, fs→read-only rootfs + emptyDir workdir, and egress→per-pod NetworkPolicies only when `network_policy: true` asserts the cluster CNI enforces them. Supports **user identity** via RBAC impersonation (see Identity). Pods carry `activeDeadlineSeconds = 2 × idle_timeout` as the orphan ceiling; the pod ServiceAccount's RBAC is the security boundary. |
 
 Additional providers (`bedrock_agentcore`) are planned in later iterations.
@@ -637,9 +638,9 @@ sandbox:
   ec2_ssm:
     attach_to: i-0123456789abcdef0  # existing instance id (or via AK_SANDBOX__... env override)
     # region: us-east-1             # omitted = boto3 default
-    # language_runtimes:            # interpreters installed on the instance; default python: [python3, -c]
-    #   python: [python3, -c]
-    #   node: [node, -e]
+    # language_runtimes:            # stdin-reading interpreters on the instance; default python: [python3, -]
+    #   python: [python3, -]
+    #   node: [node, -]
   broker:
     flavor: thread
 ```

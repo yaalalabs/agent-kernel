@@ -191,7 +191,7 @@ classDiagram
 | `package_install` | policy (may) | `None` | Presence permits installing. Absent means denied. |
 | `package_install.ecosystems` | policy (may) | `["python"]` | An omitted list permits only `python`; other ecosystems are an explicit opt-in. `[]` is rejected at load. |
 | `package_install.timeout` | policy (may) | `None` | The install's own timeout. `None` falls back to `policy.timeout`. |
-| `language_runtimes` | provider (can), `docker`/`kubernetes`/`ec2_ssm` | `{python: [python, -c]}` (`ec2_ssm`: `[python3, -c]`) | Language to interpreter argv prefix. Keys become the instance's `languages`. A `python` key is required; every prefix must be non-empty with no empty token. |
+| `language_runtimes` | provider (can), `docker`/`kubernetes`/`ec2_ssm` | `{python: [python, -c]}` (`ec2_ssm`: `[python3, -]`, code on stdin) | Language to interpreter argv prefix. Keys become the instance's `languages`. A `python` key is required; every prefix must be non-empty with no empty token. |
 | `package_installers` | provider (can) | `{python: [pip, install]}` | Ecosystem to installer argv prefix. Keys become `package_ecosystems`. Each key must resolve to a `PackageSpecRule` (`python` and `node` ship, others come from `package_rules`); every prefix must be non-empty with no empty token. |
 | `package_rules` | provider (can) | `{}` | Ecosystem to the dotted path of a bring-your-own `PackageSpecRule`, e.g. `apk: my_org.rules.ApkRule`. |
 

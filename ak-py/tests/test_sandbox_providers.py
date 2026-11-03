@@ -780,7 +780,7 @@ async def test_ssm_execute_code_runs_default_python3_runtime(ssm_env):
     sandbox = await provider.create(principal=principal, policy=policy)
     await sandbox.execute_code("print(6 * 7)")
     command = fake.ssm.send_calls[0]["Parameters"]["commands"][0]
-    assert command == "python3 -c 'print(6 * 7)'"
+    assert command == "python3 - <<'AK_SANDBOX_EOF'\nprint(6 * 7)\nAK_SANDBOX_EOF"
 
     with pytest.raises(SandboxCapabilityError):
         await sandbox.execute_code("echo hi", "bash")  # undeclared language
@@ -792,27 +792,30 @@ async def test_ssm_language_runtimes_declare_languages_and_argv(ssm_env):
     from agentkernel.core.config import _SandboxEC2SSMConfig
 
     module, fake = ssm_env
-    config = _SandboxEC2SSMConfig(region="us-east-1", attach_to="i-abc123", language_runtimes={"python": ["python3", "-c"], "node": ["node", "-e"]})
+    config = _SandboxEC2SSMConfig(region="us-east-1", attach_to="i-abc123", language_runtimes={"python": ["python3", "-"], "node": ["node", "-"]})
     provider = _ssm_provider(module, config)
     assert provider.capabilities.languages == ["python", "node"]
     principal, policy = _principal_policy()
     sandbox = await provider.create(principal=principal, policy=policy)
     await sandbox.execute_code("console.log(42)", "node")
     command = fake.ssm.send_calls[0]["Parameters"]["commands"][0]
-    assert command == "node -e 'console.log(42)'"
+    assert command == "node - <<'AK_SANDBOX_EOF'\nconsole.log(42)\nAK_SANDBOX_EOF"
 
 
 @pytest.mark.asyncio
-async def test_ssm_execute_code_quotes_code_as_one_argument(ssm_env):
-    """Code with quotes, newlines and shell metacharacters reaches the interpreter unchanged."""
+async def test_ssm_execute_code_feeds_code_on_stdin_unchanged(ssm_env):
+    """Code with quotes, newlines, shell metacharacters and the delimiter line reaches the
+    interpreter's stdin unchanged, and never its argv (the shared instance's process list)."""
     module, fake = ssm_env
     provider = _ssm_provider(module)
     principal, policy = _principal_policy()
     sandbox = await provider.create(principal=principal, policy=policy)
-    code = "print('a')\nprint(\"b; $HOME `x`\")"
+    code = "print('a')\nprint(\"b; $HOME `x`\")\nAK_SANDBOX_EOF"
     await sandbox.execute_code(code)
     command = fake.ssm.send_calls[0]["Parameters"]["commands"][0]
-    assert shlex.split(command) == ["python3", "-c", code]
+    result = subprocess.run(["sh", "-c", command.replace("python3 -", "cat", 1)], capture_output=True, text=True, check=True)
+    assert result.stdout == code + "\n"
+    assert command.splitlines()[0] == "python3 - <<'AK_SANDBOX_EOF_1'"
 
 
 def test_ssm_role_session_name_sanitizes_and_clamps():

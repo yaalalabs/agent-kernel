@@ -82,8 +82,9 @@ appended as the last argument:
   `code_run`; other keys run their interpreter argv via `process.exec`, so the image must ship them.
 - `e2b.template` now defaults to `code-interpreter-v1` (was `base`, which has no Jupyter server, so `run_code`
   failed with "port is not open"). Configs that set `template: base` explicitly must switch to run code.
-- No behaviour change for existing configs: the default map runs `python -c` as before (`python3 -c` on
-  `ec2_ssm`, replacing its `python3` heredoc).
+- No behaviour change for existing configs: the default map runs `python -c` as before. On `ec2_ssm`
+  the code still goes in on stdin through a heredoc (default `python3 -`), so each of its
+  `language_runtimes` entries must read the program from stdin (e.g. `node: [node, -]`).
 - `e2b` `network_egress: allowlist` now sends a deny-all `deny_out` with the listed hosts as `allow_out`
   exceptions; before, `allow_out` alone restricted nothing.
 

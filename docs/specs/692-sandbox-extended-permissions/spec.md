@@ -559,7 +559,7 @@ checks read the instance capabilities, not the class attribute. These five lines
   The grace period fixes that for every self-timing handle:
   - `local_subprocess`, which kills the process group on its own `TimeoutError` (`local_subprocess.py:65-68`);
   - `ec2_ssm`, which cancels the SSM command (`ec2_ssm.py:112-114`).
-- **Phase 2: the runtime argv.** `docker`, `kubernetes` and `ec2_ssm` (default `python3 -c`) look up `language_runtimes[language]`. An undeclared
+- **Phase 2: the runtime argv.** `docker`, `kubernetes` and `ec2_ssm` (default `python3 -`, code fed on stdin via a heredoc) look up `language_runtimes[language]`. An undeclared
   language raises `SandboxCapabilityError` from the instance-capability check before the lookup. The interpreter is
   always argv[0], and the submitted code is always the last argument.
 - **Why `e2b` and `daytona` get no runtimes.**

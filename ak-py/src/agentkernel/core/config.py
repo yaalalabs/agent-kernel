@@ -898,10 +898,12 @@ class _SandboxKubernetesConfig(_SandboxProviderPackageConfig, _SandboxProviderRu
 class _SandboxEC2SSMConfig(_SandboxProviderRuntimeConfig):
     region: Optional[str] = Field(default=None, description="AWS region for SSM; None uses the boto3 default")
     attach_to: Optional[str] = Field(default=None, description="EC2 instance id to run commands against via SSM (attach-only)")
-    # EC2 images often ship only `python3`, so the default differs from the docker/kubernetes `python -c`.
+    # The code goes in on stdin (keeps it out of the shared instance's process list), so each argv reads
+    # its program from stdin; EC2 images often ship only `python3`.
     language_runtimes: dict[str, list[str]] = Field(
-        default_factory=lambda: {"python": ["python3", "-c"]},
-        description="Language -> interpreter argv prefix installed on the instance; the code is appended as the last argument. "
+        default_factory=lambda: {"python": ["python3", "-"]},
+        description="Language -> interpreter argv installed on the instance that reads its program from stdin "
+        "(e.g. python3 -, node -, bash -s); the code is fed on stdin, not appended as an argument. "
         "The keys are the provider's declared languages; declaring it replaces the default map and must keep a 'python' key",
     )
 

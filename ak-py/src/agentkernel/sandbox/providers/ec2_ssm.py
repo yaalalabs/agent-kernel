@@ -4,8 +4,9 @@ Mode-3 attach: both ``create`` and ``attach`` bind to an already-running instanc
 (``attach_to`` in config, or the sandbox id on attach); ``create`` never provisions and
 ``destroy`` is a no-op — the provider never owns the host. Executions are
 ``ssm.send_command`` (``AWS-RunShellScript``) polled via ``get_command_invocation``;
-``execute_code`` runs the language's interpreter argv from ``language_runtimes`` (default
-``python3 -c``) with the code appended, as one shell command. boto3 is synchronous, so
+``execute_code`` feeds the code on stdin, through a heredoc, to the language's interpreter argv
+from ``language_runtimes`` (default ``python3 -``), so it never appears in the instance's process
+list (``/proc/<pid>/cmdline`` is world-readable) and has no argument-size limit. boto3 is synchronous, so
 every call runs in ``asyncio.to_thread``.
 
 Identity mapping (spec §PrincipalResolver): agent mode uses the default boto3 credential
@@ -42,11 +43,26 @@ from ..model import IsolationTier, SandboxCapabilities, SandboxPolicy, SandboxPr
 
 logger = logging.getLogger("ak.sandbox.provider")
 
+_HEREDOC_DELIMITER = "AK_SANDBOX_EOF"
 _POLL_INTERVAL = 1.0  # seconds between get_command_invocation polls
 _PENDING_STATUSES = {"Pending", "InProgress", "Delayed"}
 _MISSING_INVOCATION = "InvocationDoesNotExist"
 # STS RoleSessionName allows [\w+=,.@-] and 2-64 chars; anything else is replaced.
 _ROLE_SESSION_INVALID = re.compile(r"[^\w+=,.@-]")
+
+
+def _heredoc_delimiter(code: str) -> str:
+    """Return a heredoc delimiter that does not appear as a line in ``code``.
+
+    A fixed delimiter would terminate the heredoc early if the user's code contained that
+    exact line, so append a counter until the delimiter is collision-free."""
+    lines = code.splitlines()
+    delimiter = _HEREDOC_DELIMITER
+    counter = 0
+    while delimiter in lines:
+        counter += 1
+        delimiter = f"{_HEREDOC_DELIMITER}_{counter}"
+    return delimiter
 
 
 def _role_session_name(subject: str) -> str:
@@ -80,10 +96,13 @@ class EC2SSMEnvironment(AttachedEnvironment):
         self._runtimes = runtimes
 
     async def execute_code(self, code: str, language: str = "python", timeout: float | None = None) -> SandboxResult:
-        """Run the language's configured interpreter argv with the code appended (default ``python3 -c``)."""
+        """Feed the code on stdin (a quoted heredoc) to the language's configured interpreter argv
+        (default ``python3 -``); stdin keeps it out of the process list on the shared instance."""
         if language not in self._capabilities.languages:
             raise SandboxCapabilityError(self.__class__.__name__, f"language:{language}")
-        return await self.execute_command(shlex.join([*self._runtimes[language], code]), timeout)
+        delimiter = _heredoc_delimiter(code)  # collision-safe: never a line already in `code`
+        script = f"{shlex.join(self._runtimes[language])} <<'{delimiter}'\n{code}\n{delimiter}"
+        return await self.execute_command(script, timeout)
 
     async def execute_command(self, command: str, timeout: float | None = None) -> SandboxResult:
         """Send the command via ``AWS-RunShellScript`` and poll the invocation to a terminal state."""
