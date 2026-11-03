@@ -264,6 +264,7 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
         room = rtc.Room()
         room.on("disconnected", self._on_disconnected)
         if listen:
+            room.on("participant_connected", self._on_participant_connected)
             room.on("track_subscribed", self._on_track_subscribed)
             room.on("data_received", self._handle_chat_message)
         return room
@@ -327,6 +328,17 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
 
     # -- inbound: room -> queue --------------------------------------------------------------
 
+    def _on_participant_connected(self, participant: "rtc.RemoteParticipant") -> None:
+        """A remote participant joined the room: an agent participant of this gateway's own team, or the human.
+
+        The conversation opens here, on joining, rather than waiting for the human's microphone: a
+        participant that joins muted (and may stay that way for a while, or the whole call) must still
+        start the conversation.
+        """
+        if participant.identity in self._own_identities:
+            return
+        asyncio.create_task(self._greet(participant.identity))
+
     def _on_track_subscribed(self, track: "rtc.Track", publication: "rtc.RemoteTrackPublication", participant: "rtc.RemoteParticipant") -> None:
         if track.kind != rtc.TrackKind.KIND_AUDIO:
             return
@@ -337,11 +349,10 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
         _log.info(f"Subscribed to audio track from {participant.identity}")
         self._caller_identity = participant.identity
         self._caller_track_sid = getattr(publication, "sid", None) or getattr(track, "sid", None)
-        asyncio.create_task(self._greet(participant.identity))
         asyncio.create_task(self._process_incoming_audio(track))
 
     async def _greet(self, participant_identity: str) -> None:
-        """Kick off the conversation once a participant's mic appears."""
+        """Kick off the conversation once a participant joins the room."""
         prompt = self.opening_prompt(participant_identity)
         if not prompt:
             return
@@ -349,14 +360,14 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
         self._stage_request(AgentRequestText(prompt=prompt))
 
     def opening_prompt(self, participant_identity: str) -> Optional[str]:
-        """What the conversation is asked to say when a caller's microphone appears; ``None`` sends nothing.
+        """What the conversation is asked to say when a participant joins the room; ``None`` sends nothing.
 
-        Called on every caller track subscription, a rejoin after a page reload included. Override it
-        to open a conversation with words of its own.
+        Called once for every caller that joins, a rejoin after a page reload included, whether or not
+        their microphone is published yet. Override it to open a conversation with words of its own.
 
-        :param participant_identity: The identity of the participant whose microphone appeared.
+        :param participant_identity: The identity of the participant who joined.
         """
-        return f"A user named {participant_identity} just connected their microphone. Say a very short hello to them and confirm you are connected!"
+        return f"A user named {participant_identity} just connected. Say a very short hello to them and confirm you are connected!"
 
     def _handle_chat_message(self, data_packet: "rtc.DataPacket") -> None:
         if data_packet.topic not in ("chat", "lk-chat-topic", "lk-chat", ""):
