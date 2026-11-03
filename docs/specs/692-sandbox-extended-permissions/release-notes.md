@@ -59,9 +59,9 @@ What ships with it:
 See [Sandbox → Package installation](https://kernel.yaala.ai/docs/advanced/sandbox#package-installation)
 for the posture table (offline installs, read-only root filesystems, non-root images).
 
-## New: language runtimes for `docker` and `kubernetes`
+## New: language runtimes for `docker`, `kubernetes` and `ec2_ssm`
 
-`run_code` on `docker` and `kubernetes` is no longer Python-only. The provider block's
+`run_code` on `docker`, `kubernetes` and `ec2_ssm` is no longer Python-only. The provider block's
 `language_runtimes` maps each language the image provides to its interpreter argv; the code is
 appended as the last argument:
 
@@ -77,7 +77,10 @@ appended as the last argument:
   merging with it.
 - `policy.languages` still narrows per profile; `[]` keeps a profile command-only.
 - `e2b` and `daytona` stay Python-only: their SDKs choose the interpreter.
-- No behaviour change for existing configs: the default map runs `python -c` as before.
+- No behaviour change for existing configs: the default map runs `python -c` as before (`python3 -c` on
+  `ec2_ssm`, replacing its `python3` heredoc).
+- `e2b` `network_egress: allowlist` now sends a deny-all `deny_out` with the listed hosts as `allow_out`
+  exceptions; before, `allow_out` alone restricted nothing.
 
 See [Sandbox → Language runtimes](https://kernel.yaala.ai/docs/advanced/sandbox#language-runtimes).
 

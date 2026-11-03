@@ -204,7 +204,7 @@ check also runs agent-side before a request is submitted.
 
 ### Capability 1: code execution in additional languages
 
-- `docker` and `kubernetes` run code through the configured `language_runtimes` argv instead of hard-coded `python -c`.
+- `docker`, `kubernetes` and `ec2_ssm` run code through the configured `language_runtimes` argv instead of hard-coded `python -c` (a `python3` heredoc on `ec2_ssm`, whose default is `python3 -c`).
 - All handles check the *instance* capabilities, not the class attribute.
   - This follows the existing per-instance override pattern (`kubernetes.py:206`).
 - **Guard rule:** if `policy.languages` is set and does not contain the requested language, the action is denied.

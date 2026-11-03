@@ -269,7 +269,7 @@ image with a read-only root filesystem and no installer binaries.
 | Provider | `deny` | `allowlist` |
 |---|---|---|
 | `docker` | Enforced (`network_mode: none`). | Not enforceable; fails closed under `strict`. |
-| `e2b` | Enforced. | Mapped to E2B `allow_out` rules; **not yet verified** as a hard limit for registry domains. |
+| `e2b` | Enforced. | Mapped to a deny-all `deny_out` + `allow_out` exceptions; **not yet verified** as a hard limit for registry domains. |
 | `daytona` | Enforced. | Mapped to Daytona's CIDR allow list; **not yet verified** for domain entries such as `pypi.org`. |
 | `kubernetes` | Enforced only with `network_policy: true` (operator-asserted CNI support). | CIDR entries only, with `network_policy: true`; domain names fail closed under `strict`. |
 | `local_subprocess`, `ec2_ssm` | Not enforced. | Not enforced. |

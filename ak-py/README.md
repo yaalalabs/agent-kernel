@@ -1500,7 +1500,7 @@ Key fields:
   fail-closed under `strict`. Also the permissions: `languages` (which `run_code` languages are
   allowed) and `package_install` (whether `install_packages` is allowed, and for which ecosystems).
   A provider's `package_installers` sets the installer command per ecosystem (default `pip install`),
-  and on `docker`/`kubernetes` its `language_runtimes` sets the interpreter per language (default `python -c`).
+  and on `docker`/`kubernetes`/`ec2_ssm` its `language_runtimes` sets the interpreter per language (default `python -c`; `python3 -c` on `ec2_ssm`).
 - **`identity.mode`** + **`principal_resolver`** — run code under the agent's or the invoking
   user's identity.
 - **`broker.flavor`** — `thread` (default, for CLI/REST), `embedded` (inline/synchronous), or

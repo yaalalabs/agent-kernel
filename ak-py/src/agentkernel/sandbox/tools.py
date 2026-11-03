@@ -379,7 +379,7 @@ def _permissions_text(policy: Any, installs: bool, runtimes: Optional[list[str]]
 
 def _runtime_languages(prof: Any) -> Optional[list[str]]:
     """The languages the profile's provider can run, config-derived (no provider import): the
-    ``language_runtimes`` keys when its config block declares that map (``docker``, ``kubernetes``),
+    ``language_runtimes`` keys when its config block declares that map (``docker``, ``kubernetes``, ``ec2_ssm``),
     else a built-in provider's fixed languages; None for a dotted-path provider (unknown here)."""
     runtimes = getattr(getattr(prof, prof.type, None), "language_runtimes", None)
     if runtimes is not None:

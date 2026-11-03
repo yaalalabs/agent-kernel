@@ -559,7 +559,7 @@ checks read the instance capabilities, not the class attribute. These five lines
   The grace period fixes that for every self-timing handle:
   - `local_subprocess`, which kills the process group on its own `TimeoutError` (`local_subprocess.py:65-68`);
   - `ec2_ssm`, which cancels the SSM command (`ec2_ssm.py:112-114`).
-- **Phase 2: the runtime argv.** `docker` and `kubernetes` look up `language_runtimes[language]`. An undeclared
+- **Phase 2: the runtime argv.** `docker`, `kubernetes` and `ec2_ssm` (default `python3 -c`) look up `language_runtimes[language]`. An undeclared
   language raises `SandboxCapabilityError` from the instance-capability check before the lookup. The interpreter is
   always argv[0], and the submitted code is always the last argument.
 - **Why `e2b` and `daytona` get no runtimes.**
@@ -632,10 +632,10 @@ checks read the instance capabilities, not the class attribute. These five lines
     - `_profiles_text` appends each profile's permissions through `_permissions_text`:
       - `run_code disabled (command-only profile)` when `policy.languages` is `[]`;
       - otherwise `languages: …`. On a provider whose config block declares `language_runtimes` (`docker`,
-        `kubernetes`; read by `_runtime_languages`, config-only) these are the runtime keys when `policy.languages`
+        `kubernetes`, `ec2_ssm`; read by `_runtime_languages`, config-only) these are the runtime keys when `policy.languages`
         is unset, and the policy entries the map declares when it is set, so the agent is never offered a language
-        that would fail. A built-in fixed-language provider (`local_subprocess`: `python`, `bash`; `e2b`, `daytona`,
-        `ec2_ssm`: `python`; held in `_FIXED_LANGUAGES`) is narrowed the same way against its fixed languages. If
+        that would fail. A built-in fixed-language provider (`local_subprocess`: `python`, `bash`; `e2b`, `daytona`:
+        `python`; held in `_FIXED_LANGUAGES`) is narrowed the same way against its fixed languages. If
         none of the permitted languages is declared, `run_code unavailable (the provider declares none of the
         permitted languages)`. For a dotted-path provider it is `policy.languages` when set, and nothing when unset;
       - `package installs: python, node` or `package installs not permitted`, but **only when some profile permits

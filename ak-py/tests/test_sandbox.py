@@ -1127,7 +1127,7 @@ def test_install_packages_tool_registered_with_permission_guidance(monkeypatch):
 
 
 def test_guidance_lists_runtime_languages(monkeypatch):
-    # docker/kubernetes declare their languages in language_runtimes; the guidance shows them, narrowed by policy.languages.
+    # docker/kubernetes/ec2_ssm declare their languages in language_runtimes; the guidance shows them, narrowed by policy.languages.
     docker = _SandboxDockerConfig(language_runtimes={"python": ["python", "-c"], "node": ["node", "-e"]})
     profiles = {
         "default": _SandboxProfileConfig(type="docker", docker=docker),

@@ -3,8 +3,9 @@
 ``network_egress: allowlist`` joins the documented hardening recipe for ``e2b`` and ``daytona``
 only once this passes against each provider: with the PyPI hosts listed, a sandbox must reach
 them, must not reach an unlisted host, and a permitted install must succeed. The research behind
-#692 suspects both mappings (e2b sends ``allow_out`` without ``deny_out``; daytona's
-``network_allow_list`` takes CIDRs, not domains), so a failure here is a finding, not a flake.
+#692 found e2b sending ``allow_out`` without ``deny_out`` (now paired with a deny-all ``deny_out``)
+and suspects daytona's ``network_allow_list`` takes CIDRs, not domains, so a failure here is a
+finding, not a flake.
 
 Each live class is skipped unless the gate and that provider's API key are set, so the normal
 unit run is unaffected; ``TestFakeEgressAllowlist`` runs the same contract against a local fake

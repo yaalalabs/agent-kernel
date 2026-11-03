@@ -235,7 +235,7 @@ All paths below are relative to `ak-py/src/agentkernel/` unless they start with 
 
 ### Iteration 8: Runtime config and execution
 
-- **Goal:** `docker` and `kubernetes` run `run_code` through the operator-declared `language_runtimes`, and their
+- **Goal:** `docker`, `kubernetes` and `ec2_ssm` run `run_code` through the operator-declared `language_runtimes`, and their
   instance `languages` come from that map.
 - **Files:**
   - `core/config.py`
