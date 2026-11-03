@@ -635,7 +635,7 @@ checks read the instance capabilities, not the class attribute. These five lines
         `kubernetes`, `ec2_ssm`; read by `_runtime_languages`, config-only) these are the runtime keys when `policy.languages`
         is unset, and the policy entries the map declares when it is set, so the agent is never offered a language
         that would fail. A built-in fixed-language provider (`local_subprocess`: `python`, `bash`; `e2b`, `daytona`:
-        `python`; held in `_FIXED_LANGUAGES`) is narrowed the same way against its fixed languages. If
+        `python`; read from `LocalSubprocessSandboxProvider.capabilities`) is narrowed the same way against its fixed languages. If
         none of the permitted languages is declared, `run_code unavailable (the provider declares none of the
         permitted languages)`. For a dotted-path provider it is `policy.languages` when set, and nothing when unset;
       - `package installs: python, node` or `package installs not permitted`, but **only when some profile permits

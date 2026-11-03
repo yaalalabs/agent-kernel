@@ -54,7 +54,6 @@ from agentkernel.sandbox.model import (
 from agentkernel.sandbox.principal import AgentPrincipalResolver
 from agentkernel.sandbox.testing import FakeSandbox, FakeSandboxProvider, SandboxProviderContract
 from agentkernel.sandbox.tools import (
-    _FIXED_LANGUAGES,
     check_sandbox_task,
     destroy_sandbox_session,
     get_sandbox_tools,
@@ -1170,16 +1169,6 @@ def test_guidance_narrows_policy_languages_for_fixed_language_providers(monkeypa
     assert lines["e2b_multi"].endswith("; languages: python, bash")  # the config-declared kernels
     assert lines["local"].endswith("; languages: python, bash")  # no policy: the provider's own languages
     assert lines["byo"].endswith("; languages: python, bash")  # a dotted-path provider's languages are unknown here
-
-
-@pytest.mark.parametrize("provider_type", sorted(_FIXED_LANGUAGES))
-def test_fixed_languages_match_the_provider_classes(provider_type):
-    # The guidance's config-only map must not drift from the providers' declared capabilities.
-    module = pytest.importorskip(f"agentkernel.sandbox.providers.{provider_type}")
-    provider_cls = next(
-        cls for cls in vars(module).values() if isinstance(cls, type) and issubclass(cls, SandboxProvider) and cls.__module__ == module.__name__
-    )
-    assert provider_cls.capabilities.languages == _FIXED_LANGUAGES[provider_type]
 
 
 def test_get_sandbox_tools_fails_on_an_unresolvable_package_rule(monkeypatch):

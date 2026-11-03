@@ -19,6 +19,7 @@ from ..core.model import SystemTool
 from .manager import ExecutionManager
 from .model import SandboxResult, SandboxTask
 from .packages import PackageSpecRuleFactory
+from .providers.local_subprocess import LocalSubprocessSandboxProvider  # stdlib-only, unlike the other providers
 
 _log = logging.getLogger("ak.sandbox.tools")
 
@@ -314,13 +315,6 @@ async def destroy_sandbox_session(sandbox_session_id: str) -> str:
 # across separate commands. Config-derived only: no provider import at registration time.
 _NO_PERSISTENT_SHELL_TYPES = {"ec2_ssm"}
 
-# Built-in providers whose languages are fixed by the provider class, not declared in config
-# (docker/kubernetes/ec2_ssm/daytona declare theirs in language_runtimes, e2b in languages). Config-derived only,
-# like the set above; a test keeps it equal to each class's capabilities.languages.
-_FIXED_LANGUAGES: dict[str, list[str]] = {
-    "local_subprocess": ["python", "bash"],
-}
-
 
 def _profiles_text(config: Any, installs: bool) -> str:
     """Render the configured workload profiles for the tool guidance (config-derived only —
@@ -378,16 +372,17 @@ def _permissions_text(policy: Any, installs: bool, runtimes: Optional[list[str]]
 def _runtime_languages(prof: Any) -> Optional[list[str]]:
     """The languages the profile's provider can run, config-derived (no provider import): the
     block's ``runtime_languages()`` when it declares ``language_runtimes`` (``docker``, ``kubernetes``, ``ec2_ssm``, ``daytona``),
-    or its ``languages`` list (``e2b``), else a built-in provider's fixed languages; None for a dotted-path
-    provider (unknown here)."""
+    or its ``languages`` list (``e2b``), or ``local_subprocess``'s class-declared languages; None for a
+    dotted-path provider (unknown here)."""
     block = getattr(prof, prof.type, None)
     if hasattr(block, "runtime_languages"):
         return block.runtime_languages()
     runtimes = getattr(block, "languages", None)
     if runtimes is not None:
         return list(runtimes)
-    fixed = _FIXED_LANGUAGES.get(prof.type)
-    return list(fixed) if fixed is not None else None
+    if prof.type == "local_subprocess":
+        return list(LocalSubprocessSandboxProvider.capabilities.languages)
+    return None
 
 
 def _installs_permitted(config: Any) -> bool:
