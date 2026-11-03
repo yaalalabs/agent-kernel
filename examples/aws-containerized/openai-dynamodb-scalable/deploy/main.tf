@@ -18,12 +18,14 @@ module "containerized_agents" {
   # ---- REST Service Configuration ----
   # In queue mode, this service handles HTTP requests and manages the queue interaction
   rest_service = {
-    package_path          = "../dist-rest-service"
-    cpu                   = 256
-    memory                = 512
-    desired_count         = 1
-    container_port        = 8000
-    health_check_endpoint = "/health"
+    alb_security_group_id         = var.alb_security_group_id
+    ecs_service_security_group_id = var.ecs_service_security_group_id
+    package_path                  = "../dist-rest-service"
+    cpu                           = 256
+    memory                        = 512
+    desired_count                 = 1
+    container_port                = 8000
+    health_check_endpoint         = "/health"
     # Override the Docker CMD to specify the correct entrypoint
     command = ["python", "app_rest_service.py"]
   }
@@ -71,9 +73,10 @@ module "containerized_agents" {
   # Separate ECS service that processes messages from the input queue
   # This runs the actual agent logic
   agent_runner = {
-    cpu           = 1024
-    memory        = 2048
-    desired_count = 1
+    security_group_id = var.agent_runner_security_group_id
+    cpu               = 1024
+    memory            = 2048
+    desired_count     = 1
     # Provide package_path to build a separate Docker image for agent runner
     package_path = "../dist-agent-runner"
     # Override the Docker CMD to specify the correct entrypoint

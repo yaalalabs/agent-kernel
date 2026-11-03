@@ -32,7 +32,7 @@ class _QueueClient:
     """Answers every MCP or A2A request with the body a runner stores for ``reply``."""
 
     def __init__(self, reply):
-        from agentkernel.pipeline.request_client import QueuedReply
+        from agentkernel.pipeline.request_handler import QueuedReply
 
         _status, body = ResponseBuilder.build_response(200, "s1", rest_api_mode=False, result=reply)
         self._reply = QueuedReply(request_id="r1", body=body)
@@ -192,15 +192,15 @@ async def test_an_array_payload_is_reshaped_only_by_mcp(monkeypatch):
     assert mcp.meta == {"media_type": MEDIA_TYPE, "fastmcp": {"wrap_result": True}}
 
 
-def test_thread_history_records_the_same_bytes_from_either_path(labelled_reply):
-    """The queue runner holds the response body's `result`; the direct handler holds the reply."""
+def test_thread_history_records_the_same_payload_from_either_path(labelled_reply):
+    """The queue runner holds the response body's `result` and its label in a sibling key; the
+    direct handler holds the reply, which carries both."""
     from agentkernel.integration.thread.recorder import ThreadRecorder
 
-    direct = ThreadRecorder._as_thread_content(labelled_reply)
-    queued = ThreadRecorder._as_thread_content(labelled_reply.content)
+    direct = ThreadRecorder._as_thread_message(labelled_reply)
+    queued = ThreadRecorder._as_thread_message(labelled_reply.content, MEDIA_TYPE)
 
-    assert direct == queued
-    assert json.loads(direct) == EXPECTED_CONTENT
+    assert direct == queued == (EXPECTED_CONTENT, MEDIA_TYPE)
 
 
 @pytest.mark.asyncio
@@ -209,14 +209,16 @@ async def test_every_surface_agrees_on_the_payload(labelled_reply, monkeypatch):
     from a2a.helpers import get_data_parts
 
     from agentkernel.integration.agui.mapping import AGUIMapper
+    from agentkernel.integration.thread.recorder import ThreadRecorder
 
     rest = ResponseBuilder.build_response(200, "s1", rest_api_mode=True, result=labelled_reply)["result"]
     _status, async_body = ResponseBuilder.build_response(200, "s1", rest_api_mode=False, result=labelled_reply)
     stream = json.loads(ResponseBuilder.stream_chunk(StreamChunk(event=DataMessage(message_id="m1", content=RAW_CONTENT)), "s1"))
     agui = AGUIMapper.to_agui(DataMessage(message_id="m1", content=RAW_CONTENT, media_type=MEDIA_TYPE))
     [[a2a]] = get_data_parts([await _a2a_part(labelled_reply, monkeypatch)])  # the binding's one-item list
+    thread, _label = ThreadRecorder._as_thread_message(labelled_reply)
 
-    assert rest == async_body["result"] == stream["event"]["content"] == agui.value == a2a == EXPECTED_CONTENT
+    assert rest == async_body["result"] == stream["event"]["content"] == agui.value == a2a == thread == EXPECTED_CONTENT
 
 
 def test_an_unlabelled_reply_still_leaves_as_a_string_everywhere():

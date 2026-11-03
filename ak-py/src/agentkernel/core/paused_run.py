@@ -8,7 +8,7 @@ pickles and persists, so no new backend, table or config block is involved.
 
 The key holds a **list**. How many paused runs a session can really have is the framework's
 business, not Agent Kernel's: only OpenAI can hold two resumable runs at once, while LangGraph,
-Pydantic AI and Google ADK keep a single thread per session. Whether a new pause appends or replaces
+Pydantic AI, Google ADK and Microsoft Agent Framework keep a single thread per session. Whether a new pause appends or replaces
 is therefore the adapter's call, since only it knows whether the earlier one is still resumable.
 
 A replacing adapter supersedes **its own framework's** records and no others. One session can be

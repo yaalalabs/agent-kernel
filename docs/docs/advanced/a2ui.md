@@ -76,7 +76,7 @@ it has always carried when it is not, so nothing changes for a client that has n
 | REST | yes |
 | WebSocket | yes |
 | Async mode | yes |
-| Conversation threads | the live reply; stored history is not labelled |
+| Conversation threads | yes, live and on reload — stored history keeps the payload and its label |
 | Streaming / AG-UI | yes, with your own `on_stream_event` hook — see below |
 | MCP | yes, as `structuredContent` with the label in `_meta` |
 | A2A | yes, as a data part labelled in `mediaType` and `metadata.mimeType` (an object as a one-item list); the agent card declares the A2UI v0.9.1 extension — see [A2A Server](../api/a2a-server.md) |

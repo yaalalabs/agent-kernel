@@ -6,8 +6,9 @@ name: Publish Helm Chart
 # attaches it to the GitHub release.
 #
 # publish.yaml dispatches this for every production release once the GitHub release exists
-# (the tag minus its "v" becomes the chart version; the examples, docs site, and ak-cloud-deploy
-# skill are pinned to it by scripts/update_chart_versions.py in that same run); the manual
+# (the tag minus its "v" becomes the chart version; the examples, docs site, ak-cloud-deploy
+# skill, and Chart.yaml's own version/appVersion keys are pinned to it by
+# scripts/update_chart_versions.py in that same run, before the tag is cut); the manual
 # dispatch republishes a tag.
 
 on:
@@ -41,7 +42,9 @@ jobs:
       - name: Package chart
         id: package
         # A clean runner has no repo definitions; dependency build needs them even with
-        # Chart.lock present (same as chart-test.yaml).
+        # Chart.lock present (same as chart-test.yaml). Chart.yaml at the tag already carries
+        # the release in version/appVersion; stamping both here as well keeps a republish of a
+        # tag cut before that pinning existed (v0.9.5 and earlier) correct.
         run: |
           TAG_NAME="${{ inputs.tag_name }}"
           CHART_VERSION="${TAG_NAME#v}"

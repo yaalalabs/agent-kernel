@@ -19,7 +19,7 @@ Perfect for serverless applications, microservices, and containerized workloads 
 | Name | Version |
 |------|---------|
 | Terraform | >= 1.9.5 |
-| AWS Provider | >= 6.11.0 |
+| AWS Provider | 6.70.0 (pinned) |
 | Docker | Latest |
 
 ## 🚀 Usage

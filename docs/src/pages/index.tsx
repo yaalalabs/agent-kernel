@@ -79,12 +79,12 @@ function WhatsNewBanner() {
           </svg>
         </span>
         <span ref={textRef} className={styles.whatsNewText}>
-          <strong>Agent Kernel on Kubernetes</strong> - an official Helm chart
-          deploys the full pipeline to any cluster: bare metal, EKS, or
-          air-gapped.
+          <strong>Fetch spans back for evaluation</strong> - read agent, LLM
+          and tool spans back from Langfuse, Logfire, OpenLLMetry or
+          CloudWatch with one filter, to grade production traffic.
         </span>
         <Link
-          to="/blog/kubernetes-on-prem-helm-chart"
+          to="/docs/advanced/traceability#fetching-spans-back"
           className={styles.whatsNewLink}
           ref={linkRef}
         >
@@ -1060,6 +1060,7 @@ function Levels() {
 
 /* ─── Page Export ───────────────────────────────────────────────────────── */
 
+/** Render the landing page using the configured site title and tagline. */
 export default function Home() {
   const { siteConfig } = useDocusaurusContext();
   const backgroundRef = useRef<{
@@ -1125,7 +1126,7 @@ export default function Home() {
   return (
     <Layout
       title={`${siteConfig.title} - ${siteConfig.tagline}`}
-      description="Agent Kernel is the open-source operating system for scalable, compliant enterprise AI agents. Build, test, and deploy with OpenAI, LangGraph, CrewAI, Google ADK, Smolagents, or Pydantic AI to AWS, Azure, or GCP, with built-in messaging, memory, knowledge bases, guardrails, sandboxed code execution, and observability (Langfuse, OpenLLMetry, Pydantic Logfire, AWS CloudWatch)."
+      description="Agent Kernel is the open-source operating system for scalable, compliant enterprise AI agents. Build, test, and deploy with OpenAI, LangGraph, CrewAI, Google ADK, Smolagents, Pydantic AI, or Microsoft Agent Framework to AWS, Azure, or GCP, with built-in messaging, memory, knowledge bases, guardrails, sandboxed code execution, and observability (Langfuse, OpenLLMetry, Pydantic Logfire, AWS CloudWatch)."
     >
       {/* <PlantParticlesBackground ref={backgroundRef} /> */}
       <WhatsNewBanner />

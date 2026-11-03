@@ -5,6 +5,7 @@
   --line: #d9dde4;
   --accent: #2563eb;
   --warn: #b45309;
+  --rail: 15rem;
 }
 
 * { box-sizing: border-box; }
@@ -17,6 +18,46 @@ body {
 }
 
 main { max-width: 44rem; margin: 0 auto; padding: 2rem 1rem 6rem; }
+
+/* The thread list: one row per recorded conversation, read from GET /api/v1/threads. */
+.layout { display: grid; grid-template-columns: var(--rail) 1fr; align-items: start; }
+.threads {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  padding: 1.25rem 1rem;
+  border-right: 1px solid var(--line);
+  overflow-y: auto;
+}
+.threads-head { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; }
+.threads h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 .75rem; }
+.threads ul { list-style: none; margin: 0; padding: 0; display: grid; gap: .25rem; }
+.threads li button {
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  font-size: .9rem;
+  padding: .4rem .5rem;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.threads li button:hover { background: #e8ebf0; }
+.threads li button.current { background: #fff; border: 1px solid var(--line); font-weight: 600; }
+.threads-head button {
+  font: inherit;
+  font-size: .8rem;
+  padding: .2rem .6rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  cursor: pointer;
+}
 h1 { font-size: 1.25rem; margin: 0 0 .25rem; }
 .hint { color: var(--muted); margin: 0 0 1.5rem; font-size: .9rem; }
 code { background: #e8ebf0; padding: .1em .35em; border-radius: 4px; font-size: .9em; }
@@ -29,6 +70,14 @@ code { background: #e8ebf0; padding: .1em .35em; border-radius: 4px; font-size: 
   white-space: pre-wrap;
 }
 .you { background: var(--accent); color: #fff; justify-self: end; }
+.chips { display: flex; flex-wrap: wrap; gap: .35rem; }
+.chip {
+  background: rgba(255, 255, 255, .18);
+  border-radius: 999px;
+  padding: .1rem .55rem;
+  font-size: .85rem;
+  white-space: nowrap;
+}
 .prose { background: #fff; border: 1px solid var(--line); }
 .error { background: #fee2e2; border: 1px solid #fca5a5; }
 .pending { color: var(--muted); }
@@ -46,6 +95,10 @@ code { background: #e8ebf0; padding: .1em .35em; border-radius: 4px; font-size: 
 .heading { margin: 0; font-size: 1rem; }
 .text { margin: 0; }
 .field { display: grid; gap: .25rem; font-size: .85rem; color: var(--muted); }
+/* A recorded value, not an input: it reads as settled rather than editable. */
+.field.readonly { grid-template-columns: 1fr auto; align-items: baseline; gap: 1rem; }
+.field.readonly strong { color: var(--fg); font-weight: 600; }
+.field.readonly + .field.readonly { border-top: 1px solid var(--line); padding-top: .5rem; }
 .field input, .field select {
   font: inherit;
   color: var(--fg);
@@ -74,7 +127,7 @@ code { background: #e8ebf0; padding: .1em .35em; border-radius: 4px; font-size: 
 
 .composer {
   position: fixed;
-  bottom: 0; left: 0; right: 0;
+  bottom: 0; left: var(--rail); right: 0;
   display: flex;
   gap: .5rem;
   padding: 1rem;
@@ -102,3 +155,10 @@ code { background: #e8ebf0; padding: .1em .35em; border-radius: 4px; font-size: 
 fieldset { border: 0; margin: 0; padding: 0; min-inline-size: 0; }
 fieldset:disabled { opacity: .55; }
 .sent { margin: .4rem 0 0; font-size: .8rem; color: var(--muted); }
+
+/* Narrow screens: the rail stacks above the transcript, so the composer spans the full width. */
+@media (max-width: 48rem) {
+  :root { --rail: 0rem; }
+  .layout { grid-template-columns: 1fr; }
+  .threads { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+}

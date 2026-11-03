@@ -6,7 +6,7 @@ tests ship with the code they cover; iteration 7 adds the end-to-end checks and 
 | # | Iteration | Spec section | Leaves working |
 |---|---|---|---|
 | 1 | a2a-sdk cap | §6 | the A2A server imports, so A2A tests can run |
-| 2 | `QueueRequestClient` + REST borrows it | §1 | the client exists; REST unchanged |
+| 2 | `RestHandler.request` | §1 | A2A/MCP's "enqueue, then wait" exists; REST unchanged |
 | 3 | `protocol` tag through runners and response handler | §2 | tagged replies land in the store in every mode |
 | 4 | A2A and MCP executors | §3, §4 | A2A/MCP run through the queue |
 | 5 | Startup checks | §5 | non-queue entry points refuse A2A/MCP |
@@ -23,24 +23,20 @@ tests ship with the code they cover; iteration 7 adds the end-to-end checks and 
   2. Run `cd ak-py && uv lock`, and confirm the lock resolves a 0.3.x version.
 - **Verify:** `cd ak-py && ./build.sh && uv run python -c "import agentkernel.api.a2a.handler"`, then `uv run pytest`.
 
-## Iteration 2: `QueueRequestClient`, with REST borrowing it
+## Iteration 2: `RestHandler.request`
 
-- **Goal:** one reusable "enqueue, then wait for the reply", with REST running on its loop and budget.
+- **Goal:** one reusable "enqueue, then wait for the reply" without the HTTP, on REST's own loop and budget.
 - **Files:**
-  - new `ak-py/src/agentkernel/pipeline/request_client.py`
   - `pipeline/__init__.py`
   - `pipeline/envelope.py`
   - `pipeline/request_handler.py`
-  - new `ak-py/tests/test_pipeline_request_client.py`
   - `ak-py/tests/test_pipeline_request_handler.py`
 - **Steps:**
-  1. Add `ATTR_PROTOCOL` (§2).
-  2. Write `QueuedReply`, `ReplyTimeoutError` and `QueueRequestClient` following rules 1-12 (§1).
-  3. Add the three names to the lazy exports.
-  4. Delete `_DEFAULT_RESPONSE_RETRY`, and point `_response_retry_config` and
-     `_await_response_record` at the client (§1, "REST borrows the loop").
-  5. Write the client tests, and add the two REST seam tests (Testing).
-- **Verify:** `uv run pytest tests/test_pipeline_request_client.py tests/test_pipeline_request_handler.py tests/test_thread_pipeline_recording.py`
+  1. Add `ATTR_PROTOCOL` and `QueueMessage.protocol_of` (§2).
+  2. Write `QueuedReply`, `ReplyTimeoutError` and `RestHandler.request` following rules 1-11 (§1).
+  3. Add `QueuedReply` and `ReplyTimeoutError` to the lazy exports.
+  4. Write the `request` and `QueuedReply` tests (Testing).
+- **Verify:** `uv run pytest tests/test_pipeline_request_handler.py tests/test_thread_pipeline_recording.py`
 
 ## Iteration 3: the `protocol` tag through the runners and response handler
 
@@ -138,13 +134,13 @@ tests ship with the code they cover; iteration 7 adds the end-to-end checks and 
     - `:886-893` (activation rule 1): replace "CLI/A2A/MCP use `AgentService` directly" with the
       `reject_unqueued_protocols` refusal.
     - `:1328`: the execution-flow sentence.
-    - Pipeline module table: add a `request_client.py` row; add `PROTOCOL` to the `envelope.py`
+    - Pipeline module table: add `PROTOCOL` and `protocol_of` to the `envelope.py`
       rows (`:868`, `:881`); add the protocol hand-off to `agent_runner.py` (`:873`); add
-      protocol-before-mode to `response_handler.py` (`:875`); add the borrowed loop to
+      protocol-before-mode to `response_handler.py` (`:875`); add `request` to
       `request_handler.py` (`:876`); add the new fail-fast and warning to `io_handler.py` (`:878`).
   - `.agents/skills/ak-dev-testing-conventions/SKILL.md`
     - `:94`: the `test_api_mcp.py` row now covers queued replies and `ToolError`.
-    - Add rows for `test_pipeline_request_client.py`, `test_pipeline_protocol_routing.py`,
+    - Add rows for `test_pipeline_protocol_routing.py`,
       `test_api_a2a.py` and `test_protocol_pipeline_roundtrip.py` next to `:148-151`.
     - Extend the `test_pipeline_io_handler.py` row (`:151`).
 - **User skill:** `ak-py/src/agentkernel/skills/ak-add-capabilities/SKILL.md`, the MCP section

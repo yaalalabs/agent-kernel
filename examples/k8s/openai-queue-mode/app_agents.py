@@ -1,15 +1,13 @@
-"""The agents, loaded by both processes.
+"""The agents, shared by both processes.
 
 The agent runner (app_agent_runner.py) executes them. The io handler (app_io_handler.py) only
 registers them, because A2A cards and MCP agent tools are built from the agents registered in the
-process that serves those routes. The OpenAI key is set by the runner alone: the io handler never
-runs a model.
+process that serves those routes. Each entry point registers them with its own OpenAIModule call.
 
 Named app_agents rather than agents so it does not shadow the openai-agents ``agents`` package it
 imports.
 """
 
-from agentkernel.openai import OpenAIModule
 from agents import Agent
 
 math_agent = Agent(
@@ -33,5 +31,3 @@ triage_agent = Agent(
     model="openai/gpt-4.1-mini",
     handoffs=[history_agent, math_agent],
 )
-
-OpenAIModule([triage_agent, math_agent, history_agent])

@@ -19,9 +19,8 @@ _LAZY_EXPORTS = {
     "QueueMessage": ".envelope",
     "QueueName": ".envelope",
     "RequestProducer": ".producer",
-    "QueueRequestClient": ".request_client",
-    "QueuedReply": ".request_client",
-    "ReplyTimeoutError": ".request_client",
+    "QueuedReply": ".request_handler",
+    "ReplyTimeoutError": ".request_handler",
     "IOHandler": ".io_handler",
     "RequestHandler": ".request_handler",
     "RestHandler": ".request_handler",
@@ -46,8 +45,7 @@ if TYPE_CHECKING:  # pragma: no cover: static resolution only, preserves lazines
     from .envelope import QueueMessage, QueueName
     from .io_handler import IOHandler
     from .producer import RequestProducer
-    from .request_client import QueuedReply, QueueRequestClient, ReplyTimeoutError
-    from .request_handler import RequestHandler, RestHandler
+    from .request_handler import QueuedReply, ReplyTimeoutError, RequestHandler, RestHandler
     from .response_handler import ResponseHandler
     from .thread_runner import ThreadRunner
     from .transport.base import QueueTransport, QueueTransportFactory, TransportConsumer

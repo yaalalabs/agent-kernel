@@ -14,8 +14,7 @@ import types
 import pytest
 
 from agentkernel.core.util.factory import AKConfigError
-from agentkernel.test.config import AKTestConfig
-from agentkernel.test.core.evaluator import (
+from agentkernel.test import (
     AKEvaluationCase,
     AKEvaluationError,
     AKEvaluationResult,
@@ -23,6 +22,7 @@ from agentkernel.test.core.evaluator import (
     AKMetricNotSupported,
     AKMissingInput,
 )
+from agentkernel.test.config import AKTestConfig
 from agentkernel.test.test import Mode
 from agentkernel.test.test import Test as CliTest
 
@@ -166,6 +166,14 @@ async def test_expect_forwards_return_metrics(monkeypatch):
 
 
 # --- mode routing ------------------------------------------------------------------------- #
+
+
+def test_evaluator_interface_is_exported_from_agentkernel_test():
+    import agentkernel.test as public
+    import agentkernel.test.core.evaluator as core
+
+    for name in core.__all__:
+        assert getattr(public, name) is getattr(core, name)
 
 
 def test_compare_score_mode_routes_to_evaluate_by_score(monkeypatch):

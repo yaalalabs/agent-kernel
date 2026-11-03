@@ -1,16 +1,28 @@
+import datetime
+import decimal
 from unittest.mock import MagicMock
 
 import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 from agentkernel.core.base import Agent, Runner
 from agentkernel.core.config import AKConfig, _ThreadStoreConfig
 from agentkernel.core.model import AgentReplyAny, AgentReplyText, AgentRequestText, BaseRunRequest, ScheduleSpec, StreamChunk
 from agentkernel.core.runtime import Runtime
-from agentkernel.integration.thread import AgentThreadRequestHandler, ConversationThreadManager, ThreadNamingStrategy, ThreadRecorder
+from agentkernel.integration.thread import (
+    AgentThreadRequestHandler,
+    ConversationThreadManager,
+    ThreadAttachment,
+    ThreadMessage,
+    ThreadNamingStrategy,
+    ThreadRecorder,
+)
 from agentkernel.integration.thread.store.in_memory import InMemoryThreadStore
+
+MEDIA_TYPE = "application/a2ui+json"
 
 
 class EchoNaming(ThreadNamingStrategy):
@@ -132,7 +144,7 @@ class TestThreadRecorder:
 
         recorder.post_run(req, AgentReplyText(response="agent says hi"))
 
-        manager.append_message.assert_called_once_with("s1", "assistant", "agent says hi")
+        manager.append_message.assert_called_once_with("s1", "assistant", "agent says hi", media_type=None)
 
 
 class TestAgentThreadRequestHandler:
@@ -284,56 +296,151 @@ class TestEndToEnd:
         assert listing.status_code == 200
         assert [t["session_id"] for t in listing.json()["threads"]] == ["s-e2e"]
 
+    def test_a_labelled_reply_replays_as_an_object_with_its_label(self, thread_enabled, registered_agent):
+        """The whole point of #763: what rendered live must render again on reload.
+
+        Both messages go into one thread deliberately — the unlabelled one is the guarantee that an
+        application which never opted into A2UI reads exactly what it read before.
+        """
+        handler = AgentThreadRequestHandler()
+        handler.chat_service = FakeChatService(reply=AgentReplyAny(content={"version": "v1.0"}, media_type=MEDIA_TYPE))
+        app = FastAPI()
+        app.include_router(handler.get_router())
+        client = TestClient(app)
+        chat = {"session_id": "s-label", "user_id": "alice", "agent": registered_agent.name}
+
+        assert client.post("/api/v1/chat", json={**chat, "prompt": "show me the form"}).status_code == 200
+        handler.chat_service = FakeChatService(reply=AgentReplyText(response="plain words"))
+        assert client.post("/api/v1/chat", json={**chat, "prompt": "and in words"}).status_code == 200
+
+        messages = client.get("/api/v1/threads/s-label").json()["messages"]
+        labelled, unlabelled = messages[1], messages[3]
+
+        assert labelled["content"] == {"version": "v1.0"}
+        assert labelled["media_type"] == MEDIA_TYPE
+        assert unlabelled["content"] == "plain words"
+        assert "media_type" not in unlabelled
+
+
+class TestThreadMessageShape:
+    """What ``ThreadMessage`` accepts, refuses, and puts on the wire (#763).
+
+    The union is the part worth pinning rather than trusting: ``Union[str, JSONPayload]`` leans on
+    pydantic's smart union to keep a string a string, and a reply whose text happens to look like
+    JSON is exactly the value that would be wrong to promote to an object.
+    """
+
+    def test_text_content_stays_text(self):
+        assert ThreadMessage(role="assistant", content="hello").content == "hello"
+
+    def test_a_json_looking_string_is_not_promoted_to_an_object(self):
+        message = ThreadMessage(role="assistant", content='{"a": 1}')
+
+        assert message.content == '{"a": 1}'
+        assert message.media_type is None
+
+    def test_object_content_is_normalised_like_a_reply(self):
+        """The same normalisation ``AgentReplyAny.content`` runs, so neither store holds a datetime."""
+        raw = {"submittedAt": datetime.datetime(2026, 9, 22, 14, 30), "amount": decimal.Decimal("250.00")}
+
+        message = ThreadMessage(role="assistant", content=raw, media_type=MEDIA_TYPE)
+
+        assert message.content == AgentReplyAny(content=raw).content
+        assert message.content == {"submittedAt": "2026-09-22T14:30:00", "amount": "250.00"}
+
+    def test_a_scalar_is_refused(self):
+        with pytest.raises(ValidationError):
+            ThreadMessage(role="assistant", content=42)
+
+    def test_an_object_without_a_label_is_refused(self):
+        with pytest.raises(ValidationError, match="media_type is unset"):
+            ThreadMessage(role="assistant", content={"a": 1})
+
+    def test_a_label_over_text_is_refused(self):
+        with pytest.raises(ValidationError, match="content is text"):
+            ThreadMessage(role="assistant", content="hello", media_type=MEDIA_TYPE)
+
+    def test_a_blank_label_over_text_is_no_label(self):
+        """Every other layer reads a blank label as unlabelled; the wire form must not disagree."""
+        message = ThreadMessage(role="assistant", content="plain text", media_type="")
+
+        assert message.media_type is None
+        assert "media_type" not in message.to_wire()
+
+    def test_a_whitespace_only_label_is_no_label(self):
+        assert ThreadMessage(role="assistant", content="plain text", media_type="   ").media_type is None
+
+    def test_an_object_with_a_blank_label_is_refused(self):
+        with pytest.raises(ValidationError, match="media_type is unset"):
+            ThreadMessage(role="assistant", content={"a": 1}, media_type="")
+
+    def test_a_row_written_before_the_field_existed_still_reads(self):
+        message = ThreadMessage.model_validate_json('{"message_id": "m1", "role": "assistant", "content": "hi"}')
+
+        assert (message.content, message.media_type) == ("hi", None)
+
+    def test_the_wire_form_omits_an_unset_label(self):
+        wire = ThreadMessage(role="assistant", content="hello").to_wire()
+
+        assert "media_type" not in wire
+        assert wire["content"] == "hello"
+
+    def test_the_wire_form_carries_a_set_label(self):
+        wire = ThreadMessage(role="assistant", content={"a": 1}, media_type=MEDIA_TYPE).to_wire()
+
+        assert wire["media_type"] == MEDIA_TYPE
+        assert wire["content"] == {"a": 1}
+
+    def test_the_wire_form_keeps_an_attachments_unset_fields(self):
+        """The regression guard for excluding a named field rather than ``exclude_none``, which recurses."""
+        attachment = ThreadAttachment(attachment_id="a1")
+
+        wire = ThreadMessage(role="assistant", content="hello", attachments=[attachment]).to_wire()
+
+        assert wire["attachments"] == [{"attachment_id": "a1", "name": None, "mime_type": None}]
+
 
 class TestThreadContentEncoding:
-    """Both recording paths must store the same bytes for the same reply.
+    """Both recording paths must store the same content and label for the same reply.
 
     ``ThreadRecorder.post_run`` is called with three different types — an ``AgentReply`` from the
     direct handler, the accumulated text from the streaming one, and the response body's ``result``
     value from the queue runner, which for a labelled reply is a dict.
     """
 
-    def test_agent_reply_records_json(self):
-        from agentkernel.core.model import AgentReplyAny
-        from agentkernel.integration.thread.recorder import ThreadRecorder
+    def test_a_labelled_reply_records_the_object_and_its_label(self):
+        """The direct handler's shape: the reply carries its own label."""
+        reply = AgentReplyAny(content={"a": 1}, media_type=MEDIA_TYPE)
 
-        assert ThreadRecorder._as_thread_content(AgentReplyAny(content={"a": 1})) == '{"a": 1}'
+        assert ThreadRecorder._as_thread_message(reply) == ({"a": 1}, MEDIA_TYPE)
+
+    def test_a_labelled_queue_body_records_the_object_and_its_label(self):
+        """The queue runner's shape: the label arrives beside the result, not on it."""
+        assert ThreadRecorder._as_thread_message({"a": 1}, MEDIA_TYPE) == ({"a": 1}, MEDIA_TYPE)
+
+    def test_an_unlabelled_agent_reply_records_json(self):
+        """The label is the switch: without one, a structured reply is still text."""
+        assert ThreadRecorder._as_thread_message(AgentReplyAny(content={"a": 1})) == ('{"a": 1}', None)
 
     def test_text_reply_records_its_text(self):
-        from agentkernel.core.model import AgentReplyText
-        from agentkernel.integration.thread.recorder import ThreadRecorder
-
-        assert ThreadRecorder._as_thread_content(AgentReplyText(response="hello")) == "hello"
+        assert ThreadRecorder._as_thread_message(AgentReplyText(response="hello")) == ("hello", None)
 
     def test_accumulated_stream_text_passes_through(self):
-        from agentkernel.integration.thread.recorder import ThreadRecorder
+        assert ThreadRecorder._as_thread_message("hel" + "lo") == ("hello", None)
 
-        assert ThreadRecorder._as_thread_content("hel" + "lo") == "hello"
+    def test_an_unlabelled_dict_records_json_not_a_python_repr(self):
+        content, label = ThreadRecorder._as_thread_message({"root": None, "ok": True})
 
-    def test_dict_records_json_not_a_python_repr(self):
-        from agentkernel.integration.thread.recorder import ThreadRecorder
-
-        content = ThreadRecorder._as_thread_content({"root": None, "ok": True})
-
-        assert content == '{"root": null, "ok": true}'
+        assert (content, label) == ('{"root": null, "ok": true}', None)
         assert "'" not in content
         assert "None" not in content
 
-    def test_both_paths_record_identical_bytes(self):
+    def test_both_paths_record_the_same_pair(self):
         """The queue path and the direct path hold different types for the same reply."""
-        import json
-
-        from agentkernel.core.model import AgentReplyAny
-        from agentkernel.integration.thread.recorder import ThreadRecorder
-
         content = {"version": "v1.0", "createSurface": {"surfaceId": "s1"}}
-        reply = AgentReplyAny(content=content, media_type="application/a2ui+json")
+        reply = AgentReplyAny(content=content, media_type=MEDIA_TYPE)
 
-        direct = ThreadRecorder._as_thread_content(reply)
-        queue = ThreadRecorder._as_thread_content(content)
-
-        assert direct == queue
-        assert json.loads(direct) == content
+        assert ThreadRecorder._as_thread_message(reply) == ThreadRecorder._as_thread_message(content, MEDIA_TYPE) == (content, MEDIA_TYPE)
 
 
 class TestThreadPauseAndResume:

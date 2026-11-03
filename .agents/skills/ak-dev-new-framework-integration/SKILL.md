@@ -3,7 +3,7 @@ name: ak-dev-new-framework-integration
 description: >
   Step-by-step guide for adding a new agent framework adapter to Agent Kernel.
   Use this skill when you need to integrate a new agent framework (beyond OpenAI,
-    CrewAI, LangGraph, Google ADK, Smolagents, Pydantic AI). Covers creating the adapter module, implementing
+    CrewAI, LangGraph, Google ADK, Smolagents, Pydantic AI, Microsoft Agent Framework). Covers creating the adapter module, implementing
   Agent/Runner/Module subclasses, adding optional dependencies, exports, and tests.
 license: Apache-2.0
 metadata:
@@ -421,6 +421,8 @@ Create at minimum:
 - Update `docs/sidebars.js` to include the new framework
 - Landing page (`docs/src/components/*/data.tsx`): add a tile to the **Agent frameworks & dev tools** row in `IntegrationsMarquee/data.tsx` (role `Framework`, `href` to the new page, logo or `react-icons/si` glyph); add `pick("<tile name>")` to the **Agent frameworks** card in `ArchitectureOverview/data.tsx`; add the framework to the **Framework Adapters** card's `tags` and `description` under the Build tab in `FeatureExplorer/data.tsx`. Logo sourcing and the build check are in `ak-dev-sync-docs-from-branch`, *Docs-Site Landing and Features Pages*
 - Features page (`docs/src/pages/features.tsx`): the `integrations` list and the "Framework adapters for N SDKs" highlight on the Six Core Abstractions card. Grep `docs/src/pages/*.tsx` and `docs/docs/intro.md` for the framework roll call and add the new name wherever the others are listed
+- The framework's own page carries the same sections as the other framework pages: Tool Binding, Structured Output, Per-run context/state, Native run options, Human in the loop (say so when `supports_pause` stays `False`), Features and Example
+- Every other roll call. Grep the whole repo for the most recently added framework's name and compare its hits with the new framework's, e.g. `grep -rIl -i 'pydantic.\?ai' docs/docs docs/src ak-py/src/agentkernel/skills .agents/skills README.md ak-py/README.md`. Typical surfaces: `installation.md` (the framework's section and the `all` extras line), `quick-start.md` (a tab), `examples/overview.md`, the streaming-capable lists (`api/rest-api.md`, `core-concepts/configuration.md`, `core-concepts/overview.md`, the Azure/GCP deployment pages), the AG-UI tables (`api/agui-server.md`, `integrations/agui.md`), `advanced/human-in-the-loop.md`, the traceability depth tables, the native-handle list in `core-concepts/session.md`, `docs/src/components/FrameworkSelector`, the marketing pages under `docs/src/pages/`, the bundled user skills (`ak-build`, `ak-init`, `ak-test`, `ak-add-capabilities`), and the framework lists in the developer skills
 
 ## Checklist
 
@@ -445,3 +447,4 @@ Create at minimum:
 - [ ] Documentation in `docs/docs/frameworks/<name>.md`
 - [ ] Landing page inventories: marquee tile (`IntegrationsMarquee/data.tsx`), `pick()` chip on the Agent frameworks card (`ArchitectureOverview/data.tsx`), Framework Adapters card tags (`FeatureExplorer/data.tsx`)
 - [ ] Framework inventories on `docs/src/pages/features.tsx` (`integrations` and SDK count) and in `docs/docs/intro.md`
+- [ ] Every other framework roll call updated (Step 14: installation, quick start, examples overview, streaming lists, AG-UI and tracing tables, session handles, FrameworkSelector, marketing pages, bundled and developer skills)

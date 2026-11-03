@@ -17,7 +17,7 @@ This package provides the following Terraform modules:
 ### Prerequisites
 
 - Terraform >= 1.9.5
-- AWS Provider >= 6.11.0
+- AWS Provider 6.70.0 (pinned; 6.69.0 breaks zip-packaged Lambdas, fixed in 6.69.1 — [hashicorp/terraform-provider-aws#50474](https://github.com/hashicorp/terraform-provider-aws/issues/50474))
 - Valid AWS credentials configured
 
 ### Basic Usage
@@ -86,7 +86,7 @@ Each module has its own comprehensive documentation:
 | Name | Version |
 |------|---------|
 | Terraform | >= 1.9.5 |
-| AWS Provider | >= 6.11.0 |
+| AWS Provider | 6.70.0 (pinned) |
 
 ## 💡 Common Patterns
 

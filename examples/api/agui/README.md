@@ -181,11 +181,32 @@ Two things worth trying because they should *not* work:
 - Attach something over 4MB. It is refused at the moment you pick it, before you have typed anything,
   and the reason appears in the transcript — the run is never attempted, so no prompt is swallowed.
 
-Two things that look like bugs but are not. `storage_type` defaults to `in_memory`, so restarting
+Two things that look like bugs but are not. In mode A `storage_type` is `in_memory`, so restarting
 `app.py` drops the stored bytes: a follow-up question about an image attached before the restart can
 still be answered from the description in the history, but the analysis tool will not find the id. And
 if the 📎 button does nothing at all, the frontend was not rebuilt — run `./build.sh` (or
 `cd frontend && npm run build`).
+
+## Two ways to run it
+
+The agent runs on the **queue pipeline** either way — `app.py` mounts `AGUIPipelineRequestHandler`,
+not the direct `AGUIRequestHandler`, so a slow model never holds the web connection and a failed run
+can be redelivered. What changes between the two modes is how many processes that takes.
+
+**The frontend is identical in both.** That is the point worth noticing: same routes, same events,
+same order. Nothing in `frontend/` knows where the agent ran.
+
+| | Mode A — one process | Mode B — two processes |
+|---|---|---|
+| Transport | `in_memory` (the default) | NATS |
+| Reply path | in-memory response store | Valkey |
+| Attachment bytes | in-memory store | Valkey, over the redis store |
+| To run | `python app.py` | two terminals + Docker |
+| Shows | the wiring | the topology the design is for |
+
+Mode A is the default because it costs nothing: `IOHandler` runs the API, the response handler and
+the agent runner as threads in one process, so there is nothing to install and **no Docker**. Mode B
+needs a broker and a Redis-compatible store; the example ships a compose file for them.
 
 ## Install and run
 
@@ -197,6 +218,49 @@ Then run the Python app and the Vite frontend side by side. Vite proxies `/agui`
 
     python app.py
     cd frontend && npm install && npm run dev     # http://localhost:5173
+
+### Mode B: the agent in its own process (needs Docker)
+
+Two containers, from this directory's `docker-compose.yaml`: **NATS** carries the work to the agent,
+**Valkey** carries the reply chunks back and holds the conversation. Nothing Docker-specific about
+either — point `config.broker.yaml` at a NATS and a Valkey you already run and skip the compose step.
+
+Three terminals, all from `examples/api/agui`:
+
+    # terminal 0 — the broker and the store
+    docker compose up -d --wait
+
+    # terminal 1 — the API: keeps the browser's connection, enqueues, drains the reply
+    AK_CONFIG_PATH_OVERRIDE=config.broker.yaml uv run python app.py
+
+    # terminal 2 — the agent runner: no HTTP, no routes, just the agent
+    AK_CONFIG_PATH_OVERRIDE=config.broker.yaml uv run python app_runner.py
+
+    # terminal 3 — the UI, unchanged from mode A
+    cd frontend && npm run dev            # http://localhost:5173
+
+Wait for terminal 1 to log `IOHandler starting: … topology=multi-process` and terminal 2 to log
+`Stream AGUI_REQUESTS provisioned` before sending anything.
+
+Then use the UI exactly as in mode A — same URL, same events. What to watch for is in
+[Checking mode B by hand](#checking-mode-b-by-hand).
+
+Stop the containers with `docker compose down -v`.
+
+### Using the direct handler instead
+
+`AGUIRequestHandler` runs the agent inside the SSE request. It needs no queue and no store, which
+makes it the smaller thing to reason about for a demo or low traffic:
+
+```python
+from agentkernel.agui import AGUIRequestHandler
+from agentkernel.api import RESTAPI
+
+RESTAPI.run(handlers=[AGUIRequestHandler(authoriser=DemoAuthoriser())])
+```
+
+The routes and the events are the same; what you give up is retries and scaling the agent apart
+from the web tier.
 
 `./build.sh` also builds the frontend when it is run locally, so `GET /` on :8000 serves the UI. It
 skips that step in CI (`$CI` is set there): the `/agui` routes and `app_test.py` do not need the built
@@ -304,6 +368,30 @@ Requires `OPENAI_API_KEY`. The suite speaks AG-UI to the app over real HTTP, so 
 outbound chain: a real adapter, the AG-UI mapping, the SDK encoder and a live model. The two multimodal
 cases assert structurally — the image part is accepted, the run brackets and finishes — rather than on
 what a vision model says about a given picture, so they check the wiring without flaking on wording.
+
+It runs against mode A, which is enough: the suite drives the same queue-mode handler, so the
+marker, the inbound envelope and the store round trip are all exercised — just in one process.
+
+### Checking mode B by hand
+
+The suite cannot cover the two-process topology, so these four are worth a manual pass. Each is
+something mode A structurally cannot show you:
+
+1. **The run leaves the API process.** Ask the agent anything and watch `[AGUI AGENT START]` appear
+   in **terminal 2** while terminal 1 holds the browser's connection. The `request_id` on both lines
+   is the same run.
+2. **The conversation survives the hop.** Add a task, then ask how many are left. Terminal 2 reads
+   the history from Valkey, not from the process that took the request.
+3. **A failed run is retried.** Kill terminal 2 mid-answer and restart it. The queue redelivers and
+   the answer still arrives — watch `receive_count` climb. Under the direct handler that run is
+   simply lost with the connection.
+4. **A bad topology is refused at boot.** Set `execution.response_store.type: dynamodb` in
+   `config.broker.yaml` and restart terminal 1: it exits naming the store, rather than accepting a
+   request whose answer could never come back. DynamoDB has no blocking read, so it cannot carry a
+   chunk stream.
+
+Set `logging.ak.level: INFO` (already set in both configs) or you will see none of the `[AGUI …]`
+lines — the level is nested per logger tree, and a bare `logging.level` is silently ignored.
 
 ## Notes and limits
 

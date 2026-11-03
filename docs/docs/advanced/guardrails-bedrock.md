@@ -367,10 +367,10 @@ AWS Bedrock Guardrails pricing (as of 2026):
 - [Walled AI Guardrails](./guardrails-walledai) - Alternative provider
 - [Guardrails Overview](./guardrails)
 - [Configuration Guide](../core-concepts/configuration)
-- [Working Example](https://github.com/yaalalabs/agent-kernel/tree/main/examples/cli/guardrail/bedrock)
+- [Working Example](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/guardrail/bedrock)
 
 ## Support
 
 - **Issues**: [GitHub Issues](https://github.com/yaalalabs/agent-kernel/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/yaalalabs/agent-kernel/discussions)
-- **Examples**: [Repository Examples](https://github.com/yaalalabs/agent-kernel/tree/main/examples)
+- **Examples**: [Repository Examples](https://github.com/yaalalabs/agent-kernel/tree/develop/examples)

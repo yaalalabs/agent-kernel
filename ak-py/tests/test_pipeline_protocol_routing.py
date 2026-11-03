@@ -2,6 +2,8 @@
 response store, so tagged messages bypass every mode-specific delivery path."""
 
 import json
+import subprocess
+import sys
 from unittest.mock import MagicMock
 
 import pytest
@@ -256,3 +258,24 @@ class TestIntegrationWins:
 
         assert adapter.delivered == ["hi"]
         assert store.get_record("r1") is None
+
+
+class TestProtocolOf:
+    @pytest.mark.parametrize(
+        "attributes, expected",
+        [
+            ({ATTR_PROTOCOL: "a2a"}, "a2a"),
+            ({ATTR_PROTOCOL: "mcp", ATTR_INTEGRATION: "slack"}, "mcp"),
+            ({ATTR_PROTOCOL: ""}, None),
+            ({ATTR_PROTOCOL: object()}, None),
+            ({ATTR_PROTOCOL: 1}, None),
+            ({}, None),
+        ],
+    )
+    def test_only_a_non_empty_str_counts(self, attributes, expected):
+        assert QueueMessage.protocol_of(attributes) == expected
+
+    def test_the_runner_side_never_loads_the_rest_handler(self):
+        """The worker reads the tag from the envelope, so it never imports the REST layer that sends it."""
+        code = "import sys, agentkernel.pipeline.agent_runner, agentkernel.pipeline.response_handler; sys.exit('agentkernel.pipeline.request_handler' in sys.modules)"
+        assert subprocess.run([sys.executable, "-c", code]).returncode == 0

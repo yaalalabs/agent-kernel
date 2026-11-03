@@ -428,6 +428,12 @@ SDK's `RunHooks`, LangChain callbacks, ADK plugins, Pydantic AI's `event_stream_
 OpenAIModule([agent]).run_options(agent, hooks=ProgressHooks(), max_turns=25).post_hook(agent, [DisclaimerHook()])
 ```
 
+Some frameworks take their lifecycle hooks on the agent itself instead: Microsoft Agent Framework's
+chat, function and agent middleware (the `middleware=` argument of `Agent`), and smolagents'
+`step_callbacks`. Those need nothing from Agent Kernel, and `run_options` is for the run-time arguments
+beside them (MAF's `options` and `function_invocation_kwargs`; see
+[`examples/cli/maf-run-options`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/maf-run-options)).
+
 A native hook's callbacks run inside the Agent Kernel run, so `Session.current()` resolves in them and
 a post-hook can read what they recorded in the session's volatile cache before it is cleared. Two
 paths report progress:

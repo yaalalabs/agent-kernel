@@ -51,6 +51,7 @@ export interface AgentKernelArchDiagramProps {
   accentColor?: string;
 }
 
+/** Render framework, runtime capability, and deployment layers with animation when scrolled into view. */
 export default function AgentKernelArchDiagram({ accentColor }: AgentKernelArchDiagramProps) {
   const sectionRef = useRef<HTMLElement>(null);
   const [visible, setVisible] = useState(false);
@@ -107,7 +108,7 @@ export default function AgentKernelArchDiagram({ accentColor }: AgentKernelArchD
             <div className={styles.topBoxContent}>
               <span className={styles.topBoxLabel}>Your Agent Logic</span>
               <div className={styles.topBoxChips}>
-                {['OpenAI', 'LangGraph', 'CrewAI', 'Google ADK', 'Smolagents', 'Pydantic AI'].map((item) => (
+                {['OpenAI', 'LangGraph', 'CrewAI', 'Google ADK', 'Smolagents', 'Pydantic AI', 'Microsoft Agent Framework'].map((item) => (
                   <span key={item} className={styles.topBoxChip}>{item}</span>
                 ))}
               </div>

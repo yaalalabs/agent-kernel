@@ -28,6 +28,7 @@ Use this skill to add new tools, agents, or handoffs to an existing Agent Kernel
    - `from agentkernel.adk import GoogleADKModule` → **Google ADK**
    - `from agentkernel.smolagents import SmolagentsModule` → **Smolagents**
    - `from agentkernel.pydanticai import PydanticAIModule` → **Pydantic AI**
+   - `from agentkernel.maf import MAFModule` → **Microsoft Agent Framework**
 
 2. **Existing agents** — List every agent already defined (names, roles, instructions).
 
@@ -152,6 +153,14 @@ tools = PydanticAIToolBuilder.bind([lookup_order, existing_tool_1])
 agent = Agent(model="openai:gpt-4o-mini", name="support", description="...", instructions="...", tools=tools)
 ```
 
+**Microsoft Agent Framework:**
+```python
+from agentkernel.maf import MAFToolBuilder
+
+tools = MAFToolBuilder.bind([lookup_order, existing_tool_1])
+agent = Agent(client, name="support", description="...", instructions="...", tools=tools)
+```
+
 > **Gotcha:** Always add the new tool to the **existing** `bind()` call for that agent. Don't create a second `bind()`.
 
 ---
@@ -255,6 +264,23 @@ support_agent = Agent(
 
 > **Gotcha (Pydantic AI):** Always pass `name=` (AK registers by name eagerly; Pydantic AI otherwise infers it lazily at first run) **and** `description=` (Pydantic AI's description is optional but is what AK reports as the agent description / A2A summary). The provider key for the model string (e.g. `OPENAI_API_KEY`) must be set at import time — Pydantic AI resolves the provider at construction.
 
+**Microsoft Agent Framework:**
+```python
+from agent_framework import Agent
+from agent_framework.openai import OpenAIChatClient
+from agentkernel.maf import MAFToolBuilder
+
+support_agent = Agent(
+    OpenAIChatClient(model="gpt-4.1-mini"),   # swap the client for another MAF provider (agent-framework-anthropic, ...)
+    name="support",               # Always pass name= explicitly!
+    description="Specialist for customer support and order inquiries",
+    instructions="You help customers with order lookups, returns, and general support questions.",
+    tools=MAFToolBuilder.bind([lookup_order]),
+)
+```
+
+> **Gotcha (Microsoft Agent Framework):** Always pass `name=` — `MAFModule` raises `ValueError` for an unnamed agent because AK registers agents by name immediately.
+
 #### 4b. Register with the Module
 
 Add the new agent to the **existing** Module constructor call. Do not create a second Module.
@@ -267,7 +293,7 @@ OpenAIModule([triage_agent, math_agent, general_agent])
 OpenAIModule([triage_agent, math_agent, general_agent, support_agent])
 ```
 
-This applies to all frameworks — `LangGraphModule`, `CrewAIModule`, `GoogleADKModule`, `SmolagentsModule`, `PydanticAIModule` work the same way.
+This applies to all frameworks — `LangGraphModule`, `CrewAIModule`, `GoogleADKModule`, `SmolagentsModule`, `PydanticAIModule`, `MAFModule` work the same way.
 
 #### 4c. Structured Output (Optional)
 
@@ -395,7 +421,7 @@ module.pre_hook(support_agent, [RAGPreHook()])
 
 **Framework-native run options (optional):** to pass the framework's own run arguments for one agent
 (OpenAI `max_turns`, `hooks=RunHooks()` and `run_config=RunConfig(...)`; LangGraph `config`; ADK
-`plugins` and `run_config`; Pydantic AI `usage_limits`; CrewAI `step_callback`; smolagents
+`plugins` and `run_config`; Pydantic AI `usage_limits`; Microsoft Agent Framework `options`; CrewAI `step_callback`; smolagents
 `max_steps`), declare them with `run_options` on the same module, in the framework's own types:
 
 ```python

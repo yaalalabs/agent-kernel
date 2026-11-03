@@ -52,7 +52,7 @@ make deploy-inject
 ```
 
 This will:
-- Inject `backend.tf` into all AWS, Azure, and GCP example projects listed in the integration config
+- Inject `backend.tf` into all AWS, Azure, and GCP projects listed in the integration config (`deployment_base` and the nightly/weekly tests)
 - Modify `main.tf` files to use local module sources
 - Modify Terraform files under `ak-deployment` to use local common modules and nested module sources
 

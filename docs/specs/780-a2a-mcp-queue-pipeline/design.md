@@ -132,16 +132,21 @@ Five pieces, each small:
 
 | # | Piece | What it does | Where |
 |---|---|---|---|
-| 1 | **`QueueRequestClient`** | One reusable "enqueue, then wait for the reply" | new `pipeline/request_client.py` |
+| 1 | **`RestHandler.request`** | One reusable "enqueue, then wait for the reply", without the HTTP | `pipeline/request_handler.py` |
 | 2 | **`protocol` tag** | Marks a message as "a caller is waiting for one whole reply" | `pipeline/envelope.py`, runners, response handler |
-| 3 | **A2A executor** | Uses the client instead of running the agent | `api/a2a/a2a.py` |
+| 3 | **A2A executor** | Uses `RestHandler.request` instead of running the agent | `api/a2a/a2a.py` |
 | 4 | **MCP executor** | Same as the A2A executor | `api/mcp/akmcp.py` |
 | 5 | **Startup checks** | Refuses to start A2A or MCP where there is no queue | `api/http.py`, `pipeline/io_handler.py` |
 
-### 1. `QueueRequestClient`
+### 1. `RestHandler.request`
 
-**What:** one small class that puts a chat request on the input queue and waits for its reply.
-A2A, MCP and REST all use it.
+**What:** one new method on the existing `RestHandler` that puts a chat request on the input queue
+and waits for its reply. A2A and MCP each hold one `RestHandler` and call it; REST's own routes
+share its wait budget and loop.
+
+**Why a method, not a new class:** `RestHandler` already builds the transport, store and budget on
+first use, and a separate client would copy all three. The runners read the tag through
+`QueueMessage.protocol_of` in `envelope.py`, so the worker side never imports the REST layer.
 
 **Rules**
 - It uses whatever queue and response store are configured, built-in or custom. It talks only to the
@@ -156,14 +161,16 @@ A2A, MCP and REST all use it.
   `result`, `media_type` and `error`. A missing status counts as 200.
 - When the wait runs out it raises **`ReplyTimeoutError`**, which carries the request id and the
   budget.
-- **REST does not change.** It borrows the wait loop and keeps its override points
-  (`get_transport`, `get_response_store`, `_response_retry_config`, `_await_response_record`,
-  `_enqueue_request`) and its HTTP errors (504 on timeout).
+- Unlike the REST routes it raises no `HTTPException` and **always waits**, whatever
+  `execution.mode` is.
+- **REST does not change.** Its routes keep their override points (`get_transport`,
+  `get_response_store`, `_response_retry_config`, `_await_response_record`, `_enqueue_request`),
+  which `request` goes through too, and their HTTP errors (504 on timeout).
 
 <details><summary>▸ Evidence</summary>
 
 - The envelope comes from `RequestProducer` (`pipeline/producer.py:44-49`).
-- The budget is in `core/config.py:514-515`, and the 60 × 1 s default in `pipeline/request_handler.py:22`. That default moves into the client; it is not copied.
+- The budget is in `core/config.py:514-515`, and the 60 × 1 s default in `pipeline/request_handler.py:22`. That default stays there; `request` reads it through `_response_retry_config`.
 - The missing-status rule is at `request_handler.py:117`.
 
 </details>
@@ -200,7 +207,7 @@ integration reply context.
 ### 3 & 4. The A2A and MCP executors
 
 **What:** both build a chat request (`BaseRunRequest` with the prompt, agent name and session id),
-send it through the client, and turn the reply into their protocol's shape. Neither imports
+send it through `RestHandler.request`, and turn the reply into their protocol's shape. Neither imports
 `AgentService` any more.
 
 **Which session?**
@@ -342,7 +349,7 @@ SSE and REST-async request ids mean nothing to an A2A or MCP caller.
 
 ## How we'll know it works
 
-- [ ] **Client:** the envelope, the wait budget (from config and the default), the timeout, and the `QueuedReply` fields.
+- [ ] **`RestHandler.request`:** the envelope, the wait budget (from config and the default), the timeout, and the `QueuedReply` fields.
 - [ ] **Runners:** a tagged message runs as one reply under the normal, streaming and realtime runners, and so does its permanent failure.
 - [ ] **Response handler:** a tagged message gets a record in all four modes (`rest_sync`, `rest_async`, `async`, `stream`), and a tagged failure gets a 500 record.
 - [ ] **A2A and MCP:** every row of the "What the caller sees" table. MCP tests stop patching `AgentService` (`tests/test_api_mcp.py`, `tests/test_cross_surface_parity.py:101-136`).

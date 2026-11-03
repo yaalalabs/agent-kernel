@@ -641,7 +641,7 @@ scaling_config = {
 
 ## Examples
 
-See [examples/aws-containerized/](../../examples/aws-containerized/) for complete examples:
+See [examples/aws-containerized/](../../../examples/aws-containerized/) for complete examples:
 
 - **openai-dynamodb-scalable** - Production-ready OpenAI agent with auto-scaling
 - **openai-websocket** - OpenAI agent over a WebSocket API in direct (non-queue) mode: one ECS
@@ -716,7 +716,7 @@ output "schedule_table_arn"            # DynamoDB schedule store table ARN
 ## Requirements
 
 - **Terraform**: >= 1.9.5
-- **AWS Provider**: >= 6.11.0
+- **AWS Provider**: 6.70.0 (pinned; 6.69.0 breaks zip-packaged Lambdas, fixed in 6.69.1 — [hashicorp/terraform-provider-aws#50474](https://github.com/hashicorp/terraform-provider-aws/issues/50474))
 - **Docker Provider**: 3.6.2
 
 ## Providers

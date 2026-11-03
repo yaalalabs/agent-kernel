@@ -1,5 +1,5 @@
 from enum import StrEnum
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Mapping, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -13,6 +13,7 @@ ATTR_ENDPOINT_URL = "endpoint_url"
 ATTR_STATUS_CODE = "status_code"
 ATTR_INTEGRATION = "integration"
 ATTR_THREAD = "thread"
+ATTR_AGUI = "agui"
 # Marks an output message as a realtime stream chunk (audio/transcript/interrupt/done), so the
 # Response Handler routes it to the integration adapter's deliver_chunk instead of guessing from
 # the body shape.
@@ -50,3 +51,16 @@ class QueueMessage(BaseModel):
     native: Any = Field(default=None, exclude=True)
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    @staticmethod
+    def protocol_of(attributes: Mapping[str, Any]) -> Optional[str]:
+        """The surface name when a caller is waiting on the store for this message (A2A, MCP), else None.
+
+        Only a non-empty ``str`` counts, the rule ``IntegrationDelivery.integration_of`` applies:
+        a mocked attribute map hands back truthy objects, which must not reroute a message.
+
+        :param attributes: A message's attributes.
+        :return: The value of the ``protocol`` attribute, or None.
+        """
+        protocol = attributes.get(ATTR_PROTOCOL)
+        return protocol if isinstance(protocol, str) and protocol else None

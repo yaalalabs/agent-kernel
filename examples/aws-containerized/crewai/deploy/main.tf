@@ -29,8 +29,10 @@ module "containered_agents" {
   ]
 
   rest_service = {
-    package_path   = "../dist"
-    container_port = 8000
+    alb_security_group_id         = var.alb_security_group_id
+    ecs_service_security_group_id = var.ecs_service_security_group_id
+    package_path                  = "../dist"
+    container_port                = 8000
     # Environment variables passed to container
     environment_variables = {
       OPENAI_API_KEY     = var.openai_api_key,

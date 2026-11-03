@@ -23,7 +23,7 @@ Perfect for microservices, API backends, event-driven architectures, and serverl
 | Name | Version |
 |------|---------|
 | Terraform | >= 1.9.5 |
-| AWS Provider | >= 6.11.0 |
+| AWS Provider | 6.70.0 (pinned) |
 | Docker Provider | 3.6.2 |
 
 ## 🔌 Providers

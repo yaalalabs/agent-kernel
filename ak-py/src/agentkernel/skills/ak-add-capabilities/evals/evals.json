@@ -106,6 +106,18 @@
       ]
     },
     {
+      "id": "cap-tracing-fetch",
+      "name": "Fetch recorded spans back",
+      "input": "Fetch the tool-call spans my agent recorded in the last 6 hours so I can evaluate them",
+      "expected_outputs": [
+        "Trace.get().fetch_spans(",
+        "from agentkernel.trace import",
+        "SpanKind.TOOL",
+        "last=timedelta(",
+        "FetchedSpan"
+      ]
+    },
+    {
       "id": "cap-session-redis",
       "name": "Add Redis session persistence",
       "input": "Add Redis session persistence to my project",
@@ -228,6 +240,20 @@
       ],
       "must_not_contain": [
         "type: bedrock"
+      ]
+    },
+    {
+      "id": "cap-agui-queue",
+      "name": "Run AG-UI on the queue pipeline",
+      "input": "My AG-UI agent holds a web connection for the whole run. Move the run off the web tier.",
+      "expected_outputs": [
+        "AGUIPipelineRequestHandler",
+        "IOHandler",
+        "response_store",
+        "session"
+      ],
+      "must_not_contain": [
+        "RESTAPI.run"
       ]
     },
     {

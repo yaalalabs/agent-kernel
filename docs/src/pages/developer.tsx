@@ -50,7 +50,7 @@ const DEV_FEATURE_GROUPS = [
       {
         icon: MdAutoAwesome,
         title: "Multi-Framework Support",
-        body: "Run OpenAI Agents, LangGraph, CrewAI, Google ADK, Smolagents and Pydantic AI side-by-side. Keep one runtime across teams while using the best framework per use case.",
+        body: "Run OpenAI Agents, LangGraph, CrewAI, Google ADK, Smolagents, Pydantic AI and Microsoft Agent Framework side-by-side. Keep one runtime across teams while using the best framework per use case.",
       },
     ],
   },

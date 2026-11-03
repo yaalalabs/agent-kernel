@@ -699,7 +699,7 @@ export AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TTL=604800
 **Execution Modes**:
 - `rest_sync` - Synchronous REST: sends request to queue and immediately waits for response from response store (requires queues and response_store)
 - `rest_async` - Asynchronous REST: submits request to queue and returns immediately with request_id, then poll for response from response store (requires queues and response_store)
-- `stream` - Event streaming: SSE on the built-in REST server (local, containerized, Cloud Run, Container Apps), or WebSocket `STREAM_CHUNK` push on AWS serverless (queues optional, response_store not used). Requires a streaming-capable framework (OpenAI Agents SDK, LangGraph, Google ADK, Pydantic AI)
+- `stream` - Event streaming: SSE on the built-in REST server (local, containerized, Cloud Run, Container Apps), or WebSocket `STREAM_CHUNK` push on AWS serverless (queues optional, response_store not used). Requires a streaming-capable framework (OpenAI Agents SDK, LangGraph, Google ADK, Pydantic AI, Microsoft Agent Framework)
 - `async` - WebSocket mode for real-time bidirectional communication on AWS serverless (queues optional, response_store not used)
 
 **Notes**:
@@ -746,7 +746,7 @@ If `test-config.yaml` is missing, defaults apply silently (no warning is printed
 - `llm` - LLM-as-judge evaluation via the configured evaluator (DeepEval and Opik use a `GEval` metric; JEV asks one yes/no Noul question) for semantic similarity
 - `fallback` - Tries score first, falls back to llm if score fails
 
-**Evaluator backend:** `evaluator` selects the pluggable scoring backend used by both `score` and `llm` modes. Built-in values are `deepeval` (the default, requires the `test` extra), `opik` (requires the `opik` extra) and `jev` (requires the `jev` extra); any other value is treated as a dotted path to your own `AKEvaluator` subclass (`agentkernel.test.core.evaluator.AKEvaluator`) — see [Bring your own evaluator](../testing/cli-testing.md#bring-your-own-evaluator). Opik's `GEval` judge runs entirely locally against the LLM configured under `llm:` below — it does not require an Opik Cloud account, API key, or self-hosted server (AK disables its trace logging by default). `jev` is a hosted judge ([TypeSafe JEV](https://docs.typesafe.ai)) that works only with `mode: llm` (`score` and `fallback` raise `AKMetricNotSupported`); it reads `TYPESAFE_API_KEY` from the environment, ignores the `llm:` block, and sends the user input, expected output and actual output to `api.typesafe.ai`.
+**Evaluator backend:** `evaluator` selects the pluggable scoring backend used by both `score` and `llm` modes. Built-in values are `deepeval` (the default, requires the `test` extra), `opik` (requires the `opik` extra) and `jev` (requires the `jev` extra); any other value is treated as a dotted path to your own `AKEvaluator` subclass (`agentkernel.test.AKEvaluator`) — see [Bring your own evaluator](../testing/cli-testing.md#bring-your-own-evaluator). Opik's `GEval` judge runs entirely locally against the LLM configured under `llm:` below — it does not require an Opik Cloud account, API key, or self-hosted server (AK disables its trace logging by default). `jev` is a hosted judge ([TypeSafe JEV](https://docs.typesafe.ai)) that works only with `mode: llm` (`score` and `fallback` raise `AKMetricNotSupported`); it reads `TYPESAFE_API_KEY` from the environment, ignores the `llm:` block, and sends the user input, expected output and actual output to `api.typesafe.ai`.
 
 ### Custom Test Configuration File Path
 

@@ -32,8 +32,8 @@ export const FEATURE_TABS: FeatureTab[] = [
       {
         title: "Framework Adapters",
         description:
-          "OpenAI Agents SDK, LangGraph, CrewAI, Google ADK, Smolagents and Pydantic AI run side by side in one runtime. Switch frameworks by changing two import lines.",
-        tags: ["OpenAI", "LangGraph", "CrewAI", "ADK", "Smolagents", "Pydantic AI"],
+          "OpenAI Agents SDK, LangGraph, CrewAI, Google ADK, Smolagents, Pydantic AI and Microsoft Agent Framework run side by side in one runtime. Switch frameworks by changing two import lines.",
+        tags: ["OpenAI", "LangGraph", "CrewAI", "ADK", "Smolagents", "Pydantic AI", "Microsoft Agent Framework"],
         docs: "/docs/frameworks/overview",
         example: "cli/multi",
       },
@@ -279,7 +279,7 @@ export const FEATURE_TABS: FeatureTab[] = [
       {
         title: "Human in the Loop",
         description:
-          "Pause a run for a person's approval or answer and resume from their decision later, on any replica. Works on OpenAI, LangGraph, Pydantic AI and Google ADK, over REST, streaming and AG-UI.",
+          "Pause a run for a person's approval or answer and resume from their decision later, on any replica. Works on OpenAI, LangGraph, Pydantic AI, Google ADK and Microsoft Agent Framework, over REST, streaming and AG-UI.",
         tags: ["Approvals", "Pause & resume", "AG-UI"],
         docs: "/docs/advanced/human-in-the-loop",
         example: "api/hitl",
@@ -302,10 +302,10 @@ export const FEATURE_TABS: FeatureTab[] = [
       {
         title: "Tracing",
         description:
-          "One config line enables Langfuse, OpenLLMetry on OpenTelemetry, Pydantic Logfire, or AWS CloudWatch across agent runs, plus LLM calls and tool invocations where the framework supports them, with cost and latency.",
-        tags: ["Langfuse", "OpenLLMetry", "Logfire", "CloudWatch", "OpenTelemetry"],
+          "One config line enables Langfuse, OpenLLMetry on OpenTelemetry, Pydantic Logfire, or AWS CloudWatch across agent runs, plus LLM calls and tool invocations where the framework supports them, with cost and latency. Trace.fetch_spans() and fetch_traces() read the spans back with one provider-neutral filter, to grade production traffic.",
+        tags: ["Langfuse", "OpenLLMetry", "Logfire", "CloudWatch", "OpenTelemetry", "Span fetch"],
         docs: "/docs/advanced/traceability",
-        example: "cli/logfire",
+        example: "aws-serverless/openai-langfuse-trace-evaluation",
       },
       {
         title: "Automated Testing",

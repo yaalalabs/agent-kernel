@@ -187,7 +187,7 @@ Rules:
    ported positionally would send the context id as the media type.
 2. **No media type on a text part.** The text helper's `media_type` stays unset, as today.
 3. **The executor never names A2UI.** It maps whatever `media_type` the body carries
-   (`QueuedReply.media_type`, `pipeline/request_client.py:43-45`), passes every labelled payload
+   (`QueuedReply.media_type`, `pipeline/request_handler.py:47-49`), passes every labelled payload
    through `A2UIPostHook.a2a_data`, and writes the label in both `media_type` and
    `metadata["mimeType"]` for every media type (D7).
 4. **`_send_error` is deleted** (`:97-98`). On 1.x an event enqueued before the raise is never
@@ -357,7 +357,7 @@ All intentional.
 **Non-changes:**
 
 - The #780 queue path: body (`BaseRunRequest(prompt, agent, session_id=context_id)`),
-  `protocol="a2a"`, wait budget, `QueueRequestClient` reuse, lazy `pipeline` import.
+  `protocol="a2a"`, wait budget, `RestHandler.request` reuse, lazy `pipeline` import.
 - Unlabelled replies (text, image text, structured without a `media_type`) leave exactly as today.
 - Class and module names: `A2A`, `A2A.Executor`, `A2ARESTRequestHandler`, `A2ACardBuilder`,
   `RedisTaskStore`; `A2A.PROTOCOL`, `ERROR_MESSAGE`, `TIMEOUT_MESSAGE` values.

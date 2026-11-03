@@ -129,6 +129,23 @@
       ]
     },
     {
+      "id": "init-maf-cli",
+      "name": "Scaffold Microsoft Agent Framework CLI project",
+      "input": "Create a new Agent Kernel project using Microsoft Agent Framework with CLI mode",
+      "expected_outputs": [
+        "from agentkernel.maf import MAFModule",
+        "from agent_framework import Agent",
+        "name=",
+        "description=",
+        "MAFModule([",
+        "agent-framework-openai"
+      ],
+      "must_not_contain": [
+        "OpenAIModule",
+        "SmolagentsModule"
+      ]
+    },
+    {
       "id": "init-openai-lambda",
       "name": "Scaffold OpenAI AWS Lambda project",
       "input": "Create a new Agent Kernel project using OpenAI with AWS Lambda deployment",

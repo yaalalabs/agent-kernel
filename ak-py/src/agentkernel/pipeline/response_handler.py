@@ -9,9 +9,8 @@ from ..core.model import ExecutionMode, StreamChunk
 from ..core.util.async_bridge import run_async_sync
 from ..core.util.factory import AKConfigError
 from .consumer import ConsumerLoop
-from .envelope import ATTR_REALTIME, ATTR_REQUEST_ID, ATTR_STATUS_CODE, ATTR_USER_ID, QueueMessage, QueueName
+from .envelope import ATTR_AGUI, ATTR_REALTIME, ATTR_REQUEST_ID, ATTR_STATUS_CODE, ATTR_USER_ID, QueueMessage, QueueName
 from .integration_delivery import IntegrationDelivery
-from .request_client import QueueRequestClient
 from .response_store.base import ResponseStore
 from .response_store.factory import ResponseStoreFactory
 from .transport.base import QueueTransport, QueueTransportFactory
@@ -72,8 +71,14 @@ class ResponseHandler:
             status_code = int(message.attributes.get(ATTR_STATUS_CODE, "200"))
             self._integration_delivery.deliver(integration, message.attributes, body, status_code, session_id=message.group_id)
             return
-        if QueueRequestClient.protocol_of(message.attributes):
+        if QueueMessage.protocol_of(message.attributes):
             self._store_response(message)
+            return
+
+        # AG-UI chunks always go to the response store, whatever the app's execution mode is: the
+        # caller is holding an SSE socket in the edge process, which drains the store.
+        if message.attributes.get(ATTR_AGUI):
+            self._store_chunk(message)
             return
 
         mode = AKConfig.get().execution.mode
@@ -107,9 +112,19 @@ class ResponseHandler:
 
             request_id = message.attributes.get(ATTR_REQUEST_ID)
             error_text = f"Failed to process message after {max_receive_count} retries"
-            if QueueRequestClient.protocol_of(message.attributes):
+            if QueueMessage.protocol_of(message.attributes):
                 self._store_failure_record(message, request_id, error_text)
                 return
+
+            if message.attributes.get(ATTR_AGUI):
+                if request_id:
+                    store = self._get_store()
+                    if store.supports_chunk_streaming():
+                        store.add_chunk(request_id, StreamChunk(error=error_text, done=True).model_dump(exclude_none=True))
+                    else:
+                        self._log.warning("Cannot deliver permanent-failure AG-UI chunk: response store does not support chunk streaming")
+                return
+
             mode = AKConfig.get().execution.mode
 
             if mode == ExecutionMode.STREAM:
@@ -251,7 +266,9 @@ class ResponseHandler:
             raise ValueError("request_id is required in queue message attributes")
         store = self._get_store()
         if not store.supports_chunk_streaming():
-            raise AKConfigError("local STREAM delivery requires a chunk-streaming response store (in_memory, or a BYO store with the capability)")
+            raise AKConfigError(
+                "local STREAM delivery requires a chunk-streaming response store (in_memory, redis, valkey, or a BYO store with the capability)"
+            )
         store.add_chunk(request_id, json.loads(message.body))
 
     def _broadcast(self, message: QueueMessage, message_type: WebSocketHandlerABC.MessageType) -> None:
