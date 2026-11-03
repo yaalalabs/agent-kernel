@@ -478,7 +478,36 @@ def test_only_transport_drops_are_restarted():
 
     assert runner._restartable(ConnectionError("1006 abnormal closure"))
     assert runner._restartable(TimeoutError("socket timed out"))
+    assert runner._restartable(Exception("1008 None. BidiGenerateContent session not found or expired"))
     assert not runner._restartable(ValueError("ADK produced audio at 16000 Hz"))
+
+
+def test_an_expired_resumption_handle_is_dropped_so_the_retry_does_not_repeat_the_same_failure():
+    """Live: Gemini rejected a stale saved handle with 1008, and every retry resent the same handle and failed
+    the same way again, the backoff doubling each time instead of just reconnecting once with none."""
+    runner = GoogleADKRealtimeRunner()
+    session = Session("call")
+    session.get_volatile_cache().set(GoogleADKRealtimeRunner.RESUMPTION_HANDLE_KEY, "stale-handle")
+    runner._session = session
+    runner._live_options = {"run_config": RunConfig(session_resumption=types.SessionResumptionConfig(handle="stale-handle"))}
+
+    runner._drop_expired_resumption(Exception("1008 None. BidiGenerateContent session not found or expired"))
+
+    assert session.get_volatile_cache().get(GoogleADKRealtimeRunner.RESUMPTION_HANDLE_KEY) is None
+    assert runner._live_options["run_config"].session_resumption.handle is None
+
+
+def test_an_unrelated_failure_leaves_the_resumption_handle_alone():
+    runner = GoogleADKRealtimeRunner()
+    session = Session("call")
+    session.get_volatile_cache().set(GoogleADKRealtimeRunner.RESUMPTION_HANDLE_KEY, "good-handle")
+    runner._session = session
+    runner._live_options = {"run_config": RunConfig(session_resumption=types.SessionResumptionConfig(handle="good-handle"))}
+
+    runner._drop_expired_resumption(ConnectionError("1006 abnormal closure"))
+
+    assert session.get_volatile_cache().get(GoogleADKRealtimeRunner.RESUMPTION_HANDLE_KEY) == "good-handle"
+    assert runner._live_options["run_config"].session_resumption.handle == "good-handle"
 
 
 @pytest.mark.asyncio
@@ -507,32 +536,56 @@ async def test_the_connection_has_a_total_restart_cap():
 
 
 @pytest.mark.asyncio
-async def test_a_client_turn_with_no_model_event_reopens_the_live_run(monkeypatch, native):
-    """Gemini can accept a turn and then stay silent with the socket open; the watchdog starts a new run."""
+async def test_a_client_turn_with_no_model_event_fails_the_run(monkeypatch, native):
+    """Gemini can accept a turn and then stay silent with the socket open; the watchdog reports it as stalled at
+    once, with no in-place restart attempt first (one is rarely still stuck the same way moments later)."""
     monkeypatch.setattr(GoogleADKRealtimeRunner, "STALL_TIMEOUT_SECONDS", 0.05)
     coordinator, billing = team()
     with Runtime(InMemorySessionStore()):
-        runner, _, run = await open_call([coordinator, billing])
+        runner, seen, run = await open_call([coordinator, billing])
         await run.events.put(_heard("are you there", True))
-        await wait_until(lambda: len(run.calls) >= 2)
+        await wait_until(lambda: any(kind == "error" for kind, _ in seen))
         await runner.disconnect()
-    assert len(run.calls) >= 2
-    assert run.calls[0]["session_id"] == run.calls[1]["session_id"]
-    assert run.calls[0]["live_request_queue"] is not run.calls[1]["live_request_queue"]
+    assert len(run.calls) == 1  # no in-place restart: the caller reconnects instead
+    message = next(data["message"] for kind, data in seen if kind == "error")
+    assert "stalled" in message
 
 
 @pytest.mark.asyncio
-async def test_a_turn_with_no_audible_output_reopens_the_live_run(monkeypatch, native):
+async def test_a_turn_with_no_audible_output_fails_the_run(monkeypatch, native):
     """Tool/control events count as progress for the no-event watchdog, but not for the no-speech watchdog."""
     monkeypatch.setattr(GoogleADKRealtimeRunner, "NO_SPEECH_TIMEOUT_SECONDS", 0.1)
     coordinator, billing = team()
     with Runtime(InMemorySessionStore()):
-        runner, _, run = await open_call([coordinator, billing])
+        runner, seen, run = await open_call([coordinator, billing])
         await runner.send_text("please answer")
         await run.events.put(model_event("coordinator", content=types.Content(parts=[types.Part(text="only text, no voice")])))
-        await wait_until(lambda: len(run.calls) >= 2)
+        await wait_until(lambda: any(kind == "error" for kind, _ in seen))
         await runner.disconnect()
-    assert len(run.calls) >= 2
+    assert len(run.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_text_output_gets_time_to_start_speaking(monkeypatch, native):
+    """Text can arrive before generated speech; that gap must not use the shorter no-event timeout."""
+    monkeypatch.setattr(GoogleADKRealtimeRunner, "STALL_TIMEOUT_SECONDS", 0.05)
+    monkeypatch.setattr(GoogleADKRealtimeRunner, "NO_SPEECH_TIMEOUT_SECONDS", 0.3)
+    coordinator, billing = team()
+    with Runtime(InMemorySessionStore()):
+        runner, seen, run = await open_call([coordinator, billing])
+        await runner.send_text("please answer")
+        await run.events.put(model_event("coordinator", content=types.Content(parts=[types.Part(text="thinking aloud")])))
+        await wait_until(lambda: any(kind == "transcript_delta" for kind, _ in seen))
+        await asyncio.sleep(0.12)
+        assert not any(kind == "error" for kind, _ in seen)
+
+        audio = model_event("coordinator", turn_complete=True)
+        audio.content = types.Content(parts=[types.Part(inline_data=types.Blob(data=b"\x01\x02", mime_type="audio/pcm;rate=24000"))])
+        await run.events.put(audio)
+        await wait_until(lambda: any(kind == "done" for kind, _ in seen))
+        assert not any(kind == "error" for kind, _ in seen)
+        await runner.disconnect()
+    assert len(run.calls) == 1
 
 
 @pytest.mark.asyncio
@@ -552,50 +605,49 @@ async def test_a_completed_turn_with_audio_stops_the_no_speech_watchdog(monkeypa
 
 @pytest.mark.asyncio
 async def test_audio_that_never_completes_the_turn_still_rearms_the_no_speech_watchdog(monkeypatch, native):
-    """A socket that dies after some audio must not leave the turn unfinished forever."""
+    """A socket that dies after some audio must not leave the turn unfinished forever: the clock restarts from the
+    audio, not from before it, and still ends the run once the window passes with nothing more."""
     monkeypatch.setattr(GoogleADKRealtimeRunner, "NO_SPEECH_TIMEOUT_SECONDS", 0.1)
     coordinator, billing = team()
     with Runtime(InMemorySessionStore()):
-        runner, _, run = await open_call([coordinator, billing])
+        runner, seen, run = await open_call([coordinator, billing])
         await runner.send_text("please answer")
         await run.events.put(audio_event("coordinator"))
-        await wait_until(lambda: len(run.calls) >= 2)
+        await wait_until(lambda: any(kind == "error" for kind, _ in seen))
         await runner.disconnect()
-    assert len(run.calls) >= 2
+    assert len(run.calls) == 1
 
 
 @pytest.mark.asyncio
-async def test_a_handover_that_never_speaks_reopens_the_live_run(monkeypatch, native):
-    """A transfer gets the longer handover grace, then the receiving agent is expected to make progress."""
-    monkeypatch.setattr(GoogleADKRealtimeRunner, "STALL_TIMEOUT_SECONDS", 0.05)
-    monkeypatch.setattr(GoogleADKRealtimeRunner, "HANDOVER_STALL_TIMEOUT_SECONDS", 0.2)
+async def test_a_handover_that_never_speaks_fails_the_run(monkeypatch, native):
+    """A transfer starts the same flat stall clock; the receiving agent is expected to make progress within it."""
+    monkeypatch.setattr(GoogleADKRealtimeRunner, "STALL_TIMEOUT_SECONDS", 0.1)
     coordinator, billing = team()
     with Runtime(InMemorySessionStore()):
-        runner, _, run = await open_call([coordinator, billing])
+        runner, seen, run = await open_call([coordinator, billing])
         await run.events.put(Event(author="coordinator", invocation_id="i", actions=EventActions(transfer_to_agent="billing")))
-        await asyncio.sleep(0.1)
-        assert len(run.calls) == 1  # still inside the handover grace
-        await wait_until(lambda: len(run.calls) >= 2)
+        await asyncio.sleep(0.05)
+        assert not any(kind == "error" for kind, _ in seen)  # still inside the stall window
+        await wait_until(lambda: any(kind == "error" for kind, _ in seen))
         await runner.disconnect()
-    assert len(run.calls) >= 2
+    assert len(run.calls) == 1
 
 
 @pytest.mark.asyncio
 async def test_the_old_agents_tail_audio_does_not_end_the_handover_grace(monkeypatch, native):
-    """A handoff can be followed by the old agent's queued audio; only the receiving agent ends the wait."""
-    monkeypatch.setattr(GoogleADKRealtimeRunner, "STALL_TIMEOUT_SECONDS", 0.05)
-    monkeypatch.setattr(GoogleADKRealtimeRunner, "HANDOVER_STALL_TIMEOUT_SECONDS", 0.2)
+    """A handoff can be followed by the old agent's queued audio; only the receiving agent's words end the wait."""
+    monkeypatch.setattr(GoogleADKRealtimeRunner, "STALL_TIMEOUT_SECONDS", 0.1)
     coordinator, billing = team()
     with Runtime(InMemorySessionStore()):
-        runner, _, run = await open_call([coordinator, billing])
+        runner, seen, run = await open_call([coordinator, billing])
         await run.events.put(Event(author="coordinator", invocation_id="i", actions=EventActions(transfer_to_agent="billing")))
-        await asyncio.sleep(0.12)
+        await asyncio.sleep(0.07)
         await run.events.put(model_event("coordinator", content=types.Content(parts=[types.Part(text="one last thing")])))
-        await asyncio.sleep(0.12)
-        assert len(run.calls) == 1  # the old agent's tail reset the handover clock
-        await wait_until(lambda: len(run.calls) >= 2)
+        await asyncio.sleep(0.07)
+        assert not any(kind == "error" for kind, _ in seen)  # the old agent's tail reset the clock
+        await wait_until(lambda: any(kind == "error" for kind, _ in seen))
         await runner.disconnect()
-    assert len(run.calls) >= 2
+    assert len(run.calls) == 1
 
 
 @pytest.mark.asyncio
@@ -604,7 +656,7 @@ async def test_a_running_tool_is_not_mistaken_for_model_silence(monkeypatch, nat
     monkeypatch.setattr(GoogleADKRealtimeRunner, "STALL_TIMEOUT_SECONDS", 0.05)
     coordinator, billing = team()
     with Runtime(InMemorySessionStore()):
-        runner, _, run = await open_call([coordinator, billing])
+        runner, seen, run = await open_call([coordinator, billing])
         await run.events.put(
             model_event(
                 "coordinator",
@@ -612,16 +664,156 @@ async def test_a_running_tool_is_not_mistaken_for_model_silence(monkeypatch, nat
             )
         )
         await asyncio.sleep(0.2)
-        assert len(run.calls) == 1
+        assert not seen
         await run.events.put(
             model_event(
                 "coordinator",
                 content=types.Content(parts=[types.Part(function_response=types.FunctionResponse(id="t1", name="slow", response={}))]),
             )
         )
-        await wait_until(lambda: len(run.calls) >= 2)
+        await wait_until(lambda: any(kind == "error" for kind, _ in seen))
         await runner.disconnect()
-    assert len(run.calls) >= 2
+    assert len(run.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_session_resumption_is_enabled_with_no_handle_by_default(native):
+    """Gemini's own live session resumption is always on, so ADK's built-in reconnect-on-drop can restore the
+    model's memory for a real socket error, even before any handle has been issued."""
+    coordinator, billing = team()
+    with Runtime(InMemorySessionStore()):
+        runner, _, run = await open_call([coordinator, billing])
+        await runner.disconnect()
+    config = run.calls[0]["run_config"].session_resumption
+    assert config is not None and config.handle is None
+
+
+@pytest.mark.asyncio
+async def test_session_resumption_does_not_override_an_agent_configured_one(native):
+    """An agent that already set its own session_resumption (e.g. transparent=True) keeps it untouched."""
+    coordinator, billing = team()
+    with Runtime(InMemorySessionStore()):
+        module = GoogleADKModule([coordinator, billing])
+        module.run_options(coordinator, run_config=RunConfig(session_resumption=types.SessionResumptionConfig(handle="agent-own")))
+        runner = GoogleADKRealtimeRunner()
+        seen = []
+
+        async def collect(kind, data):
+            seen.append((kind, data))
+
+        await runner.connect(Session("call"), module.get_agent("coordinator"), collect)
+        run = NativeRun.latest
+        await runner.disconnect()
+    assert run.calls[0]["run_config"].session_resumption.handle == "agent-own"
+
+
+@pytest.mark.asyncio
+async def test_session_resumption_seeds_the_handle_saved_from_an_earlier_connection(native):
+    """A handle saved on the session by a previous connection (see `_handle_event`) seeds the next one, so the
+    server can restore the conversation it already knows instead of starting the model over blind."""
+    coordinator, billing = team()
+    with Runtime(InMemorySessionStore()):
+        session = Session("call")
+        session.get_volatile_cache().set(GoogleADKRealtimeRunner.RESUMPTION_HANDLE_KEY, "saved-handle")
+        runner = GoogleADKRealtimeRunner()
+        seen = []
+
+        async def collect(kind, data):
+            seen.append((kind, data))
+
+        await runner.connect(session, GoogleADKModule([coordinator, billing]).get_agent("coordinator"), collect)
+        run = NativeRun.latest
+        await runner.disconnect()
+    assert run.calls[0]["run_config"].session_resumption.handle == "saved-handle"
+
+
+@pytest.mark.asyncio
+async def test_session_resumption_seeds_the_saved_handle_even_when_the_agent_already_set_an_empty_config(native):
+    """An agent's own run_config can already set session_resumption with no handle of its own (e.g. for other live
+    settings in the same config) - the saved handle still gets filled in, not skipped just because the config
+    object already exists."""
+    coordinator, billing = team()
+    with Runtime(InMemorySessionStore()):
+        session = Session("call")
+        session.get_volatile_cache().set(GoogleADKRealtimeRunner.RESUMPTION_HANDLE_KEY, "saved-handle")
+        module = GoogleADKModule([coordinator, billing])
+        module.run_options(coordinator, run_config=RunConfig(session_resumption=types.SessionResumptionConfig()))
+        runner = GoogleADKRealtimeRunner()
+        seen = []
+
+        async def collect(kind, data):
+            seen.append((kind, data))
+
+        await runner.connect(session, module.get_agent("coordinator"), collect)
+        run = NativeRun.latest
+        await runner.disconnect()
+    assert run.calls[0]["run_config"].session_resumption.handle == "saved-handle"
+
+
+@pytest.mark.asyncio
+async def test_a_resumable_handle_from_the_root_agent_is_saved_on_the_session(native):
+    coordinator, billing = team()
+    with Runtime(InMemorySessionStore()):
+        session = Session("call")
+        runner = GoogleADKRealtimeRunner()
+        seen = []
+
+        async def collect(kind, data):
+            seen.append((kind, data))
+
+        await runner.connect(session, GoogleADKModule([coordinator, billing]).get_agent("coordinator"), collect)
+        run = NativeRun.latest
+        await run.events.put(
+            model_event("coordinator", live_session_resumption_update=types.LiveServerSessionResumptionUpdate(newHandle="h2", resumable=True))
+        )
+        await asyncio.sleep(0.05)
+        await runner.disconnect()
+    assert session.get_volatile_cache().get(GoogleADKRealtimeRunner.RESUMPTION_HANDLE_KEY) == "h2"
+
+
+@pytest.mark.asyncio
+async def test_a_handle_from_a_transferred_to_agent_is_not_saved(native):
+    """Handed-off sub-agents run their own, separate connections (ADK's own mechanism, not ours): a handle from
+    one of those does not describe the root agent's conversation, which is the one our own restart resumes as."""
+    coordinator, billing = team()
+    with Runtime(InMemorySessionStore()):
+        session = Session("call")
+        runner = GoogleADKRealtimeRunner()
+        seen = []
+
+        async def collect(kind, data):
+            seen.append((kind, data))
+
+        await runner.connect(session, GoogleADKModule([coordinator, billing]).get_agent("coordinator"), collect)
+        run = NativeRun.latest
+        await run.events.put(
+            model_event("billing", live_session_resumption_update=types.LiveServerSessionResumptionUpdate(newHandle="h3", resumable=True))
+        )
+        await asyncio.sleep(0.05)
+        await runner.disconnect()
+    assert session.get_volatile_cache().get(GoogleADKRealtimeRunner.RESUMPTION_HANDLE_KEY) is None
+
+
+@pytest.mark.asyncio
+async def test_an_unresumable_update_is_not_saved(native):
+    """Gemini sends an empty/unresumable update while mid function-call or generating; using it would lose data."""
+    coordinator, billing = team()
+    with Runtime(InMemorySessionStore()):
+        session = Session("call")
+        runner = GoogleADKRealtimeRunner()
+        seen = []
+
+        async def collect(kind, data):
+            seen.append((kind, data))
+
+        await runner.connect(session, GoogleADKModule([coordinator, billing]).get_agent("coordinator"), collect)
+        run = NativeRun.latest
+        await run.events.put(
+            model_event("coordinator", live_session_resumption_update=types.LiveServerSessionResumptionUpdate(newHandle=None, resumable=False))
+        )
+        await asyncio.sleep(0.05)
+        await runner.disconnect()
+    assert session.get_volatile_cache().get(GoogleADKRealtimeRunner.RESUMPTION_HANDLE_KEY) is None
 
 
 def test_a_run_option_the_adapter_owns_is_rejected_by_name(native):
