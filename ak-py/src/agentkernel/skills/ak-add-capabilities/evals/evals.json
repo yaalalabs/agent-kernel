@@ -106,6 +106,18 @@
       ]
     },
     {
+      "id": "cap-tracing-fetch",
+      "name": "Fetch recorded spans back",
+      "input": "Fetch the tool-call spans my agent recorded in the last 6 hours so I can evaluate them",
+      "expected_outputs": [
+        "Trace.get().fetch_spans(",
+        "from agentkernel.trace import",
+        "SpanKind.TOOL",
+        "last=timedelta(",
+        "FetchedSpan"
+      ]
+    },
+    {
       "id": "cap-session-redis",
       "name": "Add Redis session persistence",
       "input": "Add Redis session persistence to my project",

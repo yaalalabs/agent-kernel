@@ -268,6 +268,33 @@ export AWS_REGION="us-east-1"
 
 5. No code changes needed — tracing is automatically applied to all agent executions.
 
+**Fetching spans back (any of the four backends):** to read recorded spans into Python (e.g. to evaluate
+recent runs), call `Trace.get().fetch_spans(...)` with provider-neutral filters; results are `FetchedSpan`s, oldest first (each has a `status` of `UNSET`, `OK` or `ERROR`):
+
+```python
+from datetime import timedelta
+
+from agentkernel.trace import SpanKind, Trace
+
+tool_calls = Trace.get().fetch_spans(last=timedelta(hours=6), kinds=[SpanKind.TOOL])
+spans = Trace.get().fetch_spans(session_id="session-123", limit=500)
+tokens = sum(span.usage.total_tokens or 0 for span in spans if span.usage)  # span.usage: tokens and cost per model call
+
+# Whole traces (spans grouped by trace, with the root, input/output and summed usage); skip a trace whose root is missing
+for trace in Trace.get().fetch_traces(session_id="session-123"):
+    if trace.root is not None:
+        print(trace.user_input, trace.output, trace.usage)
+```
+
+- Langfuse and OpenLLMetry reuse the sending credentials.
+- Logfire needs a separate read token: `export LOGFIRE_READ_TOKEN="..."`. It and `TRACELOOP_API_KEY` are read
+  through `SecretManager`, so they can also come from AWS SSM (`secret.provider.type: aws_ssm`).
+- CloudWatch reads `aws/spans` through Logs Insights, so the identity needs `logs:StartQuery`,
+  `logs:GetQueryResults` and `logs:StopQuery` (`AWSXrayWriteOnlyAccess` does not grant them).
+- Full filter list and provider limits: [Traceability guide](https://kernel.yaala.ai/docs/advanced/traceability#fetching-spans-back).
+- End-to-end example (fetch a session's traces, grade them with Opik judges, store the scores in DynamoDB):
+  [`examples/aws-serverless/openai-langfuse-trace-evaluation`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/openai-langfuse-trace-evaluation).
+
 ---
 
 #### Session Persistence

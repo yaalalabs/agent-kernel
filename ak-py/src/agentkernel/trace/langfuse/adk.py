@@ -7,6 +7,7 @@ from openinference.instrumentation.google_adk import GoogleADKInstrumentor
 from ...core import Session
 from ...core.model import AgentReply, AgentRequest
 from ...framework.adk.adk import GoogleADKRunner
+from .langfuse import LangFuse
 
 
 class LangFuseADKRunner(GoogleADKRunner):
@@ -31,11 +32,14 @@ class LangFuseADKRunner(GoogleADKRunner):
         :return: The result of the agent's execution.
         """
 
-        with propagate_attributes(session_id=session.id, tags=["agentkernel"]):
+        try:
+            with propagate_attributes(session_id=session.id, tags=["agentkernel"]):
 
-            with self._client.start_as_current_observation(name="Agent Kernel ADK", as_type="span") as span:
+                with self._client.start_as_current_observation(name="Agent Kernel ADK", as_type="span") as span:
 
-                result = await super().run(agent, session, requests)
-                span.update(input=result.prompt, output=str(result))
+                    result = await super().run(agent, session, requests)
+                    span.update(input=result.prompt, output=str(result))
+        finally:
+            LangFuse.flush_on_lambda(self._client)
 
         return result

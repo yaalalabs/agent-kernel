@@ -79,12 +79,12 @@ function WhatsNewBanner() {
           </svg>
         </span>
         <span ref={textRef} className={styles.whatsNewText}>
-          <strong>Agent Kernel on Kubernetes</strong> - an official Helm chart
-          deploys the full pipeline to any cluster: bare metal, EKS, or
-          air-gapped.
+          <strong>Fetch spans back for evaluation</strong> - read agent, LLM
+          and tool spans back from Langfuse, Logfire, OpenLLMetry or
+          CloudWatch with one filter, to grade production traffic.
         </span>
         <Link
-          to="/blog/kubernetes-on-prem-helm-chart"
+          to="/docs/advanced/traceability#fetching-spans-back"
           className={styles.whatsNewLink}
           ref={linkRef}
         >

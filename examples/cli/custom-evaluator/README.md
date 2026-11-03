@@ -52,7 +52,8 @@ mode puts the test file's own directory on `sys.path`. No AK extra beyond `test`
 is required for a custom evaluator — the `deepeval` import lives entirely inside the built-in's
 own resolution branch.
 
-See [`agentkernel.test.core.evaluator`](../../../ak-py/src/agentkernel/test/core/evaluator)
+The interface is imported from `agentkernel.test`; see its source in
+[`agentkernel/test/core/evaluator`](../../../ak-py/src/agentkernel/test/core/evaluator)
 for the full `AKEvaluator` interface and payload models, and
 [`docs/docs/testing/cli-testing.md`](../../../docs/docs/testing/cli-testing.md#bring-your-own-evaluator)
 for the general "bring your own evaluator" documentation.

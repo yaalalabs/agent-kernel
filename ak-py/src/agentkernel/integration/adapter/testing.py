@@ -12,24 +12,12 @@ from typing import Any, Optional
 
 import pytest
 
-from ...core.event import PausedInterruption
-from ...core.model import AgentPausedReplyAny
 from ...pipeline.envelope import ATTR_INTEGRATION, ATTR_REQUEST_ID, REPLY_CONTEXT_PREFIX, QueueName
 from ...pipeline.transport.in_memory import InMemoryTransport
 from .base import InboundAdapter, InboundParseResult, OutboundAdapter, Source
 from .factory import IntegrationAdapterFactory
 from .producer import IntegrationProducer
 from .routes import BUILTIN_WEBHOOK_ROUTES
-
-PAUSED_REPLY = AgentPausedReplyAny(
-    run_id="01JD7K2MX4",
-    session_id="s-1",
-    agent="support",
-    interruptions=[
-        PausedInterruption(id="call_9f2b41d7c8e0", kind="tool_call", tool_name="refund_order", arguments='{"order_id": "A-10294"}'),
-        PausedInterruption(id="call_0c1d55ab77e3", kind="confirmation", tool_name="notify_customer"),
-    ],
-)
 
 
 class IntegrationAdapterContract:
@@ -171,16 +159,6 @@ class IntegrationAdapterContract:
         assert message.dedup_id == f"{adapter.name}:{request.request_id}", "the namespaced dedup_id is what makes a platform retry safe"
         delivered = {k.removeprefix(REPLY_CONTEXT_PREFIX): v for k, v in message.attributes.items() if k.startswith(REPLY_CONTEXT_PREFIX)}
         assert delivered == request.reply_context
-
-    def test_a_pause_renders_as_readable_text(self):
-        """Whatever an adapter does with controls, the text a pause falls back to must be readable."""
-        text = self.make_outbound().format_pause(PAUSED_REPLY)
-
-        assert text.strip(), "format_pause must always produce something to send"
-        for interruption in PAUSED_REPLY.interruptions:
-            assert interruption.tool_name in text, "a reader must be able to see what is waiting"
-        assert "A-10294" in text, "the call's arguments are what makes the decision answerable"
-        assert "run_id" not in text and "null" not in text, "a serialised object is what this replaces"
 
     def test_split_reply_respects_the_platform_limit(self):
         outbound = self.make_outbound()

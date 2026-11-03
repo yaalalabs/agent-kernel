@@ -217,7 +217,7 @@ logging:
     level: DEBUG
 ```
 
-For more information, see the [Configuration documentation](../../../../docs/docs/core-concepts/configuration.md).
+For more information, see the [Configuration documentation](../../../../../docs/docs/core-concepts/configuration.md).
 
 ## API Rate Limits
 

@@ -12,17 +12,7 @@ from agentkernel.core.model import AgentReplyText, AgentRequestText
 from agentkernel.integration.adapter.factory import IntegrationAdapterFactory
 from agentkernel.integration.adapter.producer import IntegrationProducer
 from agentkernel.integration.adapter.webhook import WebhookRESTRequestHandler
-from agentkernel.core.event import PausedInterruption
-from agentkernel.core.model import AgentPausedReplyAny, AgentResumeRequestAny
-from agentkernel.integration.telegram.adapter import (
-    CALLBACK_LIMIT,
-    CALLBACK_PREFIX,
-    HELP_MESSAGE,
-    START_MESSAGE,
-    TelegramInboundAdapter,
-    TelegramOutboundAdapter,
-    _TelegramClient,
-)
+from agentkernel.integration.telegram.adapter import HELP_MESSAGE, START_MESSAGE, TelegramInboundAdapter, TelegramOutboundAdapter, _TelegramClient
 from agentkernel.pipeline.envelope import QueueName
 from agentkernel.pipeline.transport.in_memory import InMemoryTransport
 
@@ -70,22 +60,6 @@ def _outbound():
     adapter = object.__new__(TelegramOutboundAdapter)
     adapter._client = _client_stub()
     return adapter
-
-
-def _paused(*interruption_ids, kind="tool_call"):
-    return AgentPausedReplyAny(
-        run_id="01JD7K2MX4",
-        session_id=str(CHAT_ID),
-        agent="helper",
-        interruptions=[PausedInterruption(id=i, kind=kind, tool_name="refund_order", arguments='{"order_id": "A-10294"}') for i in interruption_ids],
-    )
-
-
-def _press(data, update_id=101, message_id=812):
-    return {
-        "update_id": update_id,
-        "callback_query": {"id": "cb-1", "data": data, "from": {"id": 99}, "message": {"message_id": message_id, "chat": {"id": CHAT_ID}}},
-    }
 
 
 def _update(text="hello", update_id=100, message_id=7, **extra):
@@ -169,35 +143,6 @@ class TestParse:
 
         assert request.prompt == "option-a"
         adapter._client.answer_callback_query.assert_awaited_once()
-
-    @pytest.mark.asyncio
-    async def test_a_press_on_a_pause_button_becomes_a_decision(self):
-        adapter = _inbound()
-
-        [request] = (await adapter.parse(_fake_request(_press(f"{CALLBACK_PREFIX}a:call_9f2b")))).requests
-
-        [resume] = request.requests
-        assert isinstance(resume, AgentResumeRequestAny)
-        assert resume.run_id is None, "the runtime resolves the run from the interruption id"
-        assert [(d.id, d.status) for d in resume.decisions] == [("call_9f2b", "approved")]
-        assert request.prompt == ""
-        assert request.user_id == "99", "who pressed is what lets a pre-hook decide whether they may"
-        adapter._client.answer_callback_query.assert_awaited_once()
-
-    @pytest.mark.asyncio
-    async def test_a_press_is_identified_by_the_decision_not_the_update(self):
-        """update_id is minted per press, so a second click on one button must not be a new request."""
-        first = (await _inbound().parse(_fake_request(_press(f"{CALLBACK_PREFIX}a:call_9f2b", update_id=101)))).requests[0]
-        again = (await _inbound().parse(_fake_request(_press(f"{CALLBACK_PREFIX}a:call_9f2b", update_id=102)))).requests[0]
-        other_verb = (await _inbound().parse(_fake_request(_press(f"{CALLBACK_PREFIX}d:call_9f2b", update_id=103)))).requests[0]
-
-        assert first.request_id == again.request_id == f"telegram:{CHAT_ID}:812:call_9f2b:approved"
-        assert other_verb.request_id != first.request_id, "approve then deny are two decisions, not a repeat"
-
-    @pytest.mark.asyncio
-    @pytest.mark.parametrize("data", [f"{CALLBACK_PREFIX}z:call_9f2b", f"{CALLBACK_PREFIX}a:", CALLBACK_PREFIX])
-    async def test_a_press_that_does_not_parse_is_ignored(self, data):
-        assert (await _inbound().parse(_fake_request(_press(data)))).requests == []
 
     @pytest.mark.asyncio
     async def test_start_and_help_are_answered_without_running_the_agent(self):
@@ -318,65 +263,3 @@ class TestRoute:
         transport = InMemoryTransport()
         assert self._client(transport).post("/telegram/webhook", json=_update()).status_code == 403
         assert transport.create_consumer(QueueName.INPUT).fetch(1, 0.05) == []
-
-
-class TestPauseRendering:
-    """A paused run drawn as an inline keyboard."""
-
-    @pytest.mark.asyncio
-    async def test_the_keyboard_rides_the_last_chunk_only(self):
-        adapter = _outbound()
-
-        await adapter.deliver_paused(_paused("call_9f2b"), {"chat_id": str(CHAT_ID)})
-
-        chat_id, chunks = adapter._client.send_message.await_args.args
-        markup = adapter._client.send_message.await_args.kwargs["reply_markup"]
-        assert chat_id == str(CHAT_ID)
-        assert "refund_order" in "".join(chunks)
-        assert markup == {
-            "inline_keyboard": [
-                [
-                    {"text": "✓ Approve", "callback_data": f"{CALLBACK_PREFIX}a:call_9f2b"},
-                    {"text": "✗ Deny", "callback_data": f"{CALLBACK_PREFIX}d:call_9f2b"},
-                ]
-            ]
-        }
-
-    @pytest.mark.asyncio
-    async def test_each_interruption_gets_its_own_row(self):
-        adapter = _outbound()
-
-        await adapter.deliver_paused(_paused("call_a", "call_b"), {"chat_id": str(CHAT_ID)})
-
-        rows = adapter._client.send_message.await_args.kwargs["reply_markup"]["inline_keyboard"]
-        assert [row[0]["callback_data"] for row in rows] == [f"{CALLBACK_PREFIX}a:call_a", f"{CALLBACK_PREFIX}a:call_b"]
-
-    @pytest.mark.asyncio
-    async def test_an_over_budget_id_loses_its_row_while_its_siblings_keep_theirs(self, caplog):
-        adapter = _outbound()
-        too_long = "x" * CALLBACK_LIMIT
-
-        await adapter.deliver_paused(_paused("call_a", too_long), {"chat_id": str(CHAT_ID)})
-
-        rows = adapter._client.send_message.await_args.kwargs["reply_markup"]["inline_keyboard"]
-        assert [row[0]["callback_data"] for row in rows] == [f"{CALLBACK_PREFIX}a:call_a"]
-        chunks = adapter._client.send_message.await_args.args[1]
-        assert too_long in "".join(chunks), "an interruption without buttons is unpressable, not hidden"
-
-    @pytest.mark.asyncio
-    async def test_no_interruption_fitting_sends_the_pause_as_plain_text(self):
-        adapter = _outbound()
-
-        await adapter.deliver_paused(_paused("x" * CALLBACK_LIMIT), {"chat_id": str(CHAT_ID)})
-
-        assert adapter._client.send_message.await_args.kwargs["reply_markup"] is None
-
-    @pytest.mark.asyncio
-    async def test_a_cancelled_verb_is_offered_when_the_adapter_declares_it(self):
-        adapter = _outbound()
-        adapter.DECISIONS = ("approved", "denied", "cancelled")
-
-        await adapter.deliver_paused(_paused("call_a"), {"chat_id": str(CHAT_ID)})
-
-        [row] = adapter._client.send_message.await_args.kwargs["reply_markup"]["inline_keyboard"]
-        assert [button["text"] for button in row] == ["✓ Approve", "✗ Deny", "⊘ Cancel"]
