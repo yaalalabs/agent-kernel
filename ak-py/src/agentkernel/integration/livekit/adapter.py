@@ -735,6 +735,13 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
                 await asyncio.wait_for(self._run_on_room(previous.audio_source.wait_for_playout()), timeout=self.PLAYOUT_WAIT_SECONDS)
             except asyncio.TimeoutError:
                 _log.warning(f"Agent '{previous.agent}' was still playing after {self.PLAYOUT_WAIT_SECONDS}s; '{speaker.agent}' speaks now")
+                # Still has audio queued past the bound: drop it rather than let it trail into the next
+                # agent's first words, the same hard cut a client barge-in gets (``_clear_playback``).
+                if self._loop is not None:
+                    try:
+                        self._loop.call_soon_threadsafe(previous.audio_source.clear_queue)
+                    except RuntimeError:
+                        pass
 
         _log.info(f"Agent participant speaking: '{previous.agent}' -> '{speaker.agent}'")
         self._set_muted(previous, True)
