@@ -193,6 +193,92 @@ class TestFactory:
         assert await _run(NoOpA2UIPostHook(), reply) is reply
 
 
+class TestScopeByName:
+    """`scopes` and `labels` answer by name, for callers that describe an agent without running it (#762)."""
+
+    @pytest.mark.parametrize(
+        "agents, name, expected",
+        [
+            (None, "anything", True),
+            ([AGENT_NAME], AGENT_NAME, True),
+            (["other"], AGENT_NAME, False),
+        ],
+    )
+    def test_scopes_matches_the_agents_list_by_name(self, monkeypatch, agents, name, expected):
+        _configure(monkeypatch, agents=agents)
+
+        assert A2UIPostHook.scopes(name) is expected
+
+    @pytest.mark.parametrize("agents, name", [(None, "anything"), ([AGENT_NAME], AGENT_NAME), (["other"], AGENT_NAME)])
+    def test_the_hook_and_scopes_share_one_rule(self, monkeypatch, agents, name):
+        _configure(monkeypatch, agents=agents)
+
+        assert A2UIPostHook._applies_to(_Agent(name)) is A2UIPostHook.scopes(name)
+
+    def test_labels_is_true_for_an_enabled_agent_in_scope(self, monkeypatch):
+        _configure(monkeypatch, enabled=True, agents=[AGENT_NAME])
+
+        assert A2UIPostHookFactory.labels(AGENT_NAME) is True
+
+    def test_labels_is_false_when_disabled(self, monkeypatch):
+        _configure(monkeypatch, enabled=False)
+
+        assert A2UIPostHookFactory.labels(AGENT_NAME) is False
+
+    def test_labels_is_false_out_of_scope(self, monkeypatch):
+        _configure(monkeypatch, enabled=True, agents=["other"])
+
+        assert A2UIPostHookFactory.labels(AGENT_NAME) is False
+
+    def test_labels_is_false_for_an_absent_block(self, monkeypatch):
+        class _Cfg:
+            pass
+
+        monkeypatch.setattr(AKConfig, "get", classmethod(lambda cls: _Cfg))
+
+        assert A2UIPostHookFactory.labels(AGENT_NAME) is False
+
+    def test_labels_ignores_streaming_mode(self, monkeypatch):
+        """An A2A request takes the single-reply path, where the hook runs even when the app streams."""
+        _configure(monkeypatch, enabled=True, mode="stream")
+
+        assert A2UIPostHookFactory.labels(AGENT_NAME) is True
+
+    def test_a_failing_config_read_is_logged_and_answers_false(self, monkeypatch, caplog):
+        def _boom(cls):
+            raise RuntimeError("config unavailable")
+
+        monkeypatch.setattr(AKConfig, "get", classmethod(_boom))
+
+        with caplog.at_level("ERROR", logger="ak.a2ui.hook"):
+            assert A2UIPostHookFactory.labels(AGENT_NAME) is False
+
+        assert AGENT_NAME in caplog.text
+
+
+class TestA2AData:
+    """The A2A binding's shape rule (#762): an A2UI data part holds a list of messages."""
+
+    def test_the_extension_is_the_v0_9_1_binding(self):
+        """Matches what the hook labels: createSurface-style messages under application/a2ui+json."""
+        assert A2UIPostHook.EXTENSION_URI == "https://a2ui.org/a2a-extension/a2ui/v0.9.1"
+
+    def test_an_a2ui_object_becomes_a_one_item_list(self):
+        content = {"createSurface": {"surfaceId": "s1"}}
+
+        assert A2UIPostHook.a2a_data(A2UIPostHook.MEDIA_TYPE, content) == [content]
+
+    def test_an_a2ui_list_is_returned_as_is(self):
+        content = [{"createSurface": {}}, {"updateComponents": {}}]
+
+        assert A2UIPostHook.a2a_data(A2UIPostHook.MEDIA_TYPE, content) is content
+
+    def test_another_media_type_is_returned_as_is(self):
+        content = {"k": "v"}
+
+        assert A2UIPostHook.a2a_data("application/vnd.acme+json", content) is content
+
+
 class TestEndToEnd:
     """Config on, an agent returning an A2UI document, and no application post-hook anywhere."""
 

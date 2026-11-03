@@ -16,7 +16,7 @@ conflicts = [[
 
 [[package]]
 name = "a2a-sdk"
-version = "1.1.2"
+version = "1.2.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "culsans", marker = "python_full_version < '3.13' or (extra == 'extra-11-agentkernel-crewai' and extra == 'extra-11-agentkernel-test')" },
@@ -29,9 +29,9 @@ dependencies = [
     { name = "pydantic", version = "2.12.5", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-11-agentkernel-crewai'" },
     { name = "pydantic", version = "2.13.5", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-11-agentkernel-test' or extra != 'extra-11-agentkernel-crewai'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/38/cc/59b35c518d8289bd59d20d9d216ca29ccb41c4697eb85971efe41d1adaf3/a2a_sdk-1.1.2.tar.gz", hash = "sha256:f928d8bf9a0dc0a473ee8258bd5226c1b8520a85c70e7f233c3b9b0e30a1bd10", size = 379627, upload-time = "2026-07-22T13:40:51.409Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e7/5a/2b5ff74f3f0dbec13787c7139cb1047a562544c9b8b062d0eaa9392c79f9/a2a_sdk-1.2.3.tar.gz", hash = "sha256:a28bc40b010d088ea4a10d05a5ba021d183f02cacab15929072ea5b34cde3fe6", size = 434137, upload-time = "2026-10-19T10:11:31.052Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/c1/33/d414a03d5ef5a7d6d09a20dc9f8094e7fb9edb488662ff99c535a2a62cf1/a2a_sdk-1.1.2-py3-none-any.whl", hash = "sha256:eb9a698f526dc45a9ea967d7804e7aa363ff273d2c44fbed699bc68c9399f9c9", size = 245981, upload-time = "2026-07-22T13:40:49.484Z" },
+    { url = "https://files.pythonhosted.org/packages/7b/df/138f64f3138db7b44b9798426909357d27429c868715af8751ace6083238/a2a_sdk-1.2.3-py3-none-any.whl", hash = "sha256:a89529ab7d026900170aefc1515f35c68d9a14b6a9133f8cc775c8fe598f8ae7", size = 278339, upload-time = "2026-10-19T10:11:29.102Z" },
 ]
 
 [package.optional-dependencies]
@@ -89,6 +89,8 @@ dependencies = [
 [package.optional-dependencies]
 a2a = [
     { name = "a2a-sdk", extra = ["http-server"] },
+    { name = "fastapi" },
+    { name = "uvicorn" },
 ]
 adk = [
     { name = "google-adk" },
@@ -279,7 +281,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "a2a-sdk", extras = ["http-server"], marker = "extra == 'a2a'", specifier = ">=0.3.6" },
+    { name = "a2a-sdk", extras = ["http-server"], marker = "extra == 'a2a'", specifier = "==1.2.3" },
     { name = "ag-ui-protocol", marker = "extra == 'agui'", specifier = ">=0.1.16" },
     { name = "agent-framework-core", marker = "extra == 'maf'", specifier = ">=1.20.0,<2" },
     { name = "aiohttp", marker = "extra == 'slack'", specifier = ">=3.9.0" },
@@ -300,6 +302,7 @@ requires-dist = [
     { name = "deprecated", specifier = ">=1.2.18" },
     { name = "docker", marker = "extra == 'sandbox-docker'", specifier = ">=7.0.0" },
     { name = "e2b-code-interpreter", marker = "extra == 'e2b'", specifier = ">=2.8.0" },
+    { name = "fastapi", marker = "extra == 'a2a'", specifier = ">=0.118.0" },
     { name = "fastapi", marker = "extra == 'api'", specifier = ">=0.118.0" },
     { name = "fastapi", marker = "extra == 'instagram'", specifier = ">=0.118.0" },
     { name = "fastapi", marker = "extra == 'messenger'", specifier = ">=0.118.0" },
@@ -371,6 +374,7 @@ requires-dist = [
     { name = "traceloop-sdk", marker = "extra == 'openllmetry'", specifier = ">=0.61.0" },
     { name = "trino", marker = "extra == 'trino'", specifier = ">=0.337.0" },
     { name = "typesafe-sdk", marker = "extra == 'jev'", specifier = ">=0.7.2,<0.8" },
+    { name = "uvicorn", marker = "extra == 'a2a'", specifier = ">=0.37.0" },
     { name = "uvicorn", marker = "extra == 'api'", specifier = ">=0.37.0" },
     { name = "valkey", marker = "extra == 'valkey'", specifier = ">=6.0.0" },
     { name = "walledai", marker = "extra == 'walledai'", specifier = ">=4.9.3" },

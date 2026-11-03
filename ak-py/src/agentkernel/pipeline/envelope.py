@@ -1,5 +1,5 @@
 from enum import StrEnum
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Mapping, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -20,6 +20,7 @@ ATTR_AGUI = "agui"
 ATTR_REALTIME = "realtime"
 # Present on an input message: the edge for this session has ended (a realtime end-of-session control).
 ATTR_REALTIME_END = "realtime_end"
+ATTR_PROTOCOL = "protocol"
 REPLY_CONTEXT_PREFIX = "reply_"
 
 
@@ -52,3 +53,16 @@ class QueueMessage(BaseModel):
     native: Any = Field(default=None, exclude=True)
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    @staticmethod
+    def protocol_of(attributes: Mapping[str, Any]) -> Optional[str]:
+        """The surface name when a caller is waiting on the store for this message (A2A, MCP), else None.
+
+        Only a non-empty ``str`` counts, the rule ``IntegrationDelivery.integration_of`` applies:
+        a mocked attribute map hands back truthy objects, which must not reroute a message.
+
+        :param attributes: A message's attributes.
+        :return: The value of the ``protocol`` attribute, or None.
+        """
+        protocol = attributes.get(ATTR_PROTOCOL)
+        return protocol if isinstance(protocol, str) and protocol else None

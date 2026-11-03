@@ -7,7 +7,17 @@ from ..core.config import AKConfig
 from ..core.model import BaseRunRequest, ExecutionMode, StreamChunk
 from ..core.util.factory import AKConfigError
 from .consumer import ConsumerLoop
-from .envelope import ATTR_AGUI, ATTR_ENDPOINT_URL, ATTR_REQUEST_ID, ATTR_STATUS_CODE, ATTR_THREAD, ATTR_USER_ID, QueueMessage, QueueName
+from .envelope import (
+    ATTR_AGUI,
+    ATTR_ENDPOINT_URL,
+    ATTR_PROTOCOL,
+    ATTR_REQUEST_ID,
+    ATTR_STATUS_CODE,
+    ATTR_THREAD,
+    ATTR_USER_ID,
+    QueueMessage,
+    QueueName,
+)
 from .integration_delivery import IntegrationDelivery
 from .realtime_pool import RealtimeConnectionPool
 from .thread_runner import ThreadRunner
@@ -16,10 +26,11 @@ from .transport.base import QueueTransport, QueueTransportFactory
 # Attributes forwarded from an input message to its output message(s). ENDPOINT_URL is part of
 # the SQS/ECS wire format only (the pipeline neither stamps nor reads it, spec #495 §2): it is
 # forwarded so ECS-entered messages keep their return address through a pipeline runner.
+# PROTOCOL is forwarded so the Response Handler stores an A2A/MCP reply whatever the mode (#780).
 # The integration return address (``integration`` plus every ``reply_*``) is the rule shared with
 # the serverless runner, so it comes from IntegrationDelivery. AGUI is listed here because the
 # Response Handler branches on it off the *output* message.
-_FORWARDED_ATTRIBUTES = (ATTR_REQUEST_ID, ATTR_USER_ID, ATTR_ENDPOINT_URL, ATTR_AGUI)
+_FORWARDED_ATTRIBUTES = (ATTR_REQUEST_ID, ATTR_USER_ID, ATTR_ENDPOINT_URL, ATTR_PROTOCOL, ATTR_AGUI)
 
 
 def _is_forwarded(key: str) -> bool:
@@ -298,12 +309,16 @@ class StreamAgentRunner(AgentRunner):
     On broker transports the chunks are pushed over WebSocket, so the USER_ID attribute (the
     WS-entered marker, spec #495 §2) is required; the in_memory transport also serves
     REST-entered chunks from the local response store over SSE, where no user is needed.
+
+    Integration and ``protocol`` traffic takes the single-reply path instead: a messaging platform
+    has no streaming consumer, and an A2A or MCP caller waits for one whole reply in the response
+    store (#780).
     """
 
     _log = logging.getLogger("ak.pipeline.stream_agent_runner")
 
     def _process_run(self, message: QueueMessage) -> None:
-        if IntegrationDelivery.integration_of(message.attributes):
+        if self._wants_single_reply(message):
             return super()._process_run(message)
 
         body = BaseRunRequest.model_validate(json.loads(message.body))
@@ -333,7 +348,7 @@ class StreamAgentRunner(AgentRunner):
         self._log.info(f"[STREAM AGENT DONE] request_id={request_id}, chunks={chunk_count}")
 
     def on_permanent_failure(self, message: QueueMessage) -> None:
-        if IntegrationDelivery.integration_of(message.attributes) or message.attributes.get(ATTR_AGUI):
+        if self._wants_single_reply(message) or message.attributes.get(ATTR_AGUI):
             return super().on_permanent_failure(message)
 
         self._log.error(f"Permanent failure for message {message.message_id}")
@@ -346,9 +361,20 @@ class StreamAgentRunner(AgentRunner):
         except Exception:
             self._log.exception("Failed to send permanent-failure stream chunk to output queue")
 
+    @staticmethod
+    def _wants_single_reply(message: QueueMessage) -> bool:
+        """Whether this message's consumer takes one whole reply rather than chunks."""
+        is_integration = IntegrationDelivery.integration_of(message.attributes) is not None  # Slack, WhatsApp, ...
+        is_protocol = QueueMessage.protocol_of(message.attributes) is not None  # A2A, MCP
+        return is_integration or is_protocol
+
 
 class RealtimeAgentRunner(AgentRunner):
-    """REALTIME-mode sibling: dedicated consumer for WebRTC/audio streaming."""
+    """REALTIME-mode sibling: dedicated consumer for WebRTC/audio streaming.
+
+    ``protocol`` traffic is not realtime: an A2A or MCP caller waits for one whole reply in the
+    response store, so it takes the base single-reply path instead of the connection pool (#780).
+    """
 
     _log = logging.getLogger("ak.pipeline.realtime_agent_runner")
 
@@ -357,6 +383,9 @@ class RealtimeAgentRunner(AgentRunner):
         return [pool.get_task()]
 
     def _process_run(self, message: QueueMessage) -> None:
+        if QueueMessage.protocol_of(message.attributes):
+            return super()._process_run(message)
+
         body = BaseRunRequest.model_validate(json.loads(message.body))
         request_id = self._resolve_request_metadata(message, body)
         RealtimeConnectionPool.initialize().dispatch(body, request_id, message.attributes.get(ATTR_USER_ID), message.attributes, self._chat_service)
@@ -365,10 +394,11 @@ class RealtimeAgentRunner(AgentRunner):
     def on_permanent_failure(self, message: QueueMessage) -> None:
         """Tell the room its input failed, as a marked error chunk its edge can deliver. Catches own exceptions.
 
-        An AG-UI message is not a room's input: it goes back to the base handler, which terminates
-        the caller's stream with a ``done`` chunk the response store carries.
+        An AG-UI or ``protocol`` message is not a room's input: it goes back to the base handler,
+        which terminates an AG-UI stream with a ``done`` chunk and gives an A2A/MCP caller its
+        error reply (#780).
         """
-        if message.attributes.get(ATTR_AGUI):
+        if message.attributes.get(ATTR_AGUI) or QueueMessage.protocol_of(message.attributes):
             return super().on_permanent_failure(message)
 
         self._log.error(f"Permanent failure for message {message.message_id}")
