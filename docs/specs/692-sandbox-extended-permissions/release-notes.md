@@ -78,7 +78,7 @@ appended as the last argument:
 - `policy.languages` still narrows per profile; `[]` keeps a profile command-only.
 - `e2b` takes a `languages` list of E2B kernels (`python`, `javascript`, `typescript`, `r`, `java`, `bash`;
   default `[python]`) and passes the language to `run_code`.
-- `daytona` takes `language_runtimes` too (default `{python: [python3, -c]}`). `python` still runs via native
+- `daytona` takes `language_runtimes` too, for extra languages only (default `{}`; `python` needs no entry). `python` still runs via native
   `code_run`; other keys run their interpreter argv via `process.exec`, so the image must ship them.
 - `e2b.template` now defaults to `code-interpreter-v1` (was `base`, which has no Jupyter server, so `run_code`
   failed with "port is not open"). Configs that set `template: base` explicitly must switch to run code.

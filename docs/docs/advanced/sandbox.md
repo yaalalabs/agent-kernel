@@ -315,8 +315,8 @@ profiles:
 - **`docker`, `kubernetes`, `ec2_ssm` and `daytona` use argv runtimes.** `local_subprocess` runs
   `python` and `bash`.
 - **`daytona` runs `python` natively.** Daytona's SDK fixes `code_run`'s language per sandbox, so
-  `python` always runs via `code_run` and its argv is unused (default `python: [python3, -c]`). Every
-  other key, such as `node: [node, -e]`, is joined into one quoted shell command and run via
+  `python` always runs via `code_run`, so it is always declared and needs no `language_runtimes`
+  entry (the default map is empty; a `python` entry is ignored). Every other key, such as `node: [node, -e]`, is joined into one quoted shell command and run via
   `process.exec`. The `image` or `snapshot` must ship each interpreter.
 - **`e2b` declares kernels, not argv.** Its block takes `languages` (default `[python]`), a list of
   E2B code-interpreter kernels: `python`, `javascript`, `typescript`, `r`, `java`, `bash`. `python` is
@@ -581,8 +581,8 @@ sandbox:
     # snapshot: my-warm-snapshot    # ...OR a named Daytona snapshot (mutually exclusive)
     env_vars:                       # environment variables set inside the sandbox
       APP_ENV: demo
-    # language_runtimes:            # default {python: [python3, -c]}; python always runs via code_run
-    #   python: [python3, -c]
+    # language_runtimes:            # extra languages only; python always runs via code_run (default {})
+    #   node: [node, -e]
     #   node: [node, -e]            # only if the image ships node
     # target: us                    # Daytona target/region; omitted = SDK default
     # api_key_env: DAYTONA_API_KEY  # env variable holding the API key

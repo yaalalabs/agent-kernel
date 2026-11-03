@@ -26,7 +26,6 @@ sandbox:
         env_vars:
           APP_ENV: demo # environment variables set inside the sandbox
         # language_runtimes:   # extra languages via process.exec; python always runs via native code_run
-        #   python: [python3, -c]
         #   node: [node, -e]   # only if the image ships node (python:3.12-slim does not)
         # target: us         # optional Daytona region; omitted = SDK default
         # api_key_env: DAYTONA_API_KEY

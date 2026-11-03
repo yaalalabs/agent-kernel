@@ -1576,7 +1576,7 @@ async def test_daytona_language_runtimes_exec_non_python_and_keep_code_run_for_p
     from agentkernel.core.config import _SandboxDaytonaConfig
 
     module, _client_cls = daytona_env
-    config = _SandboxDaytonaConfig(language_runtimes={"python": ["python3", "-c"], "node": ["node", "-e"]})
+    config = _SandboxDaytonaConfig(language_runtimes={"node": ["node", "-e"]})
     provider = _daytona_provider(module, config)
     assert provider.capabilities.languages == ["python", "node"]
     assert module.DaytonaSandboxProvider.capabilities.languages == ["python"]  # the class stays the default

@@ -153,7 +153,7 @@ class DaytonaSandboxProvider(SandboxProvider):
         self._client_instance: Optional[Daytona] = None
         self._installer = PackageInstaller.from_config(config)
         self._runtimes = dict(config.language_runtimes)
-        self.capabilities = type(self).capabilities.derive(languages=list(self._runtimes), package_ecosystems=self._installer.ecosystems)
+        self.capabilities = type(self).capabilities.derive(languages=config.runtime_languages(), package_ecosystems=self._installer.ecosystems)
 
     def _handle(self, sandbox: Any) -> DaytonaSandbox:
         """Wrap an SDK sandbox in a handle carrying this instance's capabilities, installer and runtimes."""

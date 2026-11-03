@@ -805,6 +805,10 @@ class _SandboxProviderRuntimeConfig(BaseModel):
                 raise ValueError(f"language_runtimes[{language!r}] must be a non-empty argv prefix with no empty tokens")
         return value
 
+    def runtime_languages(self) -> list[str]:
+        """The languages this block declares: the ``language_runtimes`` keys, in config order."""
+        return list(self.language_runtimes)
+
 
 class _SandboxDockerConfig(_SandboxProviderPackageConfig, _SandboxProviderRuntimeConfig):
     image: str = Field(default="python:3.12-slim", description="Container image used to create sandboxes")
@@ -839,12 +843,11 @@ class _SandboxE2BConfig(_SandboxProviderPackageConfig):
 
 class _SandboxDaytonaConfig(_SandboxProviderPackageConfig, _SandboxProviderRuntimeConfig):
     api_key_env: str = Field(default="DAYTONA_API_KEY", description="Name of the environment variable holding the Daytona API key")
-    # python always runs via the SDK's native code_run, so its argv here only declares the language.
+    # python always runs via the SDK's native code_run, so it is always declared and needs no argv here.
     language_runtimes: dict[str, list[str]] = Field(
-        default_factory=lambda: {"python": ["python3", "-c"]},
-        description="Language -> interpreter argv prefix the image/snapshot provides; the code is appended as the last argument "
-        "and run via process.exec ('python' always runs via native code_run, so its argv is unused). "
-        "The keys are the provider's declared languages; declaring it replaces the default map and must keep a 'python' key",
+        default_factory=dict,
+        description="Extra language -> interpreter argv prefix the image/snapshot provides; the code is appended as the last "
+        "argument and run via process.exec. 'python' is always declared (native code_run), so it needs no entry; one is ignored",
     )
     target: Optional[str] = Field(default=None, description="Daytona target/region; None uses the SDK default")
     image: Optional[str] = Field(
@@ -856,6 +859,16 @@ class _SandboxDaytonaConfig(_SandboxProviderPackageConfig, _SandboxProviderRunti
         description="Named Daytona snapshot to launch from. Mutually exclusive with 'image'; when neither is set Daytona uses its default snapshot.",
     )
     env_vars: dict[str, str] = Field(default_factory=dict, description="Environment variables set inside the sandbox")
+
+    @field_validator("language_runtimes")
+    @classmethod
+    def _runtimes_require_python(cls, value: dict[str, list[str]]) -> dict[str, list[str]]:
+        """Overrides the shared rule: python runs via native code_run, so the map need not declare it."""
+        return value
+
+    def runtime_languages(self) -> list[str]:
+        """``python`` (always, via code_run) followed by the other ``language_runtimes`` keys."""
+        return ["python", *(language for language in self.language_runtimes if language != "python")]
 
     @model_validator(mode="after")
     def _image_snapshot_exclusive(self) -> "_SandboxDaytonaConfig":

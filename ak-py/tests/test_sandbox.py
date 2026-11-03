@@ -409,15 +409,17 @@ def test_config_sdk_native_providers_have_no_language_runtimes():
     assert "language_runtimes" not in _SandboxE2BConfig.model_fields  # its SDK picks the kernel, not an argv
 
 
-def test_config_daytona_language_runtimes_default_python3():
-    assert _SandboxDaytonaConfig().language_runtimes == {"python": ["python3", "-c"]}
+def test_config_daytona_python_is_implicit():
+    """python runs via native code_run: always declared, no argv needed, and an entry for it is ignored."""
+    assert _SandboxDaytonaConfig().language_runtimes == {}
+    assert _SandboxDaytonaConfig().runtime_languages() == ["python"]
+    assert _SandboxDaytonaConfig(language_runtimes={"node": ["node", "-e"]}).runtime_languages() == ["python", "node"]
+    assert _SandboxDaytonaConfig(language_runtimes={"node": ["node", "-e"], "python": ["x"]}).runtime_languages() == ["python", "node"]
 
 
 def test_config_provider_language_runtimes_require_python():
     with pytest.raises(ValidationError, match="'python' runtime"):
         _SandboxDockerConfig(language_runtimes={"node": ["node", "-e"]})
-    with pytest.raises(ValidationError, match="'python' runtime"):
-        _SandboxDaytonaConfig(language_runtimes={"node": ["node", "-e"]})
     with pytest.raises(ValidationError, match="'python' runtime"):
         _SandboxKubernetesConfig(language_runtimes={"node": [""]})  # the python check runs first
 
@@ -1140,7 +1142,7 @@ def test_guidance_lists_runtime_languages(monkeypatch):
         "mismatched": _SandboxProfileConfig(type="docker", docker=docker, policy=_SandboxPolicyConfig(languages=["ruby"])),
         "plain": _SandboxProfileConfig(type="docker", docker=_SandboxDockerConfig()),
         "daytona": _SandboxProfileConfig(
-            type="daytona", daytona=_SandboxDaytonaConfig(language_runtimes={"python": ["python3", "-c"], "node": ["node", "-e"]})
+            type="daytona", daytona=_SandboxDaytonaConfig(language_runtimes={"node": ["node", "-e"]})  # python is implicit
         ),
         "byo": _SandboxProfileConfig(type=FAKE_DOTTED),
     }

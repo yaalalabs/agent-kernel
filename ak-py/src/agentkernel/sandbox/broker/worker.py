@@ -88,9 +88,9 @@ class BrokerWorkerCore:
             return SandboxResult(sandbox_session_id=session.sandbox_session_id), session
 
         # 2. Fail-closed checks: principal, policy, permission, then payload (before any provider call).
-        self._warn_capability_mismatch(provider, request)
         self._check_principal(provider, request)
         self._enforce_policy(provider, request)
+        self._warn_capability_mismatch(provider, request)
         self._guard.check(request)
         self._validate_payload(request)
 
