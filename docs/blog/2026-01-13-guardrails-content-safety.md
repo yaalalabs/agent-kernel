@@ -440,7 +440,7 @@ We've created comprehensive guides to get you started:
 - **[Guardrails Overview](/docs/advanced/guardrails)** - Architecture and concepts
 - **[OpenAI Guardrails Guide](/docs/advanced/guardrails-openai)** - Complete setup and configuration
 - **[AWS Bedrock Guide](/docs/advanced/guardrails-bedrock)** - IAM setup, policies, and best practices
-- **[Working Examples](https://github.com/yaalalabs/agent-kernel/tree/main/examples/cli/guardrail)** - Copy-paste ready code
+- **[Working Examples](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/guardrail)** - Copy-paste ready code
 
 ## Join the Community
 

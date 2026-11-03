@@ -1,14 +1,13 @@
 from uuid import uuid4
 
 import httpx
-from a2a.client import A2ACardResolver, ClientConfig
-from a2a.client.base_client import BaseClient
-from a2a.client.transports import RestTransport
+from a2a.client import A2ACardResolver, ClientConfig, ClientFactory
+from a2a.helpers import get_message_text
 from a2a.types import (
     Message,
     Part,
     Role,
-    TextPart,
+    SendMessageRequest,
 )
 
 REQUEST_TIMEOUT_SECONDS = 30.0
@@ -34,20 +33,17 @@ class A2AHttpClient:
 
     async def send(self, message: str):
         async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT_SECONDS) as httpx_client:
-            config = ClientConfig(streaming=False)
-            client = BaseClient(
-                card=self.card,
-                config=config,
-                transport=RestTransport(httpx_client, self.card),
-                consumers=[],
-                middleware=[],
+            # The factory calls the card's HTTP+JSON interface and sends the A2A-Version: 1.0 header.
+            config = ClientConfig(streaming=False, httpx_client=httpx_client, supported_protocol_bindings=["HTTP+JSON"])
+            client = ClientFactory(config).create(self.card)
+
+            request = SendMessageRequest(
+                message=Message(
+                    role=Role.ROLE_USER,
+                    message_id=uuid4().hex,
+                    context_id=self.context_id,
+                    parts=[Part(text=message)],
+                )
             )
 
-            first_message = Message(
-                role=Role.user,
-                message_id=uuid4().hex,
-                context_id=self.context_id,
-                parts=[Part(root=TextPart(text=message))],
-            )
-
-            return [event async for event in client.send_message(first_message)][0].parts[0].root.text
+            return [get_message_text(item.message) async for item in client.send_message(request)][0]

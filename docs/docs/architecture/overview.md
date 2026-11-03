@@ -133,7 +133,7 @@ carries the full request envelope, and agent/session resolution happens fresh pe
 | Validation and building | None: the caller prepares everything | Validates the envelope; builds the request list from the payload, or accepts a prebuilt one |
 | Output | Typed `AgentReply` / raw `StreamChunk`s | Execution core: typed reply plus session id. Presentation wrappers: JSON dicts, SSE frames, `HTTPException` |
 | Error handling | Exceptions propagate | Core: exceptions propagate. Wrappers: `ValueError` maps to 400, anything else to 500 |
-| Callers today | CLI, A2A, MCP | REST handler and deployment adapters (wrappers); messaging integrations and the thread handler (core) |
+| Callers today | CLI | REST handler and deployment adapters (wrappers), including the pipeline agent runner that executes A2A and MCP requests; messaging integrations and the thread handler (core) |
 
 **Use `ChatService`** when handling chat traffic where each request arrives self-contained with its
 `session_id`: the presentation wrappers (`process_*`) if you want the standard HTTP shapes, or the
@@ -189,7 +189,7 @@ Pluggable via well-defined interfaces:
 
 ```mermaid
 sequenceDiagram
-    participant U as Caller (ChatService core / CLI / A2A / MCP)
+    participant U as Caller (ChatService core / CLI)
     participant SVC as AgentService
     participant R as Runtime
     participant PH as PreHooks
@@ -370,7 +370,9 @@ graph TB
 
 The activation rule: a bare `RESTAPI.run()` (no explicit handlers) runs the pipeline; surfaces
 constructed with explicit handlers (the thread handler, messaging integrations, custom handlers)
-and the `AgentService` clients (CLI, A2A, MCP) keep their direct execution paths. The client
+and the `AgentService` client (the CLI) keep their direct execution paths. A2A and MCP always run
+through the pipeline: with A2A or agent-exposing MCP enabled, an entry point that starts no agent
+runner refuses to start. The client
 receives the reply either by **polling** the response store (`rest_sync` waits server-side,
 `rest_async` polls with a `request_id`), by **SSE** (`stream` on the REST surface), or by
 **WebSocket push** (`async`/`stream` on AWS today).

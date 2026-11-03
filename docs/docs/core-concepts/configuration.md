@@ -8,6 +8,7 @@ Configure Agent Kernel via environment variables or configuration files. This su
 
 :::tip
 For detailed information about session and memory management configuration, see:
+- [Choosing a Memory Backend](./memory-backends.md) - Beginner comparison and recommended setup
 - [Session Management](/docs/core-concepts/session) - Session configuration and storage backends
 - [Memory Management](/docs/architecture/memory-management) - Advanced memory features and caching
 :::
@@ -467,17 +468,28 @@ export AK_SESSION__TYPE=redis  # Options: 'in_memory', 'redis', 'valkey', 'dynam
 export AK_SESSION__REDIS__URL=redis://localhost:6379  # default: redis://localhost:6379
 export AK_SESSION__REDIS__TTL=604800  # TTL in seconds (default: 604800 = 7 days)
 export AK_SESSION__REDIS__PREFIX=ak:sessions:  # Key prefix (default: ak:sessions:)
-export AK_SESSION__CACHE__SIZE=256  # Enable in-memory session caching with a cache size of 256 sessions
 
 # Valkey configuration (requires the agentkernel[valkey] extra)
 export AK_SESSION__VALKEY__URL=valkey://localhost:6379  # default: valkey://localhost:6379 (use valkeys:// for SSL)
 export AK_SESSION__VALKEY__TTL=604800  # TTL in seconds (default: 604800 = 7 days)
 export AK_SESSION__VALKEY__PREFIX=ak:sessions:  # Key prefix (default: ak:sessions:)
 
-# DynamoDB configuration
+# DynamoDB configuration (requires the agentkernel[aws] extra)
 export AK_SESSION__DYNAMODB__TABLE_NAME=agent-kernel-sessions  # DynamoDB table name (required)
 export AK_SESSION__DYNAMODB__TTL=604800  # TTL in seconds (default: 604800 = 7 days, 0 to disable)
-export AK_SESSION__CACHE__SIZE=256  # Enable in-memory session caching with a cache size of 256 sessions
+
+# Cosmos DB configuration (requires the agentkernel[azure] extra)
+export AK_SESSION__COSMOSDB__CONNECTION_STRING="DefaultEndpointsProtocol=https;AccountName=your-account;AccountKey=...;TableEndpoint=https://your-account.table.cosmos.azure.com:443/;"  # required
+export AK_SESSION__COSMOSDB__TABLE_NAME=sessions  # Cosmos DB table name (required)
+export AK_SESSION__COSMOSDB__TTL=604800  # TTL in seconds (default: 604800 = 7 days, 0 to disable)
+
+# Firestore configuration (requires the agentkernel[gcp] extra)
+export AK_SESSION__FIRESTORE__COLLECTION_NAME=ak_sessions  # default: ak_sessions
+export AK_SESSION__FIRESTORE__PROJECT_ID=my-project  # optional; inferred from credentials
+export AK_SESSION__FIRESTORE__TTL=604800  # TTL in seconds (default: 604800 = 7 days, 0 to disable)
+
+# Optional process-local session cache (Redis, Valkey, DynamoDB, Cosmos DB, Firestore)
+export AK_SESSION__CACHE__SIZE=256  # Number of sessions to cache; omit this var entirely to disable caching
 ```
 
 :::note Valkey and the Redis-only surfaces
@@ -746,7 +758,7 @@ If `test-config.yaml` is missing, defaults apply silently (no warning is printed
 - `llm` - LLM-as-judge evaluation via the configured evaluator (DeepEval and Opik use a `GEval` metric; JEV asks one yes/no Noul question) for semantic similarity
 - `fallback` - Tries score first, falls back to llm if score fails
 
-**Evaluator backend:** `evaluator` selects the pluggable scoring backend used by both `score` and `llm` modes. Built-in values are `deepeval` (the default, requires the `test` extra), `opik` (requires the `opik` extra) and `jev` (requires the `jev` extra); any other value is treated as a dotted path to your own `AKEvaluator` subclass (`agentkernel.test.core.evaluator.AKEvaluator`) — see [Bring your own evaluator](../testing/cli-testing.md#bring-your-own-evaluator). Opik's `GEval` judge runs entirely locally against the LLM configured under `llm:` below — it does not require an Opik Cloud account, API key, or self-hosted server (AK disables its trace logging by default). `jev` is a hosted judge ([TypeSafe JEV](https://docs.typesafe.ai)) that works only with `mode: llm` (`score` and `fallback` raise `AKMetricNotSupported`); it reads `TYPESAFE_API_KEY` from the environment, ignores the `llm:` block, and sends the user input, expected output and actual output to `api.typesafe.ai`.
+**Evaluator backend:** `evaluator` selects the pluggable scoring backend used by both `score` and `llm` modes. Built-in values are `deepeval` (the default, requires the `test` extra), `opik` (requires the `opik` extra) and `jev` (requires the `jev` extra); any other value is treated as a dotted path to your own `AKEvaluator` subclass (`agentkernel.test.AKEvaluator`) — see [Bring your own evaluator](../testing/cli-testing.md#bring-your-own-evaluator). Opik's `GEval` judge runs entirely locally against the LLM configured under `llm:` below — it does not require an Opik Cloud account, API key, or self-hosted server (AK disables its trace logging by default). `jev` is a hosted judge ([TypeSafe JEV](https://docs.typesafe.ai)) that works only with `mode: llm` (`score` and `fallback` raise `AKMetricNotSupported`); it reads `TYPESAFE_API_KEY` from the environment, ignores the `llm:` block, and sends the user input, expected output and actual output to `api.typesafe.ai`.
 
 ### Custom Test Configuration File Path
 
@@ -803,6 +815,17 @@ session:
   dynamodb:                     # DynamoDB-specific settings
     table_name: "agent-kernel-sessions"  # DynamoDB table name (required)
     ttl: 604800                 # Item TTL in seconds (7 days, 0 to disable)
+  cosmosdb:                     # Cosmos DB-specific settings (requires the agentkernel[azure] extra)
+    connection_string: "DefaultEndpointsProtocol=https;AccountName=your-account;AccountKey=...;TableEndpoint=https://your-account.table.cosmos.azure.com:443/;"  # Cosmos DB connection string (required)
+    table_name: "sessions"      # Cosmos DB table name (required)
+    ttl: 604800                 # Session TTL in seconds (7 days, 0 to disable)
+  firestore:                    # Firestore-specific settings (requires the agentkernel[gcp] extra)
+    collection_name: "ak_sessions"  # Firestore collection name
+    project_id: "my-project"    # GCP project ID (optional; inferred from credentials)
+    database_id: "(default)"    # Firestore database ID (optional)
+    ttl: 604800                 # Session TTL in seconds (7 days, 0 to disable)
+  cache:                        # Optional process-local session cache; omit this whole block to disable
+    size: 256                   # Number of sessions to cache (size: 0 raises an error — omit `cache` instead)
 
 # API server configuration
 api:

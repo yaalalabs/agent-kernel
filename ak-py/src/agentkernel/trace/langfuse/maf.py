@@ -5,6 +5,7 @@ from langfuse import Langfuse, propagate_attributes
 from ...core import Session
 from ...core.model import AgentReply, AgentRequest
 from ...framework.maf.maf import MAFRunner
+from .langfuse import LangFuse
 
 
 class LangFuseMAFRunner(MAFRunner):
@@ -28,11 +29,14 @@ class LangFuseMAFRunner(MAFRunner):
         :raises ValueError: If this runner has an unanswered paused run in the session.
         """
 
-        with propagate_attributes(session_id=session.id, tags=["agentkernel"]):
+        try:
+            with propagate_attributes(session_id=session.id, tags=["agentkernel"]):
 
-            with self._client.start_as_current_observation(name="Agent Kernel MAF", as_type="span") as span:
+                with self._client.start_as_current_observation(name="Agent Kernel MAF", as_type="span") as span:
 
-                result = await super().run(agent, session, requests)
-                span.update(input=result.prompt, output=str(result))
+                    result = await super().run(agent, session, requests)
+                    span.update(input=result.prompt, output=str(result))
+        finally:
+            LangFuse.flush_on_lambda(self._client)
 
         return result

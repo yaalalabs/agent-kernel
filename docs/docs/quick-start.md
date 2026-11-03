@@ -655,7 +655,9 @@ export AK_SESSION__TYPE=dynamodb
 export AK_SESSION__DYNAMODB__TABLE_NAME=agent-kernel-sessions
 ```
 
-See [session configuration](./core-concepts/configuration.md#session-storage) for more details.
+Other persistent backends follow the same pattern: `valkey`, `cosmosdb` (Azure), and `firestore` (GCP).
+
+See [Choosing a Memory Backend](./core-concepts/memory-backends.md) for a comparison and recommended setup, or [session configuration](./core-concepts/configuration.md#session-storage) for every field.
 
 ## Common Patterns
 

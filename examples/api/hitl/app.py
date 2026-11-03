@@ -2,11 +2,12 @@ from operator import add
 from pathlib import Path
 from typing import Annotated, Any, Dict, Optional, TypedDict
 
-from agentkernel.agui import AGUIRequestHandler
+from agentkernel.agui import AGUIPipelineRequestHandler
 from agentkernel.api import RESTAPI
 from agentkernel.auth import Authoriser
 from agentkernel.langgraph import LangGraphModule
 from agentkernel.openai import OpenAIModule, OpenAIToolBuilder
+from agentkernel.pipeline import IOHandler
 from agents import Agent
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
@@ -174,9 +175,9 @@ def asset(filename: str) -> FileResponse:
 RESTAPI.add(ui_router)
 
 if __name__ == "__main__":
-    # `handlers=` replaces the defaults rather than adding to them, so the REST handler is listed
-    # explicitly. Both surfaces then serve the same session, and the same pause can be answered from
-    # either one:
+    # IOHandler always serves the REST chat route, and `handlers=` mounts AG-UI alongside it. Both
+    # surfaces run the agent on the queue pipeline against the same session, so the same pause can
+    # be answered from either one:
     #   AG-UI  POST /agui/support   — streamed, ends with an interrupt outcome
     #   REST   POST /api/v1/chat    — answers 202 with status: "PAUSED"
-    RESTAPI.run(handlers=[*RESTAPI.get_default_handlers(), AGUIRequestHandler(authoriser=DemoAuthoriser())])
+    IOHandler.run(handlers=[AGUIPipelineRequestHandler(authoriser=DemoAuthoriser())])
