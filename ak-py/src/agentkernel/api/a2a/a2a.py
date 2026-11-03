@@ -2,20 +2,20 @@ import json
 import logging
 from typing import TYPE_CHECKING, Any, Optional
 
+from a2a.helpers import new_data_message, new_text_message
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
 from a2a.server.tasks import InMemoryTaskStore, TaskStore
-from a2a.types import AgentCard, InternalError, UnsupportedOperationError
-from a2a.utils import new_agent_text_message
-from a2a.utils.errors import ServerError
+from a2a.types import AgentCard, InternalError, Message, UnsupportedOperationError
 
+from ...a2ui.hook import A2UIPostHook
 from ...core import Agent
 from ...core.config import AKConfig
 from ...core.model import BaseRunRequest
 from ...core.runtime import Runtime
 
 if TYPE_CHECKING:  # pragma: no cover: annotation only; api reaches pipeline lazily
-    from ...pipeline.request_handler import RestHandler
+    from ...pipeline.request_handler import QueuedReply, RestHandler
 
 
 class A2A:
@@ -52,9 +52,10 @@ class A2A:
     class Executor(AgentExecutor):
         """Answers an A2A message with the agent's reply, run on the agent runner through the queue.
 
-        The session is the A2A ``context_id``. The caller gets one text message: the reply's text, or
-        a structured payload as JSON text. Failures send a generic message and raise
-        ``InternalError``; their details go to the log only.
+        The session is the A2A ``context_id``. The caller gets one message: a data part for a
+        structured payload with a media type, otherwise a text part (a structured payload without a
+        media type as JSON text). Failures raise ``InternalError`` carrying a generic message, which
+        is all the caller reads; their details go to the log only.
         """
 
         ERROR_MESSAGE = "Sorry, Agent Kernel encountered an error while processing your request"
@@ -77,25 +78,35 @@ class A2A:
                 reply = await A2A.get_client().request(body, protocol=A2A.PROTOCOL)
             except ReplyTimeoutError as e:
                 self.log.error(f"No reply within the wait budget: request_id={e.request_id}, retry_count={e.retry_count}, delay={e.delay}")
-                await self._send_error(context, event_queue)
-                raise ServerError(error=InternalError(message=self.TIMEOUT_MESSAGE)) from e
+                raise InternalError(message=self.TIMEOUT_MESSAGE) from e
             except Exception as e:
                 self.log.exception(f"Agent request failed: {e}")
-                await self._send_error(context, event_queue)
-                raise ServerError(error=InternalError()) from e
+                raise InternalError(message=self.ERROR_MESSAGE) from e
 
             if reply.is_error or reply.result is None:
                 self.log.error(f"Agent reply failed: request_id={reply.request_id}, status_code={reply.status_code}, error={reply.error}")
-                await self._send_error(context, event_queue)
-                raise ServerError(error=InternalError())
+                raise InternalError(message=self.ERROR_MESSAGE)
 
-            await event_queue.enqueue_event(new_agent_text_message(self._as_text(reply.result), context.context_id, context.task_id))
+            await event_queue.enqueue_event(self._as_message(reply, context))
 
         async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:
-            raise ServerError(error=UnsupportedOperationError())
+            raise UnsupportedOperationError()
 
-        async def _send_error(self, context: RequestContext, event_queue: EventQueue) -> None:
-            await event_queue.enqueue_event(new_agent_text_message(self.ERROR_MESSAGE, context.context_id, context.task_id))
+        @classmethod
+        def _as_message(cls, reply: "QueuedReply", context: RequestContext) -> Message:
+            """The reply as one A2A message.
+
+            A structured result with a media type becomes a data part labelled in both places a
+            client may look: the part's own ``media_type`` and ``metadata["mimeType"]``, the key
+            the A2UI binding names. Everything else is one text part, as before data parts existed.
+            Ids go by keyword: both helpers take ``media_type`` second.
+            """
+            if reply.media_type and isinstance(reply.result, (dict, list)):
+                data = A2UIPostHook.a2a_data(reply.media_type, reply.result)
+                message = new_data_message(data, media_type=reply.media_type, context_id=context.context_id, task_id=context.task_id)
+                message.parts[0].metadata.update({"mimeType": reply.media_type})
+                return message
+            return new_text_message(cls._as_text(reply.result), context_id=context.context_id, task_id=context.task_id)
 
         @staticmethod
         def _as_text(result: Any) -> str:
@@ -127,7 +138,10 @@ class A2A:
             if not whitelisted:
                 continue
             # get card
-            card: AgentCard = agent.get_a2a_card()
+            card: Optional[AgentCard] = agent.get_a2a_card()
+            if card is None:
+                cls._log.warning(f"Agent '{name}' has no A2A card; it is not served over A2A")
+                continue
             cls._cards.update({name: card})
         cls._built = True
 
