@@ -7,7 +7,7 @@
 | | |
 |---|---|
 | **Status** | Draft for review; all open questions resolved 2026-10-24 (D6–D8 added after the A2UI v0.9.1 binding was found). |
-| **Base** | `feature/780-a2a-and-mcp-from-queue-pipeline` (A2A already runs through the queue). |
+| **Base** | `develop`, after #780 merged as #829 (A2A already runs through the queue). |
 | **Read time** | About 5 minutes. Code evidence is folded away under ▸ **Evidence**. |
 | **Breaking?** | Yes: A2A 0.3 clients are no longer served, and apps that import `a2a` 0.3 types must port. See [Breaking changes](#breaking-changes). |
 | **Decisions** | All 9 resolved (D2 superseded by D7): [Decisions](#decisions) |
@@ -137,13 +137,15 @@ flowchart LR
 
 ### 3. Routes (`A2ARESTRequestHandler`, `api/a2a/handler.py`)
 
-- Per agent, mounts the routes from `create_rest_routes(handler)` under `/a2a/{agent}` on a
-  FastAPI `APIRouter`, over a 1.x `DefaultRequestHandler` built with the agent's executor, task
-  store and card.
+- Per agent, registers only the plain `Route` entries from `create_rest_routes(handler)` under
+  `/a2a/{agent}` on a FastAPI `APIRouter`, over a 1.x `DefaultRequestHandler` built with the
+  agent's executor, task store and card.
   - 1.0 routes: `/a2a/{agent}/message:send`, `/tasks/...`, `/extendedAgentCard`.
   - `enable_v0_3_compat` stays `False`: the old `/a2a/{agent}/v1/...` routes are gone and return
     404 (D1).
-  - The SDK's `/{tenant}` mount is not mounted (no multi-tenant A2A).
+  - The returned list also holds `Mount('/{tenant}')` whatever `enable_v0_3_compat` says; it is
+    filtered out, not registered, so no `/a2a/{agent}/{tenant}/...` path exists (no multi-tenant
+    A2A).
 - `GET /a2a/{agent}/.well-known/agent-card.json` and `GET /a2a/catalog` serve the card through the
   SDK's `agent_card_to_dict`, so both carry the 1.0 shape.
   - An unknown agent on the well-known route returns 404, not 500 (today `None.model_dump()`,

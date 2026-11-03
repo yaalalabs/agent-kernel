@@ -99,7 +99,7 @@ Each agent is mounted under `/a2a/{agent}` with the standard A2A 1.0 REST routes
 | `POST /a2a/{agent}/message:stream` | Refused: Agent Kernel's cards declare `streaming: false`, so use `message:send` |
 | `GET /a2a/{agent}/tasks` | List tasks |
 | `GET /a2a/{agent}/tasks/{id}` | Get a task |
-| `POST /a2a/{agent}/tasks/{id}:cancel` | Cancel a task (unsupported: the reply is always immediate) |
+| `POST /a2a/{agent}/tasks/{id}:cancel` | Cancel a task (unsupported: the executor implements neither cancellation nor streaming) |
 | `GET`/`POST /a2a/{agent}/tasks/{id}:subscribe` | Subscribe to task updates |
 | `GET /a2a/{agent}/extendedAgentCard` | Get the authenticated agent card (if supported) |
 
