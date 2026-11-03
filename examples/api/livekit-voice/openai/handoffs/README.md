@@ -10,15 +10,15 @@ The scenario is the support line of an internet provider:
 | `billing` | Invoices, charges, payments, refunds | `get_latest_invoice` | `supervisor` |
 | `tech_support` | Connection problems, outages, technician visits | `check_outage`, `book_technician` | `supervisor` |
 
-The agents are ordinary `agents.Agent` objects with `handoffs=[...]`, exactly as you would write them for a text run. Only the entry agent, `supervisor`, is registered with Agent Kernel; the specialists are reached through its handoffs.
+The agents are native `agents.realtime.RealtimeAgent` objects with `handoffs=[...]`, exactly as you would write them for a text run. Only the entry agent, `supervisor`, is registered with Agent Kernel; the specialists are reached through its handoffs.
 
 It uses the `in_memory` queue transport, so the LiveKit gateway and the agent runner run as threads in a single Python process.
 
 ## How a handoff works in realtime mode
 
-One OpenAI Realtime socket serves the whole conversation. Each agent's handoffs are offered to the model as functions (`transfer_to_billing`, ...). When the model calls one, Agent Kernel invokes the handoff through the SDK, points the session at the new agent's instructions and tools, and the new agent answers. The conversation stays on OpenAI's side, so the new agent already knows everything the caller said.
+One OpenAI `RealtimeSession` serves the conversation. The SDK executes each handoff, switches the active agent, and runs that agent's native tools. Agent Kernel changes the speaking LiveKit participant when the SDK reports a handoff.
 
-Every handoff is logged (`Handed off from 'supervisor' to 'billing'`) and reaches the LiveKit gateway as an `agent_changed` event, in order with the audio around it.
+Every handoff reaches the LiveKit gateway as an `agent_changed` event, in order with the audio around it.
 
 ## What you see in the room
 
@@ -60,8 +60,7 @@ You can talk over an agent at any time, including while a handoff is happening.
 
 ## Limits
 
-- **One model and one voice.** The socket's model and voice cannot change once the conversation starts, so every agent speaks with the entry agent's model and voice, each through its own participant. A specialist declaring a different `model` logs a warning.
-- **One LiveKit connection per agent.** Every agent in the graph is a participant for the whole call, so LiveKit bills connection minutes for each.
-- **History filters cannot be applied.** The history lives on OpenAI's side of the socket, so a handoff anywhere in the agent graph with an `input_filter` or `nest_handoff_history` is rejected with a clear error when the call connects.
-- **One handoff per model turn.** If the model calls two handoffs in one turn, the first is performed and the second is answered as not performed.
-- **Function tools only.** As for a single realtime agent, hosted tools and tools that need approval or carry tool guardrails are not offered.
+- **One model and one voice.** `OpenAIModule.run_options()` sets both on the starting agent. The same live session serves every speaker.
+- **One LiveKit connection per agent.** Every listed agent is a participant for the whole call, so LiveKit bills connection minutes for each.
+- **Native tools only.** The SDK runs tools declared on each `RealtimeAgent`. Tools needing human approval also fail because this LiveKit edge has no approval path.
+- **SDK behavior.** Handoff and guardrail details follow the installed OpenAI Agents SDK; Agent Kernel does not implement another tool or handoff engine.

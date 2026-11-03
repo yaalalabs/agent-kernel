@@ -185,6 +185,13 @@ class ResponseHandler:
 
         return StatefulEdgeRegistry.get(message.group_id)
 
+    @staticmethod
+    def _edge_recently_ended(message: QueueMessage) -> bool:
+        """True when this message's edge was unregistered in the last ``StatefulEdgeRegistry.ENDED_TTL_SECONDS``."""
+        from ..integration.adapter.registry import StatefulEdgeRegistry
+
+        return StatefulEdgeRegistry.recently_ended(message.group_id)
+
     def _deliver_realtime(self, message: QueueMessage, integration: str) -> None:
         """Deliver one realtime output message to the live edge that sent the request.
 
@@ -194,9 +201,14 @@ class ResponseHandler:
         pool emitted, re-parsed so the edge receives the typed chunk, and it is delivered on this
         thread's persistent loop because ``run_async_sync`` would create and destroy one per chunk
         at realtime rates. Raising when the edge is gone is deliberate, as for every delivery: the
-        ConsumerLoop retries, then hands the message to ``on_permanent_failure``.
+        ConsumerLoop retries, then hands the message to ``on_permanent_failure``. The exception is an
+        edge unregistered moments ago: the chunk belonged to a call that is over, so it is acked and
+        dropped rather than retried into a permanent failure.
         """
         adapter = self._realtime_edge(message)
+        if adapter is None and self._edge_recently_ended(message):
+            self._log.debug(f"Dropping realtime output for session {message.group_id}: its edge has just ended")
+            return
         if adapter is None:
             raise ValueError(f"No active realtime edge connection found for session {message.group_id}")
 
@@ -224,6 +236,9 @@ class ResponseHandler:
     def _deliver_realtime_failure(self, message: QueueMessage, integration: str) -> None:
         """Tell the live edge that a realtime output message failed for good, if it is still connected."""
         adapter = self._realtime_edge(message)
+        if adapter is None and self._edge_recently_ended(message):
+            self._log.debug(f"Dropping realtime failure for session {message.group_id}: its edge has just ended")
+            return
         if adapter is None:
             self._log.warning(f"Could not find live edge connection for session_id={message.group_id}")
             return

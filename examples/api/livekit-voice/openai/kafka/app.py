@@ -3,7 +3,7 @@
 Kafka is a broker transport, so the pipeline is split across two processes that share the queues:
 
     python app.py io        # LiveKit edge gateway + REST API (Request/Response Handler)
-    python app.py runner    # Agent Runner + the per-session realtime sockets
+    python app.py runner    # Agent Runner + the per-session native live sessions
 
 Both read the same config.yaml. Start the broker first. Run the ``runner`` role as a **single
 replica**: its RealtimeConnectionPool is process-local, and one gateway instance must own a room.
@@ -19,7 +19,7 @@ from agentkernel.framework.openai import (
 from agentkernel.integration.adapter import GatewayRunner
 from agentkernel.integration.livekit import LiveKitEdgeGateway
 from agentkernel.pipeline import AgentRunner, IOHandler
-from agents import Agent as OpenAIAgent
+from agents.realtime import RealtimeAgent as OpenAIAgent
 
 logging.basicConfig(level=logging.INFO)
 _log = logging.getLogger(__name__)
@@ -32,13 +32,14 @@ def get_weather(location: str) -> str:
 
 general_agent = OpenAIAgent(
     name="general",
-    model="gpt-realtime",
     handoff_description="Agent for general questions",
     instructions="You provide assistance with general queries. Give short and direct answers.",
     tools=OpenAIToolBuilder.bind([get_weather]),
 )
 
-OpenAIModule([general_agent])
+OpenAIModule([general_agent]).run_options(
+    general_agent, model_config={"initial_model_settings": {"model_name": "gpt-realtime", "voice": "alloy"}}
+)
 
 gateway = LiveKitEdgeGateway(session_id="room_01")
 
