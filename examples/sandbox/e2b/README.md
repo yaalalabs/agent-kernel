@@ -25,13 +25,13 @@ the fail-closed `strict` model in depth):
 | Policy | E2B mapping |
 |---|---|
 | `network_egress: deny` | `allow_internet_access: false` |
-| `network_egress: allowlist` | network `allow_out` rules (not yet verified as a hard limit for domain entries; see the [Sandbox guide](https://kernel.yaala.ai/docs/advanced/sandbox#policy-and-permissions)) |
+| `network_egress: allowlist` | deny-all `deny_out` + `allow_out` exceptions (not yet verified as a hard limit for domain entries; see the [Sandbox guide](https://kernel.yaala.ai/docs/advanced/sandbox#policy-and-permissions)) |
 | `cpu` / `memory_mb` | *not enforceable* — fixed by the E2B tier (`policy_resources=False`); a non-default value fails closed under `strict` |
 
 The `config.yaml` defines three profiles: `default` (a per-session micro-VM workspace that
 permits `python` package installs),
 `offline` (`network_egress: deny`, so outbound requests genuinely fail), and `pinned` (an
-egress allowlist mapped to E2B `allow_out` rules; not yet verified as a hard limit). Unlike `daytona`, E2B cannot enforce
+egress allowlist mapped to E2B deny-all `deny_out` + `allow_out` exceptions; not yet verified as a hard limit). Unlike `daytona`, E2B cannot enforce
 cpu/memory limits (its tier fixes them), so this example does not include a resource profile.
 
 ## Prerequisites
