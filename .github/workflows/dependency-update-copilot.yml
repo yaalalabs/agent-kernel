@@ -42,10 +42,12 @@ jobs:
       RUN_ID: ${{ github.run_id }}
       STATE_DIR: /tmp/dep-state
     steps:
-      - name: Checkout develop
+      # Checks out the branch the run was started from (the schedule uses develop), so the
+      # workflow always has its own script. The changes themselves start from origin/develop
+      # in the main step. No `ref:` here also lets `act` use the local files.
+      - name: Checkout
         uses: actions/checkout@v5
         with:
-          ref: develop
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -251,6 +253,7 @@ jobs:
           git diff --name-only | grep -E '(^|/)(pyproject\.toml|uv\.lock|package\.json|package-lock\.json)$' | xargs -r git add
           git status --short
           git commit -m "$title"
+          gh auth setup-git
           git push -u origin HEAD
           url=$(gh pr create --repo "$REPO" --base develop \
             --title "$title" \
