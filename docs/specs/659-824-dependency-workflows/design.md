@@ -268,6 +268,6 @@ A scheduled run has no inputs: everything, real PR.
 
 ## Known limits
 
-- **Token:** reading Dependabot alerts needs "Dependabot alerts: Read". The workflow uses `DEPENDABOT_ALERTS_TOKEN` when set, else `GITHUB_TOKEN`. Whether `GITHUB_TOKEN` is enough is **not yet tested** on GitHub.
+- **Token:** one token for alerts, push and PR: the `agent-kernel-ci[bot]` GitHub App (`APP_ID` + `APP_PRIVATE_KEY`, like the other bot workflows). Its PRs also trigger CI. The app must have **Dependabot alerts: Read**, **Contents: Write** and **Pull requests: Write**; not yet confirmed on a real run. Under `act` it falls back to the `GITHUB_TOKEN` passed in.
 - **Run time:** 127 manifests, with tests, must fit in 360 minutes. Not measured yet.
 - A limit with a comment above it is not raised for a plain update (only for security).

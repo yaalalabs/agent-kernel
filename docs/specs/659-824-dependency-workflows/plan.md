@@ -127,7 +127,8 @@ After the critical PRs:
 ## Step 5: Merge and schedule
 
 - Merge the workflow and the script to `develop`. Monday runs start by themselves.
-- Test that `GITHUB_TOKEN` can read alerts; if not, add `DEPENDABOT_ALERTS_TOKEN`.
+- Confirm the `agent-kernel-ci[bot]` app can read Dependabot alerts (needs **Dependabot alerts: Read**).
+- Remove the TEMPORARY `push` trigger.
 
 ## Step 6: Retire the #659 workflow
 

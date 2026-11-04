@@ -279,7 +279,7 @@ branch left on the remote does not block a later run.
 | `dry_run` | Test only; no branch, no PR | `true` |
 
 Permissions: `contents: write`, `pull-requests: write`, `security-events: read`.
-Secrets: `COPILOT_REQUEST_TOKEN` (required); `DEPENDABOT_ALERTS_TOKEN` (optional, falls back to `GITHUB_TOKEN`).
+Secrets: `COPILOT_REQUEST_TOKEN` (required); `APP_ID` + `APP_PRIVATE_KEY` (the `agent-kernel-ci[bot]` GitHub App) for one token that reads alerts, pushes and opens the PR. Under `act` the app step is skipped and the passed-in `GITHUB_TOKEN` is used.
 
 ## Script commands
 
@@ -373,7 +373,7 @@ On a throwaway clone of `develop`, with the live alerts (5,544 read in about 80 
 - `secure` rules checked on 13 hand-written cases (pins, `~=`, markers, extras, documented limits).
 - `ruff check` passes.
 
-Not tested yet: the Copilot fix loop, the full run time, the PR step, and `GITHUB_TOKEN` reading alerts on GitHub.
+Not tested yet: the Copilot fix loop, the full run time, the PR step, and the app token reading alerts on GitHub.
 
 ## Local test with `act`
 
