@@ -113,8 +113,7 @@ with history. Live tracking runs from the start of "before" to the end of the co
        lag.
   3. **Workers back (primary fetcher):** the running count of every tier is back at its count at the end of the
      "before" part.
-  - A condition with no source on a host counts as met, e.g. the local `in_memory` host has no fetchers and no
-    TransportCollector, so only condition 1 applies there.
+  - A condition with no source on a host counts as met.
   - **A read that fails or returns no value** (API error, missing permission, no datapoint) counts as **not met** for
     that poll and writes a run-log entry; the next poll checks again. If it never succeeds, the maximum cool-down
     ends the step. On SQS, such a poll breaks the 60 s run of zeros, so the 60 s start again. (Decided 2026-11-04, PR
@@ -130,8 +129,11 @@ with history. Live tracking runs from the start of "before" to the end of the co
     still calls its `fetch()` for the latest minutes, accepting the CloudWatch delay. Lambda sends no datapoint in a
     minute with no invocations (verified, see [Open points](#open-points)), so the fetcher reads a minute with no
     datapoint as 0 once it's older than its `metric_delay_s` constructor parameter (decided 2026-11-04, PR #893
-    review; default set from the first Lambda runs). A newer empty minute is "no value", so that poll counts as not
-    met. The parameter belongs to this AWS fetcher only, not to `ak-bench.yaml`. Lambda sends metric data to
+    review; default set from the first Lambda runs). Newer minutes without a datapoint aren't returned yet (their data
+    may still be on its way). A read of the latest minutes looks back far enough to get the latest known minute, so
+    the step end is seen about `metric_delay_s` after the workers really scaled in, and the harness needs no
+    Lambda-specific window; if the fetcher returns no value at all, that poll counts as not met. The parameter belongs
+    to this AWS fetcher only, not to `ak-bench.yaml`. Lambda sends metric data to
     CloudWatch in 1-minute intervals. The recorded counts still come from its `fetch_and_store()` after the
     cool-down, which has the complete data. If the delay turns out too long,
     a person can bind `aws.lambda_log_streams` to the host in `hosts.py` instead (a manual choice, not automatic).
@@ -170,8 +172,6 @@ Worker counts are recorded **per tier** and **per scaling info fetcher** (below)
   `desired_count` (default 1) with no autoscaling, so its count is recorded but stays flat.
 - **Lambda:** every function scales on its own: request handler, agent runner, response handler (and the WebSocket
   connection handler). Each is recorded as its own tier.
-- **Local (`in_memory`):** one process, nothing scales. There are no scaling fetchers and no scaling is recorded
-  locally (CPU / memory still comes from `local.process`).
 
 ### Scaling info fetchers (pluggable)
 
@@ -433,7 +433,7 @@ What a run **actually cost**, read from the cloud's bill, for the whole run.
 
 ### How the cost code is split
 
-- **Billing reader:** one per cloud (AWS: Cost Explorer). Returns `None` where there's no bill (bare metal, local), and
+- **Billing reader:** one per cloud (AWS: Cost Explorer). Returns `None` where there's no bill (bare metal), and
   the cost columns stay blank.
 - **Shared code:** writes the cost CSV and draws the cost graph. It never calls a cloud API.
 - Adding a cloud = its billing reader.
@@ -453,17 +453,18 @@ labels). The billed cost is AWS Cost Explorer `GetCostAndUsage` filtered by the 
 - **AWS's own billing rules are already in it** (e.g. Fargate's per-second billing with a 1-minute minimum, SQS
   billing per API request including empty receives), so the benchmark doesn't model them.
 - **The whole run only, never per step.** The tag is set once, at deploy time, and one deployment serves every step of
-  both test types (1 → 10 → 100 → 1000), so every charge of that host × mode carries the same tag value and Cost Explorer can't
-  tell the steps apart. Its time grain (daily, or hourly) can't separate them either: steps are minutes long and run
-  back to back. The total covers set-up, every step, the waits after the steps and the time until tear-down.
+  both test types (1 → 10 → 100 → 1000), so every charge of that host × mode carries the same tag value and Cost
+  Explorer can't tell the steps apart. Its time grain (daily, or hourly) can't separate them either: steps are
+  minutes long and run back to back. The total covers set-up, every step, the waits after the steps and the time until tear-down.
 - The tag must be activated as a cost allocation tag (management account). Tagged costs show from activation on; the
   management account can **backfill** up to 12 months (one backfill request per 24 h). Costs only appear for periods
   when the tag was actually on the resource.
 - Cost Explorer refreshes at least once every 24 h (some data can arrive later), so this is a **separate, later step**
   (`collect-cost --run-id …`) that fills in the cost CSV after the run. It fits the existing "re-plot from existing
   CSVs" option. Each Cost Explorer API request costs $0.01.
-- **Daily granularity** (decided 2026-10-29): every host × mode of every run has its own tag value, so its billed cost is the sum of
-  the daily rows for that value over the days the run covered (two days if it crosses midnight). Hourly isn't used.
+- **Daily granularity** (decided 2026-10-29): every host × mode of every run has its own tag value, so its billed cost
+  is the sum of the daily rows for that value over the days the run covered (two days if it crosses midnight).
+  Hourly isn't used.
 - Shared or long-lived resources (EKS control plane, NAT gateway, a long-lived MSK cluster) can be tagged, but if
   they're shared across runs or used by other things, their cost must be listed as a fixed allocation instead. The automatic
   `aws:eks:cluster-name` tag doesn't cover the EKS control plane fee.
@@ -482,8 +483,8 @@ labels). The billed cost is AWS Cost Explorer `GetCostAndUsage` filtered by the 
   checked on the deployed `aws-serverless/openai` example's agent runner (us-east-2): over 15 days of 1-minute data
   (`Maximum`, 60 s), there were 29 datapoints, all in minutes that also had `Invocations`, and no 0 values. So a
   missing minute is read as 0, but only for minutes older than the fetcher's `metric_delay_s` (decided 2026-11-04,
-  see [Load-step tests](#load-step-tests-scaling-per-step)). The delay's default is still to be measured on the first Lambda
-  runs.
+  see [Load-step tests](#load-step-tests-scaling-per-step)). The delay's default is still to be measured on the first
+  Lambda runs.
 - Not verified: whether the fixed 3 / 15 datapoint rule still applies to custom metrics (like `BacklogPerTask`) after
   AWS's June 2026 faster-scaling launch. AWS only describes the change for the built-in CPU/memory metrics. Check the
   CloudWatch alarms that the ECS policy creates once deployed.

@@ -246,7 +246,7 @@ Bound: both. `aws.lambda_report_memory` always (free). `aws.lambda_insights` is 
 value switches it off (e.g. to check how much latency the extension adds). The deployer adds the layer when it's on (no
 IAM change, see above); the run metadata records whether it was.
 
-## Kubernetes (EKS, bare metal) and local
+## Kubernetes (EKS, bare metal)
 
 Less researched; to check before building.
 
@@ -259,8 +259,6 @@ Less researched; to check before building.
   - metrics-server says it's "meant only for autoscaling purposes" and not "an accurate source of resource usage
     metrics". A Prometheus / cAdvisor fetcher can be added later if
     it isn't good enough.
-- **`local.process`** (`live_track = True`): reads the AK process(es) of the local baseline directly with `psutil`
-  (`cpu_percent`, `memory_info().rss`), one tier per process. If local AK runs in Docker, `docker stats` instead.
 
 ## What's recorded
 

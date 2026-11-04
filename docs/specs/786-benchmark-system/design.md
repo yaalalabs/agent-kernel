@@ -27,8 +27,8 @@ log level with per-stage trace points on the request path.
 - **Tier:** one separately deployed and scaled part of a deployment (an ECS service, a Lambda function, a K8s
   Deployment).
 - **Scale up / scale down:** adding / removing workers (horizontal only). Worker size is fixed per run.
-- **Host:** a named bundle of per-platform implementations (`local`, `ecs`, `lambda`, `eks`, `baremetal`). Each host
-  names its platform (`aws`, `k8s`, none for `local`).
+- **Host:** a named bundle of per-platform implementations (`ecs`, `lambda`, `eks`, `baremetal`). Each host
+  names its platform (`aws`, `k8s`).
 - **Percentiles:** p0 / p25 / p50 / p75 / p99 / p100 only, linear interpolation (numpy `method='linear'`).
 - **Billed cost:** the cloud bill for a run, for the whole run only.
 
@@ -95,7 +95,6 @@ log level with per-stage trace points on the request path.
 
   | Host | Platform | Deploy source | Transport | Log backend |
   |---|---|---|---|---|
-  | `local` | none | AK already running (`in_memory`) | `in_memory` | local process logs |
   | `ecs` | `aws` | Terraform `ak-aws/containerized` | SQS | CloudWatch Logs |
   | `lambda` | `aws` | Terraform `ak-aws/serverless` | SQS | CloudWatch Logs |
   | `eks` | `k8s` | Helm `ak-k8s` | Kafka | decided later (L1) |
@@ -105,7 +104,7 @@ log level with per-stage trace points on the request path.
 - Build order: AWS with WebSocket complete comes first, before anything else.
   1. `lambda`, WebSocket complete.
   2. `ecs`, WebSocket complete.
-  3. Only then the rest: `eks` right after the AWS hosts, then `baremetal` and `local`.
+  3. Only then the rest: `eks` right after the AWS hosts, then `baremetal`.
 
 ### Step timeline
 
@@ -121,7 +120,7 @@ log level with per-stage trace points on the request path.
   ```
 
   1. **before** (config, default 1 min): no requests. Live tracking starts here: the live-tracked fetchers and queue
-     depth record idle worker counts (and, on `eks` / `baremetal` / `local`, idle CPU / memory). At the end of
+     depth record idle worker counts (and, on `eks` / `baremetal`, idle CPU / memory). At the end of
      `before` the runner reads the starting worker counts with a plain `fetch()` on the primary scaling fetcher
      (stores nothing, works on any host); the cool-down waits for these counts.
   2. **load:** burst: send N → last response or timeout (≤ client timeout, default 5 min). Steady: first send →
@@ -152,7 +151,7 @@ log level with per-stage trace points on the request path.
     - Kafka: consumer-group lag 0 on both topics (AK commits after processing, `pipeline/transport/kafka.py:104`);
   - every tier's running count, from the host's **primary** scaling fetcher's `fetch()`, is back at its count at the
     end of `before`.
-  - A condition with no source on the host counts as met (`local`: only the first applies).
+  - A condition with no source on the host counts as met.
   - A read that fails or returns no value counts as not met for that poll (and writes a run-log entry); the next poll
     checks again. If it never succeeds, the maximum cool-down ends the step. On SQS, such a poll breaks the 60 s run
     of zeros (decided 2026-11-04, PR #893 review).
@@ -166,8 +165,8 @@ log level with per-stage trace points on the request path.
        errors, timeouts;
      - live-tracked scaling fetchers, each polled at its own `poll_interval_s` → worker counts: `aws.ecs_api`
        (`ecs`), `k8s.api` (`eks`, `baremetal`); none on `lambda`;
-     - live-tracked resource usage fetchers → CPU / memory: `k8s.metrics_api` (`eks`, `baremetal`), `local.process`
-       (`local`). None on `ecs` or `lambda`: every AWS CPU / memory source has history and is fetched after the
+     - live-tracked resource usage fetchers → CPU / memory: `k8s.metrics_api` (`eks`, `baremetal`). None on
+       `ecs` or `lambda`: every AWS CPU / memory source has history and is fetched after the
        cool-down;
      - `TransportCollector` (`live_track = True`) → input and output queue depth.
   2. **Cool-down only:** the step-end check reads the client, the `TransportCollector` and the primary scaling
@@ -185,13 +184,15 @@ log level with per-stage trace points on the request path.
   |= 1 set up =|======== 2 run test types ========|= 3 report =|┄ 4 ~1 day ┄|= 5 collect-cost =|
   ```
 
-  1. **Set up** (minutes): deploy with every resource tagged `ak-bench-run-id=<run-id>-<host>-<mode>`, record the run metadata.
+  1. **Set up** (minutes): deploy with every resource tagged `ak-bench-run-id=<run-id>-<host>-<mode>`, record the run
+     metadata.
   2. **Run test types:** step numbers 1 → 10 → 100 → 1000; for each, a steady step run, then a burst step run. Every
      step run is the four-part step above, with its own live tracking and its own after-step fetch.
   3. **Report, tear down:** write the run-level CSVs (`summary.csv` per test type),
      draw the graphs, tear the deployment down. Each step run already wrote its own CSVs.
   4. **Wait** (~1 day): Cost Explorer catches up.
-  5. **`collect-cost`:** billed cost for each host × mode's tag value; writes its `cost.csv` and draws the billed cost graph.
+  5. **`collect-cost`:** billed cost for each host × mode's tag value; writes its `cost.csv` and draws the billed cost
+     graph.
 
 ### Throughput and latency
 
@@ -247,11 +248,13 @@ log level with per-stage trace points on the request path.
 - **`aws.cloudwatch_metric.ConcurrentExecutions`: missing minutes** (decided 2026-11-04, PR #893 review). Lambda sends
   no datapoint in a minute with no invocations (verified, see `research/platform-scaling-and-cost.md`), so the fetcher
   reads a minute with no datapoint as 0 once it's older than its `metric_delay_s` constructor parameter (default set
-  from the first Lambda runs, R2). A newer empty minute is "no value", so that cool-down poll counts as not met.
-  Only this AWS fetcher has the parameter; it isn't in `ak-bench.yaml`.
+  from the first Lambda runs, R2). Newer minutes without a datapoint aren't returned yet (their data may still be on
+  its way). A read of the latest minutes (step-end check, starting counts) looks back far enough to get the latest
+  known minute, so the harness needs no Lambda-specific window; if the fetcher returns no value at all, that poll
+  counts as not met. Only this AWS fetcher has the parameter; it isn't in `ak-bench.yaml`.
 
 - Queue depth per window (input and output separately) from the host's `TransportCollector`, chosen by transport
-  (`sqs`, `kafka`; none for `in_memory`). It extends `InfoFetcher[QueueInfo]` with `live_track = True` (SQS and Kafka
+  (`sqs`, `kafka`). It extends `InfoFetcher[QueueInfo]` with `live_track = True` (SQS and Kafka
   only give the current depth); `QueueInfo` = samples `(ts, queue, waiting, in_flight)`.
 - Derived per step, per tier and per fetcher (summary CSV), from `t_load_up` (first send) and `t_load_down` (end of
   load):
@@ -302,7 +305,6 @@ log level with per-stage trace points on the request path.
   | `aws.lambda_report_memory` (`REPORT` `Max Memory Used`) | no | memory per environment | `lambda` |
   | `aws.lambda_insights` (Lambda Insights extension) | no | memory per environment | `lambda`, on by default |
   | `k8s.metrics_api` (`metrics.k8s.io` PodMetrics) | yes | per pod | `eks`, `baremetal` |
-  | `local.process` (`psutil`) | yes | per AK process | `local` |
 
 - Lambda Insights: the deployer adds the layer when on (the `layers` variable exists on every function,
   `ak-aws/serverless/variables.tf:309,328,349`, ...); a per-run config value switches it off.
@@ -311,8 +313,8 @@ log level with per-stage trace points on the request path.
 ### Cost
 
 - One number per run:
-  - **billed:** AWS Cost Explorer `GetCostAndUsage` filtered by the run tag (one value per host × mode), grouped by service. Whole run only,
-    filled later by `collect-cost`. Empty where there is no bill (bare metal, local).
+  - **billed:** AWS Cost Explorer `GetCostAndUsage` filtered by the run tag (one value per host × mode), grouped by
+    service. Whole run only, filled later by `collect-cost`. Empty where there is no bill (bare metal).
     - Metric: **`UnblendedCost`**, the usage at the rate AWS charged, **without discounts and credits** (those are
       separate line items; `NetUnblendedCost` is the after-discount view, not used). Recorded with the billed cost.
     - The tag is set **at deploy time**: the deployer puts `ak-bench-run-id=<run-id>-<host>-<mode>` on every resource it
@@ -322,8 +324,8 @@ log level with per-stage trace points on the request path.
     - **All the steps together, never per step:** one deployment, tagged once, serves every step of both test types,
       so the bill can't tell the steps apart. It's read once, after all the steps have run.
     - Cost Explorer records every charge with the tags of the resource it came from, and the query returns **only
-      charges from resources carrying this host × mode's tag value**. Nothing from other hosts, modes, runs or other workloads on the
-      account is included.
+      charges from resources carrying this host × mode's tag value**. Nothing from other hosts, modes, runs or other
+      workloads on the account is included.
     - Daily granularity is enough: the run's billed cost is the sum of the daily rows for that tag value over the
       run's days (two days if it crosses midnight). Hourly granularity is not used.
     - Account prerequisite: `ak-bench-run-id` is activated once as a cost allocation tag (management account);
@@ -339,7 +341,7 @@ log level with per-stage trace points on the request path.
 - A standalone project in a new top-level `benchmarks/` directory with its own `pyproject.toml` (uv), like `e2e/`.
   Not part of the `agentkernel` package.
   - Depends on `agentkernel` for `TraceStage` and the trace-line parser, and for the benchmarked app.
-  - Cloud SDKs (`boto3`, `kubernetes`), `psutil`, data and plotting libraries are dependencies of this project only.
+  - Cloud SDKs (`boto3`, `kubernetes`), data and plotting libraries are dependencies of this project only.
 - Components are classes with one responsibility each.
 - **Its own config file**, `ak-bench.yaml`, not `AKConfig`. Departure from the "reuse existing configuration" house
   pattern, because these are benchmark settings, not AK runtime config. Holds: hosts, modes, test types, load steps,
@@ -387,7 +389,8 @@ graph LR
   - **Run test types:** every step stores its own data: live tracking from the start of `before` to the end of the
     cool-down, then the data with history after the cool-down and the configured wait (see
     [Step timeline](#step-timeline)).
-  - Every resource the deployer creates carries the tag / label `ak-bench-run-id=<run-id>-<host>-<mode>` (one value per host × mode).
+  - Every resource the deployer creates carries the tag / label `ak-bench-run-id=<run-id>-<host>-<mode>` (one value
+    per host × mode).
 
 **The whole flow** (one host × mode):
 
@@ -401,7 +404,7 @@ flowchart TD
         C["<b>3 · Check cool-down</b>: over when, in one poll, checked in order:<br/>1. all requests settled<br/>2. queues empty, incl. in flight<br/>3. workers back at the starting counts<br/>(max 45 min)"]
         W["<b>4 · Wait</b> (1 min)<br/>logs and metrics arrive late"]
         H["<b>5 · Fetch and store: data with history</b><br/>live_track = False · once per step<br/>fetch_and_store(step start, step end)<br/>latency stages from the logs (TraceCollector),<br/>ECS scaling activities, ConcurrentExecutions,<br/>Container / Lambda Insights, ECS service metrics"]
-        LIVE[["<b>Live InfoFetchers, in the background</b><br/>live_track = True · no history: only 'what is it now',<br/>so it has to be polled while it happens<br/>one task per fetcher, every poll_interval_s:<br/>fetch_and_store(last poll, now)<br/>ECS / K8s API worker counts, K8s metrics and<br/>local process CPU + memory, queue depth"]]
+        LIVE[["<b>Live InfoFetchers, in the background</b><br/>live_track = True · no history: only 'what is it now',<br/>so it has to be polled while it happens<br/>one task per fetcher, every poll_interval_s:<br/>fetch_and_store(last poll, now)<br/>ECS / K8s API worker counts,<br/>K8s metrics CPU + memory, queue depth"]]
 
         B --> L --> C
         C -- "no: poll again in 10 s<br/>(fetch only, no store)" --> C
@@ -417,7 +420,7 @@ flowchart TD
     DOWN -.-> BILL["<b>Billed cost</b>: ak-bench collect-cost, ~1 day later<br/>writes cost.csv, all steps together, never per step"]
 ```
 
-- **Live group (`live_track = True`):** sources with no history (ECS / K8s API counts, metrics-server, local process,
+- **Live group (`live_track = True`):** sources with no history (ECS / K8s API counts, metrics-server,
   queue depth) only say "what it is now", so they're polled in the background from the start of `before`. They
   stop when the cool-down ends, because that's the step's end: the system is back where it started and the next
   step's samples must not mix in.
@@ -560,7 +563,6 @@ flowchart TD
 
   | Host | Scaling fetchers (primary first) | Resource fetchers | Trace collector | Transport | Billing |
   |---|---|---|---|---|---|
-  | `local` | none | `local.process` | local process logs | none | none |
   | `ecs` | `aws.ecs_api`, `aws.ecs_scaling_activities` | `aws.ecs_container_insights`, `aws.ecs_service_metrics` | CloudWatch Logs | `sqs` | Cost Explorer |
   | `lambda` | `aws.cloudwatch_metric.ConcurrentExecutions` | `aws.lambda_insights`, `aws.lambda_report_memory` | CloudWatch Logs | `sqs` | Cost Explorer |
   | `eks` | `k8s.api` | `k8s.metrics_api` | decided later (L1) | `kafka` | Cost Explorer |
@@ -615,9 +617,9 @@ flowchart TD
   - Stage in square brackets first. **Only trace lines carry the stage in `[...]`.**
   - The formatter change (`core/logger.py:42`) applies to **every** AK log line, not only `TRACE`.
   - **Clocks:** a duration between two points logged on different machines (e.g. `INPUT_ENQUEUED` →
-    `AGENT_RECEIVED`, the client legs and `CLIENT_RECEIVED`) includes the clock offset between them. It isn't
-    corrected; the load-generator machine must have clock sync (NTP) on. Durations inside one component and
-    end-to-end latency use one clock and aren't affected (PR #893 review).
+    `AGENT_RECEIVED`, client sent → `REQUEST_RECEIVED`, and `CLIENT_RECEIVED`) includes the clock offset between
+    them. It isn't corrected; the load-generator machine must have clock sync (NTP) on. Durations inside one component
+    and end-to-end latency use one clock and aren't affected (PR #893 review).
 - **Parser** in `core/logger.py` next to `TraceStage`, so format and parser change together. The benchmark imports it.
 - **Trace points on every code path a phase-1 host runs:** shared `pipeline/` (request handler, WS handler, agent
   runner, response handler), ECS containerized handlers, and the Lambda serverless handlers.
@@ -633,7 +635,7 @@ flowchart TD
 
 ### Results
 
-- Folder layout `results/<run-id>/<platform>/<host>/<mode>/<test type>/step-<N>/` (`local` has no platform level).
+- Folder layout `results/<run-id>/<platform>/<host>/<mode>/<test type>/step-<N>/`.
   - `<mode>` is the execution-mode config value (e.g. `async`).
   - `step-<N>` zero-padded to the digits of the largest step.
   - Only what ran gets a folder.
