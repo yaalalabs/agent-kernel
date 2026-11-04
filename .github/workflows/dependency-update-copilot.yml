@@ -170,6 +170,9 @@ jobs:
         if: success() && steps.gate.outputs.open != 'true'
         env:
           COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_REQUEST_TOKEN }}
+          # Used only to read Dependabot alerts, until the agent-kernel-ci app has
+          # "Dependabot alerts: Read". When empty, the app token (GH_TOKEN) is used.
+          ALERTS_TOKEN: ${{ secrets.DEPENDABOT_ALERTS_TOKEN }}
         run: |
           set -euo pipefail
           # Copy the script out first: the branch below starts from origin/develop,
