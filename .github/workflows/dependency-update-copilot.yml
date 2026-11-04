@@ -153,7 +153,9 @@ jobs:
           }
 
           git fetch origin develop
-          git switch --create "deps/update-batch-${RUN_ID}" origin/develop
+          # --force: the workspace is disposable; leftover files (e.g. from a reused act container)
+          # must not block starting from origin/develop.
+          git checkout --force -B "deps/update-batch-${RUN_ID}" origin/develop
 
           dep snapshot
           dep alerts
