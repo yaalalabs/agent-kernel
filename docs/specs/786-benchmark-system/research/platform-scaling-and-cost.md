@@ -115,6 +115,10 @@ with history. Live tracking runs from the start of "before" to the end of the co
      "before" part.
   - A condition with no source on a host counts as met, e.g. the local `in_memory` host has no fetchers and no
     TransportCollector, so only condition 1 applies there.
+  - **A read that fails or returns no value** (API error, missing permission, no datapoint) counts as **not met** for
+    that poll and writes a run-log entry; the next poll checks again. If it never succeeds, the maximum cool-down
+    ends the step. On SQS, such a poll breaks the 60 s run of zeros, so the 60 s start again. (Decided 2026-11-04, PR
+    #893 review: before, a failed read could be mistaken for "no source" and end the step too early.)
   - Why all three: in a steady-traffic step that didn't scale, condition 3 is already true when the load stops, and
     the input queue is empty as soon as the last requests are picked up, while those requests are still being
     processed. Checking only 3 (or 3 + waiting messages) would end the step too early and mix its last responses into

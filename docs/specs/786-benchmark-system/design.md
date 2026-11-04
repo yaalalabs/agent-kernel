@@ -153,6 +153,9 @@ log level with per-stage trace points on the request path.
   - every tier's running count, from the host's **primary** scaling fetcher's `fetch()`, is back at its count at the
     end of `before`.
   - A condition with no source on the host counts as met (`local`: only the first applies).
+  - A read that fails or returns no value counts as not met for that poll (and writes a run-log entry); the next poll
+    checks again. If it never succeeds, the maximum cool-down ends the step. On SQS, such a poll breaks the 60 s run
+    of zeros (decided 2026-11-04, PR #893 review).
   - **Maximum cool-down** (config, default 45 min from the end of `load`, settable per host): the step ends anyway and
     records `cooldown_max_reached = true`.
   - The check calls `fetch()` whichever group the fetcher is in, so a fetcher that isn't live-tracked (Lambda's
