@@ -24,11 +24,10 @@ log level with per-stage trace points on the request path.
 - **Tx / Rx:** requests sent / responses received per second, both counted on the client.
 - **Client timeout:** how long the client waits for a response before recording the request as `timeout` (default
   5 min). Separate from the steady load time.
-- **Tier:** one separately deployed and scaled part of a deployment (an ECS service, a Lambda function, a K8s
-  Deployment).
+- **Tier:** one separately deployed and scaled part of a deployment (an ECS service, a Lambda function).
 - **Scale up / scale down:** adding / removing workers (horizontal only). Worker size is fixed per run.
-- **Host:** a named bundle of per-platform implementations (`ecs`, `lambda`, `eks`, `baremetal`). Each host
-  names its platform (`aws`, `k8s`).
+- **Host:** a named bundle of per-platform implementations (`ecs`, `lambda`). Each host names its
+  platform (`aws`).
 - **Percentiles:** p0 / p25 / p50 / p75 / p99 / p100 only, linear interpolation (numpy `method='linear'`).
 - **Billed cost:** the cloud bill for a run, for the whole run only.
 
@@ -53,16 +52,13 @@ log level with per-stage trace points on the request path.
 - An LLM call takes 1-10 s and varies a lot, which would hide what AK itself does. A mock agent with a controlled delay is needed.
   - An agent pre-hook that returns a reply halts the run before the framework runner (`core/runtime.py:242-246`,
     `:401-405`), so the mock needs no AK code change.
-- Hosts scale and bill in very different ways (ECS target tracking, KEDA / HPA, Lambda + SQS event source mapping),
+- Hosts scale and bill in very different ways (ECS target tracking, Lambda + SQS event source mapping),
   so worker counts, resource usage and cost need per-platform code. GCP and Azure come later. See
   `research/platform-scaling-and-cost.md` and `research/resource-usage.md`.
 - The benchmarked deployments need non-default settings:
   - ECS agent-runner autoscaling is off by default with `min_count = 0`
     (`ak-deployment/ak-aws/containerized/variables.tf:394-410`); the IO service runs a fixed `desired_count = 1`
     (`:373`).
-  - KEDA is off by default in the chart (`ak-deployment/ak-k8s/chart/values.yaml:347-349`), and the EKS and
-    bare-metal values files default to `transport.type: nats` (`values-eks.yaml:19-20`,
-    `values-baremetal.yaml:15-16`).
   - The Lambda agent runner gets SQS batches of 10 (`ak-aws/serverless/variables.tf:493`), handles the records one
     after another (`deployment/aws/serverless/core/sqs_consumer.py:42`), under a 45 s timeout (`variables.tf:381`).
 
@@ -97,14 +93,12 @@ log level with per-stage trace points on the request path.
   |---|---|---|---|---|
   | `ecs` | `aws` | Terraform `ak-aws/containerized` | SQS | CloudWatch Logs |
   | `lambda` | `aws` | Terraform `ak-aws/serverless` | SQS | CloudWatch Logs |
-  | `eks` | `k8s` | Helm `ak-k8s` | Kafka | decided later (L1) |
-  | `baremetal` | `k8s` | Helm `ak-k8s` | Kafka | pod logs / Loki |
 
-- GCP, Azure and NATS are out of scope, but the interfaces must allow them.
-- Build order: AWS with WebSocket complete comes first, before anything else.
+- Kubernetes, GCP, Azure and NATS are out of scope, but the interfaces must allow them.
+- Build order: AWS with WebSocket complete comes first.
   1. `lambda`, WebSocket complete.
   2. `ecs`, WebSocket complete.
-  3. Only then the rest: `eks` right after the AWS hosts, then `baremetal`.
+  3. Right after the AWS hosts: Kubernetes (EKS, then bare metal), designed when it's built.
 
 ### Step timeline
 
@@ -120,7 +114,7 @@ log level with per-stage trace points on the request path.
   ```
 
   1. **before** (config, default 1 min): no requests. Live tracking starts here: the live-tracked fetchers and queue
-     depth record idle worker counts (and, on `eks` / `baremetal`, idle CPU / memory). At the end of
+     depth record idle worker counts. At the end of
      `before` the runner reads the starting worker counts with a plain `fetch()` on the primary scaling fetcher
      (stores nothing, works on any host); the cool-down waits for these counts.
   2. **load:** burst: send N → last response or timeout (≤ client timeout, default 5 min). Steady: first send →
@@ -148,7 +142,6 @@ log level with per-stage trace points on the request path.
   - input and output queues hold nothing, counting in-flight messages (`TransportCollector.fetch()`):
     - SQS: `ApproximateNumberOfMessages` and `ApproximateNumberOfMessagesNotVisible` both 0 in every poll of the
       last 60 s (both are approximate, so one poll reading 0 isn't enough; decided 2026-11-03);
-    - Kafka: consumer-group lag 0 on both topics (AK commits after processing, `pipeline/transport/kafka.py:104`);
   - every tier's running count, from the host's **primary** scaling fetcher's `fetch()`, is back at its count at the
     end of `before`.
   - A condition with no source on the host counts as met.
@@ -164,10 +157,9 @@ log level with per-stage trace points on the request path.
      - client: scheduled send, sent, first chunk, complete and status per request → end-to-end latency, Tx / Rx,
        errors, timeouts;
      - live-tracked scaling fetchers, each polled at its own `poll_interval_s` → worker counts: `aws.ecs_api`
-       (`ecs`), `k8s.api` (`eks`, `baremetal`); none on `lambda`;
-     - live-tracked resource usage fetchers → CPU / memory: `k8s.metrics_api` (`eks`, `baremetal`). None on
-       `ecs` or `lambda`: every AWS CPU / memory source has history and is fetched after the
-       cool-down;
+       (`ecs`); none on `lambda`;
+     - live-tracked resource usage fetchers → CPU / memory: none on `ecs` or `lambda`, since every AWS CPU / memory
+       source has history and is fetched after the cool-down;
      - `TransportCollector` (`live_track = True`) → input and output queue depth.
   2. **Cool-down only:** the step-end check reads the client, the `TransportCollector` and the primary scaling
      fetcher through `fetch()`; it only decides when the step ends.
@@ -224,7 +216,7 @@ log level with per-stage trace points on the request path.
     cool-down and the configured wait, and again by `collect-scaling`.
   - The host bundle always sets `live_track` for each fetcher (`True` for a source with no history); the default is
     never relied on.
-  - `ScalingInfo` = count samples `(ts, tier, desired|running|pending, value)` + optional worker spans
+  - `ScalingInfo` = count samples `(ts, tier, count_type, value)` + optional worker spans
     `(tier, worker, started, stopped, extra)`.
   - Loops over the deployer's `Deployment.resources` (tier → resource ids), so adding a tier changes only the
     deployer.
@@ -243,7 +235,6 @@ log level with per-stage trace points on the request path.
   | `aws.ecs_scaling_activities` | no | desired (exact decision times) | `ecs` |
   | `aws.cloudwatch_metric.ConcurrentExecutions` (`Maximum`, 60 s) | no | running | `lambda` (primary) |
   | `aws.lambda_log_streams` (one span per log stream) | no | running, spans | written, not bound; bound by hand if needed |
-  | `k8s.api` | yes | desired, running, pending, spans | `eks`, `baremetal` (primary) |
 
 - **`aws.cloudwatch_metric.ConcurrentExecutions`: missing minutes** (decided 2026-11-04, PR #893 review). Lambda sends
   no datapoint in a minute with no invocations (verified, see `research/platform-scaling-and-cost.md`), so the fetcher
@@ -254,8 +245,8 @@ log level with per-stage trace points on the request path.
   counts as not met. Only this AWS fetcher has the parameter; it isn't in `ak-bench.yaml`.
 
 - Queue depth per window (input and output separately) from the host's `TransportCollector`, chosen by transport
-  (`sqs`, `kafka`). It extends `InfoFetcher[QueueInfo]` with `live_track = True` (SQS and Kafka
-  only give the current depth); `QueueInfo` = samples `(ts, queue, waiting, in_flight)`.
+  (`sqs`). It extends `InfoFetcher[QueueInfo]` with `live_track = True` (SQS only gives the
+  current depth); `QueueInfo` = samples `(ts, queue, waiting, in_flight)`.
 - Derived per step, per tier and per fetcher (summary CSV), from `t_load_up` (first send) and `t_load_down` (end of
   load):
   - scale up: decision delay, first new worker, scale-up done, backlog drained;
@@ -279,7 +270,7 @@ log level with per-stage trace points on the request path.
   - **`ResourceSample`: one reading** of one metric for one worker (or whole tier) at one time:
     - `ts`: when the reading was taken.
     - `tier`: which tier it belongs to (a key of `Deployment.resources`, e.g. `runner`).
-    - `worker`: task id, pod name or Lambda log stream; `None` when the source only gives a whole-tier value.
+    - `worker`: task id or Lambda log stream; `None` when the source only gives a whole-tier value.
     - `metric`: what was read: `cpu_pct`, `mem_pct` or `mem_mb`.
     - `stat`: `value` for a single raw reading; `min` / `avg` / `max` when the source already aggregated it (ECS
       service metrics across tasks; Lambda readings reduced per log stream × window in the query).
@@ -304,7 +295,6 @@ log level with per-stage trace points on the request path.
   | `aws.ecs_container_insights` (performance log events, `Type = "Task"`) | no | per task | `ecs` |
   | `aws.lambda_report_memory` (`REPORT` `Max Memory Used`) | no | memory per environment | `lambda` |
   | `aws.lambda_insights` (Lambda Insights extension) | no | memory per environment | `lambda`, on by default |
-  | `k8s.metrics_api` (`metrics.k8s.io` PodMetrics) | yes | per pod | `eks`, `baremetal` |
 
 - Lambda Insights: the deployer adds the layer when on (the `layers` variable exists on every function,
   `ak-aws/serverless/variables.tf:309,328,349`, ...); a per-run config value switches it off.
@@ -314,11 +304,11 @@ log level with per-stage trace points on the request path.
 
 - One number per run:
   - **billed:** AWS Cost Explorer `GetCostAndUsage` filtered by the run tag (one value per host × mode), grouped by
-    service. Whole run only, filled later by `collect-cost`. Empty where there is no bill (bare metal).
+    service. Whole run only, filled later by `collect-cost`. Empty where a platform has no bill.
     - Metric: **`UnblendedCost`**, the usage at the rate AWS charged, **without discounts and credits** (those are
       separate line items; `NetUnblendedCost` is the after-discount view, not used). Recorded with the billed cost.
     - The tag is set **at deploy time**: the deployer puts `ak-bench-run-id=<run-id>-<host>-<mode>` on every resource it
-      creates (Terraform `default_tags`, Helm labels). The value is unique per host × execution mode (decided
+      creates (Terraform `default_tags`). The value is unique per host × execution mode (decided
       2026-11-04, PR #893 review), so each host × mode's `cost.csv` holds only its own deployment's bill. A new run gets
       new values.
     - **All the steps together, never per step:** one deployment, tagged once, serves every step of both test types,
@@ -341,7 +331,7 @@ log level with per-stage trace points on the request path.
 - A standalone project in a new top-level `benchmarks/` directory with its own `pyproject.toml` (uv), like `e2e/`.
   Not part of the `agentkernel` package.
   - Depends on `agentkernel` for `TraceStage` and the trace-line parser, and for the benchmarked app.
-  - Cloud SDKs (`boto3`, `kubernetes`), data and plotting libraries are dependencies of this project only.
+  - Cloud SDKs (`boto3`), data and plotting libraries are dependencies of this project only.
 - Components are classes with one responsibility each.
 - **Its own config file**, `ak-bench.yaml`, not `AKConfig`. Departure from the "reuse existing configuration" house
   pattern, because these are benchmark settings, not AK runtime config. Holds: hosts, modes, test types, load steps,
@@ -389,7 +379,7 @@ graph LR
   - **Run test types:** every step stores its own data: live tracking from the start of `before` to the end of the
     cool-down, then the data with history after the cool-down and the configured wait (see
     [Step timeline](#step-timeline)).
-  - Every resource the deployer creates carries the tag / label `ak-bench-run-id=<run-id>-<host>-<mode>` (one value
+  - Every resource the deployer creates carries the tag `ak-bench-run-id=<run-id>-<host>-<mode>` (one value
     per host × mode).
 
 **The whole flow** (one host × mode):
@@ -404,7 +394,7 @@ flowchart TD
         C["<b>3 · Check cool-down</b>: over when, in one poll, checked in order:<br/>1. all requests settled<br/>2. queues empty, incl. in flight<br/>3. workers back at the starting counts<br/>(max 45 min)"]
         W["<b>4 · Wait</b> (1 min)<br/>logs and metrics arrive late"]
         H["<b>5 · Fetch and store: data with history</b><br/>live_track = False · once per step<br/>fetch_and_store(step start, step end)<br/>latency stages from the logs (TraceCollector),<br/>ECS scaling activities, ConcurrentExecutions,<br/>Container / Lambda Insights, ECS service metrics"]
-        LIVE[["<b>Live InfoFetchers, in the background</b><br/>live_track = True · no history: only 'what is it now',<br/>so it has to be polled while it happens<br/>one task per fetcher, every poll_interval_s:<br/>fetch_and_store(last poll, now)<br/>ECS / K8s API worker counts,<br/>K8s metrics CPU + memory, queue depth"]]
+        LIVE[["<b>Live InfoFetchers, in the background</b><br/>live_track = True · no history: only 'what is it now',<br/>so it has to be polled while it happens<br/>one task per fetcher, every poll_interval_s:<br/>fetch_and_store(last poll, now)<br/>ECS API worker counts,<br/>queue depth"]]
 
         B --> L --> C
         C -- "no: poll again in 10 s<br/>(fetch only, no store)" --> C
@@ -420,10 +410,9 @@ flowchart TD
     DOWN -.-> BILL["<b>Billed cost</b>: ak-bench collect-cost, ~1 day later<br/>writes cost.csv, all steps together, never per step"]
 ```
 
-- **Live group (`live_track = True`):** sources with no history (ECS / K8s API counts, metrics-server,
-  queue depth) only say "what it is now", so they're polled in the background from the start of `before`. They
-  stop when the cool-down ends, because that's the step's end: the system is back where it started and the next
-  step's samples must not mix in.
+- **Live group (`live_track = True`):** sources with no history (ECS API counts, queue depth) only say "what it is
+  now", so they're polled in the background from the start of `before`. They stop when the cool-down ends, because
+  that's the step's end: the system is back where it started and the next step's samples must not mix in.
 - **After-step group (`live_track = False`):** sources with history (logs, CloudWatch metrics, ECS scaling
   activities) can be asked later for any window, so they're read once per step, after the wait for ingestion.
 - **The cool-down check** calls `fetch()` only: it needs the current values to decide, and storing is the other
@@ -432,12 +421,11 @@ flowchart TD
 
 - **Run metadata** (`run-metadata.json`), recorded before the first step. Recorded only, never compared:
   - run: run id, start time, host, platform, execution mode, region, AK version and git commit;
-  - per tier: worker size, min / max workers, autoscaling settings (target, cooldowns, HPA `behavior`, KEDA polling
-    interval, Lambda event source mapping mode / max concurrency);
-  - transport type and settings (batch size, Kafka partitions); session store type and capacity;
-  - resource usage sources: which fetchers ran, Container Insights (standard / enhanced), Lambda Insights on / off,
-    metrics-server resolution;
-  - front door (API Gateway WebSocket, ALB, Envoy Gateway, none);
+  - per tier: worker size, min / max workers, autoscaling settings (target, cooldowns, Lambda event source
+    mapping mode / max concurrency);
+  - transport type and settings (batch size); session store type and capacity;
+  - resource usage sources: which fetchers ran, Container Insights (standard / enhanced), Lambda Insights on / off;
+  - front door (API Gateway WebSocket, none);
   - benchmark settings: min / max agent delay, load steps, test types, min / max send interval, steady load time, before window, maximum
     cool-down, wait before the after-step fetch, poll intervals, client timeout, time window size, percentile method.
   - Host-side values come from the deployer; a value a host doesn't have stays empty.
@@ -531,11 +519,11 @@ flowchart TD
 - The harness (load generator, timing, CSVs, derived numbers, plots) never calls a cloud API; it only sees the ABCs
   and their common return types.
 - `Deployer`: `deploy() -> Deployment`, `teardown()`, `deployed_settings() -> dict` (for the run metadata).
-  `Deployment` has four fields, all filled from the Terraform / Helm outputs (Q9, decided 2026-11-01):
+  `Deployment` has four fields, all filled from the Terraform outputs (Q9, decided 2026-11-01):
   - `endpoint(url, auth)`: where the load generator sends.
   - `resources: {tier: resource ids}`: what each tier runs on (scaling and resource usage fetchers).
-  - `queues: {"input": ids, "output": ids}`: the two pipeline queues for the `TransportCollector` (an SQS queue URL,
-    or a Kafka topic and consumer group).
+  - `queues: {"input": ids, "output": ids}`: the two pipeline queues for the `TransportCollector` (e.g. an SQS queue
+    URL).
   - `logs: {component: log source}`: where each component logs, for the `TraceCollector` and log-based fetchers. Read
     from the deployment, not built from tier names (ECS log groups come from the task definitions).
   - Saved with the run, so the `collect-*` commands rebuild it without deploying.
@@ -565,12 +553,9 @@ flowchart TD
   |---|---|---|---|---|---|
   | `ecs` | `aws.ecs_api`, `aws.ecs_scaling_activities` | `aws.ecs_container_insights`, `aws.ecs_service_metrics` | CloudWatch Logs | `sqs` | Cost Explorer |
   | `lambda` | `aws.cloudwatch_metric.ConcurrentExecutions` | `aws.lambda_insights`, `aws.lambda_report_memory` | CloudWatch Logs | `sqs` | Cost Explorer |
-  | `eks` | `k8s.api` | `k8s.metrics_api` | decided later (L1) | `kafka` | Cost Explorer |
-  | `baremetal` | `k8s.api` | `k8s.metrics_api` | pod logs / Loki | `kafka` | none |
 
 - Benchmark deployment settings, applied by the deployers and recorded in the metadata:
   - `ecs`: `scaling_config.enabled = true`, `min_count >= 1`.
-  - `eks`, `baremetal`: `keda.enabled: true`, `transport.type: kafka`.
   - `lambda`: zip packaging (Lambda Insights layer); agent runner timeout **60 s** (AK default 45 s, but 10 messages ×
     the 5 s max agent delay = 50 s); `batch_size × max agent delay` stays under the agent runner timeout (decided
     2026-11-04, PR #893 review). The input queue visibility timeout stays at AK's default 60 s (Lambda needs it ≥ the
@@ -700,14 +685,14 @@ flowchart TD
 ## Non-goals
 
 - Flagging (Rx below Tx, saturation), alerts, early stops, or load / deployment changes based on results.
-- Preventing or working around bottlenecks outside AK's workers (load generator, API Gateway quotas, ALB, Kafka
-  partitions, node capacity).
+- Preventing or working around bottlenecks outside AK's workers (load generator, API Gateway quotas, ALB).
 - Recording the load generator's own health.
 - Comparing hosts with each other (no cross-host graphs).
 - Non-queue execution; `rest_sync` in any round.
 - WebSocket delta and `rest_async` drivers in phase 1 (designed for, added later).
 - WebSocket connect part and front-door scaling (later).
 - Repeated runs with spread across runs (later).
+- Kubernetes hosts (EKS, then bare metal) with Kafka: right after the AWS hosts; designed when they're built.
 - GCP, Azure and NATS hosts (interfaces allow them; nothing built).
 - Vertical scaling.
 - LLM latency and token cost.
@@ -744,7 +729,7 @@ Answered by looking at real data, not by a decision. Each has a fallback already
 - **R5.** ECS: Container Insights `Type = "Task"` events exist for Fargate tasks (only non-AWS examples so far).
 - **R6.** ECS: whether target tracking on a custom metric still uses the 3 / 15 one-minute datapoint rule after AWS's
   June 2026 faster-scaling change (check the CloudWatch alarms the policy creates).
-- **R7.** Cost: the run tag / label reaches every billed resource; anything untagged or shared is listed as a fixed
+- **R7.** Cost: the run tag reaches every billed resource; anything untagged or shared is listed as a fixed
   allocation.
 - **R8.** Sessions: one client can have several requests in flight, handled by different workers, and AK's session
   locks are per process. The pre-hook doesn't save the turn (`core/runtime.py:405` before `:427`), but confirm on the

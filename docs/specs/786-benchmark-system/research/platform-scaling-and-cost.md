@@ -7,12 +7,12 @@ pass/fail checks.
 
 ## Pluggable per-platform collectors
 
-Every cloud has its own APIs for worker counts and cost (ECS `DescribeServices` vs. the K8s API vs. GCP Cloud
-Monitoring / Azure Monitor; AWS Cost Explorer vs. GCP BigQuery billing export vs. Azure Cost Management). GCP and Azure
+Every cloud has its own APIs for worker counts and cost (ECS `DescribeServices` vs. GCP Cloud Monitoring /
+Azure Monitor; AWS Cost Explorer vs. GCP BigQuery billing export vs. Azure Cost Management). GCP and Azure
 are coming later, so the platform-specific parts are kept behind interfaces and everything else is shared:
 
 ```
-Host (registered by name, e.g. "ecs", "lambda", "eks", "baremetal", later "cloud_run", "aca")
+Host (registered by name, e.g. "ecs", "lambda", later "cloud_run", "aca")
 ├── Deployer            deploy() -> Deployment(endpoint(url, auth), resources: {tier: resource id},
 │                                  queues: {"input": ids, "output": ids}, logs: {component: log source})
 │                       teardown()
@@ -22,7 +22,7 @@ Host (registered by name, e.g. "ecs", "lambda", "eks", "baremetal", later "cloud
 ├── TraceCollector      fetch(run, deployment, start, end) -> TraceInfo  (stage timestamps per request, from the AK trace logs)
 ├── BillingReader       billed(run) -> [CostItem(component, usd)] | None   (one per cloud; later step; None if no bill)
 └── TransportCollector  fetch(run, deployment, start, end) -> QueueInfo  (queue depth: waiting, in flight, per queue;
-                        picked by transport: sqs, kafka, later pubsub, servicebus)
+                        picked by transport: sqs, later pubsub, servicebus)
 ```
 
 - **One base class for everything read from the platform during a step:** `ScalingInfoFetcher`,
@@ -43,9 +43,9 @@ Host (registered by name, e.g. "ecs", "lambda", "eks", "baremetal", later "cloud
   source output into per-window worker counts, all derived numbers (scale-up/down times),
   CSV writing and graphs. It only sees the common return types above.
 - **Per-platform code:** only the API calls that fill those types. A field with no source on a platform (e.g. `desired`
-  on Lambda, `billed` on bare metal) is returned as empty and the column stays blank.
-- **Reuse within a platform family:** e.g. one K8s scaling info fetcher serves EKS, bare metal and later GKE/AKS (they
-  differ only in their billing reader); the AWS billing reader is shared by Lambda, ECS and EKS.
+  on Lambda) is returned as empty and the column stays blank.
+- **Reuse within a platform family:** e.g. the AWS billing reader, the CloudWatch Logs trace collector and the SQS
+  transport collector are shared by Lambda and ECS.
 - **Adding GCP or Azure** = implement these for the new host and register it. No changes to the harness, CSVs
   or plots.
 - Worker counts come only from the platform side (APIs, metrics, logs). Nothing in AK or the benchmark pre-hook
@@ -58,9 +58,9 @@ approved).
 
 ### Terminology
 
-- **Horizontal scaling:** changing the **number** of workers (tasks, pods, Lambda execution environments). Each
+- **Horizontal scaling:** changing the **number** of workers (tasks, Lambda execution environments). Each
   worker stays the same size. The usual names are **scale out** (add workers) and **scale in** (remove workers).
-- **Vertical scaling:** changing the **size** of each worker (more or less CPU/memory per task or pod, a bigger Lambda
+- **Vertical scaling:** changing the **size** of each worker (more or less CPU/memory per task, a bigger Lambda
   memory setting). The number of workers stays the same. This is usually called **scale up / scale down**.
 - **The benchmark tracks horizontal scaling only.** Worker size is a fixed deployment setting for each run, and it's
   saved in the run metadata next to the autoscaling settings.
@@ -77,10 +77,6 @@ sets that delay:
 - **ECS:** target tracking only scales down after **15 consecutive one-minute datapoints** below target (so ~15 min after
   the load drops), then each scale-down step is followed by `scale_in_cooldown` (`scaling_config`; our Terraform default is 120 s, the
   Application Auto Scaling default for ECS is 300 s).
-- **EKS / bare metal:** our chart uses `keda.minReplicaCount: 1`, so scaling from N back to 1 is done by the **HPA**
-  that KEDA creates, not by KEDA. The HPA's scale-down stabilization window is 300 s by default (configurable through
-  the ScaledObject's `horizontalPodAutoscalerConfig.behavior`). KEDA's `cooldownPeriod` only applies when scaling to 0,
-  so it doesn't matter here.
 - **Lambda:** concurrency falls as soon as invocations stop; the SQS pollers scale back down on their
   own.
 
@@ -108,9 +104,6 @@ with history. Live tracking runs from the start of "before" to the end of the co
        still being worked on (e.g. a timed-out request in a step that never scaled) can read 0 once. The rule assumes
        a message still waiting or being worked on reads non-zero in at least one poll within 60 s, so 60 s of zeros is
        taken as empty. It's not a hard guarantee, since both counts are approximate.
-     - Kafka: consumer-group lag is 0 on the input and output topics. AK commits offsets only after processing a
-       message (`ak-py/src/agentkernel/pipeline/transport/kafka.py`), so a message being processed still counts as
-       lag.
   3. **Workers back (primary fetcher):** the running count of every tier is back at its count at the end of the
      "before" part.
   - A condition with no source on a host counts as met.
@@ -123,8 +116,7 @@ with history. Live tracking runs from the start of "before" to the end of the co
     processed. Checking only 3 (or 3 + waiting messages) would end the step too early and mix its last responses into
     the next step.
   - The check calls the primary fetcher's plain `fetch()` (reads, stores nothing), whether it's live-tracked or not.
-  - ECS and K8s: the primary fetchers (`aws.ecs_api`, `k8s.api`) read the current state, so the end is seen within
-    one poll.
+  - ECS: the primary fetcher (`aws.ecs_api`) reads the current state, so the end is seen within one poll.
   - Lambda: the primary fetcher (`aws.cloudwatch_metric.ConcurrentExecutions`) isn't live-tracked, but the check
     still calls its `fetch()` for the latest minutes, accepting the CloudWatch delay. Lambda sends no datapoint in a
     minute with no invocations (verified, see [Open points](#open-points)), so the fetcher reads a minute with no
@@ -144,11 +136,10 @@ with history. Live tracking runs from the start of "before" to the end of the co
   - ECS is the slowest: target tracking starts scaling in only after 15 one-minute datapoints below target (~15 min),
     then waits `scale_in_cooldown` (our Terraform default 120 s) between scale-in activities, and target tracking
     removes capacity more conservatively than it adds it. So a normal ECS scale-in is expected to take ~15–25 min.
-  - K8s (HPA, 5 min default stabilization window) and Lambda (concurrency drops when invocations stop) are expected
-    to finish well within it.
+  - Lambda (concurrency drops when invocations stop) is expected to finish well within it.
   - 45 min leaves room for an ECS scale-in that takes several activities, without cutting it off and losing the
     scale-down result. Waiting too long only costs time; ending too early loses data.
-  - Can be set per host (e.g. lower for K8s / Lambda) once real scale-in times are known.
+  - Can be set per host (e.g. lower for Lambda) once real scale-in times are known.
 - The steps are run one after another (steady N, then burst N, then the next N; the next starts only after the
   previous step's wait + fetch), so each step starts from the minimum workers.
 
@@ -159,10 +150,8 @@ Added to the per-time-window CSV, next to Tx/Rx/errors:
 - **Desired workers:** what the autoscaler asked for.
 - **Running workers:** what the platform says is running. On serverless hosts this is the number of instances that
   were handling work in the window (that's what their metrics and logs count).
-- **Pending workers** (K8s only): pods created but not scheduled, e.g. when bare-metal nodes are full.
 - **Queue depth:** input and output queue backlog, each queue in its own column (SQS
-  `ApproximateNumberOfMessages` waiting and `ApproximateNumberOfMessagesNotVisible` in flight, Kafka consumer-group
-  lag).
+  `ApproximateNumberOfMessages` waiting and `ApproximateNumberOfMessagesNotVisible` in flight).
 - **Latency percentiles** (p0 / p25 / p50 / p75 / p99 / p100) of requests completed in that window.
 
 Worker counts are recorded **per tier** and **per scaling info fetcher** (below). Which tiers scale depends on the host
@@ -195,11 +184,11 @@ class, `ScalingInfoFetcher`, so a new way can be added for any host without touc
   - `fetch_and_store(...)`: written once in `InfoFetcher`, the base class of every fetcher (see
     [Pluggable per-platform collectors](#pluggable-per-platform-collectors)); calls `fetch()`, then `store()`.
   - Constructor parameters: `live_track: bool = False`, and `poll_interval_s` (how often a live-tracked fetcher is
-    polled; default from `ak-bench.yaml`, settable per fetcher, since sources differ: e.g. metrics-server updates
-    every 15 s, the ECS API has request rate limits).
+    polled; default from `ak-bench.yaml`, settable per fetcher, since sources differ: e.g. the ECS API has request
+    rate limits).
 - **`live_track` only sorts the fetchers into two groups.** The runner reads it before each step; nothing inside a
   fetcher depends on it. Data is available at different times, but the calls are the same:
-  - **`live_track = True`:** management APIs (ECS, K8s, Azure Container Apps) only show the current state, so a
+  - **`live_track = True`:** management APIs (ECS, Azure Container Apps) only show the current state, so a
     background task calls `fetch_and_store` every `poll_interval_s` with (last poll, now), from the start of the
     step's "before" part until the cool-down ends. Each poll covers only the new time, so nothing is stored twice.
   - **`live_track = False`:** monitoring metrics and logs keep history but arrive late, so `fetch_and_store` is
@@ -212,12 +201,12 @@ class, `ScalingInfoFetcher`, so a new way can be added for any host without touc
   on where the data comes from, not on the deployment type.
 - **Common return type (`ScalingInfo`):** every fetcher returns the same data, so the shared code never knows where it
   came from:
-  - **Count samples:** `(ts, tier, count type, value)`, count type = desired / running / pending.
+  - **Count samples:** `(ts, tier, count type, value)`, count type = desired / running.
   - **Worker spans** (optional, from fetchers that see individual workers): `(tier, worker, started, stopped)`, plus
     extra fields where useful (e.g. ECS `pullStartedAt`). The shared code turns spans into a
     running count at any window size, so these give exact times, not just poll-interval resolution.
 - **Which resources to watch:** a fetcher gets the per-tier resource ids from the deployer's `Deployment.resources`
-  (ECS cluster and service names, K8s Deployment names, Lambda function names, ...), so it needs no extra config.
+  (ECS cluster and service names, Lambda function names, ...), so it needs no extra config.
 - **One `fetch()` covers every tier:** the fetcher loops over `Deployment.resources` and runs the same code for each
   tier, tagging each count with its tier name. No per-tier code.
   - ECS: one `aws.ecs_api` call reads the agent runner service and the IO service.
@@ -237,7 +226,7 @@ class, `ScalingInfoFetcher`, so a new way can be added for any host without touc
 - **Reuse across platforms:** generic fetchers take constructor parameters instead of being rewritten, e.g. one cloud
   metric fetcher per monitoring backend (CloudWatch, Cloud Monitoring, Azure Monitor) given the metric name, and one
   "distinct instance ids in the logs" fetcher per log backend given the id field. The log-based ones share the log
-  fetching code with the TraceCollector for the same backend. One K8s fetcher serves EKS, bare metal, GKE and AKS.
+  fetching code with the TraceCollector for the same backend.
 - **A count with no fetcher** on a platform (e.g. `desired` on Lambda) stays empty.
 
 Class sketch and a worked example: to be specified in the implementation spec (written after this design is approved).
@@ -248,7 +237,6 @@ Fetchers per host (✓ = available now, later = when the platform is added), pri
 |------|---------|--------|-------|------------|
 | ECS ✓ | `aws.ecs_api`: `DescribeServices` (`desiredCount`, `runningCount`) + `DescribeTasks` (task `createdAt` / `pullStartedAt` / `startedAt` / `stoppedAt`) | yes | desired, running, spans | poll interval; spans exact |
 | ECS ✓ | `aws.ecs_scaling_activities`: Application Auto Scaling `DescribeScalingActivities` (`StartTime`, "Setting desired count to N") | no | desired | exact |
-| EKS / bare metal ✓, GKE / AKS later | `k8s.api`: Deployment `spec.replicas` (set by KEDA/HPA), `readyReplicas`, pod start/stop times, `Pending` pods | yes | desired, running, pending, spans | poll interval; spans exact |
 | Lambda ✓ | `aws.cloudwatch_metric.ConcurrentExecutions`: CloudWatch `AWS/Lambda` metric per function (`FunctionName` dimension), `Maximum` statistic | no | running | 1 min |
 | Lambda (written, not bound to the host) | `aws.lambda_log_streams`: one span per log stream (= per execution environment), from its first to its last `REPORT` line | no | running, spans | exact to about one invocation |
 | Azure Container Apps (later) | `azure.aca_replicas_api`: List Replicas (`createdTime`, `runningState`) | yes | running, spans | poll interval |
@@ -258,8 +246,8 @@ Fetchers per host (✓ = available now, later = when the platform is added), pri
 | Azure Functions Flex (later) | `azure.app_insights_instances`: `dcount(cloud_RoleInstance)` per window | no | running | any window size |
 | Azure Functions Flex (later) | `azure.monitor_metric`: instance count (emitted every 30 s) | no | running | 30 s |
 
-- Only ECS and K8s expose a **desired** count. Lambda, Cloud Run and Azure Functions have none, and Azure Container
-  Apps runs KEDA internally without exposing it.
+- Only ECS exposes a **desired** count. Lambda, Cloud Run and Azure Functions have none, and Azure Container Apps
+  doesn't expose one.
 - **Lambda: only `aws.cloudwatch_metric.ConcurrentExecutions` is bound to the host.** `aws.lambda_log_streams` is
   written too but not bound; see [Lambda: `ConcurrentExecutions` bound, log streams written but not bound](#lambda-concurrentexecutions-bound-log-streams-written-but-not-bound) below.
   - `ConcurrentExecutions` is "the number of active concurrent invocations at a given point in time". Lambda emits it
@@ -365,12 +353,10 @@ Worker counts (from → to), recorded per tier, count type (desired / running) a
   CloudWatch labels each value with the start of its minute, but the count could have been reached at any moment in
   that minute. So "10:01 → 61 workers" means "61 reached by 10:02:00". This applies to every time read from such a
   value (first new worker, scale-up done, scale-down start / done). Otherwise scale-up could look finished at the same
-  moment as the first send. ECS and K8s counts come from live polls with exact times and need no such rule.
+  moment as the first send. ECS counts come from live polls with exact times and need no such rule.
   - Platforms don't add workers evenly. They add them in steps, e.g. ECS goes 2 → 8 at minute 4, waits out the
     scale-out cooldown, then goes 8 → 18. The rate smooths these steps into one number, which hides the shape.
   - The step pattern itself is seen in the worker-count graph, not in this number. What sets the steps:
-    - K8s HPA: re-evaluates every 15 s and by default adds at most 4 pods or 100% of current replicas (whichever is
-      more) per 15 s.
     - ECS target tracking: each scaling activity adds capacity in proportion to how far the metric is above target, then
       waits for the scale-out cooldown (300 s Application Auto Scaling default for ECS; our Terraform sets 30 s) before
       adding more, unless a larger scale-out is
@@ -388,12 +374,6 @@ Worker counts (from → to), recorded per tier, count type (desired / running) a
   plus Fargate task start (image pull + container start). AWS measured ~6 min on average to trigger scale-out with
   60 s metrics. The 20 s high-resolution metrics AWS launched in June 2026 (~86 s to trigger) only cover the built-in
   CPU/memory metrics, not custom metrics like ours.
-- **EKS / bare metal:** scaling from 1 to N is driven by the HPA, which re-reads the metric every **15 s** (default
-  sync period). KEDA's `pollingInterval` (30 s) only matters when scaling up from 0. By default the HPA adds at most
-  **4 pods or 100% of current replicas (whichever is more) per 15 s**, so a big load increase is followed in steps. Pod start adds
-  image pull and startup. On bare metal there's no node autoscaler, so scaling stops when the nodes are full (pods go
-  `Pending`; record the pending count too). Max replicas are capped by the input topic's Kafka partitions (KEDA's
-  Kafka scaler won't go past the partition count unless `allowIdleConsumers: true`).
 - **Lambda:** no explicit workers. With the SQS event source mapping in default mode, Lambda starts with 5 concurrent
   invokes and adds up to **300 per minute**, up to **1,250** per mapping (and within the account concurrency quota,
   1,000 by default). An optional *provisioned mode* (min/max event pollers) scales faster. Scale-down is effectively
@@ -417,8 +397,7 @@ Worker counts (from → to), recorded per tier, count type (desired / running) a
     roughly 100, not 1000 (rough estimate, not measured).
 
 All autoscaling settings for the run (returned by the Deployer's `deployed_settings()`) are saved in the run metadata so the times can be explained later: min/max,
-target, cooldowns, HPA `behavior`, KEDA polling interval, Kafka partitions, Lambda ESM mode / max concurrency, and
-the worker size (task vCPU/memory, pod resource requests/limits, Lambda memory).
+target, cooldowns, Lambda ESM mode / max concurrency, and the worker size (task vCPU/memory, Lambda memory).
 
 ### Graphs
 
@@ -433,15 +412,15 @@ What a run **actually cost**, read from the cloud's bill, for the whole run.
 
 ### How the cost code is split
 
-- **Billing reader:** one per cloud (AWS: Cost Explorer). Returns `None` where there's no bill (bare metal), and
-  the cost columns stay blank.
+- **Billing reader:** one per cloud (AWS: Cost Explorer). Returns `None` where a platform has no bill, and the
+  cost columns stay blank.
 - **Shared code:** writes the cost CSV and draws the cost graph. It never calls a cloud API.
 - Adding a cloud = its billing reader.
 
 ### Billed cost of each run
 
-**Tag everything.** Every resource the runner deploys gets a `ak-bench-run-id` tag (Terraform `default_tags`, Helm
-labels). The billed cost is AWS Cost Explorer `GetCostAndUsage` filtered by the run tag, grouped by service.
+**Tag everything.** Every resource the runner deploys gets a `ak-bench-run-id` tag (Terraform `default_tags`).
+The billed cost is AWS Cost Explorer `GetCostAndUsage` filtered by the run tag, grouped by service.
 
 - **One tag value per host × execution mode** (decided 2026-11-04, PR #893 review): `<run-id>-<host>-<mode>`, e.g.
   `<run-id>-lambda-async`. Each host × mode has its own deployment, so its `cost.csv` holds only that deployment's
@@ -465,9 +444,8 @@ labels). The billed cost is AWS Cost Explorer `GetCostAndUsage` filtered by the 
 - **Daily granularity** (decided 2026-10-29): every host × mode of every run has its own tag value, so its billed cost
   is the sum of the daily rows for that value over the days the run covered (two days if it crosses midnight).
   Hourly isn't used.
-- Shared or long-lived resources (EKS control plane, NAT gateway, a long-lived MSK cluster) can be tagged, but if
-  they're shared across runs or used by other things, their cost must be listed as a fixed allocation instead. The automatic
-  `aws:eks:cluster-name` tag doesn't cover the EKS control plane fee.
+- Shared or long-lived resources (e.g. a NAT gateway) can be tagged, but if they're shared across runs or used by
+  other things, their cost must be listed as a fixed allocation instead.
 - **Output:** `cost.csv` per host × mode: the billed cost per service and in total, the metric name and the dates
   covered.
 - With the mock agent, the cost covers **AK infrastructure only**; LLM token costs are excluded.
@@ -503,9 +481,6 @@ labels). The billed cost is AWS Cost Explorer `GetCostAndUsage` filtered by the 
 ## Sources (checked 2026-10-20; GCP / Azure scaling fetchers checked 2026-10-22; Lambda metrics checked 2026-10-23)
 
 - Horizontal vs. vertical scaling terms: https://wa.aws.amazon.com/wellarchitected/2020-07-02T19-33-23/wat.concept.horizontal-scaling.en.html
-- KEDA ScaledObject spec (`pollingInterval`, `cooldownPeriod`): https://keda.sh/docs/2.18/reference/scaledobject-spec/
-- KEDA Kafka scaler (`allowIdleConsumers`): https://keda.sh/docs/2.17/scalers/apache-kafka
-- Kubernetes HPA (sync period, default `behavior`): https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/
 - Application Auto Scaling target tracking (cooldown defaults; scale-in more conservative than scale-out): https://docs.aws.amazon.com/autoscaling/application/userguide/target-tracking-scaling-policy-overview.html
 - Lambda sends metric data to CloudWatch in 1-minute intervals, when a function finishes processing an event: https://docs.aws.amazon.com/lambda/latest/dg/monitoring-metrics.html
 - Target tracking 3 / 15 datapoints and the June 2026 faster scaling: https://github.com/aws/containers-roadmap/issues/2113
@@ -532,4 +507,3 @@ labels). The billed cost is AWS Cost Explorer `GetCostAndUsage` filtered by the 
 - Cost Explorer `UnblendedCost` vs `NetUnblendedCost` (discounts as separate line items; net = after discounts), checked 2026-11-02: https://docs.aws.amazon.com/cost-management/latest/userguide/ce-advanced.html, https://docs.aws.amazon.com/cost-management/latest/userguide/ce-exploring-data.html
 - SQS `GetQueueAttributes` (`ApproximateNumberOfMessages`, `ApproximateNumberOfMessagesNotVisible` = in flight, consistent only ≥ 1 min after producers stop): https://docs.aws.amazon.com/AWSSimpleQueueService/latest/APIReference/API_GetQueueAttributes.html
 - Fargate pricing: https://aws.amazon.com/fargate/pricing/
-- EKS cost awareness (control plane tagging): https://docs.aws.amazon.com/eks/latest/best-practices/cost-opt-awareness.html

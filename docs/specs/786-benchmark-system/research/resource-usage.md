@@ -30,7 +30,7 @@ class ResourceSample:
 
     ts: datetime            # when the reading was taken
     tier: str               # which tier it's for: a key of Deployment.resources, e.g. "runner", "io"
-    worker: str | None      # which worker: task id, pod name, Lambda log stream; None = one value for the whole tier
+    worker: str | None      # which worker: task id, Lambda log stream; None = one value for the whole tier
     metric: str             # what was read: "cpu_pct" / "mem_pct" / "mem_mb"
     stat: str               # "value" = a raw reading; "min" / "avg" / "max" = the source already aggregated it
     value: float            # the number
@@ -109,7 +109,7 @@ class ResourceUsageFetcher(InfoFetcher[ResourceUsage]):
   a tier needs no change here.
 - **Per worker where the source has it, per tier where it doesn't.** `worker = None` marks a whole-tier value (e.g.
   the ECS service average).
-- **Units:** CPU as a % of what one worker has (task vCPU, pod request/limit; Lambda has no CPU, see [Lambda](#lambda)), memory in MiB and as a %
+- **Units:** CPU as a % of what one worker has (task vCPU; Lambda has no CPU, see [Lambda](#lambda)), memory in MiB and as a %
   of the worker's memory, so hosts with different worker sizes read the same way. The worker size is already in the
   run metadata.
 - **Called the same way as the scaling fetchers:** `live_track = True` ones by the step's background task (every
@@ -246,20 +246,6 @@ Bound: both. `aws.lambda_report_memory` always (free). `aws.lambda_insights` is 
 value switches it off (e.g. to check how much latency the extension adds). The deployer adds the layer when it's on (no
 IAM change, see above); the run metadata records whether it was.
 
-## Kubernetes (EKS, bare metal)
-
-Less researched; to check before building.
-
-- **`k8s.metrics_api`** (`live_track = True`): the `metrics.k8s.io` API (`PodMetrics`, from metrics-server) gives each container's
-  CPU (cores) and memory (bytes). `worker` = pod name. metrics-server must be installed in the cluster. It gives raw
-  usage; % is worked out against the pod's requests/limits (as `kubectl top` / the HPA do).
-  - **Resolution:** the metrics-server binary defaults to 60 s, but its official install manifest and Helm chart set
-    `--metric-resolution=15s`. 15 s is also the finest the kubelet gives. An install with other args may differ, so
-    the run metadata records the cluster's value.
-  - metrics-server says it's "meant only for autoscaling purposes" and not "an accurate source of resource usage
-    metrics". A Prometheus / cAdvisor fetcher can be added later if
-    it isn't good enough.
-
 ## What's recorded
 
 - **Per-time-window CSV:** per tier × metric × stat × fetcher, e.g. `runner.cpu_pct.avg.aws.ecs_service_metrics`,
@@ -286,7 +272,7 @@ Less researched; to check before building.
     names it. The other fetchers stay in the CSVs.
   - Lambda: a time window with no invocations has no sample, so the line has a gap there (not drawn as 0).
 - **Run metadata:** which resource fetchers ran, and whether Container Insights (standard / enhanced) and Lambda
-  Insights were on, and the K8s metrics-server resolution.
+  Insights were on.
 
 ## Open points
 
@@ -315,5 +301,3 @@ Less researched; to check before building.
 - Fargate `Type = "Task"` event with `LaunchType: FARGATE`, one per minute (AWS developer advocate's blog, 2022): https://nathanpeck.com/diving-into-amazon-ecs-task-history-with-container-insights/
 - Fargate per-task Container Insights queries (community): https://dev.classmethod.jp/articles/record-fargate-per-task-cpu-and-memory-usage-in-cloudwatch-metrics/
 - Logs Insights result limit (100,000 with `limit` and paging, from May 2026; default 10,000): https://aws.amazon.com/de/about-aws/whats-new/2026/05/cloudwatch-logs-query-results/, https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/CWL_QuerySyntax-Limit.html
-- metrics-server (autoscaling only, 15 s): https://github.com/kubernetes-sigs/metrics-server/blob/master/README.md
-- metrics-server defaults (binary 60 s; manifest / Helm chart `--metric-resolution=15s`): https://github.com/kubernetes-sigs/metrics-server/blob/master/cmd/metrics-server/app/options/options.go, https://github.com/kubernetes-sigs/metrics-server/blob/master/charts/metrics-server/values.yaml
