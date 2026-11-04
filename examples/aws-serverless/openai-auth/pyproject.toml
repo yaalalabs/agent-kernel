@@ -11,16 +11,16 @@ dependencies = [
 [dependency-groups]
 dev = [
     "agentkernel[test]>=0.9.5",
-    "black==26.5.1",
-    "isort>=5.0.0",
-    "mypy>=1.0.0",
+    "black==26.10.1",
+    "isort>=5.0.0,<10.0.0",
+    "mypy>=1.0.0,<3.0.0",
 ]
 auth = [
     "agentkernel>=0.9.5",
     "annotated-types==0.7.0",
     "cffi==2.1.1",
     "cryptography==50.0.1",
-    "PyJWT>=2.13.0",
+    "PyJWT>=2.15.0,<3.0.0",
     "pycparser==3.0",
     "pydantic==2.12.5",
     "pydantic-settings==2.15.0",

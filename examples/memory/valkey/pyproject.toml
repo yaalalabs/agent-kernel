@@ -9,15 +9,15 @@ dependencies = [
     # The published agentkernel 0.6.1 does not declare a `valkey` extra (added after release),
     # so `agentkernel[valkey]` resolves to nothing from PyPI. Require valkey directly so it is
     # always installed into the Lambda deployment package.
-    "valkey>=6.0.0",
+    "valkey>=6.0.0,<7.0.0",
 ]
 
 [dependency-groups]
 dev = [
     "agentkernel[test]>=0.9.5",
-    "black==26.5.1",
-    "isort>=5.0.0",
-    "mypy>=1.0.0",
+    "black==26.10.1",
+    "isort>=5.0.0,<10.0.0",
+    "mypy>=1.0.0,<3.0.0",
 ]
 
 [tool.uv]

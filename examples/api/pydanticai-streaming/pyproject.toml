@@ -9,15 +9,15 @@ dependencies = [
     # agentkernel[pydanticai] installs the provider-agnostic pydantic-ai-slim core only — pick a
     # model provider explicitly. This demo uses OpenAI; swap for [anthropic], [google], etc.
     "pydantic-ai-slim[openai]>=2.13.0",
-    "python-multipart>=0.0.12",
+    "python-multipart>=0.0.12,<0.1.0",
 ]
 
 [dependency-groups]
 dev = [
     "agentkernel[test]>=0.9.5",
-    "black==26.5.1",
-    "isort>=5.0.0",
-    "mypy>=1.0.0",
+    "black==26.10.1",
+    "isort>=5.0.0,<10.0.0",
+    "mypy>=1.0.0,<3.0.0",
 ]
 
 [tool.uv]

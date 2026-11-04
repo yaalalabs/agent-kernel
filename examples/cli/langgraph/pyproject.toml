@@ -6,18 +6,18 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "agentkernel[cli,langgraph]>=0.9.5",
-    "langchain-litellm>=0.2.2",
-    "langchain-openai>=1.1.16",
-    "langgraph-supervisor>=0.0.29",
-    "openai>=1.99.1",
+    "langchain-litellm>=0.2.2,<0.12.0",
+    "langchain-openai>=1.1.16,<2.0.0",
+    "langgraph-supervisor>=0.0.29,<0.1.0",
+    "openai>=1.99.1,<4.0.0",
 ]
 
 [dependency-groups]
 dev = [
     "agentkernel[test]>=0.9.5",
-    "black==26.5.1",
-    "isort>=5.0.0",
-    "mypy>=1.0.0",
+    "black==26.10.1",
+    "isort>=5.0.0,<10.0.0",
+    "mypy>=1.0.0,<3.0.0",
 ]
 
 [tool.uv]
