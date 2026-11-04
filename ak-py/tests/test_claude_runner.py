@@ -1411,3 +1411,42 @@ class TestHITLRejectsAnUnanswerableResume:
 
         with pytest.raises(ValueError, match="only carry a JSON object"):
             await agent.runner.resume(agent, session, requests, decisions, record)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "extra",
+        [
+            AgentRequestText(prompt="thanks"),
+            AgentRequestImage(image_data="aGk=", name="a.png", mime_type="image/png"),
+            AgentRequestFile(file_data="JVBE", name="a.pdf", mime_type="application/pdf"),
+        ],
+        ids=["text", "image", "file"],
+    )
+    async def test_new_input_alongside_a_decision_is_refused(self, fake_client, runtime, extra):
+        # Claude Code would answer the new input and drop the deferred call, losing the approval silently.
+        agent = _module(_gated_spec()).get_agent("gated")
+        session = Session("s")
+        fake_client.script = [_defer()]
+        paused = await agent.runner.run(agent, session, [AgentRequestText(prompt="hi")])
+        record = PausedRunState.get(session, paused.run_id)
+        requests, decisions = _resume_requests(ResumeDecision(id=paused.interruptions[0].id, status="approved"))
+
+        with pytest.raises(ValueError, match="drops the deferred call"):
+            await agent.runner.resume(agent, session, [extra, *requests], decisions, record)
+        assert len(fake_client.instances) == 1  # no CLI run was started for the resume
+        assert PausedRunState.get(session, paused.run_id) is not None  # the pause is kept, so the caller can retry
+
+    @pytest.mark.asyncio
+    async def test_a_prompt_alongside_a_streamed_decision_is_refused(self, fake_client, runtime):
+        agent = _module(_gated_spec()).get_agent("gated")
+        session = Session("s")
+        fake_client.script = [_defer()]
+        paused = await agent.runner.run(agent, session, [AgentRequestText(prompt="hi")])
+        record = PausedRunState.get(session, paused.run_id)
+        requests, decisions = _resume_requests(ResumeDecision(id=paused.interruptions[0].id, status="approved"), prompt="thanks")
+
+        with pytest.raises(ValueError, match="drops the deferred call"):
+            async for _ in agent.runner.resume_stream(agent, session, requests, decisions, record):
+                pass
+        assert len(fake_client.instances) == 1
+        assert PausedRunState.get(session, paused.run_id) is not None

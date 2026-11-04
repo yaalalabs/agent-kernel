@@ -180,7 +180,7 @@ where it can still reach you, rather than being flattened into "something went w
 | | OpenAI | LangGraph | Pydantic AI | Google ADK | Microsoft Agent Framework | Claude Agent SDK |
 |---|---|---|---|---|---|---|
 | A structured `payload` | **rejected** | yes | on an approval, an **object** only | on a confirmation, **rejected** | **rejected** | on an approval, an **object** only |
-| A `prompt` beside a decision | **rejected** | yes | yes | **rejected** | **rejected** | yes |
+| A `prompt` beside a decision | **rejected** | yes | yes | **rejected** | **rejected** | **rejected** |
 | A second pause in one session | **appends** | replaces | replaces | replaces | replaces | replaces |
 | `cancelled` distinguishable from `denied` | yes | yes | yes | **no, on a confirmation** | **no** | yes |
 | Detects a stale resume | **no** | n/a — re-pauses | yes, refuses | no | yes, refuses | yes, refuses |

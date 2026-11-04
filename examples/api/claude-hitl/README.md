@@ -54,5 +54,8 @@ The SDK only honors `defer` when Claude makes one tool call in a turn; the promp
 This live run is the check for the exact SDK pause and replay behavior that the adapter's fake
 client tests cannot prove.
 
+Run the live check with `uv run pytest app_test.py -q`. It asserts the pause, a single execution on
+approval, and no execution on denial, using the server log.
+
 The example uses an in-memory session store, so keep the API process running between the two
 requests. For a restart or multiple workers, configure a shared session store such as Redis.

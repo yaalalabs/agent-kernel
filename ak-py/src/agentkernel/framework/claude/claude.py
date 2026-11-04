@@ -611,6 +611,29 @@ class ClaudeRunner(BaseRunner):
                 f"another shape. The payload becomes the tool call's updated input, so send an object of argument names."
             )
 
+    @staticmethod
+    def _reject_prompt_alongside(requests: list[AgentRequest]) -> None:
+        """
+        Refuses new input riding along with a decision, before the adapter's `try` opens.
+
+        Claude Code's documented defer contract: if a prompt is sent with the resume, it "answers it without the
+        tool's result and drops the deferred call". Any text, image or file becomes that prompt, so forwarding it
+        would lose the human's decision while the run still reported success. Unlike ADK and MAF, attachments are
+        refused too, since they reach Claude as the same user message.
+
+        :param requests: The hook-processed request list.
+        :raises ValueError: If any request carries text, an image, a file or audio.
+        """
+        if any(
+            (isinstance(req, AgentRequestText) and req.prompt) or isinstance(req, (AgentRequestImage, AgentRequestFile, AgentRequestVoice))
+            for req in requests
+        ):
+            raise ValueError(
+                "The Claude Agent SDK adapter cannot carry a prompt or attachment alongside a decision: Claude Code answers "
+                "new input sent with a resume without the tool's result and drops the deferred call. "
+                "Send the prompt as a separate turn once the run has resumed."
+            )
+
     @property
     def supports_pause(self) -> bool:
         """
@@ -699,6 +722,7 @@ class ClaudeRunner(BaseRunner):
         :param record: The record Runtime validated.
         :return: The continued run's reply, which may itself be paused again.
         """
+        self._reject_prompt_alongside(requests)
         self._reject_not_the_one_deferred_call(decisions, record)
         self._reject_unusable_override(decisions)
         self._require_resume_state(agent, session, record)
@@ -836,6 +860,7 @@ class ClaudeRunner(BaseRunner):
         :param record: The record Runtime validated.
         :return: The events the continued run produces.
         """
+        self._reject_prompt_alongside(requests)
         self._reject_not_the_one_deferred_call(decisions, record)
         self._reject_unusable_override(decisions)
         self._require_resume_state(agent, session, record)

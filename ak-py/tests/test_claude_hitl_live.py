@@ -49,8 +49,9 @@ async def test_deferred_tool_survives_a_new_runner_and_resumes_once():
         assert isinstance(paused, AgentPausedReplyAny), paused
         assert calls == []
 
-        # Restore the AK session and adapter as another worker would.
-        session = pickle.loads(pickle.dumps(session))
+    # Restore the AK session and adapter as another worker would: a separate process has its own Runtime.
+    session = pickle.loads(pickle.dumps(session))
+    with Runtime(SessionStoreBuilder.build()):
         resumed_agent = ClaudeModule([spec]).get_agent(spec.name)
         record = PausedRunState.get(session, paused.run_id)
         decision = ResumeDecision(id=paused.interruptions[0].id, status="approved")

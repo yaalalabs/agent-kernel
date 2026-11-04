@@ -273,10 +273,12 @@ options = ClaudeAgentOptions(output_format={"type": "json_schema", "schema": Wea
 
 ## Streaming
 
-Token streaming is supported (`execution.mode: stream`). The runner enables the SDK's partial messages and maps
+Token streaming is supported (`execution.mode: rest_sync` with `execution.message_type: delta`). The runner enables the SDK's partial messages and maps
 them onto Agent Kernel stream events: text and thinking are keyed by `<message id>:<block index>`, and tool calls
 keep their native `tool_use` id, which their results carry too. To receive reasoning text from current models,
-set `thinking={"type": "adaptive", "display": "summarized"}`.
+set `thinking={"type": "adaptive", "display": "summarized"}`. Subagent activity is not streamed; only the main
+agent's events are. See [examples/api/claude-streaming](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/claude-streaming)
+for a runnable SSE example.
 
 ## Multimodal Input
 
@@ -343,6 +345,10 @@ carrying the pending call's name and arguments. `resume()`/`resume_stream()` con
 message; `cancelled`, which Agent Kernel reports distinctly from a denial). The conversation up to the deferred
 call is already committed to the session before the paused reply is returned, so the pause is durable across
 processes.
+
+Send the decision on its own. A resume that also carries a prompt, image or file is rejected with a
+`ValueError`, and the pause is kept: Claude Code answers new input sent with a resume without the tool's result
+and drops the deferred call, so the approval would be lost. Send the prompt as a separate turn after the run resumes.
 
 **Limitation**: Anthropic's SDK honors `defer` only when the model makes a single tool call in that turn. With
 several tool calls at once, `defer` is ignored for all of them and they fall through to the ordinary permission

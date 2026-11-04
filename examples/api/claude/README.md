@@ -40,6 +40,7 @@ helper in `app.py` applies these to every agent.
 
 Each request starts a Claude Code subprocess. Set API request timeouts and process memory for the
 number of concurrent requests you expect. To stream token events over SSE, run with
-`AK_EXECUTION__MODE=stream uv run app.py`; the same `/api/v1/chat` endpoint then returns an SSE stream.
+`AK_EXECUTION__MESSAGE_TYPE=delta uv run app.py`; the same `/api/v1/chat` endpoint then returns an SSE stream.
+See [`../claude-streaming`](../claude-streaming) for a streaming example with tests.
 
 The credentialed API smoke test can be run with `uv run pytest app_test.py -q`.

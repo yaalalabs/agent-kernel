@@ -32,6 +32,7 @@ Examples demonstrating Agent Kernel's API capabilities and integrations:
 - **`schedule-openai/`** - Deferred and recurring chats: a chat request carrying a `schedule` block is registered instead of run (HTTP 202), with the in-process `local` provider, an `in_memory` task store, the `/api/v1/schedules` management routes, and an agent that can schedule work itself
 - **`claude/`** - Claude Agent SDK subagents and a bound tool served through the REST chat endpoint
 - **`claude-hitl/`** - Claude Agent SDK tool approval: pause a REST request, approve or deny it, and resume the same session
+- **`claude-streaming/`** - Claude Agent SDK token streaming over SSE (`execution.message_type: delta`), including a bound tool's call, arguments and result as stream events
 
 ### 📁 CLI Examples (`/examples/cli`)
 
