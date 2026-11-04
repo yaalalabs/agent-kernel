@@ -2,7 +2,7 @@ import importlib.metadata
 from threading import RLock
 from typing import Any, ClassVar, Dict, List, Optional
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from .model import ExecutionMode
 from .util.config_yaml_util import YamlBaseSettingsModified
@@ -721,6 +721,15 @@ class _SandboxIdentityConfig(BaseModel):
     )
 
 
+class _SandboxPackageInstallConfig(BaseModel):
+    ecosystems: list[str] = Field(
+        default_factory=lambda: ["python"],
+        min_length=1,
+        description="Package ecosystems installs may use (e.g. python, node); each must be declared by the provider's package_installers",
+    )
+    timeout: Optional[float] = Field(default=None, gt=0, description="Wall-clock limit in seconds for one install; omitted = policy.timeout")
+
+
 class _SandboxPolicyConfig(BaseModel):
     network_egress: str = Field(
         default="allow",
@@ -734,25 +743,120 @@ class _SandboxPolicyConfig(BaseModel):
     memory_mb: Optional[int] = Field(default=None, description="Memory limit in megabytes; None leaves it to the provider default")
     timeout: float = Field(default=120.0, description="Per-execution wall-clock timeout in seconds")
     strict: bool = Field(default=True, description="Fail closed when a policy dimension cannot be enforced by the selected provider")
+    languages: Optional[list[str]] = Field(
+        default=None,
+        description="Languages run_code may use under this profile; omitted = whatever the provider declares; [] = no run_code (command-only profile)",
+    )
+    package_install: Optional[_SandboxPackageInstallConfig] = Field(
+        default=None, description="Permit install_packages under this profile; omitted = installs denied"
+    )
 
 
 class _SandboxLocalSubprocessConfig(BaseModel):
     workdir: Optional[str] = Field(default=None, description="Base directory for per-sandbox working directories; None uses the system temp location")
 
 
-class _SandboxDockerConfig(BaseModel):
+class _SandboxProviderPackageConfig(BaseModel):
+    """Package-install fields shared by the provider blocks that can install packages."""
+
+    package_installers: dict[str, list[str]] = Field(
+        default_factory=lambda: {"python": ["pip", "install"]},
+        description="Ecosystem -> installer argv prefix the image provides; the keys are the provider's declared ecosystems. "
+        "Declaring it replaces the default map rather than merging with it",
+    )
+    package_rules: dict[str, str] = Field(
+        default_factory=dict,
+        description="Ecosystem -> dotted path of a PackageSpecRule subclass validating that ecosystem's package specs",
+    )
+
+    @field_validator("package_installers")
+    @classmethod
+    def _installer_argv_non_empty(cls, value: dict[str, list[str]]) -> dict[str, list[str]]:
+        """Every installer argv prefix holds at least one token, and no token is empty."""
+        for ecosystem, argv in value.items():
+            if not argv or any(not token for token in argv):
+                raise ValueError(f"package_installers[{ecosystem!r}] must be a non-empty argv prefix with no empty tokens")
+        return value
+
+    @model_validator(mode="after")
+    def _rules_match_installers(self) -> "_SandboxProviderPackageConfig":
+        """A rule for an ecosystem with no installer never runs, so a typo'd key would silently drop a narrowing rule."""
+        orphans = sorted(set(self.package_rules) - set(self.package_installers))
+        if orphans:
+            raise ValueError(f"package_rules keys {orphans} have no package_installers entry")
+        return self
+
+
+class _SandboxProviderRuntimeConfig(BaseModel):
+    """Language-runtime fields shared by the provider blocks that exec an interpreter argv."""
+
+    language_runtimes: dict[str, list[str]] = Field(
+        default_factory=lambda: {"python": ["python", "-c"]},
+        description="Language -> interpreter argv prefix the image provides; the code is appended as the last argument. "
+        "The keys are the provider's declared languages; declaring it replaces the default map and must keep a 'python' key",
+    )
+
+    @field_validator("language_runtimes")
+    @classmethod
+    def _runtimes_require_python(cls, value: dict[str, list[str]]) -> dict[str, list[str]]:
+        """Python execution is mandatory under the provider contract, so the map must declare it."""
+        if "python" not in value:
+            raise ValueError("language_runtimes must declare a 'python' runtime")
+        return value
+
+    @field_validator("language_runtimes")
+    @classmethod
+    def _runtime_argv_non_empty(cls, value: dict[str, list[str]]) -> dict[str, list[str]]:
+        """Every interpreter argv prefix holds at least one token, and no token is empty."""
+        for language, argv in value.items():
+            if not argv or any(not token for token in argv):
+                raise ValueError(f"language_runtimes[{language!r}] must be a non-empty argv prefix with no empty tokens")
+        return value
+
+    def runtime_languages(self) -> list[str]:
+        """The languages this block declares: the ``language_runtimes`` keys, in config order."""
+        return list(self.language_runtimes)
+
+
+class _SandboxDockerConfig(_SandboxProviderPackageConfig, _SandboxProviderRuntimeConfig):
     image: str = Field(default="python:3.12-slim", description="Container image used to create sandboxes")
     runtime: str = Field(default="docker", description="Container runtime to invoke (e.g. docker, nvidia)")
     attach_to: Optional[str] = Field(default=None, description="Existing container id to attach to instead of creating one (mode 3)")
 
 
-class _SandboxE2BConfig(BaseModel):
+_E2B_KERNELS = {"python", "javascript", "typescript", "r", "java", "bash"}  # run_code(language=...) values
+
+
+class _SandboxE2BConfig(_SandboxProviderPackageConfig):
     api_key_env: str = Field(default="E2B_API_KEY", description="Name of the environment variable holding the E2B API key")
-    template: str = Field(default="base", description="E2B sandbox template to launch")
+    # run_code needs the Jupyter server the code-interpreter template ships; `base` has none (port 49999 never opens)
+    template: str = Field(default="code-interpreter-v1", description="E2B sandbox template to launch; must ship the code-interpreter Jupyter server")
+    languages: list[str] = Field(
+        default_factory=lambda: ["python"],
+        description="E2B code-interpreter kernels run_code may use (python, javascript, typescript, r, java, bash); "
+        "the provider's declared languages. Declaring it replaces the default and must keep 'python'",
+    )
+
+    @field_validator("languages")
+    @classmethod
+    def _languages_are_e2b_kernels(cls, value: list[str]) -> list[str]:
+        """Python is mandatory under the provider contract; every entry must name an E2B kernel."""
+        if "python" not in value:
+            raise ValueError("e2b languages must include 'python'")
+        unknown = [lang for lang in value if lang not in _E2B_KERNELS]
+        if unknown:
+            raise ValueError(f"e2b languages {unknown} are not E2B kernels; choose from {sorted(_E2B_KERNELS)}")
+        return value
 
 
-class _SandboxDaytonaConfig(BaseModel):
+class _SandboxDaytonaConfig(_SandboxProviderPackageConfig, _SandboxProviderRuntimeConfig):
     api_key_env: str = Field(default="DAYTONA_API_KEY", description="Name of the environment variable holding the Daytona API key")
+    # python always runs via the SDK's native code_run, so it is always declared and needs no argv here.
+    language_runtimes: dict[str, list[str]] = Field(
+        default_factory=dict,
+        description="Extra language -> interpreter argv prefix the image/snapshot provides; the code is appended as the last "
+        "argument and run via process.exec. 'python' is always declared (native code_run), so it needs no entry; one is ignored",
+    )
     target: Optional[str] = Field(default=None, description="Daytona target/region; None uses the SDK default")
     image: Optional[str] = Field(
         default=None,
@@ -763,6 +867,16 @@ class _SandboxDaytonaConfig(BaseModel):
         description="Named Daytona snapshot to launch from. Mutually exclusive with 'image'; when neither is set Daytona uses its default snapshot.",
     )
     env_vars: dict[str, str] = Field(default_factory=dict, description="Environment variables set inside the sandbox")
+
+    @field_validator("language_runtimes")
+    @classmethod
+    def _runtimes_require_python(cls, value: dict[str, list[str]]) -> dict[str, list[str]]:
+        """Overrides the shared rule: python runs via native code_run, so the map need not declare it."""
+        return value
+
+    def runtime_languages(self) -> list[str]:
+        """``python`` (always, via code_run) followed by the other ``language_runtimes`` keys."""
+        return ["python", *(language for language in self.language_runtimes if language != "python")]
 
     @model_validator(mode="after")
     def _image_snapshot_exclusive(self) -> "_SandboxDaytonaConfig":
@@ -777,7 +891,7 @@ class _SandboxBedrockAgentCoreConfig(BaseModel):
     network_mode: str = Field(default="sandbox", description="AgentCore session network mode (e.g. 'sandbox', 'public')")
 
 
-class _SandboxKubernetesConfig(BaseModel):
+class _SandboxKubernetesConfig(_SandboxProviderPackageConfig, _SandboxProviderRuntimeConfig):
     namespace: str = Field(default="default", description="Kubernetes namespace for sandbox pods")
     image: str = Field(default="python:3.12-slim", description="Container image used for launched sandbox pods")
     attach_to: Optional[str] = Field(default=None, description="Existing '<namespace>/<pod>' to exec into instead of launching a pod (mode 3)")
@@ -802,9 +916,17 @@ class _SandboxKubernetesConfig(BaseModel):
     create_timeout: float = Field(default=120.0, description="Seconds to wait for a sandbox pod to reach Running before failing provisioning")
 
 
-class _SandboxEC2SSMConfig(BaseModel):
+class _SandboxEC2SSMConfig(_SandboxProviderRuntimeConfig):
     region: Optional[str] = Field(default=None, description="AWS region for SSM; None uses the boto3 default")
     attach_to: Optional[str] = Field(default=None, description="EC2 instance id to run commands against via SSM (attach-only)")
+    # The code goes in on stdin (keeps it out of the shared instance's process list), so each argv reads
+    # its program from stdin; EC2 images often ship only `python3`.
+    language_runtimes: dict[str, list[str]] = Field(
+        default_factory=lambda: {"python": ["python3", "-"]},
+        description="Language -> interpreter argv installed on the instance that reads its program from stdin "
+        "(e.g. python3 -, node -, bash -s); the code is fed on stdin, not appended as an argument. "
+        "The keys are the provider's declared languages; declaring it replaces the default map and must keep a 'python' key",
+    )
 
 
 class _ExecutionBrokerConfig(BaseModel):
@@ -870,6 +992,24 @@ class _SandboxProfileConfig(BaseModel):
     )
     kubernetes: Optional[_SandboxKubernetesConfig] = Field(default=None, description="Configuration for the 'kubernetes' provider")
     ec2_ssm: Optional[_SandboxEC2SSMConfig] = Field(default=None, description="Configuration for the 'ec2_ssm' provider")
+
+    @model_validator(mode="after")
+    def _attached_forbids_package_install(self) -> "_SandboxProfileConfig":
+        """An install would change an environment the framework never owns — reject it on attached profiles."""
+        if self.environment == "attached" and self.policy.package_install is not None:
+            raise ValueError("policy.package_install is not allowed on a profile with environment 'attached'")
+        return self
+
+    @model_validator(mode="after")
+    def _per_call_forbids_package_install(self) -> "_SandboxProfileConfig":
+        """A per_call sandbox is destroyed after every operation, so an install would be gone before
+        the next run_code — reject it rather than report a success that has no effect."""
+        if self.scope == "per_call" and self.policy.package_install is not None:
+            raise ValueError(
+                "policy.package_install is not allowed on a profile with scope 'per_call': the sandbox is destroyed "
+                "after every operation, so installed packages would not survive to the next execution"
+            )
+        return self
 
 
 class _A2UIConfig(BaseModel):

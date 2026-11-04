@@ -223,8 +223,8 @@ export const FEATURE_TABS: FeatureTab[] = [
       {
         title: "Sandbox Policy & Identity",
         description:
-          "Fail-closed network, filesystem, CPU and memory policies for sandboxed code, executed as the agent or as the end user through RBAC impersonation.",
-        tags: ["Fail-closed", "RBAC", "Per-user"],
+          "Fail-closed network, filesystem, CPU and memory policies for sandboxed code, per-profile language and package-install permissions over configurable language runtimes on Docker and Kubernetes, executed as the agent or as the end user through RBAC impersonation.",
+        tags: ["Fail-closed", "RBAC", "Per-user", "Package installs"],
         docs: "/docs/advanced/sandbox",
         example: "sandbox/policy",
       },
