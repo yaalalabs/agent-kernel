@@ -343,6 +343,7 @@ from claude_agent_sdk import ClaudeAgentOptions
         tools=[],                   # no built-in Claude Code tools (Bash, file edits, ...) on the server
         setting_sources=[],         # ignore ~/.claude settings and CLAUDE.md
         permission_mode="dontAsk",  # deny any tool call that is not explicitly approved
+        verbatim_prompts=True,      # no @path file expansion or slash commands from request text
     ),
     tools=ClaudeToolBuilder.bind([]),
 )

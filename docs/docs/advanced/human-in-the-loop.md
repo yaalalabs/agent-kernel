@@ -41,7 +41,12 @@ def issue_refund(order_id: str) -> str:
 ```
 
 ```python
-tools = ClaudeToolBuilder.bind([issue_refund], needs_approval=True)   # Claude Agent SDK
+from agentkernel.claude import ClaudeToolBuilder
+
+def issue_refund(order_id: str) -> str:                                # Claude Agent SDK: a plain function
+    ...
+
+tools = ClaudeToolBuilder.bind([issue_refund], needs_approval=True)
 ```
 
 Six frameworks can pause: **OpenAI Agents SDK**, **LangGraph**, **Pydantic AI**, **Google ADK**,
