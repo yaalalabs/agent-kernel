@@ -127,7 +127,11 @@ with history. Live tracking runs from the start of "before" to the end of the co
   - ECS and K8s: the primary fetchers (`aws.ecs_api`, `k8s.api`) read the current state, so the end is seen within
     one poll.
   - Lambda: the primary fetcher (`aws.cloudwatch_metric.ConcurrentExecutions`) isn't live-tracked, but the check
-    still calls its `fetch()` for the latest minutes, accepting the CloudWatch delay. Lambda sends metric data to
+    still calls its `fetch()` for the latest minutes, accepting the CloudWatch delay. Lambda sends no datapoint in a
+    minute with no invocations (verified, see [Open points](#open-points)), so the fetcher reads a minute with no
+    datapoint as 0 once it's older than its `metric_delay_s` constructor parameter (decided 2026-11-04, PR #893
+    review; default set from the first Lambda runs). A newer empty minute is "no value", so that poll counts as not
+    met. The parameter belongs to this AWS fetcher only, not to `ak-bench.yaml`. Lambda sends metric data to
     CloudWatch in 1-minute intervals. The recorded counts still come from its `fetch_and_store()` after the
     cool-down, which has the complete data. If the delay turns out too long,
     a person can bind `aws.lambda_log_streams` to the host in `hosts.py` instead (a manual choice, not automatic).
@@ -473,11 +477,13 @@ labels). The billed cost is AWS Cost Explorer `GetCostAndUsage` filtered by the 
 
 ## Open points
 
-- Load-step tests, Lambda end detection, not verified: whether `ConcurrentExecutions` has **no datapoint** (rather
-  than 0) in a minute with no invocations. AWS says Lambda sends metrics when a function finishes processing an
-  event, which suggests idle minutes are missing. If so, a missing datapoint has to be read as 0, but only for minutes
-  old enough that their data would have arrived (a configurable metric delay; value to be measured on the first
-  Lambda runs).
+- Load-step tests, Lambda end detection: **verified 2026-11-04 (PR #893 review), `ConcurrentExecutions` has no
+  datapoint in a minute with no invocations**, never a 0. AWS's docs don't say this for `ConcurrentExecutions`; it was
+  checked on the deployed `aws-serverless/openai` example's agent runner (us-east-2): over 15 days of 1-minute data
+  (`Maximum`, 60 s), there were 29 datapoints, all in minutes that also had `Invocations`, and no 0 values. So a
+  missing minute is read as 0, but only for minutes older than the fetcher's `metric_delay_s` (decided 2026-11-04,
+  see [Load-step tests](#load-step-tests-scaling-per-step)). The delay's default is still to be measured on the first Lambda
+  runs.
 - Not verified: whether the fixed 3 / 15 datapoint rule still applies to custom metrics (like `BacklogPerTask`) after
   AWS's June 2026 faster-scaling launch. AWS only describes the change for the built-in CPU/memory metrics. Check the
   CloudWatch alarms that the ECS policy creates once deployed.

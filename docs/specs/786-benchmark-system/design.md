@@ -244,6 +244,12 @@ log level with per-stage trace points on the request path.
   | `aws.lambda_log_streams` (one span per log stream) | no | running, spans | written, not bound; bound by hand if needed |
   | `k8s.api` | yes | desired, running, pending, spans | `eks`, `baremetal` (primary) |
 
+- **`aws.cloudwatch_metric.ConcurrentExecutions`: missing minutes** (decided 2026-11-04, PR #893 review). Lambda sends
+  no datapoint in a minute with no invocations (verified, see `research/platform-scaling-and-cost.md`), so the fetcher
+  reads a minute with no datapoint as 0 once it's older than its `metric_delay_s` constructor parameter (default set
+  from the first Lambda runs, R2). A newer empty minute is "no value", so that cool-down poll counts as not met.
+  Only this AWS fetcher has the parameter; it isn't in `ak-bench.yaml`.
+
 - Queue depth per window (input and output separately) from the host's `TransportCollector`, chosen by transport
   (`sqs`, `kafka`; none for `in_memory`). It extends `InfoFetcher[QueueInfo]` with `live_track = True` (SQS and Kafka
   only give the current depth); `QueueInfo` = samples `(ts, queue, waiting, in_flight)`.
@@ -728,8 +734,8 @@ Answered by looking at real data, not by a decision. Each has a fallback already
 - **R1.** Scaling fetchers: ECS keeps `aws.ecs_api` alone or adds `aws.ecs_scaling_activities` (and whether its
   "Setting desired count to N" wording is stable enough to parse); Lambda stays on `ConcurrentExecutions` or binds
   `aws.lambda_log_streams`.
-- **R2.** Lambda step end: whether `ConcurrentExecutions` has no datapoint (rather than 0) in idle minutes, and the
-  metric delay to allow for.
+- **R2.** Lambda step end: the metric delay to allow for (`ConcurrentExecutions` has no datapoint in idle minutes,
+  verified 2026-11-04).
 - **R3.** Whether the 1-min default wait before the after-step fetch is enough for each log backend (ingestion delay).
 - **R4.** Lambda Insights: whether its events carry `function_name`, and whether its log stream is one per execution
   environment (fallback: per-tier values).
