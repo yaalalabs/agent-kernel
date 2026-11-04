@@ -8,7 +8,7 @@ How requests flow through Agent Kernel from user input to agent response: synchr
 
 ## Request Lifecycle
 
-Every execution surface converges on the same runtime pipeline, but they enter through distinct service layers: HTTP-shaped surfaces call the **ChatService presentation wrappers** (`process_*`), channels that own their transport (messaging integrations, the thread handler) call the **ChatService execution core** (`execute`/`execute_stream`) with prebuilt request lists, and stateful clients (CLI, A2A, MCP) use **AgentService** directly. Everything then flows through `Runtime.run()` (or `Runtime.stream()`) → pre-hooks → `Runner` → framework → post-hooks → session persistence.
+Every execution surface converges on the same runtime pipeline, but they enter through distinct service layers: HTTP-shaped surfaces call the **ChatService presentation wrappers** (`process_*`), channels that own their transport (messaging integrations, the thread handler) call the **ChatService execution core** (`execute`/`execute_stream`) with prebuilt request lists, the stateful CLI uses **AgentService** directly, and A2A and MCP enqueue through the queue pipeline and wait for the agent runner's reply in the response store. Everything then flows through `Runtime.run()` (or `Runtime.stream()`) → pre-hooks → `Runner` → framework → post-hooks → session persistence.
 
 ```mermaid
 graph TD
@@ -38,7 +38,7 @@ graph TD
     AS["AgentService<br/>agent selection, session"]
     CORE --> AS
     C --> AS
-    P --> AS
+    P -->|"enqueue (protocol tag),<br/>wait for the stored reply"| Q
 
     AS --> H["Runtime.run() / Runtime.stream()"]
     H --> I[Pre-hooks<br/>guardrails · multimodal · RAG]
@@ -63,6 +63,8 @@ graph TD
   attachments.
 - An interactive or stateful client that manages agent and session lifecycle itself (REPL-like)
   uses `AgentService`.
+- A server-side protocol surface whose caller waits for one whole reply (A2A, MCP) enqueues
+  through `RestHandler.request` with its own `protocol` value, so the agent runs on the agent runner.
 - Cross-cutting behavior that must apply to every run regardless of surface goes in a `Runtime`
   pre/post hook, not in a service layer.
 - Entry surfaces never call `Runtime` directly.
@@ -82,7 +84,7 @@ The request enters through one of the execution surfaces:
 - **AWS Lambda**: API Gateway event routed by the `Lambda` handler
 - **SQS queue**: in queue mode, a request message consumed by the agent-runner Lambda or ECS consumer threads
 - **WebSocket**: a message on the configured chat route via AWS API Gateway WebSocket (async/stream modes)
-- **MCP/A2A**: protocol-specific request against the mounted `/mcp` or `/a2a` routes
+- **MCP/A2A**: protocol-specific request against the mounted `/mcp` or `/a2a` routes, enqueued through the pipeline and executed by the agent runner; the caller waits for one whole reply in the response store, whatever `execution.mode` is
 - **Messaging platforms**: webhook events from Slack, WhatsApp, Messenger, Instagram, Telegram, Teams, or Gmail
 
 ### 2. Request Building and Agent Resolution

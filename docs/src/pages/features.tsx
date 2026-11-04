@@ -911,6 +911,7 @@ function CoreFeatures() {
         "AWS CloudWatch (X-Ray) integration",
         "Multi-level verbosity",
         "Cost and latency tracking",
+        "Fetch spans back for evaluation",
       ],
       link: "/docs/advanced/traceability",
     },

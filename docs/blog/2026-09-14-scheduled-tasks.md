@@ -85,8 +85,8 @@ Your assistant finally has a calendar.
 Agent Kernel is open source under Apache 2.0.
 
 - Scheduling documentation: https://kernel.yaala.ai/docs/advanced/scheduling
-- Runnable example: [`examples/api/schedule-openai`](https://github.com/yaalalabs/agent-kernel/tree/main/examples/api/schedule-openai)
-- On AWS: [`examples/aws-containerized/openai-schedule`](https://github.com/yaalalabs/agent-kernel/tree/main/examples/aws-containerized/openai-schedule) · [`examples/aws-serverless/schedule-openai`](https://github.com/yaalalabs/agent-kernel/tree/main/examples/aws-serverless/schedule-openai)
+- Runnable example: [`examples/api/schedule-openai`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/schedule-openai)
+- On AWS: [`examples/aws-containerized/openai-schedule`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/openai-schedule) · [`examples/aws-serverless/schedule-openai`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/schedule-openai)
 - GitHub: https://github.com/yaalalabs/agent-kernel
 
 `pip install "agentkernel[cron]"` and give your agents a clock.
