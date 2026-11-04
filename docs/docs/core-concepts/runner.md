@@ -58,7 +58,7 @@ class Runner(ABC):
 
     @abstractmethod
     async def stream(self, agent: "Agent", session: Session, requests: list[AgentRequest]) -> AsyncGenerator[StreamEvent, None]:
-        """Yield AK stream events for streaming execution (execution.mode: stream)."""
+        """Yield AK stream events for streaming execution (execution.message_type: delta)."""
 ```
 
 - `run()` takes a **list of typed requests** (`AgentRequestText`, `AgentRequestImage`, `AgentRequestFile`, `AgentRequestAny`), not a raw prompt string, and returns an `AgentReply`.
@@ -72,6 +72,7 @@ class Runner(ABC):
 | `LangGraphRunner` | LangGraph | ✅ (`astream_events`) |
 | `GoogleADKRunner` | Google ADK | ✅ (SSE streaming mode) |
 | `PydanticAIRunner` | Pydantic AI | ✅ (`run_stream_events`) |
+| `MAFRunner` | Microsoft Agent Framework | ✅ (`agent.run(..., stream=True)`) |
 | `CrewAIRunner` | CrewAI | ❌ raises `NotImplementedError` |
 | `SmolagentsRunner` | Smolagents | ❌ raises `NotImplementedError` |
 
@@ -129,7 +130,7 @@ per-framework truncation behavior — see each framework's page for streaming fi
 
 ## Streaming Execution
 
-When `execution.mode: stream` is configured, the pipeline calls `Runner.stream()` instead of `run()`:
+When `execution.message_type: delta` is configured, the pipeline calls `Runner.stream()` instead of `run()`:
 
 ```python
 async for event in runner.stream(agent, session, requests):
@@ -234,6 +235,7 @@ context is set, a runner:
 |-----------|----------|-------------|--------------|
 | OpenAI | **Full round-trip** | `Runner.run(..., context=ctx)` — tools mutate it in place | the same object, in full |
 | Pydantic AI | **Full round-trip** | `agent.run(..., deps=ctx)` — native tools mutate it in place via `RunContext.deps` ([caveats](../frameworks/pydantic-ai.md#per-run-contextstate)) | the same object, in full |
+| Microsoft Agent Framework | **Full round-trip** | `native_session.state["ak_context"]` — tools mutate it via `FunctionInvocationContext.session.state` | the context dictionary, including tool-added keys |
 | Google ADK | **Round-trips (filtered), accumulate-only** | merged into the ADK session `state` (AK-internal keys always win, so they cannot be displaced by a caller key) | the accumulated session state, minus AK-internal and `app:`/`user:`/`temp:`-prefixed keys — **tool-added keys survive**, and so does anything else written to the state ([caveats](../frameworks/google-adk.md#per-run-contextstate)) |
 | Smolagents | **Round-trips (filtered)** | `agent.run(..., additional_args=ctx)` — which smolagents **also appends to the task prompt** ([caveat](../frameworks/smolagents.md#per-run-contextstate)) | `agent.state` **restricted to pre-seeded keys** — brand-new keys are dropped |
 | LangGraph | **Declared channels only** | spread into the graph input alongside `messages` (written last, so a caller key cannot replace it) | only keys the graph's state schema declares as channels (prebuilt agents drop unknown keys) |
@@ -267,7 +269,7 @@ and is never persisted.
 declared option can never displace a value the adapter populates (the session, the framework
 context, the input). The same keys are also rejected at declaration: each adapter names them in
 `RESERVED_RUN_OPTIONS`, and `run_options` raises `ValueError` naming the key and the reason. Unknown
-keys are not validated and reach the SDK. OpenAI, ADK, Pydantic AI and smolagents raise `TypeError` for
+keys are not validated and reach the SDK. OpenAI, ADK, Pydantic AI, Microsoft Agent Framework and smolagents raise `TypeError` for
 an unknown keyword on the first run; LangGraph and CrewAI drop one silently (`ainvoke` ignores unknown
 keywords, and `Crew` is a Pydantic model that ignores extra fields), so check the spelling there. The
 one guarded case is LangGraph: a `RunnableConfig` key declared at the top level (`recursion_limit`,
@@ -279,7 +281,7 @@ Two adapters share an object with the caller rather than a key, and merge deeper
   the runner's entries winning (`configurable.thread_id` stays the session id), list-valued keys
   (`callbacks`, `tags`) concatenate with the runner's entries first (a tracing runner's handler is
   kept), everything else is the caller's.
-- **ADK `run_config`** in stream mode is copied with `streaming_mode=SSE`, because the stream mapping
+- **ADK `run_config`** in a streamed run is copied with `streaming_mode=SSE`, because the stream mapping
   depends on partial events; one warning is logged per runner when the caller explicitly set a
   different `streaming_mode`.
 
@@ -287,8 +289,9 @@ Two adapters share an object with the caller rather than a key, and merge deeper
 |-----------|---------------|---------------|------------|---------------|
 | OpenAI | `Runner.run` / `run_streamed` | `starting_agent`, `input`, `session`, `context`, `conversation_id`, `previous_response_id`, `auto_previous_response_id` (the SDK rejects the last three alongside the session the runner passes) | `max_turns` | `hooks=RunHooks()` |
 | LangGraph | `ainvoke` / `astream_events` | `input`, `version`, `stream_mode`, `output_keys`, `print_mode`, `config.configurable.thread_id`, and any `RunnableConfig` key at the top level | `config["recursion_limit"]` | `config["callbacks"]` |
-| Google ADK | the per-run `Runner(...)` constructor (`plugins`, `memory_service`, `artifact_service`, `credential_service`, `plugin_close_timeout`) and `run_async` (`run_config`) | `agent`, `app`, `app_name`, `node`, `session_service`, `auto_create_session`, `user_id`, `session_id`, `new_message`, `state_delta`, `invocation_id`, `yield_user_message` | `RunConfig(max_llm_calls=...)` | `plugins=[BasePlugin()]` |
-| Pydantic AI | `agent.run` / `run_stream_events` | `user_prompt`, `message_history`, `deps` | `UsageLimits(request_limit=...)` | `event_stream_handler` (run mode; dropped with one warning in stream mode) |
+| Google ADK | the per-run `App` (`plugins`), the per-run `Runner(...)` constructor (`memory_service`, `artifact_service`, `credential_service`, `plugin_close_timeout`) and `run_async` (`run_config`) | `agent`, `app`, `app_name`, `node`, `session_service`, `auto_create_session`, `user_id`, `session_id`, `new_message`, `state_delta`, `invocation_id`, `yield_user_message` | `RunConfig(max_llm_calls=...)` | `plugins=[BasePlugin()]` |
+| Pydantic AI | `agent.run` / `run_stream_events` | `user_prompt`, `message_history`, `deps` | `UsageLimits(request_limit=...)` | `event_stream_handler` (`run()`; dropped with one warning in `stream()`) |
+| Microsoft Agent Framework | `agent.run` (including `stream=True`) — model settings are nested in `options` | `messages`, `session`, `stream` | native function-invocation configuration on the client | native middleware on the agent or client |
 | CrewAI | the per-run `Crew(...)` constructor (`verbose=False` is an overridable default; `max_rpm` is a forwarded rate limit) | `agents`, `tasks`, `memory` | `max_iter` on the native `Agent` (needs nothing from Agent Kernel) | `step_callback` / `task_callback` |
 | Smolagents | `agent.run` | `task`, `reset`, `additional_args`, `stream`, `return_full_result` | `max_steps` | `step_callbacks` on the agent constructor (needs nothing from Agent Kernel) |
 
@@ -320,7 +323,7 @@ session. A factory that raises, returns a non-mapping or names a reserved key fa
 a framework error does: a user-facing error reply in `run`, a propagated exception in `stream`.
 Nothing is cached, so the failure repeats until the factory is fixed.
 
-**Progress: two paths.** In `execution.mode: stream`, [`PostHook.on_stream_event`](../integrations/hooks.md#streaming-hooks-on_stream_event)
+**Progress: two paths.** With `execution.message_type: delta`, [`PostHook.on_stream_event`](../integrations/hooks.md#streaming-hooks-on_stream_event)
 sees Agent Kernel's framework-agnostic `StreamEvent`s for whatever the adapter maps. Native hooks
 through run options work in **any** mode, including `rest_sync`, and expose the framework's full
 lifecycle (LLM start, agent start, handoffs). A native hook's callbacks run inside the Agent Kernel
@@ -329,13 +332,13 @@ load time therefore needs no per-request plumbing. It is shared by every concurr
 agent, so keep per-run state in the session (its volatile cache is cleared after each run), never on
 the hook.
 
-Run options compose with tracing: the Langfuse, Logfire and OpenLLMetry runners delegate to the base
+Run options compose with tracing: the Langfuse, Logfire, OpenLLMetry and CloudWatch runners delegate to the base
 runner, so a declared `hooks=` still reaches the SDK when `trace.enabled` is on. The
 [custom-runner path](../advanced/traceability.md#how-to-add-your-own-platform) remains for behaviour
 that is not a keyword argument of the native call.
 
 See the per-framework demos: `examples/cli/openai-run-options`, `langgraph-run-options`,
-`adk-run-options`, `pydanticai-run-options`, `crewai-run-options` and `smolagents-run-options`, and
+`adk-run-options`, `pydanticai-run-options`, `maf-run-options`, `crewai-run-options` and `smolagents-run-options`, and
 `examples/cli/openai-dynamic-run-options` for options computed per run.
 
 ## Best Practices
@@ -368,7 +371,7 @@ except Exception as e:
 
 - Runners execute framework-specific agent logic and expose both `run()` and `stream()`
 - Each framework has its own Runner implementation
-- OpenAI Agents SDK, LangGraph, Google ADK, and Pydantic AI support native token streaming (as AK `StreamEvent`s); CrewAI and Smolagents do not
+- OpenAI Agents SDK, LangGraph, Google ADK, Pydantic AI, and Microsoft Agent Framework support native token streaming (as AK `StreamEvent`s); the CrewAI and Smolagents adapters do not implement it yet
 - Runners convert typed requests/replies and manage framework session state
 - Runners inject the reserved `framework_context` into the native call and write the produced state back on success (fidelity varies per framework)
 - Always use async/await, and prefer `Runtime.run()`/`AgentService` over calling runners directly

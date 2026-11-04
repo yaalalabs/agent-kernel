@@ -46,6 +46,77 @@ Execute an agent with a message.
 }
 ```
 
+#### Structured replies
+
+`result` is a **string** unless the reply carries a format label. An agent configured for structured
+output returns its content as a JSON string, which is what every example on this page shows:
+
+```json
+{
+  "result": "{\"city\": \"Colombo\", \"temp_c\": 31}",
+  "session_id": "user-123"
+}
+```
+
+When a reply **is** labelled — by the [A2UI capability](../advanced/a2ui.md) or by an application
+post-hook that sets `media_type` — `result` carries the object itself and the format travels beside
+it:
+
+```json
+{
+  "result": {"city": "Colombo", "temp_c": 31},
+  "media_type": "application/a2ui+json",
+  "session_id": "user-123"
+}
+```
+
+So `result` is `string | object | array`, and `media_type` is the discriminator: **present means the
+object form, absent means the string**. A client that has not opted into a labelled format never
+sees the object form, because no framework adapter sets a media type.
+
+#### Pausing for a human
+
+An agent can stop mid-run to ask a person something — a gated tool awaiting approval, or a question
+needing an answer. The request then answers **HTTP 202** with a top-level discriminator, so a client
+branches on the outcome without parsing `result`:
+
+```json
+{
+  "status": "PAUSED",
+  "run_id": "9f2c…",
+  "agent": "support",
+  "interruptions": [
+    { "id": "call_abc123", "kind": "tool_call", "tool_name": "issue_refund",
+      "arguments": "{\"order_id\": \"ORD-1001\"}" }
+  ],
+  "session_id": "user-123"
+}
+```
+
+`202` now means two things — a deferred request and a paused one — and the `status` key is what
+separates them: a scheduled acknowledgement carries `"SCHEDULED"`, a pause carries `"PAUSED"`.
+
+Answer it by sending `resume` **instead of** a prompt; `prompt` is optional and a decision can stand
+alone:
+
+```json
+{
+  "agent": "support",
+  "session_id": "user-123",
+  "resume": { "decisions": [ { "id": "call_abc123", "status": "approved" } ] }
+}
+```
+
+A decision takes `status` (`approved` | `denied` | `cancelled`), an optional `message` carrying the
+human's own words, and an optional `payload` for a structured answer. `run_id` on the `resume` block
+is optional — the run is resolved from the interruption ids when it is absent.
+
+A request carrying **both** `schedule` and `resume` is rejected with a 400: a decision deferred to a
+later occurrence is no longer a decision.
+
+See [Human in the Loop](../advanced/human-in-the-loop.md) for what each framework can carry back,
+and for the session-store setting this depends on.
+
 ### GET /api/v1/agents
 
 List all available agents.
@@ -84,6 +155,19 @@ When [conversation threads](../advanced/threads.md) are enabled by mounting `Age
 ```
 
 **`GET /api/v1/threads/{session_id}`** returns a single thread with its paginated message history (`limit`, `cursor`).
+
+A message's `content` is text, exactly as before — unless the reply was labelled (see [A2UI](../advanced/a2ui.md)), in which case it is the payload object with `media_type` beside it, the same shape `result` has on a live reply. The key is absent on every unlabelled message:
+
+```json
+{
+  "messages": [
+    {"role": "user", "content": "Show me the refund form"},
+    {"role": "assistant", "content": {"version": "v1.0", "createSurface": {"...": "..."}}, "media_type": "application/a2ui+json"},
+    {"role": "assistant", "content": "Anything else?"}
+  ],
+  "next_cursor": null
+}
+```
 
 On the thread handler's chat routes, `user_id` is **required**; the default handler's routes are unaffected. An optional `Authoriser` can protect the read routes by resolving the Bearer token to a `user_id`; requests for another user's thread then return 403. Without an `Authoriser`, the routes are open.
 
@@ -339,7 +423,14 @@ if __name__ == "__main__":
 
 ## Streaming
 
-Set `execution.mode: stream` in `config.yaml` (or `AK_EXECUTION__MODE=stream`) to enable streaming. When this mode is active, `POST /api/v1/chat` and `POST /api/v1/chat-multipart` return a `text/event-stream` (SSE) response instead of JSON; no other code changes are required.
+Set `execution.mode: rest_sync` and `execution.message_type: delta` in `config.yaml` (or `AK_EXECUTION__MODE=rest_sync` and `AK_EXECUTION__MESSAGE_TYPE=delta`) to enable streaming. With this combination, `POST /api/v1/chat` and `POST /api/v1/chat-multipart` return a `text/event-stream` (SSE) response instead of JSON; no other code changes are required. Other combinations don't stream on the REST chat route: `rest_sync` and `rest_async` with `complete` answer with JSON, and `async` rejects it with a 400 that points to `/ws`.
+
+On the queue pipeline with a broker transport (`sqs`, `kafka`, `nats`):
+
+- Only `POST /api/v1/chat` streams. `/api/v1/chat-multipart` is not registered, because of broker message-size limits.
+- SSE needs a shared response store that can hold chunks (Redis or Valkey). Otherwise startup fails with an error naming both fixes: such a store, or `async` with `message_type: delta`.
+
+`execution.mode: stream` was removed and now fails when the configuration loads; use `rest_sync` with `message_type: delta` for SSE.
 
 **Request:** Same JSON/multipart payload as the non-streaming endpoints.
 
@@ -375,7 +466,7 @@ with httpx.stream("POST", "http://localhost:8000/api/v1/chat", json={
             print(line.removeprefix("data:").strip())
 ```
 
-**Framework support:** OpenAI Agents SDK, Google ADK, LangGraph, and Pydantic AI support token streaming. CrewAI and smolagents declare `supports_streaming = False` and raise `NotImplementedError` when `execution.mode: stream` is used; use `rest_sync` for those frameworks instead.
+**Framework support:** OpenAI Agents SDK, Google ADK, LangGraph, Pydantic AI, and Microsoft Agent Framework support token streaming. CrewAI and smolagents declare `supports_streaming = False` and raise `NotImplementedError` when `execution.message_type: delta` is used; keep `message_type: complete` (the default) for those frameworks instead.
 
 For WebSocket-based streaming on AWS Lambda (serverless), see the [AWS Serverless deployment guide](/docs/deployment/aws-serverless#websocket-configuration) and the [streaming-openai example](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/streaming-openai).
 

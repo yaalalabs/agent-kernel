@@ -8,7 +8,7 @@ const FRAMEWORKS = [
   'Google ADK',
   'Smolagents',
   'Pydantic AI',
-  'LiveKit',
+  'Microsoft Agent Framework',
 ];
 
 const DEPLOY_TARGETS = [
@@ -23,6 +23,7 @@ const USER_CHANNELS = [
   'REST · MCP · A2A',
   'Telegram · Messenger',
   'WhatsApp · Instagram',
+  'LiveKit',
 ];
 
 const FOOTER_ITEMS = [

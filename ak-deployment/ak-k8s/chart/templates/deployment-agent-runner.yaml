@@ -31,6 +31,10 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       terminationGracePeriodSeconds: {{ .Values.agentRunner.terminationGracePeriodSeconds }}
+      {{- if .Values.secretStore.enabled }}
+      volumes:
+        {{- include "agent-kernel.secretStoreVolumes" . | trim | nindent 8 }}
+      {{- end }}
       containers:
         - name: agent-runner
           image: {{ include "agent-kernel.image" (dict "root" . "image" .Values.agentRunner.image) }}
@@ -63,6 +67,10 @@ spec:
           {{- with .Values.agentRunner.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if .Values.secretStore.enabled }}
+          volumeMounts:
+            {{- include "agent-kernel.secretStoreVolumeMounts" . | trim | nindent 12 }}
           {{- end }}
       {{- with .Values.agentRunner.nodeSelector }}
       nodeSelector:

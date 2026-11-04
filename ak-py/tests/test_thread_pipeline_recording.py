@@ -34,6 +34,7 @@ from agentkernel.pipeline.transport.in_memory import InMemoryTransport
 
 AGENT_NAME = "thread-pipeline-agent"
 CHAT = RequestHandler.CHAT_PATH
+MEDIA_TYPE = "application/a2ui+json"
 
 
 class EchoNaming(ThreadNamingStrategy):
@@ -93,13 +94,17 @@ def dummy_agent():
     Runtime.current().deregister(agent)
 
 
-def _configure(monkeypatch, mode=None):
+def _configure(monkeypatch, mode=None, message_type=None):
     """Real defaults (in_memory transport) with a fast response-wait budget, then threads on."""
     monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
     if mode:
         monkeypatch.setenv("AK_EXECUTION__MODE", mode)
     else:
         monkeypatch.delenv("AK_EXECUTION__MODE", raising=False)
+    if message_type:
+        monkeypatch.setenv("AK_EXECUTION__MESSAGE_TYPE", message_type)
+    else:
+        monkeypatch.delenv("AK_EXECUTION__MESSAGE_TYPE", raising=False)
     monkeypatch.setenv("AK_EXECUTION__RESPONSE_STORE__RETRY_COUNT", "100")
     monkeypatch.setenv("AK_EXECUTION__RESPONSE_STORE__DELAY", "0.05")
     AKConfig._reset()
@@ -203,20 +208,11 @@ class TestEdgeRecording:
         assert manager.get_thread("s1") is None
         assert not InMemoryTransport().create_consumer(QueueName.INPUT).fetch(10, 0.1)
 
-    def test_stream_without_a_chunk_streaming_store_leaves_no_phantom_thread(self, monkeypatch, dummy_agent):
-        """Same for a STREAM topology whose shared store pushes chunks over WebSocket instead."""
-        manager = _configure(monkeypatch, mode="stream")
+    def test_async_delta_mode_is_rejected_before_any_thread_write(self, monkeypatch, dummy_agent):
+        """Same for async + delta: its chunks go over WebSocket, so this route has nothing to serve."""
+        manager = _configure(monkeypatch, mode="async", message_type="delta")
 
-        class _NoChunkStore:
-            def supports_chunk_streaming(self):
-                return False
-
-        handler = ThreadRequestHandler()
-        handler._response_store = _NoChunkStore()
-        app = FastAPI()
-        app.include_router(handler.get_router())
-
-        response = TestClient(app).post(CHAT, json=_chat())
+        response = _client().post(CHAT, json=_chat())
 
         assert response.status_code == 400
         assert "/ws" in response.json()["detail"]["error"]
@@ -232,6 +228,18 @@ class TestEdgeRecording:
         # The 202 acknowledgement is not something the agent said, so it is never appended.
         assert ATTR_THREAD not in _enqueued().attributes
         assert manager.get_thread("s1") is None
+
+    def test_a_resume_without_a_prompt_reaches_the_queue(self, monkeypatch, dummy_agent):
+        """Unmocked through the inherited route: both guards must let a human-in-the-loop decision through."""
+        _configure(monkeypatch, mode="rest_async")
+        resume = {"decisions": [{"id": "call_1", "status": "approved"}]}
+
+        response = _client().post(CHAT, json={"session_id": "s1", "user_id": "u1", "agent": AGENT_NAME, "resume": resume})
+
+        assert response.status_code == 200
+        message = _enqueued()
+        assert message.attributes[ATTR_THREAD] == "1"
+        assert json.loads(message.body)["requests"] == [{"type": "resume", **resume}]
 
     def test_missing_prompt_keeps_the_pipeline_error_shape(self, monkeypatch, dummy_agent):
         _configure(monkeypatch, mode="rest_async")
@@ -258,9 +266,12 @@ def _open_thread(manager, session_id="s1"):
 
 
 class TestRunnerRecording:
-    def _runner(self, status_code=200, result="ok:hello"):
+    def _runner(self, status_code=200, result="ok:hello", media_type=None):
         chat_service = MagicMock()
-        chat_service.process_chat_request.return_value = (status_code, {"result": result, "session_id": "s1"})
+        body = {"result": result, "session_id": "s1"}
+        if media_type:
+            body["media_type"] = media_type
+        chat_service.process_chat_request.return_value = (status_code, body)
         return AgentRunner(transport=InMemoryTransport(), chat_service=chat_service)
 
     def test_reply_is_appended_for_a_marked_message(self, monkeypatch):
@@ -270,6 +281,39 @@ class TestRunnerRecording:
         self._runner().process(_marked_message())
 
         assert [(m.role, m.content) for m in manager.get_messages("s1").messages] == [("user", "hello"), ("assistant", "ok:hello")]
+
+    def test_an_unlabelled_dict_is_recorded_as_json_not_a_python_repr(self, monkeypatch):
+        """A dict reaching the runner without a label is still text, and must not be a Python repr.
+
+        ``str()`` on a dict gives single quotes and ``None`` for null — so the same agent would
+        record one encoding here and another through the direct handler, permanently.
+        """
+        manager = _configure(monkeypatch)
+        _open_thread(manager)
+        content = {"version": "v1.0", "createSurface": {"surfaceId": "s1", "title": None}}
+
+        self._runner(result=content).process(_marked_message())
+
+        recorded = manager.get_messages("s1").messages[-1]
+        assert json.loads(recorded.content) == content
+        assert "'" not in recorded.content
+        assert recorded.media_type is None
+
+    def test_a_labelled_reply_is_recorded_as_an_object_with_its_label(self, monkeypatch):
+        """The label rides in a sibling key of the response body, not on the ``result`` the runner holds.
+
+        Dropping it here is what left replayed history unlabelled while the live reply carried a
+        payload (#763), so this is the assertion that pins the queue half of the fix.
+        """
+        manager = _configure(monkeypatch)
+        _open_thread(manager)
+        content = {"version": "v1.0", "createSurface": {"surfaceId": "s1", "title": None}}
+
+        self._runner(result=content, media_type=MEDIA_TYPE).process(_marked_message())
+
+        recorded = manager.get_messages("s1").messages[-1]
+        assert recorded.content == content
+        assert recorded.media_type == MEDIA_TYPE
 
     def test_an_unmarked_message_records_nothing(self, monkeypatch):
         manager = _configure(monkeypatch)
@@ -331,7 +375,7 @@ class TestStreamRunnerRecording:
         return StreamAgentRunner(transport=InMemoryTransport(), chat_service=chat_service)
 
     def test_deltas_are_accumulated_into_one_assistant_message(self, monkeypatch):
-        manager = _configure(monkeypatch, mode="stream")
+        manager = _configure(monkeypatch, mode="rest_sync", message_type="delta")
         _open_thread(manager)
 
         self._stream_runner([{"delta": "he"}, {"delta": "llo"}, {"done": True}]).process(_marked_message())
@@ -341,7 +385,7 @@ class TestStreamRunnerRecording:
         assert [(m.role, m.content) for m in manager.get_messages("s1").messages][-1] == ("assistant", "hello")
 
     def test_a_halted_stream_records_nothing(self, monkeypatch):
-        manager = _configure(monkeypatch, mode="stream")
+        manager = _configure(monkeypatch, mode="rest_sync", message_type="delta")
         _open_thread(manager)
 
         self._stream_runner([{"delta": "he"}, {"error": "boom", "done": True}]).process(_marked_message())
@@ -349,7 +393,7 @@ class TestStreamRunnerRecording:
         assert [m.role for m in manager.get_messages("s1").messages] == ["user"]
 
     def test_an_empty_stream_records_no_blank_message(self, monkeypatch):
-        manager = _configure(monkeypatch, mode="stream")
+        manager = _configure(monkeypatch, mode="rest_sync", message_type="delta")
         _open_thread(manager)
 
         self._stream_runner([{"done": True}]).process(_marked_message())

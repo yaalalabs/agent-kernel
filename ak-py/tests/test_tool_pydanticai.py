@@ -63,6 +63,33 @@ class TestPydanticAIToolBuilderBind:
         assert tools[2].name == "no_params"
 
 
+# bind – keyword options forwarded to Tool
+class TestPydanticAIToolBuilderOptions:
+    """
+    Without forwarding, a gated tool could not be declared through the builder at all.
+
+    `requires_approval` is this framework's gate for a tool needing a verdict, so it stands in here
+    for the sixteen other options on `Tool`.
+    """
+
+    def test_an_option_reaches_the_tool(self):
+        tools = PydanticAIToolBuilder.bind([get_weather], requires_approval=True)
+        assert tools[0].requires_approval is True
+
+    def test_the_framework_default_is_untouched_when_no_option_is_given(self):
+        tools = PydanticAIToolBuilder.bind([get_weather])
+        assert tools[0].requires_approval is False
+
+    def test_an_option_applies_to_every_function_in_the_call(self):
+        """Why tools wanting different options are bound in separate calls."""
+        tools = PydanticAIToolBuilder.bind([get_weather, add], requires_approval=True)
+        assert [t.requires_approval for t in tools] == [True, True]
+
+    def test_an_option_the_framework_does_not_take_raises(self):
+        with pytest.raises(TypeError):
+            PydanticAIToolBuilder.bind([get_weather], not_an_option=True)
+
+
 # Tool metadata – name, description, schema
 class TestToolMetadata:
 

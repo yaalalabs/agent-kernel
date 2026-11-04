@@ -12,6 +12,8 @@ import importlib
 from typing import TYPE_CHECKING, Any
 
 _LAZY_EXPORTS = {
+    "StatefulEdgeAdapter": ".base",
+    "GatewayRunner": ".gateway",
     "InboundAdapter": ".base",
     "InboundParseResult": ".base",
     "InboundRequest": ".base",
@@ -21,16 +23,23 @@ _LAZY_EXPORTS = {
     "IntegrationAdapterFactory": ".factory",
     "IntegrationProducer": ".producer",
     "PollerRunner": ".poller",
+    "StatefulEdgeRegistry": ".registry",
     "WebhookRESTRequestHandler": ".webhook",
+    "WebhookRoute": ".routes",
+    "WebhookRouteMatcher": ".route_matcher",
 }
 
 __all__ = sorted(_LAZY_EXPORTS)
 
 if TYPE_CHECKING:  # pragma: no cover: static resolution only, preserves laziness at runtime
-    from .base import InboundAdapter, InboundParseResult, InboundRequest, OutboundAdapter, PollingInboundAdapter, Source
+    from .base import InboundAdapter, InboundParseResult, InboundRequest, OutboundAdapter, PollingInboundAdapter, Source, StatefulEdgeAdapter
     from .factory import IntegrationAdapterFactory
+    from .gateway import GatewayRunner
     from .poller import PollerRunner
     from .producer import IntegrationProducer
+    from .registry import StatefulEdgeRegistry
+    from .route_matcher import WebhookRouteMatcher
+    from .routes import WebhookRoute
     from .webhook import WebhookRESTRequestHandler
 
 

@@ -168,12 +168,16 @@ jobs:
   get-base-outputs:
     needs: [setup, build-ak-py, deploy-openai]
     runs-on: ubuntu-latest
+    environment: ci-tests
     outputs:
       vpc_id: ${{ steps.base-outputs.outputs.vpc_id }}
       private_subnet_ids: ${{ steps.base-outputs.outputs.private_subnet_ids }}
       request_handler_security_group_id: ${{ steps.base-outputs.outputs.request_handler_security_group_id }}
       agent_runner_security_group_id: ${{ steps.base-outputs.outputs.agent_runner_security_group_id }}
       response_handler_security_group_id: ${{ steps.base-outputs.outputs.response_handler_security_group_id }}
+      containerized_alb_security_group_id: ${{ steps.containerized-sgs.outputs.containerized_alb_security_group_id }}
+      containerized_ecs_service_security_group_id: ${{ steps.containerized-sgs.outputs.containerized_ecs_service_security_group_id }}
+      containerized_agent_runner_security_group_id: ${{ steps.containerized-sgs.outputs.containerized_agent_runner_security_group_id }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -202,6 +206,21 @@ jobs:
         run: |
           python3 scripts/deploy/inject_dependencies.py
           python3 .github/scripts/get_base_outputs.py \
+            --base-path ${{ fromJson(needs.setup.outputs.deployment-base).path }} \
+            --deploy-dir ${{ fromJson(needs.setup.outputs.deployment-base).deploy_dir }}
+
+      # aws-containerized has no long-lived base deployment (ECS running all week is too expensive),
+      # so its security groups come from a separate SG-only stack in the base VPC. It is never
+      # destroyed by CI: re-applying is a no-op, and recreates the SGs if they were deleted (#823).
+      # continue-on-error: if this fails, the outputs are empty, run_single_test.py skips empty SG
+      # flags, and the aws-containerized examples fall back to creating their own SGs instead of
+      # the whole weekly matrix (every cloud) being skipped.
+      - name: Apply shared aws-containerized security groups
+        id: containerized-sgs
+        continue-on-error: true
+        run: |
+          python3 .github/scripts/deploy_containerized_shared_sgs.py \
+            --vpc-id "${{ steps.base-outputs.outputs.vpc_id }}" \
             --base-path ${{ fromJson(needs.setup.outputs.deployment-base).path }} \
             --deploy-dir ${{ fromJson(needs.setup.outputs.deployment-base).deploy_dir }}
 
@@ -300,6 +319,9 @@ jobs:
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           TF_VAR_openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+          TF_VAR_langfuse_public_key: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+          TF_VAR_langfuse_secret_key: ${{ secrets.LANGFUSE_SECRET_KEY }}
+          TF_VAR_langfuse_base_url: ${{ vars.LANGFUSE_BASE_URL }}
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_SIGNING_SECRET: ${{ secrets.SLACK_SIGNING_SECRET }}
           ARM_SUBSCRIPTION_ID: ${{ vars.ARM_SUBSCRIPTION_ID }}
@@ -317,17 +339,26 @@ jobs:
             ARGS+=(--vpc-id "${{ needs.get-base-outputs.outputs.vpc_id }}" --private-subnet-ids '${{ needs.get-base-outputs.outputs.private_subnet_ids }}')
           fi
           # aws-serverless deploys also reuse the base's request handler security group (#716; also
-          # shared by the authorizer/WebSocket connection handler tier. aws-containerized needs its
-          # own SG variables and is Phase 2, not wired here).
+          # shared by the authorizer/WebSocket connection handler tier).
           if [[ "${{ matrix.type }}" == "aws-serverless" ]]; then
             ARGS+=(--request-handler-security-group-id "${{ needs.get-base-outputs.outputs.request_handler_security_group_id }}")
           fi
           # The base deployment runs in queue_mode, so it also exposes an agent runner and response
-          # handler security group — but only scalable-openai and schedule-openai (the two
-          # queue-mode examples in the weekly matrix) have those tiers to reuse them on. Every other
-          # aws-serverless example is queue_mode = false and only has a request handler tier.
-          if [[ "${{ matrix.path }}" == "examples/aws-serverless/scalable-openai" || "${{ matrix.path }}" == "examples/aws-serverless/schedule-openai" ]]; then
+          # handler security group — but only scalable-openai, schedule-openai and
+          # openai-langfuse-trace-evaluation (the queue-mode examples in the weekly matrix) have those tiers
+          # to reuse them on. Every other aws-serverless example is queue_mode = false and only has a
+          # request handler tier.
+          if [[ "${{ matrix.path }}" == "examples/aws-serverless/scalable-openai" || "${{ matrix.path }}" == "examples/aws-serverless/schedule-openai" || "${{ matrix.path }}" == "examples/aws-serverless/openai-langfuse-trace-evaluation" ]]; then
             ARGS+=(--agent-runner-security-group-id "${{ needs.get-base-outputs.outputs.agent_runner_security_group_id }}" --response-handler-security-group-id "${{ needs.get-base-outputs.outputs.response_handler_security_group_id }}")
+          fi
+          # aws-containerized deploys reuse the shared ALB and ECS service security groups (#823).
+          # Only openai-dynamodb-scalable and openai-schedule (the two queue-mode examples in the
+          # weekly matrix) have an agent runner tier, so only they also get the shared agent runner SG.
+          if [[ "${{ matrix.type }}" == "aws-containerized" ]]; then
+            ARGS+=(--alb-security-group-id "${{ needs.get-base-outputs.outputs.containerized_alb_security_group_id }}" --ecs-service-security-group-id "${{ needs.get-base-outputs.outputs.containerized_ecs_service_security_group_id }}")
+          fi
+          if [[ "${{ matrix.path }}" == "examples/aws-containerized/openai-dynamodb-scalable" || "${{ matrix.path }}" == "examples/aws-containerized/openai-schedule" ]]; then
+            ARGS+=(--agent-runner-security-group-id "${{ needs.get-base-outputs.outputs.containerized_agent_runner_security_group_id }}")
           fi
           python .github/scripts/run_single_test.py "${ARGS[@]}"
 
@@ -338,6 +369,9 @@ jobs:
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           TF_VAR_openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+          TF_VAR_langfuse_public_key: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+          TF_VAR_langfuse_secret_key: ${{ secrets.LANGFUSE_SECRET_KEY }}
+          TF_VAR_langfuse_base_url: ${{ vars.LANGFUSE_BASE_URL }}
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_SIGNING_SECRET: ${{ secrets.SLACK_SIGNING_SECRET }}
           ARM_SUBSCRIPTION_ID: ${{ vars.ARM_SUBSCRIPTION_ID }}
@@ -359,6 +393,9 @@ jobs:
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           TF_VAR_openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+          TF_VAR_langfuse_public_key: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+          TF_VAR_langfuse_secret_key: ${{ secrets.LANGFUSE_SECRET_KEY }}
+          TF_VAR_langfuse_base_url: ${{ vars.LANGFUSE_BASE_URL }}
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_SIGNING_SECRET: ${{ secrets.SLACK_SIGNING_SECRET }}
           ARM_SUBSCRIPTION_ID: ${{ vars.ARM_SUBSCRIPTION_ID }}
@@ -373,8 +410,14 @@ jobs:
           if [[ "${{ matrix.type }}" == "aws-serverless" ]]; then
             ARGS+=(--request-handler-security-group-id "${{ needs.get-base-outputs.outputs.request_handler_security_group_id }}")
           fi
-          if [[ "${{ matrix.path }}" == "examples/aws-serverless/scalable-openai" || "${{ matrix.path }}" == "examples/aws-serverless/schedule-openai" ]]; then
+          if [[ "${{ matrix.path }}" == "examples/aws-serverless/scalable-openai" || "${{ matrix.path }}" == "examples/aws-serverless/schedule-openai" || "${{ matrix.path }}" == "examples/aws-serverless/openai-langfuse-trace-evaluation" ]]; then
             ARGS+=(--agent-runner-security-group-id "${{ needs.get-base-outputs.outputs.agent_runner_security_group_id }}" --response-handler-security-group-id "${{ needs.get-base-outputs.outputs.response_handler_security_group_id }}")
+          fi
+          if [[ "${{ matrix.type }}" == "aws-containerized" ]]; then
+            ARGS+=(--alb-security-group-id "${{ needs.get-base-outputs.outputs.containerized_alb_security_group_id }}" --ecs-service-security-group-id "${{ needs.get-base-outputs.outputs.containerized_ecs_service_security_group_id }}")
+          fi
+          if [[ "${{ matrix.path }}" == "examples/aws-containerized/openai-dynamodb-scalable" || "${{ matrix.path }}" == "examples/aws-containerized/openai-schedule" ]]; then
+            ARGS+=(--agent-runner-security-group-id "${{ needs.get-base-outputs.outputs.containerized_agent_runner_security_group_id }}")
           fi
           python .github/scripts/run_single_test.py "${ARGS[@]}"
       - name: Upload test results
@@ -387,10 +430,19 @@ jobs:
             ${{ matrix.path }}/**/pytest-report.xml
           retention-days: 30
 
-  e2e-messaging-deploy:
-    if: github.event_name == 'workflow_dispatch' && inputs.provision_e2e_messaging
+  # One job for the whole e2e lifecycle (optional provisioning, scale up, test, scale down), so
+  # the concurrency lock and the always() scale-down below cover provisioning too.
+  e2e-messaging-test:
     runs-on: ubuntu-latest
     environment: ci-tests
+    # One run at a time: this job redeploys the shared e2e service and scales it down when it
+    # ends, either of which would disrupt another run's tests.
+    concurrency:
+      group: e2e-messaging-test
+      cancel-in-progress: false
+    env:
+      # (Re)deploy the e2e app before testing: manual dispatch with provision_e2e_messaging on.
+      PROVISION_E2E_MESSAGING: ${{ github.event_name == 'workflow_dispatch' && inputs.provision_e2e_messaging }}
     defaults:
       run:
         shell: bash -e {0}
@@ -410,7 +462,7 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID_DEV }}:role/${{ vars.AWS_ROLE_NAME }}
-          aws-region: us-east-2
+          aws-region: ${{ vars.AWS_REGION }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v4
@@ -419,10 +471,12 @@ jobs:
           terraform_wrapper: false
 
       - name: Build ak-py from this checkout
+        if: env.PROVISION_E2E_MESSAGING == 'true'
         working-directory: ak-py
         run: ./build.sh
 
       - name: Build deployment package
+        if: env.PROVISION_E2E_MESSAGING == 'true'
         working-directory: e2e/app
         run: |
           rm -rf dist
@@ -435,6 +489,7 @@ jobs:
           cp deploy/Dockerfile dist/
 
       - name: Deploy e2e messaging app
+        if: env.PROVISION_E2E_MESSAGING == 'true'
         working-directory: e2e/app/deploy
         env:
           TF_VAR_openai_api_key: ${{ secrets.OPENAI_API_KEY }}
@@ -465,6 +520,7 @@ jobs:
           terraform apply -input=false -auto-approve
 
       - name: Wait for ECS service to stabilize
+        if: env.PROVISION_E2E_MESSAGING == 'true'
         working-directory: e2e/app/deploy
         run: |
           # Derive cluster name and region from terraform.tfvars so this stays in sync
@@ -492,37 +548,11 @@ jobs:
             echo "  $unstable service(s) still rolling out; waiting..."
             sleep 15
           done
-  e2e-messaging-test:
-    needs: [e2e-messaging-deploy]
-    if: always() && (needs.e2e-messaging-deploy.result == 'success' || needs.e2e-messaging-deploy.result == 'skipped')
-    runs-on: ubuntu-latest
-    environment: ci-tests
-    defaults:
-      run:
-        shell: bash -e {0}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v5
 
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: '3.12'
-
-      - name: Install uv
-        run: pip install uv
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v6
-        with:
-          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID_DEV }}:role/${{ vars.AWS_ROLE_NAME }}
-          aws-region: us-east-2
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v4
-        with:
-          terraform_version: 1.14.3
-          terraform_wrapper: false
+      # The e2e service idles at 0 tasks between runs so Fargate isn't billed all week; start
+      # one task for this run. The last step scales it back to 0.
+      - name: Scale e2e messaging service up
+        run: e2e/app/deploy/scale.sh up
 
       - name: Read webhook URL and probe endpoint
         id: webhook
@@ -531,14 +561,24 @@ jobs:
           terraform init -input=false
           url=$(terraform output -raw telegram_webhook_url)
           echo "telegram_webhook_url=$url" >> "$GITHUB_OUTPUT"
-          code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$url" -H "Content-Type: application/json" -d '{}')
-          echo "POST $url -> HTTP $code"
           # 200 (no webhook secret) or 403 (secret enforced) both prove a healthy container;
-          # 503 means no healthy ECS task behind the ALB.
-          if [[ "$code" == "503" || "$code" == "500" ]]; then
-            echo "e2e messaging service is not healthy — dispatch this workflow with provision_e2e_messaging enabled to (re)deploy it" >&2
-            exit 1
-          fi
+          # 5xx means no healthy ECS task behind the ALB yet. The task was just started, and the
+          # ALB needs a few passing health checks before it routes to it, so retry for 5 minutes.
+          deadline=$(( SECONDS + 300 ))
+          while :; do
+            # Bound each attempt so a stalled connection can't hold the loop past the deadline.
+            code=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 10 --max-time 30 \
+              -X POST "$url" -H "Content-Type: application/json" -d '{}' || true)
+            echo "POST $url -> HTTP $code"
+            if [[ "$code" != 5* && "$code" != "000" ]]; then
+              break
+            fi
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              echo "e2e messaging service is not healthy — dispatch this workflow with provision_e2e_messaging enabled to (re)deploy it" >&2
+              exit 1
+            fi
+            sleep 15
+          done
 
       - name: Install e2e test dependencies
         working-directory: e2e/tests
@@ -571,3 +611,9 @@ jobs:
           E2E_WHATSAPP_SENDER_NUMBER: ${{ vars.E2E_WHATSAPP_SENDER_NUMBER }}
           E2E_TEAMS_DIRECTLINE_SECRET: ${{ secrets.E2E_TEAMS_DIRECTLINE_SECRET }}
         run: uv run pytest -v -rs
+
+      # Runs even when an earlier step failed or the run was cancelled, so the service never
+      # stays up all week.
+      - name: Scale e2e messaging service down
+        if: always()
+        run: e2e/app/deploy/scale.sh down

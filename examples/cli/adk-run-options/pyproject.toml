@@ -5,12 +5,12 @@ description = "Demo of per-agent native run options (plugins and RunConfig max_l
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[cli,adk]>=0.9.3",
+    "agentkernel[cli,adk]>=0.9.5",
 ]
 
 [dependency-groups]
 dev = [
-    "agentkernel[test]>=0.9.3",
+    "agentkernel[test]>=0.9.5",
     "black==26.5.1",
     "isort>=5.0.0",
     "mypy>=1.0.0",

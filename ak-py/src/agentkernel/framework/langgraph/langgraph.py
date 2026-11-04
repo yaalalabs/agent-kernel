@@ -11,12 +11,14 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import StructuredTool
 from langgraph.checkpoint.base import (
+    WRITES_IDX_MAP,
     BaseCheckpointSaver,
     Checkpoint,
     CheckpointMetadata,
     CheckpointTuple,
 )
 from langgraph.graph.state import CompiledStateGraph
+from langgraph.types import Command
 from pydantic import BaseModel
 
 from ...core import Agent as BaseAgent
@@ -28,9 +30,11 @@ from ...core.config import AKConfig
 from ...core.event import (
     MessageEnd,
     MessageStart,
+    PausedInterruption,
     ReasoningDelta,
     ReasoningEnd,
     ReasoningStart,
+    RunPaused,
     StreamEvent,
     TextDelta,
     ToolCallArgs,
@@ -38,7 +42,17 @@ from ...core.event import (
     ToolCallResult,
     ToolCallStart,
 )
-from ...core.model import AgentReply, AgentReplyAny, AgentReplyText, AgentRequest, AgentRequestAny, AgentRequestText
+from ...core.model import (
+    AgentPausedReplyAny,
+    AgentReply,
+    AgentReplyAny,
+    AgentReplyText,
+    AgentRequest,
+    AgentRequestAny,
+    AgentRequestText,
+    ResumeDecision,
+)
+from ...core.paused_run import PausedRun, PausedRunState
 from ...core.tool import SystemToolFactory
 from ...core.util.error_util import user_facing_error_message
 from ...trace import Trace
@@ -46,17 +60,64 @@ from ...trace import Trace
 FRAMEWORK = "langgraph"
 _logger = logging.getLogger("ak.langgraph.runner")
 
+INTERRUPT_KEY = "__interrupt__"
+"""The key `ainvoke` returns a graph's pending `interrupt()` calls under.
+
+Spelled literally rather than imported as `langgraph.constants.INTERRUPT`, which still resolves at
+1.2.11 but raises `LangGraphDeprecatedSinceV10` on access."""
+
 
 class CheckPointer(BaseCheckpointSaver):
     """
     A pickle-serializable checkpointer implementation for LangGraph.
     This stores checkpoint data in a simple dictionary structure that can be pickled
+
+    **Pending writes are part of the contract, not an optimisation.** A graph that calls
+    `interrupt()` records the pause as a write, and `Command(resume=...)` records the answer the
+    same way; both are invisible unless `get_tuple` hands them back on `CheckpointTuple.pending_writes`.
+    Without that, `aget_state(...).interrupts` is always empty and a resume silently re-runs the node
+    from the top — which is how human-in-the-loop (#606) found this. Writes are keyed by
+    `(thread_id, checkpoint_ns, checkpoint_id)` and `(task_id, index)`, mirroring LangGraph's own
+    `InMemorySaver`, so writes from one turn cannot leak into the next and a replayed task replaces
+    rather than duplicates its entries. They are also bounded: this saver keeps one checkpoint per
+    namespace, so `put` forgets the writes of the checkpoint it supersedes, which nothing can read
+    back. Unbounded here means an ever-growing pickled session on every backend.
     """
 
     def __init__(self):
         super().__init__()
         self._storage = {}
         self._writes = {}
+
+    def __getstate__(self) -> dict:
+        """
+        Everything this checkpointer holds except the inherited serializer.
+
+        `BaseCheckpointSaver.__init__` attaches a `JsonPlusSerializer` whose msgpack hook is a
+        closure, and pickle stores a function by its import path — a nested one has none. Since
+        `SessionStore` pickles the whole session, that single attribute made a session holding a
+        LangGraph conversation unstorable on every shared backend.
+
+        Excluded by name rather than listing what to keep, so an attribute added to this class later
+        is carried across instead of being silently dropped on every round trip.
+
+        :return: This checkpointer's state, minus the one entry that cannot be pickled.
+        """
+        state = self.__dict__.copy()
+        state.pop("serde", None)
+        return state
+
+    def __setstate__(self, state: dict) -> None:
+        """
+        Restores the stored state and reattaches the serializer `__getstate__` left out.
+
+        The parent's constructor is what reattaches it, so any setup it gains in a future version is
+        applied on load too.
+
+        :param state: What `__getstate__` returned.
+        """
+        BaseCheckpointSaver.__init__(self)
+        self.__dict__.update(state)
 
     def get_tuple(self, config: RunnableConfig) -> Optional[CheckpointTuple]:
         thread_id = config.get("configurable", {}).get("thread_id")
@@ -71,11 +132,13 @@ class CheckPointer(BaseCheckpointSaver):
         if checkpoint_data is None:
             return None
 
+        checkpoint = checkpoint_data["checkpoint"]
         return CheckpointTuple(
             config=config,
-            checkpoint=checkpoint_data["checkpoint"],
+            checkpoint=checkpoint,
             metadata=checkpoint_data.get("metadata", {}),
             parent_config=checkpoint_data.get("parent_config"),
+            pending_writes=self._pending_writes(thread_id, checkpoint_ns, checkpoint.get("id", "")),
         )
 
     def list(
@@ -126,8 +189,31 @@ class CheckPointer(BaseCheckpointSaver):
             "metadata": metadata,
             "parent_config": config.get("parent_config"),
         }
+        self._drop_unreachable_writes(thread_id, checkpoint_ns, checkpoint.get("id", ""))
 
         return config
+
+    def _drop_unreachable_writes(self, thread_id: str, checkpoint_ns: str, checkpoint_id: str) -> None:
+        """
+        Forgets the writes of every superseded checkpoint in one namespace.
+
+        This class keeps a single checkpoint per `(thread_id, checkpoint_ns)`, and `get_tuple` reads
+        writes for exactly that checkpoint's id — so an entry under any other id can never be
+        returned again. Without this they still accumulate, one set per superstep, inside a session
+        that is pickled to the configured backend on every store: measured at roughly half a
+        kilobyte per turn on a graph whose state never grows, and more where the retained values are
+        messages.
+
+        Called after the new checkpoint is stored, which is also after the previous one's writes have
+        been read: a resume records its answer against the paused checkpoint *before* the superstep
+        that supersedes it, so the pause is never dropped out from under a resume.
+
+        :param thread_id: The thread whose namespace was just written.
+        :param checkpoint_ns: The namespace that now holds one checkpoint.
+        :param checkpoint_id: The checkpoint now stored, whose writes are the ones still reachable.
+        """
+        for key in [k for k in self._writes if k[0] == thread_id and k[1] == checkpoint_ns and k[2] != checkpoint_id]:
+            del self._writes[key]
 
     def put_writes(
         self,
@@ -136,25 +222,47 @@ class CheckPointer(BaseCheckpointSaver):
         task_id: str,
         task_path: str = "",
     ) -> None:
-        thread_id = config.get("configurable", {}).get("thread_id")
-        checkpoint_ns = config.get("configurable", {}).get("checkpoint_ns", "")
+        """
+        Records one task's writes against the checkpoint they belong to.
 
+        The negative indices in `WRITES_IDX_MAP` are what make a replayed task overwrite its own
+        `__interrupt__` / `__resume__` entries instead of stacking a second copy; every other
+        channel keeps its first write, matching LangGraph's own saver.
+
+        :param config: The config naming the thread, namespace and checkpoint.
+        :param writes: Channel/value pairs the task produced.
+        :param task_id: The task that produced them.
+        :param task_path: The task's path, kept for parity with the base contract.
+        """
+        configurable = config.get("configurable", {})
+        thread_id = configurable.get("thread_id")
         if not thread_id:
             return
 
-        if thread_id not in self._writes:
-            self._writes[thread_id] = {}
+        outer = self._writes.setdefault((thread_id, configurable.get("checkpoint_ns", ""), configurable.get("checkpoint_id", "")), {})
+        for idx, (channel, value) in enumerate(writes):
+            inner = (task_id, WRITES_IDX_MAP.get(channel, idx))
+            if inner[1] >= 0 and inner in outer:
+                continue
+            outer[inner] = (task_id, channel, value, task_path)
 
-        if checkpoint_ns not in self._writes[thread_id]:
-            self._writes[thread_id][checkpoint_ns] = []
+    def _pending_writes(self, thread_id: str, checkpoint_ns: str, checkpoint_id: str) -> list[tuple[str, str, Any]]:
+        """
+        The writes recorded against one checkpoint, in the shape `CheckpointTuple` expects.
 
-        self._writes[thread_id][checkpoint_ns].append({"task_id": task_id, "task_path": task_path, "writes": writes})
+        :param thread_id: The thread the checkpoint belongs to.
+        :param checkpoint_ns: The checkpoint namespace.
+        :param checkpoint_id: The checkpoint the writes were made against.
+        :return: (task_id, channel, value) triples, empty when nothing is recorded.
+        """
+        recorded = self._writes.get((thread_id, checkpoint_ns, checkpoint_id), {})
+        return [(task_id, channel, value) for task_id, channel, value, _ in recorded.values()]
 
     def delete_thread(self, thread_id: str) -> None:
         if thread_id in self._storage:
             del self._storage[thread_id]
-        if thread_id in self._writes:
-            del self._writes[thread_id]
+        for key in [key for key in self._writes if isinstance(key, tuple) and key[0] == thread_id]:
+            del self._writes[key]
 
     async def aget_tuple(self, config: RunnableConfig) -> Optional[CheckpointTuple]:
         return self.get_tuple(config)
@@ -392,6 +500,22 @@ class LangGraphRunner(BaseRunner):
                 return prompt, False
         return prompt, True
 
+    def _session_config(self, agent: Any, session: Session) -> dict:
+        """
+        The RunnableConfig addressing this session's thread, with AK's checkpointer attached.
+
+        The one seam every path builds its config through — an ordinary turn and a resume alike — so
+        a subclass that needs to reach the config (the Langfuse runner, which appends its callback
+        handler) overrides this and is not silently bypassed by whichever path a turn takes. Tracing
+        a resumed run matters most, since that is where a gated tool finally executes.
+
+        :param agent: The LangGraph agent, whose checkpointer is pointed at this session's.
+        :param session: The AgentKernel session, whose id is the graph's `thread_id`.
+        :return: The config dict addressing this session's thread.
+        """
+        agent.agent.checkpointer = self._session(session).checkpointer
+        return LangGraphSessionConfigModel(configurable=LangGraphSessionConfigurable(thread_id=session.id)).model_dump()
+
     def _prepare_session_and_messages(self, agent: Any, session: Session, prompt: str) -> tuple[dict, list]:
         """
         Prepare session config and messages for LangGraph agent.
@@ -400,9 +524,8 @@ class LangGraphRunner(BaseRunner):
         :param prompt: The prompt text.
         :return: Tuple of (session_config, messages).
         """
-        session_config = LangGraphSessionConfigModel(configurable=LangGraphSessionConfigurable(thread_id=session.id))
+        session_config = self._session_config(agent, session)
         lg_session = self._session(session)
-        agent.agent.checkpointer = lg_session.checkpointer
 
         messages = []
         system_prompt = getattr(agent, "_system_prompt", "")
@@ -411,7 +534,7 @@ class LangGraphRunner(BaseRunner):
             lg_session._system_prompt_injected = True
         messages.append(HumanMessage(content=prompt))
 
-        return session_config.model_dump(), messages
+        return session_config, messages
 
     @staticmethod
     def _merge_run_config(base: dict, caller: Mapping[str, Any] | None) -> dict:
@@ -439,6 +562,11 @@ class LangGraphRunner(BaseRunner):
     async def run(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AgentReply:
         """
         Runs the LangGraph agent with provided multi modal inputs.
+
+        A pending `interrupt()` is checked before either reply mapping: on an interrupted run
+        `messages[-1]` is whatever the graph said on its way to stopping, so reading it first turns
+        a pause into a partial answer.
+
         :param agent: The LangGraph agent to run.
         :param session: The session to use for the agent.
         :param requests: The requests to the agent.
@@ -484,11 +612,165 @@ class LangGraphRunner(BaseRunner):
                 produced = {k: result[k] for k in incoming if k in result}
                 self._store_framework_context(session, incoming, produced)
 
+            if INTERRUPT_KEY in result:
+                return self._paused_reply(agent, session, result[INTERRUPT_KEY])
+
             structured = AgentReplyAny.from_output(result.get("structured_response"), prompt)
             if structured is not None:
                 return structured
             last_message = result["messages"][-1]
             return AgentReplyText(response=self._extract_text_content(last_message.content), prompt=prompt)
+        except Exception as e:
+            return AgentReplyText(response=user_facing_error_message(e), prompt=prompt)
+        finally:
+            if context is not None:
+                context.reset()
+
+    @property
+    def supports_pause(self) -> bool:
+        """
+        :return: True — `interrupt()` parks the graph in AK's own checkpointer, which the session persists.
+        """
+        return True
+
+    def _paused_reply(self, agent: Any, session: Session, interrupts: Sequence[Any]) -> AgentPausedReplyAny:
+        """
+        Records a paused graph and returns the reply that carries it back to the caller.
+
+        Replaces rather than appends: LangGraph keeps one thread per session (`thread_id` is the
+        session id), so a second pause is the same conversation stopping again and the earlier
+        record could never be resumed. Only OpenAI, whose `RunState` is a self-contained snapshot,
+        can genuinely hold two.
+
+        Scoped to this runner: the same session may also hold a pause from another framework, which
+        is a different conversation and still answerable.
+
+        The record's own payload is deliberately thin — the graph state lives in AK's checkpointer,
+        which the session already persists, so there is nothing framework-shaped to store. Each
+        question's own shape rides on `PausedInterruption.payload`, exactly as the node passed it
+        to `interrupt()`.
+
+        :param agent: The agent that paused.
+        :param session: The session the record is written to.
+        :param interrupts: The `Interrupt` objects the graph returned.
+        :return: The paused reply, carrying the assigned run id.
+        """
+        PausedRunState.clear_for_runner(session, self.name)
+
+        record = PausedRunState.add(
+            session,
+            agent=agent.name,
+            runner=self.name,
+            interruptions=[PausedInterruption(id=item.id, kind="input_required", payload=item.value) for item in interrupts],
+            payload={"thread_id": session.id},
+        )
+        return AgentPausedReplyAny(run_id=record.id, session_id=session.id, agent=agent.name, interruptions=record.interruptions)
+
+    @staticmethod
+    def _decision_value(decision: ResumeDecision) -> Any:
+        """
+        The value a node's `interrupt()` call returns for one decision.
+
+        The human's own answer, not an Agent-Kernel envelope: a node written as
+        `choice = interrupt("pick one")` gets the choice. `payload` wins because it is the
+        structured answer, `message` is the free-text one, and the bare status verb is what is left
+        when the human only pressed a button — so `"cancelled"` reaches the node as `"cancelled"`.
+
+        :param decision: One human decision.
+        :return: The value to resume that interrupt with.
+        """
+        if decision.payload is not None:
+            return decision.payload
+        if decision.message:
+            return decision.message
+        return decision.status
+
+    def _resume_config(self, agent: Any, session: Session) -> dict:
+        """
+        The RunnableConfig a resume addresses, with AK's checkpointer reattached.
+
+        Deliberately not `_prepare_session_and_messages`: that also appends a `HumanMessage` and
+        consumes the one-shot system-prompt injection, both of which belong to a new turn rather
+        than to continuing a parked one. It shares `_session_config` with that method instead, so a
+        subclass reaching the config — the Langfuse runner's callback handler — is not lost on the
+        resume path, which is where the gated tool actually runs.
+
+        :param agent: The agent being resumed.
+        :param session: The session whose id is the graph's `thread_id`.
+        :return: The config dict addressing this session's thread.
+        """
+        return self._session_config(agent, session)
+
+    def _resume_command(self, decisions: list[ResumeDecision], prompt: str) -> Command:
+        """
+        Builds the `Command` that continues the graph.
+
+        A prompt riding along with a decision has no native LangGraph feature — `Command.update`
+        means *update the graph state*. Agent Kernel encodes it as a write to the `messages`
+        channel its adapter already feeds, so the prompt reaches the model the same way an ordinary
+        turn's would. **This mapping is Agent Kernel's, not LangGraph's**, and the adapter docs say so.
+
+        :param decisions: The human's decisions.
+        :param prompt: Text sent alongside them, empty when there is none.
+        :return: The command to invoke the graph with.
+        """
+        resume = {decision.id: self._decision_value(decision) for decision in decisions}
+        if prompt.strip():
+            return Command(resume=resume, update={"messages": [HumanMessage(content=prompt)]})
+        return Command(resume=resume)
+
+    async def resume(
+        self,
+        agent: Any,
+        session: Session,
+        requests: list[AgentRequest],
+        decisions: list[ResumeDecision],
+        record: PausedRun,
+    ) -> AgentReply:
+        """
+        Continues a paused graph from the human's decisions.
+
+        The interrupting node **re-runs from the top** on resume — LangGraph replays it rather than
+        continuing inside it — so any side effect before its `interrupt()` call happens twice. That
+        is the framework's behaviour, not Agent Kernel's, and the docs pass it through verbatim.
+
+        :param agent: The agent that paused.
+        :param session: The session holding the record.
+        :param requests: The hook-processed request list, carrying the resume request.
+        :param decisions: One per interruption being answered.
+        :param record: The record Runtime validated.
+        :return: The continued run's reply, which may itself be paused again.
+        """
+        prompt = ""
+        context: ToolContext | None = None
+        try:
+            context = ToolContext(Runtime.current(), agent, session, requests).set()
+            prompt, _ = self._process_requests(requests)
+
+            options = await agent.resolve_run_options(session, requests)
+            config = self._resume_config(agent, session)
+            incoming = self._load_framework_context(session)
+
+            kwargs = self._native_kwargs(
+                options,
+                input=self._resume_command(decisions, prompt),
+                config=self._merge_run_config(config, options.get("config")),
+            )
+            result = await agent.agent.ainvoke(**kwargs)
+
+            if incoming is not None:
+                produced = {k: result[k] for k in incoming if k in result}
+                self._store_framework_context(session, incoming, produced)
+
+            PausedRunState.clear(session, record.id)
+
+            if INTERRUPT_KEY in result:
+                return self._paused_reply(agent, session, result[INTERRUPT_KEY])
+
+            structured = AgentReplyAny.from_output(result.get("structured_response"), prompt)
+            if structured is not None:
+                return structured
+            return AgentReplyText(response=self._extract_text_content(result["messages"][-1].content), prompt=prompt)
         except Exception as e:
             return AgentReplyText(response=user_facing_error_message(e), prompt=prompt)
         finally:
@@ -502,6 +784,10 @@ class LangGraphRunner(BaseRunner):
         Correlation ids are LangChain `run_id`s (one per runnable invocation), so nested model
         calls do not collide. Tool arguments arrive whole on `on_tool_start` and are emitted as a
         single fragment — LangChain has no per-token argument stream.
+
+        The state read-back after the drain is also the only place a streamed pause is visible,
+        since `astream_events` carries no interrupt event. A failed read loses both concerns, so it
+        logs the established framework-context message and a second one naming the missed pause.
 
         :param agent: The LangGraph agent to run.
         :param session: The session to use for the agent.
@@ -540,13 +826,99 @@ class LangGraphRunner(BaseRunner):
 
             # astream_events yields events, not a final state, so read the state back once the stream drains
             # normally. A disconnect or mid-stream error unwinds first, leaving the stored context intact.
-            if incoming is not None:
-                try:
-                    state = await agent.agent.aget_state(merged_config)
-                    produced = {k: state.values[k] for k in incoming if k in state.values}
-                    self._store_framework_context(session, incoming, produced)
-                except Exception as e:
+            state = None
+            try:
+                state = await agent.agent.aget_state(merged_config)
+            except Exception as e:
+                if incoming is not None:
                     self._log_framework_context_stream_failure(session, e)
+                _logger.warning(
+                    f"LangGraph state could not be read back after the stream drained for session '{session.id}', "
+                    f"so a pause this run may have produced is not reported: {e!r}"
+                )
+
+            if state is not None:
+                if incoming is not None:
+                    try:
+                        produced = {k: state.values[k] for k in incoming if k in state.values}
+                        self._store_framework_context(session, incoming, produced)
+                    except Exception as e:
+                        self._log_framework_context_stream_failure(session, e)
+
+                if state.interrupts:
+                    paused = self._paused_reply(agent, session, state.interrupts)
+                    yield RunPaused(run_id=paused.run_id, agent=agent.name, interruptions=paused.interruptions)
+        finally:
+            if context is not None:
+                context.reset()
+
+    async def resume_stream(
+        self,
+        agent: Any,
+        session: Session,
+        requests: list[AgentRequest],
+        decisions: list[ResumeDecision],
+        record: PausedRun,
+    ) -> AsyncGenerator[StreamEvent, None]:
+        """
+        Streaming counterpart of `resume()`, mapping events exactly as `stream()` does.
+
+        Like `stream()`, the pause is only visible in the state read back after the drain, and a
+        failed read logs both the framework-context message and the missed pause.
+
+        :param agent: The agent that paused.
+        :param session: The session holding the record.
+        :param requests: The hook-processed request list, carrying the resume request.
+        :param decisions: One per interruption being answered.
+        :param record: The record Runtime validated.
+        :return: The events the continued graph produces, ending in RunPaused if it pauses again.
+        """
+        context: ToolContext | None = None
+        try:
+            context = ToolContext(Runtime.current(), agent, session, requests).set()
+            prompt, _ = self._process_requests(requests)
+
+            options = await agent.resolve_run_options(session, requests)
+            config = self._resume_config(agent, session)
+            incoming = self._load_framework_context(session)
+            started: set[str] = set()
+            reasoning: dict[str, str] = {}
+
+            merged_config = self._merge_run_config(config, options.get("config"))
+            kwargs = self._native_kwargs(
+                options,
+                input=self._resume_command(decisions, prompt),
+                config=merged_config,
+                version="v2",
+            )
+            async for event in agent.agent.astream_events(**kwargs):
+                for stream_event in self._map_event(event, started, reasoning):
+                    yield stream_event
+
+            state = None
+            try:
+                state = await agent.agent.aget_state(merged_config)
+            except Exception as e:
+                if incoming is not None:
+                    self._log_framework_context_stream_failure(session, e)
+                _logger.warning(
+                    f"LangGraph state could not be read back after the resumed stream drained for session '{session.id}', "
+                    f"so a pause this run may have produced is not reported: {e!r}"
+                )
+
+            PausedRunState.clear(session, record.id)
+
+            if state is not None:
+                if incoming is not None:
+                    try:
+                        produced = {k: state.values[k] for k in incoming if k in state.values}
+                        self._store_framework_context(session, incoming, produced)
+                    except Exception as e:
+                        self._log_framework_context_stream_failure(session, e)
+
+                if state.interrupts:
+                    paused = self._paused_reply(agent, session, state.interrupts)
+                    yield RunPaused(run_id=paused.run_id, agent=agent.name, interruptions=paused.interruptions)
         finally:
             if context is not None:
                 context.reset()

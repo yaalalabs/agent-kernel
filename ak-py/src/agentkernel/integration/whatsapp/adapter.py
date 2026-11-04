@@ -12,9 +12,10 @@ from ...core.model import AgentReply, AgentRequest, AgentRequestFile, AgentReque
 from ...core.multimodal.storage import AttachmentStorageManager
 from ..adapter.base import ATTACHMENTS_DISABLED_ERROR, SESSION_CACHE_ERROR, InboundAdapter, InboundParseResult, InboundRequest, OutboundAdapter
 from ..adapter.meta import answer_challenge, verify_signature
+from ..adapter.routes import BUILTIN_WEBHOOK_ROUTES
 
 NAME = "whatsapp"
-WEBHOOK_PATH = "/whatsapp/webhook"
+WEBHOOK_PATH = BUILTIN_WEBHOOK_ROUTES[NAME].webhook_path
 
 
 class _WhatsAppClient:
@@ -118,7 +119,7 @@ class WhatsAppInboundAdapter(InboundAdapter):
 
     name = NAME
     webhook_path = WEBHOOK_PATH
-    challenge_path = WEBHOOK_PATH
+    challenge_path = BUILTIN_WEBHOOK_ROUTES[NAME].challenge_path
 
     _log = logging.getLogger("ak.integration.whatsapp")
 
@@ -127,6 +128,10 @@ class WhatsAppInboundAdapter(InboundAdapter):
         self._agent = config.whatsapp.agent or None
         self._max_file_size = config.api.max_file_size
         self._client = _WhatsAppClient()
+
+    def missing_verification_settings(self) -> List[str]:
+        """Without an app secret the delivery signature is never checked (``verify_signature``)."""
+        return [] if self._client.app_secret else ["whatsapp.app_secret"]
 
     async def verify(self, raw: Request) -> None:
         await verify_signature(raw, self._client.app_secret)

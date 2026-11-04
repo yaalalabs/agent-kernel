@@ -221,6 +221,9 @@ class PipelineWebSocketHandler(RESTRequestHandler):
         if not body.session_id:
             await self._send_system(websocket, "session_id is required")
             return
+        if not body.prompt and body.resume is None:
+            await self._send_system(websocket, "prompt is required unless the request carries a resume block")
+            return
 
         request_id = request.request_id or str(uuid.uuid4())
         # USER_ID doubles as the WS-entered marker (spec §2 invariant): the Response Handler

@@ -1,2 +1,2 @@
-region = "ap-southeast-2"
+region = "us-east-2"
 prefix = "ak-mem-ddb-dev-examples"

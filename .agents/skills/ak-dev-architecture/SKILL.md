@@ -9,7 +9,7 @@ description: >
   Runner, Module, Runtime, AgentService, ChatService (execution core + presentation wrappers,
   and which layer each surface calls), AKConfig, tools, hooks, multimodal, conversation
   threads (the integration/thread package), secret resolution (agentkernel.secret: SecretManager,
-  SecretProvider, env/aws_ssm), messaging integrations (the integration/adapter
+  SecretProvider, env/aws_ssm/kubernetes), messaging integrations (the integration/adapter
   seam: InboundAdapter/OutboundAdapter, WebhookRESTRequestHandler, PollerRunner), the adapter pattern, the queue execution pipeline
   (agentkernel.pipeline: QueueMessage/QueueTransport/ConsumerLoop, the in_memory transport,
   AgentRunner/ResponseHandler/RequestHandler/IOHandler, the RESTAPI.run delegation rule, and the
@@ -28,7 +28,7 @@ metadata:
 ## Design Principles
 
 1. **Framework-agnostic core**: All core abstractions (`Session`, `Agent`, `Tool`, `Runner`, `Module`, `Runtime`) are framework-independent. Framework-specific logic lives exclusively in adapter modules under `ak-py/src/agentkernel/framework/`.
-2. **Adapter pattern**: Each supported agent framework (OpenAI Agents SDK, CrewAI, LangGraph, Google ADK, Smolagents, and Pydantic AI) implements `Agent`, `Tool`, `Runner`, and `Module` subclasses that wrap native framework objects.
+2. **Adapter pattern**: Each supported agent framework (OpenAI Agents SDK, CrewAI, LangGraph, Google ADK, Smolagents, Pydantic AI, and Microsoft Agent Framework) implements `Agent`, `Tool`, `Runner`, and `Module` subclasses that wrap native framework objects.
 3. **Config-driven behavior**: All runtime behavior is governed by `AKConfig` (Pydantic-based), loaded from YAML/JSON files and environment variables (`AK_` prefix, `__` for nesting).
 4. **Session lifecycle**: Sessions are async context managers providing concurrency-safe state management. Session stores are pluggable (in-memory, Redis, Valkey, DynamoDB, Cosmos DB, Firestore). Session stores also provide the WebSocket gateway's `WSConnectionStore` on their backend via `SessionStore.get_connection_store()` (spec #495 §9): the ABC lives beside `SessionStore` in `core/session/base.py`, and each store file carries (or explicitly declines) its implementation, encapsulating its database operations over the shared drivers: `InMemoryWSConnectionStore` (`in_memory.py`, process-wide class-level state), `RedisLikeWSConnectionStore` (`core/session/redis_like.py`, client-library-agnostic; constructed by the redis/valkey stores with their own drivers), `DynamoDBWSConnectionStore` (`dynamodb.py`, over an existing table named by `session.connection_store.table_name`, same schema as the AWS adapters' connections table); cosmosdb/firestore raise actionably, as does the base default (so pre-method BYO stores keep working until a WS mode is enabled). Kafka's retry/dedup bookkeeping keeps its own session-type factory in `pipeline/transport/bookkeeping.py` (Q5).
 5. **Plugin architecture**: Tools, hooks, guardrails, tracing providers, session stores, knowledge base backends, sandbox providers, and messaging integrations are all pluggable via well-defined interfaces. Backend-selection factories (guardrail, trace, session/thread/multimodal stores, sandbox provider, integration outbound adapter) share one shape via `core/util/factory.py` (`resolve_dotted`, `require_extra`, `AKConfigError`): built-ins resolved by `if/elif` + real imports, with a dotted-path "bring your own" branch on every surface.
@@ -77,7 +77,7 @@ Tracks state across related interactions. Key properties:
 - **`id`**: Unique session identifier
 - **Framework-specific data**: Stored via `get(key)` / `set(key, value)`: each framework stores its own state under a unique key (e.g., `"openai"`, `"langgraph"`). `session.get_framework_session()` is a convenience accessor that resolves that key for you via `Agent.current().runner.name`: returns the **live** stored object (mutate it in place, no `set()` needed) or `None` if nothing's stored yet; raises `RuntimeError` if called with no agent currently running (`Agent.current()` is `None`), so it only works from inside a hook or a tool
 - **Volatile cache** (`v_cache`): Cleared after every `Runtime.run()` invocation: use for transient per-request data
-- **Non-volatile cache** (`nv_cache`): Persisted across requests within the session: use for data that should survive multiple interactions. AG-UI shared state is **not** a `Session.Keys` member: the AG-UI integration stashes it here under `"agui_state"` (`integration/agui/state.py`), gated by `agui.state`, and exposes it to agents as `get_agui_state` / `update_agui_state` tools — deliberately outside `framework_context`, which is per-run and adapter-owned and would overwrite it (see the AG-UI docs page)
+- **Non-volatile cache** (`nv_cache`): Persisted across requests within the session: use for data that should survive multiple interactions. Human-in-the-loop (#606) stores its paused runs here under **`ak.paused_runs`** — a list of `PausedRun`, reached only through `PausedRunState` (`core/paused_run.py`), which is accessors rather than a pluggable `*Store` because there is nothing to select between and nothing to configure. `Runtime` reads a record to validate a resume and the adapters write one, which is why it lives in `core/`: `framework/` may import `core/`, never the reverse. The `ak.` prefix marks the key framework-owned, since the cache is otherwise application space — an application clearing it discards pending decisions. AG-UI shared state is **not** a `Session.Keys` member: the AG-UI integration stashes it here under `"agui_state"` (`integration/agui/state.py`), gated by `agui.state`, and exposes it to agents as `get_agui_state` / `update_agui_state` tools — deliberately outside `framework_context`, which is per-run and adapter-owned and would overwrite it (see the AG-UI docs page)
 - **Reserved keys** (`Session.Keys` enum): `VOLATILE_CACHE`/`NON_VOLATILE_CACHE` back the two caches; `FRAMEWORK_CONTEXT` (`"framework_context"`) holds a per-run, framework-agnostic caller context/state **dict** (must be picklable) that runners inject into the native framework call and write back on success. Unlike the caches it is **not** pre-initialized: an unset key reads back as `None` (absent ⇒ no injection, no behaviour change). The key is fronted by dedicated accessors: `session.get_framework_context()` (live dict, never auto-creates), `set_framework_context(dict)` (rejects non-dicts), `clear_framework_context()`: the way `get_volatile_cache()` fronts `v_cache`; nothing outside `Session` (runners included) spells the raw key. Scope is **pre-hooks and post-hooks**; tools use their framework-native handle (`RunContextWrapper.context`, `RunContext.deps`, ADK `tool_context.state`, …) instead
 - **Acting-user propagation** (`runtime.py`'s `ACTING_USER_CACHE_KEY = "ak.acting_user_id"`): when a caller supplies `acting_user_id` to `Runtime.run`/`Runtime.stream`, it's published into the volatile cache (`session.get_volatile_cache().set(ACTING_USER_CACHE_KEY, acting_user_id)`) before the pre-hook/runner/post-hook span, and cleared with the rest of `v_cache` in the same `finally`. Threaded down from `ChatService.execute*` (`req.user_id`) → `AgentHandler.run*` → `AgentService.run_multi`/`stream_multi`, so hooks and tools can read who a request is acting on behalf of without it being threaded through every call signature
 - **Async context manager**: `async with session:` acquires a lock and sets the session as the current context via `contextvars`
@@ -100,11 +100,16 @@ Wraps a framework-specific agent. Key properties:
 Encapsulates framework-specific execution logic:
 
 - **`run(agent, session, requests) -> AgentReply`**: Async method that executes the agent with the given requests within a session context
-- **`stream(agent, session, requests) -> AsyncGenerator[StreamEvent, None]`**: Abstract async generator that yields AK stream events (`core/event.py`: `MessageStart`/`TextDelta`/`MessageEnd`, `ReasoningStart`/`ReasoningDelta`/`ReasoningEnd`, `ToolCallStart`/`ToolCallArgs`/`ToolCallEnd`/`ToolCallResult`, `StepStart`/`StepEnd`) for streaming execution (`execution.mode: stream`) — never a bare `str`; `StreamChunk.event` is a discriminated union and rejects one with a `ValidationError`. Frameworks without native token streaming (CrewAI, smolagents) implement it by raising `NotImplementedError`
-- Each framework implements its own Runner (e.g., `OpenAIRunner`, `LangGraphRunner`, `CrewAIRunner`, `GoogleADKRunner`, `SmolagentsRunner`, `PydanticAIRunner`)
+- **`stream(agent, session, requests) -> AsyncGenerator[StreamEvent, None]`**: Abstract async generator that yields AK stream events (`core/event.py`: `MessageStart`/`TextDelta`/`MessageEnd`, `ReasoningStart`/`ReasoningDelta`/`ReasoningEnd`, `ToolCallStart`/`ToolCallArgs`/`ToolCallEnd`/`ToolCallResult`, `StepStart`/`StepEnd`, `DataMessage`) for streaming execution (`execution.message_type: delta`) — never a bare `str`; `StreamChunk.event` is a discriminated union and rejects one with a `ValidationError`. Frameworks without native token streaming (CrewAI, smolagents) implement it by raising `NotImplementedError`
+- **Human in the loop** (#606): **`supports_pause`** is a `Runner` property defaulting to **`False`** — unlike `supports_streaming`, which defaults True, because `stream()` is abstract while `resume()` is a non-abstract raising default, and a True default would have a bring-your-own runner advertise a capability it lacks. **`resume(agent, session, requests, decisions, record)`** and **`resume_stream(...)`** continue a paused run; both raise by default. **`Runner.CANCELLED_DECISION_MESSAGE`** is the wording sent when a human *cancels* rather than denies — only LangGraph carries three-valued decisions natively, so on the others this is what keeps "nobody decided" from reading as a refusal; override per runner.
+  - Each adapter's `resume()` mirrors its own `run()` envelope — same `ToolContext`, same framework-context load/store, same resolved run options — and writes/clears the record **inside the `try` after a successful call**, never in a `finally`. Framework-specific rejections go **above the `try`**, because the adapter's blanket `except Exception` would otherwise flatten them into a generic reply.
+  - **Clearing is the adapter's alone — `Runtime` does not tidy up afterwards.** It cannot tell a failure from an ordinary reply, since an adapter reports framework failures as `AgentReplyText`, so a fallback there would delete the record on a transient error and leave the human's decision unappliable. The record surviving *is* the retry signal. An adapter that forgets to clear leaves a phantom pause; one that clears too early loses a retry.
+  - **A replacing adapter supersedes only its own framework's records**, via `PausedRunState.clear_for_runner(session, self.name)`. One session can be shared by agents on different frameworks — the client sends the session id and names the agent per request — and a framework session is keyed by runner name, so those pauses are independent. `PausedRun.runner` is what makes that possible; `add` derives it from `Agent.current()` when the caller omits it, so the scoping cannot be lost by forgetting to pass it. It is **stored** rather than resolved from `agent` through the registry because the record outlives the agent: a redeploy that rebinds a name to another framework would otherwise resolve to the wrong adapter, which `Runtime` now refuses as its sixth failure mode.
+  - What each framework can carry back differs and is not smoothed over: OpenAI appends a second paused run (its `RunState` is a self-contained snapshot) and refuses both a structured answer and a prompt; LangGraph, Pydantic AI, ADK and MAF replace; LangGraph and Pydantic AI accept a prompt beside a decision, OpenAI and ADK reject it.
+- Each framework implements its own Runner (e.g., `OpenAIRunner`, `LangGraphRunner`, `CrewAIRunner`, `GoogleADKRunner`, `SmolagentsRunner`, `PydanticAIRunner`, `MAFRunner`)
 - Runners handle: creating `ToolContext`, converting request models to framework-native formats, invoking the framework's execution API, converting responses back to `AgentReply`
-- **Per-run framework context**: the base `Runner` provides `_load_framework_context(session)` (returns a **deep copy** of the reserved `framework_context` key, or `None` when absent) and `_store_framework_context(session, incoming, produced)` (shallow-merges `produced` over `incoming`: framework-touched top-level keys win, untouched caller keys preserved: with a fail-fast picklability check). Each adapter's `run`/`stream` calls load before the native call, injects `incoming` via its native mechanism, and calls store **only after a successful native call** (inside the `try`, before the `except`; after the `async for` loop for streams, never in `finally`) so a crash/disconnect leaves the stored context intact. Both helpers go through the `Session` accessors, so the raw key name stays inside `Session`. Round-trip fidelity is per-framework (OpenAI and Pydantic AI full: injected as `context=` / `deps=`, mutated in place by tools; ADK all-but-internal-and-scope-prefixed keys, accumulate-only; smolagents pre-seeded keys only, and the context is also appended to the task prompt; LangGraph declared channels only; CrewAI unsupported: warns once per runner and skips). When an adapter seeds caller keys into a native state dict, write AK-internal keys **last** so a caller key cannot displace them (`ak_tool_context` in ADK, `messages` in LangGraph)
-- **Per-agent native run options** (#754): the base `Runner` provides the static `_native_kwargs(options, **ak_owned)`: a shallow copy of the agent's declared `run_options` (or an adapter's filtered view of it) with the AK-owned keys written last. Every native call site in all six adapters builds its keyword arguments through it, so with `{}` options the call is keyword-for-keyword what it was. Two adapters merge deeper because they share an object with the caller: `LangGraphRunner._merge_run_config` deep-merges the caller's `config` under the runner-built one (dict-valued keys merge with AK entries winning, list-valued keys such as `callbacks` concatenate AK-first so the Langfuse handler survives), and `GoogleADKRunner._stream_run_config` copies a caller `RunConfig` with `streaming_mode=SSE` in stream mode (one warning per runner). ADK splits options by destination (`RUNNER_CONSTRUCTOR_OPTIONS` to the per-run `Runner(...)`, the rest to `run_async`; `get_response` gained a trailing optional `run_options`); Pydantic AI's `_stream_run_options` drops `event_stream_handler` in stream mode (one warning per runner); CrewAI feeds `{"verbose": False, **run_options}` to the per-run `Crew(...)`; smolagents merges into its `run_kwargs`. Unknown keys are forwarded unvalidated: OpenAI, ADK, Pydantic AI and smolagents raise `TypeError` on the first run (a `user_facing_error_message` reply in `run`, propagated in `stream`), while LangGraph and CrewAI drop an unknown keyword silently; `LangGraphAgent.validate_run_options` therefore also rejects the known `RunnableConfig` keys (`RUNNABLE_CONFIG_KEYS`) at the top level, pointing to `config={...}`. OpenAI additionally reserves `conversation_id` / `previous_response_id` / `auto_previous_response_id`, which the SDK rejects alongside the `session=` the runner always passes. Direct mutation of `agent.run_options` skips the reservation check: keys the runner writes are overwritten, positional ones raise the SDK's duplicate-argument error, reply-mapping-only ones are forwarded. Trace runners need nothing: they delegate to `super().run`. Since #758 every adapter resolves the options once per `run` / `stream` with `options = await agent.resolve_run_options(session, requests)`, placed after the request-shape early returns (an empty request never invokes a factory) and before the framework-context load and any session or memory mutation, and passes that mapping to `_native_kwargs` and its helpers (`GoogleADKRunner._split_run_options(options)`, `_setup_session_context(..., injected, options)`, `PydanticAIRunner._stream_run_options(options)`) instead of reading `agent.run_options` at a call site. On ADK the factory runs before `_setup_session_context` creates the tool context, so `ToolContext.get()` raises `RuntimeError` inside it there
+- **Per-run framework context**: the base `Runner` provides `_load_framework_context(session)` (returns a **deep copy** of the reserved `framework_context` key, or `None` when absent) and `_store_framework_context(session, incoming, produced)` (shallow-merges `produced` over `incoming`: framework-touched top-level keys win, untouched caller keys preserved: with a fail-fast picklability check). Each adapter's `run`/`stream` calls load before the native call, injects `incoming` via its native mechanism, and calls store **only after a successful native call** (inside the `try`, before the `except`; after the `async for` loop for streams, never in `finally`) so a crash/disconnect leaves the stored context intact. Both helpers go through the `Session` accessors, so the raw key name stays inside `Session`. Round-trip fidelity is per-framework (OpenAI, Pydantic AI and MAF full: injected as `context=` / `deps=` / native `session.state["ak_context"]`, mutated in place by tools; ADK all-but-internal-and-scope-prefixed keys, accumulate-only; smolagents pre-seeded keys only, and the context is also appended to the task prompt; LangGraph declared channels only; CrewAI unsupported: warns once per runner and skips). When an adapter seeds caller keys into a native state dict, write AK-internal keys **last** so a caller key cannot displace them (`ak_tool_context` in ADK, `messages` in LangGraph)
+- **Per-agent native run options** (#754): the base `Runner` provides the static `_native_kwargs(options, **ak_owned)`: a shallow copy of the agent's declared `run_options` (or an adapter's filtered view of it) with the AK-owned keys written last. Every native call site in all seven adapters builds its keyword arguments through it, so with `{}` options the call is keyword-for-keyword what it was. Two adapters merge deeper because they share an object with the caller: `LangGraphRunner._merge_run_config` deep-merges the caller's `config` under the runner-built one (dict-valued keys merge with AK entries winning, list-valued keys such as `callbacks` concatenate AK-first so the Langfuse handler survives), and `GoogleADKRunner._stream_run_config` copies a caller `RunConfig` with `streaming_mode=SSE` in `stream()` (one warning per runner). ADK splits options by destination (`RUNNER_CONSTRUCTOR_OPTIONS` to the per-run `Runner(...)`, the rest to `run_async`; `get_response` gained a trailing optional `run_options`); Pydantic AI's `_stream_run_options` drops `event_stream_handler` in `stream()` (one warning per runner); CrewAI feeds `{"verbose": False, **run_options}` to the per-run `Crew(...)`; smolagents merges into its `run_kwargs`. Unknown keys are forwarded unvalidated: OpenAI, ADK, Pydantic AI, MAF and smolagents raise `TypeError` on the first run (a `user_facing_error_message` reply in `run`, propagated in `stream`), while LangGraph and CrewAI drop an unknown keyword silently; `LangGraphAgent.validate_run_options` therefore also rejects the known `RunnableConfig` keys (`RUNNABLE_CONFIG_KEYS`) at the top level, pointing to `config={...}`. OpenAI additionally reserves `conversation_id` / `previous_response_id` / `auto_previous_response_id`, which the SDK rejects alongside the `session=` the runner always passes. Direct mutation of `agent.run_options` skips the reservation check: keys the runner writes are overwritten, positional ones raise the SDK's duplicate-argument error, reply-mapping-only ones are forwarded. Trace runners need nothing: they delegate to `super().run`. Since #758 every adapter resolves the options once per `run` / `stream` with `options = await agent.resolve_run_options(session, requests)`, placed after the request-shape early returns (an empty request never invokes a factory) and before the framework-context load and any session or memory mutation, and passes that mapping to `_native_kwargs` and its helpers (`GoogleADKRunner._split_run_options(options)`, `_setup_session_context(..., injected, options)`, `PydanticAIRunner._stream_run_options(options)`) instead of reading `agent.run_options` at a call site. On ADK the factory runs before `_setup_session_context` creates the tool context, so `ToolContext.get()` raises `RuntimeError` inside it there
 
 ### Module (`ak-py/src/agentkernel/core/module.py`)
 
@@ -135,10 +140,10 @@ Global orchestrator and agent registry:
 - **`stream(agent, session, requests, acting_user_id=None) -> AsyncGenerator[StreamChunk, None]`**: Streaming counterpart of `run()`, sharing the same pre-hook pipeline via `_prepare_requests()`:
   1. Runs pre-hooks; if halted, yields a `StreamChunk(error=..., done=True)` and returns
   2. Iterates `agent.runner.stream(agent, session, requests)`; a legacy `str` (TRANSITIONAL) is wrapped into a synthesised `TextDelta` before anything else runs, and its first occurrence allocates a `uuid4().hex` `message_id` shared by a synthesised `MessageStart`/`MessageEnd` pair bracketing the run
-  3. **Every** event passes through `PostHook.on_stream_event()` (return the event to pass it, a modified event of the same `type` to rewrite it, `None` to drop the whole chunk, or a `list[StreamEvent]` to emit several in its place — a list is emitted as-is and ends the chain for that event). A post-hook raising `StreamHalt` ends the run: `StreamBoundaryTracker` (`core/stream.py`, unexported) supplies the closes for any boundary still open, then one `StreamChunk(error=..., done=True)` is yielded and the session is **not** stored; any other exception propagates unchanged
+  3. **Every** event passes through `PostHook.on_stream_event()` (return the event to pass it, a modified event of the same `type` to rewrite it, `None` to drop the whole chunk, or a `list[StreamEvent]` to emit several in its place — a list is emitted as-is and ends the chain for that event). A post-hook raising `StreamHalt` ends the run: `StreamBoundaryTracker` (`core/runtime.py`, not a module of its own, unexported) supplies the closes for any boundary still open, then one `StreamChunk(error=..., done=True)` is yielded and the session is **not** stored; any other exception propagates unchanged
   4. Yields a `StreamChunk(delta=..., event=...)` per event — `delta` is populated only for `TextDelta` (every other event type carries `event` alone) — then a final `StreamChunk(done=True)`
   5. Stores session and clears volatile cache in `finally`, same as `run()`
-- **System hooks**: Automatically includes `InputGuardrailFactory` as system pre-hook, `OutputGuardrailFactory` as system post-hook
+- **System hooks**: Automatically includes `InputGuardrailFactory`, `MultimodalPreHookFactory` and `SandboxPreHookFactory` as system pre-hooks, and `OutputGuardrailFactory` then `A2UIPostHookFactory` as system post-hooks. Both lists are built once per process and cached on the class (`_get_system_pre_hooks` / `_get_system_post_hooks`), so a hook factory reads the config at first use, not at import. Order is load-bearing on the post-hook side: the output guardrail inspects the reply before the A2UI hook can relabel it as a structured payload
 - **Context manager**: `with Runtime(sessions):` sets an isolated runtime as current
 
 ### AgentService (`ak-py/src/agentkernel/core/service.py`)
@@ -151,7 +156,7 @@ High-level utility encapsulating a conversation:
 - **`run(prompt) -> str`**: Wraps prompt in `AgentRequestText`, calls `runtime.run()`, returns text
 - **`run_multi(requests, acting_user_id=None) -> AgentReply`**: For multi-modal requests; forwards `acting_user_id` to `runtime.run()` (see Runtime and Session's Reserved keys)
 - **`stream_multi(requests, acting_user_id=None) -> AsyncGenerator[StreamChunk, None]`**: Calls `runtime.stream()`, yielding `StreamChunk` objects for event-level streaming; forwards `acting_user_id` the same way
-- Used directly by stateful clients that own agent/session lifecycle: the CLI, A2A, and MCP. Chat surfaces go through `ChatService`, which sits on top of it
+- Used directly by stateful clients that own agent/session lifecycle: the CLI. Chat surfaces go through `ChatService`, which sits on top of it. A2A and MCP no longer use it (#780): their executors enqueue through `RestHandler.request` and the agent runs on the pipeline's Agent Runner
 
 ### ChatService (`ak-py/src/agentkernel/core/chat_service.py`)
 
@@ -175,7 +180,7 @@ knowledge of conversation threads (that lives in `integration/thread/`).
     would be reset from a context they never belonged to and every sync stream would end on a spurious
     `"Token ... was created in a different Context"` error chunk after the real terminal one. `run_async_sync`
     (the coroutine half) is untouched — still a fresh `asyncio.run` loop per call on a consumer thread
-  - `requests=None`: `RequestBuilder` builds the list from the pydantic request (prompt required).
+  - `requests=None`: `RequestBuilder` builds the list from the pydantic request (prompt **or** a `resume` block — since #606 `BaseChatRequest.prompt` is `str = ""`, so a decision can stand alone; `_add_resume` runs in **both** the sync and async builders, and the async one is what every REST, streaming and thread request uses).
     `requests` supplied: the caller-built list is used as-is (prompt optional, list must be non-empty): this
     is how messaging integrations pass platform-downloaded attachments and extra `AgentRequestAny` context
   - Each call selects the agent/session via `prepare_agent_handler(session_id, agent) -> AgentHandler`, which
@@ -206,7 +211,7 @@ graph TD
         TH["Thread handlers<br/>(AgentThreadRequestHandler direct;<br/>ThreadRequestHandler via the queue)"]
         MSG["Messaging integrations<br/>(Slack, WhatsApp, Messenger,<br/>Instagram, Telegram, Teams, Gmail)<br/>via the pipeline queue"]
         CLI["CLI"]
-        PROTO["A2A / MCP"]
+        PROTO["A2A / MCP executors<br/>(RestHandler.request, #780)"]
     end
 
     subgraph CS["ChatService"]
@@ -223,9 +228,9 @@ graph TD
     TH --> REC --> CTM
     TH --> CORE
     MSG -->|"InboundAdapter -> input queue<br/>-> AgentRunner"| PRES
+    PROTO -->|"input queue (protocol tag)<br/>-> AgentRunner"| PRES
     CORE --> AS
     CLI --> AS
-    PROTO --> AS
     AS --> RT
 ```
 
@@ -237,6 +242,9 @@ Rubric for new code:
   (`execute`/`execute_stream`), passing a prebuilt request list when it builds its own attachments.
 - An interactive or stateful client that manages agent and session lifecycle itself (REPL-like) uses
   `AgentService`.
+- A server-side protocol surface whose caller waits for one whole reply (A2A, MCP) enqueues through
+  `pipeline.request_handler.RestHandler.request` with its own `protocol` value, so the agent runs on the
+  Agent Runner like every other server surface; it never runs the agent in the IO process.
 - Cross-cutting behavior that must apply to every run regardless of surface goes in a `Runtime` pre/post
   hook, not in a service layer.
 - Entry surfaces never call `Runtime` directly.
@@ -249,7 +257,7 @@ The rubric above routes by surface type; the underlying distinction is **statefu
   across calls (`select()`/`new()`/`clear()`/`load()`), takes caller-prepared inputs (prompt string or
   `AgentRequest` list), returns typed replies/chunks, and lets exceptions propagate; the caller owns
   validation and error handling. Use it for clients that own a *running conversation* (the CLI's
-  `!select`/`!new`/`!clear` is the canonical example; A2A and MCP also use it).
+  `!select`/`!new`/`!clear` is the canonical example).
 - **`ChatService` is a stateless chat-request processor**: every call carries a `BaseChatRequest`
   envelope and resolves the agent/session fresh per request (via a new `AgentHandler`). It validates the
   envelope, builds the request list (or accepts a prebuilt one), and offers two output contracts: the
@@ -267,23 +275,25 @@ Pydantic-based configuration:
 - **Auto-initialized** at import time via `AKConfig._set()`
 - **Config sources** (priority order): environment variables (`AK_` prefix) → config file (YAML/JSON, default `config.yaml`) → defaults
 - **Override path**: Set `AK_CONFIG_PATH_OVERRIDE` env var
-- **Key sections**: `session`, `api`, `websocket_api`, `a2a`, `mcp`, `slack`, `whatsapp`, `messenger`, `instagram`, `telegram`, `teams`, `gmail`, `multimodal`, `thread`, `schedule`, `okf`, `trace`, `guardrail`, `sandbox`, `secret`, `execution`, `logging`. Every messaging block carries an `outbound_adapter` dotted-path override (#524)
+- **Key sections**: `session`, `api`, `websocket_api`, `a2a`, `mcp`, `a2ui`, `slack`, `whatsapp`, `messenger`, `instagram`, `telegram`, `teams`, `gmail`, `multimodal`, `thread`, `schedule`, `okf`, `trace`, `guardrail`, `sandbox`, `secret`, `execution`, `logging`. Every messaging block carries an `outbound_adapter` dotted-path override (#524)
+- **`execution` mode and message type** (#641): `execution.mode` is the invocation (`rest_sync` | `rest_async` | `async` | `realtime`; unset runs as `rest_sync`) and `execution.message_type` how much of the reply each message carries (`complete` | `delta`; unset resolves to `delta` for realtime, `complete` otherwise). `_ExecutionConfig._check_message_type` rejects `rest_async` + `delta` and `realtime` + `complete` with `AKConfigError`, and the `before` validator `_reject_legacy_stream` fails the removed `mode: stream` with `STREAM_MIGRATION_MESSAGE` (Pydantic re-raises a non-`ValueError` unchanged, so `AKConfig.get()` raises `AKConfigError` itself). Call sites read only the four properties, never `message_type` or `mode == ASYNC` to mean WebSocket: `resolved_message_type`; `is_websocket` (`mode == ASYNC`); `is_delta` (delta and **not** realtime — realtime resolves to `DELTA` but has its own runner and delivery, so a voice turn never reaches `StreamAgentRunner`); `is_sse` (`is_delta and not is_websocket`, i.e. `rest_sync` + `delta`). Comparisons that mean one specific mode (`REST_SYNC`/`REST_ASYNC` routes, `REALTIME` runner selection) stay as they are. Rules that depend on the transport, store or host are startup checks in the entry point that owns them, not config validation
 - **Optional (capability-gating) sections**: `thread`, `schedule` and `okf` are `Optional` — the presence of the block is the enabled-check, so they have no default value
 
 ## Request/Reply Model (`ak-py/src/agentkernel/core/model.py`)
 
-- **Request types**: `AgentRequestText`, `AgentRequestFile`, `AgentRequestImage`, `AgentRequestAny`
+- **Request types**: `AgentRequestText`, `AgentRequestFile`, `AgentRequestImage`, `AgentRequestAny`, `AgentResumeRequestAny` (#606: a human's decisions travelling to the runner; a union member rather than a subclass of `AgentRequestAny`, whose handling is *skip* — exactly wrong for a decision that must reach the runner)
 - **Reply types**: 
   - `AgentReplyText`, 
   - `AgentReplyImage`
-  - `AgentReplyAny`: `content: dict`: returned when the agent is configured for structured output (OpenAI `output_type`, LangGraph `response_format`, ADK `output_schema`, CrewAI module-level `output_pydantic`/`output_json`, Smolagents dict/Pydantic `final_answer`, Pydantic AI `output_type`); `str(reply)` returns the JSON-serialized content. Non-streaming only.
+  - `AgentPausedReplyAny` (#606): a **subclass of `AgentReplyAny`**, not a new union member, so the `AgentReply` union and every `isinstance` tuple over it are untouched. Carries `run_id`, `session_id`, `agent`, `interruptions: list[PausedInterruption]`; `content` is derived from those by a validator and never set independently. The opaque per-framework resume state is **never** on it — a reply crosses the queue transport and reaches clients
+  - `AgentReplyAny`: `content: dict | list` + `media_type: str | None`: returned when the agent is configured for structured output (OpenAI `output_type`, LangGraph `response_format`, ADK `output_schema`, CrewAI module-level `output_pydantic`/`output_json`, Smolagents dict/Pydantic `final_answer`, Pydantic AI `output_type`, MAF `response_format`); `str(reply)` returns the JSON-serialized content. Non-streaming only. `content` is a `JSONPayload` (`core/util/payload.py`), so it is normalised to plain JSON types on validation and a value with no JSON form — including `NaN` — raises at construction; `from_output` still returns `None` for a bare list, so no adapter's behaviour changed. `media_type` is unset by default and never set by an adapter: a post-hook applies it, and `ResponseBuilder.build_response` puts `content` in `result` as an object only when it is set. Without it every surface serialises exactly as it did before the field existed.
   - `StreamChunk`: `delta: str | None`, `event: StreamEvent | None`, `done: bool`, `error: str | None`, `session_id: str | None`: yielded by `Runtime.stream()` / `AgentService.stream_multi()` for streaming; `delta` is populated only for `TextDelta` events (back-compat for plain-text consumers), `event` carries the full `StreamEvent` (including tool calls and reasoning)
 - Type aliases: `AgentRequest = Union[...]`, `AgentReply = Union[...]`
 
 ## Tools (`ak-py/src/agentkernel/core/tool.py`)
 
 - **`ToolContext`**: Execution context available inside tool functions via `ToolContext.get()`. Provides access to `runtime`, `agent`, `session`, `requests`.
-- **`ToolBuilder`**: Base class for framework-specific tool builders. Each framework implements `bind(funcs)` to wrap plain Python functions into framework-native tool objects.
+- **`ToolBuilder`**: Base class for framework-specific tool builders. Each framework implements `bind(funcs)` to wrap plain Python functions into framework-native tool objects. An adapter may accept more than `funcs`: OpenAI, Google ADK, Pydantic AI and MAF each take `**options` and forward them to the native wrapper (`function_tool`, `FunctionTool`, `Tool`, `tool()`), which is how a gated tool is declared without the native decorator — `needs_approval`, `require_confirmation` and `requires_approval` are each that framework's human-in-the-loop flag. Options apply to every function in the call, so tools wanting different ones are bound separately. LangGraph's `bind` takes `agent_name` instead; smolagents' native wrapper takes nothing but the function, so it has nothing to forward.
 - Write plain Python functions → bind via the framework's ToolBuilder → tools work across frameworks
 - **Gotcha: every `ToolBuilder.bind()` derives the bound tool's name from `func.__name__`, not from `SystemTool.name`.** A `SystemTool` whose `func` has a different `__name__` than `SystemTool.name` binds under the function's name, silently: the model schema advertises the mismatched name while any injected prompt text (and the tool's own `description`) may still reference the `SystemTool.name` spelling, so the model can't find the tool it was told to call. This bit `AnalyzeAttachmentsTool` for every multimodal deployment until `tools.py`'s `_analyze_attachments` was renamed to `analyze_attachments` (#657) — when adding a new `SystemTool`, keep `func.__name__` and `SystemTool.name` identical.
 
@@ -375,7 +385,7 @@ threads (their platforms own the history), and neither do scheduled occurrences.
   **replaces** the pipeline's chat route rather than joining it, because both own `POST
   /api/v1/chat` and FastAPI would otherwise serve whichever registered first, silently unrecorded.
   The recorder's bracket is split across the queue because the run is: `run_chat` validates, runs
-  the inherited `_reject_unroutable` (ASYNC mode, and STREAM on a store that cannot stream chunks —
+  the inherited `_reject_unroutable` (`async` mode, either message type —
   every rejection the route can raise happens **before** the recording, so none leaves a phantom
   thread), prechecks agent availability, builds the requests and runs `pre_run` (attachment bytes
   offloaded and the user message committed **before** anything is enqueued), rewrites the body (`requests` =
@@ -385,11 +395,11 @@ threads (their platforms own the history), and neither do scheduled occurrences.
   acknowledgement is not something the agent said. Both processes need the same `thread` block; a
   runner without one warns and drops the reply. Serves the read routes too, and inherits
   `requires_pipeline = True`
-- **`ThreadRecorder`** (`recorder.py`): the recording logic as a reusable class over `ConversationThreadManager`: `pre_run` (enforce `user_id`, store attachment bytes and rewrite to `AgentRequestAttachmentRef`, get-or-create thread, append user message; `store_attachments` runs first so config rejections leave no phantom thread) and `post_run` (append assistant message)
+- **`ThreadRecorder`** (`recorder.py`): the recording logic as a reusable class over `ConversationThreadManager`: `pre_run` (enforce `user_id`, store attachment bytes and rewrite to `AgentRequestAttachmentRef`, get-or-create thread, append user message; `store_attachments` runs first so config rejections leave no phantom thread) and `post_run` (append assistant message). `post_run` takes an optional `media_type` because the two callers hold the label differently: the direct handler passes an `AgentReply` carrying its own, while the queue runner has only the response body, where the label sits in a sibling key of `result`. `_as_thread_message` resolves both into the `(content, media_type)` pair the store holds — the object for a labelled reply, and otherwise every encoding it produced before, byte for byte (#763)
 - **`ConversationThreadManager`** (`manager.py`): Service façade owning thread lifecycle (create/load/append/history) and, when multimodal is enabled, saving attachment bytes into the shared `AttachmentStore` before the agent runs. A single process-wide instance (`ConversationThreadManager.get()` / class-level singleton, guarded by an `RLock`) is used by `ThreadRecorder` and `ThreadRESTRequestHandler`: `None` when no `thread` config block is present
 - **`ThreadStore`** (`store/base.py`): Abstract base with backend persistence methods (create/get/append/list); pluggable per backend
 - **`ThreadStoreBuilder`** (`store/base.py`): Factory that constructs the configured `ThreadStore` from `AKConfig`'s `thread.type`
-- **`Thread` / `ThreadMessage` / `ThreadAttachment` / `ThreadPage` / `MessagePage`** (`model.py`): Pydantic models for thread metadata, individual messages, attachment references, and cursor-paginated listings, using the shared `core/util/pagination.py` cursor helpers (`encode_cursor`/`decode_cursor`/`clamp_limit`, `MAX_PAGE_SIZE`)
+- **`Thread` / `ThreadMessage` / `ThreadAttachment` / `ThreadPage` / `MessagePage`** (`model.py`): Pydantic models for thread metadata, individual messages, attachment references, and cursor-paginated listings, using the shared `core/util/pagination.py` cursor helpers (`encode_cursor`/`decode_cursor`/`clamp_limit`, `MAX_PAGE_SIZE`). `ThreadMessage.content` is `str | JSONPayload` with a `media_type` beside it (#763): the object form **only** when the reply was labelled, the two tied together by a model validator, so replayed history has the shape the live reply had (`result` on the REST surface, #706). `to_wire()` is what the read routes serialise through — it omits an unset `media_type` rather than sending `null`, and names that one field rather than using `exclude_none`, which would also drop an attachment's unset `name`/`mime_type`. No store backend is affected: all six serialise the whole model and none reads `content`
 - **`ThreadNamingStrategy`** (`naming.py`): Overridable strategy that names auto-created threads: default implementation makes a single LiteLLM call (`thread.naming.model`, requires the `thread` extra) to derive a concise title from the first prompt, falling back to a truncated prompt prefix when `litellm`/an API key is unavailable. Explicit `thread_name` on a chat request always wins and locks the thread against further automatic naming
 - **`Authoriser`** (`auth/authoriser.py`, the single import path — `agentkernel.auth`, alongside `AuthValidator`): Pluggable base class (`authorise(token) -> Optional[user_id]`) that `ThreadRESTRequestHandler` calls, through the shared `AuthorisedRESTRequestHandler` base (`api/handler.py`), to protect the read routes; routes are open when no `Authoriser` is configured. `AuthValidatorAuthoriser` (same module) adapts an existing `AuthValidator` into an `Authoriser`
 - **`ThreadRESTRequestHandler`** (`thread_chat.py`): Serves `GET /api/v1/threads` (list, filterable by `user_id`/`group_id`, cursor-paginated) and `GET /api/v1/threads/{session_id}` (thread + paginated message history); raises 404 when thread support is disabled and 403 when a resolved `user_id` doesn't own the requested thread. Composed into `AgentThreadRequestHandler`'s router; also mountable standalone for read-only access
@@ -442,8 +452,9 @@ Attachments in thread mode additionally require `multimodal.enabled: true` with 
 The [AG-UI protocol](https://github.com/ag-ui-protocol/ag-ui) surface for streaming an agent run to a
 compliant frontend (public alias `agentkernel.agui`, requires the `agui` extra —
 `ag-ui-protocol>=0.1.16`). Packaged as an **integration** the same way conversation threads are:
-**mounting `AGUIRequestHandler` is what enables it**, the `agui` config block only parameterizes it,
-and `core/`/`api/` contain no AG-UI code. It exists because AK's runner streaming contract was widened
+**mounting a handler is what enables it** — `AGUIRequestHandler` (direct) or
+`AGUIPipelineRequestHandler` (queue), one per execution topology, the pair conversation threads
+already has — the `agui` config block only parameterizes it, and `core/`/`api/` contain no AG-UI code. It exists because AK's runner streaming contract was widened
 from plain text deltas to typed `StreamEvent`s (`core/event.py`, carried on `StreamChunk.event`,
 `core/model.py:187`) specifically so tool-call, step and reasoning information the framework adapters
 already receive survives to a frontend instead of being discarded at the text-only boundary.
@@ -457,13 +468,50 @@ already receive survives to a frontend instead of being discarded at the text-on
   names and 400s when `agent.runner.supports_streaming` is `False`. `_run` does everything that can
   still become an HTTP status (auth, agent resolution, body parse, `AGUIRunInput.to_requests`) before
   the session is written, then hands off to `_events`, an `AsyncGenerator` that always yields
-  `RunStartedEvent` first and exactly one of `RunFinishedEvent`/`RunErrorEvent` last — every failure
+  `RunStartedEvent` first and **one of three terminal shapes** last — every failure
   after the stream starts is reported as `RunErrorEvent` since the HTTP status is already sent
+- **`AGUIPipelineRequestHandler`** (`queue_handler.py`, #710): the queue-mode counterpart, mounted as
+  `IOHandler.run(handlers=[AGUIPipelineRequestHandler(...)])` — AG-UI owns `agui.prefix`, so unlike
+  `ThreadRequestHandler` it joins the pipeline's routes rather than replacing one, and `IOHandler`
+  needs no change. It subclasses the direct handler and shares its edge half verbatim
+  (`_resolve_run_inputs`: authorise, resolve agent, parse, `to_requests`), then offloads attachments
+  (`AttachmentStorageManager.offload` — bytes must not ride the queue), enqueues with the `agui`
+  marker and `group_id = thread_id`, and drains `store.stream(request_id)` back onto the socket it
+  never let go of. `requires_pipeline = True`. **It creates no session**: the client's `state`,
+  `forwardedProps` and `context` travel in a typed `AGUIRunEnvelope` on the body, because
+  `forwardedProps`/`context` are volatile and no session store persists them, and a cached session
+  store would hand the edge back its own copy anyway. The runner applies the envelope, owns the
+  before/after state comparison, and emits the snapshot as one extra chunk *before* the terminal one
+  (`stream()` returns at the first `done`). `__init__` raises `AKConfigError` on four counts: when the
+  response store cannot stream chunks, when it is process-local on a broker transport, when
+  `session.type` is the literal `in_memory` there, and when `multimodal.enabled` is set with an
+  attachment store that is not shared there (the reference the edge enqueues would be unresolvable in
+  the runner).
+- **A pause is the third terminal shape** (#606): `RunFinishedEvent(outcome=RunFinishedInterruptOutcome(interrupts=[...]))`,
+  with any `StateSnapshot` emitted **before** it so a client resuming from the snapshot has it in
+  hand. It is an *outcome* of the run, not an event during it — so `to_agui` still returns `None`
+  for `RunPaused` and nothing is dropped. **Both handlers carry it**, and a queue-mode handler that
+  only mapped events would finish the run silently: `_events` holds the pause back from the live
+  stream, `_events_from_store` from the chunk the runner wrote, and both end on the shared
+  `_interrupt_outcome`. `PausedInterruption.kind` passes through as `Interrupt.reason`
+  **untranslated**, because `reason` is a free-form `str`; what the protocol has no field for
+  (`tool_name`, `arguments`, the question payload) rides in `Interrupt.metadata` rather than being
+  forced into `response_schema`, which means a JSON Schema
 - **`AGUIMapper.to_agui`** (`mapping.py`): translates one AK `StreamEvent` to its AG-UI event
   (`message_start`/`text_delta`/`message_end` → `TextMessage*`, `tool_call_*` → `ToolCall*`,
   `step_start`/`step_end` → `Step*`, `reasoning_*` → `ReasoningMessage*`); returns `None` for event
   types AG-UI has no equivalent for, so unmapped AK event types are silently dropped rather than
   breaking the stream
+- **Resuming over AG-UI** (#606): `RunAgentInput.resume` is a list of `ResumeEntry`
+  (`interrupt_id`, `status`, `payload`) with **no run id** — the run is resolved from the interruption
+  ids, which is why `AgentResumeRequestAny.run_id` is optional and why those ids must be unique across
+  a session's records. The **agent comes from the route** (`POST {prefix}/{agent_name}`), not the body.
+  Two protocol limits are accepted rather than papered over: `status` carries two values where AK
+  carries three (so approve/deny is a boolean `payload`, and a bare boolean is consumed as the verdict
+  rather than forwarded as an answer), and there is **no field for a refusal's wording or for a prompt
+  sent beside a decision** — on a resume the replayed `messages` are history and no prompt is derived
+  from them. Where the protocol cannot express something, AK does not invent a private encoding; the
+  REST surface carries both
 - **`AGUIRunInput`** (`run_input.py`): parses the `RunAgentInput` request body, maps its messages to
   `AgentRequest`s (`threadId` is AK's `session_id`; only the final `user` message is read since history
   is rebuilt from the session store), rejects audio/video content with 400 (no AK request type covers
@@ -494,7 +542,7 @@ agui:
     agents: ["planner"]      # omitted = every agent
 ```
 
-Only `OpenAIRunner`, `LangGraphRunner`, `ADKRunner` and `PydanticAIRunner` currently declare
+Only `OpenAIRunner`, `LangGraphRunner`, `ADKRunner`, `PydanticAIRunner` and `MAFRunner` currently declare
 `supports_streaming = True`; `CrewAIRunner`/`SmolagentsRunner` still raise `NotImplementedError` from
 `stream()`, so their agents 400 rather than appearing at `GET /agui/agents`. See
 `examples/api/agui` for a full demo (OpenAI Agents SDK agent + React/Vite frontend against
@@ -545,7 +593,23 @@ Platform --poll-----> PollerRunner ---------------> (same adapter surface) -----
   `storage_type: session_cache`; a message with no attachments is never rejected. Shared with the
   thread path, which supplies its own two error messages.
 - **Hosting**: `WebhookRESTRequestHandler(adapter)` mounts the adapter's routes and sets
-  `requires_pipeline = True`; `PollerRunner(adapter)` hosts a `PollingInboundAdapter` in its own
+  `requires_pipeline = True`; its read-only `adapter` property exposes the hosted adapter. On AWS
+  Lambda the same handler is served by `deployment/aws/serverless/core/webhook_host.py::LambdaWebhookHost`
+  (#760): the application builds `LambdaWebhookHost(handler)` at module scope and registers its
+  `(event, context)` endpoints with `Lambda.register` on the existing `RESTLambdaRouter` — `handle` on
+  `POST webhook_path`, `challenge` on `GET challenge_path`. The host drives the handler on one event
+  loop per execution environment, while `core/event_translator.py::LambdaEventTranslator` turns the
+  API Gateway v1 event into a real Starlette `Request` and the result or `HTTPException` back into the
+  proxy response FastAPI would send. Both modules import FastAPI, so `agentkernel.aws` exports
+  `LambdaWebhookHost` lazily and `Lambda` never imports them. The host's constructor runs
+  `LambdaWebhookGuard`, which fails the cold start on a non-webhook handler, a non-REST mode, `message_type: delta` (platform adapters deliver whole messages), a non-`sqs`
+  transport, missing `API_BASE_PATH`/`API_VERSION`/`AGENT_ENDPOINT`, or an adapter whose
+  `missing_verification_settings()` is non-empty (default `[]`; WhatsApp, Messenger, Instagram and
+  Telegram override it — Slack and Teams refuse to construct without their secrets). The built-in
+  paths have one definition, `adapter/routes.py::BUILTIN_WEBHOOK_ROUTES` (`WebhookRoute`), read by the
+  six adapters and by `adapter/route_matcher.py::WebhookRouteMatcher`, the fastapi-free
+  `APIGatewayAuthorizer(bypass=...)` callable that lets those routes past the Lambda authorizer by
+  method and path only (never headers; authorizer TTL must be 0); `PollerRunner(adapter)` hosts a `PollingInboundAdapter` in its own
   process at one replica (its `mark_handled` state is per process), waiting on
   `ThreadRunner.shutdown_event` between iterations so a long interval still drains promptly.
 - **Testing**: `adapter/testing.py::IntegrationAdapterContract` is the reusable conformance suite
@@ -568,6 +632,7 @@ Coupling rules: `core/` reaches `schedule/` only lazily, inside enabled-checks (
 ### Key Components
 
 - **`ScheduleSpec`** (`core/model.py`, not `schedule/`): the chat-envelope block (`at` | `cron`, `timezone`, `session_mode`). It lives in core beside `BaseChatRequest` so core never imports the capability; structural validation only (exactly one of at/cron) — cron syntax, timezone and "at is in the future" are semantic checks the manager runs
+- **`ResumeSpec`** (`core/model.py`, #606): the sibling block, `BaseChatRequest.resume`, carrying `run_id: str | None` and `decisions: list[ResumeDecision]`. `run_id` is optional because AG-UI has no field for one; the run is then resolved from the decisions' interruption ids. **`schedule` + `resume` is rejected** (`ChatService._reject_ambiguous`, the first statement of all four entry points — a guard inside `_validate` would never fire, because `_maybe_schedule` has already returned its 202)
 - **Interception point** (`ChatService._maybe_schedule`): all four execution-core entry points check `req.schedule` **before** validation and agent selection, and return an `AgentReplyAny` acknowledgement (`{"status": "SCHEDULED", "scheduled_task_id", "session_id"}`) instead of running. Streaming surfaces yield that acknowledgement as a single terminal `StreamChunk` (not an error chunk). `_record_trigger` (same class, also at the top) records the occurrence of a request that carries `scheduled_task_id`, then lets it run normally — it never raises into the run. It forwards `req.user_id`, and `ScheduleManager.record_trigger` records nothing unless that user owns the task (an absent identity is a mismatch): the metadata rides on a client-bindable chat request, so any caller can name any task id, and a forged one would otherwise complete someone else's one-time task. The 202 travels through `ChatService._success_status` and, in `rest_api_mode`, a `JSONResponse`; `AgentThreadRequestHandler` checks `req.schedule` before `ThreadRecorder.pre_run`, so a deferred request creates no thread and records no messages
 - **`ScheduleManager`** (`manager.py`): process-wide singleton (`ScheduleManager.get()`, `RLock`-guarded, `reset()` for tests) owning semantic validation, ownership (`PermissionError`), the store-then-provider write order with rollback, the frozen trigger body, and occurrence recording. At construction it fails fast (`AKConfigError`) three times: `_validate_transport_compatibility` when the provider cannot deliver to the transport `QueueTransportFactory.resolve_type()` reports, `_validate_local_provider_topology` when `provider.type` is `local` and either that transport or `store.type` is not `in_memory` — the local heap and the in-memory store are reachable only from their own process's threads, so on a broker transport the management routes (IOHandler process) would amend timers the agent-runner process actually owns — and `_validate_store_topology` when `store.type` is `in_memory` on a broker transport, which splits the records themselves across the runner and IOHandler processes even under a durable provider that manages fine. Three methods, not one, because each constrains a different thing: `local` + `sqs` fires correctly and is only unmanageable, and `eventbridge` + `in_memory` manages correctly but only within one process. `update` is PUT semantics down to the manager: the occurrence rule is replaced **as a unit**, so an amendment naming any of at/cron/timezone/session_mode rebuilds the whole spec from what it carries (omitted fields fall back to their defaults, never to the stored values), while an amendment naming none of them leaves the rule untouched. That last branch is reachable only by code calling the manager directly: `ScheduleAmendment` defaults `timezone` and `session_mode` and the PUT route passes `model_dump()` (not `exclude_unset=True`), and `update_schedule` builds all six keys unconditionally, so both of those surfaces always carry occurrence fields and a body naming neither `at` nor `cron` is a `ValueError` -> 400. Prompt-only and pause/resume amendments over the route must resend the occurrence rule, which is what PUT semantics mean here — do not describe the untouched-rule branch as the routes' contract. `create` covers all three creation paths (chat block, `create_schedule` tool, BYO caller), so its validation is where a bad task is stopped: owner, prompt and session present, occurrence rule resolvable, and — via `AgentService.ensure_agent_available` — a **named** agent that is actually registered. An unnamed agent is deliberately *not* prechecked: the default is resolved by whichever process fires the occurrence, which need not be this one
 - **`ScheduledTask` / `ScheduledTaskPage` / `ScheduleStatus`** (`model.py`): the stored record (all JSON primitives, ISO-8601 UTC timestamp strings) and cursor-paginated listings, using the shared `core/util/pagination.py` helpers (`encode_cursor`/`decode_cursor`/`clamp_limit`/`paginate` plus `MAX_PAGE_SIZE` and `DEFAULT_PAGE_SIZE`, the one default the manager and the store signatures beneath it both read). Statuses: `active`, `paused`, `completed`, `cancelled`
@@ -657,11 +722,16 @@ ever writes `os.environ` — callers hand the value to the SDK explicitly
   their addressing, never cache, never fall back, and must tolerate concurrent calls.
 - **`SecretCache`** (`cache.py`): TTL'd dict of provider hits only; lock-free reads of immutable
   `(value, expires_at)` tuples, write lock for set/evict/clear. `cache_ttl: 0` disables it.
-- **`SecretProviderFactory`** (`factory.py`): `get(config)` maps `env` / `aws_ssm` (behind
-  `require_extra("aws", ...)`) or a dotted path via `resolve_dotted(..., base=SecretProvider)`;
+- **`SecretProviderFactory`** (`factory.py`): `get(config)` maps `env` / `kubernetes` / `aws_ssm`
+  (the last behind `require_extra("aws", ...)`; `kubernetes` is stdlib-only and needs no extra) or a dotted path via `resolve_dotted(..., base=SecretProvider)`;
   anything else is `AKConfigError`.
-- **Providers** (`providers/`): `EnvSecretProvider` (reads `os.environ` verbatim) and
-  `AWSSMSecretProvider` (`GetParameter(WithDecryption=True)` on `/ak/{prefix}/{key.lower()}`;
+- **Providers** (`providers/`): `EnvSecretProvider` (reads `os.environ` verbatim),
+  `KubernetesSecretProvider` (Kubernetes Secrets mounted into the pod as files,
+  `<mount_path>/<secret-name>/<KEY>`; stdlib only, exported from `agentkernel.secret`; lists the mount
+  on every call, so rotation and new Secrets need no memo; the same key in two Secrets, a missing
+  `mount_path`, a candidate whose realpath leaves `mount_path` (symlinks are followed, but never out of the
+  mount) or any other `OSError` on the mount or a Secret directory → `SecretError`, empty file → miss; no I/O at construction; never calls the API
+  server) and `AWSSMSecretProvider` (`GetParameter(WithDecryption=True)` on `/ak/{prefix}/{key.lower()}`;
   `ParameterNotFound` → `None`, other `ClientError`/`BotoCoreError` → `SecretError`; lazy boto3
   client; empty or nested prefix → `AKConfigError`). The provider is the only layer that transforms
   the key.
@@ -673,9 +743,11 @@ ever writes `os.environ` — callers hand the value to the SDK explicitly
 
 ```yaml
 secret:
-  prefix: myproduct-dev-agents  # deployment scope; required by aws_ssm, ignored by env
+  prefix: myproduct-dev-agents  # deployment scope; required by aws_ssm, ignored by env and kubernetes
   provider:
-    type: env                   # env | aws_ssm, or a dotted path to a SecretProvider
+    type: env                   # env | aws_ssm | kubernetes, or a dotted path to a SecretProvider
+    kubernetes:
+      mount_path: /var/run/secrets/agentkernel  # read only by the kubernetes provider
   cache_ttl: 300                # seconds; 0 disables caching (rotation-pickup window)
 ```
 
@@ -760,13 +832,35 @@ inert when disabled. To add a provider, use the `ak-dev-new-sandbox-provider` sk
 - **`SandboxProvider` / `Sandbox`** (`base.py`): the public ABCs a backend implements. `Sandbox`
   has two abstract methods, `execute_code` (`language="python"`) and `close`;
   `execute_command`/`upload_file`/`download_file`/`install_packages` are optional and raise
-  `SandboxCapabilityError` unless the provider declares them. `SandboxProvider` implements
+  `SandboxCapabilityError` unless the provider declares them.
+  `install_packages(packages, ecosystem="python", timeout=None)` raises
+  `SandboxCapabilityError(<handle>, "package_ecosystem:<e>")` for an ecosystem the instance does
+  not declare. The built-in installing providers delegate validation and argv building to
+  `PackageInstaller` (`packages.py`). `SandboxProvider` implements
   `create`/`destroy` (and `attach` when `capabilities.attach` is declared) and declares a
   `capabilities` class attribute.
 - **`SandboxCapabilities`** (`model.py`): the honest per-provider declaration (isolation tier,
-  shell, languages, files, package_install, stateful, attach, principal_user, policy_*). The
-  manager/worker consult it before routing; the worker enforces principal and policy **fail-closed**
-  against it (unenforceable + `strict` → `SandboxPolicyError`).
+  shell, languages, files, package_ecosystems, stateful, attach, principal_user, policy_*).
+  `package_ecosystems` is the source of truth for installs; a validator derives `package_install`
+  from it. Instance overrides go through `capabilities.derive(**update)`, never `model_copy`
+  (which skips that validator). On `docker` and `kubernetes`, `languages` is instance-declared
+  too: the keys of the provider block's `language_runtimes` (`_SandboxProviderRuntimeConfig`, default
+  `{python: [python, -c]}`, `python` required), set in the same single `derive()`; their
+  `execute_code` execs `[*language_runtimes[language], code]`. `ec2_ssm` instead feeds the code on stdin via a
+  collision-safe heredoc (default `{python: [python3, -]}`, each argv reads its program from stdin) so code never
+  appears in the shared instance's process list. `daytona` keeps `python` on native `code_run`, always declared
+  (`runtime_languages()`; its map defaults to `{}` and needs no `python` key), exec'ing only the other keys,
+  `shlex.join`ed. `e2b` declares `languages` (kernels).
+  The manager/worker consult it before routing; the worker enforces
+  principal and policy **fail-closed** against it (unenforceable + `strict` → `SandboxPolicyError`).
+- **`SandboxPermissionGuard`** (`permission.py`): decides what a profile **permits**, from the
+  request's own `SandboxPolicy` (`languages` for `execute_code`, `package_install` for
+  `install_packages`), never from `AKConfig` or capabilities. A denial raises
+  `SandboxPermissionDeniedError` after exactly one audit `WARNING` on `ak.sandbox.broker`. It runs
+  authoritatively in `BrokerWorkerCore` and, as defence in depth, in `ExecutionManager` before
+  session resolution (with package-spec validation), so a denied request has no side effects.
+  Not permitted (`SandboxPermissionDeniedError`) and not supported (`SandboxCapabilityError`)
+  stay separate.
 - **`ExecutionManager`** (`manager.py`): process-wide singleton (like `ConversationThreadManager`).
   Resolves the workload **profile** → provider, owns sandbox **sessions** (nv_cache registry,
   namespace-isolated per AK session; `per_call`/`per_session`/`per_runtime` scopes), and records
@@ -793,8 +887,9 @@ inert when disabled. To add a provider, use the `ak-dev-new-sandbox-provider` sk
   **Coupling amendment**: these three modules may import
   `pipeline.envelope`/`transport`/`consumer`/`thread_runner`/`response_store` (all core-only
   imports); the rest of `sandbox/` keeps the #494 core-only rule.
-- **Agent surface**: `tools.py` provides eight system tools (attached via `SystemToolFactory` when
-  enabled, optionally scoped to `sandbox.agents`); `hooks.py`'s `SandboxPreHook` ingests
+- **Agent surface**: `tools.py` provides eight system tools, plus `install_packages` when any
+  profile's policy sets `package_install` (attached via `SystemToolFactory` when enabled, optionally
+  scoped to `sandbox.agents`); `hooks.py`'s `SandboxPreHook` ingests
   task-completion events (the third system pre-hook). `principal.py` maps session/agent to a
   `SandboxPrincipal` (`principal_resolver` config for user identity). `testing.py` ships
   `FakeSandboxProvider` and the reusable `SandboxProviderContract`.
@@ -818,19 +913,20 @@ the cross-cutting CI: the live-broker `QueueTransportContract` job in `test-reus
 
 | Module | Contents |
 |---|---|
-| `envelope.py` | `QueueMessage` (`body`, `attributes`, `group_id`, `dedup_id`, `receive_count`, `message_id`, `native` excluded from serialization) + attribute constants `ATTR_REQUEST_ID`/`ATTR_USER_ID`/`ATTR_ENDPOINT_URL`/`ATTR_STATUS_CODE`; `QueueName` (INPUT/OUTPUT) |
+| `envelope.py` | `QueueMessage` (`body`, `attributes`, `group_id`, `dedup_id`, `receive_count`, `message_id`, `native` excluded from serialization) + attribute constants `ATTR_REQUEST_ID`/`ATTR_USER_ID`/`ATTR_ENDPOINT_URL`/`ATTR_STATUS_CODE`/`ATTR_PROTOCOL`; `QueueMessage.protocol_of(attributes)` (non-empty `str` only, the `integration_of` rule) is the single reader of `ATTR_PROTOCOL`, so the runner side never imports the REST layer that stamps it (#780); `QueueName` (INPUT/OUTPUT) |
 | `transport/base.py` | `QueueTransport` (`send`, `create_consumer` hook, `check_consumer_capacity` startup warning hook), `TransportConsumer` (`fetch`/`ack`/`nack`/`dead_letter`/`close` plus `fetch_wait_slice_seconds`: **one instance per consumer thread**), `QueueTransportFactory` (#541 house pattern; `resolve_type()`: returns the declared `execution.queues.type` — mandatory inside a declared block, since per-component queue coordinates made URL sniffing resolve differently in each process — and `in_memory` when no block is declared; all four built-ins (`in_memory`/`sqs`/`kafka`/`nats`) wired; dotted-path BYO supported). `resolve_type`/`create`/`create_consumer` accept an optional explicit `queues_config` block (#503 seam): the sandbox queue broker passes its own `sandbox.broker.queue` block, while `None` keeps the `execution.queues` path byte-for-byte |
 | `transport/in_memory.py` | `InMemoryTransport`: process-wide class-level queues; per-group FIFO with at most one in-flight message per group (groupless messages get synthetic groups); `ack_wait` redelivery with exact `receive_count`; `dedup_window`; blocking fetch; `reset()` for test isolation |
 | `consumer.py` | `ConsumerLoop`: the generic batch/retry/permanent-failure machinery extracted from `ECSSQSConsumer` (exact log-message parity; `logger` param keeps legacy `ak.ecs.*` logger names) |
-| `producer.py` | `RequestProducer`: the public input-queue enqueue seam (`enqueue(body, request_id, attributes, group_id, dedup_id)`) shared by `RestHandler._enqueue_request` and `IntegrationProducer` (#524); defaults reproduce the REST envelope exactly |
-| `agent_runner.py` | `AgentRunner`/`StreamAgentRunner`: run via `ChatService.process_chat_request`/`process_stream_chat_sync`, passing the body's prebuilt `requests` list through; forward replies with a `STATUS_CODE` attribute, plus `INTEGRATION` and every `reply_`-prefixed attribute (#524); `_record_thread_reply` appends the assistant message to a conversation thread when the input message carries the `THREAD` marker — **after** `_send_to_output` (recording first would duplicate the message on a redelivered send) and never raising (the reply is already delivered, so a failing thread store must not re-run the agent), with the thread package imported lazily inside the method as `ResponseHandler._outbound_adapter` does; `StreamAgentRunner` accumulates the chunk deltas so the reply exists as one thing exactly once, recording nothing for a halted or empty stream; `StreamAgentRunner` delegates a message carrying `INTEGRATION` to the non-streaming path, since a messaging platform has no streaming consumer; `_resolve_request_metadata` reads `request_id` from the attributes, else from the body (the scheduled-trigger contract), injecting the resolved `request_id`/`user_id` back into the attributes; per-chunk dedup suffixes `{dedup}-{receive_count}-{i}`; `run()` rejects `in_memory` (single-process runs via `IOHandler`) |
-| `response_handler.py` | `ResponseHandler`: a message carrying the `INTEGRATION` attribute is dispatched **before** the mode branch to its outbound adapter (`deliver`, or `deliver_error` with the adapter's generic `ERROR_MESSAGE` on status >= 400 and on permanent failure), so a platform reply goes to the platform whatever the app's execution mode is (#524); otherwise, REST modes write records `{session_id, request_id, status_code, body}`; STREAM routing is by the WS-entered marker: no `USER_ID` attribute (REST-entered) -> chunks to `InMemoryResponseStore.add_chunk` for SSE, `USER_ID` present -> WebSocket push, as is all of ASYNC (`STREAM_CHUNK`/`CHAT_RESPONSE` via `PodPushWebSocketHandler`, targets resolved from the shared connection store); permanent failures deliver error frames/records so clients never hang |
-| `request_handler.py` | `RestHandler` (relocated; shim at `deployment/common/rest_handler.py` keeps the `AKConfig` patch target) with three default-preserving seams (`_effective_mode`, `_await_response_record`, `_build_sync_response`); the base polls full records (`get_record`) and honors the stored status for every queue-backed surface, ECS included: `>= 400` → `HTTPException`, `200 < status < 400` → `JSONResponse` (the 202 of a deferred chat), missing → 200; pipeline `RequestHandler`: always queue mode, unset mode → REST_SYNC, SSE bridging from `store.stream`, multipart route only on `in_memory`, and `requires_pipeline` (a queue producer on a bare `RESTAPI.run` app enqueues into a queue no runner drains), inherited by `ThreadRequestHandler` |
-| `response_store/` | Relocated family (`base`/`factory`/`redis`/`valkey`/`dynamodb`; shims left at `deployment/common/response_store.py` and `deployment/aws/core/response_store/`) plus `InMemoryResponseStore` (`get_record` exposes `status_code`; `add_chunk`/`stream` for local SSE). Optional key-scan capability (`supports_key_scan`/`scan_records`, #503 idle sweep) on all four built-ins, and `ResponseStoreFactory.create` accepts explicit `response_store_config`/`transport_type`/`ttl` (#503 seam; `None` keeps today's `execution.response_store` path) |
-| `io_handler.py` | `IOHandler.run(auth_validator=None, handlers=None, pollers=None, request_handler=None)` (`handlers`: app-mounted REST handlers served alongside the pipeline's own `RequestHandler()`; `request_handler`: **replaces** that one rather than joining it — the seam for a capability that must act on a chat request before it is enqueued, which is how `ThreadRequestHandler` mounts, and refused with `AKConfigError` when it is not a `RequestHandler` — a direct-execution handler there would answer on the chat route while the agent runner idles beside it; `pollers`: integration `PollerRunner`s, co-hosted as peer threads on `in_memory` only, warned about and not started on a broker transport where they are their own containers): single-process topology (`in_memory`: rest-api + response-handler + agent-runner threads via `ThreadRunner`, co-hosting the gateway handlers in ASYNC/STREAM when a validator is passed) vs multi-process (broker: plain-REST rest-api + response-handler; `AgentRunner.run()` and `WebSocketGateway.run()` are their own containers); startup fail-fasts (a `request_handler` that is not a `RequestHandler`, ASYNC-on-in_memory without a validator, broker WS modes without `websocket_api.push_auth_token` or a shared connection store, broker transport + in_memory/absent response store -> `AKConfigError`). Carries no scheduling knowledge: the capability validates itself where its routes are mounted. Serves via its own `uvicorn.Server` (`RESTAPI.build_app()` seam) and installs SIGTERM/SIGINT handlers on the main thread: set `shutdown_event`, `server.should_exit`, and `ThreadRunner.shutdown_exit_code = 0` (uvicorn only installs handlers on the main thread, and a container PID 1 with no handler never receives SIGTERM: the containerized e2e hang). `ConsumerLoop` slices fetch waits to <=1 s so drains are prompt |
+| `producer.py` | `RequestProducer`: the public input-queue enqueue seam (`enqueue(body, request_id, attributes, group_id, dedup_id)`) shared by `RestHandler._enqueue_request`, `RestHandler.request` (#780) and `IntegrationProducer` (#524); defaults reproduce the REST envelope exactly |
+| `agent_runner.py` | `AgentRunner`/`StreamAgentRunner`: run via `ChatService.process_chat_request`/`process_stream_chat_sync`, passing the body's prebuilt `requests` list through; forward replies with a `STATUS_CODE` attribute, plus the integration return address (`INTEGRATION` and every `reply_`-prefixed attribute, the rule `IntegrationDelivery.is_routing_attribute` owns, #524/#760); `_record_thread_reply` appends the assistant message to a conversation thread when the input message carries the `THREAD` marker — **after** `_send_to_output` (recording first would duplicate the message on a redelivered send) and never raising (the reply is already delivered, so a failing thread store must not re-run the agent), with the thread package imported lazily inside the method as `IntegrationDelivery._outbound_adapter` does; `process` reads **both** `result` and `media_type` off the response body and passes them on, since the label travels beside the result rather than on it and dropping it is what left replayed history unlabelled (#763); `StreamAgentRunner` accumulates the chunk deltas so the reply exists as one thing exactly once, recording nothing for a halted or empty stream; `StreamAgentRunner` delegates a message carrying `INTEGRATION` or `PROTOCOL` (`_wants_single_reply`) to the non-streaming path, since a messaging platform has no streaming consumer and an A2A/MCP caller waits for one whole reply; `RealtimeAgentRunner` sends a `PROTOCOL` message (and its permanent failure) down the base single-reply path instead of the connection pool (#780); `PROTOCOL` is in `_FORWARDED_ATTRIBUTES`, so the reply carries it to the Response Handler; `_resolve_request_metadata` reads `request_id` from the attributes, else from the body (the scheduled-trigger contract), injecting the resolved `request_id`/`user_id` back into the attributes; per-chunk dedup suffixes `{dedup}-{receive_count}-{i}`; `StreamAgentRunner` requires `USER_ID` only for `async` + `delta` on a broker transport (missing → `ValueError`, retried); `run()` dispatches `REALTIME` first, then `is_delta` → `StreamAgentRunner`, and rejects `in_memory` (single-process runs via `IOHandler`) |
+| `integration_delivery.py` | `IntegrationDelivery(logger)` (#760): the one definition of integration delivery, shared by the pipeline `ResponseHandler`/`AgentRunner` and the serverless consumers (their copies had drifted). Speaks plain attribute mappings, not `QueueMessage`, because Lambda hands raw SQS records. Return address: `integration_of` (only a non-empty `str` counts), `is_routing_attribute`, `routing_attributes`, `reply_context`. Delivery: `deliver(integration, attributes, body, status_code, session_id)` (status >= 400 → `deliver_error(ERROR_MESSAGE)`, never the internal error; raises on failure so the host retries) and `deliver_permanent_failure`. Callers parse the status (pipeline strict, serverless tolerant). No per-message state; not exported from `agentkernel.pipeline` |
+| `response_handler.py` | `ResponseHandler`: a message carrying the `AGUI` attribute is dispatched **before** the mode branch to `_store_chunk`, so an AG-UI run's chunks reach the response store whatever `execution.mode` says (#710 §5); a message carrying the `INTEGRATION` attribute is likewise dispatched before that branch through `IntegrationDelivery` (`deliver`, or `deliver_error` with the adapter's generic `ERROR_MESSAGE` on status >= 400 and on permanent failure), so a platform reply goes to the platform whatever the app's execution mode is (#524); a message carrying `PROTOCOL` is checked next, also before the mode, and always stored as a full record (a permanent failure stores a 500 record through the shared `_store_failure_record`), because an A2A/MCP caller is polling the store whatever `execution.mode` is (#780); otherwise the config pair alone decides (`USER_ID` is not read for routing): `is_websocket` -> WebSocket push, `STREAM_CHUNK` when `is_delta` else `CHAT_RESPONSE` (via `PodPushWebSocketHandler`, targets resolved from the shared connection store); `is_sse` -> chunks to the store's `add_chunk` for SSE; REST modes write records `{session_id, request_id, status_code, body}`; permanent failures deliver error frames/records so clients never hang |
+| `request_handler.py` | `RestHandler` (relocated; shim at `deployment/common/rest_handler.py` keeps the `AKConfig` patch target) with three default-preserving seams (`_effective_mode`, `_await_response_record`, `_build_sync_response`); `_response_retry_config` (60 × 1 s without an `execution.response_store` block) and `_await_response_record` (first read straight away, `get_and_delete=True`) are the one wait budget and loop; `request(body, protocol)` (#780) is the chat route's "enqueue, then wait" without the HTTP, for A2A and MCP: it validates (empty `session_id`/`prompt`/`protocol` → `ValueError`, nothing sent; the messages match `ChatService._validate`), enqueues through `RequestProducer` with `ATTR_PROTOCOL` stamped, always waits whatever `execution.mode` is, and returns a `QueuedReply` (`status_code` with missing → 200, `body` kept as the runner built it; `is_error`/`result`/`media_type`/`error`) or raises `ReplyTimeoutError(request_id, retry_count, delay)`; an error status is returned, not raised; the REST routes never stamp `PROTOCOL`; the base polls full records (`get_record`) and honors the stored status for every queue-backed surface, ECS included: `>= 400` → `HTTPException`, `200 < status < 400` → `JSONResponse` (the 202 of a deferred chat), missing → 200; pipeline `RequestHandler`: always queue mode, unset mode → REST_SYNC, SSE bridging from `store.stream` when `is_sse` (`_reject_unroutable` answers 400 unless `_store_can_serve_sse`: chunk-capable, and `shared` or on the `in_memory` transport), multipart route only on `in_memory`, and `requires_pipeline` (a queue producer on a bare `RESTAPI.run` app enqueues into a queue no runner drains), inherited by `ThreadRequestHandler` |
+| `response_store/` | Relocated family (`base`/`factory`/`redis`/`valkey`/`dynamodb`; shims left at `deployment/common/response_store.py` and `deployment/aws/core/response_store/`) plus `InMemoryResponseStore` (`get_record` exposes `status_code`). **Chunk streaming** (`supports_chunk_streaming`/`add_chunk`/`stream`/`close_stream`) is an optional capability on `in_memory`, `redis` and `valkey` — the redis-likes over one blocking-pop driver method (`blpop`), `close_stream` pushing a reserved sentinel because a reader parked in BLPOP is released only by something arriving on the list; `dynamodb` has no blocking read and keeps the base default (#710 §3). **`shared`** is a separate predicate (default `True`, `in_memory` overrides `False`): chunk streaming says the store *can* carry a stream, `shared` says another process can *read* it, and a queue topology needs both — capability alone would pass a process-local store (#710 §2). `ResponseStoreContract` (`response_store/testing.py`) is the reusable conformance suite every chunk-streaming backend subclasses; it deliberately requires no idempotency of `add_chunk` (#710 §8). Optional key-scan capability (`supports_key_scan`/`scan_records`, #503 idle sweep) on all four built-ins, and `ResponseStoreFactory.create` accepts explicit `response_store_config`/`transport_type`/`ttl` (#503 seam; `None` keeps today's `execution.response_store` path) |
+| `io_handler.py` | `IOHandler.run(auth_validator=None, handlers=None, pollers=None, request_handler=None)` (`handlers`: app-mounted REST handlers served alongside the pipeline's own `RequestHandler()`; `request_handler`: **replaces** that one rather than joining it — the seam for a capability that must act on a chat request before it is enqueued, which is how `ThreadRequestHandler` mounts, and refused with `AKConfigError` when it is not a `RequestHandler` — a direct-execution handler there would answer on the chat route while the agent runner idles beside it; `pollers`: integration `PollerRunner`s, co-hosted as peer threads on `in_memory` only, warned about and not started on a broker transport where they are their own containers): single-process topology (`in_memory`: rest-api + response-handler + agent-runner threads via `ThreadRunner`, co-hosting the gateway handlers in `async` (either message type) when a validator is passed; `rest_sync` + `delta` serves SSE only and warns about a passed validator; runner selection `REALTIME` -> `RealtimeAgentRunner`, `is_delta` -> `StreamAgentRunner`) vs multi-process (broker: plain-REST rest-api + response-handler; `AgentRunner.run()` and `WebSocketGateway.run()` are their own containers); startup fail-fasts (a `request_handler` that is not a `RequestHandler`, `async`-on-in_memory without a validator, broker `async` without `websocket_api.push_auth_token` or a shared connection store, broker transport + in_memory/absent response store, `rest_sync` + `delta` (SSE) on a broker whose store cannot stream chunks (`supports_chunk_streaming()`) -> `AKConfigError`; since #780 the store check also covers **every** mode, not only REST ones, when `RESTAPI.agent_protocol_surfaces()` is non-empty, because A2A/MCP replies wait in the store), plus `_warn_if_no_agents`: a warning (not an error) when A2A or agent MCP is on but this process registered no agents, since cards and agent tools are built from this process's registry. Carries no scheduling knowledge: the capability validates itself where its routes are mounted. Serves via its own `uvicorn.Server` (`RESTAPI.build_app()` seam) and installs SIGTERM/SIGINT handlers on the main thread: set `shutdown_event`, `server.should_exit`, and `ThreadRunner.shutdown_exit_code = 0` (uvicorn only installs handlers on the main thread, and a container PID 1 with no handler never receives SIGTERM: the containerized e2e hang). `ConsumerLoop` slices fetch waits to <=1 s so drains are prompt |
 | `ws/` | The WebSocket Gateway tier (spec §9). `base.py`: relocated `WebSocketConnectionStoreABC`/`WebSocketHandlerABC` (shim at `deployment/common/websocket_service.py`). `registry.py`: `LocalConnectionRegistry`, the gateway pod's own sockets (no TTL; `deliver_to_connection` writes one socket from worker threads via `run_coroutine_threadsafe`). `handler.py`: `PipelineWebSocketHandler`, the native `/ws` route (token query-param auth with `userId` claim, dual registry+store registration, chat frames enqueued directly to the transport with `REQUEST_ID`+`USER_ID` only, `CHAT_QUEUED` acks, custom routes via `PipelineWebSocketHandler.register(route)`). `endpoint.py`: `PushEndpointHandler`, `POST /internal/push` (the `PostToConnection` analogue; `x-ak-push-token` shared secret, per-connection targeting, 404 = GoneException analogue). `gateway.py`: `WebSocketGateway.run(auth_validator=...)`, the standalone gateway container main (broker-only: rejects the in_memory transport, naming the co-hosted `IOHandler` topology for local testing, and rejects REST modes; requires push token + shared store). The shared connection store itself is `WSConnectionStore` (`core/session/base.py`), provided per backend by `SessionStore.get_connection_store()` and resolved via `default_connection_store()` in `push.py`. `push.py`: `PodPushWebSocketHandler` (store-lookup delivery: one POST per connection to the owning pod; stale mappings cleaned on 404, all-gone raises for retry) and `pod_endpoint_url()` (`AK_POD_IP` -> resolved host -> loopback; `local` on `in_memory`). Lazy `__init__` keeps fastapi out of Lambda imports |
 | `thread_runner.py` | Relocated `ThreadRunner` (shim at `deployment/common/thread_runner.py` keeps `import os` for the `os._exit` patch target) |
-| `envelope.py` | `QueueMessage` plus the attribute constants: `REQUEST_ID`, `USER_ID`, `ENDPOINT_URL`, `STATUS_CODE`, (#524) `INTEGRATION` — whose presence marks integration traffic and whose value resolves the outbound adapter — `REPLY_CONTEXT_PREFIX` (`reply_`), and `THREAD`, whose presence says the producer already recorded a user message and a reply is owed to that thread |
+| `envelope.py` | `QueueMessage` plus the attribute constants: `REQUEST_ID`, `USER_ID`, `ENDPOINT_URL`, `STATUS_CODE`, (#524) `INTEGRATION` — whose presence marks integration traffic and whose value resolves the outbound adapter — `REPLY_CONTEXT_PREFIX` (`reply_`), `THREAD`, whose presence says the producer already recorded a user message and a reply is owed to that thread, and (#780) `PROTOCOL` (`a2a`/`mcp`), whose presence says a caller is waiting for one whole reply in the response store, whatever `execution.mode` is; deliberately not `reply_`-prefixed, since that prefix means integration reply context |
 | `testing.py` | `QueueTransportContract`: reusable transport conformance suite (the `SandboxProviderContract` pattern); subclass it per transport |
 
 Rules that govern the package:
@@ -838,20 +934,29 @@ Rules that govern the package:
 1. **Activation**: `RESTAPI.run()` delegates to `IOHandler` only when **all three** hold: `cls is
    RESTAPI` exactly, no explicit `handlers`, and `resolve_type() == "in_memory"`. Subclasses
    (`AWSRestAPI`, `AWSWebsocketAPI`) and explicit-handler surfaces (thread handler, custom
-   handlers) never delegate; CLI/A2A/MCP use `AgentService` directly. After that branch (and
+   handlers) never delegate; the CLI uses `AgentService` directly. After that branch (and
    outside its `cls is RESTAPI` guard, so subclasses are covered) `RESTAPI.run` raises
    `AKConfigError` for any handler declaring `RESTRequestHandler.requires_pipeline` — the
    messaging-integration webhook host and the pipeline `RequestHandler` family do, because a queue
    producer on a bare FastAPI app would enqueue into a queue no runner drains and the caller would
-   still get its 200 (#524).
-2. **Coupling**: `pipeline` imports `core` and `api` only (api's pipeline imports are lazy inside
-   `run()`); `deployment` imports `pipeline`; `integration/adapter` imports `pipeline`; nothing in
+   still get its 200 (#524). It then calls `RESTAPI.reject_unqueued_protocols()` (#780): A2A
+   (`a2a.enabled`) or agent MCP (`mcp.enabled` **and** `mcp.expose_agents`, per
+   `RESTAPI.agent_protocol_surfaces()`) on any entry point that starts no runner —
+   `RESTAPI.run(handlers=[...])`, `RESTAPI.run()` on a broker, `AWSRestAPI`, `AWSWebsocketAPI` — is
+   an `AKConfigError`, because their executors only enqueue. `ECSIOHandler.run` calls the same check
+   as its first statement, before any thread starts (ECS queue-mode A2A/MCP is a follow-up). MCP
+   serving only the app's own tools runs no agent and is not refused. `build_app` still mounts A2A
+   and MCP, since `IOHandler` serves its app; `WebSocketGateway` never mounts them.
+2. **Coupling**: `pipeline` imports `core` and `api` only (api's pipeline imports are lazy: inside
+   `run()`, and inside `A2A.get_client`/`MCP.get_client` and the executors for `request_handler`); `deployment` imports `pipeline`; `integration/adapter` imports `pipeline`; nothing in
    `pipeline` imports `deployment` at runtime (typing-only imports allowed under `TYPE_CHECKING`,
    which is how `IOHandler` types its `pollers` parameter). **`pipeline` reaches `integration`
    only through lazy in-method imports**, never at module scope: `integration` capabilities carry
-   SDKs and optional extras every pipeline process would otherwise pay for. Two sites:
-   `ResponseHandler._outbound_adapter` (`IntegrationAdapterFactory`) and
-   `AgentRunner._record_thread_reply` (`ConversationThreadManager`, `ThreadRecorder` — §14.9).
+   SDKs and optional extras every pipeline process would otherwise pay for. Three sites:
+   `IntegrationDelivery._outbound_adapter` (`IntegrationAdapterFactory`; shared with the serverless
+   consumers, so a Lambda without integration traffic never imports `agentkernel.integration`),
+   `AgentRunner._record_thread_reply` (`ConversationThreadManager`, `ThreadRecorder` — §14.9), and
+   `AgentRunner._process_agui` (`AGUIRunEnvelope`, `AGUIState` — #710 §4).
    Same shape as `core/tool.py` reaching the AG-UI state helpers.
 3. **Shims preserve patch targets, not just names**: tests patch through old module paths
    (`…thread_runner.os._exit`, `…sqs_consumer.time.sleep`, `…rest_handler.AKConfig.get`): a shim
@@ -922,18 +1027,32 @@ ak-py/src/agentkernel/
 │   ├── langgraph/           # LangGraph adapter
 │   ├── adk/                 # Google ADK adapter
 │   ├── smolagents/          # Smolagents adapter
-│   └── pydanticai/          # Pydantic AI adapter
+│   ├── pydanticai/          # Pydantic AI adapter
+│   └── maf/                 # Microsoft Agent Framework adapter
+├── a2ui/                    # A2UI labelling capability: A2UIPostHook (labels a parsed JSON reply
+│   │                        #   `application/a2ui+json`), NoOpA2UIPostHook, A2UIPostHookFactory.
+│   │                        #   A capability, not an integration — it adds no surface of its own,
+│   │                        #   and it is the only place in src/ that names A2UI. Also answers by
+│   │                        #   agent name for surfaces that describe it (#762): A2UIPostHook.scopes
+│   │                        #   (the one scoping rule), A2UIPostHookFactory.labels (enabled + in
+│   │                        #   scope), EXTENSION_URI (the v0.9.1 A2A extension id) and a2a_data
+│   │                        #   (an A2UI object as the binding's one-item list)
+│   └── hook.py
 ├── api/                     # API layers
 │   ├── handler.py           # REST API handler
 │   ├── http.py              # RESTAPI class (run() delegates to pipeline IOHandler: see activation rule)
-│   ├── a2a/                 # Agent-to-Agent server
-│   └── mcp/                 # MCP server
+│   ├── a2a/                 # Agent-to-Agent server on a2a-sdk 1.2.3, A2A 1.0 only (#762): the SDK's
+│   │                        #   create_rest_routes + create_agent_card_routes per agent (no /v1, no
+│   │                        #   /{tenant}); executor enqueues via RestHandler.request (#780), sends a
+│   │                        #   labelled reply as a data part (media_type + metadata.mimeType), raises
+│   │                        #   InternalError on failure; card-less agents are skipped with a warning
+│   └── mcp/                 # MCP server (agent tools enqueue via RestHandler.request, #780)
 ├── pipeline/                # Queue execution pipeline (#495): see its section
 │   ├── envelope.py           # QueueMessage + attribute constants, QueueName
 │   ├── consumer.py           # ConsumerLoop: generic batch/retry/permanent-failure machinery
 │   ├── agent_runner.py       # AgentRunner, StreamAgentRunner
 │   ├── response_handler.py   # ResponseHandler
-│   ├── request_handler.py    # RestHandler (relocated) + pipeline RequestHandler
+│   ├── request_handler.py    # RestHandler (relocated; request() is enqueue + wait for A2A/MCP, #780) + pipeline RequestHandler
 │   ├── io_handler.py         # IOHandler: single-/two-process topologies + fail-fasts
 │   ├── thread_runner.py      # ThreadRunner (relocated)
 │   ├── testing.py            # QueueTransportContract (BYO/conformance test suite)
@@ -964,7 +1083,8 @@ ak-py/src/agentkernel/
 │   ├── thread/              # Conversation Thread Support: AgentThreadRequestHandler (direct) and
 │   │                        #   ThreadRequestHandler (queue pipeline), ThreadRecorder,
 │   │                        #   ConversationThreadManager, models, naming, store/ backends (alias: agentkernel.thread)
-│   ├── agui/                # AG-UI protocol surface: AGUIRequestHandler (routes), mapping.py
+│   ├── agui/                # AG-UI protocol surface: AGUIRequestHandler (routes), queue_handler.py
+│   │                        #   (AGUIPipelineRequestHandler, queue mode), mapping.py
 │   │                        #   (StreamEvent -> AG-UI events), run_input.py (RunAgentInput parsing),
 │   │                        #   state.py (shared-state accessors + the state/client-context tools)
 │   │                        #   (alias: agentkernel.agui)
@@ -1009,10 +1129,14 @@ ak-py/src/agentkernel/
 │   ├── bedrock.py           # AWS Bedrock guardrails
 │   └── walledai.py          # Walled AI guardrails (safety + PII redaction)
 ├── trace/                   # Observability
-│   ├── base.py              # BaseTrace
-│   ├── trace.py             # Trace factory
-│   ├── langfuse/            # Langfuse adapter
-│   └── openllmetry/         # OpenLLMetry adapter
+│   ├── base.py              # BaseTrace (+ optional, non-abstract fetch_spans(query))
+│   ├── trace.py             # Trace factory (+ Trace.fetch_spans + fetch_traces facade: TraceQuery or keyword filters)
+│   ├── fetch.py             # SpanKind, SpanStatus, TraceQuery, SpanUsage, FetchedSpan, FetchedTrace, OTelSpanClassifier (provider-neutral read model); TraceFetcher (internal base of the built-in fetchers)
+│   ├── testing.py           # TraceFetchContract conformance suite (imports pytest; test code only)
+│   ├── langfuse/            # Langfuse adapter (+ fetch.py: v2 observations API; runners flush on AWS Lambda)
+│   ├── openllmetry/         # OpenLLMetry adapter (+ fetch.py: Traceloop warehouse REST API)
+│   ├── logfire/             # Pydantic Logfire adapter (+ fetch.py: SQL Query API, needs LOGFIRE_READ_TOKEN)
+│   └── cloudwatch/          # AWS CloudWatch adapter (OpenTelemetry → X-Ray OTLP, SigV4-signed; + fetch.py: Logs Insights on aws/spans)
 ├── sandbox/                 # Sandbox capability (execute code/commands in an isolated env)
 │   ├── base.py              # Sandbox, SandboxProvider ABCs
 │   ├── model.py             # SandboxCapabilities, SandboxResult, SandboxSession, policy/principal
@@ -1020,11 +1144,14 @@ ak-py/src/agentkernel/
 │   ├── manager.py           # ExecutionManager (profile routing, sessions, fail-closed enforcement)
 │   ├── factory.py           # SandboxProviderFactory + ExecutionBrokerFactory
 │   ├── principal.py         # PrincipalResolver, AgentPrincipalResolver
-│   ├── tools.py             # The eight agent-facing system tools
+│   ├── tools.py             # Eight agent-facing system tools (+ conditional install_packages)
+│   ├── permission.py        # SandboxPermissionGuard, PermissionAuditContext (languages / package installs)
+│   ├── packages.py          # PackageSpecRule ABC, python/node rules, PackageSpecRuleFactory, PackageInstaller
 │   ├── hooks.py             # SandboxPreHook (task-completion ingestion)
 │   ├── testing.py           # FakeSandboxProvider + SandboxProviderContract (BYO test suite)
-│   ├── providers/           # local_subprocess, docker, e2b, daytona, ec2_ssm (+ planned: kubernetes, ...)
-│   └── broker/              # embedded, thread flavors + BrokerWorkerCore (+ planned: sqs)
+│   ├── providers/           # local_subprocess, docker, kubernetes, e2b, daytona, ec2_ssm;
+│   │                        #   process.py: ProcessKiller (env-marker kill for docker/kubernetes)
+│   └── broker/              # embedded, thread, queue flavors + BrokerWorkerCore + QueueBrokerWorker
 ├── schedule/                # Scheduling capability (deferred + recurring chat execution)
 │   ├── model.py             # ScheduledTask, ScheduledTaskPage, ScheduleStatus, occurrence tokens
 │   ├── errors.py            # ScheduleError
@@ -1041,7 +1168,7 @@ ak-py/src/agentkernel/
 │   ├── factory.py           # SecretProviderFactory
 │   ├── errors.py            # SecretError, SecretNotFoundError
 │   ├── testing.py           # SecretProviderContract (BYO test suite)
-│   └── providers/           # env, aws_ssm
+│   └── providers/           # env, aws_ssm, kubernetes
 ├── cli/                     # CLI interface
 │   └── cli.py               # Interactive CLI
 ├── auth/                    # Authentication
@@ -1072,10 +1199,10 @@ The containerized deployment runs on ECS Fargate and uses a two-container archit
 | `ECSSQSConsumer` | `containerized/core/sqs_consumer.py` | Extends `RawQueueConsumer`: SQS long-poll loop, retry/DLQ logic. Since #495 the machinery is the pipeline's `ConsumerLoop` bound to the SQS classmethod surface: public classmethods, raw-record subclass contract, log messages, and patch targets (`…sqs_consumer.time.sleep`) unchanged |
 | `ThreadRunner` | `pipeline/thread_runner.py` (shim at `deployment/common/thread_runner.py`) | Runs N callables as peer threads (one `threading.Thread` per `Task`, gated by a `Semaphore`) |
 | `ECSOutputConsumer` | `containerized/akoutputconsumer.py` | Extends `ECSSQSConsumer`: polls Output Queue, writes to DynamoDB or broadcasts via WebSocket |
-| `ServerlessAgentRunner` | `serverless/akagentrunner.py` | Extends `LambdaSQSConsumer`: runs `ChatService.process_chat_request` and sends the reply to the Output Queue, forwarding its status as the `ATTR_STATUS_CODE` custom attribute (`on_permanent_failure` sends 500). `ResponseHandler._construct_message_for_store` stores it on the record (absent/unparseable → 200), and `rest_lambda.DefaultEndpointsHandler` replays it: `_get_record` polls `get_record_with_retry`, `_record_response` maps the record to `(statusCode, body)`, and every `_handle_request` operation returns its own status instead of a hardcoded 200 (a missing record keeps its 200 + `NOT_FOUND` body) |
-| `ECSAgentRunner` | `containerized/akagentrunner.py` | Extends `ECSSQSConsumer`: polls Input Queue, runs the agent, sends to Output Queue. `run()` dispatches to `ECSStreamAgentRunner.run()` when `execution.mode == stream`, re-checked on every call (mirroring `ECSIOHandler.run` and the serverless `ServerlessAgentRunner.handle()`/`ServerlessStreamAgentRunner.handle()` dispatch) |
-| `ECSStreamAgentRunner` | `containerized/akagentrunner.py` | Extends `ECSAgentRunner`: STREAM-mode sibling: fans out each streamed chunk as its own Output Queue message instead of sending one full response |
-| `ECSIOHandler` | `containerized/ecs_io_handler.py` | Entrypoint for the IO container: wires REST/WebSocket API + output consumer as peer threads. `run(auth_validator=None, handlers=None)` — `handlers` mounts optional REST surfaces (the schedule/thread management routes, a Slack handler) **alongside** the API's own defaults, mirroring the pipeline `IOHandler.run(handlers=...)` contract: the REST branch composes `[*AWSRestAPI.get_default_handlers(), *handlers]` because `RESTAPI.run()` *replaces* the defaults with whatever it is handed, and the queue-producing chat route must survive. This is the reason no example needs to reimplement the two-thread body in user code. The single `auth_validator` serves both modes: in WebSocket (ASYNC/STREAM) mode it is the `$connect`-handshake validator (mandatory there); in REST modes it is wrapped as a one-item list and bound onto every REST route via `AWSRestAPI.add_auth_handlers` (`RESTAPI`'s Bearer-token `Depends` mechanism) before the REST branch's `run_api` closure is built |
+| `ServerlessAgentRunner` | `serverless/akagentrunner.py` | Extends `LambdaSQSConsumer`: runs `ChatService.process_chat_request` and sends the reply to the Output Queue, forwarding its status as the `ATTR_STATUS_CODE` custom attribute (`on_permanent_failure` sends 500). `ResponseHandler._construct_message_for_store` stores it on the record (absent/unparseable → 200), and `rest_lambda.DefaultEndpointsHandler` replays it: `_get_record` polls `get_record_with_retry`, `_record_response` maps the record to `(statusCode, body)`, and every `_handle_request` operation returns its own status instead of a hardcoded 200 (a missing record keeps its 200 + `NOT_FOUND` body). Since #760 it passes the body's prebuilt `requests` list to the chat service and copies the integration return address (`routing_attributes`: `integration` + `reply_*`) onto the output message, including the permanent-failure 500; `ServerlessStreamAgentRunner` hands an integration record (and its permanent failure) to `ServerlessAgentRunner`, since a platform has no streaming consumer. The serverless `ResponseHandler` delivers integration records through `IntegrationDelivery` before its mode branch, and reads the permanent-failure session id from the `MessageGroupId` system attribute |
+| `ECSAgentRunner` | `containerized/akagentrunner.py` | Extends `ECSSQSConsumer`: polls Input Queue, runs the agent, sends to Output Queue. `run()` dispatches `REALTIME` to `ECSRealtimeAgentRunner`, then to `ECSStreamAgentRunner.run()` when `execution.is_delta` (`async` + `delta`), re-checked on every call (mirroring `ECSIOHandler.run` and the serverless `ServerlessAgentRunner.handle()`/`ServerlessStreamAgentRunner.handle()` dispatch) |
+| `ECSStreamAgentRunner` | `containerized/akagentrunner.py` | Extends `ECSAgentRunner`: the `async` + `delta` sibling: fans out each streamed chunk as its own Output Queue message instead of sending one full response |
+| `ECSIOHandler` | `containerized/ecs_io_handler.py` | Entrypoint for the IO container: wires REST/WebSocket API + output consumer as peer threads. `run(auth_validator=None, handlers=None)` — `handlers` mounts optional REST surfaces (the schedule/thread management routes, a Slack handler) **alongside** the API's own defaults, mirroring the pipeline `IOHandler.run(handlers=...)` contract: the REST branch composes `[*AWSRestAPI.get_default_handlers(), *handlers]` because `RESTAPI.run()` *replaces* the defaults with whatever it is handed, and the queue-producing chat route must survive. This is the reason no example needs to reimplement the two-thread body in user code. `run()` refuses `rest_sync` + `delta` (SSE) with `AKConfigError` before any thread starts: the queue-backed REST route has no SSE bridge, so queue-mode delta replies need `async` + `delta` (ECS direct mode runs the plain `RESTAPI`, whose direct handler serves SSE). The single `auth_validator` serves both modes: in WebSocket (`async`) mode it is the `$connect`-handshake validator (mandatory there); in REST modes it is wrapped as a one-item list and bound onto every REST route via `AWSRestAPI.add_auth_handlers` (`RESTAPI`'s Bearer-token `Depends` mechanism) before the REST branch's `run_api` closure is built |
 | `RestHandler` | `pipeline/request_handler.py` (shim at `deployment/common/rest_handler.py`) | Queue-aware `AgentRESTRequestHandler` subclass used by ECS's `ECSQueueRequestHandler` (Lambda's poll path is the separate `rest_lambda.py` router, which uses a JSON body, not query params): `enqueue_and_wait` (`POST /api/v1/chat`, `REST_SYNC` waits on the response store / `REST_ASYNC` returns a `request_id`) and `poll_response` (`GET /api/v1/chat?request_id=...&session_id=...`, query params only: `session_id` is for logging, not validated against the stored reply) |
 | `ECSQueueRequestHandler` | `containerized/core/api/rest_api.py` | Thin `RestHandler` subclass wiring the SQS transport and response store (both inherited from `RestHandler`); routes inherited from `RestHandler.get_router()` |
 | `AWSRestAPI` | `containerized/core/api/rest_api.py` | Extends `RESTAPI`; overrides `get_default_handlers()` to default to `ECSQueueRequestHandler`, safe to construct without config |
@@ -1108,13 +1235,18 @@ not just a similar shape:
 this is what lets `RestHandler`/`AWSWebsocketAPI` reuse the base routes/paths instead of
 redefining them.
 
+`agentkernel.api` exports lazily (PEP 562 `_LAZY_EXPORTS`, #760), so importing `api.handler` no
+longer imports `api.http` and its module-scope `uvicorn`: the Lambda webhook host imports
+`WebhookRESTRequestHandler` → `api.handler` without the server stack. `from agentkernel.api import
+RESTAPI` and every `agentkernel.api.http.uvicorn` patch target keep working.
+
 ### Two-Container Layout
 
 ```
 Container 1: ECSIOHandler
   Thread 1 (ThreadRunner):  AWSRestAPI.run(handlers=[ECSQueueRequestHandler()])
                             (or AWSWebsocketAPI.set_auth_handler(validator).run() in
-                            ASYNC/STREAM mode: system + custom-route handlers built automatically)
+                            async mode: system + custom-route handlers built automatically)
                            : FastAPI/uvicorn, handles POST /chat and GET /chat?request_id=...
   Thread 2 (ThreadRunner):  ECSOutputConsumer.run()
                            : polls Output Queue, writes to DynamoDB / broadcasts via WebSocket
@@ -1264,8 +1396,10 @@ touching `Lambda` must never import `agentkernel.deployment.aws.containerized`).
 Chat surfaces enter through their layer first (see the chat execution layering diagram above): REST and
 deployment adapters via the ChatService presentation wrappers, the thread handler via the ChatService
 execution core with a prebuilt request list, messaging integrations via the pipeline queue (their
-adapter builds the request list at the edge and the Agent Runner executes it), and the CLI/A2A/MCP
-via AgentService directly. From AgentService down, the pipeline is identical everywhere:
+adapter builds the request list at the edge and the Agent Runner executes it), A2A and MCP via the
+pipeline queue too (their executors enqueue through `RestHandler.request` with a `protocol` tag and
+poll the response store for the one whole reply, #780), and the CLI via AgentService directly. From
+AgentService down, the pipeline is identical everywhere:
 
 ```
 User Input
@@ -1297,9 +1431,9 @@ User Input
             → session_store.store(session)           # persist state
             → yield StreamChunk(done=True)
             → clear volatile cache                   # cleanup
-    → REST: SSE (`text/event-stream`) when execution.mode=stream
-    → AWS Lambda serverless: each StreamChunk sent as a separate SQS/WebSocket `STREAM_CHUNK` message
-    → AWS ECS containerized: queue mode: `ECSStreamAgentRunner` fans out one SQS output message per
+    → REST: SSE (`text/event-stream`) when execution.mode=rest_sync + execution.message_type=delta (`is_sse`)
+    → AWS Lambda serverless (async + delta; the REST router refuses rest_sync + delta at init): each StreamChunk sent as a separate SQS/WebSocket `STREAM_CHUNK` message
+    → AWS ECS containerized (async + delta): queue mode: `ECSStreamAgentRunner` fans out one SQS output message per
       chunk, `ECSOutputConsumer` broadcasts each as `STREAM_CHUNK`; direct mode: `ECSWebSocketRequestHandler`
       broadcasts chunks inline via `ChatService.process_stream_chat_async`
 ```

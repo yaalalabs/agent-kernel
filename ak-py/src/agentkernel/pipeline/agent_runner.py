@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import Optional
+from typing import List, Optional
 
 from ..core.chat_service import ChatService
 from ..core.config import AKConfig
@@ -8,28 +8,34 @@ from ..core.model import BaseRunRequest, ExecutionMode, StreamChunk
 from ..core.util.factory import AKConfigError
 from .consumer import ConsumerLoop
 from .envelope import (
+    ATTR_AGUI,
     ATTR_ENDPOINT_URL,
-    ATTR_INTEGRATION,
+    ATTR_PROTOCOL,
     ATTR_REQUEST_ID,
     ATTR_STATUS_CODE,
     ATTR_THREAD,
     ATTR_USER_ID,
-    REPLY_CONTEXT_PREFIX,
     QueueMessage,
     QueueName,
 )
+from .integration_delivery import IntegrationDelivery
+from .realtime_pool import RealtimeConnectionPool
 from .thread_runner import ThreadRunner
 from .transport.base import QueueTransport, QueueTransportFactory
 
 # Attributes forwarded from an input message to its output message(s). ENDPOINT_URL is part of
 # the SQS/ECS wire format only (the pipeline neither stamps nor reads it, spec #495 §2): it is
 # forwarded so ECS-entered messages keep their return address through a pipeline runner.
-_FORWARDED_ATTRIBUTES = (ATTR_REQUEST_ID, ATTR_USER_ID, ATTR_ENDPOINT_URL, ATTR_INTEGRATION)
+# PROTOCOL is forwarded so the Response Handler stores an A2A/MCP reply whatever the mode (#780).
+# The integration return address (``integration`` plus every ``reply_*``) is the rule shared with
+# the serverless runner, so it comes from IntegrationDelivery. AGUI is listed here because the
+# Response Handler branches on it off the *output* message.
+_FORWARDED_ATTRIBUTES = (ATTR_REQUEST_ID, ATTR_USER_ID, ATTR_ENDPOINT_URL, ATTR_PROTOCOL, ATTR_AGUI)
 
 
 def _is_forwarded(key: str) -> bool:
     """Whether an input attribute travels on to the output message."""
-    return key in _FORWARDED_ATTRIBUTES or key.startswith(REPLY_CONTEXT_PREFIX)
+    return key in _FORWARDED_ATTRIBUTES or IntegrationDelivery.is_routing_attribute(key)
 
 
 class AgentRunner:
@@ -48,7 +54,20 @@ class AgentRunner:
         self._chat_service = chat_service or ChatService()
 
     def process(self, message: QueueMessage) -> None:
-        """Handle one input message: run the agent and forward the reply (with its status)."""
+        """Dispatch one input message on its markers. **Not an override point.**
+
+        Marker dispatch belongs above the runner class, not inside one: ``IOHandler`` picks
+        ``AgentRunner`` or ``StreamAgentRunner`` from the configured execution mode, and an AG-UI
+        message must take the AG-UI branch either way. A subclass that needs different run
+        behaviour overrides :meth:`_process_run`; overriding this method would silently drop
+        every marker branch for that mode.
+        """
+        if message.attributes.get(ATTR_AGUI):
+            return self._process_agui(message)
+        return self._process_run(message)
+
+    def _process_run(self, message: QueueMessage) -> None:
+        """Run one unmarked request and forward the reply to the output queue with its status."""
         body = BaseRunRequest.model_validate(json.loads(message.body))
         request_id = self._resolve_request_metadata(message, body)
 
@@ -58,17 +77,89 @@ class AgentRunner:
         # the status travels to the output message as the STATUS_CODE attribute (spec §12.6).
         status_code, agent_response = self._chat_service.process_chat_request(req=body, requests=body.requests)
         self._send_to_output(message, agent_response, status_code)
-        self._record_thread_reply(message, body, status_code, agent_response.get("result") if isinstance(agent_response, dict) else agent_response)
+        body_is_dict = isinstance(agent_response, dict)
+        result = agent_response.get("result") if body_is_dict else agent_response
+        media_type = agent_response.get("media_type") if body_is_dict else None
+        self._record_thread_reply(message, body, status_code, result, media_type)
 
         self._log.info(f"[AGENT DONE] request_id={request_id}, status_code={status_code}")
 
+    def _process_agui(self, message: QueueMessage) -> None:
+        """Run one AG-UI request, fanning each event out as its own output message.
+
+        Streams because of the marker, not because of ``execution.mode``: IOHandler picks the
+        runner class once from the configured mode, so an app on the default ``rest_sync`` would
+        otherwise produce a single non-streamed reply for a surface that is always a stream.
+
+        The ``user_id`` guard ``StreamAgentRunner._process_run`` applies does not belong here — that is
+        the WebSocket-entered marker, and AG-UI chunks go to the response store, never to a socket
+        the gateway owns. Thread recording is likewise absent: ``ATTR_AGUI`` is not ``ATTR_THREAD``.
+
+        The run goes through the handler prepared here rather than a ``ChatService`` wrapper, which
+        would resolve its own and leave the applied envelope on a session the run never sees. The
+        state comparison is the runner's for the reason the edge cannot make it: a cached session
+        store returns the caller's own copy, so an edge-side before/after finds no change.
+
+        Output order is content chunks, then the state snapshot, then the terminator — ``stream()``
+        returns at the first chunk carrying ``done``, so anything sent after it is never read.
+        """
+        from ..integration.agui.run_input import AGUIRunEnvelope, AGUIRunRequest
+        from ..integration.agui.state import AGUIState
+
+        body = AGUIRunRequest.model_validate(json.loads(message.body))
+        request_id = self._resolve_request_metadata(message, body)
+        self._log.info(f"[AGUI AGENT START] request_id={request_id}, session_id={body.session_id} (receive_count={message.receive_count})")
+
+        handler = self._chat_service.prepare_agent_handler(body.session_id, body.agent)
+        session = handler.service.session if handler.service is not None else None
+        if session is None:
+            # The edge already resolved this agent, so the two resolution paths disagree.
+            self._log.error(f"Agent '{body.agent}' could not be selected in the runner for request_id={request_id}")
+            self._send_to_output(message, {"error": f"Agent '{body.agent}' could not be selected for this run", "done": True}, status_code=None)
+            return
+
+        AGUIRunEnvelope.apply(session, body.agui)
+        state_before = AGUIState.snapshot_state(session)
+
+        chunk_count = 0
+        terminal: Optional[dict] = None
+        for chunk in handler.run_stream_sync(body.requests or [], acting_user_id=body.user_id):
+            payload = json.loads(chunk.model_dump_json())
+            if payload.get("done"):
+                terminal = payload  # withheld until after the snapshot; see the ordering note above
+                continue
+            # Retry attempts get distinct chunk dedup ids so a redelivery's chunks never collide.
+            self._send_to_output(message, payload, status_code=None, dedup_suffix=f"{message.receive_count}-{chunk_count}")
+            chunk_count += 1
+
+        state_after = AGUIState.read_state(session)
+        if state_after != state_before:
+            # The edge maps this chunk to StateSnapshotEvent.
+            self._send_to_output(message, {"agui_state": state_after}, status_code=None, dedup_suffix=f"{message.receive_count}-{chunk_count}")
+            chunk_count += 1
+
+        if terminal is not None:
+            self._send_to_output(message, terminal, status_code=None, dedup_suffix=f"{message.receive_count}-{chunk_count}")
+            chunk_count += 1
+
+        self._log.info(f"[AGUI AGENT DONE] request_id={request_id}, chunks={chunk_count}")
+
     def on_permanent_failure(self, message: QueueMessage) -> None:
-        """Surface an input message that exhausted its retries as an error reply. Catches own exceptions."""
+        """Surface an input message that exhausted its retries as an error reply. Catches own exceptions.
+
+        An AG-UI message gets a terminal stream chunk instead of a plain error body: a reader stops
+        at the first chunk carrying ``done``, so an error without it leaves the edge waiting out its
+        whole budget and then reporting a generic timeout, and the real reason never arrives.
+        """
         self._log.error(f"Permanent failure for message {message.message_id}")
         try:
             max_receive_count = AKConfig.get().execution.queues.input.max_receive_count
-            error_body = {"error": f"Failed to process message after {max_receive_count} retries"}
-            self._send_to_output(message, error_body, 500)
+            reason = f"Failed to process message after {max_receive_count} retries"
+            if message.attributes.get(ATTR_AGUI):
+                error_chunk = StreamChunk(error=reason, done=True).model_dump(exclude_none=True)
+                self._send_to_output(message, error_chunk, status_code=None, dedup_suffix=f"{message.receive_count}-error")
+                return
+            self._send_to_output(message, {"error": reason}, 500)
         except Exception:
             self._log.exception("Failed to send permanent-failure error to output queue")
 
@@ -92,25 +183,35 @@ class AgentRunner:
             queue=QueueName.INPUT,
             logger=self._log,
             exit_on_shutdown=exit_on_shutdown,
+            extra_tasks=self._get_extra_tasks(),
         ).run()
+
+    def _get_extra_tasks(self) -> List[ThreadRunner.Task]:
+        """Override in subclasses to run additional background tasks alongside the consumer loop."""
+        return []
 
     @classmethod
     def run(cls) -> None:
-        """Two-process container entry point. Dispatches to StreamAgentRunner in STREAM mode."""
+        """Two-process container entry point. Dispatches to StreamAgentRunner for delta replies."""
         if QueueTransportFactory.resolve_type() == "in_memory":
             raise AKConfigError("the in_memory transport runs in-process: start IOHandler (single-process topology) instead of AgentRunner")
         # cls check avoids redirect loops when StreamAgentRunner.run() is reached via inheritance.
-        if cls is AgentRunner and AKConfig.get().execution.mode == ExecutionMode.STREAM:
-            return StreamAgentRunner.run()
+        if cls is AgentRunner:
+            execution = AKConfig.get().execution
+            if execution.mode == ExecutionMode.REALTIME:
+                return RealtimeAgentRunner.run()
+            if execution.is_delta:
+                return StreamAgentRunner.run()
         # A standalone runner container is usually PID 1: without these handlers SIGTERM never
         # arrives and pod/task stop hangs until SIGKILL instead of draining in-flight runs.
         ThreadRunner.install_shutdown_signal_handlers(cls._log)
+
         cls().start()
 
     # -- shared plumbing --------------------------------------------------------------------
 
     @classmethod
-    def _record_thread_reply(cls, message: QueueMessage, body: BaseRunRequest, status_code: int, result) -> None:
+    def _record_thread_reply(cls, message: QueueMessage, body: BaseRunRequest, status_code: int, result, media_type: Optional[str] = None) -> None:
         """Append the assistant message to the conversation thread this request belongs to.
 
         The other half of the split: ``ThreadRecorder.pre_run`` ran at the edge (the thread
@@ -125,14 +226,17 @@ class AgentRunner:
         safer direction (the caller still got its answer).
 
         Imported lazily and locally for the same reason as
-        ``ResponseHandler._outbound_adapter``: threads are an ``integration`` capability, and a
+        ``IntegrationDelivery._outbound_adapter``: threads are an ``integration`` capability, and a
         module-scope import would make every runner process — including ones with no thread
         block configured — pay for the thread stores.
 
         :param message: The input message, carrying the ``thread`` marker.
         :param body: The validated request body; supplies the session the thread is keyed by.
         :param status_code: The status the run produced; a failure records nothing.
-        :param result: The agent's reply, recorded via ``str()``.
+        :param result: The agent's reply — the response body's ``result``, an object for a labelled
+            reply and text for every other.
+        :param media_type: The reply's label, which the response body carries beside ``result``
+            rather than on it. Dropping it here is what left replayed history unlabelled (#763).
         """
         if not message.attributes.get(ATTR_THREAD) or status_code >= 400 or result in (None, ""):
             return
@@ -148,7 +252,7 @@ class AgentRunner:
                     "Give the agent-runner process the same thread configuration as the API process."
                 )
                 return
-            ThreadRecorder(manager).post_run(body, result)
+            ThreadRecorder(manager).post_run(body, result, media_type)
         except Exception:
             cls._log.exception(f"Failed to record the assistant message for session_id={body.session_id}")
 
@@ -195,28 +299,33 @@ class AgentRunner:
 
         self._transport.send(
             QueueName.OUTPUT,
-            QueueMessage(body=json.dumps(response_body), attributes=attributes, group_id=group_id, dedup_id=dedup_id),
+            QueueMessage(body=response_body, attributes=attributes, group_id=group_id, dedup_id=dedup_id),
         )
 
 
 class StreamAgentRunner(AgentRunner):
-    """STREAM-mode sibling: fans out each streamed chunk as its own output message (spec #495 §8).
+    """Delta-reply sibling: fans out each streamed chunk as its own output message (spec #495 §8).
 
-    On broker transports the chunks are pushed over WebSocket, so the USER_ID attribute (the
-    WS-entered marker, spec #495 §2) is required; the in_memory transport also serves
-    REST-entered chunks from the local response store over SSE, where no user is needed.
+    Under ``async + delta`` on a broker transport the chunks are pushed over WebSocket, so the
+    USER_ID attribute (the WS-entered marker, spec #495 §2) is required. Under ``rest_sync + delta``
+    the chunks go to the response store and are served over SSE, where no user is needed.
+
+    Integration and ``protocol`` traffic takes the single-reply path instead: a messaging platform
+    has no streaming consumer, and an A2A or MCP caller waits for one whole reply in the response
+    store (#780).
     """
 
     _log = logging.getLogger("ak.pipeline.stream_agent_runner")
 
-    def process(self, message: QueueMessage) -> None:
-        if message.attributes.get(ATTR_INTEGRATION):
-            return super().process(message)
+    def _process_run(self, message: QueueMessage) -> None:
+        if self._wants_single_reply(message):
+            return super()._process_run(message)
 
         body = BaseRunRequest.model_validate(json.loads(message.body))
+
         request_id = self._resolve_request_metadata(message, body)
-        if not message.attributes.get(ATTR_USER_ID) and QueueTransportFactory.resolve_type() != "in_memory":
-            raise ValueError("user_id is required in queue message attributes for STREAM mode over a broker transport")
+        if not message.attributes.get(ATTR_USER_ID) and AKConfig.get().execution.is_websocket and QueueTransportFactory.resolve_type() != "in_memory":
+            raise ValueError("user_id is required in queue message attributes for async + delta over a broker transport")
 
         self._log.info(f"[STREAM AGENT START] request_id={request_id} (receive_count={message.receive_count})")
 
@@ -239,7 +348,7 @@ class StreamAgentRunner(AgentRunner):
         self._log.info(f"[STREAM AGENT DONE] request_id={request_id}, chunks={chunk_count}")
 
     def on_permanent_failure(self, message: QueueMessage) -> None:
-        if message.attributes.get(ATTR_INTEGRATION):
+        if self._wants_single_reply(message) or message.attributes.get(ATTR_AGUI):
             return super().on_permanent_failure(message)
 
         self._log.error(f"Permanent failure for message {message.message_id}")
@@ -251,3 +360,53 @@ class StreamAgentRunner(AgentRunner):
             self._send_to_output(message, error_chunk, status_code=None, dedup_suffix=f"{message.receive_count}-error")
         except Exception:
             self._log.exception("Failed to send permanent-failure stream chunk to output queue")
+
+    @staticmethod
+    def _wants_single_reply(message: QueueMessage) -> bool:
+        """Whether this message's consumer takes one whole reply rather than chunks."""
+        is_integration = IntegrationDelivery.integration_of(message.attributes) is not None  # Slack, WhatsApp, ...
+        is_protocol = QueueMessage.protocol_of(message.attributes) is not None  # A2A, MCP
+        return is_integration or is_protocol
+
+
+class RealtimeAgentRunner(AgentRunner):
+    """REALTIME-mode sibling: dedicated consumer for WebRTC/audio streaming.
+
+    ``protocol`` traffic is not realtime: an A2A or MCP caller waits for one whole reply in the
+    response store, so it takes the base single-reply path instead of the connection pool (#780).
+    """
+
+    _log = logging.getLogger("ak.pipeline.realtime_agent_runner")
+
+    def _get_extra_tasks(self) -> List[ThreadRunner.Task]:
+        pool = RealtimeConnectionPool.initialize()
+        return [pool.get_task()]
+
+    def _process_run(self, message: QueueMessage) -> None:
+        if QueueMessage.protocol_of(message.attributes):
+            return super()._process_run(message)
+
+        body = BaseRunRequest.model_validate(json.loads(message.body))
+        request_id = self._resolve_request_metadata(message, body)
+        RealtimeConnectionPool.initialize().dispatch(body, request_id, message.attributes.get(ATTR_USER_ID), message.attributes, self._chat_service)
+        self._log.debug(f"[REALTIME CHUNK] request_id={request_id} (receive_count={message.receive_count})")
+
+    def on_permanent_failure(self, message: QueueMessage) -> None:
+        """Tell the room its input failed, as a marked error chunk its edge can deliver. Catches own exceptions.
+
+        An AG-UI or ``protocol`` message is not a room's input: it goes back to the base handler,
+        which terminates an AG-UI stream with a ``done`` chunk and gives an A2A/MCP caller its
+        error reply (#780).
+        """
+        if message.attributes.get(ATTR_AGUI) or QueueMessage.protocol_of(message.attributes):
+            return super().on_permanent_failure(message)
+
+        self._log.error(f"Permanent failure for message {message.message_id}")
+        try:
+            max_receive_count = AKConfig.get().execution.queues.input.max_receive_count
+            dedup_id = f"{message.dedup_id}-{message.receive_count}-error" if message.dedup_id else None
+            RealtimeConnectionPool.send_permanent_failure(
+                self._transport, message.attributes, message.group_id, dedup_id, f"Failed to process message after {max_receive_count} retries"
+            )
+        except Exception:
+            self._log.exception("Failed to send permanent-failure error chunk to output queue")

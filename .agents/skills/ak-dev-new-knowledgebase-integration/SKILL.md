@@ -293,7 +293,8 @@ Also add the example to the demo and README lists in `docs/docs/advanced/knowled
 `docs/docs/examples/overview.md`, and to the backend enumerations in `README.md`, `ak-py/README.md`,
 `docs/docs/intro.md` and `docs/docs/installation.md` — those lists are the ones that silently go stale.
 
-The docs website carries three more hard-coded backend lists, all of which need the new name:
+The docs website carries more hard-coded backend lists, all of which need the new name:
+- the landing page inventories in `docs/src/components/*/data.tsx`: a tile in the **Memory, knowledge & data** row of `IntegrationsMarquee/data.tsx` (role `Vector knowledge`, `Graph knowledge`, or `SQL knowledge`; `href` to the knowledge base docs; logo or `react-icons/si` glyph), `pick("<tile name>")` on the **Memory & knowledge** card in `ArchitectureOverview/data.tsx`, and the **Knowledge Bases** card's `tags` and `description` under the Remember tab in `FeatureExplorer/data.tsx` (logo sourcing and the build check: `ak-dev-sync-docs-from-branch`, *Docs-Site Landing and Features Pages*)
 - `docs/src/pages/features.tsx` — the Knowledge Bases card's `description` **and** its `highlights`
 - `docs/src/pages/developer.tsx` — the Knowledge Bases `items` array
 - `docs/src/pages/ai-engineer.tsx` — the Knowledge Bases `items` array
@@ -374,6 +375,8 @@ Validate that your backend works with `KnowledgeBuilder.build()` and tools:
 - [ ] Example added/updated under `examples/cli/knowledgebase/openai/`
 - [ ] Documentation updated in the knowledge base docs, and the backend added to the enumerations that
       list backends
+- [ ] Landing page inventories: marquee tile (`IntegrationsMarquee/data.tsx`), `pick()` chip on the Memory &
+      knowledge card (`ArchitectureOverview/data.tsx`), Knowledge Bases card tags (`FeatureExplorer/data.tsx`)
 - [ ] `KnowledgeBaseContract` subclass registered in `ak-py/tests/test_knowledgebase_contract.py` and
       green (plus `DocumentStoreContract` for a new store)
 - [ ] Unit tests added under `ak-py/tests/` for connect, each declared operation, and constraints

@@ -3,7 +3,7 @@ name: ak-dev-new-framework-integration
 description: >
   Step-by-step guide for adding a new agent framework adapter to Agent Kernel.
   Use this skill when you need to integrate a new agent framework (beyond OpenAI,
-    CrewAI, LangGraph, Google ADK, Smolagents, Pydantic AI). Covers creating the adapter module, implementing
+    CrewAI, LangGraph, Google ADK, Smolagents, Pydantic AI, Microsoft Agent Framework). Covers creating the adapter module, implementing
   Agent/Runner/Module subclasses, adding optional dependencies, exports, and tests.
 license: Apache-2.0
 metadata:
@@ -281,7 +281,7 @@ class <Name>Agent(Agent):
 
 **Key requirements:**
 - `get_description()` must return a meaningful description from the native framework agent
-- `get_a2a_card()` must return a valid A2A agent card built via `A2ACardBuilder`
+- `get_a2a_card()` must return a valid A2A agent card built via `A2ACardBuilder` (a2a-sdk 1.x protobuf types, #762). Pass a `str` description (anything else is emptied with a warning); `AgentSkill(..., tags=[])` is fine, the builder tags an untagged skill with the agent name. Returning `None` means the agent is not served over A2A (logged)
 - Store the native agent in `self._native_agent` for access in the Runner
 - Declare `RESERVED_RUN_OPTIONS: ClassVar[Mapping[str, str]]` (#754): every keyword your runner passes itself, plus any that changes the result shape your reply mapping reads, each mapped to a one-line reason. `Module.run_options` rejects them at declaration with that reason. Override `validate_run_options` only for a nested key (LangGraph's `config.configurable.thread_id`)
 
@@ -303,6 +303,15 @@ class <Name>ToolBuilder(ToolBuilder):
             tools.append(tool)
         return tools
 ```
+
+Add `**options` and forward them when the framework's own tool wrapper takes per-tool arguments that
+change what the tool *is*. Three adapters do — OpenAI (`function_tool`), Google ADK (`FunctionTool`)
+and Pydantic AI (`Tool`) — and in each the framework's human-in-the-loop gate (`needs_approval`,
+`require_confirmation`, `requires_approval`) is exactly such an argument: without forwarding, a gated
+tool could only be declared natively, giving up the framework-free function the builder exists to
+allow. Options apply to every function in the call, so tools wanting different ones are bound in
+separate calls. Do not add the parameter when the framework has no such arguments — smolagents'
+`tool()` takes only the function.
 
 ### 6. Implement the Module
 
@@ -372,7 +381,7 @@ In `ak-py/pyproject.toml`, add an optional dependency group:
 
 ### 11. Add Tracing Support
 
-There are **two** tracing backends, each with per-framework traced runners. A new framework needs a traced runner under **both** `ak-py/src/agentkernel/trace/langfuse/<name>.py` and `ak-py/src/agentkernel/trace/openllmetry/<name>.py`:
+There are **four** built-in tracing backends, each with per-framework traced runners. A new framework needs a traced runner under **each** of `ak-py/src/agentkernel/trace/langfuse/<name>.py`, `trace/openllmetry/<name>.py`, `trace/logfire/<name>.py`, and `trace/cloudwatch/<name>.py` (the CloudWatch runner takes the `CloudWatch` tracer and wraps `super().run()` in `self._tracer.span(...)`):
 
 ```python
 from ...framework.<name>.<name> import <Name>Runner
@@ -410,7 +419,10 @@ Create at minimum:
 
 - Add a page under `docs/docs/frameworks/<name>.md` — note the page slug may differ from the adapter directory name (e.g. the `adk` adapter's page is `docs/docs/frameworks/google-adk.md`, referenced as `'frameworks/google-adk'` in `docs/sidebars.js`)
 - Update `docs/sidebars.js` to include the new framework
-- Update the docs-site React pages that enumerate frameworks: the `frameworks` list in `FrameworksStrip` in `docs/src/pages/index.tsx` (logo under `docs/static/img/integrations/`, link to the new page) and the `integrations` list in `docs/src/pages/features.tsx`, plus the "Framework adapters for N SDKs" highlight on the Six Core Abstractions card there. Grep `docs/src/pages/*.tsx` and `docs/docs/intro.md` for the framework roll call and add the new name wherever the others are listed
+- Landing page (`docs/src/components/*/data.tsx`): add a tile to the **Agent frameworks & dev tools** row in `IntegrationsMarquee/data.tsx` (role `Framework`, `href` to the new page, logo or `react-icons/si` glyph); add `pick("<tile name>")` to the **Agent frameworks** card in `ArchitectureOverview/data.tsx`; add the framework to the **Framework Adapters** card's `tags` and `description` under the Build tab in `FeatureExplorer/data.tsx`. Logo sourcing and the build check are in `ak-dev-sync-docs-from-branch`, *Docs-Site Landing and Features Pages*
+- Features page (`docs/src/pages/features.tsx`): the `integrations` list and the "Framework adapters for N SDKs" highlight on the Six Core Abstractions card. Grep `docs/src/pages/*.tsx` and `docs/docs/intro.md` for the framework roll call and add the new name wherever the others are listed
+- The framework's own page carries the same sections as the other framework pages: Tool Binding, Structured Output, Per-run context/state, Native run options, Human in the loop (say so when `supports_pause` stays `False`), Features and Example
+- Every other roll call. Grep the whole repo for the most recently added framework's name and compare its hits with the new framework's, e.g. `grep -rIl -i 'pydantic.\?ai' docs/docs docs/src ak-py/src/agentkernel/skills .agents/skills README.md ak-py/README.md`. Typical surfaces: `installation.md` (the framework's section and the `all` extras line), `quick-start.md` (a tab), `examples/overview.md`, the streaming-capable lists (`api/rest-api.md`, `core-concepts/configuration.md`, `core-concepts/overview.md`, the Azure/GCP deployment pages), the AG-UI tables (`api/agui-server.md`, `integrations/agui.md`), `advanced/human-in-the-loop.md`, the traceability depth tables, the native-handle list in `core-concepts/session.md`, `docs/src/components/FrameworkSelector`, the marketing pages under `docs/src/pages/`, the bundled user skills (`ak-build`, `ak-init`, `ak-test`, `ak-add-capabilities`), and the framework lists in the developer skills
 
 ## Checklist
 
@@ -418,14 +430,21 @@ Create at minimum:
 - [ ] `<Name>Session` (if needed), `<Name>Runner`, `<Name>Agent`, `<Name>Module`, `<Name>ToolBuilder`
 - [ ] `<Name>Runner.stream()` implemented — either real event streaming or a `NotImplementedError` stub
 - [ ] `<Name>Runner.supports_streaming` declared — `False` when `stream()` only raises, so callers reject instead of provoking it
+- [ ] `<Name>Runner.supports_pause` declared (#606) — leave it at the inherited `False` unless the framework has a **durable, programmatic** pause. Unlike `supports_streaming` it defaults to False, so a framework without one needs no declaration and `resume()`/`resume_stream()` keep their raising defaults
+- [ ] When it does pause: detection placed **before** the existing reply mapping (a paused run still fills the answer field with the text produced on the way to stopping), the record written with `PausedRunState.add` inside the `try` after a successful call, and any framework-specific rejection raised **above** the `try` — the adapter's `except Exception` would otherwise flatten it into a generic reply
+- [ ] When it does pause: **you** clear the record with `PausedRunState.clear` on the success path, inside the `try`. `Runtime` deliberately does not tidy up after you — it cannot tell a failed resume from an ordinary reply, so a fallback there would destroy the pause on a transient error. A record still present after a resume means that resume failed and the decision can be sent again
+- [ ] When it does pause and your framework holds **one conversation per session**, replace with `PausedRunState.clear_for_runner(session, self.name)` rather than clearing the list — another framework's agent may hold an independent, still-answerable pause on the same session. Only OpenAI appends, because its `RunState` is a self-contained snapshot
+- [ ] When it does pause: `resume()` and `resume_stream()` produce the **same shapes `run()` and `stream()` do** — the structured-reply mapping, the event envelope, the reasoning events. Three of ADK's review findings were a resumed turn quietly differing from an ordinary one; share a helper between the pair rather than writing the second copy
 - [ ] `<Name>Runner`'s `name` (passed to `super().__init__()`) matches the session key used in `session.get/set(...)` — required for `Session.get_framework_session()` to resolve it
 - [ ] Public alias at `ak-py/src/agentkernel/<name>.py`
 - [ ] Optional dependency group in `ak-py/pyproject.toml`
-- [ ] Trace runners in `ak-py/src/agentkernel/trace/langfuse/<name>.py` and `ak-py/src/agentkernel/trace/openllmetry/<name>.py` (optional)
+- [ ] Trace runners in `ak-py/src/agentkernel/trace/{langfuse,openllmetry,logfire,cloudwatch}/<name>.py` (optional)
 - [ ] Updates to `trace/base.py` and `trace/trace.py` (if adding tracing)
 - [ ] `<Name>Agent.RESERVED_RUN_OPTIONS` declared; `run()` and `stream()` each resolve once with `await agent.resolve_run_options(session, requests)` after the early returns and pass the mapping to `_native_kwargs` and your helpers (#754, #758)
 - [ ] `_native_agent_name` overridden if the registered name is not `agent.name`
 - [ ] Unit tests in `ak-py/tests/`, including: declared run options reach the native call, an AK-owned key wins over a bypassed declaration, the declared dict is not mutated across runs, and the reserved keys are rejected through the module; a factory-merged mapping (a mock whose `resolve_run_options` returns it) wins over the static key at the native call, and `resolve_run_options` is awaited exactly once per `run` and per `stream` (#758)
 - [ ] CLI example in `examples/cli/<name>/`
 - [ ] Documentation in `docs/docs/frameworks/<name>.md`
-- [ ] Framework inventories on the docs-site pages (`docs/src/pages/index.tsx` `FrameworksStrip`, `docs/src/pages/features.tsx` `integrations` and SDK count) and in `docs/docs/intro.md`
+- [ ] Landing page inventories: marquee tile (`IntegrationsMarquee/data.tsx`), `pick()` chip on the Agent frameworks card (`ArchitectureOverview/data.tsx`), Framework Adapters card tags (`FeatureExplorer/data.tsx`)
+- [ ] Framework inventories on `docs/src/pages/features.tsx` (`integrations` and SDK count) and in `docs/docs/intro.md`
+- [ ] Every other framework roll call updated (Step 14: installation, quick start, examples overview, streaming lists, AG-UI and tracing tables, session handles, FrameworkSelector, marketing pages, bundled and developer skills)

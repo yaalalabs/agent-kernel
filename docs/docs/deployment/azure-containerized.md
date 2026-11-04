@@ -7,7 +7,7 @@ sidebar_position: 6
 Deploy agents to Azure Container Apps for consistent, low-latency execution.
 
 :::note Supported execution modes
-Container Apps runs Agent Kernel's built-in REST server (`RESTAPI.run`), so it supports synchronous JSON REST **and SSE event streaming** (`execution.mode: stream`) with streaming-capable frameworks (OpenAI Agents SDK, LangGraph, Google ADK, Pydantic AI). Queue-based execution and WebSocket delivery are currently AWS-only; see the [Deployment Overview](./overview#execution-modes).
+Container Apps runs Agent Kernel's built-in REST server (`RESTAPI.run`), so it supports synchronous JSON REST **and SSE event streaming** (`execution.mode: rest_sync` with `execution.message_type: delta`) with streaming-capable frameworks (OpenAI Agents SDK, LangGraph, Google ADK, Pydantic AI, Microsoft Agent Framework). Queue-based execution and WebSocket delivery are currently AWS-only; see the [Deployment Overview](./overview#execution-modes).
 :::
 
 ## Architecture
@@ -39,7 +39,7 @@ graph TB
 
 ## Deployment
 
-Refer to [example Azure Container Apps implementation](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/azure-containerized/crewai) which leverages Agent Kernel's [terraform module](https://registry.terraform.io/modules/yaalalabs/ak-containerized/azurerm) for Container Apps deployment.
+Refer to [example Azure Container Apps implementation](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/azure-containerized/openai-cosmos) which leverages Agent Kernel's [terraform module](https://registry.terraform.io/modules/yaalalabs/ak-containerized/azurerm) for Container Apps deployment.
 
 The module is provider-agnostic — it does not configure the `azurerm` provider itself, so your root `main.tf` must configure it and pass it into the module explicitly:
 

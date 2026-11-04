@@ -2,7 +2,7 @@ import json
 import threading
 
 import pytest
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 
@@ -11,11 +11,13 @@ from agentkernel.core.config import AKConfig
 from agentkernel.core.event import MessageEnd, MessageStart, TextDelta
 from agentkernel.core.model import AgentReplyText, AgentRequestText, BaseRunRequest
 from agentkernel.core.runtime import Runtime
+from agentkernel.pipeline import request_handler
 from agentkernel.pipeline.agent_runner import AgentRunner, StreamAgentRunner
 from agentkernel.pipeline.consumer import ConsumerLoop
-from agentkernel.pipeline.envelope import QueueName
-from agentkernel.pipeline.request_handler import RequestHandler, RestHandler
+from agentkernel.pipeline.envelope import ATTR_PROTOCOL, QueueName
+from agentkernel.pipeline.request_handler import QueuedReply, ReplyTimeoutError, RequestHandler, RestHandler
 from agentkernel.pipeline.response_handler import ResponseHandler
+from agentkernel.pipeline.response_store.factory import ResponseStoreFactory
 from agentkernel.pipeline.response_store.in_memory import InMemoryResponseStore
 from agentkernel.pipeline.thread_runner import ThreadRunner
 from agentkernel.pipeline.transport.base import QueueTransportFactory
@@ -77,13 +79,17 @@ def dummy_agent():
     Runtime.current().deregister(agent)
 
 
-def _configure(monkeypatch, mode=None):
+def _configure(monkeypatch, mode=None, message_type=None):
     """Point AKConfig at real defaults (in_memory transport) with a fast response-wait budget."""
     monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
     if mode:
         monkeypatch.setenv("AK_EXECUTION__MODE", mode)
     else:
         monkeypatch.delenv("AK_EXECUTION__MODE", raising=False)
+    if message_type:
+        monkeypatch.setenv("AK_EXECUTION__MESSAGE_TYPE", message_type)
+    else:
+        monkeypatch.delenv("AK_EXECUTION__MESSAGE_TYPE", raising=False)
     monkeypatch.setenv("AK_EXECUTION__RESPONSE_STORE__RETRY_COUNT", "100")
     monkeypatch.setenv("AK_EXECUTION__RESPONSE_STORE__DELAY", "0.05")
     AKConfig._reset()
@@ -193,10 +199,22 @@ class TestRestAsync:
         # get_and_delete semantics: a second poll no longer finds the record.
         assert client.get(CHAT, params={"request_id": request_id}).status_code == 404
 
+    def test_resume_without_prompt_is_enqueued(self, monkeypatch, dummy_agent):
+        """A human-in-the-loop decision carries no prompt; direct mode accepts it, so the pipeline must too."""
+        _configure(monkeypatch, mode="rest_async")
+        resume = {"decisions": [{"id": "call_1", "status": "approved"}]}
+
+        accepted = _client().post(CHAT, json={"session_id": "s1", "agent": AGENT_NAME, "resume": resume})
+
+        assert accepted.status_code == 200
+        assert accepted.json()["status"] == "ACCEPTED"
+        [message] = InMemoryTransport().create_consumer(QueueName.INPUT).fetch(1, 0.5)
+        assert json.loads(message.body)["resume"]["decisions"][0] == {"id": "call_1", "status": "approved"}
+
 
 class TestStreamSSE:
     def test_stream_yields_sse_chunks(self, monkeypatch, dummy_agent, workers):
-        _configure(monkeypatch, mode="stream")
+        _configure(monkeypatch, mode="rest_sync", message_type="delta")
         workers(stream=True)
 
         with _client().stream("POST", CHAT, json={"prompt": "hello", "session_id": "s1", "agent": AGENT_NAME}) as response:
@@ -250,9 +268,30 @@ class TestStatusHonoringResponses:
 
         response = RequestHandler()._build_sync_response(record)
 
-        assert isinstance(response, JSONResponse)
+        assert isinstance(response, Response)
         assert response.status_code == 202
+        assert response.media_type == "application/json"
         assert json.loads(response.body) == {"status": "SCHEDULED", "session_id": "s1"}
+
+    def test_2xx_non_200_body_survives_a_value_json_response_would_reject(self, monkeypatch):
+        """Why this path builds a plain `Response` instead of a `JSONResponse`.
+
+        `JSONResponse` encodes with ``allow_nan=False`` and raises on a non-finite float, where
+        FastAPI's own return path — the 200 case two tests down — writes it through. A `NaN`
+        reaches a stored record the ordinary way: stdlib ``json.dumps`` writes the token ``NaN``
+        onto the queue and ``json.loads`` reads it back as a float, so the two REST surfaces would
+        disagree about the same record.
+        """
+        _configure(monkeypatch, mode="rest_sync")
+        record = {"request_id": "r1", "status_code": 202, "body": json.loads(json.dumps({"avg": float("nan")}))}
+
+        with pytest.raises(ValueError, match="not JSON compliant"):
+            JSONResponse(content=record["body"])
+
+        response = RequestHandler()._build_sync_response(record)
+
+        assert response.status_code == 202
+        assert response.body == b'{"avg": NaN}'
 
     def test_200_returns_the_bare_body(self, monkeypatch):
         _configure(monkeypatch, mode="rest_sync")
@@ -341,22 +380,40 @@ class TestWebSocketModeGuards:
         assert response.status_code == 400
         assert "/ws" in response.json()["detail"]["error"]
 
-    def test_stream_without_a_chunk_streaming_store_rejects_rest_chat(self, monkeypatch):
-        """Broker STREAM topologies pair a shared store with WS delivery: the SSE route has
-        nothing to drain, so the request must be refused before it is enqueued."""
-        _configure(monkeypatch, mode="stream")
+    def test_realtime_mode_rejects_rest_chat(self, monkeypatch):
+        """Realtime replies go to the stateful edge that sent the request; a REST request has none,
+        so it must be refused before it is enqueued and opens a model socket."""
+        _configure(monkeypatch, mode="realtime")
+        response = _client().post(CHAT, json={"prompt": "hi", "session_id": "s1"})
+        assert response.status_code == 400
+        assert "realtime gateway" in response.json()["detail"]["error"]
 
-        class _NoChunkStore:
-            def supports_chunk_streaming(self):
-                return False
+        # Nothing was enqueued: the input queue stays empty.
+        assert InMemoryTransport().create_consumer(QueueName.INPUT).fetch(1, 0.05) == []
+
+    def test_async_delta_mode_rejects_rest_chat(self, monkeypatch):
+        _configure(monkeypatch, mode="async", message_type="delta")
+        response = _client().post(CHAT, json={"prompt": "hi", "session_id": "s1"})
+        assert response.status_code == 400
+        assert "/ws" in response.json()["detail"]["error"]
+
+        # Nothing was enqueued: the input queue stays empty.
+        assert InMemoryTransport().create_consumer(QueueName.INPUT).fetch(1, 0.05) == []
+
+    def test_sse_with_a_process_local_store_rejects_rest_chat_on_a_broker(self, monkeypatch):
+        """The other half of `_store_can_serve_sse`: the in-memory store *can* stream chunks, but
+        holds them in class-level state, so on a broker the edge and the Response Handler hold
+        separate copies and the request would hang out its whole budget before timing out."""
+        _configure(monkeypatch, mode="rest_sync", message_type="delta")
+        monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "sqs"))
 
         handler = RequestHandler()
-        handler._response_store = _NoChunkStore()
+        handler._response_store = InMemoryResponseStore()
         app = FastAPI()
         app.include_router(handler.get_router())
         response = TestClient(app).post(CHAT, json={"prompt": "hi", "session_id": "s1"})
         assert response.status_code == 400
-        assert "/ws" in response.json()["detail"]["error"]
+        assert "shared with the response handler" in response.json()["detail"]["error"]
 
         # Nothing was enqueued: the input queue stays empty.
         assert InMemoryTransport().create_consumer(QueueName.INPUT).fetch(1, 0.05) == []
@@ -391,6 +448,284 @@ class TestEnqueueSeam:
         assert len(injected.create_consumer(QueueName.INPUT).fetch(1, 0.5)) == 1
 
 
+class TestResponseWaitSeam:
+    """The wait budget and loop REST, A2A and MCP share (#780)."""
+
+    def test_no_response_store_block_waits_sixty_reads_one_second_apart(self, monkeypatch):
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+        monkeypatch.delenv("AK_EXECUTION__RESPONSE_STORE__RETRY_COUNT", raising=False)
+        monkeypatch.delenv("AK_EXECUTION__RESPONSE_STORE__DELAY", raising=False)
+        AKConfig._reset()
+
+        assert RestHandler()._response_retry_config() == (60, 1.0)
+
+    def test_a_response_store_block_supplies_the_budget(self, monkeypatch):
+        _configure(monkeypatch)
+
+        assert RestHandler()._response_retry_config() == (100, 0.05)
+
+    @pytest.mark.asyncio
+    async def test_the_wait_uses_the_handlers_own_store_and_budget(self, monkeypatch, sleeps):
+        _configure(monkeypatch)
+        store = FakeStore()
+
+        assert await _protocol_handler(store, budget=(2, 0.3))._await_response_record("r1") is None
+        assert store.reads == [("r1", True), ("r1", True)]
+        assert sleeps == [0.3]
+
+
+class FakeStore:
+    """Answers ``get_record`` with None until read ``ready_after`` times, then with ``record``."""
+
+    def __init__(self, record=None, ready_after: int = 0, events: list | None = None):
+        self.record = record
+        self.ready_after = ready_after
+        self.reads: list[tuple[str, bool]] = []
+        self.events = events if events is not None else []
+
+    def get_record(self, request_id, get_and_delete=False):
+        self.reads.append((request_id, get_and_delete))
+        self.events.append("read")
+        if self.record is not None and len(self.reads) > self.ready_after:
+            return {"request_id": request_id, **self.record}
+        return None
+
+
+class _InjectedHandler(RestHandler):
+    """A RestHandler on a given transport, store and budget, through the override seams subclasses use."""
+
+    def __init__(self, store, transport, budget):
+        super().__init__()
+        self._injected = (store, transport, budget)
+
+    def get_response_store(self):
+        return self._injected[0]
+
+    def get_transport(self):
+        return self._injected[1]
+
+    def _response_retry_config(self):
+        return self._injected[2]
+
+
+@pytest.fixture
+def sleeps(monkeypatch):
+    """Record every sleep instead of sleeping."""
+    recorded: list[float] = []
+
+    async def _sleep(delay):
+        recorded.append(delay)
+
+    monkeypatch.setattr(request_handler.asyncio, "sleep", _sleep)
+    return recorded
+
+
+def _protocol_body(**overrides) -> BaseRunRequest:
+    return BaseRunRequest(**{"prompt": "hi", "session_id": "s1", "agent": "triage", **overrides})
+
+
+def _protocol_handler(store, transport=None, budget=(3, 0.5)) -> RestHandler:
+    return _InjectedHandler(store, transport or InMemoryTransport(), budget)
+
+
+class TestProtocolRequest:
+    """``RestHandler.request`` (#780): the "enqueue, then wait for the whole reply" A2A and MCP share with REST."""
+
+    @pytest.fixture(autouse=True)
+    def _defaults(self, monkeypatch):
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+        AKConfig._reset()
+
+    @pytest.mark.asyncio
+    async def test_the_message_is_the_rest_envelope_plus_the_protocol(self):
+        transport = InMemoryTransport()
+        store = FakeStore(record={"status_code": 200, "body": {"result": "ok"}})
+
+        reply = await _protocol_handler(store, transport).request(_protocol_body(), protocol="a2a")
+
+        [message] = transport.create_consumer(QueueName.INPUT).fetch(1, 0.5)
+        assert json.loads(message.body) == {"prompt": "hi", "session_id": "s1", "agent": "triage"}
+        assert message.attributes == {"request_id": reply.request_id, ATTR_PROTOCOL: "a2a"}
+        assert message.group_id == "s1"
+        assert message.dedup_id == reply.request_id
+
+    @pytest.mark.asyncio
+    async def test_each_request_gets_a_fresh_request_id(self):
+        store = FakeStore(record={"body": {"result": "ok"}})
+        handler = _protocol_handler(store)
+
+        first = await handler.request(_protocol_body(), protocol="mcp")
+        second = await handler.request(_protocol_body(), protocol="mcp")
+
+        assert first.request_id != second.request_id
+        assert [request_id for request_id, _ in store.reads] == [first.request_id, second.request_id]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "overrides, protocol, message",
+        [
+            ({"session_id": None}, "a2a", "No session_id is provided in the request"),
+            ({"session_id": ""}, "a2a", "No session_id is provided in the request"),
+            ({"prompt": ""}, "a2a", "No prompt provided in the request"),
+            ({}, "", "protocol is required"),
+        ],
+    )
+    async def test_rejects_before_anything_is_sent(self, overrides, protocol, message):
+        transport = InMemoryTransport()
+        store = FakeStore(record={"body": {}})
+
+        with pytest.raises(ValueError, match=message):
+            await _protocol_handler(store, transport).request(_protocol_body(**overrides), protocol=protocol)
+
+        assert transport.create_consumer(QueueName.INPUT).fetch(1, 0.05) == []
+        assert store.reads == []
+
+    @pytest.mark.asyncio
+    async def test_the_first_read_comes_before_any_sleep(self, sleeps):
+        store = FakeStore(record={"body": {"result": "ok"}})
+
+        await _protocol_handler(store).request(_protocol_body(), protocol="a2a")
+
+        assert len(store.reads) == 1
+        assert sleeps == []
+
+    @pytest.mark.asyncio
+    async def test_reads_until_the_record_is_there(self, sleeps):
+        store = FakeStore(record={"body": {"result": "ok"}}, ready_after=2)
+
+        reply = await _protocol_handler(store, budget=(5, 0.25)).request(_protocol_body(), protocol="a2a")
+
+        assert reply.result == "ok"
+        assert len(store.reads) == 3
+        assert sleeps == [0.25, 0.25]
+
+    @pytest.mark.asyncio
+    async def test_a_spent_budget_is_retry_count_reads_and_one_sleep_fewer(self, monkeypatch):
+        events: list = []
+        store = FakeStore(events=events)
+
+        async def _sleep(delay):
+            events.append(("sleep", delay))
+
+        monkeypatch.setattr(request_handler.asyncio, "sleep", _sleep)
+
+        with pytest.raises(ReplyTimeoutError) as excinfo:
+            await _protocol_handler(store, budget=(3, 0.5)).request(_protocol_body(), protocol="mcp")
+
+        assert events == ["read", ("sleep", 0.5), "read", ("sleep", 0.5), "read"]
+        assert excinfo.value.request_id == store.reads[0][0]
+        assert (excinfo.value.retry_count, excinfo.value.delay) == (3, 0.5)
+        assert isinstance(excinfo.value, TimeoutError)
+
+    @pytest.mark.asyncio
+    async def test_every_read_deletes_the_record_it_returns(self, sleeps):
+        store = FakeStore(record={"body": {}}, ready_after=1)
+
+        await _protocol_handler(store).request(_protocol_body(), protocol="a2a")
+
+        assert all(get_and_delete is True for _, get_and_delete in store.reads)
+
+    @pytest.mark.asyncio
+    async def test_an_error_status_is_returned_not_raised(self):
+        store = FakeStore(record={"status_code": 500, "body": {"error": "agent exploded"}})
+
+        reply = await _protocol_handler(store).request(_protocol_body(), protocol="a2a")
+
+        assert reply.is_error
+        assert reply.error == "agent exploded"
+
+    @pytest.mark.asyncio
+    async def test_transport_and_store_errors_reach_the_caller_unchanged(self):
+        class BrokenStore:
+            def get_record(self, request_id, get_and_delete=False):
+                raise ConnectionError("store down")
+
+        with pytest.raises(ConnectionError, match="store down"):
+            await _protocol_handler(BrokenStore()).request(_protocol_body(), protocol="a2a")
+
+    @pytest.mark.asyncio
+    async def test_execution_mode_never_skips_the_wait(self, monkeypatch):
+        """REST_ASYNC answers the REST route with a request id; a protocol caller still gets the reply."""
+        _configure(monkeypatch, mode="rest_async")
+        store = FakeStore(record={"body": {"result": "ok"}})
+
+        reply = await _protocol_handler(store).request(_protocol_body(), protocol="a2a")
+
+        assert reply.result == "ok"
+
+    @pytest.mark.asyncio
+    async def test_the_default_budget_is_read_from_config(self, monkeypatch, sleeps):
+        monkeypatch.setenv("AK_EXECUTION__RESPONSE_STORE__RETRY_COUNT", "2")
+        monkeypatch.setenv("AK_EXECUTION__RESPONSE_STORE__DELAY", "0.125")
+        AKConfig._reset()
+        store = FakeStore()
+        transport = InMemoryTransport()
+
+        class _StoreOnly(RestHandler):
+            def get_response_store(self):
+                return store
+
+            def get_transport(self):
+                return transport
+
+        with pytest.raises(ReplyTimeoutError):
+            await _StoreOnly().request(_protocol_body(), protocol="a2a")
+
+        assert len(store.reads) == 2
+        assert sleeps == [0.125]
+
+    @pytest.mark.asyncio
+    async def test_the_factories_build_the_transport_and_store_once(self, monkeypatch):
+        transport = InMemoryTransport()
+        store = FakeStore(record={"body": {"result": "ok"}})
+        built = []
+
+        def _build(made):
+            def _create(*args, **kwargs):
+                built.append(made)
+                return made
+
+            return _create
+
+        monkeypatch.setattr(QueueTransportFactory, "create", _build(transport))
+        monkeypatch.setattr(ResponseStoreFactory, "create", _build(store))
+        handler = RestHandler()
+
+        await handler.request(_protocol_body(session_id="s1"), protocol="a2a")
+        await handler.request(_protocol_body(session_id="s2"), protocol="a2a")
+
+        # Built once on first use, then reused.
+        assert built == [transport, store]
+        assert len(transport.create_consumer(QueueName.INPUT).fetch(10, 0.5)) == 2
+        assert len(store.reads) == 2
+
+
+class TestQueuedReply:
+    def test_a_missing_status_counts_as_200(self):
+        assert QueuedReply.from_record({"request_id": "r1", "body": {}}).status_code == 200
+        assert QueuedReply.from_record({"request_id": "r1", "status_code": None, "body": {}}).status_code == 200
+
+    @pytest.mark.parametrize("status_code, is_error", [(200, False), (202, False), (399, False), (400, True), (500, True)])
+    def test_is_error_from_400(self, status_code, is_error):
+        assert QueuedReply(request_id="r1", status_code=status_code).is_error is is_error
+
+    def test_a_dict_body_exposes_its_fields(self):
+        reply = QueuedReply.from_record(
+            {"request_id": "r1", "status_code": "200", "body": {"result": {"a": 1}, "media_type": "application/json", "error": "e"}}
+        )
+
+        assert reply.request_id == "r1"
+        assert reply.status_code == 200
+        assert (reply.result, reply.media_type, reply.error) == ({"a": 1}, "application/json", "e")
+
+    @pytest.mark.parametrize("body", [None, "text", ["a"]])
+    def test_a_non_dict_body_exposes_nothing(self, body):
+        reply = QueuedReply(request_id="r1", body=body)
+
+        assert (reply.result, reply.media_type, reply.error) == (None, None, None)
+        assert reply.body == body
+
+
 class TestStreamErrorFrames:
     """SSE error frames are handler-owned text: a store/driver exception must never reach the client
     (CodeQL py/stack-trace-exposure), only the log."""
@@ -398,7 +733,7 @@ class TestStreamErrorFrames:
     BACKEND_DETAIL = "redis://cache.internal:6379 read timed out after 5.0s (pool=3, db=0)"
 
     def _frames(self, monkeypatch, exception):
-        _configure(monkeypatch, mode="stream")
+        _configure(monkeypatch, mode="rest_sync", message_type="delta")
 
         def _raise(self, request_id, chunk_timeout=None):
             raise exception

@@ -68,6 +68,15 @@ pip install agentkernel[pydanticai]
 `agentkernel[pydanticai]` installs the provider-agnostic `pydantic-ai-slim` core only. Also install
 the provider you intend to use, e.g. `pip install "pydantic-ai-slim[openai]"`.
 
+### Microsoft Agent Framework
+
+```bash
+pip install agentkernel[maf]
+```
+
+`agentkernel[maf]` installs the provider-agnostic `agent-framework-core` only. Also install the MAF package
+for the model provider you intend to use, e.g. `pip install agent-framework-openai` (or `agent-framework-anthropic`).
+
 ### Multiple Frameworks
 
 You can install support for multiple frameworks at once:
@@ -128,6 +137,8 @@ pip install agentkernel[mcp]         # MCP server
 pip install agentkernel[a2a]         # Agent-to-Agent server
 pip install agentkernel[langfuse]    # Langfuse tracing
 pip install agentkernel[openllmetry] # OpenLLMetry tracing
+pip install agentkernel[logfire]     # Pydantic Logfire tracing
+pip install agentkernel[cloudwatch]  # AWS CloudWatch (X-Ray) tracing
 pip install agentkernel[auth]        # JWT auth helpers
 ```
 
@@ -146,7 +157,7 @@ pip install agentkernel[cli]
 Install everything (all frameworks and cloud providers):
 
 ```bash
-pip install agentkernel[openai,crewai,langgraph,adk,smolagents,pydanticai,api,aws,azure,gcp,cli]
+pip install agentkernel[openai,crewai,langgraph,adk,smolagents,pydanticai,maf,api,aws,azure,gcp,cli]
 ```
 
 ## Using UV Package Manager

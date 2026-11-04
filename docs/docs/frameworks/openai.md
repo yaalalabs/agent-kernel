@@ -141,6 +141,46 @@ Reserved (raise `ValueError` at declaration): `starting_agent`, `input`, `sessio
 `conversation_id`, `previous_response_id`, `auto_previous_response_id`, which the SDK rejects
 alongside the session the runner always passes.
 
+## Human in the loop
+
+Declare a gated tool with the SDK's own flag:
+
+```python
+@function_tool(needs_approval=True)
+def issue_refund(order_id: str) -> str: ...
+```
+
+Or pass it to the tool builder, which forwards its keyword options to `function_tool` and leaves the
+tool a plain function with nothing framework-specific on it. The options apply to every function in
+the call, so tools wanting different ones are bound separately:
+
+```python
+def issue_refund(order_id: str) -> str: ...
+
+tools = OpenAIToolBuilder.bind([issue_refund], needs_approval=True)
+```
+
+The run pauses before the tool executes and Agent Kernel returns a paused reply. Two limits are
+specific to this adapter, and both are reported rather than silently worked around:
+
+- **A structured answer is refused.** An approval is recorded as a boolean — `RunState.approve()`
+  takes no value — so there is nowhere to put "the human chose Large". A `payload` on a decision is
+  rejected with a message saying so. **Model "I need a value" as an ordinary question, not a gated
+  tool**; or have the model *propose* a value in the tool arguments and let the human approve or deny
+  it.
+- **A prompt sent beside a decision is refused.** `Runner.run()`'s input is either a `RunState` or new
+  input, never both.
+
+**A stale resume is not detected.** Pause, run an ordinary turn, then answer the old pause: you get a
+confident answer computed as though the intervening turns never happened. Neither the SDK nor Agent
+Kernel tracks this — answer a pause before continuing the conversation.
+
+This is also the only adapter that can hold **two paused runs at once**: a `RunState` is a
+self-contained snapshot, so a second pause appends rather than replacing, and each is resumed by its
+own `run_id`.
+
+See [Human in the Loop](../advanced/human-in-the-loop.md).
+
 ## Features
 
 - ✅ Function calling

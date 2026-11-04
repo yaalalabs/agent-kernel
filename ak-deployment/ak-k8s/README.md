@@ -99,6 +99,7 @@ uses):
 | Variable | Source |
 |---|---|
 | `AK_EXECUTION__MODE` | `execution.mode` |
+| `AK_EXECUTION__MESSAGE_TYPE` | `execution.messageType` (only when set) |
 | `AK_EXECUTION__QUEUES__TYPE` | `transport.type` |
 | `AK_EXECUTION__QUEUES__NATS__*` / `__KAFKA__*` | `transport.nats.*` / `transport.kafka.*` connection values |
 | `AK_EXECUTION__QUEUES__INPUT__URL` / `__OUTPUT__URL` | `transport.sqs.*` (sqs transport) |
@@ -109,8 +110,44 @@ uses):
 | `AK_WEBSOCKET_API__PUSH_AUTH_TOKEN` | the push-token Secret (io-handler and ws-gateway pods) |
 | `AK_POD_IP` | downward API, `status.podIP` (ws-gateway pods) |
 
-Model provider credentials (e.g. `OPENAI_API_KEY`) are yours to inject through `extraEnv`,
-ideally from a Secret.
+Model provider credentials (e.g. `OPENAI_API_KEY`) are yours to provide, either as an environment
+variable through `extraEnv` (ideally from a Secret) or as mounted files through `secretStore`
+(see [Secrets](#secrets)).
+
+## Secrets
+
+`secretStore` mounts Kubernetes Secrets you created into the pod, for the application's
+`secret.provider.type: kubernetes`:
+
+```yaml
+secretStore:
+  enabled: true
+  secrets:
+    - name: openai-credentials
+    - name: slack-credentials
+```
+
+- Each listed Secret becomes a non-optional `secret` volume (`ak-secret-<index>`) mounted read-only and whole at
+  `/var/run/secrets/agentkernel/<name>`, one file per data key. The Secrets must exist in the release
+  namespace, or the pod stays `ContainerCreating` (`FailedMount`).
+- **Placement.** Only the tier that executes agents mounts them: `agentRunner` or, in the
+  single-process profile (`agentRunner.enabled: false`, `transport.type: in_memory`), `ioHandler`.
+  `wsGateway` and `sandboxWorker` never do. `secretStore.enabled` with no such tier, an empty list, a
+  duplicate name, or an entry without a string `name` fails `helm template` / `install`.
+- **Mount path.** Leave the application's `secret.provider.kubernetes.mount_path` at its default
+  (`/var/run/secrets/agentkernel`); the chart always mounts there and has no value to move it.
+- **No RBAC.** The app reads files; it never calls the Kubernetes API. The chart creates no Role,
+  RoleBinding or ServiceAccount for this.
+- **Key names.** Data keys must be the AK key name (`OPENAI_API_KEY`); other keys are never read.
+- **Security.** Every key of every listed Secret is readable by any code in that tier, including code
+  run by a `local_subprocess` sandbox. List only what agents need, keep unrelated keys out of those
+  Secrets, and run untrusted code in an isolated sandbox provider.
+- **Rotation.** Kubelet refreshes the files after a short delay; no checksum annotation is added, so
+  a Secret change does not roll the pods. Values the app reads once at startup need a rollout restart.
+
+The environment still wins: a set, non-empty `OPENAI_API_KEY` in the container (for example from
+an `extraEnv` `secretKeyRef`) is used before any mounted file. See [Secret Resolution](https://github.com/yaalalabs/agent-kernel/tree/develop/docs/docs/advanced/secrets.md) for the
+provider side.
 
 ## Transports
 
@@ -134,13 +171,14 @@ bounded retry, dedup, permanent-failure replies) are identical over all of them.
 Sizing rule: `replicas * transport.input.noOfConsumers <= partitions`, or extra consumers
 find no free partition.
 
-## WebSocket delivery (`async` / `stream` modes)
+## WebSocket delivery (`async` mode)
 
-Enable the gateway tier for WebSocket modes on a broker transport:
+Enable the gateway tier for `async` mode on a broker transport, with either message type:
 
 ```yaml
 execution:
-  mode: stream
+  mode: async
+  messageType: delta   # one STREAM_CHUNK per chunk; omit (or complete) for one CHAT_RESPONSE per reply
 wsGateway:
   enabled: true
   auth:
@@ -154,6 +192,13 @@ must be a shared store such as `valkey`). Response Handlers on the io pods resol
 current connections and POST each frame to the owning pod's `/internal/push`, authenticated
 by the shared token; replies reach all of a user's connections on whichever gateway pod holds
 them, and io/runner pods roll without dropping a single connection.
+
+`execution.mode: stream` was removed. The chart validates neither `execution.mode` nor
+`execution.messageType`, so `--set execution.mode=stream` still renders, but the pods fail at
+config load with a migration message: use `mode: async` with `messageType: delta` for chunks over
+WebSocket. SSE (`mode: rest_sync` with `messageType: delta`) needs no gateway tier, but on a broker
+transport it needs a shared response store that can stream chunks (`redis` or `valkey`); with any
+other store the io-handler fails at startup.
 
 The WebSocket HTTPRoute carries raised timeouts (`gateway.websocket.requestTimeout: 0s`
 disables them) and must never have request buffering enabled: Envoy Gateway deadlocks
@@ -194,8 +239,11 @@ Strimzi KafkaTopic CRs for the `sandboxWorker.queue.<transport>` pair (plus Kafk
 dead-letter topics) whenever `sandboxWorker.enabled` is set. On NATS the dev alternative is
 `transport.nats.autoProvision: true`, which the chart mirrors into the sandbox broker's
 config; on SQS, bring your own queues and set `sandboxWorker.queue.sqs.*`. Keep
-`sandboxWorker.queue.nats.ackWait` (default 900) above your longest sandbox
-`policy.timeout`, or a still-running execution is redelivered and re-run.
+`sandboxWorker.queue.nats.ackWait` (default 900) above your longest sandbox effective
+timeout (`policy.timeout`, or `policy.package_install.timeout` for installs) plus the
+worker's 10-second backstop, or a still-running execution is redelivered and re-run.
+When upgrading, roll the sandbox worker before the agent tier: the worker enforces the
+sandbox permissions the agent side sends, and an older worker ignores them.
 
 This is the chart's first tier with its own identity:
 
@@ -226,7 +274,8 @@ dropped) already satisfy the rest.
 With `keda.enabled: true` the tier scales on the sandbox input queue's backlog, mirroring
 the agent-runner scaler; drain follows the same SIGTERM discipline, so keep
 `sandboxWorker.terminationGracePeriodSeconds` (default 600) above your longest sandbox
-`policy.timeout`.
+effective timeout (including `policy.package_install.timeout`) plus the worker's 10-second
+backstop and a shutdown margin, so a hung operation is still recorded as timed out before the pod is killed.
 
 ### Standalone sandbox worker (agents in Lambda or ECS)
 
@@ -325,7 +374,7 @@ Then set `serviceMonitor.enabled: true` here if your image exposes an app metric
   via your own values overlay, and deploy Strimzi's Kafka Exporter for consumer-lag metrics
   (`spec.kafkaExporter: {}` on the Kafka CR).
 
-**Tracing**: Agent Kernel's tracing providers (Langfuse, OpenLLMetry, Logfire) are app-level
+**Tracing**: Agent Kernel's tracing providers (Langfuse, OpenLLMetry, Logfire, CloudWatch) are app-level
 and configured through `config.yaml`/`AK_TRACE__*` in your image; on-cluster, run one
 OpenTelemetry Collector as the single funnel and point OTLP-capable providers at it:
 
@@ -345,11 +394,14 @@ subcharts are smoke-test conveniences, not production settings.
 
 ```bash
 ct lint --config ak-deployment/ak-k8s/ci/ct.yaml
-ct install --config ak-deployment/ak-k8s/ci/ct.yaml    # against a kind cluster
+ct install --config ak-deployment/ak-k8s/ci/ct.yaml \
+  --helm-extra-set-args "--set extraEnv[0].name=OPENAI_API_KEY --set extraEnv[0].value=placeholder"   # against a kind cluster
 ```
 
 `chart/ci/kind-smoke-values.yaml` is the values file ct installs with: the dev flavor sized
-for a CI node, expecting the example image preloaded via `kind load docker-image`.
+for a CI node, expecting the example image preloaded via `kind load docker-image`. The placeholder
+`OPENAI_API_KEY` keeps the example's agent runner (which reads the key at import) from crash-looping, since
+`ct install` provides neither the key nor the Secret mount; the gate checks that pods start, not that chat works.
 
 ## Publishing
 
@@ -357,6 +409,7 @@ The chart is pushed as an OCI artifact to `oci://ghcr.io/yaalalabs/charts` by th
 `publish-chart` workflow, which the release pipeline (`publish.yaml`) dispatches for every
 release tag once the GitHub release exists (it can also be dispatched by hand to republish a
 tag). The tag minus its `v` is the chart version; the same release run pins the install
-commands in the examples, the docs site, and the bundled `ak-cloud-deploy` skill to it with
-`scripts/update_chart_versions.py`, and the workflow attaches the `images.txt` manifest to the
-GitHub release.
+commands in the examples, the docs site, and the bundled `ak-cloud-deploy` skill to it, and
+`Chart.yaml`'s own `version` and `appVersion` keys, with `scripts/update_chart_versions.py`
+(`helm package` stamps both from the tag as well), and the workflow attaches the `images.txt`
+manifest to the GitHub release.

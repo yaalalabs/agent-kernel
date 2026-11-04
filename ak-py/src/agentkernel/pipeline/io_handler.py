@@ -8,13 +8,15 @@ from ..auth.handler import AuthValidator
 from ..core.config import AKConfig
 from ..core.model import ExecutionMode
 from ..core.util.factory import AKConfigError
-from .agent_runner import AgentRunner, StreamAgentRunner
+from .agent_runner import AgentRunner, RealtimeAgentRunner, StreamAgentRunner
 from .request_handler import RequestHandler
 from .response_handler import ResponseHandler
+from .response_store.factory import ResponseStoreFactory
 from .thread_runner import ThreadRunner
 from .transport.base import QueueTransportFactory
 
 if TYPE_CHECKING:  # pragma: no cover: typing only, so pipeline keeps importing core and api only
+    from ..integration.adapter.gateway import GatewayRunner
     from ..integration.adapter.poller import PollerRunner
 
 
@@ -26,7 +28,7 @@ class IOHandler:
 
     - ``in_memory``: single-process: all five pipeline components in one process (this is what
       a plain ``RESTAPI.run()`` boots on a laptop), co-hosting the WebSocket gateway handlers
-      in ASYNC/STREAM when a validator is passed, since a separate gateway process cannot share
+      in async mode when a validator is passed, since a separate gateway process cannot share
       an in-process queue.
     - broker transports: this process serves the plain-REST API and delivers responses;
       ``AgentRunner.run()`` and, in WS modes, ``WebSocketGateway.run()`` are their own
@@ -41,13 +43,14 @@ class IOHandler:
         auth_validator: Optional[AuthValidator] = None,
         handlers: Optional[list[RESTRequestHandler]] = None,
         pollers: Optional[list["PollerRunner"]] = None,
+        gateways: Optional[list["GatewayRunner"]] = None,
         request_handler: Optional[RequestHandler] = None,
     ) -> None:
         """Boot the pipeline topology this configuration implies and serve until shutdown.
 
         :param auth_validator: Only meaningful on the ``in_memory`` transport, where it co-hosts
-            the WebSocket gateway (the ``/ws`` route plus the push endpoint) in ASYNC/STREAM
-            modes; mandatory there for ASYNC. Broker topologies authenticate at their standalone
+            the WebSocket gateway (the ``/ws`` route plus the push endpoint) in async mode, with
+            either message type; mandatory there. Broker topologies authenticate at their standalone
             gateway instead (``WebSocketGateway.run(auth_validator=...)``). Claims must include
             a ``userId``.
         :param handlers: Optional REST handlers mounted **alongside** the pipeline's chat route,
@@ -58,6 +61,10 @@ class IOHandler:
             threads on the ``in_memory`` transport only. On a broker transport they are their own
             containers (``PollerRunner.run(adapter)``), so poller count never tracks the replica
             count of this request-bound tier; passing them there logs a warning and starts none.
+        :param gateways: Optional stateful edge gateways (``GatewayRunner``), co-hosted as peer
+            threads. Unlike a poller, a gateway must run in this process: it registers itself as
+            the platform's outbound adapter when it starts, so replies route back to its live
+            connection.
         :param request_handler: Replaces the pipeline's own ``RequestHandler`` on the chat route
             — it does not join it, because both own ``POST /api/v1/chat`` and FastAPI would serve
             whichever registered first, silently. This is the seam a capability that has to act on
@@ -68,12 +75,17 @@ class IOHandler:
         """
         cls._validate_request_handler(request_handler)
         config = AKConfig.get()
-        mode = config.execution.mode
+        execution = config.execution
+        mode = execution.mode
         transport_type = QueueTransportFactory.resolve_type()
-        cls._validate_topology(mode, transport_type, config, auth_validator)
+        cls._validate_topology(transport_type, config, auth_validator)
+        cls._warn_if_no_agents(config)
 
         single_process = transport_type == "in_memory"
-        if not single_process and mode in (ExecutionMode.ASYNC, ExecutionMode.STREAM):
+        # REALTIME is deliberately absent: its replies go through the integration gateway adapter,
+        # never the WebSocket push endpoint, so it needs no shared connection store (matching
+        # ``_validate_topology``, which exempts it from the push token for the same reason).
+        if not single_process and execution.is_websocket:
             from .ws.push import default_connection_store
 
             # Raises on session backends without a connection store; a process-local store
@@ -82,9 +94,10 @@ class IOHandler:
                 raise AKConfigError(
                     "WebSocket delivery over a broker transport needs a shared connection store: " "configure session.type redis, valkey or dynamodb"
                 )
-        ws_cohosted = single_process and auth_validator is not None and mode in (ExecutionMode.ASYNC, ExecutionMode.STREAM)
+        ws_cohosted = single_process and auth_validator is not None and execution.is_websocket
         cls._log.info(
-            f"IOHandler starting: mode={mode}, transport={transport_type}, "
+            f"IOHandler starting: mode={(mode or ExecutionMode.REST_SYNC).value}, message_type={execution.resolved_message_type.value}, "
+            f"transport={transport_type}, "
             f"topology={'single-process' if single_process else 'multi-process'}, websocket={'co-hosted' if ws_cohosted else 'off'}"
         )
 
@@ -99,7 +112,7 @@ class IOHandler:
         elif auth_validator is not None:
             cls._log.warning(
                 f"auth_validator ignored: WebSocket handling is co-hosted here only on the in_memory transport "
-                f"in ASYNC/STREAM (mode={mode}, transport={transport_type}); on broker transports start "
+                f"in async mode (mode={mode}, transport={transport_type}); on broker transports start "
                 "WebSocketGateway.run(auth_validator=...) as its own process"
             )
 
@@ -129,7 +142,14 @@ class IOHandler:
             ),
         ]
         if single_process:
-            runner = StreamAgentRunner() if mode == ExecutionMode.STREAM else AgentRunner()
+
+            if mode == ExecutionMode.REALTIME:
+                runner = RealtimeAgentRunner()
+            elif execution.is_delta:
+                runner = StreamAgentRunner()
+            else:
+                runner = AgentRunner()
+
             tasks.append(
                 ThreadRunner.Task(
                     execution_function=lambda: runner.start(exit_on_shutdown=False), thread_name="agent-runner", stop_all_on_failure=True
@@ -147,6 +167,15 @@ class IOHandler:
             cls._log.warning(
                 f"pollers ignored: they are co-hosted here only on the in_memory transport "
                 f"(transport={transport_type}); on broker transports start PollerRunner.run(adapter) as its own container"
+            )
+
+        for gateway in gateways or []:
+            tasks.append(
+                ThreadRunner.Task(
+                    execution_function=lambda g=gateway: g.start(),
+                    thread_name=f"gateway-{gateway.adapter.name}",
+                    stop_all_on_failure=True,
+                )
             )
 
         ThreadRunner.run(tasks=tasks, max_workers=len(tasks))
@@ -189,14 +218,17 @@ class IOHandler:
         )
 
     @classmethod
-    def _validate_topology(cls, mode: Optional[ExecutionMode], transport_type: str, config, auth_validator: Optional[AuthValidator] = None) -> None:
+    def _validate_topology(cls, transport_type: str, config, auth_validator: Optional[AuthValidator] = None) -> None:
         """Fail fast on unsupported/incoherent topology combinations (spec §9, §10)."""
-        if mode == ExecutionMode.ASYNC and transport_type == "in_memory" and auth_validator is None:
+        execution = config.execution
+        if execution.is_websocket and transport_type == "in_memory" and auth_validator is None:
             raise AKConfigError(
-                "ASYNC (WebSocket) mode on the in_memory transport co-hosts the gateway here: call "
+                "async (WebSocket) mode on the in_memory transport co-hosts the gateway here: call "
                 "IOHandler.run(auth_validator=...) with a validator whose claims include a 'userId'"
             )
-        if mode in (ExecutionMode.ASYNC, ExecutionMode.STREAM) and transport_type != "in_memory":
+        # REALTIME is deliberately absent: its replies go through the integration adapter, not
+        # the WebSocket push endpoint, so it needs no push token.
+        if execution.is_websocket and transport_type != "in_memory":
             # This process's Response Handler pushes replies to the gateway pods: it needs the
             # shared secret (and, checked at delivery setup, the shared connection store).
             if not config.websocket_api.push_auth_token:
@@ -204,7 +236,7 @@ class IOHandler:
                     "WebSocket delivery over a broker transport needs websocket_api.push_auth_token: "
                     "the Response Handler authenticates its pushes to the gateway pods with it"
                 )
-        if transport_type != "in_memory" and mode not in (ExecutionMode.ASYNC, ExecutionMode.STREAM):
+        if transport_type != "in_memory" and not execution.is_websocket and execution.mode != ExecutionMode.REALTIME:
             # REST modes only (spec §10): the enqueueing or polling pod and the consuming pod
             # can differ, so replies must travel through a shared store. WebSocket modes never
             # touch the response store: replies push to the gateway pods instead.
@@ -214,3 +246,43 @@ class IOHandler:
                     "multi-process REST queue modes need a shared response store (redis, valkey or dynamodb): "
                     "the in_memory store is single-process only"
                 )
+            # SSE replies are read back chunk by chunk on whichever pod holds the REST request, so
+            # the shared store must be able to stream chunks. Building the store does not connect.
+            if execution.is_sse and not ResponseStoreFactory.create().supports_chunk_streaming():
+                raise AKConfigError(
+                    f"execution.mode rest_sync with message_type delta (SSE) on the {transport_type} transport needs a "
+                    f"response store that can stream chunks; {response_store_config.type} cannot. Use a chunk-capable "
+                    "store, or execution.mode async with message_type delta (WebSocket)"
+                )
+        if transport_type != "in_memory":
+            from ..api.http import RESTAPI  # local import: RESTAPI.run() lazily imports this module
+
+            # A2A and MCP callers wait for the runner's reply in the response store whatever the
+            # mode is (#780), so in WebSocket and realtime modes too the store must be shared.
+            surfaces = RESTAPI.agent_protocol_surfaces(config)
+            response_store_config = config.execution.response_store
+            if surfaces and (response_store_config is None or response_store_config.type in (None, "in_memory")):
+                raise AKConfigError(
+                    f"{' and '.join(surfaces)} over a broker transport need a shared response store (redis, valkey or dynamodb) in every "
+                    "execution mode: their callers wait there for the agent runner's reply"
+                )
+
+    @classmethod
+    def _warn_if_no_agents(cls, config) -> None:
+        """Warn when A2A or agent MCP is on but this process has registered no agents.
+
+        A2A cards and MCP agent tools are built from this process's agent registry, even though
+        the agents run on the agent runner. A split deployment whose IO process loads no agent
+        modules would serve an empty catalog without saying why. A warning rather than an error:
+        the process still serves everything else.
+        """
+        from ..api.http import RESTAPI  # local import: RESTAPI.run() lazily imports this module
+        from ..core.runtime import Runtime
+
+        surfaces = RESTAPI.agent_protocol_surfaces(config)
+        if surfaces and not Runtime.current().agents():
+            cls._log.warning(
+                f"{' and '.join(surfaces)} enabled but no agents are registered in this process: the A2A catalog and the MCP "
+                "agent tool list will be empty, and per-agent A2A routes are not mounted, so they return 404. Import the same "
+                "agent modules here as in the agent runner: cards and tools are built from this process's registry"
+            )

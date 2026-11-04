@@ -1,5 +1,5 @@
 # Chart overlay for this example: layered on top of the chart's dev flavor (values-dev.yaml)
-# by deploy/deploy.sh, it wires the two example images and the OpenAI key. The WebSocket and
+# by deploy/deploy.sh, it wires the two example images and the OpenAI credentials Secret. The WebSocket and
 # Kafka walkthroughs add their overrides as --set flags on the same script.
 
 image:
@@ -14,9 +14,9 @@ agentRunner:
   image:
     repository: ak-example-agent-runner
 
-extraEnv:
-  - name: OPENAI_API_KEY
-    valueFrom:
-      secretKeyRef:
-        name: openai
-        key: api-key
+# The agent runner reads OPENAI_API_KEY from this Secret's mounted file (secret.provider.type:
+# kubernetes in config.*.yaml); the data key must be named OPENAI_API_KEY.
+secretStore:
+  enabled: true
+  secrets:
+    - name: openai-credentials

@@ -341,7 +341,9 @@ Add or update `docs/docs/advanced/multimodal.md` with:
 - Required environment variables or credentials
 - Any infrastructure setup steps (e.g., creating tables, buckets)
 
-Grep `docs/src/pages/*.tsx` for the existing backend names (for example "DynamoDB") in case a landing or features page card enumerates storage backends; the Smart Memory Management card in `docs/src/pages/features.tsx` lists session backends and is the usual place such a roll call appears.
+Then update the landing page inventories in `docs/src/components/*/data.tsx`: add the backend to the **Attachment Storage** card's `tags` under the Remember tab in `FeatureExplorer/data.tsx`; if the vendor is new to the site, add a tile to the **Memory, knowledge & data** row in `IntegrationsMarquee/data.tsx` (role `Memory`, every store it backs listed in `title`), and if it already has a tile for a session or thread store, append the attachment role to that tile's `title` instead. Logo sourcing and the build check are in `ak-dev-sync-docs-from-branch`, *Docs-Site Landing and Features Pages*.
+
+Grep `docs/src/pages/*.tsx` for the existing backend names (for example "DynamoDB") in case a features page card enumerates storage backends; the Smart Memory Management card in `docs/src/pages/features.tsx` lists session backends and is the usual place such a roll call appears.
 
 ## Reference: Existing Implementations
 
@@ -379,3 +381,4 @@ Grep `docs/src/pages/*.tsx` for the existing backend names (for example "DynamoD
 - [ ] Unit tests for save/get/delete, max attachments pruning, session isolation
 - [ ] Configuration example in documentation
 - [ ] Documentation in `docs/docs/advanced/multimodal.md`
+- [ ] Landing page inventories: Attachment Storage card tags (`FeatureExplorer/data.tsx`), marquee tile or role (`IntegrationsMarquee/data.tsx`)

@@ -100,6 +100,14 @@ Introduction here...
 Full content here...
 ```
 
+Use PNG/JPEG/GIF/WebP for every image (body images and the frontmatter `image`), not SVG:
+after a push to `develop`, the deploy workflow cross-posts new/changed posts to DEV Community
+(and, once re-enabled, Hashnode), and neither platform can display SVG images. The deploy
+checks every post for SVG images before building the site, so one blocks the deploy. See
+[`scripts/README.md`](../scripts/README.md#sync_blogs) for how the cross-posting sync works,
+how to opt a post out (`devto: false` / `hashnode: false` frontmatter), and how to run it
+locally.
+
 ### Add Mermaid Diagrams
 
 ```markdown

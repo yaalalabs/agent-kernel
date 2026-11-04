@@ -165,6 +165,11 @@ containerized e2e tests.
   roll call on the docs-site features page (`docs/src/pages/features.tsx`: the "Queue broker
   over SQS, Kafka, or NATS" highlight on the Sandboxed Code Execution card, and any other
   "SQS, Kafka, or NATS" mention found by grepping `docs/src/pages/*.tsx`).
+- Landing page inventories (`docs/src/components/*/data.tsx`): a tile in the **Cloud &
+  infrastructure** row of `IntegrationsMarquee/data.tsx` (role `Queue`, `href` to the queue mode
+  guide, logo or `react-icons/si` glyph), and the transport in the **Queue Pipeline** card's
+  `tags` and `description` under the Scale tab in `FeatureExplorer/data.tsx`. Logo sourcing and
+  the build check are in `ak-dev-sync-docs-from-branch`, *Docs-Site Landing and Features Pages*.
 - Skills: the pipeline section of `.agents/skills/ak-dev-architecture/SKILL.md`, and the
   user-facing queue/deploy content in `ak-py/src/agentkernel/skills/` where transports are
   enumerated.

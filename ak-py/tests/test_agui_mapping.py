@@ -11,6 +11,7 @@ from typing import get_args
 
 import pytest
 from ag_ui.core import (
+    CustomEvent,
     EventType,
     ReasoningMessageContentEvent,
     ReasoningMessageEndEvent,
@@ -27,11 +28,16 @@ from ag_ui.core import (
 )
 
 from agentkernel.core.event import (
+    AgentChanged,
+    AudioDelta,
+    DataMessage,
+    Interrupt,
     MessageEnd,
     MessageStart,
     ReasoningDelta,
     ReasoningEnd,
     ReasoningStart,
+    RunPaused,
     StepEnd,
     StepStart,
     StreamEvent,
@@ -59,9 +65,14 @@ EXPECTED_MAPPING = [
     (ReasoningStart(message_id="r1"), ReasoningMessageStartEvent),
     (ReasoningDelta(message_id="r1", content="thinking"), ReasoningMessageContentEvent),
     (ReasoningEnd(message_id="r1"), ReasoningMessageEndEvent),
+    (DataMessage(message_id="m1", content={"a": 1}, media_type="application/a2ui+json"), CustomEvent),
 ]
 
-DELIBERATELY_UNMAPPED: list[type] = []
+DELIBERATELY_UNMAPPED: list[type] = [AudioDelta, Interrupt, AgentChanged, RunPaused]
+"""RunPaused has no mapping because AG-UI models a pause as a terminal outcome — the run ends with
+RunFinishedEvent(outcome=RunFinishedInterruptOutcome(...)), carried by AGUIRequestHandler._events.
+See docs/specs/606-human-in-the-loop/spec.md, section integration/agui. AgentChanged, like AudioDelta
+and Interrupt, belongs to realtime voice, which AG-UI does not carry."""
 
 
 def test_every_union_member_has_an_explicit_decision():
@@ -174,3 +185,21 @@ def test_every_mapped_event_serialises_through_the_sdk_encoder():
     for event, _ in EXPECTED_MAPPING:
         frame = encoder.encode(AGUIMapper.to_agui(event))
         assert frame.startswith("data: ") and frame.endswith("\n\n")
+
+
+class TestDataMessageMapping:
+    """AG-UI's CustomEvent is where a structured payload lands; AK emits none itself."""
+
+    def test_data_message_becomes_a_custom_event(self):
+        content = {"version": "v1.0", "createSurface": {"surfaceId": "s1"}}
+        event = AGUIMapper.to_agui(DataMessage(message_id="m1", content=content, media_type="application/a2ui+json"))
+
+        assert isinstance(event, CustomEvent)
+        assert event.name == "application/a2ui+json"
+        assert event.value == content
+
+    def test_an_unlabelled_payload_still_maps(self):
+        event = AGUIMapper.to_agui(DataMessage(message_id="m1", content={"a": 1}))
+
+        assert event.name == "data"
+        assert event.value == {"a": 1}

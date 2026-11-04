@@ -36,14 +36,14 @@ Most agent frameworks help you build a *prototype*. **Agent Kernel is the platfo
 
 |  | Agent Kernel |
 |---|---|
-| 🔌 **Framework-Agnostic** | Run OpenAI Agents SDK, LangGraph, CrewAI, and Google ADK side by side. Swap with 2 import lines. |
+| 🔌 **Framework-Agnostic** | Run OpenAI Agents SDK, LangGraph, CrewAI, Google ADK, Smolagents, Pydantic AI, and Microsoft Agent Framework side by side. Swap with 2 import lines. |
 | ☁️ **Cloud-Agnostic** | The same agent code ships to AWS Lambda/ECS, Azure Functions/Container Apps, GCP Cloud Run, or on-prem. |
 | 🔁 **Queue-Pipeline Execution** | Every chat request runs through a queued pipeline: in-process by default (zero services, full retry/FIFO/dedup semantics locally), SQS, Kafka, and NATS JetStream transports for distributed deployments; a Helm chart ships the topology to any Kubernetes cluster. |
 | 🛡️ **Compliant by Default** | Built-in guardrails (OpenAI, AWS Bedrock), PII detection, full audit traces, jailbreak prevention. |
 | 🧠 **Stateful & Knowledge-Aware** | Pluggable session stores (Redis, Valkey, DynamoDB, Cosmos DB) + knowledge bases (ChromaDB, Neo4j, Starburst, Open Knowledge Format bundles). |
-| 💬 **Channels Built-In** | Slack, WhatsApp, Teams, Telegram, Gmail, Messenger, Instagram — out of the box. |
-| 🔍 **Production Observability** | LangFuse, OpenLLMetry, and Pydantic Logfire tracing wired in. Every agent, tool, and LLM call — visible. |
-| 🤝 **Open Standards** | Native **MCP** (Model Context Protocol), **A2A** (Agent-to-Agent), and **AG-UI** (streamed event protocol for agent-facing frontends) support. |
+| 💬 **Channels Built-In** | Slack, WhatsApp, Teams, Telegram, Gmail, Messenger, Instagram, and LiveKit — out of the box. |
+| 🔍 **Production Observability** | LangFuse, OpenLLMetry, Pydantic Logfire, and AWS CloudWatch tracing wired in. Every agent run — visible, with LLM and tool calls where the framework supports it. |
+| 🤝 **Open Standards** | Native **MCP** (Model Context Protocol), **A2A** (Agent-to-Agent), **AG-UI** (streamed event protocol for agent-facing frontends), and **A2UI** (generative UI documents, labelled from config) support. |
 | 🆓 **Apache 2.0** | No licensing fees. No vendor lock-in. Production-ready open source. |
 
 > ⭐ **If Agent Kernel is solving real problems for you, please star the repo — it's the single best way to help us grow.**
@@ -98,7 +98,7 @@ That's it. Same code deploys to AWS Lambda, ECS, Azure Functions, or Container A
 ### 🧩 Works with the Frameworks You Already Use
 
 <p align="center">
-  <b>OpenAI Agents SDK</b> &nbsp;•&nbsp; <b>LangGraph</b> &nbsp;•&nbsp; <b>CrewAI</b> &nbsp;•&nbsp; <b>Google ADK</b> &nbsp;•&nbsp; <i>Smol Agents (soon)</i> &nbsp;•&nbsp; <i>LiveKit (soon)</i>
+  <b>OpenAI Agents SDK</b> &nbsp;•&nbsp; <b>LangGraph</b> &nbsp;•&nbsp; <b>CrewAI</b> &nbsp;•&nbsp; <b>Google ADK</b> &nbsp;•&nbsp; <b>Smolagents</b> &nbsp;•&nbsp; <b>Pydantic AI</b> &nbsp;•&nbsp; <b>Microsoft Agent Framework</b>
 </p>
 
 No rewrites. No re-learning. Bring your agents — Agent Kernel handles the platform layer.
@@ -109,10 +109,10 @@ Enterprises can't ship agents they can't audit. Agent Kernel makes compliance th
 
 - **Guardrails** — OpenAI and AWS Bedrock guardrails for PII detection, jailbreak prevention, content moderation.
 - **Pre/Post Execution Hooks** — Inject policy checks, RAG context, redaction, or moderation around every agent call.
-- **Framework-Native Run Options**: Pass each framework's own run arguments and lifecycle hooks (OpenAI `RunHooks` and `RunConfig`, LangGraph callbacks, ADK plugins, Pydantic AI usage limits) per agent through `Module.run_options`, statically or computed per run by a factory, with the keys Agent Kernel owns kept safe.
+- **Framework-Native Run Options**: Pass each framework's own run arguments and lifecycle hooks (OpenAI `RunHooks` and `RunConfig`, LangGraph callbacks, ADK plugins, Pydantic AI usage limits, Microsoft Agent Framework `options`) per agent through `Module.run_options`, statically or computed per run by a factory, with the keys Agent Kernel owns kept safe.
 - **Full Traceability** — Every agent action, tool call, and LLM invocation logged with configurable verbosity.
-- **Observability** — LangFuse, OpenLLMetry, and Pydantic Logfire tracing with a single config line.
-- **Secret Resolution** — Resolve API keys from the environment locally and from AWS SSM Parameter Store in production via `SecretManager`, with only `config.yaml` changing.
+- **Observability** — LangFuse, OpenLLMetry, Pydantic Logfire, and AWS CloudWatch tracing with a single config line.
+- **Secret Resolution** — Resolve API keys from the environment locally and from AWS SSM Parameter Store or mounted Kubernetes Secrets in production via `SecretManager`, with only `config.yaml` changing.
 - **Data Residency** — Pick your cloud, your region, your storage backend. Your data stays where you need it.
 
 ### 📦 Sandboxed Code Execution
@@ -121,7 +121,7 @@ Let agents run code and shell commands in an isolated, permission-bounded enviro
 
 - **Enable it in config** — agents automatically gain code/command/file tools and the usage guidance is injected into their prompt.
 - **Pluggable providers** — `local_subprocess` (dev), `docker` (container-isolated), `kubernetes` (pod per sandbox, RBAC as the boundary), `e2b` (managed micro-VMs), `daytona` (cloud containers), and `ec2_ssm` (attach to an existing EC2 instance); bring your own via a dotted path.
-- **Workload profiles** — per-call, per-session, or shared lifetimes; each with its own permission policy (network egress, filesystem, CPU/memory, timeout) enforced fail-closed.
+- **Workload profiles** — per-call, per-session, or shared lifetimes; each with its own permission policy (network egress, filesystem, CPU/memory, timeout, `run_code` languages, package installs) enforced fail-closed.
 - **Per-user identity** — run sandboxed code under the invoking user's identity, not one shared agent identity, via a pluggable principal resolver.
 
 [Learn more →](https://kernel.yaala.ai/docs/advanced/sandbox)
@@ -136,6 +136,17 @@ Let a chat run later, or on a schedule — the platform owns the timers, the per
 - **Managed over REST** — list, read, amend, pause and cancel via `/api/v1/schedules`, scoped to the owning user by a pluggable `Authoriser`.
 
 [Learn more →](https://kernel.yaala.ai/docs/advanced/scheduling)
+
+### 🙋 Human in the Loop
+
+Let a run stop to ask a person something — approve this tool, answer this question — and resume from their decision minutes or hours later, on any replica.
+
+- **Nothing to enable** — declare a gated tool or an interrupt the way your framework already does; Agent Kernel returns HTTP 202 with `status: "PAUSED"` and the pending interruptions.
+- **Answer instead of prompting** — send a `resume` block with `approved`, `denied`, or `cancelled` per interruption, plus the human's own words or a structured value.
+- **Five frameworks pause** — OpenAI Agents SDK, LangGraph, Pydantic AI, Google ADK, and Microsoft Agent Framework; the others say they can't rather than pretending.
+- **Every surface** — REST, streaming, WebSocket, and AG-UI's interrupt outcome; durable across restarts on any shared session backend.
+
+[Learn more →](https://kernel.yaala.ai/docs/advanced/human-in-the-loop)
 
 ### 🧠 Memory, Sessions & Knowledge Bases
 
@@ -153,6 +164,8 @@ Let a chat run later, or on a schedule — the platform owns the timers, the per
 ### 💬 Messaging Channels — Out of the Box
 
 Slack • WhatsApp • Microsoft Teams • Telegram • Gmail • Messenger • Instagram
+
+**[LiveKit](https://kernel.yaala.ai/docs/next/integrations/livekit)** connects OpenAI Agents SDK and Google ADK agents to WebRTC rooms through the realtime execution pipeline.
 
 Build once. Ship to every channel your users live on. No bespoke bot code.
 
@@ -188,8 +201,8 @@ The chart is published as an OCI artifact at
 Install it with Helm (the `docker pull` command GitHub shows on the package page does not apply to charts):
 
 ```bash
-helm pull oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.9.3 --untar   # unpacks the flavor values files
-helm install ak oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.9.3 \
+helm pull oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.9.5 --untar   # unpacks the flavor values files
+helm install ak oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.9.5 \
   -f agent-kernel/values-dev.yaml \
   --set ioHandler.image.repository=<io image> \
   --set agentRunner.image.repository=<runner image> --set image.tag=<tag>

@@ -8,18 +8,20 @@ Deploy agents to AWS Lambda for auto-scaling, serverless execution.
 
 ## Execution Modes at a Glance
 
-The serverless stack supports four execution modes (`execution.mode` / Terraform `execution_mode`), plus a simple no-queue deployment:
+The serverless stack supports three execution modes (`execution.mode` / Terraform `execution_mode`), with `async` delivering either whole replies or chunks depending on `execution.message_type` (Terraform `message_type`), plus a simple no-queue deployment:
 
-| Mode | Transport | Reply delivery | Lambdas required |
-|------|-----------|----------------|------------------|
-| Simple (no queue) | REST | JSON on the same connection | Request handler only |
-| `rest_sync` | REST | JSON on the same connection - request handler polls the response store server-side | Request handler, agent runner, response handler |
-| `rest_async` | REST | `202 ACCEPTED` + `request_id`; client polls `GET` | Request handler, agent runner, response handler |
-| `async` | WebSocket | Single `CHAT_RESPONSE` push when the agent finishes | Request handler, agent runner, response handler, WS connection handler |
-| `stream` | WebSocket | One `STREAM_CHUNK` push per token (`ServerlessStreamAgentRunner`) | Request handler, agent runner (stream), response handler, WS connection handler |
+| Mode | Message type | Transport | Reply delivery | Lambdas required |
+|------|--------------|-----------|----------------|------------------|
+| Simple (no queue) | `complete` | REST | JSON on the same connection | Request handler only |
+| `rest_sync` | `complete` | REST | JSON on the same connection - request handler polls the response store server-side | Request handler, agent runner, response handler |
+| `rest_async` | `complete` | REST | `202 ACCEPTED` + `request_id`; client polls `GET` | Request handler, agent runner, response handler |
+| `async` | `complete` (default) | WebSocket | Single `CHAT_RESPONSE` push when the agent finishes | Request handler, agent runner, response handler, WS connection handler |
+| `async` | `delta` | WebSocket | One `STREAM_CHUNK` push per token (`ServerlessStreamAgentRunner`) | Request handler, agent runner (stream), response handler, WS connection handler |
+
+`execution_mode = "stream"` was removed and fails at `terraform plan`; use `execution_mode = "async"` with `message_type = "delta"` (in `config.yaml`: `execution.mode: async`, `execution.message_type: delta`).
 
 :::info No SSE on Lambda
-Token streaming on AWS serverless is delivered over **WebSocket**, not SSE; API Gateway REST endpoints can't stream SSE from standard Lambda integrations. For SSE streaming use the self-hosted/containerized REST server instead. See [Execution Flow](../architecture/execution-flow) for end-to-end sequence diagrams of each mode.
+Token streaming on AWS serverless is delivered over **WebSocket**, not SSE; API Gateway REST endpoints can't stream SSE from standard Lambda integrations, so `rest_sync` with `message_type: delta` is refused when the REST router starts. For SSE streaming use the self-hosted/containerized REST server instead. See [Execution Flow](../architecture/execution-flow) for end-to-end sequence diagrams of each mode.
 :::
 
 ## Architecture
@@ -90,7 +92,7 @@ graph LR
     style I fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
 ```
 
-#### STREAM (WebSocket token streaming) mode: queue-based
+#### ASYNC + delta (WebSocket token streaming) mode: queue-based
 ```mermaid
 graph LR
     A[User] <--> B[WebSocket API Gateway]
@@ -117,7 +119,7 @@ graph LR
     style I fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
 ```
 
-#### STREAM (WebSocket token streaming) mode: direct (no queues)
+#### ASYNC + delta (WebSocket token streaming) mode: direct (no queues)
 ```mermaid
 graph LR
     A[User] <--> B[WebSocket API Gateway]
@@ -135,9 +137,9 @@ graph LR
 
 The request handler receives the incoming API request, the agent runner executes the agent logic, and the response handler persists outbound messages to the configured response store. In queue-backed modes, the three-lambda split keeps request ingestion, execution, and response persistence independent.
 
-In **WebSocket async mode**, the full agent response is buffered and sent as a single `CHAT_RESPONSE` message once the agent finishes.
+In **WebSocket async mode** with `message_type: complete` (the default), the full agent response is buffered and sent as a single `CHAT_RESPONSE` message once the agent finishes.
 
-In **WebSocket stream mode**, each stream event is sent as a separate `STREAM_CHUNK` message as soon as it is produced, giving the client the answer's text deltas, the agent's reasoning, and its tool calls as they happen. With queues enabled, `ServerlessStreamAgentRunner` publishes one SQS message per chunk; the response handler then broadcasts each chunk individually via WebSocket. Without queues, the request handler Lambda streams chunks directly through the WebSocket connection.
+With `message_type: delta`, each stream event is sent as a separate `STREAM_CHUNK` message as soon as it is produced, giving the client the answer's text deltas, the agent's reasoning, and its tool calls as they happen. With queues enabled, `ServerlessStreamAgentRunner` publishes one SQS message per chunk; the response handler then broadcasts each chunk individually via WebSocket. Without queues, the request handler Lambda streams chunks directly through the WebSocket connection.
 
 ## Prerequisites
 
@@ -281,10 +283,10 @@ Authentication infrastructure will only be created if you define an `authorizer`
 - `environment_variables` - Environment variables for authorizer
 
 **Important Notes**:
-- For WebSocket modes (`execution_mode = "async"` or `execution_mode = "stream"`), the `authorizer` object **cannot** be set; authentication is handled exclusively by the WebSocket connection handler Lambda
+- For the WebSocket mode (`execution_mode = "async"`, either `message_type`), the `authorizer` object **cannot** be set; authentication is handled exclusively by the WebSocket connection handler Lambda
 - The bearer token must include a `userId` claim for WebSocket connections
 - If the `authorizer` object is not provided or any required field is missing, no authorizer infrastructure will be created and your REST endpoints will be publicly accessible
-- For WebSocket modes, the connection handler Lambda implements its own authentication logic via `WebsocketConnectionHandler.set_auth_validator()`
+- In WebSocket mode, the connection handler Lambda implements its own authentication logic via `WebsocketConnectionHandler.set_auth_validator()`
 
 ### Auth Lambda Handler
 
@@ -462,7 +464,7 @@ At runtime, queue mode is determined by whether queue URLs are configured in the
 
 ### Lambda Handlers
 
-**If queue mode is disabled, only the request handler is needed. If queue mode is enabled, you need all these Lambda handlers: request handler, agent runner, and response handler. For WebSocket modes (`execution_mode = "async"` or `execution_mode = "stream"`), you additionally need a WebSocket connection handler.**
+**If queue mode is disabled, only the request handler is needed. If queue mode is enabled, you need all these Lambda handlers: request handler, agent runner, and response handler. For the WebSocket mode (`execution_mode = "async"`, either `message_type`), you additionally need a WebSocket connection handler.**
 
 #### 1. Request Handler
 
@@ -544,7 +546,7 @@ handler = ServerlessAgentRunner.handle
 
 See [examples/aws-serverless/scalable-openai/lambda_agent_runner.py](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/scalable-openai/lambda_agent_runner.py) for the reference implementation.
 
-> **STREAM mode**: When `execution.mode = stream`, use `ServerlessStreamAgentRunner` in place of `ServerlessAgentRunner`. The only difference is the import; the handler is the same. `ServerlessStreamAgentRunner` calls the chat service in streaming mode and sends each yielded token chunk as a **separate SQS message** to the output queue, each with a unique deduplication ID. The response handler then broadcasts each message individually to the WebSocket client.
+> **Streaming (`async` + `delta`)**: When `execution.mode = async` and `execution.message_type = delta`, use `ServerlessStreamAgentRunner` in place of `ServerlessAgentRunner`. The only difference is the import; the handler is the same. `ServerlessStreamAgentRunner` calls the chat service in streaming mode and sends each yielded token chunk as a **separate SQS message** to the output queue, each with a unique deduplication ID. The response handler then broadcasts each message individually to the WebSocket client.
 
 ```python
 from agents import Agent
@@ -572,7 +574,7 @@ handler = ResponseHandler.handle
 
 See [examples/aws-serverless/scalable-openai/lambda_response_handler.py](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/scalable-openai/lambda_response_handler.py) for the reference implementation.
 
-#### 4. WebSocket Connection Handler (for async/stream WebSocket modes)
+#### 4. WebSocket Connection Handler (for the async WebSocket mode)
 
 This Lambda handles WebSocket connection lifecycle events (`$connect` and `$disconnect` routes), stores connection metadata in DynamoDB, and validates authentication tokens.
 
@@ -597,7 +599,7 @@ class CustomAuthTokenValidator(AuthValidator):
 handler = WebsocketConnectionHandler.set_auth_validator(CustomAuthTokenValidator()).handler
 ```
 
-See [examples/aws-serverless/websocket-openai/lambda_ws_connection_handler.py](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/websocket-openai/lambda_ws_connection_handler.py) for the async mode reference implementation, and [examples/aws-serverless/streaming-openai/lambda_ws_connection_handler.py](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/streaming-openai/lambda_ws_connection_handler.py) for the stream mode reference implementation.
+See [examples/aws-serverless/websocket-openai/lambda_ws_connection_handler.py](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/websocket-openai/lambda_ws_connection_handler.py) for the `message_type: complete` reference implementation, and [examples/aws-serverless/streaming-openai/lambda_ws_connection_handler.py](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/streaming-openai/lambda_ws_connection_handler.py) for the `message_type: delta` reference implementation.
 
 ### Lambda Package Creation
 
@@ -663,7 +665,7 @@ create_response_handler_deployment_package() {
 ```
 This creates `dist_response_handler.zip`.
 
-#### WebSocket Connection Handler Package (for async/stream WebSocket modes)
+#### WebSocket Connection Handler Package (for the async WebSocket mode)
 
 ```bash
 create_ws_connection_handler_deployment_package() {
@@ -883,9 +885,9 @@ Send messages to the `chat` route:
 }
 ```
 
-**Receiving Responses (async mode)**
+**Receiving Responses (`message_type: complete`)**
 
-In `async` mode the agent completes, then the full response is broadcast as a single `CHAT_RESPONSE` message:
+With `message_type: complete` (the default) the agent completes, then the full response is broadcast as a single `CHAT_RESPONSE` message:
 
 ```json
 {
@@ -895,9 +897,9 @@ In `async` mode the agent completes, then the full response is broadcast as a si
 }
 ```
 
-**Receiving Responses (stream mode)**
+**Receiving Responses (`message_type: delta`)**
 
-In `stream` mode each stream event arrives as a separate `STREAM_CHUNK` message. Every chunk carries `event` — the typed event it was built from — while `delta` appears **only** on a `text_delta`, so boundary and tool-call chunks have no `delta` key at all and the terminal chunk has neither. Reassemble by testing for the key rather than by position. The chunk with `"done": true` signals the end of the stream; if an unrecoverable error occurs, the final chunk contains an `error` field instead. Every chunk also carries the `session_id` from the original request.
+With `message_type: delta` each stream event arrives as a separate `STREAM_CHUNK` message. Every chunk carries `event` — the typed event it was built from — while `delta` appears **only** on a `text_delta`, so boundary and tool-call chunks have no `delta` key at all and the terminal chunk has neither. Reassemble by testing for the key rather than by position. The chunk with `"done": true` signals the end of the stream; if an unrecoverable error occurs, the final chunk contains an `error` field instead. Every chunk also carries the `session_id` from the original request.
 
 ```json
 {"type": "STREAM_CHUNK", "event": {"type": "message_start", "message_id": "m1", "role": "assistant"}, "done": false, "session_id": "user-123"}
@@ -916,11 +918,11 @@ Error chunk:
 
 All messages pushed to the client carry a `type` field:
 
-| Type | Mode | Payload fields |
-|------|------|----------------|
-| `CHAT_RESPONSE` | `async` | `result`, `session_id` - complete agent response sent once |
-| `STREAM_CHUNK` | `stream` | `delta` (token text), `done` (bool), `session_id`; on error: `error`, `done: true`, `session_id` |
-| `CHAT_QUEUED` | `async` / `stream` | `status`, `message`, `request_id` - queue acknowledgement (queue mode only) |
+| Type | Message type | Payload fields |
+|------|--------------|----------------|
+| `CHAT_RESPONSE` | `complete` | `result`, `session_id` - complete agent response sent once |
+| `STREAM_CHUNK` | `delta` | `delta` (token text), `done` (bool), `session_id`; on error: `error`, `done: true`, `session_id` |
+| `CHAT_QUEUED` | `complete` / `delta` | `status`, `message`, `request_id` - queue acknowledgement (queue mode only) |
 | `SYSTEM_RESPONSE` | both | `status`, `message` - unknown route or internal error |
 
 **Custom Routes**
@@ -969,22 +971,24 @@ The AWS serverless runtime supports these execution modes:
 
 - `rest_sync` - Synchronous REST: sends request to SQS queue and immediately waits for the matching response from the response store
 - `rest_async` - Asynchronous REST: submits request to SQS queue via POST and returns immediately with ACCEPTED status and a request_id, then poll for response via GET using the same request_id
-- `stream` - Event-level WebSocket streaming: sends each stream event as a separate `STREAM_CHUNK` message via WebSocket as soon as it is produced. Uses `ServerlessStreamAgentRunner` when queues are configured, or direct in-Lambda streaming when queues are disabled. Requires WebSocket API and `websocket_api` configuration.
-- `async` - Full-response WebSocket: buffers the complete agent response and broadcasts it as a single `CHAT_RESPONSE` message via WebSocket once the agent finishes. Requires WebSocket API and `websocket_api` configuration. Response store is not used.
+- `async` - WebSocket delivery. Requires WebSocket API and `websocket_api` configuration. Response store is not used. `execution.message_type` picks the delivery:
+  - `complete` (default) - Full-response WebSocket: buffers the complete agent response and broadcasts it as a single `CHAT_RESPONSE` message via WebSocket once the agent finishes.
+  - `delta` - Event-level WebSocket streaming: sends each stream event as a separate `STREAM_CHUNK` message via WebSocket as soon as it is produced. Uses `ServerlessStreamAgentRunner` when queues are configured, or direct in-Lambda streaming when queues are disabled.
 
 **Queue Mode Interaction**:
 - When queues are configured (`execution.queues.input.url` is set), the request handler sends messages to the SQS input queue
 - When queues are not configured, the request handler processes requests directly without queuing
-- For `async` WebSocket mode, queue mode can be enabled or disabled:
+- For `async` WebSocket mode with `message_type: complete`, queue mode can be enabled or disabled:
   - Queue enabled: messages go to SQS input queue; the agent runner processes the full request and sends the complete response to the output queue; the response handler broadcasts it via WebSocket as a `CHAT_RESPONSE` message
   - Queue disabled: the request handler Lambda runs the agent directly and broadcasts the full response via WebSocket
-- For `stream` WebSocket mode, queue mode can be enabled or disabled:
+- For `async` WebSocket mode with `message_type: delta`, queue mode can be enabled or disabled:
   - Queue enabled: messages go to SQS input queue; `ServerlessStreamAgentRunner` sends each streamed token as a separate SQS message to the output queue; the response handler broadcasts each chunk via WebSocket wrapped in a `STREAM_CHUNK` envelope
   - Queue disabled: the request handler Lambda streams each token directly to the WebSocket client via `STREAM_CHUNK` messages without touching SQS
 
 When you use queue-backed execution, configure the `execution` block:
 
-- `execution.mode` - selects the runtime mode (rest_sync, rest_async, stream, or async)
+- `execution.mode` - selects the runtime mode (rest_sync, rest_async, or async)
+- `execution.message_type` - `complete` (default) or `delta`; on Lambda `delta` works only with `async` (the REST router refuses `rest_sync` with `delta`, and `LambdaWebhookHost` refuses `delta`)
 - `execution.queues.input.url` - input SQS queue for agent requests (required for rest_sync, rest_async, and optional for async/WebSocket)
 - `execution.queues.output.url` - output SQS queue for agent responses (required for rest_sync, rest_async, and optional for async/WebSocket)
 - `execution.queues.input.max_receive_count` - input queue receive retry threshold (default: 3)
@@ -1003,7 +1007,7 @@ When you use queue-backed execution, configure the `execution` block:
 
 The response store is configured as a single object with one selected backend:
 
-**Note**: When using WebSocket modes (`execution_mode = "async"` or `execution_mode = "stream"`), the response store is not created and not used; responses are broadcast directly through the WebSocket connection. The response store is required only for `rest_sync` and `rest_async` modes. Setting `create_redis_response_store = true`, `create_valkey_response_store = true`, or `create_dynamodb_response_store = true` in Terraform while using a WebSocket mode now fails validation during planning/apply.
+**Note**: When using the WebSocket mode (`execution_mode = "async"`, either `message_type`), the response store is not created and not used; responses are broadcast directly through the WebSocket connection. The response store is required only for `rest_sync` and `rest_async` modes. Setting `create_redis_response_store = true`, `create_valkey_response_store = true`, or `create_dynamodb_response_store = true` in Terraform while using a WebSocket mode now fails validation during planning/apply.
 
 ```json
 {
@@ -1048,7 +1052,7 @@ export AK_EXECUTION__RESPONSE_STORE__DELAY=5
 
 ### WebSocket Configuration
 
-For WebSocket modes (`execution_mode = "async"` or `execution_mode = "stream"`), you need to configure WebSocket API settings in your `config.yaml`. Both modes use the same WebSocket infrastructure; the only difference is how the agent response is delivered to the client (one full message vs one chunk per stream event).
+For the WebSocket mode (`execution_mode = "async"`), you need to configure WebSocket API settings in your `config.yaml`. Both message types use the same WebSocket infrastructure; the only difference is how the agent response is delivered to the client (one full message with `message_type = "complete"` vs one chunk per stream event with `message_type = "delta"`).
 
 ```yaml
 websocket_api:
@@ -1058,7 +1062,7 @@ websocket_api:
   chat_route: "chat"  # Default route for chat messages
 ```
 
-This configuration is required for **both** `async` and `stream` execution modes.
+This configuration is required for `async` with **either** message type.
 
 **Environment Variables**:
 
@@ -1101,7 +1105,7 @@ module "websocket_deployment" {
 - Route names must contain only alphanumeric characters, hyphens (-), and underscores (_)
 - Route names cannot contain '/' and cannot be empty or whitespace-only
 - The `$` prefix is reserved for predefined routes (`$connect`, `$disconnect`, `$default`)
-- Custom routes can only be defined when `execution_mode = "async"` or `execution_mode = "stream"` (WebSocket modes)
+- Custom routes can only be defined when `execution_mode = "async"` (WebSocket mode)
 
 **Available Routes**:
 - `$connect` - Handled by WebSocket connection handler (predefined)
@@ -1114,18 +1118,19 @@ The DynamoDB connection table is automatically created by the Terraform module a
 
 ### Important: WebSocket Mode with API Gateway Disabled
 
-> **⚠️ WARNING**: When using `execution_mode = "async"` or `execution_mode = "stream"` (WebSocket modes) with `enable_api_gateway = false`, the default response handler will fail because it pushes responses through the WebSocket API Gateway. Without it, there is no endpoint to send messages to.
+> **⚠️ WARNING**: When using `execution_mode = "async"` (WebSocket mode, either `message_type`) with `enable_api_gateway = false`, the default response handler will fail because it pushes responses through the WebSocket API Gateway. Without it, there is no endpoint to send messages to.
 >
 > **Solution**: If you disable the API Gateway in a WebSocket mode, you must provide a custom response handler implementation that handles responses differently (e.g., storing them in a database or routing to an external service). Override the response handler Lambda to implement your custom response delivery mechanism.
 
 ### WebSocket Connection Handler Terraform Configuration
 
-When `execution_mode` is `"async"` or `"stream"`, set the `ws_connection_handler` block. `package_path` is the only required field:
+When `execution_mode` is `"async"`, set the `ws_connection_handler` block. `package_path` is the only required field:
 
 ```hcl
 module "serverless_agents" {
   # ...
-  execution_mode = "stream"
+  execution_mode = "async"
+  message_type   = "delta"  # or "complete" (the default when null): one CHAT_RESPONSE per reply
 
   ws_connection_handler = {
     package_path         = "../dist_ws_connection_handler.zip"
@@ -1283,6 +1288,167 @@ For the full example see [examples/aws-serverless/openai](https://github.com/yaa
 and for the application side (resolution order, caching, rotation) see the
 [Secret Resolution guide](../advanced/secrets.md).
 
+## Messaging integrations
+
+Slack, Teams, WhatsApp, Messenger, Instagram and Telegram run on Lambda in the REST modes
+(`rest_sync`, `rest_async`) with `queue_mode = true`. The platform's webhook reaches the
+request-handler Lambda, which verifies, acknowledges and enqueues each message; the agent runs behind
+the Input Queue; and the response-handler Lambda delivers the reply back to the platform.
+[`examples/aws-serverless/slack-openai`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/slack-openai)
+deploys the whole path for Slack.
+
+```
+Platform --webhook--> API Gateway --> Authorizer (bypass) --> Request-handler Lambda
+                                                              LambdaWebhookHost -> WebhookRESTRequestHandler
+                                                                   | verify, "thinking...", enqueue
+                                                                   v
+            Input Queue --> Agent-runner Lambda --> Output Queue --> Response-handler Lambda
+                                                                     IntegrationDelivery -> platform API
+```
+
+### Receiving webhooks
+
+Wrap the same `WebhookRESTRequestHandler` an app passes to the pipeline's `IOHandler.run` in a
+`LambdaWebhookHost`, at module scope in the request-handler Lambda, and register its `handle` on the
+adapter's webhook path with `Lambda.register`, like any custom route:
+
+```python
+from agentkernel.aws import Lambda, LambdaWebhookHost
+from agentkernel.integration.adapter import WebhookRESTRequestHandler
+from agentkernel.slack import SlackInboundAdapter
+
+slack = LambdaWebhookHost(WebhookRESTRequestHandler(SlackInboundAdapter()))
+
+
+@Lambda.register("/slack/events", method="POST")
+def slack_events(event, context):
+    return slack.handle(event, context)
+
+
+handler = Lambda.handler
+```
+
+WhatsApp, Messenger and Instagram also need their subscription handshake: register the host's
+`challenge` for GET on the same path.
+
+```python
+whatsapp = LambdaWebhookHost(WebhookRESTRequestHandler(WhatsAppInboundAdapter()))
+Lambda.register("/whatsapp/webhook", method="POST")(whatsapp.handle)
+Lambda.register("/whatsapp/webhook", method="GET")(whatsapp.challenge)
+```
+
+The paths are the adapters' `webhook_path` and `challenge_path`: `/slack/events`, `/teams/messages`,
+`/telegram/webhook`, and `/<platform>/webhook` for the three Meta platforms. The Lambda router strips
+`/<api_base_path>/<api_version>` and matches the rest exactly. The host turns the API Gateway event into
+the Starlette request every adapter reads, and answers with the status the platform expects: a rejected
+signature stays a 401 or 403 rather than becoming a retryable 500.
+
+Declare the route in Terraform through `gateway_endpoints`; it nests under `/<api_base_path>/<api_version>`
+like the chat route:
+
+```hcl
+gateway_endpoints = [
+  { path = "/slack/events", method = "POST" },
+]
+# WhatsApp, Messenger and Instagram need both GET (the handshake) and POST on their path.
+```
+
+`LambdaWebhookHost` checks the deployment when it is built, on cold start, and fails the Lambda's init,
+rather than dropping deliveries later, when:
+
+- the handler is not a `WebhookRESTRequestHandler` (`TypeError`);
+- `execution.mode` is not `rest_sync` or `rest_async`, or `execution.message_type` is `delta`;
+- the queue transport is not `sqs` (set `queue_mode = true` in Terraform and `execution.queues.type: sqs`
+  in `config.yaml`);
+- `API_BASE_PATH`, `API_VERSION` or `AGENT_ENDPOINT` is unset (the module always sets them);
+- the adapter's verification secret is unset: `whatsapp.app_secret`, `messenger.app_secret`,
+  `instagram.app_secret` or `telegram.webhook_secret`. Behind the authorizer's bypass the adapter's own
+  check is the only one, so an open route would let anyone enqueue a message. Slack
+  (`SLACK_SIGNING_SECRET`) and Teams (`teams.app_id`, `teams.app_password`) already refuse to construct
+  without theirs.
+
+### Delivering replies
+
+Nothing to configure. The agent runner passes the prebuilt request list (text, stored attachment
+references, context) to the agent and copies the message's return address (the `integration`
+attribute plus the `reply_*` context) onto the reply. The response handler sees `integration` and
+delivers to the platform through its outbound adapter, in every execution mode; integration replies
+never touch the response store or the WebSocket. Integration replies are always whole, since a platform has no
+streaming consumer: `LambdaWebhookHost` refuses `message_type: delta`. A failed delivery is retried up to
+`output_queue_max_receive_count` times, then the user gets the adapter's generic error message.
+
+### Packages and credentials
+
+Both the request-handler and the response-handler packages need `agentkernel[aws,<platform>]`: the
+request handler verifies and acknowledges, and the response handler delivers. The platform extras
+include FastAPI (and aiohttp for Slack); neither Lambda needs the `api` extra or its server stack.
+Pass the platform credentials to both Lambdas through `request_handler.environment_variables` and
+`response_handler.environment_variables`.
+
+### Behind an authorizer
+
+Platforms send no bearer token, so an authorizer would deny their webhooks. Give
+`APIGatewayAuthorizer` a bypass for the integration routes:
+
+```python
+from agentkernel.aws import APIGatewayAuthorizer
+from agentkernel.integration.adapter import WebhookRouteMatcher
+
+handler = APIGatewayAuthorizer(validator=MyValidator(), bypass=WebhookRouteMatcher.for_integrations("slack")).handle
+```
+
+The bypass matches the request's method and path only, never a header: the authorizer event carries
+no body, so no signature can be checked there, and a header test could be spoofed onto a chat request.
+A matched request gets an Allow for its exact `methodArn` with principal `integration:<name>`, and your
+validator is never called. The module passes `API_BASE_PATH` and `API_VERSION` to the authorizer Lambda
+so the matcher strips the prefix exactly as the router does.
+
+**Set `authorizer.result_ttl_in_seconds = 0`.** With caching on, API Gateway answers a request that has
+no `Authorization` header with 401 before calling the authorizer, so the bypass never gets a say. The
+cost is one authorizer call per request, chat routes included.
+
+### Declare the integration in three places
+
+| Where | What |
+|---|---|
+| Authorizer Lambda | `WebhookRouteMatcher.for_integrations("slack")` |
+| Request-handler Lambda | `@Lambda.register("/slack/events", method="POST")` calling `LambdaWebhookHost(WebhookRESTRequestHandler(SlackInboundAdapter())).handle` |
+| Terraform | `gateway_endpoints = [{ path = "/slack/events", method = "POST" }]` |
+
+Each mismatch fails quietly from Agent Kernel's side:
+
+- In the authorizer and the gateway, but not registered: a 500 from the router's no-route error.
+- Registered and in the gateway, but not in the authorizer: a 403. A platform that sends no
+  `Authorization` header is denied before your validator runs, with the authorizer logging
+  `Event validation failed`; Teams, whose Bot Framework token does arrive in that header, reaches your
+  validator and is rejected there.
+- A nonzero authorizer TTL: a 401 that Agent Kernel never logs, because API Gateway answers before the
+  authorizer runs.
+
+### Cold starts and Slack's 3 seconds
+
+Slack expects its 200 within 3 seconds, and a cold start imports Bolt and FastAPI. Keep the
+request-handler package slim (no agent frameworks: those belong to the agent runner); remember that
+the authorizer call is part of the budget; and use provisioned concurrency or a warm-up schedule for
+the request-handler and authorizer Lambdas, configured outside the module for now. A retry Slack sends
+because the first attempt timed out is dropped at the edge, so the user still sees one "thinking..."
+and one reply.
+
+### Stores
+
+- A response store is still required (`create_dynamodb_response_store = true` is the cheapest), because
+  the chat route on the same Lambda polls it. Integration replies never use it.
+- Attachments need `multimodal.enabled` with a store every Lambda can reach: adapters download and
+  store them at the edge. With `create_dynamodb_multimodal_memory_table = true` the table reaches the
+  request handler too, in queue mode. A Redis or Valkey store needs network reach from the request
+  handler.
+
+### Limits
+
+- REST modes only. The WebSocket mode (`async`) creates no REST API; run the integrations
+  in a second stack in `rest_async`, or on the pipeline.
+- Gmail (a poller) is not supported on Lambda.
+
 ## Cost Optimization
 
 ### Lambda Configuration
@@ -1298,6 +1464,7 @@ Refer to [Terraform modules](https://registry.terraform.io/modules/yaalalabs/ak-
 - Use provisioned concurrency for critical endpoints
 - Keep Lambda warm with scheduled pings
 - Optimize package size
+- For messaging webhooks, see [Cold starts and Slack's 3 seconds](#cold-starts-and-slacks-3-seconds)
 
 ## Fault Tolerance
 
@@ -1518,8 +1685,9 @@ CloudWatch metrics automatically available:
 |---------|------|--------|-------------|
 | [scalable-openai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/scalable-openai) | `rest_sync` / `rest_async` | Yes | REST API with SQS-backed queue processing |
 | [websocket-openai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/websocket-openai) | `async` | Yes | Full-response WebSocket delivery |
-| [streaming-openai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/streaming-openai) | `stream` | Yes | Event streaming over WebSocket with `ServerlessStreamAgentRunner` |
+| [streaming-openai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/streaming-openai) | `async` + `message_type: delta` | Yes | Event streaming over WebSocket with `ServerlessStreamAgentRunner` |
 | [openai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/openai) | `rest_sync` | Yes | REST API with SQS-backed queue processing, with the OpenAI key read from SSM Parameter Store (`ssm_enabled`); also the base deployment the weekly integration test pipeline's other `aws-serverless` examples reuse the VPC/subnets/security groups of |
 | [schedule-openai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/schedule-openai) | `rest_sync` | Yes | Deferred and recurring chats on EventBridge Scheduler with a DynamoDB schedule store |
+| [openai-langfuse-trace-evaluation](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/openai-langfuse-trace-evaluation) | `rest_sync` | Yes | Grades the agent's Langfuse traces with Opik LLM judges behind custom `/eval` and `/check` routes (an asynchronous self-invocation runs the judges) and stores the results in DynamoDB |
 
 See [examples/aws-serverless](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless) for all available examples.

@@ -34,6 +34,10 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- if and .Values.secretStore.enabled (eq (include "agent-kernel.secretStoreTier" .) "io") }}
+      volumes:
+        {{- include "agent-kernel.secretStoreVolumes" . | trim | nindent 8 }}
+      {{- end }}
       containers:
         - name: io-handler
           image: {{ include "agent-kernel.image" (dict "root" . "image" .Values.ioHandler.image) }}
@@ -84,6 +88,10 @@ spec:
           {{- with .Values.ioHandler.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if and .Values.secretStore.enabled (eq (include "agent-kernel.secretStoreTier" .) "io") }}
+          volumeMounts:
+            {{- include "agent-kernel.secretStoreVolumeMounts" . | trim | nindent 12 }}
           {{- end }}
       {{- with .Values.ioHandler.nodeSelector }}
       nodeSelector:

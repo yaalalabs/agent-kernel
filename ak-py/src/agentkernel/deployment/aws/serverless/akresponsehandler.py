@@ -3,8 +3,9 @@ import logging
 from typing import Any, Dict, Optional
 
 from ....core.config import AKConfig
-from ....core.model import ExecutionMode, StreamChunk
+from ....core.model import StreamChunk
 from ....pipeline.envelope import ATTR_STATUS_CODE
+from ....pipeline.integration_delivery import IntegrationDelivery
 from ..core.response_store import ResponseStoreFactory
 from ..core.sqs_handler import SQSHandler
 from .core import LambdaSQSConsumer
@@ -19,6 +20,7 @@ class ResponseHandler(LambdaSQSConsumer):
     _log = logging.getLogger("ak.aws.responsehandler")
     _response_store = None
     _base_ws_handler = None
+    _integration_delivery: Optional[IntegrationDelivery] = None
     # A reply sent without a status predates the runner forwarding one, so it keeps its old meaning.
     _DEFAULT_STATUS_CODE = 200
     _PERMANENT_FAILURE_STATUS_CODE = 500
@@ -40,6 +42,17 @@ class ResponseHandler(LambdaSQSConsumer):
         return cls._base_ws_handler
 
     @classmethod
+    def _get_integration_delivery(cls) -> IntegrationDelivery:
+        if cls._integration_delivery is None:
+            cls._integration_delivery = IntegrationDelivery(cls._log)
+        return cls._integration_delivery
+
+    @staticmethod
+    def _decode_body(value: Any) -> Any:
+        """JSON-decode a record body when it is a string; anything else passes through unchanged."""
+        return json.loads(value) if isinstance(value, str) else value
+
+    @classmethod
     def _construct_message_for_store(cls, record: Dict[str, Any], body: Optional[Any] = None, status_code: Optional[int] = None) -> Dict[str, Any]:
         """
         Construct the message object to be stored in the response store.
@@ -51,9 +64,7 @@ class ResponseHandler(LambdaSQSConsumer):
         :return: Message dictionary for storage
         :raises ValueError: If request_id is missing in SQS message attributes
         """
-        message_body = body if body is not None else record.get("body")
-        if isinstance(message_body, str):
-            message_body = json.loads(message_body)
+        message_body = cls._decode_body(body if body is not None else record.get("body"))
         session_id = message_body.get("session_id")
 
         message_attributes = SQSHandler.get_message_custom_attributes(record)
@@ -116,20 +127,34 @@ class ResponseHandler(LambdaSQSConsumer):
     @classmethod
     def process_message(cls, record: Dict[str, Any]) -> None:
         """
-        Process a single SQS record based on execution mode.
+        Process a single SQS record: deliver it to its messaging platform, or per the execution mode.
 
-        - ASYNC mode: Broadcast via WebSocket
+        - Integration traffic (an ``integration`` attribute): deliver to the platform, in every mode
+        - async mode: Broadcast via WebSocket (STREAM_CHUNK for delta replies, CHAT_RESPONSE otherwise)
         - Other modes: Store in response store
 
         :param record: SQS record containing the response payload
         :return: None
+        :raises Exception: When a platform delivery fails, so the record is retried
         """
         cls._log.info(f"Processing message: {record}")
 
-        if AKConfig.get().execution.mode == ExecutionMode.ASYNC:
-            cls._broadcast_via_websocket(record, message_type=LambdaWSHandler.MessageType.CHAT_RESPONSE)
-        elif AKConfig.get().execution.mode == ExecutionMode.STREAM:
-            cls._broadcast_via_websocket(record, message_type=LambdaWSHandler.MessageType.STREAM_CHUNK)
+        message_attributes = SQSHandler.get_message_custom_attributes(record)
+        integration = IntegrationDelivery.integration_of(message_attributes)
+        if integration:
+            cls._get_integration_delivery().deliver(
+                integration,
+                message_attributes,
+                cls._decode_body(record.get("body")),
+                status_code=cls._resolve_status_code(message_attributes),
+                session_id=SQSHandler.get_message_system_attributes(record).get("MessageGroupId"),
+            )
+            return
+
+        execution = AKConfig.get().execution
+        if execution.is_websocket:
+            message_type = LambdaWSHandler.MessageType.STREAM_CHUNK if execution.is_delta else LambdaWSHandler.MessageType.CHAT_RESPONSE
+            cls._broadcast_via_websocket(record, message_type=message_type)
         else:
             message = cls._construct_message_for_store(record)
             cls._get_response_store().add_message(message)
@@ -140,7 +165,8 @@ class ResponseHandler(LambdaSQSConsumer):
         """
         Handle messages that have reached their maximum retry count based on execution mode.
 
-        - ASYNC mode: Broadcast error via WebSocket
+        - Integration traffic: send the platform's generic error message
+        - async mode: Broadcast error via WebSocket (an error chunk for delta replies)
         - Other modes: Store error message in response store
 
         :param record: SQS record that failed processing after all retries
@@ -150,21 +176,30 @@ class ResponseHandler(LambdaSQSConsumer):
 
         try:
             message_attributes = SQSHandler.get_message_custom_attributes(record)
-            session_id = message_attributes["message_group_id"]
+            # The group id is the SQS system attribute MessageGroupId, never a custom attribute.
+            session_id = SQSHandler.get_message_system_attributes(record).get("MessageGroupId")
+
+            integration = IntegrationDelivery.integration_of(message_attributes)
+            if integration:
+                cls._get_integration_delivery().deliver_permanent_failure(integration, message_attributes, session_id=session_id)
+                return
+
             error_message = {
                 "error": f"Failed to process message after {cls._get_max_receive_count()} retries",
                 "request_id": message_attributes.get("request_id"),
             }
+            if session_id:
+                error_message["session_id"] = session_id
 
-            if AKConfig.get().execution.mode == ExecutionMode.ASYNC:
-                # Broadcast error via WebSocket for ASYNC mode
+            execution = AKConfig.get().execution
+            if execution.is_websocket and not execution.is_delta:
+                # Broadcast error via WebSocket for whole replies
                 endpoint_url = message_attributes.get("endpoint_url")
                 user_id = message_attributes.get("user_id")
 
                 if endpoint_url and user_id:
                     base_ws = cls._get_base_ws_handler()
                     cls._log.info(f"Broadcasting permanent failure error via WebSocket for user_id: {user_id}")
-                    error_message["session_id"] = session_id
                     base_ws.broadcast(
                         endpoint_url=endpoint_url,
                         message=error_message,
@@ -174,8 +209,8 @@ class ResponseHandler(LambdaSQSConsumer):
                     cls._log.info(f"Successfully broadcasted permanent failure error for user_id: {user_id}")
                 else:
                     cls._log.warning("Cannot broadcast permanent failure error: endpoint_url or user_id missing in message attributes")
-            elif AKConfig.get().execution.mode == ExecutionMode.STREAM:
-                # Broadcast error chunk via WebSocket for STREAM mode
+            elif execution.is_websocket:
+                # Broadcast error chunk via WebSocket for async + delta
                 endpoint_url = message_attributes.get("endpoint_url")
                 user_id = message_attributes.get("user_id")
 
@@ -198,7 +233,7 @@ class ResponseHandler(LambdaSQSConsumer):
                 else:
                     cls._log.warning("Cannot broadcast permanent failure stream chunk: endpoint_url or user_id missing in message attributes")
             else:
-                # Store error message in response store for non-ASYNC/STREAM modes
+                # Store error message in response store for REST modes
                 message = cls._construct_message_for_store(record, body=error_message, status_code=cls._PERMANENT_FAILURE_STATUS_CODE)
                 cls._get_response_store().add_message(message)
                 cls._log.info(f"Stored permanent failure message for session_id: {message['session_id']}, request_id: {message['request_id']}")

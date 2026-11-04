@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional, Union
 
 from .config import AKConfig
 from .model import (
+    AgentPausedReplyAny,
     AgentReply,
     AgentReplyAny,
     AgentReplyImage,
@@ -16,12 +17,14 @@ from .model import (
     AgentRequestFile,
     AgentRequestImage,
     AgentRequestText,
+    AgentResumeRequestAny,
     BaseChatRequest,
     BaseRunRequest,
     StreamChunk,
 )
 from .service import AgentService
 from .util.async_bridge import iterate_async_sync, run_async_sync
+from .util.payload import PayloadCodec
 
 
 class RequestBuilder:
@@ -41,9 +44,10 @@ class RequestBuilder:
         :param req: Base run request containing prompt, images, files, and additional context
         :return: List of AgentRequest objects for processing
         """
-        requests = [AgentRequestText(prompt=req.prompt)]
+        requests = [AgentRequestText(prompt=req.prompt)] if req.prompt else []
         RequestBuilder._add_images(requests, req.images)
         RequestBuilder._add_files(requests, req.files)
+        RequestBuilder._add_resume(requests, req)
         RequestBuilder._attach_additional_context(req, requests)
         return requests
 
@@ -55,7 +59,7 @@ class RequestBuilder:
                     or a multipart/upload-style request defined elsewhere)
         :return: List of AgentRequest objects for processing
         """
-        requests = [AgentRequestText(prompt=req.prompt)]
+        requests = [AgentRequestText(prompt=req.prompt)] if req.prompt else []
 
         # If this is a BaseRunRequest, it contains FileData/ImageData objects
         # (base64 or URLs) — handle them synchronously. Otherwise, assume
@@ -64,11 +68,13 @@ class RequestBuilder:
         if isinstance(req, BaseRunRequest):
             RequestBuilder._add_images(requests, req.images)
             RequestBuilder._add_files(requests, req.files)
+            RequestBuilder._add_resume(requests, req)
             RequestBuilder._attach_additional_context(req, requests)
         else:
             # For other subclasses (e.g., upload objects) try async multipart
             await RequestBuilder._add_multipart_files(requests, getattr(req, "files", None))
             await RequestBuilder._add_multipart_images(requests, getattr(req, "images", None))
+            RequestBuilder._add_resume(requests, req)
 
         return requests
 
@@ -117,6 +123,21 @@ class RequestBuilder:
             )
 
     @staticmethod
+    def _add_resume(requests: List[Any], req: BaseChatRequest) -> None:
+        """Add the human's decisions when the request carries a resume block.
+
+        Appended after any text and attachments, so a prompt sent alongside a decision stays first.
+
+        :param requests: List to append the resume request to
+        :param req: Chat request that may carry a resume block
+        :return: None
+        """
+        if req.resume is None:
+            return
+        RequestBuilder._log.debug(f"Adding resume decisions: {[d.id for d in req.resume.decisions]}")
+        requests.append(AgentResumeRequestAny(run_id=req.resume.run_id, decisions=req.resume.decisions))
+
+    @staticmethod
     def _attach_additional_context(req: BaseRunRequest, requests: List[Any]):
         """Attach additional context fields from request as AgentRequestAny objects.
 
@@ -140,6 +161,12 @@ class RequestBuilder:
             "scheduled_task_id",
             "scheduled_time",
             "requests",
+            # Resume envelope: the decisions are consumed by the runner, never shown to the agent
+            # as context.
+            "resume",
+            # AG-UI envelope: the client's per-run state/forwardedProps/context,
+            # applied to the session by the runner. Not something the user asked the agent.
+            "agui",
         }
         for key, value in req.model_dump().items():
             if key in known_fields:
@@ -303,6 +330,33 @@ class ResponseBuilder:
     def build_response(status_code: int, session_id: Optional[str], rest_api_mode: bool, result: Any = None, error: Optional[Exception] = None):
         """Build response from agent result or error.
 
+        A structured reply whose ``media_type`` is set puts its content in ``result`` as an object
+        and names the format alongside it, so a client parses once instead of twice. Every other
+        reply — text, image, and a structured reply with no media type — is serialised exactly as it
+        was before that field existed, which is what makes ``result``'s ``str | dict | list`` shape
+        unobservable to anyone who has not opted in. Only a post-hook sets a media type; no framework
+        adapter does.
+
+        A paused reply also carries `status: "PAUSED"`, `run_id`, `agent` and `interruptions` as
+        top-level keys, so a client branches on the outcome without parsing `result`. `agent` is
+        there because a resume has to name the agent that paused, and a request that named none was
+        served by the default agent — without this the client cannot answer its own pause.
+
+        **The dict this returns is JSON-safe, and that is a guarantee rather than a coincidence.**
+        Every other value it holds is a `str` or a `model_dump(mode="json")`; the object form is
+        the one way a payload reaches a client untouched, so that branch re-runs
+        ``PayloadCodec.normalise`` to close the two bypasses the field validator cannot see
+        (`model_copy` over `content`, and in-place mutation). The point is what it buys downstream:
+        a deployment adapter can serialise this body with a bare ``json.dumps`` and be correct,
+        instead of having to know that a codec exists.
+
+        `normalise` rather than a lenient variant, deliberately. It raises on a `NaN`, which the
+        lenient path would render as `null` — indistinguishable from a field the agent chose to
+        omit, which is the whole reason Decision 8 refuses it at construction. Refusing it here too
+        costs nothing a caller wants: the error names the key path and is reported, where `null`
+        would ship wrong data quietly. Leniency belongs at a queue boundary, where a raise loses
+        the message instead of reporting anything.
+
         :param status_code: HTTP status code
         :param session_id: Session identifier for the response
         :param rest_api_mode: If True, return dict only on success or raise HTTPException on error; if False, return tuple
@@ -310,12 +364,23 @@ class ResponseBuilder:
         :param error: Exception that occurred (mutually exclusive with result)
         :return: Response dict or (status_code, response_dict) tuple; raises HTTPException if error in rest_api_mode
         """
+        response_dict: Dict[str, Any]
         if error:
             response_dict = {"error": str(error)}
+        elif isinstance(result, AgentReplyAny) and result.media_type:
+            response_dict = {"result": PayloadCodec.normalise(result.content), "media_type": result.media_type}
         else:
             response_dict = {
                 "result": str(result) if isinstance(result, (AgentReplyText, AgentReplyImage, AgentReplyAny)) else "Non textual result received"
             }
+
+        if isinstance(result, AgentPausedReplyAny):
+            # 202 now carries two meanings — a deferred request and a paused one — so the body key
+            # is what separates them, and a client branches on it without parsing `result`.
+            response_dict["status"] = "PAUSED"
+            response_dict["run_id"] = result.run_id
+            response_dict["agent"] = result.agent
+            response_dict["interruptions"] = [i.model_dump(mode="json") for i in result.interruptions]
 
         if session_id:
             response_dict["session_id"] = session_id
@@ -340,10 +405,15 @@ class ResponseBuilder:
 
         :param chunk: StreamChunk to format
         :param session_id: Session identifier to include in the payload
+        Dumped in JSON mode so an event carrying a payload reaches ``json.dumps`` already converted.
+        Every field of every other event is a str, int or bool, so this is byte-identical for them;
+        without it a payload would raise here, mid-stream, after the client had rendered part of
+        the message.
+
         :param sse_format: When True, wrap the JSON payload as an SSE frame.
         :return: JSON string or SSE-formatted string with excluded None values
         """
-        payload_dict = chunk.model_dump(exclude_none=True)
+        payload_dict = chunk.model_dump(mode="json", exclude_none=True)
         payload_dict["session_id"] = session_id
         payload = json.dumps(payload_dict)
         return f"data: {payload}\n\n" if sse_format else payload
@@ -387,6 +457,7 @@ class ChatService:
         :return: Tuple of (typed agent reply, response session id)
         :raises ValueError: If validation fails or no agent is available
         """
+        self._reject_ambiguous(req)
         scheduled = self._maybe_schedule(req)
         if scheduled is not None:
             return scheduled, req.session_id
@@ -404,6 +475,7 @@ class ChatService:
         :return: Tuple of (typed agent reply, response session id)
         :raises ValueError: If validation fails or no agent is available
         """
+        self._reject_ambiguous(req)
         scheduled = self._maybe_schedule(req)
         if scheduled is not None:
             return scheduled, req.session_id
@@ -425,6 +497,7 @@ class ChatService:
         :return: Async generator yielding raw StreamChunk objects
         :raises ValueError: If validation fails or no agent is available
         """
+        self._reject_ambiguous(req)
         scheduled = self._maybe_schedule(req)
         if scheduled is not None:
             return self._acknowledgement_stream(scheduled)
@@ -453,6 +526,7 @@ class ChatService:
         :return: Generator yielding raw StreamChunk objects
         :raises ValueError: If validation fails or no agent is available
         """
+        self._reject_ambiguous(req)
         scheduled = self._maybe_schedule(req)
         if scheduled is not None:
             return self._acknowledgement_stream_sync(scheduled)
@@ -547,13 +621,36 @@ class ChatService:
         yield StreamChunk(delta=str(ack), done=True)
 
     @staticmethod
-    def _success_status(req: BaseChatRequest) -> int:
-        """Return the status a successful response carries: 202 when the request was deferred.
+    def _reject_ambiguous(req: BaseChatRequest) -> None:
+        """Reject a request whose blocks contradict each other, before anything acts on it.
+
+        Called as the first statement of every entry point, ahead of ``_maybe_schedule``: scheduling
+        returns its 202 before ``_validate`` is ever reached, so a guard placed there would never
+        fire on a scheduled request.
+
+        :param req: The chat request to check.
+        :return: None
+        :raises ValueError: If the request carries both a schedule and a resume block.
+        """
+        if req.schedule is not None and req.resume is not None:
+            raise ValueError("A request cannot carry both 'schedule' and 'resume': a decision deferred to a later occurrence is no longer a decision")
+
+    @staticmethod
+    def success_status(req: BaseChatRequest, reply: Optional[AgentReply] = None) -> int:
+        """Return the status a successful response carries: 202 when deferred, or when paused.
+
+        Two sources, deliberately not collapsed into one condition: a deferred request is knowable
+        from the request, a paused run only from the reply.
 
         :param req: The processed chat request.
-        :return: 202 for a deferred request (accepted, not executed), 200 for one that ran.
+        :param reply: The reply produced, when the request ran.
+        :return: 202 for a deferred or paused request, 200 for one that completed.
         """
-        return 202 if req.schedule is not None else 200
+        if req.schedule is not None:
+            return 202
+        if isinstance(reply, AgentPausedReplyAny):
+            return 202
+        return 200
 
     async def _prepare_async(self, req: BaseChatRequest, requests: Optional[List[AgentRequest]]) -> List[AgentRequest]:
         """Validate the request and return the effective request list (built or prebuilt).
@@ -589,7 +686,7 @@ class ChatService:
         """
         try:
             result, session_id = self.execute_sync(req, requests)
-            return ResponseBuilder.build_response(self._success_status(req), session_id, self.rest_api_mode, result=result)
+            return ResponseBuilder.build_response(self.success_status(req, result), session_id, self.rest_api_mode, result=result)
         except ValueError as ve:
             self._log.error(f"ValueError processing request: {ve}")
             return ResponseBuilder.build_response(400, req.session_id, self.rest_api_mode, error=ve)
@@ -607,7 +704,7 @@ class ChatService:
         """
         try:
             result, session_id = await self.execute(req)
-            return ResponseBuilder.build_response(self._success_status(req), session_id, self.rest_api_mode, result=result)
+            return ResponseBuilder.build_response(self.success_status(req, result), session_id, self.rest_api_mode, result=result)
         except ValueError as ve:
             self._log.error(f"ValueError processing request: {ve}")
             return ResponseBuilder.build_response(400, req.session_id, self.rest_api_mode, error=ve)
@@ -690,7 +787,7 @@ class ChatService:
         if not req.session_id:
             raise ValueError("No session_id is provided in the request")
         if requests is None:
-            if not req.prompt:
+            if not req.prompt and req.resume is None:
                 raise ValueError("No prompt provided in the request")
         elif not requests:
             raise ValueError("No requests provided in the request")

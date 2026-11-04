@@ -20,7 +20,7 @@ Perfect for storing Lambda deployment packages, application data, logs, and any 
 | Name | Version |
 |------|---------|
 | Terraform | >= 1.9.5 |
-| AWS Provider | >= 6.11.0 |
+| AWS Provider | 6.70.0 (pinned) |
 
 ## 🚀 Usage
 

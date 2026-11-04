@@ -53,6 +53,43 @@ Under `agui.prefix` (default `/agui`):
 A run takes a `RunAgentInput` body and returns `text/event-stream`: `RunStarted` first, then the run's
 events, then exactly one of `RunFinished` or `RunError`.
 
+## Running the agent off the web tier
+
+`AGUIRequestHandler` executes the agent **inside** the SSE request, so a slow model holds a web
+connection for the whole run, and a run that fails cannot be retried. That is fine for a demo and for
+modest traffic, and it stays supported for deployments that want no queue.
+
+Mount `AGUIPipelineRequestHandler` instead to run the agent on the
+[queue pipeline](../advanced/queue-mode-guide.md). The handler keeps the caller's connection,
+enqueues the run, and streams the reply back as a separate process produces it. **Your frontend does
+not change** — same routes, same events, same order:
+
+```python
+from agentkernel.agui import AGUIPipelineRequestHandler
+from agentkernel.pipeline import IOHandler
+
+IOHandler.run(handlers=[AGUIPipelineRequestHandler(authoriser=MyAuthoriser())])
+```
+
+It needs a response store that can carry a chunk stream — everywhere, not only on a broker — and on
+a broker transport a session store and an attachment store the agent runner can read:
+
+| Setting | Local (`in_memory` transport) | On a broker (sqs, kafka, nats) |
+|---|---|---|
+| `execution.response_store.type` | `in_memory`, `redis` or `valkey` — `dynamodb` has no blocking read | `redis` or `valkey` |
+| `session.type` | anything, or unset | `redis`, `valkey`, `dynamodb`, `cosmosdb` or `firestore` |
+| `multimodal.storage_type` (when `multimodal.enabled`) | anything but `session_cache`, or unset | `redis` or `dynamodb` |
+| `execution.response_store.retry_count` x `delay` | how long the edge waits for each *next* chunk — 25s by default | the same; this budget does not depend on the transport |
+
+The handler checks the three store settings at startup and refuses to boot with a message naming the
+setting to change, rather than accepting a request whose answer could never come back. The chunk
+budget it cannot check, because only the run knows how long it will be quiet: it covers the first
+token's wait as well as the gap between a tool call and its result, so raise it when a turn can go
+quiet for longer than the product of the two values.
+
+Mounting, authorization and the `agui` config block are the same either way — see
+[AG-UI Server](../api/agui-server.md).
+
 Discovery publishes **names only** — deliberately not each agent's description, because several
 framework adapters return the agent's *instructions* from `get_description()`, which would publish
 your system prompt to every authorised caller.
@@ -85,8 +122,8 @@ agui:
 Both tool blocks are **opt-in**. Mounting the handler without either yields no agent-facing tools;
 setting `enabled: true` without mounting the handler attaches the tools to every agent for nothing.
 
-There is no `execution.mode: stream` here. AG-UI delivers every run as a stream by definition, so this
-surface does not consult the execution mode.
+There is no `execution.message_type: delta` here. AG-UI delivers every run as a stream by definition, so this
+surface does not consult the execution mode or message type.
 
 ## Shared state
 
@@ -139,6 +176,7 @@ thinking block.
 | LangGraph | ✅ | ✅ | ✅ | ✅ | ❌ |
 | Google ADK | ✅ | ✅ | ✅ | ✅ | ❌ |
 | Pydantic AI | ✅ | ✅ | ✅ | ✅ | ❌ |
+| Microsoft Agent Framework | ✅ | ✅ | ✅ | ✅ | ❌ |
 | CrewAI | ❌ | — | — | — | — |
 | smolagents | ❌ | — | — | — | — |
 
@@ -149,7 +187,7 @@ Reading the table:
   routes exclude them: a `POST` to one returns a 400 naming the framework rather than a generic
   error. Both SDKs support streaming; AK simply has not wired those APIs yet. That is a pending
   adapter capability, not a permanent SDK limit.
-- **Reasoning is available on all four streaming adapters**, and only when the model actually produces
+- **Reasoning is available on all five streaming adapters**, and only when the model actually produces
   it. AK maps the model's reasoning *summary*, so a reasoning-capable model still emits nothing unless
   the summary is requested — on LangGraph that means `ChatOpenAI(..., reasoning={"effort": ...,
   "summary": "auto"})`, and the equivalent on other providers. An empty thinking block is far more
@@ -175,6 +213,13 @@ Reading the table:
 - **Audio and video content is rejected with a 400.** AK has no equivalent request type, and mapping
   them onto the generic file type produces misleading model output. Images and documents are accepted,
   from an inline base64 `data` source or a `url` source.
+- **A structured payload maps onto AG-UI's `CustomEvent`.** `DataMessage` — the one stream event
+  that carries an object rather than scalars — becomes a `CustomEvent` whose `name` is the media
+  type and whose `value` is the payload. Nothing in Agent Kernel emits one: a `PostHook` assembles
+  it from what it has accumulated and returns it alongside the closing event, which is what
+  `on_stream_event`'s list form is for. Note the cost of that approach — a hook cannot know whether
+  a message is UI or prose until the closing boundary, so it holds every delta back, and such an
+  agent streams nothing incrementally. See [A2UI](../advanced/a2ui.md).
 - **Tool-call payloads are inspectable, but only if you write a hook.** Every event an AG-UI run emits
   passes through `PostHook.on_stream_event`, including `ToolCallArgs` and `ToolCallResult`, so a hook
   can rewrite or drop them before they reach the client, or raise `StreamHalt` to end the run. The

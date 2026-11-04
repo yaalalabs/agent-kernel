@@ -40,7 +40,7 @@ graph TB
         MM[Multimodal<br/>attachments]
         TH[Conversation Threads]
         KB[Knowledge Bases<br/>Chroma · Neo4j · Starburst · OKF]
-        TR[Tracing<br/>Langfuse · OpenLLMetry · Logfire]
+        TR[Tracing<br/>Langfuse · OpenLLMetry · Logfire · CloudWatch]
     end
 
     subgraph STORE["State Stores"]
@@ -133,7 +133,7 @@ carries the full request envelope, and agent/session resolution happens fresh pe
 | Validation and building | None: the caller prepares everything | Validates the envelope; builds the request list from the payload, or accepts a prebuilt one |
 | Output | Typed `AgentReply` / raw `StreamChunk`s | Execution core: typed reply plus session id. Presentation wrappers: JSON dicts, SSE frames, `HTTPException` |
 | Error handling | Exceptions propagate | Core: exceptions propagate. Wrappers: `ValueError` maps to 400, anything else to 500 |
-| Callers today | CLI, A2A, MCP | REST handler and deployment adapters (wrappers); messaging integrations and the thread handler (core) |
+| Callers today | CLI | REST handler and deployment adapters (wrappers), including the pipeline agent runner that executes A2A and MCP requests; messaging integrations and the thread handler (core) |
 
 **Use `ChatService`** when handling chat traffic where each request arrives self-contained with its
 `session_id`: the presentation wrappers (`process_*`) if you want the standard HTTP shapes, or the
@@ -172,7 +172,7 @@ Built-in support for:
 - Queue-pipeline execution everywhere: in-process by default, SQS-backed on Lambda and ECS, Kafka and NATS JetStream for on-prem / Kubernetes (deployed by the [Helm chart](../deployment/onprem-kubernetes))
 - Input/output guardrails and PII redaction
 - Multi-agent coordination and multimodal attachments
-- Observability and tracing (Langfuse, OpenLLMetry, Logfire)
+- Observability and tracing (Langfuse, OpenLLMetry, Logfire, CloudWatch)
 
 ### 5. Extensible
 
@@ -189,7 +189,7 @@ Pluggable via well-defined interfaces:
 
 ```mermaid
 sequenceDiagram
-    participant U as Caller (ChatService core / CLI / A2A / MCP)
+    participant U as Caller (ChatService core / CLI)
     participant SVC as AgentService
     participant R as Runtime
     participant PH as PreHooks
@@ -266,8 +266,8 @@ sequenceDiagram
 
 - Each `StreamChunk` carries `delta`, `event`, `done`, `error`, and `session_id` fields. `delta` is populated only when `event` is a `TextDelta`; every other event type (message/step boundaries, tool calls, reasoning) is carried in `event` alone.
 - Post-hooks see **every** event via `on_stream_event()` — tool arguments and results included — and can rewrite one in place, return `None` to drop it, or return a list to emit several in its place. Raising `StreamHalt` ends the run.
-- Delivery depends on the surface: the REST API serves chunks as **Server-Sent Events** (`text/event-stream`); AWS serverless and AWS ECS containerized WebSocket modes push each chunk as a separate `STREAM_CHUNK` WebSocket message (optionally through SQS queues).
-- OpenAI Agents SDK, LangGraph, and Google ADK stream natively; CrewAI and Smolagents declare `supports_streaming = False` and do not support token streaming (their runners raise `NotImplementedError` in stream mode).
+- Delivery depends on the mode: `rest_sync` serves chunks as **Server-Sent Events** (`text/event-stream`) on the REST API; `async` pushes each chunk as a separate `STREAM_CHUNK` WebSocket message on AWS serverless and AWS ECS containerized (optionally through SQS queues).
+- OpenAI Agents SDK, LangGraph, and Google ADK stream natively; CrewAI and Smolagents declare `supports_streaming = False` and do not support token streaming (their runners raise `NotImplementedError` with `execution.message_type: delta`).
 
 See [Execution Flow](./execution-flow) for the full request lifecycle including the queue-based and WebSocket paths.
 
@@ -370,10 +370,12 @@ graph TB
 
 The activation rule: a bare `RESTAPI.run()` (no explicit handlers) runs the pipeline; surfaces
 constructed with explicit handlers (the thread handler, messaging integrations, custom handlers)
-and the `AgentService` clients (CLI, A2A, MCP) keep their direct execution paths. The client
+and the `AgentService` client (the CLI) keep their direct execution paths. A2A and MCP always run
+through the pipeline: with A2A or agent-exposing MCP enabled, an entry point that starts no agent
+runner refuses to start. The client
 receives the reply either by **polling** the response store (`rest_sync` waits server-side,
-`rest_async` polls with a `request_id`), by **SSE** (`stream` on the REST surface), or by
-**WebSocket push** (`async`/`stream` on AWS today).
+`rest_async` polls with a `request_id`), by **SSE** (`rest_sync` with `message_type: delta` on the REST
+surface), or by **WebSocket push** (`async`, with `message_type` `complete` or `delta`, on AWS today).
 
 This decouples request ingestion from agent execution so each scales, fails, and recovers on its
 own terms.

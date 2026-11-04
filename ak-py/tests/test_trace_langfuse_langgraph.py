@@ -128,3 +128,50 @@ class TestLangFuseLangGraphRunOptions:
         kwargs = agent.agent.ainvoke.call_args.kwargs
         assert kwargs["config"]["callbacks"] == [runner._callback_handler, mine]
         assert kwargs["config"]["recursion_limit"] == 9
+
+
+class TestAResumedRunIsTracedToo:
+    """
+    The handler used to attach only where messages were built, so a resume ran untraced.
+
+    That is the worst half to lose: everything before the pause is the model deciding to ask, and
+    everything after it is the gated tool actually running.
+    """
+
+    def test_the_resume_config_carries_the_callback_handler(self):
+        from agentkernel.core.base import Session as AKSession
+
+        runner = LangFuseLangGraph(client=MagicMock())
+        agent = MagicMock()
+        agent.agent = MagicMock()
+
+        config = runner._resume_config(agent, AKSession("s"))
+
+        assert config["callbacks"] == [runner._callback_handler]
+
+    def test_an_ordinary_turn_still_carries_it(self):
+        """The seam moved; the behaviour it already had must not have."""
+        from agentkernel.core.base import Session as AKSession
+
+        runner = LangFuseLangGraph(client=MagicMock())
+        agent = MagicMock()
+        agent.agent = MagicMock()
+        agent._system_prompt = ""
+
+        config, _ = runner._prepare_session_and_messages(agent, AKSession("s"), "hi")
+
+        assert config["callbacks"] == [runner._callback_handler]
+
+    def test_both_paths_address_the_same_thread(self):
+        from agentkernel.core.base import Session as AKSession
+
+        runner = LangFuseLangGraph(client=MagicMock())
+        agent = MagicMock()
+        agent.agent = MagicMock()
+        agent._system_prompt = ""
+        session = AKSession("s-1")
+
+        resumed = runner._resume_config(agent, session)
+        ordinary, _ = runner._prepare_session_and_messages(agent, session, "hi")
+
+        assert resumed["configurable"]["thread_id"] == ordinary["configurable"]["thread_id"] == "s-1"

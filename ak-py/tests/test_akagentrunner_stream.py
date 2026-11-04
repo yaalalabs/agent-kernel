@@ -98,7 +98,7 @@ def test_send_chunk_to_output_queue_calls_sqs_with_correct_attributes():
 def test_process_message_streams_chunks_to_output_queue():
     record = _make_record({"prompt": "hello", "session_id": "s1"})
 
-    def _mock_process_stream_sync(req, sse_format=False):
+    def _mock_process_stream_sync(req, sse_format=False, requests=None):
         yield json.dumps({"delta": "Hello", "done": False, "session_id": "s1"})
         yield json.dumps({"delta": " world", "done": False, "session_id": "s1"})
         yield json.dumps({"done": True, "session_id": "s1"})
@@ -123,7 +123,7 @@ def test_process_message_retry_does_not_reuse_prior_attempt_dedup_ids():
     retry_record = _make_record({"prompt": "hello", "session_id": "s1"})
     retry_record["attributes"]["ApproximateReceiveCount"] = "2"
 
-    def _mock_process_stream_sync(req, sse_format=False):
+    def _mock_process_stream_sync(req, sse_format=False, requests=None):
         yield json.dumps({"delta": "Hello", "done": False, "session_id": "s1"})
 
     mock_chat_service = MagicMock()

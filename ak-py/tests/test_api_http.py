@@ -398,7 +398,11 @@ class TestRESTAPIIntegration:
 
 
 class TestResponseBuilderStructuredResult:
-    """Tests for ResponseBuilder handling of structured (AgentReplyAny) results."""
+    """ResponseBuilder's one gate: the object form is reached only by a reply carrying a media type.
+
+    The unlabelled assertions below are the back-compat guarantee — they must keep passing
+    byte-for-byte, because no adapter sets a media type and nothing else in the framework does.
+    """
 
     def test_structured_result_serialized_as_json_string(self):
         import json
@@ -419,6 +423,54 @@ class TestResponseBuilderStructuredResult:
         response = ResponseBuilder.build_response(200, "session-1", rest_api_mode=True, result=AgentReplyText(response="hello"))
 
         assert response["result"] == "hello"
+
+    def test_labelled_structured_result_carries_the_object(self):
+        from agentkernel.core.chat_service import ResponseBuilder
+        from agentkernel.core.model import AgentReplyAny
+
+        content = {"version": "v1.0", "createSurface": {"surfaceId": "s1"}}
+        reply = AgentReplyAny(content=content, media_type="application/a2ui+json")
+
+        response = ResponseBuilder.build_response(200, "session-1", rest_api_mode=True, result=reply)
+
+        assert response["result"] == content
+        assert response["media_type"] == "application/a2ui+json"
+        assert response["session_id"] == "session-1"
+
+    def test_labelled_list_content_carries_the_array(self):
+        from agentkernel.core.chat_service import ResponseBuilder
+        from agentkernel.core.model import AgentReplyAny
+
+        content = [{"createSurface": {"surfaceId": "s1"}}, {"updateComponents": {}}]
+        reply = AgentReplyAny(content=content, media_type="application/a2ui+json")
+
+        response = ResponseBuilder.build_response(200, "session-1", rest_api_mode=True, result=reply)
+
+        assert response["result"] == content
+
+    def test_unlabelled_replies_never_carry_a_media_type(self):
+        """The gate, from the other side: nothing without a media type gains the key."""
+        from agentkernel.core.chat_service import ResponseBuilder
+        from agentkernel.core.model import AgentReplyAny, AgentReplyImage, AgentReplyText
+
+        unlabelled = [
+            AgentReplyAny(content={"a": 1}),
+            AgentReplyText(response="hello"),
+            AgentReplyImage(response="here", image_data="x", name="i.png", mime_type="image/png"),
+            object(),
+        ]
+
+        for result in unlabelled:
+            response = ResponseBuilder.build_response(200, "session-1", rest_api_mode=True, result=result)
+            assert "media_type" not in response
+            assert isinstance(response["result"], str)
+
+    def test_non_reply_result_keeps_its_fallback(self):
+        from agentkernel.core.chat_service import ResponseBuilder
+
+        response = ResponseBuilder.build_response(200, "session-1", rest_api_mode=True, result=object())
+
+        assert response["result"] == "Non textual result received"
 
 
 class TestPipelineDelegation:
@@ -541,3 +593,104 @@ class TestPipelineOnlyHandlerRefusal:
         with patch("agentkernel.api.http.uvicorn.run") as mock_uvicorn:
             RESTAPI.run(handlers=[handler])
         mock_uvicorn.assert_called_once()
+
+
+class TestUnqueuedProtocolRefusal:
+    """A2A and agent MCP run agents on the pipeline's runner (#780): every entry point that starts no
+    runner refuses them at startup instead of letting each call wait out its budget."""
+
+    @staticmethod
+    def _config(a2a=False, mcp=False, expose_agents=False) -> Mock:
+        config = Mock()
+        config.api.host = "localhost"
+        config.api.port = 8000
+        config.a2a.enabled = a2a
+        config.mcp.enabled = mcp
+        config.mcp.expose_agents = expose_agents
+        return config
+
+    @staticmethod
+    def _handler() -> Mock:
+        handler = Mock()
+        handler.get_router.return_value = APIRouter()
+        handler.requires_pipeline = False
+        return handler
+
+    @pytest.mark.parametrize(
+        "flags, surfaces",
+        [
+            ({}, []),
+            ({"a2a": True}, ["A2A"]),
+            ({"mcp": True}, []),
+            ({"mcp": True, "expose_agents": True}, ["MCP"]),
+            ({"expose_agents": True}, []),
+            ({"a2a": True, "mcp": True, "expose_agents": True}, ["A2A", "MCP"]),
+        ],
+    )
+    def test_agent_protocol_surfaces(self, flags, surfaces):
+        assert RESTAPI.agent_protocol_surfaces(self._config(**flags)) == surfaces
+
+    @pytest.mark.parametrize("flags, named", [({"a2a": True}, "A2A"), ({"mcp": True, "expose_agents": True}, "MCP")])
+    def test_explicit_handlers_are_refused(self, monkeypatch, flags, named):
+        monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "in_memory"))
+
+        with patch("agentkernel.api.http.AKConfig") as config_class, patch("agentkernel.api.http.uvicorn.run") as mock_uvicorn:
+            config_class.get.return_value = self._config(**flags)
+            with pytest.raises(AKConfigError) as excinfo:
+                RESTAPI.run(handlers=[self._handler()])
+
+        assert named in str(excinfo.value)
+        assert "IOHandler.run(handlers=[...])" in str(excinfo.value)
+        mock_uvicorn.assert_not_called()
+
+    def test_a_broker_transport_is_refused(self, monkeypatch):
+        monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "sqs"))
+        monkeypatch.setattr(RESTAPI, "get_default_handlers", classmethod(lambda cls: [self._handler()]))
+
+        with patch("agentkernel.api.http.AKConfig") as config_class, patch("agentkernel.api.http.uvicorn.run") as mock_uvicorn:
+            config_class.get.return_value = self._config(a2a=True)
+            with pytest.raises(AKConfigError, match="A2A"):
+                RESTAPI.run()
+
+        mock_uvicorn.assert_not_called()
+
+    def test_a_subclass_is_refused(self, monkeypatch):
+        """AWSRestAPI and AWSWebsocketAPI inherit run and never reach the in_memory hand-off."""
+        monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "in_memory"))
+        handler = self._handler()
+
+        class _SubAPI(RESTAPI):
+            @classmethod
+            def get_default_handlers(cls):
+                return [handler]
+
+        with patch("agentkernel.api.http.AKConfig") as config_class, patch("agentkernel.api.http.uvicorn.run") as mock_uvicorn:
+            config_class.get.return_value = self._config(a2a=True)
+            with pytest.raises(AKConfigError, match="A2A"):
+                _SubAPI.run()
+
+        mock_uvicorn.assert_not_called()
+
+    def test_mcp_serving_only_app_tools_is_still_served(self, monkeypatch):
+        monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "sqs"))
+        monkeypatch.setattr(RESTAPI, "build_app", classmethod(lambda cls, handlers=None: "app"))
+
+        with patch("agentkernel.api.http.AKConfig") as config_class, patch("agentkernel.api.http.uvicorn.run") as mock_uvicorn:
+            config_class.get.return_value = self._config(mcp=True)
+            RESTAPI.run(handlers=[self._handler()])
+
+        assert mock_uvicorn.call_args.kwargs["app"] == "app"
+
+    def test_a_plain_run_on_in_memory_still_hands_off_to_the_pipeline(self, monkeypatch):
+        from agentkernel.pipeline.io_handler import IOHandler
+
+        called = {}
+        monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "in_memory"))
+        monkeypatch.setattr(IOHandler, "run", classmethod(lambda cls, auth_validator=None: called.setdefault("delegated", True)))
+
+        with patch("agentkernel.api.http.AKConfig") as config_class, patch("agentkernel.api.http.uvicorn.run") as mock_uvicorn:
+            config_class.get.return_value = self._config(a2a=True, mcp=True, expose_agents=True)
+            RESTAPI.run()
+
+        assert called == {"delegated": True}
+        mock_uvicorn.assert_not_called()

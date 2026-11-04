@@ -34,9 +34,13 @@ locals {
     var.ssm_enabled ? {
       AK_SECRET__PREFIX = var.prefix
     } : {},
-    # WebSocket modes: full response (async) vs one chunk per stream event (stream).
-    contains(["async", "stream"], var.execution_mode) ? {
+    # WebSocket mode (async) pushes replies over the connection. Realtime: the runner
+    # dispatches to the realtime runner, which forwards audio to the model sockets.
+    contains(["async", "realtime"], var.execution_mode) ? {
       AK_EXECUTION__MODE = var.execution_mode
+    } : {},
+    var.message_type != null ? {
+      AK_EXECUTION__MESSAGE_TYPE = var.message_type
     } : {}
   )
 }

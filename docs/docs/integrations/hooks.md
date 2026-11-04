@@ -209,7 +209,7 @@ See [examples/api/openai_structured](https://github.com/yaalalabs/agent-kernel/t
 
 ### Streaming Hooks (`on_stream_event`)
 
-When the application runs in streaming mode (`execution.mode: stream`), or over the AG-UI surface, the agent reply arrives as a sequence of typed **events** rather than one final reply. Post-execution hooks see every one of them — message and reasoning text, tool call names, arguments and results, and the boundaries that pair them — by overriding `on_stream_event`.
+When the application streams replies (`execution.message_type: delta`), or over the AG-UI surface, the agent reply arrives as a sequence of typed **events** rather than one final reply. Post-execution hooks see every one of them — message and reasoning text, tool call names, arguments and results, and the boundaries that pair them — by overriding `on_stream_event`.
 
 The cheapest useful case needs no bookkeeping at all. A tool's return value arrives whole, in one event, on every adapter:
 
@@ -428,13 +428,19 @@ SDK's `RunHooks`, LangChain callbacks, ADK plugins, Pydantic AI's `event_stream_
 OpenAIModule([agent]).run_options(agent, hooks=ProgressHooks(), max_turns=25).post_hook(agent, [DisclaimerHook()])
 ```
 
+Some frameworks take their lifecycle hooks on the agent itself instead: Microsoft Agent Framework's
+chat, function and agent middleware (the `middleware=` argument of `Agent`), and smolagents'
+`step_callbacks`. Those need nothing from Agent Kernel, and `run_options` is for the run-time arguments
+beside them (MAF's `options` and `function_invocation_kwargs`; see
+[`examples/cli/maf-run-options`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/maf-run-options)).
+
 A native hook's callbacks run inside the Agent Kernel run, so `Session.current()` resolves in them and
 a post-hook can read what they recorded in the session's volatile cache before it is cleared. Two
 paths report progress:
 
 | Path | Mode | What you see |
 |------|------|--------------|
-| `PostHook.on_stream_event` (below) | `execution.mode: stream` only | framework-agnostic `StreamEvent`s for what the adapter maps |
+| `PostHook.on_stream_event` (below) | `execution.message_type: delta` only (and AG-UI) | framework-agnostic `StreamEvent`s for what the adapter maps |
 | native hooks through `run_options` | any mode, including `rest_sync` | the framework's full lifecycle, in its own types |
 
 ### Hook Execution Order

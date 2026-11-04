@@ -2,7 +2,6 @@ import queue
 import threading
 from typing import Any, ClassVar, Dict, Generator, Optional
 
-from ...core.config import AKConfig
 from .base import ResponseStore
 
 
@@ -13,7 +12,7 @@ class InMemoryResponseStore(ResponseStore):
     handler and the response handler share it across instances. ``get_message`` returns
     ``record["body"]``, matching the Redis/Valkey/DynamoDB stores' contract; ``get_record``
     additionally exposes the full record (``status_code`` included) for the pipeline request
-    handler. ``add_chunk``/``stream`` carry STREAM-mode chunks to the local SSE generator.
+    handler. ``add_chunk``/``stream`` carry delta-reply chunks to the local SSE generator.
 
     Not durable and not shared across processes: multi-process queue modes must use a shared
     backend (enforced at IOHandler startup). Records are expected to be consumed with
@@ -25,6 +24,11 @@ class InMemoryResponseStore(ResponseStore):
     _chunks: ClassVar[Dict[str, "queue.Queue[dict]"]] = {}
     # Sentinel put by close_stream to unblock and terminate a pending stream() consumer.
     _CLOSE_SENTINEL: ClassVar[Dict[str, Any]] = {}
+
+    @property
+    def shared(self) -> bool:
+        # Class-level state: another process gets its own copy of every dict above.
+        return False
 
     def supports_chunk_streaming(self) -> bool:
         return True
@@ -63,7 +67,7 @@ class InMemoryResponseStore(ResponseStore):
             self._chunks.pop(request_id, None)
 
     def add_chunk(self, request_id: str, chunk: Dict[str, Any]) -> None:
-        """Append one STREAM-mode chunk for the request (consumed by ``stream``)."""
+        """Append one delta-reply chunk for the request (consumed by ``stream``)."""
         with self._lock:
             chunk_queue = self._chunks.setdefault(request_id, queue.Queue())
         chunk_queue.put(chunk)
@@ -75,12 +79,7 @@ class InMemoryResponseStore(ResponseStore):
             store's ``retry_count * delay`` budget.
         :raises TimeoutError: When no chunk arrives within ``chunk_timeout``.
         """
-        if chunk_timeout is None:
-            response_store_config = AKConfig.get().execution.response_store
-            if response_store_config is not None:
-                chunk_timeout = response_store_config.retry_count * response_store_config.delay
-            else:
-                chunk_timeout = 60.0  # matches the request handler's default local wait budget (60 x 1s)
+        chunk_timeout = self._chunk_timeout(chunk_timeout)
         with self._lock:
             chunk_queue = self._chunks.setdefault(request_id, queue.Queue())
         try:

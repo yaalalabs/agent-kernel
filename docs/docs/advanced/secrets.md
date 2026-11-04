@@ -7,8 +7,8 @@ sidebar_position: 7
 Agent Kernel can **resolve secrets (API keys, passwords, tokens) from the environment, falling back to
 a managed store**. Application code asks `SecretManager` for a key by the same name the SDKs already read
 from the environment — `OPENAI_API_KEY`, `NEO4J_PASSWORD` — and the configured provider supplies it. The
-same code reads the key from an environment variable on a laptop and from AWS SSM Parameter Store in
-production, with only `config.yaml` changing.
+same code reads the key from an environment variable on a laptop, from AWS SSM Parameter Store on AWS, and from Kubernetes Secrets
+mounted into the pod on Kubernetes, with only `config.yaml` changing.
 
 ```python
 from agentkernel.secret import SecretManager
@@ -24,7 +24,7 @@ set_default_openai_key(SecretManager.current().get("OPENAI_API_KEY"))
 | **Enablement** | Always available. The default `env` provider costs nothing; selecting another `secret.provider.type` is the only opt-in, so there is no `enabled` flag. |
 | **Keys** | Environment-variable-style names matching `^[A-Z][A-Z0-9_]*$`. A malformed key raises `ValueError`. |
 | **Resolution order** | Fixed: process environment → process cache → configured provider. First hit wins. |
-| **Provider** | Where values live — `env` (the environment only) or `aws_ssm` (AWS SSM Parameter Store), or a dotted path to your own `SecretProvider`. |
+| **Provider** | Where values live — `env` (the environment only), `aws_ssm` (AWS SSM Parameter Store) or `kubernetes` (Kubernetes Secrets mounted as files), or a dotted path to your own `SecretProvider`. |
 | **Cache** | Provider hits are cached in-process for `cache_ttl` seconds (default `300`, `0` disables). |
 | **Environment** | Never written. A resolved value is returned to the caller and held in the cache only — hand it to the SDK explicitly. |
 
@@ -40,9 +40,11 @@ set_default_openai_key(SecretManager.current().get("OPENAI_API_KEY"))
 
 ```yaml
 secret:
-  prefix: ""          # deployment scope; required by aws_ssm, ignored by env
+  prefix: ""          # deployment scope; required by aws_ssm, ignored by env and kubernetes
   provider:
-    type: env         # env | aws_ssm, or a dotted path to a SecretProvider subclass
+    type: env         # env | aws_ssm | kubernetes, or a dotted path to a SecretProvider subclass
+    kubernetes:
+      mount_path: /var/run/secrets/agentkernel   # read only by the kubernetes provider
   cache_ttl: 300      # seconds a provider hit is served from the cache; 0 disables caching
 ```
 
@@ -50,6 +52,7 @@ secret:
 | --- | --- | --- | --- |
 | `secret.prefix` | `AK_SECRET__PREFIX` | `""` | Deployment scope providers namespace secrets under, e.g. `myproduct-dev-agents`. Injected by the AWS Terraform modules when `ssm_enabled = true`. |
 | `secret.provider.type` | `AK_SECRET__PROVIDER__TYPE` | `env` | Backend secret values are read from. |
+| `secret.provider.kubernetes.mount_path` | `AK_SECRET__PROVIDER__KUBERNETES__MOUNT_PATH` | `/var/run/secrets/agentkernel` | Absolute directory the Kubernetes Secrets are mounted under, one subdirectory per Secret. Read only by the `kubernetes` provider. |
 | `secret.cache_ttl` | `AK_SECRET__CACHE_TTL` | `300` | Cache lifetime in seconds (≥ 0). This is the rotation-pickup window for values read per call. |
 
 ## API
@@ -115,6 +118,79 @@ aws ssm put-parameter --name "/ak/<prefix>/openai_api_key" \
     --type SecureString --value "$OPENAI_API_KEY" --overwrite
 ```
 
+### `kubernetes` — Kubernetes Secrets mounted into the pod
+
+```yaml
+secret:
+  provider:
+    type: kubernetes
+```
+
+Reads one file per key from Kubernetes Secrets that are **mounted into the pod as volumes**. It never calls
+the Kubernetes API, so it needs no RBAC, no ServiceAccount and no extra (`pip install` nothing: it uses the
+standard library only).
+
+- **Layout:** each Secret is its own volume at `<mount_path>/<secret-name>/`, one file per data key —
+  `/var/run/secrets/agentkernel/openai-credentials/OPENAI_API_KEY`. A key file directly under `mount_path`
+  is also read.
+- **Lookup:** the key `OPENAI_API_KEY` is read from the one file of that name across all mounted Secrets, so
+  application code does not say which Secret holds it. The same key in **two** places raises `SecretError`
+  naming both paths (never the values). An empty file is a miss. Only one directory level is searched, and
+  entries starting with `.` (the kubelet's `..data` bookkeeping) are skipped.
+- **Environment first:** a set, non-empty environment variable still wins, so an `OPENAI_API_KEY` injected
+  with an `extraEnv` `secretKeyRef` is used and the mount is not read.
+- **Symlinks** are followed, since the kubelet builds the mount from them, but a matching file that resolves
+  outside `mount_path` (a symlinked directory or file pointing elsewhere) raises `SecretError` instead of being
+  read. A permission error on `mount_path` or on a Secret directory is also a `SecretError`, not a miss.
+- **Key compatibility:** data keys must be named exactly like the AK key, i.e. match `^[A-Z][A-Z0-9_]*$`. A
+  differently named data key (for example `api-key`) is silently unreachable; there is no remapping. Create
+  compatible keys with `kubectl create secret generic openai-credentials --from-literal=OPENAI_API_KEY=...`
+  or `--from-env-file=.env`, or with an External Secrets Operator `target.template.data` that renames the
+  remote keys.
+- **Missing mount:** a `mount_path` that does not exist or is not a directory raises `SecretError` on the first
+  read, **even with `default=`**. Construction does no I/O, so a pod with the provider configured but nothing
+  mounted still starts as long as the environment variable supplies the key.
+- **`mount_path`:** the Helm chart mounts under the default, so set it only for Secrets mounted another way —
+  for example the Secrets Store CSI driver, or Docker / Compose secrets (`/run/secrets`).
+
+#### Mounting with the Helm chart
+
+The `ak-deployment/ak-k8s` chart's `secretStore` creates the volumes. List Secrets that already exist in the
+release namespace:
+
+```yaml
+secretStore:
+  enabled: true
+  secrets:
+    - name: openai-credentials
+    - name: slack-credentials
+```
+
+Each listed Secret becomes a `secret` volume (`ak-secret-<index>`, `optional: false`) mounted read-only and
+whole at `/var/run/secrets/agentkernel/<name>`. A listed Secret that does not exist leaves the pod in
+`ContainerCreating` with a `FailedMount` event. To add a Secret, create it, add it to `secretStore.secrets`
+and roll out; a new key in an already-listed Secret needs no values change.
+
+- **Placement:** only the tier that executes agents gets the mounts — `agent-runner`, or `io-handler` in the
+  single-process profile (`agentRunner.enabled: false` and `transport.type: in_memory`). The `ws-gateway` and
+  `sandbox-worker` never mount. `secretStore.enabled` with no agent-executing tier, an empty list, a duplicate
+  name or an entry without a string name fails `helm template` / `install`.
+- **No subPath:** the chart never uses `items`, `subPath` or `defaultMode`. Whole-Secret mounts are what let
+  new keys and rotated values reach the pod.
+- **Rotation:** the kubelet refreshes mounted Secret files after a short delay. Values read per call are
+  picked up once that delay and `cache_ttl` have passed, or immediately after `invalidate(key)`. Values handed
+  to an SDK once at startup (`set_default_openai_key`) need `kubectl rollout restart deployment/<runner>`.
+
+**Security:** every key of every listed Secret is readable by any code running in the agent-executing
+container, including code run by a `local_subprocess` sandbox. List only the Secrets the agents need, keep
+unrelated keys out of them, and use an isolated sandbox provider for untrusted code.
+
+#### Local development
+
+Export the key (the environment wins), or set `AK_SECRET__PROVIDER__KUBERNETES__MOUNT_PATH` to a local
+directory laid out as `<dir>/<secret-name>/<KEY>` or flat `<dir>/<KEY>`. A missing directory is a
+`SecretError` even with `default=`, so keep `env` in a local config when neither applies.
+
 ### Custom providers
 
 Set `secret.provider.type` to a dotted path to a `SecretProvider` subclass:
@@ -170,6 +246,8 @@ Overwrite the parameter with `aws ssm put-parameter ... --overwrite`.
 
 - [`examples/cli/openai-secret`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/openai-secret)
   — the `env` provider locally, with a required model key and an optional tool key.
+- [`examples/k8s/openai-queue-mode`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/k8s/openai-queue-mode)
+  — the OpenAI key read from a mounted Kubernetes Secret by the agent runner.
 - [`examples/aws-serverless/openai`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/openai)
   — the OpenAI key read from SSM on Lambda.
 - [`examples/aws-containerized/openai-dynamodb-scalable`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/openai-dynamodb-scalable)

@@ -1,3 +1,4 @@
+import os
 import threading
 import time
 
@@ -6,7 +7,15 @@ from pydantic import ValidationError
 
 from agentkernel.core.config import AKConfig, _SecretConfig
 from agentkernel.core.util.factory import AKConfigError
-from agentkernel.secret import EnvSecretProvider, SecretCache, SecretError, SecretManager, SecretNotFoundError, SecretProvider
+from agentkernel.secret import (
+    EnvSecretProvider,
+    KubernetesSecretProvider,
+    SecretCache,
+    SecretError,
+    SecretManager,
+    SecretNotFoundError,
+    SecretProvider,
+)
 from agentkernel.secret import cache as cache_module
 
 KEY = "OPENAI_API_KEY"
@@ -170,6 +179,21 @@ def test_environment_only_under_env_provider(monkeypatch):
     assert manager._cache._entries == {}
 
 
+def test_environment_wins_over_kubernetes_provider_without_listing_the_mount(monkeypatch, tmp_path):
+    secret_file = tmp_path / "openai-credentials" / KEY
+    secret_file.parent.mkdir()
+    secret_file.write_text("from-file")
+    scans = []
+    real_scandir = os.scandir
+    monkeypatch.setattr(os, "scandir", lambda *args, **kwargs: scans.append(args) or real_scandir(*args, **kwargs))
+    manager = SecretManager(provider=KubernetesSecretProvider(str(tmp_path)))
+
+    monkeypatch.setenv(KEY, "from-env")
+
+    assert manager.get(KEY) == "from-env"
+    assert scans == []
+
+
 # -- misses, defaults, failures ------------------------------------------------------------
 
 
@@ -204,6 +228,13 @@ def test_default_none_returns_none_rather_than_raising(manager):
 
 def test_provider_failure_is_not_masked_by_default():
     manager = SecretManager(provider=_FailingSecretProvider())
+    with pytest.raises(SecretError):
+        manager.get(KEY, default="x")
+    assert manager._cache._entries == {}
+
+
+def test_kubernetes_missing_mount_path_is_not_masked_by_default(tmp_path):
+    manager = SecretManager(provider=KubernetesSecretProvider(str(tmp_path / "absent")))
     with pytest.raises(SecretError):
         manager.get(KEY, default="x")
     assert manager._cache._entries == {}

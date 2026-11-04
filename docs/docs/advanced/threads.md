@@ -43,7 +43,7 @@ sequenceDiagram
 - **Pluggable storage**: in-memory, Redis, Valkey, DynamoDB, Firestore, or Cosmos DB.
 - **Optional, pluggable authorization**: you supply an `Authoriser` that validates a Bearer token against
   *your* authentication provider; Agent Kernel never authenticates users itself.
-- **Streaming included**: with `execution.mode: stream`, the user message is recorded before the stream
+- **Streaming included**: with `execution.message_type: delta`, the user message is recorded before the stream
   starts and the assistant message is assembled from the streamed deltas on completion.
 
 :::caution Platform scope
@@ -90,6 +90,13 @@ fails fast at startup):
 thread:
   type: in_memory     # in_memory | redis | valkey | dynamodb | firestore | cosmosdb
 ```
+
+:::caution Custom thread stores
+A message's `content` is a JSON object, not a string, when the reply was labelled (see
+[A2UI](a2ui.md)). Every built-in backend serialises the whole `ThreadMessage` as one blob and is
+unaffected, but a bring-your-own `ThreadStore` that writes `message.content` into a typed text
+column must be updated to accept an object.
+:::
 
 ## Chat Request Fields
 

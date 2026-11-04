@@ -1,7 +1,7 @@
 {
   "skill": "ak-add-capabilities",
   "description": "Evaluations for the ak-add-capabilities (guardrails, tracing, sessions, knowledge base, MCP, A2A, AG-UI, hooks, multimodal, conversation threads, scheduled tasks, sandbox) skill",
-  "version": "0.9.3",
+  "version": "0.9.5",
   "evals": [
     {
       "id": "cap-guardrail-openai",
@@ -85,6 +85,36 @@
       "must_not_contain": [
         "type: langfuse",
         "type: openllmetry"
+      ]
+    },
+    {
+      "id": "cap-tracing-cloudwatch",
+      "name": "Add AWS CloudWatch tracing",
+      "input": "Add AWS CloudWatch tracing to my project",
+      "expected_outputs": [
+        "trace:",
+        "type: cloudwatch",
+        "enabled: true",
+        "AWS_REGION",
+        "AWSXrayWriteOnlyAccess",
+        "agentkernel[",
+        "cloudwatch"
+      ],
+      "must_not_contain": [
+        "type: langfuse",
+        "type: logfire"
+      ]
+    },
+    {
+      "id": "cap-tracing-fetch",
+      "name": "Fetch recorded spans back",
+      "input": "Fetch the tool-call spans my agent recorded in the last 6 hours so I can evaluate them",
+      "expected_outputs": [
+        "Trace.get().fetch_spans(",
+        "from agentkernel.trace import",
+        "SpanKind.TOOL",
+        "last=timedelta(",
+        "FetchedSpan"
       ]
     },
     {
@@ -194,7 +224,7 @@
         "agents:",
         "agentkernel[",
         "a2a",
-        ".well-known/agent.json"
+        ".well-known/agent-card.json"
       ]
     },
     {
@@ -210,6 +240,20 @@
       ],
       "must_not_contain": [
         "type: bedrock"
+      ]
+    },
+    {
+      "id": "cap-agui-queue",
+      "name": "Run AG-UI on the queue pipeline",
+      "input": "My AG-UI agent holds a web connection for the whole run. Move the run off the web tier.",
+      "expected_outputs": [
+        "AGUIPipelineRequestHandler",
+        "IOHandler",
+        "response_store",
+        "session"
+      ],
+      "must_not_contain": [
+        "RESTAPI.run"
       ]
     },
     {
@@ -425,6 +469,20 @@
       ]
     },
     {
+      "id": "cap-sandbox-package-install",
+      "name": "Permit package installs in a docker sandbox",
+      "input": "Let my agent pip install Python packages in its docker sandbox",
+      "expected_outputs": [
+        "sandbox:",
+        "type: docker",
+        "package_install:",
+        "ecosystems:"
+      ],
+      "must_not_contain": [
+        "environment: attached"
+      ]
+    },
+    {
       "id": "cap-schedule-basic",
       "name": "Add scheduling capability",
       "input": "Add scheduling support so my agent can defer chats and schedule follow-up work",
@@ -435,6 +493,39 @@
         "store:",
         "type: in_memory",
         "create_schedule"
+      ]
+    },
+    {
+      "id": "cap-hitl-basic",
+      "name": "Add human-in-the-loop approval",
+      "input": "I want a person to approve the refund tool before my OpenAI agent runs it",
+      "expected_outputs": [
+        "needs_approval=True",
+        "resume",
+        "status",
+        "approved",
+        "PAUSED"
+      ]
+    },
+    {
+      "id": "cap-hitl-pydantic-output-type",
+      "name": "Human in the loop on Pydantic AI needs DeferredToolRequests",
+      "input": "Make my Pydantic AI agent pause to ask the customer a question before it finishes",
+      "expected_outputs": [
+        "DeferredToolRequests",
+        "output_type",
+        "CallDeferred"
+      ]
+    },
+    {
+      "id": "cap-hitl-durability",
+      "name": "A durable pause needs a shared session backend",
+      "input": "My agent pauses for approval but the decision never finds the run on my second replica",
+      "expected_outputs": [
+        "session:",
+        "type:",
+        "redis",
+        "in_memory"
       ]
     },
     {

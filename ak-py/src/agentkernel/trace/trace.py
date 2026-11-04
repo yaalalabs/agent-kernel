@@ -4,8 +4,9 @@ from ..core import Runner
 from ..core.config import AKConfig
 from ..core.util.factory import AKConfigError, require_extra, resolve_dotted
 from .base import BaseTrace
+from .fetch import FetchedSpan, FetchedTrace, TraceQuery
 
-_BUILTIN_TRACERS = ["langfuse", "openllmetry", "logfire"]
+_BUILTIN_TRACERS = ["langfuse", "openllmetry", "logfire", "cloudwatch"]
 
 
 class Trace(BaseTrace):
@@ -53,6 +54,11 @@ class Trace(BaseTrace):
                 from .logfire.logfire import Logfire
 
             return Logfire()
+        if trace_type == "cloudwatch":
+            with require_extra("cloudwatch", "trace.type: cloudwatch"):
+                from .cloudwatch.cloudwatch import CloudWatch
+
+            return CloudWatch()
         if "." not in trace_type:
             raise AKConfigError(f"unknown trace type '{trace_type}'; expected one of {_BUILTIN_TRACERS} or a dotted path to a BaseTrace subclass")
         return resolve_dotted(trace_type, base=BaseTrace)()
@@ -111,3 +117,51 @@ class Trace(BaseTrace):
         if self._instance is not None:
             return self._instance.pydanticai()
         return None
+
+    def maf(self) -> Runner | None:
+        """
+        Returns the Microsoft Agent Framework trace runner instance.
+        :return: The configured provider's runner, or None when no provider instance is set.
+        :raises NotImplementedError: If the configured provider does not implement MAF support.
+        """
+        if self._instance is not None:
+            return self._instance.maf()
+        return None
+
+    def fetch_spans(self, query: TraceQuery | None = None, **filters) -> list[FetchedSpan]:
+        """
+        Fetches spans back from the configured tracing provider's cloud, oldest first.
+
+        Pass either a ``TraceQuery`` or its fields as keyword arguments, e.g.
+        ``Trace.get().fetch_spans(last=timedelta(hours=6), kinds=[SpanKind.TOOL])``.
+
+        :param query: The provider-neutral filter.
+        :param filters: ``TraceQuery`` fields, used when ``query`` is not given.
+        :return: The matching spans.
+        :raises ValueError: When both ``query`` and keyword filters are given, so filters are never silently ignored.
+        """
+        if self._instance is None:
+            raise AKConfigError("cannot fetch spans: tracing is disabled (set trace.enabled: true)")
+        if query is not None and filters:
+            raise ValueError("pass either a TraceQuery or keyword filters, not both")
+        return self._instance.fetch_spans(query if query is not None else TraceQuery(**filters))
+
+    def fetch_traces(self, query: TraceQuery | None = None, **filters) -> list[FetchedTrace]:
+        """
+        Fetches whole traces back from the configured tracing provider's cloud, ordered by their first span.
+
+        One pass over the window's spans, grouped by trace id, so a trace at the window's edge can be partial,
+        and a trace whose root is missing comes back with ``root=None``. ``kinds`` and ``name`` select single
+        spans, not traces, so they are rejected; filter ``trace.spans`` instead.
+
+        :param query: The provider-neutral filter.
+        :param filters: ``TraceQuery`` fields, used when ``query`` is not given.
+        :return: The traces, each with its spans oldest first.
+        :raises ValueError: When both ``query`` and keyword filters are given, or ``kinds`` / ``name`` is set.
+        """
+        if query is not None and filters:
+            raise ValueError("pass either a TraceQuery or keyword filters, not both")
+        query = query if query is not None else TraceQuery(**filters)
+        if query.kinds is not None or query.name is not None:
+            raise ValueError("fetch_traces does not take kinds or name; filter the returned trace's spans instead")
+        return FetchedTrace.group(self.fetch_spans(query))

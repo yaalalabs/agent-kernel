@@ -6,6 +6,9 @@ import logging
 from ....core.chat_service import ChatService
 from ....core.config import AKConfig, ExecutionMode
 from ....core.model import BaseRunRequest, StreamChunk
+from ....pipeline.realtime_pool import RealtimeConnectionPool
+from ....pipeline.thread_runner import ThreadRunner
+from ....pipeline.transport.base import QueueTransportFactory
 from ..core.sqs_handler import SQSHandler
 from .core import ECSSQSConsumer
 
@@ -20,7 +23,7 @@ class ECSAgentRunner(ECSSQSConsumer):
     which drives a blocking long-poll loop — meant to be the container's
     main process.
 
-    run() dispatches to ECSStreamAgentRunner when execution.mode is STREAM.
+    run() dispatches to ECSStreamAgentRunner when execution.message_type is delta.
 
     Usage::
 
@@ -99,7 +102,7 @@ class ECSAgentRunner(ECSSQSConsumer):
             "message_deduplication_id": attributes.get("MessageDeduplicationId"),
             "request_id": request_id,
             "user_id": user_id,
-            # Present in WebSocket (ASYNC) mode — the API Gateway endpoint to push the reply back to.
+            # Present in WebSocket (async) mode — the API Gateway endpoint to push the reply back to.
             "endpoint_url": message_attributes.get("endpoint_url"),
         }
 
@@ -108,7 +111,7 @@ class ECSAgentRunner(ECSSQSConsumer):
         # status_code travels to the output consumer so a non-200 reply (e.g. the 202 of a
         # deferred chat) surfaces as that status on the REST surface instead of collapsing to 200.
         custom_attributes = [SQSHandler.CustomAttribute(name="status_code", value=str(status_code), datatype=SQSHandler.AttributeDataType.STRING)]
-        # Forward endpoint_url (ASYNC mode) so the output consumer can push the reply over WebSocket.
+        # Forward endpoint_url (async mode) so the output consumer can push the reply over WebSocket.
         if record_attributes.get("endpoint_url"):
             custom_attributes.append(
                 SQSHandler.CustomAttribute(name="endpoint_url", value=record_attributes["endpoint_url"], datatype=SQSHandler.AttributeDataType.STRING)
@@ -163,16 +166,19 @@ class ECSAgentRunner(ECSSQSConsumer):
 
     @classmethod
     def run(cls) -> None:
-        """Dispatch to ECSStreamAgentRunner when execution.mode is STREAM."""
+        """Dispatch to ECSRealtimeAgentRunner for realtime, or ECSStreamAgentRunner for delta replies."""
         # cls check avoids redirect loops when a subclass (e.g. ECSStreamAgentRunner) calls this via inheritance.
-        if cls is ECSAgentRunner and cls._config.execution.mode == ExecutionMode.STREAM:
-            return ECSStreamAgentRunner.run()
+        if cls is ECSAgentRunner:
+            if cls._config.execution.mode == ExecutionMode.REALTIME:
+                return ECSRealtimeAgentRunner.run()
+            if cls._config.execution.is_delta:
+                return ECSStreamAgentRunner.run()
         return super().run()
 
 
 class ECSStreamAgentRunner(ECSAgentRunner):
     """
-    ECS Agent Runner for STREAM execution mode — polls the Input Queue, runs the agent, and
+    ECS Agent Runner for async + delta — polls the Input Queue, runs the agent, and
     fans out each streamed chunk as its own message on the Output Queue.
 
     The ECS equivalent of ServerlessStreamAgentRunner. Each chunk is sent as a separate SQS
@@ -191,7 +197,7 @@ class ECSStreamAgentRunner(ECSAgentRunner):
     @classmethod
     def _get_record_attributes(cls, raw_queue_message: dict, body: BaseRunRequest | None = None) -> dict:
         """
-        Same as ECSAgentRunner's, except endpoint_url is required — STREAM mode only makes
+        Same as ECSAgentRunner's, except endpoint_url is required — async + delta only makes
         sense pushed over a WebSocket.
 
         :param raw_queue_message: boto3 SQS message dict
@@ -201,7 +207,7 @@ class ECSStreamAgentRunner(ECSAgentRunner):
         """
         attributes = super()._get_record_attributes(raw_queue_message, body)
         if not attributes.get("endpoint_url"):
-            raise ValueError("endpoint_url is required in SQS message attributes for STREAM mode")
+            raise ValueError("endpoint_url is required in SQS message attributes for async + delta")
         return attributes
 
     @classmethod
@@ -233,7 +239,7 @@ class ECSStreamAgentRunner(ECSAgentRunner):
 
     @classmethod
     def process_message(cls, record: dict) -> None:
-        """Implements ECSSQSConsumer.process_message for STREAM mode."""
+        """Implements ECSSQSConsumer.process_message for async + delta."""
         message_id = record.get("MessageId")
         # Included in the dedup suffix below so a retry's chunks never collide with a prior attempt's.
         receive_count = record.get("Attributes", {}).get("ApproximateReceiveCount", "1")
@@ -277,3 +283,50 @@ class ECSStreamAgentRunner(ECSAgentRunner):
             )
         except Exception:
             cls._log.exception("Failed to send permanent-failure stream chunk to output queue")
+
+
+class ECSRealtimeAgentRunner(ECSAgentRunner):
+    """
+    ECS Agent Runner for REALTIME execution mode — polls the Input Queue and forwards
+    audio/text chunks to the RealtimeConnectionPool.
+
+    The ECS equivalent of pipeline.agent_runner.RealtimeAgentRunner.
+    """
+
+    _log = logging.getLogger("ak.ecs.realtimeagentrunner")
+
+    @classmethod
+    def _get_extra_tasks(cls) -> list[ThreadRunner.Task]:
+        pool = RealtimeConnectionPool.initialize()
+        return [pool.get_task()]
+
+    @classmethod
+    def on_permanent_failure(cls, record: dict) -> None:
+        """Tell the room its input failed, as a marked error chunk its edge can deliver. Catches own exceptions."""
+        cls._log.error(f"Permanent failure for message {record.get('MessageId')}")
+        try:
+            record_attributes = cls._get_record_attributes(raw_queue_message=record)
+            attributes = {**SQSHandler.get_message_custom_attributes(record), "request_id": record_attributes["request_id"]}
+            if record_attributes.get("user_id"):
+                attributes["user_id"] = record_attributes["user_id"]
+            dedup_id = record_attributes.get("message_deduplication_id")
+            RealtimeConnectionPool.send_permanent_failure(
+                QueueTransportFactory.create(),
+                attributes,
+                record_attributes["message_group_id"],
+                f"{dedup_id}-error" if dedup_id else None,
+                f"Failed to process message after {cls._config.execution.queues.input.max_receive_count} retries",
+            )
+        except Exception:
+            cls._log.exception("Failed to send permanent-failure error chunk to output queue")
+
+    @classmethod
+    def process_message(cls, record: dict) -> None:
+        receive_count = record.get("Attributes", {}).get("ApproximateReceiveCount", "1")
+        body = BaseRunRequest.model_validate(json.loads(record["Body"]))
+        record_attributes = cls._get_record_attributes(raw_queue_message=record, body=body)
+        request_id = record_attributes["request_id"]
+        RealtimeConnectionPool.initialize().dispatch(
+            body, request_id, record_attributes.get("user_id"), SQSHandler.get_message_custom_attributes(record), cls._get_chat_service()
+        )
+        cls._log.debug(f"[REALTIME CHUNK] request_id={request_id} (receive_count={receive_count})")

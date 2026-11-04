@@ -20,7 +20,7 @@ graph TB
     D --> G[Trace Events]
     E --> G
     F --> G
-    G --> H[Langfuse/OpenLLMetry/Logfire]
+    G --> H[Langfuse/OpenLLMetry/Logfire/CloudWatch]
     
     style G fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
     style H fill:#ff6b35,stroke:#fff,stroke-width:2px,color:#fff
@@ -33,6 +33,7 @@ Agent Kernel supports the following observability platforms:
 - **Langfuse** - Open-source LLM engineering platform for tracing, evaluating, and monitoring AI applications
 - **OpenLLMetry (Traceloop)** - OpenTelemetry-based observability for LLM applications with support for multiple backends
 - **Pydantic Logfire** - OpenTelemetry-based observability from the Pydantic team, with a native OpenAI Agents SDK integration
+- **AWS CloudWatch** - OpenTelemetry traces exported straight to AWS X-Ray, searchable in CloudWatch Transaction Search
 
 ## Getting Started with Langfuse
 
@@ -99,6 +100,10 @@ LANGFUSE_PUBLIC_KEY=pk-lf-...
 LANGFUSE_SECRET_KEY=sk-lf-...
 LANGFUSE_HOST=https://cloud.langfuse.com
 ```
+
+### Running on AWS Lambda
+
+The Langfuse client normally exports in the background, but Lambda freezes the execution environment as soon as an invocation returns, so pending spans would wait for the next invocation or be lost. When `AWS_LAMBDA_FUNCTION_NAME` is set, Agent Kernel therefore flushes the Langfuse client at the end of every agent run, including failed runs. The cost is one export round trip added to each run. Streamed runs are not flushed.
 
 ### Getting Langfuse Credentials
 
@@ -307,6 +312,24 @@ python -c "from traceloop.sdk import Traceloop; Traceloop.init(app_name='test');
 python -c "import logfire; logfire.configure(send_to_logfire='if-token-present'); print('Success')"
 ```
 
+### CloudWatch Issues
+
+**Startup fails with "trace.type: cloudwatch needs an AWS region":** set `AWS_REGION`, or point `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` at a collector or the CloudWatch agent.
+
+**Traces Not Appearing:**
+
+1. **Check Transaction Search**: an `ak.trace.cloudwatch` error `X-Ray in <region> rejected the span export (HTTP 400): The OTLP API is supported with CloudWatch Logs as a Trace Segment Destination...` means it is not enabled in the region named in the message (which is the region exports go to: `AWS_REGION`) — `aws xray get-trace-segment-destination` must report `"Destination": "CloudWatchLogs"` and `"Status": "ACTIVE"`
+2. **Check Permissions**: `X-Ray in <region> rejected the span export (HTTP 403)` means the role lacks `AWSXrayWriteOnlyAccess`
+3. **Check Credentials**: `Exception while exporting Span.` with `NoCredentialsError` means no AWS credentials resolved in the process
+4. **Check Region**: spans land in the region named by `AWS_REGION` (or the endpoint URL), so open the console in that region
+5. **Review Logs**: look for the `ak.trace.cloudwatch` "CloudWatch tracing configured" debug message
+
+**Setup Check:**
+
+```bash
+aws sts get-caller-identity && aws xray get-trace-segment-destination
+```
+
 ### Performance Impact
 
 Tracing adds minimal overhead:
@@ -331,6 +354,7 @@ When tracing is enabled:
 - **Langfuse**: Data sent to Langfuse cloud or self-hosted instance
 - **OpenLLMetry**: Data sent to Traceloop or configured OpenTelemetry backend
 - **Logfire**: Data sent to Logfire when `LOGFIRE_TOKEN` is set; otherwise kept local
+- **CloudWatch**: Data sent to AWS X-Ray and stored in your account's CloudWatch Logs (`aws/spans`), in the region you export to
 - Ensure compliance with your data privacy requirements
 - Consider self-hosting for sensitive data
 
@@ -449,15 +473,275 @@ Without `LOGFIRE_TOKEN`, Logfire runs locally and does **not** ship traces (Agen
 
 ### Framework Coverage
 
-Logfire configures the global OpenTelemetry tracer provider, and each non-streaming agent run (`execution.mode: invoke`) is wrapped in a Logfire span carrying the `session_id`. Streaming runs (`execution.mode: stream`) are not wrapped in a session span — matching the Langfuse and OpenLLMetry runners — though deep instrumentation still emits LLM/tool spans where it is active. Deep (LLM/tool-level) instrumentation depends on the framework:
+Logfire configures the global OpenTelemetry tracer provider, and each non-streaming agent run (`execution.message_type: complete`) is wrapped in a Logfire span carrying the `session_id`. Streaming runs (`execution.message_type: delta`) are not wrapped in a session span — matching the Langfuse and OpenLLMetry runners — though deep instrumentation still emits LLM/tool spans where it is active. Deep (LLM/tool-level) instrumentation depends on the framework:
 
 | Framework | Depth under Logfire |
 |-----------|---------------------|
 | OpenAI Agents SDK | Full — native `logfire.instrument_openai_agents()` |
 | CrewAI | Full — OpenInference CrewAI + LiteLLM instrumentors |
 | Google ADK | Full — OpenInference Google ADK instrumentor |
+| Microsoft Agent Framework | Session span, plus MAF's own OpenTelemetry agent and chat spans (MAF instruments itself; Agent Kernel activates nothing extra) |
 | LangGraph | Session span only |
 | Smolagents | Session span only |
+
+Microsoft Agent Framework's own spans carry **metadata only** by default (operation names, token counts, durations). To include prompts, completions, tool arguments and tool results in them, set MAF's `ENABLE_SENSITIVE_DATA=true`, and only when the backend receiving the spans is secured for that data.
+
+## Getting Started with AWS CloudWatch
+
+[Amazon CloudWatch](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/CloudWatch-Transaction-Search.html) ingests OpenTelemetry traces through AWS X-Ray and makes every span searchable with Transaction Search. Agent Kernel exports spans over OTLP/HTTP straight to the regional X-Ray endpoint, signed with your AWS credentials (SigV4), so no collector or sidecar is needed. That makes it work the same way on AWS Lambda, ECS, EKS, and EC2.
+
+### Installation
+
+```bash
+pip install agentkernel[cloudwatch]
+```
+
+Or with a framework integration:
+
+```bash
+# OpenAI with CloudWatch
+pip install agentkernel[openai,cloudwatch]
+
+# CrewAI with CloudWatch
+pip install agentkernel[crewai,cloudwatch]
+
+# Google ADK with CloudWatch
+pip install agentkernel[adk,cloudwatch]
+```
+
+### Configuration
+
+#### Method 1: Configuration File
+
+```yaml
+trace:
+  enabled: true
+  type: cloudwatch
+```
+
+#### Method 2: Environment Variables
+
+```bash
+export AK_TRACE__ENABLED=true
+export AK_TRACE__TYPE=cloudwatch
+```
+
+### AWS Prerequisites
+
+1. **Enable Transaction Search** once per account and region. In the CloudWatch console, choose **Application Signals → Transaction Search → Enable Transaction Search**. To do it with the AWS CLI instead, follow the [AWS guide](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/Enable-TransactionSearch.html): add a CloudWatch Logs resource policy for `xray.amazonaws.com`, then run `aws xray update-trace-segment-destination --destination CloudWatchLogs`. `aws xray get-trace-segment-destination` reports `"Status": "ACTIVE"` once spans are being ingested, which can take about 10 minutes.
+2. **Grant write access**: attach the AWS managed policy `AWSXrayWriteOnlyAccess` to the identity that runs your agent (the Lambda execution role, ECS task role, or your local profile). Agent Kernel's Terraform modules do not attach it for you.
+3. **Region and credentials**: the region is read only from `AWS_REGION`, and Agent Kernel raises an error if it is not set (`AWS_DEFAULT_REGION` and the profile region are not used). Lambda and ECS set it for you. Credentials can come from environment variables, a profile, SSO, or an instance or task role.
+
+### Export Endpoint
+
+The exporter uses the standard OpenTelemetry environment variables, so no Agent Kernel configuration beyond `trace.type` is needed:
+
+| Setting | Behaviour |
+|---------|-----------|
+| No endpoint variable set | Exports to `https://xray.<region>.amazonaws.com/v1/traces`, SigV4-signed (`amazonaws.com.cn` for `cn-*` regions) |
+| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` set to `https://xray.<region>.amazonaws.com/v1/traces`, or `OTEL_EXPORTER_OTLP_ENDPOINT` set to `https://xray.<region>.amazonaws.com` | Exports to X-Ray, signed for the region in the URL |
+| Either variable set to any other URL, such as the CloudWatch agent or an OpenTelemetry collector on `http://localhost:4318/v1/traces` | Exports there unsigned, and the agent or collector handles authentication |
+| `OTEL_SERVICE_NAME` | Service name in CloudWatch (default `AgentKernel`) |
+| `OTEL_RESOURCE_ATTRIBUTES` | Extra resource attributes, e.g. `deployment.environment.name=prod` |
+
+The other standard `OTEL_*` variables (headers, timeout, compression, sampler, batch processor, attribute limits) apply as usual.
+
+If an OpenTelemetry tracer provider is already installed, Agent Kernel reuses it rather than registering a second one. This happens, for example, when you run under `opentelemetry-instrument` with the AWS Distro for OpenTelemetry, or inside Bedrock AgentCore Runtime. In that case it adds only its session processor, and the existing provider's exporter configuration applies.
+
+### What Gets Traced
+
+Each non-streaming agent run is wrapped in a span named `Agent Kernel <Framework>`. The span carries:
+
+- `session.id`: the Agent Kernel session ID. It is also copied onto every span the framework instrumentation emits during the run, so you can filter a whole conversation in Transaction Search.
+- `input.value` / `output.value`: the prompt and the agent's reply.
+
+The service resource defaults to `service.name=AgentKernel` and `aws.service.type=gen_ai_agent`. Values set through `OTEL_SERVICE_NAME` or `OTEL_RESOURCE_ATTRIBUTES` win.
+
+Streaming runs (`execution.message_type: delta`) are not wrapped in a session span, which matches the other providers, though deep instrumentation still emits LLM and tool spans where it is active. How deep the LLM- and tool-level instrumentation goes depends on the framework:
+
+| Framework | Depth under CloudWatch |
+|-----------|------------------------|
+| OpenAI Agents SDK | Full — OpenInference OpenAI Agents instrumentor |
+| CrewAI | Full — OpenInference CrewAI + LiteLLM instrumentors |
+| Google ADK | Full — OpenInference Google ADK instrumentor |
+| Pydantic AI | Full — Pydantic AI instrumentation + OpenInference span processor |
+| Microsoft Agent Framework | Session span, plus MAF's own OpenTelemetry agent and chat spans (MAF instruments itself; Agent Kernel activates nothing extra) |
+| LangGraph | Session span only |
+| Smolagents | Session span only |
+
+Microsoft Agent Framework's own spans carry **metadata only** by default (operation names, token counts, durations). To include prompts, completions, tool arguments and tool results in them, set MAF's `ENABLE_SENSITIVE_DATA=true`, and only when the backend receiving the spans is secured for that data.
+
+X-Ray rejects spans larger than 200 KB. If your prompts or replies are very large, cap attribute sizes with `OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT`.
+
+### Running on AWS Lambda
+
+The batch span processor normally exports in the background, but Lambda freezes the execution environment as soon as an invocation returns. When `AWS_LAMBDA_FUNCTION_NAME` is set, Agent Kernel therefore flushes pending spans at the end of every agent run, including failed runs. The cost is one export round trip added to each invocation. Agent spans are not parented under the function's own X-Ray segment when Lambda active tracing is on: with X-Ray sampling, that parent would cause most agent spans to be dropped.
+
+### Viewing Traces in CloudWatch
+
+1. Open the CloudWatch console in the region you export to.
+2. Go to **Application Signals → Transaction Search** and filter spans by `session.id` or by service `AgentKernel`. Open a trace to see the run span with its agent, LLM, and tool spans nested under it.
+3. Optionally, check **GenAI Observability**. Agent Kernel sets the `aws.service.type=gen_ai_agent` resource attribute and `session.id` that the AWS Distro for OpenTelemetry sets, but AWS does not document whether its agent and session views list agents that export without the distro, so treat Transaction Search as the supported view.
+
+## Fetching Spans Back
+
+Traces stay in your provider's cloud, but you can read them back into Python (for example, to run evaluations
+over recent tool calls) with `Trace.fetch_spans()` (single spans) or `Trace.fetch_traces()` (whole traces). They take one provider-neutral filter and translates it into
+each provider's query API:
+
+```python
+from datetime import timedelta
+
+from agentkernel.trace import SpanKind, SpanStatus, Trace
+
+trace = Trace.get()  # uses the configured trace.type
+
+# Tool calls from the last 6 hours
+tool_calls = trace.fetch_spans(last=timedelta(hours=6), kinds=[SpanKind.TOOL])
+
+# Every span of one AK session in an explicit window
+spans = trace.fetch_spans(start=start, end=end, session_id="session-123")
+
+for span in tool_calls:
+    print(span.trace_id, span.name, span.input, span.output)
+```
+
+| Filter | Meaning |
+|--------|---------|
+| `start` / `end` | Span start time window (`end` defaults to now, `start` to `end - last`) |
+| `last` | Look-back window when `start` is not given (default 1 hour) |
+| `kinds` | `SpanKind.AGENT`, `LLM`, `TOOL` or `OTHER` (everything else); `None` returns all |
+| `session_id` | Only spans of this AK session |
+| `trace_ids` | Only spans of these traces (fetch tool calls first, then their whole traces) |
+| `name` | Exact span name |
+| `limit` | Maximum spans returned (default 1000); the most recent are kept, and a warning is logged when a fetch reaches it |
+
+Each result is a `FetchedSpan` (trace/span/parent ids, name, kind, status, start/end time, session id, input, output,
+usage, attributes) plus `raw`, the provider's full record. Its `provider` is the tracer's `trace.type` name
+(`langfuse`, `logfire`, `openllmetry` or `cloudwatch`). Spans are returned oldest first.
+
+`status` is a `SpanStatus` (`UNSET`, `OK` or `ERROR`), following the OpenTelemetry span status; each provider's own field
+(Langfuse's `level`, the OTel status code elsewhere) is mapped onto it. Agent Kernel maps each provider's fields onto
+these neutral ones but doesn't correct a provider's own mistakes, such as a span it labels with the wrong type.
+
+`usage` is a `SpanUsage` (`input_tokens`, `output_tokens`, `total_tokens`, `cost` in USD) for spans that record a
+model call, and `None` otherwise. It covers only that span's own call, never its children, so the cost of a whole
+run (including LLM calls made inside tools and sub-agents) is the sum over the trace's spans:
+
+```python
+spans = trace.fetch_spans(trace_ids=["4bf92f3577b34da6a3ce929d0e0e4736"])
+tokens = sum(span.usage.total_tokens or 0 for span in spans if span.usage)
+```
+
+Token counts come from every provider. Cost is filled in by Langfuse (which prices model calls itself) and, on the
+other providers, only for Pydantic AI, whose instrumentation reports a per-call cost.
+
+With OpenLLMetry and Pydantic AI, each LLM call is recorded twice (an `openai.chat` span and a Pydantic AI
+`chat` span), so a plain sum counts its tokens twice.
+
+### Fetching Whole Traces
+
+`Trace.fetch_traces()` returns the same spans grouped into traces, so you don't have to group them, find the root or
+add up usage yourself. It takes the filters above except `kinds` and `name`, which select single spans: filter
+`trace.spans` instead.
+
+```python
+for trace in Trace.get().fetch_traces(session_id="session-123", last=timedelta(hours=24)):
+    if trace.root is None:
+        continue  # the root span isn't stored (yet), so there is no request to grade
+    print(trace.trace_id, trace.user_input, trace.output, trace.usage.cost, trace.agent_names)
+    failed = [span.name for span in trace.tool_spans if span.status == SpanStatus.ERROR]
+```
+
+Each `FetchedTrace` has `trace_id`, `session_id`, `spans` (oldest first), and:
+
+| Property | Meaning |
+|----------|---------|
+| `root` | The single span with no parent, or `None` when there is none or more than one |
+| `user_input` / `output` | The root span's input and output |
+| `started_at` / `ended_at` | The root span's start and end time |
+| `tool_spans` | The spans with `kind == TOOL` |
+| `agent_names` | The names of the agent spans, de-duplicated, in start order |
+| `usage` | A `SpanUsage` summed over the spans; a field stays `None` when no span reports it |
+
+`fetch_traces` is one pass over the window's spans, so a trace at the edge of the window can be partial (the window
+filters on span start time), and Agent Kernel doesn't decide when a trace is complete: it returns what the provider has
+stored, as the provider's own UI does while spans are still arriving. A trace whose root is missing comes back with
+`root=None` instead of being dropped. The `limit` still applies to spans, not traces.
+
+On OpenLLMetry (Traceloop), Agent Kernel adds no wrapper span around a run, so the root is the framework's own span
+(for example `Agent Workflow` for the OpenAI Agents SDK), which carries no input or output: `user_input` and `output`
+are empty there.
+
+| Provider | Read API | Credentials |
+|----------|----------|-------------|
+| Langfuse | v2 observations API | Same `LANGFUSE_*` keys used for sending |
+| Logfire | SQL Query API | A separate **read token**, `LOGFIRE_READ_TOKEN` (`logfire read-tokens --project <org>/<project> create`) |
+| OpenLLMetry (Traceloop) | Warehouse spans REST API | Same `TRACELOOP_API_KEY` (and `TRACELOOP_BASE_URL`) |
+| AWS CloudWatch | CloudWatch Logs Insights over the `aws/spans` log group | The standard AWS chain and region; the identity needs `logs:StartQuery`, `logs:GetQueryResults` and `logs:StopQuery` on `aws/spans` (`AWSXrayWriteOnlyAccess` does not grant them) |
+
+`LOGFIRE_READ_TOKEN` and `TRACELOOP_API_KEY` are read through Agent Kernel's [secret manager](./secrets.md): an
+environment variable wins, and with `secret.provider.type: aws_ssm` the key can live in SSM Parameter Store
+instead. The `LANGFUSE_*` keys are read by the Langfuse SDK itself, so they stay environment variables.
+
+Session ids reach every tracing provider exactly as you pass them: Langfuse, OpenLLMetry and CloudWatch record
+them on spans, and Logfire keeps them out of its default scrubbing so traces can be filtered by session. Agent
+Kernel doesn't make them opaque, so keep personal data out of them. If you derive session ids from user ids,
+use a hash or a random id instead.
+
+Provider limits to keep in mind:
+
+- **Langfuse:** spans are readable ~15–30 seconds after ingestion; API rate limits depend on your plan.
+- **Logfire:** spans are readable ~5 minutes after ingestion; queries return at most 10,000 rows, so larger
+  fetches are paged automatically.
+- **Traceloop:** fetching is best effort. The free plan keeps spans for 24 hours only, and the warehouse
+  API is undocumented beyond its basics; its session, trace id and time filters and its cursor paging have
+  been checked against a live account (LangGraph spans). `kinds` is applied only after the spans
+  arrive (a span's kind can come from either of two attributes, and the API can't OR them), so a
+  kind-filtered fetch pages through every span in the window.
+- **CloudWatch:** only spans ingested through Transaction Search are readable, since they are what lands in
+  `aws/spans`. Transaction Search must be on, and the spans must reach X-Ray: the default export does, but if
+  you point `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` at a collector, it has to forward to X-Ray. Without
+  `aws/spans`, `fetch_spans` raises an `AKConfigError` telling you to enable Transaction Search. Logs Insights returns at most 10,000 rows per query, so larger fetches are paged automatically,
+  and each query is billed by the data it scans.
+  `kinds` is filtered server side on the OpenInference and OTel GenAI attributes the CloudWatch runners
+  emit, so spans that carry only Traceloop or Logfire kind attributes (custom instrumentation) are not
+  returned by a kind-filtered fetch; fetch without `kinds` to get them.
+
+Every built-in fetcher re-checks each filter on the spans it gets back, so no provider's own boundary rules leak
+into the result.
+
+A bring-your-own tracer can support fetching by overriding `BaseTrace.fetch_spans(query)`; tracers that don't raise
+`NotImplementedError`. `TraceQuery.matches(span)` applies every filter to a span, and
+`agentkernel.trace.testing.TraceFetchContract` is the pytest suite the built-in fetchers pass; subclass it to check
+yours:
+
+```python
+import pytest
+
+from agentkernel.trace import BaseTrace, FetchedSpan, TraceQuery
+from agentkernel.trace.testing import TraceFetchContract
+
+
+class MyTrace(BaseTrace):  # your bring-your-own tracer
+    ...
+
+    def fetch_spans(self, query: TraceQuery) -> list[FetchedSpan]:
+        spans = [span for span in self._backend_spans() if query.matches(span)]
+        return FetchedSpan.oldest_first(spans)[-query.limit :]  # newest `limit` kept, returned oldest first
+
+
+class TestMyTraceFetch(TraceFetchContract):
+    @pytest.fixture
+    def tracer(self):
+        return MyTrace()
+
+    def seed(self, tracer, spans):
+        ...  # write these spans to the backend your tracer reads
+```
+
+For an end-to-end use of `fetch_traces` and `usage`, see the [`openai-langfuse-trace-evaluation` example](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/openai-langfuse-trace-evaluation): an agent on
+AWS Lambda whose Langfuse traces are read back per session, graded by Opik LLM judges and stored in DynamoDB.
 
 ## Integrate with Your Own Traceability Platform
 
@@ -538,15 +822,17 @@ Upcoming observability features:
 
 - [Langfuse Documentation](https://langfuse.com/docs)
 - [Traceloop/OpenLLMetry Documentation](https://www.traceloop.com/docs)
+- [CloudWatch Transaction Search Documentation](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/CloudWatch-Transaction-Search.html)
 - [Configuration Guide](../core-concepts/configuration.md)
 
 ## Summary
 
 - Enable observability with simple configuration
-- **Three Platform Options**: Choose between Langfuse, OpenLLMetry, and Pydantic Logfire
+- **Four Platform Options**: Choose between Langfuse, OpenLLMetry, Pydantic Logfire, and AWS CloudWatch
 - **Langfuse**: Specialized LLM observability platform with rich analytics
 - **OpenLLMetry**: OpenTelemetry-based solution with multi-backend support
 - **Pydantic Logfire**: OpenTelemetry-based platform with a native OpenAI Agents SDK integration
+- **AWS CloudWatch**: OpenTelemetry traces in your own AWS account via X-Ray, with no collector needed
 - Comprehensive trace data including LLM calls, tools, and performance
 - Minimal performance impact
 - Self-hosting and custom backend options for data privacy

@@ -1,7 +1,7 @@
 # OpenAI Agents over WebSocket, queue-based token streaming — see ../README.md
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/aws"
-  version = "0.9.3"
+  version = "0.9.5"
 
   providers = { aws = aws, docker = docker }
 
@@ -23,9 +23,10 @@ module "containerized_agents" {
     }
   }
 
-  # Queue mode + WebSocket, STREAM execution mode
+  # Queue mode + WebSocket, async execution mode with delta replies
   queue_mode     = true
-  execution_mode = "stream" # each token delta is pushed as its own STREAM_CHUNK message
+  execution_mode = "async"
+  message_type   = "delta" # each token delta is pushed as its own STREAM_CHUNK message
   ws_chat_route  = "chat"
 
   queue_config = {

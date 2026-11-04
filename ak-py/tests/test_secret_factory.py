@@ -4,7 +4,7 @@ import pytest
 
 from agentkernel.core.config import AKConfig, _SecretConfig
 from agentkernel.core.util.factory import AKConfigError
-from agentkernel.secret import EnvSecretProvider, SecretManager, SecretProvider
+from agentkernel.secret import EnvSecretProvider, KubernetesSecretProvider, SecretManager, SecretProvider
 from agentkernel.secret.factory import SecretProviderFactory
 from agentkernel.secret.providers.aws_ssm import AWSSMSecretProvider
 
@@ -66,6 +66,7 @@ def test_unknown_short_name_rejected(name):
         SecretProviderFactory.get(_config(provider={"type": name}))
     assert "env" in str(exc_info.value)
     assert "aws_ssm" in str(exc_info.value)
+    assert "kubernetes" in str(exc_info.value)
 
 
 def test_dotted_path_to_non_subclass_rejected():
@@ -76,6 +77,20 @@ def test_dotted_path_to_non_subclass_rejected():
 def test_unimportable_dotted_path_rejected():
     with pytest.raises(AKConfigError):
         SecretProviderFactory.get(_config(provider={"type": "no_such_package.module.Provider"}))
+
+
+def test_kubernetes_builds_kubernetes_provider():
+    default = SecretProviderFactory.get(_config(provider={"type": "kubernetes"}))
+    assert isinstance(default, KubernetesSecretProvider)
+    assert default._mount_path == "/var/run/secrets/agentkernel"
+
+    override = SecretProviderFactory.get(_config(provider={"type": "kubernetes", "kubernetes": {"mount_path": "/run/secrets"}}))
+    assert override._mount_path == "/run/secrets"
+
+
+def test_kubernetes_empty_mount_path_raises_config_error():
+    with pytest.raises(AKConfigError, match="secret.provider.kubernetes.mount_path"):
+        SecretProviderFactory.get(_config(provider={"type": "kubernetes", "kubernetes": {"mount_path": ""}}))
 
 
 def test_aws_ssm_builds_aws_ssm_provider():
@@ -100,7 +115,7 @@ def test_aws_ssm_missing_extra_raises_before_prefix_check(monkeypatch):
     assert "secret.provider.type: aws_ssm" in str(exc_info.value)
 
 
-@pytest.mark.parametrize("provider_type", ["env", _RECORDING])
+@pytest.mark.parametrize("provider_type", ["env", "kubernetes", _RECORDING])
 def test_empty_prefix_is_fine_outside_aws_ssm(provider_type):
     assert SecretProviderFactory.get(_config(prefix="", provider={"type": provider_type})) is not None
 
@@ -111,6 +126,7 @@ def test_get_never_reads_akconfig(monkeypatch):
 
     monkeypatch.setattr(AKConfig, "get", classmethod(_boom))
     SecretProviderFactory.get(_config(provider={"type": "env"}))
+    SecretProviderFactory.get(_config(provider={"type": "kubernetes"}))
     SecretProviderFactory.get(_config(provider={"type": _RECORDING}))
 
 

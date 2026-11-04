@@ -23,8 +23,8 @@ from fastapi.responses import StreamingResponse
 from ...api.handler import AgentRESTRequestHandler, AuthorisedRESTRequestHandler
 from ...auth.authoriser import Authoriser
 from ...core import Config
-from ...core.chat_service import RequestBuilder, ResponseBuilder
-from ...core.model import BaseChatRequest, BaseRunRequest, ExecutionMode, StreamChunk
+from ...core.chat_service import ChatService, RequestBuilder, ResponseBuilder
+from ...core.model import BaseChatRequest, BaseRunRequest, StreamChunk
 from ...core.service import AgentService
 from ...pipeline.envelope import ATTR_THREAD
 from ...pipeline.producer import RequestProducer
@@ -43,7 +43,7 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
 
     Endpoints:
     - GET /api/v1/agents: List available agents
-    - POST /api/v1/chat: Run an agent with thread recording (SSE when execution.mode=stream)
+    - POST /api/v1/chat: Run an agent with thread recording (SSE when execution.message_type is delta)
     - POST /api/v1/chat-multipart: Same as /api/v1/chat with multipart file/image uploads
     - GET /api/v1/threads: List threads (see ThreadRESTRequestHandler)
     - GET /api/v1/threads/{session_id}: Get a thread with message history
@@ -75,7 +75,7 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
         return router
 
     async def run(self, body: BaseRunRequest):
-        if Config.get().execution.mode == ExecutionMode.STREAM:
+        if Config.get().execution.is_sse:
             try:
                 gen = await self._stream_with_recording(body)
                 return StreamingResponse(gen, media_type="text/event-stream")
@@ -106,7 +106,7 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
             files=files,
             images=images,
         )
-        if Config.get().execution.mode == ExecutionMode.STREAM:
+        if Config.get().execution.is_sse:
             try:
                 gen = await self._stream_with_recording(req)
                 return StreamingResponse(gen, media_type="text/event-stream")
@@ -134,7 +134,7 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
             requests, _ = self._recorder.pre_run(req, requests)
             result, session_id = await self.chat_service.execute(req, requests=requests)
             self._recorder.post_run(req, result)
-            return ResponseBuilder.build_response(200, session_id, True, result=result)
+            return ResponseBuilder.build_response(ChatService.success_status(req, result), session_id, True, result=result)
         except ValueError as ve:
             self._log.error(f"ValueError processing request: {ve}")
             return ResponseBuilder.build_response(400, req.session_id, True, error=ve)
@@ -198,11 +198,12 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
         """Validate the request envelope before any thread write.
 
         :param req: The chat request to validate
-        :raises ValueError: If session_id or prompt is missing
+        :raises ValueError: If session_id is missing, or the request carries neither a prompt nor
+            a resume block
         """
         if not req.session_id:
             raise ValueError("No session_id is provided in the request")
-        if not req.prompt:
+        if not req.prompt and req.resume is None:
             raise ValueError("No prompt provided in the request")
 
     @staticmethod
@@ -275,7 +276,7 @@ class ThreadRequestHandler(RequestHandler):
         """
         if not body.session_id:
             raise HTTPException(status_code=400, detail={"error": "No session_id is provided in the request"})
-        if not body.prompt:
+        if not body.prompt and body.resume is None:
             raise HTTPException(status_code=400, detail={"error": "No prompt provided in the request", "session_id": body.session_id})
         self._reject_unroutable(body)
         if body.schedule is None:
@@ -376,7 +377,7 @@ class ThreadRESTRequestHandler(AuthorisedRESTRequestHandler):
             except ValueError as e:
                 raise HTTPException(status_code=400, detail=str(e))
             body = thread.model_dump(mode="json", exclude={"messages"})
-            body["messages"] = [message.model_dump(mode="json") for message in page.messages]
+            body["messages"] = [message.to_wire() for message in page.messages]
             body["next_cursor"] = page.next_cursor
             return body
 

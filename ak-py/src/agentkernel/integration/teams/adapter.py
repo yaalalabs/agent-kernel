@@ -30,6 +30,7 @@ from ...core.config import AKConfig
 from ...core.model import AgentReply, AgentRequest, AgentRequestFile, AgentRequestImage, AgentRequestText
 from ...core.multimodal.storage import AttachmentStorageManager
 from ..adapter.base import ATTACHMENTS_DISABLED_ERROR, SESSION_CACHE_ERROR, InboundAdapter, InboundParseResult, InboundRequest, OutboundAdapter
+from ..adapter.routes import BUILTIN_WEBHOOK_ROUTES
 
 NAME = "teams"
 
@@ -123,7 +124,7 @@ class TeamsInboundAdapter(InboundAdapter):
     """Teams activities -> normalized requests."""
 
     name = NAME
-    webhook_path = "/teams/messages"
+    webhook_path = BUILTIN_WEBHOOK_ROUTES[NAME].webhook_path
 
     _log = logging.getLogger("ak.integration.teams")
 

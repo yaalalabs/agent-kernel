@@ -125,6 +125,11 @@ Streaming surfaces yield the
 acknowledgement as a single terminal chunk — deliberately not an error chunk, since deferring was the
 requested outcome.
 
+**202 also means "paused for a human"** since [Human in the Loop](human-in-the-loop.md) — a run that
+stopped to ask a person something. The `status` key tells them apart: a deferred request carries
+`"SCHEDULED"`, a paused one `"PAUSED"`. A request carrying both `schedule` and `resume` is rejected
+with a 400.
+
 ### Deferring a recurring chat
 
 ```bash
@@ -405,14 +410,14 @@ task at create/amend time and the provider substitutes the occurrence placeholde
 
 ## Examples
 
-- [`examples/api/schedule-openai`](https://github.com/yaalalabs/agent-kernel/tree/main/examples/api/schedule-openai) —
+- [`examples/api/schedule-openai`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/schedule-openai) —
   a runnable REST API with the `local` provider and `in_memory` store, showing deferral, the management
   routes, and an agent that schedules work itself.
-- [`examples/aws-containerized/openai-schedule`](https://github.com/yaalalabs/agent-kernel/tree/main/examples/aws-containerized/openai-schedule) —
+- [`examples/aws-containerized/openai-schedule`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/openai-schedule) —
   the same capability on AWS ECS with the `eventbridge` provider and a DynamoDB store: a REST-service
   task serving the management routes, an agent-runner task consuming the Input Queue, and Terraform
   provisioning the schedule group, execution role and schedule table.
-- [`examples/aws-serverless/schedule-openai`](https://github.com/yaalalabs/agent-kernel/tree/main/examples/aws-serverless/schedule-openai) —
+- [`examples/aws-serverless/schedule-openai`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/schedule-openai) —
   the AWS Lambda equivalent: request-handler, agent-runner and response-handler Lambdas with the
   `eventbridge` provider and a DynamoDB store.
 

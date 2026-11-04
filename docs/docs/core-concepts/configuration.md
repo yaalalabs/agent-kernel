@@ -8,6 +8,7 @@ Configure Agent Kernel via environment variables or configuration files. This su
 
 :::tip
 For detailed information about session and memory management configuration, see:
+- [Choosing a Memory Backend](./memory-backends.md) - Beginner comparison and recommended setup
 - [Session Management](/docs/core-concepts/session) - Session configuration and storage backends
 - [Memory Management](/docs/architecture/memory-management) - Advanced memory features and caching
 :::
@@ -79,7 +80,8 @@ websocket_api:
 
 # Execution configuration (for AWS serverless and containerized deployments)
 execution:
-  mode: rest_sync  # Execution mode: rest_sync, rest_async, stream, or async (WebSocket)
+  mode: rest_sync  # Execution mode: rest_sync, rest_async, async (WebSocket), or realtime. Unset runs as rest_sync
+  message_type: complete  # Reply delivery: complete (one whole reply) or delta (one message per chunk). Unset: delta for realtime, complete otherwise
   queues:
     type: sqs  # Queue transport: in_memory | sqs | kafka | nats, or a dotted path to a QueueTransport subclass. Mandatory whenever this block is declared
     input:
@@ -184,9 +186,11 @@ okf:
 # enabled flag. A set, non-empty environment variable named by the key always wins.
 # See /docs/advanced/secrets)
 secret:
-  prefix: ""  # Deployment scope; required by aws_ssm (injected as AK_SECRET__PREFIX by the AWS Terraform modules), ignored by env
+  prefix: ""  # Deployment scope; required by aws_ssm (injected as AK_SECRET__PREFIX by the AWS Terraform modules), ignored by env and kubernetes
   provider:
-    type: env  # env | aws_ssm, or a dotted path to a SecretProvider subclass
+    type: env  # env | aws_ssm | kubernetes, or a dotted path to a SecretProvider subclass
+    kubernetes:
+      mount_path: /var/run/secrets/agentkernel  # Directory the Kubernetes Secrets are mounted under; read only by the kubernetes provider
   cache_ttl: 300  # Seconds a provider hit is served from the process cache; 0 disables caching
 
 # Messaging platform integrations
@@ -230,6 +234,14 @@ teams:
   app_id: ""  # Azure Bot / Entra ID application (client) ID
   app_password: ""  # Azure Bot / Entra ID application client secret
   tenant_id: ""  # Bot app registration's own tenant; empty for a multi-tenant bot
+
+# A2UI labelling (optional - off unless `enabled` is true)
+# Labels a JSON reply as A2UI so a client receives the document as an object with its format
+# named, instead of a JSON string. See /docs/advanced/a2ui
+a2ui:
+  enabled: true
+  agents:
+    - expenses  # omit for every agent
 
 # Guardrails configuration
 guardrail:
@@ -326,6 +338,7 @@ Alternatively, use `config.json`:
   },
   "execution": {
     "mode": "rest_sync",
+    "message_type": "complete",
     "queues": {
       "type": "sqs",
       "input": {
@@ -457,17 +470,28 @@ export AK_SESSION__TYPE=redis  # Options: 'in_memory', 'redis', 'valkey', 'dynam
 export AK_SESSION__REDIS__URL=redis://localhost:6379  # default: redis://localhost:6379
 export AK_SESSION__REDIS__TTL=604800  # TTL in seconds (default: 604800 = 7 days)
 export AK_SESSION__REDIS__PREFIX=ak:sessions:  # Key prefix (default: ak:sessions:)
-export AK_SESSION__CACHE__SIZE=256  # Enable in-memory session caching with a cache size of 256 sessions
 
 # Valkey configuration (requires the agentkernel[valkey] extra)
 export AK_SESSION__VALKEY__URL=valkey://localhost:6379  # default: valkey://localhost:6379 (use valkeys:// for SSL)
 export AK_SESSION__VALKEY__TTL=604800  # TTL in seconds (default: 604800 = 7 days)
 export AK_SESSION__VALKEY__PREFIX=ak:sessions:  # Key prefix (default: ak:sessions:)
 
-# DynamoDB configuration
+# DynamoDB configuration (requires the agentkernel[aws] extra)
 export AK_SESSION__DYNAMODB__TABLE_NAME=agent-kernel-sessions  # DynamoDB table name (required)
 export AK_SESSION__DYNAMODB__TTL=604800  # TTL in seconds (default: 604800 = 7 days, 0 to disable)
-export AK_SESSION__CACHE__SIZE=256  # Enable in-memory session caching with a cache size of 256 sessions
+
+# Cosmos DB configuration (requires the agentkernel[azure] extra)
+export AK_SESSION__COSMOSDB__CONNECTION_STRING="DefaultEndpointsProtocol=https;AccountName=your-account;AccountKey=...;TableEndpoint=https://your-account.table.cosmos.azure.com:443/;"  # required
+export AK_SESSION__COSMOSDB__TABLE_NAME=sessions  # Cosmos DB table name (required)
+export AK_SESSION__COSMOSDB__TTL=604800  # TTL in seconds (default: 604800 = 7 days, 0 to disable)
+
+# Firestore configuration (requires the agentkernel[gcp] extra)
+export AK_SESSION__FIRESTORE__COLLECTION_NAME=ak_sessions  # default: ak_sessions
+export AK_SESSION__FIRESTORE__PROJECT_ID=my-project  # optional; inferred from credentials
+export AK_SESSION__FIRESTORE__TTL=604800  # TTL in seconds (default: 604800 = 7 days, 0 to disable)
+
+# Optional process-local session cache (Redis, Valkey, DynamoDB, Cosmos DB, Firestore)
+export AK_SESSION__CACHE__SIZE=256  # Number of sessions to cache; omit this var entirely to disable caching
 ```
 
 :::note Valkey and the Redis-only surfaces
@@ -517,8 +541,9 @@ export AK_MCP__STATELESS_HTTP=false  # Run in stateless HTTP mode, no Mcp-Sessio
 See [Secret Resolution](../advanced/secrets.md) for the resolution order and providers.
 
 ```bash
-export AK_SECRET__PROVIDER__TYPE=aws_ssm  # Options: 'env', 'aws_ssm', or a dotted path to a SecretProvider subclass (default: 'env')
-export AK_SECRET__PREFIX=myproduct-dev-agents  # Deployment scope; required by aws_ssm, ignored by env (default: '')
+export AK_SECRET__PROVIDER__TYPE=aws_ssm  # Options: 'env', 'aws_ssm', 'kubernetes', or a dotted path to a SecretProvider subclass (default: 'env')
+export AK_SECRET__PROVIDER__KUBERNETES__MOUNT_PATH=/var/run/secrets/agentkernel  # Where the Kubernetes Secrets are mounted; kubernetes provider only (default: /var/run/secrets/agentkernel)
+export AK_SECRET__PREFIX=myproduct-dev-agents  # Deployment scope; required by aws_ssm, ignored by env and kubernetes (default: '')
 export AK_SECRET__CACHE_TTL=300  # Seconds a provider hit is cached; 0 disables caching (default: 300)
 ```
 
@@ -595,7 +620,7 @@ export AK_TELEGRAM__API_VERSION=bot  # Bot API version prefix (default: bot)
 ```bash
 # Enable tracing functionality
 export AK_TRACE__ENABLED=true  # default: false
-export AK_TRACE__TYPE=langfuse  # Options: 'langfuse', 'openllmetry', 'logfire' (default: 'langfuse')
+export AK_TRACE__TYPE=langfuse  # Options: 'langfuse', 'openllmetry', 'logfire', 'cloudwatch' (default: 'langfuse')
 
 # Langfuse-specific configuration (required when using Langfuse)
 export LANGFUSE_PUBLIC_KEY=pk-lf-...  # Your Langfuse public key
@@ -605,6 +630,14 @@ export LANGFUSE_HOST=https://cloud.langfuse.com  # Langfuse host (or self-hosted
 # OpenLLMetry (Traceloop) configuration (required when using OpenLLMetry)
 export TRACELOOP_API_KEY=your-api-key  # Your Traceloop API key
 export TRACELOOP_BASE_URL=https://api.traceloop.com  # Optional: Traceloop base URL (for self-hosted)
+```
+
+### A2UI
+
+```bash
+# Enable A2UI labelling
+export AK_A2UI__ENABLED=true  # default: false
+export AK_A2UI__AGENTS="expenses,support"  # Comma-separated list (default: every agent)
 ```
 
 ### Guardrails Configuration
@@ -644,7 +677,8 @@ export AK_GUARDRAIL__OUTPUT__VERSION=1  # AWS Bedrock guardrail version
 
 ```bash
 # Execution mode
-export AK_EXECUTION__MODE=rest_sync  # Options: 'rest_sync', 'rest_async', 'stream', 'async'
+export AK_EXECUTION__MODE=rest_sync  # Options: 'rest_sync', 'rest_async', 'async', 'realtime'
+export AK_EXECUTION__MESSAGE_TYPE=complete  # Options: 'complete', 'delta' (unset: delta for realtime, complete otherwise)
 
 # Queue configuration
 export AK_EXECUTION__QUEUES__INPUT__URL=https://sqs.us-east-1.amazonaws.com/123456789012/agent-input
@@ -680,8 +714,18 @@ export AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TTL=604800
 **Execution Modes**:
 - `rest_sync` - Synchronous REST: sends request to queue and immediately waits for response from response store (requires queues and response_store)
 - `rest_async` - Asynchronous REST: submits request to queue and returns immediately with request_id, then poll for response from response store (requires queues and response_store)
-- `stream` - Event streaming: SSE on the built-in REST server (local, containerized, Cloud Run, Container Apps), or WebSocket `STREAM_CHUNK` push on AWS serverless (queues optional, response_store not used). Requires a streaming-capable framework (OpenAI Agents SDK, LangGraph, Google ADK, Pydantic AI)
 - `async` - WebSocket mode for real-time bidirectional communication on AWS serverless (queues optional, response_store not used)
+- `realtime` - Persistent realtime sockets, such as the [LiveKit](../integrations/livekit) voice gateway; always streams
+
+Unset `mode` runs as `rest_sync`.
+
+**Message Types** (`execution.message_type`, env `AK_EXECUTION__MESSAGE_TYPE`) choose how the reply is delivered:
+- `complete` - One message carrying the whole reply: a JSON body for `rest_sync`, a stored reply for `rest_async`, one `CHAT_RESPONSE` for `async`
+- `delta` - One message per `StreamChunk` as it is produced: SSE (`text/event-stream`) on `POST /api/v1/chat` for `rest_sync`, one `STREAM_CHUNK` WebSocket message per chunk (ending with `done: true`) for `async`. Requires a streaming-capable framework (OpenAI Agents SDK, LangGraph, Google ADK, Pydantic AI, Microsoft Agent Framework)
+
+Unset `message_type` resolves to `delta` for `realtime` and `complete` otherwise. `rest_async` + `delta` and `realtime` + `complete` are rejected when the configuration loads (`AKConfigError`).
+
+`execution.mode: stream` was removed and fails on load with a migration message. For SSE over REST use `mode: rest_sync` with `message_type: delta`; for chunks over WebSocket use `mode: async` with `message_type: delta`.
 
 **Notes**:
 - Queues and response_store are required for `rest_sync` and `rest_async` modes
@@ -727,7 +771,7 @@ If `test-config.yaml` is missing, defaults apply silently (no warning is printed
 - `llm` - LLM-as-judge evaluation via the configured evaluator (DeepEval and Opik use a `GEval` metric; JEV asks one yes/no Noul question) for semantic similarity
 - `fallback` - Tries score first, falls back to llm if score fails
 
-**Evaluator backend:** `evaluator` selects the pluggable scoring backend used by both `score` and `llm` modes. Built-in values are `deepeval` (the default, requires the `test` extra), `opik` (requires the `opik` extra) and `jev` (requires the `jev` extra); any other value is treated as a dotted path to your own `AKEvaluator` subclass (`agentkernel.test.core.evaluator.AKEvaluator`) — see [Bring your own evaluator](../testing/cli-testing.md#bring-your-own-evaluator). Opik's `GEval` judge runs entirely locally against the LLM configured under `llm:` below — it does not require an Opik Cloud account, API key, or self-hosted server (AK disables its trace logging by default). `jev` is a hosted judge ([TypeSafe JEV](https://docs.typesafe.ai)) that works only with `mode: llm` (`score` and `fallback` raise `AKMetricNotSupported`); it reads `TYPESAFE_API_KEY` from the environment, ignores the `llm:` block, and sends the user input, expected output and actual output to `api.typesafe.ai`.
+**Evaluator backend:** `evaluator` selects the pluggable scoring backend used by both `score` and `llm` modes. Built-in values are `deepeval` (the default, requires the `test` extra), `opik` (requires the `opik` extra) and `jev` (requires the `jev` extra); any other value is treated as a dotted path to your own `AKEvaluator` subclass (`agentkernel.test.AKEvaluator`) — see [Bring your own evaluator](../testing/cli-testing.md#bring-your-own-evaluator). Opik's `GEval` judge runs entirely locally against the LLM configured under `llm:` below — it does not require an Opik Cloud account, API key, or self-hosted server (AK disables its trace logging by default). `jev` is a hosted judge ([TypeSafe JEV](https://docs.typesafe.ai)) that works only with `mode: llm` (`score` and `fallback` raise `AKMetricNotSupported`); it reads `TYPESAFE_API_KEY` from the environment, ignores the `llm:` block, and sends the user input, expected output and actual output to `api.typesafe.ai`.
 
 ### Custom Test Configuration File Path
 
@@ -784,6 +828,17 @@ session:
   dynamodb:                     # DynamoDB-specific settings
     table_name: "agent-kernel-sessions"  # DynamoDB table name (required)
     ttl: 604800                 # Item TTL in seconds (7 days, 0 to disable)
+  cosmosdb:                     # Cosmos DB-specific settings (requires the agentkernel[azure] extra)
+    connection_string: "DefaultEndpointsProtocol=https;AccountName=your-account;AccountKey=...;TableEndpoint=https://your-account.table.cosmos.azure.com:443/;"  # Cosmos DB connection string (required)
+    table_name: "sessions"      # Cosmos DB table name (required)
+    ttl: 604800                 # Session TTL in seconds (7 days, 0 to disable)
+  firestore:                    # Firestore-specific settings (requires the agentkernel[gcp] extra)
+    collection_name: "ak_sessions"  # Firestore collection name
+    project_id: "my-project"    # GCP project ID (optional; inferred from credentials)
+    database_id: "(default)"    # Firestore database ID (optional)
+    ttl: 604800                 # Session TTL in seconds (7 days, 0 to disable)
+  cache:                        # Optional process-local session cache; omit this whole block to disable
+    size: 256                   # Number of sessions to cache (size: 0 raises an error — omit `cache` instead)
 
 # API server configuration
 api:
@@ -860,7 +915,7 @@ teams:
 # Trace / Observability
 trace:
   enabled: false                # Enable tracing
-  type: "langfuse"              # Trace provider: 'langfuse', 'openllmetry', or 'logfire'
+  type: "langfuse"              # Trace provider: 'langfuse', 'openllmetry', 'logfire', or 'cloudwatch'
 
 # Guardrails configuration
 guardrail:
@@ -879,7 +934,8 @@ guardrail:
 
 # Execution configuration (for AWS serverless and containerized deployments)
 execution:
-  mode: "rest_sync"             # Execution mode: 'rest_sync', 'rest_async', 'stream', or 'async'
+  mode: "rest_sync"             # Execution mode: 'rest_sync', 'rest_async', 'async', or 'realtime'
+  message_type: "complete"      # Reply delivery: 'complete' or 'delta' (unset: delta for realtime, complete otherwise)
   queues:                       # Queue transport + coordinates for queue-based execution
     type: "sqs"                 # in_memory | sqs | kafka | nats, or a dotted path to a QueueTransport subclass - mandatory whenever this block is declared
     input:
@@ -1085,6 +1141,29 @@ Install the logfire extra:
 pip install agentkernel[logfire]
 ```
 
+**AWS CloudWatch:**
+
+```bash
+# Enable CloudWatch tracing
+export AK_TRACE__ENABLED=true
+export AK_TRACE__TYPE=cloudwatch
+
+# Spans go to the X-Ray OTLP endpoint of this region, signed with the standard AWS credential chain
+export AWS_REGION=us-east-1
+# Optional: export through the CloudWatch agent or an OpenTelemetry collector instead
+# export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://localhost:4318/v1/traces
+# Optional: service name shown in CloudWatch (default: AgentKernel)
+# export OTEL_SERVICE_NAME=my-agent
+```
+
+Install the cloudwatch extra:
+
+```bash
+pip install agentkernel[cloudwatch]
+```
+
+CloudWatch Transaction Search must be enabled in the account, and the agent's role needs `AWSXrayWriteOnlyAccess`. See [Traceability](../advanced/traceability.md#getting-started-with-aws-cloudwatch).
+
 ## Validation and Error Handling
 
 Agent Kernel validates all configuration values at startup:
@@ -1100,8 +1179,8 @@ Example validation errors:
 # These will cause validation errors:
 export AK_SESSION__TYPE=invalid_storage  # Must be 'in_memory', 'redis', 'valkey', 'dynamodb', 'cosmosdb', or 'firestore'
 export AK_A2A__TASK_STORE_TYPE=invalid   # Must be 'in_memory' or 'redis'
-export AK_TRACE__TYPE=invalid_tracer     # Must be 'langfuse', 'openllmetry', or 'logfire'
-export AK_EXECUTION__MODE=invalid        # Must be 'rest_sync', 'rest_async', 'stream', or 'async'
+export AK_TRACE__TYPE=invalid_tracer     # Must be 'langfuse', 'openllmetry', 'logfire', 'cloudwatch', or a dotted BaseTrace path
+export AK_EXECUTION__MODE=invalid        # Must be 'rest_sync', 'rest_async', 'async', or 'realtime' ('stream' was removed)
 ```
 
 ## Best Practices
@@ -1123,7 +1202,7 @@ export AK_EXECUTION__MODE=invalid        # Must be 'rest_sync', 'rest_async', 's
 - Support for nested configuration using underscore delimiter
 - Built-in validation ensures configuration integrity
 - Flexible session storage options (in-memory, Redis, Valkey, DynamoDB, Cosmos DB, Firestore)
-- Execution modes (`rest_sync`, `rest_async`, `stream`, `async`) and queue settings live under `execution`
+- Execution modes (`rest_sync`, `rest_async`, `async`, `realtime`), the reply `message_type` (`complete`, `delta`) and queue settings live under `execution`
 - Optional multimodal and conversation-thread features via their own config blocks
 - Optional A2A and MCP functionality with granular control
 - DynamoDB recommended for non-performance-critical deployments

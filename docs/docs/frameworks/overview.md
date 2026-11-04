@@ -16,10 +16,9 @@ graph LR
     A --> E[Google ADK]
     A --> F[Smolagents]
     A --> G[Pydantic AI]
-    A -.->|coming soon| LK[LiveKit Agents]
+    A --> M[Microsoft Agent Framework]
     
     style A fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
-    style LK fill:#555,stroke:#ccc,stroke-width:1px,color:#ccc
 ```
 
 ## Framework Comparison
@@ -32,22 +31,22 @@ graph LR
 | **Google ADK** | Google ecosystem | Low | Yes |
 | **Smolagents** | Lightweight tool-driven agents | Medium | Yes |
 | **Pydantic AI** | Multi-provider apps, provider failover, typed structured output | Low | Yes |
-| **LiveKit Agents** *(coming soon)* | Real-time voice/video agents | Medium | Yes |
+| **Microsoft Agent Framework** | Conversational agents in Microsoft ecosystem | Medium | Yes |
 
 ## Capability Matrix
 
 Not every Agent Kernel capability is available on every framework:
 
-| Capability | OpenAI Agents | CrewAI | LangGraph | Google ADK | Smolagents | Pydantic AI |
-|------------|:---:|:---:|:---:|:---:|:---:|:---:|
-| Token streaming (`execution.mode: stream`) | ✅ | ❌ | ✅ | ✅ | ❌ | ✅ |
-| Structured output (`AgentReplyAny`) | ✅ `output_type` | ✅ module-level `output_pydantic`/`output_json` | ✅ `response_format` | ✅ `output_schema` | ✅ dict/Pydantic `final_answer` | ✅ `output_type` |
-| Portable tools (`ToolBuilder`) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Multimodal attachments | ✅ | ✅* | ✅* | ✅ | ✅* | ✅* |
-| Hooks / guardrails / sessions / deployments | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Native multi-provider models | ⚠️ OpenAI-first | via LiteLLM | via LangChain | via LiteLLM | via LiteLLM | ✅ many providers + `FallbackModel` |
+| Capability | OpenAI Agents | CrewAI | LangGraph | Google ADK | Smolagents | Pydantic AI | MAF |
+|------------|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| Token streaming (`execution.message_type: delta`) | ✅ | ❌ | ✅ | ✅ | ❌ | ✅ | ✅ |
+| Structured output (`AgentReplyAny`) | ✅ `output_type` | ✅ module-level `output_pydantic`/`output_json` | ✅ `response_format` | ✅ `output_schema` | ✅ dict/Pydantic `final_answer` | ✅ `output_type` | ✅ `options["response_format"]` |
+| Portable tools (`ToolBuilder`) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Multimodal attachments | ✅ | ✅* | ✅* | ✅ | ✅* | ✅* | ✅* |
+| Hooks / guardrails / sessions / deployments | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Native multi-provider models | ⚠️ OpenAI-first | via LiteLLM | via LangChain | via LiteLLM | via LiteLLM | ✅ many providers + `FallbackModel` | ✅ Provider packages |
 
-\* Multimodal preprocessing (the attachment pre-hook and `analyze_attachments` tool) is framework-agnostic; direct image/file input via the REST API is currently documented for OpenAI Agents SDK and Google ADK. CrewAI and Smolagents raise `NotImplementedError` for streaming; use the default synchronous mode (or `rest_sync` on AWS) with those frameworks.
+\* Multimodal preprocessing (the attachment pre-hook and `analyze_attachments` tool) is framework-agnostic; direct image/file input via the REST API is currently documented for OpenAI Agents SDK and Google ADK. CrewAI and Smolagents raise `NotImplementedError` for streaming; keep the default `message_type: complete` with those frameworks.
 
 ## Choosing a Framework
 
@@ -99,11 +98,13 @@ Not every Agent Kernel capability is available on every framework:
 
 [Learn more →](./pydantic-ai)
 
-### LiveKit Agents *(coming soon)*
-- Real-time audio and video agent framework
-- Voice-enabled AI applications
-- Low-latency media pipelines
-- Ideal for conversational voice assistants and live-streaming AI bots
+### Microsoft Agent Framework (MAF)
+- Core framework from Microsoft
+- Conversational agents
+- Easy state management
+- Good for Microsoft ecosystem
+
+[Learn more →](./microsoft-agents)
 
 ## Migration Between Frameworks
 
@@ -140,10 +141,12 @@ def get_weather(city: str) -> str:
 from agentkernel.openai import OpenAIToolBuilder
 from agentkernel.crewai import CrewAIToolBuilder
 from agentkernel.smolagents import SmolagentsToolBuilder
+from agentkernel.maf import MAFToolBuilder
 
 openai_tools = OpenAIToolBuilder.bind([get_weather])
 crewai_tools = CrewAIToolBuilder.bind([get_weather])
 smolagents_tools = SmolagentsToolBuilder.bind([get_weather])
+maf_tools = MAFToolBuilder.bind([get_weather])
 ```
 
 [Learn more about Tools →](../core-concepts/tools)

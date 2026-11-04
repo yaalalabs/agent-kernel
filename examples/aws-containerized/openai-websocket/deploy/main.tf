@@ -1,7 +1,7 @@
 # OpenAI Agents in ECS over a WebSocket API (async, no queue) — agent runs inline, reply pushed over the connection.
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/aws"
-  version = "0.9.3"
+  version = "0.9.5"
 
   providers = { aws = aws, docker = docker }
 
@@ -24,7 +24,7 @@ module "containerized_agents" {
 
   # WebSocket without a queue: REST service handles connect/disconnect and runs the agent inline.
   queue_mode     = false
-  execution_mode = "async" # "async" (full reply) | "stream" (token-by-token)
+  execution_mode = "async" # full reply; message_type = "delta" streams token-by-token
   ws_chat_route  = "chat"
 
   # Custom routes beyond chat — registered via @AWSWebsocketAPI.register(...) in app.py.

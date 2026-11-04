@@ -1,0 +1,176 @@
+"""
+A2UI labelling: the one place in the framework that knows the format exists.
+
+Everything else in this change carries a payload and its format label without interpreting either.
+This capability supplies the label, because that part is the same for every application: A2UI's
+media type is one agreed string, unlike a component catalog, which has to match the components a
+given frontend implements and so stays with the application.
+
+The detection rule is the config block itself. Naming an agent under ``a2ui.agents`` declares that
+it emits A2UI, and the hook takes that at its word: a reply from that agent whose body parses as
+JSON is labelled, and prose, which does not parse, is left alone. Nothing reads A2UI's message
+names or its ``version``, so the capability needs no revision when the protocol moves.
+
+An ``AgentReplyAny`` is skipped rather than labelled. A reply that is already structured means the
+application set ``output_type``, whose schema — its union members, its discriminator — Agent Kernel
+has never seen; a hook labelling every structured reply would stamp prose as A2UI on every turn.
+Skipping is what keeps the config block and the ``output_type`` route from colliding: one or the
+other owns the labelling, never both.
+"""
+
+import json
+import logging
+from typing import Any, Optional
+
+from ..core.base import Agent, Session
+from ..core.config import AKConfig
+from ..core.hooks import PostHook
+from ..core.model import AgentReply, AgentReplyAny, AgentReplyText, AgentRequest
+
+
+class A2UIPostHook(PostHook):
+    """Label a parsed reply from an agent the configuration declares to be an A2UI agent."""
+
+    MEDIA_TYPE = "application/a2ui+json"
+    EXTENSION_URI = "https://a2ui.org/a2a-extension/a2ui/v0.9.1"
+    """
+    The A2A extension an agent card declares for a labelled agent: an identifier, not a page. It is
+    defined by the binding at https://a2ui.org/specification/v0.9.1-a2ui-extension-specification/
+    and moves when Agent Kernel's labelled payloads move to a newer A2UI version.
+    """
+
+    @classmethod
+    def a2a_data(cls, media_type: str, content: Any) -> Any:
+        """Return the data an A2A data part carries for a payload labelled `media_type`.
+
+        The A2A binding requires an A2UI data part to hold a list of messages, so a single A2UI
+        object goes out as a one-item list. Any other media type, and a list, is returned as is.
+        Other surfaces never call this: they keep the payload's own shape.
+
+        :param media_type: The payload's label.
+        :param content: The labelled payload, a dict or a list.
+        :return: The data to put in the data part.
+        """
+        if media_type == cls.MEDIA_TYPE and isinstance(content, dict):
+            return [content]
+        return content
+
+    async def on_run(self, session: Session, requests: list[AgentRequest], agent: Agent, agent_reply: AgentReply) -> AgentReply:
+        """Return the reply labelled as A2UI when it parses, and untouched when it does not.
+
+        :param session: The session instance.
+        :param requests: The requests provided to the agent, after pre-hooks.
+        :param agent: The agent that produced the reply.
+        :param agent_reply: The reply to label.
+        :return: An AgentReplyAny carrying the media type, or the original reply unchanged.
+        """
+        if not self._applies_to(agent):
+            return agent_reply
+        if not isinstance(agent_reply, AgentReplyText):
+            return agent_reply
+        try:
+            payload = json.loads(agent_reply.response)
+        except (ValueError, TypeError):
+            return agent_reply
+        if not isinstance(payload, (dict, list)):
+            return agent_reply
+        return AgentReplyAny(content=payload, prompt=agent_reply.prompt, media_type=self.MEDIA_TYPE)
+
+    @staticmethod
+    def _applies_to(agent: Agent) -> bool:
+        """Return whether the configuration scopes this capability to `agent`.
+
+        Read per call rather than resolved once, so one hook instance stays correct for every
+        concurrent request; the hook holds no state of its own.
+
+        :param agent: The agent that produced the reply.
+        :return: True when `a2ui.agents` is unset or names this agent.
+        """
+        return A2UIPostHook.scopes(agent.name)
+
+    @staticmethod
+    def scopes(agent_name: str) -> bool:
+        """Return whether `a2ui.agents` covers the agent with this name.
+
+        The one scoping rule, shared by the hook and by anything that describes what the hook will
+        do, such as an A2A agent card, so the two can never disagree.
+
+        :param agent_name: The agent's name.
+        :return: True when `a2ui.agents` is unset or names this agent.
+        """
+        config = getattr(AKConfig.get(), "a2ui", None)
+        agents: Optional[list[str]] = getattr(config, "agents", None) if config else None
+        return agents is None or agent_name in agents
+
+    def name(self) -> str:
+        """Return the hook name."""
+        return "A2UIPostHook"
+
+
+class NoOpA2UIPostHook(PostHook):
+    """Returned when the capability is disabled, so the hook chain keeps a uniform shape."""
+
+    async def on_run(self, session: Session, requests: list[AgentRequest], agent: Agent, agent_reply: AgentReply) -> AgentReply:
+        """Return the reply untouched.
+
+        :param session: The session instance.
+        :param requests: The requests provided to the agent.
+        :param agent: The agent that produced the reply.
+        :param agent_reply: The reply to pass through.
+        :return: The reply, unchanged.
+        """
+        return agent_reply
+
+    def name(self) -> str:
+        """Return the hook name."""
+        return "NoOpA2UIPostHook"
+
+
+class A2UIPostHookFactory:
+    """Factory returning the A2UI post-hook, or a no-op when the capability is disabled."""
+
+    _log = logging.getLogger("ak.a2ui.hook")
+
+    @classmethod
+    def get(cls) -> PostHook:
+        """Return ``A2UIPostHook`` when ``a2ui.enabled`` is true, else the no-op hook.
+
+        Any initialization failure also falls back to the no-op: the hook chain must never break
+        the runtime. A streaming deployment is warned about rather than served, because the hook is
+        an ``on_run`` and ``Runtime.stream`` never calls one — the block would otherwise do nothing
+        with no indication why.
+
+        :return: The configured post-hook.
+        """
+        try:
+            config = getattr(AKConfig.get(), "a2ui", None)
+            if not (config and config.enabled):
+                return NoOpA2UIPostHook()
+            if getattr(AKConfig.get().execution, "is_delta", False):
+                cls._log.warning(
+                    "a2ui.enabled is true but execution.message_type is delta: the A2UI hook runs on "
+                    "Runtime.run and is never called for a streamed run, so no reply will be "
+                    "labelled. Label streamed payloads with an on_stream_event hook instead."
+                )
+            return A2UIPostHook()
+        except Exception:  # noqa: BLE001 — the hook chain must never break the runtime
+            cls._log.exception("Failed to initialize A2UIPostHook; falling back to NoOpA2UIPostHook.")
+            return NoOpA2UIPostHook()
+
+    @classmethod
+    def labels(cls, agent_name: str) -> bool:
+        """Return whether this agent's JSON replies get labelled: `a2ui.enabled` and in scope.
+
+        Ignores ``execution.mode`` on purpose: a caller asking by name (an A2A card) runs on the
+        single-reply path, where the hook is called even when the app streams. Any failure is logged
+        and answers False, the same fallback ``get()`` uses, so a broken block never breaks a caller.
+
+        :param agent_name: The agent's name.
+        :return: True when the capability is enabled and `a2ui.agents` covers the agent.
+        """
+        try:
+            config = getattr(AKConfig.get(), "a2ui", None)
+            return bool(config and config.enabled) and A2UIPostHook.scopes(agent_name)
+        except Exception:  # noqa: BLE001 — a describing caller must never fail on this block
+            cls._log.exception(f"Failed to read the a2ui configuration; treating '{agent_name}' as unlabelled.")
+            return False

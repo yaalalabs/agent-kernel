@@ -7,6 +7,7 @@ from langfuse.langchain import CallbackHandler
 from ...core import Session
 from ...core.model import AgentReply, AgentRequest
 from ...framework.langgraph.langgraph import LangGraphRunner
+from .langfuse import LangFuse
 
 
 class LangFuseLangGraph(LangGraphRunner):
@@ -21,18 +22,22 @@ class LangFuseLangGraph(LangGraphRunner):
         self._log = logging.getLogger("ak.trace.langfuse.langgraph")
         self._callback_handler = CallbackHandler()
 
-    def _prepare_session_and_messages(self, agent: Any, session: Session, prompt: str) -> tuple[dict, list]:
+    def _session_config(self, agent: Any, session: Session) -> dict:
         """
         Wires the Langfuse callback handler into the base runner's session config so LangGraph emits traces.
-        Overriding only this seam keeps message building and framework_context handling in the base runner.
+
+        Overriding the config seam rather than `_prepare_session_and_messages` keeps message building
+        and framework_context handling in the base runner, and covers a **resumed** run too: that path
+        builds no messages, so an override on the message-building method missed it entirely — losing
+        traces for everything after a human's approval, which is where a gated tool finally runs.
+
         :param agent: The LangGraph agent.
         :param session: The AgentKernel session.
-        :param prompt: The prompt text.
-        :return: Tuple of (session_config with Langfuse callbacks wired in, messages).
+        :return: The session config with the Langfuse callback wired in.
         """
-        config, messages = super()._prepare_session_and_messages(agent, session, prompt)
+        config = super()._session_config(agent, session)
         config["callbacks"] = [self._callback_handler]
-        return config, messages
+        return config
 
     async def run(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AgentReply:
         """
@@ -42,8 +47,11 @@ class LangFuseLangGraph(LangGraphRunner):
         :param requests: The requests to the agent.
         :return: The result of the agent's execution.
         """
-        with propagate_attributes(session_id=session.id, tags=["agentkernel"]):
-            with self._client.start_as_current_observation(name="Agent Kernel LangGraph", as_type="span") as span:
-                result = await super().run(agent, session, requests)
-                span.update(input=result.prompt, output=str(result))
+        try:
+            with propagate_attributes(session_id=session.id, tags=["agentkernel"]):
+                with self._client.start_as_current_observation(name="Agent Kernel LangGraph", as_type="span") as span:
+                    result = await super().run(agent, session, requests)
+                    span.update(input=result.prompt, output=str(result))
+        finally:
+            LangFuse.flush_on_lambda(self._client)
         return result

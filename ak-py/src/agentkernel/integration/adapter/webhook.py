@@ -42,6 +42,11 @@ class WebhookRESTRequestHandler(RESTRequestHandler):
         self._adapter = adapter
         self._producer = producer or IntegrationProducer()
 
+    @property
+    def adapter(self) -> InboundAdapter:
+        """The hosted adapter (the Lambda webhook host reads its routes and settings)."""
+        return self._adapter
+
     def get_router(self) -> APIRouter:
         """Mount the adapter's delivery route, plus its handshake route when it has one."""
         router = APIRouter()

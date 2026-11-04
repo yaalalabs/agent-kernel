@@ -1,0 +1,627 @@
+/* ─── Architecture Overview ─────────────────────────────────────────────── */
+
+.section {
+  position: relative;
+  padding: 5rem 1.5rem 5.5rem;
+  text-align: center;
+  background: transparent;
+  overflow: hidden;
+}
+
+.topGlow {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.15) 20%,
+    rgba(255, 255, 255, 0.4) 50%,
+    rgba(255, 255, 255, 0.15) 80%,
+    transparent 100%
+  );
+}
+
+.topGlow::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 60%;
+  height: 150px;
+  background: radial-gradient(
+    ellipse at top center,
+    rgba(255, 255, 255, 0.07) 0%,
+    rgba(255, 255, 255, 0.03) 40%,
+    transparent 70%
+  );
+  pointer-events: none;
+}
+
+/* Header */
+.header {
+  max-width: 760px;
+  margin: 0 auto 3.25rem;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 1rem;
+  border: 2px solid #2a272e;
+  border-radius: 999px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: rgba(147, 210, 255, 0.9);
+  letter-spacing: 0.01em;
+  margin-bottom: 1.25rem;
+  background: #131017;
+}
+
+.badgeStar {
+  font-size: 0.8rem;
+}
+
+.title {
+  font-size: 2.4rem;
+  font-weight: 600;
+  background: linear-gradient(to bottom, #ffffff 0%, #898989 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+  margin: 0;
+}
+
+.subtitle {
+  font-size: 1.05rem;
+  color: #9a91b8;
+  line-height: 1.7;
+  margin: 0.9rem 0 0;
+}
+
+/* ─── Diagram frame ─────────────────────────────────────────────────────── */
+.diagram {
+  position: relative;
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 2.5rem 2rem 2rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 24px;
+  background:
+    radial-gradient(ellipse at 50% 45%, rgba(0, 221, 255, 0.06) 0%, transparent 55%),
+    linear-gradient(180deg, rgba(12, 12, 20, 0.85) 0%, rgba(4, 4, 8, 0.95) 100%);
+  text-align: left;
+}
+
+.connectors {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.connector {
+  fill: none;
+  stroke: rgba(147, 210, 255, 0.45);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-dasharray: 2 6;
+  animation: flow 1.8s linear infinite;
+}
+
+.connector-source {
+  animation-direction: normal;
+}
+
+/* Responses travel from the core back out to the destinations, so the dashes run the other way. */
+.connector-destination {
+  animation-direction: reverse;
+}
+
+.connector-pill {
+  stroke: rgba(147, 210, 255, 0.3);
+  stroke-dasharray: 2 5;
+  animation: none;
+}
+
+.arrowHead {
+  fill: none;
+  stroke: rgba(147, 210, 255, 0.7);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+@keyframes flow {
+  to {
+    stroke-dashoffset: -16;
+  }
+}
+
+/* ─── Columns ───────────────────────────────────────────────────────────── */
+.columns {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(380px, 1.2fr) minmax(260px, 1fr);
+  gap: 2.75rem;
+  align-items: center;
+}
+
+.column {
+  display: flex;
+  flex-direction: column;
+  gap: 1.4rem;
+}
+
+.centerColumn {
+  align-items: center;
+}
+
+.columnLabel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.columnRule {
+  display: block;
+  width: 64px;
+  height: 1px;
+  background: rgba(147, 210, 255, 0.5);
+}
+
+.align-start {
+  align-items: flex-start;
+  text-align: left;
+}
+
+.align-center {
+  align-items: center;
+  text-align: center;
+}
+
+.align-end {
+  align-items: flex-end;
+  text-align: right;
+}
+
+/* Hidden on desktop; a down-arrow between stacked columns on small screens. */
+.stackArrow {
+  display: none;
+}
+
+/* ─── Cards ─────────────────────────────────────────────────────────────── */
+.card {
+  position: relative;
+  padding: 1rem 1.15rem 1.1rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  background: rgba(10, 10, 16, 0.92);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+
+.cardTitle {
+  font-size: 0.98rem;
+  font-weight: 600;
+  color: #ffffff;
+  letter-spacing: -0.01em;
+}
+
+.chipRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-top: 0.8rem;
+}
+
+/* Sized so seven chips fit one row in a side column at the 1280px frame width. */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: #010002;
+  color: #ffffff;
+  transition: border-color 0.2s ease, transform 0.2s ease, background 0.2s ease;
+}
+
+.chip:hover,
+.chip:focus-visible {
+  border-color: rgba(147, 210, 255, 0.55);
+  background: rgba(255, 255, 255, 0.05);
+  transform: translateY(-2px);
+  color: #ffffff;
+  outline: none;
+}
+
+.chip svg {
+  width: 19px;
+  height: 19px;
+}
+
+.chipImg {
+  max-width: 21px;
+  max-height: 21px;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  display: block;
+}
+
+.mono {
+  filter: brightness(0) invert(1);
+}
+
+/* ─── Core ──────────────────────────────────────────────────────────────── */
+.core {
+  position: relative;
+  width: 100%;
+  min-height: 460px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.coreGlow {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 440px;
+  height: 440px;
+  transform: translate(-50%, -58%);
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(0, 221, 255, 0.22) 0%,
+    rgba(130, 80, 255, 0.16) 38%,
+    transparent 68%
+  );
+  filter: blur(12px);
+  pointer-events: none;
+}
+
+.coreRing {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 300px;
+  height: 300px;
+  transform: translate(-50%, -58%);
+  border: 1px dashed rgba(147, 210, 255, 0.35);
+  border-radius: 48px;
+  pointer-events: none;
+}
+
+.coreBox {
+  position: relative;
+  width: 232px;
+  height: 232px;
+  margin-top: -2.4rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 36px;
+  border: 1px solid rgba(147, 210, 255, 0.4);
+  background: linear-gradient(160deg, rgba(22, 26, 44, 0.96) 0%, rgba(8, 8, 14, 0.96) 100%);
+  box-shadow:
+    0 0 60px rgba(0, 221, 255, 0.16),
+    inset 0 0 40px rgba(0, 221, 255, 0.06);
+}
+
+.coreLogo {
+  width: 96px;
+  height: 96px;
+  display: block;
+  filter: drop-shadow(0 0 18px rgba(0, 221, 255, 0.35));
+}
+
+.coreName {
+  position: relative;
+  margin-top: 1rem;
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #ffffff;
+  letter-spacing: -0.01em;
+}
+
+.coreSub {
+  position: relative;
+  font-size: 0.8rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #9a91b8;
+}
+
+/* Pills sit at the four corners of the core column on desktop. */
+.pills {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.pill {
+  pointer-events: auto;
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.5rem 0.95rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: #0b0a0f;
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.4);
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #ffffff;
+  white-space: nowrap;
+  text-decoration: none;
+  transition: border-color 0.2s ease, transform 0.2s ease;
+}
+
+.pill:hover,
+.pill:focus-visible {
+  border-color: rgba(147, 210, 255, 0.55);
+  color: #ffffff;
+  text-decoration: none;
+  transform: translateY(-1px);
+  outline: none;
+}
+
+.pillDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #00ddff;
+  box-shadow: 0 0 10px rgba(0, 221, 255, 0.8);
+}
+
+.pill-0 {
+  top: 4%;
+  left: -1.25rem;
+}
+
+.pill-1 {
+  top: 4%;
+  right: -1.25rem;
+}
+
+.pill-2 {
+  bottom: 9%;
+  right: -1.25rem;
+}
+
+.pill-3 {
+  bottom: 9%;
+  left: -1.25rem;
+}
+
+/* ─── Footer flow line ─────────────────────────────────────────────────── */
+.footer {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(380px, 1.2fr) minmax(260px, 1fr);
+  gap: 2.75rem;
+  align-items: end;
+  margin-top: 2.75rem;
+}
+
+.flowLabel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.flowLine {
+  position: relative;
+  display: block;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0.08));
+}
+
+.flowLine::after {
+  content: "";
+  position: absolute;
+  right: -1px;
+  top: -4px;
+  border: 4.5px solid transparent;
+  border-left-color: rgba(255, 255, 255, 0.4);
+  border-right: 0;
+}
+
+.flowWords {
+  display: flex;
+  justify-content: center;
+  align-items: baseline;
+  gap: 0.55rem;
+  padding-bottom: 0.7rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #ffffff;
+}
+
+.flowSeparator {
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.flowAccent {
+  color: #00ddff;
+}
+
+/* ─── Reduced motion ───────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .connector {
+    animation: none;
+  }
+}
+
+/* ─── Stacked layout (≤ 1100px) ────────────────────────────────────────── */
+@media (max-width: 1100px) {
+  .diagram {
+    padding: 2rem 1.25rem 1.75rem;
+  }
+
+  .connectors {
+    display: none;
+  }
+
+  .columns {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
+
+  .column {
+    gap: 1rem;
+  }
+
+  .align-end {
+    align-items: flex-start;
+    text-align: left;
+  }
+
+  .stackArrow {
+    display: block;
+    text-align: center;
+    font-size: 1.4rem;
+    color: rgba(147, 210, 255, 0.6);
+    line-height: 1;
+  }
+
+  .core {
+    min-height: 0;
+    padding: 1.5rem 0 0;
+  }
+
+  .coreGlow {
+    width: 320px;
+    height: 320px;
+    transform: translate(-50%, -62%);
+  }
+
+  .coreRing {
+    display: none;
+  }
+
+  .coreBox {
+    width: 180px;
+    height: 180px;
+    margin-top: 0;
+    border-radius: 30px;
+  }
+
+  .coreLogo {
+    width: 72px;
+    height: 72px;
+  }
+
+  .pills {
+    position: static;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.6rem;
+    margin-top: 1.4rem;
+    pointer-events: auto;
+  }
+
+  .pill,
+  .pill-0,
+  .pill-1,
+  .pill-2,
+  .pill-3 {
+    position: static;
+    inset: auto;
+  }
+
+  .footer {
+    grid-template-columns: 1fr;
+    gap: 1.25rem;
+    margin-top: 2rem;
+  }
+
+  .flowWords {
+    order: 2;
+    flex-wrap: wrap;
+    padding-bottom: 0;
+  }
+
+  .flowLabel:first-child {
+    order: 1;
+  }
+
+  .flowLabel:last-child {
+    order: 3;
+  }
+}
+
+/* ─── Mobile (≤ 540px) ─────────────────────────────────────────────────── */
+@media (max-width: 540px) {
+  .section {
+    padding: 3rem 1rem 3.5rem;
+  }
+
+  .header {
+    margin-bottom: 2rem;
+  }
+
+  .title {
+    font-size: 1.8rem;
+  }
+
+  .subtitle {
+    font-size: 0.95rem;
+  }
+
+  .diagram {
+    padding: 1.5rem 1rem 1.5rem;
+    border-radius: 18px;
+  }
+
+  .chip {
+    width: 34px;
+    height: 34px;
+  }
+
+  .chip svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .chipImg {
+    max-width: 20px;
+    max-height: 20px;
+  }
+
+  .flowWords {
+    font-size: 0.72rem;
+    gap: 0.4rem;
+  }
+
+  .topGlow::after {
+    width: 100%;
+    height: 160px;
+  }
+}

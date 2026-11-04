@@ -37,6 +37,7 @@ import FrameworkSelector from "../components/FrameworkSelector";
 import heroStyles from "../components/HeroAnimation/styles.module.css";
 import { FaGithub } from "react-icons/fa";
 
+/** Render the AI engineer guide with framework examples and interactive architecture tabs. */
 export default function AIEngineerPage() {
   const history = useHistory();
   const contentRef = useRef<HTMLDivElement>(null);
@@ -76,7 +77,7 @@ export default function AIEngineerPage() {
         "Google ADK",
         "Smolagents",
         "Pydantic AI",
-        "LiveKit",
+        "Microsoft Agent Framework",
         "Bring your own [advanced]",
       ],
     },
@@ -93,7 +94,7 @@ export default function AIEngineerPage() {
     {
       num: "06",
       label: "Observability",
-      items: ["Langfuse", "OpenLLMetry", "Pydantic Logfire"],
+      items: ["Langfuse", "OpenLLMetry", "Pydantic Logfire", "AWS CloudWatch"],
     },
     {
       num: "07",
@@ -124,6 +125,7 @@ export default function AIEngineerPage() {
         "Messenger",
         "Instagram",
         "Gmail",
+        "LiveKit",
         "Redis",
         "DynamoDB",
       ],
@@ -310,7 +312,7 @@ export default function AIEngineerPage() {
         {
           icon: MdAutoAwesome,
           title: "Multi-Framework Support",
-          body: "Run OpenAI Agents, LangGraph, CrewAI, Google ADK, Smolagents, Pydantic AI, LiveKit side-by-side. Keep one runtime across teams while using the best framework per use case.",
+          body: "Run OpenAI Agents, LangGraph, CrewAI, Google ADK, Smolagents, Pydantic AI and Microsoft Agent Framework side-by-side. Keep one runtime across teams while using the best framework per use case.",
         },
       ],
     },
@@ -331,7 +333,7 @@ export default function AIEngineerPage() {
         {
           icon: MdPermMedia,
           title: "Multimodal Support",
-          body: "In-built framework-neutral multimodal support across all integration channels. Handle files/images cleanly and keep sessions lightweight. Additional voice and video support via LiveKit.",
+          body: "In-built framework-neutral multimodal support across integration channels. Handle files/images cleanly and keep sessions lightweight. Realtime voice is available through the LiveKit integration for OpenAI Agents SDK and Google ADK agents.",
         },
       ],
     },
@@ -363,7 +365,7 @@ export default function AIEngineerPage() {
         {
           icon: MdMessage,
           title: "Messaging Integrations",
-          body: "Slack, WhatsApp, Instagram, Telegram, Gmail, Teams, Messenger plug and play.",
+          body: "Slack, WhatsApp, Instagram, Telegram, Gmail, Teams and Messenger integrations, plus realtime voice through LiveKit for OpenAI Agents SDK and Google ADK agents.",
         },
         {
           icon: MdScience,
@@ -373,7 +375,7 @@ export default function AIEngineerPage() {
         {
           icon: MdVisibility,
           title: "Observability",
-          body: "Langfuse, OpenLLMetry, and Pydantic Logfire tracing with one config line. No manual instrumentation. Trace requests, latency, tool calls, and token behavior.",
+          body: "Langfuse, OpenLLMetry, Pydantic Logfire, and AWS CloudWatch tracing with one config line. No manual instrumentation. Trace requests, latency, tool calls, and token behavior.",
         },
       ],
     },

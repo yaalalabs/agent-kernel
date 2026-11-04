@@ -10,7 +10,7 @@ attach-only `ec2_ssm` provider is rejected at startup). Attached environments ar
 destroyed or recreated by the framework: destroying the session or idling out only drops
 the binding, and if the instance becomes unreachable the failure is surfaced instead of
 self-healing into a fresh sandbox. Commands are `ssm:SendCommand` (`AWS-RunShellScript`)
-invocations polled to completion; Python code is wrapped in a `python3 - <<'EOF'` heredoc.
+invocations polled to completion; code is fed on stdin to the `language_runtimes` interpreter argv (default `python3 -`), so it stays out of the instance's process list.
 
 > **Warning:** isolation is **`none`**. Commands run directly on the instance with the SSM
 > agent's OS permissions, and every policy dimension except the execution timeout is
@@ -69,6 +69,6 @@ chain dependent steps.
 
 This is the iteration-7 **manual evaluation checkpoint** for the attach model
 (spec #494): it requires a real instance, so it is deliberately **not** part of the
-automated e2e suite (`.github/test-config.yaml`). The provider's call shapes, heredoc
-wrapping, identity mapping, and timeout behavior are covered by mocked-boto3 unit tests in
+automated e2e suite (`.github/test-config.yaml`). The provider's call shapes, interpreter
+argv, identity mapping, and timeout behavior are covered by mocked-boto3 unit tests in
 `ak-py/tests/test_sandbox_providers.py` (`-k ssm`).

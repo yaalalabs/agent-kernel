@@ -506,7 +506,8 @@ For production deployments, consider:
 
 - Cost-effective for low-to-medium traffic
 - Auto-scaling built-in
-- See `examples/aws-serverless` for reference
+- See [Messaging integrations on AWS Lambda](../deployment/aws-serverless.md#messaging-integrations): `LambdaWebhookHost`, the webhook and handshake
+  routes in `gateway_endpoints`, the authorizer bypass, and the required `messenger.app_secret`
 
 **Containerized (Docker/Kubernetes):**
 

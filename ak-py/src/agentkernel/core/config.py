@@ -2,10 +2,11 @@ import importlib.metadata
 from threading import RLock
 from typing import Any, ClassVar, Dict, List, Optional
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
-from .model import ExecutionMode
+from .model import ExecutionMode, ReplyMessageType
 from .util.config_yaml_util import YamlBaseSettingsModified
+from .util.factory import AKConfigError
 
 
 def _get_ak_version() -> str:
@@ -249,6 +250,19 @@ class _GmailConfig(BaseModel):
     )
 
 
+class _LiveKitConfig(BaseModel):
+    """LiveKit realtime voice gateway settings.
+
+    Bound like every other block, from YAML or ``AK_LIVEKIT__<FIELD>`` env vars (e.g.
+    ``AK_LIVEKIT__URL``, ``AK_LIVEKIT__API_KEY``, ``AK_LIVEKIT__API_SECRET``).
+    """
+
+    agent: str = Field(default="", description="Default agent to use for LiveKit interactions")
+    url: str = Field(default="", description="LiveKit server WebSocket URL")
+    api_key: str = Field(default="", description="LiveKit API Key")
+    api_secret: str = Field(default="", description="LiveKit API Secret")
+
+
 class _MultimodalStorageRedisConfig(_RedisConfig):
     ttl: int = Field(default=604800, description="Attachment TTL in seconds")
     prefix: str = Field(default="ak:attachments:", description="Key prefix for attachment keys")
@@ -456,7 +470,7 @@ class _TraceConfig(BaseModel):
     enabled: bool = Field(default=False, description="Enable tracing")
     type: str = Field(
         default="langfuse",
-        description="Tracing backend: a built-in short name (langfuse, openllmetry, logfire) or a dotted path to a BaseTrace subclass",
+        description="Tracing backend: a built-in short name (langfuse, openllmetry, logfire, cloudwatch) or a dotted path to a BaseTrace subclass",
     )
 
 
@@ -652,10 +666,50 @@ class _LoggingConfig(BaseModel):
     system: _LogLevelConfig = Field(description="System logging configuration", default_factory=_LogLevelConfig)
 
 
+class _RealtimeConfig(BaseModel):
+    """Realtime-mode playback pacing.
+
+    Outbound model audio is paced so the edge holds ``playback_lead_ms`` of audio ahead of
+    wall-clock. A larger lead absorbs the per-chunk latency and jitter of a store-and-forward
+    broker (SQS adds more than Kafka/NATS), trading a little added latency for smoother playback;
+    a small lead is right for a low-latency transport. Only read when ``execution.mode`` is
+    ``realtime``.
+    """
+
+    playback_lead_ms: int = Field(
+        default=50,
+        ge=0,
+        description="Audio buffered ahead of playback at the edge, in milliseconds (higher = smoother over higher-latency transports)",
+    )
+    input_batch_ms: int = Field(
+        default=100,
+        ge=0,
+        description="Mic audio batched into this many milliseconds per input-queue message; 0 passes every frame through (lowest input latency, many more messages)",
+    )
+
+
 class _ExecutionConfig(BaseModel):
+    STREAM_MIGRATION_MESSAGE: ClassVar[str] = (
+        "execution.mode 'stream' was removed. For SSE over REST set execution.mode: rest_sync and "
+        "execution.message_type: delta; for chunks over WebSocket set execution.mode: async and "
+        "execution.message_type: delta (env: AK_EXECUTION__MODE, AK_EXECUTION__MESSAGE_TYPE)"
+    )
+
     mode: Optional[ExecutionMode] = Field(
         default=None,
-        description="Execution mode: rest_sync for synchronous REST, rest_async for asynchronous REST, stream for token streaming (WebSocket serverless or containerized direct streaming)",
+        description=(
+            "Invocation mode: rest_sync (REST, wait for the reply), rest_async (REST, submit then "
+            "poll), async (WebSocket only), realtime (persistent realtime sockets, e.g. the LiveKit voice "
+            "gateway). Unset runs as rest_sync."
+        ),
+    )
+    message_type: Optional[ReplyMessageType] = Field(
+        default=None,
+        description=(
+            "Reply delivery: complete (one message with the whole reply) or delta (one message per "
+            "chunk: SSE under rest_sync, WebSocket chunks under async). Unset resolves to delta for "
+            "realtime and complete otherwise."
+        ),
     )
     # The default carries the transport type explicitly: `type` is mandatory inside a declared
     # queues block, and a config that declares no block at all still runs single-process on the
@@ -668,6 +722,65 @@ class _ExecutionConfig(BaseModel):
         default=None,
         description="Response storage configuration for async execution mode",
     )
+    realtime: _RealtimeConfig = Field(
+        default_factory=_RealtimeConfig,
+        description="Realtime execution playback pacing (used only when execution.mode is realtime)",
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_legacy_stream(cls, data: Any) -> Any:
+        """Fail the removed ``stream`` mode with the migration message instead of a bare enum error."""
+        if isinstance(data, dict) and data.get("mode") == "stream":
+            raise AKConfigError(cls.STREAM_MIGRATION_MESSAGE)
+        return data
+
+    @model_validator(mode="after")
+    def _check_message_type(self) -> "_ExecutionConfig":
+        """Reject the mode / message_type pairs no transport can deliver.
+
+        Only config-only rules live here; rules that depend on the transport, response store or
+        host run at startup in the entry point that owns them.
+        """
+        if self.message_type is None:
+            return self
+        if self.mode == ExecutionMode.REST_ASYNC and self.message_type == ReplyMessageType.DELTA:
+            raise AKConfigError(
+                "execution.mode rest_async with execution.message_type delta is not supported: polling returns one "
+                "stored reply. Use message_type complete, or mode rest_sync (SSE) or async (WebSocket) with delta"
+            )
+        if self.mode == ExecutionMode.REALTIME and self.message_type == ReplyMessageType.COMPLETE:
+            raise AKConfigError(
+                "execution.mode realtime with execution.message_type complete is not supported: realtime always "
+                "streams. Leave message_type unset or set it to delta"
+            )
+        return self
+
+    @property
+    def resolved_message_type(self) -> ReplyMessageType:
+        """``message_type`` if set, else ``DELTA`` for realtime and ``COMPLETE`` otherwise."""
+        if self.message_type is not None:
+            return self.message_type
+        return ReplyMessageType.DELTA if self.mode == ExecutionMode.REALTIME else ReplyMessageType.COMPLETE
+
+    @property
+    def is_websocket(self) -> bool:
+        """Replies are delivered over WebSocket (``async`` mode)."""
+        return self.mode == ExecutionMode.ASYNC
+
+    @property
+    def is_delta(self) -> bool:
+        """Replies are token-streamed as chunks by ``StreamAgentRunner``.
+
+        False for realtime even though its resolved message type is ``DELTA``: realtime has its own
+        runner and delivery, so a voice turn must never reach the token-streaming path.
+        """
+        return self.resolved_message_type == ReplyMessageType.DELTA and self.mode != ExecutionMode.REALTIME
+
+    @property
+    def is_sse(self) -> bool:
+        """Delta replies streamed over REST as SSE (``rest_sync`` or unset mode)."""
+        return self.is_delta and not self.is_websocket
 
 
 class _SandboxIdentityConfig(BaseModel):
@@ -676,6 +789,15 @@ class _SandboxIdentityConfig(BaseModel):
         pattern="^(agent|user)$",
         description="Execution identity: 'agent' runs under the agent's own credentials, 'user' under the invoking user's resolved identity",
     )
+
+
+class _SandboxPackageInstallConfig(BaseModel):
+    ecosystems: list[str] = Field(
+        default_factory=lambda: ["python"],
+        min_length=1,
+        description="Package ecosystems installs may use (e.g. python, node); each must be declared by the provider's package_installers",
+    )
+    timeout: Optional[float] = Field(default=None, gt=0, description="Wall-clock limit in seconds for one install; omitted = policy.timeout")
 
 
 class _SandboxPolicyConfig(BaseModel):
@@ -691,25 +813,120 @@ class _SandboxPolicyConfig(BaseModel):
     memory_mb: Optional[int] = Field(default=None, description="Memory limit in megabytes; None leaves it to the provider default")
     timeout: float = Field(default=120.0, description="Per-execution wall-clock timeout in seconds")
     strict: bool = Field(default=True, description="Fail closed when a policy dimension cannot be enforced by the selected provider")
+    languages: Optional[list[str]] = Field(
+        default=None,
+        description="Languages run_code may use under this profile; omitted = whatever the provider declares; [] = no run_code (command-only profile)",
+    )
+    package_install: Optional[_SandboxPackageInstallConfig] = Field(
+        default=None, description="Permit install_packages under this profile; omitted = installs denied"
+    )
 
 
 class _SandboxLocalSubprocessConfig(BaseModel):
     workdir: Optional[str] = Field(default=None, description="Base directory for per-sandbox working directories; None uses the system temp location")
 
 
-class _SandboxDockerConfig(BaseModel):
+class _SandboxProviderPackageConfig(BaseModel):
+    """Package-install fields shared by the provider blocks that can install packages."""
+
+    package_installers: dict[str, list[str]] = Field(
+        default_factory=lambda: {"python": ["pip", "install"]},
+        description="Ecosystem -> installer argv prefix the image provides; the keys are the provider's declared ecosystems. "
+        "Declaring it replaces the default map rather than merging with it",
+    )
+    package_rules: dict[str, str] = Field(
+        default_factory=dict,
+        description="Ecosystem -> dotted path of a PackageSpecRule subclass validating that ecosystem's package specs",
+    )
+
+    @field_validator("package_installers")
+    @classmethod
+    def _installer_argv_non_empty(cls, value: dict[str, list[str]]) -> dict[str, list[str]]:
+        """Every installer argv prefix holds at least one token, and no token is empty."""
+        for ecosystem, argv in value.items():
+            if not argv or any(not token for token in argv):
+                raise ValueError(f"package_installers[{ecosystem!r}] must be a non-empty argv prefix with no empty tokens")
+        return value
+
+    @model_validator(mode="after")
+    def _rules_match_installers(self) -> "_SandboxProviderPackageConfig":
+        """A rule for an ecosystem with no installer never runs, so a typo'd key would silently drop a narrowing rule."""
+        orphans = sorted(set(self.package_rules) - set(self.package_installers))
+        if orphans:
+            raise ValueError(f"package_rules keys {orphans} have no package_installers entry")
+        return self
+
+
+class _SandboxProviderRuntimeConfig(BaseModel):
+    """Language-runtime fields shared by the provider blocks that exec an interpreter argv."""
+
+    language_runtimes: dict[str, list[str]] = Field(
+        default_factory=lambda: {"python": ["python", "-c"]},
+        description="Language -> interpreter argv prefix the image provides; the code is appended as the last argument. "
+        "The keys are the provider's declared languages; declaring it replaces the default map and must keep a 'python' key",
+    )
+
+    @field_validator("language_runtimes")
+    @classmethod
+    def _runtimes_require_python(cls, value: dict[str, list[str]]) -> dict[str, list[str]]:
+        """Python execution is mandatory under the provider contract, so the map must declare it."""
+        if "python" not in value:
+            raise ValueError("language_runtimes must declare a 'python' runtime")
+        return value
+
+    @field_validator("language_runtimes")
+    @classmethod
+    def _runtime_argv_non_empty(cls, value: dict[str, list[str]]) -> dict[str, list[str]]:
+        """Every interpreter argv prefix holds at least one token, and no token is empty."""
+        for language, argv in value.items():
+            if not argv or any(not token for token in argv):
+                raise ValueError(f"language_runtimes[{language!r}] must be a non-empty argv prefix with no empty tokens")
+        return value
+
+    def runtime_languages(self) -> list[str]:
+        """The languages this block declares: the ``language_runtimes`` keys, in config order."""
+        return list(self.language_runtimes)
+
+
+class _SandboxDockerConfig(_SandboxProviderPackageConfig, _SandboxProviderRuntimeConfig):
     image: str = Field(default="python:3.12-slim", description="Container image used to create sandboxes")
     runtime: str = Field(default="docker", description="Container runtime to invoke (e.g. docker, nvidia)")
     attach_to: Optional[str] = Field(default=None, description="Existing container id to attach to instead of creating one (mode 3)")
 
 
-class _SandboxE2BConfig(BaseModel):
+_E2B_KERNELS = {"python", "javascript", "typescript", "r", "java", "bash"}  # run_code(language=...) values
+
+
+class _SandboxE2BConfig(_SandboxProviderPackageConfig):
     api_key_env: str = Field(default="E2B_API_KEY", description="Name of the environment variable holding the E2B API key")
-    template: str = Field(default="base", description="E2B sandbox template to launch")
+    # run_code needs the Jupyter server the code-interpreter template ships; `base` has none (port 49999 never opens)
+    template: str = Field(default="code-interpreter-v1", description="E2B sandbox template to launch; must ship the code-interpreter Jupyter server")
+    languages: list[str] = Field(
+        default_factory=lambda: ["python"],
+        description="E2B code-interpreter kernels run_code may use (python, javascript, typescript, r, java, bash); "
+        "the provider's declared languages. Declaring it replaces the default and must keep 'python'",
+    )
+
+    @field_validator("languages")
+    @classmethod
+    def _languages_are_e2b_kernels(cls, value: list[str]) -> list[str]:
+        """Python is mandatory under the provider contract; every entry must name an E2B kernel."""
+        if "python" not in value:
+            raise ValueError("e2b languages must include 'python'")
+        unknown = [lang for lang in value if lang not in _E2B_KERNELS]
+        if unknown:
+            raise ValueError(f"e2b languages {unknown} are not E2B kernels; choose from {sorted(_E2B_KERNELS)}")
+        return value
 
 
-class _SandboxDaytonaConfig(BaseModel):
+class _SandboxDaytonaConfig(_SandboxProviderPackageConfig, _SandboxProviderRuntimeConfig):
     api_key_env: str = Field(default="DAYTONA_API_KEY", description="Name of the environment variable holding the Daytona API key")
+    # python always runs via the SDK's native code_run, so it is always declared and needs no argv here.
+    language_runtimes: dict[str, list[str]] = Field(
+        default_factory=dict,
+        description="Extra language -> interpreter argv prefix the image/snapshot provides; the code is appended as the last "
+        "argument and run via process.exec. 'python' is always declared (native code_run), so it needs no entry; one is ignored",
+    )
     target: Optional[str] = Field(default=None, description="Daytona target/region; None uses the SDK default")
     image: Optional[str] = Field(
         default=None,
@@ -720,6 +937,16 @@ class _SandboxDaytonaConfig(BaseModel):
         description="Named Daytona snapshot to launch from. Mutually exclusive with 'image'; when neither is set Daytona uses its default snapshot.",
     )
     env_vars: dict[str, str] = Field(default_factory=dict, description="Environment variables set inside the sandbox")
+
+    @field_validator("language_runtimes")
+    @classmethod
+    def _runtimes_require_python(cls, value: dict[str, list[str]]) -> dict[str, list[str]]:
+        """Overrides the shared rule: python runs via native code_run, so the map need not declare it."""
+        return value
+
+    def runtime_languages(self) -> list[str]:
+        """``python`` (always, via code_run) followed by the other ``language_runtimes`` keys."""
+        return ["python", *(language for language in self.language_runtimes if language != "python")]
 
     @model_validator(mode="after")
     def _image_snapshot_exclusive(self) -> "_SandboxDaytonaConfig":
@@ -734,7 +961,7 @@ class _SandboxBedrockAgentCoreConfig(BaseModel):
     network_mode: str = Field(default="sandbox", description="AgentCore session network mode (e.g. 'sandbox', 'public')")
 
 
-class _SandboxKubernetesConfig(BaseModel):
+class _SandboxKubernetesConfig(_SandboxProviderPackageConfig, _SandboxProviderRuntimeConfig):
     namespace: str = Field(default="default", description="Kubernetes namespace for sandbox pods")
     image: str = Field(default="python:3.12-slim", description="Container image used for launched sandbox pods")
     attach_to: Optional[str] = Field(default=None, description="Existing '<namespace>/<pod>' to exec into instead of launching a pod (mode 3)")
@@ -759,9 +986,17 @@ class _SandboxKubernetesConfig(BaseModel):
     create_timeout: float = Field(default=120.0, description="Seconds to wait for a sandbox pod to reach Running before failing provisioning")
 
 
-class _SandboxEC2SSMConfig(BaseModel):
+class _SandboxEC2SSMConfig(_SandboxProviderRuntimeConfig):
     region: Optional[str] = Field(default=None, description="AWS region for SSM; None uses the boto3 default")
     attach_to: Optional[str] = Field(default=None, description="EC2 instance id to run commands against via SSM (attach-only)")
+    # The code goes in on stdin (keeps it out of the shared instance's process list), so each argv reads
+    # its program from stdin; EC2 images often ship only `python3`.
+    language_runtimes: dict[str, list[str]] = Field(
+        default_factory=lambda: {"python": ["python3", "-"]},
+        description="Language -> interpreter argv installed on the instance that reads its program from stdin "
+        "(e.g. python3 -, node -, bash -s); the code is fed on stdin, not appended as an argument. "
+        "The keys are the provider's declared languages; declaring it replaces the default map and must keep a 'python' key",
+    )
 
 
 class _ExecutionBrokerConfig(BaseModel):
@@ -827,6 +1062,38 @@ class _SandboxProfileConfig(BaseModel):
     )
     kubernetes: Optional[_SandboxKubernetesConfig] = Field(default=None, description="Configuration for the 'kubernetes' provider")
     ec2_ssm: Optional[_SandboxEC2SSMConfig] = Field(default=None, description="Configuration for the 'ec2_ssm' provider")
+
+    @model_validator(mode="after")
+    def _attached_forbids_package_install(self) -> "_SandboxProfileConfig":
+        """An install would change an environment the framework never owns — reject it on attached profiles."""
+        if self.environment == "attached" and self.policy.package_install is not None:
+            raise ValueError("policy.package_install is not allowed on a profile with environment 'attached'")
+        return self
+
+    @model_validator(mode="after")
+    def _per_call_forbids_package_install(self) -> "_SandboxProfileConfig":
+        """A per_call sandbox is destroyed after every operation, so an install would be gone before
+        the next run_code — reject it rather than report a success that has no effect."""
+        if self.scope == "per_call" and self.policy.package_install is not None:
+            raise ValueError(
+                "policy.package_install is not allowed on a profile with scope 'per_call': the sandbox is destroyed "
+                "after every operation, so installed packages would not survive to the next execution"
+            )
+        return self
+
+
+class _A2UIConfig(BaseModel):
+    """Scopes the A2UI labelling capability. Two keys, because the capability does two things:
+    decide whether to run at all, and decide which agents it runs for."""
+
+    enabled: bool = Field(
+        default=False,
+        description="Enable the A2UI capability; when False no hook runs and no reply is labelled",
+    )
+    agents: Optional[list[str]] = Field(
+        default=None,
+        description="Agent names whose JSON replies are labelled as A2UI; omitted = all agents",
+    )
 
 
 class _SandboxConfig(BaseModel):
@@ -899,13 +1166,26 @@ class _SandboxConfig(BaseModel):
         return self
 
 
+class _SecretKubernetesConfig(BaseModel):
+    mount_path: str = Field(
+        default="/var/run/secrets/agentkernel",
+        description="Absolute directory the Kubernetes Secrets are mounted under, one subdirectory per Secret "
+        "(<mount_path>/<secret-name>/<KEY>); a key file directly under mount_path is also read. The Helm chart's "
+        "secretStore mounts under the default, so set this only for Secrets mounted outside the chart, e.g. by the "
+        "Secrets Store CSI driver or as Docker / Compose secrets (/run/secrets). Read only by the kubernetes provider",
+    )
+
+
 class _SecretProviderConfig(BaseModel):
     type: str = Field(
         default="env",
-        description="Secret backend: a built-in short name (env, aws_ssm) or a dotted path to a SecretProvider subclass. "
-        "'env' reads the environment variable named by the key. 'aws_ssm' is AWS SSM Parameter Store and requires "
-        "secret.prefix. A set, non-empty environment variable named by the key always wins over the provider.",
+        description="Secret backend: a built-in short name (env, aws_ssm, kubernetes) or a dotted path to a "
+        "SecretProvider subclass. 'env' reads the environment variable named by the key. 'aws_ssm' is AWS SSM "
+        "Parameter Store and requires secret.prefix. 'kubernetes' reads one file per key from the Kubernetes Secrets "
+        "mounted under secret.provider.kubernetes.mount_path. A set, non-empty environment variable named by the key "
+        "always wins over the provider.",
     )
+    kubernetes: _SecretKubernetesConfig = Field(default_factory=_SecretKubernetesConfig, description="Settings of the kubernetes secret provider")
 
 
 class _SecretConfig(BaseModel):
@@ -914,7 +1194,7 @@ class _SecretConfig(BaseModel):
     prefix: str = Field(
         default="",
         description="Deployment scope a provider uses to namespace its secrets, e.g. 'myproduct-dev-agents'. The aws_ssm "
-        "provider reads OPENAI_API_KEY from the SSM parameter /ak/{prefix}/openai_api_key. Required by aws_ssm; ignored by env",
+        "provider reads OPENAI_API_KEY from the SSM parameter /ak/{prefix}/openai_api_key. Required by aws_ssm; ignored by env and kubernetes",
     )
     provider: _SecretProviderConfig = Field(default_factory=_SecretProviderConfig, description="Backend the secret values are read from")
     cache_ttl: int = Field(
@@ -967,6 +1247,7 @@ class AKConfig(YamlBaseSettingsModified):
         default_factory=_MCPConfig,
     )
     slack: _SlackConfig = Field(description="Slack related configurations", default_factory=_SlackConfig)
+    livekit: _LiveKitConfig = Field(description="LiveKit related configurations", default_factory=_LiveKitConfig)
     whatsapp: _WhatsAppConfig = Field(description="WhatsApp related configurations", default_factory=_WhatsAppConfig)
     messenger: _MessengerConfig = Field(description="Facebook Messenger related configurations", default_factory=_MessengerConfig)
     instagram: _InstagramConfig = Field(description="Instagram Business API related configurations", default_factory=_InstagramConfig)
@@ -994,6 +1275,7 @@ class AKConfig(YamlBaseSettingsModified):
     guardrail: _GuardrailConfig = Field(description="Guardrail related configurations", default_factory=_GuardrailConfig)
     sandbox: _SandboxConfig = Field(description="Sandbox capability configurations", default_factory=_SandboxConfig)
     secret: _SecretConfig = Field(description="Secret resolution configurations", default_factory=_SecretConfig)
+    a2ui: _A2UIConfig = Field(description="A2UI labelling capability configurations", default_factory=_A2UIConfig)
     execution: _ExecutionConfig = Field(description="Execution mode and queue related configurations", default_factory=_ExecutionConfig)
     logging: _LoggingConfig = Field(description="Logging related configurations", default_factory=_LoggingConfig)
     library_version: str = Field(default=_get_ak_version(), description="Library version")

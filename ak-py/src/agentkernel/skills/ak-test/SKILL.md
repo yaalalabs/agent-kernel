@@ -24,7 +24,7 @@ Update `pyproject.toml`:
 ```toml
 [dependency-groups]
 dev = [
-    "agentkernel[test]>=0.9.3",
+    "agentkernel[test]>=0.9.5",
     "black>=23.0.0",
     "isort>=5.0.0",
     "mypy>=1.0.0",
@@ -83,10 +83,10 @@ works as the `evaluator:` value, resolved the same way sandbox providers and ses
 their own bring-your-own backends.
 
 1. Create a module next to your test file (e.g. `my_evaluator.py`) and subclass `AKEvaluator`,
-   importing the interface from `agentkernel.test.core.evaluator`:
+   importing the interface from `agentkernel.test`:
 
    ```python
-   from agentkernel.test.core.evaluator import (
+   from agentkernel.test import (
        AKEvaluationCase,
        AKEvaluationError,
        AKEvaluationResult,
@@ -347,11 +347,12 @@ pip install "agentkernel[langgraph]"  # For LangGraph
 pip install "agentkernel[adk]"        # For Google ADK
 pip install "agentkernel[smolagents]" # For Smolagents
 pip install "agentkernel[pydanticai]" # For Pydantic AI (add a provider, e.g. pydantic-ai-slim[openai])
+pip install "agentkernel[maf]"        # For Microsoft Agent Framework (add a provider, e.g. agent-framework-openai)
 ```
 
 Or in `pyproject.toml`:
 ```toml
-dependencies = ["agentkernel[openai,api]>=0.9.3"]
+dependencies = ["agentkernel[openai,api]>=0.9.5"]
 ```
 
 #### Issue: Redis connection errors

@@ -28,13 +28,16 @@ Verification depth differs by platform:
 ```
 e2e/
   app/                  Deployable agent app: one OpenAI agent + Slack + Telegram handlers
-    deploy/             Terraform (yaalalabs/ak-containerized/aws) + Dockerfile + deploy.sh
+    deploy/             Terraform (yaalalabs/ak-containerized/aws) + Dockerfile + deploy.sh + scale.sh
   tests/                pytest harness that drives the deployed instance
     scripts/            One-time helpers (Telegram login, webhook registration)
 ```
 
 The deployment is **one-time / long-lived**: deploy once, then run the tests on demand as
-often as needed.
+often as needed. Between runs its ECS service idles at **0 tasks**, so Fargate isn't billed
+all week: `app/deploy/scale.sh up` starts one task (and waits until it's stable), and
+`app/deploy/scale.sh down` stops it. The API Gateway, ALB and webhook registrations stay in
+place, so the webhook URLs don't change.
 
 ## One-time setup
 
@@ -244,9 +247,9 @@ download is exercised by the unit tests and by manual Teams verification instead
 
 ### 3. Deploy to AWS ECS
 
-The primary deploy path is the `e2e-messaging-deploy` job in the **Weekly Integration
+The primary deploy path is the `e2e-messaging-test` job in the **Weekly Integration
 Tests** workflow (`.github/workflows/integration-test-weekly.yaml`) — dispatch it
-manually with the `provision_e2e_messaging` input enabled. It must run on a Linux
+manually with the `provision_e2e_messaging` input enabled, and it deploys before testing. It must run on a Linux
 runner: the
 container image vendors Python dependencies at build time, and building from a Mac ships
 macOS native extensions that crash the linux/amd64 container.
@@ -269,8 +272,14 @@ Terraform state is remote (`backend.tf` → the shared dev state bucket), so loc
 with `deploy/deploy.sh` (+ `app/.env`, see `.env.example`) operate on the same deployment
 — but only use that from a Linux machine, for the wheel reason above.
 
-Adjust `terraform.tfvars` (region, aliases) before the first apply if needed. To use an
-existing VPC, set `vpc_id` and `private_subnet_ids`; otherwise the module creates one.
+Adjust `terraform.tfvars` (region, prefix) before the first apply if needed.
+
+Networking is not provisioned here: the deployment runs in the VPC, private subnets and NAT
+gateway of the weekly integration base deployment (`examples/aws-serverless/openai`), read
+from its remote state. That base must be deployed first (the `deploy-openai` job), and
+must not be destroyed while this deployment
+exists — its VPC can't be deleted with the e2e ECS tasks still attached. To use a different
+VPC, set `vpc_id` and `private_subnet_ids`.
 
 ### 4. Register the webhooks
 
@@ -289,18 +298,22 @@ existing VPC, set `vpc_id` and `private_subnet_ids`; otherwise the module create
 ## Running the tests
 
 **Via GitHub Actions (default):** the `e2e-messaging-test` job in the Weekly Integration
-Tests workflow probes the deployment, registers the Telegram webhook, and runs the full
-pytest suite — weekly on schedule, or on demand via workflow_dispatch. Deployment is a
-separate, optional job (`e2e-messaging-deploy`) that runs only when the workflow is
-dispatched with `provision_e2e_messaging` enabled; scheduled runs test the existing
-deployment as-is. The tests need these in the `ci-tests` environment, in addition to the
+Tests workflow scales the service up to 1 task, probes the deployment, registers the
+Telegram webhook, runs the full pytest suite, then scales the service back to 0 (even when
+a step fails) — weekly on schedule, or on demand via workflow_dispatch. Only when the
+workflow is dispatched with `provision_e2e_messaging` enabled does the same job first
+(re)deploy the app; scheduled runs test the existing deployment as-is. One run at a time:
+a second run waits for the first to finish. The tests need these in the `ci-tests` environment, in addition to the
 deploy secrets above: secrets `E2E_SLACK_USER_TOKEN`, `E2E_TELEGRAM_API_ID`,
 `E2E_TELEGRAM_API_HASH`, `E2E_TELEGRAM_SESSION`; variables `E2E_SLACK_CHANNEL_ID`,
 `E2E_TELEGRAM_BOT_USERNAME`.
 
-**Locally:**
+**Locally:** start the service first, and stop it when you're done (needs AWS credentials
+for the dev account):
 
 ```bash
+e2e/app/deploy/scale.sh up
+
 cd e2e/tests
 uv sync
 
@@ -316,6 +329,8 @@ export E2E_TELEGRAM_SESSION=...           # from scripts/telegram_login.py
 export E2E_TELEGRAM_BOT_USERNAME=@your_e2e_bot
 
 uv run pytest -v
+
+../app/deploy/scale.sh down
 ```
 
 Tests whose environment variables are missing are **skipped**, so you can run one

@@ -16,7 +16,7 @@ conflicts = [[
 
 [[package]]
 name = "a2a-sdk"
-version = "1.1.2"
+version = "1.2.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "culsans", marker = "python_full_version < '3.13' or (extra == 'extra-11-agentkernel-crewai' and extra == 'extra-11-agentkernel-test')" },
@@ -29,9 +29,9 @@ dependencies = [
     { name = "pydantic", version = "2.12.5", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-11-agentkernel-crewai'" },
     { name = "pydantic", version = "2.13.5", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-11-agentkernel-test' or extra != 'extra-11-agentkernel-crewai'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/38/cc/59b35c518d8289bd59d20d9d216ca29ccb41c4697eb85971efe41d1adaf3/a2a_sdk-1.1.2.tar.gz", hash = "sha256:f928d8bf9a0dc0a473ee8258bd5226c1b8520a85c70e7f233c3b9b0e30a1bd10", size = 379627, upload-time = "2026-07-22T13:40:51.409Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e7/5a/2b5ff74f3f0dbec13787c7139cb1047a562544c9b8b062d0eaa9392c79f9/a2a_sdk-1.2.3.tar.gz", hash = "sha256:a28bc40b010d088ea4a10d05a5ba021d183f02cacab15929072ea5b34cde3fe6", size = 434137, upload-time = "2026-10-19T10:11:31.052Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/c1/33/d414a03d5ef5a7d6d09a20dc9f8094e7fb9edb488662ff99c535a2a62cf1/a2a_sdk-1.1.2-py3-none-any.whl", hash = "sha256:eb9a698f526dc45a9ea967d7804e7aa363ff273d2c44fbed699bc68c9399f9c9", size = 245981, upload-time = "2026-07-22T13:40:49.484Z" },
+    { url = "https://files.pythonhosted.org/packages/7b/df/138f64f3138db7b44b9798426909357d27429c868715af8751ace6083238/a2a_sdk-1.2.3-py3-none-any.whl", hash = "sha256:a89529ab7d026900170aefc1515f35c68d9a14b6a9133f8cc775c8fe598f8ae7", size = 278339, upload-time = "2026-10-19T10:11:29.102Z" },
 ]
 
 [package.optional-dependencies]
@@ -54,8 +54,28 @@ wheels = [
 ]
 
 [[package]]
+name = "agent-framework-core"
+version = "1.20.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "msgspec" },
+    { name = "opentelemetry-api" },
+    { name = "pydantic", version = "2.12.5", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-11-agentkernel-crewai'" },
+    { name = "pydantic", version = "2.13.5", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-11-agentkernel-test' or extra != 'extra-11-agentkernel-crewai'" },
+    { name = "python-dotenv" },
+    { name = "pyyaml" },
+    { name = "regex", version = "2026.1.15", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-11-agentkernel-crewai'" },
+    { name = "regex", version = "2026.9.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-11-agentkernel-test' or extra != 'extra-11-agentkernel-crewai'" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ea/e6/afcf9b4c8cdee8642deb1d836f560b49835ddb9af30d07ab6301bbc470fc/agent_framework_core-1.20.0.tar.gz", hash = "sha256:2cc3bb1fc30e8f8c4cdcd74c6996b58c7cd92246c018f904982ee41762538f0d", size = 741992, upload-time = "2026-10-02T12:41:05.438Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/48/66/1273c98faf8d3f11e6f3a882e3658c9311292c726c56e2228720169c4260/agent_framework_core-1.20.0-py3-none-any.whl", hash = "sha256:baa2e90a83c4aef9bf6ee11d2600a78e46439aa06a3fc372f2d50ccbd87584fc", size = 803359, upload-time = "2026-10-02T12:41:03.763Z" },
+]
+
+[[package]]
 name = "agentkernel"
-version = "0.9.3"
+version = "0.9.5"
 source = { editable = "." }
 dependencies = [
     { name = "deprecated" },
@@ -69,6 +89,8 @@ dependencies = [
 [package.optional-dependencies]
 a2a = [
     { name = "a2a-sdk", extra = ["http-server"] },
+    { name = "fastapi" },
+    { name = "uvicorn" },
 ]
 adk = [
     { name = "google-adk" },
@@ -100,6 +122,12 @@ chromadb = [
     { name = "chromadb", version = "1.1.1", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-11-agentkernel-crewai'" },
     { name = "chromadb", version = "1.5.9", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-11-agentkernel-test' or extra != 'extra-11-agentkernel-crewai'" },
 ]
+cloudwatch = [
+    { name = "botocore" },
+    { name = "opentelemetry-exporter-otlp-proto-http" },
+    { name = "opentelemetry-sdk" },
+    { name = "requests" },
+]
 crewai = [
     { name = "crewai" },
     { name = "openinference-instrumentation-crewai" },
@@ -124,6 +152,7 @@ gmail = [
     { name = "google-auth-oauthlib" },
 ]
 instagram = [
+    { name = "fastapi" },
     { name = "httpx" },
 ]
 jev = [
@@ -146,13 +175,22 @@ langgraph = [
     { name = "langgraph-prebuilt" },
     { name = "litellm" },
 ]
+livekit = [
+    { name = "livekit" },
+    { name = "livekit-api" },
+]
 logfire = [
+    { name = "httpx" },
     { name = "logfire" },
+]
+maf = [
+    { name = "agent-framework-core" },
 ]
 mcp = [
     { name = "fastmcp" },
 ]
 messenger = [
+    { name = "fastapi" },
     { name = "httpx" },
 ]
 multimodal = [
@@ -171,6 +209,7 @@ openai = [
     { name = "openinference-instrumentation-openai-agents" },
 ]
 openllmetry = [
+    { name = "httpx" },
     { name = "traceloop-sdk" },
 ]
 opik = [
@@ -187,6 +226,8 @@ sandbox-docker = [
     { name = "docker" },
 ]
 slack = [
+    { name = "aiohttp" },
+    { name = "fastapi" },
     { name = "httpx" },
     { name = "slack-bolt" },
 ]
@@ -197,10 +238,12 @@ teams = [
     { name = "aiohttp" },
     { name = "botbuilder-core" },
     { name = "botbuilder-schema" },
+    { name = "fastapi" },
     { name = "httpx" },
     { name = "msal" },
 ]
 telegram = [
+    { name = "fastapi" },
     { name = "httpx" },
 ]
 test = [
@@ -225,6 +268,7 @@ walledai = [
     { name = "walledai" },
 ]
 whatsapp = [
+    { name = "fastapi" },
     { name = "httpx" },
 ]
 
@@ -237,8 +281,10 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "a2a-sdk", extras = ["http-server"], marker = "extra == 'a2a'", specifier = ">=0.3.6" },
+    { name = "a2a-sdk", extras = ["http-server"], marker = "extra == 'a2a'", specifier = "==1.2.3" },
     { name = "ag-ui-protocol", marker = "extra == 'agui'", specifier = ">=0.1.16" },
+    { name = "agent-framework-core", marker = "extra == 'maf'", specifier = ">=1.20.0,<2" },
+    { name = "aiohttp", marker = "extra == 'slack'", specifier = ">=3.9.0" },
     { name = "aiohttp", marker = "extra == 'teams'", specifier = ">=3.9.0" },
     { name = "azure-core", marker = "extra == 'azure'", specifier = ">=1.26.0" },
     { name = "azure-data-tables", marker = "extra == 'azure'", specifier = ">=12.4.0" },
@@ -246,6 +292,7 @@ requires-dist = [
     { name = "botbuilder-core", marker = "extra == 'teams'", specifier = ">=4.17.0" },
     { name = "botbuilder-schema", marker = "extra == 'teams'", specifier = ">=4.17.0" },
     { name = "boto3", marker = "extra == 'aws'", specifier = ">=1.41.4" },
+    { name = "botocore", marker = "extra == 'cloudwatch'", specifier = ">=1.41.4" },
     { name = "chromadb", marker = "extra == 'chromadb'", specifier = ">=0.4.0" },
     { name = "confluent-kafka", marker = "extra == 'kafka'", specifier = ">=2.15.0" },
     { name = "crewai", marker = "extra == 'crewai'", specifier = ">=1.15.0" },
@@ -255,9 +302,16 @@ requires-dist = [
     { name = "deprecated", specifier = ">=1.2.18" },
     { name = "docker", marker = "extra == 'sandbox-docker'", specifier = ">=7.0.0" },
     { name = "e2b-code-interpreter", marker = "extra == 'e2b'", specifier = ">=2.8.0" },
+    { name = "fastapi", marker = "extra == 'a2a'", specifier = ">=0.118.0" },
     { name = "fastapi", marker = "extra == 'api'", specifier = ">=0.118.0" },
+    { name = "fastapi", marker = "extra == 'instagram'", specifier = ">=0.118.0" },
+    { name = "fastapi", marker = "extra == 'messenger'", specifier = ">=0.118.0" },
+    { name = "fastapi", marker = "extra == 'slack'", specifier = ">=0.118.0" },
+    { name = "fastapi", marker = "extra == 'teams'", specifier = ">=0.118.0" },
+    { name = "fastapi", marker = "extra == 'telegram'", specifier = ">=0.118.0" },
+    { name = "fastapi", marker = "extra == 'whatsapp'", specifier = ">=0.118.0" },
     { name = "fastmcp", marker = "extra == 'mcp'", specifier = ">=3.2.0,<4.0.0" },
-    { name = "google-adk", marker = "extra == 'adk'", specifier = ">=1.14.1" },
+    { name = "google-adk", marker = "extra == 'adk'", specifier = ">=1.24.0" },
     { name = "google-api-python-client", marker = "extra == 'gmail'", specifier = ">=2.0.0" },
     { name = "google-auth", marker = "extra == 'gmail'", specifier = ">=2.0.0" },
     { name = "google-auth-httplib2", marker = "extra == 'gmail'", specifier = ">=0.2.0" },
@@ -266,7 +320,9 @@ requires-dist = [
     { name = "gunicorn", marker = "extra == 'api'", specifier = ">=23.0.0" },
     { name = "httpx", marker = "extra == 'api'", specifier = ">=0.27.0" },
     { name = "httpx", marker = "extra == 'instagram'", specifier = ">=0.27.0" },
+    { name = "httpx", marker = "extra == 'logfire'", specifier = ">=0.27.0" },
     { name = "httpx", marker = "extra == 'messenger'", specifier = ">=0.27.0" },
+    { name = "httpx", marker = "extra == 'openllmetry'", specifier = ">=0.27.0" },
     { name = "httpx", marker = "extra == 'slack'", specifier = ">=0.27.0" },
     { name = "httpx", marker = "extra == 'teams'", specifier = ">=0.27.0" },
     { name = "httpx", marker = "extra == 'telegram'", specifier = ">=0.27.0" },
@@ -282,18 +338,22 @@ requires-dist = [
     { name = "litellm", marker = "extra == 'multimodal'", specifier = ">=1.74.9" },
     { name = "litellm", marker = "extra == 'test'", specifier = ">=1.89.2" },
     { name = "litellm", marker = "extra == 'thread'", specifier = ">=1.74.9" },
+    { name = "livekit", marker = "extra == 'livekit'", specifier = ">=0.18.0" },
+    { name = "livekit-api", marker = "extra == 'livekit'", specifier = ">=0.4.0" },
     { name = "logfire", marker = "extra == 'logfire'", specifier = ">=3.0" },
     { name = "msal", marker = "extra == 'teams'", specifier = ">=1.31.1" },
     { name = "nats-py", marker = "extra == 'nats'", specifier = ">=2.15.0" },
     { name = "neo4j", marker = "extra == 'neo4j'", specifier = ">=5.0.0" },
     { name = "nest-asyncio", marker = "extra == 'langfuse'", specifier = ">=1.6.0" },
-    { name = "openai-agents", marker = "extra == 'openai'", specifier = ">=0.7.0" },
+    { name = "openai-agents", marker = "extra == 'openai'", specifier = ">=0.20.0,<0.21" },
     { name = "openai-guardrails", marker = "extra == 'openai'", specifier = ">=0.2.1" },
     { name = "openinference-instrumentation-crewai", marker = "extra == 'crewai'", specifier = ">=0.1.16" },
     { name = "openinference-instrumentation-google-adk", marker = "extra == 'adk'", specifier = ">=0.1.6" },
     { name = "openinference-instrumentation-litellm", marker = "extra == 'crewai'", specifier = ">=0.1.28" },
     { name = "openinference-instrumentation-openai-agents", marker = "extra == 'openai'", specifier = ">=1.4.0" },
     { name = "openinference-instrumentation-pydantic-ai", marker = "extra == 'pydanticai'", specifier = ">=0.1.17" },
+    { name = "opentelemetry-exporter-otlp-proto-http", marker = "extra == 'cloudwatch'", specifier = ">=1.30.0" },
+    { name = "opentelemetry-sdk", marker = "extra == 'cloudwatch'", specifier = ">=1.30.0" },
     { name = "opik", marker = "extra == 'opik'", specifier = ">=1.7.0" },
     { name = "pydantic", specifier = ">=2.11.7" },
     { name = "pydantic-ai-slim", marker = "extra == 'pydanticai'", specifier = "~=2.13.0" },
@@ -307,17 +367,19 @@ requires-dist = [
     { name = "python-multipart", marker = "extra == 'multimodal'", specifier = ">=0.0.12" },
     { name = "pyyaml", specifier = ">=6.0.2" },
     { name = "redis", marker = "extra == 'redis'", specifier = ">=7.1.0" },
+    { name = "requests", marker = "extra == 'cloudwatch'", specifier = ">=2.32.0" },
     { name = "singleton-type", specifier = ">=0.0.5" },
     { name = "slack-bolt", marker = "extra == 'slack'", specifier = "==1.22.0" },
     { name = "smolagents", marker = "extra == 'smolagents'", specifier = ">=1.0.0" },
     { name = "traceloop-sdk", marker = "extra == 'openllmetry'", specifier = ">=0.61.0" },
     { name = "trino", marker = "extra == 'trino'", specifier = ">=0.337.0" },
     { name = "typesafe-sdk", marker = "extra == 'jev'", specifier = ">=0.7.2,<0.8" },
+    { name = "uvicorn", marker = "extra == 'a2a'", specifier = ">=0.37.0" },
     { name = "uvicorn", marker = "extra == 'api'", specifier = ">=0.37.0" },
     { name = "valkey", marker = "extra == 'valkey'", specifier = ">=6.0.0" },
     { name = "walledai", marker = "extra == 'walledai'", specifier = ">=4.9.3" },
 ]
-provides-extras = ["auth", "langfuse", "openllmetry", "logfire", "crewai", "langgraph", "smolagents", "pydanticai", "cli", "aws", "azure", "redis", "valkey", "kafka", "nats", "thread", "agui", "cron", "neo4j", "chromadb", "trino", "openai", "adk", "walledai", "api", "slack", "whatsapp", "messenger", "instagram", "telegram", "teams", "gmail", "gcp", "test", "a2a", "mcp", "multimodal", "sandbox-docker", "e2b", "daytona", "kubernetes", "opik", "jev"]
+provides-extras = ["auth", "langfuse", "openllmetry", "logfire", "cloudwatch", "crewai", "langgraph", "smolagents", "pydanticai", "maf", "cli", "livekit", "aws", "azure", "redis", "valkey", "kafka", "nats", "thread", "agui", "cron", "neo4j", "chromadb", "trino", "openai", "adk", "walledai", "api", "slack", "whatsapp", "messenger", "instagram", "telegram", "teams", "gmail", "gcp", "test", "a2a", "mcp", "multimodal", "sandbox-docker", "e2b", "daytona", "kubernetes", "opik", "jev"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -3356,6 +3418,54 @@ wheels = [
 ]
 
 [[package]]
+name = "livekit"
+version = "1.1.20"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "aiofiles" },
+    { name = "numpy" },
+    { name = "protobuf" },
+    { name = "types-protobuf" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e4/dd/651c7ad31d8f80b43511b2cb9ee1a8f5bf50a31ed4399182d09e70777e90/livekit-1.1.20.tar.gz", hash = "sha256:93f0ed9e8ee9ef356da6cbf71f98edcc891678da6872946a87e34e1458528c9c", size = 394319, upload-time = "2026-09-23T20:33:57.147Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d8/96/2c0ab8b78779f9241017a6e1980dd24c95e7509870d9d3de9bd4acf4f739/livekit-1.1.20-py3-none-macosx_10_15_x86_64.whl", hash = "sha256:253e4d15a78bbb408e926d0b317c7a47c2ca3f6bb9f9d2c7d10528a49f9b4fd9", size = 10485365, upload-time = "2026-09-23T20:33:43.35Z" },
+    { url = "https://files.pythonhosted.org/packages/08/73/9d35e3ffec6e428b040d3b599d4e1ddf554d2046dacfffeae1c20c972f8f/livekit-1.1.20-py3-none-macosx_11_0_arm64.whl", hash = "sha256:a29120a0278a20ede380ac719cd084e39241546cfd3b415aa503c7b8a21afb4e", size = 9307974, upload-time = "2026-09-23T20:33:47.143Z" },
+    { url = "https://files.pythonhosted.org/packages/75/55/dd84369c741eb04a8ca92f7c586f6d24aa0491d4bcb81fa275d91568681c/livekit-1.1.20-py3-none-manylinux_2_28_aarch64.whl", hash = "sha256:c29a5f966806db961a0607ca8e2e4957e6900bbd44710f5f618b284043be584c", size = 10602682, upload-time = "2026-09-23T20:33:49.514Z" },
+    { url = "https://files.pythonhosted.org/packages/cc/15/a53a370dc5b1f2a7c3806f24f1543fbad98bcadb0588f28f938fc338a627/livekit-1.1.20-py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:83c0ea54d7ff505e92c3e88943e050e54825b0bf0f7e90652fb126eb447b3d76", size = 11832028, upload-time = "2026-09-23T20:33:51.835Z" },
+    { url = "https://files.pythonhosted.org/packages/5e/bf/dccec2015a5594eedf26c605fe4a2682d152fabcae0cce4b71d1412efbd2/livekit-1.1.20-py3-none-win_amd64.whl", hash = "sha256:64ea60b3293e3ce92c60592ff32c518bb7c278548b97de8026c1d0617510af4d", size = 10991380, upload-time = "2026-09-23T20:33:54.775Z" },
+]
+
+[[package]]
+name = "livekit-api"
+version = "1.2.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "aiohttp" },
+    { name = "livekit-protocol" },
+    { name = "protobuf" },
+    { name = "pyjwt" },
+    { name = "types-protobuf" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/da/0d/ff9502faa5e9785563e9648313a030fab65ed7f6ff8cf52d7bc6c9e01c97/livekit_api-1.2.1.tar.gz", hash = "sha256:eee78dba493b736bc8422660debc7cf89340f1b80c63890a36a18d99c938045c", size = 21780, upload-time = "2026-08-27T14:06:57.419Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a1/c8/bc29cf16427fc446aa4487c552503cef42eebfcb920902bb54b7180e40d3/livekit_api-1.2.1-py3-none-any.whl", hash = "sha256:aa15b0a194c9e8167d4261bc61381682df23f98bc6d77760fcded93d2ce4b4ca", size = 27586, upload-time = "2026-08-27T14:06:56.286Z" },
+]
+
+[[package]]
+name = "livekit-protocol"
+version = "1.1.27"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "protobuf" },
+    { name = "types-protobuf" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/15/f3/5572f2b58f04534e22e266e113cb49b4f0b2a4e1d2abf385267cb51559ab/livekit_protocol-1.1.27.tar.gz", hash = "sha256:740a4c6e438da763d204f2a6b0fc8f7f33ca96e27b17ce9abc6557dbb0a28dbd", size = 124650, upload-time = "2026-09-16T12:43:25.761Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7e/04/12a047d5ec0ea5099426d071a0147118767cb231d270cb1d0bece266eb01/livekit_protocol-1.1.27-py3-none-any.whl", hash = "sha256:765bbe0c9c6b626519f6f5952793f81eaf3f5b8c9bd1e1b03994f3177774aa10", size = 151314, upload-time = "2026-09-16T12:43:24.327Z" },
+]
+
+[[package]]
 name = "logfire"
 version = "4.41.0"
 source = { registry = "https://pypi.org/simple" }
@@ -3625,6 +3735,34 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/b8/1f/10f9d47a63d3a2e61b2c43e15bee6b95682aab827018f9a1b97a80787e25/msal-1.38.0.tar.gz", hash = "sha256:4f10ff1257bacfd1781f22e85bd2b8d43ad1b490f3b6aafd7906671cadedd464", size = 203411, upload-time = "2026-08-24T10:22:46.053Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c4/ca/d768f77a27d81ed0a6884f2458f8613c31c79b2eb95defbeca2273fd0754/msal-1.38.0-py3-none-any.whl", hash = "sha256:765b9b98b6aa380ee8b8f1c75636e08863edaf0a953498955bd668650dde5d49", size = 131057, upload-time = "2026-08-24T10:22:47.485Z" },
+]
+
+[[package]]
+name = "msgspec"
+version = "0.22.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/d0/e6/6dcf9306ff3c5e486578f3bf29ed11dfbdbbc2a8bf0caf7e07d392887fda/msgspec-0.22.0.tar.gz", hash = "sha256:0a13624a4969159fe35d8c2a3d377b2b61bbd8585e327440d5e52725affcce38", size = 343188, upload-time = "2026-09-29T14:14:11.422Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a4/87/3e017dca361d09ed1cd09dc981a6df21b32e830fbec3470f7486d38b6be5/msgspec-0.22.0-cp312-cp312-macosx_10_13_x86_64.whl", hash = "sha256:ab1e9e7531e353653b906cdd12a0220cc288a1e8e3436aabc65f4508d91b14d9", size = 201301, upload-time = "2026-09-29T14:12:38.048Z" },
+    { url = "https://files.pythonhosted.org/packages/fb/02/109165edaafb895668d87177972a32ade9126a54f3736123d8e44be9096d/msgspec-0.22.0-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:b60b43425a47eb9cfe987f6874e354ca7c760e58e295b4e2273ff03574df28a1", size = 193044, upload-time = "2026-09-29T14:12:39.46Z" },
+    { url = "https://files.pythonhosted.org/packages/54/a5/65de05f8804492f76ea121b21a125cdf1d97ec461c677bfa0ba354d6fbdd/msgspec-0.22.0-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:b5a169b5b03f0f2c7a296c002647db1dab75d2cd501bca34e32b71cab0261b56", size = 224035, upload-time = "2026-09-29T14:12:40.876Z" },
+    { url = "https://files.pythonhosted.org/packages/4a/cc/aa1a47f8c92280d37498a5ea56a2a36606d034383e3e6472d64cbb56cf85/msgspec-0.22.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:99c401861c5bb3a57f7d6423ea7ed4352cd57aa3f04f4fbe9f3e3e4564a10f08", size = 230377, upload-time = "2026-09-29T14:12:42.796Z" },
+    { url = "https://files.pythonhosted.org/packages/61/50/f8bcdb3d613a4a4b92704297a12eba5c985cf572a64ee1a004d265759c69/msgspec-0.22.0-cp312-cp312-manylinux_2_31_riscv64.manylinux_2_39_riscv64.whl", hash = "sha256:08826f5e5b0fa2f7a88592c396a243cfcc63d37e19f9d4fbe3b3f1be2fbdc404", size = 237390, upload-time = "2026-09-29T14:12:44.282Z" },
+    { url = "https://files.pythonhosted.org/packages/cf/8a/473fa423f8fdd1b810b8652594323d7301df6920b62844d860daa0feff34/msgspec-0.22.0-cp312-cp312-musllinux_1_2_aarch64.whl", hash = "sha256:21460f54cee9208239b1a8421fdf25bffc77293e1daba88f585711ad839b9758", size = 227733, upload-time = "2026-09-29T14:12:45.839Z" },
+    { url = "https://files.pythonhosted.org/packages/03/1d/272ce23adae6c71b3f763aed3ee6e115cccc56124ed8ee0e3e3d2681e2c8/msgspec-0.22.0-cp312-cp312-musllinux_1_2_riscv64.whl", hash = "sha256:cfc3d9557de9c806318725b702f3e664db33167bb42892079b693c69893fd33b", size = 236783, upload-time = "2026-09-29T14:12:47.234Z" },
+    { url = "https://files.pythonhosted.org/packages/f6/26/29e0b9a8605c8819a3c718158e345a616ac42c092dd7d7ab248c2f2b0a72/msgspec-0.22.0-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:0b25dcbc108783cb72503ed705b9fbb8c3cb02ee5801923f44b5f038c91cc365", size = 232728, upload-time = "2026-09-29T14:12:48.792Z" },
+    { url = "https://files.pythonhosted.org/packages/e1/a6/99597c281d716da6c662b48dcc3f734669f716b41d5df2af367dac9e7c21/msgspec-0.22.0-cp312-cp312-win_amd64.whl", hash = "sha256:6ad64f5c260866b0d543f89f50cee43628989c1433c5de7ce820281fa28a2611", size = 192885, upload-time = "2026-09-29T14:12:50.274Z" },
+    { url = "https://files.pythonhosted.org/packages/46/80/85fff923d448b886ec3a85900c578d9367f08dad54fe48879495b4c6d055/msgspec-0.22.0-cp312-cp312-win_arm64.whl", hash = "sha256:0922714feff5300aacd8ecd65fa828317ce4bf5212b3139258c0bfc0253cd80e", size = 191223, upload-time = "2026-09-29T14:12:51.699Z" },
+    { url = "https://files.pythonhosted.org/packages/7f/62/5374fba2ede0408f4bd8b9b3a6c8464f8d0ea7ae9a2a064bd81ca492bd1e/msgspec-0.22.0-cp313-cp313-macosx_10_13_x86_64.whl", hash = "sha256:f13c127a945479bc9db057eb253b8851075c8e1ae07ffc967bfa1c5676203a86", size = 201355, upload-time = "2026-09-29T14:12:53.145Z" },
+    { url = "https://files.pythonhosted.org/packages/cc/e3/357baa8d2a9164a98dfd7ef9d3a58125df0ed981be909945bdd337be7194/msgspec-0.22.0-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:5aa24eb475d070ecbbe5b21080fc3ce4b0b76c60de25cfe0c9678d8fb44bb42f", size = 193097, upload-time = "2026-09-29T14:12:54.52Z" },
+    { url = "https://files.pythonhosted.org/packages/fa/1b/9cc07718d1dee8ed5e89a265801d565bc0f15ead435ccb198f9c7bf92574/msgspec-0.22.0-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:627bfdfe5a4b3d916b3360b30f4cddeee3a084f56593e33527c6872fa8322ff9", size = 224112, upload-time = "2026-09-29T14:12:55.983Z" },
+    { url = "https://files.pythonhosted.org/packages/46/64/f33fdfe95aca76601194a7064d14816c7c22c4eccc1b03a5335785895fa3/msgspec-0.22.0-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:c6c310ef83e7e291b01a63298828f848348bb99e84a1098c4b3923c05674d032", size = 230472, upload-time = "2026-09-29T14:12:57.648Z" },
+    { url = "https://files.pythonhosted.org/packages/8e/b3/8ceaa9981c230adf43c45a6e8da25da23a381eddc7ed05aeaca1d5e7928b/msgspec-0.22.0-cp313-cp313-manylinux_2_31_riscv64.manylinux_2_39_riscv64.whl", hash = "sha256:7c1e76c6bd523141b9c05c2f8a70979cd0efedbd68855a66f292f8892c0b8fc7", size = 237382, upload-time = "2026-09-29T14:12:59.414Z" },
+    { url = "https://files.pythonhosted.org/packages/88/a6/7b5c4fb39e0bf2dabc8be923c33c39b07ba769a0ce6f0afbbdfaadb1f2f2/msgspec-0.22.0-cp313-cp313-musllinux_1_2_aarch64.whl", hash = "sha256:bc374dedd5f85a5f4de2386dc5f737894ccb8c1ac18e9566ce66fd9839e6285d", size = 227717, upload-time = "2026-09-29T14:13:00.88Z" },
+    { url = "https://files.pythonhosted.org/packages/b8/5b/2334ee638880e756c8bc54a1177bd65877c786433693a43594ef5ecbe2d8/msgspec-0.22.0-cp313-cp313-musllinux_1_2_riscv64.whl", hash = "sha256:feafe612034d49e9144340c0b5168ee4e22c2af4aaa2c1db11ae84e1aac9543b", size = 236781, upload-time = "2026-09-29T14:13:02.468Z" },
+    { url = "https://files.pythonhosted.org/packages/6c/e5/b4c5323b17ecfce45350695d40fc93e16856db957a53cbcf2f53007d6e12/msgspec-0.22.0-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:6f48317f05312bfdf78248f53933f830f07ab75cc1c813ac3ca4220cb3b5b019", size = 232777, upload-time = "2026-09-29T14:13:04.025Z" },
+    { url = "https://files.pythonhosted.org/packages/01/33/e591f9d3d8d6c9cfc02ae95f3e3c44920f2d18050f3f252c244e0f293a0e/msgspec-0.22.0-cp313-cp313-win_amd64.whl", hash = "sha256:0739b068f31f2004a364f97679ba91f2f5ecd6ec2a5b4b890188ab5c57d20672", size = 192829, upload-time = "2026-09-29T14:13:05.519Z" },
+    { url = "https://files.pythonhosted.org/packages/d1/cd/a011a5b8732cd781e2ea6da5b38d71ae4a9a329338411d1f008a58f5edbf/msgspec-0.22.0-cp313-cp313-win_arm64.whl", hash = "sha256:508278300dd4efbd21cd3a4b2b016160a5feac98bc880d3673f6c06697baaf62", size = 191258, upload-time = "2026-09-29T14:13:06.909Z" },
 ]
 
 [[package]]
@@ -7110,6 +7248,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/16/f7/57713ba479fd405eb76de31404b2c744c289e336b2d999511ebf51e496f7/typer-0.27.2.tar.gz", hash = "sha256:269b7eb9d3c202ca84b4bc9618cb04ebb43d3d4d1e567e4c768607232c05f945", size = 204045, upload-time = "2026-08-28T10:26:55.046Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/dc/bf/205d0004930ede8f542fb58f601526fccf4ae7626075ca1e6c4de5d3d652/typer-0.27.2-py3-none-any.whl", hash = "sha256:b3a5fc4342d5fc8fda8fc3010b1cf117e9249aab7fae800c2eff62fd3842d97d", size = 123130, upload-time = "2026-08-28T10:26:53.752Z" },
+]
+
+[[package]]
+name = "types-protobuf"
+version = "7.35.1.20260906"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/e1/6c/e3e5b3e10bc328126a39637c138f9ebfd734bf14342b9f3540039b4ab995/types_protobuf-7.35.1.20260906.tar.gz", hash = "sha256:efd1a3862d4c967dad5512ef8d56b1530ac84f182c41735b94004756518c4998", size = 69895, upload-time = "2026-09-06T06:35:28.308Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/44/4e/f63e826c68f77ef875506d72f225918800346545ee99847bc28f3394f18d/types_protobuf-7.35.1.20260906-py3-none-any.whl", hash = "sha256:5155e48569e0dabff303fdf578db96cd31ea9a4a63b18018a4ceac6b0ae17462", size = 86419, upload-time = "2026-09-06T06:35:27.247Z" },
 ]
 
 [[package]]

@@ -284,7 +284,9 @@ Best practice: Implement queuing for high-volume scenarios.
 
 ### Deployment Architecture
 
-- **Serverless (AWS Lambda):** Cost-effective for low-to-medium traffic, auto-scaling built-in
+- **Serverless (AWS Lambda):** Cost-effective for low-to-medium traffic, auto-scaling built-in. See
+  [Messaging integrations on AWS Lambda](../deployment/aws-serverless.md#messaging-integrations): `LambdaWebhookHost`, the authorizer bypass, and the
+  required `telegram.webhook_secret`
 - **Containerized (Docker/Kubernetes):** Better for high traffic and complex workflows
 - **Traditional Server:** Simple deployment for small-scale applications
 

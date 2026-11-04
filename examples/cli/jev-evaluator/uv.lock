@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.12"
 resolution-markers = [
     "python_full_version >= '3.15'",
@@ -9,7 +9,7 @@ resolution-markers = [
 
 [[package]]
 name = "agentkernel"
-version = "0.9.3"
+version = "0.9.5"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "deprecated" },
@@ -18,12 +18,15 @@ dependencies = [
     { name = "pyyaml" },
     { name = "singleton-type" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/4c/c8/7da082f4d1840c4490282e8d9c0cfe3e6ec4eddca46a93c7dd800f99bf31/agentkernel-0.9.3.tar.gz", hash = "sha256:83d3e3e6f7e67e7889a77b49d4a16a7b76fae4232eabf5d24c914c4bf046889f", size = 577718, upload-time = "2026-09-25T06:55:25.045Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/78/23/04a97afd1bfce8f69640c7052036eda1e324114538aa519d04308d5a4de3/agentkernel-0.9.5.tar.gz", hash = "sha256:43df6229bd23e2d43db5905ee75ff93564b3c5bd5645924de97217a77a237a9f", size = 673951, upload-time = "2026-10-09T06:37:29.487Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ff/66/161a87a05e9f77d7ab73fc37559badef7d5b189fd27fbef6ebd297dedb1e/agentkernel-0.9.3-py3-none-any.whl", hash = "sha256:3306be629e2879c27726b8f4213bf8702924604948a6f58a3fcb1b10ac912437", size = 764573, upload-time = "2026-09-25T06:55:23.113Z" },
+    { url = "https://files.pythonhosted.org/packages/32/26/64bdbf4bedb1a0844ff8769d8aa91b237eaff9182a1656145aab789cb906/agentkernel-0.9.5-py3-none-any.whl", hash = "sha256:78a545e8d9652c8b2ade16003fb75ad5be5e1f2221df60a24320358956151ecc", size = 872753, upload-time = "2026-10-09T06:37:27.346Z" },
 ]
 
 [package.optional-dependencies]
+jev = [
+    { name = "typesafe-sdk" },
+]
 openai = [
     { name = "openai-agents" },
     { name = "openai-guardrails" },
@@ -610,18 +613,18 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "agentkernel", extra = ["test"] },
+    { name = "agentkernel", extra = ["jev", "test"] },
     { name = "black" },
     { name = "isort" },
     { name = "mypy" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "agentkernel", extras = ["cli", "openai"], specifier = ">=0.9.3" }]
+requires-dist = [{ name = "agentkernel", extras = ["cli", "openai"], specifier = ">=0.9.5" }]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "agentkernel", extras = ["test", "jev"], specifier = ">=0.9.3" },
+    { name = "agentkernel", extras = ["test", "jev"], specifier = ">=0.9.5" },
     { name = "black", specifier = "==26.5.1" },
     { name = "isort", specifier = ">=5.0.0" },
     { name = "mypy", specifier = ">=1.0.0" },
@@ -3544,6 +3547,25 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/16/f7/57713ba479fd405eb76de31404b2c744c289e336b2d999511ebf51e496f7/typer-0.27.2.tar.gz", hash = "sha256:269b7eb9d3c202ca84b4bc9618cb04ebb43d3d4d1e567e4c768607232c05f945", size = 204045, upload-time = "2026-08-28T10:26:55.046Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/dc/bf/205d0004930ede8f542fb58f601526fccf4ae7626075ca1e6c4de5d3d652/typer-0.27.2-py3-none-any.whl", hash = "sha256:b3a5fc4342d5fc8fda8fc3010b1cf117e9249aab7fae800c2eff62fd3842d97d", size = 123130, upload-time = "2026-08-28T10:26:53.752Z" },
+]
+
+[[package]]
+name = "typesafe-sdk"
+version = "0.7.5"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "anyio" },
+    { name = "httpx2" },
+    { name = "packaging" },
+    { name = "pydantic" },
+    { name = "pydantic-core" },
+    { name = "tenacity" },
+    { name = "truststore", marker = "sys_platform != 'emscripten'" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/26/4d/383aa14f4cfe5fb41023ea1cab52d7f79cc31ab200ee7314317cf89db744/typesafe_sdk-0.7.5.tar.gz", hash = "sha256:1eeeb0dc80a7161d84896db42a5016dc0a7c8872fa16540b70163e5357b6d398", size = 34152, upload-time = "2026-10-14T21:21:42.837Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/1c/f6/bee4c3b49570c2d312057c9e37c1446cf37eb1b86bf5872f7a797e803326/typesafe_sdk-0.7.5-py3-none-any.whl", hash = "sha256:967a8b61494d536abb55ee3f3a2b10e81685cb6baad6ccdcab588bdc6c9b86d2", size = 49948, upload-time = "2026-10-14T21:21:41.337Z" },
 ]
 
 [[package]]

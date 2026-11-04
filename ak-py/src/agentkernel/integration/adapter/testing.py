@@ -17,6 +17,7 @@ from ...pipeline.transport.in_memory import InMemoryTransport
 from .base import InboundAdapter, InboundParseResult, OutboundAdapter, Source
 from .factory import IntegrationAdapterFactory
 from .producer import IntegrationProducer
+from .routes import BUILTIN_WEBHOOK_ROUTES
 
 
 class IntegrationAdapterContract:
@@ -81,7 +82,17 @@ class IntegrationAdapterContract:
         assert outbound.name == inbound.name, "the pair must share a name so replies route back"
         assert inbound.source in (Source.WEBHOOK, Source.POLLER)
         if inbound.source == Source.WEBHOOK:
-            assert inbound.webhook_path, "a webhook adapter must declare the route the host mounts"
+            assert inbound.webhook_path, "a webhook adapter must declare the route the host serves"
+
+    def test_a_builtin_is_served_where_the_authorizer_expects(self):
+        inbound = self.make_inbound()
+        route = BUILTIN_WEBHOOK_ROUTES.get(inbound.name)
+        if inbound.source is not Source.WEBHOOK or route is None:
+            pytest.skip("not a built-in webhook adapter")
+        # WebhookRouteMatcher lets these routes past the Lambda authorizer; a path that drifts from
+        # the table is mounted where the authorizer denies it.
+        assert inbound.webhook_path == route.webhook_path, "a built-in's webhook_path must come from BUILTIN_WEBHOOK_ROUTES"
+        assert inbound.challenge_path == route.challenge_path, "a built-in's challenge_path must come from BUILTIN_WEBHOOK_ROUTES"
 
     def test_outbound_resolves_by_name(self):
         resolved = IntegrationAdapterFactory.create_outbound(self.make_inbound().name)

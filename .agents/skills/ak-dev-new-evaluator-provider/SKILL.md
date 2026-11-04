@@ -39,7 +39,10 @@ a **first-party, in-repo** provider that ships with AK and gets its own short `t
 ## Architecture Overview
 
 - **`AKEvaluator`** (`ak-py/src/agentkernel/test/core/evaluator/base.py`) is the abstract base
-  every evaluator — built-in or bring-your-own — implements. It has exactly two abstract methods:
+  every evaluator — built-in or bring-your-own — implements. It and the payload and error types are
+  re-exported from `agentkernel.test`, the import path users and examples use; built-in providers
+  inside the package import them from `.base`. A new interface type goes in `core/evaluator/__init__.py`'s
+  `__all__` and in `agentkernel/test/__init__.py`. It has exactly two abstract methods:
   - `evaluate_by_score(case: AKEvaluationCase) -> AKEvaluationResult` — deterministic scoring,
     no LLM call
   - `evaluate_by_llm(case: AKEvaluationCase) -> AKEvaluationResult` — LLM-as-judge scoring
@@ -231,9 +234,14 @@ enumerates the built-ins by name, not just one page:
   walkthrough section.
 - The user-facing `ak-test` skill (`ak-py/src/agentkernel/skills/ak-test/SKILL.md`) and its
   `evals/evals.json`.
-- Docs-site pages that describe testing/evaluators (`docs/src/pages/features.tsx`,
-  `docs/src/pages/index.tsx`) — check whether either needs updating, per
-  `ak-dev-sync-docs-from-branch`.
+- Landing page inventories (`docs/src/components/*/data.tsx`): a tile in the **Observability,
+  safety & testing** row of `IntegrationsMarquee/data.tsx` (role `Evaluator`, `href` to the
+  automated testing page, logo or `react-icons/si` glyph), and the provider in the **Pluggable
+  Evaluators** card's `tags` and `description` under the Observe tab in
+  `FeatureExplorer/data.tsx`. Logo sourcing and the build check are in
+  `ak-dev-sync-docs-from-branch`, *Docs-Site Landing and Features Pages*.
+- The features page (`docs/src/pages/features.tsx`): the `approaches` entry for Pluggable
+  Evaluators under Testing & Evaluation names every built-in.
 
 ## Checklist
 
@@ -247,4 +255,6 @@ enumerates the built-ins by name, not just one page:
       `docs/docs/testing/cli-testing.md`, `docs/docs/testing/automated-testing.md`,
       `docs/docs/testing/overview.md`, `docs/docs/agent-skills.md`,
       `.agents/skills/ak-dev-testing-conventions/SKILL.md`, `ak-py/README.md`, the `ak-test` skill
-      and its `evals/evals.json`, and the docs-site pages if they need it
+      and its `evals/evals.json`
+- [ ] Landing page inventories: marquee tile (`IntegrationsMarquee/data.tsx`), Pluggable Evaluators card
+      tags (`FeatureExplorer/data.tsx`); the Pluggable Evaluators `approaches` entry in `features.tsx`

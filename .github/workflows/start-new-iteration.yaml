@@ -1,0 +1,92 @@
+name: Start new iteration
+
+# Jira-style "Complete sprint" for the org project board: creates the new iteration (or uses it if it exists),
+# moves every agent-kernel issue and draft that is not Done/Canceled out of the previous iteration into it, then
+# closes open Done/Canceled issues.
+# See .github/SPRINT_ROLLOVER.md.
+
+on:
+  workflow_dispatch:
+    inputs:
+      previous_iteration:
+        description: "Name of the iteration whose unfinished items move, e.g. AK Sprint 13."
+        required: true
+      new_iteration:
+        description: 'Name of the new iteration, e.g. AK Sprint 14. Must match "AK Sprint <n>". If it already exists it is used as is.'
+        required: true
+      start_date:
+        description: "First day of the new sprint, starts 00:00 (YYYY-MM-DD)."
+        required: true
+      end_date:
+        description: "Last day of the new sprint, inclusive, ends 23:59 (YYYY-MM-DD)."
+        required: true
+      dry_run:
+        description: "Validate and print the plan without changing anything."
+        type: boolean
+        required: false
+        default: false
+
+# Least-privilege GITHUB_TOKEN: checkout only. Every project/issue API call uses the App token below,
+# because GITHUB_TOKEN cannot write org-level Projects.
+permissions:
+  contents: read
+
+concurrency:
+  group: start-new-iteration
+  cancel-in-progress: false
+
+env:
+  PROJECT_OWNER: yaalalabs
+  PROJECT_NUMBER: "3"
+  PROJECT_REPOSITORY: yaalalabs/agent-kernel
+  ITERATION_FIELD: Iteration
+  STATUS_FIELD: Status
+  DONE_STATUS: Done
+  CANCELED_STATUS: Canceled
+  ITERATION_TITLE_FORMAT: "AK Sprint {n}"
+
+jobs:
+  start-new-iteration:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Run unit tests
+        run: python3 -m unittest discover -s .github/scripts/tests -p test_start_new_iteration.py
+
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: yaalalabs
+          repositories: |
+            agent-kernel
+
+      # Inputs go through env, never inline ${{ }} in the script, to avoid script injection.
+      - name: Start new iteration
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PREVIOUS_ITERATION: ${{ inputs.previous_iteration }}
+          NEW_ITERATION: ${{ inputs.new_iteration }}
+          START_DATE: ${{ inputs.start_date }}
+          END_DATE: ${{ inputs.end_date }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          args=(
+            "--previous-iteration=$PREVIOUS_ITERATION"
+            "--new-iteration=$NEW_ITERATION"
+            "--start-date=$START_DATE"
+            "--end-date=$END_DATE"
+          )
+          if [ "$DRY_RUN" = "true" ]; then
+            args+=(--dry-run)
+          fi
+          python3 .github/scripts/start_new_iteration.py "${args[@]}"
