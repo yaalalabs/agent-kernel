@@ -134,6 +134,13 @@ After the critical PRs:
 
 - After one clean weekly PR, delete `vulnerability-remediation-copilot.yml`.
 
+## First full run (push trigger, 2026-11-04)
+
+- 31 minutes for 127 manifests. 119 passed first time; Copilot fixed `fastmcp` 4.x and `ag-ui-protocol` 1.0 breakages in ak-py.
+- ak-py stayed failing: `pydantic-ai-slim>=2.53` (security minimum) breaks the Pydantic AI adapter. The old rule stopped the whole run, no PR, although ~3,980 alerts were fixable.
+- Fixed since: per-package **blocked** list, ak-py revert-and-continue, Copilot PyPI URL access.
+- Follow-up outside this work: AK issue for the Pydantic AI adapter reading private `agent._instructions`.
+
 ## Open questions
 
 - If the full run is longer than 360 minutes: split by folder into parallel jobs.

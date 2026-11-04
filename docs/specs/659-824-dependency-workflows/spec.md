@@ -295,7 +295,8 @@ Run with `uv run --no-project --with packaging python .github/scripts/dependency
 | `validate` | `uv lock --upgrade` and the checks, per manifest (non-ak-py: 4 in parallel) |
 | `failures` | Prints how many manifests fail |
 | `security-fallback` | For each failing manifest with alerts: reset it, apply `secure` only, `uv lock --upgrade-package <alerted>`, check again |
-| `finalize` | Reverts manifests that still fail; exit code 3 if `ak-py` is one |
+| `apply-blocked` | Puts back the original line of each package Copilot listed in `blocked.jsonl`; keeps every other change |
+| `finalize` | Reverts manifests that still fail (ak-py included); never stops the run |
 | `unlocked` | `secure` for manifests without `uv.lock`, verified with `uv pip compile` |
 | `npm` | `npm audit fix` (never `--force`) where npm alerts exist; `npm ci` + `npm run build`; reverts on failure |
 | `report` | Checks every alert again; writes `pr-body.md`, `update-summary.md`, `still-open.json` |
@@ -344,7 +345,16 @@ Still-open reasons: `no patch released`, `held back by another package's limit`,
    `snapshot` → `alerts` → `restrict` → `lift` → `secure` → `validate --upgrade` →
    fix loop (up to 3 × Copilot + `validate --only-failed`) → `security-fallback` → `finalize` →
    `unlocked` → `npm` → `report`.
-   If `finalize` exits 3 (`ak-py` failed), restore the tree, fail the job, no PR.
+   Each fix round is: Copilot → `apply-blocked` → `validate --only-failed`.
+   If ak-py is reverted, the PR still opens for the other manifests and says so at the top.
+
+### Blocked security fixes
+
+When every version at or above a security minimum breaks the code, no version change can fix it. Copilot appends `{"manifest", "package", "reason"}` to `/tmp/dep-state/blocked.jsonl`. `apply-blocked` puts back that package's original line (from the base commit) and keeps all other changes in the manifest. `secure` and the security-only fallback skip blocked packages. The PR lists each one under **Security fix blocked (needs a code change)**, and its alerts are reported as `security fix blocked: needs a code change`.
+
+Real case from the first full run: `pydantic-ai-slim>=2.53` (security minimum) removes `agent._instructions`, which the AK Pydantic AI adapter reads; `test_falls_back_to_instructions_when_description_unset` fails on 2.53, 2.60 and 2.65.
+
+Copilot permissions: `--allow-tool=shell,read,write`, plus `--allow-url` for `pypi.org` and `files.pythonhosted.org` only.
 5. **Open PR** if `dry_run=false` and files changed: add changed `pyproject.toml`, `uv.lock`, `package.json`, `package-lock.json`; commit; push; `gh pr create`.
 6. Publish summary, verify, upload artifact, clean up.
 

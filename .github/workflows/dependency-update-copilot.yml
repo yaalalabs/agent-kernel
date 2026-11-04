@@ -219,6 +219,22 @@ jobs:
              (no --upgrade). Confirm it succeeds.
           4. If the same manifest still fails for another package, repeat for it.
 
+          WHEN A SECURITY FIX ITSELF BREAKS THE CODE
+          Sometimes the failing package is one with a security minimum, and every
+          version at or above that minimum breaks the code (for example the code
+          uses something the new version removed). No version change can fix that;
+          it needs a code change. Then:
+          - Do not lower it below the minimum, and do not edit code.
+          - Append ONE line of JSON to /tmp/dep-state/blocked.jsonl, for example:
+            {"manifest": "ak-py/pyproject.toml", "package": "pydantic-ai-slim", "reason": "2.53+ removed agent._instructions; test_falls_back_to_instructions_when_description_unset fails"}
+          - Keep the reason short and factual: what breaks and which test fails.
+          - Leave that package as it is. The workflow puts back its original line
+            and keeps every other update in the manifest.
+          Only mark a package blocked after checking that versions at or above the
+          minimum really fail. Use it for this case only, never as a shortcut.
+          Also mark a package blocked when restoring another package pulls it
+          below its own security minimum and nothing else works.
+
           Run every command in the foreground. Never use background execution.
 
           HARD RULES
@@ -229,6 +245,7 @@ jobs:
           - Never take a package below its security minimum. Restore a different
             package instead, or leave the manifest failing.
           - Do not run the full test suite. The workflow re-validates after you.
+          - Never write anything except JSON lines to /tmp/dep-state/blocked.jsonl.
           - If a manifest cannot be fixed, leave it as it is. The workflow reverts it.
           EOF
           )
@@ -243,15 +260,19 @@ jobs:
               --allow-tool=shell \
               --allow-tool=read \
               --allow-tool=write \
+              --allow-url pypi.org \
+              --allow-url files.pythonhosted.org \
               --no-ask-user || echo "Copilot fix round $round did not finish cleanly."
+            dep apply-blocked
             dep validate --level full --only-failed
           done
 
           # A manifest still failing: undo it and keep only its security fixes, then check again.
           dep security-fallback
 
-          rc=0
-          dep finalize || rc=$?
+          # Revert what still fails. ak-py included: the other manifests still ship
+          # (examples install agentkernel from PyPI, not from ak-py/).
+          dep finalize
 
           # Extras: manifests without a uv.lock, and npm lock files with alerts.
           dep unlocked
@@ -262,16 +283,6 @@ jobs:
           # shellcheck disable=SC2086
           dep report --run-id "$RUN_ID" $DRY_FLAG
           cp "$STATE_DIR/update-summary.md" update-summary.md
-
-          if [ "$rc" -eq 3 ]; then
-            echo "ak-py still fails its checks after 3 fix rounds. Restoring the tree. No PR."
-            git reset --hard HEAD
-            {
-              echo "## Status"
-              echo "ak-py failed its checks after 3 fix rounds. Nothing was changed. No PR."
-            } > update-summary.md
-            exit 1
-          fi
 
       - name: Open pull request
         if: success() && steps.gate.outputs.open != 'true' && env.DRY_RUN == 'false'

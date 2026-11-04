@@ -264,7 +264,8 @@ A scheduled run has no inputs: everything, real PR.
 - Never merge, never force-push.
 - Only `pyproject.toml`, `uv.lock`, `package.json`, `package-lock.json` change.
 - No pre-releases. Never `npm audit fix --force`.
-- If `ak-py` still fails after everything, the run stops. No PR.
+- Failure is handled **per package** first: a security fix that needs a code change is marked **blocked**, its original line is put back, and every other update stays.
+- If `ak-py` still fails after everything, only `ak-py` is reverted. The PR still opens for the other manifests and says so at the top.
 
 ## Known limits
 

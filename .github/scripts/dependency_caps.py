@@ -12,6 +12,7 @@ Commands, in the order the workflow runs them:
     secure             make every alerted direct dependency require its patched version
     validate           run uv lock and the checks for each manifest
     failures           print how many manifests still fail
+    apply-blocked      put back the original line of each package Copilot marked as blocked
     security-fallback  for a failing manifest: undo everything, apply security fixes only, check again
     finalize           revert every manifest that still fails (exit 3 if ak-py is one)
     unlocked           apply security fixes to manifests without a uv.lock
@@ -348,14 +349,55 @@ class State:
         self.save("changes.json", self.load("changes.json", []) + changes)
 
 
+class Blocked:
+    """Security fixes that break the code and need a code change, not a version change.
+
+    The Copilot fix step appends one JSON object per line to ``blocked.jsonl``:
+    ``{"manifest": "ak-py/pyproject.toml", "package": "pydantic-ai-slim", "reason": "..."}``.
+    """
+
+    FILE = "blocked.jsonl"
+
+    def __init__(self, state: State):
+        self.entries: list[dict] = []
+        path = state.path(self.FILE)
+        if not path.exists():
+            return
+        seen = set()
+        for line in path.read_text().splitlines():
+            try:
+                item = json.loads(line)
+                manifest = self.normalize(str(item["manifest"]))
+                package = canonicalize_name(str(item["package"]))
+            except (ValueError, KeyError, TypeError):
+                continue
+            if (manifest, package) in seen:
+                continue
+            seen.add((manifest, package))
+            self.entries.append({"manifest": manifest, "package": package, "reason": str(item.get("reason", ""))[:300]})
+
+    @staticmethod
+    def normalize(manifest: str) -> str:
+        manifest = manifest.strip().lstrip("./")
+        if manifest.endswith("uv.lock"):
+            manifest = manifest[: -len("uv.lock")] + "pyproject.toml"
+        if not manifest.endswith("pyproject.toml"):
+            manifest = manifest.rstrip("/") + "/pyproject.toml"
+        return manifest
+
+    def pairs(self) -> set[tuple[str, str]]:
+        return {(entry["manifest"], entry["package"]) for entry in self.entries}
+
+
 class Alerts:
     """Open Dependabot alerts, saved by the `alerts` command."""
 
     def __init__(self, state: State):
         self.items: list[dict] = state.load("alerts.json", [])
+        self.blocked = Blocked(state).pairs()
 
     def pip_for(self, manifest: Manifest) -> dict[str, str]:
-        """Package -> highest patched version needed, for alerts on this manifest."""
+        """Package -> highest patched version needed, for alerts on this manifest (blocked ones left out)."""
         needed: dict[str, Version] = {}
         for alert in self.items:
             if alert["ecosystem"] != "pip" or not alert["patched"]:
@@ -364,6 +406,8 @@ class Alerts:
                 continue
             version = parse_version(alert["patched"])
             name = canonicalize_name(alert["package"])
+            if (manifest.relative, name) in self.blocked:
+                continue
             if version and (name not in needed or version > needed[name]):
                 needed[name] = version
         return {name: str(version) for name, version in needed.items()}
@@ -800,8 +844,73 @@ class GitFiles:
         subprocess.run(["git", "checkout", "--", *files], cwd=manifest.root, check=True)
 
 
+class BlockedApplier:
+    """Command: put back the original declaration of every blocked package; keep all other changes.
+
+    One package that needs a code change must never cost the rest of the manifest its updates.
+    """
+
+    def __init__(self, manifests: list[Manifest], state: State):
+        self.manifests = {m.relative: m for m in manifests}
+        self.state = state
+
+    def _original_strings(self, manifest: Manifest, package: str) -> list[str]:
+        commit = self.state.load("snapshot-meta.json", {}).get("commit", "HEAD")
+        shown = subprocess.run(
+            ["git", "show", f"{commit}:{manifest.relative}"],
+            cwd=manifest.root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if shown.returncode != 0:
+            return []
+        data = tomllib.loads(shown.stdout)
+        found: list[str] = list(data.get("project", {}).get("dependencies", []))
+        for items in data.get("project", {}).get("optional-dependencies", {}).values():
+            found.extend(items)
+        for items in data.get("dependency-groups", {}).values():
+            found.extend(item for item in items if isinstance(item, str))
+        found.extend(data.get("tool", {}).get("uv", {}).get("dev-dependencies", []))
+        return [text for text in dict.fromkeys(found) if self._name(text) == package]
+
+    @staticmethod
+    def _name(text: str) -> str | None:
+        try:
+            return canonicalize_name(Requirement(text).name)
+        except InvalidRequirement:
+            return None
+
+    def run(self) -> int:
+        applied = {tuple(item) for item in self.state.load("blocked-applied.json", [])}
+        changes = self.state.load("changes.json", [])
+        newly = []
+        for entry in Blocked(self.state).entries:
+            key = (entry["manifest"], entry["package"])
+            manifest = self.manifests.get(entry["manifest"])
+            if key in applied or manifest is None:
+                continue
+            originals = self._original_strings(manifest, entry["package"])
+            current = [text for text in manifest.requirement_strings() if self._name(text) == entry["package"]]
+            text = manifest.pyproject.read_text(encoding="utf-8")
+            for index, line in enumerate(current):
+                if originals:
+                    original = originals[min(index, len(originals) - 1)]
+                    text = PyprojectRewriter.replace(text, line, original)
+            manifest.pyproject.write_text(text, encoding="utf-8")
+            # The blocked package keeps its original line: drop our earlier edits to it from the counts.
+            changes = [c for c in changes if (c["manifest"], c["package"]) != key]
+            changes.append(dict(entry, kind="blocked"))
+            applied.add(key)
+            newly.append(key)
+        self.state.save("changes.json", changes)
+        self.state.save("blocked-applied.json", sorted(applied))
+        print(f"blocked packages restored: {len(newly)} {newly}")
+        return 0
+
+
 class Finalizer:
-    """Command: revert every manifest that still fails."""
+    """Command: revert every manifest that still fails. Never stops the run: the rest still ship."""
 
     def __init__(self, manifests: list[Manifest], state: State):
         self.manifests = manifests
@@ -816,7 +925,9 @@ class Finalizer:
                 reverted.append(manifest.relative)
         self.state.save("reverted.json", reverted)
         print(f"reverted {len(reverted)} manifests")
-        return 3 if any(path.startswith("ak-py/") for path in reverted) else 0
+        if any(path.startswith("ak-py/") for path in reverted):
+            print("WARNING: ak-py was reverted; the PR still opens for the other manifests.")
+        return 0
 
 
 class UnlockedFixer:
@@ -912,6 +1023,7 @@ class AlertCheck:
         self.comment_limited = {
             (c["manifest"], c["package"]) for c in state.load("changes.json", []) if c["kind"] == "lift_skipped"
         }
+        self.blocked = {(e["manifest"], e["package"]): e["reason"] for e in Blocked(state).entries}
 
     def run(self) -> tuple[int, list[dict]]:
         fixed, still_open = 0, []
@@ -960,7 +1072,9 @@ class AlertCheck:
             if version is None or (patched and version >= patched):
                 fixed += 1
                 continue
-            if manifest_rel in self.reverted:
+            if (manifest_rel, canonicalize_name(alert["package"])) in self.blocked:
+                reason = "security fix blocked: needs a code change"
+            elif manifest_rel in self.reverted:
                 reason = "manifest failed its checks and was reverted"
             elif (manifest_rel, canonicalize_name(alert["package"])) in self.comment_limited:
                 reason = "documented limit"
@@ -1072,6 +1186,14 @@ class Reporter:
         fixed_alerts, still_open = AlertCheck(self.root, self.state, self.finder).run()
         npm = self.state.load("npm.json", [])
         ak_py_ok = any(r["manifest"].startswith("ak-py/") and r["status"] == "pass" for r in results)
+        ak_py_reverted = any(path.startswith("ak-py/") for path in reverted)
+        blocked = Blocked(self.state).entries
+        warning = (
+            "**ak-py was not updated:** it still failed its checks after every fix attempt, so it was kept as "
+            "before. All other manifests in this PR are updated. "
+            if ak_py_reverted
+            else ""
+        )
 
         title = "chore(deps): update dependency versions and fix vulnerabilities"
         summary = {"title": title, "files": len(changed_files), "has_changes": bool(changed_files)}
@@ -1081,7 +1203,7 @@ class Reporter:
         lines = [
             "## Description",
             (
-                f"Weekly dependency update. {counts['restrict']} dependencies got an upper limit, {counts['lift']} limits "
+                f"{warning}Weekly dependency update. {counts['restrict']} dependencies got an upper limit, {counts['lift']} limits "
                 f"were raised, {counts['security'] + counts['security_only']} limits were moved to a patched version, and "
                 f"{len(rows)} direct dependencies changed version ({transitive} indirect). "
                 f"{fixed_alerts} open Dependabot alerts are fixed by this PR; {len(still_open)} remain."
@@ -1143,6 +1265,11 @@ class Reporter:
             "",
             "## Additional Notes",
         ]
+        for entry in blocked:
+            lines.append(
+                f"- **Security fix blocked (needs a code change):** `{entry['package']}` in `{entry['manifest']}`: "
+                f"{entry['reason']}"
+            )
         for result in failed:
             first = next((line for line in reversed(result["tail"]) if line.strip()), "")
             lines.append(f"- Kept as before: `{result['manifest']}` failed at {result['step']}: {first[:160]}")
@@ -1159,9 +1286,14 @@ class Reporter:
         self.state.path("pr-body.md").write_text("\n".join(lines) + "\n")
 
         status = "dry_run_ok" if self.dry_run else ("ready" if changed_files else "no updates")
+        if ak_py_reverted:
+            status += " (ak-py not updated)"
         summary_lines = [
             "## Status",
             status,
+            "",
+            "## Security fixes blocked (need a code change)",
+            *(f"- {e['package']} in {e['manifest']}: {e['reason']}" for e in blocked),
             "",
             (
                 f"Files changed: {len(changed_files)}. Limits added: {counts['restrict']}. Limits raised: {counts['lift']}. "
@@ -1207,6 +1339,8 @@ class Snapshotter:
             "unlocked.json",
             "npm.json",
             "still-open.json",
+            "blocked.jsonl",
+            "blocked-applied.json",
         ):
             self.state.path(name).unlink(missing_ok=True)
         print(f"snapshot of {len(self.manifests)} manifests at {commit[:12]}")
@@ -1221,6 +1355,7 @@ COMMANDS = [
     "secure",
     "validate",
     "failures",
+    "apply-blocked",
     "security-fallback",
     "finalize",
     "unlocked",
@@ -1272,6 +1407,8 @@ def main() -> int:
     if args.command == "failures":
         print(sum(1 for r in state.load("results.json", []) if r["status"] == "fail"))
         return 0
+    if args.command == "apply-blocked":
+        return BlockedApplier(manifests, state).run()
     if args.command == "security-fallback":
         return SecurityFallback(manifests, state, args.workers).run()
     if args.command == "finalize":
