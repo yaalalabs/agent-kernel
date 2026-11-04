@@ -100,49 +100,41 @@ After the critical PRs:
 
 ## Status
 
-- Written: `.github/workflows/dependency-update-copilot.yml` and `.github/scripts/dependency_caps.py`.
-- One fully automatic weekly run: limits, updates, security fixes, fix loop, security-only fallback, npm, no-lock manifests, one PR.
-- Covers everything the #659 workflow does (see the table in the design).
-- Script tested end to end on a clone with the live alerts (see the spec).
-- **Not run yet:** the workflow under `act` or on GitHub, the Copilot fix loop, the PR step, the full run time.
+- Written: the workflow, the script, `workflow_call` on `chart-test.yaml` and `code-quality.yml`, tracked locks for the 3 manifests that had none.
+- Script tested locally on real manifests and live alerts (see the spec). `ruff` and `actionlint` pass.
+- **Not run yet on GitHub in this form.**
 
-## Step 1: Small dry run
+## History
 
-- `paths = examples/api/agui`, `dry_run = true`.
-- Check: alerts read, `dry_run_ok`, the still-open list, no branch, no PR.
+- **First full run (push trigger, 2026-11-04):** 31 minutes for 127 manifests. ak-py could not take `pydantic-ai-slim>=2.53` (security minimum; the adapter reads private `agent._instructions`), and the old rule stopped the whole run. → Blocked security fixes; one manifest's failure never stops the rest.
+- **Second full run (PR #900):** the PR opened, but 19 CI jobs failed. 11: `openai` 2 → 3 (via `openai-agents` 0.24; `Event loop is closed` across event loops). 7: `litellm` 1.89.7+ imports `mcp.types.CacheableResult`. 1: `sandbox/broker-nats` pod never healthy, no error. The local checks could not see this: unit tests mock the model, examples need API keys. → Version lines; tests before the PR.
+- **Same rules everywhere:** the 3 lock-free manifests got tracked locks (made against the local ak-py build, then `agentkernel` back to PyPI, so they start at the tested versions); no ak-py-specific code; every skip reported; unreadable alerts no longer stop the run.
+- **Minimal rewrite:** one failure mechanism (Copilot names the package, the script holds it) for local and CI failures; Copilot edits nothing; tests run only in the gate. Removed: `lift`, the security-only fallback, the separate blocked step, the test baseline, the no-lock fixer, local pytest. Script 2,050 → about 1,080 lines; workflow 712 → about 360.
 
-## Step 2: Small real PR
+## Step 1: Real run
 
-- Same `paths`, `dry_run = false`. Close the #659 PRs first (gate).
-- Check the PR: only dependency files, template headings, marker, no attribution.
+- Push the branch (the temporary push trigger starts a real run).
+- Check: `update` pushes `deps/update-batch-<RUN_ID>`; `e2e-1`, `kind-1`, `lint-1` run on that commit; on a failure `fix-1` reads the logs and holds packages; `finish` opens the PR only when a round is green.
+- Watch: the number of held packages, the run time, the API cost of two rounds.
+- Close PR #900 once a green run replaces it.
 
-## Step 3: Fix loop
+## Step 2: Merge and schedule
 
-- Break a manifest on purpose; confirm Copilot fixes it, or the fallback keeps its security fixes.
+- Remove the TEMPORARY `push` trigger. Merge to `develop`; Monday runs start by themselves.
+- Ask an admin to give the `agent-kernel-ci` app "Dependabot alerts: Read", then drop `DEPENDABOT_ALERTS_TOKEN`.
+- When `ANTHROPIC_API_KEY` lands in `test-reusable.yaml` (#721), pass it here too.
 
-## Step 4: Full run
-
-- Empty `paths`. Measure run time against the 360-minute limit.
-
-## Step 5: Merge and schedule
-
-- Merge the workflow and the script to `develop`. Monday runs start by themselves.
-- Confirm the `agent-kernel-ci[bot]` app can read Dependabot alerts (needs **Dependabot alerts: Read**).
-- Remove the TEMPORARY `push` trigger.
-
-## Step 6: Retire the #659 workflow
+## Step 3: Retire the #659 workflow
 
 - After one clean weekly PR, delete `vulnerability-remediation-copilot.yml`.
 
-## First full run (push trigger, 2026-11-04)
+## Follow-ups outside this work
 
-- 31 minutes for 127 manifests. 119 passed first time; Copilot fixed `fastmcp` 4.x and `ag-ui-protocol` 1.0 breakages in ak-py.
-- ak-py stayed failing: `pydantic-ai-slim>=2.53` (security minimum) breaks the Pydantic AI adapter. The old rule stopped the whole run, no PR, although ~3,980 alerts were fixable.
-- Fixed since: per-package **blocked** list, ak-py revert-and-continue, Copilot PyPI URL access.
-- Follow-up outside this work: AK issue for the Pydantic AI adapter reading private `agent._instructions`.
+- AK code fix so it works with `openai` 3 (one client per event loop).
+- AK issue: the Pydantic AI adapter reads private `agent._instructions`.
+- Report the `litellm` `mcp` import upstream.
 
 ## Open questions
 
-- If the full run is longer than 360 minutes: split by folder into parallel jobs.
-- Should libraries (`ak-py`) keep major limits? Set aside for now.
-- A comment above a limit blocks normal raises but not security raises. Is that the rule the team wants?
+- Held-back majors: open one issue per held-back major so they are not forgotten?
+- A failure with no real error blocks the PR. Accept, or allow a PR with that example listed as failing?

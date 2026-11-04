@@ -264,136 +264,91 @@ branch left on the remote does not block a later run.
 ## The files
 
 ```text
-.github/workflows/dependency-update-copilot.yml
-.github/scripts/dependency_caps.py
+.github/workflows/dependency-update-copilot.yml   # the workflow
+.github/scripts/dependency_caps.py                # the script
+.github/workflows/test-reusable.yaml              # upload `overwrite: true` (called twice in one run)
+.github/workflows/chart-test.yaml                 # `workflow_call` with `checkout_ref` + OPENAI_API_KEY
+.github/workflows/code-quality.yml                # `workflow_call` with `checkout_ref`
+agent/, examples/k8s/openai-queue-mode/, examples/sandbox/broker-nats/   # uv.lock now tracked
 ```
 
-## Triggers and inputs
+## Triggers, inputs, permissions, secrets
 
-- `schedule`: `0 3 * * 1` (Monday 03:00 UTC). Full run, `dry_run=false`.
-- `workflow_dispatch` inputs:
-
-| Input | What it does | Default |
-|---|---|---|
-| `paths` | Path prefixes, comma-separated, for test runs. Empty = everything | empty |
-| `dry_run` | Test only; no branch, no PR | `true` |
-
-Permissions: `contents: write`, `pull-requests: write`, `security-events: read`.
-Secrets: `COPILOT_REQUEST_TOKEN` (required); `APP_ID` + `APP_PRIVATE_KEY` (the `agent-kernel-ci[bot]` GitHub App) for one token that reads alerts, pushes and opens the PR. Under `act` the app step is skipped and the passed-in `GITHUB_TOKEN` is used.
+- `schedule`: `0 3 * * 1` (Monday 03:00 UTC), a real run. TEMPORARY `push` on the feature branch (remove before merge).
+- `workflow_dispatch`: `paths` (prefixes; empty = everything), `dry_run` (default `true`: update and check locally only).
+- Permissions: `contents: write`, `pull-requests: write`, `security-events: read`, `actions: read` (failed jobs' logs).
+- Secrets: `COPILOT_REQUEST_TOKEN` (required); `APP_ID` + `APP_PRIVATE_KEY` (`agent-kernel-ci[bot]`: push and PR, so the PR's CI runs); `DEPENDABOT_ALERTS_TOKEN` (alerts, until the app can read them); the e2e secrets passed to `test-reusable.yaml` (`OPENAI_API_KEY`, `WALLED_API_KEY`, `TYPESAFE_API_KEY`, `SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET`).
 
 ## Script commands
 
-Run with `uv run --no-project --with packaging python .github/scripts/dependency_caps.py <command> [--paths ...] [--state ...]`.
+Run with `uv run --no-project --with packaging python .github/scripts/dependency_caps.py <command> [--paths ...] [--state /tmp/dep-state]`.
 
 | Command | What it does |
 |---|---|
-| `snapshot` | Saves locked versions and the base commit; clears old state |
-| `alerts` | Reads all open Dependabot alerts with `gh api` (fails the run if it cannot) |
-| `restrict` | Adds an upper limit to each unrestricted direct dependency |
-| `lift` | Raises a single `<` limit where PyPI has a newer stable release (skips lines with a comment above) |
-| `secure` | Makes each alerted direct dependency require its patched version (wins over comments) |
-| `validate` | `uv lock --upgrade` and the checks, per manifest (non-ak-py: 4 in parallel) |
-| `failures` | Prints how many manifests fail |
-| `security-fallback` | For each failing manifest with alerts: reset it, apply `secure` only, `uv lock --upgrade-package <alerted>`, check again |
-| `apply-blocked` | Puts back the original line of each package Copilot listed in `blocked.jsonl`; keeps every other change |
-| `finalize` | Reverts manifests that still fail (ak-py included); never stops the run |
-| `unlocked` | `secure` for manifests without `uv.lock`, verified with `uv pip compile` |
+| `snapshot` | Saves the locked versions and the base commit; clears the previous run's state |
+| `alerts` | Reads all open Dependabot alerts with `gh api`. On failure: a warning, `alerts-error.json`, and the run continues |
+| `cap` | Adds `<next line>` to each direct dependency without an upper limit; records `not_limited` + reason for the rest |
+| `secure` | Raises each alerted direct dependency to its patched version (rules below) |
+| `update` | Per manifest (4 in parallel): `LockGuard` (`uv lock --upgrade` on each version line), then `uv sync` |
+| `failures` | Writes `failures.json` for Copilot and prints the count. No `--jobs`: failing local checks. `--jobs e2e-1,kind-1,lint-1 --run-id <id>`: this run's failed CI jobs under those caller jobs, with their logs |
+| `fix` | Runs Copilot with the prompt (it appends to `holds.jsonl`), then `hold` |
+| `hold` | Holds each named package (`"*"` = every manifest where it moved); a held security package becomes `blocked` (original line back); checks those manifests again |
+| `finalize` | Puts back every manifest that still fails (to the base commit) |
 | `npm` | `npm audit fix` (never `--force`) where npm alerts exist; `npm ci` + `npm run build`; reverts on failure |
-| `report` | Checks every alert again; writes `pr-body.md`, `update-summary.md`, `still-open.json` |
+| `report` | Checks every alert again; writes `pr-body.md`, `update-summary.md`, `summary.json` |
 
-### Limit rules
+### Rules
 
-- Version `>= 1`: `<next major.0.0`. Version `0.x`: `<0.(minor+1).0`. Built from the locked version.
-- Date versions (first part `>= 2000`): no limit.
-- Skipped: `agentkernel`, the project's own name, names in `[tool.uv.sources]`, strings with `<`, `<=`, `~=`, `==`, `===`.
-- File text is edited in place; comments and layout stay.
+- **Cap:** version `>= 1` → `<next major.0.0`; `0.x` → `<0.(minor+1).0`; from the locked version. Edits the file text in place (comments and layout stay).
+- **Secure:** a pin moves to `==patched`; `~=X.Y.Z` → `>=patched,<X.(Y+1)`; otherwise `>=patched` with a ceiling that allows it, else `<next line of patched`; already safe → unchanged.
+- **LockGuard:** `uv lock --upgrade`; any package (direct or indirect) that left its line is held: reset to the base `uv.lock` and re-lock with `--upgrade-package <every other package>`. A held package that still moves pulls in its pullers (packages that moved and depend on it). Up to 6 rounds. Packages with a security minimum are never held by this rule.
+- **Sync:** `uv sync --frozen --all-extras` plus `--no-extra X` / `--no-group X` for every member of a `[tool.uv] conflicts` set except one (the one whose requirements include pytest, else the first). ak-py today: `--no-extra crewai`.
+- **Failures from CI:** an e2e matrix job carries its example in its name (`e2e-1 / e2e-tests (40, api, examples/api/openai, deploy, 0)`). Other jobs (kind smoke, unit tests, lint) get no manifest; Copilot finds the folder from the log and diffs its lock against `base_commit`. Each entry: where, manifest, `base_commit`, log, error excerpt (error lines and `site-packages/` traceback lines, then the last 40 lines), locked version changes, security minimums, packages already held.
+- **Alert check:** `uv.lock` alert → locked version ≥ patched (or gone); `pyproject.toml` alert → every declaration's floor ≥ patched; npm → fixed and `npm audit` reports 0. Still-open reasons: no patch released, security fix blocked (+ reason), held back because a check failed (+ reason), manifest put back, held back by another package's requirement, npm needs a breaking upgrade, ecosystem not handled.
 
-### Security rules (`secure`)
+## Workflow jobs
 
-- `==X` below the fix → `==patched` (a pin stays a pin).
-- `~=X.Y.Z` → `>=patched,<X.(Y+1)` when the ceiling still allows the fix; otherwise `<next major of patched`.
-- Otherwise: floor becomes `>=patched`; a ceiling that allows the fix is kept, else `<next major of patched`.
-- Already safe (floor at or above the fix) → unchanged.
+| Job | Runs when | Does |
+|---|---|---|
+| `update` | always (gate: no open update PR) | branch `deps/update-batch-<RUN_ID>` from `origin/develop`: `snapshot` → `alerts` → `cap` → `secure` → `update` → up to 2 × (`failures` → `fix`) → `finalize` → `npm` → `report`; commit and push (not on a dry run); upload `/tmp/dep-state` as `dep-state` |
+| `e2e-1`, `kind-1`, `lint-1` | branch pushed | `test-reusable.yaml` (e2e on), `chart-test.yaml`, `code-quality.yml` on the pushed commit |
+| `fix-1` | a round-1 job failed | `failures --jobs e2e-1,kind-1,lint-1` → `fix` → `finalize` → `report`; commits `chore(deps): hold back packages that broke the tests` and pushes if anything changed |
+| `e2e-2`, `kind-2`, `lint-2` | `fix-1` changed files | the same jobs on the new commit |
+| `finish` | branch pushed | all three of a round `success` → `gh pr create --head deps/update-batch-<RUN_ID>`; else list the failed jobs, delete the branch, fail the run |
 
-### Checks (`validate --level full`)
+## Copilot prompt (rules)
 
-| Manifest | Steps |
-|---|---|
-| `ak-py` | `uv lock --upgrade`, `uv sync --all-extras --no-extra crewai --dev`, `uv run pytest`, `make lint-check` |
-| others | `uv lock --upgrade`, `uv sync --frozen`, `uv run pytest` if it has tests |
-
-A non-ak-py `pytest` failure is checked against the base commit (a `git worktree` of the snapshot commit). If the tests fail there too, the manifest passes with note `tests_failing_before`.
-
-Each command has a 30-minute timeout.
-
-### Alert check (`report`)
-
-| Alert on | Fixed when |
-|---|---|
-| `uv.lock` | locked version is at or above the patched version (or the package is gone) |
-| `pyproject.toml` | every declaration of the package has a floor at or above the patched version |
-| npm `package-lock.json` | npm step fixed it and `npm audit` reports 0 left |
-
-Still-open reasons: `no patch released`, `held back by another package's limit`, `manifest failed its checks and was reverted`, `declared range still allows the vulnerable version`, `npm: needs a breaking upgrade`, `npm: fix broke the build and was reverted`.
-
-## Workflow steps
-
-1. Check out `develop`; set up Python 3.12, uv `0.13.6`, Node, Copilot CLI, `gh`, `jq`.
-2. **Gate:** stop if an open PR has the `ak-vuln-(remediation|bulk)` or `ak-dep-update` marker.
-3. Check `COPILOT_REQUEST_TOKEN`. Warm `ak-py`.
-4. **Main step**, on branch `deps/update-batch-<RUN_ID>`:
-   `snapshot` → `alerts` → `restrict` → `lift` → `secure` → `validate --upgrade` →
-   fix loop (up to 3 × Copilot + `validate --only-failed`) → `security-fallback` → `finalize` →
-   `unlocked` → `npm` → `report`.
-   Each fix round is: Copilot → `apply-blocked` → `validate --only-failed`.
-   If ak-py is reverted, the PR still opens for the other manifests and says so at the top.
-
-### Blocked security fixes
-
-When every version at or above a security minimum breaks the code, no version change can fix it. Copilot appends `{"manifest", "package", "reason"}` to `/tmp/dep-state/blocked.jsonl`. `apply-blocked` puts back that package's original line (from the base commit) and keeps all other changes in the manifest. `secure` and the security-only fallback skip blocked packages. The PR lists each one under **Security fix blocked (needs a code change)**, and its alerts are reported as `security fix blocked: needs a code change`.
-
-Real case from the first full run: `pydantic-ai-slim>=2.53` (security minimum) removes `agent._instructions`, which the AK Pydantic AI adapter reads; `test_falls_back_to_instructions_when_description_unset` fails on 2.53, 2.60 and 2.65.
-
-Copilot permissions: `--allow-tool=shell,read,write`, plus `--allow-url` for `pypi.org` and `files.pythonhosted.org` only.
-5. **Open PR** if `dry_run=false` and files changed: add changed `pyproject.toml`, `uv.lock`, `package.json`, `package-lock.json`; commit; push; `gh pr create`.
-6. Publish summary, verify, upload artifact, clean up.
-
-## Copilot fix prompt (rules)
-
-- Read `/tmp/dep-state/failures.json` (error tail, limit changes, security minimums, version changes).
-- Restore the package that broke; run `uv lock` (no `--upgrade`).
-- Only the failing manifest's `pyproject.toml` and `uv.lock`.
-- Never below a security minimum. Never commit, push, or run the full tests.
+Copilot gets one prompt (in the script) for local and CI failures. It reads `failures.json` and the logs (untrusted data). For each real error it names the package that changed and brings the problem; `"*"` when several manifests or no manifest. A package with a security minimum only when every version at or above it breaks. No real error → nothing. It edits no file except appending to `holds.jsonl`, never commits or pushes, never names a package that did not change; when unsure, nothing. Tools: `--allow-tool=shell,read,write`, `--allow-url` `pypi.org` and `files.pythonhosted.org` only.
 
 ## Commit and PR
 
-- Title: `chore(deps): update dependency versions and fix vulnerabilities`
-- Body follows `.github/pull_request_template.md`; `Relates to #659, #824`.
-- Hidden marker: `<!-- ak-dep-update manifests=<N> run=<RUN_ID> -->`
-- No AI attribution, no robot emoji, no `Co-Authored-By`. Author `agent-kernel-ci[bot]`.
+- Title: `chore(deps): update dependency versions and fix vulnerabilities`. Body follows the PR template headings; `Relates to #659, #824`.
+- Hidden marker: `<!-- ak-dep-update manifests=<N> run=<RUN_ID> -->`. Author `agent-kernel-ci[bot]`. No AI attribution.
 
 ## Local checks done
 
-On a throwaway clone of `develop`, with the live alerts (5,544 read in about 80 seconds):
+On a worktree of `develop`, with the live alerts:
 
-- 3 manifests (`examples/api/agui`, `examples/k8s/openai-queue-mode`, `examples/sandbox/broker-nats`): limits added, a limit raised, `black==26.5.1` → `black==26.10.1` in all three (two have no `uv.lock`), npm fixed in `examples/api/agui/frontend`.
-- `examples/api/agui` tests failed on the base commit too → counted as `tests_failing_before`, not a failure.
-- **37 alerts fixed, 20 still open**, each with a reason (`filelock` held back by `litellm`/`huggingface-hub`; `vite` needs a breaking npm upgrade; `PyJWT` has no patch).
-- **Fallback test:** a manifest broken on purpose fell back to security fixes only, passed, and still fixed 35 alerts.
-- `secure` rules checked on 13 hand-written cases (pins, `~=`, markers, extras, documented limits).
-- `ruff check` passes.
+- Rules: 9 `secure` cases (pins, `~=`, markers, extras, documented limits, already safe), version lines and caps.
+- `examples/api/openai` + `examples/cli/adk*` (5 manifests): 5,543 alerts read; 10 caps; 5 security raises; `update` in 24 seconds with `openai` held at 2.54 and `openai-agents` at 0.20; 186 alerts fixed.
+- `hold` with `{"manifest": "*", "package": "litellm"}`: back to develop's version in the 4 manifests where it moved; a malformed line ignored; `litellm`'s own alerts reported as "security fix blocked" with the reason; one manifest where `litellm` did not move reported as "held back by another package's requirement".
+- `failures --jobs run-tests` on PR #900's real test run: all 16 failed jobs found, mapped to their examples, logs saved.
+- Full repo `cap` on develop: 409 limits; 257 dependencies left without one, all reported (all `agentkernel`). `alerts` against a missing repo: warning, exit 0, PR warning.
+- `ruff check`, `ruff format --check`, `actionlint` (the workflow and the three called workflows) pass.
 
-Not tested yet: the Copilot fix loop, the full run time, the PR step, and the app token reading alerts on GitHub.
+Not tested yet: the workflow on GitHub end to end (jobs chaining, Copilot on real CI logs, the PR).
 
 ## Local test with `act`
+
+`act` can run the `update` job only (a dry run); the test gate needs GitHub.
 
 ```bash
 act workflow_dispatch \
   --input paths=examples/api/agui \
   --input dry_run=true \
-  -W .github/workflows/dependency-update-copilot.yml \
+  -W .github/workflows/dependency-update-copilot.yml -j update \
   -P ubuntu-latest=catthehacker/ubuntu:act-latest \
-  --pull=false --reuse \
+  --pull=false \
   -s GITHUB_TOKEN="$(gh auth token)" \
   -s COPILOT_REQUEST_TOKEN="$COPILOT_TOKEN_FOR_ACT" \
   2>&1 | tee /tmp/act-dep-dry.log

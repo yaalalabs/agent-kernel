@@ -90,6 +90,9 @@ jobs:
           path: ak-py/dist
           retention-days: 1
           if-no-files-found: error
+          # One run may call this workflow more than once (the dependency update tests, fixes, and
+          # tests again); each call rebuilds ak-py, so the later build replaces the earlier one.
+          overwrite: true
 
   script-tests:
     runs-on: ubuntu-latest

@@ -158,41 +158,54 @@ The PR body follows `.github/pull_request_template.md` and has no AI-generated a
 
 ## What this does
 
-One workflow. Fully automatic. No package lists. **One PR per run.** Runs every Monday, or by hand.
+One workflow, every Monday or by hand. Fully automatic, no package lists. **One PR, opened only when the tests pass.** The same rules apply to every manifest: all 130 `pyproject.toml` files with their `uv.lock` (ak-py, examples, use-cases, e2e, `agent/`).
 
-Every run:
-
-1. **Reads all open Dependabot alerts.**
-2. **Adds missing upper limits.** Example: `requests>=2.32.0` → `requests>=2.32.0,<3.0.0`.
-3. **Raises limits** where PyPI has a newer release.
-4. **Moves every alerted direct dependency to its patched version.** This wins over any limit, even a documented one.
-5. **Updates everything** with `uv lock --upgrade`. uv picks the newest versions that fit together.
-6. **Checks** each manifest. **Fixes failures** in a loop (Copilot, up to 3 rounds).
-7. **Security-only fallback:** a manifest that still fails is reset and gets only its security fixes, then is checked again.
-8. **Extras:** fixes alerts in manifests without a `uv.lock`, and runs `npm audit fix` where npm alerts exist.
-9. **Checks every alert again** against the new lock files.
-10. Opens **one PR** with a short "still open" list.
+1. **Read** all open Dependabot alerts.
+2. **Cap:** add an upper limit to every direct dependency, from its locked version. Example: `requests>=2.32.0` → `requests>=2.32.0,<3.0.0`.
+3. **Secure:** every alerted direct dependency requires its patched version. This wins over any limit.
+4. **Update:** `uv lock --upgrade`, kept on each package's **version line** (see below).
+5. **Local check:** does it resolve and install (`uv lock`, `uv sync`)?
+6. **Test gate:** push the branch and run the CI jobs a PR runs: unit tests, the full e2e suite, the kind smoke tests, lint.
+7. **On a failure** (local or CI): Copilot reads the logs and **names the package** behind each real error. The script **holds it back**, then the tests run once more.
+8. **Green → one PR. Red → no PR,** the branch is deleted and the failures are listed.
 
 ## Big picture
 
 ```mermaid
 flowchart TD
-    A[Monday, or by hand] --> B[Read all open alerts]
-    B --> C[Add limits, raise limits, apply patched versions]
-    C --> D[uv lock --upgrade, then checks]
-    D --> E{All pass?}
-    E -- no --> F[Copilot fixes, check again, max 3 rounds]
-    F --> G{Still failing?}
-    G -- yes --> H[Reset: security fixes only, check again]
-    H --> I{Still failing?}
-    I -- yes --> J[Revert that manifest]
-    G -- no --> K
-    I -- no --> K
-    E -- yes --> K[Fix no-lock manifests and npm]
-    J --> K
-    K --> L[Check every alert again]
-    L --> M[Open ONE pull request]
+    A[Monday, or by hand] --> B[Read alerts]
+    B --> C[Cap, secure, update on each version line]
+    C --> D{Resolves and installs?}
+    D -- no --> E[Copilot names the package; hold it; max 2 rounds; else put the manifest back]
+    D -- yes --> F
+    E --> F[Push branch]
+    F --> T1[Unit tests + e2e + kind smoke + lint]
+    T1 --> P{Pass?}
+    P -- yes --> M[Open ONE pull request]
+    P -- no --> X[Copilot names the package behind each real error; hold it]
+    X --> T2[Same tests again]
+    T2 --> Q{Pass?}
+    Q -- yes --> M
+    Q -- no --> N[No PR; delete the branch; list the failures]
 ```
+
+## Version lines
+
+A **version line** is the major for `1.x` and up, and the minor for `0.x`. Moving to another line is a breaking upgrade.
+
+- The weekly run **never moves a package to a new line**, direct or indirect. Example: `openai` 2.54 stays on 2.x although 3.45 exists. Each held-back upgrade is listed: "needs its own PR".
+- **Exception: a security fix.** A package with an open alert may move to the line its patched version needs.
+- uv treats the old lock only as a preference. When an upgraded package needs a held package's new line, uv moves the held package anyway. So the package that pulls it is held too. Example: `openai-agents` 0.24 needs `openai` 3, so both stay.
+- Why: in PR #900, `openai` 2 → 3 (pulled in by `openai-agents` 0.20 → 0.24) broke 11 test jobs with `Event loop is closed`.
+
+## Holds: one way to handle every failure
+
+- **Copilot never edits files.** It only appends `{"manifest" or "*", "package", "reason"}` to `holds.jsonl`.
+- The script keeps that package (and whatever pulls it) at its old version, and checks the manifest again.
+- **Real error → hold:** a traceback, an exception, `No module named`, `cannot import name`, a resolver or build error, a lint failure, or an error returned as the agent's answer. Copilot names the package that changed and **brings** the problem. Example: `litellm` 1.89.7 imports `mcp.types.CacheableResult` on every call → "No module named 'mcp'" → hold `litellm`, not `mcp`.
+- **No real error → nothing is held:** an answer only worded differently, a timeout with no error, an infrastructure problem. It is listed.
+- **A held package with a security minimum** means its fix needs a code change: its original line comes back, the fix is **blocked**, and its alert stays open with the reason. Example: `pydantic-ai-slim>=2.53` removes `agent._instructions`, which the AK adapter reads.
+- A manifest that still fails after the holds is **put back** as it was on develop. The other manifests still ship.
 
 ## Limit rules
 
@@ -202,7 +215,7 @@ flowchart TD
 | `0.x` | next minor | `>=0.27.0,<0.29.0` |
 | date version (CalVer) | none | `certifi` stays open |
 
-Never capped: `agentkernel`, names in `[tool.uv.sources]`, lines that already have a limit.
+Not capped, and reported: `agentkernel` (our own package), the project itself and local sources, git/URL dependencies, date versions, packages not in the lock. A line that already has a limit keeps it.
 
 ## Security rules
 
@@ -213,62 +226,58 @@ Never capped: `agentkernel`, names in `[tool.uv.sources]`, lines that already ha
 | `langgraph~=1.2.10` | 1.2.12 | `langgraph>=1.2.12,<1.3` (keeps its ceiling) |
 | `daytona>=0.198.0,<0.199` (documented) | 0.200.0 | `daytona>=0.200.0,<0.201.0` (security wins) |
 
-Indirect packages are moved by `uv lock --upgrade`. If another package does not allow the fix yet, the alert is listed as **held back**.
-
-Example from a real test: `filelock` 3.x is locked, the fix needs 4.x, but `litellm` and `huggingface-hub` do not allow 4.x yet. No tool can fix this until they release. It is listed, not hidden.
-
-## What uv does for us
-
-- `uv lock --upgrade` picks the newest versions that fit all limits together and backs off by itself on conflicts.
-- So we keep no compatibility list of our own.
-- uv cannot know if our code still works. So checks still run.
+Indirect packages move with the update. If another package does not allow the fix yet, the alert is listed as **held back by another package's requirement** (example: `filelock` 4.x, not yet allowed by `litellm` and `huggingface-hub`).
 
 ## Checks
 
-| Manifest | Checks |
-|---|---|
-| `ak-py` | `uv sync`, `uv run pytest`, `make lint-check` |
-| others | `uv sync --frozen`, and `uv run pytest` if the manifest has tests |
+- **Local, every manifest:** `uv lock`, then `uv sync --frozen --all-extras`, leaving out what `[tool.uv] conflicts` says cannot be installed together (one member of each set stays: the one that brings pytest). Nothing is named in the script.
+- **Test gate:** the repo's own reusable workflows, on the pushed branch, with the API-key secrets: `test-reusable.yaml` (unit tests + e2e for every example), `chart-test.yaml` (kind smoke tests), `code-quality.yml` (lint). Two rounds at most (GitHub jobs cannot loop).
 
-A failing example test only counts when the same tests **passed before** the change. The script runs them once more on the base commit to find out. This separates "we broke it" from "it was already broken or needs credentials".
+## Reported, never silent
+
+- The PR and the run summary list: packages held because a check failed, security fixes blocked, manifests put back, breaking upgrades held back, everything **not covered** (no limit + reason, manifests without a lock, npm folders without alerts), and every still-open alert with its reason.
+- If alerts cannot be read, the run still caps and updates, and the PR says so at the top.
+- The only stops are by design: an update PR already open, a missing Copilot token, or red tests (no PR).
 
 ## Who does what
 
-- **A script does all the mechanical work** (`.github/scripts/dependency_caps.py`).
-- **Copilot only fixes failures.** It must never take a package below its security minimum.
+- **The script** (`.github/scripts/dependency_caps.py`) does all the mechanical work, including holds.
+- **Copilot** only names packages. Its tools stay narrow (shell, read, write, PyPI only), because it reads untrusted logs.
+- **CI** is the repo's existing test workflows; each got `workflow_call` (and a `checkout_ref` input where it lacked one).
 
 ## Inputs
 
 | Input | Meaning | Default |
 |---|---|---|
 | `paths` | Optional path prefixes, for test runs only. Empty = everything | empty |
-| `dry_run` | Test only; no branch and no PR | `true` |
+| `dry_run` | Update and check locally only; no push, no tests, no PR | `true` |
 
-A scheduled run has no inputs: everything, real PR.
+A scheduled run has no inputs: everything, real run.
 
 ## Coverage compared with the #659 workflow
 
 | #659 workflow did | This workflow |
 |---|---|
 | Critical alerts only | All severities |
-| Same-major fixes only; majors report-only | Majors tried and tested |
+| Same-major fixes only; majors report-only | Same line for updates, any line for security fixes; held-back majors listed |
+| Tested by the PR's CI after the PR opens | Unit tests, e2e, kind smoke and lint pass **before** the PR opens |
 | Reports what stays open | Yes, grouped, with a reason |
 | Detects a package that did not reach its patched version | Yes, every alert is checked again at the end |
-| A failing manifest loses only the security change | Yes, through the security-only fallback |
-| Tests examples that have tests | Yes, with a base-commit check |
-| No npm, no no-lock manifests (report only) | Fixes both where it can |
+| No npm (report only) | `npm audit fix` where npm alerts exist |
 
 ## Safety
 
-- One PR at a time (shared gate with the #659 markers).
-- Never merge, never force-push.
-- Only `pyproject.toml`, `uv.lock`, `package.json`, `package-lock.json` change.
-- No pre-releases. Never `npm audit fix --force`.
-- Failure is handled **per package** first: a security fix that needs a code change is marked **blocked**, its original line is put back, and every other update stays.
-- If `ak-py` still fails after everything, only `ak-py` is reverted. The PR still opens for the other manifests and says so at the top.
+- One PR at a time (shared gate with the #659 markers). Never merge, never force-push.
+- Only `pyproject.toml`, `uv.lock`, `package.json`, `package-lock.json` change. No pre-releases. Never `npm audit fix --force`.
+- No PR unless the tests pass. A red run deletes its branch.
+- Code problems (e.g. AK on `openai` 3) are never fixed here: the package is held; the code fix is a separate, reviewed PR.
 
 ## Known limits
 
-- **Token:** one token for alerts, push and PR: the `agent-kernel-ci[bot]` GitHub App (`APP_ID` + `APP_PRIVATE_KEY`, like the other bot workflows). Its PRs also trigger CI. The app must have **Dependabot alerts: Read**, **Contents: Write** and **Pull requests: Write**; not yet confirmed on a real run. Under `act` it falls back to the `GITHUB_TOKEN` passed in.
-- **Run time:** 127 manifests, with tests, must fit in 360 minutes. Not measured yet.
-- A limit with a comment above it is not raised for a plain update (only for security).
+- **Long held-back list.** Many indirect `0.x` packages move a minor often (`fastapi`, `uvicorn`, `jiter`), and packages that need them wait too (`google-adk` 2.8 → 2.13). Safe; each needs its own PR. Year-numbered majors (`attrs` 25 → 26) wait once a year.
+- **Hand-written limits inside a line are not raised** (e.g. `<1.5` while 1.9 exists). They stay as written.
+- **API cost:** each test round makes real OpenAI calls across all examples; up to two rounds a week.
+- **A failure with no real error blocks the PR** (nothing is held, so round 2 fails the same way). It is listed for a person.
+- **npm:** security fixes only, no weekly updates (`^` ranges already stop at the next major).
+- The e2e secrets passed must match `test-reusable.yaml`. When it gains one (e.g. `ANTHROPIC_API_KEY` for the Claude examples), add it here too.
+- Tokens: the `agent-kernel-ci[bot]` app pushes and opens the PR; `DEPENDABOT_ALERTS_TOKEN` reads alerts until the app has "Dependabot alerts: Read".

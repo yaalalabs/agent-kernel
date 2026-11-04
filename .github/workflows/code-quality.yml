@@ -4,6 +4,14 @@ on:
   pull_request:
     branches:
       - develop
+  # The weekly dependency update runs lint on its branch before it opens a PR.
+  workflow_call:
+    inputs:
+      checkout_ref:
+        description: 'The git ref to lint (empty = the triggering commit)'
+        required: false
+        type: string
+        default: ''
 
 # Least-privilege GITHUB_TOKEN (CodeQL actions/missing-workflow-permissions): checkout only.
 permissions:
@@ -15,6 +23,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.checkout_ref }}
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
