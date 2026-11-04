@@ -81,7 +81,8 @@ Run every command in the foreground.
 HARD RULES
 - Do not edit any file. Only append JSON lines to /tmp/dep-state/holds.jsonl.
 - Never run git commit or git push, and never open a PR.
-- Never name a package whose version did not change.
+- Never name a package whose version did not change, except a package with a security minimum that
+  the code cannot use (rule 4).
 - When unsure, write nothing for that failure.
 """
 
@@ -569,15 +570,46 @@ class Checker:
             hold = holds.get(manifest.relative, set()) | {e["package"] for e in previous}
             return self.check(manifest, upgrade, hold, previous)
 
-        with ThreadPoolExecutor(max_workers=self.workers) as pool:
-            for result in pool.map(one, manifests):
-                held[result["manifest"]] = result.pop("held")
-                results[result["manifest"]] = result
+        def batch(targets: list[Manifest]) -> None:
+            with ThreadPoolExecutor(max_workers=self.workers) as pool:
+                for result in pool.map(one, targets):
+                    held[result["manifest"]] = result.pop("held")
+                    results[result["manifest"]] = result
+
+        batch(manifests)
+        retry = self.block_unsatisfiable(manifests, results)
+        if retry:
+            self.alerts = Alerts(self.state)  # the blocked fixes are no longer security minimums
+            batch(retry)
         self.state.save("results.json", results)
         self.state.save("held.json", held)
         failing = sum(r["status"] == "fail" for r in results.values())
         print(f"checked {len(manifests)} manifests; {failing} failing")
         return 0
+
+    def block_unsatisfiable(self, manifests: list[Manifest], results: dict) -> list[Manifest]:
+        """`uv lock` found no solution because of a security minimum we raised: block that fix, keep the rest.
+
+        Deterministic, no AI. Example: the released agentkernel pins pydantic-ai-slim 2.13.x, so the
+        patched 2.53 cannot be installed with it; that needs a code change and a release, not a version.
+        """
+        changes, retry = self.state.load("changes.json", []), []
+        for manifest in manifests:
+            result = results.get(manifest.relative, {})
+            if result.get("status") != "fail" or result.get("step") != "uv lock":
+                continue
+            error = Path(result["log"]).read_text(errors="replace").partition("No solution found")[2]
+            raised = {c["package"] for c in changes if c["manifest"] == manifest.relative and c["kind"] == "security"}
+            named = sorted(p for p in raised if re.search(rf"(?<![\w-]){re.escape(p)}(?![\w-])", error, re.IGNORECASE))
+            first = next((line.strip() for line in error.splitlines() if "Because" in line), "")[:200]
+            for package in named:
+                reason = f"no version satisfies the security minimum with the other requirements (uv lock: {first})"
+                changes = Holds.block(self.repo, self.state, manifest, package, reason, changes)
+            if named:
+                retry.append(manifest)
+                print(f"security fix blocked (unsatisfiable) in {manifest.relative}: {named}")
+        self.state.save("changes.json", changes)
+        return retry
 
 
 class Holds:
@@ -607,21 +639,29 @@ class Holds:
             found.append({"manifest": manifest, "package": package, "reason": str(item.get("reason", ""))[:300]})
         return found
 
-    def block(self, manifest: Manifest, package: str, reason: str, changes: list[dict]) -> list[dict]:
-        """Record a held security package as blocked; put back its original line where `secure` raised it."""
+    @staticmethod
+    def block(
+        repo: Repo, state: State, manifest: Manifest, package: str, reason: str, changes: list[dict]
+    ) -> list[dict]:
+        """Record a security fix as blocked; where `secure` raised the line, put back the line before it.
+
+        "Before" is the line `cap` wrote when there is one (the original plus its upper limit), so the
+        package keeps its limit; otherwise the original line from the base commit.
+        """
 
         def pair(change: dict) -> bool:
             return change["manifest"] == manifest.relative and change["package"] == package
 
         if any(pair(c) and c["kind"] == "security" for c in changes):
-            base = tomllib.loads(self.repo.show(self.state.commit, manifest.relative) or "")
-            originals = [r for r in requirements_in(base) if name_of(r) == package]
+            base = tomllib.loads(repo.show(state.commit, manifest.relative) or "")
+            capped = {c["old"]: c["new"] for c in changes if pair(c) and c["kind"] == "cap"}
+            originals = [capped.get(r, r) for r in requirements_in(base) if name_of(r) == package]
             text = manifest.pyproject.read_text(encoding="utf-8")
             for index, current in enumerate(r for r in manifest.requirements() if name_of(r) == package):
                 if originals:
                     text = replace_requirement(text, current, originals[min(index, len(originals) - 1)])
             manifest.pyproject.write_text(text, encoding="utf-8")
-        kept = [c for c in changes if not (pair(c) and c["kind"] in {"security", "cap"})]
+        kept = [c for c in changes if not (pair(c) and c["kind"] == "security")]
         return [*kept, {"kind": "blocked", "manifest": manifest.relative, "package": package, "note": reason}]
 
     def run(self) -> int:
@@ -638,7 +678,7 @@ class Holds:
             security = alerts.patched_for(self.manifests[relative])
             for package, reason in packages.items():
                 if package in security:
-                    changes = self.block(self.manifests[relative], package, reason, changes)
+                    changes = self.block(self.repo, self.state, self.manifests[relative], package, reason, changes)
             saved[relative] = {**saved.get(relative, {}), **packages}
         self.state.save("changes.json", changes)
         self.state.save("holds.json", saved)
@@ -690,6 +730,7 @@ class Failures:
         r"never became healthy|site-packages/|would reformat"
     )
     TIMESTAMP = re.compile(r"^\S+Z ")
+    ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")  # terminal colour codes in job logs
 
     def __init__(self, repo: Repo, state: State, gh_repo: str, run_id: str, jobs: list[str]):
         self.repo = repo
@@ -702,6 +743,17 @@ class Failures:
 
     def gh(self, *args: str) -> subprocess.CompletedProcess:
         return subprocess.run(["gh", "api", *args], capture_output=True, text=True, env=self.env, check=False)
+
+    def job_log(self, job_id: int) -> str:
+        """A job's log as plain text. Newer gh refuses logs with colour codes without
+        --allow-escape-sequences; older gh does not know that flag. So try it, then fall back."""
+        endpoint = f"repos/{self.gh_repo}/actions/jobs/{job_id}/logs"
+        fetched = self.gh(endpoint, "--allow-escape-sequences")
+        if fetched.returncode != 0 and "unknown flag" in fetched.stderr:
+            fetched = self.gh(endpoint)
+        if fetched.returncode != 0:
+            return f"log not available: {fetched.stderr.strip()[-300:]}"
+        return self.ANSI.sub("", fetched.stdout)
 
     def entry(self, where: str, relative: str, log: Path) -> dict:
         lines = [self.TIMESTAMP.sub("", line)[:400] for line in log.read_text(errors="replace").splitlines()]
@@ -736,8 +788,7 @@ class Failures:
             if job["conclusion"] != "failure" or not any(job["name"].startswith(f"{j} / ") for j in self.jobs):
                 continue
             log = self.state.path(f"logs/ci-{job['id']}.log")
-            fetched = self.gh(f"repos/{self.gh_repo}/actions/jobs/{job['id']}/logs")
-            log.write_text(fetched.stdout if fetched.returncode == 0 else f"log not available: {fetched.stderr}")
+            log.write_text(self.job_log(job["id"]))
             found = self.E2E_PATH.search(job["name"])
             entries.append(self.entry(job["name"], f"{found.group(1).strip()}/pyproject.toml" if found else "", log))
         return entries
