@@ -95,3 +95,46 @@ After the critical PRs:
 6. Merge the workflow.
 7. Add weekly auto mode.
 8. Leave Pillow/chromadb for a human decision.
+
+# Part 2 — #824: Dependency version handling — plan
+
+## Status
+
+- Written: `.github/workflows/dependency-update-copilot.yml` and `.github/scripts/dependency_caps.py`.
+- One fully automatic weekly run: limits, updates, security fixes, fix loop, security-only fallback, npm, no-lock manifests, one PR.
+- Covers everything the #659 workflow does (see the table in the design).
+- Script tested end to end on a clone with the live alerts (see the spec).
+- **Not run yet:** the workflow under `act` or on GitHub, the Copilot fix loop, the PR step, the full run time.
+
+## Step 1: Small dry run
+
+- `paths = examples/api/agui`, `dry_run = true`.
+- Check: alerts read, `dry_run_ok`, the still-open list, no branch, no PR.
+
+## Step 2: Small real PR
+
+- Same `paths`, `dry_run = false`. Close the #659 PRs first (gate).
+- Check the PR: only dependency files, template headings, marker, no attribution.
+
+## Step 3: Fix loop
+
+- Break a manifest on purpose; confirm Copilot fixes it, or the fallback keeps its security fixes.
+
+## Step 4: Full run
+
+- Empty `paths`. Measure run time against the 360-minute limit.
+
+## Step 5: Merge and schedule
+
+- Merge the workflow and the script to `develop`. Monday runs start by themselves.
+- Test that `GITHUB_TOKEN` can read alerts; if not, add `DEPENDABOT_ALERTS_TOKEN`.
+
+## Step 6: Retire the #659 workflow
+
+- After one clean weekly PR, delete `vulnerability-remediation-copilot.yml`.
+
+## Open questions
+
+- If the full run is longer than 360 minutes: split by folder into parallel jobs.
+- Should libraries (`ak-py`) keep major limits? Set aside for now.
+- A comment above a limit blocks normal raises but not security raises. Is that the rule the team wants?
