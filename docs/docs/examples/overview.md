@@ -82,7 +82,7 @@ Sandbox capability examples (execute code/commands in an isolated, permission-bo
 
 - **`basic/`** - Enable the sandbox, run code, persist a workspace across turns, manage named sessions
 - **`profiles/`** - Multiple named workload profiles (provider + scope routing: a docker-backed workspace and a local throwaway sandbox)
-- **`policy/`** - Policy/permissions on the docker provider: an enforced envelope (network deny, resource limits) and the fail-closed `strict` model for what docker cannot enforce (egress allowlist)
+- **`policy/`** - Policy/permissions on the docker provider: an enforced envelope (network deny, resource limits), the fail-closed `strict` model for what docker cannot enforce (egress allowlist), and a profile that permits package installs
 - **`docker/`** - The docker provider: container-isolated execution, package installs, and enforced network policy (requires a Docker daemon)
 - **`daytona/`** - The daytona provider: cloud container sandboxes with enforced network and resource policy and native idle auto-stop (requires a Daytona API key)
 - **`e2b/`** - The e2b provider: Firecracker micro-VM sandboxes with a stateful Jupyter kernel (variables persist across executions) and enforced network policy (requires an E2B API key)
@@ -90,6 +90,16 @@ Sandbox capability examples (execute code/commands in an isolated, permission-bo
 - **`ec2-ssm/`** - The ec2_ssm provider (mode-3 attach): execute code on an existing EC2 instance over SSM (manual; requires a real instance and AWS credentials)
 - **`broker-kafka/`** - The queue broker flavor over Kafka: a two-process split where the worker runs read-only kubectl pods in a kind cluster via the kubernetes provider, with RBAC as the security boundary (requires Docker, kind, kubectl)
 - **`broker-nats/`** - The queue broker fully in-cluster: pipeline plus sandbox worker deployed by the ak-k8s Helm chart over NATS, with sandbox pods in a hardened namespace (requires a micro-cluster and Helm)
+
+### 📁 Memory Examples (`/examples/memory`)
+
+Session, cache, and memory-backend examples. See the [Choosing a Memory Backend](../core-concepts/memory-backends.md) guide for help picking one:
+
+- **`key-value-cache/`** - Volatile and non-volatile caches shared between hooks and agent tools
+- **`redis/`** - OpenAI agents on AWS Lambda with Redis sessions
+- **`valkey/`** - OpenAI agents on AWS Lambda with Valkey sessions
+- **`dynamodb/`** - OpenAI agents on AWS Lambda with DynamoDB sessions
+- **`cosmos/`** - OpenAI agents on Azure Functions with Cosmos DB sessions
 
 ### 📁 Containerized Examples (`/examples/containerized`)
 
@@ -106,8 +116,8 @@ AWS ECS/Fargate deployment examples:
 - **`openai-dynamodb-scalable/`** - OpenAI agents on AWS ECS with SQS queue mode for scalable, asynchronous request processing and DynamoDB response storage; the OpenAI key is read from SSM Parameter Store (`ssm_enabled`, `secret.provider.type: aws_ssm`)
 - **`openai-websocket/`** - OpenAI agents on AWS ECS over a WebSocket API in direct (non-queue) mode: one service authenticates `$connect`, runs the agent inline, and pushes the reply back over the same connection
 - **`openai-websocket-scalable/`** - OpenAI agents on AWS ECS over a WebSocket API in queue mode: the REST/IO service enqueues chat frames and pushes responses, while a separately-scalable Agent Runner service processes them from SQS
-- **`openai-stream/`** - OpenAI agents on AWS ECS over a WebSocket API in direct (non-queue), STREAM execution mode: the reply is delivered token-by-token as `STREAM_CHUNK` messages instead of one final `CHAT_RESPONSE`
-- **`openai-stream-queue-mode/`** - OpenAI agents on AWS ECS over a WebSocket API in queue-based STREAM execution mode: the Agent Runner streams token-by-token chunks onto the Output Queue so it can scale independently of ingress
+- **`openai-stream/`** - OpenAI agents on AWS ECS over a WebSocket API in direct (non-queue) mode with `execution.mode: async` and `execution.message_type: delta`: the reply is delivered token-by-token as `STREAM_CHUNK` messages instead of one final `CHAT_RESPONSE`
+- **`openai-stream-queue-mode/`** - OpenAI agents on AWS ECS over a WebSocket API in queue mode with `execution.mode: async` and `execution.message_type: delta`: the Agent Runner streams token-by-token chunks onto the Output Queue so it can scale independently of ingress
 - **`openai-schedule/`** - Deferred and recurring chats on AWS ECS: EventBridge Scheduler owns the timers and delivers each occurrence into the Input Queue, with a DynamoDB schedule store and the `/api/v1/schedules` management routes on the REST service
 
 ### 📁 AWS Serverless Examples (`/examples/aws-serverless`)
@@ -119,9 +129,10 @@ AWS Lambda serverless deployment examples:
 - **`langgraph/`** - LangGraph agents running on AWS Lambda
 - **`openai/`** - OpenAI agents running on AWS Lambda, with the OpenAI key read from SSM Parameter Store (`ssm_enabled`, `secret.provider.type: aws_ssm`)
 - **`websocket-openai/`** - OpenAI agents with WebSocket API for real-time bidirectional communication
-- **`streaming-openai/`** - OpenAI agents with WebSocket event streaming (`execution.mode: stream`)
+- **`streaming-openai/`** - OpenAI agents with WebSocket event streaming (`execution.mode: async` with `execution.message_type: delta`)
 - **`schedule-openai/`** - Deferred and recurring chats on AWS Lambda: EventBridge Scheduler delivers each occurrence into the Input Queue for the agent-runner Lambda, backed by a DynamoDB schedule store
 - **`slack-openai/`** - Slack messaging integration on AWS Lambda: webhooks are served by the request-handler Lambda and replies are delivered by the response-handler Lambda
+- **`openai-langfuse-trace-evaluation/`** - Evaluation on production traffic: an OpenAI agent on AWS Lambda (queue mode) traced to Langfuse, whose traces are read back with `Trace.fetch_traces()`, graded by Opik LLM judges behind `/eval` and `/check` routes, and stored in DynamoDB
 
 ### 📁 Azure Containerized Examples (`/examples/azure-containerized`)
 

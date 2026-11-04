@@ -24,5 +24,8 @@ sandbox:
         {}
         # region: us-east-1        # optional; omitted = boto3 default region
         # attach_to: i-...         # or set it here instead of the env override above
+        # language_runtimes:       # stdin-reading interpreters on the instance; omitted = python: [python3, -]
+        #   python: [python3, -]
+        #   node: [node, -e]
   broker:
     flavor: thread

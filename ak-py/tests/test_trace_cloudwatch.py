@@ -137,12 +137,13 @@ def test_default_export_is_signed_to_the_regional_xray_endpoint(monkeypatch, ote
     assert (kwargs["session"].region, kwargs["session"].service) == ("eu-west-1", "xray")
 
 
-def test_default_region_falls_back_to_aws_default_region(monkeypatch, otel_globals, exporter_cls):
-    monkeypatch.setenv("AWS_DEFAULT_REGION", "ap-southeast-2")
+def test_aws_default_region_alone_raises_config_error(monkeypatch, otel_globals, exporter_cls):
+    monkeypatch.setenv("AWS_DEFAULT_REGION", "ap-southeast-2")  # only AWS_REGION counts, so there is no silent fallback
 
-    CloudWatch().init()
+    with pytest.raises(AKConfigError, match="AWS_REGION"):
+        CloudWatch().init()
 
-    assert exporter_cls.call_args.kwargs["endpoint"] == "https://xray.ap-southeast-2.amazonaws.com/v1/traces"
+    otel_globals.assert_not_called()
 
 
 def test_china_regions_use_the_cn_partition(monkeypatch, otel_globals, exporter_cls):

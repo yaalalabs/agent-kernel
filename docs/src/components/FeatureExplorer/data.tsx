@@ -104,7 +104,7 @@ export const FEATURE_TABS: FeatureTab[] = [
       {
         title: "REST, WebSocket & Streaming",
         description:
-          "A FastAPI server with sync, async and SSE streaming modes, a WebSocket gateway for push delivery, and multipart uploads for attachments.",
+          "A FastAPI server with sync and async modes, whole or token-by-token replies over SSE or WebSocket, a WebSocket gateway for push delivery, and multipart uploads for attachments.",
         tags: ["REST", "SSE", "WebSocket", "Multipart"],
         docs: "/docs/api/rest-api",
         example: "api/openai",
@@ -223,8 +223,8 @@ export const FEATURE_TABS: FeatureTab[] = [
       {
         title: "Sandbox Policy & Identity",
         description:
-          "Fail-closed network, filesystem, CPU and memory policies for sandboxed code, executed as the agent or as the end user through RBAC impersonation.",
-        tags: ["Fail-closed", "RBAC", "Per-user"],
+          "Fail-closed network, filesystem, CPU and memory policies for sandboxed code, per-profile language and package-install permissions over configurable language runtimes on Docker and Kubernetes, executed as the agent or as the end user through RBAC impersonation.",
+        tags: ["Fail-closed", "RBAC", "Per-user", "Package installs"],
         docs: "/docs/advanced/sandbox",
         example: "sandbox/policy",
       },
@@ -302,10 +302,10 @@ export const FEATURE_TABS: FeatureTab[] = [
       {
         title: "Tracing",
         description:
-          "One config line enables Langfuse, OpenLLMetry on OpenTelemetry, Pydantic Logfire, or AWS CloudWatch across agent runs, plus LLM calls and tool invocations where the framework supports them, with cost and latency.",
-        tags: ["Langfuse", "OpenLLMetry", "Logfire", "CloudWatch", "OpenTelemetry"],
+          "One config line enables Langfuse, OpenLLMetry on OpenTelemetry, Pydantic Logfire, or AWS CloudWatch across agent runs, plus LLM calls and tool invocations where the framework supports them, with cost and latency. Trace.fetch_spans() and fetch_traces() read the spans back with one provider-neutral filter, to grade production traffic.",
+        tags: ["Langfuse", "OpenLLMetry", "Logfire", "CloudWatch", "OpenTelemetry", "Span fetch"],
         docs: "/docs/advanced/traceability",
-        example: "cli/logfire",
+        example: "aws-serverless/openai-langfuse-trace-evaluation",
       },
       {
         title: "Automated Testing",

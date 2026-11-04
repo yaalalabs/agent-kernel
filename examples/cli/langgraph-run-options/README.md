@@ -42,7 +42,7 @@ Run stats: llm_calls=2, tool_calls=1, recursion_limit=50
 
 | Path | Mode | What you get |
 |---|---|---|
-| Agent Kernel stream events (`PostHook.on_stream_event`) | `execution.mode: stream` only | framework-agnostic `ToolCallStart`, `TextDelta`, ... for what the adapter maps |
+| Agent Kernel stream events (`PostHook.on_stream_event`) | `execution.message_type: delta` on a streamed surface (SSE or WebSocket); the CLI never streams | framework-agnostic `ToolCallStart`, `TextDelta`, ... for what the adapter maps |
 | Native callbacks through run options (this demo) | any mode, including `rest_sync` | LangChain's full callback surface: chain, chat model, tool, retriever events |
 
 ## Running

@@ -83,10 +83,10 @@ works as the `evaluator:` value, resolved the same way sandbox providers and ses
 their own bring-your-own backends.
 
 1. Create a module next to your test file (e.g. `my_evaluator.py`) and subclass `AKEvaluator`,
-   importing the interface from `agentkernel.test.core.evaluator`:
+   importing the interface from `agentkernel.test`:
 
    ```python
-   from agentkernel.test.core.evaluator import (
+   from agentkernel.test import (
        AKEvaluationCase,
        AKEvaluationError,
        AKEvaluationResult,

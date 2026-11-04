@@ -18,9 +18,14 @@ from agentkernel.core.config import (
     AKConfig,
     _ExecutionBrokerConfig,
     _GuardrailConfig,
+    _InMemoryQueueConfig,
     _QueuesConfig,
     _ResponseStoreConfig,
     _SandboxConfig,
+    _SandboxDockerConfig,
+    _SandboxKubernetesConfig,
+    _SandboxPackageInstallConfig,
+    _SandboxPolicyConfig,
     _SandboxProfileConfig,
 )
 from agentkernel.core.runtime import Runtime
@@ -34,10 +39,25 @@ from agentkernel.sandbox.broker.queue import QueueExecutionBroker
 from agentkernel.sandbox.broker.queue_worker import QueueBrokerWorker
 from agentkernel.sandbox.broker.wire import BrokerWireCodec
 from agentkernel.sandbox.broker.worker import BrokerWorkerCore
-from agentkernel.sandbox.errors import ExecutionBrokerError, SandboxConfigError, SandboxPolicyError, SandboxTimeoutError
+from agentkernel.sandbox.errors import (
+    ExecutionBrokerError,
+    SandboxCapabilityError,
+    SandboxConfigError,
+    SandboxPermissionDeniedError,
+    SandboxPolicyError,
+    SandboxTimeoutError,
+)
 from agentkernel.sandbox.factory import ExecutionBrokerFactory, SandboxProviderFactory
 from agentkernel.sandbox.manager import ExecutionManager
-from agentkernel.sandbox.model import SandboxFile, SandboxPolicy, SandboxPrincipal, SandboxResult, SandboxSession, SandboxTask
+from agentkernel.sandbox.model import (
+    PackageInstallPolicy,
+    SandboxFile,
+    SandboxPolicy,
+    SandboxPrincipal,
+    SandboxResult,
+    SandboxSession,
+    SandboxTask,
+)
 from agentkernel.sandbox.testing import FakeSandbox, FakeSandboxProvider
 from agentkernel.sandbox.tools import check_sandbox_task
 
@@ -338,6 +358,36 @@ class TestQueueBrokerClient:
         assert consumer.fetch(1, 0.01) == []  # nothing was sent
 
     @pytest.mark.asyncio
+    async def test_worker_timeout_ceiling_checks_the_install_timeout(self):
+        # An install is checked against its own package_install.timeout, not policy.timeout.
+        broker = _queue_broker(worker_timeout_ceiling=10.0)
+        policy = SandboxPolicy(timeout=5.0, package_install=PackageInstallPolicy(timeout=30.0))
+        with pytest.raises(SandboxPolicyError, match="install_packages timeout 30.0s"):
+            await broker.submit(_request("install_packages", {"packages": ["requests"]}, policy=policy), wait=0)
+        consumer = InMemoryTransport().create_consumer(QueueName.INPUT)
+        assert consumer.fetch(1, 0.01) == []  # nothing was sent
+        # The same policy on execute_code uses policy.timeout and passes the ceiling.
+        task = await broker.submit(_request(policy=policy), wait=0)
+        assert isinstance(task, SandboxTask)
+
+    @pytest.mark.asyncio
+    async def test_permission_denied_round_trips_by_name(self):
+        broker = _queue_broker()
+        _store_completion(_completion("failed", error="profile 'default' does not permit", error_type="SandboxPermissionDeniedError"))
+        with pytest.raises(SandboxPermissionDeniedError, match="does not permit"):
+            await broker.submit(_request(), wait=5)
+
+    @pytest.mark.asyncio
+    async def test_capability_error_round_trips_without_double_wrapping(self):
+        broker = _queue_broker()
+        original = SandboxCapabilityError("DockerSandbox", "package_ecosystem:node")
+        _store_completion(_completion("failed", error=str(original), error_type="SandboxCapabilityError"))
+        with pytest.raises(SandboxCapabilityError) as excinfo:
+            await broker.submit(_request(), wait=5)
+        assert str(excinfo.value) == str(original)  # not "unsupported capability: DockerSandbox does not support ..."
+        assert (excinfo.value.subject, excinfo.value.capability) == ("DockerSandbox", "package_ecosystem:node")
+
+    @pytest.mark.asyncio
     async def test_oversized_request_rejected_at_submit(self):
         broker = _queue_broker(inline_payload_max_bytes=64)
         with pytest.raises(ExecutionBrokerError, match="execute_code"):
@@ -426,6 +476,52 @@ class TestQueueBrokerWorker:
             QueueBrokerWorker(_worker_cfg(queue=_QueuesConfig(type="kafka")))
         with pytest.raises(SandboxConfigError, match="only valid together"):
             QueueBrokerWorker(_worker_cfg(response_store=_ResponseStoreConfig(type="redis")))
+
+    def test_startup_rejects_an_unresolvable_package_rule(self):
+        cfg = _worker_cfg()
+        docker = _SandboxDockerConfig(package_installers={"deb": ["apt-get", "install", "-y"]}, package_rules={"deb": "zzq_missing.Rule"})
+        cfg.profiles["apt"] = _SandboxProfileConfig(type="docker", docker=docker)
+        with pytest.raises(SandboxConfigError, match="apt"):
+            QueueBrokerWorker(cfg)
+
+    @staticmethod
+    def _redelivery_warnings(caplog):
+        return [r for r in caplog.records if "will be redelivered and run twice" in r.getMessage()]
+
+    def test_startup_warns_when_an_install_can_outlive_ack_wait(self, caplog):
+        cfg = _worker_cfg(queue=_QueuesConfig(type="in_memory", in_memory=_InMemoryQueueConfig(ack_wait=300)))
+        cfg.profiles["installs"] = _SandboxProfileConfig(
+            type=FAKE_DOTTED, policy=_SandboxPolicyConfig(package_install=_SandboxPackageInstallConfig(timeout=600))
+        )
+        with caplog.at_level("WARNING", logger="ak.sandbox.broker"):
+            QueueBrokerWorker(cfg)
+        records = self._redelivery_warnings(caplog)
+        assert len(records) == 1
+        message = records[0].getMessage()
+        assert "installs" in message and "610.0s" in message and "sandbox.broker.queue.in_memory.ack_wait is 300" in message
+
+    def test_startup_does_not_warn_with_default_timeouts(self, caplog):
+        with caplog.at_level("WARNING", logger="ak.sandbox.broker"):
+            QueueBrokerWorker(_worker_cfg())  # 120s + 10s backstop < the 300s default ack_wait
+        assert self._redelivery_warnings(caplog) == []
+
+    def test_startup_counts_kubernetes_provisioning_toward_the_window(self, caplog):
+        cfg = _worker_cfg(queue=_QueuesConfig(type="in_memory", in_memory=_InMemoryQueueConfig(ack_wait=200)))
+        # 120s create_timeout + 120s policy timeout + 10s backstop = 250s > 200s, though the timeout alone fits.
+        cfg.profiles["k8s"] = _SandboxProfileConfig(type="kubernetes", kubernetes=_SandboxKubernetesConfig())
+        with caplog.at_level("WARNING", logger="ak.sandbox.broker"):
+            QueueBrokerWorker(cfg)
+        records = self._redelivery_warnings(caplog)
+        assert len(records) == 1 and "k8s" in records[0].getMessage()
+
+    def test_startup_skips_transports_whose_window_is_not_ak_config(self, caplog):
+        cfg = _worker_cfg()
+        cfg.profiles["installs"] = _SandboxProfileConfig(
+            type=FAKE_DOTTED, policy=_SandboxPolicyConfig(package_install=_SandboxPackageInstallConfig(timeout=3600))
+        )
+        with caplog.at_level("WARNING", logger="ak.sandbox.broker"):
+            QueueBrokerWorker._warn_redelivery_window(cfg, "sqs")
+        assert self._redelivery_warnings(caplog) == []
 
     @pytest.mark.asyncio
     async def test_request_loop_queues_the_ready_to_store_record(self, monkeypatch):

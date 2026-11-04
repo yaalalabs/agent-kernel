@@ -281,7 +281,7 @@ class <Name>Agent(Agent):
 
 **Key requirements:**
 - `get_description()` must return a meaningful description from the native framework agent
-- `get_a2a_card()` must return a valid A2A agent card built via `A2ACardBuilder`
+- `get_a2a_card()` must return a valid A2A agent card built via `A2ACardBuilder` (a2a-sdk 1.x protobuf types, #762). Pass a `str` description (anything else is emptied with a warning); `AgentSkill(..., tags=[])` is fine, the builder tags an untagged skill with the agent name. Returning `None` means the agent is not served over A2A (logged)
 - Store the native agent in `self._native_agent` for access in the Runner
 - Declare `RESERVED_RUN_OPTIONS: ClassVar[Mapping[str, str]]` (#754): every keyword your runner passes itself, plus any that changes the result shape your reply mapping reads, each mapped to a one-line reason. `Module.run_options` rejects them at declaration with that reason. Override `validate_run_options` only for a nested key (LangGraph's `config.configurable.thread_id`)
 

@@ -28,6 +28,7 @@ const sidebars = {
         'core-concepts/tools',
         'core-concepts/runner',
         'core-concepts/session',
+        'core-concepts/memory-backends',
         'core-concepts/module',
         'core-concepts/runtime',
         'core-concepts/configuration',

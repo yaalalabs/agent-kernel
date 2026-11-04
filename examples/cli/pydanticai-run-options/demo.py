@@ -68,7 +68,7 @@ weather_agent = Agent(
     tools=PydanticAIToolBuilder.bind([get_weather]),
 )
 
-# The declaration. Both keywords are `agent.run`'s own arguments. In Agent Kernel stream mode
+# The declaration. Both keywords are `agent.run`'s own arguments. In an Agent Kernel streamed run
 # `event_stream_handler` is dropped with one warning (the runner's own stream events carry the same
 # information); `usage_limits` applies in both modes.
 PydanticAIModule([weather_agent]).run_options(

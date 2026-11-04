@@ -79,12 +79,12 @@ it has always carried when it is not, so nothing changes for a client that has n
 | Conversation threads | yes, live and on reload — stored history keeps the payload and its label |
 | Streaming / AG-UI | yes, with your own `on_stream_event` hook — see below |
 | MCP | yes, as `structuredContent` with the label in `_meta` |
-| A2A | not yet; it arrives with the `a2a-sdk` 1.x port |
+| A2A | yes, as a data part labelled in `mediaType` and `metadata.mimeType` (an object as a one-item list); the agent card declares the A2UI v0.9.1 extension — see [A2A Server](../api/a2a-server.md) |
 
 ## Limits worth knowing before you build on it
 
 **It does not reach a streamed run.** The hook runs on `Runtime.run`, and `Runtime.stream` never
-calls one — so with `execution.mode: stream` the config block does nothing. Agent Kernel logs a
+calls one — so with `execution.message_type: delta` the config block does nothing. Agent Kernel logs a
 warning on the first request rather than leaving you to discover it. Labelling a streamed payload
 means writing an `on_stream_event` hook, which also means holding deltas back until the message
 ends.
