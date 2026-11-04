@@ -182,13 +182,13 @@ log level with per-stage trace points on the request path.
   |= 1 set up =|======== 2 run test types ========|= 3 report =|┄ 4 ~1 day ┄|= 5 collect-cost =|
   ```
 
-  1. **Set up** (minutes): deploy with every resource tagged `ak-bench-run-id`, record the run metadata.
+  1. **Set up** (minutes): deploy with every resource tagged `ak-bench-run-id=<run-id>-<host>-<mode>`, record the run metadata.
   2. **Run test types:** step numbers 1 → 10 → 100 → 1000; for each, a steady step run, then a burst step run. Every
      step run is the four-part step above, with its own live tracking and its own after-step fetch.
   3. **Report, tear down:** write the run-level CSVs (`summary.csv` per test type),
      draw the graphs, tear the deployment down. Each step run already wrote its own CSVs.
   4. **Wait** (~1 day): Cost Explorer catches up.
-  5. **`collect-cost`:** billed cost for the run tag; writes `cost.csv` and draws the billed cost graph.
+  5. **`collect-cost`:** billed cost for each host × mode's tag value; writes its `cost.csv` and draws the billed cost graph.
 
 ### Throughput and latency
 
@@ -302,16 +302,18 @@ log level with per-stage trace points on the request path.
 ### Cost
 
 - One number per run:
-  - **billed:** AWS Cost Explorer `GetCostAndUsage` filtered by the run tag, grouped by service. Whole run only,
+  - **billed:** AWS Cost Explorer `GetCostAndUsage` filtered by the run tag (one value per host × mode), grouped by service. Whole run only,
     filled later by `collect-cost`. Empty where there is no bill (bare metal, local).
     - Metric: **`UnblendedCost`**, the usage at the rate AWS charged, **without discounts and credits** (those are
       separate line items; `NetUnblendedCost` is the after-discount view, not used). Recorded with the billed cost.
-    - The tag is set **at deploy time**: the deployer puts `ak-bench-run-id=<run-id>` on every resource it creates
-      (Terraform `default_tags`, Helm labels). Each run gets a new value.
+    - The tag is set **at deploy time**: the deployer puts `ak-bench-run-id=<run-id>-<host>-<mode>` on every resource it
+      creates (Terraform `default_tags`, Helm labels). The value is unique per host × execution mode (decided
+      2026-11-04, PR #893 review), so each host × mode's `cost.csv` holds only its own deployment's bill. A new run gets
+      new values.
     - **All the steps together, never per step:** one deployment, tagged once, serves every step of both test types,
       so the bill can't tell the steps apart. It's read once, after all the steps have run.
     - Cost Explorer records every charge with the tags of the resource it came from, and the query returns **only
-      charges from resources carrying this run's tag value**. Nothing from other runs or other workloads on the
+      charges from resources carrying this host × mode's tag value**. Nothing from other hosts, modes, runs or other workloads on the
       account is included.
     - Daily granularity is enough: the run's billed cost is the sum of the daily rows for that tag value over the
       run's days (two days if it crosses midnight). Hourly granularity is not used.
@@ -376,7 +378,7 @@ graph LR
   - **Run test types:** every step stores its own data: live tracking from the start of `before` to the end of the
     cool-down, then the data with history after the cool-down and the configured wait (see
     [Step timeline](#step-timeline)).
-  - Every resource the deployer creates carries the tag / label `ak-bench-run-id=<run-id>`.
+  - Every resource the deployer creates carries the tag / label `ak-bench-run-id=<run-id>-<host>-<mode>` (one value per host × mode).
 
 **The whole flow** (one host × mode):
 
@@ -558,7 +560,10 @@ flowchart TD
 - Benchmark deployment settings, applied by the deployers and recorded in the metadata:
   - `ecs`: `scaling_config.enabled = true`, `min_count >= 1`.
   - `eks`, `baremetal`: `keda.enabled: true`, `transport.type: kafka`.
-  - `lambda`: zip packaging (Lambda Insights layer); `batch_size × max agent delay` stays under the agent runner timeout.
+  - `lambda`: zip packaging (Lambda Insights layer); agent runner timeout **60 s** (AK default 45 s, but 10 messages ×
+    the 5 s max agent delay = 50 s); `batch_size × max agent delay` stays under the agent runner timeout (decided
+    2026-11-04, PR #893 review). The input queue visibility timeout stays at AK's default 60 s (Lambda needs it ≥ the
+    function timeout).
   - every host: queue mode, WebSocket delivery, `logging.ak.level: TRACE`, the mock agent.
 
 ### Mock agent
@@ -600,6 +605,10 @@ flowchart TD
   - Timestamp = the log record's creation time, **UTC, millisecond precision**, ISO 8601 with `Z`.
   - Stage in square brackets first. **Only trace lines carry the stage in `[...]`.**
   - The formatter change (`core/logger.py:42`) applies to **every** AK log line, not only `TRACE`.
+  - **Clocks:** a duration between two points logged on different machines (e.g. `INPUT_ENQUEUED` →
+    `AGENT_RECEIVED`, the client legs and `CLIENT_RECEIVED`) includes the clock offset between them. It isn't
+    corrected; the load-generator machine must have clock sync (NTP) on. Durations inside one component and
+    end-to-end latency use one clock and aren't affected (PR #893 review).
 - **Parser** in `core/logger.py` next to `TraceStage`, so format and parser change together. The benchmark imports it.
 - **Trace points on every code path a phase-1 host runs:** shared `pipeline/` (request handler, WS handler, agent
   runner, response handler), ECS containerized handlers, and the Lambda serverless handlers.

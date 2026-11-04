@@ -105,8 +105,9 @@ with history. Live tracking runs from the start of "before" to the end of the co
        worker, not yet deleted) are 0, on the input and output queues, **in every poll of the last 60 s** (decided
        2026-11-03, PR #877 review). Both counts are approximate (SQS has no exact count) and AWS says they may not be
        consistent until at least 1 minute after producers stop sending, so one poll reading 0 isn't enough: a message
-       still being worked on (e.g. a timed-out request in a step that never scaled) can read 0 once. A message in
-       flight shows up in at least one poll of a 60 s run of zeros.
+       still being worked on (e.g. a timed-out request in a step that never scaled) can read 0 once. The rule assumes
+       a message still waiting or being worked on reads non-zero in at least one poll within 60 s, so 60 s of zeros is
+       taken as empty. It's not a hard guarantee, since both counts are approximate.
      - Kafka: consumer-group lag is 0 on the input and output topics. AK commits offsets only after processing a
        message (`ak-py/src/agentkernel/pipeline/transport/kafka.py`), so a message being processed still counts as
        lag.
@@ -328,7 +329,9 @@ Scale down, measured from `t_load_down` (the end of the step's load part):
 - **Scale-down start:** `t_load_down` → first decrease in desired/running workers.
 - **Scale-down done:** `t_load_down` → running workers back to the baseline count.
 
-The times above and the worker counts below are computed per tier and per scaling info fetcher.
+The times above and the worker counts below are computed per tier and per scaling info fetcher. On Lambda
+(`aws.cloudwatch_metric.ConcurrentExecutions`) the `workers_*` counts are concurrent invocations, not execution
+environments.
 
 Worker counts (from → to), recorded per tier, count type (desired / running) and fetcher, next to the times:
 
@@ -393,8 +396,11 @@ Worker counts (from → to), recorded per tier, count type (desired / running) a
   - **How AK uses it (checked in the code):** the agent runner's SQS event source mapping has `batch_size = 10` and
     AK's `SQSConsumer` handles the records of a batch **one after another**, so one invocation with 10 messages and a
     2 s agent delay runs ~20 s. The agent runner timeout is 45 s by default (`ak-aws/serverless/variables.tf`, `agent_runner`),
-    so `batch_size × maximum agent delay` has to stay under it (a 5 s delay with batch size 10 hits the timeout, and 5 s
-    is the default maximum agent delay). Batch size, timeout and the minimum and maximum agent delay are saved in the
+    and `batch_size × maximum agent delay` has to stay under it: 10 × the default 5 s maximum delay is 50 s. So the
+    benchmark deployer sets the agent runner timeout to **60 s** (decided 2026-11-04, PR #893 review). The input queue
+    visibility timeout stays at AK's default 60 s: Lambda rejects a function timeout above it, and AK's Terraform checks
+    visibility ≥ timeout (`ak-aws/serverless/state.tf`). AWS recommends a visibility timeout of at least 6× the
+    function timeout; that isn't applied. Batch size, timeout and the minimum and maximum agent delay are saved in the
     run metadata.
   - So the number of concurrent executions is much lower than the number of requests: each
     environment handles a batch of messages, then the next batch. Example: 1000 requests at once, 2 s each, batch
@@ -429,13 +435,17 @@ What a run **actually cost**, read from the cloud's bill, for the whole run.
 **Tag everything.** Every resource the runner deploys gets a `ak-bench-run-id` tag (Terraform `default_tags`, Helm
 labels). The billed cost is AWS Cost Explorer `GetCostAndUsage` filtered by the run tag, grouped by service.
 
+- **One tag value per host × execution mode** (decided 2026-11-04, PR #893 review): `<run-id>-<host>-<mode>`, e.g.
+  `<run-id>-lambda-async`. Each host × mode has its own deployment, so its `cost.csv` holds only that deployment's
+  bill, never another host's or mode's.
+
 - **Metric: `UnblendedCost`** (decided 2026-11-02): the usage at the rate AWS charged, **without discounts and
   credits** (Cost Explorer shows those as their own line items; the after-discount view is `NetUnblendedCost`, not
   used). The metric name is recorded with the run's billed cost.
 - **AWS's own billing rules are already in it** (e.g. Fargate's per-second billing with a 1-minute minimum, SQS
   billing per API request including empty receives), so the benchmark doesn't model them.
 - **The whole run only, never per step.** The tag is set once, at deploy time, and one deployment serves every step of
-  both test types (1 → 10 → 100 → 1000), so every charge of the run carries the same tag value and Cost Explorer can't
+  both test types (1 → 10 → 100 → 1000), so every charge of that host × mode carries the same tag value and Cost Explorer can't
   tell the steps apart. Its time grain (daily, or hourly) can't separate them either: steps are minutes long and run
   back to back. The total covers set-up, every step, the waits after the steps and the time until tear-down.
 - The tag must be activated as a cost allocation tag (management account). Tagged costs show from activation on; the
@@ -444,7 +454,7 @@ labels). The billed cost is AWS Cost Explorer `GetCostAndUsage` filtered by the 
 - Cost Explorer refreshes at least once every 24 h (some data can arrive later), so this is a **separate, later step**
   (`collect-cost --run-id …`) that fills in the cost CSV after the run. It fits the existing "re-plot from existing
   CSVs" option. Each Cost Explorer API request costs $0.01.
-- **Daily granularity** (decided 2026-10-29): every run has its own tag value, so the run's billed cost is the sum of
+- **Daily granularity** (decided 2026-10-29): every host × mode of every run has its own tag value, so its billed cost is the sum of
   the daily rows for that value over the days the run covered (two days if it crosses midnight). Hourly isn't used.
 - Shared or long-lived resources (EKS control plane, NAT gateway, a long-lived MSK cluster) can be tagged, but if
   they're shared across runs or used by other things, their cost must be listed as a fixed allocation instead. The automatic

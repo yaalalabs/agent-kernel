@@ -188,9 +188,20 @@ The standard `AWS/Lambda` metrics have no CPU or memory metric. Two sources, bot
 ### 1. `aws.lambda_report_memory`: `REPORT` lines (memory only, free)
 
 - Every invocation ends with a `REPORT` line: `Duration`, `Billed Duration`, `Memory Size`, **`Max Memory Used`**.
-- Read with Logs Insights (`filter @type = "REPORT" | stats max(@maxMemoryUsed) by @logStream, bin(<window>)`), the
-  shared Logs Insights helper. `worker` = log stream (one per
-  execution environment, as in `aws.lambda_log_streams`).
+- Read with Logs Insights (the shared Logs Insights helper), the way AWS's own example queries do (decided
+  2026-11-04, PR #893 review):
+  ```text
+  filter @type = "REPORT"
+  | stats max(@maxMemoryUsed / 1024 / 1024) as max_mem_mb,
+          avg(@maxMemoryUsed / 1024 / 1024) as avg_mem_mb,
+          (max(@maxMemoryUsed / 1024 / 1024) / max(@memorySize / 1024 / 1024)) * 100 as max_mem_pct,
+          (avg(@maxMemoryUsed / 1024 / 1024) / max(@memorySize / 1024 / 1024)) * 100 as avg_mem_pct
+    by @logStream, bin(<window>)
+  ```
+  - `@maxMemoryUsed` and `@memorySize` (the configured memory) come in bytes; `/ 1024 / 1024` gives MiB, as in AWS's
+    examples. So `mem_mb` = memory used, `mem_pct` = memory used ÷ configured memory × 100, each with `stat` `max` /
+    `avg`.
+  - `worker` = log stream (one per execution environment, as in `aws.lambda_log_streams`).
 - Free, nothing to switch on.
 - **No CPU.**
 - Caveat: "when invocations share an execution environment, Lambda reports the maximum memory used across all
@@ -295,6 +306,7 @@ Less researched; to check before building.
 - Container Insights ECS performance log events (log group, `Type = "Task"` fields): https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/Container-Insights-reference-performance-logs-ECS.html
 - Fargate task metadata endpoint v4 (`/task/stats`, Docker stats, inside the task only): https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task-metadata-endpoint-v4-fargate.html
 - Lambda `REPORT` line (`Max Memory Used`, shared-environment caveat): https://docs.aws.amazon.com/lambda/latest/dg/python-logging.html
+- Lambda Logs Insights example queries (`@maxMemoryUsed / 1024 / 1024`, memory % with `@memorySize`): https://docs.aws.amazon.com/lambda/latest/dg/monitoring-cloudwatchlogs-view.html
 - Lambda Insights (extension layer, one performance event per invocation, pricing): https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/Lambda-Insights.html
 - Lambda Insights metrics (`cpu_total_time`, `memory_utilization`, `used_memory_max`): https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/Lambda-Insights-metrics-lambda-functions.html
 - Lambda Insights log-only fields (`cpu_user_time`, `threads_max`, `memory_utilization` as average): https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/Lambda-Insights-metrics-lambda-functions.html
