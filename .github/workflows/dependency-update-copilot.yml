@@ -43,7 +43,9 @@ env:
   BRANCH: deps/update-batch-${{ github.run_id }}
   MANIFEST_PATHS: ${{ inputs.paths }}
   STATE_DIR: /tmp/dep-state
-  SCRIPT: /tmp/dependency_caps.py
+  # Inside the state folder: the later jobs get the same script with the state artifact. Their
+  # checkout is the update branch, which starts from develop and may not have this script yet.
+  SCRIPT: /tmp/dep-state/dependency_caps.py
 
 jobs:
   update:
@@ -102,7 +104,8 @@ jobs:
         run: |
           set -euo pipefail
           [ -n "$COPILOT_GITHUB_TOKEN" ] || { echo "COPILOT_REQUEST_TOKEN is not set."; exit 1; }
-          cp .github/scripts/dependency_caps.py "$SCRIPT" # develop may not have this version yet
+          mkdir -p "$STATE_DIR"
+          cp .github/scripts/dependency_caps.py "$SCRIPT" # before the checkout of develop, which may not have it
           dep() { uv run --no-project --with packaging python "$SCRIPT" --paths "$MANIFEST_PATHS" --state "$STATE_DIR" "$@"; }
           git fetch origin develop
           git checkout --force -B "$BRANCH" origin/develop
@@ -232,7 +235,7 @@ jobs:
           ACTIONS_TOKEN: ${{ secrets.GITHUB_TOKEN }} # actions: read, for this run's job logs
         run: |
           set -euo pipefail
-          cp .github/scripts/dependency_caps.py "$SCRIPT"
+          # $SCRIPT came with the state artifact (the update branch may not have it).
           dep() { uv run --no-project --with packaging python "$SCRIPT" --paths "$MANIFEST_PATHS" --state "$STATE_DIR" "$@"; }
           echo "Failed jobs: $(dep failures --run-id "$RUN_ID" --jobs e2e-1,kind-1,lint-1)"
           dep fix
