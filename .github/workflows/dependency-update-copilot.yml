@@ -1,6 +1,11 @@
 name: Dependency Version Update (Copilot)
 
 on:
+  # TEMPORARY: test runs from the feature branch (a push run is a real run that opens a PR).
+  # REMOVE this push trigger before merging.
+  push:
+    branches:
+      - feature/659-copilot-agent-for-automated-vulnerability-remediation-and-pr-creation
   schedule:
     # Every Monday 03:00 UTC.
     - cron: '0 3 * * 1'
@@ -34,8 +39,8 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       REPO: ${{ github.repository }}
-      # A scheduled run has no inputs: it is always a real run.
-      DRY_RUN: ${{ github.event_name == 'schedule' && 'false' || inputs.dry_run }}
+      # Only a manual run has inputs. Scheduled (and the temporary push) runs are always real runs.
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
       MANIFEST_PATHS: ${{ inputs.paths }}
       # Reading Dependabot alerts needs 'Dependabot alerts: Read'. Use a dedicated token when set.
       ALERTS_TOKEN: ${{ secrets.DEPENDABOT_ALERTS_TOKEN || secrets.GITHUB_TOKEN }}
