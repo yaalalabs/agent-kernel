@@ -1,7 +1,6 @@
 """Shared Azure Cosmos DB (Table API) connection driver. Requires the ``azure`` extra."""
 
 import time
-from typing import Optional
 
 from azure.core.exceptions import ResourceNotFoundError
 from azure.data.tables import TableServiceClient
@@ -96,7 +95,7 @@ class CosmosDBDriver(BaseDriver):
             self._log.error("Failed to put entity session_id=%s key=%s: %s", session_id, key, e)
             raise
 
-    def get(self, session_id: str, key: str) -> Optional[bytes]:
+    def get(self, session_id: str, key: str) -> bytes | None:
         """
         Get a single entity's raw bytes for the given partition and row key.
 

@@ -12,7 +12,7 @@ results carry a ``sandbox_session_id``, and machinery errors are caught and retu
 
 import json
 import logging
-from typing import Any, Optional, Union
+from typing import Any
 
 from ..core.config import AKConfig
 from ..core.model import SystemTool
@@ -31,19 +31,19 @@ def _max_chars() -> int:
     return AKConfig.get().sandbox.tool_output_max_chars
 
 
-def _default_session_echo(sandbox_session_id: Optional[str], profile: Optional[str]) -> str:
+def _default_session_echo(sandbox_session_id: str | None, profile: str | None) -> str:
     """The sandbox_session_id a caller can reuse when it did not pass one explicitly."""
     if sandbox_session_id:
         return sandbox_session_id
     return f"default:{profile or AKConfig.get().sandbox.default_profile}"
 
 
-def _error_json(exc: Exception, sandbox_session_id: Optional[str]) -> str:
+def _error_json(exc: Exception, sandbox_session_id: str | None) -> str:
     """Serialize a machinery error into the tool ``{"error": ...}`` JSON contract."""
     return json.dumps({"error": str(exc), "sandbox_session_id": sandbox_session_id or ""})
 
 
-def _outcome_json(outcome: Union[SandboxResult, SandboxTask]) -> str:
+def _outcome_json(outcome: SandboxResult | SandboxTask) -> str:
     """Serialize an execute outcome: a pending-task handle for a promoted ``SandboxTask``,
     or stdout/stderr/exit_code (truncated) for a ``SandboxResult``. A machinery ``notice``
     (idle reset, self-heal recreation) is passed through when present."""
@@ -64,7 +64,7 @@ def _outcome_json(outcome: Union[SandboxResult, SandboxTask]) -> str:
     return json.dumps(payload)
 
 
-async def run_code(code: str, language: str = "python", sandbox_session_id: Optional[str] = None, profile: Optional[str] = None) -> str:
+async def run_code(code: str, language: str = "python", sandbox_session_id: str | None = None, profile: str | None = None) -> str:
     """
     Execute code in an isolated sandbox and return the outcome as a JSON string.
 
@@ -91,7 +91,7 @@ async def run_code(code: str, language: str = "python", sandbox_session_id: Opti
         return _error_json(exc, sandbox_session_id)
 
 
-async def run_command(command: str, sandbox_session_id: Optional[str] = None, profile: Optional[str] = None) -> str:
+async def run_command(command: str, sandbox_session_id: str | None = None, profile: str | None = None) -> str:
     """
     Execute a shell command in an isolated sandbox and return the outcome as a JSON string.
 
@@ -117,9 +117,7 @@ async def run_command(command: str, sandbox_session_id: Optional[str] = None, pr
         return _error_json(exc, sandbox_session_id)
 
 
-async def install_packages(
-    packages: list[str], ecosystem: str = "python", sandbox_session_id: Optional[str] = None, profile: Optional[str] = None
-) -> str:
+async def install_packages(packages: list[str], ecosystem: str = "python", sandbox_session_id: str | None = None, profile: str | None = None) -> str:
     """
     Install packages into the sandbox, when the profile permits it, and return the installer's outcome as a JSON string.
 
@@ -146,7 +144,7 @@ async def install_packages(
         return _error_json(exc, sandbox_session_id)
 
 
-async def write_sandbox_file(path: str, content: str, sandbox_session_id: Optional[str] = None, profile: Optional[str] = None) -> str:
+async def write_sandbox_file(path: str, content: str, sandbox_session_id: str | None = None, profile: str | None = None) -> str:
     """
     Write a UTF-8 text file into the sandbox workspace.
 
@@ -170,7 +168,7 @@ async def write_sandbox_file(path: str, content: str, sandbox_session_id: Option
         return _error_json(exc, sandbox_session_id)
 
 
-async def read_sandbox_file(path: str, sandbox_session_id: Optional[str] = None, profile: Optional[str] = None) -> str:
+async def read_sandbox_file(path: str, sandbox_session_id: str | None = None, profile: str | None = None) -> str:
     """
     Read a UTF-8 text file from the sandbox workspace.
 
@@ -224,7 +222,7 @@ async def check_sandbox_task(task_id: str) -> str:
         return _error_json(exc, None)
 
 
-async def new_sandbox_session(name: Optional[str] = None, profile: Optional[str] = None) -> str:
+async def new_sandbox_session(name: str | None = None, profile: str | None = None) -> str:
     """
     Create a fresh, empty sandbox session and return its system-assigned id.
 
@@ -340,7 +338,7 @@ def _profiles_text(config: Any, installs: bool) -> str:
     return "\n".join(lines) if lines else "- (none configured)"
 
 
-def _permissions_text(policy: Any, installs: bool, runtimes: Optional[list[str]] = None) -> str:
+def _permissions_text(policy: Any, installs: bool, runtimes: list[str] | None = None) -> str:
     """The profile's permissions for the guidance: run_code languages, then package installs.
     ``runtimes`` is the languages the provider can run, from ``_runtime_languages`` (None for a
     dotted-path provider): they are the languages when the policy names none, and narrow the policy's
@@ -369,7 +367,7 @@ def _permissions_text(policy: Any, installs: bool, runtimes: Optional[list[str]]
     return "; " + "; ".join(parts) if parts else ""
 
 
-def _runtime_languages(prof: Any) -> Optional[list[str]]:
+def _runtime_languages(prof: Any) -> list[str] | None:
     """The languages the profile's provider can run, config-derived (no provider import): the
     block's ``runtime_languages()`` when it declares ``language_runtimes`` (``docker``, ``kubernetes``, ``ec2_ssm``, ``daytona``),
     or its ``languages`` list (``e2b``), or ``local_subprocess``'s class-declared languages; None for a

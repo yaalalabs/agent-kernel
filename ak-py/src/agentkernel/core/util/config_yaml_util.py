@@ -25,7 +25,7 @@
 import os
 import re
 from pathlib import Path
-from typing import Any, ClassVar, Dict, Tuple, Type
+from typing import Any, ClassVar
 
 import yaml
 from pydantic.fields import FieldInfo
@@ -54,7 +54,7 @@ def replace_secrets(secrets_dir: Path, data: str) -> str:
     return data
 
 
-def yaml_config_settings_source(settings_cls: Type["YamlBaseSettingsModified"]) -> Dict[str, Any]:
+def yaml_config_settings_source(settings_cls: type["YamlBaseSettingsModified"]) -> dict[str, Any]:
     """Loads settings from a YAML file resolved from the settings class attributes.
 
     The settings class declares its YAML source via `yaml_file_env_var`,
@@ -98,15 +98,15 @@ class YamlConfigSettingsSource(PydanticBaseSettingsSource):
         super().__init__(settings_class)
         self._yaml_data = yaml_config_settings_source(settings_class)
 
-    def get_field_value(self, field: FieldInfo, field_name: str) -> Tuple[Any, str, bool]:
+    def get_field_value(self, field: FieldInfo, field_name: str) -> tuple[Any, str, bool]:
         field_value = self._yaml_data.get(field_name)
         return field_value, field_name, False
 
     def prepare_field_value(self, field_name: str, field: FieldInfo, value: Any, value_is_complex: bool) -> Any:
         return value
 
-    def __call__(self) -> Dict[str, Any]:
-        d: Dict[str, Any] = {}
+    def __call__(self) -> dict[str, Any]:
+        d: dict[str, Any] = {}
 
         for field_name, field in self.settings_cls.model_fields.items():
             field_value, field_key, value_is_complex = self.get_field_value(field, field_name)
@@ -156,7 +156,7 @@ class YamlBaseSettingsModified(BaseSettings):
     @classmethod
     def settings_customise_sources(
         cls,
-        settings_cls: Type[BaseSettings],
+        settings_cls: type[BaseSettings],
         init_settings,
         env_settings,
         dotenv_settings,

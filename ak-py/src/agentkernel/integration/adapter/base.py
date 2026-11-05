@@ -17,7 +17,7 @@ import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
 
@@ -59,12 +59,12 @@ class InboundRequest(BaseModel):
 
     session_id: str
     request_id: str
-    requests: List[AgentRequestUnion]
+    requests: list[AgentRequestUnion]
     prompt: str = ""
-    agent: Optional[str] = None
-    user_id: Optional[str] = None
-    group_id: Optional[str] = None
-    reply_context: Dict[str, str] = Field(default_factory=dict)
+    agent: str | None = None
+    user_id: str | None = None
+    group_id: str | None = None
+    reply_context: dict[str, str] = Field(default_factory=dict)
 
 
 @dataclass
@@ -82,7 +82,7 @@ class InboundParseResult:
     adapter's :meth:`InboundAdapter.success_response`.
     """
 
-    requests: List[InboundRequest] = field(default_factory=list)
+    requests: list[InboundRequest] = field(default_factory=list)
     response: Any = None
 
 
@@ -96,7 +96,7 @@ class InboundAdapter(ABC):
     name: str = ""
     source: Source = Source.WEBHOOK
     webhook_path: str = ""
-    challenge_path: Optional[str] = None
+    challenge_path: str | None = None
 
     async def verify(self, raw: Any) -> None:
         """Reject a delivery that did not come from the platform.
@@ -133,7 +133,7 @@ class InboundAdapter(ABC):
         """The success body returned when the platform SDK did not produce a response itself."""
         return {"status": "ok"}
 
-    def missing_verification_settings(self) -> List[str]:
+    def missing_verification_settings(self) -> list[str]:
         """Settings without which this adapter accepts deliveries it cannot authenticate.
 
         LambdaWebhookHost refuses to serve an adapter that returns any, because behind the API Gateway
@@ -156,7 +156,7 @@ class PollingInboundAdapter(InboundAdapter):
     poll_interval: float = 30.0
 
     @abstractmethod
-    async def poll(self) -> List[Any]:
+    async def poll(self) -> list[Any]:
         """Return the raw events to parse this iteration. Must not run the agent.
 
         :return: Raw platform events, each of which is passed to :meth:`parse`.
@@ -183,12 +183,12 @@ class OutboundAdapter(ABC):
 
     name: str = ""
     MESSAGE_LIMIT: int = 4096
-    MAX_CHUNKS: Optional[int] = None
+    MAX_CHUNKS: int | None = None
     TRUNCATION_NOTICE: str = "The response was truncated because it exceeds this platform's size limit."
     ERROR_MESSAGE: str = "Sorry, there was an error processing your request."
 
     @abstractmethod
-    async def deliver(self, reply: AgentReply, reply_context: Dict[str, str]) -> None:
+    async def deliver(self, reply: AgentReply, reply_context: dict[str, str]) -> None:
         """Send the agent reply to the platform.
 
         The reply always arrives as an ``AgentReplyText``: the Agent Runner serializes the typed
@@ -202,7 +202,7 @@ class OutboundAdapter(ABC):
         :param reply_context: The delivery coordinates resolved at the edge.
         """
 
-    async def deliver_chunk(self, chunk: StreamChunk, reply_context: Dict[str, str]) -> None:
+    async def deliver_chunk(self, chunk: StreamChunk, reply_context: dict[str, str]) -> None:
         """Send a real-time streaming chunk to the platform.
 
         A realtime run emits the same typed chunks as text streaming: audio as an ``AudioDelta``
@@ -219,14 +219,14 @@ class OutboundAdapter(ABC):
         pass
 
     @abstractmethod
-    async def deliver_error(self, message: str, reply_context: Dict[str, str]) -> None:
+    async def deliver_error(self, message: str, reply_context: dict[str, str]) -> None:
         """Send a user-facing failure message, so a user is never left silent.
 
         :param message: The message to show; normally :attr:`ERROR_MESSAGE`.
         :param reply_context: The delivery coordinates resolved at the edge.
         """
 
-    async def acknowledge(self, reply_context: Dict[str, str]) -> Dict[str, str]:
+    async def acknowledge(self, reply_context: dict[str, str]) -> dict[str, str]:
         """Acknowledge receipt at the edge, before the agent runs.
 
         This is the "thinking" message, the typing indicator, the read receipt — the feedback a
@@ -269,10 +269,10 @@ class StatefulEdgeAdapter(ABC):
     session_id: str = ""
     # Agent this edge's session is bound to; None selects the runner's default agent. A realtime
     # session binds its agent once, when its connection is created from the first request.
-    agent: Optional[str] = None
+    agent: str | None = None
 
     def __init__(self):
-        self._producer: Optional["IntegrationProducer"] = None
+        self._producer: "IntegrationProducer | None" = None
 
     # ── Lifecycle ──
 
@@ -321,13 +321,13 @@ class StatefulEdgeAdapter(ABC):
     # ── Outbound: Agent Kernel -> Platform ──
 
     @abstractmethod
-    async def deliver_chunk(self, chunk: StreamChunk, reply_context: Dict[str, str]) -> None:
+    async def deliver_chunk(self, chunk: StreamChunk, reply_context: dict[str, str]) -> None:
         """Play one streamed chunk (audio, transcript, interrupt) back to the platform."""
 
     @abstractmethod
-    async def deliver(self, reply: AgentReply, reply_context: Dict[str, str]) -> None:
+    async def deliver(self, reply: AgentReply, reply_context: dict[str, str]) -> None:
         """Deliver a completed reply (non-streamed fallback)."""
 
     @abstractmethod
-    async def deliver_error(self, message: str, reply_context: Dict[str, str]) -> None:
+    async def deliver_error(self, message: str, reply_context: dict[str, str]) -> None:
         """Surface a failure so the user is never left silent."""

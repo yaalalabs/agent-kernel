@@ -1,6 +1,5 @@
 import logging
 from abc import ABC, abstractmethod
-from typing import List, Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
@@ -44,14 +43,14 @@ class AuthorisedRESTRequestHandler(RESTRequestHandler):
     None and the handler's routes remain open.
     """
 
-    def __init__(self, authoriser: Optional[Authoriser] = None):
+    def __init__(self, authoriser: Authoriser | None = None):
         """
         Initializes an AuthorisedRESTRequestHandler instance.
         :param authoriser: Optional user-supplied Authoriser protecting the handler's routes.
         """
         self._authoriser = authoriser
 
-    def _resolve_user(self, request: Request) -> Optional[str]:
+    def _resolve_user(self, request: Request) -> str | None:
         """
         Resolve the caller's user_id via the configured Authoriser.
         :param request: The incoming FastAPI request.
@@ -90,8 +89,8 @@ class AgentRESTRequestHandler(RESTRequestHandler):
     class BaseMultimodalRunRequest(BaseChatRequest):
         """Chat request with multipart file and image uploads (UploadFile format)."""
 
-        files: Optional[List[UploadFile]] = None
-        images: Optional[List[UploadFile]] = None
+        files: list[UploadFile] | None = None
+        images: list[UploadFile] | None = None
         model_config = ConfigDict(extra="allow")
 
     def __init__(self):
@@ -116,13 +115,13 @@ class AgentRESTRequestHandler(RESTRequestHandler):
     async def run_multipart(
         self,
         prompt: str = Form(...),
-        agent: Optional[str] = Form(None),
-        session_id: Optional[str] = Form(None),
-        user_id: Optional[str] = Form(None),
-        group_id: Optional[str] = Form(None),
-        thread_name: Optional[str] = Form(None),
-        files: Optional[List[UploadFile]] = File(None),
-        images: Optional[List[UploadFile]] = File(None),
+        agent: str | None = Form(None),
+        session_id: str | None = Form(None),
+        user_id: str | None = Form(None),
+        group_id: str | None = Form(None),
+        thread_name: str | None = Form(None),
+        files: list[UploadFile] | None = File(None),
+        images: list[UploadFile] | None = File(None),
     ):
         req = AgentRESTRequestHandler.BaseMultimodalRunRequest(
             prompt=prompt,

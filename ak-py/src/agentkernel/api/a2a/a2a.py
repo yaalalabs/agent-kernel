@@ -138,7 +138,7 @@ class A2A:
             if not whitelisted:
                 continue
             # get card
-            card: Optional[AgentCard] = agent.get_a2a_card()
+            card: AgentCard | None = agent.get_a2a_card()
             if card is None:
                 cls._log.warning(f"Agent '{name}' has no A2A card; it is not served over A2A")
                 continue

@@ -1,7 +1,7 @@
 """The SecretProvider seam: where a secret value lives."""
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ..core.config import _SecretConfig
@@ -19,7 +19,7 @@ class SecretProvider(ABC):
         return cls()
 
     @abstractmethod
-    def get_secret(self, key: str) -> Optional[str]:
+    def get_secret(self, key: str) -> str | None:
         """Return the value stored for `key`, or None when this backend does not have it.
 
         Must not cache or fall back to another layer, and must tolerate concurrent calls.

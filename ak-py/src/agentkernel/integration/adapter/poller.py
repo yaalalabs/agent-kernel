@@ -1,5 +1,4 @@
 import logging
-from typing import Optional
 
 from ...core.util.async_bridge import run_async_sync
 from ...core.util.factory import AKConfigError
@@ -24,7 +23,7 @@ class PollerRunner:
 
     _log = logging.getLogger("ak.integration.poller_runner")
 
-    def __init__(self, adapter: PollingInboundAdapter, producer: Optional[IntegrationProducer] = None):
+    def __init__(self, adapter: PollingInboundAdapter, producer: IntegrationProducer | None = None):
         """
         :param adapter: The polling adapter to host.
         :param producer: Input-queue producer; defaults to the configured transport.

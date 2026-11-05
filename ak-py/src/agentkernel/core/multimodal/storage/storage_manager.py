@@ -7,7 +7,6 @@ import sys
 import time
 import uuid
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
 
 from ...config import AKConfig
 from ...model import AgentRequest, AgentRequestAttachmentRef, AgentRequestFile, AgentRequestImage
@@ -141,7 +140,7 @@ class AttachmentStorageManager:
         return store.shared
 
     @staticmethod
-    def has_attachments(requests: List[AgentRequest]) -> bool:
+    def has_attachments(requests: list[AgentRequest]) -> bool:
         """Whether any request in the list carries attachment bytes.
 
         :param requests: The request list to scan.
@@ -155,11 +154,11 @@ class AttachmentStorageManager:
     def offload(
         cls,
         session_id: str,
-        requests: List[AgentRequest],
+        requests: list[AgentRequest],
         *,
         attachments_disabled_error: str,
         session_cache_error: str,
-    ) -> Tuple[List[AgentRequest], List[StoredAttachment]]:
+    ) -> tuple[list[AgentRequest], list[StoredAttachment]]:
         """Save each image/file request's bytes and replace it, in place, with a reference.
 
         Two surfaces need this same rewrite before an agent request leaves the process it was
@@ -207,8 +206,8 @@ class AttachmentStorageManager:
             raise ValueError(session_cache_error)
 
         manager = cls(session_id=session_id)
-        rebuilt: List[AgentRequest] = []
-        stored: List[StoredAttachment] = []
+        rebuilt: list[AgentRequest] = []
+        stored: list[StoredAttachment] = []
         for req in requests:
             extracted = AttachmentSource.extract(req)
             if extracted is None:
@@ -239,7 +238,7 @@ class AttachmentStorageManager:
         mime_type: str,
         description: str = "",
         max_attachments: int = DEFAULT_MAX_ATTACHMENTS,
-        url: Optional[str] = None,
+        url: str | None = None,
     ) -> str:
         """
         Save an attachment using the configured storage driver.

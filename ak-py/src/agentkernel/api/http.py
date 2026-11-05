@@ -1,5 +1,4 @@
 import logging
-from typing import Optional
 
 import uvicorn
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
@@ -133,7 +132,7 @@ class RESTAPI:
             )
 
     @staticmethod
-    def agent_protocol_surfaces(config: Optional[AKConfig] = None) -> list[str]:
+    def agent_protocol_surfaces(config: AKConfig | None = None) -> list[str]:
         """The protocol surfaces that run agents for their callers: A2A, and MCP when it exposes agents.
 
         An MCP server serving only the application's own tools runs no agent, so it is not one.

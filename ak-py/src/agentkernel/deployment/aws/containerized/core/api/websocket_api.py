@@ -5,7 +5,8 @@ import inspect
 import json
 import logging
 import re
-from typing import Any, Callable, ClassVar, Optional
+from collections.abc import Callable
+from typing import Any, ClassVar
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
@@ -41,8 +42,8 @@ class ECSWebSocketHandlerBase(RESTRequestHandler):
         if not ws_cfg.connection_table or not ws_cfg.connection_table.table_name:
             raise ValueError("websocket_api.connection_table.table_name is required for WebSocket mode")
 
-        self._connection_store: Optional[WebSocketConnectionStore] = None
-        self._ws_handler: Optional[AWSWebSocketHandler] = None
+        self._connection_store: WebSocketConnectionStore | None = None
+        self._ws_handler: AWSWebSocketHandler | None = None
 
     def get_connection_store(self) -> WebSocketConnectionStore:
         """Lazily create the DynamoDB-backed WebSocket connection store."""
@@ -60,7 +61,7 @@ class ECSWebSocketHandlerBase(RESTRequestHandler):
             self._ws_handler = AWSWebSocketHandler(connection_store=self.get_connection_store())
         return self._ws_handler
 
-    def _connection_id(self, request: Request) -> Optional[str]:
+    def _connection_id(self, request: Request) -> str | None:
         return request.headers.get(self.CONNECTION_ID_HEADER)
 
     @staticmethod
@@ -69,7 +70,7 @@ class ECSWebSocketHandlerBase(RESTRequestHandler):
         so it doesn't block the uvicorn event loop for other in-flight requests."""
         return await asyncio.to_thread(func, *args, **kwargs)
 
-    def _construct_endpoint_url(self, request: Request) -> Optional[str]:
+    def _construct_endpoint_url(self, request: Request) -> str | None:
         """Build the API Gateway management endpoint from x-ws-* headers, falling back to config."""
         domain_name = request.headers.get(self.DOMAIN_NAME_HEADER)
         stage = request.headers.get(self.STAGE_HEADER)
@@ -79,20 +80,20 @@ class ECSWebSocketHandlerBase(RESTRequestHandler):
         return self._config.websocket_api.endpoint_url
 
     @staticmethod
-    def _body(msg: str, success: bool, user_id: Optional[str] = None) -> dict:
+    def _body(msg: str, success: bool, user_id: str | None = None) -> dict:
         body = {"status": "SUCCESS" if success else "FAILED", "message": msg}
         if user_id:
             body["user_id"] = user_id
         return body
 
-    def _response(self, status_code: int, msg: str, success: bool, user_id: Optional[str] = None) -> JSONResponse:
+    def _response(self, status_code: int, msg: str, success: bool, user_id: str | None = None) -> JSONResponse:
         return JSONResponse(status_code=status_code, content=self._body(msg, success, user_id))
 
-    def build_success_http_response(self, msg: str, user_id: Optional[str] = None, status_code: int = 200) -> JSONResponse:
+    def build_success_http_response(self, msg: str, user_id: str | None = None, status_code: int = 200) -> JSONResponse:
         """Build the standard success response used by WebSocket routes."""
         return self._response(status_code, msg, success=True, user_id=user_id)
 
-    def build_error_http_response(self, status_code: int, msg: str, user_id: Optional[str] = None) -> JSONResponse:
+    def build_error_http_response(self, status_code: int, msg: str, user_id: str | None = None) -> JSONResponse:
         """Build the standard error response used by WebSocket routes."""
         return self._response(status_code, msg, success=False, user_id=user_id)
 
@@ -224,7 +225,7 @@ class ECSWebSocketRequestHandler(ECSWebSocketHandlerBase):
     # Backend path the WS API Gateway integration rewrites the chat route to.
     CHAT_PATH = "/ws/chat"
 
-    def __init__(self, custom_routes: Optional[dict[str, Callable]] = None):
+    def __init__(self, custom_routes: dict[str, Callable] | None = None):
         """The connection store is set up by the base class.
 
         :param custom_routes: Mapping of ``route name -> user function`` (from ``AWSWebsocketAPI.register``); each becomes a ``POST /ws/<route>`` endpoint.
@@ -233,7 +234,7 @@ class ECSWebSocketRequestHandler(ECSWebSocketHandlerBase):
         self._log = logging.getLogger("ak.ecs.ws_handler")
 
         self._custom_routes: dict[str, Callable] = dict(custom_routes or {})
-        self._chat_service: Optional[ChatService] = None
+        self._chat_service: ChatService | None = None
 
     def _is_queue_mode(self) -> bool:
         """True when an input queue is configured (enqueue mode); False for direct mode."""
@@ -332,7 +333,7 @@ class ECSWebSocketRequestHandler(ECSWebSocketHandlerBase):
             endpoint_url=endpoint_url,
         )
 
-    async def _enqueue_chat(self, body: BaseRunRequest, user_id: str, request_id: Optional[str], session_id: str, endpoint_url: str) -> JSONResponse:
+    async def _enqueue_chat(self, body: BaseRunRequest, user_id: str, request_id: str | None, session_id: str, endpoint_url: str) -> JSONResponse:
         """Queue mode: send to the input queue; ECSOutputConsumer pushes the reply."""
         self._log.info(f"Enqueuing WS chat request: request_id={request_id}, session_id={session_id}, user_id={user_id}")
 
@@ -440,7 +441,7 @@ class AWSWebsocketAPI(RESTAPI):
         ECSWebSocketRequestHandler.CHAT_PATH.rsplit("/", 1)[-1],
     }
 
-    _ws_auth_validator: Optional[AuthValidator] = None
+    _ws_auth_validator: AuthValidator | None = None
     _ws_custom_routes: ClassVar[dict[str, Callable]] = {}
 
     @classmethod
@@ -512,7 +513,7 @@ class AWSWebsocketAPI(RESTAPI):
         return [cls._build_system_handler(), ECSWebSocketRequestHandler(custom_routes=cls._ws_custom_routes)]
 
     @classmethod
-    def run(cls, handlers: Optional[list[RESTRequestHandler]] = None) -> None:
+    def run(cls, handlers: list[RESTRequestHandler] | None = None) -> None:
         """Start the WebSocket API server with the system handler plus the chat/custom-route application handler.
 
         :param handlers: Optional REST handlers mounted alongside the defaults, which are always served.

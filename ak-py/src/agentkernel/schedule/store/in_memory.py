@@ -1,7 +1,7 @@
 """In-memory scheduled-task store for local development and testing."""
 
 import logging
-from typing import ClassVar, List, Optional, Tuple
+from typing import ClassVar
 
 from ...core.util.pagination import DEFAULT_PAGE_SIZE, paginate
 from ..model import ScheduledTask
@@ -24,7 +24,7 @@ class InMemoryScheduleStore(ScheduleStore):
         self._tasks[task.task_id] = task.model_copy(deep=True)
         return task
 
-    def get(self, task_id: str) -> Optional[ScheduledTask]:
+    def get(self, task_id: str) -> ScheduledTask | None:
         stored = self._tasks.get(task_id)
         return stored.model_copy(deep=True) if stored is not None else None
 
@@ -35,12 +35,12 @@ class InMemoryScheduleStore(ScheduleStore):
     def delete(self, task_id: str) -> None:
         self._tasks.pop(task_id, None)
 
-    def list(self, user_id: Optional[str] = None, limit: int = DEFAULT_PAGE_SIZE, offset: int = 0) -> Tuple[List[ScheduledTask], Optional[int]]:
+    def list(self, user_id: str | None = None, limit: int = DEFAULT_PAGE_SIZE, offset: int = 0) -> tuple[list[ScheduledTask], int | None]:
         matches = [task.model_copy(deep=True) for task in self._tasks.values() if user_id is None or task.user_id == user_id]
         matches.sort(key=lambda task: task.updated_at, reverse=True)
         return paginate(matches, limit, offset)
 
-    def record_trigger(self, task_id: str, request_id: Optional[str], occurred_at: str, completed: bool) -> None:
+    def record_trigger(self, task_id: str, request_id: str | None, occurred_at: str, completed: bool) -> None:
         task = self._tasks.get(task_id)
         if task is None:
             self._log.warning(f"Ignoring trigger record for unknown scheduled task {task_id}")

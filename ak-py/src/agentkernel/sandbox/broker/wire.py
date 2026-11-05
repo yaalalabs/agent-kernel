@@ -11,7 +11,7 @@ JSON-serializable.
 
 import base64
 import json
-from typing import Any, Union
+from typing import Any
 
 from .base import ExecutionCompletion, ExecutionRequest
 
@@ -45,7 +45,7 @@ class BrokerWireCodec:
         return completion.model_dump(mode="json")
 
     @staticmethod
-    def decode_completion(data: Union[str, dict[str, Any]]) -> ExecutionCompletion:
+    def decode_completion(data: str | dict[str, Any]) -> ExecutionCompletion:
         """Rebuild a completion from its stored form (``SandboxFile`` restores its bytes)."""
         if isinstance(data, str):
             data = json.loads(data)

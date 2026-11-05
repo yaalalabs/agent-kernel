@@ -2,7 +2,7 @@ import json
 import logging
 import traceback
 import uuid
-from typing import Any, List
+from typing import Any
 
 from fastmcp.client import Client
 
@@ -14,7 +14,7 @@ class MCPHttpClient:
         self.server_url = server_url
         self.session_id = str(uuid.uuid4())
 
-    async def _list_tools(self) -> List[Any]:
+    async def _list_tools(self) -> list[Any]:
         try:
             async with Client(self.server_url, auth="oauth") as client:
                 assert await client.ping()
