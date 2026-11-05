@@ -1,11 +1,10 @@
 name: Dependency Version Update (Copilot)
 
-# Every two weeks, for every manifest the same way: upper limits, security fixes, and updates on each version
-# line (scripts/dependency_caps.py). The branch then runs the same CI jobs a PR runs: unit tests, e2e,
-# kind smoke tests, lint. The PR opens when they pass. On a failure Copilot names the package
-# behind each real error (it edits nothing), the script holds it back, and the tests run once more.
-# Failures this update did not cause (they flip between rounds, or Copilot finds no dependency cause)
-# do not block the PR; they are listed in it.
+# Every two weeks: upper limits, security fixes and updates on each version line, for every manifest
+# (.github/scripts/dependency_caps.py). Then the CI jobs a PR runs. On a failure Copilot names the package
+# behind each real error, the script holds it back, and the jobs run once more. The PR opens when they
+# pass, or when the only failures are not caused by the update (listed in the PR). After the PR opens,
+# the weekly integration tests start on its branch.
 #
 #   when -> update -> e2e-1 + kind-1 + lint-1 -> (failed) fix-1 -> e2e-2 + kind-2 + lint-2 -> finish
 
@@ -24,7 +23,7 @@ on:
         type: string
         default: ''
       dry_run:
-        description: 'Update and check locally only; no push, no tests, no PR'
+        description: 'Update and run the install check only; no push, no tests, no PR'
         required: false
         type: boolean
         default: true
@@ -46,14 +45,14 @@ env:
   BASE_BRANCH: develop # the branch the update starts from and the PR targets
   MANIFEST_PATHS: ${{ inputs.paths }}
   STATE_DIR: /tmp/dep-state
-  # Inside the state folder: the later jobs get the same script with the state artifact. Their
-  # checkout is the update branch, which starts from $BASE_BRANCH and may not have this script yet.
+  # Shipped with the state artifact: the update branch starts from $BASE_BRANCH, which may not have it yet.
   SCRIPT: /tmp/dep-state/dependency_caps.py
+  # Started on the PR branch after the PR opens; a reviewer reads its result. Empty = not started.
+  AFTER_PR_WORKFLOW: integration-test-weekly.yaml
 
 jobs:
-  # Cron cannot say "every two weeks", so a scheduled run goes ahead only on even weeks since 1970.
-  # Mondays are exactly one week apart, so the parity alternates (no ISO week 53 skip). By hand or on
-  # push it always runs.
+  # Cron cannot say "every two weeks": a scheduled run goes ahead only on even weeks since 1970.
+  # Other triggers always run.
   when:
     runs-on: ubuntu-latest
     outputs:
@@ -315,7 +314,6 @@ jobs:
       SLACK_SIGNING_SECRET: ${{ secrets.SLACK_SIGNING_SECRET }}
   kind-2:
     needs: fix-1
-    # always(): without it GitHub adds success(), which checks every earlier job, and round 1 failed.
     if: always() && needs.fix-1.outputs.changed == 'true'
     permissions:
       contents: read
@@ -326,7 +324,6 @@ jobs:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
   lint-2:
     needs: fix-1
-    # always(): without it GitHub adds success(), which checks every earlier job, and round 1 failed.
     if: always() && needs.fix-1.outputs.changed == 'true'
     permissions:
       contents: read
@@ -334,11 +331,15 @@ jobs:
     with:
       checkout_ref: ${{ needs.fix-1.outputs.sha }}
 
-  # ---- The PR only when a round passed; otherwise delete the branch and list what failed ----
+  # ---- The PR when a round passed (or only uncaused failures are left); else delete the branch ----
   finish:
     needs: [update, e2e-1, kind-1, lint-1, fix-1, e2e-2, kind-2, lint-2]
     if: always() && needs.update.outputs.pushed == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write # read this run's jobs; start $AFTER_PR_WORKFLOW on the PR branch
     steps:
       - id: app-token
         continue-on-error: true
@@ -365,8 +366,7 @@ jobs:
           if [ "$ROUND_1" = "success success success" ] || [ "$ROUND_2" = "success success success" ]; then
             green=true
           else
-            # Failures this update did not cause (flipped between rounds, or no dependency cause per
-            # Copilot) do not block; the script lists them in the PR body. Anything else does.
+            # Failures the update did not cause do not block; the script lists them in the PR body.
             ok=$(GH_TOKEN="$ACTIONS_TOKEN" uv run --no-project --with packaging python "$SCRIPT" \
               --state "$STATE_DIR" verdict --run-id "$RUN_ID" --jobs e2e-1,kind-1,lint-1 --retry-jobs e2e-2,kind-2,lint-2) || ok=false
             echo "verdict: $ok"; cat "$STATE_DIR/verdict.json" || true
@@ -376,6 +376,18 @@ jobs:
             url=$(gh pr create --repo "$REPO" --base "$BASE_BRANCH" --head "$BRANCH" \
               --title "$(jq -r .title "$STATE_DIR/summary.json")" --body-file "$STATE_DIR/pr-body.md")
             { echo "## PR opened: $url"; echo; cat "$STATE_DIR/update-summary.md"; } >> "$GITHUB_STEP_SUMMARY"
+            if [ -n "$AFTER_PR_WORKFLOW" ]; then
+              # A failure here never undoes the PR: it is only reported.
+              runs="https://github.com/$REPO/actions/workflows/$AFTER_PR_WORKFLOW?query=branch%3A$BRANCH"
+              if GH_TOKEN="$ACTIONS_TOKEN" gh workflow run "$AFTER_PR_WORKFLOW" --repo "$REPO" --ref "$BRANCH"; then
+                note="Started \`$AFTER_PR_WORKFLOW\` on this branch: [its runs]($runs). Check it before merging."
+              else
+                note="Could not start \`$AFTER_PR_WORKFLOW\` on this branch. Start it by hand before merging."
+                echo "::warning::$note"
+              fi
+              gh pr comment "$url" --body "$note" || echo "::warning::could not comment on $url"
+              echo "$note" >> "$GITHUB_STEP_SUMMARY"
+            fi
             exit 0
           fi
           failed=$(GH_TOKEN="$ACTIONS_TOKEN" gh api --paginate "repos/$REPO/actions/runs/$RUN_ID/jobs?per_page=100" \

@@ -8,7 +8,7 @@ Every pyproject.toml with a uv.lock gets the same treatment:
     cap       add an upper limit to every direct dependency: next major, or next minor for 0.x
     secure    raise every alerted direct dependency to its patched version
     update    uv lock --upgrade on each version line, then uv sync (does it resolve and install?)
-    failures  collect what failed, for Copilot: the local checks, or this run's failed CI jobs (--jobs)
+    failures  collect what failed, for Copilot: the install checks, or this run's failed CI jobs (--jobs)
     hold      hold back the packages Copilot named in holds.jsonl (a security package at its minimum
               when Copilot checked that it works, else blocked); check those manifests again
     finalize  put back every manifest that still fails
@@ -17,10 +17,8 @@ Every pyproject.toml with a uv.lock gets the same treatment:
     fix       Copilot reads failures.json and names the package behind each real error; then `hold`
     verdict   may the PR open although the last test round failed? (only failures this update did not cause)
 
-A version line is the major for >= 1.0 and the minor for 0.x. The update never moves a package to a
-new line (a breaking upgrade needs its own PR), except to reach a security fix. The tests run in CI,
-with the same jobs a PR runs, before the PR is opened. Copilot never edits files: it only names the
-package behind a failure, and this script holds it back. Everything not done is reported, with why.
+A version line is the major for >= 1.0 and the minor for 0.x. A package never leaves its line, except
+for a security fix. Copilot only names the package behind a failure; this script holds it back.
 
 Run with:  uv run --no-project --with packaging python dependency_caps.py <command>
 """
@@ -52,7 +50,7 @@ PINS_FILE = "pins.json"  # manifest -> {package: version}: held at its security 
 PROMPT = """\
 You find the package behind each failure of the dependency update. Then stop.
 
-Read {state}/failures.json. Each entry has: where it failed (a local install check, or a
+Read {state}/failures.json. Each entry has: where it failed (an install check, or a
 CI job: unit tests, e2e example, kind smoke test, lint), the manifest (empty when the job tests no
 single manifest), base_commit, the full log path, an error excerpt, the locked version changes,
 the security minimums, and the packages already held back. For an empty manifest, find the folder
@@ -75,6 +73,15 @@ For each failure:
    Use "manifest": "*" when the package causes failures in several manifests, or the job has no
    manifest. Keep the reason short and factual: what breaks, from which version. Only state what
    you saw in a log or checked yourself.
+   Only for a CI job (skip this for an "install check:" failure, because the install check already
+   runs on every manifest): look beyond the failed job. The tests here do not cover every manifest (some only deploy to
+   a cloud later), so the same broken version may sit, untested, in other manifests. Find the other
+   uv.lock files that lock that same version (grep -rl, outside .venv). For each one that uses the
+   same part of the package (the same extras in its pyproject.toml, or the same import), repeat the
+   failing import in a clean environment (as in rule 4) with that manifest's locked versions. Breaks
+   the same way: add a line for that manifest too (or use "*" when this holds everywhere it moved),
+   say "same break as <manifest>" in the reason, and apply rule 4 to it. Does not use that part, or
+   works: write nothing for it.
 4. A package with a security minimum: the version that broke is often newer than the minimum, and
    the minimum itself may work. Check the minimum (the highest one listed for that package) by
    repeating the failing import in a clean environment, in /tmp, in the foreground, for example:
@@ -189,10 +196,8 @@ class Manifest:
         return canonicalize_name(self.data().get("project", {}).get("name", "") or "-")
 
     def sync_command(self) -> list[str]:
-        """Install the lock with every extra, leaving out what `[tool.uv] conflicts` cannot install together.
-
-        Per conflict set one member stays: the one that brings pytest, else the first.
-        """
+        """Install the lock with every extra, except what `[tool.uv] conflicts` cannot install together
+        (per set, the member that brings pytest stays)."""
         data = self.data()
         members = {
             "extra": data.get("project", {}).get("optional-dependencies", {}),
@@ -238,8 +243,7 @@ class Repo:
         return sorted((m for m in found if m.lock.exists()), key=lambda m: m.relative)
 
     def own_packages(self) -> set[str]:
-        """The names of every project in this repo (all of it, not only --paths): they follow the repo,
-        so they get no upper limit and no security bump. Example: a library in this repo that the examples depend on."""
+        """Every project name in this repo. They follow the repo: no upper limit, no security bump."""
         found = set()
         for path in self.git("ls-files", "*pyproject.toml").stdout.split():
             try:
@@ -264,8 +268,7 @@ class Repo:
         self.git("checkout", commit, "--", manifest.relative, manifest.lock_relative)
 
     def changed_files(self, base: str) -> list[str]:
-        """Dependency files that differ from `base`, committed or not. In `fix-1` the first round's
-        changes are already committed, so a plain `git diff` would see only the new holds."""
+        """Dependency files that differ from `base`, committed or not (fix-1 has round 1 committed)."""
         changed = self.git("diff", "--name-only", base).stdout.split()
         return [path for path in changed if DEPENDENCY_FILES.search(path)]
 
@@ -513,12 +516,10 @@ class Securer:
 
 
 class LockGuard:
-    """Updates one lock but keeps every package on its version line.
+    """Updates one lock, keeping every package on its version line.
 
-    uv keeps the old lock only as a preference: when an upgraded package needs a held package's new
-    line, uv moves the held package anyway. So the package that pulls it is held too, round by round,
-    until nothing crosses a line. A package with a security minimum is never held by the line rule.
-    A pinned package is held at its pin (its security minimum) instead of its version before.
+    uv may still move a held package when an upgraded one needs it, so the package that pulls it is held
+    too, until nothing crosses a line. Security packages are not held by this rule; pinned ones stay at their pin.
     """
 
     MAX_ROUNDS = 6
@@ -573,10 +574,7 @@ class LockGuard:
         ]
 
     def relock(self, held: set[str], log: Path) -> int:
-        """Start again from the base lock; let everything move except the held packages.
-
-        A pinned package goes to exactly its pin (`--upgrade-package name==version`, which may move down).
-        """
+        """Start again from the base lock; everything moves except held packages. Pinned ones go to their pin."""
         self.manifest.lock.write_text(self.base_lock, encoding="utf-8")
         command = ["uv", "lock"]
         for name in sorted(set(self.before) - held - {self.manifest.project_name()}):
@@ -664,8 +662,7 @@ class Checker:
     def block_unsatisfiable(self, manifests: list[Manifest], results: dict) -> list[Manifest]:
         """`uv lock` found no solution because of a security minimum we raised: block that fix, keep the rest.
 
-        Deterministic, no AI. Example: a released library in the lock pins foo 2.13.x, so the
-        patched 2.53 cannot be installed with it; that needs a code change and a release, not a version.
+        Example: a released library pins foo 2.13.x, so the patched 2.53 cannot be installed with it.
         """
         changes, retry = self.state.load("changes.json", []), []
         for manifest in manifests:
@@ -689,8 +686,8 @@ class Checker:
 class Holds:
     """Command `hold`: hold back the packages Copilot named in holds.jsonl, then check those manifests again.
 
-    A held package with a security minimum means its fix needs a code change: it is recorded as blocked,
-    its original line comes back if `secure` raised it, and its alert stays open (reported as such).
+    A security package is kept at its minimum when Copilot checked that it works (`keep_minimum`);
+    otherwise its fix is blocked and its original line comes back.
     """
 
     def __init__(self, repo: Repo, state: State, workers: int):
@@ -724,11 +721,7 @@ class Holds:
     def block(
         repo: Repo, state: State, manifest: Manifest, package: str, reason: str, changes: list[dict]
     ) -> list[dict]:
-        """Record a security fix as blocked; where `secure` raised the line, put back the line before it.
-
-        "Before" is the line `cap` wrote when there is one (the original plus its upper limit), so the
-        package keeps its limit; otherwise the original line from the base commit.
-        """
+        """Record a security fix as blocked and put back the line before `secure` (with its cap, if any)."""
 
         def pair(change: dict) -> bool:
             return change["manifest"] == manifest.relative and change["package"] == package
@@ -747,8 +740,7 @@ class Holds:
 
     @staticmethod
     def narrow(manifest: Manifest, package: str, minimum: str) -> None:
-        """Keep each declaration of a pinned package on the minimum's minor, so a build that resolves
-        again (an example built against a local wheel of a library in this repo) cannot pull the version that broke."""
+        """Keep a pinned package's declarations on the minimum's minor, so a new resolve cannot reach the broken version."""
         text = original = manifest.pyproject.read_text(encoding="utf-8")
         for current in manifest.requirements():
             requirement = Requirement(current) if name_of(current) == package else None
@@ -798,10 +790,9 @@ class Holds:
 
 
 class CopilotFix:
-    """Command `fix`: Copilot names the package behind each failure (it edits nothing), then `hold` holds them.
+    """Command `fix`: Copilot names the package behind each failure, then `hold` holds them.
 
     Copilot reads untrusted logs, so its tools stay narrow: shell, read, write, and PyPI only.
-    Auth: COPILOT_GITHUB_TOKEN.
     """
 
     COMMAND = (
@@ -825,12 +816,10 @@ class CopilotFix:
 
 
 class Failures:
-    """Command `failures`: what failed, for Copilot. Prints only the count (the workflow reads stdout).
+    """Command `failures`: writes failures.json for Copilot and prints the count.
 
-    Without --jobs: the manifests failing their local check. With --jobs: this run's failed CI jobs
-    whose name starts with one of those caller job ids (e.g. `e2e-1 / ...`). A job that names a
-    manifest folder in its name (a matrix job per example) gets that manifest; others get none, and
-    Copilot finds the folder from the log.
+    Without --jobs: the manifests failing their install check. With --jobs: this run's failed CI jobs under
+    those caller jobs. A job whose name holds a manifest folder gets that manifest; Copilot finds the rest.
     """
 
     # Lines worth showing first; Copilot also gets the full log.
@@ -854,8 +843,7 @@ class Failures:
         return subprocess.run(["gh", "api", *args], capture_output=True, text=True, env=self.env, check=False)
 
     def job_log(self, job_id: int) -> str:
-        """A job's log as plain text. Newer gh refuses logs with colour codes without
-        --allow-escape-sequences; older gh does not know that flag. So try it, then fall back."""
+        """A job's log as plain text (newer gh needs --allow-escape-sequences; older gh lacks it)."""
         endpoint = f"repos/{self.gh_repo}/actions/jobs/{job_id}/logs"
         fetched = self.gh(endpoint, "--allow-escape-sequences")
         if fetched.returncode != 0 and "unknown flag" in fetched.stderr:
@@ -917,22 +905,17 @@ class Failures:
             entries = self.ci_entries()
         else:
             failing = [r for r in self.state.load("results.json", {}).values() if r["status"] == "fail"]
-            entries = [self.entry(f"local check: {r['step']}", r["manifest"], Path(r["log"])) for r in failing]
+            entries = [self.entry(f"install check: {r['step']}", r["manifest"], Path(r["log"])) for r in failing]
         self.state.save("failures.json", entries)
         print(len(entries))
         return 0
 
 
 class Verdict:
-    """Command `verdict`: may the PR open although the last test round had failures? Prints true or false.
+    """Command `verdict`: may the PR open although the last round failed? Prints true or false.
 
-    Only failures that this update did not cause are accepted. A failed job of the last round counts as
-    not caused by it when:
-      - the same job passed in round 1 (most likely flaky; the holds between the rounds could matter,
-        so the PR says so), or
-      - Copilot found no dependency cause for its round-1 failure (not_dependency.jsonl, with a reason).
-    Anything else (a new failure, a hold that did not help, Copilot unsure) keeps the PR closed.
-    When the PR may open, the Testing line of pr-body.md lists each accepted failure with its reason.
+    A failed job is accepted when it passed in round 1, or Copilot found no dependency cause for it.
+    Anything else keeps the PR closed. Accepted failures are listed in the PR's Testing section.
     """
 
     def __init__(self, failures: Failures, first: list[str], retry: list[str]):
@@ -1103,19 +1086,28 @@ class Reporter:
                     reason = "held back by another package's requirement"
             if reason is None:
                 fixed += 1
-                key = (self.SEVERITY.get(alert["severity"], 9), name, alert["severity"])
-                item = done.setdefault(key, {"paths": set(), "patched": set()})
-                item["paths"].add(path)
+                item = done.setdefault(name, {"alerts": 0, "dirs": set(), "patched": set(), "severity": []})
+                item["alerts"] += 1
+                item["dirs"].add(directory)
                 item["patched"] |= {patched} if patched else set()
+                item["severity"].append(alert["severity"])
             else:
                 key = (self.SEVERITY.get(alert["severity"], 9), name, alert["severity"], reason)
                 still.setdefault(key, set()).add(path)
         lines = [f"- `{p}` ({s}): {r} ({len(paths)} manifest(s))" for (_, p, s, r), paths in sorted(still.items())]
-        fixed_lines = [
-            f"- `{p}` ({s}): now at least {max(i['patched']) if i['patched'] else 'patched'} "
-            f"({len(i['paths'])} alert(s) fixed)"
-            for (_, p, s), i in sorted(done.items())
-        ]
+        fixed_lines = []
+        for name, i in done.items():
+            worst = min(i["severity"], key=lambda s: self.SEVERITY.get(s, 9))
+            low, high = (min(i["patched"]), max(i["patched"])) if i["patched"] else (None, None)
+            versions = "" if low is None else f", patched {low}" if low == high else f", patched {low} to {high}"
+            fixed_lines.append(
+                (
+                    self.SEVERITY.get(worst, 9),
+                    name,
+                    f"- `{name}` ({worst}): {i['alerts']} alert(s) in {len(i['dirs'])} manifest(s){versions}",
+                )
+            )
+        fixed_lines = [line for _, _, line in sorted(fixed_lines)]
         return fixed, fixed_lines, lines
 
     def safe(self, relative: str, name: str, patched: Version, declared: bool) -> bool:
