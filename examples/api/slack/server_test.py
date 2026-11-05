@@ -1,4 +1,5 @@
 import asyncio
+import os
 import subprocess
 import sys
 import uuid
@@ -25,10 +26,15 @@ class APITestClient:
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
 async def http_client():
+    env = os.environ.copy()
+    # Pydantic AI resolves its model provider while the agent is constructed, so the server cannot
+    # even start without a key; nothing here reaches the model.
+    env.setdefault("OPENAI_API_KEY", "sk-test")
     proc = subprocess.Popen(
         ["python3", "server.py"],
         stdout=sys.stdout,
         stderr=sys.stderr,
+        env=env,
     )
     await asyncio.sleep(5)
     try:

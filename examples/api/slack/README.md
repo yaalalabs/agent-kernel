@@ -3,10 +3,16 @@ This example shows how to create a local server based slack integration
 You need to setup the required Slack Apps and obtain the necessary slack key and tokens. Please follow the instructions in https://api.slack.com/apps/
 Please enable subscription to **app_mention** event for the Bot.
 
-The agent in this example has one tool, `restart_service`, that cannot run until a human approves
-it. Ask the bot to restart something and it replies with a paused message carrying **Approve** and
-**Deny** buttons; the tool runs only when Approve is pressed, and Deny opens a short form asking
-why, which the agent is told.
+The agent in this example runs on Pydantic AI and has one tool, `restart_service`, that cannot run
+until a human approves it. Ask the bot to restart something and it replies with a paused message
+carrying **Approve** and **Deny** buttons; the tool runs only when Approve is pressed, and Deny
+opens a short form asking why, which the agent is told.
+
+Name **several** services in one message and the pause arrives differently: the questions, then a
+single **Review all** button that opens a modal with one required Approve/Deny choice per question
+and one Submit. Pydantic AI refuses to resume a run while any gated call is still unanswered, so
+answering them one at a time is not an option the framework allows — the form is how a whole pause
+gets answered at once.
 
 **Those buttons need one more switch in the Slack app.** Presses are delivered to
 *Interactivity & Shortcuts*, which is off by default and separate from Event Subscriptions. Turn it

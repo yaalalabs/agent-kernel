@@ -134,3 +134,7 @@ Run `cd ak-py && uv run pytest` throughout; `make lint-check` before each commit
 - A "decision was applied" marker in the response body — the #606 gap that blocks editing the pause
   message, with `examples/api/hitl/frontend/src/App.tsx:53-64` as the existing victim.
 - A per-session resume lease, or a compare-and-set session write, for the pipeline.
+- **Concurrent pressers on a Telegram tally.** The keyboard is shared, so two people marking at
+  once overwrite each other and whoever submits carries the result. Slack's form has a milder
+  version (each opener fills their own), so this is the sharper case and wants either a lease or a
+  rule that the submitter owns the set.

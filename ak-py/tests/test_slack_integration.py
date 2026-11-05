@@ -35,6 +35,7 @@ from agentkernel.integration.slack.adapter import (  # noqa: E402
     REASON_BLOCK_ID,
     REASON_INPUT_ID,
     REASON_PREFIX,
+    REVIEW_CALLBACK_ID,
     SlackInboundAdapter,
     SlackOutboundAdapter,
 )
@@ -459,6 +460,27 @@ class TestPauseRendering:
         ), "a press carries this as its session id, so the pause stays in the run's own thread"
 
     @pytest.mark.asyncio
+    async def test_model_controlled_text_cannot_become_slack_control_syntax(self):
+        """A gated call's arguments are the model's words, read by a human about to approve them."""
+        adapter, posted = _outbound(), AsyncMock()
+        reply = AgentPausedReplyAny(
+            run_id="01JD7K2MX4",
+            session_id="000.111",
+            agent="helper",
+            interruptions=[
+                PausedInterruption(
+                    id="call_a", kind="tool_call", tool_name="refund_order", arguments='{"note": "<!channel> <https://evil|order A-1>"}'
+                )
+            ],
+        )
+        with patch.object(SlackOutboundAdapter, "_client", return_value=MagicMock(chat_postMessage=posted)):
+            await adapter.deliver_paused(reply, {"channel": "C9"})
+
+        rendered = str(posted.await_args.kwargs["blocks"])
+        assert "<!channel>" not in rendered and "&lt;!channel&gt;" in rendered
+        assert "<https://evil|order A-1>" not in rendered
+
+    @pytest.mark.asyncio
     async def test_an_identifier_too_long_for_slack_loses_its_buttons(self, caplog):
         adapter, posted = _outbound(), AsyncMock()
         too_long = "x" * BLOCK_ID_LIMIT
@@ -473,6 +495,95 @@ class TestPauseRendering:
         ], "Slack rejects the whole message over its id budget"
         assert [b["type"] for b in blocks] == ["section", "section", "actions", "section", "context", "section"]
         assert "block_id" in caplog.text, "the reason belongs in the log, not in front of the user"
+
+
+class TestAnswerTogether:
+    """A pause whose framework refuses a partial answer: one form, one submit, every decision."""
+
+    @staticmethod
+    def _together(*ids):
+        return AgentPausedReplyAny(
+            run_id="01JD7K2MX4",
+            session_id="000.111",
+            agent="helper",
+            answer_together=True,
+            interruptions=[PausedInterruption(id=i, kind="tool_call", tool_name="refund_order", arguments='{"order_id": "A-1"}') for i in ids],
+        )
+
+    @pytest.mark.asyncio
+    async def test_the_questions_are_drawn_without_controls_and_one_review_button(self):
+        adapter, posted = _outbound(), AsyncMock()
+        with patch.object(SlackOutboundAdapter, "_client", return_value=MagicMock(chat_postMessage=posted)):
+            await adapter.deliver_paused(self._together("call_a", "call_b"), {"channel": "C9"})
+
+        blocks = posted.await_args.kwargs["blocks"]
+        actions = [b for b in blocks if b["type"] == "actions"]
+        assert [b["block_id"] for b in actions] == [f"{BLOCK_PREFIX}review"], "a per-question press would be refused by the framework"
+        assert [b["block_id"] for b in blocks if b.get("block_id", "").startswith(BLOCK_PREFIX) and b["type"] == "section"] == [
+            f"{BLOCK_PREFIX}call_a",
+            f"{BLOCK_PREFIX}call_b",
+        ], "the section carries the id, since no actions block will"
+        assert actions[0]["elements"][0]["value"] == "approved,denied", "the inbound half reads the verbs off the button, not off outbound config"
+
+    @pytest.mark.asyncio
+    async def test_a_single_question_keeps_its_own_buttons(self):
+        adapter, posted = _outbound(), AsyncMock()
+        with patch.object(SlackOutboundAdapter, "_client", return_value=MagicMock(chat_postMessage=posted)):
+            await adapter.deliver_paused(self._together("call_a"), {"channel": "C9"})
+
+        [actions] = [b for b in posted.await_args.kwargs["blocks"] if b["type"] == "actions"]
+        assert actions["block_id"] == f"{BLOCK_PREFIX}call_a", "one question is never a partial answer"
+
+    def _press(self, adapter, *ids):
+        button = adapter._review_button()["elements"][0]
+        sections = [
+            {"type": "section", "block_id": f"{BLOCK_PREFIX}{i}", "text": {"type": "mrkdwn", "text": f"refund_order\n  order_id: {i}"}} for i in ids
+        ]
+        return {
+            "trigger_id": "t1",
+            "actions": [button],
+            "channel": {"id": "C9"},
+            "container": {"message_ts": "111.222", "thread_ts": "000.111"},
+            "user": {"id": "U123"},
+            "message": {"ts": "111.222", "blocks": [{"type": "section", "text": {"type": "mrkdwn", "text": "paused"}}] + sections},
+        }
+
+    def test_the_form_asks_one_required_question_per_interruption(self):
+        view = _inbound()._review_modal(self._press(_outbound(), "call_a", "call_b"))
+
+        inputs = [b for b in view["blocks"] if b["type"] == "input"]
+        assert [b["block_id"] for b in inputs] == [f"{BLOCK_PREFIX}call_a", f"{BLOCK_PREFIX}call_b"]
+        assert all(not b.get("optional") for b in inputs), "Slack itself refuses a submit that leaves a question unanswered"
+        assert [o["value"] for o in inputs[0]["element"]["options"]] == ["approved", "denied"]
+        assert view["callback_id"] == REVIEW_CALLBACK_ID
+
+    def test_a_submission_carries_every_decision_in_one_request(self):
+        inbound, outbound = _inbound(), _outbound()
+        view = inbound._review_modal(self._press(outbound, "call_a", "call_b"))
+        view["state"] = {
+            "values": {
+                f"{BLOCK_PREFIX}call_a": {f"{ACTION_PREFIX}choice": {"selected_option": {"value": "approved"}}},
+                f"{BLOCK_PREFIX}call_b": {f"{ACTION_PREFIX}choice": {"selected_option": {"value": "denied"}}},
+            }
+        }
+
+        request = inbound._decision_from_modal({"view": view})
+
+        [resume] = request.requests
+        assert [(d.id, d.status) for d in resume.decisions] == [("call_a", "approved"), ("call_b", "denied")]
+        assert request.session_id == "000.111" and request.user_id == "U123"
+        assert len(request.request_id) <= 128, "the request id becomes the queue dedup id, which SQS caps at 128"
+
+    def test_two_different_answer_sets_are_two_requests(self):
+        inbound, outbound = _inbound(), _outbound()
+        view = inbound._review_modal(self._press(outbound, "call_a"))
+
+        def submit(status):
+            view["state"] = {"values": {f"{BLOCK_PREFIX}call_a": {f"{ACTION_PREFIX}choice": {"selected_option": {"value": status}}}}}
+            return inbound._decision_from_modal({"view": dict(view)}).request_id
+
+        assert submit("approved") != submit("denied"), "a resubmitted form with different answers is a different decision"
+        assert submit("approved") == submit("approved"), "the same answers twice deduplicate"
 
 
 class TestPressParsing:

@@ -738,6 +738,7 @@ async def _pause(gated, session, orders=("A1",)) -> AgentPausedReplyAny:
     runner, agent = gated(orders)
     reply = await runner.run(agent, session, [AgentRequestText(prompt="refund please")])
     assert isinstance(reply, AgentPausedReplyAny), reply
+    assert reply.answer_together is True, "_reject_unresumable refuses a partial answer; a surface has to know"
     return reply
 
 

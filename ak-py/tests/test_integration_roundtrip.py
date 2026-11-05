@@ -144,6 +144,8 @@ class RoundTripInboundAdapter(InboundAdapter):
 
     async def parse(self, raw: Request) -> InboundParseResult:
         body = await raw.json()
+        if "decisions" in body:
+            return InboundParseResult(requests=[self._review(body)])
         if "decision" in body:
             return InboundParseResult(requests=[self._decision(body)])
         prompt = body["text"]
@@ -170,6 +172,21 @@ class RoundTripInboundAdapter(InboundAdapter):
             session_id=conversation,
             request_id=f"{ADAPTER_NAME}:{conversation}:{body['message']}:{interruption_id}:{status}",
             requests=[AgentResumeRequestAny(decisions=[ResumeDecision(id=interruption_id, status=status, message=body.get("reason"))])],
+            agent=body.get("agent", PAUSING_AGENT_NAME),
+            user_id=body.get("user", "u1"),
+            reply_context={"channel": conversation},
+        )
+
+    @staticmethod
+    def _review(body: dict) -> InboundRequest:
+        """A whole form, as Slack's review modal submits one: every answer in a single request."""
+        conversation = body["conversation"]
+        decisions = [ResumeDecision(id=i, status=s) for i, s in body["decisions"]]
+        digest = "-".join(f"{d.id}:{d.status}" for d in decisions)
+        return InboundRequest(
+            session_id=conversation,
+            request_id=f"{ADAPTER_NAME}:{conversation}:{body['message']}:review:{digest}",
+            requests=[AgentResumeRequestAny(decisions=decisions)],
             agent=body.get("agent", PAUSING_AGENT_NAME),
             user_id=body.get("user", "u1"),
             reply_context={"channel": conversation},
@@ -219,6 +236,15 @@ def _press(transport, interruption_id, status="approved", message="812", request
     app = FastAPI()
     app.include_router(handler.get_router())
     body = {"id": request_id or "ignored", "conversation": "C9", "message": message, "decision": [interruption_id, status], **extra}
+    return TestClient(app).post("/roundtrip/webhook", json=body)
+
+
+def _review(transport, answers, message="812"):
+    """Post a filled review form through the same webhook."""
+    handler = WebhookRESTRequestHandler(RoundTripInboundAdapter(), producer=IntegrationProducer(transport))
+    app = FastAPI()
+    app.include_router(handler.get_router())
+    body = {"id": "ignored", "conversation": "C9", "message": message, "decisions": answers}
     return TestClient(app).post("/roundtrip/webhook", json=body)
 
 
@@ -408,6 +434,33 @@ def test_two_decisions_delivered_in_order_both_land(pausing_agent):
 
     [(reply, _)] = RoundTripOutboundAdapter.delivered
     assert reply == "applied:call_1=approved;call_2=denied", "neither decision overwrote the other"
+
+
+def test_a_review_form_answers_a_whole_pause_in_one_resume(pausing_agent):
+    """What the Slack form exists for: the frameworks that set answer_together refuse anything less."""
+    transport = InMemoryTransport()
+    _post(transport, text="pause:2", agent=PAUSING_AGENT_NAME)
+    _run_pipeline(transport)
+
+    _review(transport, [["call_1", "approved"], ["call_2", "denied"]])
+    _run_pipeline(transport)
+
+    [(reply, context)] = RoundTripOutboundAdapter.delivered
+    assert reply == "applied:call_1=approved;call_2=denied", "one submission, both answers, one resume"
+    assert context["channel"] == "C9"
+    assert len(RoundTripOutboundAdapter.paused) == 1, "only the original pause; no remainder came back"
+
+
+def test_resubmitting_the_same_form_reaches_the_runtime_once(pausing_agent):
+    transport = InMemoryTransport()
+    _post(transport, text="pause:2", agent=PAUSING_AGENT_NAME)
+    _run_pipeline(transport)
+
+    answers = [["call_1", "approved"], ["call_2", "denied"]]
+    _review(transport, answers)
+    _review(transport, answers)
+
+    assert len(_queued(transport)) == 1, "a double submit of the same answers is one decision"
 
 
 def test_a_press_answering_a_resolved_pause_gets_the_generic_error(pausing_agent):

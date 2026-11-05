@@ -272,8 +272,13 @@ Four things to know before you ship it:
   [nobody decided](#why-cancelled-is-not-denied), and a button somebody pressed is not that. Add it
   if your flow wants it, by subclassing the outbound adapter and setting `DECISIONS`.
 - **An `input_required` question gets no buttons.** It wants a value, not a verdict, and a decision
-  verb would resume the run with no answer at all. The question is still shown, and named in the
-  message when its siblings drew buttons, so you can answer it over another surface.
+  verb would resume the run with no answer at all. The question is still shown, with a note where
+  its controls would have been, so you can answer it over another surface.
+- **Some frameworks only accept a whole pause answered at once.** Pydantic AI and Microsoft Agent
+  Framework refuse a resume that leaves any question unanswered, so a button per question could
+  never work there. Slack offers a single **Review all** button instead, opening a form with one
+  required choice per question and one submit. Telegram puts every question in one message under a
+  tally keyboard: a press marks an answer instead of sending it, and **Submit** sends the set. Everywhere else, a press still answers one question on its own.
 - **The buttons stay after a decision.** Nothing is edited out: a resumed run's reply is
   indistinguishable from a run a hook stopped, so editing on that guess could strip the controls
   off a pause that is still open. Pressing the same button again is deduplicated and changes
@@ -287,7 +292,8 @@ and the press goes nowhere. See [Slack](../integrations/slack.md) and
 ## A runnable example
 
 [`examples/api/slack/`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/slack)
-is the messaging version: one gated tool, approved or denied from the channel.
+is the messaging version: a Pydantic AI agent with one gated tool, approved or denied from the
+channel — and, when a turn gates several calls, answered from the review form.
 
 [`examples/api/hitl/`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/hitl) runs
 two agents side by side — an OpenAI one that can only be approved or denied, and a LangGraph one that

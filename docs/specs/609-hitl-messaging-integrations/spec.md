@@ -44,7 +44,21 @@ Rules:
    ignored for `input_required`, so a press there would resume the framework with no answer to a
    real question. `_decidable(interruption)` on the base is the shared rule, and the platform
    shows `TYPED_ANSWER_NOTICE` where that question's controls would have been.
-6. **Each question's controls go against that question**, never a block of questions followed by a
+6. **A pause some frameworks will only take answered in one go.** `PydanticAIRunner._reject_partial`
+   and `MAFRunner._reject_unresumable` refuse a resume that leaves any question unanswered, and a
+   press carries one decision, so on those two every press on a multi-question pause is refused.
+   `AgentPausedReplyAny.answer_together` says so — set by those runners, promoted onto the response
+   body by `ChatService`, read back by `IntegrationDelivery._paused_reply` — and a platform drawing
+   controls honours it: Slack offers one *Review all* button opening a form with a required radio
+   per question and one submit; Telegram sends one message holding every question under a tally
+   keyboard, where a verb press marks an answer (`akhitl:t:<code>:<id>`) and `akhitl:s` submits the
+   set. Both rebuild from the pressed message — Slack from its blocks, Telegram from
+   `CallbackQuery.message.reply_markup` — so neither stores anything between presses. The tally is
+   the **one** rendering that numbers, a keyboard being at the foot rather than beside its
+   question. An id over the callback budget costs the whole tally, since a tally missing a question
+   could never be submitted; that pause falls back to text and `ANSWER_TOGETHER_NOTICE`. A pause holding one
+   question is never a partial answer, so both keep their ordinary controls.
+7. **Each question's controls go against that question**, never a block of questions followed by a
    block of rows. Unlabelled rows in the same order as the paragraphs above them is how the wrong
    gated call gets approved, and nothing in the message would flag it. The two platforms reach the
    same arrangement by different means, because Block Kit and an inline keyboard are not the same
@@ -78,14 +92,11 @@ This run is paused until someone approves it.
 - `tool_name` on its own line; `arguments` parsed from its JSON string and listed as key/value
   pairs, falling back to the raw string when it does not parse.
 - `interruption.message` is included verbatim when the framework set it.
-- **A pause holding more than one interruption numbers them `1.`, `2.` …**, and a platform that
-  draws controls puts the same number on the button (`Approve 2`). Without it the rows are
-  identical and position is the only cue — on Telegram the keyboard is not even beside the text it
-  belongs to, and approving the wrong refund is one slip away. A pause holding one is left
-  unnumbered: there is nothing to tell it apart from. The shared `_marked(reply)` is where the
-  numbers come from, so the text and the controls cannot disagree, and the markers are **positions**
-  rather than ids, so a pause carrying the same id twice still numbers both.
-- A notice naming interruptions names their markers, falling back to the id for a lone one.
+- **A question a framework left in `payload` is rendered from it.** LangGraph names nothing — the
+  value passed to `interrupt()` is the whole question — so `_format_interruption` falls back to
+  `_format_value(payload)` before it falls back to the id. Without it a LangGraph pause reads as a
+  hex id on every platform.
+- A notice sits under the question it is about and names nothing.
 - No reply instruction, per the design.
 
 ### `IntegrationDelivery` — the PAUSED branch
@@ -147,6 +158,19 @@ def _pause_blocks(self, reply) -> list:
 
 - One `actions` block per interruption a press can answer, one button per verb in `DECISIONS`,
   placed immediately after that interruption's own section block.
+- The review form is built by the **inbound** half, from the pressed message: each question's
+  section carries `ak_pause:<id>`, so the questions and their ids come back in the `block_actions`
+  payload and no state is kept between the press and the submit. The verbs ride on the button's
+  `value`, because the inbound half reads no outbound policy of its own — the same reason a
+  denial's modal is chosen by `REASON_PREFIX` on the button. A submission's `request_id` is a
+  **digest** of the answered ids, not a join: it becomes the queue's `dedup_id`, which SQS caps at
+  128 characters.
+- A denial through the review form carries no reason, unlike the single-question path: a reason
+  input per question would cost a third of the view's 100-block budget, and since the denial
+  framing was fixed a reasonless denial already reaches the model as a refusal.
+- Model-controlled text is escaped before it becomes `mrkdwn`: a tool argument of `<!channel>`
+  would otherwise notify the channel from inside an approval prompt. Only the pause path escapes —
+  an ordinary reply's markup is the agent's own.
 - `_question_blocks(interruption)` owns the three outcomes for one question: its actions block, the
   typed-answer note, or the note that Slack's identifier budget took its controls away. Each note
   is a context block under its own question, so none of them names anything.

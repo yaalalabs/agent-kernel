@@ -491,7 +491,11 @@ class MAFRunner(Runner):
             interruptions=interruptions,
             payload={"session": native_session.to_dict(), "requests": {i.id: request.to_dict() for i, request in zip(interruptions, approvals)}},
         )
-        return AgentPausedReplyAny(run_id=record.id, session_id=session.id, agent=agent.name, interruptions=record.interruptions)
+        # answer_together mirrors what _reject_unresumable enforces, so a surface can offer one submit
+        # for the whole pause rather than a control per question that would be refused alone.
+        return AgentPausedReplyAny(
+            run_id=record.id, session_id=session.id, agent=agent.name, interruptions=record.interruptions, answer_together=True
+        )
 
     @classmethod
     def _interruption(cls, request: Content) -> PausedInterruption:

@@ -277,6 +277,28 @@ question whose id does not fit renders with no keyboard, says so in its own mess
 with its byte count. Answer that one over another surface.
 :::
 
+:::note Some pauses arrive with no keyboard
+On Pydantic AI and Microsoft Agent Framework a resume has to answer every question at once. Those pauses arrive
+as **one** message holding every question, numbered, under a tally keyboard:
+
+```
+1. refund_order
+     order_id: A-10294
+2. refund_order
+     order_id: B-20571
+
+[ ● ✓ Approve 1 ] [ ✗ Deny 1 ]
+[ ✓ Approve 2 ]   [ ● ✗ Deny 2 ]
+[ Submit ]
+```
+
+A verb press only marks an answer — nothing is sent, and you can change your mind — and **Submit**
+sends the whole set as one decision. Submitting with a question still blank says so and sends
+nothing. The marks live in the keyboard itself, which Telegram hands back on every press, so
+nothing is stored between them. This is the one rendering that numbers, because a keyboard sits at
+the foot of the message rather than beside the question it answers.
+:::
+
 The buttons stay on the message after a decision. Pressing the same one again is deduplicated and
 changes nothing; pressing one on a pause that has already been answered gets the usual error reply.
 

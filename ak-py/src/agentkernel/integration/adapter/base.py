@@ -194,6 +194,7 @@ class OutboundAdapter(ABC):
     DENY_COLLECTS_REASON: bool = False
     TYPED_ANSWER_NOTICE: str = "This needs a typed answer, which cannot be sent from here."
     UNPRESSABLE_NOTICE: str = "This cannot be answered here."
+    ANSWER_TOGETHER_NOTICE: str = "These have to be answered together, which cannot be done from here — answer them over another surface."
     PAUSE_APPROVAL_TEXT: str = "⏸ Approval needed\n\n{body}\n\nThis run is paused until someone approves it."
     PAUSE_INPUT_TEXT: str = "⏸ Input needed\n\n{body}\n\nThis run is paused until someone answers."
 
@@ -275,10 +276,12 @@ class OutboundAdapter(ABC):
         lines.extend(cls._format_arguments(interruption.arguments))
         if interruption.message:
             lines.append(interruption.message)
+        if not lines and interruption.payload is not None:
+            lines.extend(cls._format_value(interruption.payload, indent=""))
         return "\n".join(lines) if lines else interruption.id
 
-    @staticmethod
-    def _format_arguments(arguments: Optional[str]) -> List[str]:
+    @classmethod
+    def _format_arguments(cls, arguments: Optional[str]) -> List[str]:
         """The call's arguments as indented ``key: value`` lines.
 
         A JSON string from the framework; neither parsing nor an object shape is guaranteed.
@@ -289,12 +292,25 @@ class OutboundAdapter(ABC):
         if not arguments:
             return []
         try:
-            parsed = json.loads(arguments)
+            return cls._format_value(json.loads(arguments))
         except (TypeError, ValueError):
             return [f"  {arguments}"]
-        if not isinstance(parsed, dict):
-            return [f"  {parsed}"]
-        return [f"  {key}: {value}" for key, value in parsed.items()]
+
+    @staticmethod
+    def _format_value(value: Any, indent: str = "  ") -> List[str]:
+        """A decoded JSON value as lines.
+
+        A mapping reads as its pairs; anything else as itself. Shared because a framework poses its
+        question in whichever of the two it likes: OpenAI encodes call arguments as a JSON object,
+        LangGraph hands `interrupt()` whatever the node passed it.
+
+        :param value: The decoded value.
+        :param indent: What each line hangs under — nothing, when the value is the whole question.
+        :return: The lines to show.
+        """
+        if isinstance(value, dict):
+            return [f"{indent}{key}: {item}" for key, item in value.items()]
+        return [f"{indent}{value}"]
 
     async def deliver_chunk(self, chunk: StreamChunk, reply_context: Dict[str, str]) -> None:
         """Send a real-time streaming chunk to the platform.

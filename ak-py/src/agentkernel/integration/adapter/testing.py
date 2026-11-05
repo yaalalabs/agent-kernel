@@ -28,6 +28,8 @@ PAUSED_REPLY = AgentPausedReplyAny(
     interruptions=[
         PausedInterruption(id="call_9f2b41d7c8e0", kind="tool_call", tool_name="refund_order", arguments='{"order_id": "A-10294"}'),
         PausedInterruption(id="call_0c1d55ab77e3", kind="confirmation", tool_name="notify_customer"),
+        # Exactly what LangGraph builds: the question lives in payload and nothing names it.
+        PausedInterruption(id="b7f3e2a1c9d4", kind="input_required", payload={"question": "Which warehouse should ship this?"}),
     ],
 )
 
@@ -178,8 +180,10 @@ class IntegrationAdapterContract:
 
         assert text.strip(), "format_pause must always produce something to send"
         for interruption in PAUSED_REPLY.interruptions:
-            assert interruption.tool_name in text, "a reader must be able to see what is waiting"
+            if interruption.tool_name:
+                assert interruption.tool_name in text, "a reader must be able to see what is waiting"
         assert "A-10294" in text, "the call's arguments are what makes the decision answerable"
+        assert "Which warehouse should ship this?" in text, "a framework that names nothing puts the question in payload"
         assert "run_id" not in text and "null" not in text, "a serialised object is what this replaces"
 
     def test_split_reply_respects_the_platform_limit(self):

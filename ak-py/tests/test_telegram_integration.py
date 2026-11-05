@@ -1,5 +1,6 @@
 """Telegram adapter: update -> InboundRequest, and agent reply -> Bot API sends."""
 
+import asyncio
 import json
 import logging
 from unittest.mock import AsyncMock, MagicMock
@@ -18,7 +19,10 @@ from agentkernel.integration.telegram.adapter import (
     CALLBACK_LIMIT,
     CALLBACK_PREFIX,
     HELP_MESSAGE,
+    INCOMPLETE_NOTICE,
     START_MESSAGE,
+    SUBMIT_CODE,
+    TALLY_CODE,
     TelegramInboundAdapter,
     TelegramOutboundAdapter,
     _TelegramClient,
@@ -53,6 +57,7 @@ def _client_stub():
     client.send_message = AsyncMock()
     client.chat_action = AsyncMock()
     client.answer_callback_query = AsyncMock()
+    client.edit_message_reply_markup = AsyncMock()
     client.file_info = AsyncMock(return_value={"file_path": "photos/file_1.jpg", "file_size": 1024})
     client.download = AsyncMock(return_value=b"\x89PNG")
     return client
@@ -320,6 +325,100 @@ class TestRoute:
         assert transport.create_consumer(QueueName.INPUT).fetch(1, 0.05) == []
 
 
+class TestTally:
+    """A pause the framework takes whole: the keyboard collects the answers, Submit sends them."""
+
+    @pytest.fixture
+    def drawn(self):
+        adapter = _outbound()
+        reply = _paused("call_a", "call_b")
+        reply.answer_together = True
+        asyncio.run(adapter.deliver_paused(reply, {"chat_id": str(CHAT_ID)}))
+        return adapter._client.send_message.await_args.kwargs["reply_markup"]["inline_keyboard"]
+
+    @staticmethod
+    async def _press(inbound, data, keyboard):
+        message = {"message_id": 812, "chat": {"id": CHAT_ID}, "reply_markup": {"inline_keyboard": keyboard}}
+        request = await inbound._from_callback_query({"id": "cb-1", "data": data, "from": {"id": 99}, "message": message}, 101)
+        edited = inbound._client.edit_message_reply_markup.await_args
+        return request, (edited.args[2]["inline_keyboard"] if edited else keyboard)
+
+    @pytest.mark.asyncio
+    async def test_a_selection_marks_the_keyboard_and_enqueues_nothing(self, drawn):
+        inbound = _inbound()
+
+        request, keyboard = await self._press(inbound, drawn[0][0]["callback_data"], drawn)
+
+        assert request is None, "the framework would refuse a resume answering one question"
+        assert [b["text"] for b in keyboard[0]] == ["● ✓ Approve 1", "✗ Deny 1"]
+        inbound._client.edit_message_reply_markup.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_a_selection_leaves_the_other_questions_alone(self, drawn):
+        inbound = _inbound()
+
+        _, keyboard = await self._press(inbound, drawn[0][0]["callback_data"], drawn)
+        _, keyboard = await self._press(inbound, keyboard[1][1]["callback_data"], keyboard)
+
+        marked = [[b["text"] for b in row] for row in keyboard]
+        assert marked[0] == ["● ✓ Approve 1", "✗ Deny 1"], "the marks already there are the answers so far"
+        assert marked[1] == ["✓ Approve 2", "● ✗ Deny 2"]
+
+    @pytest.mark.asyncio
+    async def test_a_second_choice_for_one_question_replaces_the_first(self, drawn):
+        inbound = _inbound()
+
+        _, keyboard = await self._press(inbound, drawn[0][0]["callback_data"], drawn)
+        _, keyboard = await self._press(inbound, keyboard[0][1]["callback_data"], keyboard)
+
+        assert [b["text"] for b in keyboard[0]] == ["✓ Approve 1", "● ✗ Deny 1"], "a question holds one answer"
+
+    @pytest.mark.asyncio
+    async def test_submitting_an_incomplete_tally_says_so_and_enqueues_nothing(self, drawn):
+        inbound = _inbound()
+
+        _, keyboard = await self._press(inbound, drawn[0][0]["callback_data"], drawn)
+        request, _ = await self._press(inbound, f"{CALLBACK_PREFIX}{SUBMIT_CODE}", keyboard)
+
+        assert request is None
+        assert inbound._client.answer_callback_query.await_args.args[1] == INCOMPLETE_NOTICE
+
+    @pytest.mark.asyncio
+    async def test_submit_sends_every_answer_as_one_resume(self, drawn):
+        inbound = _inbound()
+
+        _, keyboard = await self._press(inbound, drawn[0][0]["callback_data"], drawn)
+        _, keyboard = await self._press(inbound, keyboard[1][1]["callback_data"], keyboard)
+        request, _ = await self._press(inbound, f"{CALLBACK_PREFIX}{SUBMIT_CODE}", keyboard)
+
+        [resume] = request.requests
+        assert [(d.id, d.status) for d in resume.decisions] == [("call_a", "approved"), ("call_b", "denied")]
+        assert request.session_id == str(CHAT_ID) and request.user_id == "99"
+        assert len(request.request_id) <= 128, "the request id becomes the queue dedup id, which SQS caps at 128"
+
+    @pytest.mark.asyncio
+    async def test_resubmitting_the_same_tally_is_one_decision(self, drawn):
+        inbound = _inbound()
+
+        _, keyboard = await self._press(inbound, drawn[0][0]["callback_data"], drawn)
+        _, keyboard = await self._press(inbound, keyboard[1][0]["callback_data"], keyboard)
+        first, _ = await self._press(inbound, f"{CALLBACK_PREFIX}{SUBMIT_CODE}", keyboard)
+        second, _ = await self._press(inbound, f"{CALLBACK_PREFIX}{SUBMIT_CODE}", keyboard)
+
+        assert first.request_id == second.request_id, "the same answers twice deduplicate"
+
+    @pytest.mark.asyncio
+    async def test_a_failed_edit_leaves_the_tally_as_it_was(self, drawn, caplog):
+        inbound = _inbound()
+        inbound._client.edit_message_reply_markup.side_effect = RuntimeError("telegram said no")
+
+        with caplog.at_level(logging.WARNING, logger="ak.integration.telegram"):
+            request, _ = await self._press(inbound, drawn[0][0]["callback_data"], drawn)
+
+        assert request is None, "a lost selection is a press that did nothing, not a failed delivery"
+        assert "tally selection" in caplog.text
+
+
 class TestPauseRendering:
     """A paused run drawn as one message per question, each with the keyboard that answers it."""
 
@@ -379,6 +478,52 @@ class TestPauseRendering:
         chunks = adapter._client.send_message.await_args.args[1]
         assert len(chunks) > 1, "this question is longer than the limit, so it is split"
         assert adapter._client.send_message.await_args.kwargs["reply_markup"] is not None
+
+    @pytest.mark.asyncio
+    async def test_a_pause_answered_together_is_one_message_with_a_tally(self):
+        """One press cannot answer a pause the framework takes whole, so a press only selects."""
+        adapter = _outbound()
+        reply = _paused("call_a", "call_b")
+        reply.answer_together = True
+
+        await adapter.deliver_paused(reply, {"chat_id": str(CHAT_ID)})
+
+        [(text, markup)] = self._messages(adapter)
+        assert text.count("refund_order") == 2, "every question is in the one message"
+        assert "1. refund_order" in text, "the keyboard is at the foot, so the rows need numbers"
+        rows = markup["inline_keyboard"]
+        assert [[b["text"] for b in row] for row in rows] == [
+            ["✓ Approve 1", "✗ Deny 1"],
+            ["✓ Approve 2", "✗ Deny 2"],
+            [adapter.SUBMIT_LABEL],
+        ]
+        assert rows[0][0]["callback_data"] == f"{CALLBACK_PREFIX}{TALLY_CODE}:a:call_a"
+        assert rows[-1][0]["callback_data"] == f"{CALLBACK_PREFIX}{SUBMIT_CODE}"
+
+    @pytest.mark.asyncio
+    async def test_an_over_budget_id_costs_the_whole_tally(self, caplog):
+        """A tally missing a question could never be submitted, so none is offered."""
+        adapter = _outbound()
+        reply = _paused("call_a", "x" * CALLBACK_LIMIT)
+        reply.answer_together = True
+
+        with caplog.at_level(logging.WARNING, logger="ak.integration.telegram"):
+            await adapter.deliver_paused(reply, {"chat_id": str(CHAT_ID)})
+
+        [(text, markup)] = self._messages(adapter)
+        assert markup is None and adapter.ANSWER_TOGETHER_NOTICE in text
+        assert "budget" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_one_question_answered_together_keeps_its_keyboard(self):
+        adapter = _outbound()
+        reply = _paused("call_a")
+        reply.answer_together = True
+
+        await adapter.deliver_paused(reply, {"chat_id": str(CHAT_ID)})
+
+        [(_, markup)] = self._messages(adapter)
+        assert markup is not None, "one question is never a partial answer"
 
     @pytest.mark.asyncio
     async def test_a_question_wanting_a_value_gets_a_note_instead_of_a_keyboard(self):

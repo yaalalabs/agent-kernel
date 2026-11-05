@@ -131,6 +131,7 @@ class IntegrationDelivery:
                 session_id=body.get("session_id") or session_id or "",
                 agent=body["agent"],
                 interruptions=[PausedInterruption(**interruption) for interruption in body["interruptions"]],
+                answer_together=bool(body.get("answer_together")),
             )
         except (KeyError, TypeError, ValidationError) as e:
             self._log.warning(f"Body for {integration} claims status=PAUSED but does not reconstruct ({e}); delivering it as text instead")

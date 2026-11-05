@@ -263,7 +263,11 @@ class PydanticAIRunner(BaseRunner):
             interruptions=interruptions,
             payload={"messages": to_jsonable_python(result.all_messages())},
         )
-        return AgentPausedReplyAny(run_id=record.id, session_id=session.id, agent=agent.name, interruptions=record.interruptions)
+        # answer_together mirrors what _reject_partial enforces, so a surface can offer one submit
+        # for the whole pause rather than a control per question that would be refused alone.
+        return AgentPausedReplyAny(
+            run_id=record.id, session_id=session.id, agent=agent.name, interruptions=record.interruptions, answer_together=True
+        )
 
     @staticmethod
     def _interruption(part: Any, kind: Literal["tool_call", "input_required"]) -> PausedInterruption:

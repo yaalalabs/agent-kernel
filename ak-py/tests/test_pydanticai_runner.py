@@ -1049,6 +1049,7 @@ class TestPydanticAIPauseDetection:
         assert isinstance(reply, AgentPausedReplyAny)
         assert reply.interruptions[0].kind == "input_required"
         assert reply.interruptions[0].tool_name == "ask_size"
+        assert reply.answer_together is True, "_reject_partial refuses a resume that leaves one unanswered; a surface has to know"
 
     @pytest.mark.asyncio
     async def test_an_approval_and_a_deferred_call_get_different_kinds(self):

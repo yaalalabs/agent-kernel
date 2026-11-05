@@ -185,6 +185,13 @@ who decides, enforce it yourself: the presser's Slack user id reaches the run as
 and a `PreHook` is where you check it.
 :::
 
+:::note Some pauses come with one button instead
+On Pydantic AI and Microsoft Agent Framework a resume has to answer every question at once, so a
+button per question could not work. Those pauses arrive with a single **Review all** button that
+opens a form: one required choice per question, one submit, and every answer travels as one
+decision. A denial there carries no reason — the form keeps its block budget for questions.
+:::
+
 The buttons stay on the message after a decision. Pressing the same one again is deduplicated and
 changes nothing; pressing one on a pause that has already been answered gets the usual error reply.
 

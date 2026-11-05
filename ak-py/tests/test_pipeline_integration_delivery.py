@@ -217,6 +217,45 @@ def test_the_template_is_handed_back_in_halves_for_a_platform_that_places_them_i
     assert _TextOnlyOutboundAdapter().format_pause(reply).startswith(opening), "one template owns the wording"
 
 
+def test_a_question_a_framework_left_in_payload_is_still_shown():
+    """LangGraph names nothing: `interrupt()`'s value is the whole question, and it lives in payload."""
+    reply = AgentPausedReplyAny(
+        run_id="01JD7K2MX4",
+        session_id="s1",
+        agent="support",
+        interruptions=[PausedInterruption(id="b7f3e2a1c9d4", kind="input_required", payload={"question": "Which warehouse?", "options": ["Leeds"]})],
+    )
+
+    text = _TextOnlyOutboundAdapter().format_pause(reply)
+
+    assert "Which warehouse?" in text and "Leeds" in text
+    assert text.count("b7f3e2a1c9d4") == 0, "the id is the last resort, not the first"
+
+
+def test_a_question_with_no_content_at_all_falls_back_to_its_id():
+    reply = AgentPausedReplyAny(
+        run_id="01JD7K2MX4", session_id="s1", agent="support", interruptions=[PausedInterruption(id="call_bare", kind="tool_call")]
+    )
+
+    assert "call_bare" in _TextOnlyOutboundAdapter().format_pause(reply)
+
+
+def test_answer_together_survives_the_queue_hop(adapter):
+    """A platform that draws controls needs it, and it only reaches one through the body."""
+    IntegrationDelivery(_log).deliver(ADAPTER_NAME, _attrs(), _paused_body(answer_together=True), 202, session_id="s1")
+
+    [(reply, _)] = adapter.paused
+    assert reply.answer_together is True
+
+
+def test_a_body_without_the_flag_is_answerable_one_question_at_a_time(adapter):
+    """Every runner but two omits it, and so does every body stored before it existed."""
+    IntegrationDelivery(_log).deliver(ADAPTER_NAME, _attrs(), _paused_body(), 202, session_id="s1")
+
+    [(reply, _)] = adapter.paused
+    assert reply.answer_together is False
+
+
 def test_only_a_verdict_question_can_be_answered_by_a_control():
     gated, asked = _pause("tool_call", "input_required").interruptions
 

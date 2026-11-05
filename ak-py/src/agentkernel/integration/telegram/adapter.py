@@ -6,6 +6,7 @@ is the one exception: see :meth:`TelegramInboundAdapter._decision`.
 """
 
 import base64
+import hashlib
 import logging
 import mimetypes
 from typing import Any, Dict, List, Optional
@@ -39,6 +40,13 @@ CALLBACK_LIMIT = 64
 VERB_CODES = {"approved": "a", "denied": "d", "cancelled": "c"}
 """A wire format: a code is never reused for another verb, because a message outlives a deploy."""
 VERBS_BY_CODE = {code: verb for verb, code in VERB_CODES.items()}
+TALLY_CODE = "t"
+"""Marks a press that only selects an answer, for a pause the framework takes in one resume."""
+SUBMIT_CODE = "s"
+"""Marks the press that submits a whole tally. It names no interruption, so it costs 8 bytes."""
+INCOMPLETE_NOTICE = "Answer every question first."
+SELECTED_MARK = "● "
+"""What a chosen button wears. The keyboard is the tally, so this is what the next press reads."""
 BUTTON_LABELS = {"approved": "✓ Approve", "denied": "✗ Deny", "cancelled": "⊘ Cancel"}
 
 _log = logging.getLogger("ak.integration.telegram")
@@ -77,6 +85,15 @@ class _TelegramClient:
                 response = await client.post(f"{self._base_url}/sendMessage", json=payload)
                 response.raise_for_status()
                 _log.debug(f"Message sent successfully: {response.json()}")
+
+    async def edit_message_reply_markup(self, chat_id: str, message_id: Any, reply_markup: dict) -> None:
+        """Redraw a message's keyboard in place, which is how a tally records a selection."""
+        async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
+            response = await client.post(
+                f"{self._base_url}/editMessageReplyMarkup",
+                json={"chat_id": chat_id, "message_id": message_id, "reply_markup": reply_markup},
+            )
+            response.raise_for_status()
 
     async def chat_action(self, chat_id: str, action: str = "typing") -> None:
         """Send a typing indicator. Never raises: it is a courtesy."""
@@ -203,14 +220,113 @@ class TelegramInboundAdapter(InboundAdapter):
         chat_id = (callback_query.get("message") or {}).get("chat", {}).get("id")
         data = callback_query.get("data")
         self._log.debug(f"Processing callback query {callback_query.get('id')}: {data}")
-        await self._client.answer_callback_query(callback_query.get("id"), "Processing...")
         if not chat_id or not data:
+            await self._client.answer_callback_query(callback_query.get("id"), "Processing...")
             return None
+
         sender_id = (callback_query.get("from") or {}).get("id")
         sender = str(sender_id) if sender_id is not None else None
+        if data.startswith(f"{CALLBACK_PREFIX}{TALLY_CODE}:"):
+            return await self._select(callback_query, chat_id, data)
+        if data == f"{CALLBACK_PREFIX}{SUBMIT_CODE}":
+            return await self._submit(callback_query, chat_id, sender)
+
+        await self._client.answer_callback_query(callback_query.get("id"), "Processing...")
         if data.startswith(CALLBACK_PREFIX):
             return self._decision(callback_query, chat_id, data, sender)
         return await self._build(chat_id, update_id, data, None, sender)
+
+    async def _select(self, callback_query: dict, chat_id: Any, data: str) -> None:
+        """Mark one answer on the tally. Nothing is enqueued and nothing is decided.
+
+        The keyboard is the tally: it comes back on every press as
+        ``CallbackQuery.message.reply_markup``, so redrawing it is the whole of the state keeping,
+        and the adapter stays as stateless as the seam requires.
+
+        :param callback_query: The press, carrying the message and its current keyboard.
+        :param chat_id: The conversation.
+        :param data: The callback data, already known to be a selection.
+        :return: Nothing — a selection is not a request.
+        """
+        message = callback_query.get("message") or {}
+        keyboard = (message.get("reply_markup") or {}).get("inline_keyboard") or []
+        pressed = data[len(CALLBACK_PREFIX) + len(TALLY_CODE) + 1 :]
+        redrawn = [[self._marked(button, pressed) for button in row] for row in keyboard]
+        await self._client.answer_callback_query(callback_query.get("id"))
+        try:
+            await self._client.edit_message_reply_markup(str(chat_id), message.get("message_id"), {"inline_keyboard": redrawn})
+        except Exception as e:
+            # The keyboard is the state, so a failed edit changed nothing: the press is simply lost.
+            self._log.warning(f"Could not record a tally selection: {e}")
+        return None
+
+    @staticmethod
+    def _marked(button: dict, pressed: str) -> dict:
+        """One button, wearing the mark only if it is the pressed answer to its own question.
+
+        A press changes its own question's row and no other: the marks already on the rest of the
+        keyboard are the answers given so far.
+
+        :param button: The button as the keyboard currently holds it.
+        :param pressed: The ``<verb code>:<interruption id>`` of the press.
+        :return: The button to draw in its place.
+        """
+        data = button.get("callback_data") or ""
+        if not data.startswith(f"{CALLBACK_PREFIX}{TALLY_CODE}:"):
+            return button
+        own = data[len(CALLBACK_PREFIX) + len(TALLY_CODE) + 1 :]
+        _, _, interruption_id = own.partition(":")
+        _, _, pressed_id = pressed.partition(":")
+        if interruption_id != pressed_id:
+            return button
+        text = (button.get("text") or "").removeprefix(SELECTED_MARK)
+        return {**button, "text": f"{SELECTED_MARK}{text}" if own == pressed else text}
+
+    async def _submit(self, callback_query: dict, chat_id: Any, sender: Optional[str]) -> Optional[InboundRequest]:
+        """The whole tally, as the one resume the framework will accept.
+
+        :param callback_query: The press, carrying the keyboard the answers live in.
+        :param chat_id: The conversation, which is the session.
+        :param sender: Who submitted, so a pre-hook can decide whether they may.
+        :return: Every decision as one request, or None while any question is unanswered.
+        """
+        message = callback_query.get("message") or {}
+        answers = self._tally(((message.get("reply_markup") or {}).get("inline_keyboard")) or [])
+        if not answers or any(status is None for status in answers.values()):
+            await self._client.answer_callback_query(callback_query.get("id"), INCOMPLETE_NOTICE)
+            return None
+
+        await self._client.answer_callback_query(callback_query.get("id"), "Processing...")
+        decisions = [ResumeDecision(id=interruption_id, status=status) for interruption_id, status in answers.items()]
+        digest = hashlib.sha256("|".join(f"{d.id}:{d.status}" for d in decisions).encode()).hexdigest()[:16]
+        session_id = str(chat_id)
+        return InboundRequest(
+            session_id=session_id,
+            request_id=f"{NAME}:{session_id}:{message.get('message_id')}:review:{digest}",
+            requests=[AgentResumeRequestAny(decisions=decisions)],
+            agent=self._agent,
+            user_id=sender,
+            reply_context={"chat_id": session_id},
+        )
+
+    @staticmethod
+    def _tally(keyboard: list) -> Dict[str, Optional[str]]:
+        """What the keyboard currently says, in the order its rows were drawn.
+
+        :param keyboard: The message's inline keyboard.
+        :return: Each question's id against the verb chosen for it, or None while it has none.
+        """
+        answers: Dict[str, Optional[str]] = {}
+        for row in keyboard:
+            for button in row:
+                data = button.get("callback_data") or ""
+                if not data.startswith(f"{CALLBACK_PREFIX}{TALLY_CODE}:"):
+                    continue
+                code, _, interruption_id = data[len(CALLBACK_PREFIX) + len(TALLY_CODE) + 1 :].partition(":")
+                answers.setdefault(interruption_id, None)
+                if (button.get("text") or "").startswith(SELECTED_MARK):
+                    answers[interruption_id] = VERBS_BY_CODE.get(code)
+        return answers
 
     def _decision(self, callback_query: dict, chat_id: Any, data: str, sender: Optional[str]) -> Optional[InboundRequest]:
         """A press on a pause button, as the decision it carries.
@@ -365,6 +481,7 @@ class TelegramOutboundAdapter(OutboundAdapter):
 
     name = NAME
     MESSAGE_LIMIT = 4096
+    SUBMIT_LABEL = "Submit"
 
     _log = _log
 
@@ -386,10 +503,22 @@ class TelegramOutboundAdapter(OutboundAdapter):
         one-question pause stays one message. Many questions mean many messages, and Telegram
         rate-limits a chat: a rejected send is retried, resending what already landed.
 
+        A pause the framework accepts only answered in one resume takes the other shape entirely:
+        one message holding every question, and a tally keyboard whose presses select rather than
+        decide. See :meth:`_tally_rows`.
+
         :param reply: The paused reply to draw.
         :param reply_context: The delivery coordinates resolved at the edge.
         """
         chat_id = reply_context["chat_id"]
+        if reply.answer_together and len(reply.interruptions) > 1:
+            rows = self._tally_rows(reply)
+            if not rows:
+                await self._client.send_message(chat_id, self.split_reply(f"{self.format_pause(reply)}\n\n{self.ANSWER_TOGETHER_NOTICE}"))
+                return
+            await self._client.send_message(chat_id, self.split_reply(self._tally_text(reply)), reply_markup={"inline_keyboard": rows})
+            return
+
         opening, closing = self._pause_template(reply)
         if not reply.interruptions:
             await self._client.send_message(chat_id, self.split_reply(f"{opening}{closing}"))
@@ -407,6 +536,47 @@ class TelegramOutboundAdapter(OutboundAdapter):
                 text = f"{text}{closing}"
             markup = {"inline_keyboard": [row]} if row else None
             await self._client.send_message(chat_id, self.split_reply(text), reply_markup=markup)
+
+    def _tally_text(self, reply: AgentPausedReplyAny) -> str:
+        """The whole pause as one message, numbered.
+
+        The only rendering here that numbers, and for the reason numbering ever existed: a tally
+        keyboard sits at the foot of one message holding every question, so a row has nothing but
+        its number to say which question it answers.
+
+        :param reply: The paused reply to draw.
+        :return: The text to send.
+        """
+        opening, closing = self._pause_template(reply)
+        body = "\n\n".join(f"{position}. {self._format_interruption(interruption)}" for position, interruption in enumerate(reply.interruptions, 1))
+        return f"{opening}{body}{closing}"
+
+    def _tally_rows(self, reply: AgentPausedReplyAny) -> list:
+        """One unselected row per question, then the row that submits them all.
+
+        Nothing is decided by these presses: the framework would refuse a resume answering one
+        question, so a verb here only marks the keyboard and :meth:`TelegramInboundAdapter._submit`
+        sends the whole set.
+
+        :param reply: The paused reply to draw.
+        :return: The keyboard rows, or nothing when any question's callback data is over budget —
+            a tally missing a question could never be submitted.
+        """
+        rows = []
+        for position, interruption in enumerate(reply.interruptions, 1):
+            row = [
+                {
+                    "text": f"{BUTTON_LABELS[verb]} {position}",
+                    "callback_data": f"{CALLBACK_PREFIX}{TALLY_CODE}:{VERB_CODES[verb]}:{interruption.id}",
+                }
+                for verb in self.DECISIONS
+            ]
+            if any(len(button["callback_data"].encode()) > CALLBACK_LIMIT for button in row):
+                self._log.warning(f"Interruption '{interruption.id}' is over Telegram's {CALLBACK_LIMIT}-byte budget; the pause gets no tally")
+                return []
+            rows.append(row)
+        rows.append([{"text": self.SUBMIT_LABEL, "callback_data": f"{CALLBACK_PREFIX}{SUBMIT_CODE}"}])
+        return rows
 
     def _row(self, interruption: PausedInterruption) -> tuple[list, Optional[str]]:
         """One question's buttons, or the note that stands in for them.
