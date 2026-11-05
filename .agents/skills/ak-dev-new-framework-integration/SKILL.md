@@ -3,7 +3,7 @@ name: ak-dev-new-framework-integration
 description: >
   Step-by-step guide for adding a new agent framework adapter to Agent Kernel.
   Use this skill when you need to integrate a new agent framework (beyond OpenAI,
-    CrewAI, LangGraph, Google ADK, Smolagents, Pydantic AI, Microsoft Agent Framework). Covers creating the adapter module, implementing
+    CrewAI, LangGraph, Google ADK, Smolagents, Pydantic AI, Microsoft Agent Framework, Claude Agent SDK). Covers creating the adapter module, implementing
   Agent/Runner/Module subclasses, adding optional dependencies, exports, and tests.
 license: Apache-2.0
 metadata:
@@ -281,7 +281,7 @@ class <Name>Agent(Agent):
 
 **Key requirements:**
 - `get_description()` must return a meaningful description from the native framework agent
-- `get_a2a_card()` must return a valid A2A agent card built via `A2ACardBuilder`
+- `get_a2a_card()` must return a valid A2A agent card built via `A2ACardBuilder` (a2a-sdk 1.x protobuf types, #762). Pass a `str` description (anything else is emptied with a warning); `AgentSkill(..., tags=[])` is fine, the builder tags an untagged skill with the agent name. Returning `None` means the agent is not served over A2A (logged)
 - Store the native agent in `self._native_agent` for access in the Runner
 - Declare `RESERVED_RUN_OPTIONS: ClassVar[Mapping[str, str]]` (#754): every keyword your runner passes itself, plus any that changes the result shape your reply mapping reads, each mapped to a one-line reason. `Module.run_options` rejects them at declaration with that reason. Override `validate_run_options` only for a nested key (LangGraph's `config.configurable.thread_id`)
 
@@ -396,7 +396,7 @@ class LangFuse<Name>Runner(<Name>Runner):
             return await super().run(agent, session, requests)
 ```
 
-Also add a new abstract framework method in `ak-py/src/agentkernel/trace/base.py` and the corresponding `Trace.<name>()` method in `ak-py/src/agentkernel/trace/trace.py`.
+Also add a framework method in `ak-py/src/agentkernel/trace/base.py` and the corresponding `Trace.<name>()` method in `ak-py/src/agentkernel/trace/trace.py`. Make the `BaseTrace` method **non-abstract**, raising `NotImplementedError` naming the tracer (as `claude()` does): a new `@abstractmethod` would stop every bring-your-own dotted-path tracer written before your adapter from instantiating. Then implement it in all four built-in tracers, including CloudWatch.
 
 ### 12. Add Tests
 

@@ -30,6 +30,9 @@ Examples demonstrating Agent Kernel's API capabilities and integrations:
 - **`instagram/`** - Instagram integration example
 - **`telegram/`** - Telegram integration example
 - **`schedule-openai/`** - Deferred and recurring chats: a chat request carrying a `schedule` block is registered instead of run (HTTP 202), with the in-process `local` provider, an `in_memory` task store, the `/api/v1/schedules` management routes, and an agent that can schedule work itself
+- **`claude/`** - Claude Agent SDK subagents and a bound tool served through the REST chat endpoint
+- **`claude-hitl/`** - Claude Agent SDK tool approval: pause a REST request, approve or deny it, and resume the same session
+- **`claude-streaming/`** - Claude Agent SDK token streaming over SSE (`execution.message_type: delta`), including a bound tool's call, arguments and result as stream events
 
 ### 📁 CLI Examples (`/examples/cli`)
 
@@ -49,6 +52,7 @@ Command-line interface examples for local development and testing:
 - **`openai_structured/`** - OpenAI Agent SDK agent returning structured (Pydantic) output
 - **`openai-secret/`** - Secrets resolved through `SecretManager` with the default `env` provider: a required model key read at startup and an optional tool key that degrades gracefully (see the [Secret Resolution](../advanced/secrets.md) guide)
 - **`pydanticai/`** - Pydantic AI framework integration examples
+- **`claude/`** - Claude Agent SDK integration example: a triage agent delegating to subagents, with an Agent Kernel tool
 - **`smolagents/`** - HuggingFace smolagents `CodeAgent` integration examples
 - **`knowledgebase/openai/`** - OpenAI Agents knowledge base demos split into `chromadb/`, `neo4j/`, `starburst/`, `okf/` (Open Knowledge Format markdown bundle), and `multi/`
 
@@ -58,6 +62,7 @@ Per-run framework context/state demos — a grocery assistant that carries a car
 - **`langgraph_context/`** - LangGraph, via a declared state channel on a custom graph
 - **`adk_context/`** - Google ADK, via `ToolContext.state`
 - **`pydanticai_context/`** - Pydantic AI, via `RunContext.deps`
+- **`claude_context/`** - Claude Agent SDK, via `ToolContext.get().framework_context` in bound Python tools
 - **`maf_context/`** - Microsoft Agent Framework, via `FunctionInvocationContext.session.state`
 
 Per-agent native run options demos, one per framework plus a per-run factory variant: each declares that framework's turn-limit option and progress-hook option through `Module.run_options` and appends a deterministic `Run stats:` line to every reply (see the [Runner](../core-concepts/runner.md#native-run-options) guide):
@@ -70,6 +75,7 @@ Per-agent native run options demos, one per framework plus a per-run factory var
 - **`maf-run-options/`** - Microsoft Agent Framework, `options` (`max_tokens`) and `function_invocation_kwargs`, with progress from the native chat and function middleware
 - **`crewai-run-options/`** - CrewAI, a `Crew` `step_callback` and `max_rpm`
 - **`smolagents-run-options/`** - smolagents, `max_steps` (progress via the native `step_callbacks` constructor argument)
+- **`claude-run-options/`** - Claude Agent SDK, `max_turns` and a native `PostToolUse` hook via `hooks=`
 
 ### 📁 Sandbox Examples (`/examples/sandbox`)
 
@@ -77,7 +83,7 @@ Sandbox capability examples (execute code/commands in an isolated, permission-bo
 
 - **`basic/`** - Enable the sandbox, run code, persist a workspace across turns, manage named sessions
 - **`profiles/`** - Multiple named workload profiles (provider + scope routing: a docker-backed workspace and a local throwaway sandbox)
-- **`policy/`** - Policy/permissions on the docker provider: an enforced envelope (network deny, resource limits) and the fail-closed `strict` model for what docker cannot enforce (egress allowlist)
+- **`policy/`** - Policy/permissions on the docker provider: an enforced envelope (network deny, resource limits), the fail-closed `strict` model for what docker cannot enforce (egress allowlist), and a profile that permits package installs
 - **`docker/`** - The docker provider: container-isolated execution, package installs, and enforced network policy (requires a Docker daemon)
 - **`daytona/`** - The daytona provider: cloud container sandboxes with enforced network and resource policy and native idle auto-stop (requires a Daytona API key)
 - **`e2b/`** - The e2b provider: Firecracker micro-VM sandboxes with a stateful Jupyter kernel (variables persist across executions) and enforced network policy (requires an E2B API key)
@@ -85,6 +91,16 @@ Sandbox capability examples (execute code/commands in an isolated, permission-bo
 - **`ec2-ssm/`** - The ec2_ssm provider (mode-3 attach): execute code on an existing EC2 instance over SSM (manual; requires a real instance and AWS credentials)
 - **`broker-kafka/`** - The queue broker flavor over Kafka: a two-process split where the worker runs read-only kubectl pods in a kind cluster via the kubernetes provider, with RBAC as the security boundary (requires Docker, kind, kubectl)
 - **`broker-nats/`** - The queue broker fully in-cluster: pipeline plus sandbox worker deployed by the ak-k8s Helm chart over NATS, with sandbox pods in a hardened namespace (requires a micro-cluster and Helm)
+
+### 📁 Memory Examples (`/examples/memory`)
+
+Session, cache, and memory-backend examples. See the [Choosing a Memory Backend](../core-concepts/memory-backends.md) guide for help picking one:
+
+- **`key-value-cache/`** - Volatile and non-volatile caches shared between hooks and agent tools
+- **`redis/`** - OpenAI agents on AWS Lambda with Redis sessions
+- **`valkey/`** - OpenAI agents on AWS Lambda with Valkey sessions
+- **`dynamodb/`** - OpenAI agents on AWS Lambda with DynamoDB sessions
+- **`cosmos/`** - OpenAI agents on Azure Functions with Cosmos DB sessions
 
 ### 📁 Containerized Examples (`/examples/containerized`)
 
@@ -101,8 +117,8 @@ AWS ECS/Fargate deployment examples:
 - **`openai-dynamodb-scalable/`** - OpenAI agents on AWS ECS with SQS queue mode for scalable, asynchronous request processing and DynamoDB response storage; the OpenAI key is read from SSM Parameter Store (`ssm_enabled`, `secret.provider.type: aws_ssm`)
 - **`openai-websocket/`** - OpenAI agents on AWS ECS over a WebSocket API in direct (non-queue) mode: one service authenticates `$connect`, runs the agent inline, and pushes the reply back over the same connection
 - **`openai-websocket-scalable/`** - OpenAI agents on AWS ECS over a WebSocket API in queue mode: the REST/IO service enqueues chat frames and pushes responses, while a separately-scalable Agent Runner service processes them from SQS
-- **`openai-stream/`** - OpenAI agents on AWS ECS over a WebSocket API in direct (non-queue), STREAM execution mode: the reply is delivered token-by-token as `STREAM_CHUNK` messages instead of one final `CHAT_RESPONSE`
-- **`openai-stream-queue-mode/`** - OpenAI agents on AWS ECS over a WebSocket API in queue-based STREAM execution mode: the Agent Runner streams token-by-token chunks onto the Output Queue so it can scale independently of ingress
+- **`openai-stream/`** - OpenAI agents on AWS ECS over a WebSocket API in direct (non-queue) mode with `execution.mode: async` and `execution.message_type: delta`: the reply is delivered token-by-token as `STREAM_CHUNK` messages instead of one final `CHAT_RESPONSE`
+- **`openai-stream-queue-mode/`** - OpenAI agents on AWS ECS over a WebSocket API in queue mode with `execution.mode: async` and `execution.message_type: delta`: the Agent Runner streams token-by-token chunks onto the Output Queue so it can scale independently of ingress
 - **`openai-schedule/`** - Deferred and recurring chats on AWS ECS: EventBridge Scheduler owns the timers and delivers each occurrence into the Input Queue, with a DynamoDB schedule store and the `/api/v1/schedules` management routes on the REST service
 
 ### 📁 AWS Serverless Examples (`/examples/aws-serverless`)
@@ -114,9 +130,10 @@ AWS Lambda serverless deployment examples:
 - **`langgraph/`** - LangGraph agents running on AWS Lambda
 - **`openai/`** - OpenAI agents running on AWS Lambda, with the OpenAI key read from SSM Parameter Store (`ssm_enabled`, `secret.provider.type: aws_ssm`)
 - **`websocket-openai/`** - OpenAI agents with WebSocket API for real-time bidirectional communication
-- **`streaming-openai/`** - OpenAI agents with WebSocket event streaming (`execution.mode: stream`)
+- **`streaming-openai/`** - OpenAI agents with WebSocket event streaming (`execution.mode: async` with `execution.message_type: delta`)
 - **`schedule-openai/`** - Deferred and recurring chats on AWS Lambda: EventBridge Scheduler delivers each occurrence into the Input Queue for the agent-runner Lambda, backed by a DynamoDB schedule store
 - **`slack-openai/`** - Slack messaging integration on AWS Lambda: webhooks are served by the request-handler Lambda and replies are delivered by the response-handler Lambda
+- **`openai-langfuse-trace-evaluation/`** - Evaluation on production traffic: an OpenAI agent on AWS Lambda (queue mode) traced to Langfuse, whose traces are read back with `Trace.fetch_traces()`, graded by Opik LLM judges behind `/eval` and `/check` routes, and stored in DynamoDB
 
 ### 📁 Azure Containerized Examples (`/examples/azure-containerized`)
 
@@ -160,6 +177,7 @@ Agent Kernel supports multiple AI agent frameworks:
 | **LangGraph** | Graph-based agent framework | CLI, AWS Serverless, Azure Serverless |
 | **OpenAI Agent SDK** | OpenAI's official agent framework | CLI, Containerized, AWS Serverless, AWS Containerized, Azure Serverless, Azure Containerized, GCP Serverless, GCP Containerized, API |
 | **Pydantic AI** | Type-safe agent framework from the Pydantic team | CLI, API |
+| **Claude Agent SDK** | Anthropic's Claude Code agent harness | CLI, API |
 | **Microsoft Agent Framework** | Microsoft's unified agent framework, successor to AutoGen and Semantic Kernel | CLI, API |
 | **smolagents** | HuggingFace's code-first agent framework | CLI |
 

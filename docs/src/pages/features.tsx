@@ -42,6 +42,7 @@ import {
   FaMicrosoft,
 } from "react-icons/fa";
 import {
+  SiClaude,
   SiGmail,
   SiGooglegemini,
   SiLangchain,
@@ -793,7 +794,7 @@ function CoreFeatures() {
         "Agent, Runner, Session, Module, Runtime, and Tools, a unified API across all frameworks. Build once, run on any supported framework.",
       highlights: [
         "Unified Python API",
-        "Framework adapters for 7 SDKs",
+        "Framework adapters for 8 SDKs",
         "Portable tool functions via ToolBuilder",
         "Framework-agnostic hooks",
       ],
@@ -803,7 +804,7 @@ function CoreFeatures() {
       icon: <MdSwapHoriz />,
       title: "Framework-Neutral Runtime",
       description:
-        "OpenAI Agents, LangGraph, CrewAI, Google ADK, Smolagents, Pydantic AI, and Microsoft Agent Framework, run them all simultaneously in one runtime. Switch frameworks by changing 2 import lines.",
+        "OpenAI Agents, LangGraph, CrewAI, Google ADK, Smolagents, Pydantic AI, Microsoft Agent Framework, and the Claude Agent SDK, run them all simultaneously in one runtime. Switch frameworks by changing 2 import lines.",
       highlights: [
         "OpenAI Agents SDK",
         "LangGraph",
@@ -811,6 +812,7 @@ function CoreFeatures() {
         "Google ADK",
         "Smolagents",
         "Pydantic AI",
+        "Claude Agent SDK",
         "Microsoft Agent Framework",
       ],
       link: "/docs/frameworks/overview",
@@ -859,12 +861,12 @@ function CoreFeatures() {
       icon: <MdTerminal />,
       title: "Sandboxed Code Execution",
       description:
-        "Agents run code, shell commands, and file operations in isolated sandboxes. The Execution Broker routes every execution to a pluggable, policy-governed provider, in-process or over a queue to a separate worker fleet.",
+        "Agents run code, shell commands, file operations, and permitted package installs in isolated sandboxes. The Execution Broker routes every execution to a pluggable, policy-governed provider, in-process or over a queue to a separate worker fleet.",
       highlights: [
         "local_subprocess, docker, kubernetes, e2b, daytona, ec2_ssm",
         "Queue broker over SQS, Kafka, or NATS for long-running executions",
         "Session-persistent workspaces",
-        "Fail-closed network, filesystem, CPU, and memory policies",
+        "Fail-closed network, filesystem, CPU, and memory policies; per-profile language and package-install permissions; configurable language runtimes on Docker and Kubernetes",
         "Agent or end-user identity",
       ],
       link: "/docs/advanced/sandbox",
@@ -911,6 +913,7 @@ function CoreFeatures() {
         "AWS CloudWatch (X-Ray) integration",
         "Multi-level verbosity",
         "Cost and latency tracking",
+        "Fetch spans back for evaluation",
       ],
       link: "/docs/advanced/traceability",
     },
@@ -1268,6 +1271,15 @@ function FrameworkSupport() {
           height={50}
         />
       ),
+    },
+    {
+      key: "claude-agent-sdk",
+      name: "Claude Agent SDK",
+      description:
+        "Anthropic's Claude Code agent harness: built-in file, shell and web tools, subagents, hooks and permissions, on Claude models.",
+      // Drop /next after the Claude Agent SDK adapter is released.
+      link: "/docs/next/frameworks/claude-agent-sdk",
+      logo: <SiClaude className={styles.frameworkLogoImg} size={52} color="#D97757" aria-hidden="true" />,
     },
     {
       key: "maf",

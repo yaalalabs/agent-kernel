@@ -40,14 +40,29 @@ def issue_refund(order_id: str) -> str:
     ...
 ```
 
-Five frameworks can pause: **OpenAI Agents SDK**, **LangGraph**, **Pydantic AI**, **Google ADK** and
-**Microsoft Agent Framework**. CrewAI and smolagents cannot, and say so rather than pretending — their
-runners report `supports_pause = False`.
+```python
+from agentkernel.claude import ClaudeToolBuilder
+
+def issue_refund(order_id: str) -> str:                                # Claude Agent SDK: a plain function
+    ...
+
+tools = ClaudeToolBuilder.bind([issue_refund], needs_approval=True)
+```
+
+Six frameworks can pause: **OpenAI Agents SDK**, **LangGraph**, **Pydantic AI**, **Google ADK**,
+**Microsoft Agent Framework** and the **Claude Agent SDK**. CrewAI and smolagents cannot, and say so
+rather than pretending — their runners report `supports_pause = False`.
 
 Two of them need one more line of setup, because the pause is part of the agent's own declaration
 rather than something Agent Kernel can switch on: Pydantic AI needs `DeferredToolRequests` among its
 `output_type`s, and Google ADK enables resumability on every run as a consequence of wrapping your
 agent in an `App`. Both are covered on the framework pages linked below.
+
+**The Claude Agent SDK pauses only a single tool call.** It is built on the SDK's `defer` permission
+decision, which Anthropic's docs state is honored only when the model makes one tool call in that
+turn; several at once fall through to the ordinary permission flow instead of pausing. See the
+[framework page](../frameworks/claude-agent-sdk.md#human-in-the-loop) for how to make an un-deferrable
+call fail safely rather than execute silently.
 
 ## What a paused run looks like
 
@@ -182,13 +197,13 @@ Three limits worth knowing, none of them hidden:
 The frameworks genuinely differ, and Agent Kernel does not paper over it. A rejection is raised
 where it can still reach you, rather than being flattened into "something went wrong".
 
-| | OpenAI | LangGraph | Pydantic AI | Google ADK | Microsoft Agent Framework |
-|---|---|---|---|---|---|
-| A structured `payload` | **rejected** | yes | on an approval, an **object** only | on a confirmation, **rejected** | **rejected** |
-| A `prompt` beside a decision | **rejected** | yes | yes | **rejected** | **rejected** |
-| A second pause in one session | **appends** | replaces | replaces | replaces | replaces |
-| `cancelled` distinguishable from `denied` | yes | yes | yes | **no, on a confirmation** | **no** |
-| Detects a stale resume | **no** | n/a — re-pauses | yes, refuses | no | yes, refuses |
+| | OpenAI | LangGraph | Pydantic AI | Google ADK | Microsoft Agent Framework | Claude Agent SDK |
+|---|---|---|---|---|---|---|
+| A structured `payload` | **rejected** | yes | on an approval, an **object** only | on a confirmation, **rejected** | **rejected** | on an approval, an **object** only |
+| A `prompt` beside a decision | **rejected** | yes | yes | **rejected** | **rejected** | **rejected** |
+| A second pause in one session | **appends** | replaces | replaces | replaces | replaces | replaces |
+| `cancelled` distinguishable from `denied` | yes | yes | yes | **no, on a confirmation** | **no** | yes |
+| Detects a stale resume | **no** | n/a — re-pauses | yes, refuses | no | yes, refuses | yes, refuses |
 
 Replacement stops at the framework boundary. One session can be shared by agents on different
 frameworks — you send the session id and name the agent per request — so a LangGraph question never
@@ -224,6 +239,12 @@ change which agent handles the next turn in a multi-agent app; and ADK sessions 
 setting also gates agent-state event emission. ADK's own note applies too — a tool may run more than
 once when resuming.
 
+**The Claude Agent SDK replaces, and a pause always holds exactly one pending call** — `defer`
+resolves a single tool call at a time, so there is nothing to answer partially. Resuming replays the
+pending call through `resume=<session_id>`, which fires the same `PreToolUse` hook that deferred it;
+an `approved` decision's object payload becomes the tool's updated input, exactly like Pydantic AI's
+approval channel.
+
 **Microsoft Agent Framework can only approve or reject.** A MAF approval carries a verdict and nothing
 else, so a payload is refused, and both `denied` and `cancelled` reach the model as MAF's own "rejected by
 user" — the human's `message` has no channel there. A prompt beside the decisions is refused too: MAF would
@@ -232,7 +253,7 @@ is outstanding is refused, naming the run to resume, because MAF would otherwise
 
 ## Streaming
 
-With `execution.mode: stream` a pause arrives as a `run_paused` event and the stream ends
+With `execution.message_type: delta` a pause arrives as a `run_paused` event and the stream ends
 **normally** — never through `StreamChunk.error`. Any open boundary (a tool call, a message) is
 closed first, so a frontend does not render the gated call as work still in progress forever.
 

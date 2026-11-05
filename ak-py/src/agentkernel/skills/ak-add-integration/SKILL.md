@@ -67,9 +67,9 @@ handler = Lambda.handler
 - WhatsApp, Messenger and Instagram also register the handshake:
   `Lambda.register("/<platform>/webhook", method="GET")(host.challenge)`.
 
-- It needs `queue_mode = true`, `execution_mode = "rest_sync"` or `"rest_async"`,
-  `execution.queues.type: sqs` in `config.yaml`, and a response store
-  (`create_dynamodb_response_store = true`).
+- It needs `queue_mode = true`, `execution_mode = "rest_sync"` or `"rest_async"` with `message_type`
+  unset or `"complete"` (`LambdaWebhookHost` refuses `delta`), `execution.queues.type: sqs` in
+  `config.yaml`, and a response store (`create_dynamodb_response_store = true`).
 - Declare the webhook route in Terraform: `gateway_endpoints = [{ path = "/slack/events", method = "POST" }]`
   (WhatsApp, Messenger and Instagram also need `GET` on their path for the handshake).
 - Put the platform credentials in both `request_handler.environment_variables` and

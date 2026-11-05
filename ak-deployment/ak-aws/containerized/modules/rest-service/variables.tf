@@ -192,17 +192,23 @@ variable "queue_config" {
   })
 }
 
-# WebSocket mode (async / stream)
+# WebSocket mode (async)
 
 variable "execution_mode" {
   type        = string
-  description = "Execution mode (rest_sync, rest_async, async, stream)"
+  description = "Execution mode (rest_sync, rest_async, async, realtime)"
   default     = "rest_sync"
+}
+
+variable "message_type" {
+  type        = string
+  description = "Reply message type ('complete' or 'delta'); injected as AK_EXECUTION__MESSAGE_TYPE when non-null"
+  default     = null
 }
 
 variable "websocket_mode" {
   type        = bool
-  description = "Whether a WebSocket execution mode (async/stream) is enabled"
+  description = "Whether the WebSocket execution mode (async) is enabled"
   default     = false
 }
 

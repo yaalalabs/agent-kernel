@@ -42,7 +42,7 @@ On startup you'll see the pipeline boot:
 
 ```
 ak.api.http - INFO - in_memory queue transport resolved: starting the single-process pipeline topology
-ak.pipeline.io_handler - INFO - IOHandler starting: mode=rest_sync, transport=in_memory, topology=single-process
+ak.pipeline.io_handler - INFO - IOHandler starting: mode=rest_sync, message_type=complete, transport=in_memory, topology=single-process, websocket=off
 ```
 
 ## 1. Synchronous REST (`mode: rest_sync`, the default)
@@ -77,12 +77,12 @@ curl -s "http://localhost:8000/api/v1/chat?request_id=<id>&session_id=s2"
 # {"result": "4", "session_id": "s2"}     (a second poll returns 404: replies are read once)
 ```
 
-## 3. Token streaming over SSE (`mode: stream`)
+## 3. Token streaming over SSE (`rest_sync` + `delta`)
 
 Each token is fanned out as its own output-queue message and bridged to the open SSE response.
 
 ```bash
-AK_EXECUTION__MODE=stream uv run app.py
+AK_EXECUTION__MODE=rest_sync AK_EXECUTION__MESSAGE_TYPE=delta uv run app.py
 ```
 
 ```bash

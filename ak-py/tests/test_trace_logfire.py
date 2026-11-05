@@ -28,7 +28,9 @@ def fake_logfire(monkeypatch):
 
     fake = types.ModuleType("logfire")
     fake.configure = MagicMock()
+    fake.ScrubbingOptions = MagicMock(side_effect=lambda **kwargs: kwargs)
     fake.instrument_openai_agents = MagicMock()
+    fake.instrument_claude_agent_sdk = MagicMock()
     fake.span = MagicMock(return_value=span)
     fake.span_cm = span  # expose for assertions
 
@@ -54,6 +56,38 @@ def test_factory_builds_logfire(fake_logfire):
 
     assert isinstance(trace._instance, Logfire)
     fake_logfire.configure.assert_called_once()
+
+
+def test_init_keeps_session_id_from_scrubbing(fake_logfire):
+    from agentkernel.trace.logfire.logfire import Logfire
+
+    Logfire().init()
+
+    callback = fake_logfire.configure.call_args.kwargs["scrubbing"]["callback"]
+    assert callback(types.SimpleNamespace(path=("attributes", "session_id"), value="s-1")) == "s-1"
+    assert callback(types.SimpleNamespace(path=("attributes", "session_token"), value="x")) is None
+
+
+def test_fetch_resolves_the_read_token_through_the_secret_manager(fake_logfire, monkeypatch):
+    from agentkernel.core.util.factory import AKConfigError
+    from agentkernel.secret import SecretManager
+    from agentkernel.trace import TraceQuery
+    from agentkernel.trace.logfire.fetch import LogfireTraceFetcher
+    from agentkernel.trace.logfire.logfire import Logfire
+
+    monkeypatch.delenv("LOGFIRE_READ_TOKEN", raising=False)
+    secrets = MagicMock()
+    secrets.get.side_effect = lambda key, default=None: "from-store" if key == "LOGFIRE_READ_TOKEN" else default
+    with (
+        patch.object(SecretManager, "current", return_value=secrets),
+        patch.object(LogfireTraceFetcher, "fetch_spans", autospec=True, return_value=[]) as fetch,
+    ):
+        Logfire().fetch_spans(TraceQuery())
+        assert fetch.call_args.args[0]._read_token == "from-store"
+
+        secrets.get.side_effect = lambda key, default=None: default
+        with pytest.raises(AKConfigError, match="LOGFIRE_READ_TOKEN"):
+            Logfire().fetch_spans(TraceQuery())
 
 
 def test_init_configures_once(fake_logfire):
@@ -141,3 +175,11 @@ def test_all_runners_subclass_their_framework_base(fake_logfire):
 
     # openai activates instrumentation via the (mocked) logfire module, no extra patching needed
     assert isinstance(LogfireOpenAIRunner(), OpenAIRunner)
+
+
+def test_claude_runner_activates_logfire_instrumentation(fake_logfire):
+    from agentkernel.framework.claude.claude import ClaudeRunner
+    from agentkernel.trace.logfire.claude import LogfireClaudeRunner
+
+    assert isinstance(LogfireClaudeRunner(), ClaudeRunner)
+    fake_logfire.instrument_claude_agent_sdk.assert_called_once()

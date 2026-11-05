@@ -36,7 +36,7 @@ locals {
   request_handler_lambda_invoke_arn    = local.request_handler_enabled ? module.request_handler[0].lambda_function_invoke_arn : null
   request_handler_lambda_role_arn      = local.request_handler_enabled ? module.request_handler[0].lambda_role_arn : null
 
-  is_websocket_mode     = contains(["async", "stream"], var.execution_mode) # True for both "async" (full-response WS) and "stream" (chunk-per-message WS)
+  is_websocket_mode     = var.execution_mode == "async" # message_type picks full-response (complete) or chunk-per-message (delta) WS
   websocket_api_enabled = var.enable_api_gateway && local.is_websocket_mode
   rest_api_enabled      = var.enable_api_gateway && !local.is_websocket_mode
 
@@ -631,6 +631,7 @@ module "request_handler" {
   environment_variables = merge(
     try(var.request_handler.environment_variables, {}),
     var.execution_mode != null ? { AK_EXECUTION__MODE = var.execution_mode } : {},
+    var.message_type != null ? { AK_EXECUTION__MESSAGE_TYPE = var.message_type } : {},
     local.websocket_api_enabled ? { AK_WEBSOCKET_API__CHAT_ROUTE = var.ws_chat_route } : {}
   )
 
@@ -646,7 +647,11 @@ module "agent_runner" {
   module_type = var.module_type
 
   agent_runner = merge(var.agent_runner, {
-    environment_variables = merge(var.agent_runner.environment_variables, var.execution_mode != null ? { AK_EXECUTION__MODE = var.execution_mode } : {})
+    environment_variables = merge(
+      var.agent_runner.environment_variables,
+      var.execution_mode != null ? { AK_EXECUTION__MODE = var.execution_mode } : {},
+      var.message_type != null ? { AK_EXECUTION__MESSAGE_TYPE = var.message_type } : {}
+    )
   })
 
   source_bucket     = local.shared_source_bucket
@@ -735,7 +740,11 @@ module "response_handler" {
     try(var.response_handler.ecr_image_uri, null) != null ? var.response_handler.ecr_image_uri : module.response_handler_docker_image[0].docker_image_uri
   ) : null
   response_handler = merge(var.response_handler, {
-    environment_variables = merge(var.response_handler.environment_variables, var.execution_mode != null ? { AK_EXECUTION__MODE = var.execution_mode } : {})
+    environment_variables = merge(
+      var.response_handler.environment_variables,
+      var.execution_mode != null ? { AK_EXECUTION__MODE = var.execution_mode } : {},
+      var.message_type != null ? { AK_EXECUTION__MESSAGE_TYPE = var.message_type } : {}
+    )
   })
 
   queue_config = {

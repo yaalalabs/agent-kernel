@@ -98,7 +98,7 @@ That's it. Same code deploys to AWS Lambda, ECS, Azure Functions, or Container A
 ### 🧩 Works with the Frameworks You Already Use
 
 <p align="center">
-  <b>OpenAI Agents SDK</b> &nbsp;•&nbsp; <b>LangGraph</b> &nbsp;•&nbsp; <b>CrewAI</b> &nbsp;•&nbsp; <b>Google ADK</b> &nbsp;•&nbsp; <b>Smolagents</b> &nbsp;•&nbsp; <b>Pydantic AI</b> &nbsp;•&nbsp; <b>Microsoft Agent Framework</b>
+  <b>OpenAI Agents SDK</b> &nbsp;•&nbsp; <b>LangGraph</b> &nbsp;•&nbsp; <b>CrewAI</b> &nbsp;•&nbsp; <b>Google ADK</b> &nbsp;•&nbsp; <b>Smolagents</b> &nbsp;•&nbsp; <b>Pydantic AI</b> &nbsp;•&nbsp; <b>Microsoft Agent Framework</b> &nbsp;•&nbsp; <b>Claude Agent SDK</b>
 </p>
 
 No rewrites. No re-learning. Bring your agents — Agent Kernel handles the platform layer.
@@ -121,7 +121,7 @@ Let agents run code and shell commands in an isolated, permission-bounded enviro
 
 - **Enable it in config** — agents automatically gain code/command/file tools and the usage guidance is injected into their prompt.
 - **Pluggable providers** — `local_subprocess` (dev), `docker` (container-isolated), `kubernetes` (pod per sandbox, RBAC as the boundary), `e2b` (managed micro-VMs), `daytona` (cloud containers), and `ec2_ssm` (attach to an existing EC2 instance); bring your own via a dotted path.
-- **Workload profiles** — per-call, per-session, or shared lifetimes; each with its own permission policy (network egress, filesystem, CPU/memory, timeout) enforced fail-closed.
+- **Workload profiles** — per-call, per-session, or shared lifetimes; each with its own permission policy (network egress, filesystem, CPU/memory, timeout, `run_code` languages, package installs) enforced fail-closed.
 - **Per-user identity** — run sandboxed code under the invoking user's identity, not one shared agent identity, via a pluggable principal resolver.
 
 [Learn more →](https://kernel.yaala.ai/docs/advanced/sandbox)

@@ -24,7 +24,7 @@ from ...api.handler import AgentRESTRequestHandler, AuthorisedRESTRequestHandler
 from ...auth.authoriser import Authoriser
 from ...core import Config
 from ...core.chat_service import ChatService, RequestBuilder, ResponseBuilder
-from ...core.model import BaseChatRequest, BaseRunRequest, ExecutionMode, StreamChunk
+from ...core.model import BaseChatRequest, BaseRunRequest, StreamChunk
 from ...core.service import AgentService
 from ...pipeline.envelope import ATTR_THREAD
 from ...pipeline.producer import RequestProducer
@@ -43,7 +43,7 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
 
     Endpoints:
     - GET /api/v1/agents: List available agents
-    - POST /api/v1/chat: Run an agent with thread recording (SSE when execution.mode=stream)
+    - POST /api/v1/chat: Run an agent with thread recording (SSE when execution.message_type is delta)
     - POST /api/v1/chat-multipart: Same as /api/v1/chat with multipart file/image uploads
     - GET /api/v1/threads: List threads (see ThreadRESTRequestHandler)
     - GET /api/v1/threads/{session_id}: Get a thread with message history
@@ -75,7 +75,7 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
         return router
 
     async def run(self, body: BaseRunRequest):
-        if Config.get().execution.mode == ExecutionMode.STREAM:
+        if Config.get().execution.is_sse:
             try:
                 gen = await self._stream_with_recording(body)
                 return StreamingResponse(gen, media_type="text/event-stream")
@@ -106,7 +106,7 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
             files=files,
             images=images,
         )
-        if Config.get().execution.mode == ExecutionMode.STREAM:
+        if Config.get().execution.is_sse:
             try:
                 gen = await self._stream_with_recording(req)
                 return StreamingResponse(gen, media_type="text/event-stream")

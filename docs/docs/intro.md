@@ -8,6 +8,10 @@ slug: /
 **The Operating System for Scalable & Compliant Enterprise AI Agents.**
 
 :::tip What's New
+🧠 **Claude Agent SDK** - Run agents built on Anthropic's Claude Code harness (built-in file, shell and web tools, subagents, hooks) in Agent Kernel, with conversations that continue on any replica. [Learn more →](./frameworks/claude-agent-sdk.md)
+
+🔎 **Fetch spans back for evaluation** - Read agent, LLM and tool spans back from Langfuse, Logfire, OpenLLMetry or CloudWatch with one provider-neutral `Trace.fetch_spans()` or `Trace.fetch_traces()` filter, including each model call's tokens and cost, to grade production traffic. [Learn more →](./advanced/traceability.md#fetching-spans-back)
+
 🎨 **A2UI** - Turn two config keys on and an agent's JSON reply reaches the client as an [A2UI](https://a2ui.org/) document: `result` carries the object and `media_type` names the format, over REST, MCP and AG-UI alike. [Learn more →](./advanced/a2ui.md)
 
 🔀 **Realtime multi-agent handoffs** - A voice call moves between agents with the OpenAI Agents SDK's handoffs or Google ADK's transfers, and in LiveKit every agent appears as its own participant, with only the active one unmuted. [Learn more →](./integrations/livekit.md#multi-agent-handoffs)
@@ -24,13 +28,13 @@ slug: /
 
 ⏰ **Scheduling** - Defer chat execution to a later moment or a recurring cadence (`at`/`cron`), with a management REST API and agent-facing scheduling tools. [Learn more →](./advanced/scheduling.md)
 
-📦 **Sandbox** - Let agents execute code and shell commands in an isolated, permission-bounded environment, with pluggable providers, workload profiles, and per-user identity. [Learn more →](/docs/advanced/sandbox)
+📦 **Sandbox** - Let agents execute code and shell commands in an isolated, permission-bounded environment, with pluggable providers, workload profiles, per-user identity, and per-profile language and package-install permissions. [Learn more →](/docs/advanced/sandbox)
 
 :::
 
 ## What is Agent Kernel?
 
-Agent Kernel is an **open-source runtime** that lets you build, test and deploy AI agents to production in days instead of months. It works with any major AI framework (OpenAI Agents SDK, LangGraph, CrewAI, Google ADK, Smolagents) and can run agents from multiple frameworks together in a single runtime. It deploys to AWS, Azure, GCP, or your own servers with zero platform code, and scales from a single REST container to queue-backed, token-streaming production topologies. Built-in integrations for Slack, WhatsApp and more mean your agents can reach users instantly.
+Agent Kernel is an **open-source runtime** that lets you build, test and deploy AI agents to production in days instead of months. It works with any major AI framework (OpenAI Agents SDK, LangGraph, CrewAI, Google ADK, Smolagents, Pydantic AI, Claude Agent SDK) and can run agents from multiple frameworks together in a single runtime. It deploys to AWS, Azure, GCP, or your own servers with zero platform code, and scales from a single REST container to queue-backed, token-streaming production topologies. Built-in integrations for Slack, WhatsApp and more mean your agents can reach users instantly.
 
 **Think of it like Express.js for web servers, or Spring Boot for Java microservices**, but for AI agents. It gives you the scaffolding, execution environment, session management and deployment infrastructure so you can focus on writing the logic that matters.
 
@@ -55,6 +59,8 @@ flowchart LR
     E["LangGraph"] --> B
     F["Google ADK"] --> B
     SA["Smolagents"] --> B
+    PA["Pydantic AI"] --> B
+    CA["Claude Agent SDK"] --> B
     LK["LiveKit"] -->|Voice integration| B
     G["Test Framework"]
     B --> G
@@ -93,7 +99,7 @@ Agent Kernel provides pre-built execution capabilities:
   - GCP Cloud Run (always-on)
 - **Scalable Queue Mode (AWS)**: SQS-backed decoupling of request handling and agent execution, with retries, DLQs, and backlog-based auto-scaling on Lambda and ECS
 - **Event Streaming**: SSE streaming on the REST API, and WebSocket streaming on AWS serverless. Each frame carries one typed stream event — a text delta, the agent's reasoning, a tool call, or a message boundary
-- **WebSocket Delivery (AWS)**: real-time push of full responses (`async` mode) or per-event chunks (`stream` mode)
+- **WebSocket Delivery (AWS)**: real-time push (`async` mode) of full responses (`message_type: complete`) or per-event chunks (`message_type: delta`)
 - **MCP Server** for Model Context Protocol tool publishing
 - **A2A Server** for Agent-to-Agent communication
 - **AG-UI Server** for streaming any agent (text, tool calls, reasoning, shared state) to an AG-UI-compliant frontend
@@ -132,7 +138,7 @@ Easily extend Agent Kernel with custom framework adapters, memory back-ends, and
   - **Volatile Cache**: Request-scoped temporary storage for RAG context, file content, and intermediate data
   - **Non-Volatile Cache**: Session-persistent storage for user preferences, metadata, and configurations
   
-  [Learn more about session management →](/docs/core-concepts/session) | [Advanced memory features →](/docs/architecture/memory-management)
+  [Learn more about session management →](/docs/core-concepts/session) | [Choose a memory backend →](./core-concepts/memory-backends.md) | [Advanced memory features →](/docs/architecture/memory-management)
 - **Execution Hooks**: Powerful pre and post-execution hooks for ultimate control
   - **Pre-execution hooks**: Guardrails, RAG context injection, input validation, authentication
   - **Post-execution hooks**: Response moderation, disclaimers, output filtering, analytics
@@ -150,10 +156,10 @@ Easily extend Agent Kernel with custom framework adapters, memory back-ends, and
   - AWS CloudWatch
 - **Multi-Agent Collaboration**: Leverage multi-agent hierarchies of supported agentic frameworks
 - **Multimodal Attachments**: Image and file support with pluggable attachment storage and on-demand vision analysis
-- **Sandbox**: Execute agent-generated code and shell commands in an isolated, permission-bounded environment, with pluggable providers (`local_subprocess`, `docker`, `e2b`, `daytona`, `ec2_ssm`), workload profiles, policy enforcement, and per-user identity. [Learn more →](/docs/advanced/sandbox)
+- **Sandbox**: Execute agent-generated code and shell commands in an isolated, permission-bounded environment, with pluggable providers (`local_subprocess`, `docker`, `kubernetes`, `e2b`, `daytona`, `ec2_ssm`), workload profiles, policy enforcement, per-profile language and package-install permissions, and per-user identity. [Learn more →](/docs/advanced/sandbox)
 - **Conversation Threads**: Persistent, named threads with auto-naming and REST read APIs
 - **Secret Resolution**: Resolve API keys and passwords through `SecretManager` — environment first, then a managed store (`env`, AWS SSM Parameter Store, Kubernetes Secrets mounted into the pod, or your own provider) — with only `config.yaml` changing between laptop and production. [Learn more →](./advanced/secrets.md)
-- **Structured Output**: Typed/JSON agent replies (`AgentReplyAny`) across OpenAI, LangGraph, ADK, CrewAI, Smolagents, Pydantic AI, and Microsoft Agent Framework
+- **Structured Output**: Typed/JSON agent replies (`AgentReplyAny`) across OpenAI, LangGraph, ADK, CrewAI, Smolagents, Pydantic AI, Microsoft Agent Framework, and the Claude Agent SDK
 - **Agent Testing Capability**: Built in Agent test framework so that you can write automated tests easily
 - **Governance**: Input/output guardrails with OpenAI Guardrails, AWS Bedrock Guardrails, and Walled AI (including PII redaction)
 
@@ -216,6 +222,8 @@ Agent Kernel currently supports:
 - **LangGraph** - Graph-based agent orchestration
 - **Google ADK** - Google's Agent Development Kit
 - **Smolagents** - Hugging Face's lightweight agentic framework
+- **Pydantic AI** - Pydantic-team framework with native multi-provider models
+- **Claude Agent SDK** - Anthropic's Claude Code agent harness
 - **Microsoft Agent Framework** - Microsoft's unified successor to AutoGen and Semantic Kernel (MAF)
 
 ### Flexible Deployment
@@ -279,7 +287,7 @@ You can:
 - Test locally with the CLI
 - Deploy to **AWS Lambda**, **Azure Functions**, or **GCP Cloud Run** with one line-change (multi-cloud!)
 - Deploy to **AWS ECS/Fargate**, **Azure Container Apps**, or **GCP Cloud Run (always-on)** for containerized workloads
-- Expose as a REST API, with SSE event streaming via `execution.mode: stream`
+- Expose as a REST API, with SSE event streaming via `execution.message_type: delta`
 - Scale out with SQS-backed queue mode and WebSocket delivery on AWS
 - Integrate with MCP, A2A, or AG-UI protocols
 

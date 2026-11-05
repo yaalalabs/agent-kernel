@@ -156,7 +156,7 @@ Branch from and target `develop`, not `main` — CI (`.github/workflows/code-qua
 
 ### Review Workflow
 
-- **Copilot review is automatic for collaborators**: `.github/workflows/copilot-review-request.yaml` requests a Copilot code review when a collaborator's PR is opened, reopened, or marked ready for review (bot-authored PRs excluded). Collaborators never need to request it by hand. PRs from outside contributors are not requested automatically; a maintainer runs the workflow from the Actions tab with the PR number after a first read.
+- **Copilot review is on request**: a maintainer adds the `Request Copilot` label to a PR and `.github/workflows/copilot-review-request.yaml` requests a Copilot code review. Nothing is requested automatically, since each review is billed to the `COPILOT_REVIEW_PAT` owner's license. Remove and re-add the label to request another review after new commits. Contributors cannot apply labels; ask a maintainer for one.
 - **`Reviewed` label**: maintainers add `Reviewed` once they have gone through a PR. `.github/workflows/reviewed-label-reset.yaml` removes it on every new push so the PR reappears in `is:pr is:open -label:Reviewed`. Contributors should not touch the label.
 
 ### PR Types

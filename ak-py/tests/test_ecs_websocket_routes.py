@@ -6,6 +6,7 @@ import pytest
 
 from agentkernel.api.http import RESTAPI
 from agentkernel.auth.handler import AuthValidator, ValidationResult
+from agentkernel.core.config import _ExecutionConfig
 from agentkernel.core.model import BaseRequest, ExecutionMode
 from agentkernel.deployment.aws.containerized.core.api.websocket_api import (
     AWSWebsocketAPI,
@@ -15,14 +16,14 @@ from agentkernel.deployment.aws.containerized.core.api.websocket_api import (
 from agentkernel.deployment.aws.core.websocket_service import AWSWebSocketHandler
 
 
-def _fake_config(mode=ExecutionMode.REST_SYNC):
+def _fake_config(mode=ExecutionMode.REST_SYNC, message_type=None):
     """Minimal AKConfig stand-in exposing only what the WS handlers/register read."""
     return SimpleNamespace(
         websocket_api=SimpleNamespace(
             endpoint_url="https://abc.execute-api.us-east-1.amazonaws.com/prod",
             connection_table=SimpleNamespace(table_name="ak-connections", ttl=3600),
         ),
-        execution=SimpleNamespace(mode=mode, queues=SimpleNamespace(input=SimpleNamespace(url=None))),
+        execution=_ExecutionConfig(mode=mode, message_type=message_type),
     )
 
 
@@ -339,7 +340,7 @@ def test_run_builds_default_handlers(monkeypatch):
 
 
 # --------------------------------------------------------------------------------------------------
-# STREAM mode: direct (non-queue) chat path
+# async + delta: direct (non-queue) chat path
 # --------------------------------------------------------------------------------------------------
 
 
@@ -413,8 +414,8 @@ async def test_process_chat_direct_stream_broadcasts_error_chunk_on_exception():
 
 
 @pytest.mark.asyncio
-async def test_handle_chat_stream_mode_routes_to_direct_stream(monkeypatch):
-    monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _fake_config(mode=ExecutionMode.STREAM)))
+async def test_handle_chat_async_delta_routes_to_direct_stream(monkeypatch):
+    monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _fake_config(mode=ExecutionMode.ASYNC, message_type="delta")))
     handler = _make_handler()
     ws_mock = MagicMock()
     handler.get_websocket_handler = lambda: ws_mock
@@ -443,11 +444,11 @@ async def test_handle_chat_stream_mode_routes_to_direct_stream(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_handle_chat_queue_mode_unaffected_by_stream_setting(monkeypatch):
-    """Regression: queue mode must still enqueue, even when execution.mode is STREAM."""
+async def test_handle_chat_queue_mode_unaffected_by_delta_setting(monkeypatch):
+    """Regression: queue mode must still enqueue, even when execution.message_type is delta."""
 
     def _fake_config_queue_stream():
-        cfg = _fake_config(mode=ExecutionMode.STREAM)
+        cfg = _fake_config(mode=ExecutionMode.ASYNC, message_type="delta")
         cfg.execution.queues.input.url = "https://sqs.test/input"
         return cfg
 

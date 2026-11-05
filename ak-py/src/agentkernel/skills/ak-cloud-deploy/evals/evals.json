@@ -66,10 +66,11 @@
     },
     {
       "id": "deploy-aws-serverless-websocket-stream",
-      "name": "Deploy to AWS Lambda stream websocket mode",
+      "name": "Deploy to AWS Lambda websocket mode with delta messages",
       "input": "Deploy to AWS Lambda with WebSocket token streaming",
       "expected_outputs": [
-        "execution_mode = \"stream\"",
+        "execution_mode = \"async\"",
+        "message_type",
         "ws_connection_handler",
         "ws_routes",
         "queue_mode = true",
@@ -78,7 +79,8 @@
       ],
       "must_not_contain": [
         "create_redis_response_store = true",
-        "create_dynamodb_response_store = true"
+        "create_dynamodb_response_store = true",
+        "execution_mode = \"stream\""
       ]
     },
     {

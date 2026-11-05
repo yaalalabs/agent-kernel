@@ -1,7 +1,8 @@
 name: Chart Test
 
 # The #495 chart gates: ct lint plus a kind install smoke per flavor values file, each driving
-# one real chat request through the NATS transport (spec Testing). The dev flavor runs
+# one real chat request, one A2A message and one MCP tool call through the NATS transport
+# (spec Testing; #780 for A2A and MCP). The dev flavor runs
 # auto-provisioned JetStream; baremetal and EKS run their production posture on kind: Gateway
 # API objects against installed CRDs (unreconciled without a controller, so entry is a
 # port-forward) and JetStream objects reconciled from the chart's NACK CRs by a real NACK
@@ -13,6 +14,7 @@ on:
       - 'ak-deployment/ak-k8s/**'
       - 'examples/k8s/**'
       - 'ak-py/src/agentkernel/pipeline/**'
+      - 'ak-py/src/agentkernel/api/**'
       - '.github/workflows/chart-test.yaml'
   push:
     branches:
@@ -21,6 +23,7 @@ on:
       - 'ak-deployment/ak-k8s/**'
       - 'examples/k8s/**'
       - 'ak-py/src/agentkernel/pipeline/**'
+      - 'ak-py/src/agentkernel/api/**'
       - '.github/workflows/chart-test.yaml'
   workflow_dispatch:
 
@@ -74,9 +77,10 @@ jobs:
             fi
           done
           echo "--- websocket mode"
-          helm template smoke "$CHART_DIR" -f "$CHART_DIR/values-baremetal.yaml" \
-            --set execution.mode=stream --set wsGateway.enabled=true \
-            --set wsGateway.auth.token=render --set keda.enabled=true > /dev/null
+          out=$(helm template smoke "$CHART_DIR" -f "$CHART_DIR/values-baremetal.yaml" \
+            --set execution.mode=async --set execution.messageType=delta --set wsGateway.enabled=true \
+            --set wsGateway.auth.token=render --set keda.enabled=true)
+          grep -q 'AK_EXECUTION__MESSAGE_TYPE: "delta"' <<<"$out"
           echo "--- kafka mode"
           helm template smoke "$CHART_DIR" \
             --set transport.type=kafka --set kafka.enabled=true --set nats.enabled=false \
@@ -113,7 +117,7 @@ jobs:
           grep -q 'mountPath: /var/run/secrets/agentkernel/slack-credentials' <<<"$io"
           echo "--- secretStore: websocket tier never mounts"
           ws=$(helm template smoke "$CHART_DIR" -f "$CHART_DIR/values-baremetal.yaml" "${STORE[@]}" \
-            --set execution.mode=stream --set wsGateway.enabled=true --set wsGateway.auth.token=render \
+            --set execution.mode=async --set wsGateway.enabled=true --set wsGateway.auth.token=render \
             --show-only templates/deployment-ws-gateway.yaml)
           if grep -q '/var/run/secrets/agentkernel' <<<"$ws"; then echo "ws-gateway must not mount"; exit 1; fi
           echo "--- secretStore: expected failures"
@@ -228,6 +232,15 @@ jobs:
             echo "Chat request failed: $RESPONSE"
             exit 1
           fi
+
+      - name: A2A and MCP requests through NATS
+        working-directory: examples/k8s/openai-queue-mode
+        run: |
+          kubectl port-forward service/ak-agent-kernel-io 18000:80 &
+          trap "kill %1" EXIT
+          sleep 3
+          # --no-sync keeps the local wheel that "Build example images" installed in this venv.
+          uv run --no-sync python protocol_client.py http://localhost:18000
 
       - name: Diagnostics on failure
         if: failure()

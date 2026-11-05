@@ -2,15 +2,17 @@
 
 Deploys OpenAI Agents SDK based agents as the Agent Kernel two-process pipeline on a
 Kubernetes micro-cluster, using [the Helm chart](../../../ak-deployment/ak-k8s/): an
-`io-handler` Deployment (REST API + Response Handler) and an `agent-runner` Deployment (the
+`io-handler` Deployment (REST, A2A and MCP + Response Handler) and an `agent-runner` Deployment (the
 consumers executing the agents), talking through in-cluster NATS JetStream with Valkey for
 sessions and responses. A Kafka variant is one values switch away.
 
 ```
-app_io_handler.py       IOHandler.run()                     the io image's entry point
-app_agent_runner.py     agents + AgentRunner.run()          the runner image's entry point
-app_ws_gateway.py       WebSocketGateway.run(validator)     the gateway image's entry point
+app_agents.py           the agents, shared by the io and runner images
+app_io_handler.py       OpenAIModule(agents) + IOHandler.run()    the io image's entry point
+app_agent_runner.py     OpenAIModule(agents) + AgentRunner.run()  the runner image's entry point
+app_ws_gateway.py       WebSocketGateway.run(validator)           the gateway image's entry point
 ws_client.py            demo client for the WebSocket walkthrough (runs on your machine)
+protocol_client.py      demo A2A + MCP client (runs on your machine, and in CI's kind smoke)
 config.nats.yaml        baked in as config.yaml by package.sh (default)
 config.kafka.yaml       the Kafka variant
 deploy/Dockerfile.*     one image per component, python:3.12-slim + staged dependencies
@@ -146,6 +148,33 @@ The chart install is identical to the baremetal instructions in
 [ak-deployment/ak-k8s/README.md](../../../ak-deployment/ak-k8s/README.md); the dev-flavor
 walkthrough above also works on k3s unchanged (k3s ships a local-path StorageClass).
 
+## A2A and MCP
+
+The io handler also serves A2A (`/a2a/triage`) and MCP (`/mcp/`), both turned on by the `a2a`
+and `mcp` blocks in the baked-in config. They go through the queue exactly like a REST chat
+request: the io handler enqueues, the agent runner executes, and the reply waits in Valkey until
+the waiting caller reads it. Two consequences:
+
+- Both entry points register the same agents, defined once in `app_agents.py`. The runner
+  executes them; the io handler builds the A2A cards and the MCP agent tools from them.
+  An io handler without them logs a warning at startup and serves an empty A2A catalog and no
+  MCP agent tools.
+- A reply is picked up by polling the response store, so it takes at least about one
+  `execution.response_store.delay` (1 s here), however fast the agent is.
+
+`mcp.stateless_http` is on because outside the dev flavor the chart runs two io-handler
+replicas, and a stateful MCP session would be pinned to one of them. A2A answers `message:send`
+only: the cards declare `streaming: false`, so `message:stream` is refused.
+
+With the port-forward from the walkthrough running:
+
+```bash
+uv run python protocol_client.py http://localhost:8000
+```
+
+It prints both replies and exits non-zero when either is empty or an error. CI's kind smoke runs
+it right after the chat request.
+
 ## Secrets
 
 The agent runner reads `OPENAI_API_KEY` through Agent Kernel's secret resolution
@@ -196,7 +225,7 @@ deploy/deploy.sh \
 The chat request is byte-for-byte the same as under NATS: the transport is infrastructure,
 not API.
 
-## WebSocket streaming (async / stream modes)
+## WebSocket streaming (async mode)
 
 The REST modes above need no gateway tier. For token streaming, the third image
 (`ak-example-ws-gateway`, from `app_ws_gateway.py`) runs the WebSocket gateway: it
@@ -205,14 +234,16 @@ verification off, demo only), enqueues chat frames straight to the transport, an
 each reply chunk from the Response Handler on its authenticated `/internal/push` endpoint.
 The connection table rides the session store, which values-dev already puts on Valkey.
 
-Switch the running release to stream mode with the gateway enabled (config unchanged: the
-mode override is one env var away):
+Switch the running release to `async` + `delta` with the gateway enabled (config unchanged:
+each override is one env var away). `execution.messageType` only reaches the pods from a chart
+that renders it: until a release publishes one, run `deploy/deploy.sh local` with the same flags,
+or the published chart silently drops the override and replies arrive whole:
 
 ```bash
 k3d image import -c ak ak-example-ws-gateway:dev    # kind: kind load docker-image ...
 
 deploy/deploy.sh \
-  --set execution.mode=stream \
+  --set execution.mode=async --set execution.messageType=delta \
   --set wsGateway.enabled=true --set wsGateway.replicaCount=1 \
   --set wsGateway.image.repository=ak-example-ws-gateway \
   --set wsGateway.auth.token="$(openssl rand -hex 16)"

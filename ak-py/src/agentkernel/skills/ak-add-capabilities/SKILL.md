@@ -268,6 +268,33 @@ export AWS_REGION="us-east-1"
 
 5. No code changes needed — tracing is automatically applied to all agent executions.
 
+**Fetching spans back (any of the four backends):** to read recorded spans into Python (e.g. to evaluate
+recent runs), call `Trace.get().fetch_spans(...)` with provider-neutral filters; results are `FetchedSpan`s, oldest first (each has a `status` of `UNSET`, `OK` or `ERROR`):
+
+```python
+from datetime import timedelta
+
+from agentkernel.trace import SpanKind, Trace
+
+tool_calls = Trace.get().fetch_spans(last=timedelta(hours=6), kinds=[SpanKind.TOOL])
+spans = Trace.get().fetch_spans(session_id="session-123", limit=500)
+tokens = sum(span.usage.total_tokens or 0 for span in spans if span.usage)  # span.usage: tokens and cost per model call
+
+# Whole traces (spans grouped by trace, with the root, input/output and summed usage); skip a trace whose root is missing
+for trace in Trace.get().fetch_traces(session_id="session-123"):
+    if trace.root is not None:
+        print(trace.user_input, trace.output, trace.usage)
+```
+
+- Langfuse and OpenLLMetry reuse the sending credentials.
+- Logfire needs a separate read token: `export LOGFIRE_READ_TOKEN="..."`. It and `TRACELOOP_API_KEY` are read
+  through `SecretManager`, so they can also come from AWS SSM (`secret.provider.type: aws_ssm`).
+- CloudWatch reads `aws/spans` through Logs Insights, so the identity needs `logs:StartQuery`,
+  `logs:GetQueryResults` and `logs:StopQuery` (`AWSXrayWriteOnlyAccess` does not grant them).
+- Full filter list and provider limits: [Traceability guide](https://kernel.yaala.ai/docs/advanced/traceability#fetching-spans-back).
+- End-to-end example (fetch a session's traces, grade them with Opik judges, store the scores in DynamoDB):
+  [`examples/aws-serverless/openai-langfuse-trace-evaluation`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/openai-langfuse-trace-evaluation).
+
 ---
 
 #### Session Persistence
@@ -525,6 +552,19 @@ mcp:
 
 3. No code changes needed. The MCP server endpoint is automatically available.
 
+4. Know how agent tools run: through the queue pipeline, never on the HTTP request thread. Each call
+   is enqueued, the agent runner executes it, and the reply is read back from the response store.
+   - Start the app with `RESTAPI.run()` (no handlers: one process on the in-memory queue) or
+     `IOHandler.run(handlers=[...])`. With `expose_agents: true`, `RESTAPI.run(handlers=[...])`,
+     `RESTAPI.run()` on SQS/Kafka/NATS, `AWSRestAPI`/`AWSWebsocketAPI` and `ECSIOHandler` refuse to start.
+   - Split deployment (SQS/Kafka/NATS): import the same agent modules in the IO process as in the
+     agent runner (tools are built from the IO process's registry), configure a shared
+     `execution.response_store` (redis, valkey or dynamodb) in every execution mode, and set
+     `mcp.stateless_http: true` when more than one IO replica serves `/mcp`.
+   - A reply takes at least one `execution.response_store.delay` (1 s without a `response_store`
+     block); failures reach the client as a fixed message, with details in the logs only.
+   - Tools you add yourself to `MCP.get()` are your own code and still run in the IO process.
+
 ---
 
 #### A2A Server
@@ -544,17 +584,32 @@ a2a:
   enabled: true
   agents:
     - general         # List agents to expose via A2A
-  url: "http://localhost:8000"
+  url: "http://localhost:8000/a2a"   # public base of the A2A routes; each card advertises {url}/{agent}
 ```
 
-3. No code changes needed. The A2A well-known endpoint is automatically available at `/.well-known/agent.json`.
+3. No code changes needed. Each agent's card is served at `/a2a/{agent}/.well-known/agent-card.json`
+   (all cards at `/a2a/catalog`). Agent Kernel serves A2A 1.0 only (`a2a-sdk` 1.2.3): callers need
+   an `a2a-sdk` 1.x client, built with `ClientFactory` (it sends the required `A2A-Version: 1.0`
+   header). A reply labelled by the A2UI capability arrives as a data part.
+
+4. Know how A2A calls run: through the queue pipeline, never on the HTTP request thread. Each
+   `message:send` is enqueued (the A2A `context_id` is the session), the agent runner executes it,
+   and the reply is read back from the response store.
+   - Start the app with `RESTAPI.run()` (no handlers: one process on the in-memory queue) or
+     `IOHandler.run(handlers=[...])`. `RESTAPI.run(handlers=[...])`, `RESTAPI.run()` on
+     SQS/Kafka/NATS, `AWSRestAPI`/`AWSWebsocketAPI` and `ECSIOHandler` refuse to start with `a2a.enabled`.
+   - Split deployment (SQS/Kafka/NATS): import the same agent modules in the IO process as in the
+     agent runner (cards are built from the IO process's registry), and configure a shared
+     `execution.response_store` (redis, valkey or dynamodb) in every execution mode.
+   - A reply takes at least one `execution.response_store.delay` (1 s without a `response_store`
+     block). `message:stream` is refused: the cards declare `streaming: false`.
 
 ---
 
 #### AG-UI Server
 
-Stream any streaming-capable agent (OpenAI Agents SDK, LangGraph, Google ADK, Pydantic AI, Microsoft Agent Framework — not
-CrewAI or Smolagents) to a frontend over the [AG-UI protocol](https://github.com/ag-ui-protocol/ag-ui):
+Stream any streaming-capable agent (OpenAI Agents SDK, LangGraph, Google ADK, Pydantic AI, Microsoft Agent Framework,
+Claude Agent SDK — not CrewAI or Smolagents) to a frontend over the [AG-UI protocol](https://github.com/ag-ui-protocol/ag-ui):
 text, tool calls, reasoning, and an optional shared JSON state, all as one typed event stream.
 
 1. Update `pyproject.toml`:
@@ -700,7 +755,8 @@ key. Every keyword is one of the framework's native run arguments and Agent Kern
 call with the keys it owns written last. A native hook's callbacks run inside the Agent Kernel run,
 so `Session.current()` resolves in them (keep per-run state in the session's volatile cache, not on
 the hook instance, which is shared by concurrent runs). This works in any execution mode, including
-`rest_sync`; the streaming hook below is the framework-agnostic path for `stream` mode only.
+`rest_sync`; the streaming hook below is the framework-agnostic path for streamed runs
+(`execution.message_type: delta`) only.
 
 ```python
 from agents import RunConfig, RunHooks
@@ -740,16 +796,17 @@ module.run_options(agent, options_for, max_turns=25, hooks=ProgressHooks())
 |-----------|------------------------------|------------|---------------|---------------------------------|
 | OpenAI Agents SDK | `Runner.run` / `run_streamed` | `max_turns` | `hooks=RunHooks()` | `starting_agent`, `input`, `session`, `context`, `conversation_id`, `previous_response_id`, `auto_previous_response_id` |
 | LangGraph | `ainvoke` / `astream_events` (`config` is deep-merged: `configurable.thread_id` stays the session id, `callbacks` lists concatenate) | `config["recursion_limit"]` | `config["callbacks"]` | `input`, `version`, `stream_mode`, `output_keys`, `print_mode`, `config.configurable.thread_id`, and any `RunnableConfig` key at the top level |
-| Google ADK | the per-run `App` (`plugins`), the per-run `Runner(...)` constructor (services) and `run_async` (`run_config`; copied with `streaming_mode=SSE` in stream mode) | `RunConfig(max_llm_calls=...)` | `plugins=[BasePlugin()]` | `agent`, `app`, `app_name`, `node`, `session_service`, `auto_create_session`, `user_id`, `session_id`, `new_message`, `state_delta`, `invocation_id`, `yield_user_message` |
-| Pydantic AI | `agent.run` / `run_stream_events` (`event_stream_handler` is dropped in stream mode with one warning) | `UsageLimits(request_limit=...)` | `event_stream_handler` | `user_prompt`, `message_history`, `deps` |
+| Google ADK | the per-run `App` (`plugins`), the per-run `Runner(...)` constructor (services) and `run_async` (`run_config`; copied with `streaming_mode=SSE` on a streamed run, `message_type: delta`) | `RunConfig(max_llm_calls=...)` | `plugins=[BasePlugin()]` | `agent`, `app`, `app_name`, `node`, `session_service`, `auto_create_session`, `user_id`, `session_id`, `new_message`, `state_delta`, `invocation_id`, `yield_user_message` |
+| Pydantic AI | `agent.run` / `run_stream_events` (`event_stream_handler` is dropped on a streamed run, `message_type: delta`, with one warning) | `UsageLimits(request_limit=...)` | `event_stream_handler` | `user_prompt`, `message_history`, `deps` |
 | Microsoft Agent Framework | `agent.run` (including `stream=True`); model settings nest inside `options` | native function-invocation configuration on the client | native middleware on the agent or client | `messages`, `session`, `stream` |
 | CrewAI | the per-run `Crew(...)` constructor (`verbose=False` is an overridable default; agents resolve by `role`; `max_rpm` is a forwarded rate limit) | `max_iter` on the native `Agent` (needs nothing from Agent Kernel) | `step_callback` / `task_callback` | `agents`, `tasks`, `memory` |
 | smolagents | `agent.run` | `max_steps` | `step_callbacks` on the agent constructor (needs nothing from Agent Kernel) | `task`, `reset`, `additional_args`, `stream`, `return_full_result` |
+| Claude Agent SDK | the run's `ClaudeAgentOptions` (any field; a name that is not a field is rejected) | `max_turns` (and `max_budget_usd`) | native `hooks` | `resume`, `session_id`, `continue_conversation`, `fork_session`, `resume_session_at`, `resume_drops_turn`, `session_store`, `session_store_flush`, `enable_file_checkpointing`, `include_partial_messages`, and the `ak` entry of `mcp_servers` |
 
-Worked demos: `examples/cli/<framework>-run-options` for each of the seven frameworks, and
+Worked demos: `examples/cli/<framework>-run-options` for each of the eight frameworks, and
 `examples/cli/openai-dynamic-run-options` for options computed per run.
 
-**Streaming event hook (optional):** override `on_stream_event` on a `PostHook` to inspect or modify every event a streamed run produces while `execution.mode: stream` is active. Unlike `on_run` it sees the whole stream — message and reasoning text, tool call names, arguments and results, and the boundaries that pair them. Return the event to pass it on, a modified event of the same `type` to rewrite it, `None` to drop it, or a list to emit several events in its place (a list is emitted as-is and ends the chain for that event, so `return event` and `return [event]` differ). Raise `StreamHalt` to end the run: Agent Kernel closes any open boundary, emits one error chunk, and does not store the session. Only called when streaming; regular `on_run()` still handles the non-streaming path.
+**Streaming event hook (optional):** override `on_stream_event` on a `PostHook` to inspect or modify every event a streamed run produces while `execution.message_type: delta` is set (SSE under `execution.mode: rest_sync`, WebSocket chunks under `execution.mode: async`). Unlike `on_run` it sees the whole stream — message and reasoning text, tool call names, arguments and results, and the boundaries that pair them. Return the event to pass it on, a modified event of the same `type` to rewrite it, `None` to drop it, or a list to emit several events in its place (a list is emitted as-is and ends the chain for that event, so `return event` and `return [event]` differ). Raise `StreamHalt` to end the run: Agent Kernel closes any open boundary, emits one error chunk, and does not store the session. Only called when streaming; regular `on_run()` still handles the non-streaming path.
 
 ```python
 class RedactingPostHook(DisclaimerPostHook):
@@ -793,7 +850,7 @@ these accessors are for hooks only. Tools must use their framework's native hand
 (`RunContextWrapper.context` on OpenAI, `RunContext.deps` on Pydantic AI, `ctx.session.state["ak_context"]` on MAF, `tool_context.state` on ADK,
 ...) since a tool writing through `ToolContext.get().session` writes to a different object than the one
 the run is carrying. Round-trip fidelity is framework-dependent (full for OpenAI/Pydantic AI/MAF, partial for
-ADK/smolagents/LangGraph, unsupported for CrewAI) — see the framework's page under `docs/docs/frameworks/`
+ADK/smolagents/LangGraph, supported for Claude-bound Python tools through `ToolContext.get().framework_context`, and unsupported for CrewAI) — see the framework's page under `docs/docs/frameworks/`
 for specifics.
 
 **Accessing the framework-native session (optional):** unlike `framework_context` above (an app-defined
@@ -1289,8 +1346,11 @@ needed, so it is declared where the framework declares it. Agent Kernel answers 
 `status: "PAUSED"` and the pending interruptions; the next request carries a `resume` block instead
 of a prompt.
 
-**Ask:** Which framework is the agent on? Five can pause — OpenAI Agents SDK, LangGraph, Pydantic AI,
-Google ADK and Microsoft Agent Framework. CrewAI and smolagents report `supports_pause = False` rather than pretending.
+**Ask:** Which framework is the agent on? Six can pause — OpenAI Agents SDK, LangGraph, Pydantic AI,
+Google ADK, Microsoft Agent Framework and Claude Agent SDK. Claude pauses a single tool call with
+`ClaudeToolBuilder.bind(..., needs_approval=True)`; concurrent tool calls cannot be deferred by the native SDK, and the
+bound tool handler refuses execution without a matching approval. CrewAI and smolagents report `supports_pause = False`
+rather than pretending.
 
 **Important:** the pause is written into the **session**, so a durable one needs a shared session
 backend. With `session.type: in_memory` the record lives in one process and the replica receiving the
@@ -1361,8 +1421,9 @@ before they design the question.
 **What it does:** Lets agents execute code and shell commands in an isolated, permission-bounded
 environment. When enabled, agents automatically gain sandbox tools (`run_code`, `run_command`,
 `write_sandbox_file`, `read_sandbox_file`, `check_sandbox_task`, `list_sandbox_sessions`,
-`new_sandbox_session`, `destroy_sandbox_session`) and the usage guidance is injected into their
-system prompt — the agent's own instructions need not mention the sandbox.
+`new_sandbox_session`, `destroy_sandbox_session`, plus `install_packages` when a profile's policy
+permits package installs) and the usage guidance is injected into their system prompt — the
+agent's own instructions need not mention the sandbox.
 
 **Ask:** Which provider — `local_subprocess` (no isolation; dev/test only), `docker`
 (container isolation; needs the `sandbox-docker` extra and a Docker daemon), or another
@@ -1411,11 +1472,22 @@ sandbox:
         memory_mb: 512
         timeout: 30.0
         strict: true           # fail closed when the provider can't enforce a dimension
+        languages: [python]    # optional: run_code allowlist (omit = provider-declared; [] = no run_code)
+        package_install:       # optional: permits install_packages (omit = installs denied)
+          ecosystems: [python]
+          timeout: 300         # an install's own wall clock; omit = policy.timeout
       docker:
         image: python:3.12-slim
+        # package_installers: {python: [pip, install]}   # default; declaring it replaces the map
+        # language_runtimes: {python: [python, -c]}      # default; add e.g. node: [node, -e] if the image has it
   broker:
     flavor: thread
 ```
+
+Package installs are off unless a profile declares `package_install`, and are rejected on an
+`environment: attached` or `scope: per_call` profile. `network_egress: deny` blocks all egress, so installs in this
+example only work from packages or an offline repository baked into the image (set the matching
+offline `package_installers` prefix); use `network_egress: allow` to install from the public registry.
 
 **3. No agent code changes needed** — the tools and prompt guidance attach automatically. Keep
 the agent's instructions about *what* to do; the sandbox usage is injected.
@@ -1542,7 +1614,7 @@ expenses_agent = Agent(name="expenses", instructions=f"{YOUR_INSTRUCTIONS}\n\n{C
 ```
 
 4. Two limits worth knowing before you build on this. It does **not** reach a streamed run
-   (`execution.mode: stream`) — the hook runs on `Runtime.run`, and a warning says so on the first
+   (`execution.message_type: delta`) — the hook runs on `Runtime.run`, and a warning says so on the first
    request. And it does **not** touch a reply from an agent you gave a framework `output_type`,
    since that schema is yours and Agent Kernel has never seen it; write your own post-hook there.
    See `examples/api/a2ui-openai` for a full demo including a small React renderer.

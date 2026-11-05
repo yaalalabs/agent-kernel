@@ -381,6 +381,58 @@ python my_agent.py
 ```
 
 </TabItem>
+<TabItem value="claude" label="Claude Agent SDK">
+
+## Claude Agent SDK Quick Start
+
+### 1. Install
+
+```bash
+pip install agentkernel[claude]
+```
+
+### 2. Create Your Agent
+
+Create a file called `my_agent.py`:
+
+```python
+from claude_agent_sdk import ClaudeAgentOptions
+from agentkernel.claude import ClaudeAgentSpec, ClaudeModule
+from agentkernel.cli import CLI
+
+# Define your agent
+assistant = ClaudeAgentSpec(
+    name="assistant",
+    description="A helpful AI assistant.",
+    options=ClaudeAgentOptions(
+        model="sonnet",
+        system_prompt="You are a helpful AI assistant. Provide concise and accurate answers.",
+        tools=[],                   # no built-in Claude Code tools (Bash, file edits, ...)
+        setting_sources=[],         # ignore ~/.claude settings
+        permission_mode="dontAsk",  # deny any tool call that is not explicitly approved
+    ),
+)
+
+# Register with Agent Kernel
+ClaudeModule([assistant])
+
+if __name__ == "__main__":
+    CLI.main()
+```
+
+### 3. Set API Key
+
+```bash
+export ANTHROPIC_API_KEY=your-api-key-here
+```
+
+### 4. Run Your Agent
+
+```bash
+python my_agent.py
+```
+
+</TabItem>
 </Tabs>
 
 ## Testing Your Agent
@@ -655,7 +707,9 @@ export AK_SESSION__TYPE=dynamodb
 export AK_SESSION__DYNAMODB__TABLE_NAME=agent-kernel-sessions
 ```
 
-See [session configuration](./core-concepts/configuration.md#session-storage) for more details.
+Other persistent backends follow the same pattern: `valkey`, `cosmosdb` (Azure), and `firestore` (GCP).
+
+See [Choosing a Memory Backend](./core-concepts/memory-backends.md) for a comparison and recommended setup, or [session configuration](./core-concepts/configuration.md#session-storage) for every field.
 
 ## Common Patterns
 
