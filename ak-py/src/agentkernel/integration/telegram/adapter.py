@@ -9,7 +9,7 @@ import base64
 import hashlib
 import logging
 import mimetypes
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import httpx
 from fastapi import HTTPException, Request
@@ -71,7 +71,7 @@ class _TelegramClient:
     def webhook_secret(self) -> str:
         return self._webhook_secret
 
-    async def send_message(self, chat_id: str, chunks: List[str], reply_markup: Optional[dict] = None) -> None:
+    async def send_message(self, chat_id: str, chunks: list[str], reply_markup: dict | None = None) -> None:
         """Send each chunk as its own message, in order.
 
         ``reply_markup`` rides the last chunk alone, so a keyboard does not repeat under every
@@ -79,7 +79,7 @@ class _TelegramClient:
         """
         async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
             for index, chunk in enumerate(chunks):
-                payload: Dict[str, Any] = {"chat_id": chat_id, "text": chunk}
+                payload: dict[str, Any] = {"chat_id": chat_id, "text": chunk}
                 if reply_markup and index == len(chunks) - 1:
                     payload["reply_markup"] = reply_markup
                 response = await client.post(f"{self._base_url}/sendMessage", json=payload)
@@ -104,7 +104,7 @@ class _TelegramClient:
         except Exception as e:
             _log.warning(f"Failed to send chat action: {e}")
 
-    async def answer_callback_query(self, callback_query_id: str, text: Optional[str] = None) -> None:
+    async def answer_callback_query(self, callback_query_id: str, text: str | None = None) -> None:
         """Clear the loading state on an inline keyboard press. Never raises."""
         payload = {"callback_query_id": callback_query_id}
         if text:
@@ -116,7 +116,7 @@ class _TelegramClient:
         except Exception as e:
             _log.warning(f"Failed to answer callback query: {e}")
 
-    async def file_info(self, file_id: str) -> Optional[dict]:
+    async def file_info(self, file_id: str) -> dict | None:
         """Resolve a file id to its path and declared size."""
         try:
             async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
@@ -130,7 +130,7 @@ class _TelegramClient:
             _log.error(f"Error getting file info: {e}")
         return None
 
-    async def download(self, file_path: str) -> Optional[bytes]:
+    async def download(self, file_path: str) -> bytes | None:
         """Download a file from Telegram's file host."""
         try:
             async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
@@ -160,7 +160,7 @@ class TelegramInboundAdapter(InboundAdapter):
         """Telegram expects its own acknowledgement shape."""
         return {"ok": True}
 
-    def missing_verification_settings(self) -> List[str]:
+    def missing_verification_settings(self) -> list[str]:
         """Without a webhook secret the secret-token header is never checked (``verify``)."""
         return [] if self._client.webhook_secret else ["telegram.webhook_secret"]
 
@@ -192,7 +192,7 @@ class TelegramInboundAdapter(InboundAdapter):
 
         return InboundParseResult(requests=[request] if request is not None else [])
 
-    async def _from_message(self, message: dict, update_id: Any) -> Optional[InboundRequest]:
+    async def _from_message(self, message: dict, update_id: Any) -> InboundRequest | None:
         chat_id = message.get("chat", {}).get("id")
         message_id = message.get("message_id")
         if not chat_id or not message_id:
@@ -215,7 +215,7 @@ class TelegramInboundAdapter(InboundAdapter):
         sender_id = (message.get("from") or {}).get("id")
         return await self._build(chat_id, update_id, text, message, str(sender_id) if sender_id is not None else None)
 
-    async def _from_callback_query(self, callback_query: dict, update_id: Any) -> Optional[InboundRequest]:
+    async def _from_callback_query(self, callback_query: dict, update_id: Any) -> InboundRequest | None:
         """An inline keyboard press: a decision when the data is ours, otherwise the message text."""
         chat_id = (callback_query.get("message") or {}).get("chat", {}).get("id")
         data = callback_query.get("data")
@@ -282,7 +282,7 @@ class TelegramInboundAdapter(InboundAdapter):
         text = (button.get("text") or "").removeprefix(SELECTED_MARK)
         return {**button, "text": f"{SELECTED_MARK}{text}" if own == pressed else text}
 
-    async def _submit(self, callback_query: dict, chat_id: Any, sender: Optional[str]) -> Optional[InboundRequest]:
+    async def _submit(self, callback_query: dict, chat_id: Any, sender: str | None) -> InboundRequest | None:
         """The whole tally, as the one resume the framework will accept.
 
         :param callback_query: The press, carrying the keyboard the answers live in.
@@ -310,13 +310,13 @@ class TelegramInboundAdapter(InboundAdapter):
         )
 
     @staticmethod
-    def _tally(keyboard: list) -> Dict[str, Optional[str]]:
+    def _tally(keyboard: list) -> dict[str, str | None]:
         """What the keyboard currently says, in the order its rows were drawn.
 
         :param keyboard: The message's inline keyboard.
         :return: Each question's id against the verb chosen for it, or None while it has none.
         """
-        answers: Dict[str, Optional[str]] = {}
+        answers: dict[str, str | None] = {}
         for row in keyboard:
             for button in row:
                 data = button.get("callback_data") or ""
@@ -328,7 +328,7 @@ class TelegramInboundAdapter(InboundAdapter):
                     answers[interruption_id] = VERBS_BY_CODE.get(code)
         return answers
 
-    def _decision(self, callback_query: dict, chat_id: Any, data: str, sender: Optional[str]) -> Optional[InboundRequest]:
+    def _decision(self, callback_query: dict, chat_id: Any, data: str, sender: str | None) -> InboundRequest | None:
         """A press on a pause button, as the decision it carries.
 
         The request id is composed from the press, not the per-update ``update_id``, so a second
@@ -356,7 +356,7 @@ class TelegramInboundAdapter(InboundAdapter):
         )
 
     @staticmethod
-    def _parse_callback_data(data: str) -> Optional[tuple[str, str]]:
+    def _parse_callback_data(data: str) -> tuple[str, str] | None:
         """Read ``akhitl:<verb code>:<interruption id>`` back into the pair it encodes.
 
         :param data: The callback data carrying this adapter's prefix.
@@ -369,9 +369,9 @@ class TelegramInboundAdapter(InboundAdapter):
             return None
         return interruption_id, status
 
-    async def _build(self, chat_id: Any, update_id: Any, text: str, message: Optional[dict], sender_id: Optional[str]) -> Optional[InboundRequest]:
+    async def _build(self, chat_id: Any, update_id: Any, text: str, message: dict | None, sender_id: str | None) -> InboundRequest | None:
         session_id = str(chat_id)
-        requests: List[AgentRequest] = []
+        requests: list[AgentRequest] = []
         if text:
             requests.append(AgentRequestText(prompt=text))
         if message:
@@ -401,12 +401,12 @@ class TelegramInboundAdapter(InboundAdapter):
             reply_context={"chat_id": session_id},
         )
 
-    async def _process_files(self, message: dict, requests: List[AgentRequest]) -> List[str]:
+    async def _process_files(self, message: dict, requests: list[AgentRequest]) -> list[str]:
         """Download the message's photo and document, if any.
 
         :return: Names of the attachments that could not be taken.
         """
-        failed: List[str] = []
+        failed: list[str] = []
         photos = message.get("photo") or []
         if photos:
             # Telegram sends every rendition; the last is the largest.
@@ -425,11 +425,11 @@ class TelegramInboundAdapter(InboundAdapter):
 
     async def _add_file(
         self,
-        file_id: Optional[str],
+        file_id: str | None,
         label: str,
-        mime_type: Optional[str],
-        requests: List[AgentRequest],
-        failed: List[str],
+        mime_type: str | None,
+        requests: list[AgentRequest],
+        failed: list[str],
         as_image: bool,
     ) -> None:
         """Resolve, size-check and download one attachment onto ``requests``."""
@@ -488,14 +488,14 @@ class TelegramOutboundAdapter(OutboundAdapter):
     def __init__(self):
         self._client = _TelegramClient()
 
-    async def acknowledge(self, reply_context: Dict[str, str]) -> Dict[str, str]:
+    async def acknowledge(self, reply_context: dict[str, str]) -> dict[str, str]:
         await self._client.chat_action(reply_context["chat_id"], "typing")
         return {}
 
-    async def deliver(self, reply: AgentReply, reply_context: Dict[str, str]) -> None:
+    async def deliver(self, reply: AgentReply, reply_context: dict[str, str]) -> None:
         await self._client.send_message(reply_context["chat_id"], self.split_reply(str(reply)))
 
-    async def deliver_paused(self, reply: AgentPausedReplyAny, reply_context: Dict[str, str]) -> None:
+    async def deliver_paused(self, reply: AgentPausedReplyAny, reply_context: dict[str, str]) -> None:
         """Send each question as its own message, with the keyboard that answers it.
 
         A keyboard renders at the foot of its own message, so this is the only arrangement where
@@ -582,7 +582,7 @@ class TelegramOutboundAdapter(OutboundAdapter):
         rows.append([{"text": self.SUBMIT_LABEL, "callback_data": f"{CALLBACK_PREFIX}{SUBMIT_CODE}"}])
         return rows
 
-    def _row(self, interruption: PausedInterruption) -> tuple[list, Optional[str]]:
+    def _row(self, interruption: PausedInterruption) -> tuple[list, str | None]:
         """One question's buttons, or the note that stands in for them.
 
         The buttons go when :meth:`_decidable` rejects the question, or when its callback payload
@@ -610,7 +610,7 @@ class TelegramOutboundAdapter(OutboundAdapter):
             return [], self.UNPRESSABLE_NOTICE
         return row, None
 
-    async def deliver_error(self, message: str, reply_context: Dict[str, str]) -> None:
+    async def deliver_error(self, message: str, reply_context: dict[str, str]) -> None:
         try:
             await self._client.send_message(reply_context["chat_id"], [message])
         except Exception as e:

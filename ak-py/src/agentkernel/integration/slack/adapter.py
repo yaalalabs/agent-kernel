@@ -14,7 +14,6 @@ import logging
 import os
 import re
 import traceback
-from typing import Any, Dict, List, Optional
 
 import httpx
 from fastapi import Request
@@ -71,9 +70,9 @@ DECISION_VERBS = ("approved", "denied", "cancelled")
 BUTTON_LABELS = {"approved": "Approve", "denied": "Deny", "cancelled": "Cancel"}
 BUTTON_STYLES = {"approved": "primary", "denied": "danger"}
 
-_events: contextvars.ContextVar[List[dict]] = contextvars.ContextVar("ak_slack_events")
-_presses: contextvars.ContextVar[List[dict]] = contextvars.ContextVar("ak_slack_presses")
-_submissions: contextvars.ContextVar[List[dict]] = contextvars.ContextVar("ak_slack_submissions")
+_events: contextvars.ContextVar[list[dict]] = contextvars.ContextVar("ak_slack_events")
+_presses: contextvars.ContextVar[list[dict]] = contextvars.ContextVar("ak_slack_presses")
+_submissions: contextvars.ContextVar[list[dict]] = contextvars.ContextVar("ak_slack_submissions")
 
 
 class SlackInboundAdapter(InboundAdapter):
@@ -88,7 +87,7 @@ class SlackInboundAdapter(InboundAdapter):
         config = AKConfig.get()
         self._agent = config.slack.agent or None
         self._max_file_size = config.api.max_file_size
-        self._bot_id: Optional[str] = None
+        self._bot_id: str | None = None
 
         self._app = AsyncApp(
             process_before_response=True,
@@ -188,7 +187,7 @@ class SlackInboundAdapter(InboundAdapter):
                 requests.append(decision)
         return InboundParseResult(requests=requests, response=response)
 
-    def _decision_from_press(self, body: dict) -> Optional[InboundRequest]:
+    def _decision_from_press(self, body: dict) -> InboundRequest | None:
         """A Block Kit button press, as the decision it carries.
 
         The request id is composed from the press, not Slack's per-click ``action_ts``, so a
@@ -259,7 +258,7 @@ class SlackInboundAdapter(InboundAdapter):
             ],
         }
 
-    def _decision_from_modal(self, body: dict) -> Optional[InboundRequest]:
+    def _decision_from_modal(self, body: dict) -> InboundRequest | None:
         """A submitted modal, as the decision or decisions it carries.
 
         Two kinds arrive here, told apart by the view's ``callback_id``: a denial's reason, and the
@@ -326,7 +325,7 @@ class SlackInboundAdapter(InboundAdapter):
             "user": (body.get("user") or {}).get("id"),
         }
 
-        blocks: List[dict] = []
+        blocks: list[dict] = []
         for block in message.get("blocks") or []:
             block_id = block.get("block_id") or ""
             if not block_id.startswith(BLOCK_PREFIX) or block_id == f"{BLOCK_PREFIX}review":
@@ -357,7 +356,7 @@ class SlackInboundAdapter(InboundAdapter):
             "blocks": blocks,
         }
 
-    def _decisions_from_review(self, view: dict) -> Optional[InboundRequest]:
+    def _decisions_from_review(self, view: dict) -> InboundRequest | None:
         """Every answer the review form collected, as one resume.
 
         One request carrying every decision is the whole point: the frameworks that set
@@ -404,7 +403,7 @@ class SlackInboundAdapter(InboundAdapter):
         )
 
     @classmethod
-    def _parse_action_value(cls, value: Optional[str]) -> Optional[tuple[str, str]]:
+    def _parse_action_value(cls, value: str | None) -> tuple[str, str] | None:
         """Read a button's ``<interruption id>:<verb>`` value back into the pair it encodes.
 
         Split from the right: an interruption id may contain a colon, a verb never does.
@@ -418,7 +417,7 @@ class SlackInboundAdapter(InboundAdapter):
             return None
         return interruption_id, status
 
-    async def _to_request(self, body: dict) -> Optional[InboundRequest]:
+    async def _to_request(self, body: dict) -> InboundRequest | None:
         """Normalize one Slack message event, or None when it is not for us."""
         user = body.get("user")
         channel = body.get("channel")
@@ -458,7 +457,7 @@ class SlackInboundAdapter(InboundAdapter):
             )
             return None
 
-        requests: List[AgentRequest] = []
+        requests: list[AgentRequest] = []
         if question:
             requests.append(AgentRequestText(prompt=question))
 
@@ -490,25 +489,25 @@ class SlackInboundAdapter(InboundAdapter):
             reply_context={"channel": channel, "thread_ts": thread_ts, "user": user},
         )
 
-    async def _bot_user_id(self) -> Optional[str]:
+    async def _bot_user_id(self) -> str | None:
         """The bot's own user id, so its own messages are ignored. Resolved once."""
         if self._bot_id is None:
             self._bot_id = (await self._app.client.auth_test())["user_id"]
         return self._bot_id
 
-    async def _say(self, channel: str, thread_ts: Optional[str], text: str) -> None:
+    async def _say(self, channel: str, thread_ts: str | None, text: str) -> None:
         """Post a rejection notice from the edge, where the user is still waiting."""
         try:
             await self._app.client.chat_postMessage(channel=channel, thread_ts=thread_ts, text=text)
         except Exception as e:
             self._log.error(f"Could not post a Slack message: {e}")
 
-    async def _process_files(self, files: list, requests: List[AgentRequest]) -> List[str]:
+    async def _process_files(self, files: list, requests: list[AgentRequest]) -> list[str]:
         """Download each file and append it to ``requests``.
 
         :return: Names of the files that could not be downloaded.
         """
-        failed: List[str] = []
+        failed: list[str] = []
         for file in files:
             file_name = file.get("name", "unknown")
             try:
@@ -534,7 +533,7 @@ class SlackInboundAdapter(InboundAdapter):
                 failed.append(file_name)
         return failed
 
-    async def _download(self, url: str) -> Optional[bytes]:
+    async def _download(self, url: str) -> bytes | None:
         """Download a private Slack file with the bot token."""
         try:
             async with httpx.AsyncClient() as client:
@@ -561,7 +560,7 @@ class SlackOutboundAdapter(OutboundAdapter):
     def __init__(self):
         self._acknowledgement = AKConfig.get().slack.agent_acknowledgement or None
 
-    async def acknowledge(self, reply_context: Dict[str, str]) -> Dict[str, str]:
+    async def acknowledge(self, reply_context: dict[str, str]) -> dict[str, str]:
         """Post the "thinking" message, if one is configured, and remember where it went."""
         if not self._acknowledgement:
             return {}
@@ -576,7 +575,7 @@ class SlackOutboundAdapter(OutboundAdapter):
             self._log.warning(f"Could not post the Slack acknowledgement: {e}")
             return {}
 
-    async def deliver(self, reply: AgentReply, reply_context: Dict[str, str]) -> None:
+    async def deliver(self, reply: AgentReply, reply_context: dict[str, str]) -> None:
         """Clear the loading indicator, then post the reply in the originating thread."""
         client = self._client()
         channel = reply_context.get("ack_channel") or reply_context["channel"]
@@ -593,7 +592,7 @@ class SlackOutboundAdapter(OutboundAdapter):
             metadata={"event_type": "first_pass", "event_payload": {"id": thread_ts}},
         )
 
-    async def deliver_paused(self, reply: AgentPausedReplyAny, reply_context: Dict[str, str]) -> None:
+    async def deliver_paused(self, reply: AgentPausedReplyAny, reply_context: dict[str, str]) -> None:
         """Post the pause with each question's controls directly beneath it.
 
         Posted in the run's own thread, unlike :meth:`deliver`: a press carries the pause
@@ -758,7 +757,7 @@ class SlackOutboundAdapter(OutboundAdapter):
             button["style"] = BUTTON_STYLES[verb]
         return button
 
-    async def deliver_error(self, message: str, reply_context: Dict[str, str]) -> None:
+    async def deliver_error(self, message: str, reply_context: dict[str, str]) -> None:
         try:
             await self._client().chat_postMessage(channel=reply_context["channel"], text=message)
         except Exception as e:

@@ -1,5 +1,6 @@
 import logging
-from typing import TYPE_CHECKING, Any, Dict, Mapping, Optional
+from collections.abc import Mapping
+from typing import TYPE_CHECKING, Any
 
 from pydantic import ValidationError
 
@@ -33,7 +34,7 @@ class IntegrationDelivery:
     # -- return address --------------------------------------------------------------------
 
     @staticmethod
-    def integration_of(attributes: Mapping[str, Any]) -> Optional[str]:
+    def integration_of(attributes: Mapping[str, Any]) -> str | None:
         """The adapter name when this is integration traffic, else None.
 
         Only a non-empty ``str`` counts: a mocked attribute map hands back truthy objects, which
@@ -51,7 +52,7 @@ class IntegrationDelivery:
         return name == ATTR_INTEGRATION or name.startswith(REPLY_CONTEXT_PREFIX)
 
     @classmethod
-    def routing_attributes(cls, attributes: Mapping[str, Any]) -> Dict[str, str]:
+    def routing_attributes(cls, attributes: Mapping[str, Any]) -> dict[str, str]:
         """The return-address subset of an input message's attributes.
 
         :param attributes: The input message's attributes.
@@ -61,7 +62,7 @@ class IntegrationDelivery:
         return {name: str(value) for name, value in attributes.items() if cls.is_routing_attribute(name)}
 
     @staticmethod
-    def reply_context(attributes: Mapping[str, Any]) -> Dict[str, str]:
+    def reply_context(attributes: Mapping[str, Any]) -> dict[str, str]:
         """The adapter's reply context: the ``reply_*`` attributes with the prefix removed.
 
         :param attributes: The output message's attributes.
@@ -71,7 +72,7 @@ class IntegrationDelivery:
 
     # -- delivery -------------------------------------------------------------------------
 
-    def deliver(self, integration: str, attributes: Mapping[str, Any], body: Any, status_code: int, session_id: Optional[str] = None) -> None:
+    def deliver(self, integration: str, attributes: Mapping[str, Any], body: Any, status_code: int, session_id: str | None = None) -> None:
         """Deliver one reply back to the messaging platform it came from.
 
         A status of 400 or above sends the adapter's generic ``ERROR_MESSAGE``, never the internal
@@ -114,7 +115,7 @@ class IntegrationDelivery:
         run_async_sync(adapter.deliver(AgentReplyText(response=str(body.get("result", ""))), reply_context))
         self._log.info(f"[OUTPUT DONE] Delivered to {integration}: session_id={session_id}, request_id={request_id}")
 
-    def _paused_reply(self, body: dict, session_id: Optional[str], integration: str) -> Optional[AgentPausedReplyAny]:
+    def _paused_reply(self, body: dict, session_id: str | None, integration: str) -> AgentPausedReplyAny | None:
         """Rebuild the paused reply from the pause keys ``ResponseBuilder`` promoted onto the body.
 
         Rebuilt rather than passed through as a dict, so every host delivers the same pause.
@@ -137,7 +138,7 @@ class IntegrationDelivery:
             self._log.warning(f"Body for {integration} claims status=PAUSED but does not reconstruct ({e}); delivering it as text instead")
             return None
 
-    def deliver_permanent_failure(self, integration: str, attributes: Mapping[str, Any], session_id: Optional[str] = None) -> None:
+    def deliver_permanent_failure(self, integration: str, attributes: Mapping[str, Any], session_id: str | None = None) -> None:
         """Tell the platform user that their message failed for good.
 
         :param integration: The adapter name from the ``integration`` attribute.

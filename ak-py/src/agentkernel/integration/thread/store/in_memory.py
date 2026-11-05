@@ -3,7 +3,7 @@ In-memory thread store for local development and testing.
 """
 
 import logging
-from typing import ClassVar, List, Optional, Tuple
+from typing import ClassVar
 
 from ..model import Thread, ThreadMessage, _utc_now
 from .base import ThreadStore, paginate
@@ -19,7 +19,7 @@ class InMemoryThreadStore(ThreadStore):
     """
 
     _threads: ClassVar[dict[str, Thread]] = {}  # session_id -> Thread metadata (messages always [])
-    _messages: ClassVar[dict[str, List[ThreadMessage]]] = {}  # session_id -> ordered messages
+    _messages: ClassVar[dict[str, list[ThreadMessage]]] = {}  # session_id -> ordered messages
     _log = logging.getLogger("ak.thread.store.inmemory")
 
     def create(self, thread: Thread) -> Thread:
@@ -51,7 +51,7 @@ class InMemoryThreadStore(ThreadStore):
         thread.name_locked = True
         return thread.model_copy(update={"messages": []})
 
-    def load_metadata(self, session_id: str) -> Optional[Thread]:
+    def load_metadata(self, session_id: str) -> Thread | None:
         """
         Load a thread's metadata by its session id.
         :param session_id: Unique identifier for the thread.
@@ -73,7 +73,7 @@ class InMemoryThreadStore(ThreadStore):
         self._messages.setdefault(session_id, []).append(message)
         thread.updated_at = _utc_now()
 
-    def get_messages(self, session_id: str, limit: int, offset: int = 0) -> Tuple[List[ThreadMessage], Optional[int]]:
+    def get_messages(self, session_id: str, limit: int, offset: int = 0) -> tuple[list[ThreadMessage], int | None]:
         """
         Return a page of a thread's messages in append order.
         :param session_id: Unique identifier for the thread.
@@ -85,11 +85,11 @@ class InMemoryThreadStore(ThreadStore):
 
     def list_threads(
         self,
-        user_id: Optional[str] = None,
-        group_id: Optional[str] = None,
+        user_id: str | None = None,
+        group_id: str | None = None,
         limit: int = 50,
         offset: int = 0,
-    ) -> Tuple[List[Thread], Optional[int]]:
+    ) -> tuple[list[Thread], int | None]:
         """
         List thread metadata filtered by user_id and/or group_id, most-recently updated first.
         :param user_id: Filter by owning user id.

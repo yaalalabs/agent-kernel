@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from .base import KnowledgeBase
 from .model import KnowledgeCapabilities
@@ -11,8 +11,8 @@ log = logging.getLogger("ak.KnowledgeBuilder")
 class KnowledgeBuilder:
     def __init__(
         self,
-        backends: List[KnowledgeBase],
-        semantic_map: Optional[Dict[str, str]] = None,
+        backends: list[KnowledgeBase],
+        semantic_map: dict[str, str] | None = None,
     ):
         """
         Initialize a knowledge builder that routes reads and writes to named backends.
@@ -62,7 +62,7 @@ class KnowledgeBuilder:
             translation is applied. Applies to every registered backend.
         :return: None.
         """
-        validated_backends: Dict[str, KnowledgeBase] = {}
+        validated_backends: dict[str, KnowledgeBase] = {}
 
         for backend in backends:
             backend_name = backend.backend_name
@@ -94,7 +94,7 @@ class KnowledgeBuilder:
         return resolved_text
 
     @staticmethod
-    def _capabilities_of(backend: KnowledgeBase) -> Optional[KnowledgeCapabilities]:
+    def _capabilities_of(backend: KnowledgeBase) -> KnowledgeCapabilities | None:
         """
         Return a backend's capability declaration, or None when it has none.
 
@@ -119,7 +119,7 @@ class KnowledgeBuilder:
         capabilities = self._capabilities_of(backend)
         return bool(capabilities and getattr(capabilities, capability, False))
 
-    def _backends_declaring(self, *capabilities: str) -> List[str]:
+    def _backends_declaring(self, *capabilities: str) -> list[str]:
         """
         List the registered backends declaring at least one of the given capabilities.
 

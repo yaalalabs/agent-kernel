@@ -69,7 +69,12 @@ async def test_support_agent(http_client):
 
     response = await http_client.send("I was extremely happy")
     Test.compare(
-        response, ["That's great to hear! What specifically made the experience enjoyable for you?"], threshold=0.1
+        response,
+        [
+            "That's great to hear! What specifically made the experience enjoyable for you?",
+            "Glad to hear that! Did the deposit of $250 go smoothly, without any issues or delays?",
+        ],
+        threshold=0.1,
     )
 
     response = await http_client.send(prompt="", endpoint="/custom/deposit", body={"amount": 200})

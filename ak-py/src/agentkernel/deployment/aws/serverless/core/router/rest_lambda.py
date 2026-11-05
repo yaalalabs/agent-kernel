@@ -1,7 +1,8 @@
 import json
 import logging
 import traceback
-from typing import Any, Callable, Dict, Optional
+from collections.abc import Callable
+from typing import Any
 
 from ......core.chat_service import ChatService
 from ......core.config import AKConfig
@@ -39,7 +40,7 @@ class DefaultEndpointsHandler:
             default_user_polling_method,
         )
 
-    def get_routes(self) -> Dict[str, Dict[str, Callable]]:
+    def get_routes(self) -> dict[str, dict[str, Callable]]:
         """
         Return route mappings based on execution mode.
         :return: Dictionary mapping paths → HTTP methods → handler functions
@@ -79,7 +80,7 @@ class DefaultEndpointsHandler:
 
         raise ValueError(f"Unsupported EXECUTION_MODE: {exec_mode}")
 
-    def _parse_body(self, event: Dict[str, Any]) -> BaseRequest:
+    def _parse_body(self, event: dict[str, Any]) -> BaseRequest:
         """
         Parse request body from API Gateway event.
 
@@ -90,7 +91,7 @@ class DefaultEndpointsHandler:
         body_dict = json.loads(body) if isinstance(body, str) else (body or {})
         return BaseRequest.from_payload(body_dict)
 
-    def _build_failure_body(self, request_id: Optional[str] = None, status: Optional[str] = None, message: Optional[str] = None) -> Dict[str, Any]:
+    def _build_failure_body(self, request_id: str | None = None, status: str | None = None, message: str | None = None) -> dict[str, Any]:
         """
         Build standardized error response body.
 
@@ -106,7 +107,7 @@ class DefaultEndpointsHandler:
             error_body["request_id"] = request_id
         return error_body
 
-    def _handle_request(self, event: Dict[str, Any], operation: Callable[[BaseRequest], tuple[int, Dict[str, Any]]]) -> tuple[int, Dict[str, Any]]:
+    def _handle_request(self, event: dict[str, Any], operation: Callable[[BaseRequest], tuple[int, dict[str, Any]]]) -> tuple[int, dict[str, Any]]:
         """
         Execute operation with standard request parsing and error handling.
 
@@ -125,7 +126,7 @@ class DefaultEndpointsHandler:
             self._log.error(f"Request failed: {e}\n{traceback.format_exc()}")
             return (500, self._build_failure_body(request_id))  # (statusCode, body) will be handled in aklambda.py
 
-    def _send_to_queue(self, payload: BaseRequest) -> Dict[str, Any]:
+    def _send_to_queue(self, payload: BaseRequest) -> dict[str, Any]:
         """
         Send request payload to SQS queue.
 
@@ -151,7 +152,7 @@ class DefaultEndpointsHandler:
         )
         return response
 
-    def _get_record(self, payload: BaseRequest) -> Optional[Dict[str, Any]]:
+    def _get_record(self, payload: BaseRequest) -> dict[str, Any] | None:
         """
         Fetch a response record from the response database.
 
@@ -167,7 +168,7 @@ class DefaultEndpointsHandler:
             raise ValueError("request_id is required")
         return self._response_store.get_record_with_retry(request_id=request_id, get_and_delete=True)
 
-    def _record_response(self, record: Dict[str, Any]) -> tuple[int, Dict[str, Any]]:
+    def _record_response(self, record: dict[str, Any]) -> tuple[int, dict[str, Any]]:
         """
         Map a stored response record to its (statusCode, body).
 
@@ -183,7 +184,7 @@ class DefaultEndpointsHandler:
             return (self._DEFAULT_STATUS_CODE, record)
         return (int(record.get("status_code") or self._DEFAULT_STATUS_CODE), record["body"])
 
-    def _handle_rest_sync(self, event: Dict[str, Any], context: Any) -> tuple[int, Dict[str, Any]]:
+    def _handle_rest_sync(self, event: dict[str, Any], context: Any) -> tuple[int, dict[str, Any]]:
         """
         Send request to queue and immediately fetch response.
 
@@ -192,7 +193,7 @@ class DefaultEndpointsHandler:
         :return: Tuple of (status_code, response_body)
         """
 
-        def sync_operation(payload: BaseRequest) -> tuple[int, Dict[str, Any]]:
+        def sync_operation(payload: BaseRequest) -> tuple[int, dict[str, Any]]:
             request_id = payload.request_id
             self._log.info(f"Performing REST_SYNC operation for payload: '{payload}'")
             queue_result = self._send_to_queue(payload)
@@ -218,7 +219,7 @@ class DefaultEndpointsHandler:
 
         return self._handle_request(event, sync_operation)
 
-    def _handle_async_submit(self, event: Dict[str, Any], context: Any) -> tuple[int, Dict[str, Any]]:
+    def _handle_async_submit(self, event: dict[str, Any], context: Any) -> tuple[int, dict[str, Any]]:
         """
         Submit message to queue (async mode).
 
@@ -227,7 +228,7 @@ class DefaultEndpointsHandler:
         :return: Tuple of (status_code, response_body)
         """
 
-        def submit_operation(payload: BaseRequest) -> tuple[int, Dict[str, Any]]:
+        def submit_operation(payload: BaseRequest) -> tuple[int, dict[str, Any]]:
             self._log.info(f"Performing REST_ASYNC submit operation for payload: '{payload}'")
             queue_result = self._send_to_queue(payload)
 
@@ -239,7 +240,7 @@ class DefaultEndpointsHandler:
 
         return self._handle_request(event, submit_operation)
 
-    def _handle_async_poll(self, event: Dict[str, Any], context: Any) -> tuple[int, Dict[str, Any]]:
+    def _handle_async_poll(self, event: dict[str, Any], context: Any) -> tuple[int, dict[str, Any]]:
         """
         Poll database for messages (async mode).
 
@@ -248,7 +249,7 @@ class DefaultEndpointsHandler:
         :return: Tuple of (status_code, response_body)
         """
 
-        def poll_operation(payload: BaseRequest) -> tuple[int, Dict[str, Any]]:
+        def poll_operation(payload: BaseRequest) -> tuple[int, dict[str, Any]]:
             self._log.info(f"Performing REST_ASYNC poll operation for payload: '{payload}'")
 
             request_id = payload.request_id
@@ -271,7 +272,7 @@ class DefaultEndpointsHandler:
 
         return self._handle_request(event, poll_operation)
 
-    def _handle_agent_chat(self, event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+    def _handle_agent_chat(self, event: dict[str, Any], context: Any) -> dict[str, Any]:
         """
         Process chat request directly without queue.
 
@@ -314,7 +315,7 @@ class RESTLambdaRouter(BaseLambdaRouter):
         self._default_chat_path = None
         self._default_chat_method = None
         self._default_user_polling_method = None
-        self._routes: Dict[str, Dict[str, Callable[[Dict[str, Any], Any], Any]]] = {}
+        self._routes: dict[str, dict[str, Callable[[dict[str, Any], Any], Any]]] = {}
 
         self._endpoints_handler = DefaultEndpointsHandler()
         (
@@ -326,7 +327,7 @@ class RESTLambdaRouter(BaseLambdaRouter):
         self._log.info(f"Registered REST Routes: {self._routes}")
 
     @staticmethod
-    def _normalize_method(method: Optional[str]) -> str:
+    def _normalize_method(method: str | None) -> str:
         """
         Normalize HTTP method to uppercase.
 
@@ -335,7 +336,7 @@ class RESTLambdaRouter(BaseLambdaRouter):
         """
         return (method or "GET").upper()
 
-    def register(self, route: str, method: Optional[str] = None) -> Callable[[Callable], Callable]:
+    def register(self, route: str, method: str | None = None) -> Callable[[Callable], Callable]:
         """
         Factory function that creates a decorator to register a handler for a given HTTP route and method.
 
@@ -350,7 +351,7 @@ class RESTLambdaRouter(BaseLambdaRouter):
         norm_route = self._normalize_path(route)
         norm_method = self._normalize_method(method)
 
-        def _decorator(func: Callable[[Dict[str, Any], Any], Any]) -> Callable:
+        def _decorator(func: Callable[[dict[str, Any], Any], Any]) -> Callable:
             self._log.info(f"Registering route {norm_method} {norm_route} -> {func.__name__}")
 
             methods = self._routes.setdefault(norm_route, {})
@@ -362,7 +363,7 @@ class RESTLambdaRouter(BaseLambdaRouter):
 
         return _decorator
 
-    def dispatch(self, event: Dict[str, Any], context: Any) -> Optional[Dict[str, Any]]:
+    def dispatch(self, event: dict[str, Any], context: Any) -> dict[str, Any] | None:
         """
         Dispatch incoming API Gateway REST event to the appropriate registered handler.
 

@@ -4,9 +4,9 @@ Deliberately free of FastAPI and platform SDKs: the Lambda authorizer imports it
 WebhookRouteMatcher, and must not pay for the adapter modules.
 """
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Mapping, Optional
 
 
 @dataclass(frozen=True)
@@ -15,7 +15,7 @@ class WebhookRoute:
 
     name: str
     webhook_path: str
-    challenge_path: Optional[str] = None
+    challenge_path: str | None = None
 
 
 # The only definition of the built-in paths: the six adapters read their path attributes from it,

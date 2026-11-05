@@ -1,7 +1,7 @@
 """Facebook Messenger inbound/outbound adapter pair (spec #524 §9)."""
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from fastapi import Request
 
@@ -48,7 +48,7 @@ class MessengerInboundAdapter(InboundAdapter):
         self._verify_token = config.messenger.verify_token
         self._api = _client()
 
-    def missing_verification_settings(self) -> List[str]:
+    def missing_verification_settings(self) -> list[str]:
         """Without an app secret the delivery signature is never checked (``verify_signature``)."""
         return [] if self._app_secret else ["messenger.app_secret"]
 
@@ -65,7 +65,7 @@ class MessengerInboundAdapter(InboundAdapter):
         if body.get("object") != "page":
             return InboundParseResult()
 
-        requests: List[InboundRequest] = []
+        requests: list[InboundRequest] = []
         for entry in body.get("entry", []):
             for event in entry.get("messaging", []):
                 parsed = await self._to_request(event)
@@ -73,7 +73,7 @@ class MessengerInboundAdapter(InboundAdapter):
                     requests.append(parsed)
         return InboundParseResult(requests=requests)
 
-    async def _to_request(self, event: dict) -> Optional[InboundRequest]:
+    async def _to_request(self, event: dict) -> InboundRequest | None:
         """Normalize one messaging event: a message, or a postback treated as its title."""
         sender_id = event.get("sender", {}).get("id")
         if not sender_id:
@@ -109,8 +109,8 @@ class MessengerInboundAdapter(InboundAdapter):
             self._log.debug(f"Message read receipt: {event['read']}")
         return None
 
-    async def _build(self, sender_id: str, request_id: str, text: str, attachments: list) -> Optional[InboundRequest]:
-        requests: List[AgentRequest] = []
+    async def _build(self, sender_id: str, request_id: str, text: str, attachments: list) -> InboundRequest | None:
+        requests: list[AgentRequest] = []
         if text:
             requests.append(AgentRequestText(prompt=text))
         for attachment in attachments:
@@ -136,7 +136,7 @@ class MessengerInboundAdapter(InboundAdapter):
             reply_context={"recipient_id": sender_id},
         )
 
-    async def _add_attachment(self, attachment: dict, requests: List[AgentRequest]) -> None:
+    async def _add_attachment(self, attachment: dict, requests: list[AgentRequest]) -> None:
         """Download one attachment onto ``requests``; tell the agent when it could not be read."""
         url = (attachment.get("payload") or {}).get("url")
         if not url:
@@ -167,19 +167,19 @@ class MessengerOutboundAdapter(OutboundAdapter):
     def __init__(self):
         self._api = _client()
 
-    async def acknowledge(self, reply_context: Dict[str, str]) -> Dict[str, str]:
+    async def acknowledge(self, reply_context: dict[str, str]) -> dict[str, str]:
         """Mark the message seen and start typing, so the user sees something immediately."""
         recipient_id = reply_context["recipient_id"]
         await self._api.sender_action(recipient_id, "mark_seen")
         await self._api.sender_action(recipient_id, "typing_on")
         return {}
 
-    async def deliver(self, reply: AgentReply, reply_context: Dict[str, str]) -> None:
+    async def deliver(self, reply: AgentReply, reply_context: dict[str, str]) -> None:
         recipient_id = reply_context["recipient_id"]
         await self._api.sender_action(recipient_id, "typing_off")
         await self._api.send_message(recipient_id, self.split_reply(str(reply)))
 
-    async def deliver_error(self, message: str, reply_context: Dict[str, str]) -> None:
+    async def deliver_error(self, message: str, reply_context: dict[str, str]) -> None:
         recipient_id = reply_context["recipient_id"]
         await self._api.sender_action(recipient_id, "typing_off")
         try:

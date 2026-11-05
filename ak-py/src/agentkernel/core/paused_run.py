@@ -26,10 +26,12 @@ application calling `get_non_volatile_cache().clear()` discards pending decision
 prefix marks the key as framework-owned, and the user-facing docs say so.
 """
 
+import builtins
 import logging
 import uuid
+from collections.abc import Iterable
 from datetime import datetime, timezone
-from typing import Any, Iterable, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
@@ -65,9 +67,9 @@ class PausedRun(BaseModel):
 
     id: str
     agent: str
-    runner: Optional[str] = None
+    runner: str | None = None
     created_at: str
-    interruptions: List[PausedInterruption]
+    interruptions: list[PausedInterruption]
     payload: Any = None
 
 
@@ -88,7 +90,7 @@ class PausedRunState:
     _in_memory_warned = False
 
     @staticmethod
-    def list(session: Session) -> List[PausedRun]:
+    def list(session: Session) -> list[PausedRun]:
         """
         Reads every paused run the session holds.
 
@@ -112,7 +114,7 @@ class PausedRunState:
         return records
 
     @staticmethod
-    def _write(session: Session, records: List[PausedRun]) -> None:
+    def _write(session: Session, records: builtins.list[PausedRun]) -> None:
         """
         Writes the record list as plain dicts, never as model instances.
 
@@ -128,7 +130,7 @@ class PausedRunState:
         session.get_non_volatile_cache().set(AK_PAUSED_RUNS_KEY, [record.model_dump() for record in records])
 
     @staticmethod
-    def get(session: Session, run_id: str) -> Optional[PausedRun]:
+    def get(session: Session, run_id: str) -> PausedRun | None:
         """
         Finds one paused run by its id.
 
@@ -139,7 +141,7 @@ class PausedRunState:
         return next((record for record in PausedRunState.list(session) if record.id == run_id), None)
 
     @staticmethod
-    def find_by_interruption(session: Session, interruption_ids: Iterable[str]) -> Optional[PausedRun]:
+    def find_by_interruption(session: Session, interruption_ids: Iterable[str]) -> PausedRun | None:
         """
         Resolves which paused run a set of decisions belongs to.
 
@@ -162,7 +164,9 @@ class PausedRunState:
         return matched[0] if len(matched) == 1 else None
 
     @staticmethod
-    def add(session: Session, agent: str, interruptions: List[PausedInterruption], payload: Any = None, runner: Optional[str] = None) -> PausedRun:
+    def add(
+        session: Session, agent: str, interruptions: builtins.list[PausedInterruption], payload: Any = None, runner: str | None = None
+    ) -> PausedRun:
         """
         Stores a new paused run and returns it, so the caller can read the assigned id back.
 

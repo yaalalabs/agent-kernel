@@ -2,7 +2,7 @@
 
 import base64
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import httpx
 from fastapi import Request
@@ -42,10 +42,10 @@ class _WhatsAppClient:
     def verify_token(self) -> str:
         return self._verify_token
 
-    def _headers(self) -> Dict[str, str]:
+    def _headers(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self._access_token}", "Content-Type": "application/json"}
 
-    async def send_message(self, to_number: str, chunks: List[str], reply_to_message_id: Optional[str] = None) -> None:
+    async def send_message(self, to_number: str, chunks: list[str], reply_to_message_id: str | None = None) -> None:
         """Send a (possibly split) message, replying to the original on the first chunk only."""
         url = f"{self._base_url}/{self._phone_number_id}/messages"
         async with httpx.AsyncClient() as client:
@@ -63,7 +63,7 @@ class _WhatsAppClient:
                 response.raise_for_status()
                 self._log.debug(f"Message sent successfully: {response.json()}")
 
-    async def media_info(self, media_id: str) -> Tuple[Optional[int], Optional[str]]:
+    async def media_info(self, media_id: str) -> tuple[int | None, str | None]:
         """Get a media file's size and MIME type, so an oversized file is refused before download."""
         try:
             async with httpx.AsyncClient() as client:
@@ -79,7 +79,7 @@ class _WhatsAppClient:
             self._log.error(f"Error getting media info {media_id}: {e}")
             return None, None
 
-    async def download_media(self, media_id: str, max_file_size: int) -> Optional[str]:
+    async def download_media(self, media_id: str, max_file_size: int) -> str | None:
         """Stream a media file and return it base64-encoded, aborting past ``max_file_size``.
 
         ``media_info`` has already refused anything Meta *declares* as oversized; this second
@@ -129,7 +129,7 @@ class WhatsAppInboundAdapter(InboundAdapter):
         self._max_file_size = config.api.max_file_size
         self._client = _WhatsAppClient()
 
-    def missing_verification_settings(self) -> List[str]:
+    def missing_verification_settings(self) -> list[str]:
         """Without an app secret the delivery signature is never checked (``verify_signature``)."""
         return [] if self._client.app_secret else ["whatsapp.app_secret"]
 
@@ -146,7 +146,7 @@ class WhatsAppInboundAdapter(InboundAdapter):
         if body.get("object") != "whatsapp_business_account":
             return InboundParseResult()
 
-        requests: List[InboundRequest] = []
+        requests: list[InboundRequest] = []
         for entry in body.get("entry", []):
             for change in entry.get("changes", []):
                 value = change.get("value", {})
@@ -158,7 +158,7 @@ class WhatsAppInboundAdapter(InboundAdapter):
                         requests.append(parsed)
         return InboundParseResult(requests=requests)
 
-    async def _to_request(self, message: dict) -> Optional[InboundRequest]:
+    async def _to_request(self, message: dict) -> InboundRequest | None:
         """Normalize one WhatsApp message, or None when it carries nothing runnable."""
         message_id = message.get("id")
         from_number = message.get("from")
@@ -169,8 +169,8 @@ class WhatsAppInboundAdapter(InboundAdapter):
 
         self._log.debug(f"Processing message {message_id} from {from_number} of type {message_type}")
 
-        requests: List[AgentRequest] = []
-        text: Optional[str] = None
+        requests: list[AgentRequest] = []
+        text: str | None = None
 
         if message_type == "text":
             text = message.get("text", {}).get("body")
@@ -211,7 +211,7 @@ class WhatsAppInboundAdapter(InboundAdapter):
             reply_context={"to": from_number, "reply_to_message_id": message_id},
         )
 
-    async def _add_media(self, message: dict, message_type: str, message_id: str, from_number: str, requests: List[AgentRequest]) -> Optional[str]:
+    async def _add_media(self, message: dict, message_type: str, message_id: str, from_number: str, requests: list[AgentRequest]) -> str | None:
         """Download an image or document onto ``requests``.
 
         :return: The caption to use as the prompt, or None when the media could not be taken.
@@ -254,7 +254,7 @@ class WhatsAppInboundAdapter(InboundAdapter):
         self._log.info(f"{noun} downloaded and added to request")
         return caption or label
 
-    async def _say(self, to_number: str, text: str, reply_to_message_id: Optional[str]) -> None:
+    async def _say(self, to_number: str, text: str, reply_to_message_id: str | None) -> None:
         """Tell the sender why their message is not being run."""
         try:
             await self._client.send_message(to_number, [text], reply_to_message_id)
@@ -274,7 +274,7 @@ class WhatsAppOutboundAdapter(OutboundAdapter):
         self._acknowledgement = AKConfig.get().whatsapp.agent_acknowledgement or None
         self._client = _WhatsAppClient()
 
-    async def acknowledge(self, reply_context: Dict[str, str]) -> Dict[str, str]:
+    async def acknowledge(self, reply_context: dict[str, str]) -> dict[str, str]:
         if self._acknowledgement:
             try:
                 await self._client.send_message(reply_context["to"], [self._acknowledgement], reply_context.get("reply_to_message_id"))
@@ -282,10 +282,10 @@ class WhatsAppOutboundAdapter(OutboundAdapter):
                 self._log.warning(f"Could not send the WhatsApp acknowledgement: {e}")
         return {}
 
-    async def deliver(self, reply: AgentReply, reply_context: Dict[str, str]) -> None:
+    async def deliver(self, reply: AgentReply, reply_context: dict[str, str]) -> None:
         await self._client.send_message(reply_context["to"], self.split_reply(str(reply)), reply_context.get("reply_to_message_id"))
 
-    async def deliver_error(self, message: str, reply_context: Dict[str, str]) -> None:
+    async def deliver_error(self, message: str, reply_context: dict[str, str]) -> None:
         try:
             await self._client.send_message(reply_context["to"], [message], reply_context.get("reply_to_message_id"))
         except Exception as e:

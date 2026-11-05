@@ -9,7 +9,6 @@ This module provides a PreHook that:
 """
 
 import logging
-from typing import Optional
 
 import litellm
 
@@ -202,7 +201,7 @@ class MultimodalPreHook(PreHook):
         req: AgentRequestAttachmentRef,
         manager: AttachmentStorageManager,
         config: _MultimodalConfig,
-    ) -> Optional[_AttachmentDescription]:
+    ) -> _AttachmentDescription | None:
         """
         Describe an attachment that is already in storage, referenced only by its id.
 

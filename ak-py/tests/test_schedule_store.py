@@ -8,7 +8,6 @@ its config wiring plus a representative slice (the thread suite's reasoning).
 
 import fnmatch
 import sys
-from typing import Optional
 from unittest.mock import MagicMock
 
 import pytest
@@ -164,7 +163,7 @@ class _FakeRedisLikeClient:
     def ping(self) -> bool:
         return True
 
-    def set(self, key: str, value, ex: Optional[int] = None, nx: bool = False) -> bool:
+    def set(self, key: str, value, ex: int | None = None, nx: bool = False) -> bool:
         if nx and key in self.values:
             return False
         self.values[key] = value.encode() if isinstance(value, str) else value
@@ -190,7 +189,7 @@ class _FakeRedisLikeClient:
     def expire(self, name: str, time: int) -> None:
         self.expired.append((name, time))
 
-    def scan_iter(self, match: str, count: Optional[int] = None):
+    def scan_iter(self, match: str, count: int | None = None):
         return [key for key in list(self.values) + list(self.sets) if fnmatch.fnmatch(key, match)]
 
 
@@ -200,7 +199,7 @@ class _FakeDynamoDBTable:
     def __init__(self, items: dict):
         self._items = items
         self.scan_calls: list[dict] = []
-        self.page_size: Optional[int] = None
+        self.page_size: int | None = None
 
     def scan(self, **kwargs) -> dict:
         self.scan_calls.append(kwargs)
@@ -226,7 +225,7 @@ class _FakeDynamoDBDriver:
     def put(self, item: dict) -> None:
         self.items[item["task_id"]] = item
 
-    def get(self, pk_value: str, sk_value=None) -> Optional[dict]:
+    def get(self, pk_value: str, sk_value=None) -> dict | None:
         return self.items.get(pk_value)
 
     def delete(self, pk_value: str, sk_value=None) -> None:

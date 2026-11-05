@@ -50,7 +50,8 @@ Use lowercase file names (for example `qdrant.py`, `milvus.py`, `elasticsearch.p
 Implement a concrete class that extends `KnowledgeBase`:
 
 ```python
-from typing import Any, Iterable, List, Mapping
+from collections.abc import Iterable, Mapping
+from typing import Any
 
 from .base import KnowledgeBase, Record
 from .model import KnowledgeCapabilities
@@ -91,7 +92,7 @@ class MyBackendManager(KnowledgeBase):
             # Persist text + metadata using backend-native API.
             self._client.store(text=text, metadata=metadata)
 
-    def search(self, query: str, limit: int = 3, **kwargs) -> List[Mapping[str, Any]]:
+    def search(self, query: str, limit: int = 3, **kwargs) -> list[Mapping[str, Any]]:
         rows = self._client.search(query=query, limit=limit)
         return [{"text": row["text"], "metadata": row.get("metadata", {})} for row in rows]
 

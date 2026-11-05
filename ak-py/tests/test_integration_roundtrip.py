@@ -6,7 +6,7 @@ the adapter that produced the request — with the reply context intact.
 """
 
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import pytest
 from fastapi import FastAPI, Request
@@ -119,20 +119,20 @@ class RoundTripOutboundAdapter(OutboundAdapter):
     """Stands in for a platform API, recording exactly what would have been sent."""
 
     name = ADAPTER_NAME
-    delivered: List[tuple] = []
-    errors: List[tuple] = []
-    paused: List[tuple] = []
+    delivered: list[tuple] = []
+    errors: list[tuple] = []
+    paused: list[tuple] = []
 
-    async def deliver(self, reply: AgentReply, reply_context: Dict[str, str]) -> None:
+    async def deliver(self, reply: AgentReply, reply_context: dict[str, str]) -> None:
         RoundTripOutboundAdapter.delivered.append((str(reply), dict(reply_context)))
 
-    async def deliver_paused(self, reply: AgentPausedReplyAny, reply_context: Dict[str, str]) -> None:
+    async def deliver_paused(self, reply: AgentPausedReplyAny, reply_context: dict[str, str]) -> None:
         RoundTripOutboundAdapter.paused.append(([i.id for i in reply.interruptions], dict(reply_context)))
 
-    async def deliver_error(self, message: str, reply_context: Dict[str, str]) -> None:
+    async def deliver_error(self, message: str, reply_context: dict[str, str]) -> None:
         RoundTripOutboundAdapter.errors.append((message, dict(reply_context)))
 
-    async def acknowledge(self, reply_context: Dict[str, str]) -> Dict[str, str]:
+    async def acknowledge(self, reply_context: dict[str, str]) -> dict[str, str]:
         return {"ack_id": "ack-1"}
 
 
@@ -247,14 +247,14 @@ def _review(transport, answers, message="812"):
     return TestClient(app).post("/roundtrip/webhook", json=body)
 
 
-def _queued(transport) -> List[Any]:
+def _queued(transport) -> list[Any]:
     """Every input message, drained one at a time.
 
     The in_memory transport keeps at most one message in flight per group, and every press in a
     conversation shares one — so a single fetch sees one message however many were enqueued.
     """
     consumer = transport.create_consumer(QueueName.INPUT)
-    messages: List[Any] = []
+    messages: list[Any] = []
     while batch := consumer.fetch(1, 0.1):
         messages.extend(batch)
         for message in batch:

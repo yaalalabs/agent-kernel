@@ -5,7 +5,6 @@ ordering guarantees (record first, register second, roll back on failure) are ob
 """
 
 import json
-from typing import Optional
 
 import pytest
 
@@ -29,7 +28,7 @@ FUTURE_AT = "2030-06-01T09:00:00"
 class FakeScheduleProvider(ScheduleProvider):
     """Records what the manager asked of the provider, and can be made to fail on demand."""
 
-    def __init__(self, fail_on: Optional[str] = None):
+    def __init__(self, fail_on: str | None = None):
         self.created: list[tuple[str, str]] = []  # (task_id, body_template)
         self.updated: list[tuple[str, str]] = []
         self.deleted: list[str] = []

@@ -1,7 +1,7 @@
 import logging
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable, Mapping
 from datetime import datetime
-from typing import Any, Callable, ClassVar, List, Mapping
+from typing import Any, ClassVar
 
 from crewai import Agent, Crew, Memory, Task
 from crewai.memory import MemoryRecord, ScopeInfo
@@ -573,7 +573,7 @@ class CrewAIModule(Module):
         self._output_json = output_json or {}
         self.load(agents)
 
-    def _wrap(self, agent: Agent, agents: List[Agent]) -> BaseAgent:
+    def _wrap(self, agent: Agent, agents: list[Agent]) -> BaseAgent:
         """
         Wraps the provided agent in a CrewAIAgent instance.
         :param agent: Agent to wrap.
