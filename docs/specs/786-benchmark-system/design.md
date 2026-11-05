@@ -259,8 +259,8 @@ log level with per-stage trace points on the request path.
   - counts: `workers_before_up`, `workers_peak`, `workers_before_down`, `workers_after_down`;
   - rate in workers / min: workers added ÷ (scale-up done − `t_load_up`), workers removed ÷ (scale-down done −
     `t_load_down`); never divides by 0, empty for a step that didn't scale (decided 2026-11-03);
-  - a time read from a 1-minute value (Lambda's metric) counts at the end of that minute: "10:01 → 61" = reached by
-    10:02:00;
+  - a 1-minute value (Lambda's metric) is already stored at the end of its minute (see `InfoFetcher` under Hosts):
+    "10:01 → 61" = reached by 10:02:00;
   - a count with no source stays empty; a step that didn't scale records e.g. 1 → 1.
 
 ### Resource usage (CPU and memory)
@@ -544,6 +544,10 @@ flowchart TD
     `deployment` are parameters, not instance variables: the fetchers are created in the host registry before
     anything is deployed, one bundle serves a separate deployment per execution mode, and the re-collect commands
     deploy nothing. So a fetcher stays stateless and works for any deployment;
+  - a value the source gives per period (CloudWatch metrics, Logs Insights `bin()` rows) gets `ts` = the **end** of
+    that period, set in `fetch()` (CloudWatch's 10:01 datapoint is stored as 10:02:00: it's the maximum over that
+    minute, known only once the minute is over). Window fill and derived times then both use `ts` as stored
+    (decided 2026-11-05, PR #893 review);
   - `store(result: T, step)`: abstract, written once in each family base for its type;
   - **No duplicate rows** (decided 2026-11-03, PR #877 review): before writing a row, `store()` checks whether a row
     with the same timestamp and key is already stored (resource usage: `ts, tier, worker, metric, stat, fetcher`;
@@ -567,11 +571,18 @@ flowchart TD
   - `ecs`: `scaling_config.enabled = true`, `min_count >= 1`.
   - `lambda`: zip packaging (Lambda Insights layer); agent runner timeout **60 s** (AK default 45 s, but 10 messages ×
     the 5 s max agent delay = 50 s); `batch_size × max agent delay` stays under the agent runner timeout (decided
-    2026-11-04, PR #893 review). Input queue visibility timeout **360 s** (6 × the 60 s function timeout, as AWS
-    recommends for SQS event sources; AK default 60 s) and message retention **5 min** (300 s, AK's serverless default,
-    set explicitly) on the input and output queues (decided 2026-11-05, PR #893 review). Retention is shorter than the visibility timeout,
-    so a message that was picked up is never handed out a second time; a message still waiting after 5 min is dropped
-    (the client has timed out on it by then).
+    2026-11-04, PR #893 review). Queue settings (decided 2026-11-05, PR #893 review):
+    - input queue visibility timeout **360 s** (6 × the 60 s agent runner timeout, as AWS recommends for SQS event
+      sources; AK default 60 s);
+    - output queue visibility timeout **300 s** (≥ 6 × the 45 s response handler timeout = 270 s, and ≥ retention; AK
+      default 60 s); response handler timeout stays at AK's 45 s;
+    - message retention **5 min** (300 s, AK's serverless default, set explicitly) on both queues;
+    - batch size 10 and batching window 0 s on both event source mappings (AK defaults), so the 6 × rule needs no
+      extra time for the window.
+    - On both queues the visibility timeout is ≥ retention, so a message that was picked up and not deleted expires
+      before it would become visible again. That's not an exactly-once guarantee (SQS can still deliver a message
+      twice). On the input queue, a message still waiting after 5 min is dropped (the client has timed out on it by
+      then); the output queue's 5 min starts when the response is sent to it.
   - every host: queue mode, WebSocket delivery, `logging.ak.level: TRACE`, the mock agent.
 
 ### Mock agent

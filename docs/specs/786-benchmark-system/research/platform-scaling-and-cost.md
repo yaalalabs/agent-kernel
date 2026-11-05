@@ -356,8 +356,9 @@ Worker counts (from → to), recorded per tier, count type (desired / running) a
   - A step that didn't scale has no scale-up / scale-down done time, so its rate stays empty.
 - **A time read from a 1-minute value counts at the end of that minute** (Lambda's `ConcurrentExecutions`):
   CloudWatch labels each value with the start of its minute, but the count could have been reached at any moment in
-  that minute. So "10:01 → 61 workers" means "61 reached by 10:02:00". This applies to every time read from such a
-  value (first new worker, scale-up done, scale-down start / done). Otherwise scale-up could look finished at the same
+  that minute. So "10:01 → 61 workers" means "61 reached by 10:02:00". The fetcher stores such a value with `ts` =
+  the end of its period, so the per-time-window CSV and the derived times use the same time (decided 2026-11-05, PR #893 review). This
+  applies to every time read from such a value (first new worker, scale-up done, scale-down start / done). Otherwise scale-up could look finished at the same
   moment as the first send. ECS counts come from live polls with exact times and need no such rule.
   - Platforms don't add workers evenly. They add them in steps, e.g. ECS goes 2 → 8 at minute 4, waits out the
     scale-out cooldown, then goes 8 → 18. The rate smooths these steps into one number, which hides the shape.
@@ -391,13 +392,18 @@ Worker counts (from → to), recorded per tier, count type (desired / running) a
     2 s agent delay runs ~20 s. The agent runner timeout is 45 s by default (`ak-aws/serverless/variables.tf`, `agent_runner`),
     and `batch_size × maximum agent delay` has to stay under it: 10 × the default 5 s maximum delay is 50 s. So the
     benchmark deployer sets the agent runner timeout to **60 s** (decided 2026-11-04, PR #893 review). It also sets the
-    input queue visibility timeout to **360 s**: AWS recommends at least 6× the function timeout for an SQS event
-    source, so Lambda can retry a throttled batch (Lambda also rejects a function timeout above the visibility timeout,
-    and AK's Terraform checks visibility ≥ timeout, `ak-aws/serverless/state.tf`; AK's default is 60 s). Message
-    retention is **5 min** (300 s, AK's serverless default, set explicitly) on the input and output queues
-    (decided 2026-11-05, PR #893 review). Retention is shorter than the visibility timeout, so a picked-up message is never handed out a
-    second time; one still waiting after 5 min is dropped (the client has timed out on it by then). Batch size,
-    timeout, visibility timeout, retention and the minimum and maximum agent delay are saved in the run metadata.
+    input queue visibility timeout to **360 s** and the output queue visibility timeout to **300 s**: AWS recommends
+    at least 6× the function timeout (plus the batching window, 0 s here) for an SQS event source, so Lambda can retry
+    a throttled batch; 6 × 60 s = 360 s for the agent runner, 6 × 45 s = 270 s for the response handler (AK's default
+    45 s timeout, unchanged). Lambda also rejects a function timeout above the visibility timeout, and AK's Terraform
+    checks both queues' visibility ≥ their function's timeout (`ak-aws/serverless/state.tf`); AK's default visibility
+    is 60 s on both. Message retention is **5 min** (300 s, AK's serverless default, set explicitly) on both queues
+    (decided 2026-11-05, PR #893 review). On both queues the visibility timeout is ≥ retention, so a message that was picked up and not
+    deleted expires before it would become visible again; that's not an exactly-once guarantee (SQS can still
+    deliver a message twice). On the input queue, a message still waiting after 5 min is dropped (the client has
+    timed out on it by then); the output queue's 5 min starts when the response is sent to it. Batch size, batching
+    window, timeouts, visibility timeouts, retention and the minimum and maximum agent delay are saved in the run
+    metadata.
   - So the number of concurrent executions is much lower than the number of requests: each
     environment handles a batch of messages, then the next batch. Example: 1000 requests at once, 2 s each, batch
     size 10, default mode: 5 invocations at first, +300 per minute (~5 per second), so all 100 batches are picked up
