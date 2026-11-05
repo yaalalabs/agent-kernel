@@ -297,6 +297,10 @@ sends the whole set as one decision. Submitting with a question still blank says
 nothing. The marks live in the keyboard itself, which Telegram hands back on every press, so
 nothing is stored between them. This is the one rendering that numbers, because a keyboard sits at
 the foot of the message rather than beside the question it answers.
+
+If such a pause also holds a question wanting a typed answer, there is no tally: no verb could
+answer that question, and the framework will not take the set without it. The questions arrive as
+text, with a note saying the pause has to be answered over another surface.
 :::
 
 The buttons stay on the message after a decision. Pressing the same one again is deduplicated and

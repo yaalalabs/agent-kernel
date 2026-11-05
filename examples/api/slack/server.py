@@ -30,8 +30,6 @@ def restart_service(name: str) -> str:
     return f"{name} was restarted (simulated)."
 
 
-# Provider-agnostic: swap for "anthropic:...", "google-gla:...", etc. (install the matching
-# provider extra). The model below needs OPENAI_API_KEY.
 MODEL = "openai:gpt-4.1-mini"
 
 general_agent = Agent(

@@ -189,7 +189,9 @@ and a `PreHook` is where you check it.
 On Pydantic AI and Microsoft Agent Framework a resume has to answer every question at once, so a
 button per question could not work. Those pauses arrive with a single **Review all** button that
 opens a form: one required choice per question, one submit, and every answer travels as one
-decision. A denial there carries no reason — the form keeps its block budget for questions.
+decision. A denial there carries no reason — the form keeps its block budget for questions. A pause
+that also holds an `input_required` question gets no button at all, since one of its answers could
+never be a verdict.
 :::
 
 The buttons stay on the message after a decision. Pressing the same one again is deduplicated and

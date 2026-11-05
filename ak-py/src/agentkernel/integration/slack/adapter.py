@@ -623,12 +623,18 @@ class SlackOutboundAdapter(OutboundAdapter):
         Slack takes 50 blocks per message. Two are held back for the closing line and a possible
         overflow notice; questions past what is left are counted rather than dropped silently.
 
+        A pause answered together whose review button could not be drawn — because a question fell
+        outside the budget, or wants a typed answer no verdict could give — carries
+        ``ANSWER_TOGETHER_NOTICE``: its questions have no controls of their own, so without it the
+        message would go out with nothing to press and no reason why.
+
         :param reply: The paused reply to draw.
         :return: The blocks to post.
         """
         opening, closing = self._pause_template(reply)
         blocks = self.split_reply(opening.strip())
         together = reply.answer_together and len(reply.interruptions) > 1
+        form = together and self._answerable_together(reply)
         budget = MAX_BLOCKS - 2
         skipped = 0
 
@@ -639,11 +645,13 @@ class SlackOutboundAdapter(OutboundAdapter):
                 continue
             blocks.extend(question)
 
-        if together and not skipped:
+        if form and not skipped:
             blocks.append(self._review_button())
         if skipped:
             self._log.warning(f"{skipped} interruption(s) did not fit Slack's {MAX_BLOCKS}-block message and were left out")
             blocks.append(self._notice(self.OVERFLOW_NOTICE.format(count=skipped)))
+        if together and (skipped or not form):
+            blocks.append(self._notice(self.ANSWER_TOGETHER_NOTICE))
         blocks.extend(self.split_reply(closing.strip()))
         return blocks
 
@@ -651,7 +659,9 @@ class SlackOutboundAdapter(OutboundAdapter):
         """One question, and the controls or the note that goes under it.
 
         A note stands in when :meth:`_decidable` rejects the question, or when its id would blow
-        Slack's ``block_id``/``value`` budget — which costs the **whole** message, not one row.
+        Slack's ``block_id``/``value`` budget — which costs the **whole** message, not one row. The
+        note is drawn either way: a question wanting a typed answer has nothing to offer in a review
+        form either, and carries no ``block_id``, so the form never asks for a verdict on it.
 
         :param interruption: The question to draw.
         :param controls: False when the whole pause is answered through the review form instead,
@@ -659,11 +669,11 @@ class SlackOutboundAdapter(OutboundAdapter):
         :return: Its section blocks, followed by its actions block or its note.
         """
         blocks = self.split_reply(self._escape_mrkdwn(self._format_interruption(interruption)))
-        if not controls:
-            blocks[0]["block_id"] = f"{BLOCK_PREFIX}{interruption.id}"
-            return blocks
         if not self._decidable(interruption):
             blocks.append(self._notice(self.TYPED_ANSWER_NOTICE))
+            return blocks
+        if not controls:
+            blocks[0]["block_id"] = f"{BLOCK_PREFIX}{interruption.id}"
             return blocks
 
         block_id = f"{BLOCK_PREFIX}{interruption.id}"

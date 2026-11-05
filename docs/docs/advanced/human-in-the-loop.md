@@ -278,7 +278,11 @@ Four things to know before you ship it:
   Framework refuse a resume that leaves any question unanswered, so a button per question could
   never work there. Slack offers a single **Review all** button instead, opening a form with one
   required choice per question and one submit. Telegram puts every question in one message under a
-  tally keyboard: a press marks an answer instead of sending it, and **Submit** sends the set. Everywhere else, a press still answers one question on its own.
+  tally keyboard: a press marks an answer instead of sending it, and **Submit** sends the set.
+  Everywhere else, a press still answers one question on its own. If such a pause also holds an
+  `input_required` question, neither surface offers anything to press at all — the submission would
+  need a verdict for a question that wants a value, and the framework will not take the set without
+  it — so the message says the pause has to be answered elsewhere.
 - **The buttons stay after a decision.** Nothing is edited out: a resumed run's reply is
   indistinguishable from a run a hook stopped, so editing on that guess could strip the controls
   off a pause that is still open. Pressing the same button again is deduplicated and changes

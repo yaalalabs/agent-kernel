@@ -418,6 +418,22 @@ class TestTally:
         assert request is None, "a lost selection is a press that did nothing, not a failed delivery"
         assert "tally selection" in caplog.text
 
+    @pytest.mark.asyncio
+    async def test_a_question_wanting_a_typed_answer_costs_the_whole_tally(self, caplog):
+        adapter = _outbound()
+        reply = _paused("call_a")
+        reply.answer_together = True
+        reply.interruptions.append(PausedInterruption(id="ask_1", kind="input_required", payload={"question": "Which warehouse?"}))
+
+        with caplog.at_level(logging.WARNING, logger="ak.integration.telegram"):
+            await adapter.deliver_paused(reply, {"chat_id": str(CHAT_ID)})
+
+        [call] = adapter._client.send_message.await_args_list
+        assert call.kwargs.get("reply_markup") is None, "a verdict cannot answer a question that wants a value"
+        text = "".join(call.args[1])
+        assert "Which warehouse?" in text and TelegramOutboundAdapter.ANSWER_TOGETHER_NOTICE in text
+        assert "typed answer" in caplog.text
+
 
 class TestPauseRendering:
     """A paused run drawn as one message per question, each with the keyboard that answers it."""

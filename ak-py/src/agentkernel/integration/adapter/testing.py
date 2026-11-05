@@ -28,7 +28,6 @@ PAUSED_REPLY = AgentPausedReplyAny(
     interruptions=[
         PausedInterruption(id="call_9f2b41d7c8e0", kind="tool_call", tool_name="refund_order", arguments='{"order_id": "A-10294"}'),
         PausedInterruption(id="call_0c1d55ab77e3", kind="confirmation", tool_name="notify_customer"),
-        # Exactly what LangGraph builds: the question lives in payload and nothing names it.
         PausedInterruption(id="b7f3e2a1c9d4", kind="input_required", payload={"question": "Which warehouse should ship this?"}),
     ],
 )

@@ -534,6 +534,32 @@ class TestAnswerTogether:
         [actions] = [b for b in posted.await_args.kwargs["blocks"] if b["type"] == "actions"]
         assert actions["block_id"] == f"{BLOCK_PREFIX}call_a", "one question is never a partial answer"
 
+    @pytest.mark.asyncio
+    async def test_a_question_wanting_a_typed_answer_costs_the_whole_form(self):
+        reply = self._together("call_a")
+        reply.interruptions.append(PausedInterruption(id="ask_1", kind="input_required", payload={"question": "Which warehouse?"}))
+        adapter, posted = _outbound(), AsyncMock()
+        with patch.object(SlackOutboundAdapter, "_client", return_value=MagicMock(chat_postMessage=posted)):
+            await adapter.deliver_paused(reply, {"channel": "C9"})
+
+        blocks = posted.await_args.kwargs["blocks"]
+        assert not [b for b in blocks if b["type"] == "actions"], "a verdict cannot answer a question that wants a value"
+        assert not [b for b in blocks if b.get("block_id") == f"{BLOCK_PREFIX}ask_1"], "the form must not ask for a verdict on it"
+        notices = " ".join(b["elements"][0]["text"] for b in blocks if b["type"] == "context")
+        assert SlackOutboundAdapter.TYPED_ANSWER_NOTICE in notices
+        assert SlackOutboundAdapter.ANSWER_TOGETHER_NOTICE in notices, "nothing to press needs a reason why"
+
+    @pytest.mark.asyncio
+    async def test_a_pause_too_large_for_one_message_says_why_it_cannot_be_answered(self):
+        adapter, posted = _outbound(), AsyncMock()
+        with patch.object(SlackOutboundAdapter, "_client", return_value=MagicMock(chat_postMessage=posted)):
+            await adapter.deliver_paused(self._together(*(f"call_{i}" for i in range(60))), {"channel": "C9"})
+
+        blocks = posted.await_args.kwargs["blocks"]
+        assert not [b for b in blocks if b.get("block_id") == f"{BLOCK_PREFIX}review"], "a form missing a question could not be submitted"
+        notices = " ".join(b["elements"][0]["text"] for b in blocks if b["type"] == "context")
+        assert SlackOutboundAdapter.ANSWER_TOGETHER_NOTICE in notices
+
     def _press(self, adapter, *ids):
         button = adapter._review_button()["elements"][0]
         sections = [

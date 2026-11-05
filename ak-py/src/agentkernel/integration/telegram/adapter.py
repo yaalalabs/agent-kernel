@@ -241,7 +241,8 @@ class TelegramInboundAdapter(InboundAdapter):
 
         The keyboard is the tally: it comes back on every press as
         ``CallbackQuery.message.reply_markup``, so redrawing it is the whole of the state keeping,
-        and the adapter stays as stateless as the seam requires.
+        and the adapter stays as stateless as the seam requires. A failed edit therefore changed
+        nothing and the press is simply lost.
 
         :param callback_query: The press, carrying the message and its current keyboard.
         :param chat_id: The conversation.
@@ -256,7 +257,6 @@ class TelegramInboundAdapter(InboundAdapter):
         try:
             await self._client.edit_message_reply_markup(str(chat_id), message.get("message_id"), {"inline_keyboard": redrawn})
         except Exception as e:
-            # The keyboard is the state, so a failed edit changed nothing: the press is simply lost.
             self._log.warning(f"Could not record a tally selection: {e}")
         return None
 
@@ -559,9 +559,13 @@ class TelegramOutboundAdapter(OutboundAdapter):
         sends the whole set.
 
         :param reply: The paused reply to draw.
-        :return: The keyboard rows, or nothing when any question's callback data is over budget —
-            a tally missing a question could never be submitted.
+        :return: The keyboard rows, or nothing when a question takes no verdict or its callback
+            data is over budget — a tally missing a question could never be submitted.
         """
+        if not self._answerable_together(reply):
+            self._log.warning("A question in this pause wants a typed answer, which no tally can carry; the pause gets no tally")
+            return []
+
         rows = []
         for position, interruption in enumerate(reply.interruptions, 1):
             row = [

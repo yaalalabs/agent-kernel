@@ -247,6 +247,10 @@ class PydanticAIRunner(BaseRunner):
 
         :param agent: The agent that paused.
         :param session: The session the record is written to.
+        `answer_together` mirrors what :meth:`_reject_partial` enforces, so a surface drawing
+        controls can offer one submit for the whole pause rather than a control per question that
+        would be refused on its own.
+
         :param result: The run result whose `output` is a `DeferredToolRequests`.
         :return: The paused reply, carrying the assigned run id.
         """
@@ -263,8 +267,6 @@ class PydanticAIRunner(BaseRunner):
             interruptions=interruptions,
             payload={"messages": to_jsonable_python(result.all_messages())},
         )
-        # answer_together mirrors what _reject_partial enforces, so a surface can offer one submit
-        # for the whole pause rather than a control per question that would be refused alone.
         return AgentPausedReplyAny(
             run_id=record.id, session_id=session.id, agent=agent.name, interruptions=record.interruptions, answer_together=True
         )

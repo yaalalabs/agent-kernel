@@ -58,6 +58,11 @@ Rules:
    question. An id over the callback budget costs the whole tally, since a tally missing a question
    could never be submitted; that pause falls back to text and `ANSWER_TOGETHER_NOTICE`. A pause holding one
    question is never a partial answer, so both keep their ordinary controls.
+   An `input_required` question costs the whole form or tally the same way, and for the same
+   reason: a submission would have to carry a verdict for a question that wants a value, and the
+   framework will not take the set without it. `OutboundAdapter._answerable_together` is the shared
+   test; the questions still render, each non-decidable one under `TYPED_ANSWER_NOTICE`, and the
+   pause carries `ANSWER_TOGETHER_NOTICE` so a reader knows why nothing can be pressed.
 7. **Each question's controls go against that question**, never a block of questions followed by a
    block of rows. Unlabelled rows in the same order as the paragraphs above them is how the wrong
    gated call gets approved, and nothing in the message would flag it. The two platforms reach the

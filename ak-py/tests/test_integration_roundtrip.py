@@ -204,7 +204,6 @@ def _environment(monkeypatch):
     RoundTripOutboundAdapter.paused = []
     IntegrationAdapterFactory.reset()
     IntegrationAdapterFactory._cache[ADAPTER_NAME] = RoundTripOutboundAdapter()
-    # The session store is process-wide, so a resumed run's state would otherwise outlive its test.
     Runtime.current().sessions().clear()
     yield
     Runtime.current().sessions().clear()

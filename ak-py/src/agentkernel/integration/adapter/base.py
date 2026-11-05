@@ -264,6 +264,20 @@ class OutboundAdapter(ABC):
         return interruption.kind in cls.DECIDABLE_KINDS
 
     @classmethod
+    def _answerable_together(cls, reply: AgentPausedReplyAny) -> bool:
+        """Whether one submit could answer the whole of a pause that has to be answered at once.
+
+        A question wanting a typed answer has no verb to put in the submission, and the framework
+        refuses a resume that leaves it out, so a surface drawing only controls cannot answer the
+        pause at all — not even the questions beside it. Offering a submit there would collect a
+        verdict on something that wanted a value.
+
+        :param reply: The paused reply, already known to set ``answer_together``.
+        :return: True when every question takes a verdict.
+        """
+        return all(cls._decidable(interruption) for interruption in reply.interruptions)
+
+    @classmethod
     def _format_interruption(cls, interruption: PausedInterruption) -> str:
         """One interruption as the lines naming what is waiting.
 
