@@ -769,8 +769,12 @@ class TestLangGraphStreamStateReadBack:
         assert agent.agent.aget_state.call_args.args[0] == expected
 
 
-def _gated_graph(question=None, second=False):
-    """A graph whose node stops on interrupt() and reports the value it was resumed with."""
+def _gated_graph(question=None, second=False, parallel=False):
+    """A graph whose node stops on interrupt() and reports the value it was resumed with.
+
+    ``parallel`` builds a different shape: two interrupting nodes fanning out from ``START``, which
+    is how `examples/api/hitl`'s planner asks both its questions in one pause.
+    """
     from operator import add
     from typing import Annotated, TypedDict
 
@@ -789,7 +793,22 @@ def _gated_graph(question=None, second=False):
             return {"answer": repr(got), "second": repr(again)}
         return {"answer": repr(got)}
 
+    def ask_method(state: S):
+        return {"answer": repr(interrupt({"question": "how?", "options": ["card", "credit"]}))}
+
+    def ask_note(state: S):
+        return {"second": repr(interrupt({"question": "anything to tell them?"}))}
+
     graph = StateGraph(S)
+    if parallel:
+        graph.add_node("ask_method", ask_method)
+        graph.add_node("ask_note", ask_note)
+        graph.add_edge(START, "ask_method")
+        graph.add_edge(START, "ask_note")
+        graph.add_edge("ask_method", END)
+        graph.add_edge("ask_note", END)
+        return graph.compile()
+
     graph.add_node("ask", ask)
     graph.add_edge(START, "ask")
     graph.add_edge("ask", END)
@@ -914,6 +933,29 @@ class TestLangGraphResume:
         await runner.resume(agent, session, requests, decisions, record)
 
         assert (await agent.agent.aget_state({"configurable": {"thread_id": "s"}})).values["answer"] == "'cancelled'"
+
+    @pytest.mark.asyncio
+    async def test_an_unanswered_question_comes_back_under_the_same_id(self):
+        """A partial resume re-asks what it left out — a new record, the same interruption id.
+
+        The id is LangGraph's own, derived from a task that has not run, so it survives the re-ask
+        while the record around it does not: `_paused_reply` clears the runner's previous one
+        before adding this one. `examples/api/hitl` documents the behaviour and tests it against a
+        live model; this pins it offline.
+        """
+        runner, session = LangGraphRunner(), Session("s")
+        agent = _real_agent(_gated_graph(parallel=True))
+        paused = await runner.run(agent, session, [AgentRequestText(prompt="start")])
+        method = next(i for i in paused.interruptions if "options" in i.payload)
+        note = next(i for i in paused.interruptions if "options" not in i.payload)
+        record = PausedRunState.get(session, paused.run_id)
+        requests, decisions = _resume_requests(ResumeDecision(id=method.id, payload="card"))
+
+        reply = await runner.resume(agent, session, requests, decisions, record)
+
+        assert isinstance(reply, AgentPausedReplyAny)
+        assert [i.id for i in reply.interruptions] == [note.id]
+        assert reply.run_id != paused.run_id
 
     @pytest.mark.asyncio
     async def test_the_resume_clears_its_own_record(self):

@@ -200,9 +200,9 @@ interruptions. Two `interrupt()` calls in a *single* node cannot do that — the
 second is not reached until the first is answered, and the human pays a round trip to find out what
 else is wanted.
 
-Answer both and the graph runs on. Answer one and the other comes back as a fresh pause **under a
-new id**, which is also the case that exercises Agent Kernel's checkpointer, since the pause has to
-survive between turns.
+Answer both and the graph runs on. Answer one and the other comes back as a fresh pause — a new run,
+but **the same interruption id**, which LangGraph derives from a task that has not run. That is also
+the case that exercises Agent Kernel's checkpointer, since the pause has to survive between turns.
 
 Two things worth knowing, both LangGraph's behaviour rather than Agent Kernel's:
 

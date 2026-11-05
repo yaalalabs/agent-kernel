@@ -193,16 +193,17 @@ async def test_both_questions_arrive_in_one_pause(http_client):
 @pytest.mark.asyncio
 @pytest.mark.order(6)
 async def test_answering_only_one_question_re_asks_the_other(http_client):
-    """LangGraph forgets an unanswered question and asks it again — under a new id."""
+    """LangGraph drops an unanswered question and asks it again — a fresh pause, the same id."""
     paused = await http_client.ask("Plan the refund for ORD-1002.", agent="planner")
     choice = next(i for i in paused["interruptions"] if "options" in i["payload"])
+    free_text = next(i for i in paused["interruptions"] if "options" not in i["payload"])
 
     body = await http_client.answer((choice["id"], "Store credit"))
 
     assert body["status"] == "PAUSED", body
     assert len(body["interruptions"]) == 1
     assert "tell the customer" in body["interruptions"][0]["payload"]["question"]
-    assert body["interruptions"][0]["id"] != choice["id"]
+    assert body["interruptions"][0]["id"] == free_text["id"]
 
 
 @pytest.mark.asyncio
