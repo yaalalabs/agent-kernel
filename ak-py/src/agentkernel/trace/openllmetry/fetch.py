@@ -3,9 +3,10 @@ from __future__ import annotations
 import json
 import logging
 import math
+from collections.abc import Iterable
 from datetime import datetime, timedelta, timezone
 from functools import partial
-from typing import Any, Iterable, Optional
+from typing import Any
 
 import httpx
 
@@ -31,7 +32,7 @@ class TraceloopTraceFetcher(TraceFetcher):
     _TIMEOUT = 60.0
     _SESSION_ATTRIBUTE = "traceloop.association.properties.session_id"
 
-    def __init__(self, api_key: Optional[str], base_url: Optional[str] = None, transport: Optional[httpx.BaseTransport] = None):
+    def __init__(self, api_key: str | None, base_url: str | None = None, transport: httpx.BaseTransport | None = None):
         """
         :param api_key: Traceloop API key (``TRACELOOP_API_KEY``, which the tracer resolves).
         :param base_url: API base URL; defaults to the Traceloop cloud.
@@ -72,7 +73,7 @@ class TraceloopTraceFetcher(TraceFetcher):
             params["filters"] = json.dumps(filters)
         return params
 
-    def _fetch_page(self, client: httpx.Client, params: dict[str, Any], cursor: Optional[str]) -> tuple[list[dict[str, Any]], Optional[str]]:
+    def _fetch_page(self, client: httpx.Client, params: dict[str, Any], cursor: str | None) -> tuple[list[dict[str, Any]], str | None]:
         response = client.get(self._PATH, params={**params, "cursor": cursor} if cursor else params)
         response.raise_for_status()
         body = response.json()
@@ -108,7 +109,7 @@ class TraceloopTraceFetcher(TraceFetcher):
         )
 
     @staticmethod
-    def _timestamp(value: Any) -> Optional[datetime]:
+    def _timestamp(value: Any) -> datetime | None:
         """The warehouse timestamp format is undocumented: accept ISO strings and epoch s/ms/us/ns."""
         if value is None or value == "":
             return None

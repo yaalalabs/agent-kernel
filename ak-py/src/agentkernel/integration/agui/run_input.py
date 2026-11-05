@@ -118,7 +118,7 @@ class AGUIRunInput:
         return requests
 
     @staticmethod
-    def to_resume(run_input: "RunAgentInput") -> Optional[AgentResumeRequestAny]:
+    def to_resume(run_input: "RunAgentInput") -> AgentResumeRequestAny | None:
         """Map `RunAgentInput.resume` onto one resume request, or None when the body carries none.
 
         **No `run_id` is set, because the protocol has no field for one.** The run is resolved from
@@ -232,14 +232,14 @@ class AGUIRunInput:
         return AgentRequestFile(file_data=source.value, name=name, mime_type=source.mime_type)
 
     @staticmethod
-    def _attachment_request(value: str, mime_type: Optional[str], name: str) -> AgentRequest:
+    def _attachment_request(value: str, mime_type: str | None, name: str) -> AgentRequest:
         """Route a binary part to an image or file request by mime type."""
         if mime_type and mime_type.lower().startswith("image/"):
             return AgentRequestImage(image_data=value, name=name, mime_type=mime_type)
         return AgentRequestFile(file_data=value, name=name, mime_type=mime_type)
 
     @staticmethod
-    def _generated_name(index: int, mime_type: Optional[str], value: str) -> str:
+    def _generated_name(index: int, mime_type: str | None, value: str) -> str:
         """Invent a filename when AG-UI did not send one."""
         if "://" in value:
             candidate = unquote(urlparse(value).path.rsplit("/", 1)[-1]).strip()
@@ -271,9 +271,9 @@ class AGUIRunEnvelope(BaseModel):
     # round-trips back on every run.
     BUDGET_BYTES: ClassVar[int] = 65536
 
-    state: Optional[dict] = None
-    forwarded_props: Optional[dict] = None
-    context: Optional[list[dict]] = None
+    state: dict | None = None
+    forwarded_props: dict | None = None
+    context: list[dict] | None = None
 
     @staticmethod
     def build(run_input: "RunAgentInput") -> "AGUIRunEnvelope":
@@ -348,4 +348,4 @@ class AGUIRunRequest(BaseRunRequest):
     extra; RequestProducer takes a BaseRunRequest, so a subclass needs no producer change.
     """
 
-    agui: Optional[AGUIRunEnvelope] = None
+    agui: AGUIRunEnvelope | None = None

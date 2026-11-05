@@ -9,7 +9,8 @@ The navigation protocol below was hand-written in every OKF application's agent 
 before this capability existed. It ships here so an application no longer has to know it.
 """
 
-from typing import ClassVar, Dict, Mapping, Optional
+from collections.abc import Mapping
+from typing import ClassVar
 
 from .roles import OKFRole, OKFRoleRegistry
 
@@ -81,7 +82,7 @@ class OKFPromptComposer:
     #: One sentence per role, rendered under the database it applies to. An agent holding
     #: different roles in different bundles gets both, each scoped to its own bundle -- which is
     #: why the mandate is per line rather than once per agent.
-    MANDATES: ClassVar[Dict[OKFRole, str]] = {
+    MANDATES: ClassVar[dict[OKFRole, str]] = {
         OKFRole.CONSUMER: (
             "Your role here is CONSUMER. Navigate this bundle and answer from it: browse its namespaces, follow the links "
             "between concepts, and fetch the files you need to read in full. You have no way to change this bundle and "
@@ -107,7 +108,7 @@ class OKFPromptComposer:
         ),
     }
 
-    def __init__(self, registry: OKFRoleRegistry, descriptions: Mapping[str, Optional[str]]) -> None:
+    def __init__(self, registry: OKFRoleRegistry, descriptions: Mapping[str, str | None]) -> None:
         """
         Initialize the composer.
 
@@ -119,7 +120,7 @@ class OKFPromptComposer:
         self._descriptions = descriptions
 
     @classmethod
-    def for_agent(cls, agent_name: Optional[str]) -> str:
+    def for_agent(cls, agent_name: str | None) -> str:
         """
         Render the OKF section for one agent from the configured capability.
 
@@ -142,7 +143,7 @@ class OKFPromptComposer:
         composer = cls(manager.roles, {name: config.description for name, config in manager.databases.items()})
         return composer.compose(agent_name)
 
-    def compose(self, agent_name: Optional[str]) -> str:
+    def compose(self, agent_name: str | None) -> str:
         """
         Render the whole OKF prompt section for one agent.
 

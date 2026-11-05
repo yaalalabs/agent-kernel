@@ -13,7 +13,7 @@ Every broker flavor (embedded, thread, ECS, Lambda) drives the same engine to tu
 import asyncio
 import logging
 import time
-from typing import Any, ClassVar, Optional
+from typing import Any, ClassVar
 
 from ...core.config import AKConfig
 from ..base import Sandbox, SandboxProvider
@@ -41,7 +41,7 @@ class BrokerWorkerCore:
     # The handle owns the operation's timeout; the worker's own timer fires this much later as a backstop.
     BACKSTOP_GRACE_SECONDS: ClassVar[float] = 10.0
 
-    def __init__(self, *, inline_payload_max_bytes: Optional[int] = None) -> None:
+    def __init__(self, *, inline_payload_max_bytes: int | None = None) -> None:
         """Create an engine instance. ``inline_payload_max_bytes`` is the offload threshold
         for flavors that support it (``None`` for in-process flavors, which never offload)."""
         self._inline_max = inline_payload_max_bytes

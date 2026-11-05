@@ -2,7 +2,6 @@ import asyncio
 import json
 import logging
 import threading
-from typing import Optional
 
 from ..core.config import AKConfig
 from ..core.model import StreamChunk
@@ -36,9 +35,9 @@ class ResponseHandler:
 
     def __init__(
         self,
-        transport: Optional[QueueTransport] = None,
-        response_store: Optional[ResponseStore] = None,
-        ws_handler: Optional[WebSocketHandlerABC] = None,
+        transport: QueueTransport | None = None,
+        response_store: ResponseStore | None = None,
+        ws_handler: WebSocketHandlerABC | None = None,
     ):
         self._transport = transport or QueueTransportFactory.create()
         self._response_store = response_store
@@ -244,7 +243,7 @@ class ResponseHandler:
         self._get_store().add_message(record)
         self._log.info(f"[OUTPUT DONE] Stored response: request_id={request_id}, status_code={record['status_code']}")
 
-    def _store_failure_record(self, message: QueueMessage, request_id: Optional[str], error_text: str) -> None:
+    def _store_failure_record(self, message: QueueMessage, request_id: str | None, error_text: str) -> None:
         """Store a 500 record for a caller polling the response store, so it never waits out its budget."""
         if not request_id:
             self._log.warning("Cannot store permanent-failure response: request_id missing")

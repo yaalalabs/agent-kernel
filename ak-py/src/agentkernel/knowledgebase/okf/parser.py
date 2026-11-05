@@ -15,7 +15,7 @@ and never dereferenced.
 import posixpath
 import re
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any
 
 import yaml
 from pydantic import ValidationError
@@ -87,7 +87,7 @@ class OKFParserUtil:
         return data.decode("utf-8-sig", errors="replace")
 
     @staticmethod
-    def tokenise(text: str, max_tokens: Optional[int] = None) -> set[str]:
+    def tokenise(text: str, max_tokens: int | None = None) -> set[str]:
         """
         Reduce text to the token set the lexical ranker matches on.
 

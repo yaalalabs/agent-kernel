@@ -12,7 +12,7 @@ import logging
 import os
 import socket
 import threading
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from ...core.builder import SessionStoreBuilder
 from ...core.config import AKConfig
@@ -34,7 +34,7 @@ _log = logging.getLogger("ak.pipeline.ws.push")
 # One pooled HTTP client per process: pushes are small, frequent, and pod-to-pod, so
 # connection reuse matters and per-send clients would leak sockets.
 _client_lock = threading.Lock()
-_client: Optional[Any] = None
+_client: Any | None = None
 
 _REQUEST_TIMEOUT_SECONDS = 10.0
 
@@ -92,7 +92,7 @@ class PodPushWebSocketHandler(WebSocketHandlerABC):
     bounded retries, then the error is surfaced, never a crash loop.
     """
 
-    def __init__(self, connection_store: Optional[WSConnectionStore] = None, registry: Optional[LocalConnectionRegistry] = None):
+    def __init__(self, connection_store: WSConnectionStore | None = None, registry: LocalConnectionRegistry | None = None):
         """
         :param connection_store: The shared connection store (defaults to the session backend's).
         :param registry: The pod-local socket registry, used only for ``local``-endpoint delivery.
@@ -111,11 +111,11 @@ class PodPushWebSocketHandler(WebSocketHandlerABC):
 
     def broadcast(
         self,
-        endpoint_url: Optional[str] = None,
-        message: Optional[Dict[str, Any]] = None,
-        user_id: Optional[str] = None,
-        connection_ids: Optional[List[str]] = None,
-        message_type: Optional[WebSocketHandlerABC.MessageType] = None,
+        endpoint_url: str | None = None,
+        message: dict[str, Any] | None = None,
+        user_id: str | None = None,
+        connection_ids: list[str] | None = None,
+        message_type: WebSocketHandlerABC.MessageType | None = None,
     ) -> None:
         """Deliver one frame to the user's current connections (or to explicit connection ids).
 

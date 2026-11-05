@@ -21,8 +21,8 @@ import os
 import re
 import shlex
 import uuid
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import AsyncIterator
 
 import pytest
 

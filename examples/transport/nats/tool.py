@@ -2,10 +2,8 @@
 framework the agent uses (see app.py), so the same function would work unchanged under CrewAI,
 LangGraph, ADK, and the rest."""
 
-from typing import Dict, List
 
-
-def fetch_customer_activity(name: str, operations: List[str] | None = None) -> Dict[str, object]:
+def fetch_customer_activity(name: str, operations: list[str] | None = None) -> dict[str, object]:
     """
     Returns recent banking activities for a given customer name.
 
@@ -19,7 +17,7 @@ def fetch_customer_activity(name: str, operations: List[str] | None = None) -> D
     :return: A JSON object containing the customer's name and a list of activity
         records. Each record contains: type, amount, currency, and a short note.
     """
-    sample: List[Dict[str, object]] = [
+    sample: list[dict[str, object]] = [
         {"type": "deposit", "amount": 250.00, "currency": "USD", "note": "Deposited over the counter"},
         {"type": "bill_payment", "amount": 89.99, "currency": "USD", "note": "Utility bill"},
         {"type": "transfer", "amount": 150.00, "currency": "USD", "note": "To Savings"},

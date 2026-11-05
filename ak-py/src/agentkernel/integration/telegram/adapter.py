@@ -7,7 +7,7 @@ The adapter parses the whole update object rather than just its ``message``, so 
 import base64
 import logging
 import mimetypes
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import httpx
 from fastapi import HTTPException, Request
@@ -43,7 +43,7 @@ class _TelegramClient:
     def webhook_secret(self) -> str:
         return self._webhook_secret
 
-    async def send_message(self, chat_id: str, chunks: List[str]) -> None:
+    async def send_message(self, chat_id: str, chunks: list[str]) -> None:
         """Send each chunk as its own message, in order."""
         async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
             for chunk in chunks:
@@ -60,7 +60,7 @@ class _TelegramClient:
         except Exception as e:
             _log.warning(f"Failed to send chat action: {e}")
 
-    async def answer_callback_query(self, callback_query_id: str, text: Optional[str] = None) -> None:
+    async def answer_callback_query(self, callback_query_id: str, text: str | None = None) -> None:
         """Clear the loading state on an inline keyboard press. Never raises."""
         payload = {"callback_query_id": callback_query_id}
         if text:
@@ -72,7 +72,7 @@ class _TelegramClient:
         except Exception as e:
             _log.warning(f"Failed to answer callback query: {e}")
 
-    async def file_info(self, file_id: str) -> Optional[dict]:
+    async def file_info(self, file_id: str) -> dict | None:
         """Resolve a file id to its path and declared size."""
         try:
             async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
@@ -86,7 +86,7 @@ class _TelegramClient:
             _log.error(f"Error getting file info: {e}")
         return None
 
-    async def download(self, file_path: str) -> Optional[bytes]:
+    async def download(self, file_path: str) -> bytes | None:
         """Download a file from Telegram's file host."""
         try:
             async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
@@ -116,7 +116,7 @@ class TelegramInboundAdapter(InboundAdapter):
         """Telegram expects its own acknowledgement shape."""
         return {"ok": True}
 
-    def missing_verification_settings(self) -> List[str]:
+    def missing_verification_settings(self) -> list[str]:
         """Without a webhook secret the secret-token header is never checked (``verify``)."""
         return [] if self._client.webhook_secret else ["telegram.webhook_secret"]
 
@@ -148,7 +148,7 @@ class TelegramInboundAdapter(InboundAdapter):
 
         return InboundParseResult(requests=[request] if request is not None else [])
 
-    async def _from_message(self, message: dict, update_id: Any) -> Optional[InboundRequest]:
+    async def _from_message(self, message: dict, update_id: Any) -> InboundRequest | None:
         chat_id = message.get("chat", {}).get("id")
         message_id = message.get("message_id")
         if not chat_id or not message_id:
@@ -171,7 +171,7 @@ class TelegramInboundAdapter(InboundAdapter):
         sender_id = (message.get("from") or {}).get("id")
         return await self._build(chat_id, update_id, text, message, str(sender_id) if sender_id is not None else None)
 
-    async def _from_callback_query(self, callback_query: dict, update_id: Any) -> Optional[InboundRequest]:
+    async def _from_callback_query(self, callback_query: dict, update_id: Any) -> InboundRequest | None:
         """An inline keyboard press: its data is the message text."""
         chat_id = (callback_query.get("message") or {}).get("chat", {}).get("id")
         data = callback_query.get("data")
@@ -182,9 +182,9 @@ class TelegramInboundAdapter(InboundAdapter):
         sender_id = (callback_query.get("from") or {}).get("id")
         return await self._build(chat_id, update_id, data, None, str(sender_id) if sender_id is not None else None)
 
-    async def _build(self, chat_id: Any, update_id: Any, text: str, message: Optional[dict], sender_id: Optional[str]) -> Optional[InboundRequest]:
+    async def _build(self, chat_id: Any, update_id: Any, text: str, message: dict | None, sender_id: str | None) -> InboundRequest | None:
         session_id = str(chat_id)
-        requests: List[AgentRequest] = []
+        requests: list[AgentRequest] = []
         if text:
             requests.append(AgentRequestText(prompt=text))
         if message:
@@ -214,12 +214,12 @@ class TelegramInboundAdapter(InboundAdapter):
             reply_context={"chat_id": session_id},
         )
 
-    async def _process_files(self, message: dict, requests: List[AgentRequest]) -> List[str]:
+    async def _process_files(self, message: dict, requests: list[AgentRequest]) -> list[str]:
         """Download the message's photo and document, if any.
 
         :return: Names of the attachments that could not be taken.
         """
-        failed: List[str] = []
+        failed: list[str] = []
         photos = message.get("photo") or []
         if photos:
             # Telegram sends every rendition; the last is the largest.
@@ -238,11 +238,11 @@ class TelegramInboundAdapter(InboundAdapter):
 
     async def _add_file(
         self,
-        file_id: Optional[str],
+        file_id: str | None,
         label: str,
-        mime_type: Optional[str],
-        requests: List[AgentRequest],
-        failed: List[str],
+        mime_type: str | None,
+        requests: list[AgentRequest],
+        failed: list[str],
         as_image: bool,
     ) -> None:
         """Resolve, size-check and download one attachment onto ``requests``."""
@@ -300,14 +300,14 @@ class TelegramOutboundAdapter(OutboundAdapter):
     def __init__(self):
         self._client = _TelegramClient()
 
-    async def acknowledge(self, reply_context: Dict[str, str]) -> Dict[str, str]:
+    async def acknowledge(self, reply_context: dict[str, str]) -> dict[str, str]:
         await self._client.chat_action(reply_context["chat_id"], "typing")
         return {}
 
-    async def deliver(self, reply: AgentReply, reply_context: Dict[str, str]) -> None:
+    async def deliver(self, reply: AgentReply, reply_context: dict[str, str]) -> None:
         await self._client.send_message(reply_context["chat_id"], self.split_reply(str(reply)))
 
-    async def deliver_error(self, message: str, reply_context: Dict[str, str]) -> None:
+    async def deliver_error(self, message: str, reply_context: dict[str, str]) -> None:
         try:
             await self._client.send_message(reply_context["chat_id"], [message])
         except Exception as e:

@@ -94,7 +94,7 @@ class DemoAuthoriser(Authoriser):
         "demo-token": "demo-user",
     }
 
-    def authorise(self, token: str) -> Optional[str]:
+    def authorise(self, token: str) -> str | None:
         return self._TOKENS.get(token)
 
 

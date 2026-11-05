@@ -1,5 +1,4 @@
 import logging
-from typing import List
 
 from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.request_handlers.response_helpers import agent_card_to_dict
@@ -46,7 +45,7 @@ class A2ARESTRequestHandler:
         return router
 
     @classmethod
-    def get_agent_routers(cls) -> List[APIRouter]:
+    def get_agent_routers(cls) -> list[APIRouter]:
         routers = []
         for agent in A2A.get_agent_names():
             card = A2A.get_card(agent)
