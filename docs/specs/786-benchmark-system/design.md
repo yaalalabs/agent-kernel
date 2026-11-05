@@ -149,7 +149,8 @@ log level with per-stage trace points on the request path.
     checks again. If it never succeeds, the maximum cool-down ends the step. On SQS, such a poll breaks the 60 s run
     of zeros (decided 2026-11-04, PR #893 review).
   - **Maximum cool-down** (config, default 45 min from the end of `load`, settable per host): the step ends anyway and
-    records `cooldown_max_reached = true`.
+    records `cooldown_max_reached = true`. 45 min is more than enough for every host to scale in, so the next step
+    assumes the system is settled: no steps are skipped and the next step isn't marked (decided 2026-11-05, PR #893 review).
   - The check calls `fetch()` whichever group the fetcher is in, so a fetcher that isn't live-tracked (Lambda's
     metric) still works for it; the recorded counts come from its after-step `fetch_and_store()`.
 - **What is captured when:**
@@ -241,8 +242,12 @@ log level with per-stage trace points on the request path.
   reads a minute with no datapoint as 0 once it's older than its `metric_delay_s` constructor parameter (default set
   from the first Lambda runs, R2). Newer minutes without a datapoint aren't returned yet (their data may still be on
   its way). A read of the latest minutes (step-end check, starting counts) looks back far enough to get the latest
-  known minute, so the harness needs no Lambda-specific window; if the fetcher returns no value at all, that poll
-  counts as not met. Only this AWS fetcher has the parameter; it isn't in `ak-bench.yaml`.
+  known minute, so the harness needs no Lambda-specific window. A lookback with no datapoints at all (an idle tier)
+  gives 0 for every minute older than `metric_delay_s`; the fetcher returns no value (poll not met) only when the read
+  fails (API error, missing permission) or no minute is old enough yet. A CloudWatch delivery gap can't be told
+  apart from an idle minute, so it's read as 0 too: accepted, since the worker check runs only after every request
+  has a response or timed out and the queues are empty, and the recorded counts come from the after-step fetch
+  (decided 2026-11-05, PR #893 review). Only this AWS fetcher has the parameter; it isn't in `ak-bench.yaml`.
 
 - Queue depth per window (input and output separately) from the host's `TransportCollector`, chosen by transport
   (`sqs`). It extends `InfoFetcher[QueueInfo]` with `live_track = True` (SQS only gives the
@@ -324,6 +329,8 @@ log level with per-stage trace points on the request path.
       bill, so the benchmark doesn't model them.
     - Covers set-up, every step, the waits after the steps and the time until tear-down. LLM token cost excluded
       (mock agent).
+    - CloudWatch Logs Insights query charges from the benchmark's own fetchers are excluded: they're the cost of
+      measuring, not of running AK (decided 2026-11-05, PR #893 review).
 - Per-platform part: `BillingReader` ABC, one per cloud (AWS: Cost Explorer). Returns `None` where there is no bill.
 
 ### Benchmark project
@@ -560,8 +567,11 @@ flowchart TD
   - `ecs`: `scaling_config.enabled = true`, `min_count >= 1`.
   - `lambda`: zip packaging (Lambda Insights layer); agent runner timeout **60 s** (AK default 45 s, but 10 messages ×
     the 5 s max agent delay = 50 s); `batch_size × max agent delay` stays under the agent runner timeout (decided
-    2026-11-04, PR #893 review). The input queue visibility timeout stays at AK's default 60 s (Lambda needs it ≥ the
-    function timeout).
+    2026-11-04, PR #893 review). Input queue visibility timeout **360 s** (6 × the 60 s function timeout, as AWS
+    recommends for SQS event sources; AK default 60 s) and message retention **5 min** (300 s, AK's serverless default,
+    set explicitly) on the input and output queues (decided 2026-11-05, PR #893 review). Retention is shorter than the visibility timeout,
+    so a message that was picked up is never handed out a second time; a message still waiting after 5 min is dropped
+    (the client has timed out on it by then).
   - every host: queue mode, WebSocket delivery, `logging.ak.level: TRACE`, the mock agent.
 
 ### Mock agent
@@ -638,6 +648,11 @@ flowchart TD
     fetcher.
   - `resource-usage.csv`: raw per-worker samples in long form (`ts, tier, worker, metric, stat, value, fetcher`).
   - `graphs/`.
+- **How samples fill the time windows** (decided 2026-11-05, PR #893 review): windows start at the step start. Each window takes the
+  fetcher's last sample at or before the window's end, so a fetcher polled every 60 s with 1 s windows fills 60 rows
+  with the same value until its next sample. A sample is carried forward for at most its fetcher's poll interval (or
+  the source's sample period, e.g. a Lambda Logs Insights bin); after that the window stays empty (e.g. a Lambda
+  window with no invocations). Derived scaling times (summary) use the raw sample times, not the windows.
 - Summary per step: percentiles of end-to-end latency and each stage duration (with the row count used), min / avg /
   max of per-window Tx / Rx, error and timeout counts, time to answer all N (burst), `cooldown_max_reached`, scaling
   numbers and CPU / memory per tier per fetcher (fetcher named).

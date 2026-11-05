@@ -124,14 +124,19 @@ with history. Live tracking runs from the start of "before" to the end of the co
     review; default set from the first Lambda runs). Newer minutes without a datapoint aren't returned yet (their data
     may still be on its way). A read of the latest minutes looks back far enough to get the latest known minute, so
     the step end is seen about `metric_delay_s` after the workers really scaled in, and the harness needs no
-    Lambda-specific window; if the fetcher returns no value at all, that poll counts as not met. The parameter belongs
+    Lambda-specific window. A lookback with no datapoints at all (an idle tier) gives 0 for every minute older than
+    `metric_delay_s`; the fetcher returns no value (poll not met) only when the read fails (API error, missing
+    permission) or no minute is old enough yet. A CloudWatch delivery gap can't be told apart from an idle minute, so
+    it's read as 0 too: accepted, since the worker check runs last (after every request has a response or timed out
+    and the queues are empty), and the recorded counts come from the after-step fetch (decided 2026-11-05, PR #893 review). The parameter belongs
     to this AWS fetcher only, not to `ak-bench.yaml`. Lambda sends metric data to
     CloudWatch in 1-minute intervals. The recorded counts still come from its `fetch_and_store()` after the
     cool-down, which has the complete data. If the delay turns out too long,
     a person can bind `aws.lambda_log_streams` to the host in `hosts.py` instead (a manual choice, not automatic).
 - **Maximum cool-down time:** configurable, **default 45 min**, counted from `t_load_down`. If it's reached, the step
   ends, records `cooldown_max_reached = true`, "scale-down done" stays empty and `workers_after_down` shows where it
-  stopped. Why 45 min:
+  stopped. The next step assumes the system is settled (45 min is more than enough to scale in): no steps are skipped
+  and the next step isn't marked (decided 2026-11-05, PR #893 review). Why 45 min:
   - It's a safety net for a step that never gets back to the starting count, so it's set from the slowest host.
   - ECS is the slowest: target tracking starts scaling in only after 15 one-minute datapoints below target (~15 min),
     then waits `scale_in_cooldown` (our Terraform default 120 s) between scale-in activities, and target tracking
@@ -385,11 +390,14 @@ Worker counts (from → to), recorded per tier, count type (desired / running) a
     AK's `SQSConsumer` handles the records of a batch **one after another**, so one invocation with 10 messages and a
     2 s agent delay runs ~20 s. The agent runner timeout is 45 s by default (`ak-aws/serverless/variables.tf`, `agent_runner`),
     and `batch_size × maximum agent delay` has to stay under it: 10 × the default 5 s maximum delay is 50 s. So the
-    benchmark deployer sets the agent runner timeout to **60 s** (decided 2026-11-04, PR #893 review). The input queue
-    visibility timeout stays at AK's default 60 s: Lambda rejects a function timeout above it, and AK's Terraform checks
-    visibility ≥ timeout (`ak-aws/serverless/state.tf`). AWS recommends a visibility timeout of at least 6× the
-    function timeout; that isn't applied. Batch size, timeout and the minimum and maximum agent delay are saved in the
-    run metadata.
+    benchmark deployer sets the agent runner timeout to **60 s** (decided 2026-11-04, PR #893 review). It also sets the
+    input queue visibility timeout to **360 s**: AWS recommends at least 6× the function timeout for an SQS event
+    source, so Lambda can retry a throttled batch (Lambda also rejects a function timeout above the visibility timeout,
+    and AK's Terraform checks visibility ≥ timeout, `ak-aws/serverless/state.tf`; AK's default is 60 s). Message
+    retention is **5 min** (300 s, AK's serverless default, set explicitly) on the input and output queues
+    (decided 2026-11-05, PR #893 review). Retention is shorter than the visibility timeout, so a picked-up message is never handed out a
+    second time; one still waiting after 5 min is dropped (the client has timed out on it by then). Batch size,
+    timeout, visibility timeout, retention and the minimum and maximum agent delay are saved in the run metadata.
   - So the number of concurrent executions is much lower than the number of requests: each
     environment handles a batch of messages, then the next batch. Example: 1000 requests at once, 2 s each, batch
     size 10, default mode: 5 invocations at first, +300 per minute (~5 per second), so all 100 batches are picked up
