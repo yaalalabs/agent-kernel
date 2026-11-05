@@ -6,7 +6,6 @@ is the one exception: see :meth:`TelegramInboundAdapter._decision`.
 """
 
 import base64
-import hashlib
 import logging
 import mimetypes
 from typing import Any
@@ -298,11 +297,11 @@ class TelegramInboundAdapter(InboundAdapter):
 
         await self._client.answer_callback_query(callback_query.get("id"), "Processing...")
         decisions = [ResumeDecision(id=interruption_id, status=status) for interruption_id, status in answers.items()]
-        digest = hashlib.sha256("|".join(f"{d.id}:{d.status}" for d in decisions).encode()).hexdigest()[:16]
+        submitted = "|".join([f"{d.id}:{d.status}" for d in decisions] + ([sender] if sender else []))
         session_id = str(chat_id)
         return InboundRequest(
             session_id=session_id,
-            request_id=f"{NAME}:{session_id}:{message.get('message_id')}:review:{digest}",
+            request_id=self._bounded_request_id(f"{NAME}:{session_id}:{message.get('message_id')}:review", submitted),
             requests=[AgentResumeRequestAny(decisions=decisions)],
             agent=self._agent,
             user_id=sender,
@@ -332,7 +331,9 @@ class TelegramInboundAdapter(InboundAdapter):
         """A press on a pause button, as the decision it carries.
 
         The request id is composed from the press, not the per-update ``update_id``, so a second
-        click deduplicates instead of reaching a pause already answered.
+        click by the same person deduplicates instead of reaching a pause already answered. It
+        names the presser too: an approval policy that rejects one press leaves the pause open, and
+        the authorized press that follows must not deduplicate against the rejected one.
 
         :param callback_query: The press, carrying the message it was attached to.
         :param chat_id: The conversation, which is the session.
@@ -348,7 +349,7 @@ class TelegramInboundAdapter(InboundAdapter):
         session_id = str(chat_id)
         return InboundRequest(
             session_id=session_id,
-            request_id=f"{NAME}:{session_id}:{message_id}:{interruption_id}:{status}",
+            request_id=self._bounded_request_id(f"{NAME}:{session_id}:{message_id}", ":".join(filter(None, (interruption_id, status, sender)))),
             requests=[AgentResumeRequestAny(decisions=[ResumeDecision(id=interruption_id, status=status)])],
             agent=self._agent,
             user_id=sender,

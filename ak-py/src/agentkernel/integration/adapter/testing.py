@@ -185,6 +185,19 @@ class IntegrationAdapterContract:
         assert "Which warehouse should ship this?" in text, "a framework that names nothing puts the question in payload"
         assert "run_id" not in text and "null" not in text, "a serialised object is what this replaces"
 
+    def test_a_request_id_stays_inside_the_queue_deduplication_budget(self):
+        """An id a framework made long must not produce a message the queue refuses to take.
+
+        ``IntegrationProducer`` makes the deduplication key out of the adapter name and the request
+        id, and SQS caps that at ``DEDUP_ID_LIMIT``; an adapter composing one by hand would render
+        a control whose press could never be enqueued.
+        """
+        inbound = self.make_inbound()
+        bounded = inbound._bounded_request_id(f"{inbound.name}:head", "x" * 300)
+
+        assert len(f"{inbound.name}:{bounded}") <= inbound.DEDUP_ID_LIMIT
+        assert bounded != inbound._bounded_request_id(f"{inbound.name}:head", "y" * 300), "two decisions must stay two"
+
     def test_split_reply_respects_the_platform_limit(self):
         outbound = self.make_outbound()
         chunks = outbound.split_reply("x" * (outbound.MESSAGE_LIMIT * 2))

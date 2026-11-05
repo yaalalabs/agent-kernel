@@ -13,6 +13,7 @@ turn open past the platform's delivery timeout.
 """
 
 import base64
+import hashlib
 import json
 import uuid
 from abc import ABC, abstractmethod
@@ -99,6 +100,32 @@ class InboundAdapter(ABC):
     source: Source = Source.WEBHOOK
     webhook_path: str = ""
     challenge_path: str | None = None
+
+    DEDUP_ID_LIMIT: int = 128
+    """What a ``request_id`` has to fit inside, with the adapter name and a colon.
+
+    ``IntegrationProducer`` makes the queue's deduplication key out of both
+    (``dedup_id=f"{adapter_name}:{request.request_id}"``, ``adapter/producer.py``), and
+    ``SQSTransport`` passes it to ``MessageDeduplicationId`` unchanged, which SQS caps here.
+    """
+
+    @classmethod
+    def _bounded_request_id(cls, head: str, tail: str) -> str:
+        """A request id that cannot grow past the queue's deduplication budget.
+
+        ``head`` is the platform's own coordinates, which the platform itself bounds. ``tail`` is
+        whatever a framework's interruption ids make unbounded: an id long enough to pass a
+        platform's own budget would otherwise render a control whose press could never be
+        enqueued. Digesting only the tail keeps a log line readable in the ordinary case.
+
+        :param head: The bounded part, kept verbatim.
+        :param tail: The unbounded part, digested when it does not fit.
+        :return: The request id to put on the envelope.
+        """
+        composed = f"{head}:{tail}"
+        if len(composed) <= cls.DEDUP_ID_LIMIT - len(cls.name) - 1:
+            return composed
+        return f"{head}:{hashlib.sha256(tail.encode()).hexdigest()[:16]}"
 
     async def verify(self, raw: Any) -> None:
         """Reject a delivery that did not come from the platform.

@@ -371,6 +371,17 @@ class TestPauseRendering:
         assert [e.get("style") for e in blocks[2]["elements"]] == ["primary", "danger"]
 
     @pytest.mark.asyncio
+    async def test_the_message_text_names_what_is_being_approved(self):
+        """Slack reads `text` to a screen reader in place of the blocks, so a heading is not enough."""
+        adapter, posted = _outbound(), AsyncMock()
+        with patch.object(SlackOutboundAdapter, "_client", return_value=MagicMock(chat_postMessage=posted)):
+            await adapter.deliver_paused(_paused("call_a"), {"channel": "C9", "thread_ts": "000.111"})
+
+        text = posted.await_args.kwargs["text"]
+        assert "refund_order" in text and "A-10294" in text
+        assert len(text) <= SlackOutboundAdapter.MESSAGE_LIMIT
+
+    @pytest.mark.asyncio
     async def test_the_buttons_need_no_label_beyond_the_verb(self):
         adapter, posted = _outbound(), AsyncMock()
         with patch.object(SlackOutboundAdapter, "_client", return_value=MagicMock(chat_postMessage=posted)):
@@ -550,6 +561,19 @@ class TestAnswerTogether:
         assert SlackOutboundAdapter.ANSWER_TOGETHER_NOTICE in notices, "nothing to press needs a reason why"
 
     @pytest.mark.asyncio
+    async def test_an_id_slack_would_refuse_costs_the_form_not_the_message(self):
+        """Over the block_id budget Slack rejects the whole message, so the id is never set."""
+        adapter, posted = _outbound(), AsyncMock()
+        with patch.object(SlackOutboundAdapter, "_client", return_value=MagicMock(chat_postMessage=posted)):
+            await adapter.deliver_paused(self._together("call_a", "c" * 300), {"channel": "C9"})
+
+        blocks = posted.await_args.kwargs["blocks"]
+        assert all(len(b.get("block_id", "")) <= BLOCK_ID_LIMIT for b in blocks)
+        assert not [b for b in blocks if b.get("block_id") == f"{BLOCK_PREFIX}review"], "a form missing a question is unsubmittable"
+        notices = " ".join(b["elements"][0]["text"] for b in blocks if b["type"] == "context")
+        assert SlackOutboundAdapter.ANSWER_TOGETHER_NOTICE in notices
+
+    @pytest.mark.asyncio
     async def test_a_pause_too_large_for_one_message_says_why_it_cannot_be_answered(self):
         adapter, posted = _outbound(), AsyncMock()
         with patch.object(SlackOutboundAdapter, "_client", return_value=MagicMock(chat_postMessage=posted)):
@@ -633,8 +657,21 @@ class TestPressParsing:
         again = _inbound()._decision_from_press(_press())
         denied = _inbound()._decision_from_press(_press(value="call_9f2b:denied"))
 
-        assert first.request_id == again.request_id == "slack:C9:111.222:call_9f2b:approved"
+        assert first.request_id == again.request_id == "slack:C9:111.222:call_9f2b:approved:U123"
         assert denied.request_id != first.request_id, "approve then deny are two decisions, not a repeat"
+
+    def test_two_people_pressing_are_two_requests(self):
+        """A policy that rejects one press leaves the pause open; the next press must still arrive."""
+        mine = _inbound()._decision_from_press(_press())
+        theirs = _inbound()._decision_from_press(_press(user="U999"))
+
+        assert mine.request_id != theirs.request_id, "a rejected press must not deduplicate an authorized one"
+
+    def test_a_press_id_stays_inside_the_queue_deduplication_budget(self):
+        """An id long enough for Slack's block budget would otherwise blow SQS's 128-character cap."""
+        request = _inbound()._decision_from_press(_press(value=f"{'c' * 200}:approved"))
+
+        assert len(f"slack:{request.request_id}") <= SlackInboundAdapter.DEDUP_ID_LIMIT
 
     def test_an_id_containing_a_colon_survives(self):
         request = _inbound()._decision_from_press(_press(value="ns:call_9f2b:denied"))
@@ -694,7 +731,7 @@ class TestDenialReason:
         assert (decision.id, decision.status) == ("call_9f2b", "denied")
         assert decision.message == "Customer was already refunded."
         assert request.session_id == "000.111"
-        assert request.request_id == "slack:C9:111.222:call_9f2b:denied"
+        assert request.request_id == "slack:C9:111.222:call_9f2b:denied:U123"
         assert request.reply_context == {"channel": "C9", "thread_ts": "000.111", "user": "U123"}
 
     def test_a_submission_with_no_reason_still_denies(self):

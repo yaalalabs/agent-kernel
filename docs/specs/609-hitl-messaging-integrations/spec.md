@@ -167,9 +167,9 @@ def _pause_blocks(self, reply) -> list:
   section carries `ak_pause:<id>`, so the questions and their ids come back in the `block_actions`
   payload and no state is kept between the press and the submit. The verbs ride on the button's
   `value`, because the inbound half reads no outbound policy of its own — the same reason a
-  denial's modal is chosen by `REASON_PREFIX` on the button. A submission's `request_id` is a
-  **digest** of the answered ids, not a join: it becomes the queue's `dedup_id`, which SQS caps at
-  128 characters.
+  denial's modal is chosen by `REASON_PREFIX` on the button. A question Slack would refuse a
+  `block_id` for costs the form, like a question wanting a typed answer: the pause renders without
+  controls and carries `ANSWER_TOGETHER_NOTICE`.
 - A denial through the review form carries no reason, unlike the single-question path: a reason
   input per question would cost a third of the view's 100-block budget, and since the denial
   framing was fixed a reasonless denial already reaches the model as a refusal.
@@ -246,7 +246,7 @@ async def _reason_submitted(ack, body):
   | Field | Source | Why |
   |---|---|---|
   | `session_id` | `container.thread_ts`, else `message.thread_ts`, else `message.ts` | Must equal the `thread_ts` the original turn used (`:158`), or the decision reaches a session with no pause. The pause message is posted into that thread, so the container carries it. |
-  | `request_id` | `f"slack:{channel}:{message_ts}:{interruption_id}:{verb}"` | The composite logical key. Never `action_ts`, which is minted per click. |
+  | `request_id` | `InboundAdapter._bounded_request_id(f"slack:{channel}:{message_ts}", f"{interruption_id}:{verb}:{user}")` | The composite logical key. Never `action_ts`, which is minted per click. The presser is part of it: a press an approver policy rejects leaves the pause open, so it must not deduplicate the authorized press that follows. The tail is digested when the whole id would pass `DEDUP_ID_LIMIT` — `IntegrationProducer` makes the queue's `dedup_id` out of the adapter name and this, and SQS caps that at 128 characters. |
   | `user_id` | `user.id` | Carries the presser to `acting_user_id`, which is what lets an application's pre-hook enforce an approver policy. |
   | `group_id` | `channel.id` | Same as a message turn. |
   | `requests` | `[AgentResumeRequestAny(run_id=None, decisions=[ResumeDecision(id=..., status=verb)])]` | |

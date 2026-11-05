@@ -8,7 +8,6 @@ handing Bolt's own response back for the host to return.
 
 import base64
 import contextvars
-import hashlib
 import json
 import logging
 import os
@@ -191,8 +190,10 @@ class SlackInboundAdapter(InboundAdapter):
         """A Block Kit button press, as the decision it carries.
 
         The request id is composed from the press, not Slack's per-click ``action_ts``, so a
-        second press deduplicates instead of reaching a pause already answered. The session is
-        the thread the pause was posted into.
+        second press by the same person deduplicates instead of reaching a pause already answered.
+        It names the presser too: an approval policy that rejects one press leaves the pause open,
+        and the authorized press that follows must not deduplicate against the rejected one. The
+        session is the thread the pause was posted into.
 
         :param body: The ``block_actions`` payload.
         :return: The decision as a request, or None when the payload does not carry one.
@@ -213,7 +214,7 @@ class SlackInboundAdapter(InboundAdapter):
             reply_context["user"] = user
         return InboundRequest(
             session_id=thread_ts,
-            request_id=f"{NAME}:{channel}:{message_ts}:{interruption_id}:{status}",
+            request_id=self._bounded_request_id(f"{NAME}:{channel}:{message_ts}", ":".join(filter(None, (interruption_id, status, user)))),
             requests=[AgentResumeRequestAny(decisions=[ResumeDecision(id=interruption_id, status=status)])],
             agent=self._agent,
             user_id=user,
@@ -288,7 +289,9 @@ class SlackInboundAdapter(InboundAdapter):
             reply_context["user"] = user
         return InboundRequest(
             session_id=metadata["thread_ts"],
-            request_id=f"{NAME}:{metadata['channel']}:{metadata['ts']}:{interruption_id}:{status}",
+            request_id=self._bounded_request_id(
+                f"{NAME}:{metadata['channel']}:{metadata['ts']}", ":".join(filter(None, (interruption_id, status, user)))
+            ),
             requests=[AgentResumeRequestAny(decisions=[ResumeDecision(id=interruption_id, status=status, message=reason or None)])],
             agent=self._agent,
             user_id=user,
@@ -362,9 +365,10 @@ class SlackInboundAdapter(InboundAdapter):
         One request carrying every decision is the whole point: the frameworks that set
         ``answer_together`` refuse a resume that leaves any question unanswered.
 
-        The ``request_id`` is a digest of the answered ids rather than a join of them. It has to
-        stay bounded — it becomes the queue's ``dedup_id``, and SQS caps a deduplication id at 128
-        characters — while still differing from any other set of answers to the same message.
+        The ``request_id`` goes through :meth:`_bounded_request_id`, which digests the answers
+        rather than joining them: a join would be unbounded, and the id becomes the queue's
+        deduplication key. The submitter is part of what is digested, for the reason given in
+        :meth:`_decision_from_press`.
 
         :param view: The submitted view, carrying the return address and the answers.
         :return: The decisions as one request, or None when nothing usable came back.
@@ -387,14 +391,14 @@ class SlackInboundAdapter(InboundAdapter):
         if not decisions:
             return None
 
-        digest = hashlib.sha256("|".join(sorted(f"{d.id}:{d.status}" for d in decisions)).encode()).hexdigest()[:16]
         user = metadata.get("user")
+        answers = "|".join(sorted(f"{d.id}:{d.status}" for d in decisions) + ([user] if user else []))
         reply_context = {"channel": metadata["channel"], "thread_ts": metadata["thread_ts"]}
         if user:
             reply_context["user"] = user
         return InboundRequest(
             session_id=metadata["thread_ts"],
-            request_id=f"{NAME}:{metadata['channel']}:{metadata['ts']}:review:{digest}",
+            request_id=self._bounded_request_id(f"{NAME}:{metadata['channel']}:{metadata['ts']}:review", answers),
             requests=[AgentResumeRequestAny(decisions=decisions)],
             agent=self._agent,
             user_id=user,
@@ -598,6 +602,10 @@ class SlackOutboundAdapter(OutboundAdapter):
         Posted in the run's own thread, unlike :meth:`deliver`: a press carries the pause
         message's ``thread_ts`` as its session id, so moving it would resume the wrong session.
 
+        The message's ``text`` is the whole pause rather than a heading, because Slack reads that
+        field to a screen reader in place of the blocks: a heading alone would ask somebody to
+        approve something unnamed.
+
         :param reply: The paused reply to draw.
         :param reply_context: The delivery coordinates resolved at the edge.
         """
@@ -612,7 +620,7 @@ class SlackOutboundAdapter(OutboundAdapter):
         await client.chat_postMessage(
             channel=reply_context["channel"],
             thread_ts=reply_context.get("thread_ts"),
-            text="Approval needed",
+            text=self._escape_mrkdwn(self.format_pause(reply))[: self.MESSAGE_LIMIT],
             blocks=self._pause_blocks(reply),
         )
 
@@ -623,7 +631,8 @@ class SlackOutboundAdapter(OutboundAdapter):
         overflow notice; questions past what is left are counted rather than dropped silently.
 
         A pause answered together whose review button could not be drawn — because a question fell
-        outside the budget, or wants a typed answer no verdict could give — carries
+        outside the block budget, carries an id Slack would refuse, or wants a typed answer no
+        verdict could give — carries
         ``ANSWER_TOGETHER_NOTICE``: its questions have no controls of their own, so without it the
         message would go out with nothing to press and no reason why.
 
@@ -633,7 +642,7 @@ class SlackOutboundAdapter(OutboundAdapter):
         opening, closing = self._pause_template(reply)
         blocks = self.split_reply(opening.strip())
         together = reply.answer_together and len(reply.interruptions) > 1
-        form = together and self._answerable_together(reply)
+        form = together and self._answerable_together(reply) and all(self._block_id(i) for i in reply.interruptions)
         budget = MAX_BLOCKS - 2
         skipped = 0
 
@@ -671,15 +680,16 @@ class SlackOutboundAdapter(OutboundAdapter):
         if not self._decidable(interruption):
             blocks.append(self._notice(self.TYPED_ANSWER_NOTICE))
             return blocks
+        block_id = self._block_id(interruption)
         if not controls:
-            blocks[0]["block_id"] = f"{BLOCK_PREFIX}{interruption.id}"
+            if block_id:
+                blocks[0]["block_id"] = block_id
             return blocks
 
-        block_id = f"{BLOCK_PREFIX}{interruption.id}"
         longest_value = max((len(f"{interruption.id}:{verb}") for verb in self.DECISIONS), default=0)
-        if len(block_id) > BLOCK_ID_LIMIT or longest_value > VALUE_LIMIT:
+        if block_id is None or longest_value > VALUE_LIMIT:
             self._log.warning(
-                f"Interruption '{interruption.id}' needs a {len(block_id)}-character block_id and a "
+                f"Interruption '{interruption.id}' needs a {len(BLOCK_PREFIX) + len(interruption.id)}-character block_id and a "
                 f"{longest_value}-character value, over Slack's {BLOCK_ID_LIMIT}/{VALUE_LIMIT}; rendering it without buttons"
             )
             blocks.append(self._notice(self.UNPRESSABLE_NOTICE))
@@ -687,6 +697,20 @@ class SlackOutboundAdapter(OutboundAdapter):
 
         blocks.append({"type": "actions", "block_id": block_id, "elements": [self._button(interruption.id, verb) for verb in self.DECISIONS]})
         return blocks
+
+    @staticmethod
+    def _block_id(interruption: PausedInterruption) -> str | None:
+        """The ``block_id`` carrying this question's id, or None when Slack would refuse it.
+
+        Over the budget Slack rejects the **whole message**, not the one block, so an id this long
+        costs the entire pause — which is why the caller draws a notice instead of the controls,
+        and why a question with no usable id also costs the review form.
+
+        :param interruption: The question to identify.
+        :return: The block id, or None when it is over budget.
+        """
+        block_id = f"{BLOCK_PREFIX}{interruption.id}"
+        return block_id if len(block_id) <= BLOCK_ID_LIMIT else None
 
     def _review_button(self) -> dict:
         """The one control a pause answered together offers.

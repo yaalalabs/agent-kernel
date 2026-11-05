@@ -267,8 +267,9 @@ class Runner(ABC):
     phrasing."""
 
     DENIED_DECISION_MESSAGE: str = (
-        "A human reviewer refused this request, so it was not carried out. Do not retry it, do not "
-        "ask for approval again, and do not report it as done."
+        "A human reviewer refused this call, so it was not carried out. Do not run it again "
+        "unchanged and do not report it as done. If the reviewer gave a reason, you may propose a "
+        "different call that answers it."
     )
     """What the model is told when a human denies a paused run. The frameworks' own defaults do not
     serve: the OpenAI SDK says only "not approved", which a model reads as approval still pending."""

@@ -147,14 +147,20 @@ On OpenAI and Pydantic AI the refusal text **becomes the gated call's output** â
 separate "this was rejected" flag the model sees. So Agent Kernel sends a framed sentence, and
 quotes your `message` inside it rather than in place of it:
 
-> A human reviewer refused this request, so it was not carried out. Do not retry it, do not ask for
-> approval again, and do not report it as done. The reviewer's reason: not during business hours
+> A human reviewer refused this call, so it was not carried out. Do not run it again unchanged and
+> do not report it as done. If the reviewer gave a reason, you may propose a different call that
+> answers it. The reviewer's reason: not during business hours
 
 Neither half is cosmetic. With the framework's own default the OpenAI SDK says only "Tool execution
 was not approved", which a model reads as approval still *pending* â€” it replies by asking the human
 to confirm. With the bare reason and no frame, the model reads it as what the tool returned and
-reports the action as carried out. Override `DENIED_DECISION_MESSAGE` and `DENIED_DECISION_REASON`
-on your runner if you want different wording.
+reports the action as carried out. The refusal is scoped to *this* call so that a reason saying what
+the reviewer wants instead still leaves the agent free to propose it. Override
+`DENIED_DECISION_MESSAGE` and `DENIED_DECISION_REASON` on your runner if you want different wording.
+
+On OpenAI, an application that configured `RunConfig.tool_error_formatter` has already said how a
+refused call should read, so a denial carrying no reason of its own defers to it. A denial with a
+reason, and `cancelled` in every case, keep the wording above.
 
 ### Answering one question at a time
 
@@ -307,7 +313,9 @@ Four things to know before you ship it:
 - **The buttons stay after a decision.** Nothing is edited out: a resumed run's reply is
   indistinguishable from a run a hook stopped, so editing on that guess could strip the controls
   off a pause that is still open. Pressing the same button again is deduplicated and changes
-  nothing; pressing one on a pause that has already been answered gets the usual error reply.
+  nothing; pressing one on a pause that has already been answered gets the usual error reply. The
+  presser is part of that identity, so a press your approver policy rejects does not swallow the
+  authorized one that follows; two people answering at once means the second gets that error reply.
 
 Slack needs one switch the other platforms do not: **Interactivity & Shortcuts**, with its Request
 URL set to the same `/slack/events` URL as your event subscription. Without it the buttons render

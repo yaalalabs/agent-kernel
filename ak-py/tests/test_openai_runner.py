@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from types import SimpleNamespace
 from unittest import mock
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -1342,6 +1343,54 @@ class TestOpenAIResume:
         assert "refused" in sent and "not carried out" in sent
         if message:
             assert message in sent, "and the reason still has to reach the model"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "message, expected_explicit",
+        [(None, False), ("not during business hours", True)],
+    )
+    async def test_a_configured_formatter_speaks_for_a_denial_that_gave_no_reason(self, message, expected_explicit):
+        """`RunConfig.tool_error_formatter` is how an application says how a refused call reads.
+
+        The SDK consults it only when no explicit `rejection_message` is given, so a reasonless
+        denial defers to it. A denial that carries a reason does not: that reason has to reach the
+        model, and the formatter knows nothing about it.
+        """
+        runner, session, agent = OpenAIRunner(), Session("s"), _mock_agent()
+        agent.run_options = {"run_config": SimpleNamespace(tool_error_formatter=lambda *a, **k: "configured")}
+        paused = await _pause_once(runner, session, agent)
+        record = PausedRunState.get(session, paused.run_id)
+        requests, decisions = _resume_requests("call-1", status="denied", message=message)
+        state = _FakeState([_approval_item()])
+
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner, patch("agentkernel.framework.openai.openai.RunState") as MockState:
+            MockState.from_json = AsyncMock(return_value=state)
+            MockRunner.run = AsyncMock(return_value=_done_result())
+
+            await runner.resume(agent, session, requests, decisions, record)
+
+        sent = state.rejected[0][1]
+        assert (sent is not None) is expected_explicit
+        if expected_explicit:
+            assert message in sent
+
+    @pytest.mark.asyncio
+    async def test_a_configured_formatter_does_not_speak_for_a_cancellation(self):
+        """Nobody deciding is not a tool error, so AK's own wording stands."""
+        runner, session, agent = OpenAIRunner(), Session("s"), _mock_agent()
+        agent.run_options = {"run_config": SimpleNamespace(tool_error_formatter=lambda *a, **k: "configured")}
+        paused = await _pause_once(runner, session, agent)
+        record = PausedRunState.get(session, paused.run_id)
+        requests, decisions = _resume_requests("call-1", status="cancelled")
+        state = _FakeState([_approval_item()])
+
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner, patch("agentkernel.framework.openai.openai.RunState") as MockState:
+            MockState.from_json = AsyncMock(return_value=state)
+            MockRunner.run = AsyncMock(return_value=_done_result())
+
+            await runner.resume(agent, session, requests, decisions, record)
+
+        assert state.rejected[0][1] == OpenAIRunner.CANCELLED_DECISION_MESSAGE
 
     @pytest.mark.asyncio
     async def test_cancelled_does_not_read_as_a_refusal(self):

@@ -196,8 +196,25 @@ class TestParse:
         again = (await _inbound().parse(_fake_request(_press(f"{CALLBACK_PREFIX}a:call_9f2b", update_id=102)))).requests[0]
         other_verb = (await _inbound().parse(_fake_request(_press(f"{CALLBACK_PREFIX}d:call_9f2b", update_id=103)))).requests[0]
 
-        assert first.request_id == again.request_id == f"telegram:{CHAT_ID}:812:call_9f2b:approved"
+        assert first.request_id == again.request_id == f"telegram:{CHAT_ID}:812:call_9f2b:approved:99"
         assert other_verb.request_id != first.request_id, "approve then deny are two decisions, not a repeat"
+
+    @pytest.mark.asyncio
+    async def test_two_people_pressing_are_two_requests(self):
+        """A policy that rejects one press leaves the pause open; the next press must still arrive."""
+        press = _press(f"{CALLBACK_PREFIX}a:call_9f2b")
+        mine = (await _inbound().parse(_fake_request(press))).requests[0]
+        press["callback_query"]["from"] = {"id": 7}
+        theirs = (await _inbound().parse(_fake_request(press))).requests[0]
+
+        assert mine.request_id != theirs.request_id, "a rejected press must not deduplicate an authorized one"
+
+    @pytest.mark.asyncio
+    async def test_a_press_id_stays_inside_the_queue_deduplication_budget(self):
+        """A long framework id would otherwise blow SQS's 128-character deduplication cap."""
+        request = (await _inbound().parse(_fake_request(_press(f"{CALLBACK_PREFIX}a:{'c' * 200}")))).requests[0]
+
+        assert len(f"telegram:{request.request_id}") <= TelegramInboundAdapter.DEDUP_ID_LIMIT
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("data", [f"{CALLBACK_PREFIX}z:call_9f2b", f"{CALLBACK_PREFIX}a:", CALLBACK_PREFIX])

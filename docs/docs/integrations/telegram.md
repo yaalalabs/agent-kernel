@@ -305,6 +305,8 @@ text, with a note saying the pause has to be answered over another surface.
 
 The buttons stay on the message after a decision. Pressing the same one again is deduplicated and
 changes nothing; pressing one on a pause that has already been answered gets the usual error reply.
+A press is identified by who made it as well as by what it decides, so an approval policy that
+rejects one press does not deduplicate the authorized press that follows it.
 
 ## Supported Message Types
 
