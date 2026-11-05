@@ -148,6 +148,9 @@ class RequestBuilder:
         known_fields = {
             "request_id",
             "user_id",
+            # Identity envelope: the principal the surface authenticated, read by the runtime and
+            # the ownership checks, never shown to the agent as context.
+            "principal",
             "group_id",
             "thread_name",
             "prompt",

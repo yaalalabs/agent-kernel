@@ -62,7 +62,17 @@ class InboundRequest(BaseModel):
     requests: list[AgentRequestUnion]
     prompt: str = ""
     agent: str | None = None
+    # The platform's own id for the sender (a Slack user id, a WhatsApp phone number, an email
+    # address). It becomes ``Principal.subject`` with ``messaging:<platform>`` as the provider.
     user_id: str | None = None
+    # The platform scope ``user_id`` is unique within, which becomes ``Principal.namespace``: a Slack
+    # team id, a Teams tenant id, the Gmail inbox address, a WhatsApp ``phone_number_id``, a
+    # Messenger or Instagram page id, a Telegram bot id, a LiveKit API key id. The same sender id
+    # seen under two scopes is two different principals.
+    namespace: str | None = None
+    # Platform facts about the sender worth carrying on the principal's ``claims`` (Gmail's
+    # ``Authentication-Results`` header); empty for platforms that vouch for the sender themselves.
+    claims: dict[str, Any] = Field(default_factory=dict)
     group_id: str | None = None
     reply_context: dict[str, str] = Field(default_factory=dict)
 

@@ -1,8 +1,9 @@
 # #603: Identity layer, RBAC and agent registry: Implementation Plan
 
 Builds `spec.md` in 28 iterations grouped into seven phases. Every iteration is one theme a
-reviewer can read as a single diff, and every iteration leaves the branch green under
-`cd ak-py && uv run pytest`. The phase order is set by two dependencies: nothing above the
+reviewer can read as a single diff and is expected to leave the branch green; within a phase only
+the suites an iteration's Verify names are run, and the full suite (`cd ak-py && uv run --no-sync
+pytest`) runs once at the end of each phase. The phase order is set by two dependencies: nothing above the
 identity fix is worth building on a forgeable subject, and the omnichannel work (#243) needs the
 identity interfaces frozen early and live principals on every surface soon after. Phase A freezes
 the interfaces; phase B is the point after which every surface carries a real `Principal`.
@@ -32,7 +33,10 @@ iteration 18 and `credentials` lands in iteration 25, both additive).
 - Each iteration has a **Goal** (what is true of the branch once it lands), **Files** (every
   source file the diff touches, so the reviewer knows the diff's extent before opening it),
   **Steps** (in commit order, with the spec section each one implements) and **Verify** (the
-  tests that prove the goal).
+  suites to run after the iteration; new files and changed files by name).
+- Test cadence: after an iteration, run only the suites its Verify names. The full `ak-py` suite
+  runs once at the end of each phase (after iterations 3, 12, 16, 20, 23, 25 and 28) and
+  `make lint-check` with it; that phase-end run is what confirms the branch is green.
 - Size rule: an iteration touches at most about ten source files beside its tests and has one
   kind of change. Phases C, D, E and F split along the component boundary: contract and config
   first, backends second, consumers third, so each diff is either new code with no caller or
@@ -56,18 +60,24 @@ iteration 18 and `credentials` lands in iteration 25, both additive).
 
 - **Goal:** the types every later iteration and omnichannel build on exist, exported from
   `agentkernel.core`, with no consumer; behaviour is unchanged.
-- **Files:** `core/model.py`, `core/__init__.py`, `integration/adapter/base.py`.
+- **Files:** `core/model.py`, `core/__init__.py`, `core/chat_service.py`,
+  `integration/adapter/base.py`.
 - **Steps:**
   1. `AccessLevel`, `Principal` (`anonymous()`, `is_anonymous`, `with_actor`,
      `with_credential_ref`), `SessionOwner`, `ToolFilter` (`allows`, `reason`),
      `AgentSkillDescriptor`, `AgentIdentitySpec`, `AgentDescriptor` (`exposed_on`);
-     `SystemTool.tier` with its default (spec 2).
+     `SystemTool.tier` with its default (spec 2). The declared tiers on the system tools come
+     with the gate in iteration 18.
   2. `BaseChatRequest.principal: Optional[Principal] = None` beside `user_id`, which stays until
-     iteration 3 (spec 2).
+     iteration 3 (spec 2); `RequestBuilder._attach_additional_context` adds `"principal"` to
+     `known_fields` in the same step, since the builder turns every unknown field into an
+     `AgentRequestAny` (spec 8.1).
   3. `InboundRequest.namespace` and `claims` with their defaults; the adapters fill them in
      iteration 9 (spec 8.4).
   4. Exports.
-- **Verify:** new `tests/test_identity_models.py`; the existing suite unchanged.
+- **Verify:** new `tests/test_identity_models.py` (including the principal never reaching the
+  agent as context); `test_model`, `test_hitl_chat_service`, `test_thread_pipeline_recording`
+  (the suites that exercise the request builder).
 
 ### Iteration 2: The principal replaces the acting user
 
@@ -116,8 +126,8 @@ iteration 18 and `credentials` lands in iteration 25, both additive).
 - **Steps:**
   1. Remove `BaseChatRequest.user_id`; `from_payload` drops the envelope propagation and raises
      `ValueError` on a `user_id` key (spec 2).
-  2. `ChatService._validate` rejects the `user_id` extra; `known_fields` swaps `user_id` for
-     `principal`; `_record_trigger` forwards `req.principal` (spec 8.1).
+  2. `ChatService._validate` rejects the `user_id` extra; `known_fields` drops `user_id`;
+     `_record_trigger` forwards `req.principal` (spec 8.1).
   3. `ScheduledTask.principal`; `ScheduleManager.create(principal, ...)` with the anonymous
      `PermissionError`, `create_from_request`, `_build_trigger_body` carrying `principal`,
      `record_trigger(task_id, principal, ...)` and `_owns_occurrence` comparing the subject; the
@@ -420,8 +430,10 @@ iteration 18 and `credentials` lands in iteration 25, both additive).
      (spec 3).
   3. `Module.load` calls `validate_configuration`; `ensure_agent_available(name, principal)`
      gains the principal and the gate (spec 6, 7).
+  4. The declared tiers on the system tools: sandbox and schedule tools, `write_kb` and
+     `update_agui_state` at `WRITE`, the rest at the `READ` default (spec 2).
 - **Verify:** new `tests/test_access_gate.py`; the gate cases in `test_runtime_principal`;
-  changed `test_module`.
+  changed `test_module`, `test_schedule_tools`, `test_sandbox_tools`.
 
 ### Iteration 19: Service, pipeline and schedule enforcement
 

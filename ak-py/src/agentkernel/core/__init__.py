@@ -31,6 +31,9 @@ from .event import (
     ToolCallStart,
 )
 from .model import (
+    AccessLevel,
+    AgentDescriptor,
+    AgentIdentitySpec,
     AgentRequest,
     AgentRequestAny,
     AgentRequestFile,
@@ -41,7 +44,11 @@ from .model import (
     AgentReplyAny,
     AgentReplyText,
     AgentReplyImage,
+    AgentSkillDescriptor,
+    Principal,
+    SessionOwner,
     StreamChunk,
+    ToolFilter,
 )
 from .config import AKConfig as Config
 from .module import Module
