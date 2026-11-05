@@ -5,8 +5,8 @@ import contextlib
 import copy
 import json
 import logging
-from collections.abc import AsyncGenerator
-from typing import Any, Callable, ClassVar, List, Mapping
+from collections.abc import AsyncGenerator, Callable, Mapping
+from typing import Any, ClassVar
 from uuid import uuid4
 
 from agent_framework import Agent, AgentResponse, AgentResponseUpdate, AgentSession, Content, Message
@@ -820,7 +820,7 @@ class MAFModule(Module):
             self.runner = MAFRunner()
         self.load(agents)
 
-    def _wrap(self, agent: Agent, agents: List[Agent]) -> BaseAgent:
+    def _wrap(self, agent: Agent, agents: list[Agent]) -> BaseAgent:
         """
         Wraps a native MAF agent in a MAFAgent.
         :param agent: The native MAF agent; it must have an explicit name.

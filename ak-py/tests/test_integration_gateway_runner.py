@@ -1,7 +1,5 @@
 """GatewayRunner: hosting a stateful gateway adapter, and its outbound registration."""
 
-from typing import Dict
-
 import pytest
 
 from agentkernel.core.model import AgentReply
@@ -23,13 +21,13 @@ class FakeStatefulEdgeAdapter(StatefulEdgeAdapter):
     async def stop(self) -> None:
         pass
 
-    async def deliver(self, reply: AgentReply, reply_context: Dict[str, str]) -> None:
+    async def deliver(self, reply: AgentReply, reply_context: dict[str, str]) -> None:
         pass
 
-    async def deliver_chunk(self, chunk, reply_context: Dict[str, str]) -> None:
+    async def deliver_chunk(self, chunk, reply_context: dict[str, str]) -> None:
         pass
 
-    async def deliver_error(self, message: str, reply_context: Dict[str, str]) -> None:
+    async def deliver_error(self, message: str, reply_context: dict[str, str]) -> None:
         pass
 
 

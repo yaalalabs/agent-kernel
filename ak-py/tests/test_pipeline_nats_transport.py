@@ -11,7 +11,7 @@ import asyncio
 import logging
 import threading
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import pytest
 from nats.errors import TimeoutError as NatsTimeoutError
@@ -73,18 +73,18 @@ class FakeMsg:
 class FakeStream:
     """One work-queue stream: per-partition FIFO, one in-flight message per partition, dedup."""
 
-    def __init__(self, name: str, subjects: List[str], ack_wait: float = 2.0):
+    def __init__(self, name: str, subjects: list[str], ack_wait: float = 2.0):
         self.name = name
         self.subjects = subjects
         self.ack_wait = ack_wait
-        self.records: List[dict] = []
-        self.in_flight: Dict[int, dict] = {}  # partition -> record
+        self.records: list[dict] = []
+        self.in_flight: dict[int, dict] = {}  # partition -> record
         self.dedup_ids: set = set()
-        self.consumers: Dict[str, Any] = {}
+        self.consumers: dict[str, Any] = {}
         self._seq = 0
         self._lock = threading.Lock()
 
-    def publish(self, subject: str, data: bytes, headers: Optional[dict]) -> dict:
+    def publish(self, subject: str, data: bytes, headers: dict | None) -> dict:
         with self._lock:
             dedup_id = (headers or {}).get(MSG_ID_HEADER)
             if dedup_id is not None and dedup_id in self.dedup_ids:
@@ -104,7 +104,7 @@ class FakeStream:
             self.records.append(record)
             return {"seq": self._seq, "duplicate": False}
 
-    def next_for(self, partition: int) -> Optional[FakeMsg]:
+    def next_for(self, partition: int) -> FakeMsg | None:
         with self._lock:
             held = self.in_flight.get(partition)
             if held is not None and time.monotonic() >= held["deadline"]:
@@ -130,7 +130,7 @@ class FakeStream:
         with self._lock:
             self.in_flight.pop(record["partition"], None)
 
-    def pending(self) -> List[dict]:
+    def pending(self) -> list[dict]:
         return [record for record in self.records if not record["done"]]
 
 
@@ -140,7 +140,7 @@ class FakePullSubscription:
         self._partition = partition
         self.unsubscribed = False
 
-    async def fetch(self, batch: int = 1, timeout: float = 1.0) -> List[FakeMsg]:
+    async def fetch(self, batch: int = 1, timeout: float = 1.0) -> list[FakeMsg]:
         messages = []
         while len(messages) < batch:
             message = self._stream.next_for(self._partition)
@@ -210,9 +210,9 @@ class FakeClient:
 
 class FakeNatsServer:
     def __init__(self):
-        self.streams: Dict[str, FakeStream] = {}
-        self.created_streams: List[Any] = []
-        self.created_consumers: List[Any] = []
+        self.streams: dict[str, FakeStream] = {}
+        self.created_streams: list[Any] = []
+        self.created_consumers: list[Any] = []
         self.connect_calls = 0
 
     def provision(self, name: str, prefix: str, partitions: int = PARTITIONS, ack_wait: float = 2.0) -> None:
@@ -222,7 +222,7 @@ class FakeNatsServer:
             stream.consumers[f"{name}-p{partition}"] = object()
         self.streams[name] = stream
 
-    def stream_for_subject(self, subject: str) -> Optional[FakeStream]:
+    def stream_for_subject(self, subject: str) -> FakeStream | None:
         for stream in self.streams.values():
             for pattern in stream.subjects:
                 if subject.startswith(pattern.rstrip(">").rstrip(".")):

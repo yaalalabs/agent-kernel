@@ -18,7 +18,6 @@ store's precedent applies without needing a GSI.
 """
 
 import logging
-from typing import List, Optional, Tuple
 
 from boto3.dynamodb.conditions import Attr
 
@@ -46,7 +45,7 @@ class DynamoDBScheduleStore(ScheduleStore):
         self._log.debug(f"Storing scheduled task {task.task_id} for user {task.user_id}")
         return self._write(task)
 
-    def get(self, task_id: str) -> Optional[ScheduledTask]:
+    def get(self, task_id: str) -> ScheduledTask | None:
         item = self._driver.get(task_id)
         if not item:
             return None
@@ -58,9 +57,9 @@ class DynamoDBScheduleStore(ScheduleStore):
     def delete(self, task_id: str) -> None:
         self._driver.delete(task_id)
 
-    def list(self, user_id: Optional[str] = None, limit: int = DEFAULT_PAGE_SIZE, offset: int = 0) -> Tuple[List[ScheduledTask], Optional[int]]:
+    def list(self, user_id: str | None = None, limit: int = DEFAULT_PAGE_SIZE, offset: int = 0) -> tuple[list[ScheduledTask], int | None]:
         scan_kwargs = {} if user_id is None else {"FilterExpression": Attr("user_id").eq(user_id)}
-        items: List[dict] = []
+        items: list[dict] = []
         resp = self._driver.table.scan(**scan_kwargs)
         while True:
             items.extend(resp.get("Items", []))
@@ -74,7 +73,7 @@ class DynamoDBScheduleStore(ScheduleStore):
         page, next_offset = paginate(items, limit, offset)
         return [ScheduledTask.model_validate_json(item["data"]) for item in page], next_offset
 
-    def record_trigger(self, task_id: str, request_id: Optional[str], occurred_at: str, completed: bool) -> None:
+    def record_trigger(self, task_id: str, request_id: str | None, occurred_at: str, completed: bool) -> None:
         task = self.get(task_id)
         if task is None:
             self._log.warning(f"Ignoring trigger record for unknown scheduled task {task_id}")

@@ -26,7 +26,8 @@ import math
 import os
 import shlex
 import time
-from typing import Any, Callable, Optional
+from collections.abc import Callable
+from typing import Any
 
 from daytona import (
     CreateSandboxFromImageParams,
@@ -144,13 +145,13 @@ class DaytonaSandboxProvider(SandboxProvider):
         policy_resources=True,  # cpu/memory -> Resources on an image-based sandbox
     )
 
-    def __init__(self, config, idle_timeout: Optional[float] = None) -> None:
+    def __init__(self, config, idle_timeout: float | None = None) -> None:
         """Store the config and the profile's idle_timeout (mapped to auto_stop_interval);
         the Daytona client is created lazily on first use. ``language_runtimes`` sets this
         instance's languages and the installer its package ecosystems."""
         super().__init__(config)
         self._idle_timeout = idle_timeout
-        self._client_instance: Optional[Daytona] = None
+        self._client_instance: Daytona | None = None
         self._installer = PackageInstaller.from_config(config)
         self._runtimes = dict(config.language_runtimes)
         self.capabilities = type(self).capabilities.derive(languages=config.runtime_languages(), package_ecosystems=self._installer.ecosystems)

@@ -466,7 +466,7 @@ with httpx.stream("POST", "http://localhost:8000/api/v1/chat", json={
             print(line.removeprefix("data:").strip())
 ```
 
-**Framework support:** OpenAI Agents SDK, Google ADK, LangGraph, Pydantic AI, and Microsoft Agent Framework support token streaming. CrewAI and smolagents declare `supports_streaming = False` and raise `NotImplementedError` when `execution.message_type: delta` is used; keep `message_type: complete` (the default) for those frameworks instead.
+**Framework support:** OpenAI Agents SDK, Google ADK, LangGraph, Pydantic AI, Microsoft Agent Framework, and the Claude Agent SDK support token streaming. CrewAI and smolagents declare `supports_streaming = False` and raise `NotImplementedError` when `execution.message_type: delta` is used; keep `message_type: complete` (the default) for those frameworks instead.
 
 For WebSocket-based streaming on AWS Lambda (serverless), see the [AWS Serverless deployment guide](/docs/deployment/aws-serverless#websocket-configuration) and the [streaming-openai example](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/streaming-openai).
 
@@ -482,10 +482,9 @@ Create a custom auth validator by extending `AuthValidator`:
 ```python
 from agentkernel.api import RESTAPI
 from agentkernel.auth import AuthValidator, ValidationContext, ValidationResult
-from typing import Optional
 
 class CustomAuthValidator(AuthValidator):
-    def validate(self, token: str, context: Optional[ValidationContext] = None) -> ValidationResult:
+    def validate(self, token: str, context: ValidationContext | None = None) -> ValidationResult:
         """Validate authentication token and return result."""
         if token == "your-secret-token":
             return ValidationResult(is_valid=True, subject="api_user")

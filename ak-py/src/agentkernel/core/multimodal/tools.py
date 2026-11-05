@@ -11,7 +11,7 @@ the source-form split exists to prevent.
 """
 
 import logging
-from typing import Callable
+from collections.abc import Callable
 
 from ..config import AKConfig
 from ..model import SystemTool

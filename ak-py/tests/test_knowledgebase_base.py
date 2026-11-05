@@ -11,7 +11,8 @@ Backends are declared inline rather than through a shared fixture; the reusable
 FakeKnowledgeBase lands with KnowledgeBaseContract.
 """
 
-from typing import Any, List, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 import pytest
 
@@ -41,11 +42,11 @@ class MinimalBackend(KnowledgeBase):
 class RecordingBackend(MinimalBackend):
     """Records which operation was reached, so routing is observable."""
 
-    def search(self, query: str, limit: int = 3, **kwargs) -> List[Record]:
+    def search(self, query: str, limit: int = 3, **kwargs) -> list[Record]:
         self.calls.append(("search", (query, limit), kwargs))
         return [{"text": f"search:{query}", "metadata": {}}]
 
-    def query(self, statement: str, limit: int = 3, **kwargs) -> List[Record]:
+    def query(self, statement: str, limit: int = 3, **kwargs) -> list[Record]:
         self.calls.append(("query", (statement, limit), kwargs))
         return [{"text": f"query:{statement}", "metadata": {}}]
 

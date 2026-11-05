@@ -57,7 +57,6 @@ Create `ak-py/src/agentkernel/core/multimodal/storage/<backend>.py`.
 ```python
 # ak-py/src/agentkernel/core/multimodal/storage/<backend>.py
 import logging
-from typing import Optional
 
 from .base import AttachmentStore
 
@@ -113,7 +112,7 @@ class <Backend>AttachmentStore(AttachmentStore):
         logger.debug(f"Saved attachment {attachment_id} to <backend>")
         return attachment_id
 
-    def get(self, attachment_id: str) -> Optional[dict]:
+    def get(self, attachment_id: str) -> dict | None:
         """
         Retrieve a full attachment dict by ID.
 
@@ -171,7 +170,7 @@ class _MultimodalConfig(BaseModel):
                      "path to an AttachmentStore subclass",  # ADD <backend> to the short-name list
     )
     # ... existing backends ...
-    <backend>: Optional[_MultimodalStorage<Backend>Config] = None       # ADD THIS
+    <backend>: _MultimodalStorage<Backend>Config | None = None       # ADD THIS
 ```
 
 `storage_type` is a free-form string (no regex `pattern=`) so that a dotted path resolves as

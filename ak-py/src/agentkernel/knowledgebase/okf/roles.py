@@ -9,9 +9,10 @@ This module reads no configuration. It is handed an already-parsed mapping, whic
 a caller -- or a test -- build a registry from a literal dict.
 """
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import TYPE_CHECKING, Dict, List, Mapping, Optional, Tuple
+from typing import TYPE_CHECKING
 
 from ...core.util.factory import AKConfigError
 
@@ -60,7 +61,7 @@ class OKFRoleRegistry:
     may be a producer of one bundle and a consumer of another, and both hold simultaneously.
     """
 
-    def __init__(self, assignments: Mapping[str, Tuple[OKFAssignment, ...]]) -> None:
+    def __init__(self, assignments: Mapping[str, tuple[OKFAssignment, ...]]) -> None:
         """
         Initialize the registry from already-validated assignments.
 
@@ -70,12 +71,12 @@ class OKFRoleRegistry:
         :param assignments: Agent name mapped to that agent's assignments.
         :return: None.
         """
-        self._assignments: Dict[str, Tuple[OKFAssignment, ...]] = {agent: tuple(items) for agent, items in assignments.items()}
+        self._assignments: dict[str, tuple[OKFAssignment, ...]] = {agent: tuple(items) for agent, items in assignments.items()}
         # Both derived once: every lookup below is a dict hit, because they happen per tool call.
-        self._databases: Dict[str, Tuple[str, ...]] = {
+        self._databases: dict[str, tuple[str, ...]] = {
             agent: tuple(dict.fromkeys(item.database for item in items)) for agent, items in self._assignments.items()
         }
-        self._writable: Dict[str, frozenset] = {
+        self._writable: dict[str, frozenset] = {
             agent: frozenset(item.database for item in items if item.role.writable) for agent, items in self._assignments.items()
         }
 
@@ -89,7 +90,7 @@ class OKFRoleRegistry:
         :raises AKConfigError: If a database names no agent, or names one agent as both its
                                producer and its curator.
         """
-        assignments: Dict[str, List[OKFAssignment]] = {}
+        assignments: dict[str, list[OKFAssignment]] = {}
 
         for database, config in databases.items():
             # Deduplicated per role so a name repeated in one list does not become two
@@ -118,7 +119,7 @@ class OKFRoleRegistry:
         return cls({agent: tuple(items) for agent, items in assignments.items()})
 
     @staticmethod
-    def _clean(names: Optional[List[str]]) -> List[str]:
+    def _clean(names: list[str] | None) -> list[str]:
         """
         Drop blank entries and surrounding whitespace from one role list.
 
@@ -127,7 +128,7 @@ class OKFRoleRegistry:
         """
         return [name.strip() for name in (names or []) if name and name.strip()]
 
-    def assignments_for(self, agent_name: str) -> Tuple[OKFAssignment, ...]:
+    def assignments_for(self, agent_name: str) -> tuple[OKFAssignment, ...]:
         """
         Return every role this agent holds, in database declaration order.
 
@@ -136,7 +137,7 @@ class OKFRoleRegistry:
         """
         return self._assignments.get(agent_name, ())
 
-    def databases_for(self, agent_name: str) -> Tuple[str, ...]:
+    def databases_for(self, agent_name: str) -> tuple[str, ...]:
         """
         Return the databases this agent may reach at all, in declaration order.
 

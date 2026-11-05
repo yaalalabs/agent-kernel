@@ -8,7 +8,6 @@ the encode/decode, so backends need no cursor awareness.
 """
 
 import base64
-from typing import Optional
 
 # Cap applied to every requested page size.
 MAX_PAGE_SIZE = 200
@@ -18,14 +17,14 @@ MAX_PAGE_SIZE = 200
 DEFAULT_PAGE_SIZE = 50
 
 
-def encode_cursor(offset: Optional[int]) -> Optional[str]:
+def encode_cursor(offset: int | None) -> str | None:
     """Encode a numeric page offset into an opaque cursor token, or None."""
     if offset is None:
         return None
     return base64.urlsafe_b64encode(str(offset).encode()).decode()
 
 
-def decode_cursor(cursor: Optional[str]) -> int:
+def decode_cursor(cursor: str | None) -> int:
     """Decode an opaque cursor token back into a numeric offset (0 when absent).
 
     :raises ValueError: If the cursor is present but malformed.
@@ -41,14 +40,14 @@ def decode_cursor(cursor: Optional[str]) -> int:
     return offset
 
 
-def clamp_limit(limit: Optional[int], default: int) -> int:
+def clamp_limit(limit: int | None, default: int) -> int:
     """Clamp a requested page size into [1, MAX_PAGE_SIZE], defaulting when absent."""
     if not limit or limit < 1:
         return default
     return min(limit, MAX_PAGE_SIZE)
 
 
-def paginate(items: list, limit: int, offset: int) -> tuple[list, Optional[int]]:
+def paginate(items: list, limit: int, offset: int) -> tuple[list, int | None]:
     """Slice an in-order list into an offset/limit page.
 
     For backends that hold or fetch the whole ordered collection (in-memory maps, scans,

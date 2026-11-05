@@ -12,7 +12,6 @@ Expected table schema:
 
 import json
 import logging
-from typing import Optional
 
 from ...util.driver.dynamodb import DynamoDBDriver
 from .base import AttachmentStore
@@ -90,7 +89,7 @@ class DynamoDBAttachmentStore(AttachmentStore):
         self._log.debug(f"Saved attachment: {attachment_id}")
         return attachment_id
 
-    def get(self, attachment_id: str) -> Optional[dict]:
+    def get(self, attachment_id: str) -> dict | None:
         """
         Retrieves an attachment by its ID.
         :param attachment_id: Attachment ID.

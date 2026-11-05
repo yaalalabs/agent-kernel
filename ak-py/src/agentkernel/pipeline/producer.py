@@ -1,5 +1,5 @@
 import json
-from typing import Any, Dict, Optional
+from typing import Any
 
 from ..core.model import BaseRunRequest
 from .envelope import ATTR_REQUEST_ID, QueueMessage, QueueName
@@ -14,7 +14,7 @@ class RequestProducer:
     id (so a webhook retry deduplicates against it) and to stamp its routing/reply attributes.
     """
 
-    def __init__(self, transport: Optional[QueueTransport] = None):
+    def __init__(self, transport: QueueTransport | None = None):
         """
         :param transport: Transport to send on; defaults to the configured one. Callers that own
             a transport (the REST handler's ``get_transport()`` seam) pass theirs.
@@ -25,10 +25,10 @@ class RequestProducer:
         self,
         body: BaseRunRequest,
         request_id: str,
-        attributes: Optional[Dict[str, str]] = None,
-        group_id: Optional[str] = None,
-        dedup_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        attributes: dict[str, str] | None = None,
+        group_id: str | None = None,
+        dedup_id: str | None = None,
+    ) -> dict[str, Any]:
         """Build the input-queue envelope for a chat request and send it.
 
         ``exclude_none`` keeps the body JSON identical to the pre-#495 SQS path (which dumped

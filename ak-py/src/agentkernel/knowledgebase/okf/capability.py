@@ -11,8 +11,9 @@ construction; instead a bundle is walked the first time something actually reach
 """
 
 import logging
+from collections.abc import Mapping
 from threading import RLock
-from typing import TYPE_CHECKING, Any, ClassVar, Dict, Mapping, Optional
+from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
 from ...core.config import AKConfig
 from ...core.util.factory import AKConfigError, resolve_dotted
@@ -57,15 +58,15 @@ class OKFCapabilityManager:
         :raises AKConfigError: If a database names no agent, or names one agent as both its
                                producer and its curator.
         """
-        self._databases: Dict[str, "_OKFDatabaseConfig"] = dict(config.databases)
+        self._databases: dict[str, "_OKFDatabaseConfig"] = dict(config.databases)
         self._roles = OKFRoleRegistry.from_config(self._databases)
 
         # Reentrant because builder_for() resolves backends while already holding it.
         self._cache_lock = RLock()
-        self._stores: Dict[str, DocumentStore] = {}
-        self._backends: Dict[str, "OKFManager"] = {}
-        self._builders: Dict[str, KnowledgeBuilder] = {}
-        self._agent_tools: Dict[str, Dict[str, Any]] = {}
+        self._stores: dict[str, DocumentStore] = {}
+        self._backends: dict[str, "OKFManager"] = {}
+        self._builders: dict[str, KnowledgeBuilder] = {}
+        self._agent_tools: dict[str, dict[str, Any]] = {}
 
     @classmethod
     def get(cls) -> Optional["OKFCapabilityManager"]:
@@ -142,7 +143,7 @@ class OKFCapabilityManager:
                 self._backends[database] = manager
             return manager
 
-    def builder_for(self, agent_name: str) -> Optional[KnowledgeBuilder]:
+    def builder_for(self, agent_name: str) -> KnowledgeBuilder | None:
         """
         Return this agent's tool builder, over only the databases it holds a role in.
 

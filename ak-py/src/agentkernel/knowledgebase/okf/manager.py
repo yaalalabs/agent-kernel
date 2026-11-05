@@ -26,8 +26,9 @@ import posixpath
 import re
 import threading
 import time
+from collections.abc import Iterable, Mapping
 from datetime import datetime, timezone
-from typing import Any, Iterable, List, Mapping, Optional
+from typing import Any
 from uuid import uuid4
 
 import yaml
@@ -110,10 +111,10 @@ class OKFManager(DocumentKnowledgeBase):
         self,
         store: DocumentStore,
         name: str = "",
-        description: Optional[str] = None,
-        refresh_seconds: Optional[float] = 300.0,
+        description: str | None = None,
+        refresh_seconds: float | None = 300.0,
         max_concepts: int = 10_000,
-        write_actor: Optional[str] = None,
+        write_actor: str | None = None,
         write_prefix: str = "generated",
     ) -> None:
         """
@@ -152,7 +153,7 @@ class OKFManager(DocumentKnowledgeBase):
         self._write_prefix = write_prefix
         self._write_actor = write_actor.strip() if write_actor and write_actor.strip() else self._default_write_actor()
 
-        self._manifest: Optional[OKFBundle] = None
+        self._manifest: OKFBundle | None = None
         self._loaded_at = 0.0
         # A plain threading.Lock, not an asyncio primitive: this tier is synchronous and the
         # tools KnowledgeBuilder emits are sync callables a framework may run on a thread pool.
@@ -205,7 +206,7 @@ class OKFManager(DocumentKnowledgeBase):
             self._loaded_at = time.monotonic()
             return self._manifest
 
-    def search(self, query: str, limit: int = 3, **kwargs) -> List[Record]:
+    def search(self, query: str, limit: int = 3, **kwargs) -> list[Record]:
         """
         Rank concepts lexically against a query.
 
@@ -228,7 +229,7 @@ class OKFManager(DocumentKnowledgeBase):
         ranked = sorted(((score, concept) for score, concept in scored if score > 0), key=lambda pair: (-pair[0], pair[1].path))
         return [self._concept_record(concept) for _, concept in ranked[:limit]]
 
-    def fetch(self, ids: List[str], **kwargs) -> List[Record]:
+    def fetch(self, ids: list[str], **kwargs) -> list[Record]:
         """
         Return concepts by bundle path, in the order requested.
 
@@ -240,7 +241,7 @@ class OKFManager(DocumentKnowledgeBase):
         :return: One record per resolvable id; unknown or unreadable ids are omitted.
         """
         self._ensure_manifest()
-        records: List[Record] = []
+        records: list[Record] = []
         seen: set[str] = set()
 
         for raw_id in ids or []:
@@ -251,7 +252,7 @@ class OKFManager(DocumentKnowledgeBase):
             records.append(self._concept_record(concept, include_body=True))
         return records
 
-    def browse(self, path: str = "", limit: int = 50, **kwargs) -> List[Record]:
+    def browse(self, path: str = "", limit: int = 50, **kwargs) -> list[Record]:
         """
         Enumerate a directory of the bundle.
 
@@ -298,7 +299,7 @@ class OKFManager(DocumentKnowledgeBase):
         if not self.capabilities.writable:
             raise KnowledgeCapabilityError(self.backend_name, "write")
 
-        prepared: List[tuple[str, str, dict]] = []
+        prepared: list[tuple[str, str, dict]] = []
         for record in records or []:
             metadata = dict(record.get("metadata", {}) or {})
             text = record.get("text", "") or ""
@@ -329,7 +330,7 @@ class OKFManager(DocumentKnowledgeBase):
                 if self._manifest is not None:
                     self._manifest.concepts = {**self._manifest.concepts, **written}
 
-    def format_results(self, rows: List[Record]) -> str:
+    def format_results(self, rows: list[Record]) -> str:
         """
         Render records so both the content and the routing signals reach the prompt.
 
@@ -345,7 +346,7 @@ class OKFManager(DocumentKnowledgeBase):
         if not rows:
             return "No relevant knowledge found."
 
-        lines: List[str] = []
+        lines: list[str] = []
         for row in rows:
             metadata = row.get("metadata", {}) or {}
             record_id = metadata.get("id", "")
@@ -377,7 +378,7 @@ class OKFManager(DocumentKnowledgeBase):
         :param metadata: The record's metadata.
         :return: The signal suffix, or ``""`` when the record carries no signals.
         """
-        parts: List[str] = []
+        parts: list[str] = []
         if metadata.get("kind"):
             parts.append(str(metadata["kind"]))
         if metadata.get("trust"):
@@ -531,7 +532,7 @@ class OKFManager(DocumentKnowledgeBase):
         if concept is not None:
             bundle.concepts[path] = concept
 
-    def _read_walk_document(self, bundle: OKFBundle, path: str, *, whole: bool) -> Optional[bytes]:
+    def _read_walk_document(self, bundle: OKFBundle, path: str, *, whole: bool) -> bytes | None:
         """
         Read a document during a walk, turning a store failure into a diagnostic.
 
@@ -570,7 +571,7 @@ class OKFManager(DocumentKnowledgeBase):
         # A weighted field the index does not cover scores nothing, rather than raising.
         return sum(weight for field, weight in _FIELD_WEIGHTS.items() for token in tokens if token in concept.field_tokens.get(field, frozenset()))
 
-    def _load_full_concept(self, raw_id: str) -> Optional[OKFConcept]:
+    def _load_full_concept(self, raw_id: str) -> OKFConcept | None:
         """
         Re-read and re-parse one concept with a complete body.
 
@@ -599,7 +600,7 @@ class OKFManager(DocumentKnowledgeBase):
             log.warning("[%s.fetch] document at %s is not a usable concept", self.backend_name, path)
         return concept
 
-    def _index_record(self, index_path: str) -> List[Record]:
+    def _index_record(self, index_path: str) -> list[Record]:
         """
         Serve a curated listing from a directory's ``index.md``.
 
@@ -649,7 +650,7 @@ class OKFManager(DocumentKnowledgeBase):
                 names.add(head)
         return names
 
-    def _derived_listing(self, manifest: OKFBundle, directory: str, limit: int) -> List[Record]:
+    def _derived_listing(self, manifest: OKFBundle, directory: str, limit: int) -> list[Record]:
         """
         Derive a directory listing from the manifest when no index curates one.
 
@@ -694,7 +695,7 @@ class OKFManager(DocumentKnowledgeBase):
                 limit,
             )
 
-        entries: List[Record] = [self._directory_record(prefix, name) for name in subdirectories[:directory_count]]
+        entries: list[Record] = [self._directory_record(prefix, name) for name in subdirectories[:directory_count]]
         entries.extend(self._concept_record(concept) for concept in concepts[:concept_count])
         return entries
 

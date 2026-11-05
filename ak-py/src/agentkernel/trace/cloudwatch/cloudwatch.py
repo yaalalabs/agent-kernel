@@ -4,8 +4,8 @@ import logging
 import os
 import re
 import threading
+from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import Iterator
 
 from opentelemetry import baggage, context
 from opentelemetry import trace as trace_api
@@ -210,6 +210,14 @@ class CloudWatch(BaseTrace):
         from .maf import CloudWatchMAFRunner
 
         return CloudWatchMAFRunner(self)
+
+    def claude(self) -> Runner:
+        """
+        Returns the CloudWatch Claude Agent SDK runner instance.
+        """
+        from .claude import CloudWatchClaudeRunner
+
+        return CloudWatchClaudeRunner(self)
 
     def fetch_spans(self, query: TraceQuery) -> list[FetchedSpan]:
         """

@@ -2,9 +2,10 @@ import logging
 import os
 import signal
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass
 from queue import Queue
-from typing import Any, Callable, Optional
+from typing import Any
 
 _log = logging.getLogger("ak.pipeline.thread_runner")
 
@@ -25,7 +26,7 @@ class ThreadRunner:
     shutdown_exit_code: int = 1
 
     @classmethod
-    def install_shutdown_signal_handlers(cls, logger: logging.Logger, on_shutdown_signal: Optional[Callable[[], None]] = None) -> None:
+    def install_shutdown_signal_handlers(cls, logger: logging.Logger, on_shutdown_signal: Callable[[], None] | None = None) -> None:
         """Install SIGTERM/SIGINT handlers that start a graceful drain with exit code 0.
 
         Required for any pipeline process that runs as a container's PID 1: the kernel drops
