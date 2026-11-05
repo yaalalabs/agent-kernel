@@ -135,7 +135,9 @@ class TestThreadRecorder:
 
         assert out_requests is rebuilt
         assert out_attachments is attachments
-        manager.get_or_create_thread.assert_called_once_with(session_id="s1", user_id="u1", group_id="g1", name="Chat", first_prompt="hi")
+        manager.get_or_create_thread.assert_called_once_with(
+            session_id="s1", user_id="u1", group_id="g1", name="Chat", first_prompt="hi", enforce_owner=False
+        )
         manager.append_message.assert_called_once_with("s1", "user", "hi", attachments=attachments, media_type=None)
 
     def test_post_run_appends_assistant_message(self):

@@ -108,7 +108,7 @@ flowchart TD
 
 ### Thread ownership
 
-- An AG-UI run on a `threadId` whose thread belongs to another user is refused with 403, before anything is written or enqueued — the read routes' ownership rule (`ConversationThreadManager.get_thread(..., user_id=...)`), applied on write because AG-UI always knows the caller. Added after PR review.
+- An AG-UI run on a `threadId` whose thread belongs to another user is refused with 403, before anything is written or enqueued — the read routes' ownership rule (`ConversationThreadManager.get_thread(..., user_id=...)`), applied on write because AG-UI always knows the caller, and checked again when the thread is created so two first requests racing on one `threadId` cannot share it. Added after PR review.
   - Refusing the run also keeps the caller out of that session's agent memory when threads are on.
   - REST's chat handlers keep the gap (see Non-goals).
 

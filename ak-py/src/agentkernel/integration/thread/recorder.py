@@ -30,7 +30,9 @@ class ThreadRecorder:
         """
         self._manager = manager
 
-    def pre_run(self, req: BaseChatRequest, requests: list[AgentRequest]) -> tuple[list[AgentRequest], list[ThreadAttachment]]:
+    def pre_run(
+        self, req: BaseChatRequest, requests: list[AgentRequest], enforce_owner: bool = False
+    ) -> tuple[list[AgentRequest], list[ThreadAttachment]]:
         """Thread work done before the agent runs: enforce user_id, store attachment
         bytes, create/load the thread, append the user message, and return the rebuilt
         request list in which stored attachments are replaced by in-band
@@ -42,8 +44,10 @@ class ThreadRecorder:
 
         :param req: The originating chat request
         :param requests: The built AgentRequest list (may carry attachments)
+        :param enforce_owner: Refuse a thread another user owns (see ``get_or_create_thread``)
         :return: Tuple of (rebuilt request list, stored ThreadAttachment references)
         :raises ValueError: If user_id is missing, or attachments are rejected by config
+        :raises PermissionError: If ``enforce_owner`` is set and the thread belongs to another user
         """
         if not req.user_id:
             raise ValueError("No user_id is provided in the request — user_id is required when thread support is enabled")
@@ -54,6 +58,7 @@ class ThreadRecorder:
             group_id=req.group_id,
             name=req.thread_name,
             first_prompt=req.prompt,
+            enforce_owner=enforce_owner,
         )
         content, media_type = self._as_user_message(req)
         self._manager.append_message(req.session_id, "user", content, attachments=attachments, media_type=media_type)

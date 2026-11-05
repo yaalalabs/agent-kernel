@@ -96,7 +96,13 @@ Rules:
    `ConversationThreadManager.get_thread(session_id, user_id=...)` (`manager.py:189-204`) and maps
    its `PermissionError` to `HTTPException(403, "Thread is not owned by the authorised user")`, the
    read route's wording. `__init__` takes the manager beside the recorder for this. Cost: one
-   thread-metadata read per run.
+   thread-metadata read per run. That check alone misses a race: two first requests both find no
+   thread, and every store's `create` returns the thread that won rather than failing. So
+   `ThreadRecorder.pre_run` gains `enforce_owner: bool = False`, passed to
+   `ConversationThreadManager.get_or_create_thread(..., enforce_owner=...)`, which checks the owner
+   of both the loaded thread (before any rename) and the one `create` returned. AG-UI sets it; every
+   other caller keeps today's behaviour. In the race, the loser's attachment bytes may already be
+   stored before the 403; no message is written.
 
 ### 3. Direct path — `AGUIRequestHandler` (`integration/agui/handler.py`)
 
@@ -255,7 +261,8 @@ All intentional, all only when a `thread` block is present:
 
 **Non-changes:**
 
-- `ThreadMessage` layout, `ThreadRecorder` signatures, store data layouts, read-route responses.
+- `ThreadMessage` layout, store data layouts, read-route responses. `ThreadRecorder.pre_run` and
+  `get_or_create_thread` gain only an optional `enforce_owner` keyword, off by default (§2 rule 6).
 - AG-UI wire output: every event, its order and the terminal shapes are unchanged; recording emits nothing.
 - AG-UI routes: neither handler gains a route; the read routes stay app-mounted (§6).
 - The pre-existing uncaught `ValueError` from `AttachmentStorageManager.offload` on the queue path

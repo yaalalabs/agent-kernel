@@ -141,6 +141,18 @@ class TestPreRun:
         assert excinfo.value.status_code == 403
         assert thread_store.get_messages("thread-1").messages == []
 
+    def test_a_thread_created_concurrently_by_another_user_is_a_403(self, thread_store, monkeypatch):
+        thread_store.get_or_create_thread(session_id="thread-1", user_id="owner", first_prompt="mine")
+        threads = AGUIThreadRecorder.create()
+        monkeypatch.setattr(thread_store, "get_thread", lambda session_id, user_id=None: None)
+        monkeypatch.setattr(thread_store._store, "load_metadata", lambda session_id: None)
+        req, requests = chat_request(body("hijack"))
+        with pytest.raises(HTTPException) as excinfo:
+            threads.pre_run(req, requests)
+
+        assert excinfo.value.status_code == 403
+        assert InMemoryThreadStore._messages["thread-1"] == []
+
     def test_returns_the_rebuilt_requests(self):
         rebuilt = [AgentRequestText(prompt="rebuilt")]
         recorder = MagicMock(spec=ThreadRecorder)

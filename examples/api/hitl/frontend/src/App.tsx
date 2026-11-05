@@ -50,7 +50,7 @@ export default function App() {
     void run({ prompt: text });
   }
 
-  async function decide(lineId: string, verdict: Verdict, settled: string) {
+  async function decide(lineId: string, verdict: Verdict, pending: string, settled: string) {
     // Answer goes back to the agent that asked, not the one selected now — switching the picker
     // while a pause is open would otherwise post it to an agent the record does not belong to, which
     // Agent Kernel rejects as an agent mismatch.
@@ -58,7 +58,7 @@ export default function App() {
     if (asked?.kind !== "pause") return;
 
     const staged: Line[] = lines.map((line) =>
-      line.id === lineId && line.kind === "pause" ? { ...line, staged: { verdict, settled } } : line,
+      line.id === lineId && line.kind === "pause" ? { ...line, staged: { verdict, pending, settled } } : line,
     );
     setLines(staged);
 
@@ -135,7 +135,7 @@ export default function App() {
                   lineId={line.id}
                   interrupt={line.interrupt}
                   settled={line.settled}
-                  staged={line.staged?.settled}
+                  staged={line.staged?.pending}
                   busy={running}
                   onDecide={decide}
                 />

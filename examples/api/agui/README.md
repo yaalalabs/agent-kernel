@@ -304,7 +304,8 @@ resolves `agentkernel` from PyPI, where the version matches but the `agui` extra
 and uv drops an unknown extra silently rather than failing, so the install appears to succeed and then
 `AGUIRequestHandler` raises `ValueError: AG-UI support requires the 'ag-ui-protocol' package`.
 `./build.sh local` resolves against `../../../ak-py/dist`, so run `ak-py/build.sh` first if that
-directory is empty or stale.
+directory is empty or stale. The same holds for conversation history: no release records AG-UI runs as
+threads yet, so `test_a_run_is_recorded_as_a_thread` fails against the PyPI package.
 
 **Start the app with `python app.py`, not `uv run app.py`, for the same reason.** `uv run` re-resolves
 the environment before running, and on this branch that can replace the locally built `agentkernel`

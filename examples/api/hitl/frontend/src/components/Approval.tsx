@@ -33,7 +33,8 @@ export function Approval({
   /** A run is in flight. The in-flight latch in App already drops a second decision; this is what
    *  tells the human why, instead of letting a click look accepted and do nothing. */
   busy?: boolean;
-  onDecide: (lineId: string, verdict: Verdict, settled: string) => void;
+  /** `pending` is shown while the answer waits for the others; `settled` once the run accepted it. */
+  onDecide: (lineId: string, verdict: Verdict, pending: string, settled: string) => void;
 }) {
   const [text, setText] = useState("");
   const metadata = (interrupt.metadata ?? {}) as { tool_name?: string; arguments?: string; payload?: Question };
@@ -47,7 +48,7 @@ export function Approval({
     /* not JSON: show it as sent */
   }
 
-  const decide = (verdict: Verdict, note: string) => onDecide(lineId, verdict, note);
+  const decide = (verdict: Verdict, pending: string, settled = pending) => onDecide(lineId, verdict, pending, settled);
 
   return (
     <div className="approval">
@@ -86,16 +87,16 @@ export function Approval({
         </div>
       ) : (
         <div className="actions">
-          <button className="ok" disabled={busy} onClick={() => decide({ status: "resolved", payload: true }, "Approved — the tool ran.")}>
+          <button className="ok" disabled={busy} onClick={() => decide({ status: "resolved", payload: true }, "Approved", "Approved — the tool ran.")}>
             Approve
           </button>
-          <button className="no" disabled={busy} onClick={() => decide({ status: "resolved", payload: false }, "Denied — the tool did not run.")}>
+          <button className="no" disabled={busy} onClick={() => decide({ status: "resolved", payload: false }, "Denied", "Denied — the tool did not run.")}>
             Deny
           </button>
-          <button disabled={busy} onClick={() => decide({ status: "cancelled" }, "Cancelled — nobody decided, and the model is told so.")}>Cancel</button>
+          <button disabled={busy} onClick={() => decide({ status: "cancelled" }, "Cancelled", "Cancelled — nobody decided, and the model is told so.")}>Cancel</button>
         </div>
       )}
-      {!settled && staged && <div className="staged">{staged} — waiting for the other answer</div>}
+      {!settled && staged && <div className="staged">{staged} — sent with the other answer; nothing has run yet</div>}
     </div>
   );
 }

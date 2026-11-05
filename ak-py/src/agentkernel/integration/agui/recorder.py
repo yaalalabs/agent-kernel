@@ -55,18 +55,20 @@ class AGUIThreadRecorder:
         """
         Record the user turn before the run, refusing a thread another user owns.
 
+        Checked twice: up front, so the common case stores no attachment bytes, and again inside
+        ``get_or_create_thread``, which also catches a thread a concurrent request created first.
+
         :param req: From ``chat_request``.
         :param requests: The run's requests.
         :return: The requests with stored attachments replaced by references.
         :raises HTTPException: 403 for another user's thread, 400 when the attachments are refused;
-                               nothing is written either way.
+                               no message is written either way.
         """
         try:
             self._manager.get_thread(req.session_id, user_id=req.user_id)
+            rebuilt, _ = self._recorder.pre_run(req, requests, enforce_owner=True)
         except PermissionError:
             raise HTTPException(status_code=403, detail="Thread is not owned by the authorised user")
-        try:
-            rebuilt, _ = self._recorder.pre_run(req, requests)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
         return rebuilt

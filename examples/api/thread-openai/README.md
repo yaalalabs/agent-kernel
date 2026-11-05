@@ -27,6 +27,11 @@ Install local dependencies in development mode using:
 
     ./build.sh local
 
+**Until a release includes it, the pause and decision history below needs the local build.** The plain
+`./build.sh` installs `agentkernel` 0.9.5 from PyPI, which stores pauses and decisions without a
+`media_type`, so `app_test.py` fails there. Run `ak-py/build.sh` to fill `../../../ak-py/dist`, then
+`./build.sh local`.
+
 Run this demo using the following.
 
 Run REST API:
@@ -80,3 +85,6 @@ answered it are messages of their own, each carrying its payload as an object wi
 To run tests:
 
     uv run pytest -s
+
+After `./build.sh local`, run `.venv/bin/pytest -s` instead: `uv run` re-resolves the environment and can
+swap the local build back for the PyPI release.
