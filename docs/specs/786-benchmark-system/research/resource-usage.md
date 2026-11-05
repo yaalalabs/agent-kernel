@@ -11,8 +11,8 @@ min / avg / max everywhere on 2026-10-29), and separate graphs. Still open: see 
 ## Design: resource usage fetchers (pluggable)
 
 Same pattern as the scaling info fetchers: one abstract class, one subclass per **way of reading** CPU / memory on one
-platform, a `live_track` constructor parameter that puts it in the live-tracked or the after-step group (fetched after the cool-down and wait), and a
-host lists one or more of them.
+platform, and a host puts one or more of them in its fetcher lists (on both AWS hosts: `after_step`, fetched once
+after the cool-down and wait).
 
 - **Why a separate interface, not part of `ScalingInfoFetcher`:**
   - The sources are different (ECS `DescribeServices` gives counts but no usage; Container Insights gives usage but
@@ -59,8 +59,9 @@ class ResourceUsageFetcher(InfoFetcher[ResourceUsage]):
 
 - Extends `InfoFetcher[T]`, the base class every fetcher shares (see
   [pluggable per-platform collectors](platform-scaling-and-cost.md#pluggable-per-platform-collectors)):
-  constructor parameters `live_track` and `poll_interval_s`, `fetch()` (the only method a subclass writes) and
-  `fetch_and_store()`. `ResourceUsageFetcher` only adds `store()`. The host bundle always sets `live_track`.
+  constructor parameters `poll_interval_s` and `settle_window_s`, `fetch()` (the only method a subclass writes) and
+  `fetch_and_store()`. `ResourceUsageFetcher` only adds `store()`. It has no `is_settled()`, so it can't be in the
+  host's `cooldown_checks` list. Which of the host's lists it's in decides when it runs.
 
 - **`ResourceSample` = one reading.** Each row says "at time `ts`, worker `worker` of tier `tier` had `metric` =
   `value`". `stat` says whether that number is a raw reading (`value`) or something the source already worked out
@@ -112,10 +113,10 @@ class ResourceUsageFetcher(InfoFetcher[ResourceUsage]):
 - **Units:** CPU as a % of what one worker has (task vCPU; Lambda has no CPU, see [Lambda](#lambda)), memory in MiB and as a %
   of the worker's memory, so hosts with different worker sizes read the same way. The worker size is already in the
   run metadata.
-- **Called the same way as the scaling fetchers:** `live_track = True` ones by the step's background task (every
-  `poll_interval_s`, from the start of "before" until the cool-down ends), the others once per step after the
-  cool-down and the configured wait (default 1 min). Re-runnable with a `collect-resources --run-id …` step like
-  `collect-scaling`; a re-run adds no duplicate rows (same timestamp and key → the new row replaces the old one, see
+- **Called the same way as the scaling fetchers:** ones in the host's `during_step` list by the step's background
+  task (every `poll_interval_s`, from the start of "before" until the cool-down ends), ones in `after_step` once per
+  step after the cool-down and the configured wait (default 1 min). A row written twice is stored once (same
+  timestamp and key → the new row replaces the old one, see
   [scaling info fetchers](platform-scaling-and-cost.md#scaling-info-fetchers-pluggable)).
 - **A fetcher that fails** (no permission, Container Insights off) records empty columns and a run-log entry; the run
   carries on. Same rule as the scaling fetchers.
@@ -142,7 +143,7 @@ Three places have ECS CPU / memory. Bound: the first two.
 - With CPU set at task level (ours), CPU % doesn't go above 100.
 - Optional 20-second resolution (`resolutionSeconds = 20` on the service's monitoring configuration) exists; not set
   in our Terraform and not proposed.
-- `live_track = False`. Implemented as a generic `CloudWatchMetricResourceFetcher` (namespace, metric names, dimensions as
+- In the `ecs` host's `after_step` list (has history). Implemented as a generic `CloudWatchMetricResourceFetcher` (namespace, metric names, dimensions as
   constructor parameters), so GCP / Azure monitoring-metric fetchers follow the same shape later.
 
 ### 2. `aws.ecs_container_insights`: per-task usage (Container Insights)
@@ -161,7 +162,7 @@ Three places have ECS CPU / memory. Bound: the first two.
 - **Enhanced observability** (`containerInsights = enhanced`) also publishes per-task metrics with a `TaskId`
   dimension (`TaskCpuUtilization`, `TaskMemoryUtilization`, and `ContainerCpuUtilization` / `ContainerMemoryUtilization`
   per container). Only needed if the log events turn out not to cover Fargate tasks. Costs more than standard.
-- `live_track = False` (log ingestion delay).
+- In the `ecs` host's `after_step` list (log ingestion delay).
 - **Fargate:** AWS's reference shows only an EC2 example. A Fargate `Type = "Task"` event with
   `"LaunchType": "FARGATE"` and the same CPU / memory fields is shown by an AWS developer advocate's write-up from
   2022, before enhanced observability existed, so standard Container Insights covers Fargate tasks. Community queries
@@ -206,7 +207,7 @@ The standard `AWS/Lambda` metrics have no CPU or memory metric. Two sources, bot
 - **No CPU.**
 - Caveat: "when invocations share an execution environment, Lambda reports the maximum memory used across all
   invocations", so it's a high-water mark per environment, not the memory of that invocation.
-- `live_track = False`.
+- In the `lambda` host's `after_step` list.
 
 ### 2. `aws.lambda_insights`: Lambda Insights extension (memory)
 
@@ -240,7 +241,7 @@ The standard `AWS/Lambda` metrics have no CPU or memory metric. Two sources, bot
   billed in 1 ms increments. It runs inside the measured functions, so it adds a little to their duration (and to the
   latency being measured). To be recorded in the run metadata whether it was on.
 - Only on Amazon Linux 2 / 2023 runtimes.
-- `live_track = False`.
+- In the `lambda` host's `after_step` list.
 
 Bound: both. `aws.lambda_report_memory` always (free). `aws.lambda_insights` is **on by default**; a per-run config
 value switches it off (e.g. to check how much latency the extension adds). The deployer adds the layer when it's on (no
