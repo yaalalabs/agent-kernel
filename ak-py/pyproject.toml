@@ -33,7 +33,7 @@ openllmetry = [
     "httpx>=0.27.0",
 ]
 logfire = [
-    "logfire>=3.0",
+    "logfire>=4.31.0",
     "httpx>=0.27.0",
 ]
 cloudwatch = [
@@ -63,6 +63,10 @@ pydanticai = [
 ]
 maf = [
     "agent-framework-core>=1.20.0,<2",
+]
+claude = [
+    "claude-agent-sdk>=0.2.165,<0.3",
+    "openinference-instrumentation-claude-agent-sdk>=0.1.20",
 ]
 cli = [
     
@@ -187,7 +191,9 @@ test = [
     "litellm>=1.89.2",
 ]
 a2a = [
-    "a2a-sdk[http-server]>=0.3.6",
+    "a2a-sdk[http-server]==1.2.3",
+    "fastapi>=0.118.0",
+    "uvicorn>=0.37.0",
 ]
 mcp = [
     "fastmcp>=3.2.0,<4.0.0"

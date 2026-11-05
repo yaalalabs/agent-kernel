@@ -249,7 +249,7 @@ class GoogleADKRunner(BaseRunner):
         super().__init__(FRAMEWORK)
         self._log = logging.getLogger("ak.adk.runner")
         self._streaming_mode_warned = False
-        """Whether the stream-mode streaming_mode override was already logged for this runner."""
+        """Whether the streamed-run streaming_mode override was already logged for this runner."""
 
     @classmethod
     def _split_run_options(cls, options: Mapping[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -275,7 +275,7 @@ class GoogleADKRunner(BaseRunner):
         explicitly_set = "streaming_mode" in caller.model_fields_set
         if explicitly_set and caller.streaming_mode is not StreamingMode.SSE and not self._streaming_mode_warned:
             self._log.warning(
-                f"ADK RunConfig streaming_mode {caller.streaming_mode} overridden to SSE for Agent Kernel stream mode; "
+                f"ADK RunConfig streaming_mode {caller.streaming_mode} overridden to SSE for Agent Kernel streamed runs; "
                 "the stream mapping depends on partial events"
             )
             self._streaming_mode_warned = True

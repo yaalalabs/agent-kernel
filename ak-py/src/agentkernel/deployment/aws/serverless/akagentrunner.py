@@ -4,7 +4,7 @@ from typing import Optional
 
 from ....core.chat_service import ChatService
 from ....core.config import AKConfig
-from ....core.model import BaseRunRequest, ExecutionMode, StreamChunk
+from ....core.model import BaseRunRequest, StreamChunk
 from ....pipeline.envelope import ATTR_STATUS_CODE
 from ....pipeline.integration_delivery import IntegrationDelivery
 from ..core.sqs_handler import SQSHandler
@@ -13,7 +13,7 @@ from .core import LambdaSQSConsumer
 
 class ServerlessAgentRunner(LambdaSQSConsumer):
     """
-    handle() dispatches to ServerlessStreamAgentRunner when execution.mode is STREAM.
+    handle() dispatches to ServerlessStreamAgentRunner when execution.message_type is delta.
     """
 
     _log = logging.getLogger("ak.aws.agentrunner")
@@ -27,8 +27,8 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
 
     @classmethod
     def handle(cls, event: dict, context) -> dict:
-        """Dispatch to ServerlessStreamAgentRunner when execution.mode is STREAM."""
-        if AKConfig.get().execution.mode == ExecutionMode.STREAM:
+        """Dispatch to ServerlessStreamAgentRunner when execution.message_type is delta."""
+        if AKConfig.get().execution.is_delta:
             return ServerlessStreamAgentRunner.handle(event, context)
         return super().handle(event, context)
 
@@ -78,9 +78,7 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
         message_attributes = SQSHandler.get_message_custom_attributes(raw_queue_message)
         request_id = message_attributes.get("request_id")
         user_id = message_attributes.get("user_id")
-        endpoint_url = (
-            message_attributes.get("endpoint_url") if AKConfig.get().execution.mode in (ExecutionMode.ASYNC, ExecutionMode.STREAM) else None
-        )
+        endpoint_url = message_attributes.get("endpoint_url") if AKConfig.get().execution.is_websocket else None
 
         if not request_id or not user_id:
             body = body if body is not None else cls._body_from_record(raw_queue_message)
@@ -211,7 +209,7 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
 
 class ServerlessStreamAgentRunner(LambdaSQSConsumer):
     """
-    Lambda SQS consumer that processes chat requests in STREAM mode.
+    Lambda SQS consumer that processes chat requests for async + delta (message_type delta).
 
     Each streaming chunk from the agent is sent as a separate message to the output SQS queue.
     The ResponseHandler then broadcasts each chunk via WebSocket to the connected client.
@@ -276,7 +274,7 @@ class ServerlessStreamAgentRunner(LambdaSQSConsumer):
         if not request_id:
             raise ValueError("request_id is required")
         if not endpoint_url:
-            raise ValueError("endpoint_url is required for STREAM mode")
+            raise ValueError("endpoint_url is required for async + delta")
 
         record_attributes = {
             "message_group_id": attributes["MessageGroupId"],
@@ -332,7 +330,7 @@ class ServerlessStreamAgentRunner(LambdaSQSConsumer):
     @classmethod
     def process_message(cls, record: dict) -> None:
         """
-        Process a single SQS record in STREAM mode: invoke the chat service and send
+        Process a single SQS record for async + delta: invoke the chat service and send
         each yielded chunk as a separate message to the output queue.
 
         :param record: SQS record (``dict``) containing the chat request payload

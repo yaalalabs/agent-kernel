@@ -228,7 +228,7 @@ PydanticAIModule([agent]).run_options(
 ```
 
 `run_stream_events` does not accept `event_stream_handler` (it is itself the event stream), so in
-`execution.mode: stream` the handler is dropped with one warning per runner and the adapter's own
+`execution.message_type: delta` the handler is dropped with one warning per runner and the adapter's own
 stream events carry the same information; `usage_limits` applies in both modes.
 
 Reserved (raise `ValueError` at declaration): `user_prompt`, `message_history` (the

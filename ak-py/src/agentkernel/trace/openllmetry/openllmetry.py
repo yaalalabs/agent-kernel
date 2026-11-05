@@ -158,6 +158,14 @@ class OpenLLMetry(BaseTrace):
 
         return OpenLLMetryMAFRunner()
 
+    def claude(self) -> Runner:
+        """
+        Returns the OpenLLMetry Claude Agent SDK runner instance.
+        """
+        from .claude import OpenLLMetryClaudeRunner
+
+        return OpenLLMetryClaudeRunner()
+
     def fetch_spans(self, query: TraceQuery) -> list[FetchedSpan]:
         """
         Fetches spans back from Traceloop through the warehouse REST API (same ``TRACELOOP_API_KEY``, resolved

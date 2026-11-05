@@ -312,24 +312,29 @@ class AgentPausedReplyAny(AgentReplyAny):
 
 
 class ExecutionMode(str, Enum):
-    """How a request is executed and how its reply is delivered.
+    """How a request is invoked, which also fixes the transport its reply travels on.
 
     The mode is a process-level configuration value (``execution.mode``), read wherever a
     component must branch on it; it is never carried on a request.
 
-    - ``REST_SYNC`` / ``REST_ASYNC``: the reply is written to the response store and read back
-      over REST.
-    - ``ASYNC``: WebSocket delivery, whole replies.
-    - ``STREAM``: token streaming (``StreamAgentRunner``), delivered over WebSocket.
-    - ``REALTIME``: a persistent model socket (voice), streamed and delivered through an
-      integration adapter such as the LiveKit gateway.
+    - ``REST_SYNC`` / ``REST_ASYNC``: over REST (JSON reply, submit + poll, or SSE for delta replies).
+    - ``ASYNC``: over WebSocket only.
+    - ``REALTIME``: a persistent model socket (voice) through an integration gateway.
+
+    How much of the reply each message carries is ``execution.message_type`` (``ReplyMessageType``).
     """
 
     REST_SYNC = "rest_sync"
     REST_ASYNC = "rest_async"
-    STREAM = "stream"
     ASYNC = "async"
     REALTIME = "realtime"
+
+
+class ReplyMessageType(str, Enum):
+    """How much of the reply each delivered message carries (``execution.message_type``)."""
+
+    COMPLETE = "complete"  # one message with the whole reply
+    DELTA = "delta"  # one message per StreamChunk, ending with the done chunk
 
 
 class StreamChunk(BaseModel):
