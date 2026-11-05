@@ -4,7 +4,8 @@
 
 - Done: the workflow, the script, tracked locks for the 3 manifests that had none. The shared test workflows are
   unchanged.
-- Tested with real runs on GitHub (the temporary `push` trigger). The fifth run opened PR #901.
+- Tested with 7 real runs on GitHub (a temporary `push` trigger on the feature branch, now removed). The last one
+  opened PR #908.
 
 ## Real runs
 
@@ -16,12 +17,13 @@
 | 4 (41964502523) | Round 2 failed only on `kind-smoke (dev)` (also flaky on develop) and `broker-kafka` (passed in round 1); no PR. PR body counted 4 files, not 258 | `verdict`; report diffs against the base commit |
 | 5 (41972879075) | PR #901 opened; `cli/adk` (a wrong answer, passed in round 1) accepted. Fixed-alerts list repeated per severity. `aws-containerized/mcp/multi` kept `litellm` 1.108.0, the version that broke its tested twin | One line per package; integration tests after the PR; Copilot checks untested manifests with the same broken version |
 | PR #902 (CodeQL) | 5 cache-poisoning alerts: `code-quality.yml` (new, from its `checkout_ref`) and `test-reusable.yaml` (old ones, shown because the file changed) | Kind and lint out of the gate (kind started after the PR, lint is a PR check); round 1's artifact deleted before round 2, so the shared workflows are unchanged |
+| 6 (41986532730, PR #903) | Round 2 all green, PR opened; integration tests started, but without redeploying the Slack/Telegram app | `provision_e2e_messaging=true`; `ANTHROPIC_API_KEY` for the Claude examples (#833) |
+| 7 (42020023574, PR #908) | Round 1: 6 failures. Copilot held `pydantic-ai-slim` and found the broken `litellm` in 5 manifests, including the untested `aws-containerized/mcp/multi`. Round 2 all green, PR opened, kind smoke and integration tests started, messaging tests passed on the redeployed app. The 5 after-PR failures were infra (`kreuzwerker/docker` provider download, a response-store race, `kind-smoke (eks)`) | None |
 
 ## Next
 
-1. One more real run with the latest changes (close PR #901 first: only one update PR at a time).
-2. Remove the TEMPORARY `push` trigger and merge to `develop`. Runs then start every second Monday.
-3. Ask an admin to give the `agent-kernel-ci` app "Dependabot alerts: Read", then drop `DEPENDABOT_ALERTS_TOKEN`.
+1. Merge to `develop`. Runs then start every second Monday; a run by hand is Actions → Run workflow.
+2. Ask an admin to give the `agent-kernel-ci` app "Dependabot alerts: Read", then drop `DEPENDABOT_ALERTS_TOKEN`.
 
 ## Follow-ups outside this work
 

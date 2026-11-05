@@ -14,7 +14,6 @@ The shared workflows (`test-reusable.yaml`, `chart-test.yaml`, `code-quality.yml
 
 - `schedule`: `0 3 * * 1` (Monday 03:00 UTC); the `when` job lets only even weeks since 1970 through
   (`date +%s / 604800 % 2 == 0`). Other triggers always run.
-- TEMPORARY `push` on the feature branch, for real test runs. Removed before merge.
 - `workflow_dispatch`: a real run by hand, no inputs (every run covers every manifest).
 - Permissions: `contents: write`, `pull-requests: write`, `security-events: read`, `actions: read`; `fix-1` and
   `finish` also `actions: write` (delete an artifact; start workflows).
@@ -22,7 +21,8 @@ The shared workflows (`test-reusable.yaml`, `chart-test.yaml`, `code-quality.yml
   so the PR's CI runs); `DEPENDABOT_ALERTS_TOKEN` (until the app can read alerts); the e2e secrets of
   `test-reusable.yaml` (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `WALLED_API_KEY`, `TYPESAFE_API_KEY`, `SLACK_BOT_TOKEN`,
   `SLACK_SIGNING_SECRET`).
-- Settings in the workflow `env`: `BASE_BRANCH` (`develop`), `AFTER_PR_WORKFLOWS` (`chart-test.yaml integration-test-weekly.yaml`).
+- Settings in the workflow `env`: `BASE_BRANCH` (`develop`), `AFTER_PR_WORKFLOWS` (`chart-test.yaml integration-test-weekly.yaml:provision_e2e_messaging=true`; each entry is
+  `<workflow file>[:<input>=<value>,...]`).
 
 ## Script commands
 
@@ -77,7 +77,7 @@ The shared workflows (`test-reusable.yaml`, `chart-test.yaml`, `code-quality.yml
 One prompt in the script, for install-check and CI failures. Copilot reads `failures.json` and the logs as
 untrusted data. For each failure:
 
-1. Find the real error (traceback, import error, resolver or build error, lint failure, an error as the answer).
+1. Find the real error (traceback, import error, resolver or build error, an error as the answer).
 2. Name the package that changed and brings the problem (the prompt's example is made up, so it cannot be copied).
 3. Append `{"manifest", "package", "reason"}` to `holds.jsonl` (`"*"` for several manifests or none). CI failures
    only: find other `uv.lock` files with the same broken version; where the manifest uses the same part of the
@@ -97,6 +97,6 @@ unsure, nothing. Tools: `shell`, `read`, `write`; URLs `pypi.org` and `files.pyt
 
 ## How it is tested
 
-Real runs on GitHub, started by the temporary `push` trigger: each push runs the whole workflow (update, both
-rounds, PR). Results and the fixes they led to are in [plan.md](plan.md). `ruff`, `black -l 120` and `actionlint`
+Real runs on GitHub, started by a temporary `push` trigger on the feature branch (removed before merge): each push
+ran the whole workflow (update, both rounds, PR). Results and the fixes they led to are in [plan.md](plan.md). `ruff`, `black -l 120` and `actionlint`
 pass.

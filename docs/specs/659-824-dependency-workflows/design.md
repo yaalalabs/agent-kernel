@@ -81,7 +81,7 @@ flowchart TD
 ### Copilot
 
 - Copilot only appends lines to `holds.jsonl` and `not_dependency.jsonl`; it never edits a file, commits or pushes.
-- **Real error** (traceback, import error, resolver error, lint failure, an error as the agent's answer): name
+- **Real error** (traceback, import error, resolver error, an error as the agent's answer): name
   the package. Example: `litellm` 1.108.0 imports `mcp.types.CacheableResult` → hold `litellm`, not `mcp`.
 - **Same break elsewhere:** the gate does not test every manifest (the cloud examples deploy later). After a CI
   finding, Copilot checks other manifests that lock the same broken version and use the same part of the
@@ -96,8 +96,9 @@ flowchart TD
   "no dependency cause" reason. Anything unexplained keeps the PR closed and deletes the branch.
 - Lists every change: version changes, security fixes by package, holds with reasons, blocked fixes, manifests put
   back, breaking upgrades held back, what is not covered, alerts still open, and accepted failures.
-- After the PR opens, `chart-test.yaml` (kind smoke) and `integration-test-weekly.yaml` start on its branch, and
-  lint runs as a normal PR check. A reviewer reads them; nothing waits for them.
+- After the PR opens, the workflows in `AFTER_PR_WORKFLOWS` start on its branch: `chart-test.yaml` (kind smoke) and
+  `integration-test-weekly.yaml` with `provision_e2e_messaging=true` (the Slack/Telegram app is redeployed from the
+  branch). Lint runs as a normal PR check. A reviewer reads them; nothing waits for them.
 - Why kind and lint are not in the gate: calling them from this workflow needs a `checkout_ref` input, which CodeQL
   flags as cache poisoning (code from another branch runs with `develop`'s cache rights). Started on the branch
   itself, they need no change.

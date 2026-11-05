@@ -1,21 +1,5 @@
 #!/usr/bin/env python3
-"""Dependency update for Agent Kernel, every two weeks (issues #659, #824).
-
-Every pyproject.toml with a uv.lock gets the same treatment:
-
-    snapshot  save the locked versions and the base commit; clear old state
-    alerts    read the open Dependabot alerts (a failure is reported, it never stops the run)
-    cap       add an upper limit to every direct dependency: next major, or next minor for 0.x
-    secure    raise every alerted direct dependency to its patched version
-    update    uv lock --upgrade on each version line, then uv sync (does it resolve and install?)
-    failures  collect what failed, for Copilot: the install checks, or this run's failed CI jobs (--jobs)
-    hold      hold back the packages Copilot named in holds.jsonl (a security package at its minimum
-              when Copilot checked that it works, else blocked); check those manifests again
-    finalize  put back every manifest that still fails
-    npm       npm audit fix where npm alerts exist (never --force), then npm ci and build
-    report    write the PR body and the run summary
-    fix       Copilot reads failures.json and names the package behind each real error; then `hold`
-    verdict   may the PR open although the last test round failed? (only failures this update did not cause)
+"""Dependency update for Agent Kernel, every two weeks (#659, #824). One class per command.
 
 A version line is the major for >= 1.0 and the minor for 0.x. A package never leaves its line, except
 for a security fix. Copilot only names the package behind a failure; this script holds it back.
@@ -512,11 +496,7 @@ class Securer:
 
 
 class LockGuard:
-    """Updates one lock, keeping every package on its version line.
-
-    uv may still move a held package when an upgraded one needs it, so the package that pulls it is held
-    too, until nothing crosses a line. Security packages are not held by this rule; pinned ones stay at their pin.
-    """
+    """Updates one lock, keeping every package on its version line (a package's pullers are held with it)."""
 
     MAX_ROUNDS = 6
 
@@ -656,10 +636,7 @@ class Checker:
         return 0
 
     def block_unsatisfiable(self, manifests: list[Manifest], results: dict) -> list[Manifest]:
-        """`uv lock` found no solution because of a security minimum we raised: block that fix, keep the rest.
-
-        Example: a released library pins foo 2.13.x, so the patched 2.53 cannot be installed with it.
-        """
+        """`uv lock` found no solution because of a security minimum we raised: block that fix, keep the rest."""
         changes, retry = self.state.load("changes.json", []), []
         for manifest in manifests:
             result = results.get(manifest.relative, {})
@@ -680,11 +657,7 @@ class Checker:
 
 
 class Holds:
-    """Command `hold`: hold back the packages Copilot named in holds.jsonl, then check those manifests again.
-
-    A security package is kept at its minimum when Copilot checked that it works (`keep_minimum`);
-    otherwise its fix is blocked and its original line comes back.
-    """
+    """Command `hold`: hold back the packages Copilot named in holds.jsonl, then check those manifests again."""
 
     def __init__(self, repo: Repo, state: State, workers: int):
         self.repo = repo
@@ -786,10 +759,7 @@ class Holds:
 
 
 class CopilotFix:
-    """Command `fix`: Copilot names the package behind each failure, then `hold` holds them.
-
-    Copilot reads untrusted logs, so its tools stay narrow: shell, read, write, and PyPI only.
-    """
+    """Command `fix`: Copilot names the package behind each failure (narrow tools: it reads untrusted logs)."""
 
     COMMAND = (
         "copilot", "--allow-tool=shell", "--allow-tool=read", "--allow-tool=write",
@@ -812,11 +782,7 @@ class CopilotFix:
 
 
 class Failures:
-    """Command `failures`: writes failures.json for Copilot and prints the count.
-
-    Without --jobs: the manifests failing their install check. With --jobs: this run's failed CI jobs under
-    those caller jobs. A job whose name holds a manifest folder gets that manifest; Copilot finds the rest.
-    """
+    """Command `failures`: writes failures.json for Copilot (install checks, or CI jobs with --jobs); prints the count."""
 
     # Lines worth showing first; Copilot also gets the full log.
     ERROR = re.compile(
@@ -908,11 +874,7 @@ class Failures:
 
 
 class Verdict:
-    """Command `verdict`: may the PR open although the last round failed? Prints true or false.
-
-    A failed job is accepted when it passed in round 1, or Copilot found no dependency cause for it.
-    Anything else keeps the PR closed. Accepted failures are listed in the PR's Testing section.
-    """
+    """Command `verdict`: true when every failed job passed in round 1 or has no dependency cause (Copilot)."""
 
     def __init__(self, failures: Failures, first: list[str], retry: list[str]):
         self.failures = failures
@@ -1240,8 +1202,7 @@ class Reporter:
             "",
             "## Testing",
             self.TESTED,
-            "- [ ] Kind smoke tests and the weekly integration tests: started on this branch after the PR opened.",
-            "- [ ] Lint: the normal check on this PR.",
+            "- [ ] The checks started on this branch after the PR opened (see the comment below) and this PR's own checks.",
             "",
             "## Additional Notes",
             *notes,

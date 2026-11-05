@@ -4,15 +4,11 @@ name: Dependency Version Update (Copilot)
 # (.github/scripts/dependency_caps.py). Then unit tests and e2e. On a failure Copilot names the package
 # behind each real error, the script holds it back, and the tests run once more. The PR opens when they
 # pass, or when the only failures are not caused by the update (listed in the PR). After the PR opens,
-# the kind smoke tests and the weekly integration tests start on its branch; lint runs as a PR check.
+# the workflows in AFTER_PR_WORKFLOWS start on its branch.
 #
 #   when -> update -> e2e-1 -> (failed) fix-1 -> e2e-2 -> finish
 
 on:
-  # TEMPORARY: test runs from the feature branch (a push run is a real run). REMOVE before merging.
-  push:
-    branches:
-      - feature/659-copilot-agent-for-automated-vulnerability-remediation-and-pr-creation
   schedule:
     - cron: '0 3 * * 1' # every Monday 03:00 UTC; the `when` job lets every second one through
   workflow_dispatch:
@@ -227,7 +223,6 @@ jobs:
           ACTIONS_TOKEN: ${{ secrets.GITHUB_TOKEN }} # actions: read, for this run's job logs
         run: |
           set -euo pipefail
-          # $SCRIPT came with the state artifact (the update branch may not have it).
           dep() { uv run --no-project --with packaging python "$SCRIPT" --state "$STATE_DIR" "$@"; }
           echo "Failed jobs: $(dep failures --run-id "$RUN_ID" --jobs e2e-1)"
           dep fix
@@ -355,7 +350,7 @@ jobs:
               fi
             done
             if [ -n "$note" ]; then
-              note+="Check them before merging. Lint runs as a normal check on this PR."
+              note+="Check them before merging."
               gh pr comment "$url" --body "$note" || echo "::warning::could not comment on $url"
               echo "$note" >> "$GITHUB_STEP_SUMMARY"
             fi
