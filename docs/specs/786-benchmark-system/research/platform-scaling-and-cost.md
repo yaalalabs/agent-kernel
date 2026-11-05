@@ -436,9 +436,10 @@ What a run **actually cost**, read from the cloud's bill, for the whole run.
 **Tag everything.** Every resource the runner deploys gets a `ak-bench-run-id` tag (Terraform `default_tags`).
 The billed cost is AWS Cost Explorer `GetCostAndUsage` filtered by the run tag, grouped by service.
 
-- **One tag value per host × execution mode** (decided 2026-11-04, PR #893 review): `<run-id>-<host>-<mode>`, e.g.
-  `<run-id>-lambda-async`. Each host × mode has its own deployment, so its `cost.csv` holds only that deployment's
-  bill, never another host's or mode's.
+- **One tag value per host × mode × message type** (decided 2026-11-04, PR #893 review; message type added 2026-11-05):
+  `<run-id>-<host>-<mode>-<message-type>`, e.g. `<run-id>-lambda-async-complete`. Each host × mode × message type has
+  its own deployment, so its `cost.csv` holds only that deployment's bill, never another host's, mode's or message
+  type's.
 
 - **Metric: `UnblendedCost`** (decided 2026-11-02): the usage at the rate AWS charged, **without discounts and
   credits** (Cost Explorer shows those as their own line items; the after-discount view is `NetUnblendedCost`, not
@@ -446,22 +447,23 @@ The billed cost is AWS Cost Explorer `GetCostAndUsage` filtered by the run tag, 
 - **AWS's own billing rules are already in it** (e.g. Fargate's per-second billing with a 1-minute minimum, SQS
   billing per API request including empty receives), so the benchmark doesn't model them.
 - **The whole run only, never per step.** The tag is set once, at deploy time, and one deployment serves every step of
-  both test types (1 → 10 → 100 → 1000), so every charge of that host × mode carries the same tag value and Cost
-  Explorer can't tell the steps apart. Its time grain (daily, or hourly) can't separate them either: steps are
-  minutes long and run back to back. The total covers set-up, every step, the waits after the steps and the time until tear-down.
+  both test types (1 → 10 → 100 → 1000), so every charge of that host × mode × message type carries the same tag value
+  and Cost Explorer can't tell the steps apart. Its time grain (daily, or hourly) can't separate them either: steps are
+  minutes long and run back to back. The total covers set-up, every step, the waits after the steps and the time until
+  tear-down.
 - The tag must be activated as a cost allocation tag (management account). Tagged costs show from activation on; the
   management account can **backfill** up to 12 months (one backfill request per 24 h). Costs only appear for periods
   when the tag was actually on the resource.
 - Cost Explorer refreshes at least once every 24 h (some data can arrive later), so this is a **separate, later step**
   (`collect-cost --run-id …`) that fills in the cost CSV after the run. It fits the existing "re-plot from existing
   CSVs" option. Each Cost Explorer API request costs $0.01.
-- **Daily granularity** (decided 2026-10-29): every host × mode of every run has its own tag value, so its billed cost
-  is the sum of the daily rows for that value over the days the run covered (two days if it crosses midnight).
-  Hourly isn't used.
+- **Daily granularity** (decided 2026-10-29): every host × mode × message type of every run has its own tag value, so
+  its billed cost is the sum of the daily rows for that value over the days the run covered (two days if it crosses
+  midnight). Hourly isn't used.
 - Shared or long-lived resources (e.g. a NAT gateway) can be tagged, but if they're shared across runs or used by
   other things, their cost must be listed as a fixed allocation instead.
-- **Output:** `cost.csv` per host × mode: the billed cost per service and in total, the metric name and the dates
-  covered.
+- **Output:** `cost.csv` per host × mode × message type: the billed cost per service and in total, the metric name and
+  the dates covered.
 - With the mock agent, the cost covers **AK infrastructure only**; LLM token costs are excluded.
 
 ### Graphs
