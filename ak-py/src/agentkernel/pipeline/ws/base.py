@@ -1,7 +1,7 @@
 import logging
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 
 class WebSocketConnectionStoreABC(ABC):
@@ -21,7 +21,7 @@ class WebSocketConnectionStoreABC(ABC):
         pass
 
     @abstractmethod
-    def get_connections(self, user_id: str) -> List[str]:
+    def get_connections(self, user_id: str) -> list[str]:
         """
         Retrieve all connection IDs for a given user.
 
@@ -31,7 +31,7 @@ class WebSocketConnectionStoreABC(ABC):
         pass
 
     @abstractmethod
-    def get_user_id(self, connection_id: str) -> Optional[str]:
+    def get_user_id(self, connection_id: str) -> str | None:
         """
         Retrieve the user ID for a given connection ID.
 
@@ -80,7 +80,7 @@ class WebSocketHandlerABC(ABC):
         :param connection_store: Cloud-specific connection store implementation
         """
         self._connection_store = connection_store
-        self._clients: Dict[str, Any] = {}
+        self._clients: dict[str, Any] = {}
         self._log = logging.getLogger("ak.pipeline.ws.handler")
 
     @abstractmethod
@@ -127,7 +127,7 @@ class WebSocketHandlerABC(ABC):
         """
         self._connection_store.add_connection(user_id, connection_id)
 
-    def get_connections(self, user_id: str) -> List[str]:
+    def get_connections(self, user_id: str) -> list[str]:
         """
         Retrieve all connection IDs for a given user.
 
@@ -136,7 +136,7 @@ class WebSocketHandlerABC(ABC):
         """
         return self._connection_store.get_connections(user_id)
 
-    def get_user_id(self, connection_id: str) -> Optional[str]:
+    def get_user_id(self, connection_id: str) -> str | None:
         """
         Retrieve the user ID for a given connection ID.
 
@@ -203,10 +203,10 @@ class WebSocketHandlerABC(ABC):
         # Optional because delivery does not always need a return address: the AWS adapters
         # route by it, while the pipeline's store-lookup delivery resolves targets from the
         # shared connection store and ignores it.
-        endpoint_url: Optional[str] = None,
-        message: Optional[Dict[str, Any]] = None,
-        user_id: Optional[str] = None,
-        connection_ids: Optional[List[str]] = None,
+        endpoint_url: str | None = None,
+        message: dict[str, Any] | None = None,
+        user_id: str | None = None,
+        connection_ids: list[str] | None = None,
         message_type: Optional["WebSocketHandlerABC.MessageType"] = None,
     ) -> None:
         """

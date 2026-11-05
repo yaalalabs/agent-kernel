@@ -157,7 +157,7 @@ Evaluate the delta on each dimension. For each finding, record: file, line (in t
 
 - Type hints on all function signatures; Pydantic `BaseModel` for data models; `ABC`/`@abstractmethod` for interfaces.
 - Logging via `logging.getLogger("ak.<module>")` at appropriate levels — no `print`, no root logger.
-- Formatting consistent with `black`/`isort` config (line length 150 in `ak-py`, 120 in examples).
+- Formatting consistent with `black`/`isort` config (line length 150 in `ak-py`, 120 in examples), and annotations in the modern style from `ak-dev-code-quality` (`list[...]`, `X | None`, `collections.abc`), which `make lint-check` enforces with ruff.
 - No dead code, commented-out blocks, leftover debug output, or unrelated drive-by changes.
 - No secrets, tokens, or hardcoded credentials in code, tests, or example configs.
 
@@ -254,7 +254,7 @@ After posting, report back to the requester:
 - Anchoring an inline comment to a line that is not part of the diff — the API rejects it; put un-anchorable findings in the summary body.
 - Approving or requesting changes — this skill only ever comments.
 - Restating feedback that is already on the PR.
-- Flagging formatting that `black`/`isort` would fix anyway as individual nits — one summary-level note ("run `make lint`") is enough.
+- Flagging formatting or old-style annotations that `black`/`isort`/`ruff` would catch anyway as individual nits — one summary-level note ("run `make lint`") is enough.
 - Writing comments as dense paragraphs — point-form bullets are far easier for the author to scan and act on.
 - Reviewing from memory of the conventions instead of loading the `ak-dev-*` skills.
 - Loading only the three always-on skills and skipping the path-to-skill routing in Step 2 — component PRs then get reviewed without the checklist that defines what "complete" means for that component.

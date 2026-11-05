@@ -8,7 +8,7 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass
-from typing import ClassVar, List, Optional, Tuple
+from typing import ClassVar
 
 from ...core.config import _ScheduleProviderConfig
 from ...pipeline.envelope import QueueMessage, QueueName
@@ -53,7 +53,7 @@ class LocalScheduleProvider(ScheduleProvider):
     documented boundary between this provider and a durable one.
     """
 
-    supported_transports: ClassVar[Optional[frozenset[str]]] = None
+    supported_transports: ClassVar[frozenset[str] | None] = None
 
     _log = logging.getLogger("ak.schedule.provider.local")
 
@@ -64,10 +64,10 @@ class LocalScheduleProvider(ScheduleProvider):
         """
         self._transport = transport
         self._armed: dict[str, _ArmedTask] = {}  # task_id -> its currently armed occurrence
-        self._heap: List[Tuple[float, int, str]] = []  # (fire_at, sequence, task_id)
+        self._heap: list[tuple[float, int, str]] = []  # (fire_at, sequence, task_id)
         self._sequence = itertools.count()  # keeps heap entries orderable when two share an instant
         self._condition = threading.Condition()
-        self._thread: Optional[threading.Thread] = None
+        self._thread: threading.Thread | None = None
 
     @classmethod
     def from_config(cls, provider_config: _ScheduleProviderConfig) -> "LocalScheduleProvider":
@@ -115,7 +115,7 @@ class LocalScheduleProvider(ScheduleProvider):
             self._compact_heap()
             self._condition.notify_all()
 
-    def get(self, provider_ref: str) -> Optional[dict]:
+    def get(self, provider_ref: str) -> dict | None:
         """Return the armed occurrence of a task.
 
         :param provider_ref: The task id returned by :meth:`create`.
@@ -127,7 +127,7 @@ class LocalScheduleProvider(ScheduleProvider):
             return None
         return {"task_id": armed.task.task_id, "next_fire_time": armed.fire_time.isoformat()}
 
-    def _arm(self, task: ScheduledTask, body_template: str, after: Optional[datetime.datetime] = None) -> None:
+    def _arm(self, task: ScheduledTask, body_template: str, after: datetime.datetime | None = None) -> None:
         """Replace a task's armed occurrence with its next one, or disarm it when it has none.
 
         :param task: The task to arm.
@@ -187,7 +187,7 @@ class LocalScheduleProvider(ScheduleProvider):
                 # single failure.
                 self._log.error(f"Local schedule loop iteration failed: {exc}")
 
-    def _take_due_occurrence(self) -> Optional[_ArmedTask]:
+    def _take_due_occurrence(self) -> _ArmedTask | None:
         """Wait for the earliest armed occurrence and claim it once it is due.
 
         Claiming re-arms the task's following occurrence immediately, still under the lock, so a

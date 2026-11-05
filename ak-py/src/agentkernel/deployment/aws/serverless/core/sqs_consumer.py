@@ -1,7 +1,7 @@
 import logging
 import traceback
 from abc import abstractmethod
-from typing import Any, Dict, List
+from typing import Any
 
 from ...core.raw_queue_consumer import RawQueueConsumer
 
@@ -29,14 +29,14 @@ class LambdaSQSConsumer(RawQueueConsumer):
         return 3
 
     @classmethod
-    def handle(cls, event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+    def handle(cls, event: dict[str, Any], context: Any) -> dict[str, Any]:
         """
         Main Lambda handler. Processes messages and builds a list of failures.
         :param event: Lambda event containing SQS Records
         :param context: Lambda context object
         :return: A dict with "batchItemFailures" per AWS format
         """
-        failures: List[Dict[str, str]] = []
+        failures: list[dict[str, str]] = []
         records = event.get("Records", [])
 
         for record in records:
@@ -65,7 +65,7 @@ class LambdaSQSConsumer(RawQueueConsumer):
 
     @classmethod
     @abstractmethod
-    def process_message(cls, record: Dict[str, Any]) -> None:
+    def process_message(cls, record: dict[str, Any]) -> None:
         """
         Process a single SQS message.
         Subclasses must override this method.
@@ -76,7 +76,7 @@ class LambdaSQSConsumer(RawQueueConsumer):
 
     @classmethod
     @abstractmethod
-    def on_permanent_failure(cls, record: Dict[str, Any]) -> None:
+    def on_permanent_failure(cls, record: dict[str, Any]) -> None:
         """
         Called when a message is treated as permanently failed (retry limit reached).
         The default behavior does nothing, but subclasses can override

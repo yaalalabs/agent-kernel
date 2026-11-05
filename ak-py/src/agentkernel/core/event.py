@@ -26,7 +26,7 @@ Adapters take them from the framework's own stream where one is available and ge
 `uuid4().hex` otherwise. They are run-scoped and never persisted.
 """
 
-from typing import Annotated, Literal, Optional, Union
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, JsonValue
 
@@ -232,28 +232,26 @@ class DataMessage(StreamEventBase):
     type: Literal["data_message"] = "data_message"
     message_id: str
     content: JSONPayload
-    media_type: Optional[str] = None
+    media_type: str | None = None
 
 
 type StreamEvent = Annotated[
-    Union[
-        MessageStart,
-        TextDelta,
-        MessageEnd,
-        ToolCallStart,
-        ToolCallArgs,
-        ToolCallEnd,
-        ToolCallResult,
-        StepStart,
-        StepEnd,
-        ReasoningStart,
-        ReasoningDelta,
-        ReasoningEnd,
-        AudioDelta,
-        Interrupt,
-        AgentChanged,
-        RunPaused,
-        DataMessage,
-    ],
+    MessageStart
+    | TextDelta
+    | MessageEnd
+    | ToolCallStart
+    | ToolCallArgs
+    | ToolCallEnd
+    | ToolCallResult
+    | StepStart
+    | StepEnd
+    | ReasoningStart
+    | ReasoningDelta
+    | ReasoningEnd
+    | AudioDelta
+    | Interrupt
+    | AgentChanged
+    | RunPaused
+    | DataMessage,
     Field(discriminator="type"),
 ]

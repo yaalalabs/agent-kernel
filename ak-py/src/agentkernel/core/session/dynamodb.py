@@ -1,5 +1,4 @@
 import logging
-from typing import Optional
 
 from boto3.dynamodb.types import Binary
 
@@ -173,18 +172,18 @@ class DynamoDBWSConnectionStore(WSConnectionStore):
     def get_endpoints(self, user_id: str) -> dict[str, str]:
         return {item["connection_id"]: item.get("endpoint", "") for item in self._driver.query_items(user_id)}
 
-    def get_endpoint(self, connection_id: str) -> Optional[str]:
+    def get_endpoint(self, connection_id: str) -> str | None:
         item = self._reverse_item(connection_id)
         return item.get("endpoint") if item else None
 
-    def get_user_id(self, connection_id: str) -> Optional[str]:
+    def get_user_id(self, connection_id: str) -> str | None:
         item = self._reverse_item(connection_id)
         return item.get("user_id") if item else None
 
     def delete_connection(self, user_id: str, connection_id: str) -> None:
         self._driver.delete(user_id, connection_id)
 
-    def _reverse_item(self, connection_id: str) -> Optional[dict]:
+    def _reverse_item(self, connection_id: str) -> dict | None:
         items = self._driver.query_index(self.CONNECTION_ID_INDEX, "connection_id", connection_id)
         if not items:
             return None

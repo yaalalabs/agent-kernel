@@ -8,7 +8,7 @@ handle) so a remote worker needs nothing else to execute it.
 
 from abc import ABC, abstractmethod
 from collections import OrderedDict
-from typing import Any, Literal, Optional, Union
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -51,16 +51,16 @@ class ExecutionRequest(BaseModel):
     sandbox_session: SandboxSession  # includes the reconnect handle — self-sufficient
     ak_session_id: str  # for completion routing
     agent: str  # for completion routing
-    wait_deadline: Optional[float] = None  # epoch seconds; None = caller will not wait
+    wait_deadline: float | None = None  # epoch seconds; None = caller will not wait
 
 
 class ExecutionCompletion(BaseModel):
     task_id: str
     status: Literal["succeeded", "failed", "timed_out"]
-    result: Optional[SandboxResult] = None  # inline when small
-    result_ref: Optional[dict[str, str]] = None  # {"bucket":..., "key":...} when offloaded
-    error: Optional[str] = None
-    error_type: Optional[str] = None  # SandboxError subclass name, for a typed re-raise across the wire
+    result: SandboxResult | None = None  # inline when small
+    result_ref: dict[str, str] | None = None  # {"bucket":..., "key":...} when offloaded
+    error: str | None = None
+    error_type: str | None = None  # SandboxError subclass name, for a typed re-raise across the wire
     sandbox_session: SandboxSession  # updated handle (e.g. newly created sandbox_id)
 
 
@@ -72,12 +72,12 @@ class ExecutionBroker(ABC):
     """
 
     @abstractmethod
-    async def submit(self, request: ExecutionRequest, wait: Optional[float]) -> Union[SandboxResult, SandboxTask]:
+    async def submit(self, request: ExecutionRequest, wait: float | None) -> SandboxResult | SandboxTask:
         """Submit a request. Returns a ``SandboxResult`` when it completes within ``wait``,
         or a ``SandboxTask`` handle when execution is promoted to run asynchronously."""
 
     @abstractmethod
-    async def result(self, task_id: str) -> Optional[ExecutionCompletion]:
+    async def result(self, task_id: str) -> ExecutionCompletion | None:
         """Return the completion for a previously submitted task, or None if not yet available."""
 
     async def discard(self, task_id: str) -> None:

@@ -4,8 +4,8 @@ import asyncio
 import copy
 import json
 import logging
-from collections.abc import AsyncGenerator
-from typing import Any, AsyncIterator, Callable, ClassVar, Iterator, List, Mapping, Optional, Sequence
+from collections.abc import AsyncGenerator, AsyncIterator, Callable, Iterator, Mapping, Sequence
+from typing import Any, ClassVar
 from uuid import uuid4
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -120,7 +120,7 @@ class CheckPointer(BaseCheckpointSaver):
         BaseCheckpointSaver.__init__(self)
         self.__dict__.update(state)
 
-    def get_tuple(self, config: RunnableConfig) -> Optional[CheckpointTuple]:
+    def get_tuple(self, config: RunnableConfig) -> CheckpointTuple | None:
         """
         The stored checkpoint for one thread and namespace, as a copy the caller may mutate.
 
@@ -158,11 +158,11 @@ class CheckPointer(BaseCheckpointSaver):
 
     def list(
         self,
-        config: Optional[dict] = None,
+        config: dict | None = None,
         *,
-        filter: Optional[dict[str, Any]] = None,
-        before: Optional[dict] = None,
-        limit: Optional[int] = None,
+        filter: dict[str, Any] | None = None,
+        before: dict | None = None,
+        limit: int | None = None,
     ) -> Iterator[CheckpointTuple]:
         result = []
         if config:
@@ -279,16 +279,16 @@ class CheckPointer(BaseCheckpointSaver):
         for key in [key for key in self._writes if isinstance(key, tuple) and key[0] == thread_id]:
             del self._writes[key]
 
-    async def aget_tuple(self, config: RunnableConfig) -> Optional[CheckpointTuple]:
+    async def aget_tuple(self, config: RunnableConfig) -> CheckpointTuple | None:
         return self.get_tuple(config)
 
     async def alist(
         self,
-        config: Optional[dict] = None,
+        config: dict | None = None,
         *,
-        filter: Optional[dict[str, Any]] = None,
-        before: Optional[dict] = None,
-        limit: Optional[int] = None,
+        filter: dict[str, Any] | None = None,
+        before: dict | None = None,
+        limit: int | None = None,
     ) -> AsyncIterator[CheckpointTuple]:
         for item in self.list(config, filter=filter, before=before, limit=limit):
             yield item
@@ -1105,7 +1105,7 @@ class LangGraphModule(BaseModule):
             self.runner = LangGraphRunner()
         self.load(agents)
 
-    def _wrap(self, agent: CompiledStateGraph, agents: List[CompiledStateGraph]) -> BaseAgent:
+    def _wrap(self, agent: CompiledStateGraph, agents: list[CompiledStateGraph]) -> BaseAgent:
         return LangGraphAgent(name=agent.name, runner=self.runner, agent=agent)
 
     def load(self, agents: list[CompiledStateGraph]) -> "LangGraphModule":

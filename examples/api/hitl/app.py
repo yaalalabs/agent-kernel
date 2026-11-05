@@ -1,6 +1,6 @@
 from operator import add
 from pathlib import Path
-from typing import Annotated, Any, Dict, Optional, TypedDict
+from typing import Annotated, Any, TypedDict
 
 from agentkernel.agui import AGUIPipelineRequestHandler
 from agentkernel.api import RESTAPI
@@ -16,7 +16,7 @@ from langchain_openai import ChatOpenAI
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 
-REFUNDS: Dict[str, float] = {"ORD-1001": 42.50, "ORD-1002": 980.00}
+REFUNDS: dict[str, float] = {"ORD-1001": 42.50, "ORD-1002": 980.00}
 
 
 def issue_refund(order_id: str) -> str:
@@ -80,7 +80,7 @@ class RefundPlan(TypedDict):
     note: str
 
 
-def ask_method(state: RefundPlan) -> Dict[str, Any]:
+def ask_method(state: RefundPlan) -> dict[str, Any]:
     """Ask which way the refund goes.
 
     LangGraph re-runs the node from the top on resume, returning the stored answer instead of
@@ -96,12 +96,12 @@ def ask_method(state: RefundPlan) -> Dict[str, Any]:
     }
 
 
-def ask_note(state: RefundPlan) -> Dict[str, Any]:
+def ask_note(state: RefundPlan) -> dict[str, Any]:
     """Ask what to tell the customer. A sentence, because `confirm` works the answer in verbatim."""
     return {"note": interrupt({"question": "What should we tell the customer? (a sentence, or leave blank)"})}
 
 
-def confirm(state: RefundPlan) -> Dict[str, Any]:
+def confirm(state: RefundPlan) -> dict[str, Any]:
     """Write the confirmation, so the answers come back as streamed text.
 
     A node that merely returns a message produces no stream: `astream_events` streams *model*
@@ -136,7 +136,7 @@ class DemoAuthoriser(Authoriser):
 
     _TOKENS = {"demo-token": "demo-user"}
 
-    def authorise(self, token: str) -> Optional[str]:
+    def authorise(self, token: str) -> str | None:
         """Resolve a bearer token to a user id.
 
         :param token: Bearer token from the Authorization header.

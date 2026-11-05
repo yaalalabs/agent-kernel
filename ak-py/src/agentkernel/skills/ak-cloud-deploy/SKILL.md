@@ -1060,12 +1060,11 @@ the agent runner whenever `message_type` is set, so the two containers always ag
 from agentkernel.aws import AWSWebsocketAPI
 from agentkernel.auth import AuthValidator, ValidationContext, ValidationResult
 from agentkernel.openai import OpenAIModule
-from typing import Optional
 
 OpenAIModule([...])
 
 class CustomAuthValidator(AuthValidator):
-    def validate(self, token: str, context: Optional[ValidationContext] = None) -> ValidationResult:
+    def validate(self, token: str, context: ValidationContext | None = None) -> ValidationResult:
         # userId claim is mandatory — it's how a connection maps to a user for reply routing
         ...
         return ValidationResult(is_valid=True, claims={"userId": "userId-claim-value"})

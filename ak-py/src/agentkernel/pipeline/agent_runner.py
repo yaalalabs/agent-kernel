@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import Any, List, Optional
+from typing import Any
 
 from ..core.chat_service import ChatService
 from ..core.config import AKConfig
@@ -50,7 +50,7 @@ class AgentRunner:
 
     _log = logging.getLogger("ak.pipeline.agent_runner")
 
-    def __init__(self, transport: Optional[QueueTransport] = None, chat_service: Optional[ChatService] = None):
+    def __init__(self, transport: QueueTransport | None = None, chat_service: ChatService | None = None):
         self._transport = transport or QueueTransportFactory.create()
         self._chat_service = chat_service or ChatService()
 
@@ -122,7 +122,7 @@ class AgentRunner:
         state_before = AGUIState.snapshot_state(session)
 
         chunk_count = 0
-        terminal: Optional[dict] = None
+        terminal: dict | None = None
         for chunk in handler.run_stream_sync(body.requests or [], acting_user_id=body.user_id):
             payload = json.loads(chunk.model_dump_json())
             if payload.get("done"):
@@ -186,7 +186,7 @@ class AgentRunner:
             extra_tasks=self._get_extra_tasks(),
         ).run()
 
-    def _get_extra_tasks(self) -> List[ThreadRunner.Task]:
+    def _get_extra_tasks(self) -> list[ThreadRunner.Task]:
         """Override in subclasses to run additional background tasks alongside the consumer loop."""
         return []
 
@@ -250,7 +250,7 @@ class AgentRunner:
         )
 
     @classmethod
-    def _record_thread_reply(cls, message: QueueMessage, body: BaseRunRequest, status_code: int, result, media_type: Optional[str] = None) -> None:
+    def _record_thread_reply(cls, message: QueueMessage, body: BaseRunRequest, status_code: int, result, media_type: str | None = None) -> None:
         """Append the assistant message to the conversation thread this request belongs to.
 
         The other half of the split: ``ThreadRecorder.pre_run`` ran at the edge (the thread
@@ -323,7 +323,7 @@ class AgentRunner:
             message.attributes.setdefault(ATTR_USER_ID, body.user_id)
         return request_id
 
-    def _send_to_output(self, source: QueueMessage, response_body, status_code: Optional[int] = None, dedup_suffix: Optional[str] = None) -> None:
+    def _send_to_output(self, source: QueueMessage, response_body, status_code: int | None = None, dedup_suffix: str | None = None) -> None:
         attributes = {key: value for key, value in source.attributes.items() if _is_forwarded(key)}
         if status_code is not None:
             attributes[ATTR_STATUS_CODE] = str(status_code)
@@ -371,7 +371,7 @@ class StreamAgentRunner(AgentRunner):
         chunk_count = 0
         deltas: list[str] = []
         error_seen = False
-        paused: Optional[AgentPausedReplyAny] = None
+        paused: AgentPausedReplyAny | None = None
         for raw_chunk in self._chat_service.process_stream_chat_sync(req=body, requests=body.requests):
             chunk = json.loads(raw_chunk)
             if chunk.get("error"):
@@ -425,7 +425,7 @@ class RealtimeAgentRunner(AgentRunner):
 
     _log = logging.getLogger("ak.pipeline.realtime_agent_runner")
 
-    def _get_extra_tasks(self) -> List[ThreadRunner.Task]:
+    def _get_extra_tasks(self) -> list[ThreadRunner.Task]:
         pool = RealtimeConnectionPool.initialize()
         return [pool.get_task()]
 

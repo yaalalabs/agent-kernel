@@ -15,7 +15,6 @@ Both serve the thread read routes.
 """
 
 import logging
-from typing import List, Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
@@ -50,7 +49,7 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
     - GET /api/v1/threads/{session_id}: Get a thread with message history
     """
 
-    def __init__(self, authoriser: Optional[Authoriser] = None):
+    def __init__(self, authoriser: Authoriser | None = None):
         """
         Initializes an AgentThreadRequestHandler instance. Fails fast when
         Conversation Thread Support is not configured.
@@ -89,13 +88,13 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
     async def run_multipart(
         self,
         prompt: str = Form(...),
-        agent: Optional[str] = Form(None),
-        session_id: Optional[str] = Form(None),
-        user_id: Optional[str] = Form(None),
-        group_id: Optional[str] = Form(None),
-        thread_name: Optional[str] = Form(None),
-        files: Optional[List[UploadFile]] = File(None),
-        images: Optional[List[UploadFile]] = File(None),
+        agent: str | None = Form(None),
+        session_id: str | None = Form(None),
+        user_id: str | None = Form(None),
+        group_id: str | None = Form(None),
+        thread_name: str | None = Form(None),
+        files: list[UploadFile] | None = File(None),
+        images: list[UploadFile] | None = File(None),
     ):
         req = AgentRESTRequestHandler.BaseMultimodalRunRequest(
             prompt=prompt,
@@ -172,9 +171,9 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
         recorder = self._recorder
 
         async def _stream():
-            deltas: List[str] = []
+            deltas: list[str] = []
             error_seen = False
-            paused: Optional[AgentPausedReplyAny] = None
+            paused: AgentPausedReplyAny | None = None
             try:
                 async for chunk in chunks:
                     if chunk.error:
@@ -201,7 +200,7 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
         return _stream()
 
     @staticmethod
-    async def _acknowledgement_frames(chunks, session_id: Optional[str]):
+    async def _acknowledgement_frames(chunks, session_id: str | None):
         """Frame a deferred request's acknowledgement chunk as SSE, without any recording.
 
         :param chunks: The single-chunk stream returned by the ChatService for a deferred request
@@ -225,7 +224,7 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
             raise ValueError("No prompt provided in the request")
 
     @staticmethod
-    def _check_agent_available(name: Optional[str]) -> None:
+    def _check_agent_available(name: str | None) -> None:
         """Agent-availability precheck before any thread write, keeping a missing agent
         from leaving a phantom thread with an unanswered user message. The rule itself is
         shared with the other commit-before-running surfaces (AgentService.ensure_agent_available).
@@ -254,7 +253,7 @@ class ThreadRequestHandler(RequestHandler):
     routes (see ThreadRESTRequestHandler).
     """
 
-    def __init__(self, authoriser: Optional[Authoriser] = None):
+    def __init__(self, authoriser: Authoriser | None = None):
         """
         :param authoriser: Optional user-supplied Authoriser protecting the thread read routes.
         :raises ValueError: If no 'thread' block is present in the configuration.
@@ -341,7 +340,7 @@ class ThreadRESTRequestHandler(AuthorisedRESTRequestHandler):
     ownership. Without an Authoriser, routes are open.
     """
 
-    def __init__(self, authoriser: Optional[Authoriser] = None):
+    def __init__(self, authoriser: Authoriser | None = None):
         """
         Initializes a ThreadRESTRequestHandler instance.
         :param authoriser: Optional user-supplied Authoriser protecting the thread routes.
@@ -358,10 +357,10 @@ class ThreadRESTRequestHandler(AuthorisedRESTRequestHandler):
         @router.get("/api/v1/threads")
         def list_threads(
             request: Request,
-            user_id: Optional[str] = None,
-            group_id: Optional[str] = None,
-            limit: Optional[int] = None,
-            cursor: Optional[str] = None,
+            user_id: str | None = None,
+            group_id: str | None = None,
+            limit: int | None = None,
+            cursor: str | None = None,
         ):
             manager = ConversationThreadManager.get()
             if manager is None:
@@ -379,7 +378,7 @@ class ThreadRESTRequestHandler(AuthorisedRESTRequestHandler):
             }
 
         @router.get("/api/v1/threads/{session_id}")
-        def get_thread(session_id: str, request: Request, limit: Optional[int] = None, cursor: Optional[str] = None):
+        def get_thread(session_id: str, request: Request, limit: int | None = None, cursor: str | None = None):
             manager = ConversationThreadManager.get()
             if manager is None:
                 raise HTTPException(status_code=404, detail="Thread support is not enabled")

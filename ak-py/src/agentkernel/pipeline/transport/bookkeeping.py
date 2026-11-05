@@ -12,7 +12,6 @@ import logging
 import threading
 import time
 from abc import ABC, abstractmethod
-from typing import Dict, Optional
 
 from ...core.config import AKConfig
 from ...core.util.factory import require_extra
@@ -59,8 +58,8 @@ class InMemoryBookkeepingStore(BookkeepingStore):
     def __init__(self, dedup_ttl: float = DEFAULT_DEDUP_TTL_SECONDS):
         self._dedup_ttl = dedup_ttl
         self._lock = threading.Lock()
-        self._attempts: Dict[str, int] = {}
-        self._dedup: Dict[str, tuple[str, float]] = {}  # dedup_id -> (owner, expiry)
+        self._attempts: dict[str, int] = {}
+        self._dedup: dict[str, tuple[str, float]] = {}  # dedup_id -> (owner, expiry)
 
     def incr_attempts(self, key: str) -> int:
         with self._lock:
@@ -167,6 +166,6 @@ class BookkeepingStoreFactory:
         )
 
 
-def reset_fallback_warning(state: Optional[bool] = False) -> None:
+def reset_fallback_warning(state: bool | None = False) -> None:
     """Test helper: reset the one-time fallback warning latch."""
     BookkeepingStoreFactory._fallback_warned = bool(state)

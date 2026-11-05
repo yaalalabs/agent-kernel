@@ -4,8 +4,8 @@ import logging
 import os
 import re
 import threading
+from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import Iterator
 
 from opentelemetry import baggage, context
 from opentelemetry import trace as trace_api

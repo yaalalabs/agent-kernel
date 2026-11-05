@@ -26,7 +26,6 @@ import sys
 import time
 import uuid
 from pathlib import Path
-from typing import Dict, List, Optional
 
 from confluent_kafka import Consumer, Producer, TopicPartition
 from confluent_kafka.admin import AdminClient, NewTopic
@@ -50,7 +49,7 @@ class KafkaTester:
     def __init__(self, bootstrap_servers: str = BOOTSTRAP_SERVERS, partitions: int = DEFAULT_PARTITIONS):
         self.bootstrap_servers = bootstrap_servers
         self.partitions = partitions
-        self._admin: Optional[AdminClient] = None
+        self._admin: AdminClient | None = None
 
     # -- infrastructure ------------------------------------------------------------------
 
@@ -70,7 +69,7 @@ class KafkaTester:
     def wait_for_broker(self, timeout: float = 90.0) -> None:
         """Block until the broker serves metadata, so callers never race a half-started Kafka."""
         deadline = time.monotonic() + timeout
-        last_error: Optional[Exception] = None
+        last_error: Exception | None = None
         while time.monotonic() < deadline:
             try:
                 self.admin().list_topics(timeout=5)
@@ -87,7 +86,7 @@ class KafkaTester:
 
     # -- topics --------------------------------------------------------------------------
 
-    def ensure_topics(self, topics: Optional[List[str]] = None) -> None:
+    def ensure_topics(self, topics: list[str] | None = None) -> None:
         """Create any missing topic. Existing topics are left exactly as they are."""
         wanted = topics or TOPICS
         existing = set(self.admin().list_topics(timeout=10).topics)
@@ -101,7 +100,7 @@ class KafkaTester:
             future.result()  # raises if creation failed
             print(f"created topic {name} with {self.partitions} partition(s)")
 
-    def delete_topics(self, topics: Optional[List[str]] = None) -> None:
+    def delete_topics(self, topics: list[str] | None = None) -> None:
         wanted = topics or TOPICS
         existing = [name for name in wanted if name in self.admin().list_topics(timeout=10).topics]
         if not existing:
@@ -117,10 +116,10 @@ class KafkaTester:
         self.delete_topics()
         self.ensure_topics()
 
-    def describe(self) -> Dict[str, Dict[str, object]]:
+    def describe(self) -> dict[str, dict[str, object]]:
         """Partition count and total records currently retained, per topic."""
         metadata = self.admin().list_topics(timeout=10)
-        described: Dict[str, Dict[str, object]] = {}
+        described: dict[str, dict[str, object]] = {}
         for name in TOPICS:
             topic_metadata = metadata.topics.get(name)
             if topic_metadata is None:
@@ -133,7 +132,7 @@ class KafkaTester:
             }
         return described
 
-    def _record_count(self, topic: str, partitions: List[int]) -> int:
+    def _record_count(self, topic: str, partitions: list[int]) -> int:
         """Sum of (high watermark - low watermark) across partitions: what a tail would print."""
         consumer = Consumer({"bootstrap.servers": self.bootstrap_servers, "group.id": f"tester-{uuid.uuid4()}"})
         try:
@@ -147,7 +146,7 @@ class KafkaTester:
 
     # -- records -------------------------------------------------------------------------
 
-    def tail(self, topic: str, timeout: float = 5.0, limit: int = 50) -> List[dict]:
+    def tail(self, topic: str, timeout: float = 5.0, limit: int = 50) -> list[dict]:
         """Read a topic from its start without joining the pipeline's consumer groups.
 
         Uses a throwaway group id and never commits, so inspecting a queue cannot steal work
@@ -163,7 +162,7 @@ class KafkaTester:
         )
         try:
             consumer.subscribe([topic])
-            records: List[dict] = []
+            records: list[dict] = []
             deadline = time.monotonic() + timeout
             while time.monotonic() < deadline and len(records) < limit:
                 message = consumer.poll(0.5)
@@ -183,7 +182,7 @@ class KafkaTester:
             consumer.close()
 
     def produce(
-        self, topic: str, value: str, key: Optional[str] = None, headers: Optional[Dict[str, str]] = None
+        self, topic: str, value: str, key: str | None = None, headers: dict[str, str] | None = None
     ) -> None:
         """Put a record on a topic directly: how to feed the runner a message it cannot process."""
         producer = Producer({"bootstrap.servers": self.bootstrap_servers})
@@ -196,7 +195,7 @@ class KafkaTester:
         producer.flush(10)
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("command", choices=["up", "down", "topics", "tail", "produce", "reset"])
     parser.add_argument("topic", nargs="?", help="topic name, for tail and produce")
