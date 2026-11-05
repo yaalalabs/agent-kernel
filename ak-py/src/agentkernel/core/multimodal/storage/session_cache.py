@@ -6,7 +6,6 @@ It is the legacy/simple approach where attachment data lives inside the session 
 """
 
 import logging
-from typing import Optional
 
 from .base import (
     ATTACHMENT_INDEX_KEY,
@@ -67,7 +66,7 @@ class SessionNonVolatileCacheAttachmentStore(AttachmentStore):
         self._cache.set(ATTACHMENT_INDEX_KEY, index)
         return attachment_id
 
-    def get(self, attachment_id: str) -> Optional[dict]:
+    def get(self, attachment_id: str) -> dict | None:
         return self._cache.get(f"{ATTACHMENT_KEY_PREFIX}{attachment_id}")
 
     def delete(self, attachment_id: str) -> None:

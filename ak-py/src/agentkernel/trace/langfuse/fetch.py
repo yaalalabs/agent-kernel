@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterable
 from functools import partial
-from typing import TYPE_CHECKING, Any, Iterable, Optional
+from typing import TYPE_CHECKING, Any
 
 from ..fetch import FetchedSpan, SpanKind, SpanStatus, SpanUsage, TraceFetcher, TraceQuery
 
@@ -44,15 +45,13 @@ class LangfuseTraceFetcher(TraceFetcher):
                 spans.extend(self._fetch_by_cursor(query, partial(self._fetch_page, query, langfuse_type, trace_id), self._to_span))
         return spans
 
-    def _types(self, query: TraceQuery) -> list[Optional[str]]:
+    def _types(self, query: TraceQuery) -> list[str | None]:
         # OTHER means "everything Langfuse doesn't type as agent/llm/tool", which no single type covers
         if query.kinds is None or SpanKind.OTHER in query.kinds:
             return [None]
         return [self._TYPES[kind] for kind in query.kinds]
 
-    def _fetch_page(
-        self, query: TraceQuery, langfuse_type: Optional[str], trace_id: Optional[str], cursor: Optional[str]
-    ) -> tuple[list[Any], Optional[str]]:
+    def _fetch_page(self, query: TraceQuery, langfuse_type: str | None, trace_id: str | None, cursor: str | None) -> tuple[list[Any], str | None]:
         start, end = query.window()
         response = self._client.api.observations.get_many(
             fields=self._FIELDS,
@@ -69,7 +68,7 @@ class LangfuseTraceFetcher(TraceFetcher):
         return list(response.data), response.meta.cursor
 
     @staticmethod
-    def _usage(observation: Any) -> Optional[SpanUsage]:
+    def _usage(observation: Any) -> SpanUsage | None:
         """Langfuse's own usage and cost (``fields=usage``): it prices model calls server side."""
         usage = getattr(observation, "usage_details", None) or {}
         costs = getattr(observation, "cost_details", None) or {}

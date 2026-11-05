@@ -8,7 +8,8 @@ an agent-side, defence-in-depth check before submit.
 """
 
 import logging
-from typing import Any, Mapping, Optional
+from collections.abc import Mapping
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -65,7 +66,7 @@ class SandboxPermissionGuard:
         )
 
     @staticmethod
-    def _denial_reason(operation: str, payload: Mapping[str, Any], policy: SandboxPolicy) -> Optional[str]:
+    def _denial_reason(operation: str, payload: Mapping[str, Any], policy: SandboxPolicy) -> str | None:
         """The deny rules; None = permitted. Reasons hold only names (repr-escaped, as they come from the
         request) and the permitted list, never code or specs."""
         if operation == "execute_code" and policy.languages is not None:

@@ -2,7 +2,6 @@
 
 import time
 from threading import Lock
-from typing import Optional
 
 from ..core.util.factory import AKConfigError
 
@@ -26,7 +25,7 @@ class SecretCache:
     def enabled(self) -> bool:
         return self._ttl > 0
 
-    def get(self, key: str) -> Optional[str]:
+    def get(self, key: str) -> str | None:
         """Return the cached value, or None when absent or expired."""
         entry = self._entries.get(key)
         if entry is None:

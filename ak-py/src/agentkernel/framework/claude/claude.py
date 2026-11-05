@@ -9,9 +9,9 @@ import inspect
 import json
 import logging
 import typing
-from collections.abc import AsyncGenerator, AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator, Callable, Mapping
 from dataclasses import dataclass, field
-from typing import Any, Callable, ClassVar, List, Mapping
+from typing import Any, ClassVar
 from uuid import uuid4
 
 from claude_agent_sdk import (
@@ -1083,7 +1083,7 @@ class ClaudeModule(Module):
             self.runner = ClaudeRunner()
         self.load(agents)
 
-    def _wrap(self, agent: ClaudeAgentSpec, agents: List[ClaudeAgentSpec]) -> BaseAgent:
+    def _wrap(self, agent: ClaudeAgentSpec, agents: list[ClaudeAgentSpec]) -> BaseAgent:
         """
         Wraps the provided agent in a ClaudeAgent instance.
         :param agent: Agent to wrap.

@@ -1,7 +1,6 @@
 """Shared Google Firestore connection driver. Requires the ``gcp`` extra."""
 
 import datetime
-from typing import Optional
 
 from .base import BaseDriver
 
@@ -23,8 +22,8 @@ class FirestoreDriver(BaseDriver):
     def __init__(
         self,
         collection_name: str,
-        project_id: Optional[str] = None,
-        database_id: Optional[str] = None,
+        project_id: str | None = None,
+        database_id: str | None = None,
         ttl: int = 0,
     ):
         """
@@ -96,7 +95,7 @@ class FirestoreDriver(BaseDriver):
             self._log.error("Failed to put item session_id=%s key=%s: %s", session_id, key, e)
             raise
 
-    def get(self, session_id: str, key: str) -> Optional[bytes]:
+    def get(self, session_id: str, key: str) -> bytes | None:
         """
         Read a single field value from the document.
 

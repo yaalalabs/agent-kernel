@@ -5,7 +5,7 @@ around a ChatService execution-core run.
 
 import json
 import logging
-from typing import Any, List, Optional
+from typing import Any
 
 from ...core.event import DataMessage, RunPaused
 from ...core.model import AgentPausedReplyAny, AgentReplyAny, AgentRequest, BaseChatRequest, StreamChunk
@@ -30,7 +30,7 @@ class ThreadRecorder:
         """
         self._manager = manager
 
-    def pre_run(self, req: BaseChatRequest, requests: List[AgentRequest]) -> tuple[List[AgentRequest], List[ThreadAttachment]]:
+    def pre_run(self, req: BaseChatRequest, requests: list[AgentRequest]) -> tuple[list[AgentRequest], list[ThreadAttachment]]:
         """Thread work done before the agent runs: enforce user_id, store attachment
         bytes, create/load the thread, append the user message, and return the rebuilt
         request list in which stored attachments are replaced by in-band
@@ -60,7 +60,7 @@ class ThreadRecorder:
         return requests, attachments
 
     @staticmethod
-    def _as_user_message(req: BaseChatRequest) -> tuple[Any, Optional[str]]:
+    def _as_user_message(req: BaseChatRequest) -> tuple[Any, str | None]:
         """The turn as the request carried it: its text, or the decision it answered a pause with.
 
         A resume-only request has no prompt, so recording ``req.prompt`` alone wrote an empty message
@@ -76,7 +76,7 @@ class ThreadRecorder:
         resume = {"resume": req.resume.model_dump(mode="json")}
         return ({"prompt": req.prompt, **resume} if req.prompt else resume), HITL_MEDIA_TYPE
 
-    def post_run(self, req: BaseChatRequest, result: Any, media_type: Optional[str] = None) -> None:
+    def post_run(self, req: BaseChatRequest, result: Any, media_type: str | None = None) -> None:
         """Thread work done after a successful agent run: append the assistant message.
 
         ``media_type`` is how the queue runner hands over a label it holds *beside* the result
@@ -92,7 +92,7 @@ class ThreadRecorder:
         self._manager.append_message(req.session_id, "assistant", content, media_type=label)
 
     @staticmethod
-    def _as_thread_message(result: Any, media_type: Optional[str] = None) -> tuple[Any, Optional[str]]:
+    def _as_thread_message(result: Any, media_type: str | None = None) -> tuple[Any, str | None]:
         """Render a reply as the (content, media_type) pair the thread store holds.
 
         A paused run is checked first: ``AgentPausedReplyAny`` subclasses ``AgentReplyAny`` and carries
@@ -148,10 +148,10 @@ class StreamedReply:
         :param session_id: The run's session; ``RunPaused`` carries none.
         """
         self._session_id = session_id
-        self._deltas: List[str] = []
+        self._deltas: list[str] = []
         self._errored = False
-        self._pause: Optional[RunPaused] = None
-        self._data: Optional[DataMessage] = None
+        self._pause: RunPaused | None = None
+        self._data: DataMessage | None = None
 
     def add(self, chunk: StreamChunk) -> None:
         """:param chunk: The run's next chunk."""
@@ -169,7 +169,7 @@ class StreamedReply:
         """Whether the thread will record a pause for this run."""
         return self._pause is not None and not self._errored
 
-    def result(self) -> Optional[AgentReplyAny | str]:
+    def result(self) -> AgentReplyAny | str | None:
         """:return: What ``ThreadRecorder.post_run`` should record, or None to record nothing."""
         if self._errored:
             return None

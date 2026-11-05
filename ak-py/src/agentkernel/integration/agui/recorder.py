@@ -1,7 +1,7 @@
 """Conversation-thread recording for AG-UI runs (#836)."""
 
 import logging
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from fastapi import HTTPException
 
@@ -27,13 +27,13 @@ class AGUIThreadRecorder:
         self._manager = manager
 
     @classmethod
-    def create(cls) -> Optional["AGUIThreadRecorder"]:
+    def create(cls) -> "AGUIThreadRecorder | None":
         """:return: A recorder, or None when no ``thread`` block is configured."""
         manager = ConversationThreadManager.get()
         return cls(ThreadRecorder(manager), manager) if manager is not None else None
 
     @staticmethod
-    def chat_request(run_input: "RunAgentInput", user_id: Optional[str], agent_name: str, requests: list[AgentRequest]) -> BaseChatRequest:
+    def chat_request(run_input: "RunAgentInput", user_id: str | None, agent_name: str, requests: list[AgentRequest]) -> BaseChatRequest:
         """
         The chat request ``ThreadRecorder`` expects, built from an AG-UI run.
 

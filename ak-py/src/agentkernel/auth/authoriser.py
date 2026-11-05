@@ -9,7 +9,6 @@ subject (user_id).
 """
 
 from abc import ABC, abstractmethod
-from typing import Optional
 
 from .handler import AuthValidator
 
@@ -23,7 +22,7 @@ class Authoriser(ABC):
     """
 
     @abstractmethod
-    def authorise(self, token: str) -> Optional[str]:
+    def authorise(self, token: str) -> str | None:
         """
         Validate a Bearer token against the caller's own authentication provider.
         :param token: The Bearer token from the Authorization header.
@@ -46,7 +45,7 @@ class AuthValidatorAuthoriser(Authoriser):
         """
         self._validator = validator
 
-    def authorise(self, token: str) -> Optional[str]:
+    def authorise(self, token: str) -> str | None:
         """
         Validate the token via the wrapped AuthValidator.
         :param token: The Bearer token from the Authorization header.
