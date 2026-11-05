@@ -4,6 +4,7 @@ import { useEffect, useReducer, useState } from "react";
 import { EMPTY_VIEW, reduceEvent } from "./reduceEvent.ts";
 import { sseEvents } from "./sse.ts";
 import { persist, restore, forget } from "./storage.ts";
+import { fetchThreadMessages, toLines } from "./threads.ts";
 import type { Attachment, Line, OutboundPart } from "./types.ts";
 import { uuid } from "./uuid.ts";
 
@@ -32,7 +33,7 @@ function toPart(attachment: Attachment): OutboundPart {
  * same way the reducer checks the inbound half.
  */
 export function useAgUiRun(token: string) {
-  const [threadId] = useState(() => saved.threadId || uuid());
+  const [threadId, setThreadId] = useState(() => saved.threadId || uuid());
   const [view, apply] = useReducer(reduceEvent, {
     ...EMPTY_VIEW,
     lines: saved.lines || [],
@@ -45,7 +46,7 @@ export function useAgUiRun(token: string) {
   // is hundreds of events, and a message a reload interrupts mid-stream is legitimately incomplete.
   useEffect(() => {
     persist({ threadId, state: view.state, lines: view.lines });
-  }, [running, view.state]);
+  }, [running, view.state, threadId]);
 
   const local = (line: Line) => apply({ type: "__local", line });
 
@@ -100,10 +101,26 @@ export function useAgUiRun(token: string) {
     location.reload();
   }
 
+  /**
+   * Continue a recorded conversation: its messages replace the transcript and its id becomes the
+   * thread the next run is sent on. The shared state stays on the server and reappears on the next
+   * snapshot.
+   */
+  async function open(id: string) {
+    try {
+      const lines = toLines(await fetchThreadMessages(token, id));
+      apply({ type: "__load", lines });
+      setThreadId(id);
+      setRunId(null);
+    } catch (e) {
+      report(`Could not load the conversation: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
   /** Surface a client-side problem in the transcript — a file the browser could not read, say. */
   function report(message: string) {
     local({ id: uuid(), kind: "error", text: message });
   }
 
-  return { threadId, runId, view, running, send, reset, report };
+  return { threadId, runId, view, running, send, reset, report, open };
 }

@@ -189,6 +189,13 @@ Rules:
 | `app.py` | `runner()` (`app.py:111-119`) mounts `ThreadRESTRequestHandler(authoriser=DemoAuthoriser())` beside `AGUIPipelineRequestHandler`. |
 | `app_test.py` | `test_a_run_is_recorded_as_a_thread`: send `run_input(prompt, thread_id)` through `collect`, then `GET /api/v1/threads/{thread_id}` with `AUTH`; assert `user_id == "demo-user"`, two messages, roles `user` then `assistant`, user content equals the prompt, assistant content non-empty. Uses the file's existing `base_url`, `run_input`, `collect` and `AUTH` helpers (`app_test.py:21-52`). |
 | `README.md` | A "Conversation history" section after "Attachments" (`README.md:126`): the `thread` block, the read-route mount, a `curl` for `GET /api/v1/threads/{threadId}`, and the broker note. |
+| `frontend/src/agui/threads.ts` (new) | `fetchThreads` (`GET /api/v1/threads?limit=200`, first page, most recent first; a 404 — no thread routes mounted, or no `thread` block — is an empty list, any other failure rejects), `fetchThreadMessages` (follows `next_cursor` to the end), and `toLines` (a text message to a `user`/`assistant` line; an object — a pause or a decision — to its pretty-printed JSON; attachment names carried over). Every request sends the bearer token. |
+| `frontend/src/agui/useThreads.ts` (new) | Hook holding the list and an error; refetches when the token changes and whenever a run finishes. |
+| `frontend/src/agui/types.ts`, `reduceEvent.ts` | A `__load` action: replaces the view with `EMPTY_VIEW` plus the loaded lines. |
+| `frontend/src/agui/useAgUiRun.ts` | `threadId` becomes settable; `open(id)` loads the thread, dispatches `__load`, switches `threadId` and clears `runId`; a failure is reported as a transcript error. `threadId` joins the persist effect's dependencies. Inbound `state` stays `null`, which the server treats as "keep" (`AGUIRunEnvelope.apply`, `run_input.py:332-335`). |
+| `frontend/src/components/ThreadList.tsx` (new), `App.tsx`, `styles.css` | A "Conversations" column between the transcript and the unchanged `Sidebar` (grid `1fr 240px 320px`): one button per thread (name, else id), the open one marked and disabled, all disabled while a run is in flight; the fetch error shown in place of the list. |
+| `frontend/vite.config.ts` | Proxy `/api` to `:8000` beside `/agui`, so the dev server reaches the thread routes. |
+| `frontend/src/agui/threads.test.ts` (new) | `toLines` for text, payloads and attachments; pagination across pages with the token; a 404 listing as empty and any other failure rejecting with its status; `__load` replacing the view. |
 
 `examples/api/hitl` is unchanged (design non-goal).
 

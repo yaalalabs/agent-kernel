@@ -10,6 +10,8 @@ export function reduceEvent(view: View, event: AgUiAction): View {
   switch (event.type) {
     case "__local":
       return { ...view, lines: [...view.lines, event.line] };
+    case "__load":
+      return { ...EMPTY_VIEW, lines: event.lines };
 
     case "RUN_STARTED":
       return { ...view, status: busy("Working") };

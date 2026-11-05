@@ -119,6 +119,7 @@ flowchart TD
 - `app.py`: mounts `ThreadRESTRequestHandler(authoriser=DemoAuthoriser())` beside `AGUIPipelineRequestHandler`.
 - `app_test.py`: one test — a run, then `GET /api/v1/threads/{threadId}` returns the user and assistant messages.
 - `README.md`: a short "Conversation history" section — what is recorded, how to read it back.
+- `frontend/`: a **Conversations** column, left of the shared-state sidebar, from `GET /api/v1/threads`; opening one loads its messages and continues that `threadId`. Shared state is not refetched — it stays on the server and reappears on the next snapshot. Added after review so the demo shows the feature.
 - `examples/api/hitl` is unchanged: showing a pause and a decision in AG-UI history is a possible follow-up, not needed for this issue.
 
 ### Testing

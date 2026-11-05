@@ -65,7 +65,13 @@ export type LocalAction = {
   line: Line;
 };
 
-export type AgUiAction = AGUIEvent | LocalAction;
+/** A past conversation loaded from the thread routes, replacing the transcript. */
+export type LoadAction = {
+  type: "__load";
+  lines: Line[];
+};
+
+export type AgUiAction = AGUIEvent | LocalAction | LoadAction;
 
 /**
  * The shared state as this demo's agent writes it. AG-UI leaves the shape to the app — its own

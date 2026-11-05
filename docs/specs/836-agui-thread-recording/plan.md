@@ -66,8 +66,9 @@ each leaves the branch green. Section numbers refer to [spec.md](spec.md).
   2. Mount `ThreadRESTRequestHandler(authoriser=DemoAuthoriser())` beside `AGUIPipelineRequestHandler` in `runner()` (spec §6).
   3. Add `test_a_run_is_recorded_as_a_thread` to `app_test.py`.
   4. Add the "Conversation history" README section.
+  4a. Frontend: the thread fetch module, the list hook, the `__load` action, `open(id)`, the conversations column and the `/api` proxy, with `threads.test.ts` (spec §7).
   5. Check mode B by hand with the README's "Checking mode B by hand" steps (`README.md:375`), then read the thread back.
-- **Verify:** `cd examples/api/agui && ./build.sh local && .venv/bin/pytest -s app_test.py`; `make lint-check-all`.
+- **Verify:** `cd examples/api/agui && ./build.sh local && .venv/bin/pytest -s app_test.py`; `cd frontend && npm test && npm run typecheck`; `make lint-check-all`.
 
 ## Iteration 7: Tests
 

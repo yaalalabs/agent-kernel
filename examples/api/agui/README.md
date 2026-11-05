@@ -198,7 +198,10 @@ handler, which serves the history back:
     curl -s -H "Authorization: Bearer demo-token" http://localhost:8000/api/v1/threads/<threadId>
 
 AG-UI itself has no way to fetch history, so this route is how a client reloads a past conversation.
-The demo frontend does not use it — its reload behaviour above is still the tab's own `sessionStorage`.
+The demo frontend uses it: the **Conversations** column comes from `GET /api/v1/threads`, and
+clicking one loads its messages and continues that thread, so the next run is sent on its `threadId`.
+The task list stays empty until the agent next changes the shared state, which lives on the server.
+Reloading the tab still restores the open conversation from `sessionStorage`, as above.
 
 In mode B the user's message is recorded by the API and the reply by the runner, so
 `config.broker.yaml` puts the thread store on Valkey, where both can reach it.
