@@ -141,6 +141,27 @@ distinction; see the table below.
 A boolean would collapse the two, and the model would confidently tell your customer they were
 turned down.
 
+### What a refusal actually says to the model
+
+On OpenAI and Pydantic AI the refusal text **becomes the gated call's output** — there is no
+separate "this was rejected" flag the model sees. So Agent Kernel sends a framed sentence, and
+quotes your `message` inside it rather than in place of it:
+
+> A human reviewer refused this call, so it was not carried out. Do not run it again unchanged and
+> do not report it as done. If the reviewer gave a reason, you may propose a different call that
+> answers it. The reviewer's reason: not during business hours
+
+Neither half is cosmetic. With the framework's own default the OpenAI SDK says only "Tool execution
+was not approved", which a model reads as approval still *pending* — it replies by asking the human
+to confirm. With the bare reason and no frame, the model reads it as what the tool returned and
+reports the action as carried out. The refusal is scoped to *this* call so that a reason saying what
+the reviewer wants instead still leaves the agent free to propose it. Override
+`DENIED_DECISION_MESSAGE` and `DENIED_DECISION_REASON` on your runner if you want different wording.
+
+On OpenAI, an application that configured `RunConfig.tool_error_formatter` has already said how a
+refused call should read, so a denial carrying no reason of its own defers to it. A denial with a
+reason, and `cancelled` in every case, keep the wording above.
+
 ### Answering one question at a time
 
 A pause can hold several interruptions. You may answer some now and the rest later — the remainder
@@ -256,7 +277,59 @@ values, so approve and deny are a boolean `payload`; and there is no field for a
 for a prompt sent beside a decision. Agent Kernel does not invent a private encoding for either —
 use the REST surface when you need them. See [AG-UI Server](../api/agui-server.md).
 
+## From a messaging platform
+
+A run that pauses in a Slack or Telegram conversation is delivered with buttons on it, and pressing
+one continues the run. There is nothing to configure: a press parses into exactly the decision a
+REST client would send, travels the same queue as every other message from that conversation, and
+the agent cannot tell the two apart.
+
+| Platform | A pause arrives as |
+|---|---|
+| Slack | Block Kit buttons, one row per question. **Deny** opens a short form asking why, and the reason reaches the agent as the decision's `message` |
+| Telegram | An inline keyboard, one row per question |
+| WhatsApp, Messenger, Instagram, Teams, Gmail | Readable text naming what is being asked. Nothing to press — answer over another surface |
+
+Four things to know before you ship it:
+
+- **Anyone who can see the message can press.** Agent Kernel ships no approver policy: channel
+  membership is not an approval list. The presser's platform user id travels with the decision as
+  `acting_user_id`, so a `PreHook` is where you check it.
+- **The buttons offer approve and deny, not cancel.** `cancelled` means
+  [nobody decided](#why-cancelled-is-not-denied), and a button somebody pressed is not that. Add it
+  if your flow wants it, by subclassing the outbound adapter and setting `DECISIONS`. The words on
+  the buttons are a separate attribute, `DECISION_LABELS`, so you can rename them — or write them in
+  another language — without redeclaring which verbs exist. On Slack the labels travel to the review
+  form with the button, so the form says what the buttons said.
+- **An `input_required` question gets no buttons.** It wants a value, not a verdict, and a decision
+  verb would resume the run with no answer at all. The question is still shown, with a note where
+  its controls would have been, so you can answer it over another surface.
+- **Some frameworks only accept a whole pause answered at once.** Pydantic AI and Microsoft Agent
+  Framework refuse a resume that leaves any question unanswered, so a button per question could
+  never work there. Slack offers a single **Review all** button instead, opening a form with one
+  required choice per question and one submit. Telegram puts every question in one message under a
+  tally keyboard: a press marks an answer instead of sending it, and **Submit** sends the set.
+  Everywhere else, a press still answers one question on its own. If such a pause also holds an
+  `input_required` question, neither surface offers anything to press at all — the submission would
+  need a verdict for a question that wants a value, and the framework will not take the set without
+  it — so the message says the pause has to be answered elsewhere.
+- **The buttons stay after a decision.** Nothing is edited out: a resumed run's reply is
+  indistinguishable from a run a hook stopped, so editing on that guess could strip the controls
+  off a pause that is still open. Pressing the same button again is deduplicated and changes
+  nothing; pressing one on a pause that has already been answered gets the usual error reply. The
+  presser is part of that identity, so a press your approver policy rejects does not swallow the
+  authorized one that follows; two people answering at once means the second gets that error reply.
+
+Slack needs one switch the other platforms do not: **Interactivity & Shortcuts**, with its Request
+URL set to the same `/slack/events` URL as your event subscription. Without it the buttons render
+and the press goes nowhere. See [Slack](../integrations/slack.md) and
+[Telegram](../integrations/telegram.md).
+
 ## A runnable example
+
+[`examples/api/slack/`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/slack)
+is the messaging version: a Pydantic AI agent with one gated tool, approved or denied from the
+channel — and, when a turn gates several calls, answered from the review form.
 
 [`examples/api/hitl/`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/hitl) runs
 two agents side by side — an OpenAI one that can only be approved or denied, and a LangGraph one that

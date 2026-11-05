@@ -381,6 +381,7 @@ class ResponseBuilder:
             response_dict["run_id"] = result.run_id
             response_dict["agent"] = result.agent
             response_dict["interruptions"] = [i.model_dump(mode="json") for i in result.interruptions]
+            response_dict["answer_together"] = result.answer_together
 
         if session_id:
             response_dict["session_id"] = session_id

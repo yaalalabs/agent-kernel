@@ -60,7 +60,7 @@ delivery timeout and make it redeliver the message.
 - The **inbound adapter** verifies the delivery, normalizes it (resolving the session and the
   platform's own message id at the edge), stores any attachments, and enqueues.
 - The **agent runner** executes it, knowing nothing about the platform.
-- The **outbound adapter** delivers the reply through the platform's API.
+- The **outbound adapter** delivers the reply through the platform's API. A run that stopped to ask a human goes out the same way: Slack and Telegram draw it with buttons, every other platform gets readable text. See [Human in the Loop](../advanced/human-in-the-loop.md#from-a-messaging-platform).
 
 ```mermaid
 ---

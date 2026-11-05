@@ -324,3 +324,25 @@ class TestTeamsContract(_ConfiguredContract):
 
     expected_session_id = "conv-1"
     expected_request_id = "act-1"
+
+
+def test_every_adapter_knows_the_same_decision_verbs_as_the_model():
+    """A platform's verb vocabulary has to match `ResumeDecision`, or a press goes nowhere.
+
+    Each adapter keeps its own list: Slack validates a press against `DECISION_VERBS`, Telegram
+    maps each verb to a one-letter wire code. Neither can be derived from the model at import
+    without obscuring what the wire carries, so the copies are pinned here instead. Adding a verb
+    to `ResumeDecision` without adding it to an adapter fails this test rather than silently
+    dropping every press that carries it — Slack filters an unknown verb out and answers nothing.
+    """
+    from typing import get_args
+
+    from agentkernel.core.model import ResumeDecision
+    from agentkernel.integration.slack.adapter import DECISION_VERBS
+    from agentkernel.integration.telegram.adapter import VERB_CODES
+
+    verbs = {verb for arg in get_args(ResumeDecision.model_fields["status"].annotation) for verb in get_args(arg)}
+
+    assert set(DECISION_VERBS) == verbs, "Slack would drop a press carrying a verb it does not list"
+    assert set(VERB_CODES) == verbs, "Telegram would raise drawing a keyboard for a verb it has no code for"
+    assert len(set(VERB_CODES.values())) == len(VERB_CODES), "a wire code is never reused: a message outlives a deploy"
