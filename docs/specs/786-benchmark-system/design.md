@@ -51,8 +51,9 @@ path.
 - `logging.ak.level` rejects anything below `DEBUG`: `_LogLevelConfig.level` pattern is
   `^(INFO|DEBUG|ERROR|WARNING|CRITICAL)$` (`core/config.py:656-661`).
 - An LLM call takes 1-10 s and varies a lot, which would hide what AK itself does. A mock agent with a controlled delay is needed.
-  - An agent pre-hook that returns a reply halts the run before the framework runner (`core/runtime.py:242-246`,
-    `:401-405`), so the mock needs no AK code change.
+  - Every agent runs through a `Runner` (`core/base.py:250`), called by `Runtime.run` between the pre-hooks and the
+    post-hooks (`core/runtime.py:418`). A benchmark-side runner whose `run()` waits in place of the LLM call needs no
+    AK code change.
 - Hosts scale and bill in very different ways (ECS target tracking, Lambda + SQS event source mapping),
   so worker counts, resource usage and cost need per-platform code. GCP and Azure come later. See
   `research/platform-scaling-and-cost.md` and `research/resource-usage.md`.
@@ -400,7 +401,7 @@ graph LR
     ORCH -->|"after_all_steps; after_teardown (post-run)"| IF
     SR --> LG["Load generator"]
     LG --> DRV["ClientDriver"]
-    DRV -->|WebSocket| AK["AK app<br/>(mock pre-hook, TRACE on)"]
+    DRV -->|WebSocket| AK["AK app<br/>(mock runner, in_memory sessions, TRACE on)"]
     ORCH --> SHARED["Shared: collectors, step-end check,<br/>derived numbers, CSVs, plots"]
 ```
 
@@ -677,23 +678,33 @@ flowchart TD
       before it would become visible again. That's not an exactly-once guarantee (SQS can still deliver a message
       twice). On the input queue, a message still waiting after 5 min is dropped (the client has timed out on it by
       then); the output queue's 5 min starts when the response is sent to it.
-  - every host: queue mode, WebSocket delivery, `logging.ak.level: TRACE`, the mock agent.
+  - every host: queue mode, WebSocket delivery, `logging.ak.level: TRACE`, the mock agent, session store
+    `in_memory` (`session.type`, AK's default; the Terraform `create_redis_cluster`, `create_valkey_cluster` and
+    `create_dynamodb_memory_table` stay `false`, their default).
 
 ### Mock agent
 
-- A benchmark pre-hook in the benchmarked app, the **first** pre-hook on the agent (agent pre-hooks run before the
-  system ones, `core/runtime.py:242`). No AK code change.
-  - Waits a random delay per request, `await asyncio.sleep(random.uniform(min_delay, max_delay))` (min / max are
-    config, recorded; defaults 1 s and 5 s; min = max gives a fixed delay).
+- **A mock `Runner` in the benchmarked app** (decided 2026-11-06, replaces the earlier pre-hook that replied before
+  the runner): `MockRunner(Runner)` and a `MockAgent(Agent)` that uses it, registered with the runtime like any agent
+  (same shape as `DummyRunner` / `DummyAgent` in `ak-py/tests/test_pipeline_request_handler.py`). No AK code change.
+  - `run()` waits a random delay per request, `await asyncio.sleep(random.uniform(min_delay, max_delay))` (min / max
+    are config, recorded; defaults 1 s and 5 s; min = max gives a fixed delay), where the LLM call would be.
   - Returns `AgentReplyAny(content={"echo": <prompt>})`. The prompt carries the client's `request_id`.
-  - Keeps no per-request state on `self`; does no timing (stage times come from the trace logs).
-- Everything around the LLM call runs as normal: request handler, queues, agent runner, ChatService, session load,
+  - Keeps no per-request state on `self`; does no timing (stage times come from the trace logs); adds nothing to the
+    session (no history, no framework context).
+  - `stream()` is abstract on `Runner` (`core/base.py:462`), so it's written too, though WebSocket complete doesn't
+    call it: the same delay, then the echo as stream events (WebSocket delta, later).
+- So `Runtime.run` runs in full: pre-hooks, `agent.runner.run()` (`core/runtime.py:418`), post-hooks, then
+  `self.sessions().store(session)` (`:427`). So the `AGENT_START` → `AGENT_DONE` stage is the delay plus the hooks
+  and the in-memory session save. No hooks are configured on the agent; the system hooks (guardrails, multimodal,
+  sandbox, A2UI) are always in the chain (`:126,134`) but none is switched on, so each runs as its no-op version.
+- **Session store: `in_memory`** (`session.type`, set in the app's config) on every host, so the session save is an in-process write, no
+  session store is deployed, and none is in the latency or the bill. Each worker keeps its own sessions; the mock
+  runner reads nothing from them, so a client's requests handled by different workers get the same reply. Session
+  history doesn't grow during steady traffic. Recorded in the run metadata. WebSocket connections aren't affected:
+  both AWS hosts keep them in API Gateway's DynamoDB table (`websocket_api.connection_table`), not the session store.
+- Everything around the agent run runs as normal: request handler, queues, agent runner, ChatService, session load,
   response handler, WebSocket push.
-- Verified consequences of the pre-hook approach:
-  - The halted turn is **not stored**: `Runtime.run` returns at `core/runtime.py:405`, before
-    `self.sessions().store(session)` at `:427`. So session history doesn't grow during steady traffic, and the
-    session-store write isn't in the measured latency or cost.
-  - System pre-hooks (guardrails, multimodal, sandbox) are skipped.
 - The same app is used on every host. A real-LLM run is an optional final realism check.
 
 ### AK change: `TRACE` log level and trace points (`ak-py`)
@@ -857,9 +868,8 @@ Answered by looking at real data, not by a decision. Each has a fallback already
 - **R7.** Cost: the run tag reaches every billed resource; anything untagged or shared is listed as a fixed
   allocation. Also confirm that Cost Explorer returns the tagged cost of torn-down resources (`post-run` reads it
   after teardown).
-- **R8.** Sessions: one client can have several requests in flight, handled by different workers, and AK's session
-  locks are per process. The pre-hook doesn't save the turn (`core/runtime.py:405` before `:427`), but confirm on the
-  first steady-traffic runs that concurrent work on one session has no side effect.
+- **R8.** ~~Sessions: concurrent work on one session across workers.~~ Dropped 2026-11-06: sessions are `in_memory`,
+  so each worker has its own copy and no shared store can be overwritten.
 - **R9.** ECS API calls during the cool-down: `aws.ecs_api` is in the `ecs` host's `cooldown_checks` list, so every
   cool-down poll (every 10 s) calls `DescribeServices` and `DescribeTasks`, though the check only needs the counts.
   Check the run log for ECS API throttling errors on the first ECS runs (fallback: the check reads the counts only).

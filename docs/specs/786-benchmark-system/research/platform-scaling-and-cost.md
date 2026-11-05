@@ -65,7 +65,7 @@ Host (registered by name, e.g. "ecs", "lambda", later "cloud_run", "aca")
   transport collector are shared by Lambda and ECS.
 - **Adding GCP or Azure** = implement these for the new host and register it. No changes to the harness, CSVs
   or plots.
-- Worker counts come only from the platform side (APIs, metrics, logs). Nothing in AK or the benchmark pre-hook
+- Worker counts come only from the platform side (APIs, metrics, logs). Nothing in AK or the mock agent
   reports a worker id.
 
 File and class layout for these interfaces: to be specified in the implementation spec (written after this design is
