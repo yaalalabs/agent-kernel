@@ -20,7 +20,7 @@ The shared workflows (`test-reusable.yaml`, `chart-test.yaml`, `code-quality.yml
   `finish` also `actions: write` (delete an artifact; start workflows).
 - Secrets: `COPILOT_REQUEST_TOKEN` (required); `APP_ID` + `APP_PRIVATE_KEY` (`agent-kernel-ci[bot]`: push and PR,
   so the PR's CI runs); `DEPENDABOT_ALERTS_TOKEN` (until the app can read alerts); the e2e secrets of
-  `test-reusable.yaml` (`OPENAI_API_KEY`, `WALLED_API_KEY`, `TYPESAFE_API_KEY`, `SLACK_BOT_TOKEN`,
+  `test-reusable.yaml` (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `WALLED_API_KEY`, `TYPESAFE_API_KEY`, `SLACK_BOT_TOKEN`,
   `SLACK_SIGNING_SECRET`).
 - Settings in the workflow `env`: `BASE_BRANCH` (`develop`), `AFTER_PR_WORKFLOWS` (`chart-test.yaml integration-test-weekly.yaml`).
 

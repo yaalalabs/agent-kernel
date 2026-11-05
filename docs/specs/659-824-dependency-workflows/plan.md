@@ -22,7 +22,6 @@
 1. One more real run with the latest changes (close PR #901 first: only one update PR at a time).
 2. Remove the TEMPORARY `push` trigger and merge to `develop`. Runs then start every second Monday.
 3. Ask an admin to give the `agent-kernel-ci` app "Dependabot alerts: Read", then drop `DEPENDABOT_ALERTS_TOKEN`.
-4. When `ANTHROPIC_API_KEY` lands in `test-reusable.yaml` (#721), pass it here too.
 
 ## Follow-ups outside this work
 
