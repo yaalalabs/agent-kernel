@@ -96,13 +96,17 @@ def dummy_agent():
     Runtime.current().deregister(agent)
 
 
-def _configure(monkeypatch, mode=None):
+def _configure(monkeypatch, mode=None, message_type=None):
     """Real defaults (in_memory transport) with a fast response-wait budget, then threads on."""
     monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
     if mode:
         monkeypatch.setenv("AK_EXECUTION__MODE", mode)
     else:
         monkeypatch.delenv("AK_EXECUTION__MODE", raising=False)
+    if message_type:
+        monkeypatch.setenv("AK_EXECUTION__MESSAGE_TYPE", message_type)
+    else:
+        monkeypatch.delenv("AK_EXECUTION__MESSAGE_TYPE", raising=False)
     monkeypatch.setenv("AK_EXECUTION__RESPONSE_STORE__RETRY_COUNT", "100")
     monkeypatch.setenv("AK_EXECUTION__RESPONSE_STORE__DELAY", "0.05")
     AKConfig._reset()
@@ -206,20 +210,11 @@ class TestEdgeRecording:
         assert manager.get_thread("s1") is None
         assert not InMemoryTransport().create_consumer(QueueName.INPUT).fetch(10, 0.1)
 
-    def test_stream_without_a_chunk_streaming_store_leaves_no_phantom_thread(self, monkeypatch, dummy_agent):
-        """Same for a STREAM topology whose shared store pushes chunks over WebSocket instead."""
-        manager = _configure(monkeypatch, mode="stream")
+    def test_async_delta_mode_is_rejected_before_any_thread_write(self, monkeypatch, dummy_agent):
+        """Same for async + delta: its chunks go over WebSocket, so this route has nothing to serve."""
+        manager = _configure(monkeypatch, mode="async", message_type="delta")
 
-        class _NoChunkStore:
-            def supports_chunk_streaming(self):
-                return False
-
-        handler = ThreadRequestHandler()
-        handler._response_store = _NoChunkStore()
-        app = FastAPI()
-        app.include_router(handler.get_router())
-
-        response = TestClient(app).post(CHAT, json=_chat())
+        response = _client().post(CHAT, json=_chat())
 
         assert response.status_code == 400
         assert "/ws" in response.json()["detail"]["error"]
@@ -423,7 +418,7 @@ class TestStreamRunnerRecording:
         return StreamAgentRunner(transport=InMemoryTransport(), chat_service=chat_service)
 
     def test_deltas_are_accumulated_into_one_assistant_message(self, monkeypatch):
-        manager = _configure(monkeypatch, mode="stream")
+        manager = _configure(monkeypatch, mode="rest_sync", message_type="delta")
         _open_thread(manager)
 
         self._stream_runner([{"delta": "he"}, {"delta": "llo"}, {"done": True}]).process(_marked_message())
@@ -433,7 +428,7 @@ class TestStreamRunnerRecording:
         assert [(m.role, m.content) for m in manager.get_messages("s1").messages][-1] == ("assistant", "hello")
 
     def test_a_streamed_pause_is_recorded(self, monkeypatch):
-        manager = _configure(monkeypatch, mode="stream")
+        manager = _configure(monkeypatch, mode="rest_sync", message_type="delta")
         _open_thread(manager)
         event = {"type": "run_paused", "run_id": "run-1", "agent": AGENT_NAME, "interruptions": [{"id": "i1", "kind": "input_required"}]}
 
@@ -447,7 +442,7 @@ class TestStreamRunnerRecording:
 
     def test_a_stream_that_errors_after_pausing_records_nothing(self, monkeypatch):
         """Same rule on the queue: the pause reported by a run that then failed is not recorded."""
-        manager = _configure(monkeypatch, mode="stream")
+        manager = _configure(monkeypatch, mode="rest_sync", message_type="delta")
         _open_thread(manager)
         event = {"type": "run_paused", "run_id": "run-1", "agent": AGENT_NAME, "interruptions": [{"id": "i1", "kind": "input_required"}]}
 
@@ -456,7 +451,7 @@ class TestStreamRunnerRecording:
         assert [m.role for m in manager.get_messages("s1").messages] == ["user"]
 
     def test_a_halted_stream_records_nothing(self, monkeypatch):
-        manager = _configure(monkeypatch, mode="stream")
+        manager = _configure(monkeypatch, mode="rest_sync", message_type="delta")
         _open_thread(manager)
 
         self._stream_runner([{"delta": "he"}, {"error": "boom", "done": True}]).process(_marked_message())
@@ -464,7 +459,7 @@ class TestStreamRunnerRecording:
         assert [m.role for m in manager.get_messages("s1").messages] == ["user"]
 
     def test_an_empty_stream_records_no_blank_message(self, monkeypatch):
-        manager = _configure(monkeypatch, mode="stream")
+        manager = _configure(monkeypatch, mode="rest_sync", message_type="delta")
         _open_thread(manager)
 
         self._stream_runner([{"done": True}]).process(_marked_message())

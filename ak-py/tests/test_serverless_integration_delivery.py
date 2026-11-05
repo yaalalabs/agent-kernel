@@ -12,6 +12,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from agentkernel.core.config import _ExecutionConfig
 from agentkernel.core.model import AgentReplyText, ExecutionMode
 from agentkernel.deployment.aws.serverless.akagentrunner import ServerlessAgentRunner, ServerlessStreamAgentRunner
 from agentkernel.deployment.aws.serverless.akresponsehandler import ResponseHandler
@@ -44,11 +45,9 @@ def _input_record(routing: dict | None = None, endpoint_url: str | None = None, 
     }
 
 
-def _config(mode):
+def _config(mode, message_type=None):
     config = MagicMock()
-    config.execution.mode = mode
-    config.execution.queues.input.max_receive_count = 3
-    config.execution.queues.output.max_receive_count = 3
+    config.execution = _ExecutionConfig(mode=mode, message_type=message_type)
     return config
 
 
@@ -221,9 +220,9 @@ def handler_sinks():
     store = MagicMock()
     ws = MagicMock()
 
-    def _set_mode(mode):
+    def _set_mode(mode, message_type=None):
         ak_config = MagicMock()
-        ak_config.get.return_value = _config(mode)
+        ak_config.get.return_value = _config(mode, message_type)
         return patch(f"{HANDLER_MODULE}.AKConfig", ak_config)
 
     with (
@@ -233,14 +232,19 @@ def handler_sinks():
         yield _set_mode, store, ws
 
 
-ALL_MODES = [ExecutionMode.REST_SYNC, ExecutionMode.REST_ASYNC, ExecutionMode.ASYNC, ExecutionMode.STREAM]
+ALL_MODES = [
+    (ExecutionMode.REST_SYNC, None),
+    (ExecutionMode.REST_ASYNC, None),
+    (ExecutionMode.ASYNC, None),
+    (ExecutionMode.ASYNC, "delta"),
+]
 
 
 class TestResponseHandler:
-    @pytest.mark.parametrize("mode", ALL_MODES)
-    def test_an_integration_reply_is_delivered_to_the_platform_in_every_mode(self, adapter, handler_sinks, mode):
+    @pytest.mark.parametrize("mode, message_type", ALL_MODES)
+    def test_an_integration_reply_is_delivered_to_the_platform_in_every_mode(self, adapter, handler_sinks, mode, message_type):
         set_mode, store, ws = handler_sinks
-        with set_mode(mode):
+        with set_mode(mode, message_type):
             ResponseHandler.process_message(_output_record(RECORDING_ROUTING))
 
         assert adapter.delivered == [(AgentReplyText(response="hello from the agent"), SLACK_REPLY_CONTEXT)]
@@ -318,9 +322,9 @@ class TestPermanentFailure:
         assert kwargs["message"]["session_id"] == "s1"
         assert kwargs["user_id"] == "u1"
 
-    def test_stream_broadcasts_an_error_chunk(self, handler_sinks):
+    def test_async_delta_broadcasts_an_error_chunk(self, handler_sinks):
         set_mode, _, ws = handler_sinks
-        with set_mode(ExecutionMode.STREAM):
+        with set_mode(ExecutionMode.ASYNC, "delta"):
             ResponseHandler.on_permanent_failure(_output_record(endpoint_url="https://ws.example/prod"))
 
         kwargs = ws.broadcast.call_args.kwargs

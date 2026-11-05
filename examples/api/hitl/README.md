@@ -24,6 +24,10 @@ export OPENAI_API_KEY=sk-...
 uv run app.py
 ```
 
+`app.py` starts with `IOHandler.run(handlers=[AGUIPipelineRequestHandler(...)])`: the REST chat route
+is always served, AG-UI is mounted alongside it, and both run the agent on the queue pipeline. A
+`resume` request needs no `prompt`.
+
 Two surfaces are mounted, and the same pause can be answered from either:
 
 | | |
@@ -210,7 +214,7 @@ Two things worth knowing, both LangGraph's behaviour rather than Agent Kernel's:
 
 ## What else is possible
 
-- **Streaming.** With `execution.mode: stream`, the pause arrives as a `run_paused` event and the
+- **Streaming.** With `execution.message_type: delta`, the pause arrives as a `run_paused` event and the
   stream ends normally rather than with an error — a pause is an outcome, not a failure.
 - **The other three frameworks.** Pydantic AI pauses on both `CallDeferred` and `requires_approval`,
   Google ADK on long-running tools and confirmations, and Microsoft Agent Framework on a tool declared

@@ -170,7 +170,7 @@ class _FetchingTrace(BaseTrace):
     def openai(self):
         return None
 
-    langgraph = crewai = adk = smolagents = pydanticai = maf = openai
+    langgraph = crewai = adk = smolagents = pydanticai = maf = claude = openai
 
     def fetch_spans(self, query):
         self.queries.append(query)

@@ -91,7 +91,7 @@ output "rest_service_task_role_arn" {
   value       = module.rest_service.task_role_arn
 }
 
-# WebSocket API outputs (async / stream modes only; null otherwise)
+# WebSocket API outputs (async mode only; null otherwise)
 
 output "websocket_api_endpoint_url" {
   description = "WebSocket API endpoint URL (wss://...)"

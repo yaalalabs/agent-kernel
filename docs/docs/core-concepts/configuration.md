@@ -8,6 +8,7 @@ Configure Agent Kernel via environment variables or configuration files. This su
 
 :::tip
 For detailed information about session and memory management configuration, see:
+- [Choosing a Memory Backend](./memory-backends.md) - Beginner comparison and recommended setup
 - [Session Management](/docs/core-concepts/session) - Session configuration and storage backends
 - [Memory Management](/docs/architecture/memory-management) - Advanced memory features and caching
 :::
@@ -79,7 +80,8 @@ websocket_api:
 
 # Execution configuration (for AWS serverless and containerized deployments)
 execution:
-  mode: rest_sync  # Execution mode: rest_sync, rest_async, stream, or async (WebSocket)
+  mode: rest_sync  # Execution mode: rest_sync, rest_async, async (WebSocket), or realtime. Unset runs as rest_sync
+  message_type: complete  # Reply delivery: complete (one whole reply) or delta (one message per chunk). Unset: delta for realtime, complete otherwise
   queues:
     type: sqs  # Queue transport: in_memory | sqs | kafka | nats, or a dotted path to a QueueTransport subclass. Mandatory whenever this block is declared
     input:
@@ -336,6 +338,7 @@ Alternatively, use `config.json`:
   },
   "execution": {
     "mode": "rest_sync",
+    "message_type": "complete",
     "queues": {
       "type": "sqs",
       "input": {
@@ -467,17 +470,28 @@ export AK_SESSION__TYPE=redis  # Options: 'in_memory', 'redis', 'valkey', 'dynam
 export AK_SESSION__REDIS__URL=redis://localhost:6379  # default: redis://localhost:6379
 export AK_SESSION__REDIS__TTL=604800  # TTL in seconds (default: 604800 = 7 days)
 export AK_SESSION__REDIS__PREFIX=ak:sessions:  # Key prefix (default: ak:sessions:)
-export AK_SESSION__CACHE__SIZE=256  # Enable in-memory session caching with a cache size of 256 sessions
 
 # Valkey configuration (requires the agentkernel[valkey] extra)
 export AK_SESSION__VALKEY__URL=valkey://localhost:6379  # default: valkey://localhost:6379 (use valkeys:// for SSL)
 export AK_SESSION__VALKEY__TTL=604800  # TTL in seconds (default: 604800 = 7 days)
 export AK_SESSION__VALKEY__PREFIX=ak:sessions:  # Key prefix (default: ak:sessions:)
 
-# DynamoDB configuration
+# DynamoDB configuration (requires the agentkernel[aws] extra)
 export AK_SESSION__DYNAMODB__TABLE_NAME=agent-kernel-sessions  # DynamoDB table name (required)
 export AK_SESSION__DYNAMODB__TTL=604800  # TTL in seconds (default: 604800 = 7 days, 0 to disable)
-export AK_SESSION__CACHE__SIZE=256  # Enable in-memory session caching with a cache size of 256 sessions
+
+# Cosmos DB configuration (requires the agentkernel[azure] extra)
+export AK_SESSION__COSMOSDB__CONNECTION_STRING="DefaultEndpointsProtocol=https;AccountName=your-account;AccountKey=...;TableEndpoint=https://your-account.table.cosmos.azure.com:443/;"  # required
+export AK_SESSION__COSMOSDB__TABLE_NAME=sessions  # Cosmos DB table name (required)
+export AK_SESSION__COSMOSDB__TTL=604800  # TTL in seconds (default: 604800 = 7 days, 0 to disable)
+
+# Firestore configuration (requires the agentkernel[gcp] extra)
+export AK_SESSION__FIRESTORE__COLLECTION_NAME=ak_sessions  # default: ak_sessions
+export AK_SESSION__FIRESTORE__PROJECT_ID=my-project  # optional; inferred from credentials
+export AK_SESSION__FIRESTORE__TTL=604800  # TTL in seconds (default: 604800 = 7 days, 0 to disable)
+
+# Optional process-local session cache (Redis, Valkey, DynamoDB, Cosmos DB, Firestore)
+export AK_SESSION__CACHE__SIZE=256  # Number of sessions to cache; omit this var entirely to disable caching
 ```
 
 :::note Valkey and the Redis-only surfaces
@@ -663,7 +677,8 @@ export AK_GUARDRAIL__OUTPUT__VERSION=1  # AWS Bedrock guardrail version
 
 ```bash
 # Execution mode
-export AK_EXECUTION__MODE=rest_sync  # Options: 'rest_sync', 'rest_async', 'stream', 'async'
+export AK_EXECUTION__MODE=rest_sync  # Options: 'rest_sync', 'rest_async', 'async', 'realtime'
+export AK_EXECUTION__MESSAGE_TYPE=complete  # Options: 'complete', 'delta' (unset: delta for realtime, complete otherwise)
 
 # Queue configuration
 export AK_EXECUTION__QUEUES__INPUT__URL=https://sqs.us-east-1.amazonaws.com/123456789012/agent-input
@@ -699,8 +714,18 @@ export AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TTL=604800
 **Execution Modes**:
 - `rest_sync` - Synchronous REST: sends request to queue and immediately waits for response from response store (requires queues and response_store)
 - `rest_async` - Asynchronous REST: submits request to queue and returns immediately with request_id, then poll for response from response store (requires queues and response_store)
-- `stream` - Event streaming: SSE on the built-in REST server (local, containerized, Cloud Run, Container Apps), or WebSocket `STREAM_CHUNK` push on AWS serverless (queues optional, response_store not used). Requires a streaming-capable framework (OpenAI Agents SDK, LangGraph, Google ADK, Pydantic AI, Microsoft Agent Framework)
 - `async` - WebSocket mode for real-time bidirectional communication on AWS serverless (queues optional, response_store not used)
+- `realtime` - Persistent realtime sockets, such as the [LiveKit](../integrations/livekit) voice gateway; always streams
+
+Unset `mode` runs as `rest_sync`.
+
+**Message Types** (`execution.message_type`, env `AK_EXECUTION__MESSAGE_TYPE`) choose how the reply is delivered:
+- `complete` - One message carrying the whole reply: a JSON body for `rest_sync`, a stored reply for `rest_async`, one `CHAT_RESPONSE` for `async`
+- `delta` - One message per `StreamChunk` as it is produced: SSE (`text/event-stream`) on `POST /api/v1/chat` for `rest_sync`, one `STREAM_CHUNK` WebSocket message per chunk (ending with `done: true`) for `async`. Requires a streaming-capable framework (OpenAI Agents SDK, LangGraph, Google ADK, Pydantic AI, Microsoft Agent Framework)
+
+Unset `message_type` resolves to `delta` for `realtime` and `complete` otherwise. `rest_async` + `delta` and `realtime` + `complete` are rejected when the configuration loads (`AKConfigError`).
+
+`execution.mode: stream` was removed and fails on load with a migration message. For SSE over REST use `mode: rest_sync` with `message_type: delta`; for chunks over WebSocket use `mode: async` with `message_type: delta`.
 
 **Notes**:
 - Queues and response_store are required for `rest_sync` and `rest_async` modes
@@ -803,6 +828,17 @@ session:
   dynamodb:                     # DynamoDB-specific settings
     table_name: "agent-kernel-sessions"  # DynamoDB table name (required)
     ttl: 604800                 # Item TTL in seconds (7 days, 0 to disable)
+  cosmosdb:                     # Cosmos DB-specific settings (requires the agentkernel[azure] extra)
+    connection_string: "DefaultEndpointsProtocol=https;AccountName=your-account;AccountKey=...;TableEndpoint=https://your-account.table.cosmos.azure.com:443/;"  # Cosmos DB connection string (required)
+    table_name: "sessions"      # Cosmos DB table name (required)
+    ttl: 604800                 # Session TTL in seconds (7 days, 0 to disable)
+  firestore:                    # Firestore-specific settings (requires the agentkernel[gcp] extra)
+    collection_name: "ak_sessions"  # Firestore collection name
+    project_id: "my-project"    # GCP project ID (optional; inferred from credentials)
+    database_id: "(default)"    # Firestore database ID (optional)
+    ttl: 604800                 # Session TTL in seconds (7 days, 0 to disable)
+  cache:                        # Optional process-local session cache; omit this whole block to disable
+    size: 256                   # Number of sessions to cache (size: 0 raises an error — omit `cache` instead)
 
 # API server configuration
 api:
@@ -898,7 +934,8 @@ guardrail:
 
 # Execution configuration (for AWS serverless and containerized deployments)
 execution:
-  mode: "rest_sync"             # Execution mode: 'rest_sync', 'rest_async', 'stream', or 'async'
+  mode: "rest_sync"             # Execution mode: 'rest_sync', 'rest_async', 'async', or 'realtime'
+  message_type: "complete"      # Reply delivery: 'complete' or 'delta' (unset: delta for realtime, complete otherwise)
   queues:                       # Queue transport + coordinates for queue-based execution
     type: "sqs"                 # in_memory | sqs | kafka | nats, or a dotted path to a QueueTransport subclass - mandatory whenever this block is declared
     input:
@@ -1143,7 +1180,7 @@ Example validation errors:
 export AK_SESSION__TYPE=invalid_storage  # Must be 'in_memory', 'redis', 'valkey', 'dynamodb', 'cosmosdb', or 'firestore'
 export AK_A2A__TASK_STORE_TYPE=invalid   # Must be 'in_memory' or 'redis'
 export AK_TRACE__TYPE=invalid_tracer     # Must be 'langfuse', 'openllmetry', 'logfire', 'cloudwatch', or a dotted BaseTrace path
-export AK_EXECUTION__MODE=invalid        # Must be 'rest_sync', 'rest_async', 'stream', or 'async'
+export AK_EXECUTION__MODE=invalid        # Must be 'rest_sync', 'rest_async', 'async', or 'realtime' ('stream' was removed)
 ```
 
 ## Best Practices
@@ -1165,7 +1202,7 @@ export AK_EXECUTION__MODE=invalid        # Must be 'rest_sync', 'rest_async', 's
 - Support for nested configuration using underscore delimiter
 - Built-in validation ensures configuration integrity
 - Flexible session storage options (in-memory, Redis, Valkey, DynamoDB, Cosmos DB, Firestore)
-- Execution modes (`rest_sync`, `rest_async`, `stream`, `async`) and queue settings live under `execution`
+- Execution modes (`rest_sync`, `rest_async`, `async`, `realtime`), the reply `message_type` (`complete`, `delta`) and queue settings live under `execution`
 - Optional multimodal and conversation-thread features via their own config blocks
 - Optional A2A and MCP functionality with granular control
 - DynamoDB recommended for non-performance-critical deployments

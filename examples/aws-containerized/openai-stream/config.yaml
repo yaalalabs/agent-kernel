@@ -6,4 +6,5 @@ session:
   dynamodb:
     table_name: "ak-oai-ws-str-dev-examples-session_store"
 execution:
-  mode: stream
+  mode: async
+  message_type: delta

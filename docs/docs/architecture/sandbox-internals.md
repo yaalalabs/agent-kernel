@@ -14,7 +14,7 @@ The capability is split into three layers with one wire contract between them. E
 flowchart TB
     subgraph AGENT["Agent process"]
         LLM["Agent turn (LLM)"]
-        TOOLS["System tools<br/>run_code · run_command · read/write_sandbox_file<br/>check_sandbox_task · list/new/destroy_sandbox_session"]
+        TOOLS["System tools<br/>run_code · run_command · read/write_sandbox_file<br/>check_sandbox_task · list/new/destroy_sandbox_session<br/>install_packages (when a profile permits installs)"]
         HOOK["SandboxPreHook<br/>task-completion ingestion"]
         MGR["ExecutionManager (singleton façade)"]
         RES["PrincipalResolver<br/>default: AgentPrincipalResolver"]
@@ -77,7 +77,7 @@ classDiagram
         +execute_command(command, timeout) SandboxResult
         +upload_file(path, content) None
         +download_file(path) bytes
-        +install_packages(packages) SandboxResult
+        +install_packages(packages, ecosystem, timeout) SandboxResult
         +close()* None
     }
     class SandboxProvider {
@@ -104,7 +104,8 @@ classDiagram
         +shell bool
         +languages list
         +files bool
-        +package_install bool
+        +package_ecosystems list
+        +package_install bool — derived from package_ecosystems
         +stateful bool
         +attach bool
         +provisions bool
@@ -256,10 +257,13 @@ classDiagram
     BrokerWorkerCore ..> SandboxProviderFactory : resolve provider
 ```
 
-Two enforcement gates run inside `BrokerWorkerCore.run()` before any provider call, both fail-closed:
+Three enforcement gates run inside `BrokerWorkerCore.run()` before any provider call, all fail-closed:
 
 - **Principal:** a profile demanding `identity.mode: user` requires a provider declaring `principal_user` *and* a resolver that actually produced a user principal; otherwise the request is rejected.
 - **Policy:** every non-default policy dimension (network, filesystem, cpu/memory) is checked against the provider's declared `policy_*` capabilities; unenforceable under `strict: true` raises `SandboxPolicyError`. See [Policy and permissions](../advanced/sandbox.md#policy-and-permissions) for the user-facing semantics.
+- **Permission:** `SandboxPermissionGuard` (`sandbox/permission.py`) checks the request's own policy: a `run_code` language outside `policy.languages`, or an `install_packages` request when `policy.package_install` is absent or does not list the ecosystem, raises `SandboxPermissionDeniedError` after one audit `WARNING` on `ak.sandbox.broker`. It reads only the request, never `AKConfig` or provider capabilities, so a queue worker enforces exactly the policy the agent side resolved. `ExecutionManager` runs the same guard, plus package-spec validation (`PackageInstaller`, `sandbox/packages.py`), before session resolution, so a denied or malformed request is never submitted and has no side effects.
+
+Before the gates, the worker also warns once per (provider, profile) when a policy permits a language or package ecosystem the provider instance does not declare; such requests can only fail with `SandboxCapabilityError`.
 
 `QueueExecutionBroker` is the one flavor that does **not** run `BrokerWorkerCore` in the agent process: `submit()` serializes the `ExecutionRequest` with `BrokerWireCodec` and sends it over the `sandbox.broker.queue` input queue (`group_id = sandbox_session_id` keeps one execution in flight per session across the whole worker fleet), then polls the shared `response_store` for the bounded wait. A separate `QueueBrokerWorker` process consumes the input queue, runs the exact same `BrokerWorkerCore.run()`, and delivers the `ExecutionCompletion` to the output queue and `response_store` — see the [Queue-mode guide](../advanced/queue-mode-guide.md) and the `queue` flavor section of the [Sandbox guide](../advanced/sandbox.md#broker-flavors) for the wire contract, transport/store pairing rules, and the `sandbox/broker-kafka` and `sandbox/broker-nats` examples.
 
@@ -306,6 +310,8 @@ classDiagram
         +memory_mb int
         +timeout float
         +strict bool
+        +languages list or null
+        +package_install PackageInstallPolicy or null
     }
     class SandboxSession {
         +sandbox_session_id str
@@ -382,7 +388,7 @@ sequenceDiagram
         Core->>Prov: create(principal, policy)
     end
     Prov-->>Core: Sandbox handle
-    Core->>Sbx: execute_code(code) under asyncio.wait_for(policy.timeout)
+    Core->>Sbx: execute_code(code, timeout) — the handle enforces the effective timeout,<br/>the worker's wait_for(timeout + 10 s) is a backstop
     Sbx-->>Core: SandboxResult(stdout, stderr, exit_code)
     Core-->>Brk: result + updated session
     Brk-->>Mgr: SandboxResult
@@ -475,6 +481,7 @@ classDiagram
     class SandboxConfigError { unknown profile, type, flavor, missing block }
     class SandboxCapabilityError { operation the provider never declared }
     class SandboxPolicyError { unenforceable under strict, identity fail-closed }
+    class SandboxPermissionDeniedError { operation the profile policy does not permit }
     class SandboxTimeoutError { effective execution timeout exceeded }
     class SandboxProvisionError { create or attach failed }
     class SandboxGoneError { attach target vanished, self-heal signal }
@@ -484,6 +491,7 @@ classDiagram
     SandboxError <|-- SandboxConfigError
     SandboxError <|-- SandboxCapabilityError
     SandboxError <|-- SandboxPolicyError
+    SandboxPolicyError <|-- SandboxPermissionDeniedError
     SandboxError <|-- SandboxTimeoutError
     SandboxError <|-- SandboxProvisionError
     SandboxProvisionError <|-- SandboxGoneError
@@ -500,7 +508,9 @@ All paths are under `ak-py/src/agentkernel/`.
 | `sandbox/base.py` | `Sandbox` and `SandboxProvider` ABCs, the public bring-your-own surface |
 | `sandbox/model.py` | `SandboxCapabilities`, `SandboxResult`, `SandboxSession`, `SandboxTask`, `SandboxPrincipal`, `SandboxPolicy`, `IsolationTier` |
 | `sandbox/manager.py` | `ExecutionManager` singleton façade, session and task registries, scope handling |
-| `sandbox/tools.py` | The eight system tools plus the system-prompt guidance injected via the first tool's description |
+| `sandbox/tools.py` | The eight system tools, the conditional `install_packages` tool, and the system-prompt guidance injected via the first tool's description |
+| `sandbox/permission.py` | `SandboxPermissionGuard` and `PermissionAuditContext`: the permission decision and its audit log line |
+| `sandbox/packages.py` | `PackageSpecRule` (public, bring-your-own), the `python`/`node` rules, `PackageSpecRuleFactory`, and `PackageInstaller` |
 | `sandbox/hooks.py` | `SandboxPreHook` for push-based task-completion ingestion with dedup |
 | `sandbox/principal.py` | `PrincipalResolver` ABC and the default `AgentPrincipalResolver` |
 | `sandbox/factory.py` | `SandboxProviderFactory` and `ExecutionBrokerFactory`, lazy imports and dotted-path escape hatches |
@@ -511,5 +521,5 @@ All paths are under `ak-py/src/agentkernel/`.
 | `sandbox/broker/queue.py` | `QueueExecutionBroker`, the agent-side client for the `queue` flavor |
 | `sandbox/broker/queue_worker.py` | `QueueBrokerWorker`, the out-of-process worker that runs `BrokerWorkerCore` against the input/output queues |
 | `sandbox/broker/wire.py` | `BrokerWireCodec`, the wire (de)serialization contract shared by the client and worker |
-| `sandbox/providers/` | `local_subprocess.py`, `docker.py`, and `kubernetes.py` reference providers |
+| `sandbox/providers/` | The built-in providers (`local_subprocess.py`, `docker.py`, `kubernetes.py`, `e2b.py`, `daytona.py`, `ec2_ssm.py`) and `process.py`, the `ProcessKiller` that docker and kubernetes use to kill a timed-out or cancelled exec by its environment marker |
 | `sandbox/testing.py` | Public `SandboxProviderContract` test suite for new providers |

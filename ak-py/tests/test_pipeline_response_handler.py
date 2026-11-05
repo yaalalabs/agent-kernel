@@ -2,6 +2,7 @@ import json
 
 import pytest
 
+from agentkernel.core.config import _ExecutionConfig
 from agentkernel.core.model import ExecutionMode
 from agentkernel.core.util.factory import AKConfigError
 from agentkernel.integration.adapter.base import OutboundAdapter
@@ -21,14 +22,11 @@ def _reset_state():
     InMemoryResponseStore.reset()
 
 
-def _use_mode(monkeypatch, mode, output_max_receive_count=3):
+def _use_mode(monkeypatch, mode, message_type=None, output_max_receive_count=3):
     class _Cfg:
-        class execution:
-            class queues:
-                class output:
-                    max_receive_count = output_max_receive_count
+        execution = _ExecutionConfig(mode=mode, message_type=message_type)
 
-    _Cfg.execution.mode = mode
+    _Cfg.execution.queues.output.max_receive_count = output_max_receive_count
     monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _Cfg))
 
 
@@ -115,20 +113,38 @@ class TestRestDelivery:
         assert record["body"]["session_id"] == "s1"
 
 
-class TestStreamDelivery:
-    def test_local_chunks_reach_the_store_stream(self, monkeypatch):
-        _use_mode(monkeypatch, ExecutionMode.STREAM)
-        handler, store = _handler()
-        handler.process(_output_msg({"delta": "he", "session_id": "s1"}, attributes={"request_id": "r1"}))
-        handler.process(_output_msg({"done": True, "session_id": "s1"}, attributes={"request_id": "r1"}))
+class TestSSEDelivery:
+    """rest_sync + delta: every chunk goes to the chunk store for the SSE generator."""
+
+    @pytest.mark.parametrize("attributes", [{"request_id": "r1"}, {"request_id": "r1", "user_id": "u1"}])
+    def test_chunks_reach_the_store_stream_with_or_without_user_id(self, monkeypatch, attributes):
+        _use_mode(monkeypatch, ExecutionMode.REST_SYNC, "delta")
+        handler, store, ws = _ws_handler()
+        handler.process(_output_msg({"delta": "he", "session_id": "s1"}, attributes=attributes))
+        handler.process(_output_msg({"done": True, "session_id": "s1"}, attributes=attributes))
 
         chunks = list(store.stream("r1", chunk_timeout=0.5))
         assert chunks == [{"delta": "he", "session_id": "s1"}, {"done": True, "session_id": "s1"}]
+        assert ws.broadcasts == []
 
-    def test_ws_entered_chunks_broadcast_over_websocket(self, monkeypatch):
-        """The USER_ID attribute (stamped only by the gateway) marks a WS-entered request: its
-        chunks are pushed, never routed into the SSE chunk store."""
-        _use_mode(monkeypatch, ExecutionMode.STREAM)
+    @pytest.mark.parametrize("attributes", [{"request_id": "r1"}, {"request_id": "r1", "user_id": "u1"}])
+    def test_permanent_failure_emits_error_chunk(self, monkeypatch, attributes):
+        _use_mode(monkeypatch, ExecutionMode.REST_SYNC, "delta")
+        handler, store, ws = _ws_handler()
+        handler.on_permanent_failure(_output_msg({"delta": "x"}, attributes=attributes))
+
+        [chunk] = list(store.stream("r1", chunk_timeout=0.5))
+        assert chunk["done"] is True
+        assert "after 3 retries" in chunk["error"]
+        assert chunk["session_id"] == "s1"
+        assert ws.broadcasts == []
+
+
+class TestWebSocketDeltaDelivery:
+    """async + delta: every chunk is pushed as STREAM_CHUNK, never routed into the chunk store."""
+
+    def test_chunks_broadcast_over_websocket(self, monkeypatch):
+        _use_mode(monkeypatch, ExecutionMode.ASYNC, "delta")
         handler, store, ws = _ws_handler()
         handler.process(_output_msg({"delta": "x", "session_id": "s1"}, attributes={"request_id": "r1", "user_id": "u1"}))
 
@@ -139,8 +155,18 @@ class TestStreamDelivery:
         with pytest.raises(TimeoutError):  # nothing was routed into the SSE chunk store
             next(store.stream("r1", chunk_timeout=0.1))
 
-    def test_permanent_failure_of_a_ws_entered_chunk_broadcasts_the_error(self, monkeypatch):
-        _use_mode(monkeypatch, ExecutionMode.STREAM)
+    def test_a_chunk_without_user_id_raises_for_retry_instead_of_reaching_the_store(self, monkeypatch):
+        _use_mode(monkeypatch, ExecutionMode.ASYNC, "delta")
+        handler, store, ws = _ws_handler()
+        with pytest.raises(ValueError, match="user_id"):
+            handler.process(_output_msg({"delta": "x", "session_id": "s1"}, attributes={"request_id": "r1"}))
+
+        assert ws.broadcasts == []
+        with pytest.raises(TimeoutError):
+            next(store.stream("r1", chunk_timeout=0.1))
+
+    def test_permanent_failure_broadcasts_the_error_chunk(self, monkeypatch):
+        _use_mode(monkeypatch, ExecutionMode.ASYNC, "delta")
         handler, _, ws = _ws_handler()
         handler.on_permanent_failure(_output_msg({"delta": "x"}, attributes={"request_id": "r1", "user_id": "u1"}))
 
@@ -150,15 +176,14 @@ class TestStreamDelivery:
         assert "after 3 retries" in call["message"]["error"]
         assert call["message"]["session_id"] == "s1"
 
-    def test_permanent_failure_emits_error_chunk(self, monkeypatch):
-        _use_mode(monkeypatch, ExecutionMode.STREAM)
-        handler, store = _handler()
+    def test_permanent_failure_without_user_id_never_raises_or_stores(self, monkeypatch):
+        _use_mode(monkeypatch, ExecutionMode.ASYNC, "delta")
+        handler, store, ws = _ws_handler()
         handler.on_permanent_failure(_output_msg({"delta": "x"}, attributes={"request_id": "r1"}))
 
-        [chunk] = list(store.stream("r1", chunk_timeout=0.5))
-        assert chunk["done"] is True
-        assert "after 3 retries" in chunk["error"]
-        assert chunk["session_id"] == "s1"
+        assert ws.broadcasts == []
+        with pytest.raises(TimeoutError):
+            next(store.stream("r1", chunk_timeout=0.1))
 
 
 class TestAsyncDelivery:
@@ -223,11 +248,20 @@ class TestIntegrationDispatch:
             },
         )
 
-    @pytest.mark.parametrize("mode", [None, ExecutionMode.REST_SYNC, ExecutionMode.ASYNC, ExecutionMode.STREAM])
-    def test_the_integration_branch_precedes_the_mode_branch(self, monkeypatch, _adapter, mode):
+    @pytest.mark.parametrize(
+        "mode, message_type",
+        [
+            (None, None),
+            (ExecutionMode.REST_SYNC, None),
+            (ExecutionMode.REST_SYNC, "delta"),
+            (ExecutionMode.ASYNC, None),
+            (ExecutionMode.ASYNC, "delta"),
+        ],
+    )
+    def test_the_integration_branch_precedes_the_mode_branch(self, monkeypatch, _adapter, mode, message_type):
         # A platform reply goes to the platform whatever the app's execution mode is; without
         # this ordering an ASYNC app would try to push a Slack reply over a WebSocket.
-        _use_mode(monkeypatch, mode)
+        _use_mode(monkeypatch, mode, message_type)
         handler, _ = _handler()
         handler.process(self._message({"result": "agent says hi", "session_id": "s1"}))
         assert _adapter.delivered == [("agent says hi", {"channel": "C9", "thread_ts": "111.222"})]

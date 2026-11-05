@@ -40,6 +40,10 @@ This is the same five-component [queue pipeline](../advanced/queue-mode-guide) t
 in-process locally and over SQS on AWS, split into the two-process topology: the transport is
 configuration, not code.
 
+A2A and MCP are served by the io-handler and executed by the agent-runner through the same queues;
+see the example's [A2A and MCP section](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/k8s/openai-queue-mode#a2a-and-mcp)
+for the setup (agents loaded in both images, `mcp.stateless_http` for several io-handler replicas).
+
 ## Quick Start
 
 Build your application images (the
@@ -140,15 +144,17 @@ retry, dedup, permanent-failure replies) are identical over all of them:
   topics as CRs.
 - **`sqs`**: no broker to operate; the EKS option via Pod Identity.
 
-## WebSocket Modes (async / stream)
+## WebSocket Mode (async)
 
-Enabling `wsGateway` adds the gateway tier for `async` and `stream` execution modes: gateway
+Enabling `wsGateway` adds the gateway tier for the `async` execution mode, with either message
+type (the chart's `execution.messageType` value, injected as `AK_EXECUTION__MESSAGE_TYPE`:
+`complete` for one reply, `delta` for token chunks): gateway
 pods own the client sockets, enqueue chat frames directly to the transport, and receive each
 reply or token chunk from the Response Handler on an authenticated internal push endpoint,
 addressed through a shared connection store on the session backend. Replies reach all of a
 user's connections on whichever gateway pod holds them, and io/runner pods roll without
 dropping a single connection. See the
-[WebSocket delivery section of the Queue Mode Guide](../advanced/queue-mode-guide#websocket-delivery-on-the-pipeline-asyncstream)
+[WebSocket delivery section of the Queue Mode Guide](../advanced/queue-mode-guide#websocket-delivery-on-the-pipeline-async)
 for the mechanism and the
 [chart README](https://github.com/yaalalabs/agent-kernel/tree/develop/ak-deployment/ak-k8s)
 for the values.
@@ -169,6 +175,10 @@ sandbox worker; the agent side and the worker then meet solely on the shared san
 and response store. See the
 [chart README's sandbox worker section](https://github.com/yaalalabs/agent-kernel/tree/develop/ak-deployment/ak-k8s)
 for the values and the agent-side mirror configuration.
+
+**Upgrade the sandbox worker before the agent tier.** The worker enforces the sandbox
+permissions the agent side sends (`policy.languages`, `policy.package_install`); an older
+worker would ignore them. See [Sandbox → The `queue` flavor](../advanced/sandbox.md#the-queue-flavor).
 
 ## Autoscaling
 

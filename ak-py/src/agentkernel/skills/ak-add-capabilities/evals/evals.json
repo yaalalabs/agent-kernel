@@ -224,7 +224,7 @@
         "agents:",
         "agentkernel[",
         "a2a",
-        ".well-known/agent.json"
+        ".well-known/agent-card.json"
       ]
     },
     {
@@ -466,6 +466,20 @@
         "type: docker",
         "agentkernel[sandbox-docker]",
         "image:"
+      ]
+    },
+    {
+      "id": "cap-sandbox-package-install",
+      "name": "Permit package installs in a docker sandbox",
+      "input": "Let my agent pip install Python packages in its docker sandbox",
+      "expected_outputs": [
+        "sandbox:",
+        "type: docker",
+        "package_install:",
+        "ecosystems:"
+      ],
+      "must_not_contain": [
+        "environment: attached"
       ]
     },
     {
