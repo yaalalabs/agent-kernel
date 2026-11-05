@@ -55,7 +55,7 @@ langgraph = [
     "litellm~=1.89.2"
 ]
 smolagents = [
-    "smolagents>=1.0.0",
+    "smolagents>=1.26.0",
 ]
 pydanticai = [
     "pydantic-ai-slim~=2.13.0",

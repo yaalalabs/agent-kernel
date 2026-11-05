@@ -377,7 +377,7 @@ requires-dist = [
     { name = "requests", marker = "extra == 'cloudwatch'", specifier = ">=2.32.0" },
     { name = "singleton-type", specifier = ">=0.0.5" },
     { name = "slack-bolt", marker = "extra == 'slack'", specifier = "==1.22.0" },
-    { name = "smolagents", marker = "extra == 'smolagents'", specifier = ">=1.0.0" },
+    { name = "smolagents", marker = "extra == 'smolagents'", specifier = ">=1.26.0" },
     { name = "traceloop-sdk", marker = "extra == 'openllmetry'", specifier = ">=0.61.0" },
     { name = "trino", marker = "extra == 'trino'", specifier = ">=0.337.0" },
     { name = "typesafe-sdk", marker = "extra == 'jev'", specifier = ">=0.7.2,<0.8" },
