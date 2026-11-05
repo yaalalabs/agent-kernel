@@ -187,6 +187,21 @@ still be answered from the description in the history, but the analysis tool wil
 if the 📎 button does nothing at all, the frontend was not rebuilt — run `./build.sh` (or
 `cd frontend && npm run build`).
 
+## Conversation history
+
+`config.yaml` has a `thread` block, so every run is recorded as a conversation thread keyed by its
+`threadId`: the user's message, then the agent's reply. A failed run records no reply, and a run that
+pauses for approval records the pause. `app.py` mounts `ThreadRESTRequestHandler` beside the AG-UI
+handler, which serves the history back:
+
+    curl -s -H "Authorization: Bearer demo-token" http://localhost:8000/api/v1/threads/<threadId>
+
+AG-UI itself has no way to fetch history, so this route is how a client reloads a past conversation.
+The demo frontend does not use it — its reload behaviour above is still the tab's own `sessionStorage`.
+
+In mode B the user's message is recorded by the API and the reply by the runner, so
+`config.broker.yaml` puts the thread store on Valkey, where both can reach it.
+
 ## Two ways to run it
 
 The agent runs on the **queue pipeline** either way — `app.py` mounts `AGUIPipelineRequestHandler`,
