@@ -36,7 +36,9 @@ env:
   # Shipped with the state artifact: the update branch starts from $BASE_BRANCH, which may not have it yet.
   SCRIPT: /tmp/dep-state/dependency_caps.py
   # Started on the PR branch after the PR opens (not in the gate); a reviewer reads their results.
-  AFTER_PR_WORKFLOWS: chart-test.yaml integration-test-weekly.yaml
+  # Each entry: <workflow file>[:<input>=<value>,...]. provision_e2e_messaging redeploys the shared Slack and
+  # Telegram app from the PR branch, so those real messaging tests use the new versions.
+  AFTER_PR_WORKFLOWS: chart-test.yaml integration-test-weekly.yaml:provision_e2e_messaging=true
 
 jobs:
   # Cron cannot say "every two weeks": a scheduled run goes ahead only on even weeks since 1970.
@@ -336,9 +338,14 @@ jobs:
             { echo "## PR opened: $url"; echo; cat "$STATE_DIR/update-summary.md"; } >> "$GITHUB_STEP_SUMMARY"
             # Started on the PR branch; a failure to start never undoes the PR, it is only reported.
             note=""
-            for workflow in $AFTER_PR_WORKFLOWS; do
+            for entry in $AFTER_PR_WORKFLOWS; do
+              workflow=${entry%%:*} inputs=()
+              if [ "$entry" != "$workflow" ]; then
+                IFS=, read -ra pairs <<< "${entry#*:}"
+                for pair in "${pairs[@]}"; do inputs+=(-f "$pair"); done
+              fi
               runs="https://github.com/$REPO/actions/workflows/$workflow?query=branch%3A$BRANCH"
-              if GH_TOKEN="$ACTIONS_TOKEN" gh workflow run "$workflow" --repo "$REPO" --ref "$BRANCH"; then
+              if GH_TOKEN="$ACTIONS_TOKEN" gh workflow run "$workflow" --repo "$REPO" --ref "$BRANCH" "${inputs[@]}"; then
                 note+="- Started \`$workflow\` on this branch: [its runs]($runs)."$'\n'
               else
                 note+="- Could not start \`$workflow\`; start it by hand on this branch."$'\n'
