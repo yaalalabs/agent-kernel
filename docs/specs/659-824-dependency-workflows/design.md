@@ -23,13 +23,13 @@ flowchart TD
     B --> C{Installs?}
     C -- no --> D[Copilot names the package; hold it]
     C -- yes --> E
-    D --> E[Round 1: unit tests, e2e, kind smoke, lint]
+    D --> E[Round 1: unit tests and e2e]
     E -- pass --> M[Open ONE PR]
     E -- fail --> F[Copilot names the package behind each real error; hold it]
     F --> G[Round 2: the same jobs]
     G -- pass, or only failures the update did not cause --> M
     G -- other failures --> N[No PR; delete the branch; list the failures]
-    M --> I[Start the weekly integration tests on the PR branch]
+    M --> I[Start kind smoke and the weekly integration tests on the PR branch]
 ```
 
 ## Requirements
@@ -38,7 +38,7 @@ flowchart TD
 
 - Every `pyproject.toml` with a `uv.lock` (131 manifests: ak-py, examples, use-cases, e2e, `agent/`), the same
   rules for each. No package lists in the code.
-- Every second Monday; also by hand (`paths` limits the manifests, `dry_run` skips the push, tests and PR).
+- Every second Monday, or by hand. Every run is a real run on every manifest (no inputs).
 - One update PR at a time: an open PR with the `ak-dep-update` marker stops the run.
 - If the alerts cannot be read, the run still caps and updates, and the PR says so at the top.
 
@@ -70,8 +70,8 @@ flowchart TD
 ### Checks and holds
 
 - **Install check:** `uv lock` and `uv sync` for every manifest.
-- **Test gate:** the repo's own reusable workflows on the pushed branch: `test-reusable.yaml` (unit tests and
-  e2e), `chart-test.yaml` (kind smoke), `code-quality.yml` (lint). Two rounds at most.
+- **Test gate:** `test-reusable.yaml` (unit tests and e2e) on the pushed branch, two rounds at most. It already
+  takes a `checkout_ref`, so no shared workflow changes.
 - **On a failure** Copilot names the package that changed and brings the problem; the script holds it back.
 - **A held security package:** kept at its security minimum when Copilot checked that the minimum works
   (`keep_minimum`), its declarations narrowed to that minor. Otherwise the fix is blocked, the original line comes
@@ -96,8 +96,11 @@ flowchart TD
   "no dependency cause" reason. Anything unexplained keeps the PR closed and deletes the branch.
 - Lists every change: version changes, security fixes by package, holds with reasons, blocked fixes, manifests put
   back, breaking upgrades held back, what is not covered, alerts still open, and accepted failures.
-- After the PR opens, the weekly integration tests (`integration-test-weekly.yaml`) start on its branch. A reviewer
-  reads the result; nothing waits for it.
+- After the PR opens, `chart-test.yaml` (kind smoke) and `integration-test-weekly.yaml` start on its branch, and
+  lint runs as a normal PR check. A reviewer reads them; nothing waits for them.
+- Why kind and lint are not in the gate: calling them from this workflow needs a `checkout_ref` input, which CodeQL
+  flags as cache poisoning (code from another branch runs with `develop`'s cache rights). Started on the branch
+  itself, they need no change.
 
 ### Safety
 
@@ -109,7 +112,8 @@ flowchart TD
 
 - Code fixes (e.g. AK on `openai` 3): the package is held; the fix is a separate PR.
 - Fixing flaky tests: they are listed in the PR, not fixed.
-- Acting on the weekly integration tests automatically.
+- Acting on the after-PR checks (kind smoke, integration tests, lint) automatically.
+- Changes to the shared test workflows.
 
 ## Open questions
 

@@ -5,30 +5,28 @@
 ```text
 .github/workflows/dependency-update-copilot.yml   # the workflow
 .github/scripts/dependency_caps.py                # the script (all mechanical work, and the Copilot prompt)
-.github/workflows/test-reusable.yaml              # upload `overwrite: true` (called twice in one run)
-.github/workflows/chart-test.yaml                 # `workflow_call` with `checkout_ref` + OPENAI_API_KEY
-.github/workflows/code-quality.yml                # `workflow_call` with `checkout_ref`
 agent/, examples/k8s/openai-queue-mode/, examples/sandbox/broker-nats/   # uv.lock now tracked
 ```
+
+The shared workflows (`test-reusable.yaml`, `chart-test.yaml`, `code-quality.yml`) are unchanged.
 
 ## Triggers, permissions, secrets
 
 - `schedule`: `0 3 * * 1` (Monday 03:00 UTC); the `when` job lets only even weeks since 1970 through
   (`date +%s / 604800 % 2 == 0`). Other triggers always run.
-- `workflow_dispatch`: `paths` (prefixes; empty = everything), `dry_run` (default `true`: the install check only;
-  no push, no tests, no PR).
 - TEMPORARY `push` on the feature branch, for real test runs. Removed before merge.
-- Permissions: `contents: write`, `pull-requests: write`, `security-events: read`, `actions: read`; `finish` also
-  `actions: write` (starts the integration tests).
+- `workflow_dispatch`: a real run by hand, no inputs (every run covers every manifest).
+- Permissions: `contents: write`, `pull-requests: write`, `security-events: read`, `actions: read`; `fix-1` and
+  `finish` also `actions: write` (delete an artifact; start workflows).
 - Secrets: `COPILOT_REQUEST_TOKEN` (required); `APP_ID` + `APP_PRIVATE_KEY` (`agent-kernel-ci[bot]`: push and PR,
   so the PR's CI runs); `DEPENDABOT_ALERTS_TOKEN` (until the app can read alerts); the e2e secrets of
   `test-reusable.yaml` (`OPENAI_API_KEY`, `WALLED_API_KEY`, `TYPESAFE_API_KEY`, `SLACK_BOT_TOKEN`,
   `SLACK_SIGNING_SECRET`).
-- Settings in the workflow `env`: `BASE_BRANCH` (`develop`), `AFTER_PR_WORKFLOW` (`integration-test-weekly.yaml`).
+- Settings in the workflow `env`: `BASE_BRANCH` (`develop`), `AFTER_PR_WORKFLOWS` (`chart-test.yaml integration-test-weekly.yaml`).
 
 ## Script commands
 
-`uv run --no-project --with packaging python .github/scripts/dependency_caps.py [--paths ...] [--state DIR] <command>`
+`uv run --no-project --with packaging python .github/scripts/dependency_caps.py [--state DIR] <command>`
 
 | Command | Does |
 |---|---|
@@ -69,10 +67,10 @@ agent/, examples/k8s/openai-queue-mode/, examples/sandbox/broker-nats/   # uv.lo
 |---|---|---|
 | `when` | always | `run=true` unless a scheduled run on an odd week |
 | `update` | `when` says run, no open update PR | branch `deps/update-batch-<RUN_ID>` from `$BASE_BRANCH`: `snapshot` → `alerts` → `cap` → `secure` → `update` → up to 2 × (`failures` → `fix`) → `finalize` → `npm` → `report`; commit, push, upload the state as `dep-state` |
-| `e2e-1`, `kind-1`, `lint-1` | branch pushed | `test-reusable.yaml`, `chart-test.yaml`, `code-quality.yml` on the pushed commit |
-| `fix-1` | a round-1 job failed | `failures --jobs e2e-1,kind-1,lint-1` → `fix` → `finalize` → `report`; commits and pushes the holds |
-| `e2e-2`, `kind-2`, `lint-2` | `always()` and `fix-1` changed files | the same jobs on the new commit (`always()`: GitHub's implied `success()` would see round 1's failure) |
-| `finish` | branch pushed | a round all `success`, or `verdict` → `true`: `gh pr create`, then `gh workflow run $AFTER_PR_WORKFLOW --ref <branch>` and a PR comment with its link (a failure to start is only a warning). Else: delete the branch, list failed and blocking jobs, fail the run |
+| `e2e-1` | branch pushed | `test-reusable.yaml` (unit tests and e2e) with `checkout_ref` = the pushed commit |
+| `fix-1` | `e2e-1` failed | `failures --jobs e2e-1` → `fix` → `finalize` → `report`; commits and pushes the holds; deletes this run's `ak-py-dist` artifact, which round 2 uploads again |
+| `e2e-2` | `always()` and `fix-1` changed files | the same on the new commit (`always()`: GitHub's implied `success()` would see round 1's failure) |
+| `finish` | branch pushed | a round `success`, or `verdict` → `true`: `gh pr create`, then `gh workflow run <each of $AFTER_PR_WORKFLOWS> --ref <branch>` and one PR comment with their links (a failure to start is only a warning). Else: delete the branch, list failed and blocking jobs, fail the run |
 
 ## Copilot prompt
 

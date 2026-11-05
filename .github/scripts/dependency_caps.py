@@ -51,7 +51,7 @@ PROMPT = """\
 You find the package behind each failure of the dependency update. Then stop.
 
 Read {state}/failures.json. Each entry has: where it failed (an install check, or a
-CI job: unit tests, e2e example, kind smoke test, lint), the manifest (empty when the job tests no
+CI job: unit tests or an e2e example), the manifest (empty when the job tests no
 single manifest), base_commit, the full log path, an error excerpt, the locked version changes,
 the security minimums, and the packages already held back. For an empty manifest, find the folder
 the job builds from its log and see what changed with: git diff <base_commit> -- <folder>/uv.lock
@@ -61,7 +61,7 @@ Never print tokens.
 
 For each failure:
 1. Look for a real error: a traceback, an exception, "No module named", "cannot import name",
-   a resolver or build error, a lint/format failure, or an error returned as the agent's answer
+   a resolver or build error, or an error returned as the agent's answer
    (the test prints the error text instead of a normal answer).
 2. Find the package whose new version causes it. Follow the traceback's site-packages/<package>/
    paths and compare them with the version changes. You may read lock files and PyPI metadata.
@@ -225,18 +225,14 @@ class Manifest:
 class Repo:
     """The checkout: finds manifests, reads and restores files at the base commit."""
 
-    def __init__(self, root: Path, prefixes: list[str]):
+    def __init__(self, root: Path):
         self.root = root
-        self.prefixes = prefixes
 
     def git(self, *args: str) -> subprocess.CompletedProcess:
         return subprocess.run(["git", *args], cwd=self.root, capture_output=True, text=True, check=False)
 
-    def in_scope(self, path: str) -> bool:
-        return not self.prefixes or any(path.startswith(prefix) for prefix in self.prefixes)
-
     def tracked(self, pattern: str) -> list[str]:
-        return [path for path in self.git("ls-files", pattern).stdout.split() if self.in_scope(path)]
+        return self.git("ls-files", pattern).stdout.split()
 
     def manifests(self) -> list[Manifest]:
         found = [Manifest(self.root, path) for path in self.tracked("*pyproject.toml")]
@@ -971,7 +967,7 @@ class Verdict:
         body = self.state.path("pr-body.md")
         if ok and body.exists():
             tested = [
-                f"- Round {label}: unit tests, e2e, kind smoke and lint passed except these jobs, which this update",
+                f"- Round {label}: unit tests and e2e passed except these jobs, which this update",
                 "  did not cause. The PR's own CI runs them again; check them before merging:",
                 *accepted,
             ]
@@ -1039,14 +1035,13 @@ class Reporter:
 
     MARKER = "<!-- ak-dep-update manifests={count} run={run} -->"
     # `verdict` replaces this line when the PR opens with failures that have no dependency cause.
-    TESTED = "- [x] Unit tests, the full e2e suite, the kind smoke tests and lint passed on this branch before the PR was opened."
+    TESTED = "- [x] Unit tests and the full e2e suite passed on this branch before the PR was opened."
     SEVERITY: ClassVar[dict[str, int]] = {"critical": 0, "high": 1, "medium": 2, "low": 3}
 
-    def __init__(self, repo: Repo, state: State, run_id: str, dry_run: bool):
+    def __init__(self, repo: Repo, state: State, run_id: str):
         self.repo = repo
         self.state = state
         self.run_id = run_id
-        self.dry_run = dry_run
         self.reverted = set(state.load("reverted.json", []))
         self.changes = state.load("changes.json", [])
 
@@ -1062,8 +1057,6 @@ class Reporter:
                 canonicalize_name(alert["package"]),
                 parse_version(alert["patched"]),
             )
-            if not self.repo.in_scope(path):
-                continue
             directory = str(Path(path).parent)
             relative = str(Path(directory) / "pyproject.toml")
             reason = None
@@ -1247,6 +1240,8 @@ class Reporter:
             "",
             "## Testing",
             self.TESTED,
+            "- [ ] Kind smoke tests and the weekly integration tests: started on this branch after the PR opened.",
+            "- [ ] Lint: the normal check on this PR.",
             "",
             "## Additional Notes",
             *notes,
@@ -1255,7 +1250,7 @@ class Reporter:
             f"- Hidden marker: {self.MARKER.format(count=len(changed_dirs), run=self.run_id)}",
         ]
         self.state.path("pr-body.md").write_text("\n".join(body) + "\n")
-        status = "dry_run_ok" if self.dry_run else ("ready" if changed else "no updates")
+        status = "ready" if changed else "no updates"
         summary = [
             "## Status",
             status + (" (Dependabot alerts not read: no security fixes)" if warning else ""),
@@ -1308,23 +1303,21 @@ def main() -> int:
     parser.add_argument("command", choices=commands)
     parser.add_argument("--root", default=".", help="repository root")
     parser.add_argument("--state", default="/tmp/dep-state", help="state directory")
-    parser.add_argument("--paths", default="", help="comma-separated path prefixes (empty = everything)")
     parser.add_argument(
         "--repo",
         default=os.environ.get("REPO") or os.environ.get("GITHUB_REPOSITORY", ""),
         help="owner/name on GitHub (default: $REPO, else $GITHUB_REPOSITORY)",
     )
     parser.add_argument("--run-id", default="local", help="the workflow run id (failures --jobs, report)")
-    parser.add_argument("--jobs", default="", help="failures, verdict: round-1 caller job ids, e.g. e2e-1,kind-1")
-    parser.add_argument("--retry-jobs", default="", help="verdict: round-2 caller job ids, e.g. e2e-2,kind-2")
+    parser.add_argument("--jobs", default="", help="failures, verdict: round-1 caller job ids, e.g. e2e-1")
+    parser.add_argument("--retry-jobs", default="", help="verdict: round-2 caller job ids, e.g. e2e-2")
     parser.add_argument("--workers", type=int, default=4)
-    parser.add_argument("--dry-run", action="store_true", help="report only")
     args = parser.parse_args()
 
     def split(value: str) -> list[str]:
         return [item.strip() for item in value.split(",") if item.strip()]
 
-    repo, state = Repo(Path(args.root).resolve(), split(args.paths)), State(Path(args.state))
+    repo, state = Repo(Path(args.root).resolve()), State(Path(args.state))
     run = {
         "snapshot": lambda: Snapshotter(repo, state).run(),
         "alerts": lambda: Alerts.fetch(state, args.repo),
@@ -1335,7 +1328,7 @@ def main() -> int:
         "hold": lambda: Holds(repo, state, args.workers).run(),
         "finalize": lambda: Finalizer(repo, state).run(),
         "npm": lambda: NpmFixer(repo, state).run(),
-        "report": lambda: Reporter(repo, state, args.run_id, args.dry_run).run(),
+        "report": lambda: Reporter(repo, state, args.run_id).run(),
         "fix": lambda: CopilotFix(repo, state, args.workers).run(),
         "verdict": lambda: Verdict(
             Failures(repo, state, args.repo, args.run_id, []), split(args.jobs), split(args.retry_jobs)

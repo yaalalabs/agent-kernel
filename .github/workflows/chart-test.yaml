@@ -26,17 +26,6 @@ on:
       - 'ak-py/src/agentkernel/api/**'
       - '.github/workflows/chart-test.yaml'
   workflow_dispatch:
-  # The weekly dependency update runs these smoke tests on its branch before it opens a PR.
-  workflow_call:
-    inputs:
-      checkout_ref:
-        description: 'The git ref to test (empty = the triggering commit)'
-        required: false
-        type: string
-        default: ''
-    secrets:
-      OPENAI_API_KEY:
-        required: false
 
 permissions:
   contents: read
@@ -52,7 +41,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
         with:
-          ref: ${{ inputs.checkout_ref }}
           fetch-depth: 0
 
       - name: Set up Helm
@@ -163,8 +151,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
-        with:
-          ref: ${{ inputs.checkout_ref }}
 
       - name: Set up Python
         uses: actions/setup-python@v6
