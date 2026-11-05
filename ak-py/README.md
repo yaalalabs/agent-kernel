@@ -8,7 +8,7 @@ Agent Kernel is a lightweight **AI agent runtime** and adapter layer for buildin
 ## Features
 
 - **Unified API**: Common abstractions (Agent, Runner, Session, Module, Runtime) across frameworks
-- **Multi-Framework Support**: OpenAI Agents SDK, CrewAI, LangGraph, Google ADK, Smolagents, Pydantic AI, and Microsoft Agent Framework
+- **Multi-Framework Support**: OpenAI Agents SDK, CrewAI, LangGraph, Google ADK, Smolagents, Pydantic AI, Microsoft Agent Framework, and the Claude Agent SDK
 - **Session Management**: Built-in session abstraction with pluggable storage backends
 - **Knowledge Bases**: Unified, capability-declaring `KnowledgeBase` interface with ChromaDB, Neo4j, Starburst/Trino and Open Knowledge Format bundle (local directory or S3) backends via `KnowledgeBuilder`
 - **Sandbox**: Execute agent-generated code and shell commands in an isolated, permission-bounded environment with pluggable providers (`local_subprocess`, `docker`, `kubernetes`, `e2b`, `daytona`, `ec2_ssm`), workload profiles, policy enforcement, per-user identity, and a queue-decoupled broker for long-running executions
@@ -738,10 +738,26 @@ Configure queue-backed and serverless execution behavior.
 
 - **Execution Mode**
   - **Field**: `execution.mode`
-  - **Options**: `rest_sync`, `rest_async`, `stream`, `async`
-  - **Default**: `None`
-  - **Description**: Selects the execution mode used for queue-backed and serverless request handling
+  - **Options**: `rest_sync`, `rest_async`, `async`, `realtime`
+  - **Default**: `None` (runs as `rest_sync`)
+  - **Description**: How a request is invoked: `rest_sync` (REST, wait for the reply), `rest_async`
+    (REST, submit then poll), `async` (WebSocket only), `realtime` (persistent realtime sockets, e.g.
+    the LiveKit voice gateway). `stream` was removed and fails at config load with `AKConfigError`:
+    set `mode: rest_sync` with `message_type: delta` for SSE over REST, or `mode: async` with
+    `message_type: delta` for chunks over WebSocket
   - **Environment Variable**: `AK_EXECUTION__MODE`
+
+- **Message Type**
+  - **Field**: `execution.message_type`
+  - **Options**: `complete`, `delta`
+  - **Default**: `None` (resolves to `delta` for `realtime`, `complete` otherwise)
+  - **Description**: How much of the reply each delivered message carries. `complete` sends the whole
+    reply in one message (JSON under `rest_sync`, one `CHAT_RESPONSE` under `async`); `delta` sends one
+    message per chunk (SSE under `rest_sync`, one `STREAM_CHUNK` per chunk ending with `done: true`
+    under `async`). `rest_async` + `delta` and `realtime` + `complete` fail at config load. AWS
+    Lambda (REST router init) and the ECS queue-mode `ECSIOHandler` (startup) refuse `rest_sync` +
+    `delta`; use `async` + `delta` there
+  - **Environment Variable**: `AK_EXECUTION__MESSAGE_TYPE`
 
 - **Queues**
   - **Field**: `execution.queues`
@@ -1099,7 +1115,7 @@ Labels a JSON reply as [A2UI](https://a2ui.org/) so a client receives the docume
 its format named, instead of a JSON string it has to parse a second time. Agent Kernel supplies the
 media type and nothing else — the component catalog belongs in your agent's instructions, because it
 has to match the components your frontend implements. The block does not reach a streamed run
-(`execution.mode: stream`) or an agent configured with a framework `output_type`; both are told to
+(`execution.message_type: delta`) or an agent configured with a framework `output_type`; both are told to
 write their own post-hook. See `examples/api/a2ui-openai`.
 
 - **Enabled**
@@ -1453,8 +1469,8 @@ guardrail:
 Enable the sandbox capability to let agents execute code and shell commands in an isolated,
 permission-bounded environment. When enabled, agents automatically gain sandbox tools
 (`run_code`, `run_command`, `write_sandbox_file`, `read_sandbox_file`, `check_sandbox_task`,
-`list_sandbox_sessions`, `new_sandbox_session`, `destroy_sandbox_session`) and the usage
-guidance is injected into their system prompt.
+`list_sandbox_sessions`, `new_sandbox_session`, `destroy_sandbox_session`, plus `install_packages`
+when a profile permits package installs) and the usage guidance is injected into their system prompt.
 
 Minimal single-backend form (a `default` profile is synthesized from `type` + its config block):
 
@@ -1492,6 +1508,9 @@ sandbox:
         memory_mb: 512
         timeout: 30.0           # per-execution wall-clock seconds (always enforced)
         strict: true            # fail closed when the provider can't enforce a policy dimension
+        languages: [python]     # run_code allowlist; omitted = provider-declared; [] = no run_code
+        package_install:        # omitted = installs denied; present = install_packages permitted
+          ecosystems: [python]
       docker:
         image: python:3.12-slim
 ```
@@ -1501,7 +1520,8 @@ Key fields:
 - **`enabled`** (`AK_SANDBOX__ENABLED`, default `false`) — master switch; inert when off.
 - **`agents`** — agent names the tools/prompt attach to; omit for all agents.
 - **`type`** (per profile) — `local_subprocess` (no isolation; dev/test), `docker`
-  (container isolation; `sandbox-docker` extra), `e2b` (managed micro-VMs; `e2b` extra),
+  (container isolation; `sandbox-docker` extra), `kubernetes` (pod per sandbox; `kubernetes`
+  extra), `e2b` (managed micro-VMs; `e2b` extra),
   `daytona` (cloud containers; `daytona` extra), `ec2_ssm` (attach to an existing EC2
   instance via SSM; `aws` extra), or a dotted path to your own `SandboxProvider`.
 - **`scope`** — `per_call` (fresh per execution), `per_session` (persists across turns),
@@ -1511,10 +1531,14 @@ Key fields:
   e.g. an EC2 instance via `ec2_ssm`; requires the provider's `attach_to` and is validated
   against the provider's lifecycle capabilities at startup).
 - **`policy`** — network egress, filesystem paths, cpu/memory, timeout; enforced per provider,
-  fail-closed under `strict`.
+  fail-closed under `strict`. Also the permissions: `languages` (which `run_code` languages are
+  allowed) and `package_install` (whether `install_packages` is allowed, and for which ecosystems).
+  A provider's `package_installers` sets the installer command per ecosystem (default `pip install`),
+  and on `docker`/`kubernetes`/`ec2_ssm` its `language_runtimes` sets the interpreter per language (default `python -c`; on `ec2_ssm` each argv reads the code from stdin, default `python3 -`).
 - **`identity.mode`** + **`principal_resolver`** — run code under the agent's or the invoking
   user's identity.
-- **`broker.flavor`** — `thread` (default, for CLI/REST) or `embedded` (inline/synchronous).
+- **`broker.flavor`** — `thread` (default, for CLI/REST), `embedded` (inline/synchronous), or
+  `queue` (a separate `QueueBrokerWorker` fleet over a queue transport).
 
 See the [Sandbox guide](https://kernel.yaala.ai/docs/advanced/sandbox) for the full
 reference and the `examples/sandbox` and `examples/sandbox/identity` examples.
@@ -1992,6 +2016,7 @@ Sessions maintain state across agent interactions. Framework adapters manage the
 - `"adk"` — Google ADK session data
 - `"pydanticai"` — Pydantic AI session data (message history)
 - `"maf"` — Microsoft Agent Framework session data (`AgentSession` snapshot)
+- `"claude"` — Claude Agent SDK session data (each agent's Claude session id and transcript)
 
 Access the session in your runner:
 

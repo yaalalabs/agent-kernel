@@ -38,11 +38,14 @@ locals {
     (var.queue_mode && !var.websocket_mode) ? {
       AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TABLE_NAME = var.response_store_table_name
     } : {},
-    # WebSocket modes (async / stream) — push responses over the connection
+    # WebSocket mode (async) — push responses over the connection
     var.websocket_mode ? {
       AK_EXECUTION__MODE                             = var.execution_mode
       AK_WEBSOCKET_API__CONNECTION_TABLE__TABLE_NAME = var.websocket_connections_table_name
       AK_WEBSOCKET_API__ENDPOINT_URL                 = var.websocket_endpoint_url
+    } : {},
+    var.message_type != null ? {
+      AK_EXECUTION__MESSAGE_TYPE = var.message_type
     } : {}
   )
 

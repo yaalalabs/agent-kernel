@@ -5,7 +5,7 @@ from typing import Any, Awaitable, Callable, ClassVar, Coroutine, Dict, Mapping,
 from starlette.requests import Request
 
 from .....core.config import AKConfig
-from .....core.model import ExecutionMode
+from .....core.model import ExecutionMode, ReplyMessageType
 from .....core.util.factory import AKConfigError
 from .....integration.adapter.webhook import WebhookRESTRequestHandler
 from .....pipeline.transport.base import QueueTransportFactory
@@ -114,11 +114,18 @@ class LambdaWebhookGuard:
         return handler
 
     def _check_mode(self) -> None:
-        mode = AKConfig.get().execution.mode
+        execution = AKConfig.get().execution
+        mode = execution.mode
         if mode not in self.REST_MODES:
             raise AKConfigError(
                 f"LambdaWebhookHost serves webhooks in execution.mode rest_sync or rest_async only; got {mode.value if mode else 'unset'}. "
                 "Lambda routes the other modes' events to WSLambdaRouter"
+            )
+        message_type = execution.resolved_message_type
+        if message_type != ReplyMessageType.COMPLETE:
+            raise AKConfigError(
+                f"LambdaWebhookHost serves webhooks with execution.message_type complete only; got {message_type.value}. "
+                "Platform adapters deliver whole messages"
             )
 
     @staticmethod

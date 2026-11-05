@@ -136,9 +136,11 @@ def _environment(monkeypatch):
     AKConfig._reset()
 
 
-def _configure(monkeypatch, mode=None, **env):
+def _configure(monkeypatch, mode=None, message_type=None, **env):
     if mode:
         monkeypatch.setenv("AK_EXECUTION__MODE", mode)
+    if message_type:
+        monkeypatch.setenv("AK_EXECUTION__MESSAGE_TYPE", message_type)
     for name, value in env.items():
         monkeypatch.setenv(name, value)
     AKConfig._reset()
@@ -175,12 +177,12 @@ async def _mcp_call(prompts: list[str], session_id: str) -> list[str]:
 
 class TestA2A:
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("mode", [None, "stream"])
-    async def test_message_send_runs_on_the_runner_and_keeps_the_session(self, monkeypatch, mode):
-        _configure(monkeypatch, mode, AK_A2A__ENABLED="true")
+    @pytest.mark.parametrize("mode, message_type", [(None, None), ("rest_sync", "delta"), ("async", "delta")])
+    async def test_message_send_runs_on_the_runner_and_keeps_the_session(self, monkeypatch, mode, message_type):
+        _configure(monkeypatch, mode, message_type, AK_A2A__ENABLED="true")
         context_id = f"a2a-{uuid.uuid4()}"
 
-        with Pump(stream=mode == "stream") as pump:
+        with Pump(stream=message_type == "delta") as pump:
             replies = await _a2a_send(["first", "second"], context_id)
 
         assert pump.errors == []
@@ -188,14 +190,14 @@ class TestA2A:
         assert CountingRunner.runs == [(PUMP_THREAD, context_id), (PUMP_THREAD, context_id)]
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("mode", [None, "stream"])
-    async def test_a_labelled_reply_arrives_through_the_queue_as_a_data_part(self, monkeypatch, mode):
+    @pytest.mark.parametrize("mode, message_type", [(None, None), ("rest_sync", "delta")])
+    async def test_a_labelled_reply_arrives_through_the_queue_as_a_data_part(self, monkeypatch, mode, message_type):
         """The A2UI hook labels the reply on the runner; the A2A caller gets a data part (#762)."""
-        _configure(monkeypatch, mode, AK_A2A__ENABLED="true", AK_A2UI__ENABLED="true")
+        _configure(monkeypatch, mode, message_type, AK_A2A__ENABLED="true", AK_A2UI__ENABLED="true")
         # System post-hooks are built once per process; rebuild them with A2UI on, and restore after.
         monkeypatch.setattr(Runtime, "_system_post_hooks", None)
 
-        with Pump(stream=mode == "stream") as pump:
+        with Pump(stream=message_type == "delta") as pump:
             [message] = await _a2a_messages(['{"createSurface": {"surfaceId": "s1"}}'], f"a2a-{uuid.uuid4()}")
 
         assert pump.errors == []
@@ -218,12 +220,12 @@ class TestA2A:
 
 class TestMCP:
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("mode", [None, "async", "stream"])
-    async def test_call_tool_runs_on_the_runner_and_keeps_the_session(self, monkeypatch, mode):
-        _configure(monkeypatch, mode, AK_MCP__ENABLED="true", AK_MCP__EXPOSE_AGENTS="true")
+    @pytest.mark.parametrize("mode, message_type", [(None, None), ("async", None), ("rest_sync", "delta"), ("async", "delta")])
+    async def test_call_tool_runs_on_the_runner_and_keeps_the_session(self, monkeypatch, mode, message_type):
+        _configure(monkeypatch, mode, message_type, AK_MCP__ENABLED="true", AK_MCP__EXPOSE_AGENTS="true")
         session_id = f"mcp-{uuid.uuid4()}"
 
-        with Pump(stream=mode == "stream") as pump:
+        with Pump(stream=message_type == "delta") as pump:
             replies = await _mcp_call(["first", "second"], session_id)
 
         assert pump.errors == []

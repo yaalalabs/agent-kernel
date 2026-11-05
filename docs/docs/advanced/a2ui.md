@@ -84,7 +84,7 @@ it has always carried when it is not, so nothing changes for a client that has n
 ## Limits worth knowing before you build on it
 
 **It does not reach a streamed run.** The hook runs on `Runtime.run`, and `Runtime.stream` never
-calls one — so with `execution.mode: stream` the config block does nothing. Agent Kernel logs a
+calls one — so with `execution.message_type: delta` the config block does nothing. Agent Kernel logs a
 warning on the first request rather than leaving you to discover it. Labelling a streamed payload
 means writing an `on_stream_event` hook, which also means holding deltas back until the message
 ends.
