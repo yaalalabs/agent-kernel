@@ -154,3 +154,19 @@ class TestAttachmentStorageTopology:
         """No attachment reaches a store at all; ATTACHMENTS_DISABLED_ERROR refuses it first."""
         self._multimodal(monkeypatch, enabled=False, storage_type="in_memory")
         IntegrationProducer(InMemoryTransport())
+
+
+def test_extra_attributes_are_merged_after_the_integration_and_reply_attributes():
+    transport = InMemoryTransport()
+    IntegrationProducer(transport).enqueue("livekit", _request(requests=[]), {"realtime_end": "true"})
+    [message] = transport.create_consumer(QueueName.INPUT).fetch(1, 1.0)
+
+    assert message.attributes["realtime_end"] == "true"
+    assert message.attributes[ATTR_INTEGRATION] == "livekit"
+    assert message.attributes["reply_channel"] == "C9"
+
+
+@pytest.mark.parametrize("key", [ATTR_INTEGRATION, "reply_channel"])
+def test_an_extra_attribute_that_collides_raises(key):
+    with pytest.raises(ValueError, match="collides"):
+        IntegrationProducer(InMemoryTransport()).enqueue("slack", _request(), {key: "x"})
