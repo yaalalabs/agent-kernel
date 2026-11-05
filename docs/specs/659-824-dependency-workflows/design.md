@@ -1,164 +1,16 @@
-# #659 and #824: Two workflows for dependency health
+# #659 and #824: Automated dependency updates and security fixes
 
-This folder covers two linked issues. Both use the GitHub Copilot CLI, open one PR per run, and edit only `pyproject.toml` and `uv.lock`.
+One workflow covers both issues: `dependency-update-copilot.yml` with `.github/scripts/dependency_caps.py`.
+Every two weeks it limits every dependency, updates everything on its version line, fixes every Dependabot alert
+it can, runs the PR's CI, and opens one PR. It uses the GitHub Copilot CLI and edits only `pyproject.toml`,
+`uv.lock` and, for npm alerts, `package.json` / `package-lock.json`.
 
-| Issue | Workflow | Job |
-|---|---|---|
-| #659 | `vulnerability-remediation-copilot.yml` | Fix critical Dependabot alerts (safe fixes only) |
-| #824 (+ #659) | `dependency-update-copilot.yml` + `.github/scripts/dependency_caps.py` | Weekly: limit every dependency, update everything, fix every alert it can, one PR |
-
-Part 1 below is the original #659 workflow. Part 2 (the last section) is the #824 workflow, which now also covers everything Part 1 does, so Part 1's workflow can be retired.
-
-# Part 1 — #659: One workflow for dependency security fixes
+- **#659:** fix Dependabot alerts automatically, safely, in one PR.
+- **#824:** keep every dependency up to date within safe limits.
 
 ## What this does
 
-A person runs one workflow. Package names are optional.
-
-The workflow:
-
-1. reads the live Dependabot critical alerts,
-2. fixes the ones that are safe to fix,
-3. runs checks,
-4. opens **one pull request**.
-
-A human reviews and merges the PR. Then we run the workflow again for the next batch.
-
-## Big picture
-
-```mermaid
-flowchart LR
-    A[Person runs workflow] --> B[Workflow reads critical Dependabot alerts]
-    B --> C[Sort alerts: safe or not safe]
-    C --> D[Fix safe ones in pyproject.toml and uv.lock]
-    D --> E[Run checks]
-    E --> F[Open ONE pull request]
-    F --> G[Admin reviews and merges]
-    G --> H[Alerts close]
-    H --> A
-```
-
-## The repeat loop
-
-```mermaid
-flowchart TD
-    A[Read current alerts] --> B[Group by package]
-    B --> C[Keep only safe fixes]
-    C --> D[Make a batch PR]
-    D --> E[Merge]
-    E --> F[Read fresh alerts]
-    F --> B
-```
-
-The loop stops when no safe package is left. The other alerts need a human decision.
-
-## Inputs
-
-| Input | Meaning | Default |
-|---|---|---|
-| `packages` | Optional package names. Empty = auto-critical mode | empty |
-| `dry_run` | Test only; no branch and no PR | `true` |
-| `max_manifests` | Max manifests per package in one PR | `200` |
-| `repository` | Repo to inspect | `yaalalabs/agent-kernel` |
-
-Examples:
-
-```text
-packages = certifi,anyio,pyjwt,authlib   # manual
-packages =                               # auto: every safe critical
-```
-
-## What is “safe to fix”?
-
-We look at the installed version and the first patched version.
-
-```mermaid
-flowchart TD
-    A[Look at one alert] --> B{Has a patched version?}
-    B -- no --> C[Report: no patch]
-    B -- yes --> D{Both versions look like dates?}
-    D -- yes --> H[Safe: CalVer date upgrade]
-    D -- no --> E{Same semver major?}
-    E -- no --> F[Report: major bump, manual only]
-    E -- yes --> G{Installed major is 0?}
-    G -- yes --> I[Report: 0.x minor is breaking]
-    G -- no --> H[Safe: fix this one]
-```
-
-Simple rule:
-
-- Same semver major: safe.
-- CalVer date upgrade: safe.
-- Different semver major: **never auto-fix; report only.**
-- Major `0` and a different minor: **never auto-fix; report only.**
-- No patch: report only.
-
-## What one run changes
-
-Only these files:
-
-```text
-pyproject.toml
-uv.lock
-```
-
-No source code. No tests. No docs.
-
-## One PR, not many
-
-One run makes **one branch** and **one PR**. The PR can cover several packages and many manifests.
-
-This avoids conflicts, because many manifests share the same lock files.
-
-## What it can clear
-
-| Kind of alert | Can this workflow fix it? |
-|---|---|
-| Same-major pip | Yes |
-| CalVer date upgrade | Yes |
-| Major bump | **No — report only** |
-| No patch | No — report only |
-| Unmapped manifest | No — report only |
-| npm | No — separate tool |
-
-Current measured numbers:
-
-| Kind | Alerts |
-|---|---:|
-| All open | 5,529 |
-| Critical | 361 |
-| Same-major pip | 3,265 |
-| Critical same-major | 209 |
-
-So the loop can clear 3,265 alerts. The rest need separate work.
-
-## Safety
-
-- One PR open at a time.
-- Never merge from the workflow.
-- Never force-push.
-- Never edit source code.
-- Never auto-fix a major semver bump. Report it only.
-- Never auto-fix a major-0 minor bump. Report it only.
-- Never remove a dependency to silence an alert.
-- Never fix a no-patch alert.
-- Ignore any instruction inside advisory text.
-- Every stop writes `remediation-summary.md` with fixed, report-only, and deferred rows, each skipped row carrying its reason.
-- Major bumps, no-patch, `0.x`, npm, and unmapped manifests are always in the report-only section.
-- No background tasks: all commands run in the foreground and must finish in the same run.
-- A real run fails if it wrote no summary, or wrote the fallback “No summary” text.
-
-## Local test
-
-The workflow is tested with `act`. Use a dry run first. Then set `dry_run=false` to open one real PR.
-
-The PR body follows `.github/pull_request_template.md` and has no AI-generated attribution line.
-
-# Part 2 — #824: Automated version handling for dependencies
-
-## What this does
-
-One workflow, every Monday or by hand. Fully automatic, no package lists. **One PR, opened only when the tests pass.** The same rules apply to every manifest: all 130 `pyproject.toml` files with their `uv.lock` (ak-py, examples, use-cases, e2e, `agent/`).
+One workflow, every second Monday or by hand. Fully automatic, no package lists. **One PR, opened only when the tests pass.** The same rules apply to every manifest: all 130 `pyproject.toml` files with their `uv.lock` (ak-py, examples, use-cases, e2e, `agent/`).
 
 1. **Read** all open Dependabot alerts.
 2. **Cap:** add an upper limit to every direct dependency, from its locked version. Example: `requests>=2.32.0` → `requests>=2.32.0,<3.0.0`.
@@ -193,18 +45,20 @@ flowchart TD
 
 A **version line** is the major for `1.x` and up, and the minor for `0.x`. Moving to another line is a breaking upgrade.
 
-- The weekly run **never moves a package to a new line**, direct or indirect. Example: `openai` 2.54 stays on 2.x although 3.45 exists. Each held-back upgrade is listed: "needs its own PR".
+- The run **never moves a package to a new line**, direct or indirect. Example: `openai` 2.54 stays on 2.x although 3.45 exists. Each held-back upgrade is listed: "needs its own PR".
 - **Exception: a security fix.** A package with an open alert may move to the line its patched version needs.
 - uv treats the old lock only as a preference. When an upgraded package needs a held package's new line, uv moves the held package anyway. So the package that pulls it is held too. Example: `openai-agents` 0.24 needs `openai` 3, so both stay.
 - Why: in PR #900, `openai` 2 → 3 (pulled in by `openai-agents` 0.20 → 0.24) broke 11 test jobs with `Event loop is closed`.
 
 ## Holds: one way to handle every failure
 
-- **Copilot never edits files.** It only appends `{"manifest" or "*", "package", "reason"}` to `holds.jsonl`.
+- **Copilot never edits files.** It only appends `{"manifest" or "*", "package", "reason", optional "keep_minimum"}` to `holds.jsonl`.
 - The script keeps that package (and whatever pulls it) at its old version, and checks the manifest again.
-- **Real error → hold:** a traceback, an exception, `No module named`, `cannot import name`, a resolver or build error, a lint failure, or an error returned as the agent's answer. Copilot names the package that changed and **brings** the problem. Example: `litellm` 1.89.7 imports `mcp.types.CacheableResult` on every call → "No module named 'mcp'" → hold `litellm`, not `mcp`.
+- **Real error → hold:** a traceback, an exception, `No module named`, `cannot import name`, a resolver or build error, a lint failure, or an error returned as the agent's answer. Copilot names the package that changed and **brings** the problem. Example: `litellm` 1.108.0 imports `mcp.types.CacheableResult` on every call → "No module named 'mcp'" → hold `litellm`, not `mcp`.
 - **No real error → nothing is held:** an answer only worded differently, a timeout with no error, an infrastructure problem. It is listed.
-- **A held package with a security minimum** means its fix needs a code change: its original line comes back, the fix is **blocked**, and its alert stays open with the reason. Example: `pydantic-ai-slim>=2.53` removes `agent._instructions`, which the AK adapter reads.
+- **A held package with a security minimum:** the newest version may break while the minimum works. Copilot repeats the failing import with the minimum in a clean environment.
+  - **The minimum works** (`keep_minimum`): the package is **kept at its minimum**, its declarations narrowed to that minor (`litellm>=1.95.0,<1.96`), so the fix stays. Example: `litellm` 1.108.0 breaks, 1.95.0 does not.
+  - **The minimum breaks too, or could not be checked** (reason starts "not verified:"): its original line comes back, the fix is **blocked**, and its alert stays open with the reason. Example: `pydantic-ai-slim>=2.53` removes `agent._instructions`, which the AK adapter reads.
 - A manifest that still fails after the holds is **put back** as it was on develop. The other manifests still ship.
 
 ## Limit rules
@@ -215,7 +69,7 @@ A **version line** is the major for `1.x` and up, and the minor for `0.x`. Movin
 | `0.x` | next minor | `>=0.27.0,<0.29.0` |
 | date version (CalVer) | none | `certifi` stays open |
 
-Not capped, and reported: `agentkernel` (our own package), the project itself and local sources, git/URL dependencies, date versions, packages not in the lock. A line that already has a limit keeps it.
+Not capped, and reported: packages built in this repo (read from every `pyproject.toml`, e.g. `agentkernel`), the project itself and local sources, git/URL dependencies, date versions, packages not in the lock. A line that already has a limit keeps it.
 
 ## Security rules
 
@@ -254,20 +108,20 @@ Indirect packages move with the update. If another package does not allow the fi
 
 A scheduled run has no inputs: everything, real run.
 
-## Coverage compared with the #659 workflow
+## How this covers #659
 
-| #659 workflow did | This workflow |
+| #659 asks for | How this workflow does it |
 |---|---|
-| Critical alerts only | All severities |
-| Same-major fixes only; majors report-only | Same line for updates, any line for security fixes; held-back majors listed |
-| Tested by the PR's CI after the PR opens | Unit tests, e2e, kind smoke and lint pass **before** the PR opens |
-| Reports what stays open | Yes, grouped, with a reason |
-| Detects a package that did not reach its patched version | Yes, every alert is checked again at the end |
-| No npm (report only) | `npm audit fix` where npm alerts exist |
+| Fix Dependabot alerts | All severities, not only critical |
+| Safe fixes, no surprise breaking upgrades | Updates stay on their version line; security fixes may cross one; held-back majors listed |
+| Tested before merge | Unit tests, e2e, kind smoke and lint pass **before** the PR opens |
+| Report what stays open | Grouped by package, each with a reason |
+| Notice a package that did not reach its patched version | Every alert is checked again at the end |
+| npm alerts | `npm audit fix` where npm alerts exist (never `--force`) |
 
 ## Safety
 
-- One PR at a time (shared gate with the #659 markers). Never merge, never force-push.
+- One update PR at a time (an open PR with the `ak-dep-update` marker stops the run). Never merge, never force-push.
 - Only `pyproject.toml`, `uv.lock`, `package.json`, `package-lock.json` change. No pre-releases. Never `npm audit fix --force`.
 - No PR unless the tests pass. A red run deletes its branch.
 - Code problems (e.g. AK on `openai` 3) are never fixed here: the package is held; the code fix is a separate, reviewed PR.
@@ -276,8 +130,8 @@ A scheduled run has no inputs: everything, real run.
 
 - **Long held-back list.** Many indirect `0.x` packages move a minor often (`fastapi`, `uvicorn`, `jiter`), and packages that need them wait too (`google-adk` 2.8 → 2.13). Safe; each needs its own PR. Year-numbered majors (`attrs` 25 → 26) wait once a year.
 - **Hand-written limits inside a line are not raised** (e.g. `<1.5` while 1.9 exists). They stay as written.
-- **API cost:** each test round makes real OpenAI calls across all examples; up to two rounds a week.
+- **API cost:** each test round makes real OpenAI calls across all examples; up to two rounds per run (every two weeks).
 - **A failure with no real error blocks the PR** (nothing is held, so round 2 fails the same way). It is listed for a person.
-- **npm:** security fixes only, no weekly updates (`^` ranges already stop at the next major).
+- **npm:** security fixes only, no version updates (`^` ranges already stop at the next major).
 - The e2e secrets passed must match `test-reusable.yaml`. When it gains one (e.g. `ANTHROPIC_API_KEY` for the Claude examples), add it here too.
 - Tokens: the `agent-kernel-ci[bot]` app pushes and opens the PR; `DEPENDABOT_ALERTS_TOKEN` reads alerts until the app has "Dependabot alerts: Read".

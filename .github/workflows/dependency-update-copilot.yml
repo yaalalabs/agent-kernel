@@ -1,11 +1,11 @@
 name: Dependency Version Update (Copilot)
 
-# Weekly, for every manifest the same way: upper limits, security fixes, and updates on each version
+# Every two weeks, for every manifest the same way: upper limits, security fixes, and updates on each version
 # line (scripts/dependency_caps.py). The branch then runs the same CI jobs a PR runs: unit tests, e2e,
 # kind smoke tests, lint. The PR opens only when they pass. On a failure Copilot names the package
 # behind each real error (it edits nothing), the script holds it back, and the tests run once more.
 #
-#   update -> e2e-1 + kind-1 + lint-1 -> (failed) fix-1 -> e2e-2 + kind-2 + lint-2 -> finish
+#   when -> update -> e2e-1 + kind-1 + lint-1 -> (failed) fix-1 -> e2e-2 + kind-2 + lint-2 -> finish
 
 on:
   # TEMPORARY: test runs from the feature branch (a push run is a real run). REMOVE before merging.
@@ -13,7 +13,7 @@ on:
     branches:
       - feature/659-copilot-agent-for-automated-vulnerability-remediation-and-pr-creation
   schedule:
-    - cron: '0 3 * * 1' # Monday 03:00 UTC
+    - cron: '0 3 * * 1' # every Monday 03:00 UTC; the `when` job lets every second one through
   workflow_dispatch:
     inputs:
       paths:
@@ -41,14 +41,36 @@ env:
   REPO: ${{ github.repository }}
   RUN_ID: ${{ github.run_id }}
   BRANCH: deps/update-batch-${{ github.run_id }}
+  BASE_BRANCH: develop # the branch the update starts from and the PR targets
   MANIFEST_PATHS: ${{ inputs.paths }}
   STATE_DIR: /tmp/dep-state
   # Inside the state folder: the later jobs get the same script with the state artifact. Their
-  # checkout is the update branch, which starts from develop and may not have this script yet.
+  # checkout is the update branch, which starts from $BASE_BRANCH and may not have this script yet.
   SCRIPT: /tmp/dep-state/dependency_caps.py
 
 jobs:
+  # Cron cannot say "every two weeks", so a scheduled run goes ahead only on even weeks since 1970.
+  # Mondays are exactly one week apart, so the parity alternates (no ISO week 53 skip). By hand or on
+  # push it always runs.
+  when:
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.week.outputs.run }}
+    steps:
+      - id: week
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT" != schedule ] || [ $(( $(date -u +%s) / 604800 % 2 )) -eq 0 ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Odd week: skipped (runs every two weeks)." | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
   update:
+    needs: when
+    if: needs.when.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 240
     env:
@@ -57,15 +79,13 @@ jobs:
       pushed: ${{ steps.push.outputs.pushed }}
       sha: ${{ steps.push.outputs.sha }}
     steps:
-      # The agent-kernel-ci[bot] app pushes and opens the PR, so the PR's CI runs. Falls back to GITHUB_TOKEN.
+      # The GitHub App (APP_ID) pushes and opens the PR, so the PR's CI runs. Falls back to GITHUB_TOKEN.
       - id: app-token
         continue-on-error: true
         uses: actions/create-github-app-token@v3
         with:
           app-id: ${{ secrets.APP_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
-          owner: yaalalabs
-          repositories: agent-kernel
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
@@ -80,7 +100,7 @@ jobs:
       - uses: actions/setup-node@v5
       - run: npm install -g @github/copilot
 
-      # One update PR at a time (the #659 workflow's markers too: they edit the same files).
+      # One update PR at a time.
       - name: Check for an open update PR
         id: gate
         env:
@@ -88,7 +108,7 @@ jobs:
         run: |
           set -euo pipefail
           open=$(gh pr list --repo "$REPO" --state open --limit 500 --json number,body \
-            --jq '[.[] | select((.body // "") | test("ak-(vuln-(remediation|bulk)|dep-update)"))] | map("#\(.number)") | join(" ")')
+            --jq '[.[] | select((.body // "") | test("ak-dep-update"))] | map("#\(.number)") | join(" ")')
           if [ "$DRY_RUN" = false ] && [ -n "$open" ]; then
             echo "An update PR is already open ($open). One at a time." | tee update-summary.md
             echo "open=true" >> "$GITHUB_OUTPUT"
@@ -99,16 +119,16 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
           COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_REQUEST_TOKEN }}
-          # Reads Dependabot alerts until the agent-kernel-ci app has "Dependabot alerts: Read".
+          # Reads Dependabot alerts until the GitHub App has "Dependabot alerts: Read".
           ALERTS_TOKEN: ${{ secrets.DEPENDABOT_ALERTS_TOKEN }}
         run: |
           set -euo pipefail
           [ -n "$COPILOT_GITHUB_TOKEN" ] || { echo "COPILOT_REQUEST_TOKEN is not set."; exit 1; }
           mkdir -p "$STATE_DIR"
-          cp .github/scripts/dependency_caps.py "$SCRIPT" # before the checkout of develop, which may not have it
+          cp .github/scripts/dependency_caps.py "$SCRIPT" # before the checkout of $BASE_BRANCH, which may not have it
           dep() { uv run --no-project --with packaging python "$SCRIPT" --paths "$MANIFEST_PATHS" --state "$STATE_DIR" "$@"; }
-          git fetch origin develop
-          git checkout --force -B "$BRANCH" origin/develop
+          git fetch origin "$BASE_BRANCH"
+          git checkout --force -B "$BRANCH" "origin/$BASE_BRANCH"
           dep snapshot
           dep alerts
           dep cap
@@ -128,14 +148,15 @@ jobs:
         if: steps.gate.outputs.open != 'true' && env.DRY_RUN == 'false'
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
+          BOT: ${{ steps.app-token.outputs.app-slug || 'github-actions' }}
         run: |
           set -euo pipefail
           if [ "$(jq -r .has_changes "$STATE_DIR/summary.json")" != true ]; then
             echo "pushed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          git config user.name "agent-kernel-ci[bot]"
-          git config user.email "agent-kernel-ci[bot]@users.noreply.github.com"
+          git config user.name "$BOT[bot]"
+          git config user.email "$BOT[bot]@users.noreply.github.com"
           git diff --name-only | grep -E '(^|/)(pyproject\.toml|uv\.lock|package(-lock)?\.json)$' | xargs git add
           git commit -m "$(jq -r .title "$STATE_DIR/summary.json")"
           gh auth setup-git
@@ -208,8 +229,6 @@ jobs:
         with:
           app-id: ${{ secrets.APP_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
-          owner: yaalalabs
-          repositories: agent-kernel
       - uses: actions/checkout@v5
         with:
           ref: ${{ env.BRANCH }}
@@ -246,6 +265,7 @@ jobs:
         id: push
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
+          BOT: ${{ steps.app-token.outputs.app-slug || 'github-actions' }}
         run: |
           set -euo pipefail
           files=$(git diff --name-only | grep -E '(^|/)(pyproject\.toml|uv\.lock)$' || true)
@@ -254,8 +274,8 @@ jobs:
             echo "changed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          git config user.name "agent-kernel-ci[bot]"
-          git config user.email "agent-kernel-ci[bot]@users.noreply.github.com"
+          git config user.name "$BOT[bot]"
+          git config user.email "$BOT[bot]@users.noreply.github.com"
           echo "$files" | xargs git add
           git commit -m "chore(deps): hold back packages that broke the tests"
           gh auth setup-git
@@ -275,7 +295,8 @@ jobs:
   # ---- Round 2: the same jobs again, after the holds ----
   e2e-2:
     needs: fix-1
-    if: needs.fix-1.outputs.changed == 'true'
+    # always(): without it GitHub adds success(), which checks every earlier job, and round 1 failed.
+    if: always() && needs.fix-1.outputs.changed == 'true'
     permissions:
       contents: read
     uses: ./.github/workflows/test-reusable.yaml
@@ -292,7 +313,8 @@ jobs:
       SLACK_SIGNING_SECRET: ${{ secrets.SLACK_SIGNING_SECRET }}
   kind-2:
     needs: fix-1
-    if: needs.fix-1.outputs.changed == 'true'
+    # always(): without it GitHub adds success(), which checks every earlier job, and round 1 failed.
+    if: always() && needs.fix-1.outputs.changed == 'true'
     permissions:
       contents: read
     uses: ./.github/workflows/chart-test.yaml
@@ -302,7 +324,8 @@ jobs:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
   lint-2:
     needs: fix-1
-    if: needs.fix-1.outputs.changed == 'true'
+    # always(): without it GitHub adds success(), which checks every earlier job, and round 1 failed.
+    if: always() && needs.fix-1.outputs.changed == 'true'
     permissions:
       contents: read
     uses: ./.github/workflows/code-quality.yml
@@ -321,8 +344,6 @@ jobs:
         with:
           app-id: ${{ secrets.APP_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
-          owner: yaalalabs
-          repositories: agent-kernel
       - uses: actions/download-artifact@v4
         with:
           name: dep-state
@@ -336,7 +357,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ "$ROUND_1" = "success success success" ] || [ "$ROUND_2" = "success success success" ]; then
-            url=$(gh pr create --repo "$REPO" --base develop --head "$BRANCH" \
+            url=$(gh pr create --repo "$REPO" --base "$BASE_BRANCH" --head "$BRANCH" \
               --title "$(jq -r .title "$STATE_DIR/summary.json")" --body-file "$STATE_DIR/pr-body.md")
             { echo "## PR opened: $url"; echo; cat "$STATE_DIR/update-summary.md"; } >> "$GITHUB_STEP_SUMMARY"
             exit 0
@@ -344,8 +365,13 @@ jobs:
           failed=$(GH_TOKEN="$ACTIONS_TOKEN" gh api --paginate "repos/$REPO/actions/runs/$RUN_ID/jobs?per_page=100" \
             --jq '.jobs[] | select(.conclusion == "failure") | "- " + .name' | grep -E '^- (e2e|kind|lint)-[12] / ' || true)
           gh api -X DELETE "repos/$REPO/git/refs/heads/$BRANCH" || true
+          if [ "$ROUND_2" = "skipped skipped skipped" ]; then
+            why="round 1 failed and nothing could be held back (or the fix job failed), so round 2 did not run"
+          else
+            why="the tests still failed after the holds"
+          fi
           {
-            echo "## No PR: the tests still failed, so \`$BRANCH\` was deleted"
+            echo "## No PR: $why, so \`$BRANCH\` was deleted"
             echo "Round 1: $ROUND_1. Round 2: $ROUND_2."
             echo; echo "### Failed jobs"; echo "${failed:-(none found; a job may have been cancelled)}"
             echo; cat "$STATE_DIR/update-summary.md"

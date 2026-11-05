@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Weekly dependency update for Agent Kernel (issues #659, #824).
+"""Dependency update for Agent Kernel, every two weeks (issues #659, #824).
 
 Every pyproject.toml with a uv.lock gets the same treatment:
 
@@ -9,7 +9,8 @@ Every pyproject.toml with a uv.lock gets the same treatment:
     secure    raise every alerted direct dependency to its patched version
     update    uv lock --upgrade on each version line, then uv sync (does it resolve and install?)
     failures  collect what failed, for Copilot: the local checks, or this run's failed CI jobs (--jobs)
-    hold      hold back the packages Copilot named in holds.jsonl; check those manifests again
+    hold      hold back the packages Copilot named in holds.jsonl (a security package at its minimum
+              when Copilot checked that it works, else blocked); check those manifests again
     finalize  put back every manifest that still fails
     npm       npm audit fix where npm alerts exist (never --force), then npm ci and build
     report    write the PR body and the run summary
@@ -40,16 +41,16 @@ from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
 
-NEVER_CAP = {"agentkernel"}  # our own package follows the repo
 CALVER_MIN_MAJOR = 2000  # a first version part this high is a date (2026.10.1), not a major
 UPPER_OPERATORS = {"<", "<=", "~=", "==", "==="}
 TIMEOUT_SECONDS = 1800
 DEPENDENCY_FILES = re.compile(r"(^|/)(pyproject\.toml|uv\.lock|package\.json|package-lock\.json)$")
+PINS_FILE = "pins.json"  # manifest -> {package: version}: held at its security minimum, not at develop's version
 
 PROMPT = """\
-You find the package behind each failure of the weekly dependency update. Then stop.
+You find the package behind each failure of the dependency update. Then stop.
 
-Read /tmp/dep-state/failures.json. Each entry has: where it failed (a local install check, or a
+Read {state}/failures.json. Each entry has: where it failed (a local install check, or a
 CI job: unit tests, e2e example, kind smoke test, lint), the manifest (empty when the job tests no
 single manifest), base_commit, the full log path, an error excerpt, the locked version changes,
 the security minimums, and the packages already held back. For an empty manifest, find the folder
@@ -61,28 +62,36 @@ Never print tokens.
 For each failure:
 1. Look for a real error: a traceback, an exception, "No module named", "cannot import name",
    a resolver or build error, a lint/format failure, or an error returned as the agent's answer
-   (for example "Received: Error: Event loop is closed").
+   (the test prints the error text instead of a normal answer).
 2. Find the package whose new version causes it. Follow the traceback's site-packages/<package>/
    paths and compare them with the version changes. You may read lock files and PyPI metadata.
    Name the package that changed and brings the problem, not the one that only shows it.
-   Example: litellm 1.89.7 imports mcp.types.CacheableResult on every call, so an example fails
-   with "No module named 'mcp'": name litellm, not mcp.
-3. Append ONE line of JSON to /tmp/dep-state/holds.jsonl:
-   {"manifest": "examples/cli/adk/pyproject.toml", "package": "litellm", "reason": "1.89.7 imports mcp.types.CacheableResult on every call; No module named 'mcp'"}
+   Example (made up): acme-client 3.4.0 imports acme_plugins.cache on every call, so an example
+   fails with "No module named 'acme_plugins'": name acme-client, not acme-plugins.
+3. Append ONE line of JSON to {state}/holds.jsonl:
+   {"manifest": "examples/cli/demo/pyproject.toml", "package": "acme-client", "reason": "3.4.0 imports acme_plugins.cache on every call; No module named 'acme_plugins'"}
    Use "manifest": "*" when the package causes failures in several manifests, or the job has no
-   manifest. Keep the reason short and factual: what breaks, from which version.
-4. A package with a security minimum may be named only when every version at or above the
-   minimum breaks (the code needs a change). Say so in the reason.
+   manifest. Keep the reason short and factual: what breaks, from which version. Only state what
+   you saw in a log or checked yourself.
+4. A package with a security minimum: the version that broke is often newer than the minimum, and
+   the minimum itself may work. Check the minimum (the highest one listed for that package) by
+   repeating the failing import in a clean environment, in /tmp, in the foreground, for example:
+     cd /tmp && uv run --no-project --with "acme-client==3.1.0" python -c "import acme_client.cache"
+   Add --with for any other package the error names, at the version in the failing lock.
+   - The minimum works: add "keep_minimum": true to the line. The script keeps the package at its
+     minimum, so the security fix stays and the tests run again.
+   - The minimum breaks the same way: leave keep_minimum out and say so in the reason. The fix is
+     blocked (the code needs a change).
+   - You could not check: leave keep_minimum out and start the reason with "not verified:".
 5. No real error (an answer only worded differently, a timeout with no error, an infrastructure
    problem such as a port-forward, cluster, network, rate limit or missing secret): write nothing.
 
 Run every command in the foreground.
 
 HARD RULES
-- Do not edit any file. Only append JSON lines to /tmp/dep-state/holds.jsonl.
+- Do not edit any file. Only append JSON lines to {state}/holds.jsonl.
 - Never run git commit or git push, and never open a PR.
-- Never name a package whose version did not change, except a package with a security minimum that
-  the code cannot use (rule 4).
+- Never name a package whose version did not change.
 - When unsure, write nothing for that failure.
 """
 
@@ -221,6 +230,19 @@ class Repo:
         found = [Manifest(self.root, path) for path in self.tracked("*pyproject.toml")]
         return sorted((m for m in found if m.lock.exists()), key=lambda m: m.relative)
 
+    def own_packages(self) -> set[str]:
+        """The names of every project in this repo (all of it, not only --paths): they follow the repo,
+        so they get no upper limit and no security bump. Example: a library in this repo that the examples depend on."""
+        found = set()
+        for path in self.git("ls-files", "*pyproject.toml").stdout.split():
+            try:
+                name = read_toml(self.root / path).get("project", {}).get("name")
+            except (OSError, tomllib.TOMLDecodeError):
+                continue
+            if name:
+                found.add(canonicalize_name(name))
+        return found
+
     def unlocked(self) -> list[str]:
         return [p for p in self.tracked("*pyproject.toml") if not (self.root / p).with_name("uv.lock").exists()]
 
@@ -243,7 +265,7 @@ class State:
 
     RUN_FILES = (
         "alerts.json", "alerts-error.json", "changes.json", "results.json", "held.json", "holds.json",
-        "holds.jsonl", "failures.json", "reverted.json", "npm.json",
+        "holds.jsonl", "failures.json", "reverted.json", "npm.json", PINS_FILE,
     )  # fmt: skip
 
     def __init__(self, directory: Path):
@@ -334,19 +356,22 @@ class Alerts:
 class Capper:
     """Command `cap`: an upper limit for every direct dependency, from its locked version."""
 
-    def __init__(self, manifests: list[Manifest], state: State):
+    def __init__(self, manifests: list[Manifest], state: State, own_packages: set[str]):
         self.manifests = manifests
         self.state = state
+        self.own_packages = own_packages
 
     @staticmethod
-    def why_not(text: str, name: str | None, own: set[str], locked: dict[str, str]) -> str | None:
+    def why_not(
+        text: str, name: str | None, own: set[str], locked: dict[str, str], repo_packages: frozenset[str] = frozenset()
+    ) -> str | None:
         """Why a dependency gets no limit ("" = it already has one); None when it gets one."""
         if name is None:
             return "not a valid requirement"
-        if name in NEVER_CAP:
-            return "our own package; it follows the repo"
         if name in own:
             return "the project itself or a local source"
+        if name in repo_packages:
+            return "a package built in this repo; it follows the repo"
         requirement = Requirement(text)
         if any(spec.operator in UPPER_OPERATORS for spec in requirement.specifier):
             return ""
@@ -368,7 +393,7 @@ class Capper:
             own = {manifest.project_name(), *(canonicalize_name(s) for s in sources)}
             for requirement in manifest.requirements():
                 name = name_of(requirement)
-                reason = self.why_not(requirement, name, own, locked)
+                reason = self.why_not(requirement, name, own, locked, frozenset(self.own_packages))
                 base = {"manifest": manifest.relative, "package": name or requirement, "old": requirement}
                 if reason:
                     changes.append(dict(base, kind="not_limited", note=reason))
@@ -391,9 +416,10 @@ class Capper:
 class Securer:
     """Command `secure`: every alerted direct dependency requires its patched version. Wins over any limit."""
 
-    def __init__(self, manifests: list[Manifest], state: State):
+    def __init__(self, manifests: list[Manifest], state: State, own_packages: set[str]):
         self.manifests = manifests
         self.state = state
+        self.own_packages = own_packages
 
     @staticmethod
     def secure(text: str, patched: str) -> str | None:
@@ -416,7 +442,10 @@ class Securer:
         allowed = [c for c in ceilings if Requirement(f"x{c}").specifier.contains(target)]
         if floors and all(Version(s.version) >= target for s in floors) and len(allowed) == len(ceilings):
             return None
-        clauses = [f">={target}", *(allowed[:1] or [f"<{VersionLine.cap(target)}"]), *others]
+        # ~= was a narrow range on purpose (foo~=1.89.2: 1.89.x only). Keep that width at the target.
+        narrow = [s.version for s in specs if s.operator == "~="]
+        fallback = Securer.same_width_ceiling(narrow[0], target) if narrow else VersionLine.cap(target)
+        clauses = [f">={target}", *(allowed[:1] or [f"<{fallback}"]), *others]
         return f"{requirement.name}{extras}{','.join(clauses)}{tail}"
 
     @staticmethod
@@ -427,6 +456,24 @@ class Securer:
         head[-1] += 1
         return ".".join(str(p) for p in head)
 
+    @staticmethod
+    def same_width_ceiling(spec_version: str, target: Version) -> str:
+        """The ceiling of ~= at `target` with the spec's precision: ~=1.89.2 at 1.95.0 -> 1.96; ~=1.89 -> 2."""
+        width = max(len(Version(spec_version).release), 2)
+        release = [*target.release, 0, 0][:width]
+        return Securer.compatible_ceiling(".".join(str(p) for p in release))
+
+    @staticmethod
+    def narrow(text: str, minimum: str) -> str:
+        """The requirement kept on the minimum's minor: foo>=1.95.0,<2.0.0 -> foo>=1.95.0,<1.96."""
+        requirement, target = Requirement(text), Version(minimum)
+        extras = f"[{','.join(sorted(requirement.extras))}]" if requirement.extras else ""
+        _, separator, marker = text.partition(";")
+        tail = f"; {marker.strip()}" if separator else ""
+        others = [str(s) for s in requirement.specifier if s.operator == "!=" and str(s) != f"!={target}"]
+        ceiling = Securer.same_width_ceiling(f"{target.major}.{target.minor}.0", target)
+        return f"{requirement.name}{extras}{','.join([f'>={target}', f'<{ceiling}', *others])}{tail}"
+
     def run(self) -> int:
         alerts, changes = Alerts(self.state), []
         for manifest in self.manifests:
@@ -434,7 +481,9 @@ class Securer:
             text = original_text = manifest.pyproject.read_text(encoding="utf-8")
             for requirement in manifest.requirements():
                 name = name_of(requirement)
-                new = self.secure(requirement, needed[name]) if name in needed and name not in NEVER_CAP else None
+                new = (
+                    self.secure(requirement, needed[name]) if name in needed and name not in self.own_packages else None
+                )
                 if new and new != requirement:
                     text = replace_requirement(text, requirement, new)
                     changes.append(
@@ -459,15 +508,24 @@ class LockGuard:
     uv keeps the old lock only as a preference: when an upgraded package needs a held package's new
     line, uv moves the held package anyway. So the package that pulls it is held too, round by round,
     until nothing crosses a line. A package with a security minimum is never held by the line rule.
+    A pinned package is held at its pin (its security minimum) instead of its version before.
     """
 
     MAX_ROUNDS = 6
 
-    def __init__(self, manifest: Manifest, before: dict[str, str], base_lock: str | None, security: set[str]):
+    def __init__(
+        self,
+        manifest: Manifest,
+        before: dict[str, str],
+        base_lock: str | None,
+        security: set[str],
+        pins: dict[str, str] | None = None,
+    ):
         self.manifest = manifest
         self.before = before
         self.base_lock = base_lock
         self.security = security
+        self.pins = {n: v for n, v in (pins or {}).items() if n in before}
 
     def run(self, log: Path, upgrade: bool, hold: set[str]) -> tuple[int, list[dict]]:
         """Return (exit code, one entry per held package that wanted to move)."""
@@ -476,14 +534,14 @@ class LockGuard:
         wanted = current = self.manifest.locked()
         if self.base_lock is None:
             return 0, []
-        pending, held = {n for n in hold if n in self.before}, set()
+        pending, held = {n for n in hold if n in self.before} | set(self.pins), set()
         for _ in range(self.MAX_ROUNDS):
             crossing = {
                 n
                 for n, v in current.items()
                 if n in self.before and n not in self.security and VersionLine.crosses(self.before[n], v)
             }
-            moved_anyway = {n for n in held if current.get(n) != self.before[n]}
+            moved_anyway = {n for n in held if current.get(n) != self.pins.get(n, self.before[n])}
             new = (crossing | pending | self.pullers(moved_anyway)) - held
             if not new:
                 break
@@ -505,11 +563,16 @@ class LockGuard:
         ]
 
     def relock(self, held: set[str], log: Path) -> int:
-        """Start again from the base lock; let everything move except the held packages."""
+        """Start again from the base lock; let everything move except the held packages.
+
+        A pinned package goes to exactly its pin (`--upgrade-package name==version`, which may move down).
+        """
         self.manifest.lock.write_text(self.base_lock, encoding="utf-8")
         command = ["uv", "lock"]
         for name in sorted(set(self.before) - held - {self.manifest.project_name()}):
             command += ["--upgrade-package", name]
+        for name in sorted(held & set(self.pins)):
+            command += ["--upgrade-package", f"{name}=={self.pins[name]}"]
         return CommandRunner.run(command, self.manifest.directory, log)
 
     def pullers(self, targets: set[str]) -> set[str]:
@@ -544,7 +607,8 @@ class Checker:
         log.write_text("")
         base_lock = self.repo.show(self.state.commit, manifest.lock_relative)
         security = set(self.alerts.patched_for(manifest)) - hold
-        code, entries = LockGuard(manifest, self.snapshot.get(manifest.relative, {}), base_lock, security).run(
+        pins = self.state.load(PINS_FILE, {}).get(manifest.relative, {})
+        code, entries = LockGuard(manifest, self.snapshot.get(manifest.relative, {}), base_lock, security, pins).run(
             log, upgrade, hold
         )
         held = {e["package"]: e for e in previous if e["package"] in hold}
@@ -590,7 +654,7 @@ class Checker:
     def block_unsatisfiable(self, manifests: list[Manifest], results: dict) -> list[Manifest]:
         """`uv lock` found no solution because of a security minimum we raised: block that fix, keep the rest.
 
-        Deterministic, no AI. Example: the released agentkernel pins pydantic-ai-slim 2.13.x, so the
+        Deterministic, no AI. Example: a released library in the lock pins foo 2.13.x, so the
         patched 2.53 cannot be installed with it; that needs a code change and a release, not a version.
         """
         changes, retry = self.state.load("changes.json", []), []
@@ -636,7 +700,14 @@ class Holds:
                 continue
             if manifest != "*" and not manifest.endswith("pyproject.toml"):
                 manifest = str(Path(manifest.removesuffix("uv.lock")) / "pyproject.toml")
-            found.append({"manifest": manifest, "package": package, "reason": str(item.get("reason", ""))[:300]})
+            found.append(
+                {
+                    "manifest": manifest,
+                    "package": package,
+                    "reason": str(item.get("reason", ""))[:300],
+                    "keep_minimum": item.get("keep_minimum") is True,
+                }
+            )
         return found
 
     @staticmethod
@@ -664,24 +735,50 @@ class Holds:
         kept = [c for c in changes if not (pair(c) and c["kind"] == "security")]
         return [*kept, {"kind": "blocked", "manifest": manifest.relative, "package": package, "note": reason}]
 
+    @staticmethod
+    def narrow(manifest: Manifest, package: str, minimum: str) -> None:
+        """Keep each declaration of a pinned package on the minimum's minor, so a build that resolves
+        again (an example built against a local wheel of a library in this repo) cannot pull the version that broke."""
+        text = original = manifest.pyproject.read_text(encoding="utf-8")
+        for current in manifest.requirements():
+            requirement = Requirement(current) if name_of(current) == package else None
+            if (
+                requirement is None
+                or requirement.url
+                or any(s.operator in {"==", "==="} for s in requirement.specifier)
+            ):
+                continue
+            text = replace_requirement(text, current, Securer.narrow(current, minimum))
+        if text != original:
+            manifest.pyproject.write_text(text, encoding="utf-8")
+
     def run(self) -> int:
         snapshot, saved = self.state.load("snapshot.json", {}), self.state.load("holds.json", {})
+        pins = self.state.load(PINS_FILE, {})
         alerts, changes = Alerts(self.state), self.state.load("changes.json", [])
-        new: dict[str, dict[str, str]] = {}
+        new: dict[str, dict[str, dict]] = {}
         for request in self.requests():
             for relative in list(self.manifests) if request["manifest"] == "*" else [request["manifest"]]:
                 manifest = self.manifests.get(relative)
                 before = snapshot.get(relative, {}).get(request["package"])
                 if manifest and before and manifest.locked().get(request["package"]) != before:
-                    new.setdefault(relative, {})[request["package"]] = request["reason"]
-        for relative, packages in new.items():
-            security = alerts.patched_for(self.manifests[relative])
-            for package, reason in packages.items():
-                if package in security:
-                    changes = self.block(self.repo, self.state, self.manifests[relative], package, reason, changes)
-            saved[relative] = {**saved.get(relative, {}), **packages}
+                    new.setdefault(relative, {})[request["package"]] = request
+        for relative, requests in new.items():
+            manifest, security = self.manifests[relative], alerts.patched_for(self.manifests[relative])
+            for package, request in requests.items():
+                minimum = parse_version(security.get(package))
+                locked = parse_version(manifest.locked().get(package))
+                if minimum and request["keep_minimum"] and (locked is None or locked > minimum):
+                    # The newer version broke, the minimum works: keep the fix, at the minimum.
+                    pins.setdefault(relative, {})[package] = str(minimum)
+                    self.narrow(manifest, package, str(minimum))
+                elif minimum:
+                    pins.get(relative, {}).pop(package, None)  # the minimum broke too
+                    changes = self.block(self.repo, self.state, manifest, package, request["reason"], changes)
+            saved[relative] = {**saved.get(relative, {}), **{p: r["reason"] for p, r in requests.items()}}
         self.state.save("changes.json", changes)
         self.state.save("holds.json", saved)
+        self.state.save(PINS_FILE, pins)
         self.state.path("holds.jsonl").unlink(missing_ok=True)
         targets = [self.manifests[relative] for relative in new]
         holds = {relative: set(packages) for relative, packages in saved.items()}
@@ -711,7 +808,8 @@ class CopilotFix:
         if not self.state.load("failures.json", []):
             print("no failures to fix")
             return 0
-        if subprocess.run([*self.COMMAND, PROMPT], cwd=self.repo.root, check=False).returncode:
+        prompt = PROMPT.replace("{state}", str(self.state.directory.resolve()))
+        if subprocess.run([*self.COMMAND, prompt], cwd=self.repo.root, check=False).returncode:
             print("WARNING: Copilot did not finish cleanly; holding whatever it named.")
         return Holds(self.repo, self.state, self.workers).run()
 
@@ -720,14 +818,15 @@ class Failures:
     """Command `failures`: what failed, for Copilot. Prints only the count (the workflow reads stdout).
 
     Without --jobs: the manifests failing their local check. With --jobs: this run's failed CI jobs
-    whose name starts with one of those caller job ids (e.g. `e2e-1 / e2e-tests (...)`).
+    whose name starts with one of those caller job ids (e.g. `e2e-1 / ...`). A job that names a
+    manifest folder in its name (a matrix job per example) gets that manifest; others get none, and
+    Copilot finds the folder from the log.
     """
 
-    # The e2e matrix puts the example path in the job name; other jobs (kind, unit tests, lint) get none.
-    E2E_PATH = re.compile(r"e2e-tests \(\d+, [^,]+, ([^,]+),")
+    # Lines worth showing first; Copilot also gets the full log.
     ERROR = re.compile(
-        r"Traceback|Error|Exception|FAILED|No module named|cannot import|exit code|Received:|"
-        r"never became healthy|site-packages/|would reformat"
+        r"Traceback|Error|Exception|FAILED|No module named|cannot import|exit code|site-packages/|"
+        r"healthy|would reformat|timed out"
     )
     TIMESTAMP = re.compile(r"^\S+Z ")
     ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")  # terminal colour codes in job logs
@@ -789,9 +888,19 @@ class Failures:
                 continue
             log = self.state.path(f"logs/ci-{job['id']}.log")
             log.write_text(self.job_log(job["id"]))
-            found = self.E2E_PATH.search(job["name"])
-            entries.append(self.entry(job["name"], f"{found.group(1).strip()}/pyproject.toml" if found else "", log))
+            entries.append(self.entry(job["name"], self.manifest_in(job["name"]), log))
         return entries
+
+    def manifest_in(self, job_name: str) -> str:
+        """The manifest whose folder the job name mentions (the longest, so `cli/adk` is not `cli/adk_context`)."""
+        found = [
+            m.relative
+            for m in self.repo.manifests()
+            if re.search(
+                rf"(?<![\w./-]){re.escape(str(m.directory.relative_to(self.repo.root)))}/?(?![\w./-])", job_name
+            )
+        ]
+        return max(found, key=len, default="")
 
     def run(self) -> int:
         if self.jobs:
@@ -993,6 +1102,15 @@ class Reporter:
             if change["kind"] == "blocked":
                 grouped.setdefault((change["package"], change["note"]), set()).add(change["manifest"])
         blocked = [f"- `{p}`: {note} ({len(m)} manifest(s))" for (p, note), m in sorted(grouped.items())]
+        reasons, pinned_groups = self.state.load("holds.json", {}), {}
+        for relative, packages in self.state.load(PINS_FILE, {}).items():
+            for package, version in ([] if relative in self.reverted else packages.items()):
+                key = (package, version, reasons.get(relative, {}).get(package, ""))
+                pinned_groups.setdefault(key, set()).add(relative)
+        pinned = [
+            f"- `{p}` kept at {v}, the lowest patched version (newer ones broke a check: {r}) ({len(m)} manifest(s))"
+            for (p, v, r), m in sorted(pinned_groups.items())
+        ]
         rows, indirect = self.version_rows(changed_dirs)
         fixed, still_open = self.alert_status()
         held_failed, held_line = self.held_lines()
@@ -1008,6 +1126,7 @@ class Reporter:
 
         notes = [
             *section("Held back because a check failed", held_failed),
+            *section("Security fixes kept at the lowest patched version", pinned),
             *section("Security fixes blocked (need a code change)", blocked),
             *section("Put back as before", put_back),
             *section(
@@ -1019,7 +1138,7 @@ class Reporter:
         body = [
             "## Description",
             (
-                f"{warning}Weekly dependency update. {caps} upper limits added, {secured} moved to a patched "
+                f"{warning}Dependency update (every two weeks). {caps} upper limits added, {secured} moved to a patched "
                 f"version, {len(rows)} direct dependencies updated ({indirect} indirect), each on its version line. "
                 f"{fixed} open Dependabot alerts fixed; {len(still_open)} groups still open."
             ),
@@ -1100,7 +1219,11 @@ def main() -> int:
     parser.add_argument("--root", default=".", help="repository root")
     parser.add_argument("--state", default="/tmp/dep-state", help="state directory")
     parser.add_argument("--paths", default="", help="comma-separated path prefixes (empty = everything)")
-    parser.add_argument("--repo", default=os.environ.get("REPO", "yaalalabs/agent-kernel"), help="owner/name on GitHub")
+    parser.add_argument(
+        "--repo",
+        default=os.environ.get("REPO") or os.environ.get("GITHUB_REPOSITORY", ""),
+        help="owner/name on GitHub (default: $REPO, else $GITHUB_REPOSITORY)",
+    )
     parser.add_argument("--run-id", default="local", help="the workflow run id (failures --jobs, report)")
     parser.add_argument("--jobs", default="", help="failures: caller job ids to read failed CI jobs from, e.g. e2e-1")
     parser.add_argument("--workers", type=int, default=4)
@@ -1114,8 +1237,8 @@ def main() -> int:
     run = {
         "snapshot": lambda: Snapshotter(repo, state).run(),
         "alerts": lambda: Alerts.fetch(state, args.repo),
-        "cap": lambda: Capper(repo.manifests(), state).run(),
-        "secure": lambda: Securer(repo.manifests(), state).run(),
+        "cap": lambda: Capper(repo.manifests(), state, repo.own_packages()).run(),
+        "secure": lambda: Securer(repo.manifests(), state, repo.own_packages()).run(),
         "update": lambda: Checker(repo, state, args.workers).run(repo.manifests(), upgrade=True, holds={}),
         "failures": lambda: Failures(repo, state, args.repo, args.run_id, split(args.jobs)).run(),
         "hold": lambda: Holds(repo, state, args.workers).run(),
