@@ -82,7 +82,8 @@ class AgentRunner:
 
         The ``user_id`` guard ``StreamAgentRunner._process_run`` applies does not belong here — that is
         the WebSocket-entered marker, and AG-UI chunks go to the response store, never to a socket
-        the gateway owns. Thread recording is likewise absent: ``ATTR_AGUI`` is not ``ATTR_THREAD``.
+        the gateway owns. The reply is recorded to the conversation thread only when the edge set
+        ``ATTR_THREAD``, after the terminal chunk is sent, as ``_record_thread_reply`` requires.
 
         The run goes through the handler prepared here rather than a ``ChatService`` wrapper, which
         would resolve its own and leave the applied envelope on a session the run never sees. The
@@ -94,6 +95,7 @@ class AgentRunner:
         """
         from ..integration.agui.run_input import AGUIRunEnvelope, AGUIRunRequest
         from ..integration.agui.state import AGUIState
+        from ..integration.thread.recorder import StreamedReply
 
         body = AGUIRunRequest.model_validate(json.loads(message.body))
         request_id = self._resolve_request_metadata(message, body)
@@ -112,7 +114,9 @@ class AgentRunner:
 
         chunk_count = 0
         terminal: Optional[dict] = None
+        reply = StreamedReply(body.session_id)
         for chunk in handler.run_stream_sync(body.requests or [], acting_user_id=body.user_id):
+            reply.add(chunk)
             payload = json.loads(chunk.model_dump_json())
             if payload.get("done"):
                 terminal = payload  # withheld until after the snapshot; see the ordering note above
@@ -131,6 +135,7 @@ class AgentRunner:
             self._send_to_output(message, terminal, status_code=None, dedup_suffix=f"{message.receive_count}-{chunk_count}")
             chunk_count += 1
 
+        self._record_thread_reply(message, body, 202 if reply.paused else 200, reply.result())
         self._log.info(f"[AGUI AGENT DONE] request_id={request_id}, chunks={chunk_count}")
 
     def on_permanent_failure(self, message: QueueMessage) -> None:
