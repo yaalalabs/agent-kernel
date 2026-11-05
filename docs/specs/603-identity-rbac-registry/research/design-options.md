@@ -307,6 +307,28 @@ closed; the analyses stay as the record of why.
 | Q9 Registry persistence | Own `registry` block with a `type` selector (`in_memory`, `redis`, `valkey`, `dynamodb`, dotted path) | 2.3, 2.6 |
 | Q10 Issue anchoring | #603 is the single ticket; the requirements of #441, #521 and #658 were merged into it and those issues closed | GitHub |
 
+Revisited 2026-11-04 (Amitha): no compatibility shims and no migration window. Q2's unchanged
+default posture, Q3's body `user_id` mismatch rule and Q6's one-release fallback are superseded:
+the body and envelope `user_id` are removed outright, the `agentkernel.auth` seams are replaced by
+`identity.provider`, and `mcp.agents` / `a2a.agents` / `agui.agents` are removed in the same
+release. The analyses in 2.2, 2.6 and 4.3 stay as the record of the options; `design.md`
+section 10 holds the current list of breaking changes.
+
+Review round 2 (2026-10-05 to 2026-11-05, Amitha), on the design's open questions:
+
+| Q | Decision |
+|---|---|
+| Q11 Engine order | `casbin` first after `static` |
+| Q12 LangGraph and smolagents native tools | Refuse to start when `authorization` is configured |
+| Q13 Schedule creation level | Any level; re-check at fire time |
+| Q14 Firebase role claim | Default claim path `roles`; boolean flags need a custom mapper |
+| Q15 Catalog tool hiding | Hide tools above the caller's level |
+| Q16 Static provider credentials | Only through the `secret` capability |
+| Q17 Shared-session ownership | `messaging:` and `realtime:` provider prefixes are exempt |
+| Q18 `tag:` agent selector | Added |
+| Q19 Token exchange | Built when required; the credential store and broker ship (2026-11-04) |
+| Tool self-gating | `ToolContext.access_level` added for tools that cannot be split (2026-11-05) |
+
 ### 4.1 Q4: `execute` versus `write`, and which meaning of "level" the brief intends
 
 In the scale of 2.4, `execute` means the principal may send the agent messages: chat and stream,
