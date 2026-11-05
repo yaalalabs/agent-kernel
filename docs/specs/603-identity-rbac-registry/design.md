@@ -235,7 +235,8 @@ and `research/design-options.md` section 4).
   handlers receive `ctx["principal"]` where they received `ctx["user_id"]`.
 - Messaging: `InboundRequest.user_id` (the platform sender id, `integration/adapter/base.py:65`)
   becomes `Principal(subject=<sender>, provider="messaging:<platform>", namespace=<scope>)` at
-  `AgentRunner`, where the scope is the platform's own: the Slack team id, the Teams tenant id
+  `IntegrationProducer.enqueue` (the edge, so the runner stays platform-agnostic; spec
+  refinement 3), where the scope is the platform's own: the Slack team id, the Teams tenant id
   (`integration/teams/adapter.py:109`), the Gmail inbox address, the WhatsApp phone number id
   (`integration/whatsapp/adapter.py:29`), the Messenger or Instagram page id, the Telegram bot
   id. `InboundRequest` gains `namespace` and `claims` for that purpose, and an adapter may put
@@ -393,6 +394,10 @@ and `research/design-options.md` section 4).
   shape): `in_memory` (today's dict; the default when no `registry` block exists), `redis`,
   `valkey`, `dynamodb` (under `require_extra("redis" | "valkey" | "aws", ...)`), else a dotted path
   to an `AgentRegistry` subclass, else `AKConfigError`.
+- Placement: the ABC, `InMemoryAgentRegistry`, `AgentRegistryFactory` and `AgentRegistrationError`
+  live in `core/registry.py`, because `Runtime` needs a registry with no `registry` block and
+  `core/` reaches `identity/` only lazily inside an enabled-check; the store-backed backends and
+  their contract suite live under `identity/registry/` (spec refinement 1).
 - Store-backed registries persist descriptors only; `Agent` objects stay process-local.
   Redis-like layout `{prefix}agent:{id}` document plus `{prefix}index:all` set over
   `_RedisLikeDriver`; DynamoDB one item per agent, partition key `agent_id`, over `DynamoDBDriver`
@@ -601,11 +606,11 @@ async def manage_ticket(ctx: ToolContext, action: str, ticket_id: str, **fields)
 | Microsoft Agent Framework (agent-framework-core 1.20.0, `framework/maf/`) | none (the tool list is static on the agent) | a per-run `FunctionMiddleware` passed through `Agent.run(middleware=...)` that sets a denial result instead of calling next | hosted and provider-executed tools |
 | Realtime runners (`core/realtime/runner.py:124`) | none (the session's tool list is declared at connect) | the AK-owned `execute_tool` entry point, before the adapter runs the tool | none: this is the one place AK already owns the call |
 | OpenAI Agents SDK (0.20.0) | `FunctionTool.is_enabled` composed with any user-set callable (AND) | `tool_input_guardrails` entry returning `reject_content(reason)` | Hosted tools (web search, file search, computer use) |
-| Pydantic AI (2.13.0) | agent-wide `prepare_tools` composed with the user's | wrapper on AK-bound `Tool`s; natively declared tools covered by `prepare_tools` returning `None` for denied tools | none beyond MCP toolsets the app attaches itself |
+| Pydantic AI (2.13.0) | a per-run `capabilities=[AKToolGateCapability]` whose `prepare_tools` drops denied definitions, composed AK-first with any caller capabilities (2.13.0 has no `prepare_tools` on `Agent`; spec refinement 2) | the same capability's `before_tool_execute` raising `ModelRetry(reason)` | none: the capability sees every `ToolDefinition`, attached toolsets included |
 | Google ADK | none (the tool list is static on `LlmAgent`) | `before_tool_callback` composed AK-first with the user's; returns `{"error": reason}` | ADK built-in tools |
 | CrewAI (1.15.18 in the lock) | none | one process-wide `before_tool_call` hook (available since 1.9.1) returning `False`; CrewAI's own "blocked by hook" message reaches the agent | tools not routed through the executor |
 | LangGraph | none (compiled graph) | wrapper around the `StructuredTool` callables produced by `LangGraphToolBuilder.bind` | tools bound natively by the application: with `authorization` configured, an agent on this runner that has them fails `AccessGate.validate_configuration` with `AKConfigError` (settled, Q12) |
-| smolagents | none | wrapper on `Tool.forward` of AK-bound tools | natively constructed tools: refused at startup with `authorization` configured, as for LangGraph (settled, Q12) |
+| smolagents | none | `Tool.forward` wrapped on every tool in `agent.tools` at wrap time, native ones included | tools added to `agent.tools` after wrap time: refused at startup with `authorization` configured, as for LangGraph (settled, Q12; spec refinement 4) |
 
 - Every adapter resolves nothing itself: it reads `TOOL_FILTER_CACHE_KEY` from the session's
   volatile cache (set by `Runtime`), so with no `authorization` block the filter is absent and the
@@ -634,7 +639,9 @@ async def manage_ticket(ctx: ToolContext, action: str, ticket_id: str, **fields)
   (`api/http.py:193-194`), so the principal is on `request.state`; the executor (which also only
   enqueues since #829, `api/a2a/a2a.py:76-78`) serializes it into the body the same way. It does
   not rely on the a2a-sdk `ServerCallContext.user`, which the SDK (1.2.3) leaves unauthenticated
-  without a Starlette `AuthenticationMiddleware`. `/a2a/catalog` and the well-known card route
+  without a Starlette `AuthenticationMiddleware`; the principal reaches the executor through a
+  `ServerCallContextBuilder` passed to `create_rest_routes`, carrying `request.state.principal`
+  in `call_context.state` (spec refinement 5). `/a2a/catalog` and the well-known card route
   return cards for agents visible to the caller and exposed on `a2a`; cards per section 4, built on
   the 1.x shape the builder already emits (`core/builder.py:63-74`).
 - AG-UI: the `/agents` listing becomes `visible_agents` narrowed by `surfaces` and
