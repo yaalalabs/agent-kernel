@@ -176,6 +176,7 @@ thinking block.
 | LangGraph | ✅ | ✅ | ✅ | ✅ | ❌ |
 | Google ADK | ✅ | ✅ | ✅ | ✅ | ❌ |
 | Pydantic AI | ✅ | ✅ | ✅ | ✅ | ❌ |
+| Claude Agent SDK | ✅ | ✅ | ✅ | ✅ | ❌ |
 | Microsoft Agent Framework | ✅ | ✅ | ✅ | ✅ | ❌ |
 | CrewAI | ❌ | — | — | — | — |
 | smolagents | ❌ | — | — | — | — |

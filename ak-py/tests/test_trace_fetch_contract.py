@@ -47,6 +47,9 @@ class InMemoryTrace(BaseTrace):
     def maf(self):
         return None
 
+    def claude(self):
+        return None
+
     def fetch_spans(self, query: TraceQuery) -> list[FetchedSpan]:
         return FetchedSpan.oldest_first(span for span in self.spans if query.matches(span))[-query.limit :]
 

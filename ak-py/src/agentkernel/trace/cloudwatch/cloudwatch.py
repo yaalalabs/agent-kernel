@@ -211,6 +211,14 @@ class CloudWatch(BaseTrace):
 
         return CloudWatchMAFRunner(self)
 
+    def claude(self) -> Runner:
+        """
+        Returns the CloudWatch Claude Agent SDK runner instance.
+        """
+        from .claude import CloudWatchClaudeRunner
+
+        return CloudWatchClaudeRunner(self)
+
     def fetch_spans(self, query: TraceQuery) -> list[FetchedSpan]:
         """
         Fetches spans back from the aws/spans log group through CloudWatch Logs Insights (needs Transaction Search).

@@ -480,6 +480,7 @@ Logfire configures the global OpenTelemetry tracer provider, and each non-stream
 | OpenAI Agents SDK | Full — native `logfire.instrument_openai_agents()` |
 | CrewAI | Full — OpenInference CrewAI + LiteLLM instrumentors |
 | Google ADK | Full — OpenInference Google ADK instrumentor |
+| Claude Agent SDK | Agent and tool spans — native `logfire.instrument_claude_agent_sdk()`; model calls run inside the Claude Code CLI |
 | Microsoft Agent Framework | Session span, plus MAF's own OpenTelemetry agent and chat spans (MAF instruments itself; Agent Kernel activates nothing extra) |
 | LangGraph | Session span only |
 | Smolagents | Session span only |
@@ -565,6 +566,7 @@ Streaming runs (`execution.message_type: delta`) are not wrapped in a session sp
 | CrewAI | Full — OpenInference CrewAI + LiteLLM instrumentors |
 | Google ADK | Full — OpenInference Google ADK instrumentor |
 | Pydantic AI | Full — Pydantic AI instrumentation + OpenInference span processor |
+| Claude Agent SDK | Agent and tool spans — OpenInference Claude Agent SDK instrumentor; model calls run inside the Claude Code CLI |
 | Microsoft Agent Framework | Session span, plus MAF's own OpenTelemetry agent and chat spans (MAF instruments itself; Agent Kernel activates nothing extra) |
 | LangGraph | Session span only |
 | Smolagents | Session span only |
