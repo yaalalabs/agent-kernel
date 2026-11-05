@@ -648,6 +648,18 @@ multimodal:
   storage_type: redis          # not in_memory/session_cache: the runner must read what the edge wrote
 ```
 
+6. **Optional — keep conversation history.** Add a `thread` block (see Conversation Thread Support)
+   and both AG-UI handlers record every run as a thread keyed by `threadId`; no other setting is
+   needed. AG-UI has no history call of its own, so mount `ThreadRESTRequestHandler` beside the
+   AG-UI handler for `GET /api/v1/threads/{threadId}`. On a broker the thread store must be shared
+   (`redis`, `valkey`, `dynamodb`, ...): the edge records the user turn and the runner the reply.
+```python
+from agentkernel.thread import ThreadRESTRequestHandler
+
+auth = MyAuthoriser()
+IOHandler.run(handlers=[AGUIPipelineRequestHandler(authoriser=auth), ThreadRESTRequestHandler(authoriser=auth)])
+```
+
 ---
 
 #### Custom Hooks
@@ -1019,6 +1031,8 @@ thread:
    - `GET /api/v1/threads` and `GET /api/v1/threads/{session_id}` are served by the same handler for reading thread history (open by default, or protected by a pluggable `Authoriser`)
    - Threads are auto-named by an LLM call deriving a concise title from the first prompt (falls back to a truncated prompt prefix without `litellm`/an API key)
    - Sending `thread_name` on any chat request sets/renames the thread and locks it against automatic naming
+   - AG-UI runs are recorded too, from the `thread` block alone — no thread handler mount; mount
+     `ThreadRESTRequestHandler` beside the AG-UI handler for the read routes (see AG-UI Server)
 
 **For LLM-based thread naming**, add the `thread` extra:
 ```toml
