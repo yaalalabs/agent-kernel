@@ -12,18 +12,20 @@ Before installing Agent Kernel, ensure you have:
 
 - **Python 3.12 - 3.13.x** installed on your system
   - ⚠️ Python 3.14 and later support to be available soon
-- **pip** or **uv** package manager
-- (Optional) **Virtual environment** tool like `venv` or `conda`
+- **[uv](https://docs.astral.sh/uv/getting-started/installation/)** package manager
 
 ## Basic Installation
 
-Install Agent Kernel using pip:
+Create a uv project (skip this if you already have one), then add Agent Kernel to it:
 
 ```bash
-pip install agentkernel
+uv init --python 3.12 my-agent
+cd my-agent
+uv add agentkernel
 ```
 
-This installs the core Agent Kernel library with minimal dependencies.
+This installs the core Agent Kernel library with minimal dependencies, records it in `pyproject.toml`, and creates
+the project's `.venv` for you.
 
 ## Framework-Specific Installation
 
@@ -32,55 +34,55 @@ Agent Kernel supports multiple AI agent frameworks. Install the extras for the f
 ### OpenAI Agents
 
 ```bash
-pip install agentkernel[openai]
+uv add "agentkernel[openai]"
 ```
 
 ### CrewAI
 
 ```bash
-pip install agentkernel[crewai]
+uv add "agentkernel[crewai]"
 ```
 
 ### LangGraph
 
 ```bash
-pip install agentkernel[langgraph]
+uv add "agentkernel[langgraph]"
 ```
 
 ### Google ADK
 
 ```bash
-pip install agentkernel[adk]
+uv add "agentkernel[adk]"
 ```
 
 ### Smolagents
 
 ```bash
-pip install agentkernel[smolagents]
+uv add "agentkernel[smolagents]"
 ```
 
 ### Pydantic AI
 
 ```bash
-pip install agentkernel[pydanticai]
+uv add "agentkernel[pydanticai]"
 ```
 
 `agentkernel[pydanticai]` installs the provider-agnostic `pydantic-ai-slim` core only. Also install
-the provider you intend to use, e.g. `pip install "pydantic-ai-slim[openai]"`.
+the provider you intend to use, e.g. `uv add "pydantic-ai-slim[openai]"`.
 
 ### Microsoft Agent Framework
 
 ```bash
-pip install agentkernel[maf]
+uv add "agentkernel[maf]"
 ```
 
 `agentkernel[maf]` installs the provider-agnostic `agent-framework-core` only. Also install the MAF package
-for the model provider you intend to use, e.g. `pip install agent-framework-openai` (or `agent-framework-anthropic`).
+for the model provider you intend to use, e.g. `uv add agent-framework-openai` (or `agent-framework-anthropic`).
 
 ### Claude Agent SDK
 
 ```bash
-pip install agentkernel[claude]
+uv add "agentkernel[claude]"
 ```
 
 The `claude-agent-sdk` wheel bundles the Claude Code CLI it drives (no Node.js needed). It runs Claude models only,
@@ -92,7 +94,7 @@ authenticated with `ANTHROPIC_API_KEY` or a cloud provider (Bedrock, Vertex, Fou
 You can install support for multiple frameworks at once:
 
 ```bash
-pip install agentkernel[openai,crewai,langgraph]
+uv add "agentkernel[openai,crewai,langgraph]"
 ```
 
 ## Additional Components
@@ -102,7 +104,7 @@ pip install agentkernel[openai,crewai,langgraph]
 For running agents with REST API endpoints:
 
 ```bash
-pip install agentkernel[api]
+uv add "agentkernel[api]"
 ```
 
 ### Multi-Cloud Deployment
@@ -110,46 +112,46 @@ pip install agentkernel[api]
 For deploying to AWS (Lambda, ECS/Fargate):
 
 ```bash
-pip install agentkernel[aws]
+uv add "agentkernel[aws]"
 ```
 
 For deploying to Azure (Functions, Container Apps):
 
 ```bash
-pip install agentkernel[azure]
+uv add "agentkernel[azure]"
 ```
 
 For deploying to GCP (Cloud Run, includes Firestore session support):
 
 ```bash
-pip install agentkernel[gcp]
+uv add "agentkernel[gcp]"
 ```
 
 For multiple clouds:
 
 ```bash
-pip install agentkernel[aws,azure,gcp]
+uv add "agentkernel[aws,azure,gcp]"
 ```
 
 ### Session / State Stores
 
 ```bash
-pip install agentkernel[redis]    # Redis session/response/attachment stores
-pip install agentkernel[valkey]   # Valkey session/response stores (Redis fork)
+uv add "agentkernel[redis]"    # Redis session/response/attachment stores
+uv add "agentkernel[valkey]"   # Valkey session/response stores (Redis fork)
 ```
 
 ### Optional Features
 
 ```bash
-pip install agentkernel[multimodal]  # Image/file attachment support
-pip install agentkernel[thread]      # Conversation threads (LLM auto-naming)
-pip install agentkernel[mcp]         # MCP server
-pip install agentkernel[a2a]         # Agent-to-Agent server
-pip install agentkernel[langfuse]    # Langfuse tracing
-pip install agentkernel[openllmetry] # OpenLLMetry tracing
-pip install agentkernel[logfire]     # Pydantic Logfire tracing
-pip install agentkernel[cloudwatch]  # AWS CloudWatch (X-Ray) tracing
-pip install agentkernel[auth]        # JWT auth helpers
+uv add "agentkernel[multimodal]"  # Image/file attachment support
+uv add "agentkernel[thread]"      # Conversation threads (LLM auto-naming)
+uv add "agentkernel[mcp]"         # MCP server
+uv add "agentkernel[a2a]"         # Agent-to-Agent server
+uv add "agentkernel[langfuse]"    # Langfuse tracing
+uv add "agentkernel[openllmetry]" # OpenLLMetry tracing
+uv add "agentkernel[logfire]"     # Pydantic Logfire tracing
+uv add "agentkernel[cloudwatch]"  # AWS CloudWatch (X-Ray) tracing
+uv add "agentkernel[auth]"        # JWT auth helpers
 ```
 
 Messaging integrations each have their own extra: `slack`, `whatsapp`, `messenger`, `instagram`, `telegram`, `teams`, `gmail`. Knowledge base backends: `chromadb`, `neo4j`, `trino`. Open Knowledge Format bundles need no extra - `pyyaml` is a core dependency - unless the bundle is served from S3, which uses the `aws` extra.
@@ -159,7 +161,7 @@ Messaging integrations each have their own extra: `slack`, `whatsapp`, `messenge
 For interactive command-line testing:
 
 ```bash
-pip install agentkernel[cli]
+uv add "agentkernel[cli]"
 ```
 
 ### All Features
@@ -167,48 +169,40 @@ pip install agentkernel[cli]
 Install everything (all frameworks and cloud providers):
 
 ```bash
-pip install agentkernel[openai,crewai,langgraph,adk,smolagents,pydanticai,maf,claude,api,aws,azure,gcp,cli]
-```
-
-## Using UV Package Manager
-
-[UV](https://github.com/astral-sh/uv) is a fast Python package installer. If you're using UV:
-
-```bash
-uv pip install agentkernel[openai,crewai,langgraph,api]
+uv add "agentkernel[openai,crewai,langgraph,adk,smolagents,pydanticai,maf,claude,api,aws,azure,gcp,cli]"
 ```
 
 ## Virtual Environment Setup
 
-We recommend using a virtual environment to avoid dependency conflicts:
-
-### Using venv
+`uv add` creates and manages the project's `.venv` automatically. Run commands inside it with `uv run`, or
+activate it:
 
 ```bash
-# Create virtual environment
-python -m venv .venv
+# Run without activating
+uv run python my_agent.py
 
 # Activate (Linux/macOS)
 source .venv/bin/activate
 
 # Activate (Windows)
 .venv\Scripts\activate
-
-# Install Agent Kernel
-pip install agentkernel[openai,api]
 ```
 
-### Using conda
+### Using an existing environment
+
+To install into an environment you already manage (a plain venv or a conda environment) instead of a uv
+project, activate it and use uv's pip interface:
 
 ```bash
-# Create conda environment
+# venv
+python -m venv .venv
+source .venv/bin/activate
+uv pip install "agentkernel[openai,api]"
+
+# conda
 conda create -n .venv python=3.12
-
-# Activate
 conda activate .venv
-
-# Install Agent Kernel
-pip install agentkernel[openai,api]
+uv pip install "agentkernel[openai,api]"
 ```
 
 ## Verify Installation
@@ -216,7 +210,7 @@ pip install agentkernel[openai,api]
 After installation, verify that Agent Kernel is installed correctly:
 
 ```bash
-python -c "import agentkernel; print(agentkernel.__version__)"
+uv run python -c "import agentkernel; print(agentkernel.__version__)"
 ```
 
 You should see the version number printed (e.g., `0.1.2`).
@@ -263,24 +257,23 @@ export AK_SESSION__DYNAMODB__TABLE_NAME=agent-kernel-sessions
 Agent Kernel requires Python 3.12+. Check your Python version:
 
 ```bash
-python --version
+uv run python --version
 ```
 
-If you have multiple Python versions, use `python3.12` explicitly:
+If the project picked up an unsupported version, pin it to Python 3.12 (uv downloads it if needed) and re-sync:
 
 ```bash
-python3.12 -m pip install agentkernel
+uv python pin 3.12
+uv sync
 ```
 
 ### Dependency Conflicts
 
-If you encounter dependency conflicts, try creating a fresh virtual environment:
+If you encounter dependency conflicts, recreate the project's virtual environment:
 
 ```bash
-python -m venv fresh-env
-source fresh-env/bin/activate  # or fresh-env\Scripts\activate on Windows
-pip install --upgrade pip
-pip install agentkernel[your-extras]
+rm -rf .venv
+uv sync
 ```
 
 ### Import Errors
@@ -289,10 +282,10 @@ If you get import errors after installation, ensure you've installed the appropr
 
 ```bash
 # If using OpenAI Agents
-pip install agentkernel[openai]
+uv add "agentkernel[openai]"
 
 # If using CrewAI
-pip install agentkernel[crewai]
+uv add "agentkernel[crewai]"
 ```
 
 ## Next Steps

@@ -61,4 +61,4 @@ def require_extra(extra: str, feature: str) -> Iterator[None]:
     try:
         yield
     except ImportError as exc:
-        raise ImportError(f"{feature} requires the '{extra}' extra: pip install \"agentkernel[{extra}]\"") from exc
+        raise ImportError(f"{feature} requires the '{extra}' extra: uv add \"agentkernel[{extra}]\"") from exc

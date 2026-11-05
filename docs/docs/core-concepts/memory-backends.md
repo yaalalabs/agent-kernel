@@ -135,7 +135,7 @@ The full capability model and tool set are documented in [Knowledge Bases](../ad
 ### Minimal ChromaDB example
 
 ```bash
-pip install "agentkernel[openai,chromadb]"
+uv add "agentkernel[openai,chromadb]"
 ```
 
 ```python
@@ -182,7 +182,7 @@ For a complete walkthrough, see the [Knowledge Bases guide](../advanced/knowledg
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | `unknown session store type 'X'` | Typo or unsupported name | Use one of `in_memory`, `redis`, `valkey`, `dynamodb`, `cosmosdb`, `firestore` |
-| `session.type: redis requires the 'redis' extra` | Optional SDK not installed | `pip install "agentkernel[redis]"` (or the matching extra) |
+| `session.type: redis requires the 'redis' extra` | Optional SDK not installed | `uv add "agentkernel[redis]"` (or the matching extra) |
 | Connection refused / timeout (Redis, Valkey) | Server not running or wrong URL | Start the server and check the URL; put a password in the URL |
 | Sessions disappear between runs | `in_memory`, or a new process/instance | Use a persistent backend |
 | Works locally, not across pods | Process-local cache or `in_memory` | Remove `session.cache` and use a shared backend |

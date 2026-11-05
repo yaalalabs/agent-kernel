@@ -118,7 +118,7 @@ class MultimodalPreHook(PreHook):
                 return f"File ({mime_type}) - Content not currently visible. Use analyze_attachments to analyze."
 
         except ImportError:
-            self._log.error("LiteLLM not installed. Install with: pip install litellm")
+            self._log.error('LiteLLM not installed. Install with: uv add "agentkernel[multimodal]"')
             return "Attachment (LiteLLM missing)"
         except Exception as e:
             self._log.error(f"Error describing attachment: {e}")

@@ -27,53 +27,53 @@ Agent Kernel is a lightweight **AI agent runtime** and adapter layer for buildin
 ## Installation
 
 ```bash
-pip install agentkernel
+uv add agentkernel
 ```
 
 Install optional knowledge base extras as needed:
 
 ```bash
-pip install "agentkernel[chromadb]"
-pip install "agentkernel[neo4j]"
-pip install "agentkernel[trino]"
+uv add "agentkernel[chromadb]"
+uv add "agentkernel[neo4j]"
+uv add "agentkernel[trino]"
 ```
 
 Open Knowledge Format bundles need no extra - `pyyaml` is a core dependency. Serving a bundle from S3
-uses the `aws` extra: `pip install "agentkernel[aws]"`.
+uses the `aws` extra: `uv add "agentkernel[aws]"`.
 
 For LLM-based thread naming with Conversation Thread Support:
 
 ```bash
-pip install "agentkernel[thread]"
+uv add "agentkernel[thread]"
 ```
 
 For the AG-UI server (`AGUIRequestHandler`):
 
 ```bash
-pip install "agentkernel[agui]"
+uv add "agentkernel[agui]"
 ```
 
 For the sandbox providers (the `local_subprocess` provider needs no extra; `ec2_ssm` rides
 the `aws` extra):
 
 ```bash
-pip install "agentkernel[sandbox-docker]"   # docker provider
-pip install "agentkernel[kubernetes]"       # kubernetes provider (pod per sandbox)
-pip install "agentkernel[e2b]"              # e2b cloud provider
-pip install "agentkernel[daytona]"          # daytona cloud provider
-pip install "agentkernel[aws]"              # ec2_ssm provider (boto3)
+uv add "agentkernel[sandbox-docker]"   # docker provider
+uv add "agentkernel[kubernetes]"       # kubernetes provider (pod per sandbox)
+uv add "agentkernel[e2b]"              # e2b cloud provider
+uv add "agentkernel[daytona]"          # daytona cloud provider
+uv add "agentkernel[aws]"              # ec2_ssm provider (boto3)
 ```
 
 For the `aws_ssm` secret provider (AWS SSM Parameter Store):
 
 ```bash
-pip install "agentkernel[aws]"
+uv add "agentkernel[aws]"
 ```
 
 For cron parsing with the Scheduling capability (the `eventbridge` provider rides the `aws` extra):
 
 ```bash
-pip install "agentkernel[cron]"
+uv add "agentkernel[cron]"
 ```
 
 **Requirements:**
@@ -477,7 +477,7 @@ mode additionally require `multimodal.enabled: true` with a shared attachment st
   - **Field**: `thread.naming.model`
   - **Type**: string
   - **Default**: `gpt-4o-mini`
-  - **Description**: LiteLLM model used to generate thread names (requires the `thread` extra — `pip install "agentkernel[thread]"` — and an API key in the environment; falls back to a truncated prompt prefix otherwise)
+  - **Description**: LiteLLM model used to generate thread names (requires the `thread` extra — `uv add "agentkernel[thread]"` — and an API key in the environment; falls back to a truncated prompt prefix otherwise)
   - **Environment Variable**: `AK_THREAD__NAMING__MODEL`
 
 - **Auto-name Max Length**
@@ -511,7 +511,7 @@ Required when `thread.type=redis`:
 
 ##### Valkey Thread Store
 
-Required when `thread.type=valkey`. Requires the `valkey` extra (`pip install "agentkernel[valkey]"`):
+Required when `thread.type=valkey`. Requires the `valkey` extra (`uv add "agentkernel[valkey]"`):
 
 - **URL**
   - **Field**: `thread.valkey.url`
@@ -1152,7 +1152,7 @@ Configure tracing and observability for monitoring agent execution.
 To use Langfuse for tracing, install the langfuse extra:
 
 ```bash
-pip install agentkernel[langfuse]
+uv add "agentkernel[langfuse]"
 ```
 
 Configure Langfuse credentials via environment variables:
@@ -1176,7 +1176,7 @@ trace:
 To use OpenLLMetry for tracing, install the openllmetry extra:
 
 ```bash
-pip install agentkernel[openllmetry]
+uv add "agentkernel[openllmetry]"
 ```
 
 Configure Traceloop credentials via environment variables:
@@ -1199,7 +1199,7 @@ trace:
 To use Logfire for tracing, install the logfire extra:
 
 ```bash
-pip install agentkernel[logfire]
+uv add "agentkernel[logfire]"
 ```
 
 Configure the Logfire write token via an environment variable (optional — without a token, Logfire
@@ -1222,7 +1222,7 @@ trace:
 To send traces to Amazon CloudWatch (via AWS X-Ray, searchable in Transaction Search), install the cloudwatch extra:
 
 ```bash
-pip install agentkernel[cloudwatch]
+uv add "agentkernel[cloudwatch]"
 ```
 
 Spans are exported over OTLP to the X-Ray endpoint of your region, signed with the standard AWS credential
@@ -1297,7 +1297,7 @@ Configure test comparison modes for automated testing. Test configuration is sep
   - **Environment Variable**: `AK_TEST__LLM__EMBEDDING_MODEL`
 
 **Test Modes:**
-- `score`: Deterministic, offline string-match scoring via the configured evaluator (built-in `deepeval`: `Scorer.quasi_exact_match_score`; built-in `opik`: `LevenshteinRatio`, requires `pip install "agentkernel[opik]"`; built-in `jev` has no score mode)
+- `score`: Deterministic, offline string-match scoring via the configured evaluator (built-in `deepeval`: `Scorer.quasi_exact_match_score`; built-in `opik`: `LevenshteinRatio`, requires `uv add "agentkernel[opik]"`; built-in `jev` has no score mode)
 - `llm`: LLM-as-judge evaluation via the configured evaluator (built-in `deepeval` or `opik`: `GEval`; built-in `jev`: a TypeSafe JEV yes/no Noul question) for semantic similarity
 - `fallback`: Tries score first, falls back to llm if score fails
 
@@ -1396,19 +1396,19 @@ Configure input and output guardrails to validate agent requests and responses f
 To use OpenAI guardrails, install the openai-guardrails package:
 
 ```bash
-pip install agentkernel[openai]
+uv add "agentkernel[openai]"
 ```
 
 To use AWS Bedrock guardrails, install the AWS package:
 
 ```bash
-pip install agentkernel[aws]
+uv add "agentkernel[aws]"
 ```
 
 To use Walled AI guardrails, install the Walled AI package:
 
 ```bash
-pip install agentkernel[walledai]
+uv add "agentkernel[walledai]"
 ```
 
 Create guardrail configuration:
@@ -1942,7 +1942,7 @@ gmail:
 
 Test harness configuration (comparison mode, evaluator backend, llm models) is separate from the application configuration. It is not part of `config.yaml` — it lives in its own `test-config.yaml` file, resolved from the current working directory, and is only loaded when the testing utilities (`agentkernel.test`) are used. A legacy `test:` section in `config.yaml` is ignored. See [Test Configuration](#test-configuration) under Configuration Options for the full list of fields and defaults.
 
-The `evaluator` field accepts three built-in short names — `deepeval` (default, `pip install "agentkernel[test]"`) or `opik` (`pip install "agentkernel[opik]"`, [Opik](https://www.comet.com/docs/opik/) by Comet, runs entirely locally with `OPIK_TRACK_DISABLE` set so no Opik Cloud account or API key is needed) or `jev` (`pip install "agentkernel[jev]"`, hosted [TypeSafe JEV](https://docs.typesafe.ai) judge; `mode: llm` only, needs `TYPESAFE_API_KEY`, and sends the comparison text to `api.typesafe.ai`) — or a dotted path to your own `AKEvaluator` subclass.
+The `evaluator` field accepts three built-in short names — `deepeval` (default, `uv add "agentkernel[test]"`) or `opik` (`uv add "agentkernel[opik]"`, [Opik](https://www.comet.com/docs/opik/) by Comet, runs entirely locally with `OPIK_TRACK_DISABLE` set so no Opik Cloud account or API key is needed) or `jev` (`uv add "agentkernel[jev]"`, hosted [TypeSafe JEV](https://docs.typesafe.ai) judge; `mode: llm` only, needs `TYPESAFE_API_KEY`, and sends the comparison text to `api.typesafe.ai`) — or a dotted path to your own `AKEvaluator` subclass.
 
 **test-config.yaml:**
 
@@ -2043,7 +2043,7 @@ def run(self, agent, prompt, session):
 ```bash
 git clone https://github.com/yaalalabs/agent-kernel.git
 cd agent-kernel/ak-py
-uv sync  # or: pip install -e ".[dev]"
+uv sync
 ```
 
 **Run Tests:**

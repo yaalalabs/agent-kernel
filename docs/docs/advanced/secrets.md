@@ -100,7 +100,7 @@ secret:
     type: aws_ssm
 ```
 
-- **Install:** `pip install "agentkernel[aws]"` (boto3). Region and credentials come from the standard
+- **Install:** `uv add "agentkernel[aws]"` (boto3). Region and credentials come from the standard
   boto3 environment chain.
 - **Addressing:** the key is lowercased under the prefix — `OPENAI_API_KEY` →
   `/ak/<prefix>/openai_api_key`.
@@ -127,7 +127,7 @@ secret:
 ```
 
 Reads one file per key from Kubernetes Secrets that are **mounted into the pod as volumes**. It never calls
-the Kubernetes API, so it needs no RBAC, no ServiceAccount and no extra (`pip install` nothing: it uses the
+the Kubernetes API, so it needs no RBAC, no ServiceAccount and no extra (nothing to install: it uses the
 standard library only).
 
 - **Layout:** each Secret is its own volume at `<mount_path>/<secret-name>/`, one file per data key —

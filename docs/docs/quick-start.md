@@ -26,7 +26,7 @@ import TabItem from '@theme/TabItem';
 ### 1. Install
 
 ```bash
-pip install agentkernel[openai]
+uv add "agentkernel[openai]"
 ```
 
 ### 2. Create Your Agent
@@ -78,7 +78,7 @@ python my_agent.py
 ### 1. Install
 
 ```bash
-pip install agentkernel[crewai]
+uv add "agentkernel[crewai]"
 ```
 
 ### 2. Create Your Agent
@@ -132,7 +132,7 @@ python my_agent.py
 ### 1. Install
 
 ```bash
-pip install agentkernel[langgraph]
+uv add "agentkernel[langgraph]"
 ```
 
 ### 2. Create Your Agent
@@ -193,7 +193,7 @@ python my_agent.py
 ### 1. Install
 
 ```bash
-pip install agentkernel[adk]
+uv add "agentkernel[adk]"
 ```
 
 ### 2. Create Your Agent
@@ -239,7 +239,7 @@ python my_agent.py
 ### 1. Install
 
 ```bash
-pip install agentkernel[smolagents]
+uv add "agentkernel[smolagents]"
 ```
 
 ### 2. Create Your Agent
@@ -287,11 +287,11 @@ python my_agent.py
 ### 1. Install
 
 ```bash
-pip install agentkernel[pydanticai]
+uv add "agentkernel[pydanticai]"
 ```
 
 `agentkernel[pydanticai]` installs the provider-agnostic `pydantic-ai-slim` core only. Install the
-provider you intend to use, e.g. `pip install "pydantic-ai-slim[openai]"`.
+provider you intend to use, e.g. `uv add "pydantic-ai-slim[openai]"`.
 
 ### 2. Create Your Agent
 
@@ -337,7 +337,7 @@ python my_agent.py
 ### 1. Install
 
 ```bash
-pip install agentkernel[maf] agent-framework-openai
+uv add "agentkernel[maf]" agent-framework-openai
 ```
 
 `agentkernel[maf]` installs the provider-agnostic `agent-framework-core` only. Install the MAF package for
@@ -388,7 +388,7 @@ python my_agent.py
 ### 1. Install
 
 ```bash
-pip install agentkernel[claude]
+uv add "agentkernel[claude]"
 ```
 
 ### 2. Create Your Agent
@@ -512,7 +512,7 @@ Run your agent as a REST API server:
 
 ```bash
 # Install API dependencies
-pip install agentkernel[api]
+uv add "agentkernel[api]"
 ```
 Use the RESTAPI module run the agents
 
@@ -569,7 +569,7 @@ Package and deploy to AWS Lambda:
 
 ```bash
 # Install AWS dependencies
-pip install agentkernel[aws]
+uv add "agentkernel[aws]"
 ```
 Use the Lambda module to run the agents
 
@@ -763,7 +763,7 @@ export GOOGLE_API_KEY=...
 Install the correct extras package:
 
 ```bash
-pip install agentkernel[your-framework]
+uv add "agentkernel[your-framework]"
 ```
 
 ## Learn More

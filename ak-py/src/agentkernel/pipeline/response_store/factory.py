@@ -74,7 +74,7 @@ class ResponseStoreFactory:
                 from .valkey import ValkeyResponseStore
             except ImportError as e:
                 raise ImportError(
-                    f"The 'valkey' package is required for {config_path}.type: valkey. Install it with: pip install agentkernel[valkey]"
+                    f"The 'valkey' package is required for {config_path}.type: valkey. Install it with: uv add \"agentkernel[valkey]\""
                 ) from e
 
             valkey_config = response_store_config.valkey

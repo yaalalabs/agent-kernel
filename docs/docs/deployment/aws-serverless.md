@@ -145,8 +145,8 @@ With `message_type: delta`, each stream event is sent as a separate `STREAM_CHUN
 
 - AWS CLI configured
 - AWS credentials with Lambda/API Gateway permissions
-- Agent Kernel with AWS extras: `pip install agentkernel[aws]`
-- For authentication: `pip install agentkernel[api,aws]`
+- Agent Kernel with AWS extras: `uv add "agentkernel[aws]"`
+- For authentication: `uv add "agentkernel[api,aws]"`
 
 ## Deployment
 
@@ -156,12 +156,12 @@ The dependencies need to be installed in both the main Lambda package and the au
 
 **Main Lambda Package:**
 ```bash
-pip install agentkernel[aws,openai]
+uv add "agentkernel[aws,openai]"
 ```
 
 **Authorizer Lambda Package:**
 ```bash
-pip install agentkernel[api,aws]
+uv add "agentkernel[api,aws]"
 ```
 
 **Example Deployment Scripts:**

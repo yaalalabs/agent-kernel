@@ -19,7 +19,7 @@ OpenAI Guardrails support:
 Install the `openai-guardrails` package:
 
 ```bash
-pip install agentkernel[openai]
+uv add "agentkernel[openai]"
 ```
 
 ## Configuration
@@ -539,7 +539,7 @@ WARNING: openai-guardrails package not installed. Guardrails will be disabled.
 
 **Solution:** Install the package:
 ```bash
-pip install openai-guardrails
+uv add openai-guardrails
 ```
 
 ### Runtime Errors

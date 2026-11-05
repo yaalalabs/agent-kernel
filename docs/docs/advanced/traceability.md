@@ -42,23 +42,23 @@ Agent Kernel supports the following observability platforms:
 Install Agent Kernel with Langfuse support:
 
 ```bash
-pip install agentkernel[langfuse]
+uv add "agentkernel[langfuse]"
 ```
 
 Or if you need multiple framework integrations:
 
 ```bash
 # OpenAI with Langfuse
-pip install agentkernel[openai,langfuse]
+uv add "agentkernel[openai,langfuse]"
 
 # LangGraph with Langfuse
-pip install agentkernel[langgraph,langfuse]
+uv add "agentkernel[langgraph,langfuse]"
 
 # CrewAI with Langfuse
-pip install agentkernel[crewai,langfuse]
+uv add "agentkernel[crewai,langfuse]"
 
 # Google ADK with Langfuse
-pip install agentkernel[adk,langfuse]
+uv add "agentkernel[adk,langfuse]"
 ```
 
 ### Configuration
@@ -121,23 +121,23 @@ For self-hosted Langfuse, see the [Langfuse documentation](https://langfuse.com/
 Install Agent Kernel with OpenLLMetry support:
 
 ```bash
-pip install agentkernel[openllmetry]
+uv add "agentkernel[openllmetry]"
 ```
 
 Or if you need multiple framework integrations:
 
 ```bash
 # OpenAI with OpenLLMetry
-pip install agentkernel[openai,openllmetry]
+uv add "agentkernel[openai,openllmetry]"
 
 # LangGraph with OpenLLMetry
-pip install agentkernel[langgraph,openllmetry]
+uv add "agentkernel[langgraph,openllmetry]"
 
 # CrewAI with OpenLLMetry
-pip install agentkernel[crewai,openllmetry]
+uv add "agentkernel[crewai,openllmetry]"
 
 # Google ADK with OpenLLMetry
-pip install agentkernel[adk,openllmetry]
+uv add "agentkernel[adk,openllmetry]"
 ```
 
 ### Configuration
@@ -422,20 +422,20 @@ See [OpenLLMetry documentation](https://www.traceloop.com/docs/openllmetry/integ
 ### Installation
 
 ```bash
-pip install agentkernel[logfire]
+uv add "agentkernel[logfire]"
 ```
 
 Or with a framework integration:
 
 ```bash
 # OpenAI with Logfire
-pip install agentkernel[openai,logfire]
+uv add "agentkernel[openai,logfire]"
 
 # CrewAI with Logfire
-pip install agentkernel[crewai,logfire]
+uv add "agentkernel[crewai,logfire]"
 
 # Google ADK with Logfire
-pip install agentkernel[adk,logfire]
+uv add "agentkernel[adk,logfire]"
 ```
 
 ### Configuration
@@ -494,20 +494,20 @@ Microsoft Agent Framework's own spans carry **metadata only** by default (operat
 ### Installation
 
 ```bash
-pip install agentkernel[cloudwatch]
+uv add "agentkernel[cloudwatch]"
 ```
 
 Or with a framework integration:
 
 ```bash
 # OpenAI with CloudWatch
-pip install agentkernel[openai,cloudwatch]
+uv add "agentkernel[openai,cloudwatch]"
 
 # CrewAI with CloudWatch
-pip install agentkernel[crewai,cloudwatch]
+uv add "agentkernel[crewai,cloudwatch]"
 
 # Google ADK with CloudWatch
-pip install agentkernel[adk,cloudwatch]
+uv add "agentkernel[adk,cloudwatch]"
 ```
 
 ### Configuration

@@ -1428,7 +1428,7 @@ process can wait, the `queue` broker flavor runs them on a separate worker
 **1. Install the extra (docker only):**
 
 ```bash
-pip install "agentkernel[sandbox-docker]"
+uv add "agentkernel[sandbox-docker]"
 ```
 
 **2. Add a `sandbox` block to `config.yaml`.**
@@ -1513,7 +1513,7 @@ subclass?
 **1. Install the extra (aws_ssm only):**
 
 ```bash
-pip install "agentkernel[aws]"
+uv add "agentkernel[aws]"
 ```
 
 **2. Add a `secret` block to `config.yaml`** (optional for `env`, which is the default):
