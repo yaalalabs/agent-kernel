@@ -1,9 +1,11 @@
 import json
 import logging
+from typing import Any
 
 from ..core.chat_service import ChatService
 from ..core.config import AKConfig
-from ..core.model import BaseRunRequest, ExecutionMode, StreamChunk
+from ..core.event import PausedInterruption
+from ..core.model import AgentPausedReplyAny, BaseRunRequest, ExecutionMode, StreamChunk
 from ..core.util.factory import AKConfigError
 from .consumer import ConsumerLoop
 from .envelope import (
@@ -76,10 +78,9 @@ class AgentRunner:
         # the status travels to the output message as the STATUS_CODE attribute (spec §12.6).
         status_code, agent_response = self._chat_service.process_chat_request(req=body, requests=body.requests)
         self._send_to_output(message, agent_response, status_code)
-        body_is_dict = isinstance(agent_response, dict)
-        result = agent_response.get("result") if body_is_dict else agent_response
-        media_type = agent_response.get("media_type") if body_is_dict else None
-        self._record_thread_reply(message, body, status_code, result, media_type)
+
+        media_type = agent_response.get("media_type") if isinstance(agent_response, dict) else None
+        self._record_thread_reply(message, body, status_code, self._reply_to_record(agent_response, body.session_id), media_type)
 
         self._log.info(f"[AGENT DONE] request_id={request_id}, status_code={status_code}")
 
@@ -92,7 +93,8 @@ class AgentRunner:
 
         The ``user_id`` guard ``StreamAgentRunner._process_run`` applies does not belong here — that is
         the WebSocket-entered marker, and AG-UI chunks go to the response store, never to a socket
-        the gateway owns. Thread recording is likewise absent: ``ATTR_AGUI`` is not ``ATTR_THREAD``.
+        the gateway owns. The reply is recorded to the conversation thread only when the edge set
+        ``ATTR_THREAD``, after the terminal chunk is sent, as ``_record_thread_reply`` requires.
 
         The run goes through the handler prepared here rather than a ``ChatService`` wrapper, which
         would resolve its own and leave the applied envelope on a session the run never sees. The
@@ -104,6 +106,7 @@ class AgentRunner:
         """
         from ..integration.agui.run_input import AGUIRunEnvelope, AGUIRunRequest
         from ..integration.agui.state import AGUIState
+        from ..integration.thread.recorder import StreamedReply
 
         body = AGUIRunRequest.model_validate(json.loads(message.body))
         request_id = self._resolve_request_metadata(message, body)
@@ -122,7 +125,9 @@ class AgentRunner:
 
         chunk_count = 0
         terminal: dict | None = None
+        reply = StreamedReply(body.session_id)
         for chunk in handler.run_stream_sync(body.requests or [], acting_user_id=body.user_id):
+            reply.add(chunk)
             payload = json.loads(chunk.model_dump_json())
             if payload.get("done"):
                 terminal = payload  # withheld until after the snapshot; see the ordering note above
@@ -141,6 +146,7 @@ class AgentRunner:
             self._send_to_output(message, terminal, status_code=None, dedup_suffix=f"{message.receive_count}-{chunk_count}")
             chunk_count += 1
 
+        self._record_thread_reply(message, body, 202 if reply.paused else 200, reply.result())
         self._log.info(f"[AGUI AGENT DONE] request_id={request_id}, chunks={chunk_count}")
 
     def on_permanent_failure(self, message: QueueMessage) -> None:
@@ -208,6 +214,45 @@ class AgentRunner:
         cls().start()
 
     # -- shared plumbing --------------------------------------------------------------------
+
+    @classmethod
+    def _reply_to_record(cls, agent_response: Any, session_id: str) -> Any:
+        """
+        Pick what the thread recorder should store for one response.
+
+        A paused run is the exception: `result` holds the serialised pause, not something the agent
+        said. `ResponseBuilder` promotes the pause keys beside it so a client can branch without
+        parsing `result`, and this is such a client.
+
+        :param agent_response: The response body the chat service built, or a non-dict reply.
+        :param session_id: The request's session, for a body that carries none of its own.
+        :return: The paused reply, the body's `result`, or the response itself.
+        """
+        if not isinstance(agent_response, dict):
+            return agent_response
+        if agent_response.get("status") == "PAUSED":
+            return cls._paused_reply(agent_response, session_id)
+        return agent_response.get("result")
+
+    @staticmethod
+    def _paused_reply(source: dict, session_id: str) -> AgentPausedReplyAny:
+        """Rebuild the reply a paused run produced from the pause keys its source carries.
+
+        Neither runner holds the reply itself — one has a response body, the other a streamed event
+        — but both carry the keys it was built from. Rebuilding the model rather than assembling a
+        dict keeps the content coming from `AgentPausedReplyAny`'s own validator, so every surface
+        stores the same bytes for the same pause.
+
+        :param source: The response body or the streamed event, holding the pause keys.
+        :param session_id: The request's session, used when the source carries none of its own.
+        :return: The paused reply the thread recorder stores.
+        """
+        return AgentPausedReplyAny(
+            run_id=source["run_id"],
+            session_id=source.get("session_id") or session_id,
+            agent=source["agent"],
+            interruptions=[PausedInterruption(**interruption) for interruption in source["interruptions"]],
+        )
 
     @classmethod
     def _record_thread_reply(cls, message: QueueMessage, body: BaseRunRequest, status_code: int, result, media_type: str | None = None) -> None:
@@ -331,18 +376,26 @@ class StreamAgentRunner(AgentRunner):
         chunk_count = 0
         deltas: list[str] = []
         error_seen = False
+        paused: AgentPausedReplyAny | None = None
         for raw_chunk in self._chat_service.process_stream_chat_sync(req=body, requests=body.requests):
             chunk = json.loads(raw_chunk)
             if chunk.get("error"):
                 error_seen = True
             if chunk.get("delta"):
                 deltas.append(chunk["delta"])
+            event = chunk.get("event") or {}
+            if event.get("type") == "run_paused":
+                paused = self._paused_reply(event, body.session_id)
             # Retry attempts get distinct chunk dedup ids so a redelivery's chunks never collide.
             self._send_to_output(message, chunk, status_code=None, dedup_suffix=f"{message.receive_count}-{chunk_count}")
             chunk_count += 1
 
-        if not error_seen and deltas:
-            self._record_thread_reply(message, body, 200, "".join(deltas))
+        if not error_seen:
+            if paused is not None:
+                # 202, not the 200 the ordinary branch records under: a paused run has not completed.
+                self._record_thread_reply(message, body, 202, paused)
+            elif deltas:
+                self._record_thread_reply(message, body, 200, "".join(deltas))
 
         self._log.info(f"[STREAM AGENT DONE] request_id={request_id}, chunks={chunk_count}")
 

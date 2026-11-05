@@ -7,9 +7,10 @@ import json
 import logging
 from typing import Any
 
-from ...core.model import AgentReplyAny, AgentRequest, BaseChatRequest
+from ...core.event import DataMessage, RunPaused
+from ...core.model import AgentPausedReplyAny, AgentReplyAny, AgentRequest, BaseChatRequest, StreamChunk
 from .manager import ConversationThreadManager
-from .model import ThreadAttachment
+from .model import HITL_MEDIA_TYPE, ThreadAttachment
 
 
 class ThreadRecorder:
@@ -29,7 +30,9 @@ class ThreadRecorder:
         """
         self._manager = manager
 
-    def pre_run(self, req: BaseChatRequest, requests: list[AgentRequest]) -> tuple[list[AgentRequest], list[ThreadAttachment]]:
+    def pre_run(
+        self, req: BaseChatRequest, requests: list[AgentRequest], enforce_owner: bool = False
+    ) -> tuple[list[AgentRequest], list[ThreadAttachment]]:
         """Thread work done before the agent runs: enforce user_id, store attachment
         bytes, create/load the thread, append the user message, and return the rebuilt
         request list in which stored attachments are replaced by in-band
@@ -41,8 +44,10 @@ class ThreadRecorder:
 
         :param req: The originating chat request
         :param requests: The built AgentRequest list (may carry attachments)
+        :param enforce_owner: Refuse a thread another user owns (see ``get_or_create_thread``)
         :return: Tuple of (rebuilt request list, stored ThreadAttachment references)
         :raises ValueError: If user_id is missing, or attachments are rejected by config
+        :raises PermissionError: If ``enforce_owner`` is set and the thread belongs to another user
         """
         if not req.user_id:
             raise ValueError("No user_id is provided in the request — user_id is required when thread support is enabled")
@@ -53,9 +58,28 @@ class ThreadRecorder:
             group_id=req.group_id,
             name=req.thread_name,
             first_prompt=req.prompt,
+            enforce_owner=enforce_owner,
         )
-        self._manager.append_message(req.session_id, "user", req.prompt, attachments=attachments)
+        content, media_type = self._as_user_message(req)
+        self._manager.append_message(req.session_id, "user", content, attachments=attachments, media_type=media_type)
         return requests, attachments
+
+    @staticmethod
+    def _as_user_message(req: BaseChatRequest) -> tuple[Any, str | None]:
+        """The turn as the request carried it: its text, or the decision it answered a pause with.
+
+        A resume-only request has no prompt, so recording ``req.prompt`` alone wrote an empty message
+        for every decision a human made. The ``ResumeSpec`` is nested whole under ``resume`` rather
+        than flattened, so a thread-owned ``prompt`` key can never collide with one of its fields, and
+        the pair is one literal because insertion order is key order in ``model_dump_json``.
+
+        :param req: The originating chat request.
+        :return: The message content, and its label when the turn carried a decision.
+        """
+        if req.resume is None:
+            return req.prompt, None
+        resume = {"resume": req.resume.model_dump(mode="json")}
+        return ({"prompt": req.prompt, **resume} if req.prompt else resume), HITL_MEDIA_TYPE
 
     def post_run(self, req: BaseChatRequest, result: Any, media_type: str | None = None) -> None:
         """Thread work done after a successful agent run: append the assistant message.
@@ -75,6 +99,9 @@ class ThreadRecorder:
     @staticmethod
     def _as_thread_message(result: Any, media_type: str | None = None) -> tuple[Any, str | None]:
         """Render a reply as the (content, media_type) pair the thread store holds.
+
+        A paused run is checked first: ``AgentPausedReplyAny`` subclasses ``AgentReplyAny`` and carries
+        no label of its own, so the branches below would store the question as a string of itself.
 
         The callers pass three different things, which is what makes a single ``str()`` wrong. The
         direct handlers pass an ``AgentReply``, whose ``__str__`` already yields JSON, and the
@@ -99,6 +126,8 @@ class ThreadRecorder:
         :param media_type: The label when the caller holds it separately from the result.
         :return: The thread message content, and its label when the reply carried one.
         """
+        if isinstance(result, AgentPausedReplyAny):
+            return result.content, HITL_MEDIA_TYPE
         if isinstance(result, AgentReplyAny) and result.media_type:
             return result.content, result.media_type
         if media_type and isinstance(result, (dict, list)):
@@ -108,3 +137,56 @@ class ThreadRecorder:
         if isinstance(result, (dict, list)):
             return json.dumps(result, default=str), None
         return str(result), None
+
+
+class StreamedReply:
+    """
+    The reply a streamed run leaves in a thread, gathered chunk by chunk.
+
+    Precedence: an error records nothing (a pause included, since a failure after a pause means it
+    was never persisted); then a pause, replacing any text before it; then a ``DataMessage``
+    payload; then the joined text.
+    """
+
+    def __init__(self, session_id: str):
+        """
+        :param session_id: The run's session; ``RunPaused`` carries none.
+        """
+        self._session_id = session_id
+        self._deltas: list[str] = []
+        self._errored = False
+        self._pause: RunPaused | None = None
+        self._data: DataMessage | None = None
+
+    def add(self, chunk: StreamChunk) -> None:
+        """:param chunk: The run's next chunk."""
+        if chunk.error:
+            self._errored = True
+        if chunk.delta:
+            self._deltas.append(chunk.delta)
+        if isinstance(chunk.event, RunPaused):
+            self._pause = chunk.event
+        elif isinstance(chunk.event, DataMessage):
+            self._data = chunk.event
+
+    @property
+    def paused(self) -> bool:
+        """Whether the thread will record a pause for this run."""
+        return self._pause is not None and not self._errored
+
+    def result(self) -> AgentReplyAny | str | None:
+        """:return: What ``ThreadRecorder.post_run`` should record, or None to record nothing."""
+        if self._errored:
+            return None
+        if self._pause is not None:
+            return AgentPausedReplyAny(
+                run_id=self._pause.run_id,
+                session_id=self._session_id,
+                agent=self._pause.agent,
+                interruptions=self._pause.interruptions,
+            )
+        if self._data is not None:
+            return AgentReplyAny(content=self._data.content, media_type=self._data.media_type)
+        if self._deltas:
+            return "".join(self._deltas)
+        return None

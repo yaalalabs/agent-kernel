@@ -91,6 +91,22 @@ thread:
   type: in_memory     # in_memory | redis | valkey | dynamodb | firestore | cosmosdb
 ```
 
+**[AG-UI](../integrations/agui.md)** is the one surface that records without a thread handler: with a
+`thread` block present, both AG-UI handlers record every run under its `threadId`. They serve no read
+routes, so mount `ThreadRESTRequestHandler` beside them to read the history back:
+
+```python
+from agentkernel.agui import AGUIPipelineRequestHandler
+from agentkernel.pipeline import IOHandler
+from agentkernel.thread import ThreadRESTRequestHandler
+
+IOHandler.run(handlers=[AGUIPipelineRequestHandler(authoriser=auth), ThreadRESTRequestHandler(authoriser=auth)])
+```
+
+The queue split above applies here too: the agent-runner process needs the same `thread` block, and on a
+broker transport it must name a shared store (`redis`, `valkey`, `dynamodb`, ...). `in_memory` is per process,
+so the runner could not append the reply to the thread the edge created.
+
 :::caution Custom thread stores
 A message's `content` is a JSON object, not a string, when the reply was labelled (see
 [A2UI](a2ui.md)). Every built-in backend serialises the whole `ThreadMessage` as one blob and is
@@ -169,6 +185,21 @@ curl "http://localhost:8000/api/v1/threads/ses-1"
 
 Both endpoints paginate: pass `limit` (default 50, max 200) and the opaque `cursor` returned as `next_cursor`
 in the previous page (`null` on the last page).
+
+### Message Content
+
+A message's `content` is normally the text of the turn, and carries no other key. A message whose
+content is structured stores the object itself with a sibling `media_type` naming its format: a reply
+the agent labelled (see [A2UI](a2ui.md)), a [paused run](human-in-the-loop.md), or the decision
+answering it. The pause is an `assistant` message holding
+`run_id`, `agent` and `interruptions`; the decision is a `user` message holding the `resume` block that
+was sent, with the prompt beside it when the turn carried both.
+
+The two fields always agree: `media_type` present means `content` is an object or an array, absent
+means it is text. A labelled reply may be either; a pause and a decision are always objects. A human's
+decision is a `user` message because a person sent it, so the `user`/`assistant` roles are unchanged —
+a client tells the two structured kinds apart by `role`, or by the keys they carry:
+`content.interruptions` for a pause, `content.resume.decisions` for a decision.
 
 ## Renaming Threads
 

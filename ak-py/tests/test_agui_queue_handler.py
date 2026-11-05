@@ -17,15 +17,18 @@ from fastapi import HTTPException
 
 from agentkernel.auth.authoriser import Authoriser
 from agentkernel.core.base import Session
-from agentkernel.core.config import AKConfig
+from agentkernel.core.config import AKConfig, _ThreadStoreConfig
 from agentkernel.core.event import MessageEnd, MessageStart, PausedInterruption, RunPaused, TextDelta
-from agentkernel.core.model import AgentRequestAttachmentRef, AgentRequestImage, ExecutionMode, ReplyMessageType, StreamChunk
+from agentkernel.core.model import AgentRequestAttachmentRef, AgentRequestImage, AgentRequestText, ExecutionMode, ReplyMessageType, StreamChunk
+from agentkernel.core.multimodal.storage import AttachmentStorageManager
 from agentkernel.core.util.factory import AKConfigError
 from agentkernel.integration.agui.queue_handler import AGUIPipelineRequestHandler
 from agentkernel.integration.agui.run_input import AGUIRunEnvelope, AGUIRunRequest
 from agentkernel.integration.agui.state import AGUIState
+from agentkernel.integration.thread import ConversationThreadManager, ThreadNamingStrategy
+from agentkernel.integration.thread.store.in_memory import InMemoryThreadStore
 from agentkernel.pipeline.agent_runner import AgentRunner, RealtimeAgentRunner, StreamAgentRunner
-from agentkernel.pipeline.envelope import ATTR_AGUI, ATTR_REQUEST_ID, ATTR_USER_ID, QueueMessage, QueueName
+from agentkernel.pipeline.envelope import ATTR_AGUI, ATTR_REQUEST_ID, ATTR_THREAD, ATTR_USER_ID, QueueMessage, QueueName
 from agentkernel.pipeline.response_handler import ResponseHandler
 from agentkernel.pipeline.response_store.dynamodb import DynamoDBResponseStore
 from agentkernel.pipeline.response_store.in_memory import InMemoryResponseStore
@@ -383,10 +386,12 @@ class _RecordingProducer:
     def __init__(self):
         self.threads = []
         self.requests = []
+        self.attributes = []
 
     def enqueue(self, request, **kwargs):
         self.threads.append(threading.current_thread())
         self.requests.append(request)
+        self.attributes.append(kwargs.get("attributes"))
         return {}
 
 
@@ -488,6 +493,84 @@ class TestTheAttachmentsAreOffloadedBeforeTheEnqueue:
         assert [type(request) for request in enqueued] == [AgentRequestAttachmentRef]
         assert enqueued[0].attachment_id
         assert "not-really-a-png" not in json.dumps(handler._producer.requests[0].model_dump(mode="json"))
+
+
+class _FixedNaming(ThreadNamingStrategy):
+    def generate_name(self, prompt: str) -> str:
+        return "thread"
+
+
+@pytest.fixture
+def thread_store(monkeypatch):
+    """An in-memory `thread` block and an empty store, with naming that makes no model call."""
+
+    def clear():
+        ConversationThreadManager.reset()
+        InMemoryThreadStore._threads.clear()
+        InMemoryThreadStore._messages.clear()
+
+    monkeypatch.setattr(AKConfig.get(), "thread", _ThreadStoreConfig(type="in_memory"), raising=False)
+    clear()
+    ConversationThreadManager.set_naming_strategy(_FixedNaming())
+    yield ConversationThreadManager.get()
+    clear()
+
+
+def _image():
+    return AgentRequestImage(prompt="what is this?", name="shot.png", image_data=base64.b64encode(b"png").decode(), mime_type="image/png")
+
+
+class TestTheEdgeRecordsTheUserTurn:
+    """With a `thread` block the edge records the user turn and marks the message for the runner."""
+
+    @pytest.mark.asyncio
+    async def test_the_user_turn_is_recorded_and_the_message_marked(self, monkeypatch, thread_store):
+        handler = _edge_handler(monkeypatch, requests=[AgentRequestText(prompt="hello")])
+        await handler._run("planner", _StubRequest())
+
+        assert handler._producer.attributes[0] == {ATTR_AGUI: "1", ATTR_THREAD: "1"}
+        assert thread_store.get_thread("t-1").user_id == "u1"
+        assert [(m.role, m.content) for m in thread_store.get_messages("t-1").messages] == [("user", "hello")]
+
+    @pytest.mark.asyncio
+    async def test_without_a_thread_block_the_message_is_unmarked(self, monkeypatch):
+        handler = _edge_handler(monkeypatch, requests=[AgentRequestText(prompt="hello")])
+        await handler._run("planner", _StubRequest())
+
+        assert handler._producer.attributes[0] == {ATTR_AGUI: "1"}
+
+    @pytest.mark.asyncio
+    async def test_an_attachment_is_offloaded_once(self, monkeypatch, thread_store):
+        _use_attachment_store(monkeypatch, "in_memory")
+        handler = _edge_handler(monkeypatch, requests=[_image()])
+        with patch.object(AttachmentStorageManager, "offload", wraps=AttachmentStorageManager.offload) as offload:
+            await handler._run("planner", _StubRequest())
+
+        assert offload.call_count == 1
+        assert [type(r) for r in handler._producer.requests[0].requests] == [AgentRequestAttachmentRef]
+        assert len(thread_store.get_messages("t-1").messages[0].attachments) == 1
+
+    @pytest.mark.asyncio
+    async def test_another_users_thread_is_a_403_with_nothing_enqueued(self, monkeypatch, thread_store):
+        thread_store.get_or_create_thread(session_id="t-1", user_id="someone-else", first_prompt="mine")
+        handler = _edge_handler(monkeypatch, requests=[AgentRequestText(prompt="hello")])
+        with pytest.raises(HTTPException) as excinfo:
+            await handler._run("planner", _StubRequest())
+
+        assert excinfo.value.status_code == 403
+        assert handler._producer.requests == []
+        assert thread_store.get_messages("t-1").messages == []
+
+    @pytest.mark.asyncio
+    async def test_a_refused_attachment_is_a_400_with_nothing_enqueued_or_recorded(self, monkeypatch, thread_store):
+        _use_attachment_store(monkeypatch, "in_memory", enabled=False)
+        handler = _edge_handler(monkeypatch, requests=[_image()])
+        with pytest.raises(HTTPException) as excinfo:
+            await handler._run("planner", _StubRequest())
+
+        assert excinfo.value.status_code == 400
+        assert handler._producer.requests == []
+        assert thread_store.get_thread("t-1") is None
 
 
 class TestAPauseIsTheRunsTerminalOutcome:

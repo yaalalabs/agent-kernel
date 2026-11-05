@@ -7,6 +7,7 @@ from agentkernel.auth import Authoriser
 from agentkernel.core import Session
 from agentkernel.openai import OpenAIModule, OpenAIToolBuilder
 from agentkernel.pipeline import IOHandler
+from agentkernel.thread import ThreadRESTRequestHandler
 from agents import Agent, ModelSettings
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
@@ -114,8 +115,17 @@ def runner() -> None:
     On the default in_memory transport that is still one process — the API, the response handler
     and the agent runner are threads — so this stays a single command with nothing to install.
     Point config at a broker and the agent runner moves out; see README "Two ways to run it".
+
+    The thread read routes are mounted beside AG-UI: the `thread` block records the runs, and these
+    routes are how a client reads them back.
     """
-    IOHandler.run(handlers=[AGUIPipelineRequestHandler(authoriser=DemoAuthoriser())])
+    authoriser = DemoAuthoriser()
+    IOHandler.run(
+        handlers=[
+            AGUIPipelineRequestHandler(authoriser=authoriser),
+            ThreadRESTRequestHandler(authoriser=authoriser),
+        ]
+    )
 
 
 if __name__ == "__main__":

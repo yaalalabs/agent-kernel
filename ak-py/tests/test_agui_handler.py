@@ -22,6 +22,7 @@ import json
 import logging
 from contextlib import contextmanager
 from copy import deepcopy
+from typing import Any
 
 import pytest
 from fastapi import FastAPI
@@ -30,7 +31,7 @@ from fastapi.testclient import TestClient
 from agentkernel.auth import Authoriser
 from agentkernel.auth.handler import AuthValidator, ValidationResult
 from agentkernel.core.base import Agent, Runner, Session
-from agentkernel.core.config import _AGUIConfig, _GuardrailConfig
+from agentkernel.core.config import AKConfig, _AGUIConfig, _GuardrailConfig, _MultimodalConfig, _ThreadStoreConfig
 from agentkernel.core.event import MessageEnd, MessageStart, TextDelta, ToolCallStart
 from agentkernel.core.hooks import PreHook
 from agentkernel.core.model import AgentReplyText
@@ -39,6 +40,8 @@ from agentkernel.core.session.in_memory import InMemorySessionStore
 from agentkernel.core.tool import ToolContext
 from agentkernel.integration.agui import AGUIRequestHandler
 from agentkernel.integration.agui.state import AGUI_STATE_KEY, AGUIState
+from agentkernel.integration.thread import ConversationThreadManager, ThreadNamingStrategy
+from agentkernel.integration.thread.store.in_memory import InMemoryThreadStore
 
 GOOD_TOKEN = "good-token"
 AUTH = {"Authorization": f"Bearer {GOOD_TOKEN}"}
@@ -118,11 +121,12 @@ class CopyingSessionStore(InMemorySessionStore):
         return deepcopy(super().load(session_id, strict))
 
 
-def _install_cfg(monkeypatch, agui_cfg):
+def _install_cfg(monkeypatch, agui_cfg, thread_cfg=None):
     """Point AKConfig.get() at a stub carrying every section this path reads."""
 
     class _Cfg:
         agui = agui_cfg
+        thread = thread_cfg
         multimodal = None
         sandbox = None
         guardrail = _GuardrailConfig()
@@ -134,9 +138,9 @@ def _install_cfg(monkeypatch, agui_cfg):
 
 
 @contextmanager
-def serving(monkeypatch, agents, agui_cfg=None, authoriser=None, store=None):
+def serving(monkeypatch, agents, agui_cfg=None, authoriser=None, store=None, thread_cfg=None):
     """Mount the AG-UI router over a runtime holding the given agents."""
-    _install_cfg(monkeypatch, agui_cfg if agui_cfg is not None else _AGUIConfig())
+    _install_cfg(monkeypatch, agui_cfg if agui_cfg is not None else _AGUIConfig(), thread_cfg)
     Runtime._system_pre_hooks = []
     Runtime._system_post_hooks = []
     runtime = Runtime(store if store is not None else InMemorySessionStore())
@@ -591,3 +595,81 @@ class TestOptionalDependency:
         monkeypatch.setattr(builtins, "__import__", _no_ag_ui)
         with pytest.raises(ValueError, match="agui"):
             AGUIRequestHandler(authoriser=StaticAuthoriser())
+
+
+class _FixedNaming(ThreadNamingStrategy):
+    def generate_name(self, prompt: str) -> str:
+        return "thread"
+
+
+@pytest.fixture
+def thread_store():
+    """An empty in-memory thread store, with naming that makes no model call."""
+
+    def clear():
+        ConversationThreadManager.reset()
+        InMemoryThreadStore._threads.clear()
+        InMemoryThreadStore._messages.clear()
+
+    clear()
+    ConversationThreadManager.set_naming_strategy(_FixedNaming())
+    yield
+    clear()
+
+
+def recorded(session_id: str = "session-1") -> list[tuple[str, Any]]:
+    return [(m.role, m.content) for m in ConversationThreadManager.get().get_messages(session_id).messages]
+
+
+class TestThreadRecording:
+    THREADS = _ThreadStoreConfig(type="in_memory")
+
+    def test_a_run_records_both_turns_under_the_thread_id(self, monkeypatch, thread_store):
+        with serving(monkeypatch, [ScriptedAgent("assistant", TEXT_SCRIPT)], thread_cfg=self.THREADS) as (client, _):
+            assert types_of(client.post("/agui/assistant", headers=AUTH, json=body()))[-1] == "RUN_FINISHED"
+            assert ConversationThreadManager.get().get_thread("session-1").user_id == "u1"
+            assert recorded() == [("user", "hello"), ("assistant", "hi")]
+
+    def test_without_a_thread_block_nothing_is_recorded_and_the_stream_is_unchanged(self, monkeypatch, thread_store):
+        with serving(monkeypatch, [ScriptedAgent("assistant", TEXT_SCRIPT)], thread_cfg=self.THREADS) as (client, _):
+            recording = events(client.post("/agui/assistant", headers=AUTH, json=body()))
+        InMemoryThreadStore._threads.clear()
+        InMemoryThreadStore._messages.clear()
+
+        with serving(monkeypatch, [ScriptedAgent("assistant", TEXT_SCRIPT)]) as (client, _):
+            assert events(client.post("/agui/assistant", headers=AUTH, json=body())) == recording
+        assert not InMemoryThreadStore._threads
+
+    def test_a_halted_run_records_no_reply(self, monkeypatch, thread_store):
+        agent = ScriptedAgent("assistant", TEXT_SCRIPT)
+        agent.pre_hooks.append(HaltingPreHook())
+        with serving(monkeypatch, [agent], thread_cfg=self.THREADS) as (client, _):
+            assert types_of(client.post("/agui/assistant", headers=AUTH, json=body()))[-1] == "RUN_ERROR"
+            assert recorded() == [("user", "hello")]
+
+    def test_a_run_that_raises_records_no_reply(self, monkeypatch, thread_store):
+        script = [MessageStart(message_id="m1"), TextDelta(message_id="m1", content="hi"), RuntimeError("model exploded")]
+        with serving(monkeypatch, [ScriptedAgent("assistant", script)], thread_cfg=self.THREADS) as (client, _):
+            assert types_of(client.post("/agui/assistant", headers=AUTH, json=body()))[-1] == "RUN_ERROR"
+            assert recorded() == [("user", "hello")]
+
+    def test_an_empty_run_records_no_reply(self, monkeypatch, thread_store):
+        with serving(monkeypatch, [ScriptedAgent("assistant", [])], thread_cfg=self.THREADS) as (client, _):
+            assert types_of(client.post("/agui/assistant", headers=AUTH, json=body()))[-1] == "RUN_FINISHED"
+            assert recorded() == [("user", "hello")]
+
+    def test_another_users_thread_is_refused_with_a_403(self, monkeypatch, thread_store):
+        with serving(monkeypatch, [ScriptedAgent("assistant", TEXT_SCRIPT)], thread_cfg=self.THREADS) as (client, _):
+            ConversationThreadManager.get().get_or_create_thread(session_id="session-1", user_id="someone-else", first_prompt="mine")
+            response = client.post("/agui/assistant", headers=AUTH, json=body())
+            assert response.status_code == 403
+            assert recorded() == []
+
+    def test_a_refused_attachment_is_a_400_and_leaves_no_thread(self, monkeypatch, thread_store):
+        image = {"type": "image", "source": {"type": "data", "value": "iVBORw0KGgo=", "mimeType": "image/png"}}
+        with serving(monkeypatch, [ScriptedAgent("assistant", TEXT_SCRIPT)], thread_cfg=self.THREADS) as (client, _):
+            monkeypatch.setattr(AKConfig.get(), "multimodal", _MultimodalConfig(enabled=False))
+            response = client.post("/agui/assistant", headers=AUTH, json=body(messages=[{"id": "m1", "role": "user", "content": [image]}]))
+            assert response.status_code == 400
+            assert "multimodal" in response.json()["detail"]
+            assert ConversationThreadManager.get().get_thread("session-1") is None

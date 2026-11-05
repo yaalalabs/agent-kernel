@@ -242,3 +242,30 @@ async def test_an_attachment_only_turn_is_accepted(base_url):
     events = await collect(base_url, payload)
     assert [e["type"] for e in events][-1] == "RUN_FINISHED"
     assert "RUN_ERROR" not in [e["type"] for e in events]
+
+
+@pytest.mark.asyncio
+async def test_a_run_is_recorded_as_a_thread(base_url):
+    """Both turns are readable from the thread routes once the run finishes.
+
+    Polled briefly: on the queue path the runner records the reply after sending the final chunk,
+    so the client can see RUN_FINISHED a moment before the reply is in the store.
+    """
+    thread_id = str(uuid.uuid4())
+    prompt = "Say hello in five words."
+    events = await collect(base_url, run_input(prompt, thread_id))
+    assert events[-1]["type"] == "RUN_FINISHED"
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        for _ in range(20):
+            response = await client.get(f"{base_url}/api/v1/threads/{thread_id}", headers=AUTH)
+            if response.status_code == 200 and len(response.json()["messages"]) == 2:
+                break
+            await asyncio.sleep(0.25)
+
+    assert response.status_code == 200
+    thread = response.json()
+    assert thread["user_id"] == "demo-user"
+    assert [m["role"] for m in thread["messages"]] == ["user", "assistant"]
+    assert thread["messages"][0]["content"] == prompt
+    assert thread["messages"][1]["content"].strip()

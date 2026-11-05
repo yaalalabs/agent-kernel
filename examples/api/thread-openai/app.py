@@ -1,12 +1,26 @@
 from agentkernel.api import RESTAPI
 from agentkernel.auth import Authoriser
-from agentkernel.openai import OpenAIModule
+from agentkernel.openai import OpenAIModule, OpenAIToolBuilder
 from agentkernel.thread import AgentThreadRequestHandler
 from agents import Agent
+
+
+def send_summary_email(recipient: str) -> str:
+    """
+    Simulate emailing a summary of this conversation; nothing is actually sent. Requires human
+    approval before it runs.
+
+    :param recipient: The address the summary would go to.
+    :return: A note that the send was simulated.
+    """
+    return f"Simulated: a summary would be sent to {recipient}. Nothing was emailed."
+
 
 assistant_agent = Agent(
     name="assistant",
     instructions="You are a helpful assistant. Give short and direct answers.",
+    # Gated so the thread records the pause and its decision, not just the turns either side.
+    tools=OpenAIToolBuilder.bind([send_summary_email], needs_approval=True),
     model="openai/gpt-4.1-mini",
 )
 

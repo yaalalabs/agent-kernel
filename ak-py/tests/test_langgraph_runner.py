@@ -1087,6 +1087,18 @@ class TestCheckPointerDurability:
 
         assert cp._pending_writes("t", "", "c") == [("task-1", "messages", "one")]
 
+    def test_get_tuple_hands_back_a_copy_of_the_checkpoint(self):
+        """`get_state()` writes to the checkpoint it is given, and the stored one must not move."""
+        from agentkernel.framework.langgraph.langgraph import CheckPointer
+
+        cp = CheckPointer()
+        config = {"configurable": {"thread_id": "t"}}
+        cp.put(config, {"id": "c", "versions_seen": {}}, {}, {})
+
+        cp.get_tuple(config).checkpoint["versions_seen"]["ask"] = {"start": 1}
+
+        assert cp.get_tuple(config).checkpoint["versions_seen"] == {}
+
     def test_delete_thread_clears_its_writes(self):
         from agentkernel.framework.langgraph.langgraph import CheckPointer
 
@@ -1199,6 +1211,29 @@ class TestLangGraphStreamingPause:
         assert again.run_id != first.run_id
         assert again.interruptions[0].payload == {"question": "anything else?"}
         assert [r.id for r in PausedRunState.list(session)] == [again.run_id]
+
+    @pytest.mark.asyncio
+    async def test_answering_the_second_question_still_runs_the_graph(self):
+        """Three streamed turns, because the second resume is where the read-back used to bite.
+
+        Every streamed turn reads the state back to find a pause, and `get_state()` edits the
+        checkpoint it is handed. While the checkpointer handed out the stored object itself, that
+        read marked the parked node as already run — so this third turn resumed a graph with
+        nothing left to do and ended with neither a reply nor a pause.
+        """
+        runner, session = LangGraphRunner(), Session("s")
+        agent = _real_agent(_gated_graph(second=True))
+        first = [e async for e in runner.stream(agent, session, [AgentRequestText(prompt="start")])][-1]
+        requests, decisions = _resume_requests(ResumeDecision(id=first.interruptions[0].id, message="yes"))
+        again = [e async for e in runner.resume_stream(agent, session, requests, decisions, PausedRunState.get(session, first.run_id))][-1]
+        requests, decisions = _resume_requests(ResumeDecision(id=again.interruptions[0].id, message="nothing else"))
+
+        finished = [e async for e in runner.resume_stream(agent, session, requests, decisions, PausedRunState.get(session, again.run_id))]
+
+        assert not any(isinstance(e, RunPaused) for e in finished)
+        assert PausedRunState.list(session) == []
+        values = (await agent.agent.aget_state({"configurable": {"thread_id": "s"}})).values
+        assert (values["answer"], values["second"]) == ("'yes'", "'nothing else'")
 
     @pytest.mark.asyncio
     async def test_an_ordinary_stream_emits_no_run_paused(self):

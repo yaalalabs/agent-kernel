@@ -188,6 +188,24 @@ still be answered from the description in the history, but the analysis tool wil
 if the 📎 button does nothing at all, the frontend was not rebuilt — run `./build.sh` (or
 `cd frontend && npm run build`).
 
+## Conversation history
+
+`config.yaml` has a `thread` block, so every run is recorded as a conversation thread keyed by its
+`threadId`: the user's message, then the agent's reply. A failed run records no reply, and a run that
+pauses for approval records the pause. `app.py` mounts `ThreadRESTRequestHandler` beside the AG-UI
+handler, which serves the history back:
+
+    curl -s -H "Authorization: Bearer demo-token" http://localhost:8000/api/v1/threads/<threadId>
+
+AG-UI itself has no way to fetch history, so this route is how a client reloads a past conversation.
+The demo frontend uses it: the **Conversations** column comes from `GET /api/v1/threads`, and
+clicking one loads its messages and continues that thread, so the next run is sent on its `threadId`.
+The task list stays empty until the agent next changes the shared state, which lives on the server.
+Reloading the tab still restores the open conversation from `sessionStorage`, as above.
+
+In mode B the user's message is recorded by the API and the reply by the runner, so
+`config.broker.yaml` puts the thread store on Valkey, where both can reach it.
+
 ## Two ways to run it
 
 The agent runs on the **queue pipeline** either way — `app.py` mounts `AGUIPipelineRequestHandler`,
@@ -286,7 +304,8 @@ resolves `agentkernel` from PyPI, where the version matches but the `agui` extra
 and uv drops an unknown extra silently rather than failing, so the install appears to succeed and then
 `AGUIRequestHandler` raises `ValueError: AG-UI support requires the 'ag-ui-protocol' package`.
 `./build.sh local` resolves against `../../../ak-py/dist`, so run `ak-py/build.sh` first if that
-directory is empty or stale.
+directory is empty or stale. The same holds for conversation history: no release records AG-UI runs as
+threads yet, so `test_a_run_is_recorded_as_a_thread` fails against the PyPI package.
 
 **Start the app with `python app.py`, not `uv run app.py`, for the same reason.** `uv run` re-resolves
 the environment before running, and on this branch that can replace the locally built `agentkernel`

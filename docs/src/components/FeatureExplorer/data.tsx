@@ -168,8 +168,8 @@ export const FEATURE_TABS: FeatureTab[] = [
       {
         title: "Conversation Threads",
         description:
-          "Persistent, named conversation threads keyed by session, readable over REST with cursor pagination and auto-named from the first prompt.",
-        tags: ["Threads", "REST", "Auto-naming"],
+          "Persistent, named conversation threads keyed by session, readable over REST with cursor pagination and auto-named from the first prompt. A paused run and the decision answering it are recorded as messages of their own.",
+        tags: ["Threads", "REST", "Auto-naming", "Human in the loop"],
         docs: "/docs/advanced/threads",
         example: "api/thread-openai",
       },

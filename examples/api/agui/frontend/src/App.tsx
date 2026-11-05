@@ -2,9 +2,11 @@ import { useState } from "react";
 
 import type { TextLine } from "./agui/types.ts";
 import { useAgUiRun } from "./agui/useAgUiRun.ts";
+import { useThreads } from "./agui/useThreads.ts";
 import Composer from "./components/Composer.tsx";
 import Sidebar from "./components/Sidebar.tsx";
 import StatusStrip from "./components/StatusStrip.tsx";
+import ThreadList from "./components/ThreadList.tsx";
 import Transcript from "./components/Transcript.tsx";
 
 const FILE_ORIGIN_HINT: TextLine = {
@@ -18,7 +20,8 @@ const FILE_ORIGIN_HINT: TextLine = {
 /** Layout and page header. Warns if the page was opened from a file:// URL. */
 export default function App() {
   const [token, setToken] = useState("demo-token");
-  const { threadId, runId, view, running, send, reset, report } = useAgUiRun(token);
+  const { threadId, runId, view, running, opening, send, reset, report, open } = useAgUiRun(token);
+  const history = useThreads(token, running);
 
   const offline = location.protocol === "file:";
   const lines = offline ? [FILE_ORIGIN_HINT, ...view.lines] : view.lines;
@@ -32,8 +35,9 @@ export default function App() {
       <main>
         <Transcript lines={lines} />
         <StatusStrip status={view.status} />
-        <Composer onSend={send} onError={report} disabled={running || offline} />
+        <Composer onSend={send} onError={report} disabled={running || opening || offline} />
       </main>
+      <ThreadList threads={history.threads} error={history.error} currentId={threadId} busy={running || opening} onOpen={open} />
       <Sidebar state={view.state} onReset={reset} token={token} onTokenChange={setToken} threadId={threadId} runId={runId} />
     </>
   );
