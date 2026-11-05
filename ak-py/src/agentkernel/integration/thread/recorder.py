@@ -7,7 +7,8 @@ import json
 import logging
 from typing import Any, List, Optional
 
-from ...core.model import AgentPausedReplyAny, AgentReplyAny, AgentRequest, BaseChatRequest
+from ...core.event import DataMessage, RunPaused
+from ...core.model import AgentPausedReplyAny, AgentReplyAny, AgentRequest, BaseChatRequest, StreamChunk
 from .manager import ConversationThreadManager
 from .model import HITL_MEDIA_TYPE, ThreadAttachment
 
@@ -131,3 +132,56 @@ class ThreadRecorder:
         if isinstance(result, (dict, list)):
             return json.dumps(result, default=str), None
         return str(result), None
+
+
+class StreamedReply:
+    """
+    The reply a streamed run leaves in a thread, gathered chunk by chunk.
+
+    Precedence: an error records nothing (a pause included, since a failure after a pause means it
+    was never persisted); then a pause, replacing any text before it; then a ``DataMessage``
+    payload; then the joined text.
+    """
+
+    def __init__(self, session_id: str):
+        """
+        :param session_id: The run's session; ``RunPaused`` carries none.
+        """
+        self._session_id = session_id
+        self._deltas: List[str] = []
+        self._errored = False
+        self._pause: Optional[RunPaused] = None
+        self._data: Optional[DataMessage] = None
+
+    def add(self, chunk: StreamChunk) -> None:
+        """:param chunk: The run's next chunk."""
+        if chunk.error:
+            self._errored = True
+        if chunk.delta:
+            self._deltas.append(chunk.delta)
+        if isinstance(chunk.event, RunPaused):
+            self._pause = chunk.event
+        elif isinstance(chunk.event, DataMessage):
+            self._data = chunk.event
+
+    @property
+    def paused(self) -> bool:
+        """Whether the thread will record a pause for this run."""
+        return self._pause is not None and not self._errored
+
+    def result(self) -> Optional[AgentReplyAny | str]:
+        """:return: What ``ThreadRecorder.post_run`` should record, or None to record nothing."""
+        if self._errored:
+            return None
+        if self._pause is not None:
+            return AgentPausedReplyAny(
+                run_id=self._pause.run_id,
+                session_id=self._session_id,
+                agent=self._pause.agent,
+                interruptions=self._pause.interruptions,
+            )
+        if self._data is not None:
+            return AgentReplyAny(content=self._data.content, media_type=self._data.media_type)
+        if self._deltas:
+            return "".join(self._deltas)
+        return None
