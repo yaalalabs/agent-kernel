@@ -15,6 +15,7 @@ Every pyproject.toml with a uv.lock gets the same treatment:
     npm       npm audit fix where npm alerts exist (never --force), then npm ci and build
     report    write the PR body and the run summary
     fix       Copilot reads failures.json and names the package behind each real error; then `hold`
+    verdict   may the PR open although the last test round failed? (only failures this update did not cause)
 
 A version line is the major for >= 1.0 and the minor for 0.x. The update never moves a package to a
 new line (a breaking upgrade needs its own PR), except to reach a security fix. The tests run in CI,
@@ -45,6 +46,7 @@ CALVER_MIN_MAJOR = 2000  # a first version part this high is a date (2026.10.1),
 UPPER_OPERATORS = {"<", "<=", "~=", "==", "==="}
 TIMEOUT_SECONDS = 1800
 DEPENDENCY_FILES = re.compile(r"(^|/)(pyproject\.toml|uv\.lock|package\.json|package-lock\.json)$")
+NOT_DEPENDENCY_FILE = "not_dependency.jsonl"  # Copilot: failures with no dependency cause
 PINS_FILE = "pins.json"  # manifest -> {package: version}: held at its security minimum, not at develop's version
 
 PROMPT = """\
@@ -83,16 +85,21 @@ For each failure:
    - The minimum breaks the same way: leave keep_minimum out and say so in the reason. The fix is
      blocked (the code needs a change).
    - You could not check: leave keep_minimum out and start the reason with "not verified:".
-5. No real error (an answer only worded differently, a timeout with no error, an infrastructure
-   problem such as a port-forward, cluster, network, rate limit or missing secret): write nothing.
+5. No dependency cause (an answer only worded differently, a timeout with no error, an
+   infrastructure problem such as a port-forward, cluster, network, rate limit or missing secret):
+   hold nothing. Append ONE line of JSON to {state}/not_dependency.jsonl instead, with "job" copied
+   exactly from the failure's "where":
+   {"job": "<where>", "reason": "the answer has the same facts in another order; no error or traceback"}
+   Write it only when you are sure no changed package causes the failure. Such a failure does not
+   block the PR; it is listed in the PR for a person to check.
 
 Run every command in the foreground.
 
 HARD RULES
-- Do not edit any file. Only append JSON lines to {state}/holds.jsonl.
+- Do not edit any file. Only append JSON lines to {state}/holds.jsonl and {state}/not_dependency.jsonl.
 - Never run git commit or git push, and never open a PR.
 - Never name a package whose version did not change.
-- When unsure, write nothing for that failure.
+- When unsure, write nothing for that failure (then it blocks the PR, which is the safe side).
 """
 
 
@@ -256,8 +263,11 @@ class Repo:
     def restore(self, manifest: Manifest, commit: str) -> None:
         self.git("checkout", commit, "--", manifest.relative, manifest.lock_relative)
 
-    def changed_files(self) -> list[str]:
-        return [path for path in self.git("diff", "--name-only").stdout.split() if DEPENDENCY_FILES.search(path)]
+    def changed_files(self, base: str) -> list[str]:
+        """Dependency files that differ from `base`, committed or not. In `fix-1` the first round's
+        changes are already committed, so a plain `git diff` would see only the new holds."""
+        changed = self.git("diff", "--name-only", base).stdout.split()
+        return [path for path in changed if DEPENDENCY_FILES.search(path)]
 
 
 class State:
@@ -265,7 +275,7 @@ class State:
 
     RUN_FILES = (
         "alerts.json", "alerts-error.json", "changes.json", "results.json", "held.json", "holds.json",
-        "holds.jsonl", "failures.json", "reverted.json", "npm.json", PINS_FILE,
+        "holds.jsonl", "failures.json", "reverted.json", "npm.json", PINS_FILE, NOT_DEPENDENCY_FILE,
     )  # fmt: skip
 
     def __init__(self, directory: Path):
@@ -913,6 +923,81 @@ class Failures:
         return 0
 
 
+class Verdict:
+    """Command `verdict`: may the PR open although the last test round had failures? Prints true or false.
+
+    Only failures that this update did not cause are accepted. A failed job of the last round counts as
+    not caused by it when:
+      - the same job passed in round 1 (most likely flaky; the holds between the rounds could matter,
+        so the PR says so), or
+      - Copilot found no dependency cause for its round-1 failure (not_dependency.jsonl, with a reason).
+    Anything else (a new failure, a hold that did not help, Copilot unsure) keeps the PR closed.
+    When the PR may open, the Testing line of pr-body.md lists each accepted failure with its reason.
+    """
+
+    def __init__(self, failures: Failures, first: list[str], retry: list[str]):
+        self.failures = failures
+        self.state = failures.state
+        self.first = first
+        self.retry = retry
+
+    def rounds(self) -> tuple[dict[str, str], dict[str, str]]:
+        """(round 1, round 2): job name without its caller prefix -> conclusion."""
+        listed = self.failures.gh(
+            "--paginate",
+            f"repos/{self.failures.gh_repo}/actions/runs/{self.failures.run_id}/jobs?per_page=100",
+            "--jq",
+            ".jobs[] | {name, conclusion}",
+        )
+        first, retry = {}, {}
+        for job in (json.loads(line) for line in listed.stdout.splitlines() if line.strip()):
+            caller, separator, name = job["name"].partition(" / ")
+            if separator and caller in self.first:
+                first[name] = job["conclusion"] or ""
+            elif separator and caller in self.retry:
+                retry[name] = job["conclusion"] or ""
+        return first, retry
+
+    def copilot_reasons(self) -> dict[str, str]:
+        path, found = self.state.path(NOT_DEPENDENCY_FILE), {}
+        for line in path.read_text().splitlines() if path.exists() else []:
+            try:
+                item = json.loads(line)
+                name = str(item["job"]).partition(" / ")[2] or str(item["job"])
+                found[name.strip()] = str(item.get("reason", ""))[:300]
+            except (ValueError, KeyError, TypeError):
+                continue
+        return found
+
+    def run(self) -> int:
+        first, retry = self.rounds()
+        last, other, label = (retry, first, 2) if retry else (first, {}, 1)
+        reasons, accepted, blocking = self.copilot_reasons(), [], []
+        for name, conclusion in sorted(last.items()):
+            if conclusion in {"success", "skipped"}:
+                continue
+            if conclusion == "failure" and other.get(name) == "success":
+                accepted.append(
+                    f"  - `{name}`: passed in round 1, failed in round 2 (flaky, or a hold between the rounds)"
+                )
+            elif conclusion == "failure" and name in reasons:
+                accepted.append(f"  - `{name}`: no dependency cause (Copilot): {reasons[name]}")
+            else:
+                blocking.append(f"- `{name}`: {conclusion or 'not finished'}")
+        ok = bool(last) and not blocking
+        body = self.state.path("pr-body.md")
+        if ok and body.exists():
+            tested = [
+                f"- Round {label}: unit tests, e2e, kind smoke and lint passed except these jobs, which this update",
+                "  did not cause. The PR's own CI runs them again; check them before merging:",
+                *accepted,
+            ]
+            body.write_text(body.read_text().replace(Reporter.TESTED, "\n".join(tested)))
+        self.state.save("verdict.json", {"ok": ok, "round": label, "accepted": accepted, "blocking": blocking})
+        print("true" if ok else "false")
+        return 0
+
+
 class Finalizer:
     """Command `finalize`: put back every manifest that still fails. The rest still ship."""
 
@@ -970,6 +1055,8 @@ class Reporter:
     """Command `report`: check every alert again; write the PR body and the run summary."""
 
     MARKER = "<!-- ak-dep-update manifests={count} run={run} -->"
+    # `verdict` replaces this line when the PR opens with failures that have no dependency cause.
+    TESTED = "- [x] Unit tests, the full e2e suite, the kind smoke tests and lint passed on this branch before the PR was opened."
     SEVERITY: ClassVar[dict[str, int]] = {"critical": 0, "high": 1, "medium": 2, "low": 3}
 
     def __init__(self, repo: Repo, state: State, run_id: str, dry_run: bool):
@@ -980,12 +1067,12 @@ class Reporter:
         self.reverted = set(state.load("reverted.json", []))
         self.changes = state.load("changes.json", [])
 
-    def alert_status(self) -> tuple[int, list[str]]:
-        """(fixed count, still-open lines grouped by package and reason)."""
+    def alert_status(self) -> tuple[int, list[str], list[str]]:
+        """(fixed count, fixed lines grouped by package, still-open lines grouped by package and reason)."""
         blocked = {(c["manifest"], c["package"]): c["note"] for c in self.changes if c["kind"] == "blocked"}
         holds = self.state.load("holds.json", {})
         npm = {r["dir"]: r for r in self.state.load("npm.json", [])}
-        fixed, still = 0, {}
+        fixed, done, still = 0, {}, {}
         for alert in Alerts(self.state).items:
             path, name, patched = (
                 alert["manifest_path"],
@@ -1016,11 +1103,20 @@ class Reporter:
                     reason = "held back by another package's requirement"
             if reason is None:
                 fixed += 1
+                key = (self.SEVERITY.get(alert["severity"], 9), name, alert["severity"])
+                item = done.setdefault(key, {"paths": set(), "patched": set()})
+                item["paths"].add(path)
+                item["patched"] |= {patched} if patched else set()
             else:
-                key = (self.SEVERITY.get(alert["severity"], 9), alert["package"], alert["severity"], reason)
+                key = (self.SEVERITY.get(alert["severity"], 9), name, alert["severity"], reason)
                 still.setdefault(key, set()).add(path)
         lines = [f"- `{p}` ({s}): {r} ({len(paths)} manifest(s))" for (_, p, s, r), paths in sorted(still.items())]
-        return fixed, lines
+        fixed_lines = [
+            f"- `{p}` ({s}): now at least {max(i['patched']) if i['patched'] else 'patched'} "
+            f"({len(i['paths'])} alert(s) fixed)"
+            for (_, p, s), i in sorted(done.items())
+        ]
+        return fixed, fixed_lines, lines
 
     def safe(self, relative: str, name: str, patched: Version, declared: bool) -> bool:
         """Locked version (alert on uv.lock) or every declared floor (alert on pyproject.toml) is patched."""
@@ -1093,7 +1189,7 @@ class Reporter:
         return rows, indirect
 
     def run(self) -> int:
-        changed = self.repo.changed_files()
+        changed = self.repo.changed_files(self.state.commit)
         changed_dirs = {str(Path(path).parent) for path in changed}
         live = [c for c in self.changes if c["manifest"] not in self.reverted]
         caps, secured = sum(c["kind"] == "cap" for c in live), sum(c["kind"] == "security" for c in live)
@@ -1112,7 +1208,7 @@ class Reporter:
             for (p, v, r), m in sorted(pinned_groups.items())
         ]
         rows, indirect = self.version_rows(changed_dirs)
-        fixed, still_open = self.alert_status()
+        fixed, fixed_lines, still_open = self.alert_status()
         held_failed, held_line = self.held_lines()
         put_back = [f"- `{r}`: still failed its checks" for r in sorted(self.reverted)]
         warning = ""
@@ -1125,6 +1221,7 @@ class Reporter:
             return ["", f"{heading}:", *lines] if lines else []
 
         notes = [
+            *section("Security fixes (Dependabot alerts fixed, by package)", fixed_lines[:120]),
             *section("Held back because a check failed", held_failed),
             *section("Security fixes kept at the lowest patched version", pinned),
             *section("Security fixes blocked (need a code change)", blocked),
@@ -1157,7 +1254,7 @@ class Reporter:
             ),
             "",
             "## Testing",
-            "- [x] Unit tests, the full e2e suite, the kind smoke tests and lint passed on this branch before the PR was opened.",
+            self.TESTED,
             "",
             "## Additional Notes",
             *notes,
@@ -1213,6 +1310,7 @@ def main() -> int:
         "npm",
         "report",
         "fix",
+        "verdict",
     ]
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("command", choices=commands)
@@ -1225,7 +1323,8 @@ def main() -> int:
         help="owner/name on GitHub (default: $REPO, else $GITHUB_REPOSITORY)",
     )
     parser.add_argument("--run-id", default="local", help="the workflow run id (failures --jobs, report)")
-    parser.add_argument("--jobs", default="", help="failures: caller job ids to read failed CI jobs from, e.g. e2e-1")
+    parser.add_argument("--jobs", default="", help="failures, verdict: round-1 caller job ids, e.g. e2e-1,kind-1")
+    parser.add_argument("--retry-jobs", default="", help="verdict: round-2 caller job ids, e.g. e2e-2,kind-2")
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--dry-run", action="store_true", help="report only")
     args = parser.parse_args()
@@ -1246,6 +1345,9 @@ def main() -> int:
         "npm": lambda: NpmFixer(repo, state).run(),
         "report": lambda: Reporter(repo, state, args.run_id, args.dry_run).run(),
         "fix": lambda: CopilotFix(repo, state, args.workers).run(),
+        "verdict": lambda: Verdict(
+            Failures(repo, state, args.repo, args.run_id, []), split(args.jobs), split(args.retry_jobs)
+        ).run(),
     }
     return run[args.command]()
 

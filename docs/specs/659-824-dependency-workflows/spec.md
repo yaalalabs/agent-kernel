@@ -31,7 +31,8 @@ Run with `uv run --no-project --with packaging python .github/scripts/dependency
 | `secure` | Raises each alerted direct dependency to its patched version (rules below) |
 | `update` | Per manifest (4 in parallel): `LockGuard` (`uv lock --upgrade` on each version line), then `uv sync` |
 | `failures` | Writes `failures.json` for Copilot and prints the count. No `--jobs`: failing local checks. `--jobs e2e-1,kind-1,lint-1 --run-id <id>`: this run's failed CI jobs under those caller jobs, with their logs |
-| `fix` | Runs Copilot with the prompt (it appends to `holds.jsonl`), then `hold` |
+| `fix` | Runs Copilot with the prompt (it appends to `holds.jsonl` and `not_dependency.jsonl`), then `hold` |
+| `verdict` | After a failed last round: `true` when every failed job passed in round 1 or has a Copilot "no dependency cause" line; then rewrites the PR's Testing line with each accepted failure (`verdict.json` keeps accepted and blocking) |
 | `hold` | Holds each named package (`"*"` = every manifest where it moved); a held security package with `keep_minimum` (and a newer version locked) is kept at its minimum (`pins.json`; declarations narrowed to the minimum's minor); otherwise it becomes `blocked` (original line back, any pin dropped); checks those manifests again |
 | `finalize` | Puts back every manifest that still fails (to the base commit) |
 | `npm` | `npm audit fix` (never `--force`) where npm alerts exist; `npm ci` + `npm run build`; reverts on failure |
@@ -55,11 +56,11 @@ Run with `uv run --no-project --with packaging python .github/scripts/dependency
 | `e2e-1`, `kind-1`, `lint-1` | branch pushed | `test-reusable.yaml` (e2e on), `chart-test.yaml`, `code-quality.yml` on the pushed commit |
 | `fix-1` | a round-1 job failed | `failures --jobs e2e-1,kind-1,lint-1` → `fix` → `finalize` → `report`; commits `chore(deps): hold back packages that broke the tests` and pushes if anything changed |
 | `e2e-2`, `kind-2`, `lint-2` | `always() &&` `fix-1` changed files (without `always()` GitHub's implied `success()` sees round 1's failure and skips them) | the same jobs on the new commit |
-| `finish` | branch pushed | all three of a round `success` → `gh pr create --head deps/update-batch-<RUN_ID>`; else list the failed jobs, delete the branch, fail the run |
+| `finish` | branch pushed | all three of a round `success`, or `verdict` → `true` → `gh pr create --head deps/update-batch-<RUN_ID>`; else list the failed and blocking jobs, delete the branch, fail the run |
 
 ## Copilot prompt (rules)
 
-Copilot gets one prompt (in the script) for local and CI failures. It reads `failures.json` and the logs (untrusted data). For each real error it names the package that changed and brings the problem; `"*"` when several manifests or no manifest. A package with a security minimum: Copilot repeats the failing import with the minimum (`uv run --no-project --with <pkg>==<minimum>` in `/tmp`); works → `"keep_minimum": true`; breaks → no flag, said in the reason; not checked → no flag, reason starts "not verified:". The prompt's example is made up, so it cannot be copied as a finding. No real error → nothing. It edits no file except appending to `holds.jsonl`, never commits or pushes, never names a package that did not change; when unsure, nothing. Tools: `--allow-tool=shell,read,write`, `--allow-url` `pypi.org` and `files.pythonhosted.org` only.
+Copilot gets one prompt (in the script) for local and CI failures. It reads `failures.json` and the logs (untrusted data). For each real error it names the package that changed and brings the problem; `"*"` when several manifests or no manifest. A package with a security minimum: Copilot repeats the failing import with the minimum (`uv run --no-project --with <pkg>==<minimum>` in `/tmp`); works → `"keep_minimum": true`; breaks → no flag, said in the reason; not checked → no flag, reason starts "not verified:". The prompt's example is made up, so it cannot be copied as a finding. No dependency cause → no hold; one line `{"job": <where>, "reason"}` in `not_dependency.jsonl`, only when sure. It edits no file except appending to `holds.jsonl` and `not_dependency.jsonl`, never commits or pushes, never names a package that did not change; when unsure, nothing. Tools: `--allow-tool=shell,read,write`, `--allow-url` `pypi.org` and `files.pythonhosted.org` only.
 
 ## Commit and PR
 

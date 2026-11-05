@@ -2,8 +2,10 @@ name: Dependency Version Update (Copilot)
 
 # Every two weeks, for every manifest the same way: upper limits, security fixes, and updates on each version
 # line (scripts/dependency_caps.py). The branch then runs the same CI jobs a PR runs: unit tests, e2e,
-# kind smoke tests, lint. The PR opens only when they pass. On a failure Copilot names the package
+# kind smoke tests, lint. The PR opens when they pass. On a failure Copilot names the package
 # behind each real error (it edits nothing), the script holds it back, and the tests run once more.
+# Failures this update did not cause (they flip between rounds, or Copilot finds no dependency cause)
+# do not block the PR; they are listed in it.
 #
 #   when -> update -> e2e-1 + kind-1 + lint-1 -> (failed) fix-1 -> e2e-2 + kind-2 + lint-2 -> finish
 
@@ -348,6 +350,9 @@ jobs:
         with:
           name: dep-state
           path: /tmp/dep-state
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: '0.13.6'
       - name: Open the PR, or delete the branch
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
@@ -356,7 +361,18 @@ jobs:
           ROUND_2: ${{ needs.e2e-2.result }} ${{ needs.kind-2.result }} ${{ needs.lint-2.result }}
         run: |
           set -euo pipefail
+          green=false
           if [ "$ROUND_1" = "success success success" ] || [ "$ROUND_2" = "success success success" ]; then
+            green=true
+          else
+            # Failures this update did not cause (flipped between rounds, or no dependency cause per
+            # Copilot) do not block; the script lists them in the PR body. Anything else does.
+            ok=$(GH_TOKEN="$ACTIONS_TOKEN" uv run --no-project --with packaging python "$SCRIPT" \
+              --state "$STATE_DIR" verdict --run-id "$RUN_ID" --jobs e2e-1,kind-1,lint-1 --retry-jobs e2e-2,kind-2,lint-2) || ok=false
+            echo "verdict: $ok"; cat "$STATE_DIR/verdict.json" || true
+            [ "$ok" != true ] || green=true
+          fi
+          if [ "$green" = true ]; then
             url=$(gh pr create --repo "$REPO" --base "$BASE_BRANCH" --head "$BRANCH" \
               --title "$(jq -r .title "$STATE_DIR/summary.json")" --body-file "$STATE_DIR/pr-body.md")
             { echo "## PR opened: $url"; echo; cat "$STATE_DIR/update-summary.md"; } >> "$GITHUB_STEP_SUMMARY"
@@ -366,14 +382,15 @@ jobs:
             --jq '.jobs[] | select(.conclusion == "failure") | "- " + .name' | grep -E '^- (e2e|kind|lint)-[12] / ' || true)
           gh api -X DELETE "repos/$REPO/git/refs/heads/$BRANCH" || true
           if [ "$ROUND_2" = "skipped skipped skipped" ]; then
-            why="round 1 failed and nothing could be held back (or the fix job failed), so round 2 did not run"
+            why="round 1 had failures that were neither held back nor explained (or the fix job failed)"
           else
-            why="the tests still failed after the holds"
+            why="the tests still failed after the holds, with failures this update may have caused"
           fi
           {
             echo "## No PR: $why, so \`$BRANCH\` was deleted"
             echo "Round 1: $ROUND_1. Round 2: $ROUND_2."
             echo; echo "### Failed jobs"; echo "${failed:-(none found; a job may have been cancelled)}"
+            echo; echo "### Blocking (not explained)"; jq -r '.blocking[]?' "$STATE_DIR/verdict.json" 2>/dev/null || true
             echo; cat "$STATE_DIR/update-summary.md"
           } >> "$GITHUB_STEP_SUMMARY"
           exit 1

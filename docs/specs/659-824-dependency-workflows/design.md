@@ -55,7 +55,7 @@ A **version line** is the major for `1.x` and up, and the minor for `0.x`. Movin
 - **Copilot never edits files.** It only appends `{"manifest" or "*", "package", "reason", optional "keep_minimum"}` to `holds.jsonl`.
 - The script keeps that package (and whatever pulls it) at its old version, and checks the manifest again.
 - **Real error → hold:** a traceback, an exception, `No module named`, `cannot import name`, a resolver or build error, a lint failure, or an error returned as the agent's answer. Copilot names the package that changed and **brings** the problem. Example: `litellm` 1.108.0 imports `mcp.types.CacheableResult` on every call → "No module named 'mcp'" → hold `litellm`, not `mcp`.
-- **No real error → nothing is held:** an answer only worded differently, a timeout with no error, an infrastructure problem. It is listed.
+- **No dependency cause → nothing is held:** an answer only worded differently, a timeout with no error, an infrastructure problem. Copilot records it with a reason (`not_dependency.jsonl`); unsure → it records nothing.
 - **A held package with a security minimum:** the newest version may break while the minimum works. Copilot repeats the failing import with the minimum in a clean environment.
   - **The minimum works** (`keep_minimum`): the package is **kept at its minimum**, its declarations narrowed to that minor (`litellm>=1.95.0,<1.96`), so the fix stays. Example: `litellm` 1.108.0 breaks, 1.95.0 does not.
   - **The minimum breaks too, or could not be checked** (reason starts "not verified:"): its original line comes back, the fix is **blocked**, and its alert stays open with the reason. Example: `pydantic-ai-slim>=2.53` removes `agent._instructions`, which the AK adapter reads.
@@ -131,7 +131,7 @@ A scheduled run has no inputs: everything, real run.
 - **Long held-back list.** Many indirect `0.x` packages move a minor often (`fastapi`, `uvicorn`, `jiter`), and packages that need them wait too (`google-adk` 2.8 → 2.13). Safe; each needs its own PR. Year-numbered majors (`attrs` 25 → 26) wait once a year.
 - **Hand-written limits inside a line are not raised** (e.g. `<1.5` while 1.9 exists). They stay as written.
 - **API cost:** each test round makes real OpenAI calls across all examples; up to two rounds per run (every two weeks).
-- **A failure with no real error blocks the PR** (nothing is held, so round 2 fails the same way). It is listed for a person.
+- **Failures this update did not cause do not block the PR.** A failed job of the last round is accepted when it passed in round 1 (flaky, or a hold between the rounds), or when Copilot found no dependency cause for it. The PR's Testing section lists each one with its reason, and the PR's own CI runs it again. Anything unexplained still blocks the PR.
 - **npm:** security fixes only, no version updates (`^` ranges already stop at the next major).
 - The e2e secrets passed must match `test-reusable.yaml`. When it gains one (e.g. `ANTHROPIC_API_KEY` for the Claude examples), add it here too.
 - Tokens: the `agent-kernel-ci[bot]` app pushes and opens the PR; `DEPENDABOT_ALERTS_TOKEN` reads alerts until the app has "Dependabot alerts: Read".

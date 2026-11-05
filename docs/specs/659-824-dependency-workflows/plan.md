@@ -14,6 +14,7 @@
 - **Same rules everywhere:** the 3 lock-free manifests got tracked locks (made against the local ak-py build, then `agentkernel` back to PyPI, so they start at the tested versions); no ak-py-specific code; every skip reported; unreadable alerts no longer stop the run.
 - **Minimal rewrite:** one failure mechanism (Copilot names the package, the script holds it) for local and CI failures; Copilot edits nothing; tests run only in the gate. Removed: `lift`, the security-only fallback, the separate blocked step, the test baseline, the no-lock fixer, local pytest. Script 2,050 → about 1,080 lines; workflow 712 → about 360.
 - **Third full run (41892521552):** Copilot named `litellm` and `pydantic-ai-slim`, `fix-1` pushed the holds, but round 2 was skipped: its jobs lacked `always()`, so GitHub's implied `success()` saw round 1's failure. Copilot also blocked the `litellm` security fix in 51 manifests on the prompt's own (wrong) example, although 1.95.0 works. Root cause: `secure` turned ak-py's `litellm~=1.89.2` into `<2.0.0`, so the local wheel let examples reach 1.108.0. → `always()` on round 2; `secure` keeps the `~=` width; `keep_minimum` holds a security package at its minimum; made-up prompt example; every two weeks.
+- **Fourth full run (41964502523):** round 2 ran. Copilot checked the minimums itself and used `keep_minimum` (`litellm` 1.95.0 and 1.100.4), held `pydantic-ai-slim`, and wrote nothing for crewai, pydanticai and kind, which then passed in round 2 or failed on `develop` too (`kind-smoke (dev)`: 2 of the last 8 develop runs). Round 2 failed only on `kind-smoke (dev)` and `broker-kafka` (passed in round 1), so no PR. The PR body from `fix-1` also counted 4 files instead of 258 (plain `git diff` misses round 1's committed changes). → `verdict`: failures this update did not cause no longer block the PR; the report diffs against the base commit and lists every fixed alert.
 
 ## Step 1: Real run
 
@@ -37,4 +38,3 @@
 ## Open questions
 
 - Held-back majors: open one issue per held-back major so they are not forgotten?
-- A failure with no real error blocks the PR. Accept, or allow a PR with that example listed as failing?
