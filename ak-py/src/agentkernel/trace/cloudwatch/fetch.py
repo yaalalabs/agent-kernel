@@ -4,9 +4,10 @@ import json
 import logging
 import math
 import time
+from collections.abc import Iterable
 from datetime import datetime, timedelta, timezone
 from functools import partial
-from typing import Any, Iterable, Optional
+from typing import Any
 
 from ...core.util.factory import AKConfigError
 from ..fetch import FetchedSpan, OTelSpanClassifier, SpanKind, SpanStatus, TraceFetcher, TraceQuery
@@ -43,7 +44,7 @@ class CloudWatchTraceFetcher(TraceFetcher):
         SpanKind.AGENT: '(attributes.gen_ai.operation.name in ["invoke_agent", "create_agent"] or attributes.openinference.span.kind = "AGENT")',
     }
 
-    def __init__(self, client: Any = None, region: Optional[str] = None, log_group: str = LOG_GROUP, timeout: float = 120.0):
+    def __init__(self, client: Any = None, region: str | None = None, log_group: str = LOG_GROUP, timeout: float = 120.0):
         """
         :param client: A botocore CloudWatch Logs client; defaults to one built from the standard AWS chain.
         :param region: The AWS region to query; defaults to AWS_REGION.
@@ -65,7 +66,7 @@ class CloudWatchTraceFetcher(TraceFetcher):
             query, upper_bound=upper_bound, max_rows_per_request=self._MAX_ROWS, fetch_page=partial(self._fetch_page, client, query)
         )
 
-    def _fetch_page(self, client: Any, query: TraceQuery, page_size: int, upper_bound: datetime) -> list[tuple[Optional[datetime], FetchedSpan]]:
+    def _fetch_page(self, client: Any, query: TraceQuery, page_size: int, upper_bound: datetime) -> list[tuple[datetime | None, FetchedSpan]]:
         start, _ = query.window()
         return [self._to_span(row) for row in self._run(client, self._insights(query, page_size), start, upper_bound)]
 
@@ -132,7 +133,7 @@ class CloudWatchTraceFetcher(TraceFetcher):
     def _literal(value: str) -> str:
         return json.dumps(str(value))
 
-    def _to_span(self, row: dict[str, str]) -> tuple[Optional[datetime], FetchedSpan]:
+    def _to_span(self, row: dict[str, str]) -> tuple[datetime | None, FetchedSpan]:
         record = json.loads(row["@message"])
         attributes = self._flatten(record.get("attributes") or {})
         span_input, span_output = OTelSpanClassifier.io(attributes)
@@ -169,13 +170,13 @@ class CloudWatchTraceFetcher(TraceFetcher):
         return flat
 
     @staticmethod
-    def _nanos(value: Any) -> Optional[datetime]:
+    def _nanos(value: Any) -> datetime | None:
         if value in (None, ""):
             return None
         return datetime.fromtimestamp(int(value) / 1e9, tz=timezone.utc)
 
     @staticmethod
-    def _stamp(value: Optional[str]) -> Optional[datetime]:
+    def _stamp(value: str | None) -> datetime | None:
         """
         Logs Insights reports @timestamp in UTC as "YYYY-MM-DD HH:MM:SS.mmm".
         """

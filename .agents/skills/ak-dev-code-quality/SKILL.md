@@ -15,7 +15,8 @@ metadata:
 
 ## Code Formatting
 
-Agent Kernel uses `black` for formatting and `isort` for import sorting.
+Agent Kernel uses `black` for formatting, `isort` for import sorting, and `ruff` for the typing rules only
+(pyupgrade `UP006`/`UP007`/`UP035`/`UP045`; see Type annotations below).
 
 ### Auto-format
 
@@ -60,7 +61,13 @@ target-version = ["py312"]
 [tool.isort]
 profile = "black"
 line_length = 150
+
+[tool.ruff.lint]
+select = ["UP006", "UP007", "UP035", "UP045"]
 ```
+
+Examples have no ruff config of their own: the root `Makefile` runs `uvx ruff` over `examples/` in
+`--isolated` mode with the same rules (`RUFF_VERSION`/`RUFF_RULES`), so keep those in sync with `ak-py`.
 
 In example projects, line length is 120:
 
@@ -237,13 +244,25 @@ uv run pytest -s
 
 ## Python Style Guidelines
 
-- Python 3.12+ features are encouraged (type unions with `|`, `match` statements)
-- Use type hints for all function signatures
+- Python 3.12+ features are encouraged (`match` statements, `type` aliases)
+- Use type hints for all function signatures, in the modern style (see Type annotations below)
 - Use `logging.getLogger("ak.<module>")` for logger names
 - Use async/await for all I/O operations
 - Prefer `BaseModel` (Pydantic) for data models
 - Use `ABC` and `@abstractmethod` for interfaces
 - Keep line length under 150 characters (120 for examples)
+
+### Type annotations
+
+`ak-py/src`, `ak-py/tests` and `examples/` use PEP 585/604 annotations (`typing.List`, `typing.Callable` and the other generic aliases are deprecated since Python 3.9; `Optional`/`Union` are only superseded). Write new code and doc snippets the same way:
+
+- Built-in generics: `list[str]`, `dict[str, Any]`, `tuple[int, ...]`, `type[Agent]`, `collections.deque`. Never `typing.List`/`Dict`/`Tuple`/`Type`/`Deque`.
+- Unions: `str | None` and `A | B`, never `Optional`/`Union`. Quote a forward reference as a whole (`"rtc.Room | None"`), never `"rtc.Room" | None`, which raises `TypeError` wherever the annotation is evaluated.
+- Abstract types come from `collections.abc`: `Callable`, `Mapping`, `Iterable`, `Iterator`, `Sequence`, `Generator`, `AsyncGenerator`, `AsyncIterator`, `Awaitable`, `Coroutine`.
+- `typing` is still the home of `Any`, `ClassVar`, `Literal`, `Annotated`, `TYPE_CHECKING`, `Self`, `TypedDict`, `TypeVar` and `cast`.
+- Type aliases use the `type` statement: `type AgentReply = AgentReplyText | AgentReplyImage | AgentReplyAny`.
+
+`make lint-check` / `make lint-check-all` enforce these rules with ruff, and `make lint` / `make lint-all` rewrite the annotations. Ruff can't safely delete the `from typing import ...` names it leaves unused, so the check keeps failing on them (`UP035`) until you remove them by hand.
 
 ### Classes, not script-style functions
 

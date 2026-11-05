@@ -8,7 +8,7 @@ agent runs. A single shared instance is used by ChatService and ThreadRouter.
 
 import logging
 from threading import RLock
-from typing import List, Optional, Union
+from typing import Optional
 
 from ...core.config import AKConfig
 from ...core.model import AgentRequest
@@ -30,11 +30,11 @@ class ConversationThreadManager:
     """
 
     _instance: Optional["ConversationThreadManager"] = None
-    _naming_strategy: Optional[ThreadNamingStrategy] = None
+    _naming_strategy: ThreadNamingStrategy | None = None
     _lock: RLock = RLock()
     _log = logging.getLogger("ak.thread.manager")
 
-    def __init__(self, store: ThreadStore, naming_strategy: Optional[ThreadNamingStrategy] = None):
+    def __init__(self, store: ThreadStore, naming_strategy: ThreadNamingStrategy | None = None):
         """
         Initializes a ConversationThreadManager instance.
         :param store: The ThreadStore backend to persist threads in.
@@ -86,9 +86,9 @@ class ConversationThreadManager:
         self,
         session_id: str,
         user_id: str,
-        group_id: Optional[str] = None,
-        name: Optional[str] = None,
-        first_prompt: Optional[str] = None,
+        group_id: str | None = None,
+        name: str | None = None,
+        first_prompt: str | None = None,
     ) -> Thread:
         """
         Load the thread for a session_id, creating it on the session's first request.
@@ -127,9 +127,9 @@ class ConversationThreadManager:
         self,
         session_id: str,
         role: str,
-        content: Union[str, JSONPayload],
-        attachments: Optional[List[ThreadAttachment]] = None,
-        media_type: Optional[str] = None,
+        content: str | JSONPayload,
+        attachments: list[ThreadAttachment] | None = None,
+        media_type: str | None = None,
     ) -> ThreadMessage:
         """
         Append a message to the thread for a session_id.
@@ -144,7 +144,7 @@ class ConversationThreadManager:
         self._store.append_message(session_id, message)
         return message
 
-    def store_attachments(self, session_id: str, requests: List[AgentRequest]) -> tuple[List[AgentRequest], List[ThreadAttachment]]:
+    def store_attachments(self, session_id: str, requests: list[AgentRequest]) -> tuple[list[AgentRequest], list[ThreadAttachment]]:
         """
         Save each image/file request into the multimodal AttachmentStore and return the
         rebuilt request list plus one ThreadAttachment per attachment the turn carried.
@@ -186,7 +186,7 @@ class ConversationThreadManager:
         references = [ThreadAttachment(attachment_id=a.attachment_id, name=a.name, mime_type=a.mime_type) for a in stored]
         return rebuilt, references
 
-    def get_thread(self, session_id: str, user_id: Optional[str] = None) -> Optional[Thread]:
+    def get_thread(self, session_id: str, user_id: str | None = None) -> Thread | None:
         """
         Load a thread's metadata by session_id, optionally enforcing ownership.
         Messages are fetched separately and paginated via get_messages.
@@ -203,7 +203,7 @@ class ConversationThreadManager:
             raise PermissionError(f"Thread {session_id} is not owned by user {user_id}")
         return thread
 
-    def get_messages(self, session_id: str, limit: Optional[int] = None, cursor: Optional[str] = None) -> MessagePage:
+    def get_messages(self, session_id: str, limit: int | None = None, cursor: str | None = None) -> MessagePage:
         """
         Return a page of a thread's messages in chronological order.
         :param session_id: Unique identifier for the thread.
@@ -219,10 +219,10 @@ class ConversationThreadManager:
 
     def list_threads(
         self,
-        user_id: Optional[str] = None,
-        group_id: Optional[str] = None,
-        limit: Optional[int] = None,
-        cursor: Optional[str] = None,
+        user_id: str | None = None,
+        group_id: str | None = None,
+        limit: int | None = None,
+        cursor: str | None = None,
     ) -> ThreadPage:
         """
         List threads filtered by user_id and/or group_id (metadata only), paginated.

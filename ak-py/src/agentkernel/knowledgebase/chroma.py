@@ -1,6 +1,7 @@
 import hashlib
 import logging
-from typing import Any, Iterable, List, Mapping, Optional
+from collections.abc import Iterable, Mapping
+from typing import Any
 
 import chromadb
 from chromadb.utils import embedding_functions
@@ -23,7 +24,7 @@ class ChromaManager(KnowledgeBase):
         name: str = "",
         collection_name: str = "knowledge_base",
         description: str = "chroma vector database",
-        embedding_function: Optional[Any] = None,
+        embedding_function: Any | None = None,
     ):  # pass in a description
         """
         Initialize a ChromaDB-backed knowledge manager.
@@ -103,7 +104,7 @@ class ChromaManager(KnowledgeBase):
         if texts:
             self.collection.upsert(documents=texts, metadatas=metadatas, ids=ids)
 
-    def search(self, query: str, limit: int = 3, **kwargs) -> List[Mapping[str, Any]]:
+    def search(self, query: str, limit: int = 3, **kwargs) -> list[Mapping[str, Any]]:
         """
         Query the Chroma collection for semantically similar documents.
 

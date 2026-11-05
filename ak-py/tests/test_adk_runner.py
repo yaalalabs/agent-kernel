@@ -1063,7 +1063,7 @@ def _gated_adk(confirmation=False, repeat=False, with_probe=False):
     stashes that context in its own state rather than setting it around `run_async`, so reading it
     from inside a tool is the only place the resumed turn's request list is observable.
     """
-    from typing import AsyncGenerator
+    from collections.abc import AsyncGenerator
 
     from google.adk.agents import LlmAgent
     from google.adk.models.base_llm import BaseLlm
@@ -1591,7 +1591,7 @@ def _restating_adk():
     ADK re-emits a call that is still waiting, so a drained turn can carry the same id twice. Found
     by running the demo: a model that asked once and then restated the question crashed the pause.
     """
-    from typing import AsyncGenerator
+    from collections.abc import AsyncGenerator
 
     from google.adk.agents import LlmAgent
     from google.adk.models.base_llm import BaseLlm

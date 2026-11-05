@@ -1,5 +1,4 @@
 import logging
-from typing import Optional
 
 from ....auth.handler import AuthValidator
 from .aklambda import Lambda
@@ -8,7 +7,7 @@ from .core import WSLambdaRouter
 
 class WebsocketConnectionHandler(Lambda):
     _log = logging.getLogger("ak.aws.serverless.websocket_connection_handler")
-    _auth_validator: Optional[AuthValidator] = None
+    _auth_validator: AuthValidator | None = None
 
     @classmethod
     def set_auth_validator(cls, auth_validator: AuthValidator) -> "type[WebsocketConnectionHandler]":
@@ -33,7 +32,7 @@ class WebsocketConnectionHandler(Lambda):
             cls._router = WSLambdaRouter(connection_routes=True, system_routes=False, auth_validator=cls._auth_validator)
         return cls._router
 
-    def register(self, route: str, method: Optional[str] = None) -> None:
+    def register(self, route: str, method: str | None = None) -> None:
         """
         Route registration is not supported for WebsocketConnectionHandler.
 

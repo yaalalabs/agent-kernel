@@ -1,5 +1,4 @@
 import logging
-from typing import Optional
 
 from ....api.handler import RESTRequestHandler
 from ....api.http import RESTAPI
@@ -32,8 +31,8 @@ class ECSIOHandler:
     @classmethod
     def run(
         cls,
-        auth_validator: Optional[AuthValidator] = None,
-        handlers: Optional[list[RESTRequestHandler]] = None,
+        auth_validator: AuthValidator | None = None,
+        handlers: list[RESTRequestHandler] | None = None,
     ) -> None:
         """Boot the REST/WebSocket API and the output-queue consumer as peer threads, and serve until shutdown.
 

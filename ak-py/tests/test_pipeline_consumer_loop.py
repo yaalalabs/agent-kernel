@@ -1,6 +1,5 @@
 import threading
 import time
-from typing import List
 from unittest.mock import MagicMock
 
 import pytest
@@ -27,10 +26,10 @@ def _msg(message_id="m1", receive_count=1):
 class FakeConsumer(TransportConsumer):
     """Scripted consumer: yields the given batches, then empty batches; records acks/nacks/closes."""
 
-    def __init__(self, batches: List[List[QueueMessage]] = None):
+    def __init__(self, batches: list[list[QueueMessage]] = None):
         self.batches = list(batches or [])
-        self.acked: List[QueueMessage] = []
-        self.nacked: List[QueueMessage] = []
+        self.acked: list[QueueMessage] = []
+        self.nacked: list[QueueMessage] = []
         self.closed = False
 
     def fetch(self, batch_size, wait_seconds):

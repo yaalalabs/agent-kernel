@@ -20,7 +20,6 @@ import io
 import logging
 import posixpath
 import tarfile
-from typing import Optional
 
 import docker
 
@@ -168,7 +167,7 @@ class DockerSandboxProvider(SandboxProvider):
     def __init__(self, config) -> None:
         """Store the config and build the installer and runtime map; the Docker client is created lazily on first use."""
         super().__init__(config)
-        self._client_instance: Optional["docker.DockerClient"] = None
+        self._client_instance: "docker.DockerClient" | None = None
         self._installer = PackageInstaller.from_config(config)
         self._runtimes = dict(config.language_runtimes)
         self.capabilities = type(self).capabilities.derive(languages=list(self._runtimes), package_ecosystems=self._installer.ecosystems)

@@ -19,7 +19,7 @@ The capability's instructions are not here: they are a system prompt section, co
 ``OKFPromptComposer.for_agent`` and appended to the agent's own prompt.
 """
 
-from typing import Any, List, Optional
+from typing import Any
 
 from ...core.model import SystemTool
 from .capability import OKFCapabilityManager
@@ -31,7 +31,7 @@ class OKFToolFactory:
     """Builds one agent's OKF system tools from the configured roles."""
 
     @staticmethod
-    def get_tools(agent_name: Optional[str]) -> List[SystemTool]:
+    def get_tools(agent_name: str | None) -> list[SystemTool]:
         """
         Build the OKF system tools for one agent.
 
@@ -55,7 +55,7 @@ class OKFToolFactory:
         return [SystemTool(name=func.__name__, description="", func=func) for func in OKFToolFactory._build(agent_name, writable)]
 
     @staticmethod
-    def _build(agent_name: str, writable: bool) -> List[Any]:
+    def _build(agent_name: str, writable: bool) -> list[Any]:
         """
         Build the plain callables, each closing over the agent name only.
 

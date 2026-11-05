@@ -3,7 +3,7 @@
 import asyncio
 import json
 import threading
-from typing import Any, Dict, List, Optional
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -42,15 +42,15 @@ class FakeOutboundAdapter(OutboundAdapter):
     """Records what the edge asked it to do."""
 
     name = ADAPTER_NAME
-    acknowledged: List[Dict[str, str]] = []
+    acknowledged: list[dict[str, str]] = []
 
-    async def deliver(self, reply: AgentReply, reply_context: Dict[str, str]) -> None:  # pragma: no cover - not exercised here
+    async def deliver(self, reply: AgentReply, reply_context: dict[str, str]) -> None:  # pragma: no cover - not exercised here
         raise AssertionError("the edge must never deliver")
 
-    async def deliver_error(self, message: str, reply_context: Dict[str, str]) -> None:  # pragma: no cover - not exercised here
+    async def deliver_error(self, message: str, reply_context: dict[str, str]) -> None:  # pragma: no cover - not exercised here
         raise AssertionError("the edge must never deliver")
 
-    async def acknowledge(self, reply_context: Dict[str, str]) -> Dict[str, str]:
+    async def acknowledge(self, reply_context: dict[str, str]) -> dict[str, str]:
         FakeOutboundAdapter.acknowledged.append(dict(reply_context))
         return {"ack_ts": "ack-1"}
 
@@ -67,11 +67,11 @@ class FakeInboundAdapter(InboundAdapter):
     source = Source.WEBHOOK
     webhook_path = "/fake/webhook"
 
-    def __init__(self, requests: Optional[List[InboundRequest]] = None, response: Any = None, secret: Optional[str] = None):
+    def __init__(self, requests: list[InboundRequest] | None = None, response: Any = None, secret: str | None = None):
         self._requests = requests if requests is not None else [_inbound()]
         self._response = response
         self._secret = secret
-        self.loops: List[asyncio.AbstractEventLoop] = []
+        self.loops: list[asyncio.AbstractEventLoop] = []
 
     async def verify(self, raw) -> None:
         if self._secret and raw.headers.get("x-secret") != self._secret:
@@ -89,11 +89,11 @@ class ChallengingInboundAdapter(FakeInboundAdapter):
         return int(raw.query_params["hub.challenge"])
 
 
-def _handler(adapter: Optional[InboundAdapter] = None, transport: Optional[InMemoryTransport] = None) -> WebhookRESTRequestHandler:
+def _handler(adapter: InboundAdapter | None = None, transport: InMemoryTransport | None = None) -> WebhookRESTRequestHandler:
     return WebhookRESTRequestHandler(adapter or FakeInboundAdapter(), producer=IntegrationProducer(transport or InMemoryTransport()))
 
 
-def _event(method: str = "POST", path: str = "/api/v1/fake/webhook", headers: Optional[dict] = None, query: Optional[dict] = None, body: str = "{}"):
+def _event(method: str = "POST", path: str = "/api/v1/fake/webhook", headers: dict | None = None, query: dict | None = None, body: str = "{}"):
     return {
         "httpMethod": method,
         "path": path,

@@ -1,7 +1,8 @@
 """AG-UI surface: discovery, run routes, and the run lifecycle."""
 
 import logging
-from typing import Any, AsyncGenerator, Optional
+from collections.abc import AsyncGenerator
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -23,7 +24,7 @@ from .state import AGUIState
 class AGUIRequestHandler(AuthorisedRESTRequestHandler):
     """AG-UI routes: GET /agents, POST /{agent_name}, and POST / when `agui.default_agent` is set."""
 
-    def __init__(self, authoriser: Optional[Authoriser] = None, auth_validator: Optional[AuthValidator] = None):
+    def __init__(self, authoriser: Authoriser | None = None, auth_validator: AuthValidator | None = None):
         """
         :param authoriser: Authoriser for the AG-UI routes.
         :param auth_validator: Wrapped as an Authoriser when `authoriser` is omitted.
@@ -175,7 +176,7 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
 
         return router
 
-    async def _resolve_run_inputs(self, agent_name: str, request: Request) -> tuple[Optional[str], Agent, Any, list]:
+    async def _resolve_run_inputs(self, agent_name: str, request: Request) -> tuple[str | None, Agent, Any, list]:
         """Everything that can still be reported as an HTTP status, before any state is written.
 
         Shared verbatim with the queue-mode handler (spec #710 §7) so the two execution models
@@ -241,8 +242,8 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
         handler: AgentHandler,
         requests: list,
         run_input: Any,
-        state_before: Optional[dict],
-        user_id: Optional[str],
+        state_before: dict | None,
+        user_id: str | None,
     ) -> AsyncGenerator[str, None]:
         """Yield the run's encoded AG-UI events.
 
@@ -265,7 +266,7 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
         from ag_ui.core import RunErrorEvent, RunFinishedEvent, RunStartedEvent, StateSnapshotEvent
 
         yield encoder.encode(RunStartedEvent(thread_id=run_input.thread_id, run_id=run_input.run_id, parent_run_id=run_input.parent_run_id))
-        paused: Optional[Any] = None
+        paused: Any | None = None
 
         service = handler.service
         session = service.session if service is not None else None
@@ -275,7 +276,7 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
             return
 
         agent_name = agent.name
-        error: Optional[str] = None
+        error: str | None = None
         try:
             async for chunk in handler.run_stream_async(requests, acting_user_id=user_id):
                 if chunk.error:

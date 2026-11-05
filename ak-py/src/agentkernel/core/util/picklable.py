@@ -8,7 +8,8 @@ helpers so the check has one implementation.
 """
 
 import pickle
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 
 def not_picklable(value: Any) -> bool:
