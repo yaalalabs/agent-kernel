@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import os
 import subprocess
 import sys
 import uuid
@@ -11,6 +12,11 @@ import pytest
 import pytest_asyncio
 
 pytestmark = pytest.mark.asyncio(loop_scope="session")  # uses a single session for all tests
+
+requires_openai_key = pytest.mark.skipif(
+    not os.environ.get("OPENAI_API_KEY"),
+    reason="requires OPENAI_API_KEY for the live OpenAI stream",
+)
 
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
@@ -45,6 +51,7 @@ def _events(frames: list[dict]) -> list[dict]:
     return [f["event"] for f in frames[:-1]]
 
 
+@requires_openai_key
 @pytest.mark.asyncio
 async def test_streaming_delta_then_done(base_url):
     print("test_streaming_delta_then_done")
@@ -104,6 +111,7 @@ async def test_streaming_delta_then_done(base_url):
     assert story.strip(), "expected non-empty streamed text across delta frames"
 
 
+@requires_openai_key
 @pytest.mark.asyncio
 async def test_final_answer_tool_call_streams_start_end_and_result(base_url):
     session_id = str(uuid.uuid4())

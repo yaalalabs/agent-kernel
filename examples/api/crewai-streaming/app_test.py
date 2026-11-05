@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import os
 import subprocess
 import sys
 import uuid
@@ -11,6 +12,11 @@ import pytest
 import pytest_asyncio
 
 pytestmark = pytest.mark.asyncio(loop_scope="session")  # uses a single session for all tests
+
+requires_openai_key = pytest.mark.skipif(
+    not os.environ.get("OPENAI_API_KEY"),
+    reason="requires OPENAI_API_KEY for the live OpenAI stream",
+)
 
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
@@ -41,6 +47,7 @@ async def _collect_frames(url: str, payload: dict) -> list[dict]:
     return frames
 
 
+@requires_openai_key
 @pytest.mark.asyncio
 async def test_streaming_delta_then_done(base_url):
     print("test_streaming_delta_then_done")
