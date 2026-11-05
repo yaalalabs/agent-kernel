@@ -389,10 +389,10 @@ flowchart TD
     DEP["<b>Deploy</b> (once per host × mode)<br/>returns the Deployment: endpoint, resources, queues, logs<br/>+ record run metadata"]
 
     subgraph STEP["One step run: one test type (steady or burst) at one step number N"]
-        B["<b>1 · before</b> (1 min, no load)<br/>idle baseline for the graphs<br/>at its end: read the starting worker counts (fetch only)"]
+        B["<b>1 · before</b> (no load, 1 min: default, configurable)<br/>idle baseline for the graphs<br/>at its end: read the starting worker counts (fetch only)"]
         L["<b>2 · Send requests</b> (this run's test type only)<br/>client stores per request: id, sent, received"]
-        C["<b>3 · Check cool-down</b>: over when, in one poll, checked in order:<br/>1. all requests settled<br/>2. queues empty, incl. in flight<br/>3. workers back at the starting counts<br/>(max 45 min)"]
-        W["<b>4 · Wait</b> (1 min)<br/>logs and metrics arrive late"]
+        C["<b>3 · Check cool-down</b>: over when, in one poll, checked in order:<br/>1. all requests settled<br/>2. queues empty, incl. in flight<br/>3. workers back at the starting counts<br/>(max 45 min: default, configurable)"]
+        W["<b>4 · Wait</b> (1 min: default, configurable)<br/>logs and metrics arrive late"]
         H["<b>5 · Fetch and store: data with history</b><br/>live_track = False · once per step<br/>fetch_and_store(step start, step end)<br/>latency stages from the logs (TraceCollector),<br/>ECS scaling activities, ConcurrentExecutions,<br/>Container / Lambda Insights, ECS service metrics"]
         LIVE[["<b>Live InfoFetchers, in the background</b><br/>live_track = True · no history: only 'what is it now',<br/>so it has to be polled while it happens<br/>one task per fetcher, every poll_interval_s:<br/>fetch_and_store(last poll, now)<br/>ECS API worker counts,<br/>queue depth"]]
 
@@ -425,7 +425,7 @@ flowchart TD
     mapping mode / max concurrency);
   - transport type and settings (batch size); session store type and capacity;
   - resource usage sources: which fetchers ran, Container Insights (standard / enhanced), Lambda Insights on / off;
-  - front door (API Gateway WebSocket, none);
+  - front door (API Gateway WebSocket);
   - benchmark settings: min / max agent delay, load steps, test types, min / max send interval, steady load time, before window, maximum
     cool-down, wait before the after-step fetch, poll intervals, client timeout, time window size, percentile method.
   - Host-side values come from the deployer; a value a host doesn't have stays empty.
@@ -477,14 +477,15 @@ flowchart TD
 - A `Host` is a bundle: platform name, deployer, scaling fetchers (ordered), resource usage fetchers, trace collector,
   transport collector (or none), billing reader (or none).
 - A host registry maps names to bundles; a new host or platform is a registration, not a harness change.
-- Code is grouped in folders by cloud (`platforms/aws/`, `platforms/k8s/`, ...), one file per implementation. No
-  per-cloud "benchmarker" classes (`AWSBenchmarker`, `KubernetesBenchmarker`), because cloud, compute type and
+- Code is grouped in folders by cloud (`platforms/aws/`, later `platforms/gcp/`, ...), one file per implementation. No
+  per-cloud "benchmarker" classes (`AWSBenchmarker`, `GCPBenchmarker`), because cloud, compute type and
   transport vary independently:
   - `lambda` and `ecs` are both AWS but read worker counts from different places; one AWS class would fill up with
     `if variant == ...` branches.
-  - `eks` reads worker counts from Kubernetes but its bill from AWS, so it would belong in both classes.
-  - Queue depth depends on the transport (SQS, Kafka), not the cloud.
-  - Example: each host picks its parts; the AWS ones are shared, so `eks` adds no new AWS code:
+  - A later Kubernetes host on EKS would read worker counts from Kubernetes but its bill from AWS, so it would belong
+    in both classes.
+  - Queue depth depends on the transport (SQS today), not the cloud.
+  - Example: each host picks its parts; `lambda` and `ecs` share the AWS ones (trace collector, SQS, Cost Explorer):
 
     ```python
     HOSTS = {
@@ -499,14 +500,16 @@ flowchart TD
             transport=SqsTransportCollector(live_track=True),  # chosen by transport, not cloud
             billing=CostExplorerBillingReader(),     # shared AWS part
         ),
-        "eks": Host(
-            platform="k8s",
-            deployer=HelmDeployer(),
-            scaling_fetchers=[K8sApiScalingInfoFetcher(live_track=True)],   # worker counts from Kubernetes
-            resource_fetchers=[K8sMetricsApiResourceFetcher(live_track=True)],
-            trace=...,                               # log backend decided when EKS is built (L1)
-            transport=KafkaTransportCollector(live_track=True),
-            billing=CostExplorerBillingReader(),     # bill from AWS: same class as lambda
+        "ecs": Host(
+            platform="aws",
+            deployer=TerraformDeployer("ak-aws/containerized"),
+            scaling_fetchers=[EcsApiScalingInfoFetcher(live_track=True),
+                              EcsScalingActivitiesScalingInfoFetcher(live_track=False)],
+            resource_fetchers=[EcsContainerInsightsResourceFetcher(live_track=False),
+                               CloudWatchMetricResourceFetcher("AWS/ECS", ..., live_track=False)],
+            trace=CloudWatchLogsTraceCollector(live_track=False),   # same class as lambda
+            transport=SqsTransportCollector(live_track=True),       # same class as lambda
+            billing=CostExplorerBillingReader(),                    # same class as lambda
         ),
     }
     ```
@@ -514,7 +517,6 @@ flowchart TD
 - No per-host classes either (`LambdaBenchmarker`, `EcsBenchmarker`): a host is a registry entry that picks existing
   implementations, not a class with its own code. A class per host would copy the shared parts into every host:
   - `lambda` and `ecs` would each carry their own SQS queue depth and Cost Explorer code.
-  - `eks` and `baremetal` would each carry the same Helm deployer, `k8s.api` and `k8s.metrics_api` fetchers.
   - A new host would be a new class; as a bundle it's one registry entry built from existing parts.
 - The harness (load generator, timing, CSVs, derived numbers, plots) never calls a cloud API; it only sees the ABCs
   and their common return types.
@@ -709,10 +711,8 @@ Q1-Q8 were resolved on 2026-10-30 and Q9 on 2026-11-01. None are open.
 
 Parked on purpose; decided when that part is built.
 
-- **L1.** EKS (right after the AWS hosts): pre-existing cluster or a Terraform step before Helm; its log backend for
-  the TraceCollector.
-- **L2.** WebSocket delta: whether the results folders get a message-type level under the mode.
-- **L3.** WebSocket delta: trace every chunk or only the first (`AGENT_FIRST_CHUNK`) and last (`AGENT_DONE`).
+- **L1.** WebSocket delta: whether the results folders get a message-type level under the mode.
+- **L2.** WebSocket delta: trace every chunk or only the first (`AGENT_FIRST_CHUNK`) and last (`AGENT_DONE`).
 
 ## Check on the first runs
 
