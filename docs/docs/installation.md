@@ -210,7 +210,11 @@ uv pip install "agentkernel[openai,api]"
 After installation, verify that Agent Kernel is installed correctly:
 
 ```bash
+# In a uv project
 uv run python -c "import agentkernel; print(agentkernel.__version__)"
+
+# In an existing environment you activated (venv or conda)
+python -c "import agentkernel; print(agentkernel.__version__)"
 ```
 
 You should see the version number printed (e.g., `0.1.2`).
@@ -260,7 +264,9 @@ Agent Kernel requires Python 3.12+. Check your Python version:
 uv run python --version
 ```
 
-If the project picked up an unsupported version, pin it to Python 3.12 (uv downloads it if needed) and re-sync:
+If the project picked up an unsupported version, first set `requires-python = ">=3.12,<3.14"` in its
+`pyproject.toml` (uv rejects a pin outside that range), then pin Python 3.12 (uv downloads it if needed) and
+re-sync:
 
 ```bash
 uv python pin 3.12

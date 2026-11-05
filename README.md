@@ -55,6 +55,8 @@ Most agent frameworks help you build a *prototype*. **Agent Kernel is the platfo
 **Requirements:** Python 3.12 – 3.13.x
 
 ```bash
+uv init --python 3.12 my-agent
+cd my-agent
 uv add agentkernel
 ```
 

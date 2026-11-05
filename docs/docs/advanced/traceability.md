@@ -276,7 +276,7 @@ After running your agents with OpenLLMetry tracing enabled:
 
 ```bash
 # Verify your Langfuse credentials
-python -c "from langfuse import Langfuse; client = Langfuse(); print(client.auth_check())"
+uv run python -c "from langfuse import Langfuse; client = Langfuse(); print(client.auth_check())"
 ```
 
 This should return `True` if credentials are valid.
@@ -294,7 +294,7 @@ This should return `True` if credentials are valid.
 
 ```bash
 # Verify your Traceloop setup
-python -c "from traceloop.sdk import Traceloop; Traceloop.init(app_name='test'); print('Success')"
+uv run python -c "from traceloop.sdk import Traceloop; Traceloop.init(app_name='test'); print('Success')"
 ```
 
 ### Logfire Issues
@@ -309,7 +309,7 @@ python -c "from traceloop.sdk import Traceloop; Traceloop.init(app_name='test');
 **Setup Check:**
 
 ```bash
-python -c "import logfire; logfire.configure(send_to_logfire='if-token-present'); print('Success')"
+uv run python -c "import logfire; logfire.configure(send_to_logfire='if-token-present'); print('Success')"
 ```
 
 ### CloudWatch Issues

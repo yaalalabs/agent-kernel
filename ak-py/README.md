@@ -27,6 +27,8 @@ Agent Kernel is a lightweight **AI agent runtime** and adapter layer for buildin
 ## Installation
 
 ```bash
+uv init --python 3.12 my-agent
+cd my-agent
 uv add agentkernel
 ```
 
@@ -196,7 +198,7 @@ Agent Kernel includes an interactive CLI for local development and testing.
 **Usage:**
 
 ```bash
-python demo.py
+uv run python demo.py
 ```
 
 Then interact with your agents:
@@ -2036,7 +2038,7 @@ def run(self, agent, prompt, session):
 
 **Requirements:**
 - Python 3.12+
-- uv 0.8.0+ (recommended) or pip
+- uv 0.8.0+
 
 **Setup:**
 

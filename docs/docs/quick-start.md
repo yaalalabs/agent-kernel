@@ -11,6 +11,17 @@ Build and run your first AI agent with Agent Kernel in under 5 minutes!
 **Cloud Platforms:** AWS, Azure, GCP (multi-cloud support)
 :::
 
+## Create a Project
+
+Agent Kernel installs into a [uv](https://docs.astral.sh/uv/getting-started/installation/) project. Create one and move into it:
+
+```bash
+uv init --python 3.12 my-agent
+cd my-agent
+```
+
+Run the framework steps below from inside this directory.
+
 ## Choose Your Framework
 
 Agent Kernel supports multiple frameworks. Pick the one you're most comfortable with:
@@ -67,7 +78,7 @@ export OPENAI_API_KEY=your-api-key-here
 ### 4. Run Your Agent
 
 ```bash
-python my_agent.py
+uv run python my_agent.py
 ```
 
 </TabItem>
@@ -121,7 +132,7 @@ export OPENAI_API_KEY=your-api-key-here
 ### 4. Run Your Agent
 
 ```bash
-python my_agent.py
+uv run python my_agent.py
 ```
 
 </TabItem>
@@ -182,7 +193,7 @@ export OPENAI_API_KEY=your-api-key-here
 ### 4. Run Your Agent
 
 ```bash
-python my_agent.py
+uv run python my_agent.py
 ```
 
 </TabItem>
@@ -228,7 +239,7 @@ export GOOGLE_API_KEY=your-api-key-here
 ### 4. Run Your Agent
 
 ```bash
-python my_agent.py
+uv run python my_agent.py
 ```
 
 </TabItem>
@@ -276,7 +287,7 @@ export OPENAI_API_KEY=your-api-key-here
 ### 4. Run Your Agent
 
 ```bash
-python my_agent.py
+uv run python my_agent.py
 ```
 
 </TabItem>
@@ -326,7 +337,7 @@ export OPENAI_API_KEY=your-api-key-here
 ### 4. Run Your Agent
 
 ```bash
-python my_agent.py
+uv run python my_agent.py
 ```
 
 </TabItem>
@@ -377,7 +388,7 @@ export OPENAI_API_KEY=your-api-key-here
 ### 4. Run Your Agent
 
 ```bash
-python my_agent.py
+uv run python my_agent.py
 ```
 
 </TabItem>
@@ -429,7 +440,7 @@ export ANTHROPIC_API_KEY=your-api-key-here
 ### 4. Run Your Agent
 
 ```bash
-python my_agent.py
+uv run python my_agent.py
 ```
 
 </TabItem>
@@ -545,7 +556,7 @@ Run the agents
 
 ```bash
 # Run as API server
-python my_agent.py
+uv run python my_agent.py
 ```
 
 Configure the API port by editing `config.yaml`

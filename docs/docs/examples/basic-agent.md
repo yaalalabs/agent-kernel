@@ -39,7 +39,7 @@ uv add "agentkernel[crewai]"
 export OPENAI_API_KEY=sk-...
 
 # Run the agent
-python basic_agent.py
+uv run python basic_agent.py
 ```
 
 ## Customization

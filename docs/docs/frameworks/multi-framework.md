@@ -93,7 +93,7 @@ uv add "agentkernel[cli,crewai,openai]"
 For all supported frameworks:
 
 ```bash
-uv add "agentkernel[cli,crewai,openai,langgraph,adk,smolagents]"
+uv add "agentkernel[cli,crewai,openai,langgraph,adk,smolagents,pydanticai,maf,claude]"
 ```
 
 ## Project Structure

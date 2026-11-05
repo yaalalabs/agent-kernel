@@ -493,7 +493,7 @@ guardrail:
 Run your agent and test with various inputs:
 
 ```bash
-python demo.py
+uv run python demo.py
 ```
 
 ### Test Input Guardrails
