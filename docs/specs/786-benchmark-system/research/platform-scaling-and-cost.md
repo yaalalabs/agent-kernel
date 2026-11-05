@@ -97,19 +97,24 @@ with history. Live tracking runs from the start of "before" to the end of the co
      The queue ids come from `deployment.queues` (`{"input": ids, "output": ids}`, filled by the deployer).
      This covers requests the client gave up on (timed out) that are still inside AK, so they don't finish during
      the next step.
-     - SQS: `ApproximateNumberOfMessages` (waiting) **and** `ApproximateNumberOfMessagesNotVisible` (received by a
-       worker, not yet deleted) are 0, on the input and output queues, **in every poll of the last 60 s** (decided
-       2026-11-03, PR #877 review). Both counts are approximate (SQS has no exact count) and AWS says they may not be
+     - Generic rule: both queues read 0 waiting and 0 in flight **in every poll of the last
+       `empty_confirm_window_s`**, a constructor parameter of the transport collector, so the shared check has no
+       transport-specific code (decided 2026-11-05). A transport with exact counts sets 0 (one poll is enough).
+     - SQS (`empty_confirm_window_s = 60`): `ApproximateNumberOfMessages` (waiting) **and**
+       `ApproximateNumberOfMessagesNotVisible` (received by a worker, not yet deleted) are 0, on the input and output
+       queues, in every poll of the last 60 s (decided 2026-11-03, PR #877 review). Both counts are approximate (SQS has no exact count) and AWS says they may not be
        consistent until at least 1 minute after producers stop sending, so one poll reading 0 isn't enough: a message
        still being worked on (e.g. a timed-out request in a step that never scaled) can read 0 once. The rule assumes
        a message still waiting or being worked on reads non-zero in at least one poll within 60 s, so 60 s of zeros is
        taken as empty. It's not a hard guarantee, since both counts are approximate.
   3. **Workers back (primary fetcher):** the running count of every tier is back at its count at the end of the
      "before" part.
-  - A condition with no source on a host counts as met.
+  - A condition with no source on a host counts as met. For the workers check, "no source" means the host lists no
+    scaling fetcher at all; a primary that can't give `running` is refused at start-up (see
+    [Primary fetcher](#scaling-info-fetchers-pluggable)).
   - **A read that fails or returns no value** (API error, missing permission, no datapoint) counts as **not met** for
     that poll and writes a run-log entry; the next poll checks again. If it never succeeds, the maximum cool-down
-    ends the step. On SQS, such a poll breaks the 60 s run of zeros, so the 60 s start again. (Decided 2026-11-04, PR
+    ends the step. Such a poll also breaks the run of zeros, so the `empty_confirm_window_s` (SQS: 60 s) starts again. (Decided 2026-11-04, PR
     #893 review: before, a failed read could be mistaken for "no source" and end the step too early.)
   - Why all three: in a steady-traffic step that didn't scale, condition 3 is already true when the load stops, and
     the input queue is empty as soon as the last requests are picked up, while those requests are still being
@@ -228,6 +233,11 @@ class, `ScalingInfoFetcher`, so a new way can be added for any host without touc
   discussed. Each host will be finalized to one fetcher; until then both are recorded side by side.
 - **Primary fetcher:** the first fetcher in the host's list in `hosts.py`. The end-of-step check uses it. The
   summary CSV records which fetcher each number came from.
+  - **It must give a `running` count** (decided 2026-11-05). Every fetcher declares the count types it gives
+    (`count_types`, e.g. `{"desired", "running"}` for `aws.ecs_api`, `{"desired"}` for `aws.ecs_scaling_activities`).
+    At start-up, before anything is deployed, the runner refuses a host whose primary fetcher doesn't list `running`,
+    with an error naming the host and the fetcher. Without this, a `desired`-only primary would give the "workers
+    back" check nothing to compare and every step would run to the maximum cool-down.
 - **Reuse across platforms:** generic fetchers take constructor parameters instead of being rewritten, e.g. one cloud
   metric fetcher per monitoring backend (CloudWatch, Cloud Monitoring, Azure Monitor) given the metric name, and one
   "distinct instance ids in the logs" fetcher per log backend given the id field. The log-based ones share the log
@@ -243,7 +253,7 @@ Fetchers per host (✓ = available now, later = when the platform is added), pri
 | ECS ✓ | `aws.ecs_api`: `DescribeServices` (`desiredCount`, `runningCount`) + `DescribeTasks` (task `createdAt` / `pullStartedAt` / `startedAt` / `stoppedAt`) | yes | desired, running, spans | poll interval; spans exact |
 | ECS ✓ | `aws.ecs_scaling_activities`: Application Auto Scaling `DescribeScalingActivities` (`StartTime`, "Setting desired count to N") | no | desired | exact |
 | Lambda ✓ | `aws.cloudwatch_metric.ConcurrentExecutions`: CloudWatch `AWS/Lambda` metric per function (`FunctionName` dimension), `Maximum` statistic | no | running | 1 min |
-| Lambda (written, not bound to the host) | `aws.lambda_log_streams`: one span per log stream (= per execution environment), from its first to its last `REPORT` line | no | running, spans | exact to about one invocation |
+| Lambda (written, not bound to the host) | `aws.lambda_log_streams`: number of execution environments (log streams) with a `REPORT` line in each period | no | running | `period_s` (default 1 min) |
 | Azure Container Apps (later) | `azure.aca_replicas_api`: List Replicas (`createdTime`, `runningState`) | yes | running, spans | poll interval |
 | Azure Container Apps (later) | `azure.monitor_metric.Replicas` (split by revision only) | no | running | 1 min |
 | Cloud Run (later) | `gcp.logging_instance_ids`: distinct `labels.instanceId` in Cloud Logging | no | running | any window size |
@@ -264,13 +274,21 @@ Fetchers per host (✓ = available now, later = when the platform is added), pri
     scale-up done, scale-down start/done) have 1-minute resolution.
   - Lambda doesn't report when an environment is shut down; the metric counts invocations in progress. "Scale-down
     done" on Lambda means "concurrent invocations are back to the baseline level".
-- `aws.lambda_log_streams` runs one Logs Insights query per function: `stats min(@timestamp), max(@timestamp) by
-  @logStream` over the `REPORT` lines. That's one row per execution environment, so the count is exact (no
-  `count_distinct`, which is approximate for high counts) and stays far below the 10,000-rows-per-page limit.
-  - A `REPORT` line is written when an invocation ends, so a span starts up to one invocation (agent delay + cold
-    start) late.
-  - Lambda doesn't report when an environment is shut down, so a span ends at the environment's last invocation.
-    With this fetcher, "scale-down done" means "the extra environments stopped getting invocations".
+- `aws.lambda_log_streams` returns **counts only**, no worker spans (decided 2026-11-05). It runs one Logs Insights
+  query per function, `filter @type = "REPORT" | stats count(*) by @logStream, bin(<period_s>)`: one row per execution
+  environment per period it finished an invocation in. The fetcher counts the rows of each period and returns one
+  `running` count per tier per period, with `ts` = the period's end. So the count is exact (no `count_distinct`, which
+  is approximate for high counts). 100 environments over a 20-minute step at 1-minute periods is ~2,000 rows, below
+  the 10,000-rows-per-page limit; if a step goes over, the fetcher splits the time range.
+  - It counts environments that **finished** an invocation in the period. A `REPORT` line is written when an
+    invocation ends, so an environment busy in one period whose invocation ends in the next is counted in the next.
+    Invocations last up to the 60 s agent runner timeout, so `period_s` stays at 1 min or more.
+  - Missing periods and delay: the same rule as `ConcurrentExecutions`. A period with no `REPORT` line counts as 0
+    once it's older than the fetcher's `log_delay_s` constructor parameter (log ingestion delay; default set from the
+    first Lambda runs); newer periods aren't returned yet. It returns no value only when the read fails or no period
+    is old enough yet.
+  - Lambda doesn't report when an environment is shut down, so with this fetcher "scale-down done" means "the extra
+    environments stopped finishing invocations".
 - `aws.ecs_api` keeps every task it has seen across polls (merged by task ARN), because stopped tasks only stay
   visible in `DescribeTasks` for at least 1 hour after they stop. Live tracking through every step catches all of them.
 - `aws.ecs_scaling_activities` gives the exact time of each autoscaler decision (activity history is kept 6 weeks), so
@@ -295,19 +313,18 @@ Fetchers per host (✓ = available now, later = when the platform is added), pri
   - Reuses the generic `CloudWatchMetricScalingInfoFetcher`.
 - **Switching is manual.** If the first Lambda runs show the metric's known limits get in the way, a person binds
   `aws.lambda_log_streams` to the Lambda host in `hosts.py` by hand. There's no automatic fallback and no config
-  switch; the harness never picks a fetcher on its own. The limits to look for:
-  - 1-minute resolution is too coarse to read the Lambda scale-up/down times.
+  switch; the harness never picks a fetcher on its own. The limit to look for:
   - It reads low because it counts invocations in progress, not environments that are alive (e.g. with a short agent
     delay).
 - If both end up bound, they're recorded side by side like any other pair of fetchers.
 
 | | `aws.cloudwatch_metric.ConcurrentExecutions` | `aws.lambda_log_streams` |
 |---|---|---|
-| What it counts | Invocations running at the same moment | Execution environments (workers) |
-| Resolution | 1 min | Exact to about one invocation |
-| Per-worker start/stop | No | Yes (spans) |
-| Exact time of each scale-up/down step | No: one aggregated value per minute, and Lambda publishes no scaling events to get the times from | Yes (from the spans) |
-| With a short agent delay (e.g. 0 ms) | Reads low: environments sit idle between short invocations | Still counts every environment |
+| What it counts | Invocations running at the same moment | Execution environments (workers) that finished an invocation in the period |
+| Resolution | 1 min | `period_s` (1 min or more) |
+| Per-worker start/stop | No | No (counts only) |
+| Exact time of each scale-up/down step | No: one aggregated value per minute, and Lambda publishes no scaling events to get the times from | No: one count per period |
+| With a short agent delay (e.g. 0 ms) | Reads low: environments sit idle between short invocations | Counts every environment that ran an invocation in the period |
 | Cost / effort | One `GetMetricData` call, simplest | One Logs Insights query per function (billed per GB scanned) |
 | Depends on | The per-function metric (emitted for all functions) | `REPORT` lines in CloudWatch Logs |
 
@@ -354,12 +371,6 @@ Worker counts (from → to), recorded per tier, count type (desired / running) a
     on Lambda both times can fall in the same minute.)
   - Example above: 16 tasks added, scale-up done 7.5 min after the first send, so 16 ÷ 7.5 min ≈ 2.1 tasks/min.
   - A step that didn't scale has no scale-up / scale-down done time, so its rate stays empty.
-- **A time read from a 1-minute value counts at the end of that minute** (Lambda's `ConcurrentExecutions`):
-  CloudWatch labels each value with the start of its minute, but the count could have been reached at any moment in
-  that minute. So "10:01 → 61 workers" means "61 reached by 10:02:00". The fetcher stores such a value with `ts` =
-  the end of its period, so the per-time-window CSV and the derived times use the same time (decided 2026-11-05, PR #893 review). This
-  applies to every time read from such a value (first new worker, scale-up done, scale-down start / done). Otherwise scale-up could look finished at the same
-  moment as the first send. ECS counts come from live polls with exact times and need no such rule.
   - Platforms don't add workers evenly. They add them in steps, e.g. ECS goes 2 → 8 at minute 4, waits out the
     scale-out cooldown, then goes 8 → 18. The rate smooths these steps into one number, which hides the shape.
   - The step pattern itself is seen in the worker-count graph, not in this number. What sets the steps:
@@ -368,6 +379,12 @@ Worker counts (from → to), recorded per tier, count type (desired / running) a
       adding more, unless a larger scale-out is
       triggered.
     - Lambda: see the Lambda note under [Platform notes](#platform-notes-that-will-show-up-in-the-numbers).
+- **A time read from a 1-minute value counts at the end of that minute** (Lambda's `ConcurrentExecutions`):
+  CloudWatch labels each value with the start of its minute, but the count could have been reached at any moment in
+  that minute. So "10:01 → 61 workers" means "61 reached by 10:02:00". The fetcher stores such a value with `ts` =
+  the end of its period, so the per-time-window CSV and the derived times use the same time (decided 2026-11-05, PR #893 review). This
+  applies to every time read from such a value (first new worker, scale-up done, scale-down start / done). Otherwise scale-up could look finished at the same
+  moment as the first send. ECS counts come from live polls with exact times and need no such rule.
 - A count that has no source on a platform stays empty (e.g. `desired` on Lambda, see
   [Scaling info fetchers](#scaling-info-fetchers-pluggable)).
 - `workers_after_down` can be above the baseline count if scale-down didn't finish inside the cool-down; then

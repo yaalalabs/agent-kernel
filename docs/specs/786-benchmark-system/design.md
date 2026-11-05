@@ -140,15 +140,18 @@ itself is a `TRACE` log level with per-stage trace points on the request path.
   8. Moves on to the next step.
 - **The step ends when all three hold in the same cool-down poll,** checked in this order (decided 2026-11-03, PR #877 review), and a later check only runs once the earlier ones hold:
   - every request of the step has a response or timed out (client);
-  - input and output queues hold nothing, counting in-flight messages (`TransportCollector.fetch()`):
-    - SQS: `ApproximateNumberOfMessages` and `ApproximateNumberOfMessagesNotVisible` both 0 in every poll of the
-      last 60 s (both are approximate, so one poll reading 0 isn't enough; decided 2026-11-03);
+  - input and output queues hold nothing, counting in-flight messages (`TransportCollector.fetch()`): 0 waiting and
+    0 in flight in every poll of the last `empty_confirm_window_s`, a constructor parameter of the transport
+    collector, so the shared check has no transport-specific code (decided 2026-11-05; 0 = one poll is enough):
+    - SQS sets 60 s: `ApproximateNumberOfMessages` and `ApproximateNumberOfMessagesNotVisible` are both approximate,
+      so one poll reading 0 isn't enough (decided 2026-11-03);
   - every tier's running count, from the host's **primary** scaling fetcher's `fetch()`, is back at its count at the
     end of `before`.
-  - A condition with no source on the host counts as met.
+  - A condition with no source on the host counts as met (for the workers check: the host lists no scaling fetcher;
+    a primary without `running` is refused at start-up, see [Scaling](#scaling)).
   - A read that fails or returns no value counts as not met for that poll (and writes a run-log entry); the next poll
-    checks again. If it never succeeds, the maximum cool-down ends the step. On SQS, such a poll breaks the 60 s run
-    of zeros (decided 2026-11-04, PR #893 review).
+    checks again. If it never succeeds, the maximum cool-down ends the step. Such a poll also breaks the run of zeros,
+    so the `empty_confirm_window_s` starts again (decided 2026-11-04, PR #893 review).
   - **Maximum cool-down** (config, default 45 min from the end of `load`, settable per host): the step ends anyway and
     records `cooldown_max_reached = true`. 45 min is more than enough for every host to scale in, so the next step
     assumes the system is settled: no steps are skipped and the next step isn't marked (decided 2026-11-05, PR #893 review).
@@ -227,6 +230,10 @@ itself is a `TRACE` log level with per-stage trace points on the request path.
 - A host lists one or more fetchers in the host registry; the first is the **primary** (step-end rule). Every bound
   fetcher runs; there is no config switch for fetchers. All are recorded side by side, never reconciled. The harness
   never branches on host kind.
+- **The primary must give a `running` count** (decided 2026-11-05). Each fetcher declares the count types it gives
+  (`count_types`); at start-up the runner refuses a host whose primary doesn't list `running`, naming the host and the
+  fetcher. Otherwise a `desired`-only primary (e.g. `aws.ecs_scaling_activities`) would leave the workers check with
+  nothing to compare, and every step would run to the maximum cool-down.
 - A fetcher can be written but not bound (`aws.lambda_log_streams`): the class exists, no step run uses it. Binding it
   is a manual edit of the host registry.
 - Phase 1 fetchers:
@@ -236,7 +243,7 @@ itself is a `TRACE` log level with per-stage trace points on the request path.
   | `aws.ecs_api` (`DescribeServices` + `DescribeTasks`) | yes | desired, running, spans | `ecs` (primary) |
   | `aws.ecs_scaling_activities` | no | desired (exact decision times) | `ecs` |
   | `aws.cloudwatch_metric.ConcurrentExecutions` (`Maximum`, 60 s) | no | running | `lambda` (primary) |
-  | `aws.lambda_log_streams` (one span per log stream) | no | running, spans | written, not bound; bound by hand if needed |
+  | `aws.lambda_log_streams` (environments with a `REPORT` line per period, counts only) | no | running | written, not bound; bound by hand if needed |
 
 - **`aws.cloudwatch_metric.ConcurrentExecutions`: missing minutes** (decided 2026-11-04, PR #893 review). Lambda sends
   no datapoint in a minute with no invocations (verified, see `research/platform-scaling-and-cost.md`), so the fetcher
@@ -249,10 +256,16 @@ itself is a `TRACE` log level with per-stage trace points on the request path.
   apart from an idle minute, so it's read as 0 too: accepted, since the worker check runs only after every request
   has a response or timed out and the queues are empty, and the recorded counts come from the after-step fetch
   (decided 2026-11-05, PR #893 review). Only this AWS fetcher has the parameter; it isn't in `ak-bench.yaml`.
+- **`aws.lambda_log_streams`: counts only** (decided 2026-11-05). One Logs Insights query per function over the
+  `REPORT` lines (`stats count(*) by @logStream, bin(<period_s>)`); the fetcher counts the rows of each period and
+  returns one `running` count per tier per period (`ts` = the period's end), no worker spans. It counts environments
+  that finished an invocation in the period, so `period_s` stays at 1 min or more (invocations last up to the 60 s
+  agent runner timeout). Same missing-period rule as above, with its own `log_delay_s` (log ingestion delay).
 
 - Queue depth per window (input and output separately) from the host's `TransportCollector`, chosen by transport
   (`sqs`). It extends `InfoFetcher[QueueInfo]` with `live_track = True` (SQS only gives the
-  current depth); `QueueInfo` = samples `(ts, queue, waiting, in_flight)`.
+  current depth); `QueueInfo` = samples `(ts, queue, waiting, in_flight)`. Its constructor parameter
+  `empty_confirm_window_s` (SQS: 60 s) tells the step-end check how long the queues must read empty.
 - Derived per step, per tier and per fetcher (summary CSV), from `t_load_up` (first send) and `t_load_down` (end of
   load):
   - scale up: decision delay, first new worker, scale-up done, backlog drained;
@@ -506,7 +519,7 @@ flowchart TD
             resource_fetchers=[LambdaInsightsResourceFetcher(live_track=False),
                                LambdaReportMemoryResourceFetcher(live_track=False)],
             trace=CloudWatchLogsTraceCollector(live_track=False),
-            transport=SqsTransportCollector(live_track=True),  # chosen by transport, not cloud
+            transport=SqsTransportCollector(live_track=True, empty_confirm_window_s=60),  # by transport, not cloud
             billing=CostExplorerBillingReader(),     # shared AWS part
         ),
         "ecs": Host(
@@ -517,7 +530,7 @@ flowchart TD
             resource_fetchers=[EcsContainerInsightsResourceFetcher(live_track=False),
                                CloudWatchMetricResourceFetcher("AWS/ECS", ..., live_track=False)],
             trace=CloudWatchLogsTraceCollector(live_track=False),   # same class as lambda
-            transport=SqsTransportCollector(live_track=True),       # same class as lambda
+            transport=SqsTransportCollector(live_track=True, empty_confirm_window_s=60),  # same class as lambda
             billing=CostExplorerBillingReader(),                    # same class as lambda
         ),
     }
@@ -751,7 +764,7 @@ Answered by looking at real data, not by a decision. Each has a fallback already
   "Setting desired count to N" wording is stable enough to parse); Lambda stays on `ConcurrentExecutions` or binds
   `aws.lambda_log_streams`.
 - **R2.** Lambda step end: the metric delay to allow for (`ConcurrentExecutions` has no datapoint in idle minutes,
-  verified 2026-11-04).
+  verified 2026-11-04), and `aws.lambda_log_streams`' `log_delay_s` if it gets bound.
 - **R3.** Whether the 1-min default wait before the after-step fetch is enough for each log backend (ingestion delay).
 - **R4.** Lambda Insights: whether its events carry `function_name`, and whether its log stream is one per execution
   environment (fallback: per-tier values).
