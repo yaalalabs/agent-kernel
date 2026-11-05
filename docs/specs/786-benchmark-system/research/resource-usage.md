@@ -48,7 +48,7 @@ class ResourceUsageFetcher(InfoFetcher[ResourceUsage]):
 
     name: str    # registry name, e.g. "aws.ecs_service_metrics"; used in the CSV column names
 
-    def store(self, usage: ResourceUsage, step: StepResults) -> None:
+    def store(self, usage: ResourceUsage, results: Results) -> None:
         """Adds the samples to the step's resource-usage.csv; a row with the same key replaces the old one.
 
         Written once here, not per subclass.
