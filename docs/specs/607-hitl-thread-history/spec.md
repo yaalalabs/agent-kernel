@@ -154,10 +154,11 @@ if isinstance(chunk.event, RunPaused):
         agent=chunk.event.agent, interruptions=chunk.event.interruptions,
     )
 ...
-if paused is not None:
-    recorder.post_run(req, paused)
-elif not error_seen and deltas:
-    recorder.post_run(req, "".join(deltas))
+if not error_seen:
+    if paused is not None:
+        recorder.post_run(req, paused)
+    elif deltas:
+        recorder.post_run(req, "".join(deltas))
 ```
 
 - **A paused run records the pause and nothing else**, even when text streamed before it. The
@@ -168,6 +169,9 @@ elif not error_seen and deltas:
   halted or empty stream writing a blank assistant message.
 - A pause is not an error, so `error_seen` is not set by it (`Runtime.stream` emits `RunPaused` as an
   ordinary chunk and ends with `done=True`, never through `StreamChunk.error`).
+- An error anywhere in the stream records nothing, the pause included: `execute_stream` reports a
+  failure raised after the pause as an error chunk, and that failure is the one that never
+  persisted it, so recording the pause would leave a question nothing can answer.
 
 #### Queue (`AgentRunner.process`)
 
@@ -207,10 +211,11 @@ if event.get("type") == "run_paused":
         interruptions=[PausedInterruption(**i) for i in event["interruptions"]],
     )
 ...
-if paused is not None:
-    self._record_thread_reply(message, body, 202, paused)
-elif not error_seen and deltas:
-    self._record_thread_reply(message, body, 200, "".join(deltas))
+if not error_seen:
+    if paused is not None:
+        self._record_thread_reply(message, body, 202, paused)
+    elif deltas:
+        self._record_thread_reply(message, body, 200, "".join(deltas))
 ```
 
 - `"run_paused"` is `RunPaused.type`'s literal (`core/event.py:209`). The chunk's shape is

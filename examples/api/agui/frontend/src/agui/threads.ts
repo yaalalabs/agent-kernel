@@ -16,7 +16,7 @@ export type ThreadMessage = {
   attachments?: { name?: string | null }[];
 };
 
-type ThreadPage = { threads: ThreadSummary[] };
+type ThreadPage = { threads: ThreadSummary[]; next_cursor: string | null };
 type MessagePage = { messages: ThreadMessage[]; next_cursor: string | null };
 
 const PAGE_SIZE = 200;
@@ -37,18 +37,25 @@ async function getJson<T>(url: string, token: string): Promise<T> {
 }
 
 /**
- * The caller's threads, most recent first. The server scopes the list to the token's user.
- * A 404 means the app records no threads (no `thread` block, or the read routes are not mounted),
- * which is an empty history rather than an error.
+ * The caller's threads, most recent first, following the cursor across pages. The server scopes the
+ * list to the token's user. A 404 means the app records no threads (no `thread` block, or the read
+ * routes are not mounted), which is an empty history rather than an error.
  */
 export async function fetchThreads(token: string): Promise<ThreadSummary[]> {
+  const threads: ThreadSummary[] = [];
+  let cursor: string | null = null;
   try {
-    const page = await getJson<ThreadPage>(`/api/v1/threads?limit=${PAGE_SIZE}`, token);
-    return page.threads;
+    do {
+      const query = cursor ? `&cursor=${encodeURIComponent(cursor)}` : "";
+      const page: ThreadPage = await getJson<ThreadPage>(`/api/v1/threads?limit=${PAGE_SIZE}${query}`, token);
+      threads.push(...page.threads);
+      cursor = page.next_cursor;
+    } while (cursor);
   } catch (e) {
     if (e instanceof HttpError && e.status === 404) return [];
     throw e;
   }
+  return threads;
 }
 
 /** Every message of one thread, following the cursor across pages. */

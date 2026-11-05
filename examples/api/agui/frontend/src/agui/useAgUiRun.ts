@@ -1,5 +1,5 @@
 import type { RunAgentInput } from "@ag-ui/core";
-import { useEffect, useReducer, useState } from "react";
+import { useEffect, useReducer, useRef, useState } from "react";
 
 import { EMPTY_VIEW, reduceEvent } from "./reduceEvent.ts";
 import { sseEvents } from "./sse.ts";
@@ -41,6 +41,8 @@ export function useAgUiRun(token: string) {
   });
   const [running, setRunning] = useState(false);
   const [runId, setRunId] = useState<string | null>(null);
+  const [opening, setOpening] = useState(false);
+  const openTicket = useRef(0);
 
   // Run boundaries and state changes only. `view.lines` is deliberately not a dependency: a response
   // is hundreds of events, and a message a reload interrupts mid-stream is legitimately incomplete.
@@ -51,6 +53,7 @@ export function useAgUiRun(token: string) {
   const local = (line: Line) => apply({ type: "__local", line });
 
   async function send(prompt: string, attachments: Attachment[] = []) {
+    if (opening) return;
     const id = uuid();
     setRunId(id);
     setRunning(true);
@@ -104,16 +107,21 @@ export function useAgUiRun(token: string) {
   /**
    * Continue a recorded conversation: its messages replace the transcript and its id becomes the
    * thread the next run is sent on. The shared state stays on the server and reappears on the next
-   * snapshot.
+   * snapshot. Only the latest open wins: a slower, superseded load is dropped.
    */
   async function open(id: string) {
+    const ticket = ++openTicket.current;
+    setOpening(true);
     try {
       const lines = toLines(await fetchThreadMessages(token, id));
+      if (ticket !== openTicket.current) return;
       apply({ type: "__load", lines });
       setThreadId(id);
       setRunId(null);
     } catch (e) {
-      report(`Could not load the conversation: ${e instanceof Error ? e.message : String(e)}`);
+      if (ticket === openTicket.current) report(`Could not load the conversation: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      if (ticket === openTicket.current) setOpening(false);
     }
   }
 
@@ -122,5 +130,5 @@ export function useAgUiRun(token: string) {
     local({ id: uuid(), kind: "error", text: message });
   }
 
-  return { threadId, runId, view, running, send, reset, report, open };
+  return { threadId, runId, view, running, opening, send, reset, report, open };
 }

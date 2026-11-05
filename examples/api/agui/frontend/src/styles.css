@@ -92,3 +92,9 @@ aside button { width: 100%; margin-top: 8px; }
 .threads button { width: 100%; margin-top: 4px; padding: 6px 8px; text-align: left; font-size: 13px;
                   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .threads button.current { font-weight: 600; opacity: 1; }
+
+@media (max-width: 720px) {
+  #root { grid-template-columns: 1fr; grid-template-rows: auto; height: auto; }
+  main { min-height: 70vh; }
+  aside, nav { border-left: 0; border-top: 1px solid var(--border); }
+}

@@ -20,7 +20,7 @@ const FILE_ORIGIN_HINT: TextLine = {
 /** Layout and page header. Warns if the page was opened from a file:// URL. */
 export default function App() {
   const [token, setToken] = useState("demo-token");
-  const { threadId, runId, view, running, send, reset, report, open } = useAgUiRun(token);
+  const { threadId, runId, view, running, opening, send, reset, report, open } = useAgUiRun(token);
   const history = useThreads(token, running);
 
   const offline = location.protocol === "file:";
@@ -35,9 +35,9 @@ export default function App() {
       <main>
         <Transcript lines={lines} />
         <StatusStrip status={view.status} />
-        <Composer onSend={send} onError={report} disabled={running || offline} />
+        <Composer onSend={send} onError={report} disabled={running || opening || offline} />
       </main>
-      <ThreadList threads={history.threads} error={history.error} currentId={threadId} busy={running} onOpen={open} />
+      <ThreadList threads={history.threads} error={history.error} currentId={threadId} busy={running || opening} onOpen={open} />
       <Sidebar state={view.state} onReset={reset} token={token} onTokenChange={setToken} threadId={threadId} runId={runId} />
     </>
   );

@@ -103,7 +103,9 @@ from agentkernel.thread import ThreadRESTRequestHandler
 IOHandler.run(handlers=[AGUIPipelineRequestHandler(authoriser=auth), ThreadRESTRequestHandler(authoriser=auth)])
 ```
 
-The queue split above applies here too: the agent-runner process needs the same `thread` block.
+The queue split above applies here too: the agent-runner process needs the same `thread` block, and on a
+broker transport it must name a shared store (`redis`, `valkey`, `dynamodb`, ...). `in_memory` is per process,
+so the runner could not append the reply to the thread the edge created.
 
 :::caution Custom thread stores
 A message's `content` is a JSON object, not a string, when the reply was labelled (see

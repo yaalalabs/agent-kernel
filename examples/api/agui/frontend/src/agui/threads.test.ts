@@ -51,6 +51,17 @@ test("a thread's messages are read across every page, with the token", async () 
   );
 });
 
+test("the thread list is read across every page", async () => {
+  stubFetch({
+    "/api/v1/threads?limit=200": { threads: [{ session_id: "a", name: "A", updated_at: "" }], next_cursor: "c2" },
+    "/api/v1/threads?limit=200&cursor=c2": { threads: [{ session_id: "b", name: "B", updated_at: "" }], next_cursor: null },
+  });
+  assert.deepEqual(
+    (await fetchThreads("tok")).map((t) => t.session_id),
+    ["a", "b"],
+  );
+});
+
 test("no thread routes reads as an empty history, not an error", async () => {
   stubFetch({});
   assert.deepEqual(await fetchThreads("tok"), []);

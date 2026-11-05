@@ -9,12 +9,13 @@ from agents import Agent
 
 def send_summary_email(recipient: str) -> str:
     """
-    Email a summary of this conversation. Requires human approval before it runs.
+    Simulate emailing a summary of this conversation; nothing is actually sent. Requires human
+    approval before it runs.
 
-    :param recipient: The address to send the summary to.
-    :return: Confirmation that the summary was sent.
+    :param recipient: The address the summary would go to.
+    :return: A note that the send was simulated.
     """
-    return f"Summary sent to {recipient}."
+    return f"Simulated: a summary would be sent to {recipient}. Nothing was emailed."
 
 
 assistant_agent = Agent(
