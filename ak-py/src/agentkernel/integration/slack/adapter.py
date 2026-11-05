@@ -66,8 +66,6 @@ BLOCK_ID_LIMIT = 255
 VALUE_LIMIT = 2000
 """Slack's caps on a ``block_id`` and a button ``value``; over either, it rejects the whole message."""
 DECISION_VERBS = ("approved", "denied", "cancelled")
-BUTTON_LABELS = {"approved": "Approve", "denied": "Deny", "cancelled": "Cancel"}
-BUTTON_STYLES = {"approved": "primary", "denied": "danger"}
 
 _events: contextvars.ContextVar[list[dict]] = contextvars.ContextVar("ak_slack_events")
 _presses: contextvars.ContextVar[list[dict]] = contextvars.ContextVar("ak_slack_presses")
@@ -299,6 +297,27 @@ class SlackInboundAdapter(InboundAdapter):
             reply_context=reply_context,
         )
 
+    @staticmethod
+    def _offered(value: str | None) -> dict[str, str]:
+        """The verbs the pressed button offers, against the words it offered them in.
+
+        Written by the outbound half as JSON. A pause posted before that shape existed carries a
+        comma-separated list of verbs instead, and a message outlives a deploy, so that form is
+        still read — labelled with the verb itself, which is all it ever carried.
+
+        :param value: The button's ``value``.
+        :return: Each offered verb against its label, never empty.
+        """
+        try:
+            parsed = json.loads(value or "")
+        except ValueError:
+            parsed = None
+        if isinstance(parsed, dict):
+            offered = {verb: str(label) for verb, label in parsed.items() if verb in DECISION_VERBS}
+        else:
+            offered = {verb: verb.capitalize() for verb in (value or "").split(",") if verb in DECISION_VERBS}
+        return offered or {"approved": "Approve", "denied": "Deny"}
+
     def _review_modal(self, body: dict) -> dict:
         """The form that answers every question of a pause at once.
 
@@ -314,11 +333,14 @@ class SlackInboundAdapter(InboundAdapter):
         question would cost a third of the view's block budget, and a reasonless denial reaches the
         model as a refusal in its own words.
 
+        The verbs and their labels come off the pressed button rather than from any setting of this
+        half's own: see :meth:`SlackOutboundAdapter._review_button`.
+
         :param body: The ``block_actions`` payload of the press that opened it.
         :return: The Slack view to open.
         """
         action = next(iter(body.get("actions") or []), {})
-        verbs = [verb for verb in (action.get("value") or "").split(",") if verb in DECISION_VERBS] or ["approved", "denied"]
+        offered = self._offered(action.get("value"))
         container, message = body.get("container") or {}, body.get("message") or {}
         message_ts = container.get("message_ts") or message.get("ts")
         metadata = {
@@ -344,7 +366,7 @@ class SlackInboundAdapter(InboundAdapter):
                     "element": {
                         "type": "radio_buttons",
                         "action_id": f"{ACTION_PREFIX}choice",
-                        "options": [{"text": {"type": "plain_text", "text": BUTTON_LABELS[verb]}, "value": verb} for verb in verbs],
+                        "options": [{"text": {"type": "plain_text", "text": label}, "value": verb} for verb, label in offered.items()],
                     },
                 }
             )
@@ -555,6 +577,9 @@ class SlackOutboundAdapter(OutboundAdapter):
     name = NAME
     MESSAGE_LIMIT = 3000
     MAX_CHUNKS = 5
+    BUTTON_STYLES = {"approved": "primary", "denied": "danger"}
+    """Block Kit's own colour words, so they stay here rather than in the seam's vocabulary."""
+    REVIEW_LABEL = "Review all"
     TRUNCATION_NOTICE = "Response is truncated due to size restrictions in Slack"
     OVERFLOW_NOTICE = "{count} more question(s) did not fit in this message and cannot be answered here."
     DENY_COLLECTS_REASON = True
@@ -715,9 +740,11 @@ class SlackOutboundAdapter(OutboundAdapter):
     def _review_button(self) -> dict:
         """The one control a pause answered together offers.
 
-        ``value`` carries the verbs this adapter offers, because the form is built by the inbound
-        half, which reads no outbound policy of its own — the same reason a denial's modal is
-        chosen by :data:`REASON_PREFIX` on the button rather than by re-reading a setting.
+        ``value`` carries the verbs this adapter offers **and the words it offers them in**,
+        because the form is built by the inbound half, which reads no outbound policy of its own —
+        the same reason a denial's modal is chosen by :data:`REASON_PREFIX` on the button rather
+        than by re-reading a setting. An application that retunes `DECISION_LABELS` therefore
+        retunes the form with it.
 
         :return: The actions block holding it.
         """
@@ -728,9 +755,9 @@ class SlackOutboundAdapter(OutboundAdapter):
                 {
                     "type": "button",
                     "action_id": f"{REVIEW_PREFIX}open",
-                    "text": {"type": "plain_text", "text": "Review all"},
+                    "text": {"type": "plain_text", "text": self.REVIEW_LABEL},
                     "style": "primary",
-                    "value": ",".join(self.DECISIONS),
+                    "value": json.dumps({verb: self._label(verb) for verb in self.DECISIONS}),
                 }
             ],
         }
@@ -774,11 +801,11 @@ class SlackOutboundAdapter(OutboundAdapter):
         button = {
             "type": "button",
             "action_id": f"{prefix}{verb}",
-            "text": {"type": "plain_text", "text": BUTTON_LABELS[verb]},
+            "text": {"type": "plain_text", "text": self._label(verb)},
             "value": f"{interruption_id}:{verb}",
         }
-        if verb in BUTTON_STYLES:
-            button["style"] = BUTTON_STYLES[verb]
+        if verb in self.BUTTON_STYLES:
+            button["style"] = self.BUTTON_STYLES[verb]
         return button
 
     async def deliver_error(self, message: str, reply_context: dict[str, str]) -> None:

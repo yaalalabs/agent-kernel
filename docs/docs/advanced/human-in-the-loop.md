@@ -297,7 +297,10 @@ Four things to know before you ship it:
   `acting_user_id`, so a `PreHook` is where you check it.
 - **The buttons offer approve and deny, not cancel.** `cancelled` means
   [nobody decided](#why-cancelled-is-not-denied), and a button somebody pressed is not that. Add it
-  if your flow wants it, by subclassing the outbound adapter and setting `DECISIONS`.
+  if your flow wants it, by subclassing the outbound adapter and setting `DECISIONS`. The words on
+  the buttons are a separate attribute, `DECISION_LABELS`, so you can rename them — or write them in
+  another language — without redeclaring which verbs exist. On Slack the labels travel to the review
+  form with the button, so the form says what the buttons said.
 - **An `input_required` question gets no buttons.** It wants a value, not a verdict, and a decision
   verb would resume the run with no answer at all. The question is still shown, with a note where
   its controls would have been, so you can answer it over another surface.

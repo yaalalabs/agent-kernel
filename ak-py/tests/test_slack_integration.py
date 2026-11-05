@@ -371,6 +371,44 @@ class TestPauseRendering:
         assert [e.get("style") for e in blocks[2]["elements"]] == ["primary", "danger"]
 
     @pytest.mark.asyncio
+    async def test_an_application_can_change_the_words_on_the_buttons(self):
+        """The labels are a default, not a requirement: a subclass is the documented way to retune."""
+
+        class Spanish(SlackOutboundAdapter):
+            DECISION_LABELS = {"approved": "Aprobar", "denied": "Rechazar"}
+
+        adapter, posted = object.__new__(Spanish), AsyncMock()
+        with patch.object(SlackOutboundAdapter, "_client", return_value=MagicMock(chat_postMessage=posted)):
+            await adapter.deliver_paused(_paused("call_a"), {"channel": "C9", "thread_ts": "000.111"})
+
+        [actions] = [b for b in posted.await_args.kwargs["blocks"] if b["type"] == "actions"]
+        assert [e["text"]["text"] for e in actions["elements"]] == ["Aprobar", "Rechazar"]
+        assert [e["value"] for e in actions["elements"]] == ["call_a:approved", "call_a:denied"], "the wire is untouched by the wording"
+
+    @pytest.mark.asyncio
+    async def test_the_review_form_offers_the_words_the_buttons_offered(self):
+        """The form is built by the inbound half, so the labels have to travel on the button."""
+
+        class Spanish(SlackOutboundAdapter):
+            DECISION_LABELS = {"approved": "Aprobar", "denied": "Rechazar"}
+
+        view = _inbound()._review_modal(TestAnswerTogether()._press(object.__new__(Spanish), "call_a"))
+
+        [element] = [b["element"] for b in view["blocks"] if b["type"] == "input"]
+        assert [o["text"]["text"] for o in element["options"]] == ["Aprobar", "Rechazar"]
+        assert [o["value"] for o in element["options"]] == ["approved", "denied"]
+
+    def test_a_review_button_posted_before_the_labels_existed_still_opens(self):
+        """A message outlives a deploy, so the old comma-separated value is still read."""
+        press = TestAnswerTogether()._press(_outbound(), "call_a")
+        press["actions"][0]["value"] = "approved,denied"
+
+        view = _inbound()._review_modal(press)
+
+        [element] = [b["element"] for b in view["blocks"] if b["type"] == "input"]
+        assert [(o["value"], o["text"]["text"]) for o in element["options"]] == [("approved", "Approved"), ("denied", "Denied")]
+
+    @pytest.mark.asyncio
     async def test_the_message_text_names_what_is_being_approved(self):
         """Slack reads `text` to a screen reader in place of the blocks, so a heading is not enough."""
         adapter, posted = _outbound(), AsyncMock()
@@ -534,7 +572,8 @@ class TestAnswerTogether:
             f"{BLOCK_PREFIX}call_a",
             f"{BLOCK_PREFIX}call_b",
         ], "the section carries the id, since no actions block will"
-        assert actions[0]["elements"][0]["value"] == "approved,denied", "the inbound half reads the verbs off the button, not off outbound config"
+        offered = json.loads(actions[0]["elements"][0]["value"])
+        assert offered == {"approved": "Approve", "denied": "Deny"}, "the inbound half reads the verbs and their words off the button"
 
     @pytest.mark.asyncio
     async def test_a_single_question_keeps_its_own_buttons(self):

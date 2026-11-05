@@ -167,7 +167,9 @@ def _pause_blocks(self, reply) -> list:
   section carries `ak_pause:<id>`, so the questions and their ids come back in the `block_actions`
   payload and no state is kept between the press and the submit. The verbs ride on the button's
   `value`, because the inbound half reads no outbound policy of its own — the same reason a
-  denial's modal is chosen by `REASON_PREFIX` on the button. A question Slack would refuse a
+  denial's modal is chosen by `REASON_PREFIX` on the button. The button's `value` carries each verb
+  against its label, so an application that retunes `DECISION_LABELS` retunes the form with it; a
+  pause posted before that shape existed carries a comma-separated verb list and is still read. A question Slack would refuse a
   `block_id` for costs the form, like a question wanting a typed answer: the pause renders without
   controls and carries `ANSWER_TOGETHER_NOTICE`.
 - A denial through the review form carries no reason, unlike the single-question path: a reason

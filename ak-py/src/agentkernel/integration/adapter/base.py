@@ -217,6 +217,7 @@ class OutboundAdapter(ABC):
     ERROR_MESSAGE: str = "Sorry, there was an error processing your request."
 
     DECISIONS: tuple[str, ...] = ("approved", "denied")
+    DECISION_LABELS: dict[str, str] = {"approved": "Approve", "denied": "Deny", "cancelled": "Cancel"}
     DECIDABLE_KINDS: tuple[str, ...] = ("tool_call", "confirmation")
     DENY_COLLECTS_REASON: bool = False
     TYPED_ANSWER_NOTICE: str = "This needs a typed answer, which cannot be sent from here."
@@ -291,6 +292,19 @@ class OutboundAdapter(ABC):
         return interruption.kind in cls.DECIDABLE_KINDS
 
     @classmethod
+    def _label(cls, verb: str) -> str:
+        """The word a control offers a decision verb in.
+
+        Separate from :data:`DECISIONS` so that retuning the wording does not mean re-declaring
+        which verbs exist, and falling back to the verb so that adding one to ``DECISIONS`` cannot
+        fail a whole message over a missing label.
+
+        :param verb: The decision the control records.
+        :return: What to write on it.
+        """
+        return cls.DECISION_LABELS.get(verb, verb.capitalize())
+
+    @classmethod
     def _answerable_together(cls, reply: AgentPausedReplyAny) -> bool:
         """Whether one submit could answer the whole of a pause that has to be answered at once.
 
@@ -337,21 +351,39 @@ class OutboundAdapter(ABC):
         except (TypeError, ValueError):
             return [f"  {arguments}"]
 
-    @staticmethod
-    def _format_value(value: Any, indent: str = "  ") -> list[str]:
+    @classmethod
+    def _format_value(cls, value: Any, indent: str = "  ") -> list[str]:
         """A decoded JSON value as lines.
 
-        A mapping reads as its pairs; anything else as itself. Shared because a framework poses its
-        question in whichever of the two it likes: OpenAI encodes call arguments as a JSON object,
-        LangGraph hands `interrupt()` whatever the node passed it.
+        A mapping reads as its pairs, a sequence as one line each, anything else as itself. Shared
+        because a framework poses its question in whichever shape it likes: OpenAI encodes call
+        arguments as a JSON object, LangGraph hands `interrupt()` whatever the node passed it —
+        often a question beside the options that answer it.
 
         :param value: The decoded value.
         :param indent: What each line hangs under — nothing, when the value is the whole question.
         :return: The lines to show.
         """
         if isinstance(value, dict):
-            return [f"{indent}{key}: {item}" for key, item in value.items()]
+            return [f"{indent}{key}: {cls._inline(item)}" for key, item in value.items()]
+        if isinstance(value, list):
+            return [f"{indent}{cls._inline(item)}" for item in value]
         return [f"{indent}{value}"]
+
+    @staticmethod
+    def _inline(value: Any) -> str:
+        """One value on one line, without Python's own punctuation.
+
+        A list of options is something a human reads and answers, so it must not reach them as
+        ``['refund', 'replace']`` — the quotes and brackets are an implementation detail of the
+        language the question happened to pass through.
+
+        :param value: The value to put on the line.
+        :return: Its text.
+        """
+        if isinstance(value, list):
+            return ", ".join(str(item) for item in value)
+        return str(value)
 
     async def deliver_chunk(self, chunk: StreamChunk, reply_context: dict[str, str]) -> None:
         """Send a real-time streaming chunk to the platform.

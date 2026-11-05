@@ -19,7 +19,6 @@ from agentkernel.integration.telegram.adapter import (
     CALLBACK_LIMIT,
     CALLBACK_PREFIX,
     HELP_MESSAGE,
-    INCOMPLETE_NOTICE,
     START_MESSAGE,
     SUBMIT_CODE,
     TALLY_CODE,
@@ -398,7 +397,7 @@ class TestTally:
         request, _ = await self._press(inbound, f"{CALLBACK_PREFIX}{SUBMIT_CODE}", keyboard)
 
         assert request is None
-        assert inbound._client.answer_callback_query.await_args.args[1] == INCOMPLETE_NOTICE
+        assert inbound._client.answer_callback_query.await_args.args[1] == TelegramInboundAdapter.INCOMPLETE_NOTICE
 
     @pytest.mark.asyncio
     async def test_submit_sends_every_answer_as_one_resume(self, drawn):
@@ -434,6 +433,23 @@ class TestTally:
 
         assert request is None, "a lost selection is a press that did nothing, not a failed delivery"
         assert "tally selection" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_an_application_can_change_the_words_on_the_buttons(self):
+        """The glyph labels are this platform's default, not a requirement."""
+
+        class Spanish(TelegramOutboundAdapter):
+            DECISION_LABELS = {"approved": "Aprobar", "denied": "Rechazar"}
+
+        adapter = object.__new__(Spanish)
+        adapter._client = AsyncMock()
+        reply = _paused("call_a", "call_b")
+        reply.answer_together = True
+        await adapter.deliver_paused(reply, {"chat_id": str(CHAT_ID)})
+
+        rows = adapter._client.send_message.await_args.kwargs["reply_markup"]["inline_keyboard"]
+        assert [b["text"] for b in rows[0]] == ["Aprobar 1", "Rechazar 1"]
+        assert all(b["callback_data"].startswith(CALLBACK_PREFIX) for b in rows[0]), "the wire is untouched by the wording"
 
     @pytest.mark.asyncio
     async def test_a_question_wanting_a_typed_answer_costs_the_whole_tally(self, caplog):

@@ -43,10 +43,10 @@ TALLY_CODE = "t"
 """Marks a press that only selects an answer, for a pause the framework takes in one resume."""
 SUBMIT_CODE = "s"
 """Marks the press that submits a whole tally. It names no interruption, so it costs 8 bytes."""
-INCOMPLETE_NOTICE = "Answer every question first."
 SELECTED_MARK = "● "
-"""What a chosen button wears. The keyboard is the tally, so this is what the next press reads."""
-BUTTON_LABELS = {"approved": "✓ Approve", "denied": "✗ Deny", "cancelled": "⊘ Cancel"}
+"""What a chosen button wears. Not decoration and not a label: the keyboard is the tally, so the
+outbound half writes this mark and the inbound half reads it back as the answer. Both halves have
+to agree on it, which is why it stays here rather than on either of them."""
 
 _log = logging.getLogger("ak.integration.telegram")
 
@@ -146,6 +146,9 @@ class TelegramInboundAdapter(InboundAdapter):
 
     name = NAME
     webhook_path = BUILTIN_WEBHOOK_ROUTES[NAME].webhook_path
+    INCOMPLETE_NOTICE = "Answer every question first."
+    """The toast on a tally submitted with a question still blank. This half's to send, so this
+    half's to retune: an application subclasses the adapter it already constructs."""
 
     _log = _log
 
@@ -292,7 +295,7 @@ class TelegramInboundAdapter(InboundAdapter):
         message = callback_query.get("message") or {}
         answers = self._tally(((message.get("reply_markup") or {}).get("inline_keyboard")) or [])
         if not answers or any(status is None for status in answers.values()):
-            await self._client.answer_callback_query(callback_query.get("id"), INCOMPLETE_NOTICE)
+            await self._client.answer_callback_query(callback_query.get("id"), self.INCOMPLETE_NOTICE)
             return None
 
         await self._client.answer_callback_query(callback_query.get("id"), "Processing...")
@@ -483,6 +486,9 @@ class TelegramOutboundAdapter(OutboundAdapter):
     name = NAME
     MESSAGE_LIMIT = 4096
     SUBMIT_LABEL = "Submit"
+    DECISION_LABELS = {"approved": "✓ Approve", "denied": "✗ Deny", "cancelled": "⊘ Cancel"}
+    """The seam's words with a glyph in front: an inline keyboard button carries no styling, so the
+    mark is what distinguishes approve from deny at a glance."""
 
     _log = _log
 
@@ -571,7 +577,7 @@ class TelegramOutboundAdapter(OutboundAdapter):
         for position, interruption in enumerate(reply.interruptions, 1):
             row = [
                 {
-                    "text": f"{BUTTON_LABELS[verb]} {position}",
+                    "text": f"{self._label(verb)} {position}",
                     "callback_data": f"{CALLBACK_PREFIX}{TALLY_CODE}:{VERB_CODES[verb]}:{interruption.id}",
                 }
                 for verb in self.DECISIONS
@@ -597,7 +603,7 @@ class TelegramOutboundAdapter(OutboundAdapter):
 
         row = [
             {
-                "text": BUTTON_LABELS[verb],
+                "text": self._label(verb),
                 "callback_data": f"{CALLBACK_PREFIX}{VERB_CODES[verb]}:{interruption.id}",
             }
             for verb in self.DECISIONS

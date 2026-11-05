@@ -232,6 +232,25 @@ def test_a_question_a_framework_left_in_payload_is_still_shown():
     assert text.count("b7f3e2a1c9d4") == 0, "the id is the last resort, not the first"
 
 
+def test_the_options_of_a_question_read_as_words_not_as_a_python_list():
+    """A list of options is something a human answers, so Python's own punctuation must not show."""
+    reply = AgentPausedReplyAny(
+        run_id="01JD7K2MX4",
+        session_id="s1",
+        agent="support",
+        interruptions=[
+            PausedInterruption(
+                id="int_1", kind="input_required", payload={"question": "How should we make this right?", "options": ["refund", "replace"]}
+            )
+        ],
+    )
+
+    text = _TextOnlyOutboundAdapter().format_pause(reply)
+
+    assert "options: refund, replace" in text
+    assert "[" not in text and "'" not in text
+
+
 def test_a_question_with_no_content_at_all_falls_back_to_its_id():
     reply = AgentPausedReplyAny(
         run_id="01JD7K2MX4", session_id="s1", agent="support", interruptions=[PausedInterruption(id="call_bare", kind="tool_call")]
