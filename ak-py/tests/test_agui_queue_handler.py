@@ -551,6 +551,17 @@ class TestTheEdgeRecordsTheUserTurn:
         assert len(thread_store.get_messages("t-1").messages[0].attachments) == 1
 
     @pytest.mark.asyncio
+    async def test_another_users_thread_is_a_403_with_nothing_enqueued(self, monkeypatch, thread_store):
+        thread_store.get_or_create_thread(session_id="t-1", user_id="someone-else", first_prompt="mine")
+        handler = _edge_handler(monkeypatch, requests=[AgentRequestText(prompt="hello")])
+        with pytest.raises(HTTPException) as excinfo:
+            await handler._run("planner", _StubRequest())
+
+        assert excinfo.value.status_code == 403
+        assert handler._producer.requests == []
+        assert thread_store.get_messages("t-1").messages == []
+
+    @pytest.mark.asyncio
     async def test_a_refused_attachment_is_a_400_with_nothing_enqueued_or_recorded(self, monkeypatch, thread_store):
         _use_attachment_store(monkeypatch, "in_memory", enabled=False)
         handler = _edge_handler(monkeypatch, requests=[_image()])

@@ -106,6 +106,12 @@ flowchart TD
 - A run that pauses (`RunPaused`) records the pause alone as the assistant message (`AgentPausedReplyAny`, labelled `HITL_MEDIA_TYPE`), not the text streamed before it — #827's rule. An errored run records nothing, the pause included.
 - Messages read back through `GET /api/v1/threads/{session_id}` are indistinguishable in shape from REST-recorded ones.
 
+### Thread ownership
+
+- An AG-UI run on a `threadId` whose thread belongs to another user is refused with 403, before anything is written or enqueued — the read routes' ownership rule (`ConversationThreadManager.get_thread(..., user_id=...)`), applied on write because AG-UI always knows the caller. Added after PR review.
+  - Refusing the run also keeps the caller out of that session's agent memory when threads are on.
+  - REST's chat handlers keep the gap (see Non-goals).
+
 ### Read routes
 
 - The AG-UI handlers do not serve the thread read routes. An app that wants clients to reload mounts `ThreadRESTRequestHandler` itself, beside the AG-UI handler (`IOHandler.run(handlers=[...])` or `RESTAPI.run(handlers=[...])`).
@@ -124,7 +130,7 @@ flowchart TD
 
 ### Testing
 
-- Direct path, alongside `tests/test_agui_handler.py`: recorded user + assistant turns; thread keyed by `threadId`; nothing recorded on error, halt, empty run; no thread code touched without a `thread` block; `pre_run` rejection is a 400 with no thread.
+- Direct path, alongside `tests/test_agui_handler.py`: recorded user + assistant turns; thread keyed by `threadId`; nothing recorded on error, halt, empty run; no thread code touched without a `thread` block; `pre_run` rejection is a 400 with no thread; another user's thread is a 403 with nothing recorded.
 - Queue path, alongside `tests/test_agui_queue_handler.py` and `tests/test_thread_pipeline_recording.py`: `ATTR_THREAD` stamped only when threads are on; single offload; runner records the reply; runner without a `thread` block drops it with the warning.
 - `StreamedReply` unit tests: text, error, empty, `DataMessage` precedence, pause over text, error over pause.
 - Human in the loop over AG-UI, on both paths: a pausing run records the pause; the resume run records the decision as the user message and the reply as the assistant message — matching what #827's REST tests assert for the same exchange.
@@ -143,7 +149,7 @@ flowchart TD
 - Folding the two existing inline accumulators (`thread_chat.py:167-178`, `agent_runner.py:333-346`, both extended with pause handling by #827) onto `StreamedReply`. Possible follow-up; kept out so this change touches no REST behaviour.
 - Setting `group_id` / `thread_name` from AG-UI (`forwardedProps` could carry them; not designed here).
 - `MESSAGES_SNAPSHOT` on reload (optional in the issue). Every AG-UI `POST` is a run — the protocol has no "open thread" call, so the trigger for emitting a snapshot needs its own design. Clients reload via the thread read routes.
-- Thread ownership on write. `get_or_create_thread` does not check that an existing thread belongs to the caller (`integration/thread/manager.py:109-115`), so an authorised user who knows a `threadId` can append to another user's thread. REST has the same gap, and the session behind the thread has the same exposure; it gets its own issue.
+- Thread ownership on REST writes. `get_or_create_thread` does not check that an existing thread belongs to the caller (`integration/thread/manager.py:109-115`), so on the REST chat handlers an authorised user who knows a `session_id` can append to another user's thread; the session behind it has the same exposure. It gets its own issue. AG-UI checks ownership (see Thread ownership).
 
 ## Open questions
 

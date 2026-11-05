@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { EMPTY_VIEW, reduceEvent } from "./reduceEvent.ts";
-import { fetchThreadMessages, fetchThreads, toLines, type ThreadMessage } from "./threads.ts";
+import { fetchThreadMessages, fetchThreads, HttpError, toLines, type ThreadMessage } from "./threads.ts";
 
 const message = (overrides: Partial<ThreadMessage>): ThreadMessage => ({ message_id: "m", role: "user", content: "", ...overrides });
 
@@ -58,7 +58,7 @@ test("no thread routes reads as an empty history, not an error", async () => {
 
 test("any other failed listing rejects with the status, so the sidebar can say why", async () => {
   globalThis.fetch = (async () => new Response("bad token", { status: 401 })) as typeof fetch;
-  await assert.rejects(() => fetchThreads("tok"), /401 bad token/);
+  await assert.rejects(() => fetchThreads("tok"), (e: unknown) => e instanceof HttpError && e.status === 401 && /bad token/.test(e.message));
 });
 
 test("loading a thread replaces the transcript and clears the run state", () => {

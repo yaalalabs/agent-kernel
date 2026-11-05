@@ -1,6 +1,6 @@
 # #836: Record AG-UI runs as conversation threads — Implementation Plan
 
-Eight iterations on `feature/836-agui-thread-recording`, which is stacked on #827
+Nine iterations on `feature/836-agui-thread-recording`, which is stacked on #827
 (`feature/607-hitl-threads-support`). The shared pieces come first, then one path per iteration, so
 each leaves the branch green. Section numbers refer to [spec.md](spec.md).
 
@@ -110,7 +110,16 @@ No update needed, verified:
 
 Confirm with the `ak-dev-sync-docs-from-branch` and `ak-dev-sync-skills-from-branch` flows before merge.
 
+## Iteration 9: PR review fixes
+
+- **Goal:** the PR #905 review findings are fixed.
+- **Files:** the three example `uv.lock` files (restored to `develop`); `integration/agui/recorder.py`; `test_agui_recorder.py`, `test_agui_handler.py`, `test_agui_queue_handler.py`; frontend `useThreads.ts`, `threads.ts`, `threads.test.ts`; spec docs, `agui.md`, the architecture skill.
+- **Steps:**
+  1. Restore the example locks that pointed at `ak-py/dist`.
+  2. The ownership check in `AGUIThreadRecorder.pre_run` (spec §2 rule 6) with its tests.
+  3. Frontend: fetch the list once the token settles; a 401/403 reads as a rejected token.
+- **Verify:** the spec's test command, the full suite, `npm test && npm run typecheck`, `make lint-check-all`.
+
 ## Before merge
 
-- Rebase onto #827 whenever it moves: `git rebase --onto origin/feature/607-hitl-threads-support 674550b9`.
-- After #827 merges: `git rebase --onto origin/develop 674550b9`, then re-verify spec.md's **#827** citations and the line numbers above.
+- `develop` is merged into this branch, so the `rebase --onto` route no longer applies: after #827 lands, merge `develop` again, then re-verify spec.md's **#827** citations and the line numbers above.

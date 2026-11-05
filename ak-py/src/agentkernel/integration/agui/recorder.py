@@ -18,15 +18,19 @@ class AGUIThreadRecorder:
 
     _log = logging.getLogger("ak.integration.agui.recorder")
 
-    def __init__(self, recorder: ThreadRecorder):
-        """:param recorder: The recorder every write goes through."""
+    def __init__(self, recorder: ThreadRecorder, manager: ConversationThreadManager):
+        """
+        :param recorder: The recorder every write goes through.
+        :param manager: The thread manager, for the ownership check.
+        """
         self._recorder = recorder
+        self._manager = manager
 
     @classmethod
     def create(cls) -> Optional["AGUIThreadRecorder"]:
         """:return: A recorder, or None when no ``thread`` block is configured."""
         manager = ConversationThreadManager.get()
-        return cls(ThreadRecorder(manager)) if manager is not None else None
+        return cls(ThreadRecorder(manager), manager) if manager is not None else None
 
     @staticmethod
     def chat_request(run_input: "RunAgentInput", user_id: Optional[str], agent_name: str, requests: list[AgentRequest]) -> BaseChatRequest:
@@ -49,13 +53,18 @@ class AGUIThreadRecorder:
 
     def pre_run(self, req: BaseChatRequest, requests: list[AgentRequest]) -> list[AgentRequest]:
         """
-        Record the user turn before the run.
+        Record the user turn before the run, refusing a thread another user owns.
 
         :param req: From ``chat_request``.
         :param requests: The run's requests.
         :return: The requests with stored attachments replaced by references.
-        :raises HTTPException: 400 when the attachments are refused; nothing is written.
+        :raises HTTPException: 403 for another user's thread, 400 when the attachments are refused;
+                               nothing is written either way.
         """
+        try:
+            self._manager.get_thread(req.session_id, user_id=req.user_id)
+        except PermissionError:
+            raise HTTPException(status_code=403, detail="Thread is not owned by the authorised user")
         try:
             rebuilt, _ = self._recorder.pre_run(req, requests)
         except ValueError as e:

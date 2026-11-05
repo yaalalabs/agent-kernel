@@ -1,8 +1,15 @@
 import { useEffect, useState } from "react";
 
-import { fetchThreads, type ThreadSummary } from "./threads.ts";
+import { fetchThreads, HttpError, type ThreadSummary } from "./threads.ts";
 
-/** The caller's recorded conversations, refetched when the token changes or a run finishes. */
+const SETTLE_MS = 400;
+
+function describe(e: unknown): string {
+  if (e instanceof HttpError && (e.status === 401 || e.status === 403)) return "The server rejected the bearer token.";
+  return e instanceof Error ? e.message : String(e);
+}
+
+/** The caller's recorded conversations, refetched once the token settles and whenever a run finishes. */
 export function useThreads(token: string, running: boolean) {
   const [threads, setThreads] = useState<ThreadSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -18,13 +25,14 @@ export function useThreads(token: string, running: boolean) {
         setThreads(list);
         setError(null);
       } catch (e) {
-        if (!stale) setError(e instanceof Error ? e.message : String(e));
+        if (!stale) setError(describe(e));
       }
     }
 
-    load();
+    const timer = setTimeout(load, SETTLE_MS);
     return () => {
       stale = true;
+      clearTimeout(timer);
     };
   }, [token, running]);
 

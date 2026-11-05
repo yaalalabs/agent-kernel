@@ -49,6 +49,12 @@ def text_reply(text: str) -> StreamedReply:
     return reply
 
 
+def _no_threads() -> ConversationThreadManager:
+    manager = MagicMock(spec=ConversationThreadManager)
+    manager.get_thread.return_value = None
+    return manager
+
+
 class _FixedNaming(ThreadNamingStrategy):
     def generate_name(self, prompt: str) -> str:
         return "thread"
@@ -126,13 +132,22 @@ class TestPreRun:
         assert excinfo.value.status_code == 400
         assert thread_store.get_thread("thread-1") is None
 
+    def test_another_users_thread_is_a_403_and_writes_nothing(self, thread_store):
+        thread_store.get_or_create_thread(session_id="thread-1", user_id="owner", first_prompt="mine")
+        req, requests = chat_request(body("hijack"))
+        with pytest.raises(HTTPException) as excinfo:
+            AGUIThreadRecorder.create().pre_run(req, requests)
+
+        assert excinfo.value.status_code == 403
+        assert thread_store.get_messages("thread-1").messages == []
+
     def test_returns_the_rebuilt_requests(self):
         rebuilt = [AgentRequestText(prompt="rebuilt")]
         recorder = MagicMock(spec=ThreadRecorder)
         recorder.pre_run.return_value = (rebuilt, [])
         req, requests = chat_request(body())
 
-        assert AGUIThreadRecorder(recorder).pre_run(req, requests) is rebuilt
+        assert AGUIThreadRecorder(recorder, _no_threads()).pre_run(req, requests) is rebuilt
 
 
 class TestPostRun:
@@ -149,7 +164,7 @@ class TestPostRun:
         recorder = MagicMock(spec=ThreadRecorder)
         req, _ = chat_request(body())
 
-        AGUIThreadRecorder(recorder).post_run(req, StreamedReply("thread-1"))
+        AGUIThreadRecorder(recorder, _no_threads()).post_run(req, StreamedReply("thread-1"))
 
         recorder.post_run.assert_not_called()
 
@@ -159,6 +174,6 @@ class TestPostRun:
         req, _ = chat_request(body())
 
         with caplog.at_level(logging.ERROR, logger="ak.integration.agui.recorder"):
-            AGUIThreadRecorder(recorder).post_run(req, text_reply("hi"))
+            AGUIThreadRecorder(recorder, _no_threads()).post_run(req, text_reply("hi"))
 
         assert "thread-1" in caplog.text

@@ -213,7 +213,8 @@ Reading the table:
   and the agent's reply are stored under the `threadId`; a failed run records no reply, and a paused
   run records the pause. AG-UI has no call for fetching history, so mount `ThreadRESTRequestHandler`
   beside the AG-UI handler and read `GET /api/v1/threads/{threadId}`. On a broker transport the thread
-  store must be shared, since the edge records the user's message and the runner the reply. See
+  store must be shared, since the edge records the user's message and the runner the reply. A run on
+  a `threadId` whose thread belongs to another user is refused with a 403. See
   [Conversation Threads](../advanced/threads.md).
 - **Client-declared `tools` are ignored.** AK builds an agent's tool registry when the agent is
   constructed, so a tool named per-request has nothing to bind to.

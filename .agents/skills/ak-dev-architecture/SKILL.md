@@ -496,7 +496,8 @@ already receive survives to a frontend instead of being discarded at the text-on
 - **Conversation threads** (`recorder.py`, #836): `AGUIThreadRecorder` adapts an AG-UI run to
   `ThreadRecorder` — `create()` is `None` without a `thread` block (the enabled-check),
   `chat_request` builds the `BaseChatRequest` (prompt from the text parts, even `""`; decisions
-  copied onto `resume`), `pre_run` maps a refusal to 400. The direct handler records the user turn
+  copied onto `resume`), `pre_run` refuses another user's thread with 403 (`get_thread(..., user_id=...)`,
+  the read routes' rule) and maps an attachment refusal to 400. The direct handler records the user turn
   after every rejection and the reply before `RunFinished` (a disconnect can skip code after the last
   yield), both via `asyncio.to_thread`; the queue edge records the user turn and marks the message,
   and `_process_agui` records the reply after the terminal chunk through `_record_thread_reply`

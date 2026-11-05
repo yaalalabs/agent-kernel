@@ -21,7 +21,7 @@ type MessagePage = { messages: ThreadMessage[]; next_cursor: string | null };
 
 const PAGE_SIZE = 200;
 
-class HttpError extends Error {
+export class HttpError extends Error {
   readonly status: number;
 
   constructor(status: number, body: string) {

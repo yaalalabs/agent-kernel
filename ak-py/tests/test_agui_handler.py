@@ -658,6 +658,13 @@ class TestThreadRecording:
             assert types_of(client.post("/agui/assistant", headers=AUTH, json=body()))[-1] == "RUN_FINISHED"
             assert recorded() == [("user", "hello")]
 
+    def test_another_users_thread_is_refused_with_a_403(self, monkeypatch, thread_store):
+        with serving(monkeypatch, [ScriptedAgent("assistant", TEXT_SCRIPT)], thread_cfg=self.THREADS) as (client, _):
+            ConversationThreadManager.get().get_or_create_thread(session_id="session-1", user_id="someone-else", first_prompt="mine")
+            response = client.post("/agui/assistant", headers=AUTH, json=body())
+            assert response.status_code == 403
+            assert recorded() == []
+
     def test_a_refused_attachment_is_a_400_and_leaves_no_thread(self, monkeypatch, thread_store):
         image = {"type": "image", "source": {"type": "data", "value": "iVBORw0KGgo=", "mimeType": "image/png"}}
         with serving(monkeypatch, [ScriptedAgent("assistant", TEXT_SCRIPT)], thread_cfg=self.THREADS) as (client, _):

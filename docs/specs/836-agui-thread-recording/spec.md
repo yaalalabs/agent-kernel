@@ -92,6 +92,11 @@ Rules:
    runs `store_attachments` before `get_or_create_thread` for exactly this reason (`recorder.py:38-41`).
 5. **`post_run` never fails the stream.** By the time it runs the client has its answer; a thread
    store outage is logged at `exception` level on `ak.integration.agui.recorder`.
+6. **Another user's thread is refused** (added after PR review). `pre_run` first calls
+   `ConversationThreadManager.get_thread(session_id, user_id=...)` (`manager.py:189-204`) and maps
+   its `PermissionError` to `HTTPException(403, "Thread is not owned by the authorised user")`, the
+   read route's wording. `__init__` takes the manager beside the recorder for this. Cost: one
+   thread-metadata read per run.
 
 ### 3. Direct path — `AGUIRequestHandler` (`integration/agui/handler.py`)
 
@@ -243,6 +248,10 @@ All intentional, all only when a `thread` block is present:
    (#827 `thread_chat.py:174-196`) does not — it records only text or a pause. *Justification:*
    AG-UI is the surface that forwards `DataMessage` to clients (`mapping.py:65-66`), so replayed
    history should match what the client rendered. Aligning the REST SSE path is a follow-up.
+7. With a `thread` block, an AG-UI run on a `threadId` another user's thread already holds is
+   refused with 403 before the run starts. *Justification:* the read routes already enforce
+   ownership; on write it also keeps the caller out of that session. Without a `thread` block
+   nothing changes. REST's chat handlers are not changed (design non-goal).
 
 **Non-changes:**
 
@@ -260,6 +269,7 @@ All intentional, all only when a `thread` block is present:
 | Failure | Where | Outcome |
 |---|---|---|
 | `pre_run` `ValueError` (attachments refused) | edge, both paths | HTTP 400, nothing written, nothing enqueued |
+| Thread owned by another user | edge, both paths | HTTP 403, nothing written, nothing enqueued |
 | Thread store down during `pre_run` | edge | HTTP 500 from FastAPI, before the stream starts; no run |
 | Enqueue fails after `pre_run` | queue edge | User message recorded with no reply — same exposure as `ThreadRequestHandler` (`thread_chat.py:282-284`) |
 | Run errors / halts / is empty | both | No assistant message (`StreamedReply.result()` is `None`) |
@@ -279,18 +289,22 @@ New:
 - `tests/test_agui_recorder.py` — `AGUIThreadRecorder`: `create()` is `None` without a block;
   `chat_request` for text, multi-part text, image-only (`prompt == ""` passes validation), and a
   resume (decisions copied, `run_id` `None`); `pre_run` `ValueError` → `HTTPException(400)`;
-  `post_run` no-op on `None`, swallow-and-log on a store error.
+  another user's thread → `HTTPException(403)` with nothing appended; `post_run` no-op on `None`,
+  swallow-and-log on a store error.
 
 Extended:
 
 - `tests/test_agui_handler.py` — with `ConversationThreadManager.reset()` and an in-memory `thread`
   block: user + assistant recorded, keyed by `threadId`, `user_id` from the authoriser; error chunk,
-  raised exception and empty run record no assistant message; a pausing run records the pause; a
-  resume run records the decision as the user message; an attachment with multimodal off is a 400
-  with no thread; no `thread` block leaves the store untouched and the event stream byte-identical.
+  raised exception and empty run record no assistant message; an attachment with multimodal off is
+  a 400 with no thread; another user's thread is a 403 with nothing recorded; no `thread` block
+  leaves the store untouched and the event stream byte-identical.
+- `tests/test_agui_resume.py` — over the direct handler with its pausing agent: a pausing run
+  records the pause; the resume run records the decision as the user message and the reply.
 - `tests/test_agui_queue_handler.py` — `ATTR_THREAD` present only with a block; `offload` not called
   when threads are on (patch `AttachmentStorageManager.offload` and assert one store write);
-  `pre_run` rejection is a 400 with nothing enqueued.
+  `pre_run` rejection is a 400 with nothing enqueued; another user's thread is a 403 with nothing
+  enqueued.
 - `tests/test_thread_pipeline_recording.py` — `_process_agui` with `ATTR_THREAD`: reply recorded
   after the terminal chunk is sent; pause recorded under 202; error records nothing; no
   `ATTR_THREAD` records nothing; no `thread` block in the runner warns and drops.
