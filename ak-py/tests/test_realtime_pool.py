@@ -7,6 +7,7 @@ import types
 import pytest
 
 from agentkernel import Agent, Runner, Session
+from agentkernel.core.config import _ExecutionConfig, _InputQueueConfig, _OutputQueueConfig, _QueuesConfig, _RealtimeConfig
 from agentkernel.core.event import TextDelta
 from agentkernel.core.model import AgentReplyText, AgentRequestText, BaseRunRequest, ExecutionMode, StreamChunk
 from agentkernel.core.realtime import RealtimeRunner
@@ -308,12 +309,7 @@ class TestRealtimeRunnerReuse:
         from agentkernel.pipeline.envelope import QueueMessage
 
         class _Cfg:
-            class execution:
-                mode = ExecutionMode.REALTIME
-                queues = None
-
-                class realtime:
-                    playback_lead_ms = 50
+            execution = _ExecutionConfig(mode=ExecutionMode.REALTIME, queues=None, realtime=_RealtimeConfig(playback_lead_ms=50))
 
         monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _Cfg))
 
@@ -876,19 +872,12 @@ class TestRealtimePermanentFailure:
         from agentkernel.pipeline.envelope import QueueMessage
         from agentkernel.pipeline.response_handler import ResponseHandler
 
-        class _Input:
-            max_receive_count = 3
-
-        class _Queues:
-            input = _Input()
-
         class _Cfg:
-            class execution:
-                mode = ExecutionMode.REALTIME
-                queues = _Queues()
-
-                class realtime:
-                    playback_lead_ms = 50
+            execution = _ExecutionConfig(
+                mode=ExecutionMode.REALTIME,
+                queues=_QueuesConfig(type="in_memory", input=_InputQueueConfig(max_receive_count=3)),
+                realtime=_RealtimeConfig(playback_lead_ms=50),
+            )
 
         monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _Cfg))
 
@@ -962,12 +951,10 @@ class TestResponseHandlerRealtimeRouting:
         from agentkernel.pipeline.response_handler import ResponseHandler
 
         class _Cfg:
-            class execution:
-                mode = ExecutionMode.REALTIME
-
-                class queues:
-                    class output:
-                        max_receive_count = 3
+            execution = _ExecutionConfig(
+                mode=ExecutionMode.REALTIME,
+                queues=_QueuesConfig(type="in_memory", output=_OutputQueueConfig(max_receive_count=3)),
+            )
 
         monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _Cfg))
         edge = self._Edge()
@@ -983,19 +970,14 @@ class TestResponseHandlerRealtimeRouting:
 class TestBrokerRealtimeUserGate:
     def test_realtime_chunk_without_user_id_is_not_rejected_on_a_broker(self, monkeypatch):
         """Realtime delivers through the integration adapter, not WebSocket, so the broker
-        user_id requirement that guards the STREAM path must not apply to it."""
+        user_id requirement that guards the async + delta path must not apply to it."""
         from unittest.mock import MagicMock
 
         from agentkernel.pipeline.agent_runner import RealtimeAgentRunner
         from agentkernel.pipeline.envelope import QueueMessage
 
         class _Cfg:
-            class execution:
-                mode = ExecutionMode.REALTIME
-                queues = None
-
-                class realtime:
-                    playback_lead_ms = 50
+            execution = _ExecutionConfig(mode=ExecutionMode.REALTIME, queues=None, realtime=_RealtimeConfig(playback_lead_ms=50))
 
         monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _Cfg))
         monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda *a, **k: "kafka"))

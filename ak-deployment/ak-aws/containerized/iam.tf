@@ -125,7 +125,7 @@ resource "aws_iam_role_policy_attachment" "rest_service_scheduler_attachment" {
   policy_arn = aws_iam_policy.rest_service_scheduler_policy[0].arn
 }
 
-# REST service WebSocket IAM policies (async / stream modes)
+# REST service WebSocket IAM policies (async mode)
 
 # Push messages to connected clients (PostToConnection).
 resource "aws_iam_policy" "rest_service_websocket_api_policy" {

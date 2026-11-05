@@ -55,8 +55,9 @@ module "rest_service" {
   response_store_table_name = (var.queue_mode && !local.is_websocket_mode) ? aws_dynamodb_table.response_store[0].name : null
   queue_config              = var.queue_config
 
-  # WebSocket mode (async / stream): REST service handles connections and push.
+  # WebSocket mode (async): REST service handles connections and push.
   execution_mode                   = var.execution_mode
+  message_type                     = var.message_type
   websocket_mode                   = local.is_websocket_mode
   websocket_connections_table_name = local.is_websocket_mode ? module.websocket_connections[0].table_name : null
   websocket_connections_table_arn  = local.is_websocket_mode ? module.websocket_connections[0].table_arn : null

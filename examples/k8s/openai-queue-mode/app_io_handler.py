@@ -7,7 +7,7 @@ registered here too: A2A cards and MCP agent tools are built from this process's
 without them the A2A catalog and the MCP tool list would be empty. Both processes load the same
 agents from app_agents.py. Nothing here runs a model, so no OpenAI key is set.
 
-For WebSocket execution modes (async/stream) the chart adds a separate gateway Deployment
+For the WebSocket execution mode (async) the chart adds a separate gateway Deployment
 running WebSocketGateway.run(auth_validator=...); the io handler's API stays plain REST.
 """
 

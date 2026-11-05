@@ -608,8 +608,8 @@ a2a:
 
 #### AG-UI Server
 
-Stream any streaming-capable agent (OpenAI Agents SDK, LangGraph, Google ADK, Pydantic AI, Microsoft Agent Framework — not
-CrewAI or Smolagents) to a frontend over the [AG-UI protocol](https://github.com/ag-ui-protocol/ag-ui):
+Stream any streaming-capable agent (OpenAI Agents SDK, LangGraph, Google ADK, Pydantic AI, Microsoft Agent Framework,
+Claude Agent SDK — not CrewAI or Smolagents) to a frontend over the [AG-UI protocol](https://github.com/ag-ui-protocol/ag-ui):
 text, tool calls, reasoning, and an optional shared JSON state, all as one typed event stream.
 
 1. Update `pyproject.toml`:
@@ -755,7 +755,8 @@ key. Every keyword is one of the framework's native run arguments and Agent Kern
 call with the keys it owns written last. A native hook's callbacks run inside the Agent Kernel run,
 so `Session.current()` resolves in them (keep per-run state in the session's volatile cache, not on
 the hook instance, which is shared by concurrent runs). This works in any execution mode, including
-`rest_sync`; the streaming hook below is the framework-agnostic path for `stream` mode only.
+`rest_sync`; the streaming hook below is the framework-agnostic path for streamed runs
+(`execution.message_type: delta`) only.
 
 ```python
 from agents import RunConfig, RunHooks
@@ -795,16 +796,17 @@ module.run_options(agent, options_for, max_turns=25, hooks=ProgressHooks())
 |-----------|------------------------------|------------|---------------|---------------------------------|
 | OpenAI Agents SDK | `Runner.run` / `run_streamed` | `max_turns` | `hooks=RunHooks()` | `starting_agent`, `input`, `session`, `context`, `conversation_id`, `previous_response_id`, `auto_previous_response_id` |
 | LangGraph | `ainvoke` / `astream_events` (`config` is deep-merged: `configurable.thread_id` stays the session id, `callbacks` lists concatenate) | `config["recursion_limit"]` | `config["callbacks"]` | `input`, `version`, `stream_mode`, `output_keys`, `print_mode`, `config.configurable.thread_id`, and any `RunnableConfig` key at the top level |
-| Google ADK | the per-run `App` (`plugins`), the per-run `Runner(...)` constructor (services) and `run_async` (`run_config`; copied with `streaming_mode=SSE` in stream mode) | `RunConfig(max_llm_calls=...)` | `plugins=[BasePlugin()]` | `agent`, `app`, `app_name`, `node`, `session_service`, `auto_create_session`, `user_id`, `session_id`, `new_message`, `state_delta`, `invocation_id`, `yield_user_message` |
-| Pydantic AI | `agent.run` / `run_stream_events` (`event_stream_handler` is dropped in stream mode with one warning) | `UsageLimits(request_limit=...)` | `event_stream_handler` | `user_prompt`, `message_history`, `deps` |
+| Google ADK | the per-run `App` (`plugins`), the per-run `Runner(...)` constructor (services) and `run_async` (`run_config`; copied with `streaming_mode=SSE` on a streamed run, `message_type: delta`) | `RunConfig(max_llm_calls=...)` | `plugins=[BasePlugin()]` | `agent`, `app`, `app_name`, `node`, `session_service`, `auto_create_session`, `user_id`, `session_id`, `new_message`, `state_delta`, `invocation_id`, `yield_user_message` |
+| Pydantic AI | `agent.run` / `run_stream_events` (`event_stream_handler` is dropped on a streamed run, `message_type: delta`, with one warning) | `UsageLimits(request_limit=...)` | `event_stream_handler` | `user_prompt`, `message_history`, `deps` |
 | Microsoft Agent Framework | `agent.run` (including `stream=True`); model settings nest inside `options` | native function-invocation configuration on the client | native middleware on the agent or client | `messages`, `session`, `stream` |
 | CrewAI | the per-run `Crew(...)` constructor (`verbose=False` is an overridable default; agents resolve by `role`; `max_rpm` is a forwarded rate limit) | `max_iter` on the native `Agent` (needs nothing from Agent Kernel) | `step_callback` / `task_callback` | `agents`, `tasks`, `memory` |
 | smolagents | `agent.run` | `max_steps` | `step_callbacks` on the agent constructor (needs nothing from Agent Kernel) | `task`, `reset`, `additional_args`, `stream`, `return_full_result` |
+| Claude Agent SDK | the run's `ClaudeAgentOptions` (any field; a name that is not a field is rejected) | `max_turns` (and `max_budget_usd`) | native `hooks` | `resume`, `session_id`, `continue_conversation`, `fork_session`, `resume_session_at`, `resume_drops_turn`, `session_store`, `session_store_flush`, `enable_file_checkpointing`, `include_partial_messages`, and the `ak` entry of `mcp_servers` |
 
-Worked demos: `examples/cli/<framework>-run-options` for each of the seven frameworks, and
+Worked demos: `examples/cli/<framework>-run-options` for each of the eight frameworks, and
 `examples/cli/openai-dynamic-run-options` for options computed per run.
 
-**Streaming event hook (optional):** override `on_stream_event` on a `PostHook` to inspect or modify every event a streamed run produces while `execution.mode: stream` is active. Unlike `on_run` it sees the whole stream — message and reasoning text, tool call names, arguments and results, and the boundaries that pair them. Return the event to pass it on, a modified event of the same `type` to rewrite it, `None` to drop it, or a list to emit several events in its place (a list is emitted as-is and ends the chain for that event, so `return event` and `return [event]` differ). Raise `StreamHalt` to end the run: Agent Kernel closes any open boundary, emits one error chunk, and does not store the session. Only called when streaming; regular `on_run()` still handles the non-streaming path.
+**Streaming event hook (optional):** override `on_stream_event` on a `PostHook` to inspect or modify every event a streamed run produces while `execution.message_type: delta` is set (SSE under `execution.mode: rest_sync`, WebSocket chunks under `execution.mode: async`). Unlike `on_run` it sees the whole stream — message and reasoning text, tool call names, arguments and results, and the boundaries that pair them. Return the event to pass it on, a modified event of the same `type` to rewrite it, `None` to drop it, or a list to emit several events in its place (a list is emitted as-is and ends the chain for that event, so `return event` and `return [event]` differ). Raise `StreamHalt` to end the run: Agent Kernel closes any open boundary, emits one error chunk, and does not store the session. Only called when streaming; regular `on_run()` still handles the non-streaming path.
 
 ```python
 class RedactingPostHook(DisclaimerPostHook):
@@ -848,7 +850,7 @@ these accessors are for hooks only. Tools must use their framework's native hand
 (`RunContextWrapper.context` on OpenAI, `RunContext.deps` on Pydantic AI, `ctx.session.state["ak_context"]` on MAF, `tool_context.state` on ADK,
 ...) since a tool writing through `ToolContext.get().session` writes to a different object than the one
 the run is carrying. Round-trip fidelity is framework-dependent (full for OpenAI/Pydantic AI/MAF, partial for
-ADK/smolagents/LangGraph, unsupported for CrewAI) — see the framework's page under `docs/docs/frameworks/`
+ADK/smolagents/LangGraph, supported for Claude-bound Python tools through `ToolContext.get().framework_context`, and unsupported for CrewAI) — see the framework's page under `docs/docs/frameworks/`
 for specifics.
 
 **Accessing the framework-native session (optional):** unlike `framework_context` above (an app-defined
@@ -1344,8 +1346,11 @@ needed, so it is declared where the framework declares it. Agent Kernel answers 
 `status: "PAUSED"` and the pending interruptions; the next request carries a `resume` block instead
 of a prompt.
 
-**Ask:** Which framework is the agent on? Five can pause — OpenAI Agents SDK, LangGraph, Pydantic AI,
-Google ADK and Microsoft Agent Framework. CrewAI and smolagents report `supports_pause = False` rather than pretending.
+**Ask:** Which framework is the agent on? Six can pause — OpenAI Agents SDK, LangGraph, Pydantic AI,
+Google ADK, Microsoft Agent Framework and Claude Agent SDK. Claude pauses a single tool call with
+`ClaudeToolBuilder.bind(..., needs_approval=True)`; concurrent tool calls cannot be deferred by the native SDK, and the
+bound tool handler refuses execution without a matching approval. CrewAI and smolagents report `supports_pause = False`
+rather than pretending.
 
 **Important:** the pause is written into the **session**, so a durable one needs a shared session
 backend. With `session.type: in_memory` the record lives in one process and the replica receiving the
@@ -1408,8 +1413,9 @@ before they design the question.
 **What it does:** Lets agents execute code and shell commands in an isolated, permission-bounded
 environment. When enabled, agents automatically gain sandbox tools (`run_code`, `run_command`,
 `write_sandbox_file`, `read_sandbox_file`, `check_sandbox_task`, `list_sandbox_sessions`,
-`new_sandbox_session`, `destroy_sandbox_session`) and the usage guidance is injected into their
-system prompt — the agent's own instructions need not mention the sandbox.
+`new_sandbox_session`, `destroy_sandbox_session`, plus `install_packages` when a profile's policy
+permits package installs) and the usage guidance is injected into their system prompt — the
+agent's own instructions need not mention the sandbox.
 
 **Ask:** Which provider — `local_subprocess` (no isolation; dev/test only), `docker`
 (container isolation; needs the `sandbox-docker` extra and a Docker daemon), or another
@@ -1458,11 +1464,22 @@ sandbox:
         memory_mb: 512
         timeout: 30.0
         strict: true           # fail closed when the provider can't enforce a dimension
+        languages: [python]    # optional: run_code allowlist (omit = provider-declared; [] = no run_code)
+        package_install:       # optional: permits install_packages (omit = installs denied)
+          ecosystems: [python]
+          timeout: 300         # an install's own wall clock; omit = policy.timeout
       docker:
         image: python:3.12-slim
+        # package_installers: {python: [pip, install]}   # default; declaring it replaces the map
+        # language_runtimes: {python: [python, -c]}      # default; add e.g. node: [node, -e] if the image has it
   broker:
     flavor: thread
 ```
+
+Package installs are off unless a profile declares `package_install`, and are rejected on an
+`environment: attached` or `scope: per_call` profile. `network_egress: deny` blocks all egress, so installs in this
+example only work from packages or an offline repository baked into the image (set the matching
+offline `package_installers` prefix); use `network_egress: allow` to install from the public registry.
 
 **3. No agent code changes needed** — the tools and prompt guidance attach automatically. Keep
 the agent's instructions about *what* to do; the sandbox usage is injected.
@@ -1589,7 +1606,7 @@ expenses_agent = Agent(name="expenses", instructions=f"{YOUR_INSTRUCTIONS}\n\n{C
 ```
 
 4. Two limits worth knowing before you build on this. It does **not** reach a streamed run
-   (`execution.mode: stream`) — the hook runs on `Runtime.run`, and a warning says so on the first
+   (`execution.message_type: delta`) — the hook runs on `Runtime.run`, and a warning says so on the first
    request. And it does **not** touch a reply from an agent you gave a framework `output_type`,
    since that schema is yours and Agent Kernel has never seen it; write your own post-hook there.
    See `examples/api/a2ui-openai` for a full demo including a small React renderer.

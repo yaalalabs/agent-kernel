@@ -21,7 +21,7 @@ MAFModule([weather_agent]).run_options(
    it owns (`session`, `stream`) last.
 2. **Reserved keys.** `messages`, `stream` and `session` raise `ValueError` at declaration. Per-run state
    belongs to `framework_context`, which the adapter injects as `session.state["ak_context"]`.
-3. **Both modes.** The same keywords apply in run mode and in `execution.mode: stream`.
+3. **Both modes.** The same keywords apply in run mode and on a streamed run (`execution.message_type: delta`).
 4. **Progress.** MAF has no per-run hook argument; its lifecycle hooks are **middleware on the agent**, so
    `count_model_requests` (a chat middleware) and `count_tool_calls` (a function middleware) need nothing from
    Agent Kernel. They run inside the Agent Kernel run, so `Session.current()` resolves, and they record what

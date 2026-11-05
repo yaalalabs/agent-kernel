@@ -77,6 +77,16 @@ pip install agentkernel[maf]
 `agentkernel[maf]` installs the provider-agnostic `agent-framework-core` only. Also install the MAF package
 for the model provider you intend to use, e.g. `pip install agent-framework-openai` (or `agent-framework-anthropic`).
 
+### Claude Agent SDK
+
+```bash
+pip install agentkernel[claude]
+```
+
+The `claude-agent-sdk` wheel bundles the Claude Code CLI it drives (no Node.js needed). It runs Claude models only,
+authenticated with `ANTHROPIC_API_KEY` or a cloud provider (Bedrock, Vertex, Foundry). See
+[Claude Agent SDK](./frameworks/claude-agent-sdk.md).
+
 ### Multiple Frameworks
 
 You can install support for multiple frameworks at once:
@@ -157,7 +167,7 @@ pip install agentkernel[cli]
 Install everything (all frameworks and cloud providers):
 
 ```bash
-pip install agentkernel[openai,crewai,langgraph,adk,smolagents,pydanticai,maf,api,aws,azure,gcp,cli]
+pip install agentkernel[openai,crewai,langgraph,adk,smolagents,pydanticai,maf,claude,api,aws,azure,gcp,cli]
 ```
 
 ## Using UV Package Manager
