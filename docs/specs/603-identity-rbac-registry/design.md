@@ -94,7 +94,11 @@ and `research/design-options.md` section 4).
 - `Principal` (Pydantic, picklable) beside `BaseChatRequest` in `core/model.py`, so core never
   imports the capability (the `ScheduleSpec` precedent):
   - `subject: str`; `kind: Literal["user", "agent", "service"] = "user"`; `provider: str` (the
-    provider short name that produced it, or `anonymous`); `groups: list[str] = []`;
+    provider short name that produced it, or `anonymous`); `namespace: Optional[str]` (the scope
+    the subject is unique in: the validated issuer for the OIDC family, `static` for the static
+    provider, the platform scope for messaging and realtime principals, `None` for anonymous;
+    with `provider` and `subject` it is the identity key the omnichannel work (#243) links on, so
+    it is set by the identity layer, never derived downstream); `groups: list[str] = []`;
     `roles: list[str] = []`; `claims: dict[str, Any] = {}`; `actor: Optional[Principal] = None`
     (the RFC 8693 `act` chain: who is acting for this subject); `credential_ref: Optional[str]`
     (an opaque, run-scoped handle to the inbound credential, section 3.1; never the credential).
@@ -165,12 +169,14 @@ and `research/design-options.md` section 4).
   A tool that cannot be split into read and write forms declares the tier of its
   least-privileged mode and gates its own write path on it (section 5.1).
 - Session ownership (the durable side): `Session.Keys.OWNER = "owner"` is a new reserved durable
-  key holding `SessionOwner(subject, provider)`; `Session.get_owner() -> Optional[SessionOwner]`
-  is its only public reader. `Runtime` sets it once, on the first run with a non-anonymous
-  principal when the key is absent, and never overwrites it; it persists with the session and
-  survives `clear_framework_context()`. Enforcement is in section 6; the recorded owner is also
-  the hook #243 needs for user-scoped lookup and replaces the hand-rolled
-  `nv_cache["user_identity"]` pattern (`examples/sandbox/identity/identity.py:28`).
+  key holding `SessionOwner(subject, provider, namespace)`; `Session.get_owner() ->
+  Optional[SessionOwner]` is its only public reader. `Runtime` sets it once, on the first run
+  with a non-anonymous principal when the key is absent, and never overwrites it; it persists
+  with the session and survives `clear_framework_context()`. Enforcement is in section 6 and
+  compares namespace and subject. The owner is the enforcement side only: answering "every
+  session this identity used" is an index the omnichannel work (#243) keeps in its own mapping
+  store. The owner replaces the hand-rolled `nv_cache["user_identity"]` pattern
+  (`examples/sandbox/identity/identity.py:28`).
 - Identity reaches tools and hooks, never the model: `ChatService._attach_additional_context`
   keeps excluding `group_id` and rejects `user_id` (`core/chat_service.py:148-170`, where `resume`
   and `agui` joined the known fields; section 2); the `Principal` is
@@ -228,9 +234,16 @@ and `research/design-options.md` section 4).
   `deployment/aws/serverless/core/router/ws_lambda.py:206`) is removed, and custom route
   handlers receive `ctx["principal"]` where they received `ctx["user_id"]`.
 - Messaging: `InboundRequest.user_id` (the platform sender id, `integration/adapter/base.py:65`)
-  becomes `Principal(subject=<sender>, provider="messaging:<platform>")` at `AgentRunner`; the
-  prefix is what the ownership gate keys on (settled, Q17); no mapping to a canonical subject in
-  this change (#243 is the hook).
+  becomes `Principal(subject=<sender>, provider="messaging:<platform>", namespace=<scope>)` at
+  `AgentRunner`, where the scope is the platform's own: the Slack team id, the Teams tenant id
+  (`integration/teams/adapter.py:109`), the Gmail inbox address, the WhatsApp phone number id
+  (`integration/whatsapp/adapter.py:29`), the Messenger or Instagram page id, the Telegram bot
+  id. `InboundRequest` gains `namespace` and `claims` for that purpose, and an adapter may put
+  platform-asserted facts in `claims`: the Gmail adapter already fetches messages with
+  `format="full"` (`integration/gmail/adapter.py:237`), so it records the
+  `Authentication-Results` header there for a downstream DMARC check. The `messaging:` prefix is
+  what the ownership gate keys on (settled, Q17); no mapping to a canonical subject in this
+  change (#243 links identities on `provider`, `namespace`, `subject`).
 - AG-UI: token-derived user and no anonymous mode, as today; `_resolve_user` becomes the
   `RequestAuthenticator` over the configured provider (the `authoriser=` argument goes) and the
   run receives the `Principal` (`integration/agui/handler.py:280` passes it where it passed
@@ -238,7 +251,7 @@ and `research/design-options.md` section 4).
 - MCP and A2A: section 8.
 - LiveKit realtime: the participant identity LiveKit asserts (`participant.identity`,
   `integration/livekit/adapter.py:249`) becomes `Principal(subject=identity,
-  provider="realtime:livekit")`;
+  provider="realtime:livekit", namespace=<the configured LiveKit API key id>)`;
   `RealtimeConnectionPool.dispatch` runs the agent check before `prepare_agent_handler`
   (`pipeline/realtime_pool.py:550`) and publishes the principal around every `execute_tool`.
   Rooms are shared, so the `realtime:` prefix is exempt from ownership like `messaging:` (settled,
@@ -274,7 +287,8 @@ and `research/design-options.md` section 4).
   - Claim paths (dotted, configurable): `subject` default `sub`, `groups` default `groups`; a
     missing groups claim yields an empty list, a missing subject claim is an `AuthenticationError`.
     Every other validated claim lands in `claims` for the mapper and for tools; providers never
-    write `roles`.
+    write `roles`. `namespace` is the validated `iss`, so the three direct surfaces yield one
+    identity per issuer and subject.
 - Provider subclasses that change only defaults and one check each:
   - `CognitoIdentityProvider` (`cognito`): issuer
     `https://cognito-idp.<region>.amazonaws.com/<user_pool_id>`; groups from `cognito:groups`;
@@ -292,8 +306,8 @@ and `research/design-options.md` section 4).
     need a dotted-path `RoleMapper`; the built-in `mapping` maps list and string values only.
 - `StaticIdentityProvider` (`static`): a map of credential key to principal fields; credential
   values are resolved by key through the existing secret capability (`SecretManager.get`,
-  `secret/manager.py:60`), never written in YAML; comparison via `hmac.compare_digest`. Documented
-  as the dev, test and CLI provider, not for production.
+  `secret/manager.py:60`), never written in YAML; comparison via `hmac.compare_digest`; `namespace`
+  is the literal `static`. Documented as the dev, test and CLI provider, not for production.
 - `RoleMapper` ABC (`identity/provider/roles.py`): `map(principal) -> list[str]`, applied by the
   factory wrapper after `authenticate`, so every provider's output is mapped the same way and
   `Principal.roles` has exactly one producer. Selected by `identity.role_mapper.type` through
@@ -433,9 +447,12 @@ and `research/design-options.md` section 4).
     coerced to a one-element list, so `agents: support-triage` and `agents: [a, b]` are both
     valid. A grant applies to every (subject, agent) pair it names.
   - Subject grammar: `*` (everyone, anonymous included), `authenticated` (any non-anonymous
-    principal), `user:<subject>` (matches the subject of a principal of any kind, so a
-    client-credentials service principal is granted the same way), `group:<name>`,
-    `role:<name>`; an agent entry is an agent id, `*`, or `tag:<name>`, resolved through the
+    principal, which includes messaging senders the platform did not verify, such as a Gmail
+    From address), `provider:<name>` (the principal's provider by exact name, or by prefix when
+    the name ends in a colon, so `provider:messaging:` is every messaging sender and
+    `provider:oidc` is token-verified callers only), `user:<subject>` (matches the subject of a
+    principal of any kind, so a client-credentials service principal is granted the same way),
+    `group:<name>`, `role:<name>`; an agent entry is an agent id, `*`, or `tag:<name>`, resolved through the
     registry against `AgentDescriptor.tags` (settled, Q18), so `StaticAuthorizer` is constructed
     with the registry; a tag no descriptor carries matches nothing.
   - `agent_level` is the highest level over every matching (subject, agent) pair across all
@@ -463,14 +480,17 @@ and `research/design-options.md` section 4).
   process. With `authorization` configured, an agent on LangGraph or smolagents whose native tool
   set includes tools AK did not bind raises `AKConfigError` here (settled, Q12), because those
   adapters cannot gate them (section 7).
-- `AuthorizerContract` (`identity/authz/testing.py`): level resolution across all five subject
+- `AuthorizerContract` (`identity/authz/testing.py`): level resolution across all six subject
   forms, highest-level-wins, `*` and `tag:` agent grants, tier gating, `allow` / `deny` precedence, anonymous
   handling, and `visible_agents` equivalence with the candidate walk; every backend subclasses it.
 
 ### 5.1 Worked example: how users, agents and tools combine
 
 - Subjects come from two places: IdP groups verbatim (`group:`) and AK roles produced by the
-  configured `RoleMapper` (`role:`); with no mapper, grants use `group:` and `user:` only. A role is
+  configured `RoleMapper` (`role:`); with no mapper, grants use `group:`, `user:` and `provider:`
+  only. Roles never carry across an omnichannel link: a Slack sender holds whatever its own
+  principal matches, and a deployment that wants linked identities to share roles resolves the
+  profile in a dotted-path `RoleMapper`. A role is
   not bound to one agent; a grant binds subjects to agents (or `*`) at a level. A tool's tier is
   per agent, so the same tool name can be `write` on one agent and `admin` on another.
 - Who holds a role is decided in the IdP, not in AK: membership is managed there and arrives in
@@ -555,7 +575,7 @@ async def manage_ticket(ctx: ToolContext, action: str, ticket_id: str, **fields)
 | Which agents the principal may see | Catalog routes | `AccessGate.visible_agents`, narrowed by `surfaces` | Feeds REST, AG-UI, MCP `tools/list`, `/a2a/catalog` |
 | Which tools agent A offers this run | Per run, at tool-list time | `Runtime` resolves `AccessGate.tool_filter(principal, agent)` once, after `resolve_run_options` and before the framework-context load, and publishes it under `TOOL_FILTER_CACHE_KEY`; adapters apply it natively (section 7) | Visibility only; hidden tools are not a boundary |
 | May agent A invoke tool T now, for this principal | Call time | The same filter re-checked at the call through each adapter's native gate or wrapper (section 7) | A denied call returns a tool result string naming the reason (`"Tool 'apply_manifest' requires level write; the current principal has read"`), never an exception into the framework (the OKF `write_kb` behaviour, `knowledgebase/okf/tools.py:150-152`); a failure inside the gate itself denies |
-| May the principal continue session S | `Runtime.run` / `stream`, after the agent check; the thread path at `ConversationThreadManager.get_or_create_thread` | `AccessGate.authorize_session(principal, session)`: allowed when the gate is absent, the session has no owner, the principal is anonymous (the agent check already decided), the owner's subject equals the principal's, or either side's `provider` carries the `messaging:` or `realtime:` prefix (settled, Q17); otherwise `PermissionError`. The thread path compares the existing `Thread.user_id` with the principal before any write (`integration/thread/manager.py:109-115` checks nothing today) | Closes session continuation by anyone who knows a `session_id`; 403 at the choke point, and before a thread message is written on the thread path |
+| May the principal continue session S | `Runtime.run` / `stream`, after the agent check; the thread path at `ConversationThreadManager.get_or_create_thread` | `AccessGate.authorize_session(principal, session)`: allowed when the gate is absent, the session has no owner, the principal is anonymous (the agent check already decided), the owner's namespace and subject equal the principal's, or either side's `provider` carries the `messaging:` or `realtime:` prefix (settled, Q17); otherwise `PermissionError`. The thread path compares the existing `Thread.user_id` with the principal before any write (`integration/thread/manager.py:109-115` checks nothing today) | Closes session continuation by anyone who knows a `session_id`; 403 at the choke point, and before a thread message is written on the thread path |
 | May the principal resume paused run R | `Runtime._validate_resume` (`core/runtime.py:273-332`) | Compares the recorded `PausedRun.subject` with the principal; a differing non-anonymous subject is `PermissionError` | Today no check exists; the HITL design deferred approver identity |
 | Threads, schedules, sandbox principal | Existing checks | Unchanged ownership rules; any level creates a thread or a schedule, and a schedule is re-checked at fire time (settled, Q13); `AgentPrincipalResolver` reads `ToolContext.principal` so `sandbox.identity.mode: user` works with the run principal and no custom resolver | Absorbing ownership checks into the authorizer is round 2 |
 
@@ -747,8 +767,8 @@ registry:
   denied call returns the reason string, no-authorization path keyword-for-keyword unchanged);
   `tests/test_session_identity.py` (`ak.` keys refused from application code, `get_principal`,
   `get_owner` and `ToolContext.access_level` read-only, `access_level` `None` without
-  authorization, owner set once and persisted, principal never persisted, ownership 403,
-  messaging and realtime exemption); `tests/test_identity_credentials.py` (store TTL and encryption, the inbound
+  authorization, owner set once and persisted with its namespace, principal never persisted,
+  ownership 403 on a subject or namespace mismatch, messaging and realtime exemption); `tests/test_identity_credentials.py` (store TTL and encryption, the inbound
   entry deleted at run end, no token in the queue body or logs, `TokenExchangerContract` run
   against `passthrough` and a fake exchanger, `passthrough` warning, broker cache keyed per
   audience, `CredentialError` when no exchanger matches the audience).
@@ -849,3 +869,12 @@ graph TD
   `CredentialBroker` seam, so no token rides the queue and a later exchanger plugs in at the
   runner, lazily, without touching the surfaces, the queue or the runners. Eager exchange at the
   edge for declared audiences stays possible on the same store if ever needed.
+- Q20 (settled 2026-11-05). Alignment with the omnichannel requirements (#243, "Omnichannel:
+  Functional Requirements", 2026-10-26): the identity key omnichannel links on is `provider`,
+  `namespace` and `subject`, so `namespace` is a Principal field set by every provider and
+  adapter and is carried on `SessionOwner`; the owner key is enforcement, not the
+  identity-to-sessions index, which omnichannel keeps in its own mapping store; roles never carry
+  across a link; `provider:<name>` joins the subject grammar because `authenticated` includes
+  unverified messaging senders. The channel a turn arrived on derives from `provider`
+  (`messaging:<platform>` and `realtime:<gateway>` name it, everything else is the shared direct
+  channel) and needs no further plumbing in this change.

@@ -328,6 +328,7 @@ Review round 2 (2026-10-05 to 2026-11-05, Amitha), on the design's open question
 | Q18 `tag:` agent selector | Added |
 | Q19 Token exchange | Built when required; the credential store and broker ship (2026-11-04) |
 | Tool self-gating | `ToolContext.access_level` added for tools that cannot be split (2026-11-05) |
+| Q20 Omnichannel alignment | `Principal.namespace`, owner compares namespace and subject, `provider:<name>` subject form, roles never cross a link (2026-11-05) |
 
 ### 4.1 Q4: `execute` versus `write`, and which meaning of "level" the brief intends
 
