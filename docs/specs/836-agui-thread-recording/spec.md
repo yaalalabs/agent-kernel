@@ -95,22 +95,22 @@ Rules:
 
 ### 3. Direct path — `AGUIRequestHandler` (`integration/agui/handler.py`)
 
-- `__init__`: `self._threads = AGUIThreadRecorder.create()`.
+- `__init__`: `self._recorder = AGUIThreadRecorder.create()`.
 - `_run` (`handler.py:203-236`), after `prepare_agent_handler` and the session check
-  (`handler.py:222-229`), when `self._threads` is set:
-  1. `req = AGUIThreadRecorder.chat_request(run_input, user_id, agent_name, requests)`.
-  2. `requests = await asyncio.to_thread(self._threads.pre_run, req, requests)`.
-  3. Pass `req` to `_events`.
+  (`handler.py:222-229`), when `self._recorder` is set:
+  1. `chat_request = AGUIThreadRecorder.chat_request(run_input, user_id, agent_name, requests)`.
+  2. `requests = await asyncio.to_thread(self._recorder.pre_run, chat_request, requests)`.
+  3. Pass `chat_request` to `_events`.
   - Placement: after every check that can reject the request, so a 404/400/500 from them leaves no
     thread. A `pre_run` 400 at this point has selected a session but not stored one — sessions are
     persisted only by `Runtime`'s `store()`, which no run reached.
-- `_events` (`handler.py:238-318`) gains an optional `thread_request: Optional[BaseChatRequest]`:
+- `_events` (`handler.py:238-318`) gains an optional `chat_request: Optional[BaseChatRequest]`:
   1. Build a `StreamedReply(run_input.thread_id)` and `add()` every chunk in the existing loop,
      including the error, `RunPaused` and unmapped ones it `continue`s past (`handler.py:280-293`).
   2. The existing early returns on an exception (`:294-297`) and on an error chunk (`:299-301`) stay
      where they are, so neither path records.
   3. After them, **before** the state snapshot and terminal event (`:303`), call
-     `await asyncio.to_thread(self._threads.post_run, thread_request, reply)`.
+     `await asyncio.to_thread(self._recorder.post_run, chat_request, reply)`.
   - Why before the terminal event, not after: Starlette stops iterating a `StreamingResponse`
     generator when the client disconnects, so code after the last `yield` can be skipped. Recording
     before `RunFinished` makes the record independent of how the client hangs up.
@@ -121,9 +121,9 @@ Rules:
 
 ### 4. Queue path, edge — `AGUIPipelineRequestHandler` (`integration/agui/queue_handler.py`)
 
-- `__init__`: inherits `self._threads` from the direct handler's `__init__`.
+- `__init__`: inherits `self._recorder` from the direct handler's `__init__`.
 - `_run` (`queue_handler.py:112-151`), replacing the attachment offload (`:131-137`):
-  - Threads on: build `req`, then `requests = await asyncio.to_thread(self._threads.pre_run, req, requests)`.
+  - Threads on: build `chat_request`, then `requests = await asyncio.to_thread(self._recorder.pre_run, chat_request, requests)`.
     `pre_run`'s `store_attachments` performs the same `AttachmentStorageManager.offload`
     (`integration/thread/manager.py:172-185`), so bytes are offloaded exactly once.
   - Threads off: today's `offload` call, unchanged.
@@ -200,8 +200,8 @@ None added.
 
 | Consumer | Change |
 |---|---|
-| `AGUIRequestHandler` | `_threads` set in `__init__`; `_run` builds and pre-records; `_events` accumulates and post-records. Nothing changes when `_threads` is `None`. |
-| `AGUIPipelineRequestHandler` | `_run` swaps `offload` for `pre_run` and adds `ATTR_THREAD` when `_threads` is set. |
+| `AGUIRequestHandler` | `_recorder` set in `__init__`; `_run` builds and pre-records; `_events` accumulates and post-records. Nothing changes when `_recorder` is `None`. |
+| `AGUIPipelineRequestHandler` | `_run` swaps `offload` for `pre_run` and adds `ATTR_THREAD` when `_recorder` is set. |
 | `AgentRunner._process_agui` | Accumulates and calls `_record_thread_reply`. |
 | `ThreadRecorder`, `ConversationThreadManager`, store backends, read routes | Unchanged. |
 | `AgentThreadRequestHandler`, `ThreadRequestHandler`, `StreamAgentRunner` | Unchanged; they keep their inline accumulators (design non-goal). |

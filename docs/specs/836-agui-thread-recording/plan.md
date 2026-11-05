@@ -30,7 +30,7 @@ each leaves the branch green. Section numbers refer to [spec.md](spec.md).
 - **Goal:** `AGUIRequestHandler` records both turns when a `thread` block is present, and is unchanged without one.
 - **Files:** `ak-py/src/agentkernel/integration/agui/handler.py`, `ak-py/tests/test_agui_handler.py`.
 - **Steps:**
-  1. `__init__`: `self._threads = AGUIThreadRecorder.create()`.
+  1. `__init__`: `self._recorder = AGUIThreadRecorder.create()`.
   2. `_run`: after the session check, build the request and `pre_run` via `asyncio.to_thread`; pass the request to `_events` (spec §3).
   3. `_events`: feed every chunk to a `StreamedReply`; after the error returns and before the state snapshot, `post_run` via `asyncio.to_thread`.
   4. Extend the handler tests (spec Testing → `test_agui_handler.py`), including the "no block → byte-identical stream" case.
@@ -41,8 +41,8 @@ each leaves the branch green. Section numbers refer to [spec.md](spec.md).
 - **Goal:** `AGUIPipelineRequestHandler` records the user turn and marks the message; the runner ignores the mark until iteration 5.
 - **Files:** `ak-py/src/agentkernel/integration/agui/queue_handler.py`, `ak-py/tests/test_agui_queue_handler.py`.
 - **Steps:**
-  1. In `_run`, when `_threads` is set, replace the `offload` call with `pre_run` via `asyncio.to_thread` (spec §4).
-  2. Add `ATTR_THREAD` to the enqueue attributes when `_threads` is set.
+  1. In `_run`, when `_recorder` is set, replace the `offload` call with `pre_run` via `asyncio.to_thread` (spec §4).
+  2. Add `ATTR_THREAD` to the enqueue attributes when `_recorder` is set.
   3. Extend the queue-handler tests (spec Testing → `test_agui_queue_handler.py`): attribute present only with a block, single offload, 400 with nothing enqueued.
 - **Verify:** `uv run pytest tests/test_agui_queue_handler.py`.
 
