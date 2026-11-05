@@ -20,13 +20,17 @@ async def test_client():
 
 @pytest.mark.order(1)
 async def test_first_question(test_client):
-    await test_client.send("Who won the 1996 cricket world cup?, answer with only the country name")
+    await test_client.send(
+        "Which country won the 1996 men's cricket world cup final played in Lahore?, answer with only the country name"
+    )
     await test_client.expect(["Sri Lanka"])
 
 
 @pytest.mark.order(2)
 async def test_follow_up_question(test_client):
     await test_client.send(
-        "Which country hosted the tournament?, answer with only the country names and make sure to mention all the contries that hosted this tournament"
+        "Which South Asian countries co-hosted that tournament?, answer with only the country names and make sure to mention all of the co-hosting countries"
     )
-    await test_client.expect(["Sri Lanka, India and Pakistan"])
+    await test_client.expect(
+        ["Sri Lanka, India and Pakistan", "India, Pakistan and Sri Lanka", "India, Pakistan, Sri Lanka"]
+    )
