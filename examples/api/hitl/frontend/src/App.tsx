@@ -69,8 +69,13 @@ export default function App() {
 
     // Retire the questions only once the run accepted them. A failed resume leaves the pause in
     // place precisely so it can be answered again, which a card with no buttons left cannot do.
+    // Its staged answers are cleared, since whether the server applied them is unknown.
     const resume = answers.map(({ line, staged: answer }) => ({ interruptId: line.interrupt.id, verdict: answer.verdict }));
-    if (!(await run({ agent: asked.agent, resume }))) return;
+    const batch = new Set(answers.map(({ line }) => line.id));
+    if (!(await run({ agent: asked.agent, resume }))) {
+      setLines((current) => current.map((line) => (line.kind === "pause" && batch.has(line.id) ? { ...line, staged: undefined } : line)));
+      return;
+    }
     const settledById = new Map(answers.map(({ line, staged: answer }) => [line.id, answer.settled]));
     setLines((current) =>
       current.map((line) => (line.kind === "pause" && settledById.has(line.id) ? { ...line, settled: settledById.get(line.id) } : line)),
