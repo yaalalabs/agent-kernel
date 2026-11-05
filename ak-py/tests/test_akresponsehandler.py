@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from agentkernel.core.config import _ExecutionConfig
 from agentkernel.deployment.aws.serverless.akresponsehandler import ResponseHandler
 
 
@@ -82,12 +83,12 @@ def test_broadcast_stream_chunk_wraps_with_type_and_broadcasts():
 
 
 @patch("agentkernel.deployment.aws.serverless.akresponsehandler.AKConfig")
-def test_process_message_stream_mode_calls_broadcast_stream_chunk(mock_config_cls):
+def test_process_message_async_delta_calls_broadcast_stream_chunk(mock_config_cls):
     from agentkernel.core.model import ExecutionMode
     from agentkernel.deployment.aws.serverless.core.router.ws_lambda import LambdaWSHandler
 
     mock_config = MagicMock()
-    mock_config.execution.mode = ExecutionMode.STREAM
+    mock_config.execution = _ExecutionConfig(mode=ExecutionMode.ASYNC, message_type="delta")
     mock_config_cls.get.return_value = mock_config
 
     ResponseHandler._config = mock_config

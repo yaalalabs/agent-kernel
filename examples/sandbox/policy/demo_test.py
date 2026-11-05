@@ -60,3 +60,25 @@ async def test_relaxed_profile_proceeds_with_warning(test_client):
     # unrestricted), so the same computation that was rejected on 'restricted' now runs.
     await test_client.send("Using the relaxed profile, run Python code to compute 6 * 7. Reply with only the number.")
     await test_client.expect(["42"])
+
+
+@pytest.mark.order(5)
+async def test_installs_profile_denies_an_unlisted_language(test_client):
+    # policy.languages is [python] on the installs profile, so bash in run_code is not permitted:
+    # the request is denied before it reaches the container.
+    await test_client.send(
+        "Using ONLY the installs profile, run this as bash code (language bash) with run_code: echo hi. "
+        "If the sandbox says it is not permitted, reply with only the single word: DENIED"
+    )
+    await test_client.expect(["DENIED"])
+
+
+@pytest.mark.order(6)
+async def test_guarded_profile_denies_package_installs(test_client):
+    # The guarded profile declares no package_install block, so install_packages is denied there
+    # (the tool exists because the installs profile permits installs).
+    await test_client.send(
+        "Using ONLY the guarded profile (never any other profile), install the Python package six with "
+        "install_packages. If the sandbox says it is not permitted, reply with only the single word: DENIED"
+    )
+    await test_client.expect(["DENIED"])

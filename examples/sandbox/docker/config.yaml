@@ -5,19 +5,28 @@
 # /workspace. Requires the `sandbox-docker` extra and a running Docker daemon.
 #
 # Two profiles show what an isolating provider adds over local_subprocess:
-#   - default : a per-session container workspace; files persist across turns, and the
-#               container survives idle CLI pauses for up to idle_timeout.
+#   - default : a per-session container workspace; files persist across turns, the
+#               container survives idle CLI pauses for up to idle_timeout,
+#               install_packages is permitted (installs are off unless a profile opts in),
+#               and run_code accepts bash as well as python (docker.language_runtimes).
 #   - offline : the same, but with `network_egress: deny` — docker ENFORCES this
-#               (network_mode: none). See ../policy for the full policy envelope and
-#               the fail-closed `strict` model.
+#               (network_mode: none) — and no package installs. See ../policy for the
+#               full policy envelope and the fail-closed `strict` model.
 sandbox:
   enabled: true
   profiles:
     default:
       type: docker
       idle_timeout: 21600 # 6 hours; an idle-expired container is removed and the workspace resets
+      policy:
+        package_install:
+          ecosystems: [python] # -> install_packages runs the default `pip install` (docker.package_installers) in the container
       docker:
         image: python:3.12-slim
+        language_runtimes: # language -> interpreter argv; run_code appends the code as the last argument
+          python: [python, -c] # required; declaring the map replaces the default rather than merging
+          bash: [bash, -c] # python:3.12-slim ships bash, so no image change is needed
+          # node: [node, -e]   # needs an image that has node
     offline:
       type: docker
       policy:

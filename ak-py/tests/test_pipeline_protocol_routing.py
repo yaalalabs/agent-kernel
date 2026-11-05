@@ -8,6 +8,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from agentkernel.core.config import _ExecutionConfig
 from agentkernel.core.model import ExecutionMode
 from agentkernel.integration.adapter.base import OutboundAdapter
 from agentkernel.pipeline.agent_runner import AgentRunner, RealtimeAgentRunner, StreamAgentRunner
@@ -19,7 +20,16 @@ from agentkernel.pipeline.transport.base import QueueTransportFactory
 from agentkernel.pipeline.transport.in_memory import InMemoryTransport
 from agentkernel.pipeline.ws.base import WebSocketHandlerABC
 
-ALL_MODES = [None, ExecutionMode.REST_SYNC, ExecutionMode.REST_ASYNC, ExecutionMode.ASYNC, ExecutionMode.STREAM, ExecutionMode.REALTIME]
+# Every valid (mode, message_type) pair (#641), unset included.
+ALL_MODES = [
+    pytest.param(None, None, id="unset"),
+    pytest.param(ExecutionMode.REST_SYNC, None, id="rest_sync"),
+    pytest.param(ExecutionMode.REST_SYNC, "delta", id="rest_sync-delta"),
+    pytest.param(ExecutionMode.REST_ASYNC, None, id="rest_async"),
+    pytest.param(ExecutionMode.ASYNC, None, id="async"),
+    pytest.param(ExecutionMode.ASYNC, "delta", id="async-delta"),
+    pytest.param(ExecutionMode.REALTIME, None, id="realtime"),
+]
 TAGGED = {"request_id": "r1", ATTR_PROTOCOL: "a2a"}
 
 
@@ -32,19 +42,14 @@ def _reset_state():
     InMemoryResponseStore.reset()
 
 
-def _use_mode(monkeypatch, mode):
-    """Stub AKConfig with the mode and the retry counts both pipeline sides read."""
+def _use_mode(monkeypatch, mode, message_type=None):
+    """Stub AKConfig with the mode pair and the retry counts both pipeline sides read."""
 
     class _Cfg:
-        class execution:
-            class queues:
-                class input:
-                    max_receive_count = 3
+        execution = _ExecutionConfig(mode=mode, message_type=message_type)
 
-                class output:
-                    max_receive_count = 3
-
-    _Cfg.execution.mode = mode
+    _Cfg.execution.queues.input.max_receive_count = 3
+    _Cfg.execution.queues.output.max_receive_count = 3
     monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _Cfg))
 
 
@@ -125,7 +130,7 @@ class TestStreamAgentRunner:
         chat_service.process_stream_chat_sync.assert_not_called()
 
     def test_a_tagged_permanent_failure_is_an_error_body_not_a_chunk(self, monkeypatch):
-        _use_mode(monkeypatch, ExecutionMode.STREAM)
+        _use_mode(monkeypatch, ExecutionMode.ASYNC, "delta")
         transport = InMemoryTransport()
 
         StreamAgentRunner(transport=transport, chat_service=MagicMock()).on_permanent_failure(_input_msg(TAGGED, receive_count=4))
@@ -173,9 +178,9 @@ class TestRealtimeAgentRunner:
 
 
 class TestResponseHandler:
-    @pytest.mark.parametrize("mode", ALL_MODES)
-    def test_a_tagged_reply_is_stored_in_every_mode(self, monkeypatch, mode):
-        _use_mode(monkeypatch, mode)
+    @pytest.mark.parametrize("mode, message_type", ALL_MODES)
+    def test_a_tagged_reply_is_stored_in_every_mode(self, monkeypatch, mode, message_type):
+        _use_mode(monkeypatch, mode, message_type)
         handler, store, ws = _handler()
 
         handler.process(_output_msg({"result": "hi", "session_id": "s1"}, {**TAGGED, "user_id": "u1", "status_code": "200"}))
@@ -183,9 +188,9 @@ class TestResponseHandler:
         assert store.get_record("r1") == {"session_id": "s1", "request_id": "r1", "status_code": 200, "body": {"result": "hi", "session_id": "s1"}}
         assert ws.broadcasts == []
 
-    @pytest.mark.parametrize("mode", ALL_MODES)
-    def test_a_tagged_permanent_failure_stores_a_500_record_in_every_mode(self, monkeypatch, mode):
-        _use_mode(monkeypatch, mode)
+    @pytest.mark.parametrize("mode, message_type", ALL_MODES)
+    def test_a_tagged_permanent_failure_stores_a_500_record_in_every_mode(self, monkeypatch, mode, message_type):
+        _use_mode(monkeypatch, mode, message_type)
         handler, store, ws = _handler()
 
         handler.on_permanent_failure(_output_msg({"result": "hi"}, {**TAGGED, "user_id": "u1"}))
@@ -212,16 +217,16 @@ class TestResponseHandler:
         assert ws.broadcasts == []
 
     @pytest.mark.parametrize(
-        "mode, message_type",
-        [(ExecutionMode.STREAM, WebSocketHandlerABC.MessageType.STREAM_CHUNK), (ExecutionMode.ASYNC, WebSocketHandlerABC.MessageType.CHAT_RESPONSE)],
+        "reply_type, frame_type",
+        [("delta", WebSocketHandlerABC.MessageType.STREAM_CHUNK), ("complete", WebSocketHandlerABC.MessageType.CHAT_RESPONSE)],
     )
-    def test_an_untagged_websocket_reply_still_broadcasts(self, monkeypatch, mode, message_type):
-        _use_mode(monkeypatch, mode)
+    def test_an_untagged_websocket_reply_still_broadcasts(self, monkeypatch, reply_type, frame_type):
+        _use_mode(monkeypatch, ExecutionMode.ASYNC, reply_type)
         handler, store, ws = _handler()
 
         handler.process(_output_msg({"delta": "hi"}, {"request_id": "r1", "user_id": "u1"}))
 
-        assert [b["message_type"] for b in ws.broadcasts] == [message_type]
+        assert [b["message_type"] for b in ws.broadcasts] == [frame_type]
         assert store.get_record("r1") is None
 
 

@@ -1,0 +1,4 @@
+# Token streaming: POST /api/v1/chat returns Server-Sent Events instead of a JSON body.
+execution:
+  mode: rest_sync
+  message_type: delta

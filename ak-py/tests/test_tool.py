@@ -94,6 +94,20 @@ class TestToolContextProperties:
         assert len(tool_context.requests) == 1
         assert tool_context.requests[0].prompt == "hello"
 
+    def test_framework_context_is_none_until_a_runner_sets_it(self, tool_context):
+        assert tool_context.framework_context is None
+
+    def test_framework_context_is_the_dict_a_runner_set_and_is_per_instance(self, mock_runtime, mock_agent, mock_session, mock_requests):
+        ctx1 = ToolContext(mock_runtime, mock_agent, mock_session, mock_requests)
+        ctx2 = ToolContext(mock_runtime, mock_agent, mock_session, mock_requests)
+        produced = {"cart": []}
+
+        ctx1.framework_context = produced
+        ctx1.framework_context["cart"].append("apple")
+
+        assert produced == {"cart": ["apple"]}
+        assert ctx2.framework_context is None
+
 
 # ToolContext.get / .set / .reset (contextvars)
 class TestToolContextGetSetReset:

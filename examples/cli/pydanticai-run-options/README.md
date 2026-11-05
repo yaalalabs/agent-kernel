@@ -21,7 +21,7 @@ PydanticAIModule([weather_agent]).run_options(
 2. **Reserved keys.** `user_prompt`, `message_history` and `deps` raise `ValueError` at declaration.
    Per-run state belongs to `framework_context`, which the adapter injects as `deps`.
 3. **Stream mode.** `run_stream_events` does not accept `event_stream_handler` (it is itself the event
-   stream), so in `execution.mode: stream` the handler is dropped with one warning per runner and the
+   stream), so with `execution.message_type: delta` the handler is dropped with one warning per runner and the
    adapter's own stream events carry the same information. `usage_limits` applies in both modes.
 4. **Progress.** `count_events` is a plain Pydantic AI `event_stream_handler`. The SDK calls it for
    every model request stream and every tool batch, inside the Agent Kernel run, so
@@ -41,7 +41,7 @@ Run stats: llm_calls=2, tool_calls=1, request_limit=10
 
 | Path | Mode | What you get |
 |---|---|---|
-| Agent Kernel stream events (`PostHook.on_stream_event`) | `execution.mode: stream` only | framework-agnostic `ToolCallStart`, `TextDelta`, ... for what the adapter maps |
+| Agent Kernel stream events (`PostHook.on_stream_event`) | `execution.message_type: delta` on a streamed surface (SSE or WebSocket); the CLI never streams | framework-agnostic `ToolCallStart`, `TextDelta`, ... for what the adapter maps |
 | Native `event_stream_handler` through run options (this demo) | run mode (`rest_sync`, the CLI) | Pydantic AI's own event stream plus the run's `RunContext` and usage |
 
 ## Running
