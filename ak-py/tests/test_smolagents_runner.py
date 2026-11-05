@@ -1,10 +1,14 @@
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from pydantic import BaseModel
+from smolagents import ChatMessageStreamDelta, FinalAnswerStep, ToolCall, ToolOutput
+from smolagents.models import ChatMessageToolCallFunction, ChatMessageToolCallStreamDelta
 
 from agentkernel.core import Session
 from agentkernel.core.builder import SessionStoreBuilder
+from agentkernel.core.event import MessageEnd, MessageStart, TextDelta, ToolCallArgs, ToolCallEnd, ToolCallResult, ToolCallStart
 from agentkernel.core.model import (
     AgentReplyAny,
     AgentReplyText,
@@ -402,3 +406,178 @@ class TestSmolagentsRunnerCannotPause:
         with pytest.raises(NotImplementedError, match=runner.name):
             async for _ in runner.resume_stream(None, Session("s"), [], [], None):
                 pass
+
+
+class _StreamingNativeSmolagent:
+    """Minimal native agent whose `run(stream=True)` returns a pre-built sync iterator."""
+
+    def __init__(self, items):
+        self.stream_outputs = False
+        self.state = {}
+        self._items = items
+        self.calls = []
+
+    def run(self, task, **kwargs):
+        self.calls.append((task, kwargs))
+        return iter(self._items)
+
+
+class TestSmolagentsRunnerStreaming:
+    def test_supports_streaming_is_true(self):
+        assert SmolagentsRunner().supports_streaming is True
+
+    @pytest.mark.asyncio
+    async def test_stream_maps_text_tool_calls_result_and_final_answer(self):
+        tool_call = ToolCall(name="lookup", arguments={"q": "x"}, id="call-1")
+        native = _StreamingNativeSmolagent(
+            [
+                ChatMessageStreamDelta(content="Hello "),
+                ChatMessageStreamDelta(content="world"),
+                tool_call,
+                ToolOutput(id="call-1", output="42", is_final_answer=False, observation="42", tool_call=tool_call),
+                FinalAnswerStep(output="Done"),
+            ]
+        )
+        runner = SmolagentsRunner()
+        agent = _mock_agent()
+        agent.agent = native
+
+        with (
+            patch.object(runner, "_hydrate_memory"),
+            patch.object(runner, "_sync_memory"),
+        ):
+            events = [event async for event in runner.stream(agent, Session("s"), [AgentRequestText(prompt="hi")])]
+
+        assert [event.type for event in events] == [
+            "message_start",
+            "text_delta",
+            "text_delta",
+            "message_end",
+            "tool_call_start",
+            "tool_call_args",
+            "tool_call_end",
+            "tool_call_result",
+            "message_start",
+            "text_delta",
+            "message_end",
+        ]
+        assert [event.content for event in events if isinstance(event, TextDelta)] == ["Hello ", "world", "Done"]
+        start = next(event for event in events if isinstance(event, ToolCallStart))
+        assert (start.tool_call_id, start.name) == ("call-1", "lookup")
+        args = next(event for event in events if isinstance(event, ToolCallArgs))
+        assert json.loads(args.delta) == {"q": "x"}
+        result = next(event for event in events if isinstance(event, ToolCallResult))
+        assert (result.tool_call_id, result.content) == ("call-1", "42")
+        assert native.calls == [("hi", {"reset": False, "stream": True})]
+        assert native.stream_outputs is False
+
+    @pytest.mark.asyncio
+    async def test_stream_uses_tool_call_deltas_and_closes_once(self):
+        native = _StreamingNativeSmolagent(
+            [
+                ChatMessageStreamDelta(
+                    tool_calls=[
+                        ChatMessageToolCallStreamDelta(
+                            index=0,
+                            id="c1",
+                            type="function",
+                            function=ChatMessageToolCallFunction(name="search", arguments='{"q"'),
+                        )
+                    ]
+                ),
+                ChatMessageStreamDelta(
+                    tool_calls=[
+                        ChatMessageToolCallStreamDelta(
+                            index=0,
+                            function=ChatMessageToolCallFunction(name=None, arguments=': "x"}'),
+                        )
+                    ]
+                ),
+                ToolCall(name="search", arguments={"q": "x"}, id="c1"),
+                ToolOutput(
+                    id="c1",
+                    output="found",
+                    is_final_answer=False,
+                    observation="found",
+                    tool_call=ToolCall(name="search", arguments={"q": "x"}, id="c1"),
+                ),
+                FinalAnswerStep(output="found"),
+            ]
+        )
+        runner = SmolagentsRunner()
+        agent = _mock_agent()
+        agent.agent = native
+
+        with (
+            patch.object(runner, "_hydrate_memory"),
+            patch.object(runner, "_sync_memory"),
+        ):
+            events = [event async for event in runner.stream(agent, Session("s"), [AgentRequestText(prompt="hi")])]
+
+        starts = [event for event in events if isinstance(event, ToolCallStart)]
+        ends = [event for event in events if isinstance(event, ToolCallEnd)]
+        args = [event for event in events if isinstance(event, ToolCallArgs)]
+        assert len(starts) == len(ends) == 1
+        assert "".join(event.delta for event in args) == '{"q": "x"}'
+        # The final answer is emitted once, as a fresh assistant message.
+        assert [event.content for event in events if isinstance(event, TextDelta)] == ["found"]
+
+    @pytest.mark.asyncio
+    async def test_stream_reconciles_a_complete_call_with_a_delta_that_had_no_id(self):
+        native = _StreamingNativeSmolagent(
+            [
+                ChatMessageStreamDelta(
+                    tool_calls=[
+                        ChatMessageToolCallStreamDelta(
+                            index=0,
+                            function=ChatMessageToolCallFunction(name="search", arguments='{"q": "x"}'),
+                        )
+                    ]
+                ),
+                ToolCall(name="search", arguments={"q": "x"}, id="actual-1"),
+                ToolOutput(
+                    id="actual-1",
+                    output="found",
+                    is_final_answer=False,
+                    observation="found",
+                    tool_call=ToolCall(name="search", arguments={"q": "x"}, id="actual-1"),
+                ),
+                FinalAnswerStep(output="found"),
+            ]
+        )
+        runner = SmolagentsRunner()
+        agent = _mock_agent()
+        agent.agent = native
+
+        with (
+            patch.object(runner, "_hydrate_memory"),
+            patch.object(runner, "_sync_memory"),
+        ):
+            events = [event async for event in runner.stream(agent, Session("s"), [AgentRequestText(prompt="hi")])]
+
+        starts = [event for event in events if isinstance(event, ToolCallStart)]
+        ends = [event for event in events if isinstance(event, ToolCallEnd)]
+        results = [event for event in events if isinstance(event, ToolCallResult)]
+        assert len(starts) == len(ends) == len(results) == 1
+        # The client pairs the result with the id the adapter announced, even though the native id differs.
+        assert starts[0].tool_call_id == ends[0].tool_call_id == results[0].tool_call_id
+        assert results[0].content == "found"
+
+    @pytest.mark.asyncio
+    async def test_stream_persists_memory_and_framework_context_after_a_normal_drain(self):
+        native = _StreamingNativeSmolagent([FinalAnswerStep(output="ok")])
+        native.state = {"seeded": 5}
+        runner = SmolagentsRunner()
+        session = Session("s")
+        session.set(FRAMEWORK_CONTEXT, {"seeded": 1})
+        agent = _mock_agent()
+        agent.agent = native
+
+        with (
+            patch.object(runner, "_hydrate_memory"),
+            patch.object(runner, "_sync_memory") as mock_sync,
+        ):
+            _ = [event async for event in runner.stream(agent, session, [AgentRequestText(prompt="hi")])]
+
+        mock_sync.assert_called_once_with(agent, session)
+        assert session.get(FRAMEWORK_CONTEXT) == {"seeded": 5}

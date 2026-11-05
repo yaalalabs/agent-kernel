@@ -116,8 +116,8 @@ can't stream yet:
 | Pydantic AI | ✅ |
 | Claude Agent SDK | ✅ |
 | Microsoft Agent Framework | ✅ |
-| CrewAI | ❌ (framework adapter does not implement streaming yet) |
-| Smolagents | ❌ (framework adapter does not implement streaming yet) |
+| CrewAI | ✅ |
+| Smolagents | ✅ |
 
 Which event types a given streaming-capable agent actually emits (tool calls, steps, reasoning)
 still depends on how much of its native event stream that framework's adapter surfaces — see each
