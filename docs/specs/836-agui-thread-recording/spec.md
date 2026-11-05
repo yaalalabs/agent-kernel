@@ -47,7 +47,7 @@ Rules, in precedence order:
 `session_id` is a constructor argument because `RunPaused` carries none and `AgentPausedReplyAny`
 requires one (`core/model.py:293`).
 
-### 2. `AGUIThreadRecorder` — `integration/agui/thread.py` (new)
+### 2. `AGUIThreadRecorder` — `integration/agui/recorder.py` (new)
 
 The one class both AG-UI paths call. It owns no recording logic; it adapts an AG-UI run to
 `ThreadRecorder`.
@@ -91,7 +91,7 @@ Rules:
 4. **`pre_run`'s rejections are HTTP 400**, raised before anything is written — `ThreadRecorder.pre_run`
    runs `store_attachments` before `get_or_create_thread` for exactly this reason (`recorder.py:38-41`).
 5. **`post_run` never fails the stream.** By the time it runs the client has its answer; a thread
-   store outage is logged at `exception` level on `ak.integration.agui.thread`.
+   store outage is logged at `exception` level on `ak.integration.agui.recorder`.
 
 ### 3. Direct path — `AGUIRequestHandler` (`integration/agui/handler.py`)
 
@@ -269,7 +269,7 @@ New:
   empty → `None`; pause → `AgentPausedReplyAny` with `paused` true; pause after text → pause;
   error after pause → `None`; `DataMessage` → labelled `AgentReplyAny`; the paused reply equal
   (`model_dump_json`) to what #827 `_stream_with_recording` builds for the same event.
-- `tests/test_agui_thread.py` — `AGUIThreadRecorder`: `create()` is `None` without a block;
+- `tests/test_agui_recorder.py` — `AGUIThreadRecorder`: `create()` is `None` without a block;
   `chat_request` for text, multi-part text, image-only (`prompt == ""` passes validation), and a
   resume (decisions copied, `run_id` `None`); `pre_run` `ValueError` → `HTTPException(400)`;
   `post_run` no-op on `None`, swallow-and-log on a store error.
@@ -303,4 +303,4 @@ Example run: `cd examples/api/agui && ./build.sh local && .venv/bin/pytest -s ap
 `OPENAI_API_KEY`; `.venv/bin/pytest`, not `uv run`, so the local wheel is not re-resolved away —
 `README.md:360-366`).
 
-Run: `cd ak-py && uv run pytest tests/test_thread_streamed_reply.py tests/test_agui_thread.py tests/test_agui_handler.py tests/test_agui_queue_handler.py tests/test_thread_pipeline_recording.py tests/test_thread_integration.py`, then the full suite.
+Run: `cd ak-py && uv run pytest tests/test_thread_streamed_reply.py tests/test_agui_recorder.py tests/test_agui_handler.py tests/test_agui_queue_handler.py tests/test_thread_pipeline_recording.py tests/test_thread_integration.py`, then the full suite.

@@ -67,7 +67,7 @@ flowchart TD
 
 ### Components
 
-- `AGUIThreadRecorder` (new, `integration/agui/thread.py`): the one class both AG-UI paths call. Single responsibility: translate an AG-UI run into `ThreadRecorder` calls.
+- `AGUIThreadRecorder` (new, `integration/agui/recorder.py`): the one class both AG-UI paths call. Single responsibility: translate an AG-UI run into `ThreadRecorder` calls.
   - Wraps `ThreadRecorder`; adds no recording logic of its own.
   - Builds the `BaseChatRequest` the recorder needs from the run: `session_id = threadId`, `user_id` = resolved caller, `agent` = route agent, `prompt` = the user message's text parts joined.
   - On a resume turn, `resume` is set to a `ResumeSpec` carrying the run's decisions (copied from the `AgentResumeRequestAny` that `to_resume` built; `run_id` stays `None`, as the protocol has none), so #827's `_as_user_message` records the decision.

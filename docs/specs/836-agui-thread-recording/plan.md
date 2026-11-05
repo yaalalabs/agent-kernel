@@ -17,13 +17,13 @@ each leaves the branch green. Section numbers refer to [spec.md](spec.md).
 ## Iteration 2: `AGUIThreadRecorder`
 
 - **Goal:** an AG-UI run can be turned into `ThreadRecorder` calls; nothing calls it yet.
-- **Files:** `ak-py/src/agentkernel/integration/agui/thread.py` (new), `ak-py/tests/test_agui_thread.py` (new).
+- **Files:** `ak-py/src/agentkernel/integration/agui/recorder.py` (new), `ak-py/tests/test_agui_recorder.py` (new).
 - **Steps:**
   1. Add the class with `create`, `chat_request`, `pre_run`, `post_run` (spec §2).
   2. `chat_request`: explicit `prompt` (even `""`), `ResumeSpec` copied from the `AgentResumeRequestAny`.
   3. `pre_run`: `ValueError` → `HTTPException(400)`. `post_run`: no-op on `None`, log and swallow on failure.
-  4. Write the unit tests listed under spec Testing → `test_agui_thread.py`.
-- **Verify:** `uv run pytest tests/test_agui_thread.py`.
+  4. Write the unit tests listed under spec Testing → `test_agui_recorder.py`.
+- **Verify:** `uv run pytest tests/test_agui_recorder.py`.
 
 ## Iteration 3: Direct path
 
@@ -88,7 +88,7 @@ Developer skills:
   - `:469-476` (`AGUIPipelineRequestHandler`): `pre_run` replaces `offload` when threads are on.
   - `:925` (pipeline → integration lazy imports): `_process_agui` now also imports `StreamedReply`.
 - `.agents/skills/ak-dev-testing-conventions/SKILL.md`
-  - Add rows for `test_thread_streamed_reply.py` and `test_agui_thread.py`.
+  - Add rows for `test_thread_streamed_reply.py` and `test_agui_recorder.py`.
   - `:113` (`test_thread_integration.py`) and `:114` (`test_thread_pipeline_recording.py`): append the AG-UI cases.
 
 Bundled user skill:
