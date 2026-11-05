@@ -36,11 +36,7 @@ async function getJson<T>(url: string, token: string): Promise<T> {
   return (await response.json()) as T;
 }
 
-/**
- * The caller's threads, most recent first, following the cursor across pages. The server scopes the
- * list to the token's user. A 404 means the app records no threads (no `thread` block, or the read
- * routes are not mounted), which is an empty history rather than an error.
- */
+/** The caller's threads across every page; a 404 (no thread routes) is an empty history. */
 export async function fetchThreads(token: string): Promise<ThreadSummary[]> {
   const threads: ThreadSummary[] = [];
   let cursor: string | null = null;
@@ -71,7 +67,7 @@ export async function fetchThreadMessages(token: string, threadId: string): Prom
   return messages;
 }
 
-/** Recorded messages as transcript lines. A payload (a pause, a decision) is shown as its JSON. */
+/** Recorded messages as transcript lines; a payload is shown as JSON. */
 export function toLines(messages: ThreadMessage[]): Line[] {
   return messages.map((message) => {
     const text = typeof message.content === "string" ? message.content : JSON.stringify(message.content, null, 2);

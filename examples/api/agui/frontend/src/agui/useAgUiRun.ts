@@ -10,14 +10,7 @@ import { uuid } from "./uuid.ts";
 
 const saved = restore();
 
-/**
- * Send each attachment under the part type its media type calls for.
- *
- * Audio and video are sent as `audio` and `video` even though Agent Kernel refuses both with a 400 —
- * that refusal is the point. The server decides on the part *type*, not the media type, so routing an
- * .mp3 through `document` would slip it past the guard and hand the model a generic file, which is the
- * misleading output the refusal exists to prevent.
- */
+/** Send each attachment under the part type its media type calls for. */
 function toPart(attachment: Attachment): OutboundPart {
   const source = { type: "data" as const, value: attachment.data, mimeType: attachment.mimeType };
   if (attachment.mimeType.startsWith("image/")) return { type: "image", source };
@@ -26,12 +19,7 @@ function toPart(attachment: Attachment): OutboundPart {
   return { type: "document", source };
 }
 
-/**
- * One AG-UI conversation: the run envelope, the view folded out of the event stream, and the reload
- * persistence. Components below this only render — every state transition happens in `reduceEvent`.
- * Typing the request body as the SDK's `RunAgentInput` checks the outbound half of the protocol the
- * same way the reducer checks the inbound half.
- */
+/** One AG-UI conversation: the run, the view folded from its events, and reload persistence. */
 export function useAgUiRun(token: string) {
   const [threadId, setThreadId] = useState(() => saved.threadId || uuid());
   const [view, apply] = useReducer(reduceEvent, {
@@ -44,8 +32,7 @@ export function useAgUiRun(token: string) {
   const [opening, setOpening] = useState(false);
   const openTicket = useRef(0);
 
-  // Run boundaries and state changes only. `view.lines` is deliberately not a dependency: a response
-  // is hundreds of events, and a message a reload interrupts mid-stream is legitimately incomplete.
+  // Not keyed on `view.lines`: a response is hundreds of events.
   useEffect(() => {
     persist({ threadId, state: view.state, lines: view.lines });
   }, [running, view.state, threadId]);
@@ -59,8 +46,6 @@ export function useAgUiRun(token: string) {
     setRunning(true);
     local({ id: uuid(), kind: "user", text: prompt, ...(attachments.length ? { attachments: attachments.map((a) => a.name) } : {}) });
 
-    // A plain string when there is nothing attached, typed parts when there is. Both are valid AG-UI
-    // content; sending the string form for the common case keeps the request identical to before.
     const content: string | OutboundPart[] = attachments.length ? [{ type: "text", text: prompt }, ...attachments.map(toPart)] : prompt;
 
     const body: RunAgentInput = {
@@ -104,11 +89,7 @@ export function useAgUiRun(token: string) {
     location.reload();
   }
 
-  /**
-   * Continue a recorded conversation: its messages replace the transcript and its id becomes the
-   * thread the next run is sent on. The shared state stays on the server and reappears on the next
-   * snapshot. Only the latest open wins: a slower, superseded load is dropped.
-   */
+  /** Continue a recorded conversation; a superseded load is dropped. */
   async function open(id: string) {
     const ticket = ++openTicket.current;
     setOpening(true);
@@ -125,7 +106,7 @@ export function useAgUiRun(token: string) {
     }
   }
 
-  /** Surface a client-side problem in the transcript — a file the browser could not read, say. */
+  /** Show a client-side error in the transcript. */
   function report(message: string) {
     local({ id: uuid(), kind: "error", text: message });
   }
