@@ -99,6 +99,7 @@ uses):
 | Variable | Source |
 |---|---|
 | `AK_EXECUTION__MODE` | `execution.mode` |
+| `AK_EXECUTION__MESSAGE_TYPE` | `execution.messageType` (only when set) |
 | `AK_EXECUTION__QUEUES__TYPE` | `transport.type` |
 | `AK_EXECUTION__QUEUES__NATS__*` / `__KAFKA__*` | `transport.nats.*` / `transport.kafka.*` connection values |
 | `AK_EXECUTION__QUEUES__INPUT__URL` / `__OUTPUT__URL` | `transport.sqs.*` (sqs transport) |
@@ -170,13 +171,14 @@ bounded retry, dedup, permanent-failure replies) are identical over all of them.
 Sizing rule: `replicas * transport.input.noOfConsumers <= partitions`, or extra consumers
 find no free partition.
 
-## WebSocket delivery (`async` / `stream` modes)
+## WebSocket delivery (`async` mode)
 
-Enable the gateway tier for WebSocket modes on a broker transport:
+Enable the gateway tier for `async` mode on a broker transport, with either message type:
 
 ```yaml
 execution:
-  mode: stream
+  mode: async
+  messageType: delta   # one STREAM_CHUNK per chunk; omit (or complete) for one CHAT_RESPONSE per reply
 wsGateway:
   enabled: true
   auth:
@@ -190,6 +192,13 @@ must be a shared store such as `valkey`). Response Handlers on the io pods resol
 current connections and POST each frame to the owning pod's `/internal/push`, authenticated
 by the shared token; replies reach all of a user's connections on whichever gateway pod holds
 them, and io/runner pods roll without dropping a single connection.
+
+`execution.mode: stream` was removed. The chart validates neither `execution.mode` nor
+`execution.messageType`, so `--set execution.mode=stream` still renders, but the pods fail at
+config load with a migration message: use `mode: async` with `messageType: delta` for chunks over
+WebSocket. SSE (`mode: rest_sync` with `messageType: delta`) needs no gateway tier, but on a broker
+transport it needs a shared response store that can stream chunks (`redis` or `valkey`); with any
+other store the io-handler fails at startup.
 
 The WebSocket HTTPRoute carries raised timeouts (`gateway.websocket.requestTimeout: 0s`
 disables them) and must never have request buffering enabled: Envoy Gateway deadlocks
@@ -230,8 +239,11 @@ Strimzi KafkaTopic CRs for the `sandboxWorker.queue.<transport>` pair (plus Kafk
 dead-letter topics) whenever `sandboxWorker.enabled` is set. On NATS the dev alternative is
 `transport.nats.autoProvision: true`, which the chart mirrors into the sandbox broker's
 config; on SQS, bring your own queues and set `sandboxWorker.queue.sqs.*`. Keep
-`sandboxWorker.queue.nats.ackWait` (default 900) above your longest sandbox
-`policy.timeout`, or a still-running execution is redelivered and re-run.
+`sandboxWorker.queue.nats.ackWait` (default 900) above your longest sandbox effective
+timeout (`policy.timeout`, or `policy.package_install.timeout` for installs) plus the
+worker's 10-second backstop, or a still-running execution is redelivered and re-run.
+When upgrading, roll the sandbox worker before the agent tier: the worker enforces the
+sandbox permissions the agent side sends, and an older worker ignores them.
 
 This is the chart's first tier with its own identity:
 
@@ -262,7 +274,8 @@ dropped) already satisfy the rest.
 With `keda.enabled: true` the tier scales on the sandbox input queue's backlog, mirroring
 the agent-runner scaler; drain follows the same SIGTERM discipline, so keep
 `sandboxWorker.terminationGracePeriodSeconds` (default 600) above your longest sandbox
-`policy.timeout`.
+effective timeout (including `policy.package_install.timeout`) plus the worker's 10-second
+backstop and a shutdown margin, so a hung operation is still recorded as timed out before the pod is killed.
 
 ### Standalone sandbox worker (agents in Lambda or ECS)
 

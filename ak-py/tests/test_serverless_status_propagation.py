@@ -11,6 +11,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from agentkernel.core.config import _ExecutionConfig, _ResponseStoreConfig
 from agentkernel.core.model import ExecutionMode
 from agentkernel.deployment.aws.serverless.akagentrunner import ServerlessAgentRunner
 from agentkernel.deployment.aws.serverless.akresponsehandler import ResponseHandler
@@ -100,7 +101,7 @@ class TestRestSurfaceReplaysTheStatus:
     @pytest.fixture
     def handler_and_store(self):
         config = MagicMock()
-        config.execution.mode = ExecutionMode.REST_SYNC
+        config.execution = _ExecutionConfig(mode=ExecutionMode.REST_SYNC, response_store=_ResponseStoreConfig(type="dynamodb"))
         store = MagicMock()
 
         with (

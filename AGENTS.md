@@ -31,7 +31,7 @@ scratch by grepping; the skill is maintained precisely so agents don't have to.
 ak-py/                  The agentkernel PyPI package (core framework, all Python source + tests)
   src/agentkernel/
     core/                Framework-agnostic abstractions (Session, Agent, Runner, Module, Runtime, Config, hooks, tools)
-    framework/           Adapters: openai, crewai, langgraph, adk, smolagents
+    framework/           Adapters: openai, crewai, langgraph, adk, smolagents, pydanticai, claude
     api/                 REST, MCP, A2A server layers
     deployment/          AWS (Lambda + ECS), Azure Functions, GCP Cloud Run handlers
     integration/         adapter/ (the messaging seam) + Slack, WhatsApp, Messenger, Instagram, Telegram, Teams, Gmail

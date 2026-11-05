@@ -20,7 +20,7 @@
     "devto_url": "https://dev.to/agent-kernel/power-up-your-agents-execution-hooks-and-smart-memory-in-agent-kernel-5d1k"
   },
   "2026-01-13-guardrails-content-safety.md": {
-    "content_hash": "b5b0007f6b48ad0ebee5fd6a9266fd61a1ce395c2d138b18809ca4b1fba456e1",
+    "content_hash": "ac9c9edfff484896b80592f78ad63230795dd7f7f84725abd2b5255d8724d8d4",
     "devto_article_id": 4806127,
     "devto_url": "https://dev.to/agent-kernel/safe-ai-at-scale-introducing-guardrails-for-agent-kernel-34ec"
   },
@@ -30,7 +30,7 @@
     "devto_url": "https://dev.to/agent-kernel/agent-kernel-goes-multi-cloud-azure-support-is-here-29he"
   },
   "2026-02-18-framework-agnostic-tools.md": {
-    "content_hash": "a19dcdb7166e1c01056f8f82de1fee96cad365fc2eea4a70e6df384ee58851f8",
+    "content_hash": "4279b3668733ad42c96c4ce9da5ee00daba4521c61f60716e8e96e31e3eb8349",
     "devto_article_id": 4806178,
     "devto_url": "https://dev.to/agent-kernel/write-once-run-anywhere-universal-tools-for-ai-agents-1mmg"
   },
@@ -75,8 +75,13 @@
     "devto_url": "https://dev.to/agent-kernel/your-cluster-your-data-one-helm-chart-agent-kernel-on-on-prem-kubernetes-5g9g"
   },
   "2026-09-14-scheduled-tasks.md": {
-    "content_hash": "307dd1d59d21586b0e2532c70baf04865b3aca1ab5576b81006b739c07af3756",
+    "content_hash": "360ba261a6949e9d6df0a302a10ae0c391b6694798b82621cda2a4b8098de3ee",
     "devto_article_id": 4806343,
     "devto_url": "https://dev.to/agent-kernel/scheduled-tasks-in-agent-kernel-work-that-runs-without-anyone-asking-4j09"
+  },
+  "2026-10-25-agui-agentic-ui.md": {
+    "content_hash": "deb9524bb8cb81dbfc406591992a46d3b684643b92b3bd54fa88a1c19782b9b9",
+    "devto_article_id": 4968017,
+    "devto_url": "https://dev.to/agent-kernel/your-agent-finally-has-a-face-ag-ui-in-agent-kernel-2hca"
   }
 }

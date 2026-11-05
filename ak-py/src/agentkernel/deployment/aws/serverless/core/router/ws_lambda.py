@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 from ......auth.handler import AuthValidator
 from ......core.chat_service import ChatService
-from ......core.config import AKConfig, ExecutionMode
+from ......core.config import AKConfig
 from ......core.model import BaseRequest, StreamChunk
 from ....core.sqs_handler import SQSHandler
 from ....core.websocket_service import AWSWebSocketHandler, WebSocketConnectionStore
@@ -279,7 +279,7 @@ class SystemRoutesHandler(LambdaWSHandler):
         :param: None
         :return: Chat handler callable
         """
-        if self._config.execution.mode == ExecutionMode.STREAM:
+        if self._config.execution.is_delta:
             return self._handle_queue_mode if self._is_queue_mode() else self._handle_stream_direct
         return self._handle_queue_mode if self._is_queue_mode() else self._handle_direct_chat
 
@@ -327,7 +327,7 @@ class SystemRoutesHandler(LambdaWSHandler):
 
     def _handle_stream_direct(self, event: dict[str, Any], context: Any | None = None) -> tuple[int, dict[str, Any]]:
         """
-        Handle direct streaming chat request without queue (non-queue STREAM mode).
+        Handle direct streaming chat request without queue (non-queue async + delta).
 
         Streams agent response chunks directly via WebSocket.
 
@@ -369,7 +369,7 @@ class SystemRoutesHandler(LambdaWSHandler):
         """
         Handle chat request in queue mode - send message to SQS input queue.
 
-        Used for both STREAM and non-STREAM execution modes when queues are configured.
+        Used for both delta and complete replies when queues are configured.
         Response will arrive via output queue -> ResponseHandler -> WebSocket.
 
         :param event: WebSocket event

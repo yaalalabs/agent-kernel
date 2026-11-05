@@ -45,6 +45,17 @@ session:
     url: "valkey://ak-valkey:6379"
     prefix: "ak:sessions:"
 
+# A2A and MCP run through the queue like REST chat: the io handler enqueues, the agent runner
+# executes, and the caller's reply waits in the response store above.
+a2a:
+  enabled: true
+  agents: ["triage"]
+mcp:
+  enabled: true
+  expose_agents: true
+  agents: ["triage"]
+  stateless_http: true         # the chart runs 2 io-handler replicas outside dev; a stateful MCP session is pinned to one
+
 logging:
   ak:
     level: INFO

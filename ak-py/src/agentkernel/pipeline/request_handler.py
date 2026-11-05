@@ -8,19 +8,82 @@ from typing import Any
 
 from fastapi import APIRouter, File, Form, HTTPException, Response, UploadFile
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 
 from ..api.handler import AgentRESTRequestHandler
 from ..core.config import AKConfig
 from ..core.model import BaseRunRequest, ExecutionMode, FileData, ImageData
+from .envelope import ATTR_PROTOCOL
 from .producer import RequestProducer
 from .response_store.base import ResponseStore
 from .response_store.factory import ResponseStoreFactory
 from .transport.base import QueueTransport, QueueTransportFactory
 
-# Retry budget for awaiting a response when no execution.response_store block is configured:
-# 60 x 1s. Agent runs are frequently LLM-bound and slow; direct mode waited indefinitely, so the
-# unconfigured default errs generous. Set execution.response_store.{retry_count,delay} to tune.
 _DEFAULT_RESPONSE_RETRY = (60, 1.0)
+
+
+class QueuedReply(BaseModel):
+    """One whole reply read back from the response store, as ``RestHandler.request`` returns it.
+
+    ``body`` is kept exactly as the Agent Runner produced it (``ResponseBuilder.build_response``),
+    so a caller reads the same keys a REST client does; the properties only save each surface
+    from repeating the dict checks.
+    """
+
+    request_id: str
+    status_code: int = 200
+    body: Any = None
+
+    @property
+    def is_error(self) -> bool:
+        """Whether the run failed: a status of 400 or above."""
+        return self.status_code >= 400
+
+    @property
+    def result(self) -> Any:
+        """The reply's ``result`` when the body is a dict, else None."""
+        return self.body.get("result") if isinstance(self.body, dict) else None
+
+    @property
+    def media_type(self) -> str | None:
+        """The structured reply's ``media_type`` when the body is a dict and carries one, else None."""
+        return self.body.get("media_type") if isinstance(self.body, dict) else None
+
+    @property
+    def error(self) -> str | None:
+        """The failed run's ``error`` when the body is a dict and carries one, else None."""
+        return self.body.get("error") if isinstance(self.body, dict) else None
+
+    @classmethod
+    def from_record(cls, record: dict[str, Any]) -> "QueuedReply":
+        """Build a reply from a response-store record (``{session_id, request_id, status_code, body}``).
+
+        A missing status counts as 200, the rule REST applies to records written before the
+        status was forwarded.
+
+        :param record: The record the Response Handler stored.
+        :return: The reply.
+        """
+        return cls(
+            request_id=str(record.get("request_id") or ""),
+            status_code=int(record.get("status_code") or 200),
+            body=record.get("body"),
+        )
+
+
+class ReplyTimeoutError(TimeoutError):
+    """The wait budget ran out before the reply was stored."""
+
+    def __init__(self, request_id: str, retry_count: int, delay: float):
+        """
+        :param request_id: The request that got no reply.
+        :param retry_count: The number of store reads the budget allowed.
+        :param delay: The seconds between those reads.
+        """
+        super().__init__(f"No reply stored for request_id {request_id} after {retry_count} reads {delay}s apart")
+        self.request_id = request_id
+        self.retry_count = retry_count
+        self.delay = delay
 
 
 class RestHandler(AgentRESTRequestHandler):
@@ -84,8 +147,9 @@ class RestHandler(AgentRESTRequestHandler):
     async def _await_response_record(self, request_id: str):
         """Wait for the response record for ``request_id`` and return it (or None on timeout).
 
-        Polls full records (``get_record``) rather than bodies (``get_message``) on every store,
-        so the stored status_code reaches ``_build_sync_response`` on shared stores too.
+        The first read happens straight away, and each read deletes the record it returns. Polls
+        full records (``get_record``) rather than bodies (``get_message``) on every store, so the
+        stored status_code reaches the caller on shared stores too.
         """
         store = self.get_response_store()
         retry_count, delay = self._response_retry_config()
@@ -96,6 +160,49 @@ class RestHandler(AgentRESTRequestHandler):
             if attempt < retry_count - 1:
                 await asyncio.sleep(delay)
         return None
+
+    async def request(self, body: BaseRunRequest, protocol: str) -> QueuedReply:
+        """Enqueue one chat request tagged with ``protocol`` and wait for its whole reply (#780).
+
+        The path A2A and MCP share with the REST chat route, minus everything HTTP: it raises no
+        ``HTTPException`` and always waits, whatever ``execution.mode`` is. The ``protocol``
+        attribute tells the runners and the Response Handler to deliver one whole reply to the
+        store in every mode. A reply with an error status is returned, not raised: the caller
+        checks ``is_error``.
+
+        :param body: The chat request; ``session_id`` and ``prompt`` are required.
+        :param protocol: The surface's name, stamped as the ``protocol`` attribute.
+        :return: The stored reply.
+        :raises ValueError: If ``session_id``, ``prompt`` or ``protocol`` is empty; nothing is sent.
+        :raises ReplyTimeoutError: If the budget runs out before the reply is stored.
+        """
+        self._validate_protocol_request(body, protocol)
+        request_id = str(uuid.uuid4())
+        self._log.info(f"[ENQUEUE] protocol={protocol}, session_id={body.session_id}, request_id={request_id}, agent={body.agent}")
+        # Offload the sync send so it doesn't block the event loop.
+        await asyncio.to_thread(RequestProducer(self.get_transport()).enqueue, body, request_id, {ATTR_PROTOCOL: protocol})
+
+        record = await self._await_response_record(request_id)
+        if record is None:
+            raise ReplyTimeoutError(request_id, *self._response_retry_config())
+        reply = QueuedReply.from_record(record)
+        self._log.info(f"[REPLY] protocol={protocol}, request_id={request_id}, status_code={reply.status_code}")
+        return reply
+
+    @staticmethod
+    def _validate_protocol_request(body: BaseRunRequest, protocol: str) -> None:
+        """Refuse a request the runner could only reject, before anything is sent.
+
+        The session and prompt messages match ``ChatService._validate`` word for word.
+
+        :raises ValueError: If ``session_id``, ``prompt`` or ``protocol`` is empty.
+        """
+        if not body.session_id:
+            raise ValueError("No session_id is provided in the request")
+        if not body.prompt:
+            raise ValueError("No prompt provided in the request")
+        if not protocol:
+            raise ValueError("protocol is required")
 
     def _build_sync_response(self, record: Any) -> Any:
         """Map a stored response record to the HTTP response, honoring its stored status.
@@ -128,13 +235,15 @@ class RestHandler(AgentRESTRequestHandler):
         try:
             if not body.session_id:
                 raise HTTPException(status_code=400, detail="session_id is required")
-            if not body.prompt:
+            if not body.prompt and body.resume is None:
                 raise HTTPException(status_code=400, detail="prompt is required")
 
             # Unique request_id, distinct from session_id.
             request_id = str(uuid.uuid4())
 
-            self._log.info(f"[REQUEST START] session_id={body.session_id}, request_id={request_id}, agent={body.agent}, prompt={body.prompt[:50]}")
+            self._log.info(
+                f"[REQUEST START] session_id={body.session_id}, request_id={request_id}, agent={body.agent}, prompt={(body.prompt or '')[:50]}"
+            )
 
             # Offload the sync send so it doesn't block the event loop.
             queue_result = await asyncio.to_thread(self._enqueue_request, body, request_id)
@@ -261,16 +370,16 @@ class RequestHandler(RestHandler):
         return router
 
     async def run_chat(self, body: BaseRunRequest):
-        """POST /api/v1/chat: enqueue; SSE stream in STREAM mode, JSON otherwise."""
+        """POST /api/v1/chat: enqueue; SSE stream for rest_sync + delta, JSON otherwise."""
         # Direct-mode parity: same validation messages and error shape as ChatService._validate
         # (ValueError -> HTTPException(400, detail={"error": ...})).
         if not body.session_id:
             raise HTTPException(status_code=400, detail={"error": "No session_id is provided in the request"})
-        if not body.prompt:
+        if not body.prompt and body.resume is None:
             raise HTTPException(status_code=400, detail={"error": "No prompt provided in the request", "session_id": body.session_id})
 
         self._reject_unroutable(body)
-        if self._effective_mode() == ExecutionMode.STREAM:
+        if self._config.execution.is_sse:
             return await self._run_chat_stream(body)
         return await self.enqueue_and_wait(body)
 
@@ -284,7 +393,7 @@ class RequestHandler(RestHandler):
         first.
 
         :param body: The chat request; only its session_id reaches the error detail.
-        :raises HTTPException: 400 when the mode or the response store cannot serve this route.
+        :raises HTTPException: 400 when the mode cannot serve this route.
         """
         mode = self._effective_mode()
         if mode == ExecutionMode.REALTIME:
@@ -297,16 +406,17 @@ class RequestHandler(RestHandler):
                     "session_id": body.session_id,
                 },
             )
-        if mode == ExecutionMode.ASYNC:
+        if self._config.execution.is_websocket:
             raise HTTPException(
                 status_code=400,
                 detail={"error": "ASYNC mode delivers responses over the WebSocket route: connect to /ws instead", "session_id": body.session_id},
             )
-        if mode == ExecutionMode.STREAM and not self._store_can_serve_sse():
+        if self._config.execution.is_sse and not self._store_can_serve_sse():
             raise HTTPException(
                 status_code=400,
                 detail={
-                    "error": "STREAM responses on this topology are delivered over the WebSocket route: connect to /ws instead",
+                    "error": "SSE (execution.mode rest_sync with message_type delta) needs a response store that can stream "
+                    "chunks and is shared with the response handler; this topology's store cannot",
                     "session_id": body.session_id,
                 },
             )
@@ -333,7 +443,7 @@ class RequestHandler(RestHandler):
         return StreamingResponse(self._sse_stream(request_id, body.session_id), media_type="text/event-stream")
 
     async def _sse_stream(self, request_id: str, session_id: str | None) -> AsyncGenerator[str, None]:
-        store = self.get_response_store()  # chunk-streaming capable: checked in _run_chat_stream before enqueue
+        store = self.get_response_store()  # chunk-streaming capable: checked by _reject_unroutable
         chunk_iterator = store.stream(request_id)
         try:
             while True:

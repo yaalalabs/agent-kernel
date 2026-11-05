@@ -5,7 +5,7 @@ import logging
 from collections.abc import Callable
 from typing import Any
 
-from ....core.config import AKConfig, ExecutionMode
+from ....core.config import AKConfig
 from .core import BaseLambdaRouter, RESTLambdaRouter, WSLambdaRouter
 
 
@@ -34,8 +34,7 @@ class Lambda:
 
     @staticmethod
     def _is_websocket_mode() -> bool:
-        mode = Lambda._get_config().execution.mode
-        return mode in (ExecutionMode.ASYNC, ExecutionMode.STREAM)
+        return Lambda._get_config().execution.is_websocket
 
     @classmethod
     def register(cls, route: str, method: str | None = None) -> Callable[[Callable], Callable]:

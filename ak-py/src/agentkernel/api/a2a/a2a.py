@@ -1,22 +1,34 @@
+import json
 import logging
-import traceback
-from typing import Any
+from typing import TYPE_CHECKING, Any, Optional
 
+from a2a.helpers import new_data_message, new_text_message
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
 from a2a.server.tasks import InMemoryTaskStore, TaskStore
-from a2a.types import AgentCard, InternalError, UnsupportedOperationError
-from a2a.utils import new_agent_text_message
-from a2a.utils.errors import ServerError
+from a2a.types import AgentCard, InternalError, Message, UnsupportedOperationError
 
-from ...core import Agent, AgentService
+from ...a2ui.hook import A2UIPostHook
+from ...core import Agent
 from ...core.config import AKConfig
+from ...core.model import BaseRunRequest
 from ...core.runtime import Runtime
+
+if TYPE_CHECKING:  # pragma: no cover: annotation only; api reaches pipeline lazily
+    from ...pipeline.request_handler import QueuedReply, RestHandler
 
 
 class A2A:
     """
     A2A class provides a utility method for interacting with runtime, agents and sessions.
+
+    Agents never run here: each executor puts the request on the input queue and waits for the
+    runner's whole reply in the response store (#780).
+    """
+
+    PROTOCOL = "a2a"
+    """
+    Value of the queue message's ``protocol`` attribute for A2A requests
     """
 
     _cards: dict[str, AgentCard] = {}
@@ -31,36 +43,88 @@ class A2A:
     """
     Card built flag
     """
+    _client: Optional["RestHandler"] = None
+    """
+    The surface's one queue client (the pipeline's ``RestHandler``), built on first use
+    """
     _log = logging.getLogger("ak.a2a")
 
     class Executor(AgentExecutor):
+        """Answers an A2A message with the agent's reply, run on the agent runner through the queue.
+
+        The session is the A2A ``context_id``. The caller gets one message: a data part for a
+        structured payload with a media type, otherwise a text part (a structured payload without a
+        media type as JSON text). Failures raise ``InternalError`` carrying a generic message, which
+        is all the caller reads; their details go to the log only.
+        """
+
+        ERROR_MESSAGE = "Sorry, Agent Kernel encountered an error while processing your request"
+        TIMEOUT_MESSAGE = "Timed out waiting for the agent's reply"
 
         def __init__(self, agent_name: str):
             self.agent_name = agent_name
             self.log = logging.getLogger(f"ak.a2a.executor.{agent_name}")
 
         async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
+            from ...pipeline.request_handler import ReplyTimeoutError
+
             if not context.task_id or not context.context_id:
                 raise ValueError("RequestContext must have task_id and context_id")
             if not context.message:
                 raise ValueError("RequestContext must have a message")
+
+            body = BaseRunRequest(prompt=context.get_user_input(), agent=self.agent_name, session_id=context.context_id)
             try:
-                response = await self._execute_agent(context.context_id, context.get_user_input())
-                await event_queue.enqueue_event(new_agent_text_message(str(response), context.context_id, context.task_id))
+                reply = await A2A.get_client().request(body, protocol=A2A.PROTOCOL)
+            except ReplyTimeoutError as e:
+                self.log.error(f"No reply within the wait budget: request_id={e.request_id}, retry_count={e.retry_count}, delay={e.delay}")
+                raise InternalError(message=self.TIMEOUT_MESSAGE) from e
             except Exception as e:
-                error = "Sorry, Agent Kernel encountered an error while processing your request"
-                self.log.error(traceback.format_exc())
-                self.log.error(f"Exception: {e}")
-                await event_queue.enqueue_event(new_agent_text_message(error, context.context_id, context.task_id))
-                raise ServerError(error=InternalError()) from e
+                self.log.exception(f"Agent request failed: {e}")
+                raise InternalError(message=self.ERROR_MESSAGE) from e
+
+            if reply.is_error or reply.result is None:
+                self.log.error(f"Agent reply failed: request_id={reply.request_id}, status_code={reply.status_code}, error={reply.error}")
+                raise InternalError(message=self.ERROR_MESSAGE)
+
+            await event_queue.enqueue_event(self._as_message(reply, context))
 
         async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:
-            raise ServerError(error=UnsupportedOperationError())
+            raise UnsupportedOperationError()
 
-        async def _execute_agent(self, session_id: str, prompt: str) -> Any:
-            service = AgentService()
-            service.select(session_id, self.agent_name)
-            return await service.run(prompt=prompt)
+        @classmethod
+        def _as_message(cls, reply: "QueuedReply", context: RequestContext) -> Message:
+            """The reply as one A2A message.
+
+            A structured result with a media type becomes a data part labelled in both places a
+            client may look: the part's own ``media_type`` and ``metadata["mimeType"]``, the key
+            the A2UI binding names. Everything else is one text part, as before data parts existed.
+            Ids go by keyword: both helpers take ``media_type`` second.
+            """
+            if reply.media_type and isinstance(reply.result, (dict, list)):
+                data = A2UIPostHook.a2a_data(reply.media_type, reply.result)
+                message = new_data_message(data, media_type=reply.media_type, context_id=context.context_id, task_id=context.task_id)
+                message.parts[0].metadata.update({"mimeType": reply.media_type})
+                return message
+            return new_text_message(cls._as_text(reply.result), context_id=context.context_id, task_id=context.task_id)
+
+        @staticmethod
+        def _as_text(result: Any) -> str:
+            """A text reply as is; a structured one as JSON text, the same text ``str(AgentReplyAny)`` gives."""
+            return result if isinstance(result, str) else json.dumps(result)
+
+    @classmethod
+    def get_client(cls) -> "RestHandler":
+        """The surface's one queue client, built on first use: a ``RestHandler``, whose ``request`` is
+        the REST chat route's "enqueue, then wait" without the HTTP.
+
+        Imported here, not at module scope: ``api`` reaches ``pipeline`` lazily, as ``RESTAPI.run`` does.
+        """
+        if cls._client is None:
+            from ...pipeline.request_handler import RestHandler
+
+            cls._client = RestHandler()
+        return cls._client
 
     @classmethod
     def _build(cls):
@@ -74,7 +138,10 @@ class A2A:
             if not whitelisted:
                 continue
             # get card
-            card: AgentCard = agent.get_a2a_card()
+            card: AgentCard | None = agent.get_a2a_card()
+            if card is None:
+                cls._log.warning(f"Agent '{name}' has no A2A card; it is not served over A2A")
+                continue
             cls._cards.update({name: card})
         cls._built = True
 

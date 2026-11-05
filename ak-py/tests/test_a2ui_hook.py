@@ -9,7 +9,7 @@ an `output_type` agent.
 import pytest
 
 from agentkernel.a2ui.hook import A2UIPostHook, A2UIPostHookFactory, NoOpA2UIPostHook
-from agentkernel.core.config import AKConfig
+from agentkernel.core.config import AKConfig, _ExecutionConfig
 from agentkernel.core.model import AgentReplyAny, AgentReplyImage, AgentReplyText
 
 AGENT_NAME = "expenses"
@@ -22,11 +22,8 @@ class _Agent:
         self.name = name
 
 
-def _configure(monkeypatch, enabled: bool = True, agents=None, mode: str = "rest_sync"):
+def _configure(monkeypatch, enabled: bool = True, agents=None, mode: str = "rest_sync", message_type=None):
     class _A2UI:
-        pass
-
-    class _Execution:
         pass
 
     class _Cfg:
@@ -34,9 +31,8 @@ def _configure(monkeypatch, enabled: bool = True, agents=None, mode: str = "rest
 
     _A2UI.enabled = enabled
     _A2UI.agents = agents
-    _Execution.mode = mode
     _Cfg.a2ui = _A2UI
-    _Cfg.execution = _Execution
+    _Cfg.execution = _ExecutionConfig(mode=mode, message_type=message_type)
     monkeypatch.setattr(AKConfig, "get", classmethod(lambda cls: _Cfg))
 
 
@@ -176,21 +172,118 @@ class TestFactory:
 
         assert isinstance(A2UIPostHookFactory.get(), NoOpA2UIPostHook)
 
-    def test_streaming_mode_warns_that_the_hook_will_not_fire(self, monkeypatch, caplog):
+    @pytest.mark.parametrize("mode", ["rest_sync", "async"])
+    def test_delta_replies_warn_that_the_hook_will_not_fire(self, monkeypatch, caplog, mode):
         """`on_run` is never called for a streamed run, so the block would silently do nothing."""
-        _configure(monkeypatch, enabled=True, mode="stream")
+        _configure(monkeypatch, enabled=True, mode=mode, message_type="delta")
 
         with caplog.at_level("WARNING", logger="ak.a2ui.hook"):
             hook = A2UIPostHookFactory.get()
 
         assert isinstance(hook, A2UIPostHook)
+        assert "execution.message_type is delta" in caplog.text
         assert "never called for a streamed run" in caplog.text
+
+    @pytest.mark.parametrize("mode, message_type", [("rest_sync", None), ("async", "complete"), ("realtime", None)])
+    def test_complete_replies_and_realtime_do_not_warn(self, monkeypatch, caplog, mode, message_type):
+        _configure(monkeypatch, enabled=True, mode=mode, message_type=message_type)
+
+        with caplog.at_level("WARNING", logger="ak.a2ui.hook"):
+            A2UIPostHookFactory.get()
+
+        assert "never called for a streamed run" not in caplog.text
 
     @pytest.mark.asyncio
     async def test_the_no_op_returns_the_reply_untouched(self):
         reply = AgentReplyText(response='{"a": 1}')
 
         assert await _run(NoOpA2UIPostHook(), reply) is reply
+
+
+class TestScopeByName:
+    """`scopes` and `labels` answer by name, for callers that describe an agent without running it (#762)."""
+
+    @pytest.mark.parametrize(
+        "agents, name, expected",
+        [
+            (None, "anything", True),
+            ([AGENT_NAME], AGENT_NAME, True),
+            (["other"], AGENT_NAME, False),
+        ],
+    )
+    def test_scopes_matches_the_agents_list_by_name(self, monkeypatch, agents, name, expected):
+        _configure(monkeypatch, agents=agents)
+
+        assert A2UIPostHook.scopes(name) is expected
+
+    @pytest.mark.parametrize("agents, name", [(None, "anything"), ([AGENT_NAME], AGENT_NAME), (["other"], AGENT_NAME)])
+    def test_the_hook_and_scopes_share_one_rule(self, monkeypatch, agents, name):
+        _configure(monkeypatch, agents=agents)
+
+        assert A2UIPostHook._applies_to(_Agent(name)) is A2UIPostHook.scopes(name)
+
+    def test_labels_is_true_for_an_enabled_agent_in_scope(self, monkeypatch):
+        _configure(monkeypatch, enabled=True, agents=[AGENT_NAME])
+
+        assert A2UIPostHookFactory.labels(AGENT_NAME) is True
+
+    def test_labels_is_false_when_disabled(self, monkeypatch):
+        _configure(monkeypatch, enabled=False)
+
+        assert A2UIPostHookFactory.labels(AGENT_NAME) is False
+
+    def test_labels_is_false_out_of_scope(self, monkeypatch):
+        _configure(monkeypatch, enabled=True, agents=["other"])
+
+        assert A2UIPostHookFactory.labels(AGENT_NAME) is False
+
+    def test_labels_is_false_for_an_absent_block(self, monkeypatch):
+        class _Cfg:
+            pass
+
+        monkeypatch.setattr(AKConfig, "get", classmethod(lambda cls: _Cfg))
+
+        assert A2UIPostHookFactory.labels(AGENT_NAME) is False
+
+    def test_labels_ignores_streaming_mode(self, monkeypatch):
+        """An A2A request takes the single-reply path, where the hook runs even when the app streams."""
+        _configure(monkeypatch, enabled=True, mode="rest_sync", message_type="delta")
+
+        assert A2UIPostHookFactory.labels(AGENT_NAME) is True
+
+    def test_a_failing_config_read_is_logged_and_answers_false(self, monkeypatch, caplog):
+        def _boom(cls):
+            raise RuntimeError("config unavailable")
+
+        monkeypatch.setattr(AKConfig, "get", classmethod(_boom))
+
+        with caplog.at_level("ERROR", logger="ak.a2ui.hook"):
+            assert A2UIPostHookFactory.labels(AGENT_NAME) is False
+
+        assert AGENT_NAME in caplog.text
+
+
+class TestA2AData:
+    """The A2A binding's shape rule (#762): an A2UI data part holds a list of messages."""
+
+    def test_the_extension_is_the_v0_9_1_binding(self):
+        """Matches what the hook labels: createSurface-style messages under application/a2ui+json."""
+        assert A2UIPostHook.EXTENSION_URI == "https://a2ui.org/a2a-extension/a2ui/v0.9.1"
+
+    def test_an_a2ui_object_becomes_a_one_item_list(self):
+        content = {"createSurface": {"surfaceId": "s1"}}
+
+        assert A2UIPostHook.a2a_data(A2UIPostHook.MEDIA_TYPE, content) == [content]
+
+    def test_an_a2ui_list_is_returned_as_is(self):
+        content = [{"createSurface": {}}, {"updateComponents": {}}]
+
+        assert A2UIPostHook.a2a_data(A2UIPostHook.MEDIA_TYPE, content) is content
+
+    def test_another_media_type_is_returned_as_is(self):
+        content = {"k": "v"}
+
+        assert A2UIPostHook.a2a_data("application/vnd.acme+json", content) is content
 
 
 class TestEndToEnd:

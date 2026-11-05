@@ -143,7 +143,7 @@ GoogleADKModule([agent]).run_options(
 )
 ```
 
-In `execution.mode: stream` the `RunConfig` is copied with `streaming_mode=SSE`, because the stream
+With `execution.message_type: delta` the `RunConfig` is copied with `streaming_mode=SSE`, because the stream
 mapping depends on partial events; one warning is logged per runner when you explicitly set a
 different `streaming_mode`, and
 your object is never mutated. In run mode it is passed as is.

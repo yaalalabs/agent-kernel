@@ -1,8 +1,10 @@
 import logging
 
 from ....api.handler import RESTRequestHandler
+from ....api.http import RESTAPI
 from ....auth.handler import AuthValidator
-from ....core.config import AKConfig, ExecutionMode
+from ....core.config import AKConfig
+from ....core.util.factory import AKConfigError
 from ...common import ThreadRunner
 from .akoutputconsumer import ECSOutputConsumer
 
@@ -13,9 +15,9 @@ class ECSIOHandler:
     the REST API and the output-queue consumer.
 
     Thread 1 (rest-api) runs the FastAPI/uvicorn app: ECSQueueRequestHandler in REST queue
-    modes, or WebSocket (ASYNC/STREAM) frames via ECSWebSocketRequestHandler. Thread 2
+    modes, or WebSocket (async) frames via ECSWebSocketRequestHandler. Thread 2
     (output-queue-consumer) runs ECSOutputConsumer.run, writing to DB (REST) or pushing
-    over WebSocket (ASYNC). Both modes take a single ``run(auth_validator=MyValidator())``:
+    over WebSocket (async). Both modes take a single ``run(auth_validator=MyValidator())``:
     it authenticates the ``$connect`` handshake in WebSocket mode (mandatory there), and in
     REST modes it is bound onto every REST route via ``RESTAPI.add_auth_handlers``.
 
@@ -34,26 +36,36 @@ class ECSIOHandler:
     ) -> None:
         """Boot the REST/WebSocket API and the output-queue consumer as peer threads, and serve until shutdown.
 
-        :param auth_validator: Authenticates the ``$connect`` handshake in WebSocket (ASYNC/STREAM)
+        :param auth_validator: Authenticates the ``$connect`` handshake in WebSocket (async)
             mode, where it is mandatory. In the REST queue modes it is bound onto every REST route
             via ``RESTAPI.add_auth_handlers``.
         :param handlers: Optional REST handlers mounted alongside the API's own defaults, which are
             always served (the chat route is the queue producer, not a replaceable default).
             Mounting an optional surface is the application's job here, as it is on the pipeline's
             ``IOHandler``.
+        :raises AKConfigError: If A2A or agent-exposing MCP is enabled: their executors need the queue
+            pipeline's agent runner, which ECS does not support for them yet (#780).
         :raises ValueError: If WebSocket mode is configured without an ``auth_validator``.
+        :raises AKConfigError: For rest_sync + delta (SSE), which the ECS REST container does not serve.
         """
-        mode = cls._config.execution.mode
-        cls._log.info(f"ECSIOHandler starting — mode={mode}")
+        # Before any thread starts: inside the rest-api thread the same refusal would come too late.
+        RESTAPI.reject_unqueued_protocols()
+        execution = cls._config.execution
+        mode = execution.mode
+        if execution.is_sse:
+            # ECSQueueRequestHandler is the plain RestHandler: it waits for one stored record.
+            raise AKConfigError(
+                "execution.mode rest_sync with message_type delta (SSE) is not served by the ECS deployment: its REST "
+                "container (ECSQueueRequestHandler) has no SSE route. Use execution.mode async with message_type delta (WebSocket)"
+            )
+        cls._log.info(f"ECSIOHandler starting — mode={mode}, message_type={execution.resolved_message_type}")
 
-        if mode in (ExecutionMode.ASYNC, ExecutionMode.STREAM):
+        if execution.is_websocket:
             from .core.api.websocket_api import AWSWebsocketAPI
 
             # Auth is mandatory in WebSocket mode — fail fast rather than raise deep inside the thread.
             if auth_validator is None:
-                raise ValueError(
-                    "auth_validator is required for WebSocket (ASYNC/STREAM) mode. " "Call ECSIOHandler.run(auth_validator=MyValidator())."
-                )
+                raise ValueError("auth_validator is required for WebSocket (async) mode. " "Call ECSIOHandler.run(auth_validator=MyValidator()).")
 
             # Register the validator on AWSWebsocketAPI so its default handler picks it up.
             def run_api() -> None:
