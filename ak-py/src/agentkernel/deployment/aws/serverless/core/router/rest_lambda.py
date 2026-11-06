@@ -148,7 +148,6 @@ class DefaultEndpointsHandler:
             message_body=request_body.model_dump(exclude_none=True),
             attributes={"message_deduplication_id": payload.request_id},
             request_id=payload.request_id,
-            user_id=payload.user_id,
         )
         return response
 

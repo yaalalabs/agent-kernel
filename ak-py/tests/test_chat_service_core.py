@@ -569,3 +569,22 @@ class TestSyncStreamIsIncremental:
         stream.close()
 
         assert runner.torn_down is True
+
+
+class TestUserIdIsRefused:
+    """``user_id`` left the request models (#603): a body still carrying one is refused before anything runs."""
+
+    @pytest.mark.asyncio
+    async def test_a_request_carrying_user_id_is_rejected_before_anything_runs(self):
+        handler = _mock_handler(AgentReplyText(response="never"))
+        with patch("agentkernel.core.chat_service.AgentHandler", return_value=handler):
+            with pytest.raises(ValueError, match="user_id is not a request field"):
+                await ChatService().execute(BaseRunRequest(prompt="hi", session_id="s1", user_id="u-1"))
+        handler.run_async.assert_not_called()
+
+    def test_the_sync_path_refuses_it_too(self):
+        handler = _mock_handler(AgentReplyText(response="never"))
+        with patch("agentkernel.core.chat_service.AgentHandler", return_value=handler):
+            with pytest.raises(ValueError, match="user_id is not a request field"):
+                ChatService().execute_sync(BaseRunRequest(prompt="hi", session_id="s1", user_id="u-1"))
+        handler.run_sync.assert_not_called()

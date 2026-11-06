@@ -2,8 +2,8 @@
 
 FastAPI silently discards multipart fields that are absent from the endpoint signature, so a
 field dropped from ``run_multipart`` fails invisibly: the request still succeeds, the value just
-never reaches the agent. ``user_id`` in particular is mandatory once Conversation Thread Support
-is configured, and ``group_id``/``thread_name`` feed thread auto-creation.
+never reaches the agent. ``group_id`` and ``thread_name`` feed thread auto-creation. The acting
+user is not a form field: it comes from the credential the surface authenticated (#603).
 """
 
 from contextlib import contextmanager
@@ -18,7 +18,7 @@ from agentkernel.core.config import _ExecutionConfig
 from agentkernel.core.model import ExecutionMode
 
 # Every form field the endpoint must accept and forward, beyond the file/image uploads.
-EXPECTED_FORM_FIELDS = ("prompt", "agent", "session_id", "user_id", "group_id", "thread_name")
+EXPECTED_FORM_FIELDS = ("prompt", "agent", "session_id", "group_id", "thread_name")
 
 
 @contextmanager
@@ -56,7 +56,7 @@ def captured_requests():
 
 
 def test_multipart_forwards_every_form_field(captured_requests):
-    """All six form fields must land on the request model — not just prompt/agent/session_id."""
+    """All five form fields must land on the request model, not just prompt/agent/session_id."""
     client, captured = captured_requests
 
     response = client.post(
@@ -65,7 +65,6 @@ def test_multipart_forwards_every_form_field(captured_requests):
             "prompt": "hello",
             "agent": "triage",
             "session_id": "s-1",
-            "user_id": "u-1",
             "group_id": "g-1",
             "thread_name": "my thread",
         },
@@ -75,7 +74,7 @@ def test_multipart_forwards_every_form_field(captured_requests):
     assert len(captured) == 1
     req = captured[0]
     assert (req.prompt, req.agent, req.session_id) == ("hello", "triage", "s-1")
-    assert (req.user_id, req.group_id, req.thread_name) == ("u-1", "g-1", "my thread")
+    assert (req.group_id, req.thread_name) == ("g-1", "my thread")
 
 
 @pytest.mark.parametrize("field", EXPECTED_FORM_FIELDS)
@@ -99,7 +98,17 @@ def test_multipart_optional_fields_default_to_none(captured_requests):
 
     assert response.status_code == 200
     req = captured[0]
-    assert (req.user_id, req.group_id, req.thread_name) == (None, None, None)
+    assert (req.group_id, req.thread_name) == (None, None)
+
+
+def test_multipart_has_no_user_id_field(captured_requests):
+    """A ``user_id`` form field is not part of the endpoint: FastAPI drops it and nothing reads it."""
+    client, captured = captured_requests
+
+    response = client.post(AgentRESTRequestHandler.CHAT_MULTIPART_PATH, data={"prompt": "hello", "user_id": "u-1"})
+
+    assert response.status_code == 200
+    assert "user_id" not in captured[0].model_dump()
 
 
 class TestReplyMessageType:

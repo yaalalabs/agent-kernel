@@ -474,6 +474,14 @@ class Principal(BaseModel):
         """Whether the principal arrived through a messaging or realtime edge, whose sessions record no owner."""
         return self.provider.startswith(self.SHARED_CHANNEL_PREFIXES)
 
+    @classmethod
+    def subject_of(cls, principal: "Principal | None") -> str | None:
+        """The subject of an authenticated principal, or None for a missing or anonymous one.
+
+        What the owner-keyed records (threads, schedules, the WebSocket routing attribute) store.
+        """
+        return None if principal is None or principal.is_anonymous else principal.subject
+
     def with_actor(self, actor: "Principal") -> "Principal":
         """A copy of this principal acting on behalf of ``actor``."""
         return self.model_copy(update={"actor": actor})
@@ -641,13 +649,18 @@ class ScheduleSpec(BaseModel):
 class BaseChatRequest(BaseModel):
     """Base model for chat requests with common fields.
 
-    user_id is required when Conversation Thread Support is enabled (a 'thread'
-    block is present in config.yaml); group_id and thread_name are optional and
-    applied only when the thread is auto-created on the session's first request.
+    principal is assigned by the surface after authentication, never read from the client; a
+    non-anonymous principal is required when Conversation Thread Support is enabled (a 'thread'
+    block is present in config.yaml). group_id and thread_name are optional and applied only
+    when the thread is auto-created on the session's first request.
 
     A schedule block defers the request: instead of running the agent, the request
     is registered as a scheduled task and acknowledged with HTTP 202. It requires
-    the scheduling capability (a 'schedule' block in config.yaml) and a user_id.
+    the scheduling capability (a 'schedule' block in config.yaml) and a non-anonymous
+    principal, who owns the task.
+
+    user_id is not a request field: a body or envelope carrying one is refused, since the acting
+    user comes from the credential the surface authenticated.
 
     A resume block answers a paused run instead of starting a new turn, so prompt
     defaults to empty rather than being required. ChatService rejects a request
@@ -657,7 +670,6 @@ class BaseChatRequest(BaseModel):
     prompt: str = ""
     agent: str | None = None
     session_id: str | None = None
-    user_id: str | None = None
     principal: Principal | None = None
     """Assigned by the surface after authentication; a value arriving from a client is overwritten, never read."""
     group_id: str | None = None
@@ -713,6 +725,9 @@ class BaseRunRequest(BaseChatRequest):
     model_config = ConfigDict(extra="allow")
 
 
+USER_ID_NOT_A_FIELD = "user_id is not a request field; the acting user comes from the credential"
+
+
 class BaseRequest(BaseModel):
     request_id: str | None = None
     route: str | None = None  # RouteKey of the Websocket, needed for WS implementation
@@ -721,6 +736,15 @@ class BaseRequest(BaseModel):
 
     @classmethod
     def from_payload(cls, payload: "BaseRequest | BaseRunRequest | dict[str, Any]") -> "BaseRequest":
+        """
+        Wraps a client payload in the envelope.
+
+        :param payload: An envelope, a bare run request, or a dict in either shape.
+        :return: The envelope, with the body validated when the payload carries one.
+        :raises ValueError: If the envelope or the body carries a ``user_id`` key: the acting user
+            is established by the surface from the credential, never taken from the client.
+        :raises TypeError: If the payload is of another type.
+        """
         if isinstance(payload, cls):
             return payload
 
@@ -728,28 +752,26 @@ class BaseRequest(BaseModel):
             return cls(request_id=str(uuid.uuid4()), body=payload)
 
         if isinstance(payload, dict):
+            if "user_id" in payload:
+                raise ValueError(USER_ID_NOT_A_FIELD)
             request_id = payload.get("request_id") or str(uuid.uuid4())
-            user_id = payload.get("user_id")
             route = payload.get("route")
 
             if "body" in payload and payload["body"] is not None:
                 body = payload["body"]
                 if isinstance(body, dict):
-                    body = {key: value for key, value in body.items() if key not in {"request_id", "user_id", "route"}}
+                    if "user_id" in body:
+                        raise ValueError(USER_ID_NOT_A_FIELD)
+                    body = {key: value for key, value in body.items() if key not in {"request_id", "route"}}
             else:
-                body = {key: value for key, value in payload.items() if key not in {"request_id", "user_id", "route", "body"}}
+                body = {key: value for key, value in payload.items() if key not in {"request_id", "route", "body"}}
 
             if not body:
-                return cls(request_id=request_id, user_id=user_id, route=route)
+                return cls(request_id=request_id, route=route)
 
             if not isinstance(body, BaseRunRequest):
                 body = BaseRunRequest.model_validate(body)
 
-            # The envelope user_id is authoritative — propagate it into the body so
-            # body-level consumers (e.g. Conversation Thread Support) can read it.
-            if user_id is not None:
-                body.user_id = user_id
-
-            return cls(request_id=request_id, user_id=user_id, route=route, body=body)
+            return cls(request_id=request_id, route=route, body=body)
 
         raise TypeError(f"Unsupported payload type for BaseRequest: {repr(type(payload))}")

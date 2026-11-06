@@ -7,6 +7,7 @@ from typing import Any
 
 from .config import AKConfig
 from .model import (
+    USER_ID_NOT_A_FIELD,
     AgentPausedReplyAny,
     AgentReply,
     AgentReplyAny,
@@ -148,7 +149,6 @@ class RequestBuilder:
         """
         known_fields = {
             "request_id",
-            "user_id",
             # Identity envelope: the principal the surface authenticated, read by the runtime and
             # the ownership checks, never shown to the agent as context.
             "principal",
@@ -591,12 +591,12 @@ class ChatService:
             if manager is None:
                 self._log.warning(f"Trigger of scheduled task {task_id} arrived while scheduling is not configured")
                 return
-            # The acting user is passed so the manager can reject a request that named someone
+            # The principal is passed so the manager can reject a request that named someone
             # else's task: this metadata arrives on a client-bindable chat request, not a channel
             # only a provider can reach.
             manager.record_trigger(
                 task_id,
-                req.user_id,
+                req.principal,
                 request_id=getattr(req, "request_id", None),
                 occurred_at=getattr(req, "scheduled_time", None),
             )
@@ -784,8 +784,10 @@ class ChatService:
                          optional but the list must be non-empty
         :return: None
         :raises ValueError: If session_id is missing, prompt is missing on the built path,
-                            or a prebuilt request list is empty
+                            a prebuilt request list is empty, or the body carries a user_id
         """
+        if "user_id" in (req.model_extra or {}):
+            raise ValueError(USER_ID_NOT_A_FIELD)
         if not req.session_id:
             raise ValueError("No session_id is provided in the request")
         if requests is None:

@@ -13,15 +13,17 @@ import pytest
 from fastapi.responses import JSONResponse
 
 from agentkernel.core.chat_service import ChatService, RequestBuilder
-from agentkernel.core.model import AgentReplyText, AgentRequestAny, BaseRunRequest, ScheduleSpec
+from agentkernel.core.model import AgentReplyText, AgentRequestAny, BaseRunRequest, Principal, ScheduleSpec
 from agentkernel.schedule.manager import ScheduleManager
 from agentkernel.schedule.model import ScheduledTask
 
 FUTURE_AT = "2030-06-01T09:00:00"
+PRINCIPAL = Principal(subject="u1", provider="static", namespace="static")
+SOMEONE_ELSE = Principal(subject="someone-else", provider="static", namespace="static")
 
 
 def _scheduled_request(**overrides) -> BaseRunRequest:
-    fields = {"prompt": "send the weekly report", "session_id": "s1", "user_id": "u1", "schedule": ScheduleSpec(at=FUTURE_AT)}
+    fields = {"prompt": "send the weekly report", "session_id": "s1", "principal": PRINCIPAL, "schedule": ScheduleSpec(at=FUTURE_AT)}
     fields.update(overrides)
     return BaseRunRequest(**fields)
 
@@ -174,7 +176,7 @@ class TestTriggerRecording:
         fields = {
             "prompt": "send the weekly report",
             "session_id": "s1",
-            "user_id": "u1",
+            "principal": PRINCIPAL,
             "scheduled_task_id": "t1",
             "scheduled_time": "2030-06-01T09:00:00Z",
             "request_id": "r1",
@@ -186,15 +188,15 @@ class TestTriggerRecording:
     async def test_occurrence_is_recorded_and_the_request_runs(self, manager, handler):
         result, _ = await ChatService().execute(self._trigger_request())
 
-        manager.record_trigger.assert_called_once_with("t1", "u1", request_id="r1", occurred_at="2030-06-01T09:00:00Z")
+        manager.record_trigger.assert_called_once_with("t1", PRINCIPAL, request_id="r1", occurred_at="2030-06-01T09:00:00Z")
         assert str(result) == "agent ran"
 
     @pytest.mark.asyncio
-    async def test_the_acting_user_is_forwarded_so_the_manager_can_reject_a_foreign_task(self, manager, handler):
+    async def test_the_principal_is_forwarded_so_the_manager_can_reject_a_foreign_task(self, manager, handler):
         """The trigger metadata rides on a client-bindable request, so ownership is the manager's call."""
-        await ChatService().execute(self._trigger_request(user_id="someone-else"))
+        await ChatService().execute(self._trigger_request(principal=SOMEONE_ELSE))
 
-        manager.record_trigger.assert_called_once_with("t1", "someone-else", request_id="r1", occurred_at="2030-06-01T09:00:00Z")
+        manager.record_trigger.assert_called_once_with("t1", SOMEONE_ELSE, request_id="r1", occurred_at="2030-06-01T09:00:00Z")
 
     def test_occurrence_is_recorded_on_the_sync_path(self, manager, handler):
         ChatService().execute_sync(self._trigger_request())
@@ -229,7 +231,7 @@ class TestAdditionalContext:
         req = BaseRunRequest(
             prompt="send the weekly report",
             session_id="s1",
-            user_id="u1",
+            principal=PRINCIPAL,
             schedule=ScheduleSpec(at=FUTURE_AT),
             scheduled_task_id="t1",
             scheduled_time="2030-06-01T09:00:00Z",

@@ -80,6 +80,8 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
                 return StreamingResponse(gen, media_type="text/event-stream")
             except ValueError as e:
                 raise HTTPException(status_code=400, detail=str(e))
+            except PermissionError as e:
+                raise HTTPException(status_code=403, detail=str(e))
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Streaming failed: {str(e)}")
         return await self._run_with_recording(body)
@@ -89,7 +91,6 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
         prompt: str = Form(...),
         agent: str | None = Form(None),
         session_id: str | None = Form(None),
-        user_id: str | None = Form(None),
         group_id: str | None = Form(None),
         thread_name: str | None = Form(None),
         files: list[UploadFile] | None = File(None),
@@ -99,7 +100,6 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
             prompt=prompt,
             agent=agent,
             session_id=session_id,
-            user_id=user_id,
             group_id=group_id,
             thread_name=thread_name,
             files=files,
@@ -111,6 +111,8 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
                 return StreamingResponse(gen, media_type="text/event-stream")
             except ValueError as e:
                 raise HTTPException(status_code=400, detail=str(e))
+            except PermissionError as e:
+                raise HTTPException(status_code=403, detail=str(e))
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Streaming failed: {str(e)}")
         return await self._run_with_recording(req)
@@ -137,6 +139,9 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
         except ValueError as ve:
             self._log.error(f"ValueError processing request: {ve}")
             return ResponseBuilder.build_response(400, req.session_id, True, error=ve)
+        except PermissionError as pe:
+            self._log.warning(f"Refused request: {pe}")
+            return ResponseBuilder.build_response(403, req.session_id, True, error=pe)
         except HTTPException:
             raise
         except Exception as e:
@@ -292,9 +297,9 @@ class ThreadRequestHandler(RequestHandler):
         once `requests` is set.
 
         :param body: The chat request, mutated in place into its queue-ready form.
-        :raises HTTPException: 400 when the agent is unavailable, `user_id` is missing, or the
-            attachment configuration rejects the request — all of them before any thread write,
-            so an unanswerable request leaves no phantom thread behind.
+        :raises HTTPException: 400 when the agent is unavailable or the attachment configuration
+            rejects the request, 403 when the request carries no authenticated principal, all of
+            them before any thread write, so an unanswerable request leaves no phantom thread behind.
         """
         try:
             AgentService.ensure_agent_available(body.agent)
@@ -303,6 +308,9 @@ class ThreadRequestHandler(RequestHandler):
         except ValueError as e:
             self._log.error(f"Rejected before recording: {e}")
             raise HTTPException(status_code=400, detail={"error": str(e), "session_id": body.session_id})
+        except PermissionError as e:
+            self._log.warning(f"Refused before recording: {e}")
+            raise HTTPException(status_code=403, detail={"error": str(e), "session_id": body.session_id})
         body.requests = requests
         body.files = None
         body.images = None

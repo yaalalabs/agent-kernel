@@ -136,8 +136,12 @@ def registered_agent():
     Runtime.current().deregister(agent)
 
 
+def _principal(subject: str) -> Principal:
+    return Principal(subject=subject, provider="static", namespace="static")
+
+
 def _create(manager: ScheduleManager, **overrides):
-    fields = {"user_id": "u1", "prompt": "send the weekly report", "spec": ScheduleSpec(cron="0 9 * * 1"), "session_id": "s1"}
+    fields = {"principal": _principal("u1"), "prompt": "send the weekly report", "spec": ScheduleSpec(cron="0 9 * * 1"), "session_id": "s1"}
     fields.update(overrides)
     return manager.create(**fields)
 
@@ -315,7 +319,7 @@ class TestActingUser:
 
     @pytest.mark.asyncio
     async def test_reads_and_mutations_cannot_reach_another_users_schedule(self, manager, acting_session):
-        theirs = _create(manager, user_id="u2")
+        theirs = _create(manager, principal=_principal("u2"))
 
         assert "error" in json.loads(await get_schedule(theirs.task_id))
         assert "error" in json.loads(await update_schedule(theirs.task_id, "mine now", cron="0 9 * * *"))
@@ -324,8 +328,8 @@ class TestActingUser:
 
     @pytest.mark.asyncio
     async def test_listing_is_scoped_to_the_acting_user(self, manager, acting_session):
-        mine = _create(manager, user_id="u1")
-        _create(manager, user_id="u2")
+        mine = _create(manager, principal=_principal("u1"))
+        _create(manager, principal=_principal("u2"))
 
         listed = json.loads(await list_schedules())["schedules"]
 

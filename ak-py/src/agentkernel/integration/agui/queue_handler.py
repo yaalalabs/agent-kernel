@@ -140,7 +140,7 @@ class AGUIPipelineRequestHandler(AGUIRequestHandler):
         # Offload the sync send so it doesn't block the event loop, as the REST handler does.
         await asyncio.to_thread(
             self._producer.enqueue,
-            AGUIRunRequest(session_id=run_input.thread_id, agent=agent.name, user_id=user_id, requests=requests, agui=envelope),
+            AGUIRunRequest(session_id=run_input.thread_id, agent=agent.name, requests=requests, agui=envelope),
             request_id=request_id,
             attributes={ATTR_AGUI: "1"},
             group_id=run_input.thread_id,

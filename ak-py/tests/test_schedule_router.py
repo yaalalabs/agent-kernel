@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 
 from agentkernel.auth import Authoriser
 from agentkernel.core.config import AKConfig, _ScheduleConfig
-from agentkernel.core.model import ScheduleSpec
+from agentkernel.core.model import Principal, ScheduleSpec
 from agentkernel.core.util.factory import AKConfigError
 from agentkernel.schedule.handler import ScheduleRESTRequestHandler
 from agentkernel.schedule.manager import ScheduleManager
@@ -77,8 +77,12 @@ def _client(authoriser: Authoriser | None = None) -> TestClient:
     return TestClient(app, raise_server_exceptions=False)
 
 
+def _principal(subject: str) -> Principal:
+    return Principal(subject=subject, provider="static", namespace="static")
+
+
 def _create(manager: ScheduleManager, **overrides):
-    fields = {"user_id": "u1", "prompt": "send the weekly report", "spec": ScheduleSpec(cron="0 9 * * 1"), "session_id": "s1"}
+    fields = {"principal": _principal("u1"), "prompt": "send the weekly report", "spec": ScheduleSpec(cron="0 9 * * 1"), "session_id": "s1"}
     fields.update(overrides)
     return manager.create(**fields)
 
@@ -120,8 +124,8 @@ class TestRoutesOpen:
     """Schedule routes without an Authoriser (open access)."""
 
     def test_list_schedules_by_user(self, scheduling):
-        mine = _create(scheduling, user_id="u1")
-        _create(scheduling, user_id="u2")
+        mine = _create(scheduling, principal=_principal("u1"))
+        _create(scheduling, principal=_principal("u2"))
 
         response = _client().get(SCHEDULES_PATH, params={"user_id": "u1"})
 
@@ -271,8 +275,8 @@ class TestRoutesAuthorised:
         assert response.status_code == 200
 
     def test_listing_forced_to_the_authorised_user(self, scheduling):
-        mine = _create(scheduling, user_id="u1")
-        _create(scheduling, user_id="u2")
+        mine = _create(scheduling, principal=_principal("u1"))
+        _create(scheduling, principal=_principal("u2"))
 
         # The caller asks for u2's schedules but the token resolves to u1.
         response = _client(StaticAuthoriser()).get(SCHEDULES_PATH, params={"user_id": "u2"}, headers={"Authorization": "Bearer good-token"})
@@ -281,14 +285,14 @@ class TestRoutesAuthorised:
         assert [task["task_id"] for task in response.json()["schedules"]] == [mine.task_id]
 
     def test_get_owned_schedule_200(self, scheduling):
-        task = _create(scheduling, user_id="u1")
+        task = _create(scheduling, principal=_principal("u1"))
 
         response = _client(StaticAuthoriser()).get(f"{SCHEDULES_PATH}/{task.task_id}", headers={"Authorization": "Bearer good-token"})
 
         assert response.status_code == 200
 
     def test_get_unowned_schedule_403(self, scheduling):
-        task = _create(scheduling, user_id="u2")
+        task = _create(scheduling, principal=_principal("u2"))
 
         response = _client(StaticAuthoriser()).get(f"{SCHEDULES_PATH}/{task.task_id}", headers={"Authorization": "Bearer good-token"})
 
@@ -296,7 +300,7 @@ class TestRoutesAuthorised:
         assert response.json()["detail"] == "Schedule is not owned by the authorised user"
 
     def test_amending_an_unowned_schedule_403(self, scheduling):
-        task = _create(scheduling, user_id="u2")
+        task = _create(scheduling, principal=_principal("u2"))
 
         response = _client(StaticAuthoriser()).put(
             f"{SCHEDULES_PATH}/{task.task_id}", json=_amendment(), headers={"Authorization": "Bearer good-token"}
@@ -305,7 +309,7 @@ class TestRoutesAuthorised:
         assert response.status_code == 403
 
     def test_cancelling_an_unowned_schedule_403(self, scheduling):
-        task = _create(scheduling, user_id="u2")
+        task = _create(scheduling, principal=_principal("u2"))
 
         response = _client(StaticAuthoriser()).delete(f"{SCHEDULES_PATH}/{task.task_id}", headers={"Authorization": "Bearer good-token"})
 

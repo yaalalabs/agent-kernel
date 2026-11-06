@@ -24,7 +24,7 @@ ROUTER_MODULE = "agentkernel.deployment.aws.serverless.core.router.rest_lambda"
 
 def _input_record(prompt: str = "hi") -> dict:
     return {
-        "body": json.dumps({"prompt": prompt, "session_id": "s1", "user_id": "u1"}),
+        "body": json.dumps({"prompt": prompt, "session_id": "s1"}),
         "attributes": {"MessageGroupId": "s1", "MessageDeduplicationId": "req-1"},
         "messageAttributes": {
             "request_id": {"stringValue": "req-1", "DataType": "String"},
@@ -113,7 +113,7 @@ class TestRestSurfaceReplaysTheStatus:
 
     @staticmethod
     def _event() -> dict:
-        return {"body": json.dumps({"request_id": "req-1", "user_id": "u1", "prompt": "hi", "session_id": "s1"})}
+        return {"body": json.dumps({"request_id": "req-1", "prompt": "hi", "session_id": "s1"})}
 
     @pytest.mark.parametrize("stored_status,expected_status", [(200, 200), (202, 202), (400, 400)])
     def test_rest_sync_answers_with_the_stored_status(self, handler_and_store, stored_status, expected_status):

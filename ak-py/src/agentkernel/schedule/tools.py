@@ -16,7 +16,7 @@ from typing import Any
 
 from ..core.base import Session
 from ..core.config import AKConfig
-from ..core.model import ScheduleSpec, SystemTool
+from ..core.model import Principal, ScheduleSpec, SystemTool
 from .manager import ScheduleManager
 from .model import ScheduledTask
 
@@ -69,16 +69,24 @@ class ScheduleToolUtil:
         return _CRON_STANDARD_DOC
 
     @staticmethod
-    def acting_user() -> str | None:
-        """The subject of the principal the current run acts as, published by ``Runtime``.
+    def acting_principal() -> Principal | None:
+        """The principal the current run acts as, published by ``Runtime``.
 
-        :return: The subject, or None when the run is anonymous or there is no run.
+        :return: The principal, or None when the run is anonymous or there is no run.
         """
         session = Session.current()
         principal = session.get_principal() if session is not None else None
         if principal is None or principal.is_anonymous:
             return None
-        return principal.subject
+        return principal
+
+    @staticmethod
+    def acting_user() -> str | None:
+        """The subject of the principal the current run acts as, the key the owner-scoped reads use.
+
+        :return: The subject, or None when the run is anonymous or there is no run.
+        """
+        return Principal.subject_of(ScheduleToolUtil.acting_principal())
 
     @staticmethod
     def current_session_id() -> str | None:
@@ -175,12 +183,12 @@ async def create_schedule(
     manager = ScheduleManager.get()
     if manager is None:
         return _DISABLED
-    user_id = ScheduleToolUtil.acting_user()
-    if user_id is None:
+    principal = ScheduleToolUtil.acting_principal()
+    if principal is None:
         return _NO_IDENTITY
     try:
         spec = ScheduleSpec(at=at, cron=cron, timezone=timezone, session_mode=session_mode)
-        task = manager.create(user_id=user_id, prompt=prompt, spec=spec, agent=agent, session_id=ScheduleToolUtil.current_session_id())
+        task = manager.create(principal=principal, prompt=prompt, spec=spec, agent=agent, session_id=ScheduleToolUtil.current_session_id())
         return json.dumps(ScheduleToolUtil.task_json(task))
     except Exception as exc:  # noqa: BLE001 — tools never raise into the framework
         _log.warning("create_schedule failed: %s", exc)

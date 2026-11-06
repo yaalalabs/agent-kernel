@@ -15,7 +15,6 @@ def _make_ws_event(user_id="user-1", session_id="s1", request_id="req-1"):
         "body": json.dumps(
             {
                 "request_id": request_id,
-                "user_id": user_id,
                 "body": {
                     "prompt": "Hello",
                     "session_id": session_id,

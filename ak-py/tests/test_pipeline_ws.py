@@ -400,6 +400,18 @@ class TestWebSocketChat:
             assert websocket.receive_json()["type"] == "CHAT_QUEUED"
         assert len(transport.create_consumer(QueueName.INPUT).fetch(1, 1.0)) == 1
 
+    def test_a_frame_carrying_user_id_is_refused_before_the_queue(self, monkeypatch):
+        """The acting user comes from the connection's credential, never from the frame (#603)."""
+        app, _, transport, _ = _ws_app(monkeypatch)
+        client = TestClient(app)
+        with client.websocket_connect(f"{WS_PATH}?token=good") as websocket:
+            websocket.send_json({"route": "chat", "body": {"prompt": "hi", "session_id": "s1", "user_id": "u1"}})
+            reply = websocket.receive_json()
+
+        assert reply["status"] == "FAILED"
+        assert "user_id is not a request field" in reply["message"]
+        assert transport.create_consumer(QueueName.INPUT).fetch(1, 0.1) == []
+
     def test_configured_chat_route_is_honored(self, monkeypatch):
         app, _, _, _ = _ws_app(monkeypatch, chat_route="converse")
         client = TestClient(app)

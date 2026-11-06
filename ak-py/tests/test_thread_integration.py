@@ -10,7 +10,7 @@ from pydantic import ValidationError
 
 from agentkernel.core.base import Agent, Runner
 from agentkernel.core.config import AKConfig, _ThreadStoreConfig
-from agentkernel.core.model import AgentReplyAny, AgentReplyText, AgentRequestText, BaseRunRequest, ScheduleSpec, StreamChunk
+from agentkernel.core.model import AgentReplyAny, AgentReplyText, AgentRequestText, BaseRunRequest, Principal, ScheduleSpec, StreamChunk
 from agentkernel.core.runtime import Runtime
 from agentkernel.integration.thread import (
     AgentThreadRequestHandler,
@@ -23,6 +23,14 @@ from agentkernel.integration.thread import (
 from agentkernel.integration.thread.store.in_memory import InMemoryThreadStore
 
 MEDIA_TYPE = "application/a2ui+json"
+
+
+def _principal(subject: str) -> Principal:
+    return Principal(subject=subject, provider="static", namespace="static")
+
+
+U1 = _principal("u1")
+ALICE = _principal("alice")
 
 
 class EchoNaming(ThreadNamingStrategy):
@@ -105,17 +113,20 @@ def registered_agent():
 
 
 class TestThreadRecorder:
-    def test_missing_user_id_rejected_with_exact_message(self):
-        recorder = ThreadRecorder(MagicMock())
-        req = BaseRunRequest(prompt="hi", session_id="s1")
-        with pytest.raises(ValueError, match="user_id is required when thread support is enabled"):
+    @pytest.mark.parametrize("principal", [None, Principal.anonymous()])
+    def test_an_anonymous_request_is_refused_with_exact_message(self, principal):
+        manager = MagicMock()
+        recorder = ThreadRecorder(manager)
+        req = BaseRunRequest(prompt="hi", session_id="s1", principal=principal)
+        with pytest.raises(PermissionError, match="thread support requires an authenticated principal"):
             recorder.pre_run(req, [AgentRequestText(prompt="hi")])
+        manager.get_or_create_thread.assert_not_called()
 
     def test_store_attachments_rejection_fires_before_thread_creation(self):
         manager = MagicMock()
         manager.store_attachments.side_effect = ValueError("attachments need multimodal")
         recorder = ThreadRecorder(manager)
-        req = BaseRunRequest(prompt="hi", session_id="s1", user_id="u1")
+        req = BaseRunRequest(prompt="hi", session_id="s1", principal=U1)
 
         with pytest.raises(ValueError, match="multimodal"):
             recorder.pre_run(req, [AgentRequestText(prompt="hi")])
@@ -128,7 +139,7 @@ class TestThreadRecorder:
         rebuilt, attachments = [AgentRequestText(prompt="hi")], ["att-ref"]
         manager.store_attachments.return_value = (rebuilt, attachments)
         recorder = ThreadRecorder(manager)
-        req = BaseRunRequest(prompt="hi", session_id="s1", user_id="u1", group_id="g1", thread_name="Chat")
+        req = BaseRunRequest(prompt="hi", session_id="s1", principal=U1, group_id="g1", thread_name="Chat")
 
         out_requests, out_attachments = recorder.pre_run(req, [AgentRequestText(prompt="hi")])
 
@@ -140,7 +151,7 @@ class TestThreadRecorder:
     def test_post_run_appends_assistant_message(self):
         manager = MagicMock()
         recorder = ThreadRecorder(manager)
-        req = BaseRunRequest(prompt="hi", session_id="s1", user_id="u1")
+        req = BaseRunRequest(prompt="hi", session_id="s1", principal=U1)
 
         recorder.post_run(req, AgentReplyText(response="agent says hi"))
 
@@ -166,22 +177,22 @@ class TestAgentThreadRequestHandler:
         handler = AgentThreadRequestHandler()
         handler.chat_service = FakeChatService()
 
-        body = await handler._run_with_recording(BaseRunRequest(prompt="hi there", session_id="s1", user_id="u1", agent=registered_agent.name))
+        body = await handler._run_with_recording(BaseRunRequest(prompt="hi there", session_id="s1", principal=U1, agent=registered_agent.name))
 
         assert body == {"result": "agent says hi", "session_id": "s1"}
         messages = thread_enabled.get_messages("s1").messages
         assert [(m.role, m.content) for m in messages] == [("user", "hi there"), ("assistant", "agent says hi")]
 
     @pytest.mark.asyncio
-    async def test_missing_user_id_maps_to_400(self, thread_enabled, registered_agent):
+    async def test_an_anonymous_request_maps_to_403(self, thread_enabled, registered_agent):
         handler = AgentThreadRequestHandler()
         handler.chat_service = FakeChatService()
 
         with pytest.raises(HTTPException) as exc:
             await handler._run_with_recording(BaseRunRequest(prompt="hi", session_id="s1", agent=registered_agent.name))
 
-        assert exc.value.status_code == 400
-        assert "user_id" in exc.value.detail["error"]
+        assert exc.value.status_code == 403
+        assert "authenticated principal" in exc.value.detail["error"]
         assert thread_enabled.get_thread("s1") is None
 
     @pytest.mark.asyncio
@@ -190,7 +201,7 @@ class TestAgentThreadRequestHandler:
         handler.chat_service = FakeChatService()
 
         with pytest.raises(HTTPException) as exc:
-            await handler._run_with_recording(BaseRunRequest(prompt="hi", session_id="s1", user_id="u1", agent="no-such-agent"))
+            await handler._run_with_recording(BaseRunRequest(prompt="hi", session_id="s1", principal=U1, agent="no-such-agent"))
 
         assert exc.value.status_code == 400
         assert exc.value.detail["error"] == "No agent available"
@@ -201,7 +212,7 @@ class TestAgentThreadRequestHandler:
         handler = AgentThreadRequestHandler()
         handler.chat_service = FakeChatService(chunks=[StreamChunk(delta="Hel"), StreamChunk(delta="lo!"), StreamChunk(done=True)])
 
-        gen = await handler._stream_with_recording(BaseRunRequest(prompt="hi", session_id="s1", user_id="u1", agent=registered_agent.name))
+        gen = await handler._stream_with_recording(BaseRunRequest(prompt="hi", session_id="s1", principal=U1, agent=registered_agent.name))
         frames = [frame async for frame in gen]
 
         assert all(frame.startswith("data: ") for frame in frames)
@@ -213,7 +224,7 @@ class TestAgentThreadRequestHandler:
         handler = AgentThreadRequestHandler()
         handler.chat_service = FakeChatService(chunks=[StreamChunk(error="blocked by guardrail", done=True)])
 
-        gen = await handler._stream_with_recording(BaseRunRequest(prompt="hi", session_id="s1", user_id="u1", agent=registered_agent.name))
+        gen = await handler._stream_with_recording(BaseRunRequest(prompt="hi", session_id="s1", principal=U1, agent=registered_agent.name))
         _ = [frame async for frame in gen]
 
         messages = thread_enabled.get_messages("s1").messages
@@ -228,7 +239,7 @@ class TestAgentThreadRequestHandler:
         req = BaseRunRequest(
             prompt="send the weekly report",
             session_id="s1",
-            user_id="u1",
+            principal=U1,
             agent=registered_agent.name,
             schedule=ScheduleSpec(at="2030-06-01T09:00:00"),
         )
@@ -249,7 +260,7 @@ class TestAgentThreadRequestHandler:
         req = BaseRunRequest(
             prompt="send the weekly report",
             session_id="s1",
-            user_id="u1",
+            principal=U1,
             agent=registered_agent.name,
             schedule=ScheduleSpec(at="2030-06-01T09:00:00"),
         )
@@ -265,23 +276,32 @@ class TestAgentThreadRequestHandler:
         handler = AgentThreadRequestHandler()
         handler.chat_service = FakeChatService(chunks=[StreamChunk(done=True)])
 
-        gen = await handler._stream_with_recording(BaseRunRequest(prompt="hi", session_id="s1", user_id="u1", agent=registered_agent.name))
+        gen = await handler._stream_with_recording(BaseRunRequest(prompt="hi", session_id="s1", principal=U1, agent=registered_agent.name))
         _ = [frame async for frame in gen]
 
         messages = thread_enabled.get_messages("s1").messages
         assert [(m.role,) for m in messages] == [("user",)]
 
 
+class _AuthenticatedThreadHandler(AgentThreadRequestHandler):
+    """Stands in for the identity dependency the REST surface gains with the identity provider: the
+    surface, never the client, assigns the principal the thread is keyed on."""
+
+    async def run(self, body: BaseRunRequest):
+        body.principal = ALICE
+        return await super().run(body)
+
+
 class TestEndToEnd:
     def test_chat_records_and_reads_back_through_the_api(self, thread_enabled, registered_agent):
-        handler = AgentThreadRequestHandler()
+        handler = _AuthenticatedThreadHandler()
         app = FastAPI()
         app.include_router(handler.get_router())
         client = TestClient(app)
 
         resp = client.post(
             "/api/v1/chat",
-            json={"prompt": "hello", "session_id": "s-e2e", "user_id": "alice", "agent": registered_agent.name},
+            json={"prompt": "hello", "session_id": "s-e2e", "agent": registered_agent.name},
         )
         assert resp.status_code == 200
         assert resp.json() == {"result": "ok:hello", "session_id": "s-e2e"}
@@ -302,12 +322,12 @@ class TestEndToEnd:
         Both messages go into one thread deliberately — the unlabelled one is the guarantee that an
         application which never opted into A2UI reads exactly what it read before.
         """
-        handler = AgentThreadRequestHandler()
+        handler = _AuthenticatedThreadHandler()
         handler.chat_service = FakeChatService(reply=AgentReplyAny(content={"version": "v1.0"}, media_type=MEDIA_TYPE))
         app = FastAPI()
         app.include_router(handler.get_router())
         client = TestClient(app)
-        chat = {"session_id": "s-label", "user_id": "alice", "agent": registered_agent.name}
+        chat = {"session_id": "s-label", "agent": registered_agent.name}
 
         assert client.post("/api/v1/chat", json={**chat, "prompt": "show me the form"}).status_code == 200
         handler.chat_service = FakeChatService(reply=AgentReplyText(response="plain words"))
@@ -465,7 +485,7 @@ class TestThreadPauseAndResume:
                 interruptions=[PausedInterruption(id="i1", kind="tool_call", tool_name="refund")],
             )
         )
-        req = BaseRunRequest(prompt="refund it", session_id="s1", user_id="u1", agent=registered_agent.name)
+        req = BaseRunRequest(prompt="refund it", session_id="s1", principal=U1, agent=registered_agent.name)
 
         response = await handler._run_with_recording(req)
 
@@ -480,7 +500,7 @@ class TestThreadPauseAndResume:
         handler.chat_service = FakeChatService()
         req = BaseRunRequest(
             session_id="s1",
-            user_id="u1",
+            principal=U1,
             agent=registered_agent.name,
             resume=ResumeSpec(decisions=[ResumeDecision(id="i1", status="approved")]),
         )
@@ -501,7 +521,7 @@ class TestThreadPauseAndResume:
         handler = ThreadRequestHandler()
         req = BaseRunRequest(
             session_id="s1",
-            user_id="u1",
+            principal=U1,
             agent=registered_agent.name,
             resume=ResumeSpec(decisions=[ResumeDecision(id="i1", status="approved")]),
         )
@@ -520,7 +540,7 @@ class TestThreadPauseAndResume:
         handler = ThreadRequestHandler()
 
         with pytest.raises(HTTPException) as exc:
-            await handler.run_chat(BaseRunRequest(session_id="s1", user_id="u1", agent=registered_agent.name, prompt=""))
+            await handler.run_chat(BaseRunRequest(session_id="s1", principal=U1, agent=registered_agent.name, prompt=""))
 
         assert exc.value.status_code == 400
         assert "No prompt provided" in exc.value.detail["error"]

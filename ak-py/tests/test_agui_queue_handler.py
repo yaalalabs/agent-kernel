@@ -113,7 +113,7 @@ def _text_run():
 
 
 def _agui_message(envelope=None, attributes=None, receive_count=1):
-    body = AGUIRunRequest(session_id="t-1", agent="planner", user_id="u1", requests=[], agui=envelope)
+    body = AGUIRunRequest(session_id="t-1", agent="planner", requests=[], agui=envelope)
     return QueueMessage(
         body=body.model_dump_json(exclude_none=True),
         attributes=attributes if attributes is not None else {ATTR_AGUI: "1", ATTR_REQUEST_ID: "r1"},

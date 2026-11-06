@@ -116,17 +116,21 @@ iteration 18 and `credentials` lands in iteration 25, both additive).
   through `_set_reserved`; the "clearing discards decisions" pin flips), `test_chat_service_core`,
   `test_chat_service_streaming`, `test_schedule_tools`, `test_agui_queue_handler`,
   `test_agui_handler` (the authoriser-to-acting-user test is removed; iteration 7 adds the
-  principal one), `test_agui_resume`, `test_hitl_*`, `test_tool`, `test_session`.
+  principal one), `test_agui_resume`, `test_hitl_*`, `test_tool`, `test_session`, `test_key_value_cache` (the `clear()` log line).
 
 ### Iteration 3: `user_id` leaves the request models
 
 - **Goal:** no request body carries a user id, a body or envelope with one is refused, and
   threads and schedules key on `req.principal`.
 - **Files:** `core/model.py`, `core/chat_service.py`, `schedule/model.py`, `schedule/manager.py`,
-  `schedule/tools.py`, `integration/thread/recorder.py`, and the six constructor sites that pass
-  `user_id=` today: `api/handler.py:130`, `pipeline/request_handler.py:508`,
-  `integration/adapter/producer.py:79`, `integration/agui/queue_handler.py:143`,
-  `pipeline/realtime_pool.py:545`, `deployment/aws/serverless/core/router/rest_lambda.py:151`.
+  `schedule/tools.py`, `integration/thread/recorder.py`, `integration/thread/thread_chat.py`
+  (its own multipart form field and the 403 mapping), the three queue runners whose routing
+  attribute falls back to the body (`pipeline/agent_runner.py`,
+  `deployment/aws/{containerized,serverless}/akagentrunner.py`), and the six constructor sites
+  that pass `user_id=` today: `api/handler.py:130`, `pipeline/request_handler.py:508`,
+  `thread_chat.py:98`, `integration/adapter/producer.py:79`,
+  `integration/agui/queue_handler.py:143`, `deployment/aws/serverless/core/router/rest_lambda.py:151`.
+  (`pipeline/realtime_pool.py:545` is the dispatch parameter, not a body field; it moves in 9.)
 - **Steps:**
   1. Remove `BaseChatRequest.user_id`; `from_payload` drops the envelope propagation and raises
      `ValueError` on a `user_id` key (spec 2).
@@ -138,15 +142,23 @@ iteration 18 and `credentials` lands in iteration 25, both additive).
      `create_schedule` tool passes the principal object (spec 8.11). The `error=` keyword and the
      store's `last_error` come with the fire-time skip in iteration 19.
   4. `ThreadRecorder.pre_run` reads `req.principal` and raises `PermissionError` when it is
-     missing or anonymous (spec 8.10).
-  5. The six constructor sites stop passing `user_id=` (the multipart form field goes with it);
-     each gets its principal in phase B.
+     missing or anonymous; the thread handlers map it to 403 (pulled forward from 10, so an
+     anonymous thread request is a 403 and not a 500 in the meantime) (spec 8.10).
+  5. The six constructor sites stop passing `user_id=` (the multipart form fields go with it);
+     each gets its principal in phase B. The three queue runners' body fallback for the routing
+     attribute reads `Principal.subject_of(body.principal)` (spec 8.3).
 - **Verify:** `grep -rn "\.user_id\|\"user_id\"" ak-py/src/agentkernel` shows only
   `InboundRequest.user_id`, `Thread.user_id`, `ScheduledTask.user_id`, the WebSocket routing
   attribute (`ATTR_USER_ID`, the connection stores, `response_handler.py`) and ADK's native
-  session `user_id`; changed `test_chat_service_core` (400 on `user_id`),
-  `test_thread_integration`, `test_serverless_request_handle`, `test_schedule_tools`,
-  `test_api_multipart_fields`.
+  session `user_id`; changed `test_chat_service_core` (refusal of `user_id`),
+  `test_serverless_request_handle` (`from_payload` refusals), `test_api_multipart_fields`,
+  `test_chat_service_schedule`, `test_schedule_manager`, `test_schedule_tools`,
+  `test_schedule_router`, `test_schedule_model`, `test_thread_integration` and
+  `test_thread_pipeline_recording` (a test-side handler subclass assigns the principal the way
+  the identity dependency will in 6), `test_integration_producer`, `test_agui_queue_handler`,
+  the three `*_agent_runner_schedule` suites, `test_ws_lambda_stream`,
+  `test_serverless_status_propagation`, `test_pipeline_ws` (a frame carrying `user_id` is a
+  `FAILED` frame).
 
 ## Phase B: Providers and surfaces (iterations 4 to 12)
 
@@ -279,7 +291,7 @@ iteration 18 and `credentials` lands in iteration 25, both additive).
   2. `ConversationThreadManager.get_or_create_thread` raises `PermissionError` on a foreign
      thread (spec 8.10).
   3. `AgentThreadRequestHandler` and `ThreadRequestHandler` lose `authoriser`, require the
-     identity block, map `PermissionError` to 403 and an anonymous principal to 401 (spec 8.10).
+     identity block and map an anonymous principal to 401 (the 403 mapping landed in 3) (spec 8.10).
   4. The schedule handler passes `principal.subject` to `get_task`, `list_tasks`, `update`,
      `cancel` (spec 8.11).
   5. `AgentPrincipalResolver.resolve` returns the user-mode principal for a non-anonymous run

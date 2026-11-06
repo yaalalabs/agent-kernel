@@ -17,7 +17,7 @@ from fastapi.testclient import TestClient
 from agentkernel.core.base import Agent, Runner
 from agentkernel.core.config import AKConfig, _ThreadStoreConfig
 from agentkernel.core.event import MessageEnd, MessageStart, TextDelta
-from agentkernel.core.model import AgentReplyText, AgentRequestText, ScheduleSpec
+from agentkernel.core.model import AgentReplyText, AgentRequestText, BaseRunRequest, Principal, ScheduleSpec
 from agentkernel.core.runtime import Runtime
 from agentkernel.core.util.factory import AKConfigError
 from agentkernel.integration.thread import AgentThreadRequestHandler, ConversationThreadManager, ThreadNamingStrategy, ThreadRequestHandler
@@ -120,9 +120,21 @@ def _enable_threads():
     return ConversationThreadManager.get()
 
 
-def _client() -> TestClient:
+PRINCIPAL = Principal(subject="u1", provider="static", namespace="static")
+
+
+class _AuthenticatedThreadRequestHandler(ThreadRequestHandler):
+    """Stands in for the identity dependency the pipeline route gains with the identity provider: the
+    surface, never the client, assigns the principal the thread is keyed on."""
+
+    async def run_chat(self, body: BaseRunRequest):
+        body.principal = PRINCIPAL
+        return await super().run_chat(body)
+
+
+def _client(handler: ThreadRequestHandler | None = None) -> TestClient:
     app = FastAPI()
-    app.include_router(ThreadRequestHandler().get_router())
+    app.include_router((handler or _AuthenticatedThreadRequestHandler()).get_router())
     return TestClient(app)
 
 
@@ -132,8 +144,8 @@ def _enqueued(transport=None) -> QueueMessage:
     return message
 
 
-def _chat(session_id="s1", prompt="hello", user_id="u1", **extra) -> dict:
-    return {"prompt": prompt, "session_id": session_id, "user_id": user_id, "agent": AGENT_NAME, **extra}
+def _chat(session_id="s1", prompt="hello", **extra) -> dict:
+    return {"prompt": prompt, "session_id": session_id, "agent": AGENT_NAME, **extra}
 
 
 class TestEdgeRecording:
@@ -179,13 +191,13 @@ class TestEdgeRecording:
         assert body.get("images") is None
         assert [req["type"] for req in body["requests"]] == ["text", "attachment_ref"]
 
-    def test_missing_user_id_is_rejected_before_any_thread_write(self, monkeypatch, dummy_agent):
+    def test_an_anonymous_request_is_rejected_before_any_thread_write(self, monkeypatch, dummy_agent):
         manager = _configure(monkeypatch, mode="rest_async")
 
-        response = _client().post(CHAT, json={"prompt": "hello", "session_id": "s1", "agent": AGENT_NAME})
+        response = _client(ThreadRequestHandler()).post(CHAT, json={"prompt": "hello", "session_id": "s1", "agent": AGENT_NAME})
 
-        assert response.status_code == 400
-        assert "user_id" in response.json()["detail"]["error"]
+        assert response.status_code == 403
+        assert "authenticated principal" in response.json()["detail"]["error"]
         assert manager.get_thread("s1") is None
         assert not InMemoryTransport().create_consumer(QueueName.INPUT).fetch(10, 0.1)
 
@@ -234,7 +246,7 @@ class TestEdgeRecording:
         _configure(monkeypatch, mode="rest_async")
         resume = {"decisions": [{"id": "call_1", "status": "approved"}]}
 
-        response = _client().post(CHAT, json={"session_id": "s1", "user_id": "u1", "agent": AGENT_NAME, "resume": resume})
+        response = _client().post(CHAT, json={"session_id": "s1", "agent": AGENT_NAME, "resume": resume})
 
         assert response.status_code == 200
         message = _enqueued()
@@ -244,15 +256,15 @@ class TestEdgeRecording:
     def test_missing_prompt_keeps_the_pipeline_error_shape(self, monkeypatch, dummy_agent):
         _configure(monkeypatch, mode="rest_async")
 
-        response = _client().post(CHAT, json={"prompt": "", "session_id": "s1", "user_id": "u1"})
+        response = _client().post(CHAT, json={"prompt": "", "session_id": "s1"})
 
         assert response.status_code == 400
         assert response.json()["detail"] == {"error": "No prompt provided in the request", "session_id": "s1"}
 
 
-def _marked_message(session_id="s1", user_id="u1", marked=True) -> QueueMessage:
+def _marked_message(session_id="s1", marked=True) -> QueueMessage:
     return QueueMessage(
-        body=json.dumps({"prompt": "hello", "session_id": session_id, "user_id": user_id, "agent": AGENT_NAME}),
+        body=json.dumps({"prompt": "hello", "session_id": session_id, "agent": AGENT_NAME}),
         attributes={"request_id": "r1", **({ATTR_THREAD: "1"} if marked else {})},
         group_id=session_id,
         dedup_id="d1",
