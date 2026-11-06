@@ -383,8 +383,8 @@ path.
 - **Its own config file**, `ak-bench.yaml`, not `AKConfig`. Departure from the "reuse existing configuration" house
   pattern, because these are benchmark settings, not AK runtime config. Holds: hosts, modes, message types, test types,
   load steps, min / max send interval, steady load time, before window (default 1 min), maximum cool-down, wait before
-  the after-step fetch (default 1 min), client timeout, time window size, min / max agent delay, poll interval per
-  `during_step` fetcher, Lambda Insights on-off.
+  the after-step fetch (default 1 min), client timeout, time window size, the `mock_agent` block (`min_delay`, `max_delay`; read by `deploy`, see
+  [Mock agent](#mock-agent)), poll interval per `during_step` fetcher, Lambda Insights on-off.
 - Registries follow AK's factory shape: built-in short names, dotted-path bring-your-own, unknown name → error naming
   the built-ins.
 
@@ -496,8 +496,9 @@ flowchart TD
   - transport type and settings (batch size); session store type and capacity;
   - resource usage sources: which fetchers ran, Container Insights (standard / enhanced), Lambda Insights on / off;
   - front door (API Gateway WebSocket);
+  - agent: mock or real; for the mock agent, min / max agent delay (set at deploy, see [Mock agent](#mock-agent));
   - the benchmark settings are recorded **per step**, in `step-<N>/step-metadata.json`, since `ak-bench.yaml` can
-    change between step commands: test type and step number, min / max agent delay, min / max send interval, steady
+    change between step commands: test type and step number, min / max send interval, steady
     load time, before window, maximum cool-down, wait before the after-step fetch, poll intervals, client timeout,
     time window size, percentile method, warm-up or not.
   - Host-side values come from the deployer; a value a host doesn't have stays empty.
@@ -678,7 +679,7 @@ flowchart TD
       before it would become visible again. That's not an exactly-once guarantee (SQS can still deliver a message
       twice). On the input queue, a message still waiting after 5 min is dropped (the client has timed out on it by
       then); the output queue's 5 min starts when the response is sent to it.
-  - every host: queue mode, WebSocket delivery, `logging.ak.level: TRACE`, the mock agent, session store
+  - every host: queue mode, WebSocket delivery, `logging.ak.level: TRACE`, the mock agent (or the real agent when `mock_agent` isn't set), session store
     `in_memory` (`session.type`, AK's default; the Terraform `create_redis_cluster`, `create_valkey_cluster` and
     `create_dynamodb_memory_table` stay `false`, their default).
 
@@ -688,7 +689,18 @@ flowchart TD
   the runner): `MockRunner(Runner)` and a `MockAgent(Agent)` that uses it, registered with the runtime like any agent
   (same shape as `DummyRunner` / `DummyAgent` in `ak-py/tests/test_pipeline_request_handler.py`). No AK code change.
   - `run()` waits a random delay per request, `await asyncio.sleep(random.uniform(min_delay, max_delay))` (min / max
-    are config, recorded; defaults 1 s and 5 s; min = max gives a fixed delay), where the LLM call would be.
+    are `mock_agent.min_delay` / `max_delay`, recorded; no defaults; min = max gives a fixed delay), where the LLM
+    call would be.
+  - **Delay set at deploy** (decided 2026-11-06): `deploy` reads min / max from `ak-bench.yaml` and sets them as
+    environment variables on the agent runner (`AK_BENCH_MOCK_AGENT_MIN_DELAY_S`, `AK_BENCH_MOCK_AGENT_MAX_DELAY_S`), through
+    the `agent_runner.environment_variables` input both Terraform modules already have
+    (`ak-aws/serverless/variables.tf:398`, `ak-aws/containerized/variables.tf:387`). The runner reads them once when
+    it's created. Fixed for the deployment: changing them takes a new `deploy`, so they're in `run-metadata.json`,
+    not `step-metadata.json`.
+  - **Mock or real agent** (decided 2026-11-06): `ak-bench.yaml` has a `mock_agent` block with `min_delay` and
+    `max_delay` (seconds). Both set: the mock agent. Block left out, or neither set: `deploy` sets no delay
+    variables and the app runs its real agent (with its LLM call). Only one set: `deploy` refuses, naming the missing
+    key. The run metadata records which agent ran.
   - Returns `AgentReplyAny(content={"echo": <prompt>})`. The prompt carries the client's `request_id`.
   - Keeps no per-request state on `self`; does no timing (stage times come from the trace logs); adds nothing to the
     session (no history, no framework context).
@@ -705,7 +717,7 @@ flowchart TD
   both AWS hosts keep them in API Gateway's DynamoDB table (`websocket_api.connection_table`), not the session store.
 - Everything around the agent run runs as normal: request handler, queues, agent runner, ChatService, session load,
   response handler, WebSocket push.
-- The same app is used on every host. A real-LLM run is an optional final realism check.
+- The same app is used on every host. A real-LLM run (no `mock_agent` block) is an optional final realism check.
 
 ### AK change: `TRACE` log level and trace points (`ak-py`)
 

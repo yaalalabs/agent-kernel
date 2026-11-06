@@ -431,7 +431,7 @@ Worker counts (from → to), recorded per tier, count type (desired / running) a
   - **How AK uses it (checked in the code):** the agent runner's SQS event source mapping has `batch_size = 10` and
     AK's `SQSConsumer` handles the records of a batch **one after another**, so one invocation with 10 messages and a
     2 s agent delay runs ~20 s. The agent runner timeout is 45 s by default (`ak-aws/serverless/variables.tf`, `agent_runner`),
-    and `batch_size × maximum agent delay` has to stay under it: 10 × the default 5 s maximum delay is 50 s. So the
+    and `batch_size × maximum agent delay` has to stay under it: 10 × a 5 s maximum delay (e.g. `max_delay: 5`) is 50 s. So the
     benchmark deployer sets the agent runner timeout to **60 s** (decided 2026-11-04, PR #893 review). It also sets the
     input queue visibility timeout to **360 s** and the output queue visibility timeout to **300 s**: AWS recommends
     at least 6× the function timeout (plus the batching window, 0 s here) for an SQS event source, so Lambda can retry
