@@ -10,14 +10,15 @@ DEFAULT_METHOD = "POST"  # must be same as _default_agent_registered_method in L
 
 
 # monkeypatch is a builtin fixture that allows to temporarily modify env vars, all env var changes are reverted after each test
-def make_event_with_env_vars(monkeypatch, path, method="GET", base="api", version="v1", agent_endpoint="agent"):
-    """Set environment variables using monkeypatch and return event"""
+def make_event_with_env_vars(monkeypatch, path, method="GET", base="api", version="v1", agent_endpoint="agent", **extra):
+    """Set environment variables using monkeypatch and return event; extra keys (resource, pathParameters) are merged in"""
     monkeypatch.setenv("API_BASE_PATH", base)
     monkeypatch.setenv("API_VERSION", version)
     monkeypatch.setenv("AGENT_ENDPOINT", agent_endpoint)
     return {
         "httpMethod": method,
         "path": path,
+        **extra,
     }
 
 
@@ -106,6 +107,71 @@ def test_dispatch_raises_for_unknown_route_with_env_vars(router, monkeypatch):
     msg = str(ei.value)
     assert "/api/v1/unknown" in msg
     assert "GET" in msg
+
+
+def test_dispatch_routes_path_parameter_route_by_resource_template(router, monkeypatch):
+    @router.register("/threads/{session_id}", method="GET")
+    def get_thread(event, context):
+        return (200, {"session_id": event["pathParameters"]["session_id"]})
+
+    event = make_event_with_env_vars(
+        monkeypatch,
+        "/api/v1/threads/abc123",
+        resource="/api/v1/threads/{session_id}",
+        pathParameters={"session_id": "abc123"},
+    )
+
+    assert router.dispatch(event, context=None) == (200, {"session_id": "abc123"})
+
+
+def test_dispatch_follows_the_resource_api_gateway_selected_over_a_matching_concrete_path(router, monkeypatch):
+    # The concrete path is also registered, but the gateway matched the template: its choice wins.
+    router.register("/thread/something1/something2", method="GET")(lambda e, c: (200, {"via": "static"}))
+    router.register("/thread/something1/{param2}", method="GET")(lambda e, c: (200, {"via": "template"}))
+
+    event = make_event_with_env_vars(
+        monkeypatch,
+        "/api/v1/thread/something1/something2",
+        resource="/api/v1/thread/something1/{param2}",
+        pathParameters={"param2": "something2"},
+    )
+
+    assert router.dispatch(event, context=None) == (200, {"via": "template"})
+
+
+def test_dispatch_routes_static_route_when_resource_equals_path(router, monkeypatch):
+    router.register("/threads/search", method="GET")(lambda e, c: (200, {"via": "static"}))
+    router.register("/threads/{session_id}", method="GET")(lambda e, c: (200, {"via": "template"}))
+
+    event = make_event_with_env_vars(monkeypatch, "/api/v1/threads/search", resource="/api/v1/threads/search")
+
+    assert router.dispatch(event, context=None) == (200, {"via": "static"})
+
+
+def test_dispatch_falls_back_to_concrete_path_when_resource_is_not_registered(router, monkeypatch):
+    # A {proxy+} resource in front of the Lambda: its template is not a registered route.
+    router.register("/foo", method="GET")(lambda e, c: (200, {"via": "path"}))
+
+    event = make_event_with_env_vars(monkeypatch, "/api/v1/foo", resource="/api/v1/{proxy+}", pathParameters={"proxy": "foo"})
+
+    assert router.dispatch(event, context=None) == (200, {"via": "path"})
+
+
+def test_dispatch_raises_when_template_route_lacks_the_method(router, monkeypatch):
+    router.register("/threads/{session_id}", method="GET")(lambda e, c: (200, {}))
+
+    event = make_event_with_env_vars(monkeypatch, "/api/v1/threads/abc123", method="DELETE", resource="/api/v1/threads/{session_id}")
+
+    with pytest.raises(ValueError, match="/api/v1/threads/abc123"):
+        router.dispatch(event, context=None)
+
+
+def test_dispatch_routes_agent_endpoint_to_default_when_resource_is_present(router, stub_default, monkeypatch):
+    stub_default(status=201, payload={"routed_to": "default_handler"})
+
+    event = make_event_with_env_vars(monkeypatch, "/api/v1/agent", method="POST", resource="/api/v1/agent")
+
+    assert router.dispatch(event, context=None) == (201, {"routed_to": "default_handler"})
 
 
 def _router_with_execution(monkeypatch, input_queue_url, **execution):

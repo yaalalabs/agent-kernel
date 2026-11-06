@@ -245,6 +245,34 @@ def custom_app_info_handler(event, context):
 handler = Lambda.handler
 ```
 
+### Path and query parameters
+
+A route can carry path parameters. Query parameters reach every handler as-is in `event["queryStringParameters"]`.
+
+```python
+@Lambda.register("/orders/{order_id}", method="GET")
+def get_order(event, context):
+    order_id = event["pathParameters"]["order_id"]
+    params = event.get("queryStringParameters") or {}
+    return {"order_id": order_id, "expand": params.get("expand")}
+```
+
+Declare the same template in `gateway_endpoints`, with the same parameter name:
+
+```hcl
+gateway_endpoints = [
+  { path = "orders/{order_id}", method = "GET" },
+]
+```
+
+The router does no path matching of its own. API Gateway matches the request against its resources and
+sends the matched template in `event["resource"]` and the values in `event["pathParameters"]`, and the
+router looks the template up among the registered routes. So when two templates overlap, API Gateway's
+precedence decides (a static segment beats a `{parameter}` at the same level). Avoid overlapping templates
+such as `/a/{x}/c` and `/a/b/{y}`: both match `/a/b/c`, and the containerized (FastAPI) target resolves
+that by registration order instead. Path parameters need API Gateway REST in front of the Lambda; a
+direct invoke or a function URL sends no `resource`, so only static routes match there.
+
 ## Lambda Environment Variables
 
 The Lambda router automatically reads the following environment variables to correctly map incoming API paths:
@@ -1246,6 +1274,35 @@ are unaffected — they always send an explicit `MessageDeduplicationId`, which 
 Relevant outputs: `schedule_group_name`, `schedule_group_arn`, `scheduler_execution_role_arn`,
 `schedule_table_name`, `schedule_table_arn` (each `null` unless the matching flag is set).
 
+**Management routes.** `ScheduleRESTRequestHandler` is a FastAPI router and cannot be mounted on the
+Lambda router. Register the same routes on the request handler instead, calling `ScheduleManager`
+directly, and read the task id from the path (see [Path and query parameters](#path-and-query-parameters)):
+
+```python
+from agentkernel.aws import Lambda
+from agentkernel.schedule import ScheduleManager
+
+@Lambda.register("/schedules/{task_id}", method="GET")
+def get_schedule(event, context):
+    task_id = event["pathParameters"]["task_id"]
+    task = ScheduleManager.get().get_task(task_id)
+    return task.model_dump(mode="json") if task else (404, {"error": f"Unknown scheduled task {task_id}"})
+```
+
+```hcl
+gateway_endpoints = [
+  { path = "schedules",           method = "GET" },    # list
+  { path = "schedules/{task_id}", method = "GET" },    # read
+  { path = "schedules/{task_id}", method = "PUT" },    # amend
+  { path = "schedules/{task_id}", method = "DELETE" }, # cancel
+]
+```
+
+These are the containerized routes, path for path. Without an authorizer they are open; resolve the
+owner from the caller's token rather than trusting a client-supplied `user_id`.
+[`examples/aws-serverless/schedule-openai`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/schedule-openai)
+implements all four with ownership checks and error mapping.
+
 For the application side see the [Scheduling guide](../advanced/scheduling.md).
 
 ### Secret Resolution (SSM Parameter Store)
@@ -1338,7 +1395,7 @@ Lambda.register("/whatsapp/webhook", method="GET")(whatsapp.challenge)
 
 The paths are the adapters' `webhook_path` and `challenge_path`: `/slack/events`, `/teams/messages`,
 `/telegram/webhook`, and `/<platform>/webhook` for the three Meta platforms. The Lambda router strips
-`/<api_base_path>/<api_version>` and matches the rest exactly. The host turns the API Gateway event into
+`/<api_base_path>/<api_version>` and looks the rest up among the registered routes. The host turns the API Gateway event into
 the Starlette request every adapter reads, and answers with the status the platform expects: a rejected
 signature stays a 401 or 403 rather than becoming a retryable 500.
 

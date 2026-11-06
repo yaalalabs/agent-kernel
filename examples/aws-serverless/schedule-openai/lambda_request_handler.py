@@ -5,9 +5,9 @@ hand-rolled path/method table, so `ScheduleRESTRequestHandler` (a FastAPI APIRou
 mounted here. Management is exposed instead through `Lambda.register` routes that call
 `ScheduleManager` directly, which is the same object the REST handler wraps.
 
-Two consequences of the router being exact-match on the path:
-  * no `{task_id}` path parameters — the task id travels as a query parameter or in the body
-  * these paths must also be declared in `gateway_endpoints` in deploy/main.tf
+The routes match the containerized `ScheduleRESTRequestHandler`: the task id is the `{task_id}` path
+parameter, read from `event["pathParameters"]`. These paths must also be declared in
+`gateway_endpoints` in deploy/main.tf, with the same `{task_id}` name.
 
 Creation is deliberately absent here, exactly as in the REST handler: a task is created by the
 `schedule` block on a chat request or by the agent's own `create_schedule` tool, so callers and
@@ -59,17 +59,10 @@ def list_schedules(event, context):
     }
 
 
-@Lambda.register("/schedules/get", method="GET")
+@Lambda.register("/schedules/{task_id}", method="GET")
 def get_schedule(event, context):
-    """GET /api/v1/schedules/get?user_id=...&task_id=... — read one task.
-
-    A query parameter rather than a path segment: the serverless router matches paths exactly, so
-    `/schedules/{task_id}` would never resolve.
-    """
-    params = event.get("queryStringParameters") or {}
-    task_id = params.get("task_id")
-    if not task_id:
-        return 400, {"error": "task_id query parameter is required"}
+    """GET /api/v1/schedules/{task_id}?user_id=... — read one task."""
+    task_id = event["pathParameters"]["task_id"]
     try:
         task = _manager().get_task(task_id, user_id=_user_id(event))
     except PermissionError as e:
@@ -82,20 +75,17 @@ def get_schedule(event, context):
     return task.model_dump(mode="json")
 
 
-@Lambda.register("/schedules/amend", method="POST")
+@Lambda.register("/schedules/{task_id}", method="PUT")
 def amend_schedule(event, context):
-    """POST /api/v1/schedules/amend — full-replacement amendment.
+    """PUT /api/v1/schedules/{task_id}?user_id=... — full-replacement amendment.
 
-    Body: {"task_id", "user_id", "prompt", "at"|"cron", "timezone", "session_mode", "status"}.
-    Replaces the amendable state rather than merging, matching the PUT route's semantics: an
-    omitted occurrence field clears it.
+    Body: {"prompt", "at"|"cron", "timezone", "session_mode", "status"}. Replaces the amendable
+    state rather than merging, matching the containerized PUT route: an omitted occurrence field
+    clears it.
     """
-    body = json.loads(event.get("body") or "{}")
-    task_id, user_id = body.pop("task_id", None), body.pop("user_id", None)
-    if not task_id or not user_id:
-        return 400, {"error": "task_id and user_id are required"}
+    task_id = event["pathParameters"]["task_id"]
     try:
-        task = _manager().update(task_id, body, user_id=user_id)
+        task = _manager().update(task_id, json.loads(event.get("body") or "{}"), user_id=_user_id(event))
     except PermissionError as e:
         return 403, {"error": str(e)}
     except KeyError:
@@ -105,18 +95,15 @@ def amend_schedule(event, context):
     return task.model_dump(mode="json")
 
 
-@Lambda.register("/schedules/cancel", method="POST")
+@Lambda.register("/schedules/{task_id}", method="DELETE")
 def cancel_schedule(event, context):
-    """POST /api/v1/schedules/cancel — body: {"task_id", "user_id"}.
+    """DELETE /api/v1/schedules/{task_id}?user_id=... — cancel.
 
     The record survives as the audit trail, so the cancelled task is returned.
     """
-    body = json.loads(event.get("body") or "{}")
-    task_id, user_id = body.get("task_id"), body.get("user_id")
-    if not task_id or not user_id:
-        return 400, {"error": "task_id and user_id are required"}
+    task_id = event["pathParameters"]["task_id"]
     try:
-        task = _manager().cancel(task_id, user_id=user_id)
+        task = _manager().cancel(task_id, user_id=_user_id(event))
     except PermissionError as e:
         return 403, {"error": str(e)}
     except KeyError:

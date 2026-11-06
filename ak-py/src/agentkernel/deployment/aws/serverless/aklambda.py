@@ -41,7 +41,8 @@ class Lambda:
         """
         Class method decorator that delegates route registration to the internal LambdaRouter.
 
-        :param route: URL route for the handler (normalized with leading slash, no trailing slash)
+        :param route: URL route for the handler (normalized with leading slash, no trailing slash); may carry
+            path parameters such as "/threads/{session_id}", read from event["pathParameters"]
         :param method: HTTP method (defaults to "GET", case-insensitive)
         :return: Decorator function that registers the handler and returns it unchanged
         """

@@ -296,6 +296,13 @@ if __name__ == "__main__":
 Remember to list the schedule paths in `gateway_endpoints` — the gateway only proxies paths it is
 told about.
 
+On **AWS serverless** the Lambda router is not FastAPI, so `ScheduleRESTRequestHandler` cannot be
+mounted. Register the same routes with `@Lambda.register("/schedules", method="GET")` and
+`@Lambda.register("/schedules/{task_id}", method="GET"|"PUT"|"DELETE")`, calling `ScheduleManager`
+directly and reading `event["pathParameters"]["task_id"]`. Declare each in `gateway_endpoints` with
+the same `{task_id}` name (`{ path = "schedules/{task_id}", method = "PUT" }`). Reference
+implementation: `examples/aws-serverless/schedule-openai/lambda_request_handler.py`.
+
 New outputs on both AWS stacks (null unless the matching flag is set): `schedule_group_name`,
 `schedule_group_arn`, `scheduler_execution_role_arn`, `schedule_table_name`, `schedule_table_arn`.
 
