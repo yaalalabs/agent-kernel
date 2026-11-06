@@ -19,11 +19,15 @@
 | PR #902 (CodeQL) | 5 cache-poisoning alerts: `code-quality.yml` (new, from its `checkout_ref`) and `test-reusable.yaml` (old ones, shown because the file changed) | Kind and lint out of the gate (kind started after the PR, lint is a PR check); round 1's artifact deleted before round 2, so the shared workflows are unchanged |
 | 6 (41986532730, PR #903) | Round 2 all green, PR opened; integration tests started, but without redeploying the Slack/Telegram app | `provision_e2e_messaging=true`; `ANTHROPIC_API_KEY` for the Claude examples (#833) |
 | 7 (42020023574, PR #908) | Round 1: 6 failures. Copilot held `pydantic-ai-slim` and found the broken `litellm` in 5 manifests, including the untested `aws-containerized/mcp/multi`. Round 2 all green, PR opened, kind smoke and integration tests started, messaging tests passed on the redeployed app. The 5 after-PR failures were infra (`kreuzwerker/docker` provider download, a response-store race, `kind-smoke (eks)`) | None |
+| Security review (PR #902) | Package code in `update` and `fix-1` could read the job's write token (from a parent process's environment) or replace the script that later steps and `finish` ran from the artifact. The App key was also passed, unused, to the e2e jobs | Jobs split: package code only where there is no write token; a checked patch is pushed by a job that runs no package code; the script always from the workflow's own commit; no App key in the e2e jobs; no `uv` cache; `packaging` pinned. `Verdict` no longer lets a round-2 "skipped" job hide a round-1 failure |
 
 ## Next
 
-1. Merge to `develop`. Runs then start every second Monday; a run by hand is Actions → Run workflow.
-2. Ask an admin to give the `agent-kernel-ci` app "Dependabot alerts: Read", then drop `DEPENDABOT_ALERTS_TOKEN`.
+1. One real run with the job split (Actions → Run workflow on this branch; close any open update PR first).
+2. Merge to `develop`. Runs then start every second Monday; a run by hand is Actions → Run workflow.
+3. Ask an admin to give the `agent-kernel-ci` app "Dependabot alerts: Read", then drop `DEPENDABOT_ALERTS_TOKEN`.
+4. Check that `COPILOT_REQUEST_TOKEN` is a fine-grained token with only the Copilot permission, and that the e2e keys
+   have low limits (see the accepted risks in the design).
 
 ## Follow-ups outside this work
 

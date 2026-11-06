@@ -10,6 +10,7 @@ Run with:  uv run --no-project --with packaging python dependency_caps.py <comma
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import os
 import re
@@ -915,13 +916,19 @@ class Verdict:
         last, other, label = (retry, first, 2) if retry else (first, {}, 1)
         reasons, accepted, blocking = self.copilot_reasons(), [], []
         for name, conclusion in sorted(last.items()):
-            if conclusion in {"success", "skipped"}:
+            if conclusion == "success":
                 continue
-            if conclusion == "failure" and other.get(name) == "success":
-                accepted.append(
-                    f"  - `{name}`: passed in round 1, failed in round 2 (flaky, or a hold between the rounds)"
-                )
-            elif conclusion == "failure" and name in reasons:
+            if other.get(name) == "success":
+                # Already proved itself in the other round. A "skipped" here (an unrelated job earlier
+                # in its chain, e.g. build-ak-py, failed in this round) does not reopen that question.
+                if conclusion == "failure":
+                    accepted.append(
+                        f"  - `{name}`: passed in round 1, failed in round 2 (flaky, or a hold between the rounds)"
+                    )
+                continue
+            # Not a known pass in either round: a "skipped" counts the same as a "failure" here, so a
+            # job dropped by an unrelated upstream failure cannot pass through unexamined.
+            if name in reasons:
                 accepted.append(f"  - `{name}`: no dependency cause (Copilot): {reasons[name]}")
             else:
                 blocking.append(f"- `{name}`: {conclusion or 'not finished'}")
@@ -1161,8 +1168,6 @@ class Reporter:
         warning = ""
         if self.state.load(Alerts.ERROR_FILE, None):
             warning = "**Dependabot alerts were not read** (needs 'Dependabot alerts: Read'): no security fixes. "
-        title = "chore(deps): update dependency versions and fix vulnerabilities"
-        self.state.save("summary.json", {"title": title, "files": len(changed), "has_changes": bool(changed)})
 
         def section(heading: str, lines: list[str]) -> list[str]:
             return ["", f"{heading}:", *lines] if lines else []
@@ -1228,6 +1233,144 @@ class Reporter:
         return 0
 
 
+class PatchGate:
+    """Command `apply`: apply a patch made by a job that ran package code, only if all it does is move versions.
+
+    The patch may edit tracked dependency files only (no new, deleted, binary, renamed or mode-changed files).
+    pyproject.toml and package.json must stay the same apart from version specifiers, and every lock entry must
+    come from PyPI, npm or a local path.
+    """
+
+    PYPI_INDEX = "https://pypi.org/simple"
+    PYPI_FILES = "https://files.pythonhosted.org/"
+    NPM_REGISTRY = "https://registry.npmjs.org/"
+    NPM_SECTIONS = ("dependencies", "devDependencies", "optionalDependencies", "peerDependencies")
+    LOCAL_SOURCES = frozenset({"virtual", "editable", "path", "directory"})
+
+    def __init__(self, repo: Repo, patch: Path):
+        self.repo = repo
+        self.patch = patch.resolve()
+
+    def shape(self) -> tuple[list[str], list[str]]:
+        """(paths, problems) of the patch, read before it is applied."""
+        summary = self.repo.git("apply", "--summary", str(self.patch))
+        numstat = self.repo.git("apply", "--numstat", "-z", str(self.patch))
+        problems = [f"not a plain edit: {line.strip()}" for line in summary.stdout.splitlines() if line.strip()]
+        if summary.returncode or numstat.returncode:
+            problems.append(f"unreadable patch: {(summary.stderr + numstat.stderr).strip()[-300:]}")
+        paths = []
+        for record in filter(None, numstat.stdout.split("\0")):
+            if record.count("\t") < 2:
+                problems.append(f"not a plain edit: {record}")
+                continue
+            added, _, path = record.split("\t", 2)
+            paths.append(path)
+            if added == "-":
+                problems.append(f"{path}: binary change")
+            if not DEPENDENCY_FILES.search(path) or path.startswith(".github/") or ".." in Path(path).parts:
+                problems.append(f"{path}: not a dependency file")
+            elif (self.repo.root / path).is_symlink():
+                problems.append(f"{path}: a symlink")
+        return paths, problems
+
+    @staticmethod
+    def requirement_shape(data: dict) -> dict:
+        """The pyproject data with each requirement cut down to what a version change must not touch."""
+
+        def shape(items: list) -> list:
+            found = []
+            for item in items:
+                try:
+                    r = Requirement(item) if isinstance(item, str) else None
+                except InvalidRequirement:
+                    r = None
+                found.append((canonicalize_name(r.name), sorted(r.extras), str(r.marker), r.url) if r else item)
+            return found
+
+        data = copy.deepcopy(data)
+        project, uv = data.get("project", {}), data.get("tool", {}).get("uv", {})
+        lists = [(project, "dependencies"), (uv, "dev-dependencies")]
+        lists += [(project["optional-dependencies"], k) for k in project.get("optional-dependencies", {})]
+        lists += [(data["dependency-groups"], k) for k in data.get("dependency-groups", {})]
+        for parent, key in lists:
+            if key in parent:
+                parent[key] = shape(parent[key])
+        return data
+
+    @classmethod
+    def npm_shape(cls, data: dict) -> dict:
+        """The package.json data with each dependency section cut down to its package names. A value that is not a
+        version range (a git, file or URL source, an `npm:` alias) is kept, so a change to or from one shows."""
+
+        def shape(section: dict) -> list:
+            return sorted((k, v if re.search(r"[:/]", str(v)) else "") for k, v in section.items())
+
+        return {k: shape(v) if k in cls.NPM_SECTIONS and isinstance(v, dict) else v for k, v in data.items()}
+
+    def inside(self, where: object, directory: Path) -> bool:
+        """A relative path that stays inside the repo."""
+        text = str(where)
+        if "://" in text or Path(text).is_absolute():
+            return False
+        return (directory / text).resolve().is_relative_to(self.repo.root.resolve())
+
+    def uv_sources(self, lock: dict, directory: Path) -> list[str]:
+        problems = []
+        for package in lock.get("package", []):
+            name = package.get("name", "?")
+            kind, where = next(iter(package.get("source", {}).items()), ("none", ""))
+            local = self.inside(where, directory)
+            if not (kind in self.LOCAL_SOURCES and local or kind == "registry" and (local or where == self.PYPI_INDEX)):
+                problems.append(f"{name}: source {kind} = {where}")
+            for artifact in [package.get("sdist") or {}, *package.get("wheels", [])]:
+                url, path = artifact.get("url"), artifact.get("path")
+                plain_file = path is None or (str(path) == Path(str(path)).name and str(path) not in {"", ".", ".."})
+                if url and not url.startswith(self.PYPI_FILES) or not plain_file:
+                    problems.append(f"{name}: file from {url or path}")
+        return problems
+
+    def npm_sources(self, lock: dict) -> list[str]:
+        """Lockfile v2 or v3 (npm reads `packages`); every entry but the root from the npm registry, with a hash."""
+        if lock.get("lockfileVersion") not in (2, 3):
+            return [f"lockfileVersion {lock.get('lockfileVersion')} (2 or 3 expected)"]
+        return [
+            f"{name}: resolved from {item.get('resolved')}"
+            for name, item in lock.get("packages", {}).items()
+            if name and not (str(item.get("resolved", "")).startswith(self.NPM_REGISTRY) and item.get("integrity"))
+        ]
+
+    def content(self, path: str) -> list[str]:
+        before, after = self.repo.show("HEAD", path) or "", (self.repo.root / path).read_text(encoding="utf-8")
+        name = Path(path).name
+        try:
+            if name == "pyproject.toml":
+                same = self.requirement_shape(tomllib.loads(before)) == self.requirement_shape(tomllib.loads(after))
+                return [] if same else ["changes more than version specifiers"]
+            if name == "package.json":
+                same = self.npm_shape(json.loads(before)) == self.npm_shape(json.loads(after))
+                return [] if same else ["changes more than dependency versions"]
+            if name == "uv.lock":
+                return self.uv_sources(tomllib.loads(after), (self.repo.root / path).parent)
+            return self.npm_sources(json.loads(after))
+        except ValueError as error:  # tomllib.TOMLDecodeError and json.JSONDecodeError
+            return [f"unreadable: {error}"]
+
+    def run(self) -> int:
+        if not self.patch.exists() or not self.patch.stat().st_size:
+            print("nothing to apply")
+            return 0
+        paths, problems = self.shape()
+        if not problems and (applied := self.repo.git("apply", str(self.patch))).returncode:
+            problems.append(f"git apply failed: {applied.stderr.strip()[-300:]}")
+        for path in [] if problems else paths:
+            problems += [f"{path}: {problem}" for problem in self.content(path)]
+        if problems:
+            print("Patch rejected:\n" + "\n".join(f"- {problem}" for problem in problems[:100]))
+            return 1
+        print(f"Patch applied: {len(paths)} dependency files.")
+        return 0
+
+
 class Snapshotter:
     """Command `snapshot`: the locked versions and the base commit; clears the previous run's state."""
 
@@ -1259,6 +1402,7 @@ def main() -> int:
         "report",
         "fix",
         "verdict",
+        "apply",
     ]
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("command", choices=commands)
@@ -1273,6 +1417,7 @@ def main() -> int:
     parser.add_argument("--jobs", default="", help="failures, verdict: round-1 caller job ids, e.g. e2e-1")
     parser.add_argument("--retry-jobs", default="", help="verdict: round-2 caller job ids, e.g. e2e-2")
     parser.add_argument("--workers", type=int, default=4)
+    parser.add_argument("--patch", default="", help="apply: the patch from a job that ran package code")
     args = parser.parse_args()
 
     def split(value: str) -> list[str]:
@@ -1291,6 +1436,7 @@ def main() -> int:
         "npm": lambda: NpmFixer(repo, state).run(),
         "report": lambda: Reporter(repo, state, args.run_id).run(),
         "fix": lambda: CopilotFix(repo, state, args.workers).run(),
+        "apply": lambda: PatchGate(repo, Path(args.patch)).run(),
         "verdict": lambda: Verdict(
             Failures(repo, state, args.repo, args.run_id, []), split(args.jobs), split(args.retry_jobs)
         ).run(),

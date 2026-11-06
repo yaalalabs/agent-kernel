@@ -22,8 +22,9 @@ flowchart TD
     A[Every second Monday, or by hand] --> B[Cap, secure, update on each version line]
     B --> C{Installs?}
     C -- no --> D[Copilot names the package; hold it]
-    C -- yes --> E
-    D --> E[Round 1: unit tests and e2e]
+    C -- yes --> P
+    D --> P[Check the patch: versions only, known registries; push]
+    P --> E[Round 1: unit tests and e2e]
     E -- pass --> M[Open ONE PR]
     E -- fail --> F[Copilot names the package behind each real error; hold it]
     F --> G[Round 2: the same jobs]
@@ -88,7 +89,7 @@ flowchart TD
   package, and holds it there too when it breaks the same way.
 - **No dependency cause** (an answer only worded differently, an infra problem): no hold, a reason line instead.
 - **Unsure:** nothing, so the failure blocks the PR.
-- Narrow tools (shell, read, write, PyPI only), because it reads untrusted logs.
+- Tools: shell, read, write, PyPI URLs. The shell is not a sandbox, so Copilot only runs where no write token is.
 
 ### The PR
 
@@ -105,9 +106,34 @@ flowchart TD
 
 ### Safety
 
-- Only `pyproject.toml`, `uv.lock`, `package.json` and `package-lock.json` change. No pre-releases. Never merges,
-  never force-pushes.
-- The `agent-kernel-ci[bot]` app pushes and opens the PR, so the PR's CI runs.
+- **Package code never runs next to a write token.** The update runs code from the packages it updates (build hooks,
+  npm scripts, Copilot's own checks). That code runs as the same user as everything else in its job, so it can read
+  any secret the job holds (for example from `/proc/<parent>/environ`) and replace files later steps run. So the
+  jobs that run it (`update`, `fix-1`) get a read-only token and the Copilot token only, and hand over a patch.
+- **A patch is checked before it is pushed**, in a job that runs no package code:
+  - only edits to tracked `pyproject.toml`, `uv.lock`, `package.json`, `package-lock.json` (no new, deleted,
+    binary, renamed or mode-changed files, nothing under `.github/`);
+  - `pyproject.toml` and `package.json` unchanged apart from version specifiers (same packages, extras, markers,
+    no URLs, no new sections; an npm value stays a version range, not a git, file, URL or `npm:` source);
+  - every `uv.lock` entry from PyPI (files from `files.pythonhosted.org`) or a relative path inside the repo;
+    `package-lock.json` at lockfileVersion 2 or 3, every entry but the root from `registry.npmjs.org` with an
+    `integrity` hash.
+- **The script never comes from an artifact or a branch:** every job checks it out from the workflow's own commit.
+  `packaging`, its one dependency, is pinned.
+- **No `uv` cache** in this workflow, so package code cannot plant files that another run restores.
+- No pre-releases. Never merges, never force-pushes. The `agent-kernel-ci[bot]` app pushes and opens the PR, so the
+  PR's CI runs.
+
+### Accepted risks
+
+- **The Copilot token** sits in the jobs that run package code (Copilot itself runs `uv` to check minimums). A leak
+  means use of the Copilot account, not repo access. Keep `COPILOT_REQUEST_TOKEN` a fine-grained token with only
+  the Copilot permission.
+- **The e2e keys** (`OPENAI_API_KEY` and the others) reach the code under test, as they do in the PR's own CI. Keep
+  them scoped and with low limits.
+- **A malicious release on PyPI or npm itself** passes the registry check; review and the PR's CI are the defence.
+- **The PR body and Copilot's reasons** are written in jobs that run package code. They are only ever text or data
+  (never run), so the worst case is a misleading description or a PR that opens with failing tests.
 
 ## Non-goals
 

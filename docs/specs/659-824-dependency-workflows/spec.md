@@ -12,21 +12,30 @@ The shared workflows (`test-reusable.yaml`, `chart-test.yaml`, `code-quality.yml
 
 ## Triggers, permissions, secrets
 
-- `schedule`: `0 3 * * 1` (Monday 03:00 UTC); the `when` job lets only even weeks since 1970 through
+- `schedule`: `0 3 * * 1` (Monday 03:00 UTC); the `prepare` job lets only even weeks since 1970 through
   (`date +%s / 604800 % 2 == 0`). Other triggers always run.
 - `workflow_dispatch`: a real run by hand, no inputs (every run covers every manifest).
-- Permissions: `contents: write`, `pull-requests: write`, `security-events: read`, `actions: read`; `fix-1` and
-  `finish` also `actions: write` (delete an artifact; start workflows).
+- Permissions (workflow default `contents: read`; each job sets its own):
+
+| Job | Permissions | Secrets | Runs package code |
+|---|---|---|---|
+| `prepare` | `contents`, `pull-requests`, `security-events`: read | `DEPENDABOT_ALERTS_TOKEN` | no |
+| `update`, `fix-1` | `contents: read` (+ `actions: read` in `fix-1`) | `COPILOT_REQUEST_TOKEN` | **yes** |
+| `push`, `push-holds` | `contents: write` (+ `actions: write` in `push-holds`) | App key | no |
+| `e2e-1`, `e2e-2` | `contents: read` | the e2e keys | **yes** (the tests) |
+| `finish` | `contents`, `pull-requests`, `actions`: write | App key | no |
+
 - Secrets: `COPILOT_REQUEST_TOKEN` (required); `APP_ID` + `APP_PRIVATE_KEY` (`agent-kernel-ci[bot]`: push and PR,
   so the PR's CI runs); `DEPENDABOT_ALERTS_TOKEN` (until the app can read alerts); the e2e secrets of
   `test-reusable.yaml` (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `WALLED_API_KEY`, `TYPESAFE_API_KEY`, `SLACK_BOT_TOKEN`,
   `SLACK_SIGNING_SECRET`).
-- Settings in the workflow `env`: `BASE_BRANCH` (`develop`), `AFTER_PR_WORKFLOWS` (`chart-test.yaml integration-test-weekly.yaml:provision_e2e_messaging=true`; each entry is
+- Settings in the workflow `env`: `BASE_BRANCH` (`develop`), `PR_TITLE`, `PACKAGING` (the pinned `packaging`),
+  `SCRIPT` (the script in the `trusted` checkout of `github.sha`), `AFTER_PR_WORKFLOWS` (`chart-test.yaml integration-test-weekly.yaml:provision_e2e_messaging=true`; each entry is
   `<workflow file>[:<input>=<value>,...]`).
 
 ## Script commands
 
-`uv run --no-project --with packaging python .github/scripts/dependency_caps.py [--state DIR] <command>`
+`uv run --no-project --with packaging==<PACKAGING> python dependency_caps.py [--root REPO] [--state DIR] <command>`
 
 | Command | Does |
 |---|---|
@@ -40,7 +49,8 @@ The shared workflows (`test-reusable.yaml`, `chart-test.yaml`, `code-quality.yml
 | `hold` | Holds each package in `holds.jsonl` (`"*"` = every manifest where it moved); `keep_minimum` → pinned at the minimum (`pins.json`) and narrowed to its minor; otherwise a security package is `blocked`; checks those manifests again |
 | `finalize` | Puts back every manifest that still fails |
 | `npm` | `npm audit fix` where npm alerts exist; `npm ci` + `npm run build`; reverts on failure |
-| `report` | Checks every alert again; writes `pr-body.md`, `update-summary.md`, `summary.json` |
+| `report` | Checks every alert again; writes `pr-body.md` and `update-summary.md` |
+| `apply` | `--patch FILE`: checks a patch from a job that ran package code (rules below) and applies it; exit 1 and the reasons when it breaks a rule |
 | `verdict` | `true` when every failed job of the last round passed in round 1 or has a `not_dependency.jsonl` reason; then lists them in the PR's Testing section (`verdict.json`) |
 
 ### Rules
@@ -58,6 +68,14 @@ The shared workflows (`test-reusable.yaml`, `chart-test.yaml`, `code-quality.yml
   deploy, 0)`) gets that manifest, the longest match. Other jobs get none; Copilot finds the folder from the log.
   Each entry: where, manifest, base commit, log, error excerpt, locked version changes, security minimums, held
   packages.
+- **Patch check (`apply`):** `git apply --summary` must print nothing (no new, deleted, renamed or mode-changed
+  files); `--numstat` paths must be dependency files outside `.github/`, not binary, not symlinks. After applying:
+  `pyproject.toml` parsed equals the version before apart from each requirement's specifier (name, extras, marker
+  and URL must stay); `package.json` equals it apart from the versions in its dependency sections, and a changed value stays a
+  version range (no `:` or `/`); `uv.lock` sources are `registry = "https://pypi.org/simple"` or a relative path
+  inside the repo, files from `files.pythonhosted.org` or a plain file name in a local registry; `package-lock.json`
+  is lockfileVersion 2 or 3 and every `packages` entry but the root has a `registry.npmjs.org` `resolved` and an
+  `integrity`.
 - **Alert check:** `uv.lock` alert → locked version ≥ patched; `pyproject.toml` alert → every floor ≥ patched;
   npm → `npm audit` reports 0. Every open alert gets a reason.
 
@@ -65,12 +83,14 @@ The shared workflows (`test-reusable.yaml`, `chart-test.yaml`, `code-quality.yml
 
 | Job | Runs when | Does |
 |---|---|---|
-| `when` | always | `run=true` unless a scheduled run on an odd week |
-| `update` | `when` says run, no open update PR | branch `deps/update-batch-<RUN_ID>` from `$BASE_BRANCH`: `snapshot` → `alerts` → `cap` → `secure` → `update` → up to 2 × (`failures` → `fix`) → `finalize` → `npm` → `report`; commit, push, upload the state as `dep-state` |
+| `prepare` | always | `run=true` unless a scheduled run on an odd week or an update PR is open; `alerts` → artifact `alerts` |
+| `update` | `prepare` says run | `$BASE_BRANCH`: `snapshot` → alerts copied in → `cap` → `secure` → `update` → up to 2 × (`failures` → `fix`) → `finalize` → `npm` → `report`; the dependency-file diff as `update.patch`; the state as artifact `update` |
+| `push` | the patch is not empty | checks out the base commit (40 hex, on `$BASE_BRANCH`), `apply --patch update.patch`, commits, pushes `deps/update-batch-<RUN_ID>` |
 | `e2e-1` | branch pushed | `test-reusable.yaml` (unit tests and e2e) with `checkout_ref` = the pushed commit |
-| `fix-1` | `e2e-1` failed | `failures --jobs e2e-1` → `fix` → `finalize` → `report`; commits and pushes the holds; deletes this run's `ak-py-dist` artifact, which round 2 uploads again |
-| `e2e-2` | `always()` and `fix-1` changed files | the same on the new commit (`always()`: GitHub's implied `success()` would see round 1's failure) |
-| `finish` | branch pushed | a round `success`, or `verdict` → `true`: `gh pr create`, then `gh workflow run <each of $AFTER_PR_WORKFLOWS> --ref <branch>` and one PR comment with their links (a failure to start is only a warning). Else: delete the branch, list failed and blocking jobs, fail the run |
+| `fix-1` | `e2e-1` failed | `failures --jobs e2e-1` → `fix` → `finalize` → `report`; the diff as `holds.patch`; the state as artifact `holds` |
+| `push-holds` | `fix-1` held something | `apply --patch holds.patch` on the pushed commit, commits, pushes; deletes this run's `ak-py-dist` artifact, which round 2 uploads again |
+| `e2e-2` | not cancelled and `push-holds` succeeded | the same on the new commit (`!cancelled()`: GitHub's implied `success()` would see round 1's failure) |
+| `finish` | branch pushed (also on cancel, then it only deletes the branch) | a round `success`, or `verdict` → `true`: `gh pr create --title $PR_TITLE`, then `gh workflow run <each of $AFTER_PR_WORKFLOWS> --ref <branch>` and one PR comment with their links (a failure to start is only a warning). Else: delete the branch, list failed and blocking jobs, fail the run |
 
 ## Copilot prompt
 
@@ -91,12 +111,15 @@ unsure, nothing. Tools: `shell`, `read`, `write`; URLs `pypi.org` and `files.pyt
 
 ## Commit and PR
 
-- Title: `chore(deps): update dependency versions and fix vulnerabilities`. Body follows the PR template;
+- Title: `$PR_TITLE` (`chore(deps): update dependency versions and fix vulnerabilities`). Body follows the PR template;
   `Relates to #659, #824`.
 - Hidden marker: `<!-- ak-dep-update manifests=<N> run=<RUN_ID> -->`. Author: the app (`<app-slug>[bot]`).
 
 ## How it is tested
 
 Real runs on GitHub, started by a temporary `push` trigger on the feature branch (removed before merge): each push
-ran the whole workflow (update, both rounds, PR). Results and the fixes they led to are in [plan.md](plan.md). `ruff`, `black -l 120` and `actionlint`
-pass.
+ran the whole workflow (update, both rounds, PR). Results and the fixes they led to are in [plan.md](plan.md).
+The patch check was run on the real update of run 42020023574 (270 files, accepted) and on 15 crafted patches (git
+source, new dependency, `[build-system]`, URL requirement, new extra, changed marker, lock source or file host
+changed, `postinstall` added, npm host changed, edits outside dependency files, new file, deleted file, symlink:
+all rejected). `ruff`, `black -l 120` and `actionlint` pass.
