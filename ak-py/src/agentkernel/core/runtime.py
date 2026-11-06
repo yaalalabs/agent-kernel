@@ -28,15 +28,16 @@ from .model import (
     AgentRequestImage,
     AgentRequestText,
     AgentResumeRequestAny,
+    Principal,
+    SessionOwner,
     StreamChunk,
 )
 from .multimodal import MultimodalPreHookFactory
 from .paused_run import PausedRun, PausedRunState
 from .session import SessionStore
 
-# Volatile-cache key under which the run's acting user is published, so hooks and tools can read
-# who the request was made on behalf of without threading user_id through every call.
-ACTING_USER_CACHE_KEY = "ak.acting_user_id"
+# The provider of the agent principal Runtime attaches as the run principal's actor.
+AGENT_PRINCIPAL_PROVIDER = "agentkernel"
 
 
 class StreamBoundaryTracker:
@@ -275,7 +276,7 @@ class Runtime:
 
         Runs here rather than in the adapter because every adapter wraps its body in one `except
         Exception` that returns a text reply, so a failure raised inside would surface as a generic
-        error instead of naming what went wrong. These six checks also need no framework knowledge,
+        error instead of naming what went wrong. These checks also need no framework knowledge,
         so an adapter-side implementation would be written four times.
 
         :param agent: The agent this run will execute, checked against the record rather than
@@ -288,6 +289,9 @@ class Runtime:
             the record's agent is no longer registered, or that agent now runs on a different
             framework than the one that paused it — a name survives a redeploy that rebinds it,
             and the adapter it reaches would answer from a fresh run rather than the stored state.
+        :raises PermissionError: If the record was paused by another principal (same subject in
+            another namespace included). An anonymous resume is not checked here: with an access
+            gate the session's ownership refuses it first, and without one there is no owner.
         """
         decision_ids = [decision.id for decision in resume.decisions]
         record = PausedRunState.get(session, resume.run_id) if resume.run_id else PausedRunState.find_by_interruption(session, decision_ids)
@@ -326,9 +330,35 @@ class Runtime:
                 f"'{agent.name}' now runs on '{agent.runner.name}'. Its state cannot be resumed here."
             )
 
+        principal = session.get_principal()
+        if record.subject is not None and principal is not None and not principal.is_anonymous:
+            if (record.namespace, record.subject) != (principal.namespace, principal.subject):
+                raise PermissionError(f"Paused run '{record.id}' belongs to another principal")
+
         if not agent.runner.supports_pause:
             raise ValueError(f"Runner '{agent.runner.name}' for agent '{agent.name}' does not support resuming a paused run.")
         return record
+
+    def _publish(self, agent: Agent, session: Session, principal: Principal | None) -> Principal:
+        """
+        Resolves the run's principal, publishes it and records the session's owner.
+
+        Runs before the pre-hooks so nothing acts on an unpublished identity. The access gate's
+        checks (agent level, session ownership, the tool filter) slot in here once an
+        authorization block exists; until then the tool filter is absent.
+
+        :param agent: The agent about to run, attached to the principal as its actor.
+        :param session: The session the run uses.
+        :param principal: The principal the surface authenticated, or None for an anonymous run.
+        :return: The published principal.
+        """
+        # The agent subject becomes the descriptor's identity subject once the registry lands.
+        actor = Principal(kind="agent", subject=agent.name, provider=AGENT_PRINCIPAL_PROVIDER)
+        principal = (principal or Principal.anonymous()).with_actor(actor)
+        session._publish_run(principal, None)
+        if not principal.is_anonymous and not principal.is_shared_channel:
+            session._record_owner(SessionOwner(subject=principal.subject, provider=principal.provider, namespace=principal.namespace))
+        return principal
 
     def _warn_resume_dropped(self, agent: Agent, session: Session) -> None:
         """
@@ -374,7 +404,7 @@ class Runtime:
             f"but never delivered. The paused run is untouched and can be answered again."
         )
 
-    async def run(self, agent: Agent, session: Session, requests: list[AgentRequest], acting_user_id: str | None = None) -> AgentReply:
+    async def run(self, agent: Agent, session: Session, requests: list[AgentRequest], principal: Principal | None = None) -> AgentReply:
         """
         Runs the specified agent with the multi-modal requests.
 
@@ -386,14 +416,15 @@ class Runtime:
         :param requests: The multi-modal inputs are provided to the agent.  It will be submitted to the agent as a single request
                         AgentRequestText objects will be concatenated into a single text prompt.
                         AgentRequestAny is handled only by pre-hooks, not by the agent itself
-        :param acting_user_id: When given, published under ACTING_USER_CACHE_KEY in the session's volatile
-                        cache for the duration of this run, so hooks and tools can attribute work to the caller.
+        :param principal: The principal the surface authenticated, or None for an anonymous run. Published through
+                        Session.get_principal() for the duration of the run, with the agent as its actor, and recorded
+                        as the session's owner the first time a direct-channel principal runs here.
         :return: The result of the agent's execution.
+        :raises PermissionError: If a resume answers a run paused by another principal.
         """
         async with session:
             try:
-                if acting_user_id:
-                    session.get_volatile_cache().set(ACTING_USER_CACHE_KEY, acting_user_id)
+                self._publish(agent, session, principal)
                 with agent._activate():
                     arrived_with_resume = self._extract_resume(requests) is not None
                     requests_or_reply = await self._prepare_requests(agent, session, requests)
@@ -426,10 +457,11 @@ class Runtime:
                     self.sessions().store(session)
                     return reply
             finally:
-                session.get_volatile_cache().clear()
+                session._unpublish_run()
+                session.get_volatile_cache()._clear_all()
 
     async def stream(
-        self, agent: Agent, session: Session, requests: list[AgentRequest], acting_user_id: str | None = None
+        self, agent: Agent, session: Session, requests: list[AgentRequest], principal: Principal | None = None
     ) -> AsyncGenerator[StreamChunk, None]:
         """
         Streams the specified agent response as StreamChunks carrying typed stream events.
@@ -447,14 +479,13 @@ class Runtime:
         :param agent: The agent to run.
         :param session: The session to use for the agent.
         :param requests: The multi-modal inputs provided to the agent.
-        :param acting_user_id: When given, published under ACTING_USER_CACHE_KEY in the session's volatile
-                        cache for the duration of this run, so hooks and tools can attribute work to the caller.
+        :param principal: The principal the surface authenticated, or None for an anonymous run (see run()).
         :return: An async generator of StreamChunk objects.
+        :raises PermissionError: If a resume answers a run paused by another principal.
         """
         async with session:
             try:
-                if acting_user_id:
-                    session.get_volatile_cache().set(ACTING_USER_CACHE_KEY, acting_user_id)
+                self._publish(agent, session, principal)
                 with agent._activate():
                     arrived_with_resume = self._extract_resume(requests) is not None
                     requests_or_reply = await self._prepare_requests(agent, session, requests)
@@ -533,7 +564,8 @@ class Runtime:
                         # generator has run to completion.
                         await events.aclose()
             finally:
-                session.get_volatile_cache().clear()
+                session._unpublish_run()
+                session.get_volatile_cache()._clear_all()
 
     def sessions(self) -> SessionStore:
         """

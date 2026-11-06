@@ -87,8 +87,8 @@ iteration 18 and `credentials` lands in iteration 25, both additive).
   and the schedule tools refuse.
 - **Files:** `core/util/key_value_cache.py`, `core/base.py`, `core/paused_run.py`,
   `core/runtime.py`, `core/tool.py`, `core/service.py`, `core/chat_service.py`,
-  `core/__init__.py`, `integration/agui/handler.py`, `pipeline/agent_runner.py`,
-  `schedule/tools.py`.
+  `core/__init__.py`, `core/model.py` (`Principal.is_shared_channel`, the prefix rule's one
+  home), `integration/agui/handler.py`, `pipeline/agent_runner.py`, `schedule/tools.py`.
 - **Steps:**
   1. `KeyValueCache`: `RESERVED_PREFIX = "ak."`, `_set_reserved`, `_delete_reserved`,
      `_clear_all`; `clear()` keeps reserved entries (spec 3).
@@ -98,9 +98,10 @@ iteration 18 and `credentials` lands in iteration 25, both additive).
   3. `PausedRun` gains `subject`, `provider`, `namespace`; `PausedRunState` writes through the
      reserved path and records them from `get_principal()` (spec 2, 3).
   4. `Runtime.run`/`stream`: `acting_user_id` becomes `principal=`; publish before the pre-hooks,
-     record the owner (prefix rule), the actor chain, the eighth resume check
-     (`PermissionError`); `ACTING_USER_CACHE_KEY` deleted with its export. The gate steps are
-     left as no-ops until iteration 18 (spec 3).
+     record the owner (prefix rule), the actor chain (the agent subject is `agent.name` until the
+     descriptor lands in 13), the eighth resume check (`PermissionError`);
+     `ACTING_USER_CACHE_KEY` deleted with its export. The gate steps are left as no-ops until
+     iteration 18 (spec 3).
   5. `ToolContext.principal` and `access_level` (reads `get_tool_filter`, so `None` for now)
      (spec 3).
   6. `AgentService.run_multi`/`stream_multi`, `AgentHandler.run_*` and `ChatService.execute*`
@@ -111,8 +112,11 @@ iteration 18 and `credentials` lands in iteration 25, both additive).
 - **Verify:** `grep -rn "acting_user_id\|ACTING_USER_CACHE_KEY" ak-py/src/agentkernel` returns
   nothing; new `tests/test_session_identity.py` and `tests/test_runtime_principal.py`
   (publication, owner, resume check; the gate cases come in 18); changed `test_runtime`,
-  `test_chat_service_core`, `test_chat_service_streaming`, `test_schedule_tools`,
-  `test_agui_handler`, `test_agui_resume`.
+  `test_runtime_resume` and `test_paused_run_state` (tests that seed `ak.paused_runs` write it
+  through `_set_reserved`; the "clearing discards decisions" pin flips), `test_chat_service_core`,
+  `test_chat_service_streaming`, `test_schedule_tools`, `test_agui_queue_handler`,
+  `test_agui_handler` (the authoriser-to-acting-user test is removed; iteration 7 adds the
+  principal one), `test_agui_resume`, `test_hitl_*`, `test_tool`, `test_session`.
 
 ### Iteration 3: `user_id` leaves the request models
 

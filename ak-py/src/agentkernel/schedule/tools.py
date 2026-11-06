@@ -17,7 +17,6 @@ from typing import Any
 from ..core.base import Session
 from ..core.config import AKConfig
 from ..core.model import ScheduleSpec, SystemTool
-from ..core.runtime import ACTING_USER_CACHE_KEY
 from .manager import ScheduleManager
 from .model import ScheduledTask
 
@@ -25,7 +24,7 @@ _log = logging.getLogger("ak.schedule.tools")
 
 _DISABLED = json.dumps({"error": "scheduling capability is disabled"})
 
-_NO_IDENTITY = json.dumps({"error": "scheduling requires a user identity: include user_id on the chat request"})
+_NO_IDENTITY = json.dumps({"error": "scheduling requires an authenticated principal"})
 
 # Placeholder the cron flavor's description is substituted into, in both the tool docstrings and
 # the prompt guidance. Substituted textually rather than with str.format because those templates
@@ -71,14 +70,15 @@ class ScheduleToolUtil:
 
     @staticmethod
     def acting_user() -> str | None:
-        """The user the current run acts for, published in the session's volatile cache by ``Runtime``.
+        """The subject of the principal the current run acts as, published by ``Runtime``.
 
-        :return: The acting user id, or None when the run carries no user identity.
+        :return: The subject, or None when the run is anonymous or there is no run.
         """
         session = Session.current()
-        if session is None:
+        principal = session.get_principal() if session is not None else None
+        if principal is None or principal.is_anonymous:
             return None
-        return session.get_volatile_cache().get(ACTING_USER_CACHE_KEY)
+        return principal.subject
 
     @staticmethod
     def current_session_id() -> str | None:

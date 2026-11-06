@@ -87,7 +87,7 @@ class _FakeHandler:
         self._chunks = chunks
         self._during_run = during_run
 
-    def run_stream_sync(self, requests, acting_user_id=None):
+    def run_stream_sync(self, requests, principal=None):
         if self._during_run is not None:
             self._during_run(self.service.session)
         yield from self._chunks

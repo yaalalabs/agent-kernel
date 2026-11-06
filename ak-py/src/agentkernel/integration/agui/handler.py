@@ -278,7 +278,9 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
         agent_name = agent.name
         error: str | None = None
         try:
-            async for chunk in handler.run_stream_async(requests, acting_user_id=user_id):
+            # The principal reaches this surface with the identity provider; until then the run is
+            # anonymous and the resolved user is not forwarded.
+            async for chunk in handler.run_stream_async(requests):
                 if chunk.error:
                     error = chunk.error
                     continue

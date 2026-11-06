@@ -122,7 +122,7 @@ class AgentRunner:
 
         chunk_count = 0
         terminal: dict | None = None
-        for chunk in handler.run_stream_sync(body.requests or [], acting_user_id=body.user_id):
+        for chunk in handler.run_stream_sync(body.requests or [], principal=body.principal):
             payload = json.loads(chunk.model_dump_json())
             if payload.get("done"):
                 terminal = payload  # withheld until after the snapshot; see the ordering note above

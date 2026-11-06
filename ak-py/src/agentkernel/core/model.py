@@ -2,7 +2,7 @@ import json
 import uuid
 from collections.abc import Callable
 from enum import Enum, StrEnum
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
@@ -405,7 +405,7 @@ class Principal(BaseModel):
     groups, roles: list[str] : facts from the provider, and the roles a configured role mapper
         derived from them; Agent Kernel stores neither
     claims: dict[str, Any] : provider-specific facts kept for authorizers and tools
-    actor: Principal | None : the principal on whose behalf this one acts (an agent acting for a
+    actor: Principal | None : the party acting on the subject's behalf (the agent running for the
         user)
     credential_ref: str | None : the handle under which the inbound credential is retained; never
         the credential itself
@@ -416,11 +416,15 @@ class Principal(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
+    # Provider prefixes of the edge adapters whose sessions are the platform's own conversations,
+    # shared by everyone in them: such a principal never becomes a session's owner.
+    SHARED_CHANNEL_PREFIXES: ClassVar[tuple[str, ...]] = ("messaging:", "realtime:")
+
     # The stable identifier the provider resolved: an OIDC ``sub``, a static-provider subject, a
     # messaging platform's sender id. It is unique only within ``namespace``, never on its own.
     subject: str
-    # What the subject is. Agents and services act as principals too, carrying the user they serve
-    # as ``actor``.
+    # What the subject is. A run's principal is the user; the agent running on their behalf is its
+    # ``actor``. An agent or service is a subject of its own only when it calls in directly.
     kind: Literal["user", "agent", "service"] = "user"
     # Who vouched for the subject: the configured provider's short name (``oidc``, ``cognito``,
     # ``entra``, ``firebase``, ``static``), ``messaging:<platform>`` or ``realtime:<gateway>`` for
@@ -449,7 +453,8 @@ class Principal(BaseModel):
     # Provider-specific facts kept verbatim for authorizers and tools (selected token claims, a
     # Gmail ``Authentication-Results`` header).
     claims: dict[str, Any] = Field(default_factory=dict)
-    # The principal on whose behalf this one acts: an agent principal carries the user it serves.
+    # The party acting on the subject's behalf (RFC 8693's ``act`` claim): during a run, the agent
+    # principal (``kind="agent"``, provider ``agentkernel``), set by Runtime, never by a surface.
     actor: "Principal | None" = None
     # The handle the inbound credential is retained under in the credential store. The token
     # itself never rides on the principal, a queue body or a log line.
@@ -463,6 +468,11 @@ class Principal(BaseModel):
     @property
     def is_anonymous(self) -> bool:
         return self.provider == ANONYMOUS_PROVIDER
+
+    @property
+    def is_shared_channel(self) -> bool:
+        """Whether the principal arrived through a messaging or realtime edge, whose sessions record no owner."""
+        return self.provider.startswith(self.SHARED_CHANNEL_PREFIXES)
 
     def with_actor(self, actor: "Principal") -> "Principal":
         """A copy of this principal acting on behalf of ``actor``."""

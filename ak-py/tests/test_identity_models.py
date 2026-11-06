@@ -60,6 +60,12 @@ class TestPrincipal:
     def test_an_authenticated_principal_is_not_anonymous(self):
         assert not _principal().is_anonymous
 
+    @pytest.mark.parametrize(
+        "provider, shared", [("messaging:slack", True), ("realtime:livekit", True), ("oidc", False), ("static", False), ("anonymous", False)]
+    )
+    def test_shared_channel_is_decided_by_the_provider_prefix(self, provider, shared):
+        assert _principal(provider=provider).is_shared_channel is shared
+
     def test_defaults(self):
         principal = _principal()
         assert principal.kind == "user"
@@ -76,11 +82,11 @@ class TestPrincipal:
 
     def test_with_actor_returns_a_copy_and_leaves_the_original_untouched(self):
         user = _principal()
-        agent = Principal(subject="planner", kind="agent", provider="registry")
-        acting = agent.with_actor(user)
-        assert acting.actor == user
-        assert acting.subject == "planner"
-        assert agent.actor is None
+        agent = Principal(subject="planner", kind="agent", provider="agentkernel")
+        acting = user.with_actor(agent)
+        assert acting.actor == agent
+        assert acting.subject == "alice"
+        assert user.actor is None
 
     def test_with_credential_ref_sets_and_clears_on_copies(self):
         principal = _principal()
@@ -90,10 +96,10 @@ class TestPrincipal:
         assert retained.with_credential_ref(None).credential_ref is None
 
     def test_round_trips_through_json_with_its_actor(self):
-        acting = Principal(subject="planner", kind="agent", provider="registry").with_actor(_principal(groups=["ops"]))
+        acting = _principal(groups=["ops"]).with_actor(Principal(subject="planner", kind="agent", provider="agentkernel"))
         restored = Principal.model_validate(json.loads(acting.model_dump_json()))
         assert restored == acting
-        assert restored.actor is not None and restored.actor.groups == ["ops"]
+        assert restored.groups == ["ops"] and restored.actor is not None and restored.actor.kind == "agent"
 
     def test_kind_is_one_of_user_agent_service(self):
         with pytest.raises(ValidationError):

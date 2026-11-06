@@ -237,19 +237,6 @@ class TestAuthorization:
             response = client.post("/agui/assistant", headers={"Authorization": "Bearer nope"}, json=body())
             assert response.status_code == 401
 
-    def test_identity_reaches_the_run_as_the_acting_user(self, monkeypatch):
-        """The authoriser's subject is what hooks and tools attribute the work to."""
-        seen = []
-
-        def capture():
-            from agentkernel.core.runtime import ACTING_USER_CACHE_KEY
-
-            seen.append(ToolContext.get().session.get_volatile_cache().get(ACTING_USER_CACHE_KEY))
-
-        with serving(monkeypatch, [ScriptedAgent("assistant", [capture])]) as (client, _):
-            client.post("/agui/assistant", headers=AUTH, json=body())
-        assert seen == ["u1"]
-
 
 class TestConstructorGuards:
 
