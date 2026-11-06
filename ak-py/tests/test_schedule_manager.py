@@ -10,7 +10,7 @@ import pytest
 
 from agentkernel.core.base import Agent, Runner
 from agentkernel.core.config import AKConfig, _ScheduleConfig
-from agentkernel.core.model import AgentReplyText, BaseRunRequest, ScheduleSpec
+from agentkernel.core.model import AgentReplyText, BaseRunRequest, Principal, ScheduleSpec
 from agentkernel.core.runtime import Runtime
 from agentkernel.core.util.factory import AKConfigError
 from agentkernel.pipeline.transport.base import QueueTransportFactory
@@ -129,8 +129,12 @@ def _configure_schedule(monkeypatch, **schedule_fields) -> None:
     monkeypatch.setattr(AKConfig, "get", classmethod(lambda cls: base.model_copy(update={"schedule": schedule})))
 
 
+def _principal(subject: str = "u1") -> Principal:
+    return Principal(subject=subject, provider="static", namespace="static")
+
+
 def _create(manager: ScheduleManager, **overrides):
-    fields = {"user_id": "u1", "prompt": "send the weekly report", "spec": ScheduleSpec(cron="0 9 * * 1"), "session_id": "s1"}
+    fields = {"principal": _principal(), "prompt": "send the weekly report", "spec": ScheduleSpec(cron="0 9 * * 1"), "session_id": "s1"}
     fields.update(overrides)
     return manager.create(**fields)
 
@@ -241,7 +245,7 @@ class TestCreation:
             prompt="send the weekly report",
             agent="planner",
             session_id="s1",
-            user_id="u1",
+            principal=_principal(),
             schedule=ScheduleSpec(at=FUTURE_AT, timezone="Asia/Colombo"),
         )
 
@@ -267,7 +271,7 @@ class TestCreation:
         assert provider.created[0][0] == task.task_id
 
     def test_create_from_a_request_without_a_schedule_block_is_rejected(self, manager):
-        req = BaseRunRequest(prompt="hi", session_id="s1", user_id="u1")
+        req = BaseRunRequest(prompt="hi", session_id="s1", principal=_principal())
 
         with pytest.raises(ValueError, match="carries no 'schedule' block"):
             manager.create_from_request(req)
@@ -275,7 +279,6 @@ class TestCreation:
     @pytest.mark.parametrize(
         "overrides, message",
         [
-            ({"user_id": None}, "requires a user identity"),
             ({"prompt": ""}, "requires a prompt"),
             ({"session_id": None}, "requires a session_id"),
             ({"spec": ScheduleSpec(cron="0 9 * *  ")}, "5-field expression"),
@@ -291,6 +294,27 @@ class TestCreation:
 
         # Nothing was registered: validation runs before any write.
         assert provider.created == []
+
+    @pytest.mark.parametrize("principal", [None, Principal.anonymous()])
+    def test_creation_by_an_anonymous_principal_is_refused(self, manager, provider, principal):
+        with pytest.raises(PermissionError, match="requires an authenticated principal"):
+            _create(manager, principal=principal)
+
+        assert provider.created == []
+
+    def test_the_task_records_its_owner_from_the_principal(self, manager, store):
+        task = _create(manager, principal=_principal("u9"))
+
+        assert task.user_id == "u9"
+        assert task.principal["subject"] == "u9"
+        # Stored as JSON primitives, so the record survives a store round trip and a later release.
+        assert store.get(task.task_id).principal == task.principal
+
+    def test_create_from_a_request_without_a_principal_is_refused(self, manager, registered_agent):
+        req = BaseRunRequest(prompt="send the weekly report", agent="planner", session_id="s1", schedule=ScheduleSpec(at=FUTURE_AT))
+
+        with pytest.raises(PermissionError, match="requires an authenticated principal"):
+            manager.create_from_request(req)
 
     def test_provider_failure_rolls_the_record_back(self, store):
         manager = ScheduleManager(provider=FakeScheduleProvider(fail_on="create"), store=store)
@@ -322,7 +346,15 @@ class TestTriggerBody:
 
         body = json.loads(provider.created[0][1])
         assert "schedule" not in body
-        assert sorted(body) == ["agent", "prompt", "request_id", "scheduled_task_id", "scheduled_time", "session_id", "user_id"]
+        assert sorted(body) == ["agent", "principal", "prompt", "request_id", "scheduled_task_id", "scheduled_time", "session_id"]
+
+    def test_body_carries_the_owners_principal_not_a_user_id(self, manager, provider):
+        # The occurrence runs as the owner: the frozen principal is what the runner publishes.
+        _create(manager)
+
+        body = json.loads(provider.created[0][1])
+        assert body["principal"]["subject"] == "u1"
+        assert "user_id" not in body
 
 
 class TestReads:
@@ -330,20 +362,20 @@ class TestReads:
         assert manager.get_task("missing") is None
 
     def test_get_task_enforces_ownership(self, manager):
-        task = _create(manager, user_id="u1")
+        task = _create(manager, principal=_principal("u1"))
 
         assert manager.get_task(task.task_id, user_id="u1").task_id == task.task_id
         with pytest.raises(PermissionError, match="not owned by user u2"):
             manager.get_task(task.task_id, user_id="u2")
 
     def test_get_task_without_a_resolved_user_skips_the_ownership_check(self, manager):
-        task = _create(manager, user_id="u1")
+        task = _create(manager, principal=_principal("u1"))
 
         assert manager.get_task(task.task_id) is not None
 
     def test_list_tasks_is_scoped_by_owner(self, manager):
-        mine = _create(manager, user_id="u1")
-        _create(manager, user_id="u2")
+        mine = _create(manager, principal=_principal("u1"))
+        _create(manager, principal=_principal("u2"))
 
         page = manager.list_tasks(user_id="u1")
 
@@ -441,7 +473,7 @@ class TestAmendment:
             manager.update("missing", {"prompt": "whatever"})
 
     def test_amendment_enforces_ownership(self, manager):
-        task = _create(manager, user_id="u1")
+        task = _create(manager, principal=_principal("u1"))
 
         with pytest.raises(PermissionError):
             manager.update(task.task_id, {"prompt": "theirs now"}, user_id="u2")
@@ -475,7 +507,7 @@ class TestCancellation:
         assert store.get(task.task_id).status is ScheduleStatus.CANCELLED
 
     def test_cancel_enforces_ownership(self, manager):
-        task = _create(manager, user_id="u1")
+        task = _create(manager, principal=_principal("u1"))
 
         with pytest.raises(PermissionError):
             manager.cancel(task.task_id, user_id="u2")
@@ -506,7 +538,7 @@ class TestTriggerRecording:
     def test_recording_advances_the_occurrence_fields(self, manager, store):
         task = _create(manager)
 
-        manager.record_trigger(task.task_id, "u1", request_id="r1", occurred_at="2030-06-01T09:00:00Z")
+        manager.record_trigger(task.task_id, _principal(), request_id="r1", occurred_at="2030-06-01T09:00:00Z")
 
         recorded = store.get(task.task_id)
         assert recorded.trigger_count == 1
@@ -517,41 +549,42 @@ class TestTriggerRecording:
     def test_recording_stamps_the_current_time_when_the_provider_reports_none(self, manager, store):
         task = _create(manager)
 
-        manager.record_trigger(task.task_id, "u1")
+        manager.record_trigger(task.task_id, _principal())
 
         assert store.get(task.task_id).last_triggered_at is not None
 
     def test_recording_completes_a_one_time_task(self, manager, store):
         task = _create(manager, spec=ScheduleSpec(at=FUTURE_AT))
 
-        manager.record_trigger(task.task_id, "u1", request_id="r1")
+        manager.record_trigger(task.task_id, _principal(), request_id="r1")
 
         assert store.get(task.task_id).status is ScheduleStatus.COMPLETED
 
     def test_recording_against_a_task_another_user_owns_is_ignored(self, manager, store):
         """A forged trigger must not complete someone else's one-time task out from under them."""
-        task = _create(manager, user_id="u1", spec=ScheduleSpec(at=FUTURE_AT))
+        task = _create(manager, spec=ScheduleSpec(at=FUTURE_AT))
 
-        manager.record_trigger(task.task_id, "u2", request_id="r1")
+        manager.record_trigger(task.task_id, _principal("u2"), request_id="r1")
 
         recorded = store.get(task.task_id)
         assert recorded.trigger_count == 0
         assert recorded.status is ScheduleStatus.ACTIVE
 
-    def test_recording_without_an_identity_is_ignored(self, manager, store):
-        """An absent user_id is a mismatch, not an unauthenticated caller to wave through."""
-        task = _create(manager, user_id="u1")
+    @pytest.mark.parametrize("principal", [None, Principal.anonymous()])
+    def test_recording_without_an_identity_is_ignored(self, manager, store, principal):
+        """An absent or anonymous principal is a mismatch, not an unauthenticated caller to wave through."""
+        task = _create(manager)
 
-        manager.record_trigger(task.task_id, None, request_id="r1")
+        manager.record_trigger(task.task_id, principal, request_id="r1")
 
         assert store.get(task.task_id).trigger_count == 0
 
     def test_recording_an_unknown_task_is_ignored(self, manager):
-        manager.record_trigger("missing", "u1", request_id="r1")
+        manager.record_trigger("missing", _principal(), request_id="r1")
 
     def test_recording_never_raises_into_the_run(self, provider, store, monkeypatch):
         manager = ScheduleManager(provider=provider, store=store)
         task = _create(manager)
         monkeypatch.setattr(store, "record_trigger", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("store down")))
 
-        manager.record_trigger(task.task_id, "u1", request_id="r1")
+        manager.record_trigger(task.task_id, _principal(), request_id="r1")

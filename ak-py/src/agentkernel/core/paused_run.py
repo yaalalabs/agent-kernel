@@ -21,9 +21,13 @@ The runner is derived rather than required, because forgetting it fails silently
 runner is one `clear_for_runner` leaves alone forever. `add` reads it from `Agent.current()`, which
 `Runtime` sets for the whole run, so an adapter gets the scoping whether or not it asks for it.
 
-Accepted risk, documented rather than hidden: the non-volatile cache is application space, so an
-application calling `get_non_volatile_cache().clear()` discards pending decisions. The `ak.` key
-prefix marks the key as framework-owned, and the user-facing docs say so.
+The `ak.` key prefix is reserved (`KeyValueCache.RESERVED_PREFIX`): application code can read the
+key but `set`, `delete` and `clear` leave it alone, so an application clearing the non-volatile
+cache keeps its pending decisions. Only `Session.clear()`, which resets the whole session, drops it.
+
+Each record also carries who paused it (`subject`, `provider`, `namespace`, from the principal the
+run was published with), so `Runtime` can refuse a resume by someone else. A record with no subject,
+written by an anonymous run or before the fields existed, is resumable by anyone.
 """
 
 import builtins
@@ -63,6 +67,9 @@ class PausedRun(BaseModel):
         validated without deserialising the payload
     payload: Any : per-framework resume state, opaque to core and never sent to a client. Must be
         picklable
+    subject, provider, namespace: str | None : the principal that paused the run, copied from the
+        published principal when it was not anonymous; None otherwise, which leaves the record
+        resumable by anyone
     """
 
     id: str
@@ -71,6 +78,9 @@ class PausedRun(BaseModel):
     created_at: str
     interruptions: list[PausedInterruption]
     payload: Any = None
+    subject: str | None = None
+    provider: str | None = None
+    namespace: str | None = None
 
 
 class PausedRunState:
@@ -127,7 +137,7 @@ class PausedRunState:
         :param session: The session to write to.
         :param records: The records to store.
         """
-        session.get_non_volatile_cache().set(AK_PAUSED_RUNS_KEY, [record.model_dump() for record in records])
+        session.get_non_volatile_cache()._set_reserved(AK_PAUSED_RUNS_KEY, [record.model_dump() for record in records])
 
     @staticmethod
     def get(session: Session, run_id: str) -> PausedRun | None:
@@ -213,6 +223,12 @@ class PausedRunState:
                 f"Ids must be unique across a session's paused runs so a decision resolves to one run."
             )
 
+        principal = session.get_principal()
+        paused_by = (
+            {}
+            if principal is None or principal.is_anonymous
+            else {"subject": principal.subject, "provider": principal.provider, "namespace": principal.namespace}
+        )
         record = PausedRun(
             id=uuid.uuid4().hex,
             agent=agent,
@@ -220,6 +236,7 @@ class PausedRunState:
             created_at=datetime.now(timezone.utc).isoformat(),
             interruptions=interruptions,
             payload=payload,
+            **paused_by,
         )
         PausedRunState._write(session, existing + [record])
         PausedRunState._warn_once_on_process_local_store(session)

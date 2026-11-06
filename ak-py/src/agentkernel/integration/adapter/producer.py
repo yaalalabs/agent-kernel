@@ -61,9 +61,9 @@ class IntegrationProducer:
     def enqueue(self, adapter_name: str, request: InboundRequest) -> dict[str, Any]:
         """Enqueue one parsed platform message.
 
-        ``user_id`` is deliberately not stamped as a message attribute: that attribute is the
-        WebSocket-entered marker the runner and Response Handler branch on, and integration
-        traffic is neither. The user id travels in the body instead.
+        The sender is deliberately not stamped as the ``user_id`` message attribute: that attribute
+        is the WebSocket-entered marker the runner and Response Handler branch on, and integration
+        traffic is neither. The sender reaches the body as its principal once the edge builds one.
 
         :param adapter_name: The inbound adapter's ``name``; becomes the routing attribute and
             namespaces the dedup key.
@@ -76,7 +76,6 @@ class IntegrationProducer:
             prompt=request.prompt,
             agent=request.agent,
             session_id=request.session_id,
-            user_id=request.user_id,
             group_id=request.group_id,
             requests=request.requests,
         )

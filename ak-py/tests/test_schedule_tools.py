@@ -12,8 +12,8 @@ import pytest
 
 from agentkernel.core.base import Agent, Runner, Session
 from agentkernel.core.config import _ScheduleConfig
-from agentkernel.core.model import AgentReplyText, ScheduleSpec
-from agentkernel.core.runtime import ACTING_USER_CACHE_KEY, Runtime
+from agentkernel.core.model import AgentReplyText, Principal, ScheduleSpec
+from agentkernel.core.runtime import Runtime
 from agentkernel.core.tool import SystemToolFactory
 from agentkernel.schedule.manager import ScheduleManager
 from agentkernel.schedule.model import ScheduleStatus
@@ -111,9 +111,9 @@ def disabled(monkeypatch):
 
 @pytest.fixture
 def acting_session():
-    """A current session carrying an acting user, the way Runtime publishes it during a run."""
+    """A current session carrying a principal, the way Runtime publishes it during a run."""
     session = Session("s1")
-    session.get_volatile_cache().set(ACTING_USER_CACHE_KEY, "u1")
+    session._publish_run(Principal(subject="u1", provider="static", namespace="static"), None)
     token = Session.current_session.set(session)
     yield session
     Session.current_session.reset(token)
@@ -121,7 +121,7 @@ def acting_session():
 
 @pytest.fixture
 def anonymous_session():
-    """A current session whose run carried no user_id, so no acting user was published."""
+    """A current session whose run carried no principal, so the tools see no identity."""
     token = Session.current_session.set(Session("s1"))
     yield
     Session.current_session.reset(token)
@@ -136,8 +136,12 @@ def registered_agent():
     Runtime.current().deregister(agent)
 
 
+def _principal(subject: str) -> Principal:
+    return Principal(subject=subject, provider="static", namespace="static")
+
+
 def _create(manager: ScheduleManager, **overrides):
-    fields = {"user_id": "u1", "prompt": "send the weekly report", "spec": ScheduleSpec(cron="0 9 * * 1"), "session_id": "s1"}
+    fields = {"principal": _principal("u1"), "prompt": "send the weekly report", "spec": ScheduleSpec(cron="0 9 * * 1"), "session_id": "s1"}
     fields.update(overrides)
     return manager.create(**fields)
 
@@ -302,7 +306,7 @@ class TestActingUser:
         ]
 
         for result in results:
-            assert "requires a user identity" in json.loads(result)["error"]
+            assert "requires an authenticated principal" in json.loads(result)["error"]
 
     @pytest.mark.asyncio
     async def test_a_created_schedule_is_owned_by_the_acting_user(self, manager, acting_session):
@@ -315,7 +319,7 @@ class TestActingUser:
 
     @pytest.mark.asyncio
     async def test_reads_and_mutations_cannot_reach_another_users_schedule(self, manager, acting_session):
-        theirs = _create(manager, user_id="u2")
+        theirs = _create(manager, principal=_principal("u2"))
 
         assert "error" in json.loads(await get_schedule(theirs.task_id))
         assert "error" in json.loads(await update_schedule(theirs.task_id, "mine now", cron="0 9 * * *"))
@@ -324,8 +328,8 @@ class TestActingUser:
 
     @pytest.mark.asyncio
     async def test_listing_is_scoped_to_the_acting_user(self, manager, acting_session):
-        mine = _create(manager, user_id="u1")
-        _create(manager, user_id="u2")
+        mine = _create(manager, principal=_principal("u1"))
+        _create(manager, principal=_principal("u2"))
 
         listed = json.loads(await list_schedules())["schedules"]
 
