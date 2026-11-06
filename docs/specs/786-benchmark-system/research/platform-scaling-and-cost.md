@@ -160,7 +160,7 @@ with history. Live tracking runs from the start of "before" to the end of the co
     cool-down, which has the complete data. If the delay turns out too long,
     a person can put `aws.lambda_log_streams` in the Lambda host's `cooldown_checks` and `after_step` lists in `hosts.py`
     instead (a manual choice, not automatic).
-- **Maximum cool-down time:** configurable, **default 45 min**, counted from `t_load_down`. If it's reached, the step
+- **Maximum cool-down time:** configurable (`step_run.max_cooldown_s`, per-host override in `host_settings`), **default 45 min**, counted from `t_load_down`. If it's reached, the step
   ends, records `cooldown_max_reached = true`, "scale-down done" stays empty and `workers_after_down` shows where it
   stopped. The next step assumes the system is settled (45 min is more than enough to scale in): no steps are skipped
   and the next step isn't marked (decided 2026-11-05, PR #893 review). Why 45 min:
@@ -217,7 +217,7 @@ class, `ScalingInfoFetcher`, so a new way can be added for any host without touc
   - `fetch_and_store(...)`: written once in `InfoFetcher`, the base class of every fetcher (see
     [Pluggable per-platform collectors](#pluggable-per-platform-collectors)); calls `fetch()`, then `store()`.
   - Constructor parameters: `poll_interval_s` (how often the fetcher is polled when it's in `during_step`; default
-    from `ak-bench.yaml`, settable per fetcher, since sources differ: e.g. the ECS API has request rate limits) and
+    from `ak-bench.yaml` (`fetchers.default.poll_interval_s`), settable per fetcher (`fetchers.<name>.poll_interval_s`), since sources differ: e.g. the ECS API has request rate limits) and
     `settle_window_s` (see the cool-down rule above).
   - `is_settled(now, start)`: written once in `ScalingInfoFetcher`: every tier's running count equals its starting
     count.
@@ -230,7 +230,7 @@ class, `ScalingInfoFetcher`, so a new way can be added for any host without touc
     step's "before" part until the cool-down ends. Each poll covers only the new time, so nothing is stored twice.
   - **`after_step`:** monitoring metrics and logs keep history but arrive late, so `fetch_and_store` is
     called once per step with (step start, step end), after the cool-down and a configured wait for log ingestion
-    (default 1 min). The wait is configurable, so it's raised if the logs turn out to arrive later (R3).
+    (default 1 min, `step_run.after_step_wait_s`). The wait is configurable, so it's raised if the logs turn out to arrive later (R3).
 - **Not split by serverless / containerized:** the harness never checks what kind of host it is. A host is only ever
   one kind, the line between them is blurry (Fargate, Cloud Run, Azure Container Apps), and the fetching code depends
   on where the data comes from, not on the deployment type.

@@ -12,19 +12,19 @@ path.
 
 - **Load:** what the benchmark controls: the number of concurrent clients. Each client is its own user, with its own
   user identity and session. Throughput, latency, scaling, resource usage and cost are the outputs.
-- **Load step N:** N clients (N users) start at the same moment. Steps are set in config before a run; default
+- **Load step N:** N clients (N users) start at the same moment. Steps are set in config before a run (`load_steps`); default
   `1, 10, 100, 1000`. N is never requests per second.
 - **Open load:** a client never waits for a response before sending its next request.
 - **Test type:**
   - **burst:** each client sends one request (N requests at once).
   - **steady:** each client sends with a random interval between requests (uniform between a configured min and
-    max, default 1 s and 5 s) for a configured time (default 5 min), without waiting for responses.
+    max, default 1 s and 5 s) for a configured time (default 5 min; `steady_traffic.*`), without waiting for responses.
 - **Step timeline:** `before` (no load) → `load` → `cool-down` (no load, ends by the step-end rule), then the
   after-step wait and fetch of the data with history.
-- **Time window:** the sampling interval (e.g. 1 s). One row per window in the per-time-window CSV.
+- **Time window:** the sampling interval (e.g. 1 s; `step_run.time_window_s`). One row per window in the per-time-window CSV.
 - **Tx / Rx:** requests sent / responses received per second, both counted on the client.
 - **Client timeout:** how long the client waits for a response before recording the request as `timeout` (default
-  5 min). Separate from the steady load time.
+  5 min; `step_run.client_timeout_s`). Separate from the steady load time.
 - **Tier:** one separately deployed and scaled part of a deployment (an ECS service, a Lambda function).
 - **Scale up / scale down:** adding / removing workers (horizontal only). Worker size is fixed per run.
 - **Host:** a named bundle of per-platform implementations (`ecs`, `lambda`). Each host names its
@@ -117,7 +117,7 @@ path.
   |<---------- live tracking: `during_step` list (background, every poll stored) ---------->|
   ```
 
-  1. **before** (config, default 1 min): no requests. Live tracking starts here: the fetchers in the host's
+  1. **before** (`step_run.before_window_s`, default 1 min): no requests. Live tracking starts here: the fetchers in the host's
      `during_step` list (worker counts, queue depth) record idle values. At the end of `before` the runner calls a
      plain `fetch()` on each fetcher in `cooldown_checks` and keeps the result as that fetcher's starting value
      (stores nothing, works on any host); the cool-down waits to get back to it.
@@ -127,7 +127,7 @@ path.
      writes trace lines, read after the step. Live tracking keeps polling; workers scale up.
   3. **cool-down:** no new requests; late replies are still recorded; workers scale down. Every poll runs the step-end
      check (below). When it passes (or the maximum is reached) the step ends and live tracking stops.
-  4. **wait + fetch:** wait for log ingestion (config, default 1 min), then run the host's `after_step` list for
+  4. **wait + fetch:** wait for log ingestion (`step_run.after_step_wait_s`, default 1 min), then run the host's `after_step` list for
      (step start, step end): trace lines → stage durations, the other scaling and CPU / memory fetchers.
 - **What the runner does in one step:**
   1. Takes the host's step lists (see [Hosts](#hosts)): `during_step`, `cooldown_checks`, `after_step`.
@@ -170,7 +170,7 @@ path.
   - A read that fails or returns no value counts as not met for that poll (and writes a run-log entry); the next poll
     checks again. If it never succeeds, the maximum cool-down ends the step. Such a poll also breaks the
     `settle_window_s` run, so it starts again (decided 2026-11-04, PR #893 review).
-  - **Maximum cool-down** (config, default 45 min from the end of `load`, settable per host): the step ends anyway and
+  - **Maximum cool-down** (`step_run.max_cooldown_s`, default 45 min from the end of `load`; a host can override it in `host_settings`): the step ends anyway and
     records `cooldown_max_reached = true`. 45 min is more than enough for every host to scale in, so the next step
     assumes the system is settled: no steps are skipped and the next step isn't marked (decided 2026-11-05, PR #893 review).
   - A fetcher in `cooldown_checks` doesn't have to be in `during_step`: Lambda's metric is in `cooldown_checks` and
@@ -221,7 +221,9 @@ path.
     a `TraceInfo` (`{request_id: {stage: ts}}`). Parsing is shared and lives in AK. It extends
     `InfoFetcher[TraceInfo]` and sits in the host's `after_step` list (logs have history; see [Hosts](#hosts)).
   - Per request, one duration per request-path `TraceStage` value (previous stage → this stage), plus `CLIENT_RECEIVED`
-    (`RESPONSE_DELIVERED` → client received). Empty when either point is missing.
+    (`RESPONSE_DELIVERED` → client received). Empty when either point is missing. `AGENT_DONE` follows
+    `AGENT_FIRST_CHUNK` in delta and `AGENT_START` in complete (`AGENT_FIRST_CHUNK` is delta only), so a stage that
+    doesn't run in a message type is simply empty (PR #893 review).
   - Percentiles are computed over requests, never per worker first.
 
 ### Scaling
@@ -333,7 +335,7 @@ path.
   | `aws.lambda_insights` (Lambda Insights extension) | memory per environment | `lambda`: `after_step`, on by default |
 
 - Lambda Insights: the deployer adds the layer when on (the `layers` variable exists on every function,
-  `ak-aws/serverless/variables.tf:309,328,349`, ...); a per-run config value switches it off.
+  `ak-aws/serverless/variables.tf:309,328,349`, ...); `host_settings.lambda.lambda_insights: false` switches it off (applied at `deploy`).
 - Lambda Logs Insights queries reduce in the query (per log stream × window), not by fetching raw invocations.
 
 ### Cost
@@ -381,10 +383,49 @@ path.
   - Cloud SDKs (`boto3`), data and plotting libraries are dependencies of this project only.
 - Components are classes with one responsibility each.
 - **Its own config file**, `ak-bench.yaml`, not `AKConfig`. Departure from the "reuse existing configuration" house
-  pattern, because these are benchmark settings, not AK runtime config. Holds: hosts, modes, message types, test types,
-  load steps, min / max send interval, steady load time, before window (default 1 min), maximum cool-down, wait before
-  the after-step fetch (default 1 min), client timeout, time window size, the `mock_agent` block (`min_delay`, `max_delay`; read by `deploy`, see
-  [Mock agent](#mock-agent)), poll interval per `during_step` fetcher, Lambda Insights on-off.
+  pattern, because these are benchmark settings, not AK runtime config. Example with every key (decided 2026-11-06;
+  values are the defaults, `# no default` marks a made-up value):
+
+```yaml
+  hosts: [ecs, lambda]             # default: all registered hosts
+  modes: [async]                   # default: all with a client driver (phase 1: async)
+  message_types: [complete]        # default: all with a client driver (phase 1: complete)
+  test_types: [steady, burst]      # default: both
+  load_steps: [1, 10, 100, 1000]   # saved by deploy (state.json)
+
+  step_run:
+    before_window_s: 60
+    max_cooldown_s: 2700           # 45 min
+    after_step_wait_s: 60          # wait before the after-step fetch
+    client_timeout_s: 300
+    time_window_s: 1               # no default
+
+  steady_traffic:
+    min_send_interval_s: 1
+    max_send_interval_s: 5
+    load_time_s: 300
+
+  fetchers:                        # settings per fetcher, by its registered name
+    default:
+      poll_interval_s: 5           # no default; for a during_step fetcher not listed here
+    aws.ecs_api:
+      poll_interval_s: 5           # no default
+    sqs:
+      poll_interval_s: 5           # no default
+
+  host_settings:                   # per-host settings
+    lambda:
+      lambda_insights: true        # applied by deploy
+      max_cooldown_s: 2700         # optional, overrides step_run.max_cooldown_s
+
+  mock_agent:                      # left out = the real agent; read by deploy
+    min_delay: 1                   # no default (seconds)
+    max_delay: 5                   # no default (seconds)
+  ```
+
+  - The other fetcher settings (`settle_window_s`, `metric_delay_s`) stay in the host code: they follow how that
+    host's source behaves. See [Mock agent](#mock-agent) for the `mock_agent` rules.
+  - `hosts`, `modes`, `message_types`, `test_types` and `load_steps` are also CLI arguments; see L3.
 - Registries follow AK's factory shape: built-in short names, dotted-path bring-your-own, unknown name → error naming
   the built-ins.
 
@@ -412,7 +453,7 @@ graph LR
 
   | Command | What it does |
   |---|---|
-  | `deploy --host <h> --mode <m> --message-type <t> [--run-id <id>]` | Deploys one host × mode × message type, tags every resource, writes `run-metadata.json` and the deployment's `state.json` (the saved `Deployment`, step windows, teardown time). Prints the **deployment id**: the tag value `<run-id>-<host>-<mode>-<message-type>`. Starts a new run id unless `--run-id` is given (to put several deployments in one run folder); refuses a host × mode × message type that already has a deployment in that run, since the tag value and folder would clash. |
+  | `deploy --host <h> --mode <m> --message-type <t> [--run-id <id>]` | Deploys one host × mode × message type, tags every resource, writes `run-metadata.json` and the deployment's `state.json` (the saved `Deployment`, the load steps from `ak-bench.yaml`, step windows, teardown time). Prints the **deployment id**: the tag value `<run-id>-<host>-<mode>-<message-type>`. Starts a new run id unless `--run-id` is given (to put several deployments in one run folder); refuses a host × mode × message type that already has a deployment in that run, since the tag value and folder would clash. |
   | `step --deployment <id> --test-type steady\|burst --step <N> [--warm-up] [--replace]` | Runs **one** step run (the four parts of the [step timeline](#step-timeline)) with the host's `during_step`, `cooldown_checks` and `after_step` lists. `--step` is one number, not a list, and must be one of the load steps in `ak-bench.yaml`. Writes `step-<N>/` and its row of the test type's `summary.csv`. |
   | `plot --deployment <id>` or `--run-id <id>` | Draws every graph from the CSVs of the steps run so far, written into the same `graphs/` folders. Any time, as often as needed. |
   | `finish --deployment <id>` | Runs the `after_all_steps` list (and re-plots if it stored anything, so its data is in the graphs), tears down, records the teardown time. Says whether `post-run` is needed (an `after_teardown` list that isn't empty). |
@@ -420,8 +461,9 @@ graph LR
   | `run [--host] [--mode] [--message-type] [--steps]` | For each selected host × mode × message type: `deploy` → `step` for every configured step in the default order → `plot` → `finish`. |
 
 - `run`'s `--host <name>`, `--mode <name>` and `--message-type <name>` are each repeatable (default: all). Covers all ×
-  all, one host, one mode on one host, one mode on all hosts, one message type of a mode. `--steps` overrides the load
-  steps; test types from config (default both).
+  all, one host, one mode on one host, one mode on all hosts, one message type of a mode. `--steps` picks a subset of the
+  load steps in `ak-bench.yaml`; every value is checked before anything is deployed and a value not in that list is
+  refused (PR #893 review). Test types from config (default both).
 - `--mode` and `--message-type` take AK's config values (e.g. `--mode async --message-type complete`), the same names
   used in the results folders. `--test-type` takes `steady` or `burst`.
 - **`step` rules:**
@@ -429,7 +471,8 @@ graph LR
     mix. The lock records the process id and machine; a lock whose process is no longer running (a step that was
     killed) counts as stale and is taken over, with a run-log entry.
   - Refuses a step whose folder already exists, unless `--replace` is given.
-  - `--step` must be one of the load steps in `ak-bench.yaml` (the list the step folders are padded to).
+  - `--step` must be one of the deployment's load steps, the list `deploy` stored in `state.json` (the list the step
+    folders are padded to). Changing the load steps in `ak-bench.yaml` takes a new `deploy` (PR #893 review).
   - Order is the person's choice; the default order (steady N, then burst N, then the next N) is what `run` uses and
     what the testing checklist recommends.
   - `--warm-up`: runs the step as normal but writes it to `warm-up/`, left out of `summary.csv` and the graphs.
@@ -543,7 +586,8 @@ flowchart TD
   per deployment, see [the CLI](#selecting-what-to-run-cli)), so it starts from the minimum workers.
 - Steady: each gap between two sends of a client is random, uniform between a min and max send interval (defaults
   1 s and 5 s, 3 s on average). Each client draws its own gaps. The next send is the previous **scheduled** send time
-  plus the gap, so the load stays open. Min / max interval and load time (default 5 min) are config values and
+  plus the gap, so the load stays open. Min / max interval and load time (default 5 min) are config values (`steady_traffic.min_send_interval_s`,
+  `max_send_interval_s`, `load_time_s`) and
   recorded with the results; min = max gives a fixed interval.
 
 ### Hosts
@@ -630,7 +674,8 @@ flowchart TD
   - Saved in the deployment's `state.json`, so `step`, `finish` and `post-run` rebuild it without deploying.
 - **`InfoFetcher[T]`: one generic base for everything read from the platform.** `ScalingInfoFetcher`,
   `ResourceUsageFetcher`, `TraceCollector`, `TransportCollector` and `CostFetcher` all extend it:
-  - constructor parameters `poll_interval_s` (used in `during_step`; default from `ak-bench.yaml`) and
+  - constructor parameters `poll_interval_s` (used in `during_step`; from `fetchers.<name>.poll_interval_s`, else
+    `fetchers.default.poll_interval_s` in `ak-bench.yaml`) and
     `settle_window_s` (used in `cooldown_checks`; default 0);
   - `fetch(run, deployment, start, end) -> T`: abstract, the only method a platform subclass writes. `run` and
     `deployment` are parameters, not instance variables: the fetchers are created in the host registry before anything
@@ -763,8 +808,9 @@ flowchart TD
 - Folder layout `results/<run-id>/<platform>/<host>/<mode>/<message type>/<test type>/step-<N>/`.
   - `<mode>` is the execution-mode config value (e.g. `async`), `<message type>` the message-type config value
     (e.g. `complete`). WebSocket complete and delta share `async`, so they need their own level.
-  - `step-<N>` zero-padded to the digits of the largest load step in `ak-bench.yaml` (a single `step` command doesn't
-    know which steps will follow).
+  - `step-<N>` zero-padded to the digits of the largest of the deployment's load steps (stored in `state.json` at
+    `deploy`), so a step's folder name stays the same for the whole deployment even if `ak-bench.yaml` changes (a
+    single `step` command doesn't know which steps will follow; PR #893 review).
   - Only what ran gets a folder.
   - Warm-up steps (`--warm-up`) go to `<message type>/warm-up/`, outside the test type folders.
 - Per run: `run.log` (incl. the missing-responses warnings); every command appends to it.
@@ -782,9 +828,9 @@ flowchart TD
   - `resource-usage.csv`: raw per-worker samples in long form (`ts, tier, worker, metric, stat, value, fetcher`).
   - `step-metadata.json`: the benchmark settings this step ran with.
   - `graphs/`.
-- **How samples fill the time windows** (decided 2026-11-05, PR #893 review): windows start at the step start. Each window takes the
-  fetcher's last sample at or before the window's end, so a fetcher polled every 60 s with 1 s windows fills 60 rows
-  with the same value until its next sample. A sample is carried forward for at most its fetcher's poll interval (or
+- **How samples fill the time windows** (decided 2026-11-05, PR #893 review): windows start at the step start. Each window takes, for
+  each series (tier, worker, metric, stat, fetcher), that series' last sample at or before the window's end, so a
+  series from a fetcher polled every 60 s with 1 s windows fills 60 rows with the same value until its next sample. A sample is carried forward for at most its fetcher's poll interval (or
   the source's sample period, e.g. a Lambda Logs Insights bin); after that the window stays empty (e.g. a Lambda
   window with no invocations). Derived scaling times (summary) use the raw sample times, not the windows.
 - Summary per step: percentiles of end-to-end latency and each stage duration (with the row count used), min / avg /
@@ -861,6 +907,10 @@ Q1-Q8 were resolved on 2026-10-30 and Q9 on 2026-11-01. None are open.
 Parked on purpose; decided when that part is built.
 
 - **L2.** WebSocket delta: trace every chunk or only the first (`AGENT_FIRST_CHUNK`) and last (`AGENT_DONE`).
+- **L3.** Config vs CLI: `hosts`, `modes`, `message_types`, `test_types` and `load_steps` are in `ak-bench.yaml` and
+  also come in through the commands (`--host`, `--mode`, `--message-type`, `--test-type`, `--steps` / `--step`). The
+  design keeps them in the config; during implementation, if one of them can be dropped from the config or from the
+  commands, decide then and do it (2026-11-06).
 
 ## Check on the first runs
 
