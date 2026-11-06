@@ -145,7 +145,8 @@ jobs:
           dep secure
           dep update
           for _ in 1 2; do
-            [ "$(dep failures)" -eq 0 ] && break
+            count=$(dep failures) # an assignment, so set -e stops here when `failures` fails
+            [ "$count" -eq 0 ] && break
             dep fix
           done
           dep finalize
@@ -436,6 +437,8 @@ jobs:
           ACTIONS_TOKEN: ${{ secrets.GITHUB_TOKEN }} # read-only here
         run: |
           set -euo pipefail
+          # Only this job writes them: copies in the `holds` artifact came from jobs that ran package code.
+          rm -f "$STATE_DIR/judge.json" "$STATE_DIR/judge.jsonl"
           count=$(uv run --no-project --with "packaging==$PACKAGING" python "$SCRIPT" --root repo --state "$STATE_DIR" \
             evidence --run-id "$RUN_ID" --jobs e2e-1 --retry-jobs e2e-2)
           echo "Unexplained failures: $count"
@@ -500,6 +503,8 @@ jobs:
         with:
           name: holds
           path: /tmp/dep-state
+      # Labels count only from a successful judge-2, never from copies in the artifacts above.
+      - run: rm -f "$STATE_DIR/judge.json" "$STATE_DIR/judge.jsonl"
       - if: needs.judge-2.result == 'success'
         continue-on-error: true # no labels: the failures stay unexplained, so the PR is a draft
         uses: actions/download-artifact@v4
@@ -542,8 +547,17 @@ jobs:
             esac
           fi
           if [ "$green" = true ]; then
-            url=$(gh pr create --repo "$REPO" --base "$BASE_BRANCH" --head "$BRANCH" "${draft[@]}" \
-              --title "$PR_TITLE" --body-file "$STATE_DIR/pr-body.md")
+            if ! url=$(gh pr create --repo "$REPO" --base "$BASE_BRANCH" --head "$BRANCH" "${draft[@]}" \
+              --title "$PR_TITLE" --body-file "$STATE_DIR/pr-body.md"); then
+              # It may have opened anyway (an error after GitHub created it): keep the branch then.
+              url=$(gh pr list --repo "$REPO" --head "$BRANCH" --state open --json url --jq '.[0].url // ""' || true)
+              if [ -z "$url" ]; then
+                # A rerun keeps the run id, so the same branch name: delete it, or the rerun's push fails.
+                gh api -X DELETE "repos/$REPO/git/refs/heads/$BRANCH" || true
+                echo "## No PR: \`gh pr create\` failed, so \`$BRANCH\` was deleted; rerun the workflow" >> "$GITHUB_STEP_SUMMARY"
+                exit 1
+              fi
+            fi
             if [ ${#draft[@]} -gt 0 ]; then
               echo "::warning::opened as a draft: some failures have no known cause; see the PR body"
               { echo "## Opened as a draft"; echo; echo "### Not explained (flaky, or caused by this update)"

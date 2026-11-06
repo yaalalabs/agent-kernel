@@ -1042,6 +1042,7 @@ class Evidence:
     WORKFLOW = "test.yaml"
     RUNS = 30  # recent completed runs looked at
     LOGS_PER_JOB = 3  # failed runs whose error lines are fetched, per job
+    EVENTS = {"push", "pull_request", "workflow_dispatch"}  # runs of this repository's own branches
 
     def __init__(self, failures: Failures, verdict: Verdict):
         self.failures = failures
@@ -1068,10 +1069,18 @@ class Evidence:
             [
                 f"{endpoint}?status=completed&per_page={self.RUNS}",
                 "--jq",
-                ".workflow_runs[] | {id, head_branch, created_at}",
+                ".workflow_runs[] | {id, head_branch, created_at, event, repository: .head_repository.full_name}",
             ]
         )
-        return [r for r in runs if not str(r.get("head_branch") or "").startswith("deps/")]
+        # Only this repository's own branches: a fork PR's log is anyone's text (it could carry instructions
+        # for Copilot), and its e2e jobs fail anyway, without the secrets. No earlier dependency-update branches.
+        return [
+            r
+            for r in runs
+            if r.get("repository") == self.failures.gh_repo
+            and r.get("event") in self.EVENTS
+            and not str(r.get("head_branch") or "").startswith("deps/")
+        ]
 
     def jobs_in(self, run: dict) -> list[dict]:
         # Smaller pages: GitHub often answers 502 to a full page of a large run's jobs.
