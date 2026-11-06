@@ -227,9 +227,10 @@ implementations.
 
 ## Framework-owned credentials
 
-Every credential Agent Kernel itself consumes resolves through `SecretManager`, so a deployment can keep
-them all in its secret provider and none in its environment. The environment still wins, so existing
-deployments that inject these variables behave exactly as before.
+The credentials listed in this section resolve through `SecretManager`, so a deployment can keep them in its
+secret provider instead of its environment. The environment still wins, so existing deployments that inject
+these variables behave exactly as before. Some components still read their credentials from the environment
+only; see [Environment only](#environment-only).
 
 **Keys read directly.** Each is resolved under its usual environment variable name when the component
 needs it:
@@ -245,6 +246,8 @@ needs it:
 | Daytona sandbox provider | the key named by `api_key_env` (default `DAYTONA_API_KEY`) | `/ak/<prefix>/daytona_api_key` |
 | OpenAI realtime runner (`execution.mode: realtime`) | `OPENAI_API_KEY` | `/ak/<prefix>/openai_api_key` |
 | Google ADK realtime runner (Gemini Live) | `GOOGLE_API_KEY` | `/ak/<prefix>/google_api_key` |
+| Logfire span fetching ([evaluation](traceability.md)) | `LOGFIRE_READ_TOKEN` | `/ak/<prefix>/logfire_read_token` |
+| OpenLLMetry span fetching ([evaluation](traceability.md)) | `TRACELOOP_API_KEY` | `/ak/<prefix>/traceloop_api_key` |
 
 **Secret-valued configuration fields.** A value set in `config.yaml` or through the field's `AK_*`
 environment variable is used as-is. When the field is empty, it is resolved through `SecretManager` under
@@ -267,6 +270,20 @@ credential. Model keys your own code passes to an SDK (`OPENAI_API_KEY` for a no
 `LLM`, a LangChain chat model, LiteLLM for the multimodal and thread-naming models) are the application's
 to resolve, as in the [API](#api) example. A regression test fails the build if a framework module reads a
 credential straight from `os.environ`.
+
+### Environment only
+
+These components hand their credentials to an SDK that reads the environment itself, so the keys must stay
+environment variables even with a secret provider configured. A key moved only into the provider leaves the
+component disabled or not exporting, often with nothing more than a log line.
+
+| Component | Environment variables |
+| --- | --- |
+| OpenAI guardrails | `OPENAI_API_KEY` |
+| Langfuse tracing (sending and span fetching) | `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` |
+| Logfire tracing (sending) | `LOGFIRE_TOKEN` |
+| OpenLLMetry tracing (sending) | `TRACELOOP_API_KEY`: span fetching resolves it through `SecretManager`, sending does not |
+| DeepEval and Opik evaluators | the judge model's key, read by LiteLLM (for example `OPENAI_API_KEY`) |
 
 ## Deploying on AWS
 

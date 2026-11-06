@@ -10,7 +10,7 @@ from livekit import api, rtc
 from ...core.config import AKConfig
 from ...core.model import AgentReply, AgentRequestText, StreamChunk
 from ...core.realtime import EDGE_SAMPLE_RATE
-from ...secret import SecretManager
+from ...secret import SecretError, SecretManager
 from ..adapter.base import StatefulEdgeAdapter
 
 _log = logging.getLogger("ak.integration.livekit")
@@ -119,8 +119,8 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
 
         # Kept to give each agent of the team a token of its own when the conversation announces it. An
         # empty field falls back to the secret provider, keyed by the field's own AK_* name.
-        self._api_key = api_key or config.livekit.api_key or SecretManager.current().get("AK_LIVEKIT__API_KEY", default="")
-        self._api_secret = api_secret or config.livekit.api_secret or SecretManager.current().get("AK_LIVEKIT__API_SECRET", default="")
+        self._api_key = api_key or config.livekit.api_key or self._provider_credential("AK_LIVEKIT__API_KEY", token)
+        self._api_secret = api_secret or config.livekit.api_secret or self._provider_credential("AK_LIVEKIT__API_SECRET", token)
         # The participant that hears the human; it speaks for the starting agent.
         self._participants = [self._single_participant(token)]
         # Each agent's participant, once it is in the room.
@@ -149,6 +149,23 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
         # Accumulated from TextDelta chunks; published as one chat message when the turn ends.
         self._transcript: list[str] = []
         self._interrupted = False
+
+    @staticmethod
+    def _provider_credential(key: str, token: Optional[str]) -> str:
+        """``key`` from the secret provider, or "" when it has none.
+
+        With a ``token`` the credential only gives the team's other agents participants of their own,
+        so a provider failure is logged and the gateway starts on the token alone.
+
+        :raises SecretError: If the provider failed and no ``token`` was given.
+        """
+        try:
+            return SecretManager.current().get(key, default="")
+        except SecretError as e:
+            if not token:
+                raise
+            _log.warning(f"Starting on the given token without {key}: {e}")
+            return ""
 
     def _single_participant(self, token: Optional[str]) -> _AgentParticipant:
         if token:

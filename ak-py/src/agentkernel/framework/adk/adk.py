@@ -1167,8 +1167,10 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
         # Opened before the socket, so a failure here leaves no live connection to clean up.
         await self._open_tool_session(session.id)
         # Resolved so the key can come from the secret provider; None leaves the SDK's own lookup
-        # (GEMINI_API_KEY, or Vertex AI from the environment).
-        self._client = genai.Client(api_key=SecretManager.current().get("GOOGLE_API_KEY", default=None))
+        # (GEMINI_API_KEY, or Vertex AI from the environment). Off the loop: a provider miss is a
+        # blocking network call, and this loop is shared by every live connection in the pool.
+        api_key = await asyncio.to_thread(SecretManager.current().get, "GOOGLE_API_KEY", default=None)
+        self._client = genai.Client(api_key=api_key)
         try:
             await self._open_socket(root)
         except Exception:

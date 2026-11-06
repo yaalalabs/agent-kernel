@@ -709,7 +709,9 @@ no `enabled` flag: selecting a provider other than `env` is the only opt-in. Not
 ever writes `os.environ` — callers hand the value to the SDK explicitly
 (`set_default_openai_key(SecretManager.current().get("OPENAI_API_KEY"))`).
 
-**Every framework-owned credential goes through it (#858)**, and `tests/test_secret_consumers.py`
+**Every credential the framework reads itself goes through it (#858)** — not those an SDK reads from the
+environment on its own (OpenAI guardrails, Langfuse/Logfire/OpenLLMetry sending, the evaluators' LiteLLM
+judge), which `docs/docs/advanced/secrets.md` lists under "Environment only" — and `tests/test_secret_consumers.py`
 enforces it two ways: an AST scan fails on any `os.environ`/`os.getenv` read under `src/agentkernel/`
 (outside `secret/`) whose literal key looks like a credential (`KEY|TOKEN|SECRET|PASSWORD|...`) or whose key
 is computed, short of a reviewed allow-list; and a table of consumers asserts the three behaviours each must

@@ -10,6 +10,7 @@ straight from ``os.environ``.
 """
 
 import ast
+import asyncio
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -191,7 +192,6 @@ class _ClientBuilt(Exception):
 
 def _realtime_key(monkeypatch, client_path: str, runner_cls, sdk_agent) -> str:
     """Connect a realtime runner just far enough for it to build its SDK client, and return the key it was given."""
-    import asyncio
     import types
 
     from agentkernel.core import Session
@@ -352,11 +352,36 @@ def required_consumer(request, monkeypatch):
     yield from _isolate(request.param, monkeypatch)
 
 
+# Realtime runners connect on the pool's event loop, which every live connection shares.
+REALTIME = [consumer for consumer in CONSUMERS if consumer.resolve in (_openai_realtime, _adk_realtime)]
+
+
+@pytest.fixture(params=REALTIME, ids=_consumer_id)
+def realtime_consumer(request, monkeypatch):
+    yield from _isolate(request.param, monkeypatch)
+
+
 class _LocatedSecretProvider(_DictSecretProvider):
     """An empty provider that names where it looks, the way aws_ssm does."""
 
     def describe(self, key):
         return f"SSM parameter /ak/test/{key.lower()}"
+
+
+class _LoopCheckingSecretProvider(_DictSecretProvider):
+    """Records, per key, whether the lookup ran on a thread with a running event loop."""
+
+    def __init__(self, values: Dict[str, str]) -> None:
+        super().__init__(values)
+        self.on_loop: Dict[str, bool] = {}
+
+    def get_secret(self, key):
+        try:
+            asyncio.get_running_loop()
+            self.on_loop[key] = True
+        except RuntimeError:
+            self.on_loop[key] = False
+        return super().get_secret(key)
 
 
 def _install(monkeypatch, provider: SecretProvider) -> None:
@@ -413,6 +438,50 @@ class TestFrameworkConsumers:
 
         assert "SSM parameter /ak/test/ak_whatsapp__app_secret" in LambdaWebhookGuard._sources("whatsapp.app_secret")
         assert LambdaWebhookGuard._sources("a bring-your-own setting") == "a bring-your-own setting"
+
+
+class TestRealtimeLookupStaysOffTheLoop:
+    def test_the_provider_is_not_called_on_the_event_loop(self, realtime_consumer, monkeypatch):
+        """A provider miss is a blocking network call; on the shared loop it would stall every live call."""
+        provider = _LoopCheckingSecretProvider({realtime_consumer.key: PROVIDER_VALUE})
+        _install(monkeypatch, provider)
+
+        assert realtime_consumer.resolve(monkeypatch) == PROVIDER_VALUE
+        assert provider.on_loop[realtime_consumer.key] is False
+
+
+@pytest.fixture
+def no_livekit_credentials(monkeypatch):
+    """No config file and neither LiveKit credential in the environment, so both fall to the provider."""
+    monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+    for name in _LIVEKIT:
+        monkeypatch.delenv(name, raising=False)
+    AKConfig._reset()
+    yield
+    AKConfig._reset()
+
+
+class TestLiveKitTokenOnly:
+    def test_a_provider_failure_does_not_stop_a_gateway_given_a_token(self, no_livekit_credentials, monkeypatch):
+        """A given token joins on its own; the API credentials only give the team's other agents participants."""
+        pytest.importorskip("livekit")
+        from agentkernel.integration.livekit.adapter import LiveKitEdgeGateway
+
+        _install(monkeypatch, _FailingSecretProvider())
+
+        gateway = LiveKitEdgeGateway(agent_name="helper", session_id="room-1", token="given-token")
+
+        assert gateway.token == "given-token"
+        assert (gateway._api_key, gateway._api_secret) == ("", "")
+
+    def test_a_provider_failure_still_stops_a_gateway_that_mints_its_token(self, no_livekit_credentials, monkeypatch):
+        pytest.importorskip("livekit")
+        from agentkernel.integration.livekit.adapter import LiveKitEdgeGateway
+
+        _install(monkeypatch, _FailingSecretProvider())
+
+        with pytest.raises(SecretError, match="AK_LIVEKIT__API_KEY"):
+            LiveKitEdgeGateway(agent_name="helper", session_id="room-1")
 
 
 class TestConfigFieldsResolveLazily:

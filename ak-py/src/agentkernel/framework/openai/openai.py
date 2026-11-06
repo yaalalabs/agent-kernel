@@ -697,7 +697,10 @@ class OpenAIRealtimeRunner(BaseRealtimeRunner):
         # Checked before anything opens, so a graph that cannot run leaves nothing to clean up.
         self._validate_handoffs(getattr(agent, "agent", None))
         # Resolved so the key can come from the secret provider; None leaves the SDK's own lookup.
-        self._client = AsyncOpenAI(api_key=SecretManager.current().get("OPENAI_API_KEY", default=None))
+        # Off the loop: a provider miss is a blocking network call, and this loop is shared by every
+        # live connection in the pool.
+        api_key = await asyncio.to_thread(SecretManager.current().get, "OPENAI_API_KEY", default=None)
+        self._client = AsyncOpenAI(api_key=api_key)
 
         try:
             cm = self._client.realtime.connect(model=self._model)
