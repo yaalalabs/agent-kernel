@@ -2,9 +2,9 @@
 
 import asyncio
 import json
-import os
 import subprocess
 import sys
+import time
 import uuid
 
 import httpx
@@ -13,47 +13,71 @@ import pytest_asyncio
 
 pytestmark = pytest.mark.asyncio(loop_scope="session")  # uses a single session for all tests
 
-requires_openai_key = pytest.mark.skipif(
-    not os.environ.get("OPENAI_API_KEY"),
-    reason="requires OPENAI_API_KEY for the live OpenAI stream",
-)
+HOST, PORT = "localhost", 8000
+STARTUP_TIMEOUT = 90
+
+
+async def _wait_until_serving(proc):
+    """Block until the app accepts a connection, or raise if it exits or never serves.
+
+    Polled rather than slept: a cold CI runner can take much longer to import the app than a laptop does.
+    """
+    deadline = time.monotonic() + STARTUP_TIMEOUT
+    while time.monotonic() < deadline:
+        if proc.poll() is not None:
+            raise RuntimeError(f"app.py exited with code {proc.returncode} before it began serving")
+        try:
+            _, writer = await asyncio.wait_for(asyncio.open_connection(HOST, PORT), timeout=1)
+        except (OSError, asyncio.TimeoutError):
+            await asyncio.sleep(0.25)
+            continue
+        writer.close()
+        await writer.wait_closed()
+        return
+    raise RuntimeError(f"app.py did not serve {HOST}:{PORT} within {STARTUP_TIMEOUT}s")
+
+
+class APITestClient:
+    def __init__(self, url):
+        self.url = url
+
+    async def stream(self, payload: dict) -> list[dict]:
+        """POST to the streaming endpoint and parse every SSE `data:` frame into a dict."""
+        frames: list[dict] = []
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            async with client.stream("POST", f"{self.url}/api/v1/chat", json=payload) as resp:
+                resp.raise_for_status()
+                assert resp.headers["content-type"].startswith("text/event-stream")
+                async for line in resp.aiter_lines():
+                    if line.startswith("data:"):
+                        frames.append(json.loads(line[len("data:") :].strip()))
+        return frames
 
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
-async def base_url():
+async def http_client():
     proc = subprocess.Popen(
-        [sys.executable, "app.py"],
+        ["python3", "app.py"],
         stdout=sys.stdout,
         stderr=sys.stderr,
     )
-    await asyncio.sleep(5)
     try:
-        yield "http://localhost:8000"
+        await _wait_until_serving(proc)
+        yield APITestClient(f"http://{HOST}:{PORT}")
     finally:
         proc.terminate()
-        proc.wait()
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
 
 
-async def _collect_frames(url: str, payload: dict) -> list[dict]:
-    """POST to the streaming endpoint and parse every SSE `data:` frame into a dict."""
-    frames: list[dict] = []
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        async with client.stream("POST", f"{url}/api/v1/chat", json=payload) as resp:
-            resp.raise_for_status()
-            assert resp.headers["content-type"].startswith("text/event-stream")
-            async for line in resp.aiter_lines():
-                if line.startswith("data:"):
-                    frames.append(json.loads(line[len("data:") :].strip()))
-    return frames
-
-
-@requires_openai_key
 @pytest.mark.asyncio
-async def test_streaming_delta_then_done(base_url):
+async def test_streaming_delta_then_done(http_client):
     print("test_streaming_delta_then_done")
     session_id = str(uuid.uuid4())
-    frames = await _collect_frames(
-        base_url,
+    frames = await http_client.stream(
         {"prompt": "a robot learning to paint", "session_id": session_id},
     )
 
