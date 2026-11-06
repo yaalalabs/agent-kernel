@@ -58,7 +58,7 @@ smolagents = [
     "smolagents>=1.26.0,<2.0.0",
 ]
 pydanticai = [
-    "pydantic-ai-slim>=2.53.0,<2.54",
+    "pydantic-ai-slim~=2.13.0",
     "openinference-instrumentation-pydantic-ai>=0.1.17,<0.2.0",
 ]
 maf = [
