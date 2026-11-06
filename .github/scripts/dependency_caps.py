@@ -805,6 +805,19 @@ class Failures:
     def gh(self, *args: str) -> subprocess.CompletedProcess:
         return subprocess.run(["gh", "api", *args], capture_output=True, text=True, env=self.env, check=False)
 
+    @staticmethod
+    def json_objects(output: str):
+        """Decode consecutive JSON values, including pretty-printed objects from `gh api --jq`."""
+        decoder = json.JSONDecoder()
+        position = 0
+        while position < len(output):
+            while position < len(output) and output[position].isspace():
+                position += 1
+            if position == len(output):
+                break
+            value, position = decoder.raw_decode(output, position)
+            yield value
+
     def job_log(self, job_id: int) -> str:
         """A job's log as plain text (newer gh needs --allow-escape-sequences; older gh lacks it)."""
         endpoint = f"repos/{self.gh_repo}/actions/jobs/{job_id}/logs"
@@ -844,7 +857,7 @@ class Failures:
         if listed.returncode != 0:
             print(f"cannot list this run's jobs (needs 'actions: read'): {listed.stderr[-500:]}", file=sys.stderr)
         entries = []
-        for job in (json.loads(line) for line in listed.stdout.splitlines() if line.strip()):
+        for job in self.json_objects(listed.stdout):
             if job["conclusion"] != "failure" or not any(job["name"].startswith(f"{j} / ") for j in self.jobs):
                 continue
             log = self.state.path(f"logs/ci-{job['id']}.log")
@@ -892,7 +905,7 @@ class Verdict:
             ".jobs[] | {name, conclusion}",
         )
         first, retry = {}, {}
-        for job in (json.loads(line) for line in listed.stdout.splitlines() if line.strip()):
+        for job in self.failures.json_objects(listed.stdout):
             caller, separator, name = job["name"].partition(" / ")
             if separator and caller in self.first:
                 first[name] = job["conclusion"] or ""
