@@ -86,7 +86,7 @@ AWS ECS supports `execution_mode = "async"` with `message_type = "delta"` for We
 | Kubernetes (Helm chart) | ✅ | - | ✅ (`async`, `complete` or `delta`, ws-gateway tier) | ✅ NATS / Kafka / SQS |
 
 :::info
-SSE streaming is served by the built-in FastAPI `RESTAPI` server, so it is available anywhere that server runs (local, ECS single-container REST, Azure Container Apps, GCP Cloud Run). AWS Lambda delivers streaming over **WebSocket** instead, since API Gateway REST endpoints don't support SSE responses from standard Lambda integrations. CrewAI and Smolagents don't support token streaming; keep `message_type: complete` with those frameworks.
+SSE streaming is served by the built-in FastAPI `RESTAPI` server, so it is available anywhere that server runs (local, ECS single-container REST, Azure Container Apps, GCP Cloud Run). AWS Lambda delivers streaming over **WebSocket** instead, since API Gateway REST endpoints don't support SSE responses from standard Lambda integrations.
 :::
 
 ## Quick Comparison

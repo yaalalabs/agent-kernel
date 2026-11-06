@@ -1,0 +1,42 @@
+[project]
+name = "api-crewai-streaming"
+version = "0.1.0"
+description = "CrewAI token streaming over SSE through the Agent Kernel REST API"
+readme = "README.md"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+    "agentkernel[api,crewai]>=0.9.5",
+    # The REST API needs it for its multipart route; other API examples get it via their framework extra.
+    "mcp>=1.30.0",
+    "python-multipart>=0.0.12",
+]
+
+[dependency-groups]
+dev = [
+    "agentkernel[test]>=0.9.5",
+    "httpx>=0.27.0",
+    "pytest-asyncio>=0.23.0",
+    "black==26.5.1",
+    "isort>=5.0.0",
+    "mypy>=1.0.0",
+]
+
+[tool.uv]
+package = false
+# force newer posthog: crewai's chromadb needs posthog<6.0.0 but deepeval needs posthog>=7.0.0; both only use it for telemetry
+override-dependencies = ["posthog>=7.0.0,<8.0.0"]
+
+[tool.isort]
+profile = "black"
+line_length = 120
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+
+[tool.black]
+line-length = 120
+target-version = ["py312"]

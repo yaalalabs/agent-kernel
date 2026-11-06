@@ -2,18 +2,20 @@ import logging
 from collections.abc import AsyncGenerator, Callable, Mapping
 from datetime import datetime
 from typing import Any, ClassVar
+from uuid import uuid4
 
 from crewai import Agent, Crew, Memory, Task
 from crewai.memory import MemoryRecord, ScopeInfo
 from crewai.memory.storage.backend import StorageBackend as Storage
 from crewai.tools import tool as crewai_tool
+from crewai.types.streaming import StreamChunkType
 from pydantic import BaseModel
 
 from ...core import Agent as BaseAgent
 from ...core import Module, Runner, Runtime, Session, ToolBuilder, ToolContext
 from ...core.builder import A2ACardBuilder
 from ...core.config import AKConfig
-from ...core.event import StreamEvent
+from ...core.event import MessageEnd, MessageStart, StreamEvent, TextDelta, ToolCallArgs, ToolCallEnd, ToolCallStart
 from ...core.model import AgentReply, AgentReplyAny, AgentReplyText, AgentRequest, AgentRequestAny, AgentRequestText
 from ...core.util.error_util import user_facing_error_message
 from ...trace import Trace
@@ -254,6 +256,83 @@ class CrewAISession(Storage):
         return None
 
 
+class _CrewAIStreamMapper:
+    """
+    Translates CrewAI ``StreamChunk`` objects into Agent Kernel stream events for one run.
+
+    CrewAI exposes text and tool-call fragments, but no message boundary and no tool result, so
+    message ids are generated here and a tool call is closed when text resumes or the stream ends.
+    State is per-run; a ``Runner`` instance is shared across sessions.
+    """
+
+    def __init__(self):
+        """
+        Initializes a per-run mapper.
+        """
+        self._message_id: str | None = None
+        self._index_ids: dict[int, str] = {}
+        self._open_calls: set[str] = set()
+
+    def events(self, chunk: Any) -> list[StreamEvent]:
+        """
+        Maps one CrewAI stream chunk onto zero or more AK events.
+        :param chunk: A ``crewai.types.streaming.StreamChunk``.
+        :return: The AK events this chunk produces.
+        """
+        if getattr(chunk, "chunk_type", None) == StreamChunkType.TOOL_CALL and getattr(chunk, "tool_call", None) is not None:
+            return self._tool_call(chunk.tool_call)
+        content = getattr(chunk, "content", None)
+        if not content:
+            return []
+        events = self._close_calls()
+        events.extend(self._open_message())
+        events.append(TextDelta(message_id=self._message_id, content=content))
+        return events
+
+    def close(self) -> list[StreamEvent]:
+        """
+        Closes every boundary the stream left open.
+        :return: The closing events.
+        """
+        events = self._close_calls()
+        events.extend(self._close_message())
+        return events
+
+    def _open_message(self) -> list[StreamEvent]:
+        if self._message_id is not None:
+            return []
+        self._message_id = uuid4().hex
+        return [MessageStart(message_id=self._message_id)]
+
+    def _close_message(self) -> list[StreamEvent]:
+        if self._message_id is None:
+            return []
+        message_id, self._message_id = self._message_id, None
+        return [MessageEnd(message_id=message_id)]
+
+    def _close_calls(self) -> list[StreamEvent]:
+        if not self._open_calls:
+            return []
+        events = [ToolCallEnd(tool_call_id=call_id) for call_id in self._open_calls]
+        self._open_calls.clear()
+        return events
+
+    def _tool_call(self, tool_call: Any) -> list[StreamEvent]:
+        events = self._close_message()
+        index = getattr(tool_call, "index", 0)
+        call_id = getattr(tool_call, "tool_id", None) or self._index_ids.get(index)
+        if call_id is None:
+            call_id = uuid4().hex
+        self._index_ids[index] = call_id
+        if call_id not in self._open_calls:
+            self._open_calls.add(call_id)
+            events.append(ToolCallStart(tool_call_id=call_id, name=getattr(tool_call, "tool_name", None) or ""))
+        arguments = getattr(tool_call, "arguments", None)
+        if arguments:
+            events.append(ToolCallArgs(tool_call_id=call_id, delta=arguments))
+        return events
+
+
 class CrewAIRunner(Runner):
     """
     CrewAIRunner class provides a runner for CrewAI based agents.
@@ -324,6 +403,110 @@ class CrewAIRunner(Runner):
             previous = session.get(FRAMEWORK)
         return Memory(storage=previous)
 
+    @staticmethod
+    def _prompt(requests: list[AgentRequest]) -> tuple[str, AgentReplyText | None]:
+        """
+        Builds the text prompt from the request list.
+        :param requests: The requests to the agent.
+        :return: The prompt and, when the requests cannot be served, the reply to return instead.
+        """
+        prompt = ""
+        for req in requests:
+            if isinstance(req, AgentRequestAny):  # AgentRequestAny is handled only by pre-hooks, not by the agent itself
+                continue
+            if isinstance(req, AgentRequestText):
+                prompt = prompt + "\n" + req.prompt if prompt else req.prompt
+            else:
+                return prompt, AgentReplyText(
+                    response="Sorry. Agent kernel CrewAI runner is unable to handle content other than text at the moment",
+                    prompt=prompt,
+                )
+        if prompt.strip() == "":
+            return prompt, AgentReplyText(response="Sorry. No valid text prompt found in the requests")
+        return prompt, None
+
+    async def _build_crew(
+        self, agent: Any, session: Session, requests: list[AgentRequest], prompt: str, *, stream: bool
+    ) -> tuple[Crew, list[str] | None]:
+        """
+        Builds the one-shot Crew for this run.
+        :param agent: The CrewAI agent to run.
+        :param session: The session to use for the agent.
+        :param requests: The requests to the agent.
+        :param prompt: The text prompt already extracted from the requests.
+        :param stream: Whether the crew is being built for streaming.
+        :return: The Crew and the transcript it was built from.
+        """
+        # Resolved once per run: the static options with a declared factory's result merged over them.
+        options = await agent.resolve_run_options(session, requests)
+        memory = self._memory(session)
+        if memory:
+            try:
+                memory.remember(content=prompt)
+            except Exception as e:
+                # Memory is an enrichment on top of the transcript; a failure (e.g. no
+                # embedder configured) must not fail the run.
+                self._log.warning(f"Unable to persist prompt to CrewAI memory, continuing without memory: {e}")
+                memory = None
+
+        transcript = self._transcript(session)
+        output_pydantic = getattr(agent, "output_pydantic", None)
+        output_json = getattr(agent, "output_json", None)
+        schema = output_pydantic or output_json
+        expected_output = f"A structured response conforming to the {schema.__name__} schema" if schema is not None else "An answer is plain text"
+        task = Task(
+            description=self._describe(prompt, transcript),
+            expected_output=expected_output,
+            agent=agent.agent,
+            output_pydantic=output_pydantic,
+            output_json=output_json,
+        )
+        # `verbose=False` is a default the resolved options may override; agents/tasks/memory/stream are written last.
+        crew = Crew(**self._native_kwargs({"verbose": False, **options}, agents=agent.crew, tasks=[task], memory=memory, stream=stream))
+        return crew, transcript
+
+    def _warn_context_unsupported(self, session: Session) -> None:
+        """
+        Warns once that CrewAI has no per-run caller-state slot.
+        :param session: The session whose stored context is being ignored.
+        """
+        # CrewAI's kickoff(inputs=...) are template-interpolation variables, not a context/state object, so
+        # there is no per-run caller-state slot. Warn once, and leave the stored context untouched.
+        if not self._context_warned and session is not None and session.get_framework_context():
+            self._log.warning("framework_context is set but CrewAI does not support per-run caller context/state; ignoring it.")
+            self._context_warned = True
+
+    @staticmethod
+    def _reply_from_output(reply: Any, prompt: str) -> AgentReply:
+        """
+        Maps a ``CrewOutput`` onto an AK reply.
+        :param reply: The native CrewAI output.
+        :param prompt: The prompt the run was given.
+        :return: A structured reply when the output carries one, otherwise a text reply.
+        """
+        if isinstance(getattr(reply, "pydantic", None), BaseModel):
+            return AgentReplyAny(content=reply.pydantic.model_dump(mode="json"), prompt=prompt)
+        if isinstance(getattr(reply, "json_dict", None), dict):
+            return AgentReplyAny(content=reply.json_dict, prompt=prompt)
+        if hasattr(reply, "raw"):
+            raw_reply = reply.raw
+            reply_text = "" if raw_reply is None else str(raw_reply)
+        else:
+            reply_text = "" if reply is None else str(reply)
+        return AgentReplyText(response=reply_text, prompt=prompt)
+
+    def _update_transcript(self, transcript: list[str] | None, prompt: str, reply: AgentReply) -> None:
+        """
+        Appends one completed turn to the session transcript.
+        :param transcript: The transcript to update, or None when there is no session.
+        :param prompt: The user prompt.
+        :param reply: The agent reply.
+        """
+        if transcript is not None:
+            transcript.append(f"User: {prompt}")
+            transcript.append(f"Assistant: {str(reply)}")
+            del transcript[: -self.TRANSCRIPT_MAX_LINES]
+
     async def run(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AgentReply:
         """
         Runs the CrewAI agent with provided multi modal inputs.
@@ -332,73 +515,19 @@ class CrewAIRunner(Runner):
         :param requests: The requests to the agent.
         :return: The result of the agent's execution.
         """
-        prompt = ""
         context: ToolContext | None = None
+        prompt = ""
         try:
             context = ToolContext(Runtime.current(), agent, session, requests).set()
-            for req in requests:
-                if isinstance(req, AgentRequestAny):  # AgentRequestAny is handled only by pre-hooks, not by the agent itself
-                    continue
-                if isinstance(req, AgentRequestText):
-                    prompt = prompt + "\n" + req.prompt if prompt else req.prompt
-                else:
-                    return AgentReplyText(
-                        response="Sorry. Agent kernel CrewAI runner is unable to handle content other than text at the moment",
-                        prompt=prompt,
-                    )
+            prompt, invalid = self._prompt(requests)
+            if invalid is not None:
+                return invalid
 
-            if prompt.strip() == "":
-                return AgentReplyText(response="Sorry. No valid text prompt found in the requests")
-
-            # Resolved once per run: the static options with a declared factory's result merged over them.
-            options = await agent.resolve_run_options(session, requests)
-            memory = self._memory(session)
-            if memory:
-                try:
-                    memory.remember(content=prompt)
-                except Exception as e:
-                    # Memory is an enrichment on top of the transcript; a failure (e.g. no
-                    # embedder configured) must not fail the run.
-                    self._log.warning(f"Unable to persist prompt to CrewAI memory, continuing without memory: {e}")
-                    memory = None
-
-            transcript = self._transcript(session)
-            output_pydantic = getattr(agent, "output_pydantic", None)
-            output_json = getattr(agent, "output_json", None)
-            schema = output_pydantic or output_json
-            expected_output = f"A structured response conforming to the {schema.__name__} schema" if schema is not None else "An answer is plain text"
-            task = Task(
-                description=self._describe(prompt, transcript),
-                expected_output=expected_output,
-                agent=agent.agent,
-                output_pydantic=output_pydantic,
-                output_json=output_json,
-            )
-            # `verbose=False` is a default the resolved options may override; agents/tasks/memory are written last.
-            crew = Crew(**self._native_kwargs({"verbose": False, **options}, agents=agent.crew, tasks=[task], memory=memory))
-            # CrewAI's kickoff(inputs=...) are template-interpolation variables, not a context/state object, so
-            # there is no per-run caller-state slot. Warn once, and leave the stored context untouched.
-            if not self._context_warned and session is not None and session.get_framework_context():
-                self._log.warning("framework_context is set but CrewAI does not support per-run caller context/state; ignoring it.")
-                self._context_warned = True
+            crew, transcript = await self._build_crew(agent, session, requests, prompt, stream=False)
+            self._warn_context_unsupported(session)
             reply = await crew.kickoff_async(inputs={})
-            if isinstance(getattr(reply, "pydantic", None), BaseModel):
-                agent_reply: AgentReply = AgentReplyAny(content=reply.pydantic.model_dump(mode="json"), prompt=prompt)
-            elif isinstance(getattr(reply, "json_dict", None), dict):
-                agent_reply = AgentReplyAny(content=reply.json_dict, prompt=prompt)
-            else:
-                if hasattr(reply, "raw"):
-                    raw_reply = reply.raw
-                    reply_text = "" if raw_reply is None else str(raw_reply)
-                else:
-                    reply_text = "" if reply is None else str(reply)
-                agent_reply = AgentReplyText(response=reply_text, prompt=prompt)
-
-            if transcript is not None:
-                transcript.append(f"User: {prompt}")
-                transcript.append(f"Assistant: {str(agent_reply)}")
-                del transcript[: -self.TRANSCRIPT_MAX_LINES]
-
+            agent_reply = self._reply_from_output(reply, prompt)
+            self._update_transcript(transcript, prompt, agent_reply)
             return agent_reply
         except Exception as e:
             return AgentReplyText(response=user_facing_error_message(e), prompt=prompt)
@@ -406,20 +535,52 @@ class CrewAIRunner(Runner):
             if context is not None:
                 context.reset()
 
-    @property
-    def supports_streaming(self) -> bool:
-        """
-        :return: False — this adapter does not implement streaming, so stream() always raises.
-        """
-        return False
-
     async def stream(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[StreamEvent, None]:
         """
-        CrewAI does not support SSE streaming.
-        :raises NotImplementedError: Always raised — use rest_sync mode instead.
+        Streams the CrewAI agent response as Agent Kernel stream events.
+
+        A ``Crew`` built with ``stream=True`` returns a ``CrewStreamingOutput`` whose async iterator
+        yields text and tool-call fragments as the crew runs. CrewAI exposes no message boundary and
+        no tool result on that path, so message ids are generated per turn, a tool call is closed
+        when prose resumes or the stream ends, and no ``ToolCallResult`` is emitted.
+
+        :param agent: The CrewAI agent to run.
+        :param session: The session to use for the agent.
+        :param requests: The requests to the agent.
+        :return: An async generator yielding StreamEvent objects.
         """
-        raise NotImplementedError("CrewAI does not support SSE streaming. Use rest_sync mode.")
-        yield  # make this an async generator to satisfy the type contract
+        context: ToolContext | None = None
+        try:
+            context = ToolContext(Runtime.current(), agent, session, requests).set()
+            prompt, invalid = self._prompt(requests)
+            if invalid is not None:
+                return
+
+            crew, transcript = await self._build_crew(agent, session, requests, prompt, stream=True)
+            self._warn_context_unsupported(session)
+            streaming = await crew.kickoff_async(inputs={})
+            mapper = _CrewAIStreamMapper()
+            try:
+                async for chunk in streaming:
+                    for event in mapper.events(chunk):
+                        yield event
+                for event in mapper.close():
+                    yield event
+            finally:
+                close = getattr(streaming, "aclose", None)
+                if close is not None:
+                    await close()
+
+            # After a normal drain only: a disconnect or framework error leaves the stored turn intact.
+            try:
+                output = streaming.result
+            except Exception as e:
+                self._log.warning(f"CrewAI streaming completed without a final result, so the transcript was not updated: {e}")
+                return
+            self._update_transcript(transcript, prompt, self._reply_from_output(output, prompt))
+        finally:
+            if context is not None:
+                context.reset()
 
 
 class CrewAIAgent(BaseAgent):
@@ -431,6 +592,7 @@ class CrewAIAgent(BaseAgent):
         "agents": "the crew is the module's agent list",
         "tasks": "the runner builds one Task per run from the prompt",
         "memory": "the CrewAISession memory stored on the Agent Kernel session",
+        "stream": "the runner sets it per run: True for stream(), False for run()",
     }
 
     def __init__(
