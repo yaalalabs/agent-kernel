@@ -37,14 +37,91 @@ dispatch by looking the route up under the resource template API Gateway already
   - Handlers read the values from `event["pathParameters"]`; the router does not parse them.
 - The router does no path matching of its own: when templates overlap, API Gateway's precedence
   decides (a static segment beats a `{parameter}` at the same level).
-- Fallback to the concrete path when the resource template is not registered for the method.
-  - Keeps a `{proxy+}` resource in front of the Lambda working (its `resource` is `/{proxy+}`).
-  - Keeps events without `resource` working (ALB targets, direct invokes, hand-built test events).
+- Fallback to the concrete path (`event["path"]`) when the resource is not registered for the method.
+  - Needed only for a catch-all `{proxy+}` resource in front of the Lambda (see the note below).
+  - The router supports API Gateway REST (v1) events only, where `path` and `resource` are always
+    both present. Hand-built unit-test events without `resource` also fall through to `path`.
 - Unchanged paths:
   - The chat endpoint check (`event_path == env_agent_endpoint`) still compares the concrete path.
   - The no-env-vars branch still sends everything to the default chat handler.
   - The no-match error still names the concrete path.
   - Static routes resolve as before (`resource == path` for them).
+
+### Note: why the fallback to `event["path"]` is needed
+
+- **The rule: the router uses `path` when `resource` is not a registered route.** Not when `resource`
+  is missing: under API Gateway REST it is always present.
+- What each key holds:
+
+  | Key | Holds | Example (`GET /api/v1/schedules/t1`, our Terraform) |
+  |---|---|---|
+  | `resource` | the gateway resource that matched, as declared, braces included (never filled in) | `/api/v1/schedules/{task_id}` |
+  | `pathParameters` | the values for its `{...}` placeholders | `{"task_id": "t1"}` |
+  | `path` | the actual request path | `/api/v1/schedules/t1` |
+
+- So `resource` is a usable route key only when the gateway declares each route as its own
+  resource, as our Terraform module does. Behind a catch-all `{proxy+}` resource it is present but
+  is always `/api/v1/{proxy+}`, which is not one of our routes.
+- `{proxy+}` is API Gateway's catch-all resource: a greedy path parameter whose value is the whole
+  rest of the path, one or more segments. `{task_id}` captures exactly one segment; `{proxy+}`
+  captures everything after it, so its value can be a route, or a route plus its values:
+
+  | Resource `/api/v1/{proxy+}`, request | `pathParameters` |
+  |---|---|
+  | `GET /api/v1/schedules` | `{"proxy": "schedules"}` |
+  | `GET /api/v1/schedules/t1` | `{"proxy": "schedules/t1"}` |
+  | `GET /api/v1/schedules/t1/history` | `{"proxy": "schedules/t1/history"}` |
+
+  A deployer who fronts our Lambda with their own gateway may use it, so they never have
+  to redeploy the gateway when a route is added in code. Behind it, `resource` is the same
+  `/api/v1/{proxy+}` for every request, so it never names the route that was hit. The only place
+  the route is still visible is `path`.
+- Complete example. The application registers:
+
+  ```python
+  @Lambda.register("/schedules", method="GET")
+  def list_schedules(event, context): ...
+
+  @Lambda.register("/schedules/{task_id}", method="GET")
+  def get_schedule(event, context): ...
+  ```
+
+  `_routes` holds the keys `/schedules` and `/schedules/{task_id}`.
+
+  - **Our Terraform module** (`gateway_endpoints` declares `schedules` and `schedules/{task_id}`, one
+    resource each):
+
+    | Request | `path` | `resource` | Key from `resource` | Key from `path` | Handler |
+    |---|---|---|---|---|---|
+    | `GET /api/v1/schedules` | `/api/v1/schedules` | `/api/v1/schedules` | `/schedules` ✅ | not tried | `list_schedules` |
+    | `GET /api/v1/schedules/t1` | `/api/v1/schedules/t1` | `/api/v1/schedules/{task_id}` | `/schedules/{task_id}` ✅ | not tried | `get_schedule`, `pathParameters = {"task_id": "t1"}` |
+
+    `resource` always gives the answer, so the fallback never changes the outcome here.
+
+  - **A deployer's own gateway with one `/api/v1/{proxy+}` resource**:
+
+    | Request | `path` | `resource` | Key from `resource` | Key from `path` | Handler |
+    |---|---|---|---|---|---|
+    | `GET /api/v1/schedules` | `/api/v1/schedules` | `/api/v1/{proxy+}` | `/{proxy+}` ❌ not registered | `/schedules` ✅ | `list_schedules` |
+    | `GET /api/v1/schedules/t1` | `/api/v1/schedules/t1` | `/api/v1/{proxy+}` | `/{proxy+}` ❌ not registered | `/schedules/t1` ❌ not registered | none: "No registered route" → 500 |
+
+    The full event for the first row:
+
+    ```json
+    {
+      "httpMethod": "GET",
+      "path": "/api/v1/schedules",
+      "resource": "/api/v1/{proxy+}",
+      "pathParameters": {"proxy": "schedules"}
+    }
+    ```
+
+- Without the fallback, the first `{proxy+}` row returns 500 instead of `list_schedules`. Static
+  routes behind `{proxy+}` work on `develop` today, because the router looked up `path` only, so
+  removing the fallback would break a working setup.
+- The fallback cannot make template routes work behind `{proxy+}` (second `{proxy+}` row). The
+  gateway never reports the matched template there, and the router does not match templates itself
+  (Non-goals). Template routes need each route declared as its own resource, as our Terraform module does.
 
 ### Configuration and Terraform
 
@@ -74,8 +151,10 @@ dispatch by looking the route up under the resource template API Gateway already
 - Phase 2 of #879: `ThreadLambdaHandler` and the thread read routes on Lambda.
 - Route authorization on any cloud.
 - Our own template matcher, or `{proxy+}`-to-route mapping inside the router.
-- HTTP API v2 / Function URL (payload 2.0) events: they carry no `resource`, so only static routes
-  match there (unchanged).
+- Any invoker other than API Gateway REST (v1): ALB targets, Function URLs, HTTP API payload 2.0,
+  direct invokes. Their events use other shapes and keys, and the router does not support them,
+  before or after this change.
+- Path-parameter routes behind a `{proxy+}` resource (see the fallback note).
 - Moving the chat endpoint check onto `resource` (it would change custom-domain behaviour; out of scope).
 - GCP and Azure.
 
