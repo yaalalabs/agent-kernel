@@ -29,7 +29,10 @@ flowchart TD
     E -- fail --> F[Copilot names the package behind each real error; hold it]
     F --> G[Round 2: the same jobs]
     G -- pass, or only failures the update did not cause --> M
-    G -- other failures --> N[No PR; delete the branch; list the failures]
+    G -- other failures --> J[Copilot labels each flaky, dependency or unsure, from the same job's history on other branches]
+    J -- all flaky --> M
+    J -- a dependency break, or unsure --> R[Open a DRAFT PR that lists them]
+    G -- no results, or Copilot did not finish --> N[No PR; delete the branch; list the failures]
     M --> I[Start kind smoke and the weekly integration tests on the PR branch]
 ```
 
@@ -81,20 +84,30 @@ flowchart TD
 
 ### Copilot
 
-- Copilot only appends lines to `holds.jsonl` and `not_dependency.jsonl`; it never edits a file, commits or pushes.
+- Copilot only appends lines to `holds.jsonl`, `not_dependency.jsonl` and (after round 2) `judge.jsonl`; it never
+  edits a file, commits or pushes.
 - **Real error** (traceback, import error, resolver error, an error as the agent's answer): name
   the package. Example: `litellm` 1.108.0 imports `mcp.types.CacheableResult` → hold `litellm`, not `mcp`.
 - **Same break elsewhere:** the gate does not test every manifest (the cloud examples deploy later). After a CI
   finding, Copilot checks other manifests that lock the same broken version and use the same part of the
   package, and holds it there too when it breaks the same way.
 - **No dependency cause** (an answer only worded differently, an infra problem): no hold, a reason line instead.
-- **Unsure:** nothing, so the failure blocks the PR.
+- **Unsure:** nothing, so the failure goes on to round 2 unexplained.
+- **After round 2 (`judge-2`), a separate prompt:** only round 2's failures with no pass in round 1 and no
+  reason. The script first collects the same job's recent results in the normal Test workflow on other
+  branches, with their error lines. Copilot labels each failure `flaky` (with evidence: the same failure on
+  other branches, or a wording/infra failure with no error from a changed package), `dependency` (names the
+  package) or `unsure`, in `judge.jsonl`. It holds nothing: there is no round 3 to test a hold.
 - Tools: shell, read, write, PyPI URLs. The shell is not a sandbox, so Copilot only runs where no write token is.
 
 ### The PR
 
-- Opens when a round passes, or when every failed job of the last round passed in round 1 or has a Copilot
-  "no dependency cause" reason. Anything unexplained keeps the PR closed and deletes the branch.
+- Opens when a round passes, or when every failed job of the last round passed in round 1, has a Copilot
+  "no dependency cause" reason, or is labelled `flaky` after round 2. Each is listed with its reason; the PR's
+  own CI runs them again, and a real break fails there again.
+- **A draft** when some failures are labelled `dependency` or `unsure`, or have no label. They are listed with
+  Copilot's reason, for a person to decide.
+- **No PR, branch deleted,** only when nothing can be judged: Copilot's fix job did not finish, or no results.
 - Lists every change: version changes, security fixes by package, holds with reasons, blocked fixes, manifests put
   back, breaking upgrades held back, what is not covered, alerts still open, and accepted failures.
 - After the PR opens, the workflows in `AFTER_PR_WORKFLOWS` start on its branch: `chart-test.yaml` (kind smoke) and
@@ -109,7 +122,7 @@ flowchart TD
 - **Package code never runs next to a write token.** The update runs code from the packages it updates (build hooks,
   npm scripts, Copilot's own checks). That code runs as the same user as everything else in its job, so it can read
   any secret the job holds (for example from `/proc/<parent>/environ`) and replace files later steps run. So the
-  jobs that run it (`update`, `fix-1`) get a read-only token and the Copilot token only, and hand over a patch.
+  jobs that run it (`update`, `fix-1`, `judge-2`) get a read-only token and the Copilot token only, and hand over a patch.
 - **A patch is checked before it is pushed**, in a job that runs no package code:
   - only edits to tracked `pyproject.toml`, `uv.lock`, `package.json`, `package-lock.json` (no new, deleted,
     binary, renamed or mode-changed files, nothing under `.github/`);
@@ -122,7 +135,8 @@ flowchart TD
   `packaging`, its one dependency, is pinned.
 - **No `uv` cache** in this workflow, so package code cannot plant files that another run restores.
 - No pre-releases. Never merges, never force-pushes. The `agent-kernel-ci[bot]` app pushes and opens the PR, so the
-  PR's CI runs.
+  PR's CI runs. Its token asks only for `contents: write` (push, delete the branch) and, in `finish`,
+  `pull-requests: write`.
 
 ### Accepted risks
 

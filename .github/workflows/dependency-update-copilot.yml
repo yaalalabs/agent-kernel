@@ -2,16 +2,18 @@ name: Dependency Version Update (Copilot)
 
 # Every two weeks: upper limits, security fixes and updates on each version line, for every manifest
 # (.github/scripts/dependency_caps.py). Then unit tests and e2e. On a failure Copilot names the package
-# behind each real error, the script holds it back, and the tests run once more. The PR opens when they
-# pass, or when the only failures are not caused by the update (listed in the PR). After the PR opens,
-# the workflows in AFTER_PR_WORKFLOWS start on its branch.
+# behind each real error, the script holds it back, and the tests run once more. Failures left after that,
+# with no known cause, go to Copilot once more (`judge-2`), which labels each one flaky, dependency or
+# unsure, and changes nothing. The PR opens when the tests pass, or when the only failures are not caused
+# by the update (listed in the PR); as a draft when some failures still have no known cause. After the PR
+# opens, the workflows in AFTER_PR_WORKFLOWS start on its branch.
 #
-# Package code (build hooks, npm scripts, Copilot's checks) runs only in `update` and `fix-1`. They hold no
+# Package code (build hooks, npm scripts, Copilot's checks) runs only in `update`, `fix-1` and `judge-2`. They hold no
 # write token or App key, and hand their changes over as a patch. `push` and `push-holds` run no package code:
 # they check the patch (dependency files and versions only, known registries) and push it. Every job runs the
 # script from this workflow's own commit, never from a branch or an artifact.
 #
-#   prepare -> update -> push -> e2e-1 -> (failed) fix-1 -> push-holds -> e2e-2 -> finish
+#   prepare -> update -> push -> e2e-1 -> (failed) fix-1 -> push-holds -> e2e-2 -> (failed) judge-2 -> finish
 
 on:
   schedule:
@@ -142,7 +144,7 @@ jobs:
           dep cap
           dep secure
           dep update
-          for round in 1 2; do
+          for _ in 1 2; do
             [ "$(dep failures)" -eq 0 ] && break
             dep fix
           done
@@ -189,6 +191,7 @@ jobs:
         with:
           app-id: ${{ secrets.APP_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          permission-contents: write # push the branch
       - uses: actions/checkout@v5
         with:
           ref: ${{ github.sha }}
@@ -219,8 +222,8 @@ jobs:
           git -C repo merge-base --is-ancestor HEAD "origin/$BASE_BRANCH" || { echo "The base is not on $BASE_BRANCH."; exit 1; }
           uv run --no-project --with "packaging==$PACKAGING" python "$SCRIPT" --root repo --state "$STATE_DIR" \
             apply --patch "$STATE_DIR/update.patch" | tee -a "$GITHUB_STEP_SUMMARY"
-          git -C repo config user.name "$BOT[bot]"
-          git -C repo config user.email "$BOT[bot]@users.noreply.github.com"
+          git -C repo config user.name "${BOT}[bot]"
+          git -C repo config user.email "${BOT}[bot]@users.noreply.github.com"
           git -C repo commit -qam "$PR_TITLE"
           git -C repo push origin "HEAD:refs/heads/$BRANCH"
           echo "sha=$(git -C repo rev-parse HEAD)" >> "$GITHUB_OUTPUT"
@@ -331,6 +334,7 @@ jobs:
         with:
           app-id: ${{ secrets.APP_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          permission-contents: write # push the branch
       - uses: actions/checkout@v5
         with:
           ref: ${{ github.sha }}
@@ -360,8 +364,8 @@ jobs:
           set -euo pipefail
           uv run --no-project --with "packaging==$PACKAGING" python "$SCRIPT" --root repo --state "$STATE_DIR" \
             apply --patch "$STATE_DIR/holds.patch" | tee -a "$GITHUB_STEP_SUMMARY"
-          git -C repo config user.name "$BOT[bot]"
-          git -C repo config user.email "$BOT[bot]@users.noreply.github.com"
+          git -C repo config user.name "${BOT}[bot]"
+          git -C repo config user.email "${BOT}[bot]@users.noreply.github.com"
           git -C repo commit -qam "chore(deps): hold back packages that broke the tests"
           git -C repo push origin "HEAD:refs/heads/$BRANCH"
           echo "sha=$(git -C repo rev-parse HEAD)" >> "$GITHUB_OUTPUT"
@@ -390,11 +394,82 @@ jobs:
       SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
       SLACK_SIGNING_SECRET: ${{ secrets.SLACK_SIGNING_SECRET }}
 
-  # ---- The PR when a round passed (or only uncaused failures are left); else delete the branch ----
+  # ---- Judge: Copilot labels round 2's unexplained failures flaky, dependency or unsure; changes nothing ----
+  # Runs package code (Copilot's checks) like `fix-1`. The evidence step holds only a read-only token; the
+  # Copilot step holds only Copilot's own token.
+  judge-2:
+    needs: [push-holds, e2e-2]
+    if: ${{ !cancelled() && needs.push-holds.result == 'success' && needs.e2e-2.result == 'failure' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: read # this run's job logs, and the Test workflow's recent runs
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          path: trusted
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.push-holds.outputs.sha }}
+          path: repo
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: false
+          version: '0.13.6'
+      - uses: actions/download-artifact@v4
+        with:
+          name: holds
+          path: /tmp/dep-state
+
+      - name: Collect the evidence (round 2's unexplained failures, and the same jobs on other branches)
+        id: evidence
+        env:
+          ACTIONS_TOKEN: ${{ secrets.GITHUB_TOKEN }} # read-only here
+        run: |
+          set -euo pipefail
+          count=$(uv run --no-project --with "packaging==$PACKAGING" python "$SCRIPT" --root repo --state "$STATE_DIR" \
+            evidence --run-id "$RUN_ID" --jobs e2e-1 --retry-jobs e2e-2)
+          echo "Unexplained failures: $count"
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+
+      - if: steps.evidence.outputs.count != '0'
+        uses: actions/setup-node@v5
+      - if: steps.evidence.outputs.count != '0'
+        run: npm install -g @github/copilot
+      - name: Copilot labels each failure
+        if: steps.evidence.outputs.count != '0'
+        env:
+          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_REQUEST_TOKEN }}
+        run: |
+          set -euo pipefail
+          uv run --no-project --with "packaging==$PACKAGING" python "$SCRIPT" --root repo --state "$STATE_DIR" judge
+          cat "$STATE_DIR/judge.jsonl" 2>/dev/null || echo "(no labels)"
+
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: judge
+          path: |
+            /tmp/dep-state/judge.json
+            /tmp/dep-state/judge.jsonl
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # ---- The PR when a round passed (or only uncaused failures are left); a draft when some have no known
+  # cause; else delete the branch ----
   # Runs no package code. The state it reads (PR body, Copilot's reasons) comes from jobs that did, so it is
   # only ever text or data here, never run.
   finish:
-    needs: [push, e2e-1, fix-1, push-holds, e2e-2]
+    needs: [push, e2e-1, fix-1, push-holds, e2e-2, judge-2]
     if: always() && needs.push.result == 'success'
     runs-on: ubuntu-latest
     permissions:
@@ -408,6 +483,8 @@ jobs:
         with:
           app-id: ${{ secrets.APP_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          permission-contents: write # delete the branch
+          permission-pull-requests: write # open and comment on the PR
       - uses: actions/checkout@v5
         with:
           ref: ${{ github.sha }}
@@ -422,6 +499,12 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: holds
+          path: /tmp/dep-state
+      - if: needs.judge-2.result == 'success'
+        continue-on-error: true # no labels: the failures stay unexplained, so the PR is a draft
+        uses: actions/download-artifact@v4
+        with:
+          name: judge
           path: /tmp/dep-state
       - uses: astral-sh/setup-uv@v7
         with:
@@ -439,21 +522,33 @@ jobs:
           ACTIONS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ROUND_1: ${{ needs.e2e-1.result }}
           ROUND_2: ${{ needs.e2e-2.result }}
+          FIX_1: ${{ needs.fix-1.result }}
         run: |
           set -euo pipefail
-          green=false
+          green=false draft=()
           if [ "$ROUND_1" = success ] || [ "$ROUND_2" = success ]; then
             green=true
           else
-            # Failures the update did not cause do not block; the script lists them in the PR body.
-            ok=$(GH_TOKEN="$ACTIONS_TOKEN" uv run --no-project --with "packaging==$PACKAGING" python "$SCRIPT" \
-              --state "$STATE_DIR" verdict --run-id "$RUN_ID" --jobs e2e-1 --retry-jobs e2e-2) || ok=false
-            echo "verdict: $ok"; cat "$STATE_DIR/verdict.json" || true
-            [ "$ok" != true ] || green=true
+            # Failures the update did not cause (Copilot's reasons after round 1, its "flaky" labels after
+            # round 2) do not block; the script lists them in the PR body. Failures with no known cause
+            # (a break, or Copilot unsure) open a draft that lists them.
+            outcome=$(GH_TOKEN="$ACTIONS_TOKEN" uv run --no-project --with "packaging==$PACKAGING" python "$SCRIPT" \
+              --state "$STATE_DIR" verdict --run-id "$RUN_ID" --jobs e2e-1 --retry-jobs e2e-2) || outcome=false
+            echo "verdict: $outcome"; cat "$STATE_DIR/verdict.json" || true
+            case "$outcome" in
+              true) green=true ;;
+              # Only once Copilot has looked at round 1: without that, every failure is unexamined.
+              draft) [ "$FIX_1" != success ] || { green=true draft=(--draft); } ;;
+            esac
           fi
           if [ "$green" = true ]; then
-            url=$(gh pr create --repo "$REPO" --base "$BASE_BRANCH" --head "$BRANCH" \
+            url=$(gh pr create --repo "$REPO" --base "$BASE_BRANCH" --head "$BRANCH" "${draft[@]}" \
               --title "$PR_TITLE" --body-file "$STATE_DIR/pr-body.md")
+            if [ ${#draft[@]} -gt 0 ]; then
+              echo "::warning::opened as a draft: some failures have no known cause; see the PR body"
+              { echo "## Opened as a draft"; echo; echo "### Not explained (flaky, or caused by this update)"
+                jq -r '.blocking[]?' "$STATE_DIR/verdict.json" 2>/dev/null || true; echo; } >> "$GITHUB_STEP_SUMMARY"
+            fi
             { echo "## PR opened: $url"; echo; cat "$STATE_DIR/update-summary.md"; } >> "$GITHUB_STEP_SUMMARY"
             # Started on the PR branch; a failure to start never undoes the PR, it is only reported.
             note=""
@@ -481,10 +576,10 @@ jobs:
           failed=$(GH_TOKEN="$ACTIONS_TOKEN" gh api --paginate "repos/$REPO/actions/runs/$RUN_ID/jobs?per_page=100" \
             --jq '.jobs[] | select(.conclusion == "failure") | "- " + .name' | grep -E '^- e2e-[12] / ' || true)
           gh api -X DELETE "repos/$REPO/git/refs/heads/$BRANCH" || true
-          if [ "$ROUND_2" = skipped ]; then
-            why="round 1 had failures that were neither held back nor explained (or the fix job failed)"
+          if [ "$FIX_1" != success ]; then
+            why="round 1 failed and the fix job did not finish, so no failure was examined"
           else
-            why="the tests still failed after the holds, with failures this update may have caused"
+            why="the test results could not be judged (a job was cancelled, or the verdict step failed)"
           fi
           {
             echo "## No PR: $why, so \`$BRANCH\` was deleted"

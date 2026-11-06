@@ -20,7 +20,7 @@ The shared workflows (`test-reusable.yaml`, `chart-test.yaml`, `code-quality.yml
 | Job | Permissions | Secrets | Runs package code |
 |---|---|---|---|
 | `prepare` | `contents`, `pull-requests`, `security-events`: read | `DEPENDABOT_ALERTS_TOKEN` | no |
-| `update`, `fix-1` | `contents: read` (+ `actions: read` in `fix-1`) | `COPILOT_REQUEST_TOKEN` | **yes** |
+| `update`, `fix-1`, `judge-2` | `contents: read` (+ `actions: read` in `fix-1`, `judge-2`) | `COPILOT_REQUEST_TOKEN` | **yes** |
 | `push`, `push-holds` | `contents: write` (+ `actions: write` in `push-holds`) | App key | no |
 | `e2e-1`, `e2e-2` | `contents: read` | the e2e keys | **yes** (the tests) |
 | `finish` | `contents`, `pull-requests`, `actions`: write | App key | no |
@@ -46,12 +46,14 @@ The shared workflows (`test-reusable.yaml`, `chart-test.yaml`, `code-quality.yml
 | `update` | Per manifest: `LockGuard` (`uv lock --upgrade` on each version line), then `uv sync` |
 | `failures` | Writes `failures.json` and prints the count. No `--jobs`: failing install checks. `--jobs` + `--run-id`: this run's failed CI jobs under those caller jobs, with logs |
 | `fix` | Runs Copilot with the prompt, then `hold` |
+| `evidence` | `--jobs e2e-1 --retry-jobs e2e-2`: writes `judge.json` with round 2's failed jobs that `verdict` cannot explain (no pass in round 1, no `not_dependency.jsonl` reason), each like a `failures.json` entry plus `history`: the same job (caller and matrix index ignored) in the last 30 completed `test.yaml` runs off `deps/` branches: runs, passed, failed, and up to 3 failures with branch, date and error lines. Prints the count; a history call that fails is skipped |
+| `judge` | Runs Copilot with the judge prompt on `judge.json` (nothing to judge: no Copilot). Copilot appends `{"job", "verdict": "flaky"\|"dependency"\|"unsure", "reason"}` to `judge.jsonl` |
 | `hold` | Holds each package in `holds.jsonl` (`"*"` = every manifest where it moved); `keep_minimum` → pinned at the minimum (`pins.json`) and narrowed to its minor; otherwise a security package is `blocked`; checks those manifests again |
 | `finalize` | Puts back every manifest that still fails |
 | `npm` | `npm audit fix` where npm alerts exist; `npm ci` + `npm run build`; reverts on failure |
 | `report` | Checks every alert again; writes `pr-body.md` and `update-summary.md` |
 | `apply` | `--patch FILE`: checks a patch from a job that ran package code (rules below) and applies it; exit 1 and the reasons when it breaks a rule |
-| `verdict` | `true` when every failed job of the last round passed in round 1 or has a `not_dependency.jsonl` reason; then lists them in the PR's Testing section (`verdict.json`) |
+| `verdict` | `true` when every failed job of the last round passed in the other round or has a `not_dependency.jsonl` reason; `draft` when some have neither (flaky, or a break: listed as blocking); a round 2 failure labelled `flaky` in `judge.jsonl` counts as accepted (only for jobs in `judge.json`), any other label is shown next to the blocking job; `false` with no results. Lists every non-success, timeouts included, in the PR's Testing section (`verdict.json`). Lists the run's jobs with `gh api`, tried 3 times on HTTP 5xx; any other error stops the command |
 
 ### Rules
 
@@ -90,7 +92,8 @@ The shared workflows (`test-reusable.yaml`, `chart-test.yaml`, `code-quality.yml
 | `fix-1` | `e2e-1` failed | `failures --jobs e2e-1` → `fix` → `finalize` → `report`; the diff as `holds.patch`; the state as artifact `holds` |
 | `push-holds` | `fix-1` held something | `apply --patch holds.patch` on the pushed commit, commits, pushes; deletes this run's `ak-py-dist` artifact, which round 2 uploads again |
 | `e2e-2` | not cancelled and `push-holds` succeeded | the same on the new commit (`!cancelled()`: GitHub's implied `success()` would see round 1's failure) |
-| `finish` | branch pushed (also on cancel, then it only deletes the branch) | a round `success`, or `verdict` → `true`: `gh pr create --title $PR_TITLE`, then `gh workflow run <each of $AFTER_PR_WORKFLOWS> --ref <branch>` and one PR comment with their links (a failure to start is only a warning). Else: delete the branch, list failed and blocking jobs, fail the run |
+| `judge-2` | `e2e-2` failed | `evidence` (read-only `GITHUB_TOKEN` only) → `judge` (Copilot token only), on the round 2 commit; `judge.json` and `judge.jsonl` as artifact `judge` |
+| `finish` | branch pushed (also on cancel, then it only deletes the branch) | a round `success`, or `verdict` → `true`: `gh pr create --title $PR_TITLE`, then `gh workflow run <each of $AFTER_PR_WORKFLOWS> --ref <branch>` and one PR comment with their links (a failure to start is only a warning). `verdict` → `draft` (only when `fix-1` succeeded): the same, with `gh pr create --draft`. Else: delete the branch, list failed and blocking jobs, fail the run |
 
 ## Copilot prompt
 
