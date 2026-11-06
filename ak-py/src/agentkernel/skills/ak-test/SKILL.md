@@ -58,9 +58,9 @@ llm:
 ```
 
 **Evaluator backend:** `evaluator` selects the scoring backend used by both `score` and `llm`
-modes — `deepeval` (the default, `pip install "agentkernel[test]"`), `opik` (`pip install
+modes — `deepeval` (the default, `uv add "agentkernel[test]"`), `opik` (`uv add
 "agentkernel[opik]"`, [Opik](https://www.comet.com/docs/opik/) by Comet, runs entirely locally) and `jev`
-(`pip install "agentkernel[jev]"`, hosted [TypeSafe JEV](https://docs.typesafe.ai) judge: `mode: llm` only, needs
+(`uv add "agentkernel[jev]"`, hosted [TypeSafe JEV](https://docs.typesafe.ai) judge: `mode: llm` only, needs
 `TYPESAFE_API_KEY`, sends the comparison text to `api.typesafe.ai`) are the three built-ins. Set it to a dotted path (e.g. `my_evaluator.MyEvaluator`) to bring your own
 `AKEvaluator` subclass instead:
 
@@ -341,14 +341,14 @@ def my_tool(query: str) -> str:
 
 **Fix:** Install the correct extras:
 ```bash
-pip install "agentkernel[openai]"     # For OpenAI Agents SDK
-pip install "agentkernel[crewai]"     # For CrewAI
-pip install "agentkernel[langgraph]"  # For LangGraph
-pip install "agentkernel[adk]"        # For Google ADK
-pip install "agentkernel[smolagents]" # For Smolagents
-pip install "agentkernel[pydanticai]" # For Pydantic AI (add a provider, e.g. pydantic-ai-slim[openai])
-pip install "agentkernel[maf]"        # For Microsoft Agent Framework (add a provider, e.g. agent-framework-openai)
-pip install "agentkernel[claude]"     # For Claude Agent SDK (Claude models only; ANTHROPIC_API_KEY or Bedrock/Vertex)
+uv add "agentkernel[openai]"     # For OpenAI Agents SDK
+uv add "agentkernel[crewai]"     # For CrewAI
+uv add "agentkernel[langgraph]"  # For LangGraph
+uv add "agentkernel[adk]"        # For Google ADK
+uv add "agentkernel[smolagents]" # For Smolagents
+uv add "agentkernel[pydanticai]" # For Pydantic AI (add a provider, e.g. pydantic-ai-slim[openai])
+uv add "agentkernel[maf]"        # For Microsoft Agent Framework (add a provider, e.g. agent-framework-openai)
+uv add "agentkernel[claude]"     # For Claude Agent SDK (Claude models only; ANTHROPIC_API_KEY or Bedrock/Vertex)
 ```
 
 Or in `pyproject.toml`:

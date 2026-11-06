@@ -197,7 +197,7 @@ pytest tests/test_guardrail.py -v
 Make sure `openai-guardrails` dependency is installed via `agentkernel`:
 
 ```bash
-pip install agentkernel[openai]
+uv add "agentkernel[openai]"
 ```
 
 ### Performance considerations
