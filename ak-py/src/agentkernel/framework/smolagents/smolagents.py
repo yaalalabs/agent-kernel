@@ -223,6 +223,7 @@ class _SmolagentsStreamMapper:
                 events.extend(self._tool_call(tool_call))
         self._last_step_text = self._step_text.strip()
         self._step_text = ""
+        self._index_ids.clear()
         self._text_emitted_this_step = False
         return events
 
@@ -453,6 +454,10 @@ class SmolagentsRunner(Runner):
             context = ToolContext(Runtime.current(), agent, session, requests).set()
             prompt, invalid = self._prompt(requests)
             if invalid is not None:
+                message_id = uuid4().hex
+                yield MessageStart(message_id=message_id)
+                yield TextDelta(message_id=message_id, content=invalid.response)
+                yield MessageEnd(message_id=message_id)
                 return
 
             # Resolved once per run: the static options with a declared factory's result merged over them.

@@ -117,6 +117,9 @@ Pydantic results are converted via `model_dump()`, and `str(reply)` returns the 
 Agent Kernel's Smolagents adapter implements `Runner.stream()`, but structured output still applies
 to non-streaming execution only. A streaming client receives text and tool-call events and reconstructs
 the final answer from them rather than receiving an `AgentReplyAny`.
+
+Token-level deltas need a model that implements `generate_stream`. Without it, smolagents yields whole
+steps, so the adapter emits each step's text and tool calls at once rather than token by token.
 :::
 
 ## Per-run context/state

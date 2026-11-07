@@ -583,6 +583,45 @@ class TestCrewAIRunnerStreaming:
         assert [event.type for event in events] == ["tool_call_start", "tool_call_args", "tool_call_end"]
 
     @pytest.mark.asyncio
+    async def test_stream_does_not_reuse_a_closed_call_id_for_an_id_less_call(self):
+        chunks = [
+            StreamChunk(
+                content="",
+                chunk_type=StreamChunkType.TOOL_CALL,
+                tool_call=ToolCallChunk(tool_id="t1", tool_name="lookup", arguments="{}", index=0),
+            ),
+            StreamChunk(content="between", chunk_type=StreamChunkType.TEXT),
+            StreamChunk(
+                content="",
+                chunk_type=StreamChunkType.TOOL_CALL,
+                tool_call=ToolCallChunk(tool_id="", tool_name="lookup", arguments="{}", index=0),
+            ),
+        ]
+        crew = MagicMock()
+        crew.kickoff_async = AsyncMock(return_value=_CrewAsyncStream(chunks, _crew_output(raw="")))
+        runner = CrewAIRunner()
+
+        with (
+            patch.object(runner, "_memory", return_value=None),
+            patch("agentkernel.framework.crewai.crewai.Task"),
+            patch("agentkernel.framework.crewai.crewai.Crew", return_value=crew),
+        ):
+            events = [event async for event in runner.stream(_mock_agent(), Session("s"), [AgentRequestText(prompt="hi")])]
+
+        starts = [event.tool_call_id for event in events if isinstance(event, ToolCallStart)]
+        assert len(starts) == 2
+        assert starts[0] != starts[1]
+
+    @pytest.mark.asyncio
+    async def test_stream_emits_the_rejection_reply_for_an_invalid_prompt(self):
+        runner = CrewAIRunner()
+
+        events = [event async for event in runner.stream(_mock_agent(), Session("s"), [AgentRequestText(prompt="   ")])]
+
+        assert [event.type for event in events] == ["message_start", "text_delta", "message_end"]
+        assert events[1].content
+
+    @pytest.mark.asyncio
     async def test_run_builds_a_non_streaming_crew(self):
         output = _crew_output(raw="answer")
         crew = MagicMock()

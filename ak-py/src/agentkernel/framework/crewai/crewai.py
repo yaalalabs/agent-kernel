@@ -315,6 +315,7 @@ class _CrewAIStreamMapper:
             return []
         events = [ToolCallEnd(tool_call_id=call_id) for call_id in self._open_calls]
         self._open_calls.clear()
+        self._index_ids.clear()
         return events
 
     def _tool_call(self, tool_call: Any) -> list[StreamEvent]:
@@ -554,6 +555,10 @@ class CrewAIRunner(Runner):
             context = ToolContext(Runtime.current(), agent, session, requests).set()
             prompt, invalid = self._prompt(requests)
             if invalid is not None:
+                message_id = uuid4().hex
+                yield MessageStart(message_id=message_id)
+                yield TextDelta(message_id=message_id, content=invalid.response)
+                yield MessageEnd(message_id=message_id)
                 return
 
             crew, transcript = await self._build_crew(agent, session, requests, prompt, stream=True)

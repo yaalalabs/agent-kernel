@@ -523,6 +523,17 @@ class TestSmolagentsRunnerStreaming:
         assert [event.content for event in events if isinstance(event, TextDelta)] == ["found"]
 
     @pytest.mark.asyncio
+    async def test_stream_emits_the_rejection_reply_for_an_invalid_prompt(self):
+        runner = SmolagentsRunner()
+        agent = _mock_agent()
+        agent.agent = _StreamingNativeSmolagent([])
+
+        events = [event async for event in runner.stream(agent, Session("s"), [AgentRequestText(prompt="   ")])]
+
+        assert [event.type for event in events] == ["message_start", "text_delta", "message_end"]
+        assert events[1].content
+
+    @pytest.mark.asyncio
     async def test_stream_reconciles_a_complete_call_with_a_delta_that_had_no_id(self):
         native = _StreamingNativeSmolagent(
             [
