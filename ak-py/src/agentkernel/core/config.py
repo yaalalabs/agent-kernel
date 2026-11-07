@@ -159,6 +159,16 @@ class _MCPConfig(BaseModel):
 
 class _SlackConfig(BaseModel):
     agent: str = Field(default="", description="Default agent to use for Slack interactions")
+    bot_token_key: str = Field(
+        default="SLACK_BOT_TOKEN",
+        description="Secret key (an environment-variable-style name) holding the Slack bot token, "
+        "resolved through SecretManager: the environment first, then the configured secret provider",
+    )
+    signing_secret_key: str = Field(
+        default="SLACK_SIGNING_SECRET",
+        description="Secret key (an environment-variable-style name) holding the Slack signing secret, "
+        "resolved through SecretManager: the environment first, then the configured secret provider",
+    )
     agent_acknowledgement: str = Field(
         default="",
         description="The message to send as an acknowledgement when a Slack message is received",
@@ -177,15 +187,30 @@ class _WhatsAppConfig(BaseModel):
     )
     verify_token: str = Field(
         default="",
-        description="WhatsApp webhook verify token. When empty, resolved through SecretManager as AK_WHATSAPP__VERIFY_TOKEN (the environment, then the configured secret provider)",
+        description="WhatsApp webhook verify token. When empty, resolved through SecretManager under verify_token_key (the environment, then the configured secret provider)",
+    )
+    verify_token_key: str = Field(
+        default="AK_WHATSAPP__VERIFY_TOKEN",
+        description="Secret key (an environment-variable-style name) holding the WhatsApp webhook verify token when verify_token is empty, "
+        "resolved through SecretManager: the environment first, then the configured secret provider",
     )
     access_token: str = Field(
         default="",
-        description="WhatsApp Business API access token. When empty, resolved through SecretManager as AK_WHATSAPP__ACCESS_TOKEN (the environment, then the configured secret provider)",
+        description="WhatsApp Business API access token. When empty, resolved through SecretManager under access_token_key (the environment, then the configured secret provider)",
+    )
+    access_token_key: str = Field(
+        default="AK_WHATSAPP__ACCESS_TOKEN",
+        description="Secret key (an environment-variable-style name) holding the WhatsApp Business API access token when access_token is empty, "
+        "resolved through SecretManager: the environment first, then the configured secret provider",
     )
     app_secret: str = Field(
         default="",
-        description="WhatsApp app secret for signature verification. When empty, resolved through SecretManager as AK_WHATSAPP__APP_SECRET (the environment, then the configured secret provider)",
+        description="WhatsApp app secret for signature verification. When empty, resolved through SecretManager under app_secret_key (the environment, then the configured secret provider)",
+    )
+    app_secret_key: str = Field(
+        default="AK_WHATSAPP__APP_SECRET",
+        description="Secret key (an environment-variable-style name) holding the WhatsApp app secret when app_secret is empty, "
+        "resolved through SecretManager: the environment first, then the configured secret provider",
     )
     phone_number_id: str = Field(default="", description="WhatsApp Business phone number ID")
     api_version: str = Field(default="v24.0", description="WhatsApp API version")
@@ -199,15 +224,30 @@ class _MessengerConfig(BaseModel):
     agent: str = Field(default="", description="Default agent to use for Facebook Messenger interactions")
     verify_token: str = Field(
         default="",
-        description="Facebook Messenger webhook verify token. When empty, resolved through SecretManager as AK_MESSENGER__VERIFY_TOKEN (the environment, then the configured secret provider)",
+        description="Facebook Messenger webhook verify token. When empty, resolved through SecretManager under verify_token_key (the environment, then the configured secret provider)",
+    )
+    verify_token_key: str = Field(
+        default="AK_MESSENGER__VERIFY_TOKEN",
+        description="Secret key (an environment-variable-style name) holding the Messenger webhook verify token when verify_token is empty, "
+        "resolved through SecretManager: the environment first, then the configured secret provider",
     )
     access_token: str = Field(
         default="",
-        description="Facebook Page access token. When empty, resolved through SecretManager as AK_MESSENGER__ACCESS_TOKEN (the environment, then the configured secret provider)",
+        description="Facebook Page access token. When empty, resolved through SecretManager under access_token_key (the environment, then the configured secret provider)",
+    )
+    access_token_key: str = Field(
+        default="AK_MESSENGER__ACCESS_TOKEN",
+        description="Secret key (an environment-variable-style name) holding the Facebook Page access token when access_token is empty, "
+        "resolved through SecretManager: the environment first, then the configured secret provider",
     )
     app_secret: str = Field(
         default="",
-        description="Facebook app secret for signature verification. When empty, resolved through SecretManager as AK_MESSENGER__APP_SECRET (the environment, then the configured secret provider)",
+        description="Facebook app secret for signature verification. When empty, resolved through SecretManager under app_secret_key (the environment, then the configured secret provider)",
+    )
+    app_secret_key: str = Field(
+        default="AK_MESSENGER__APP_SECRET",
+        description="Secret key (an environment-variable-style name) holding the Facebook app secret when app_secret is empty, "
+        "resolved through SecretManager: the environment first, then the configured secret provider",
     )
     api_version: str = Field(default="v24.0", description="Facebook Graph API version")
     outbound_adapter: str = Field(
@@ -220,15 +260,30 @@ class _InstagramConfig(BaseModel):
     agent: str = Field(default="", description="Default agent to use for Instagram interactions")
     verify_token: str = Field(
         default="",
-        description="Instagram webhook verify token. When empty, resolved through SecretManager as AK_INSTAGRAM__VERIFY_TOKEN (the environment, then the configured secret provider)",
+        description="Instagram webhook verify token. When empty, resolved through SecretManager under verify_token_key (the environment, then the configured secret provider)",
+    )
+    verify_token_key: str = Field(
+        default="AK_INSTAGRAM__VERIFY_TOKEN",
+        description="Secret key (an environment-variable-style name) holding the Instagram webhook verify token when verify_token is empty, "
+        "resolved through SecretManager: the environment first, then the configured secret provider",
     )
     access_token: str = Field(
         default="",
-        description="Instagram Business access token. When empty, resolved through SecretManager as AK_INSTAGRAM__ACCESS_TOKEN (the environment, then the configured secret provider)",
+        description="Instagram Business access token. When empty, resolved through SecretManager under access_token_key (the environment, then the configured secret provider)",
+    )
+    access_token_key: str = Field(
+        default="AK_INSTAGRAM__ACCESS_TOKEN",
+        description="Secret key (an environment-variable-style name) holding the Instagram Business access token when access_token is empty, "
+        "resolved through SecretManager: the environment first, then the configured secret provider",
     )
     app_secret: str = Field(
         default="",
-        description="Instagram app secret for signature verification. When empty, resolved through SecretManager as AK_INSTAGRAM__APP_SECRET (the environment, then the configured secret provider)",
+        description="Instagram app secret for signature verification. When empty, resolved through SecretManager under app_secret_key (the environment, then the configured secret provider)",
+    )
+    app_secret_key: str = Field(
+        default="AK_INSTAGRAM__APP_SECRET",
+        description="Secret key (an environment-variable-style name) holding the Instagram app secret when app_secret is empty, "
+        "resolved through SecretManager: the environment first, then the configured secret provider",
     )
     instagram_account_id: str = Field(default="", description="Instagram Business Account ID (IGSID)")
     api_version: str = Field(default="v21.0", description="Instagram Graph API version")
@@ -242,11 +297,21 @@ class _TelegramConfig(BaseModel):
     agent: str = Field(default="", description="Default agent to use for Telegram")
     bot_token: str = Field(
         default="",
-        description="Telegram bot token from BotFather. When empty, resolved through SecretManager as AK_TELEGRAM__BOT_TOKEN (the environment, then the configured secret provider)",
+        description="Telegram bot token from BotFather. When empty, resolved through SecretManager under bot_token_key (the environment, then the configured secret provider)",
+    )
+    bot_token_key: str = Field(
+        default="AK_TELEGRAM__BOT_TOKEN",
+        description="Secret key (an environment-variable-style name) holding the Telegram bot token when bot_token is empty, "
+        "resolved through SecretManager: the environment first, then the configured secret provider",
     )
     webhook_secret: str = Field(
         default="",
-        description="Optional secret token for webhook security. When empty, resolved through SecretManager as AK_TELEGRAM__WEBHOOK_SECRET (the environment, then the configured secret provider)",
+        description="Optional secret token for webhook security. When empty, resolved through SecretManager under webhook_secret_key (the environment, then the configured secret provider)",
+    )
+    webhook_secret_key: str = Field(
+        default="AK_TELEGRAM__WEBHOOK_SECRET",
+        description="Secret key (an environment-variable-style name) holding the Telegram webhook secret when webhook_secret is empty, "
+        "resolved through SecretManager: the environment first, then the configured secret provider",
     )
     api_version: str = Field(default="bot", description="Telegram Bot API version prefix")
     outbound_adapter: str = Field(
@@ -264,7 +329,12 @@ class _TeamsConfig(BaseModel):
     app_id: str = Field(default="", description="Azure Bot / Entra ID application (client) ID")
     app_password: str = Field(
         default="",
-        description="Azure Bot / Entra ID application client secret. When empty, resolved through SecretManager as AK_TEAMS__APP_PASSWORD (the environment, then the configured secret provider)",
+        description="Azure Bot / Entra ID application client secret. When empty, resolved through SecretManager under app_password_key (the environment, then the configured secret provider)",
+    )
+    app_password_key: str = Field(
+        default="AK_TEAMS__APP_PASSWORD",
+        description="Secret key (an environment-variable-style name) holding the Azure Bot / Entra ID client secret when app_password is empty, "
+        "resolved through SecretManager: the environment first, then the configured secret provider",
     )
     tenant_id: str = Field(
         default="",
@@ -278,6 +348,16 @@ class _TeamsConfig(BaseModel):
 
 class _GmailConfig(BaseModel):
     agent: str = Field(default="", description="Default agent to use for Gmail")
+    client_id_key: str = Field(
+        default="AK_GMAIL__CLIENT_ID",
+        description="Secret key (an environment-variable-style name) holding the Gmail OAuth2 client ID, "
+        "resolved through SecretManager: the environment first, then the configured secret provider",
+    )
+    client_secret_key: str = Field(
+        default="AK_GMAIL__CLIENT_SECRET",
+        description="Secret key (an environment-variable-style name) holding the Gmail OAuth2 client secret, "
+        "resolved through SecretManager: the environment first, then the configured secret provider",
+    )
     token_file: str = Field(default="token.pickle", description="Path to store OAuth2 token")
     poll_interval: int = Field(default=30, description="Email polling interval in seconds")
     label_filter: str = Field(default="INBOX", description="Gmail label to monitor (e.g., INBOX, UNREAD)")

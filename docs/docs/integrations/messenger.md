@@ -87,7 +87,7 @@ export AK_MESSENGER__APP_SECRET="your_app_secret"  # Optional but recommended
 export AK_MESSENGER__API_VERSION="v21.0"  # Optional, defaults to v21.0
 ```
 
-> **Secret providers:** these credentials can also live in your configured secret provider (AWS SSM Parameter Store, mounted Kubernetes Secrets) instead of the environment; see [Framework-owned credentials](../advanced/secrets.md#framework-owned-credentials).
+> **Secret providers:** these credentials can also live in your configured secret provider (AWS SSM Parameter Store, mounted Kubernetes Secrets) instead of the environment; see [Framework-owned credentials](../advanced/secrets.md#framework-owned-credentials). The keys they are read under are set by `messenger.access_token_key`, `verify_token_key` and `app_secret_key` in `config.yaml`, defaulting to the names above.
 
 **Multimodal Configuration (for image and document support):**
 

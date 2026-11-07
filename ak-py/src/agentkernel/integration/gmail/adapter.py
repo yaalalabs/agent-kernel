@@ -73,14 +73,15 @@ class _GmailService:
     """OAuth2 credentials and the Gmail client both halves use."""
 
     def __init__(self):
-        self._token_file = AKConfig.get().gmail.token_file or "token.pickle"
+        config = AKConfig.get().gmail
+        self._token_file = config.token_file or "token.pickle"
         secrets = SecretManager.current()
-        self._client_id = secrets.get("AK_GMAIL__CLIENT_ID", default=None)
-        self._client_secret = secrets.get("AK_GMAIL__CLIENT_SECRET", default=None)
+        self._client_id = secrets.get(config.client_id_key, default=None)
+        self._client_secret = secrets.get(config.client_secret_key, default=None)
         self._redirect_uris = os.environ.get("AK_GMAIL__REDIRECT_URIS", "http://localhost").split(",")
         missing = [
             secrets.describe(key)
-            for key, value in (("AK_GMAIL__CLIENT_ID", self._client_id), ("AK_GMAIL__CLIENT_SECRET", self._client_secret))
+            for key, value in ((config.client_id_key, self._client_id), (config.client_secret_key, self._client_secret))
             if not value
         ]
         if missing:

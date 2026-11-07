@@ -33,14 +33,15 @@ class _TelegramClient:
 
     def __init__(self):
         config = AKConfig.get().telegram
-        # An empty field falls back to the secret provider, keyed by the field's own AK_* name.
-        self._bot_token = config.bot_token or SecretManager.current().get("AK_TELEGRAM__BOT_TOKEN", default="")
+        # An empty field falls back to the secret provider, under the key its *_key field names.
+        secrets = SecretManager.current()
+        self._bot_token = config.bot_token or secrets.get(config.bot_token_key, default="")
         if not self._bot_token:
-            message = f"Incomplete Telegram configuration: set {SecretManager.current().describe('AK_TELEGRAM__BOT_TOKEN', 'telegram.bot_token')}."
+            message = f"Incomplete Telegram configuration: set {secrets.describe(config.bot_token_key, 'telegram.bot_token')}."
             _log.error(message)
             raise ValueError(message)
         self._base_url = f"https://api.telegram.org/{config.api_version or 'bot'}{self._bot_token}"
-        self._webhook_secret = config.webhook_secret or SecretManager.current().get("AK_TELEGRAM__WEBHOOK_SECRET", default="")
+        self._webhook_secret = config.webhook_secret or secrets.get(config.webhook_secret_key, default="")
 
     @property
     def webhook_secret(self) -> str:

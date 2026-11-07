@@ -21,13 +21,14 @@ _log = logging.getLogger("ak.integration.messenger")
 
 def _client() -> MetaSendAPIClient:
     config = AKConfig.get().messenger
-    access_token = config.access_token or SecretManager.current().get("AK_MESSENGER__ACCESS_TOKEN", default="")
-    verify_token = config.verify_token or SecretManager.current().get("AK_MESSENGER__VERIFY_TOKEN", default="")
+    secrets = SecretManager.current()
+    access_token = config.access_token or secrets.get(config.access_token_key, default="")
+    verify_token = config.verify_token or secrets.get(config.verify_token_key, default="")
     missing = [
-        SecretManager.current().describe(key, field)
+        secrets.describe(key, field)
         for field, key, value in (
-            ("messenger.access_token", "AK_MESSENGER__ACCESS_TOKEN", access_token),
-            ("messenger.verify_token", "AK_MESSENGER__VERIFY_TOKEN", verify_token),
+            ("messenger.access_token", config.access_token_key, access_token),
+            ("messenger.verify_token", config.verify_token_key, verify_token),
         )
         if not value
     ]
@@ -56,8 +57,9 @@ class MessengerInboundAdapter(InboundAdapter):
         config = AKConfig.get()
         self._agent = config.messenger.agent or None
         self._max_file_size = config.api.max_file_size
-        self._app_secret = config.messenger.app_secret or SecretManager.current().get("AK_MESSENGER__APP_SECRET", default="")
-        self._verify_token = config.messenger.verify_token or SecretManager.current().get("AK_MESSENGER__VERIFY_TOKEN", default="")
+        secrets = SecretManager.current()
+        self._app_secret = config.messenger.app_secret or secrets.get(config.messenger.app_secret_key, default="")
+        self._verify_token = config.messenger.verify_token or secrets.get(config.messenger.verify_token_key, default="")
         self._api = _client()
 
     def missing_verification_settings(self) -> list[str]:

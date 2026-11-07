@@ -52,9 +52,10 @@ class SlackInboundAdapter(InboundAdapter):
         # Passed explicitly so both resolve through the secret provider; Bolt would read only the environment.
         # Checked here too, because Bolt's own errors name only the environment variable.
         secrets = SecretManager.current()
-        token = secrets.get("SLACK_BOT_TOKEN", default=None)
-        signing_secret = secrets.get("SLACK_SIGNING_SECRET", default=None)
-        missing = [secrets.describe(key) for key, value in (("SLACK_BOT_TOKEN", token), ("SLACK_SIGNING_SECRET", signing_secret)) if not value]
+        token_key, signing_secret_key = config.slack.bot_token_key, config.slack.signing_secret_key
+        token = secrets.get(token_key, default=None)
+        signing_secret = secrets.get(signing_secret_key, default=None)
+        missing = [secrets.describe(key) for key, value in ((token_key, token), (signing_secret_key, signing_secret)) if not value]
         if missing:
             message = f"Incomplete Slack configuration: set {'; '.join(missing)}."
             self._log.error(message)
@@ -243,7 +244,9 @@ class SlackOutboundAdapter(OutboundAdapter):
     _log = logging.getLogger("ak.integration.slack")
 
     def __init__(self):
-        self._acknowledgement = AKConfig.get().slack.agent_acknowledgement or None
+        config = AKConfig.get().slack
+        self._acknowledgement = config.agent_acknowledgement or None
+        self._token = SecretManager.current().get(config.bot_token_key, default=None)
 
     async def acknowledge(self, reply_context: dict[str, str]) -> dict[str, str]:
         """Post the "thinking" message, if one is configured, and remember where it went."""
@@ -291,7 +294,6 @@ class SlackOutboundAdapter(OutboundAdapter):
             blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": self.TRUNCATION_NOTICE}})
         return blocks
 
-    @staticmethod
-    def _client() -> AsyncWebClient:
+    def _client(self) -> AsyncWebClient:
         """A fresh client per call: each delivery runs on its own event loop."""
-        return AsyncWebClient(token=SecretManager.current().get("SLACK_BOT_TOKEN", default=None))
+        return AsyncWebClient(token=self._token)

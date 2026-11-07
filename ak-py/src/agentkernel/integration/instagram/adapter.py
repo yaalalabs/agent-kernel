@@ -25,13 +25,14 @@ _log = logging.getLogger("ak.integration.instagram")
 
 def _client() -> MetaSendAPIClient:
     config = AKConfig.get().instagram
-    access_token = config.access_token or SecretManager.current().get("AK_INSTAGRAM__ACCESS_TOKEN", default="")
-    verify_token = config.verify_token or SecretManager.current().get("AK_INSTAGRAM__VERIFY_TOKEN", default="")
+    secrets = SecretManager.current()
+    access_token = config.access_token or secrets.get(config.access_token_key, default="")
+    verify_token = config.verify_token or secrets.get(config.verify_token_key, default="")
     missing = [
-        SecretManager.current().describe(key, field)
+        secrets.describe(key, field)
         for field, key, value in (
-            ("instagram.access_token", "AK_INSTAGRAM__ACCESS_TOKEN", access_token),
-            ("instagram.verify_token", "AK_INSTAGRAM__VERIFY_TOKEN", verify_token),
+            ("instagram.access_token", config.access_token_key, access_token),
+            ("instagram.verify_token", config.verify_token_key, verify_token),
         )
         if not value
     ]
@@ -59,8 +60,9 @@ class InstagramInboundAdapter(InboundAdapter):
         config = AKConfig.get()
         self._agent = config.instagram.agent or None
         self._max_file_size = config.api.max_file_size
-        self._app_secret = config.instagram.app_secret or SecretManager.current().get("AK_INSTAGRAM__APP_SECRET", default="")
-        self._verify_token = config.instagram.verify_token or SecretManager.current().get("AK_INSTAGRAM__VERIFY_TOKEN", default="")
+        secrets = SecretManager.current()
+        self._app_secret = config.instagram.app_secret or secrets.get(config.instagram.app_secret_key, default="")
+        self._verify_token = config.instagram.verify_token or secrets.get(config.instagram.verify_token_key, default="")
         self._api = _client()
 
     def missing_verification_settings(self) -> list[str]:

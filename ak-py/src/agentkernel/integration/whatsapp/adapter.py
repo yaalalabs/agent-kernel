@@ -26,18 +26,19 @@ class _WhatsAppClient:
 
     def __init__(self):
         config = AKConfig.get().whatsapp
-        # An empty field falls back to the secret provider, keyed by the field's own AK_* name.
-        self._access_token = config.access_token or SecretManager.current().get("AK_WHATSAPP__ACCESS_TOKEN", default="")
+        # An empty field falls back to the secret provider, under the key its *_key field names.
+        secrets = SecretManager.current()
+        self._access_token = config.access_token or secrets.get(config.access_token_key, default="")
         self._phone_number_id = config.phone_number_id
-        self._verify_token = config.verify_token or SecretManager.current().get("AK_WHATSAPP__VERIFY_TOKEN", default="")
-        self._app_secret = config.app_secret or SecretManager.current().get("AK_WHATSAPP__APP_SECRET", default="")
+        self._verify_token = config.verify_token or secrets.get(config.verify_token_key, default="")
+        self._app_secret = config.app_secret or secrets.get(config.app_secret_key, default="")
         self._base_url = f"https://graph.facebook.com/{config.api_version or 'v24.0'}"
         missing = [
-            SecretManager.current().describe(key, field) if key else field
+            secrets.describe(key, field) if key else field
             for field, key, value in (
-                ("whatsapp.access_token", "AK_WHATSAPP__ACCESS_TOKEN", self._access_token),
+                ("whatsapp.access_token", config.access_token_key, self._access_token),
                 ("whatsapp.phone_number_id", None, self._phone_number_id),
-                ("whatsapp.verify_token", "AK_WHATSAPP__VERIFY_TOKEN", self._verify_token),
+                ("whatsapp.verify_token", config.verify_token_key, self._verify_token),
             )
             if not value
         ]

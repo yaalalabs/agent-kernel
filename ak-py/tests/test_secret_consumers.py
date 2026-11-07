@@ -75,7 +75,7 @@ def _slack_outbound_token(monkeypatch) -> str:
     pytest.importorskip("slack_bolt")
     from agentkernel.integration.slack.adapter import SlackOutboundAdapter
 
-    return SlackOutboundAdapter._client().token
+    return SlackOutboundAdapter()._client().token
 
 
 def _gmail(attribute: str) -> Callable:
@@ -245,6 +245,8 @@ class Consumer:
     # Settings the consumer also needs, set in the environment in every case so that `key` is the
     # only one left for the provider.
     siblings: dict[str, str] = field(default_factory=dict)
+    # The AK_* name of the config field naming the secret key, for consumers whose key is configurable.
+    key_field: str | None = None
 
     def __str__(self) -> str:
         return self.key
@@ -262,17 +264,17 @@ def _without(siblings: dict[str, str], key: str) -> dict[str, str]:
 
 CONSUMERS = [
     Consumer("WALLED_API_KEY", _walledai),
-    Consumer("SLACK_BOT_TOKEN", _slack_inbound_token, {"SLACK_SIGNING_SECRET": SIBLING_VALUE}),
-    Consumer("SLACK_SIGNING_SECRET", _slack_inbound_signing_secret, {"SLACK_BOT_TOKEN": SIBLING_VALUE}),
-    Consumer("SLACK_BOT_TOKEN", _slack_outbound_token),
-    Consumer("AK_GMAIL__CLIENT_ID", _gmail("_client_id"), {"AK_GMAIL__CLIENT_SECRET": SIBLING_VALUE}),
-    Consumer("AK_GMAIL__CLIENT_SECRET", _gmail("_client_secret"), {"AK_GMAIL__CLIENT_ID": SIBLING_VALUE}),
+    Consumer("SLACK_BOT_TOKEN", _slack_inbound_token, {"SLACK_SIGNING_SECRET": SIBLING_VALUE}, "AK_SLACK__BOT_TOKEN_KEY"),
+    Consumer("SLACK_SIGNING_SECRET", _slack_inbound_signing_secret, {"SLACK_BOT_TOKEN": SIBLING_VALUE}, "AK_SLACK__SIGNING_SECRET_KEY"),
+    Consumer("SLACK_BOT_TOKEN", _slack_outbound_token, key_field="AK_SLACK__BOT_TOKEN_KEY"),
+    Consumer("AK_GMAIL__CLIENT_ID", _gmail("_client_id"), {"AK_GMAIL__CLIENT_SECRET": SIBLING_VALUE}, "AK_GMAIL__CLIENT_ID_KEY"),
+    Consumer("AK_GMAIL__CLIENT_SECRET", _gmail("_client_secret"), {"AK_GMAIL__CLIENT_ID": SIBLING_VALUE}, "AK_GMAIL__CLIENT_SECRET_KEY"),
     Consumer("NEO4J_PASSWORD", _neo4j),
     Consumer("STARBURST_PASSWORD", _starburst),
     Consumer("E2B_API_KEY", _e2b),
     Consumer("DAYTONA_API_KEY", _daytona),
     *[
-        Consumer(key, _whatsapp(attribute), _without(_WHATSAPP, key))
+        Consumer(key, _whatsapp(attribute), _without(_WHATSAPP, key), f"{key}_KEY")
         for key, attribute in [
             ("AK_WHATSAPP__ACCESS_TOKEN", "_access_token"),
             ("AK_WHATSAPP__VERIFY_TOKEN", "verify_token"),
@@ -284,13 +286,16 @@ CONSUMERS = [
             f"AK_{platform.upper()}__{attribute.upper()}",
             _meta_inbound(platform, attribute),
             _without(siblings, f"AK_{platform.upper()}__{attribute.upper()}"),
+            f"AK_{platform.upper()}__{attribute.upper()}_KEY",
         )
         for platform, siblings in [("messenger", _MESSENGER), ("instagram", _INSTAGRAM)]
         for attribute in ["access_token", "verify_token", "app_secret"]
     ],
-    Consumer("AK_TELEGRAM__BOT_TOKEN", _telegram("_bot_token"), {"AK_TELEGRAM__WEBHOOK_SECRET": SIBLING_VALUE}),
-    Consumer("AK_TELEGRAM__WEBHOOK_SECRET", _telegram("webhook_secret"), {"AK_TELEGRAM__BOT_TOKEN": SIBLING_VALUE}),
-    Consumer("AK_TEAMS__APP_PASSWORD", _teams, {"AK_TEAMS__APP_ID": "app-id"}),
+    Consumer("AK_TELEGRAM__BOT_TOKEN", _telegram("_bot_token"), {"AK_TELEGRAM__WEBHOOK_SECRET": SIBLING_VALUE}, "AK_TELEGRAM__BOT_TOKEN_KEY"),
+    Consumer(
+        "AK_TELEGRAM__WEBHOOK_SECRET", _telegram("webhook_secret"), {"AK_TELEGRAM__BOT_TOKEN": SIBLING_VALUE}, "AK_TELEGRAM__WEBHOOK_SECRET_KEY"
+    ),
+    Consumer("AK_TEAMS__APP_PASSWORD", _teams, {"AK_TEAMS__APP_ID": "app-id"}, "AK_TEAMS__APP_PASSWORD_KEY"),
     Consumer("AK_LIVEKIT__API_KEY", _livekit("_api_key"), _without(_LIVEKIT, "AK_LIVEKIT__API_KEY")),
     Consumer("AK_LIVEKIT__API_SECRET", _livekit("_api_secret"), _without(_LIVEKIT, "AK_LIVEKIT__API_SECRET")),
     Consumer("AK_WEBSOCKET_API__PUSH_AUTH_TOKEN", _push_auth_token),
@@ -349,6 +354,23 @@ def consumer(request, monkeypatch):
 
 @pytest.fixture(params=REQUIRED, ids=_consumer_id)
 def required_consumer(request, monkeypatch):
+    yield from _isolate(request.param, monkeypatch)
+
+
+# Consumers whose secret key a config field names, so an app can store the secret under its own key.
+CONFIGURABLE = [consumer for consumer in CONSUMERS if consumer.key_field]
+CUSTOM_KEY = "MY_APP_SECRET"
+
+
+@pytest.fixture(params=CONFIGURABLE, ids=_consumer_id)
+def configurable_consumer(request, monkeypatch):
+    monkeypatch.delenv(CUSTOM_KEY, raising=False)
+    yield from _isolate(request.param, monkeypatch)
+
+
+@pytest.fixture(params=[consumer for consumer in CONFIGURABLE if consumer in REQUIRED], ids=_consumer_id)
+def configurable_required_consumer(request, monkeypatch):
+    monkeypatch.delenv(CUSTOM_KEY, raising=False)
     yield from _isolate(request.param, monkeypatch)
 
 
@@ -438,6 +460,41 @@ class TestFrameworkConsumers:
 
         assert "SSM parameter /ak/test/ak_whatsapp__app_secret" in LambdaWebhookGuard._sources("whatsapp.app_secret")
         assert LambdaWebhookGuard._sources("a bring-your-own setting") == "a bring-your-own setting"
+
+
+class TestConfiguredSecretKeys:
+    def test_the_configured_key_is_the_one_resolved(self, configurable_consumer, monkeypatch):
+        provider = _DictSecretProvider({CUSTOM_KEY: PROVIDER_VALUE, configurable_consumer.key: "default-key-value"})
+        _install(monkeypatch, provider)
+        monkeypatch.setenv(configurable_consumer.key_field, CUSTOM_KEY)
+        AKConfig._reset()
+
+        assert configurable_consumer.resolve(monkeypatch) == PROVIDER_VALUE
+        assert configurable_consumer.key not in provider.calls
+
+    def test_a_missing_credential_names_the_configured_key(self, configurable_required_consumer, monkeypatch):
+        _install(monkeypatch, _LocatedSecretProvider({}))
+        monkeypatch.setenv(configurable_required_consumer.key_field, CUSTOM_KEY)
+        AKConfig._reset()
+
+        with pytest.raises(Exception) as exc_info:
+            configurable_required_consumer.resolve(monkeypatch)
+
+        message = str(exc_info.value)
+        assert f"the {CUSTOM_KEY} environment variable" in message
+        assert f"SSM parameter /ak/test/{CUSTOM_KEY.lower()}" in message
+
+    def test_the_webhook_guard_names_the_configured_key(self, monkeypatch):
+        from agentkernel.deployment.aws.serverless.core.webhook_host import LambdaWebhookGuard
+
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+        monkeypatch.setenv("AK_WHATSAPP__APP_SECRET_KEY", CUSTOM_KEY)
+        AKConfig._reset()
+        _install(monkeypatch, _LocatedSecretProvider({}))
+        try:
+            assert f"SSM parameter /ak/test/{CUSTOM_KEY.lower()}" in LambdaWebhookGuard._sources("whatsapp.app_secret")
+        finally:
+            AKConfig._reset()
 
 
 class TestRealtimeLookupStaysOffTheLoop:

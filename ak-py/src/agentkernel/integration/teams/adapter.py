@@ -58,11 +58,11 @@ class _TeamsCredentials:
     def __init__(self):
         config = AKConfig.get().teams
         self._app_id = config.app_id
-        # An empty field falls back to the secret provider, keyed by the field's own AK_* name.
-        self._app_password = config.app_password or SecretManager.current().get("AK_TEAMS__APP_PASSWORD", default="")
+        # An empty field falls back to the secret provider, under the key app_password_key names.
+        self._app_password = config.app_password or SecretManager.current().get(config.app_password_key, default="")
         self._tenant_id = config.tenant_id
         missing = ([] if self._app_id else ["teams.app_id"]) + (
-            [] if self._app_password else [SecretManager.current().describe("AK_TEAMS__APP_PASSWORD", "teams.app_password")]
+            [] if self._app_password else [SecretManager.current().describe(config.app_password_key, "teams.app_password")]
         )
         if missing:
             message = f"Incomplete Teams configuration: set {'; '.join(missing)}."

@@ -162,8 +162,9 @@ class LambdaWebhookGuard:
 
     @staticmethod
     def _sources(setting: str) -> str:
-        """Every place an unset setting can be set: the AKConfig field, then its AK_* name through SecretManager."""
-        try:
-            return SecretManager.current().describe("AK_" + setting.upper().replace(".", "__"), setting)
-        except ValueError:  # not an AKConfig field path: a bring-your-own adapter's own wording
+        """Every place an unset setting can be set: the AKConfig field, then the secret key its ``*_key`` field names."""
+        block, _, field = setting.partition(".")
+        key = getattr(getattr(AKConfig.get(), block, None), f"{field}_key", None) if field else None
+        if not isinstance(key, str) or not key:  # no configurable secret key: a bring-your-own adapter's own wording
             return setting
+        return SecretManager.current().describe(key, setting)

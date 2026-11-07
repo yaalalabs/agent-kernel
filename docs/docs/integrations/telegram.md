@@ -46,7 +46,7 @@ export AK_TELEGRAM__WEBHOOK_SECRET="your_secure_random_string"  # Optional
 export OPENAI_API_KEY="your_openai_api_key"
 ```
 
-> **Secret providers:** these credentials can also live in your configured secret provider (AWS SSM Parameter Store, mounted Kubernetes Secrets) instead of the environment; see [Framework-owned credentials](../advanced/secrets.md#framework-owned-credentials).
+> **Secret providers:** these credentials can also live in your configured secret provider (AWS SSM Parameter Store, mounted Kubernetes Secrets) instead of the environment; see [Framework-owned credentials](../advanced/secrets.md#framework-owned-credentials). The keys they are read under are set by `telegram.bot_token_key` and `webhook_secret_key` in `config.yaml`, defaulting to the names above.
 ### Multimodal Configuration
 
 For image and document support, configure these environment variables:
