@@ -1,5 +1,3 @@
-from typing import Optional
-
 import jwt
 from agentkernel.auth import AuthValidator, ValidationContext, ValidationResult
 from agentkernel.aws import AWSWebsocketAPI, ECSIOHandler
@@ -8,7 +6,7 @@ from agentkernel.aws import AWSWebsocketAPI, ECSIOHandler
 # Auth validator for the WebSocket $connect handshake. The client passes a token via the
 # `?token=` query string; a rejected (non is_valid) result closes the connection before it opens.
 class CustomAuthValidator(AuthValidator):
-    def validate(self, token: str, context: Optional[ValidationContext] = None) -> ValidationResult:
+    def validate(self, token: str, context: ValidationContext | None = None) -> ValidationResult:
         """Validate JWT token and return validation result.
 
         WARNING: Signature verification is disabled here for demo purposes only.

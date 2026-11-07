@@ -24,9 +24,10 @@ module "containerized_agents" {
     command      = ["python", "app_rest_service.py"]
   }
 
-  # Queue mode + WebSocket, STREAM execution mode
+  # Queue mode + WebSocket, async execution mode with delta replies
   queue_mode     = true
-  execution_mode = "stream" # each token delta is pushed as its own STREAM_CHUNK message
+  execution_mode = "async"
+  message_type   = "delta" # each token delta is pushed as its own STREAM_CHUNK message
   ws_chat_route  = "chat"
 
   queue_config = {

@@ -102,6 +102,14 @@ class Logfire(BaseTrace):
 
         return LogfireMAFRunner()
 
+    def claude(self) -> Runner:
+        """
+        Returns the Logfire Claude Agent SDK runner instance.
+        """
+        from .claude import LogfireClaudeRunner
+
+        return LogfireClaudeRunner()
+
     def fetch_spans(self, query: TraceQuery) -> list[FetchedSpan]:
         """
         Fetches spans back from Logfire through the SQL Query API (needs ``LOGFIRE_READ_TOKEN``, resolved

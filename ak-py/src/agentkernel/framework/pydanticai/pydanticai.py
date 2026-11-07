@@ -4,8 +4,8 @@ import base64
 import copy
 import json
 import logging
-from collections.abc import AsyncGenerator
-from typing import Any, Callable, ClassVar, List, Literal, Mapping
+from collections.abc import AsyncGenerator, Callable, Mapping
+from typing import Any, ClassVar, Literal
 from uuid import uuid4
 
 from pydantic_ai import Agent as PydanticAgent
@@ -110,7 +110,7 @@ class PydanticAIRunner(BaseRunner):
         filtered = dict(options)
         if filtered.pop("event_stream_handler", None) is not None and not self._event_stream_handler_warned:
             _log.warning(
-                "Pydantic AI event_stream_handler is ignored in Agent Kernel stream mode; the runner's own stream events "
+                "Pydantic AI event_stream_handler is ignored in Agent Kernel streamed runs; the runner's own stream events "
                 "carry the same information"
             )
             self._event_stream_handler_warned = True
@@ -906,7 +906,7 @@ class PydanticAIModule(Module):
             self.runner = PydanticAIRunner()
         self.load(agents)
 
-    def _wrap(self, agent: PydanticAgent, agents: List[PydanticAgent]) -> BaseAgent:
+    def _wrap(self, agent: PydanticAgent, agents: list[PydanticAgent]) -> BaseAgent:
         """
         Wraps the provided agent in a PydanticAIAgent instance.
         :param agent: Agent to wrap.

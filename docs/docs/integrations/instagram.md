@@ -214,8 +214,6 @@ the events you want to handle yourself and return `None`, and hand everything el
 normalisation. Nothing here runs the agent — that happens on the far side of the queue.
 
 ```python
-from typing import Optional
-
 from agentkernel.instagram import InstagramInboundAdapter
 from agentkernel.integration.adapter import WebhookRESTRequestHandler
 from agentkernel.integration.adapter.base import InboundRequest
@@ -229,7 +227,7 @@ SHORTHAND = {"pls": "please", "thx": "thanks", "u": "you"}
 
 
 class CustomInstagramInboundAdapter(InstagramInboundAdapter):
-    async def _to_request(self, event: dict) -> Optional[InboundRequest]:
+    async def _to_request(self, event: dict) -> InboundRequest | None:
         sender_id = event.get("sender", {}).get("id")
         text = (event.get("message", {}).get("text") or "").strip()
 

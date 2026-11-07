@@ -12,14 +12,12 @@ API, runner, and Response Handler for local testing.
 """
 
 import logging
-from typing import Optional
 
 import uvicorn
 from fastapi import FastAPI
 
 from ...auth.handler import AuthValidator
 from ...core.config import AKConfig
-from ...core.model import ExecutionMode
 from ...core.util.factory import AKConfigError
 from ..thread_runner import ThreadRunner
 from ..transport.base import QueueTransportFactory
@@ -76,7 +74,7 @@ class WebSocketGateway:
         return app
 
     @classmethod
-    def _validate(cls, auth_validator: Optional[AuthValidator], transport_type: str, config) -> None:
+    def _validate(cls, auth_validator: AuthValidator | None, transport_type: str, config) -> None:
         """Fail fast on an unusable gateway configuration (spec §9)."""
         if auth_validator is None:
             raise ValueError(
@@ -88,9 +86,9 @@ class WebSocketGateway:
                 "a standalone WebSocket gateway cannot run on the in_memory transport (the queue is "
                 "process-local): run the single-process topology instead, IOHandler.run(auth_validator=...)"
             )
-        if config.execution.mode not in (ExecutionMode.ASYNC, ExecutionMode.STREAM):
+        if not config.execution.is_websocket:
             raise AKConfigError(
-                f"the WebSocket gateway serves ASYNC/STREAM modes; execution.mode is {config.execution.mode}: "
+                f"the WebSocket gateway serves execution.mode async; execution.mode is {config.execution.mode}: "
                 "replies in REST modes go to the response store and would never reach a WebSocket client"
             )
         if not push_auth_token(config):

@@ -6,6 +6,10 @@ sidebar_position: 4
 
 Agent Kernel provides a sophisticated memory management system with multiple layers designed for different use cases and lifecycles. Understanding these layers helps you build efficient, context-aware agents that don't bloat LLM prompts.
 
+:::tip Choosing a backend?
+See [Choosing a Memory Backend](../core-concepts/memory-backends.md) for a beginner-friendly comparison of session stores, caches, and knowledge bases.
+:::
+
 ## Memory Architecture
 
 ```mermaid
@@ -25,14 +29,12 @@ graph TB
     
     subgraph "Storage Backends"
         F[In-Memory]
-        G[Redis]
-        H[DynamoDB]
+        G[Redis / Valkey]
+        H[DynamoDB / Cosmos DB / Firestore]
     end
     
-    subgraph "Future: Long-term Memory"
-        I[User Profiles]
-        J[Knowledge Base]
-        K[Historical Data]
+    subgraph "Long-term Memory"
+        I[Knowledge Base<br/>ChromaDB, Neo4j, Starburst, OKF]
     end
     
     SD --> F
@@ -47,6 +49,8 @@ graph TB
     style D fill:#25c2a0,stroke:#fff,stroke-width:2px,color:#fff
     style E fill:#1e7a55,stroke:#fff,stroke-width:2px,color:#fff
 ```
+
+Session-bound memory lives in the session store. Long-term knowledge lives in a [knowledge base](../advanced/knowledge-bases.md), which is separate from the session backend. For help choosing a session backend, see [Choosing a Memory Backend](../core-concepts/memory-backends.md).
 
 ## Memory Layers
 
@@ -381,17 +385,30 @@ Both conversational state and auxiliary memory use the same storage backend conf
 
 ```bash
 # Configure storage type
-export AK_SESSION__TYPE=redis  # Options: 'in_memory', 'redis', 'dynamodb'
+export AK_SESSION__TYPE=redis  # in_memory | redis | valkey | dynamodb | cosmosdb | firestore
 
 # Redis configuration
-export AK_SESSION__REDIS__URL=redis://localhost:6379
-export AK_SESSION__REDIS__PASSWORD=your-password
+export AK_SESSION__REDIS__URL=redis://localhost:6379  # redis://:password@host:6379 to include a password
 export AK_SESSION__REDIS__TTL=604800  # 7 days
 export AK_SESSION__REDIS__PREFIX=ak:sessions:
+
+# Valkey configuration (requires the agentkernel[valkey] extra)
+export AK_SESSION__VALKEY__URL=valkey://localhost:6379
+export AK_SESSION__VALKEY__TTL=604800  # 7 days
+export AK_SESSION__VALKEY__PREFIX=ak:sessions:
 
 # DynamoDB configuration
 export AK_SESSION__DYNAMODB__TABLE_NAME=agent-kernel-sessions
 export AK_SESSION__DYNAMODB__TTL=604800  # 7 days (0 to disable)
+
+# Cosmos DB configuration
+export AK_SESSION__COSMOSDB__CONNECTION_STRING="DefaultEndpointsProtocol=https;AccountName=your-account;AccountKey=...;TableEndpoint=https://your-account.table.cosmos.azure.com:443/;"
+export AK_SESSION__COSMOSDB__TABLE_NAME=sessions
+export AK_SESSION__COSMOSDB__TTL=604800  # 7 days (0 to disable)
+
+# Firestore configuration
+export AK_SESSION__FIRESTORE__COLLECTION_NAME=ak_sessions
+export AK_SESSION__FIRESTORE__TTL=604800  # 7 days (0 to disable)
 
 # Optional: Enable session caching
 export AK_SESSION__CACHE__SIZE=256

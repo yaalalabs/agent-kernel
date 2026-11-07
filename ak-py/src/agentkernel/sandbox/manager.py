@@ -15,15 +15,17 @@ import logging
 import time
 import uuid
 from threading import RLock
-from typing import Any, ClassVar, Optional, Union
+from typing import Any, ClassVar, Optional
 
 from ..core.base import Session
-from ..core.config import AKConfig
+from ..core.config import AKConfig, _SandboxProviderPackageConfig
 from ..core.util.factory import resolve_dotted
 from .broker.base import ExecutionBroker, ExecutionCompletion, ExecutionRequest
 from .errors import SandboxConfigError, SandboxSessionNotFoundError
 from .factory import ExecutionBrokerFactory
-from .model import SandboxPolicy, SandboxPrincipal, SandboxResult, SandboxSession, SandboxTask
+from .model import PackageInstallPolicy, SandboxPolicy, SandboxPrincipal, SandboxResult, SandboxSession, SandboxTask
+from .packages import PackageInstaller
+from .permission import PermissionAuditContext, SandboxPermissionGuard
 from .principal import AgentPrincipalResolver, PrincipalResolver
 
 
@@ -35,12 +37,59 @@ class ExecutionManager:
 
     _REGISTRY_KEY = "sandbox"  # key under the AK session's non-volatile cache
 
+    # Installer prefix for a read-only root filesystem, per built-in ecosystem (the sandbox guide's
+    # "Installer prefixes per posture" table); any other ecosystem is pointed at that table.
+    _READ_ONLY_FS_INSTALLERS: ClassVar[dict[str, str]] = {
+        "python": "[pip, install, --target, /workspace/site] with /workspace/site on the image's PYTHONPATH",
+        "node": "[npm, install, --cache, /workspace/.npm]",
+    }
+
     def __init__(self, config: Any) -> None:
         """Build the manager from the ``sandbox`` config section: the broker client (via the
         factory) and the principal resolver. Use :meth:`get`, not this constructor."""
         self._config = config
         self._broker: ExecutionBroker = ExecutionBrokerFactory.get()
         self._resolver: PrincipalResolver = self._build_resolver(config)
+        # Defence in depth: the worker's guard is authoritative, this one fails a request before submit.
+        self._guard = SandboxPermissionGuard()
+        self._installers: dict[str, PackageInstaller] = {}  # per profile name
+        self._warn_permission_config(config)
+
+    def _warn_permission_config(self, config: Any) -> None:
+        """Warn once per profile (the manager is a process singleton) about install permissions that
+        are legal but likely surprising."""
+        for name, profile_cfg in config.profiles.items():
+            policy = profile_cfg.policy
+            if policy.package_install is None:
+                continue
+            if profile_cfg.scope == "per_runtime":
+                self._log.warning(
+                    "Sandbox profile %s permits package installs with scope per_runtime; an install changes the sandbox "
+                    "that every AK session on this runtime shares",
+                    name,
+                )
+            if policy.network_egress == "deny":
+                self._log.warning(
+                    "Sandbox profile %s permits package installs with network_egress deny; installs need a package mirror "
+                    "reachable inside the image",
+                    name,
+                )
+            if profile_cfg.type in ("docker", "kubernetes") and (policy.fs_allow_read or policy.fs_allow_write):
+                self._log.warning(
+                    "Sandbox profile %s permits package installs with a filesystem policy, so the %s root filesystem is "
+                    "read-only and installs must write into the workdir; configure package_installers for that posture: %s",
+                    name,
+                    profile_cfg.type,
+                    "; ".join(self._read_only_fs_hint(ecosystem) for ecosystem in policy.package_install.ecosystems),
+                )
+
+    @classmethod
+    def _read_only_fs_hint(cls, ecosystem: str) -> str:
+        """The read-only-root installer advice for one ecosystem."""
+        installer = cls._READ_ONLY_FS_INSTALLERS.get(ecosystem)
+        if installer is None:
+            return f"{ecosystem}: an installer prefix that writes into the workdir (see 'Installer prefixes per posture' in the sandbox guide)"
+        return f"{ecosystem}: {installer}"
 
     @staticmethod
     def _build_resolver(config: Any) -> PrincipalResolver:
@@ -74,13 +123,13 @@ class ExecutionManager:
     async def execute(
         self,
         *,
-        code: Optional[str] = None,
-        command: Optional[str] = None,
+        code: str | None = None,
+        command: str | None = None,
         language: str = "python",
-        profile: Optional[str] = None,
-        sandbox_session_id: Optional[str] = None,
-        wait: Optional[float] = None,
-    ) -> Union[SandboxResult, SandboxTask]:
+        profile: str | None = None,
+        sandbox_session_id: str | None = None,
+        wait: float | None = None,
+    ) -> SandboxResult | SandboxTask:
         """Execute ``code`` (in ``language``) or a shell ``command`` in a sandbox.
 
         Exactly one of ``code``/``command`` must be given. Returns a ``SandboxResult`` when
@@ -95,18 +144,35 @@ class ExecutionManager:
             raise ValueError("execute() requires either code or command")
         return await self._submit_op(operation, payload, profile=profile, sandbox_session_id=sandbox_session_id, wait=wait)
 
-    async def upload(self, path: str, content: bytes, *, profile: Optional[str] = None, sandbox_session_id: Optional[str] = None) -> None:
+    async def install_packages(
+        self,
+        packages: list[str],
+        *,
+        ecosystem: str = "python",
+        profile: str | None = None,
+        sandbox_session_id: str | None = None,
+        wait: float | None = None,
+    ) -> SandboxResult | SandboxTask:
+        """Install ``packages`` of one ``ecosystem`` in a sandbox, when the profile permits it.
+
+        A denied request raises ``SandboxPermissionDeniedError`` and a malformed spec raises
+        ``ValueError``, both before anything is submitted. Returns like :meth:`execute`.
+        """
+        payload = {"packages": packages, "ecosystem": ecosystem}
+        return await self._submit_op("install_packages", payload, profile=profile, sandbox_session_id=sandbox_session_id, wait=wait)
+
+    async def upload(self, path: str, content: bytes, *, profile: str | None = None, sandbox_session_id: str | None = None) -> None:
         """Write ``content`` to ``path`` inside the resolved sandbox session's workspace."""
         await self._submit_op("upload_file", {"path": path, "content": content}, profile=profile, sandbox_session_id=sandbox_session_id)
 
-    async def download(self, path: str, *, profile: Optional[str] = None, sandbox_session_id: Optional[str] = None) -> bytes:
+    async def download(self, path: str, *, profile: str | None = None, sandbox_session_id: str | None = None) -> bytes:
         """Read and return the bytes at ``path`` from the resolved sandbox session's workspace."""
         result = await self._submit_op("download_file", {"path": path}, profile=profile, sandbox_session_id=sandbox_session_id)
         if isinstance(result, SandboxResult) and result.output_files:
             return result.output_files[0].content
         return b""
 
-    async def task_status(self, task_id: str) -> Optional[SandboxTask]:
+    async def task_status(self, task_id: str) -> SandboxTask | None:
         """Return the current state of a promoted task, or ``None`` when unknown.
 
         Registry first; a still-pending entry (or a task missing from this session's
@@ -166,7 +232,7 @@ class ExecutionManager:
                 summary["notice"] = result.notice
         return summary
 
-    def ingest_completion(self, completion: ExecutionCompletion) -> Optional[SandboxTask]:
+    def ingest_completion(self, completion: ExecutionCompletion) -> SandboxTask | None:
         """Consume a task-completion event (called by ``SandboxPreHook`` under the session lock).
 
         Returns the updated task after marking it consumed and terminal and refreshing the
@@ -184,7 +250,7 @@ class ExecutionManager:
         self._write_session(completion.sandbox_session)
         return task
 
-    def new_session(self, profile: Optional[str] = None, name: Optional[str] = None) -> SandboxSession:
+    def new_session(self, profile: str | None = None, name: str | None = None) -> SandboxSession:
         """Mint and register a fresh sandbox session for ``profile`` (default profile when
         omitted) and return it — the only way an explicit ``sandbox_session_id`` comes into
         existence. ``name`` is an optional human-friendly label surfaced by
@@ -230,10 +296,10 @@ class ExecutionManager:
         operation: str,
         payload: dict[str, Any],
         *,
-        profile: Optional[str] = None,
-        sandbox_session_id: Optional[str] = None,
-        wait: Optional[float] = None,
-    ) -> Union[SandboxResult, SandboxTask]:
+        profile: str | None = None,
+        sandbox_session_id: str | None = None,
+        wait: float | None = None,
+    ) -> SandboxResult | SandboxTask:
         """Resolve profile, session, principal, and policy into a ``ExecutionRequest``
         and submit it. Persists the (updated) session handle on success; ``per_call``
         sessions are ephemeral and their backend is torn down in ``finally``.
@@ -241,11 +307,18 @@ class ExecutionManager:
         When an explicit ``sandbox_session_id`` is given, the profile is taken from the
         session's own record (the profile it was minted under), not the caller's ``profile``
         argument — a session is bound to its provider, so a mismatched or omitted caller
-        profile must never reroute it to a different backend."""
+        profile must never reroute it to a different backend.
+
+        The permission guard and payload validation run before session resolution, which can
+        tear down an idle-expired sandbox: a denied or malformed request has no side effects."""
         profile_name = self._resolve_profile_name(profile, sandbox_session_id)
         profile_cfg = self._config.profiles.get(profile_name)
         if profile_cfg is None:
             raise SandboxConfigError(f"unknown sandbox profile '{profile_name}'; configured profiles: {sorted(self._config.profiles)}")
+
+        policy = self._policy_from(profile_cfg)
+        self._guard.check_operation(operation, payload, policy, self._audit_context(profile_name, profile_cfg, sandbox_session_id))
+        self._validate_payload(operation, payload, profile_name, profile_cfg)
 
         session, ephemeral, notice = await self._resolve_session(profile_name, sandbox_session_id, profile_cfg)
         principal = await self._resolve_principal()
@@ -255,7 +328,7 @@ class ExecutionManager:
             payload=payload,
             profile=profile_name,
             principal=principal,
-            policy=self._policy_from(profile_cfg),
+            policy=policy,
             sandbox_session=session,
             ak_session_id=self._current_session_id(),
             agent=self._current_agent_name(),
@@ -278,7 +351,7 @@ class ExecutionManager:
                 # per_call: dispose the ephemeral sandbox regardless of success/failure.
                 await self._destroy_backend(request.sandbox_session)
 
-    def _resolve_profile_name(self, profile: Optional[str], sandbox_session_id: Optional[str]) -> str:
+    def _resolve_profile_name(self, profile: str | None, sandbox_session_id: str | None) -> str:
         """Pick the profile for this operation. An explicit ``sandbox_session_id`` binds the
         profile to the one the session was minted under (found across both registries); a
         caller ``profile`` that contradicts it is a config error, and omitting it is fine. No
@@ -293,6 +366,36 @@ class ExecutionManager:
                     )
                 return existing.profile
         return profile or self._config.default_profile
+
+    def _audit_context(self, profile_name: str, profile_cfg: Any, sandbox_session_id: str | None) -> PermissionAuditContext:
+        """Who and where, for a denial's log line: the session id is the explicit one, the
+        profile's default session, or empty for ``per_call`` (it has none until resolved)."""
+        if sandbox_session_id is None:
+            sandbox_session_id = "" if profile_cfg.scope == "per_call" else f"default:{profile_name}"
+        return PermissionAuditContext(
+            profile=profile_name,
+            agent=self._current_agent_name(),
+            ak_session_id=self._current_session_id(),
+            sandbox_session_id=sandbox_session_id,
+        )
+
+    def _validate_payload(self, operation: str, payload: dict[str, Any], profile_name: str, profile_cfg: Any) -> None:
+        """Input checks that must fail before submit; only install_packages has any (ValueError on a bad spec)."""
+        if operation == "install_packages":
+            self._installer_for(profile_name, profile_cfg).validate(payload["packages"], payload["ecosystem"])
+
+    def _installer_for(self, profile_name: str, profile_cfg: Any) -> PackageInstaller:
+        """The profile's PackageInstaller, cached: built from the agent's copy of the provider block
+        when it is a package-capable one, else the baseline-only installer (the worker's handle decides)."""
+        installer = self._installers.get(profile_name)
+        if installer is None:
+            block = getattr(profile_cfg, profile_cfg.type, None)
+            if isinstance(block, _SandboxProviderPackageConfig):
+                installer = PackageInstaller.from_config(block)
+            else:
+                installer = PackageInstaller({}, {})
+            self._installers[profile_name] = installer
+        return installer
 
     def _record_task(self, task: SandboxTask) -> None:
         """Record a promoted task in the current AK session's registry so ``task_status``
@@ -331,6 +434,9 @@ class ExecutionManager:
     def _policy_from(profile_cfg: Any) -> SandboxPolicy:
         """Convert a profile's policy config block into the ``SandboxPolicy`` wire model."""
         p = profile_cfg.policy
+        package_install = None
+        if p.package_install is not None:
+            package_install = PackageInstallPolicy(ecosystems=list(p.package_install.ecosystems), timeout=p.package_install.timeout)
         return SandboxPolicy(
             network_egress=p.network_egress,
             network_allow=list(p.network_allow),
@@ -340,10 +446,12 @@ class ExecutionManager:
             memory_mb=p.memory_mb,
             timeout=p.timeout,
             strict=p.strict,
+            languages=list(p.languages) if p.languages is not None else None,
+            package_install=package_install,
         )
 
     @staticmethod
-    def _deadline(wait: Optional[float]) -> Optional[float]:
+    def _deadline(wait: float | None) -> float | None:
         """Turn a relative ``wait`` in seconds into an absolute epoch deadline (``None`` passes through)."""
         return None if wait is None else time.time() + wait
 
@@ -355,9 +463,7 @@ class ExecutionManager:
 
     # -- session resolution / registry ------------------------------------- #
 
-    async def _resolve_session(
-        self, profile_name: str, sandbox_session_id: Optional[str], profile_cfg: Any
-    ) -> tuple[SandboxSession, bool, Optional[str]]:
+    async def _resolve_session(self, profile_name: str, sandbox_session_id: str | None, profile_cfg: Any) -> tuple[SandboxSession, bool, str | None]:
         """Resolve the target sandbox session; returns ``(session, ephemeral, notice)``.
 
         ``per_call`` scope always returns a fresh ephemeral session. An explicit id must
@@ -414,7 +520,7 @@ class ExecutionManager:
         profile_cfg = self._config.profiles.get(profile_name)
         return profile_cfg.scope if profile_cfg is not None else "per_session"
 
-    def _read_session(self, sandbox_session_id: str, scope: str) -> Optional[SandboxSession]:
+    def _read_session(self, sandbox_session_id: str, scope: str) -> SandboxSession | None:
         """Look up a session in the registry the given scope addresses, or ``None``."""
         if scope == "per_runtime":
             return self._runtime_registry.get(sandbox_session_id)
@@ -440,7 +546,7 @@ class ExecutionManager:
         reg["sessions"].pop(session.sandbox_session_id, None)
         self._save_nv_registry(reg)
 
-    def _find_session(self, sandbox_session_id: str) -> Optional[SandboxSession]:
+    def _find_session(self, sandbox_session_id: str) -> SandboxSession | None:
         """Look up a session id across both registries (per_runtime first), or ``None``."""
         if sandbox_session_id in self._runtime_registry:
             return self._runtime_registry[sandbox_session_id]

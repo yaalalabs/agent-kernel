@@ -109,7 +109,7 @@ from agentkernel.core import Runner
 **Key Features:**
 - Framework-specific execution
 - Async/await support
-- Event streaming via `stream()` (OpenAI Agents SDK, LangGraph, Google ADK, Pydantic AI, Microsoft Agent Framework)
+- Event streaming via `stream()` (OpenAI Agents SDK, LangGraph, Google ADK, Pydantic AI, Microsoft Agent Framework, Claude Agent SDK)
 - Error handling and fault-tolerant execution patterns
 
 [Learn more about Runners →](./runner)
@@ -132,7 +132,7 @@ session = Session(id="user-123")
 - Volatile and non-volatile caches
 - Context preservation
 
-[Learn more about Sessions →](./session)
+[Learn more about Sessions →](./session) | [Choose a memory backend →](./memory-backends.md)
 
 ### 5. **Module**
 
@@ -181,7 +181,7 @@ Around these abstractions, the kernel provides:
 - **Hooks**: `PreHook`/`PostHook` classes attached per-agent or system-wide. Pre-hooks can rewrite or halt requests (guardrails, RAG injection); post-hooks transform replies and can inspect, rewrite or drop any streamed event — tool arguments and results included — via `on_stream_event()`, or end a run by raising `StreamHalt`. [Hooks guide →](../integrations/hooks)
 - **AgentService**: the conversation object for stateful clients (the CLI): owns agent selection and session lifecycle; `run_multi()` executes multi-modal requests and `stream_multi()` yields token-level `StreamChunk`s.
 - **ChatService**: the chat request layer on top of AgentService. Its execution core (`execute`/`execute_stream`) validates, builds or accepts prebuilt request lists, and returns typed replies; it is what messaging integrations, the thread handler, and the AG-UI handler call. Its presentation wrappers (`process_*`) add the HTTP shapes (JSON, SSE, `HTTPException`) used by the REST API and deployment handlers.
-- **Execution modes**: the same application supports direct execution, SSE streaming (`execution.mode: stream`), and on AWS, queue-backed (`rest_sync`/`rest_async`) and WebSocket (`async`/`stream`) modes. [Execution flow →](../architecture/execution-flow)
+- **Execution modes**: the same application supports direct execution, SSE streaming (`execution.mode: rest_sync` with `execution.message_type: delta`), and on AWS, queue-backed (`rest_sync`/`rest_async`) and WebSocket (`async`, with `message_type` `complete` or `delta`) modes. [Execution flow →](../architecture/execution-flow)
 - **Conversation threads**: optional persistent, named conversation history with REST read APIs. [Threads →](../advanced/threads)
 - **Scheduling**: optional deferred/recurring chat execution (`at`/`cron`) intercepted at the top of ChatService's execution core, with a management REST API and agent-facing scheduling tools. [Scheduling →](../advanced/scheduling)
 - **Multimodal attachments**: image/file preprocessing via a system pre-hook with pluggable attachment stores. [Multimodal →](../advanced/multimodal)
@@ -290,7 +290,8 @@ Common configuration options:
 | `AK_SESSION__TYPE` | Session storage backend (`in_memory`, `redis`, `valkey`, `dynamodb`, `cosmosdb`, `firestore`) | `in_memory` |
 | `AK_SESSION__REDIS__URL` | Redis connection URL | `redis://localhost:6379` |
 | `AK_SESSION__DYNAMODB__TABLE_NAME` | DynamoDB table name | - |
-| `AK_EXECUTION__MODE` | Execution mode (`rest_sync`, `rest_async`, `stream`, `async`) | - (direct when unset) |
+| `AK_EXECUTION__MODE` | Execution mode (`rest_sync`, `rest_async`, `async`, `realtime`) | - (runs as `rest_sync`) |
+| `AK_EXECUTION__MESSAGE_TYPE` | Reply delivery (`complete`: one whole reply, `delta`: one message per chunk) | - (`delta` for `realtime`, `complete` otherwise) |
 
 [Learn more about Configuration →](./configuration)
 
@@ -342,6 +343,8 @@ if __name__ == "__main__":
 Sessions and caches help with short- to medium-term conversational context, but many applications also need durable, cross-session knowledge that persists across conversations and agents. Examples include product manuals, user or customer profiles, organizational policies, or domain knowledge graphs.
 
 Agent Kernel's **Knowledge Base** support provides a unified way to connect multiple storage backends - vector stores, graph databases, SQL engines, and directories of markdown documents - and expose them to agents as callable tools. Each backend declares what it supports, and the agent is given tools for exactly those operations.
+
+For help deciding between session memory and a knowledge base, see [Choosing a Memory Backend](./memory-backends.md).
 
 ### Core Components
 

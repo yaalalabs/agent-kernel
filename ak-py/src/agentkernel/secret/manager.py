@@ -57,7 +57,7 @@ class SecretManager:
         with cls._instance_lock:
             cls._instance = None
 
-    def get(self, key: str, default: Optional[str] = _UNSET) -> Optional[str]:
+    def get(self, key: str, default: str | None = _UNSET) -> str | None:
         """Resolve `key`: environment, then cache, then provider; first hit wins.
 
         :param key: An environment-variable-style name matching ^[A-Z][A-Z0-9_]*$.
@@ -75,7 +75,7 @@ class SecretManager:
             raise SecretNotFoundError(key, self.describe(key))
         return default
 
-    def describe(self, key: str, field: Optional[str] = None) -> str:
+    def describe(self, key: str, field: str | None = None) -> str:
         """Every place `key` can be set, for an error message that tells the user what to create.
 
         For example "whatsapp.access_token, the AK_WHATSAPP__ACCESS_TOKEN environment variable or SSM
@@ -106,7 +106,7 @@ class SecretManager:
         """Drop every cached value."""
         self._cache.clear()
 
-    def _resolve(self, key: str) -> Optional[str]:
+    def _resolve(self, key: str) -> str | None:
         env_value = os.environ.get(key)
         if env_value:  # "" is a miss
             return env_value

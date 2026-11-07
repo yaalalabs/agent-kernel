@@ -101,6 +101,14 @@ class LangFuse(BaseTrace):
 
         return LangFuseMAFRunner(self._client)
 
+    def claude(self) -> Runner:
+        """
+        Returns the Langfuse Claude Agent SDK runner instance.
+        """
+        from .claude import LangFuseClaudeRunner
+
+        return LangFuseClaudeRunner(self._client)
+
     def fetch_spans(self, query: TraceQuery) -> list[FetchedSpan]:
         """
         Fetches observations back from Langfuse with the same client used for sending.

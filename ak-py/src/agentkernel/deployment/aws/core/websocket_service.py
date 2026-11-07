@@ -1,7 +1,6 @@
 import json
 import logging
 import time
-from typing import List, Optional
 
 import boto3
 from boto3.dynamodb.conditions import Key
@@ -49,7 +48,7 @@ class WebSocketConnectionStore(WebSocketConnectionStoreABC):
             }
         )
 
-    def get_connections(self, user_id: str) -> List[str]:
+    def get_connections(self, user_id: str) -> list[str]:
         """
         Retrieve all connection IDs for a given user.
 
@@ -60,7 +59,7 @@ class WebSocketConnectionStore(WebSocketConnectionStoreABC):
 
         return [item["connection_id"] for item in resp.get("Items", [])]
 
-    def get_user_id(self, connection_id: str) -> Optional[str]:
+    def get_user_id(self, connection_id: str) -> str | None:
         """
         Retrieve the user ID for a given connection ID using GSI: connection_id-index.
 

@@ -19,7 +19,7 @@ from agentkernel.auth.authoriser import Authoriser
 from agentkernel.core.base import Session
 from agentkernel.core.config import AKConfig
 from agentkernel.core.event import MessageEnd, MessageStart, PausedInterruption, RunPaused, TextDelta
-from agentkernel.core.model import AgentRequestAttachmentRef, AgentRequestImage, ExecutionMode, StreamChunk
+from agentkernel.core.model import AgentRequestAttachmentRef, AgentRequestImage, ExecutionMode, ReplyMessageType, StreamChunk
 from agentkernel.core.util.factory import AKConfigError
 from agentkernel.integration.agui.queue_handler import AGUIPipelineRequestHandler
 from agentkernel.integration.agui.run_input import AGUIRunEnvelope, AGUIRunRequest
@@ -32,9 +32,10 @@ from agentkernel.pipeline.response_store.in_memory import InMemoryResponseStore
 from agentkernel.pipeline.transport.in_memory import InMemoryTransport
 
 
-def _use_mode(monkeypatch, mode):
-    """Override one field on the real config, so everything else the code reads stays real."""
+def _use_mode(monkeypatch, mode, message_type=None):
+    """Override the mode pair on the real config, so everything else the code reads stays real."""
     monkeypatch.setattr(AKConfig.get().execution, "mode", mode)
+    monkeypatch.setattr(AKConfig.get().execution, "message_type", message_type)
 
 
 def _use_session_type(monkeypatch, session_type):
@@ -298,10 +299,19 @@ class TestTheStateSnapshot:
 class TestResponseHandlerDispatch:
     """The marker branch runs ahead of the execution.mode branch, so AG-UI never depends on it."""
 
-    @pytest.mark.parametrize("mode", [ExecutionMode.REST_SYNC, ExecutionMode.REST_ASYNC, ExecutionMode.STREAM, ExecutionMode.ASYNC])
+    @pytest.mark.parametrize(
+        "mode, message_type",
+        [
+            (ExecutionMode.REST_SYNC, None),
+            (ExecutionMode.REST_SYNC, ReplyMessageType.DELTA),
+            (ExecutionMode.REST_ASYNC, None),
+            (ExecutionMode.ASYNC, None),
+            (ExecutionMode.ASYNC, ReplyMessageType.DELTA),
+        ],
+    )
     @pytest.mark.parametrize("user_id_present", [False, True])
-    def test_chunks_reach_the_store_whatever_the_mode_or_user_id(self, monkeypatch, mode, user_id_present):
-        _use_mode(monkeypatch, mode)
+    def test_chunks_reach_the_store_whatever_the_mode_or_user_id(self, monkeypatch, mode, message_type, user_id_present):
+        _use_mode(monkeypatch, mode, message_type)
 
         attributes = {ATTR_AGUI: "1", ATTR_REQUEST_ID: "r1"}
         if user_id_present:

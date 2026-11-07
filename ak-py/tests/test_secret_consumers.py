@@ -12,9 +12,9 @@ straight from ``os.environ``.
 import ast
 import asyncio
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Dict, List, Optional
 
 import pytest
 
@@ -29,9 +29,9 @@ SIBLING_VALUE = "sibling"
 class _DictSecretProvider(SecretProvider):
     """Answers from a dict and records every key it is asked for."""
 
-    def __init__(self, values: Dict[str, str]) -> None:
+    def __init__(self, values: dict[str, str]) -> None:
         self._values = values
-        self.calls: List[str] = []
+        self.calls: list[str] = []
 
     def get_secret(self, key):
         self.calls.append(key)
@@ -232,7 +232,7 @@ def _adk_realtime(monkeypatch) -> str:
     return _realtime_key(monkeypatch, "google.genai.Client", GoogleADKRealtimeRunner, sdk_agent)
 
 
-def _push_auth_token(monkeypatch) -> Optional[str]:
+def _push_auth_token(monkeypatch) -> str | None:
     from agentkernel.pipeline.ws.push import push_auth_token
 
     return push_auth_token(AKConfig.get())
@@ -244,7 +244,7 @@ class Consumer:
     resolve: Callable
     # Settings the consumer also needs, set in the environment in every case so that `key` is the
     # only one left for the provider.
-    siblings: Dict[str, str] = field(default_factory=dict)
+    siblings: dict[str, str] = field(default_factory=dict)
 
     def __str__(self) -> str:
         return self.key
@@ -256,7 +256,7 @@ _INSTAGRAM = {"AK_INSTAGRAM__ACCESS_TOKEN": SIBLING_VALUE, "AK_INSTAGRAM__VERIFY
 _LIVEKIT = {"AK_LIVEKIT__API_KEY": SIBLING_VALUE, "AK_LIVEKIT__API_SECRET": SIBLING_VALUE}
 
 
-def _without(siblings: Dict[str, str], key: str) -> Dict[str, str]:
+def _without(siblings: dict[str, str], key: str) -> dict[str, str]:
     return {name: value for name, value in siblings.items() if name != key}
 
 
@@ -371,9 +371,9 @@ class _LocatedSecretProvider(_DictSecretProvider):
 class _LoopCheckingSecretProvider(_DictSecretProvider):
     """Records, per key, whether the lookup ran on a thread with a running event loop."""
 
-    def __init__(self, values: Dict[str, str]) -> None:
+    def __init__(self, values: dict[str, str]) -> None:
         super().__init__(values)
-        self.on_loop: Dict[str, bool] = {}
+        self.on_loop: dict[str, bool] = {}
 
     def get_secret(self, key):
         try:
@@ -550,7 +550,7 @@ class _EnvironmentReads(ast.NodeVisitor):
             for target in node.targets
             if isinstance(target, ast.Name)
         }
-        self.reads: List[tuple] = []
+        self.reads: list[tuple] = []
         self.visit(module)
 
     @staticmethod

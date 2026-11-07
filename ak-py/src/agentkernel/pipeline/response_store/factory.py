@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from ...core.config import AKConfig
 from ...core.util.factory import AKConfigError, resolve_dotted
@@ -25,8 +25,8 @@ class ResponseStoreFactory:
     def create(
         cls,
         response_store_config: Any = None,
-        transport_type: Optional[str] = None,
-        ttl: Optional[int] = None,
+        transport_type: str | None = None,
+        ttl: int | None = None,
         config_path: str = "execution.response_store",
     ) -> ResponseStore:
         """Create the effective response store.

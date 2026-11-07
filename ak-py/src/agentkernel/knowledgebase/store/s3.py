@@ -1,7 +1,7 @@
 """S3-backed document store. Requires the existing ``aws`` extra; no new extra."""
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from ...core.util.driver.s3 import S3Driver
 from ..errors import KnowledgePathError
@@ -28,8 +28,8 @@ class S3DocumentStore(DocumentStore):
         self,
         bucket: str,
         prefix: str = "",
-        region: Optional[str] = None,
-        client: Optional[Any] = None,
+        region: str | None = None,
+        client: Any | None = None,
         writable: bool = True,
     ) -> None:
         """
@@ -68,7 +68,7 @@ class S3DocumentStore(DocumentStore):
             return relative
         return f"{self._prefix}/{relative}" if relative else self._prefix
 
-    def _relative(self, key: str) -> Optional[str]:
+    def _relative(self, key: str) -> str | None:
         """
         Map an object key back to a store-relative path.
 

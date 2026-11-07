@@ -161,7 +161,7 @@ back to the right client.
 ## Execution mode
 
 `config.yaml` sets `execution.mode: async`, meaning the full agent reply is sent as one
-`CHAT_RESPONSE` message. Setting it to `stream` instead delivers the reply token-by-token as a
+`CHAT_RESPONSE` message. Adding `execution.message_type: delta` delivers the reply token-by-token as a
 sequence of `STREAM_CHUNK` messages, terminated by a chunk with `"done": true` — see
 [`openai-stream`](../openai-stream) for the direct-mode streaming counterpart of this example, or
 [`openai-stream-queue-mode`](../openai-stream-queue-mode) if you need the Agent Runner to scale

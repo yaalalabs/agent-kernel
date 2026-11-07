@@ -15,8 +15,9 @@ import httpx
 from a2a.client import A2ACardResolver, ClientConfig
 from a2a.client.base_client import BaseClient
 from a2a.client.transports.rest import RestTransport
-from a2a.types import Message, Part, Role, TextPart
-from a2a.utils import get_message_text
+from a2a.helpers import get_message_text
+from a2a.types import Message, Part, Role, SendMessageRequest
+from a2a.utils.constants import PROTOCOL_VERSION_CURRENT, VERSION_HEADER
 from fastmcp import Client
 
 AGENT = "triage"
@@ -25,15 +26,17 @@ PROMPT = "What is 17 * 23? Answer with the number only."
 
 async def ask_a2a(base_url: str) -> str:
     agent_url = f"{base_url}/a2a/{AGENT}"
-    async with httpx.AsyncClient(timeout=120) as http:
+    # A 1.x server reads a request without the A2A-Version header as 0.3 and refuses it. The SDK's
+    # ClientFactory sets the header; this hand-built client sets it itself.
+    async with httpx.AsyncClient(timeout=120, headers={VERSION_HEADER: PROTOCOL_VERSION_CURRENT}) as http:
         card = await A2ACardResolver(http, base_url=agent_url).get_agent_card()
         # The explicit url overrides the card's (a2a.url), so a port-forward on any port works.
         transport = RestTransport(http, card, url=agent_url)
-        client = BaseClient(card, ClientConfig(streaming=False), transport, consumers=[], middleware=[])
-        message = Message(message_id=str(uuid.uuid4()), role=Role.user, parts=[Part(root=TextPart(text=PROMPT))])
-        async for reply in client.send_message(message):
-            if isinstance(reply, Message):
-                return get_message_text(reply)
+        client = BaseClient(card, ClientConfig(streaming=False), transport, interceptors=[])
+        message = Message(message_id=str(uuid.uuid4()), role=Role.ROLE_USER, parts=[Part(text=PROMPT)])
+        async for item in client.send_message(SendMessageRequest(message=message)):
+            if item.HasField("message"):
+                return get_message_text(item.message)
     return ""
 
 

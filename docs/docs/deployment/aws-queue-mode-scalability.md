@@ -59,8 +59,8 @@ differs per mode:
 | **Async** (WebSocket in/out) | Sends a WebSocket message | Response pushed back over the same connection |
 
 :::note As implemented
-On AWS, token streaming is delivered over a **WebSocket** connection (`execution_mode = "stream"`,
-one `STREAM_CHUNK` push per token), not as chunked HTTP/SSE — API Gateway's Lambda and ALB
+On AWS, token streaming is delivered over a **WebSocket** connection (`execution_mode = "async"` with
+`message_type = "delta"`, one `STREAM_CHUNK` push per token), not as chunked HTTP/SSE — API Gateway's Lambda and ALB
 integrations can't stream SSE the way a long-lived process can. Plain SSE-over-HTTP is only
 available outside queue mode, in the single-container "Simple REST" topology. The queue *contract*
 for streaming is unchanged: the Agent Runner still emits one output-queue message per chunk.
@@ -128,7 +128,7 @@ graph TB
 | **Input SQS Queue** | FIFO; `MessageGroupId = SessionID` preserves per-session order; `MessageDeduplicationId` rejects a duplicate *enqueue* of the same request within SQS's 5-minute dedup window (delivery itself stays at-least-once — that's governed by the visibility timeout); `MessageVisibilityTimeout` + `MessageRetentionPeriod` bound retries | `modules/queues/` |
 | **Agent Runner** | Triggered by an Event Source Mapping, one Lambda invocation per batch; runs the agent and writes to the Output Queue; returns `batchItemFailures` so the ESM only retries the messages that actually failed | `LambdaSQSConsumer`, `modules/agent-runner/` |
 | **Output SQS Queue** | Same FIFO/dedup/visibility properties as the Input Queue | `modules/queues/` |
-| **Response Handler** | Reads the Output Queue and either writes to the response store (REST modes) or pushes over WebSocket (Async/Stream) | Separate Lambda, `modules/response-handler/` |
+| **Response Handler** | Reads the Output Queue and either writes to the response store (REST modes) or pushes over WebSocket (`async`, either message type) | Separate Lambda, `modules/response-handler/` |
 | **Response Store** | Holds replies keyed by session/request ID with a TTL, for the Request Handler to read | DynamoDB, Redis, or Valkey — configurable |
 
 Both queues use `MessageDeduplicationId = request_id`: a request the *caller* retries within the
@@ -140,7 +140,7 @@ SQS FIFO deduplication rejects duplicate **enqueues**; it does not stop a messag
 **redelivers** from being processed again. Redelivery is the retry mechanism working as designed —
 a message whose visibility timeout expires before it was deleted comes back, and the Agent Runner
 re-runs the agent, which appends the turn to session history a **second time**. Only the duplicate
-reply is suppressed, and only inside SQS's 5-minute dedup window. In `stream` mode not even that
+reply is suppressed, and only inside SQS's 5-minute dedup window. With `message_type = "delta"` not even that
 holds: chunk dedup IDs deliberately include the receive count (`{dedup}-{receive_count}-{i}`) so a
 retry's chunks are never suppressed as duplicates of the previous attempt's.
 
@@ -190,7 +190,7 @@ graph TB
     style RS fill:#25c2a0,stroke:#fff,stroke-width:2px,color:#fff
 ```
 
-Async/Stream (WebSocket) replaces the response-store hop with a direct push. WebSocket API Gateway
+Async (WebSocket, `message_type` `complete` or `delta`) replaces the response-store hop with a direct push. WebSocket API Gateway
 only supports a VPC Link V1 integration, and V1 requires a Network Load Balancer target, so an
 internal NLB sits in front of the existing ALB whenever WebSocket mode is enabled:
 
@@ -219,7 +219,7 @@ into two threads of one **IO container** (`ECSIOHandler`, via `ThreadRunner`):
 - **Thread 1** runs the REST or WebSocket API: enqueues requests and, for REST Sync/Async, reads
   the response store or returns a `request_id` immediately.
 - **Thread 2** (`ECSOutputConsumer`) long-polls the Output Queue and writes to the response store,
-  or pushes over WebSocket for Async/Stream modes.
+  or pushes over WebSocket for Async mode.
 
 The **Agent Runner** is a separate long-running ECS service (`ECSAgentRunner`) that long-polls the
 Input Queue directly — there's no Event Source Mapping on ECS.

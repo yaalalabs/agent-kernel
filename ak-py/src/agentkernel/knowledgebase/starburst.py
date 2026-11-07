@@ -1,7 +1,8 @@
 import logging
 import os
 import re
-from typing import Any, List, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 import trino
 import trino.exceptions
@@ -148,7 +149,7 @@ class StarburstManager(KnowledgeBase):
         """
         return f"{self.backend_name}: {self.description}"
 
-    def query(self, statement: str = "", limit: int = 3, **kwargs) -> List[Mapping[str, Any]]:
+    def query(self, statement: str = "", limit: int = 3, **kwargs) -> list[Mapping[str, Any]]:
         """
         Execute a validated read-only SQL query against Starburst Galaxy.
 
@@ -184,7 +185,7 @@ class StarburstManager(KnowledgeBase):
 
         return self._execute(sql, retried=False)
 
-    def _execute(self, sql: str, retried: bool) -> List[Mapping[str, Any]]:
+    def _execute(self, sql: str, retried: bool) -> list[Mapping[str, Any]]:
         """
         Execute SQL against Starburst with single-retry reconnect behavior.
 

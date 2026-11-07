@@ -4,7 +4,9 @@ Mode-3 attach: both ``create`` and ``attach`` bind to an already-running instanc
 (``attach_to`` in config, or the sandbox id on attach); ``create`` never provisions and
 ``destroy`` is a no-op — the provider never owns the host. Executions are
 ``ssm.send_command`` (``AWS-RunShellScript``) polled via ``get_command_invocation``;
-``execute_code`` wraps python in a ``python3 - <<'EOF'`` heredoc. boto3 is synchronous, so
+``execute_code`` feeds the code on stdin, through a heredoc, to the language's interpreter argv
+from ``language_runtimes`` (default ``python3 -``), so it never appears in the instance's process
+list (``/proc/<pid>/cmdline`` is world-readable) and has no argument-size limit. boto3 is synchronous, so
 every call runs in ``asyncio.to_thread``.
 
 Identity mapping (spec §PrincipalResolver): agent mode uses the default boto3 credential
@@ -30,7 +32,7 @@ import asyncio
 import logging
 import re
 import shlex
-from typing import Any, Optional
+from typing import Any
 
 import boto3
 from botocore.credentials import AssumeRoleCredentialFetcher as _AssumeRoleCredentialFetcher
@@ -76,18 +78,30 @@ class EC2SSMEnvironment(AttachedEnvironment):
     An ``AttachedEnvironment``, not a sandbox: the instance exists and keeps running independently
     of the framework, so ``close()`` (inherited) releases nothing."""
 
-    def __init__(self, instance_id: str, ssm_client: Any, run_as: Optional[str] = None) -> None:
-        """Bind the handle to the instance id (the sandbox id) and the resolved SSM client."""
+    def __init__(
+        self,
+        instance_id: str,
+        ssm_client: Any,
+        run_as: str | None = None,
+        *,
+        capabilities: SandboxCapabilities,
+        runtimes: dict[str, list[str]],
+    ) -> None:
+        """Bind the handle to the instance id (the sandbox id) and the resolved SSM client;
+        ``capabilities`` are the provider instance's; ``runtimes`` is its ``language_runtimes``."""
         self.id = instance_id
         self._ssm = ssm_client
         self._run_as = run_as
+        self._capabilities = capabilities
+        self._runtimes = runtimes
 
     async def execute_code(self, code: str, language: str = "python", timeout: float | None = None) -> SandboxResult:
-        """Wrap the code in a ``python3 - <<'EOF'`` heredoc and run it as a shell command."""
-        if language not in EC2SSMSandboxProvider.capabilities.languages:
+        """Feed the code on stdin (a quoted heredoc) to the language's configured interpreter argv
+        (default ``python3 -``); stdin keeps it out of the process list on the shared instance."""
+        if language not in self._capabilities.languages:
             raise SandboxCapabilityError(self.__class__.__name__, f"language:{language}")
         delimiter = _heredoc_delimiter(code)  # collision-safe: never a line already in `code`
-        script = f"python3 - <<'{delimiter}'\n{code}\n{delimiter}"
+        script = f"{shlex.join(self._runtimes[language])} <<'{delimiter}'\n{code}\n{delimiter}"
         return await self.execute_command(script, timeout)
 
     async def execute_command(self, command: str, timeout: float | None = None) -> SandboxResult:
@@ -164,7 +178,7 @@ class EC2SSMSandboxProvider(AttachedEnvironmentProvider):
     capabilities = SandboxCapabilities(
         isolation=IsolationTier.NONE,  # commands run directly on the shared instance
         shell=True,
-        languages=["python"],
+        languages=["python"],  # the default; each instance declares its language_runtimes keys
         files=False,
         package_install=False,
         stateful=False,  # SSM runs each command as its own process — no persistent shell/cwd/env
@@ -180,7 +194,9 @@ class EC2SSMSandboxProvider(AttachedEnvironmentProvider):
     def __init__(self, config) -> None:
         """Store the config; boto3 clients are created lazily per identity mode."""
         super().__init__(config)
-        self._agent_client: Optional[Any] = None
+        self._runtimes = dict(config.language_runtimes)
+        self.capabilities = type(self).capabilities.derive(languages=list(self._runtimes))
+        self._agent_client: Any | None = None
         # user-mode: one auto-refreshing assumed-role client per (subject, role_arn), so a
         # long-lived session re-assumes transparently near token expiry instead of issuing an
         # sts:AssumeRole + new client on every execution.
@@ -202,9 +218,9 @@ class EC2SSMSandboxProvider(AttachedEnvironmentProvider):
             raise
         except Exception as exc:  # noqa: BLE001 — mapped to the typed hierarchy
             raise _map_instance_error(exc, sandbox_id)
-        return EC2SSMEnvironment(sandbox_id, ssm_client, run_as)
+        return EC2SSMEnvironment(sandbox_id, ssm_client, run_as, capabilities=self.capabilities, runtimes=self._runtimes)
 
-    def _resolve_client(self, principal: SandboxPrincipal) -> tuple[Any, Optional[str]]:
+    def _resolve_client(self, principal: SandboxPrincipal) -> tuple[Any, str | None]:
         """Map the principal onto an SSM client (spec §PrincipalResolver): agent mode uses the
         default boto3 chain (cached); user mode assumes ``credentials["role_arn"]`` and carries
         ``credentials["run_as"]`` onto the handle."""
@@ -228,7 +244,7 @@ class EC2SSMSandboxProvider(AttachedEnvironmentProvider):
         return client, run_as
 
     @staticmethod
-    def _assumed_role_client(region: Optional[str], role_arn: str, subject: str) -> Any:
+    def _assumed_role_client(region: str | None, role_arn: str, subject: str) -> Any:
         """Build an SSM client whose credentials come from an auto-refreshing
         ``sts:AssumeRole`` provider: the role is assumed on first use and re-assumed
         transparently as the temporary credentials near expiry, so a cached client stays

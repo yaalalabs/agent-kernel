@@ -19,11 +19,10 @@ import concurrent.futures
 import logging
 import threading
 import time
-from typing import Optional, Union
 
 from pydantic import BaseModel
 
-from ..errors import ExecutionBrokerError, SandboxTimeoutError
+from ..errors import ExecutionBrokerError, SandboxPermissionDeniedError, SandboxTimeoutError
 from ..model import SandboxResult, SandboxTask
 from .base import BoundedCompletionStore, ExecutionBroker, ExecutionCompletion, ExecutionRequest
 from .worker import BrokerWorkerCore
@@ -34,14 +33,14 @@ logger = logging.getLogger("ak.sandbox.broker")
 class ThreadBroker(ExecutionBroker):
     """In-process broker running executions on a dedicated daemon thread."""
 
-    def __init__(self, config: Optional[BaseModel] = None) -> None:
+    def __init__(self, config: BaseModel | None = None) -> None:
         """Create the broker; the worker thread starts lazily on first ``submit()``.
         ``config`` (the ``sandbox.broker`` block) is accepted for factory uniformity."""
         self._worker = BrokerWorkerCore()
         self._completions = BoundedCompletionStore()
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
-        self._queue: Optional[asyncio.Queue] = None
-        self._thread: Optional[threading.Thread] = None
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._queue: asyncio.Queue | None = None
+        self._thread: threading.Thread | None = None
         self._ready = threading.Event()
         self._start_lock = threading.Lock()
         self._closed = False
@@ -100,7 +99,7 @@ class ThreadBroker(ExecutionBroker):
 
     # -- request path -------------------------------------------------------- #
 
-    async def submit(self, request: ExecutionRequest, wait: Optional[float] = None) -> Union[SandboxResult, SandboxTask]:
+    async def submit(self, request: ExecutionRequest, wait: float | None = None) -> SandboxResult | SandboxTask:
         """Enqueue the request on the broker loop and await its result.
 
         ``wait=None`` awaits indefinitely; ``wait=N`` promotes to a ``SandboxTask`` on
@@ -135,6 +134,10 @@ class ThreadBroker(ExecutionBroker):
         except SandboxTimeoutError as exc:
             self._complete(request, "timed_out", error=str(exc))
             self._deliver_exception(response, exc)
+        except SandboxPermissionDeniedError as exc:
+            # The guard already logged this denial; no generic warning.
+            self._complete(request, "failed", error=str(exc))
+            self._deliver_exception(response, exc)
         except Exception as exc:  # noqa: BLE001 — terminal guarantee: every task ends with a completion
             logger.warning("Sandbox task %s failed: %s", request.task_id, exc)
             self._complete(request, "failed", error=str(exc))
@@ -161,7 +164,7 @@ class ThreadBroker(ExecutionBroker):
         if not response.done():
             response.set_exception(exc)
 
-    async def result(self, task_id: str) -> Optional[ExecutionCompletion]:
+    async def result(self, task_id: str) -> ExecutionCompletion | None:
         """Return the completion held in worker memory for ``task_id``, or ``None``."""
         return self._completions.get(task_id)
 

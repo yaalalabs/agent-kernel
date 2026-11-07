@@ -8,7 +8,6 @@ followed (the kubelet's own layout is built from them), but never to a file outs
 import logging
 import os
 import stat
-from typing import Optional
 
 from ...core.config import _SecretConfig
 from ...core.util.factory import AKConfigError
@@ -38,10 +37,10 @@ class KubernetesSecretProvider(SecretProvider):
         """
         return cls(mount_path=config.provider.kubernetes.mount_path)
 
-    def describe(self, key: str) -> Optional[str]:
+    def describe(self, key: str) -> str | None:
         return f"a file named {key} in a Kubernetes Secret mounted under {self._mount_path}"
 
-    def get_secret(self, key: str) -> Optional[str]:
+    def get_secret(self, key: str) -> str | None:
         """Return the content of the one file named `key` under mount_path, or None if there is none.
 
         :raises ValueError: If key is not a single, non-hidden path component.
@@ -100,7 +99,7 @@ class KubernetesSecretProvider(SecretProvider):
         except OSError as exc:
             raise SecretError(f"cannot read Kubernetes secret file '{path}': {type(exc).__name__}") from exc
 
-    def _read(self, path: str) -> Optional[str]:
+    def _read(self, path: str) -> str | None:
         """Return the file content verbatim; None when it is empty or vanished since discovery."""
         try:
             with open(path, "rb") as handle:

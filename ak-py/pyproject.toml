@@ -33,7 +33,7 @@ openllmetry = [
     "httpx>=0.27.0",
 ]
 logfire = [
-    "logfire>=3.0",
+    "logfire>=4.31.0",
     "httpx>=0.27.0",
 ]
 cloudwatch = [
@@ -55,7 +55,7 @@ langgraph = [
     "litellm~=1.89.2"
 ]
 smolagents = [
-    "smolagents>=1.0.0",
+    "smolagents>=1.26.0",
 ]
 pydanticai = [
     "pydantic-ai-slim~=2.13.0",
@@ -63,6 +63,10 @@ pydanticai = [
 ]
 maf = [
     "agent-framework-core>=1.20.0,<2",
+]
+claude = [
+    "claude-agent-sdk>=0.2.165,<0.3",
+    "openinference-instrumentation-claude-agent-sdk>=0.1.20",
 ]
 cli = [
     
@@ -187,7 +191,9 @@ test = [
     "litellm>=1.89.2",
 ]
 a2a = [
-    "a2a-sdk[http-server]>=0.3.6,<1",
+    "a2a-sdk[http-server]==1.2.3",
+    "fastapi>=0.118.0",
+    "uvicorn>=0.37.0",
 ]
 mcp = [
     "fastmcp>=3.2.0,<4.0.0"
@@ -225,6 +231,7 @@ dev = [
     "black==26.5.1",
     "isort>=5.0.0",
     "mypy>=1.0.0",
+    "ruff==0.17.1",
 ]
 
 
@@ -252,6 +259,15 @@ disallow_incomplete_defs = true
 [tool.black]
 line-length = 150
 target-version = ["py312"]
+
+[tool.ruff]
+line-length = 150
+target-version = "py312"
+
+[tool.ruff.lint]
+# Only the pyupgrade typing rules (PEP 585/604 annotations, collections.abc imports): black and isort own
+# formatting and import order. Keep in sync with RUFF_RULES in the root Makefile, which lints examples.
+select = ["UP006", "UP007", "UP035", "UP045"]
 
 [tool.pytest.ini_options]
 addopts = "--cov=src --cov-report=term --cov-report=html --html=report.html"

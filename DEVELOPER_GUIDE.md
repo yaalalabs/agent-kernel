@@ -76,6 +76,7 @@ Agent Kernel uses the following tools to maintain code quality:
 
 - **[black](https://github.com/psf/black)**: Opinionated code formatter
 - **[isort](https://pycqa.github.io/isort/)**: Import statement organizer
+- **[ruff](https://docs.astral.sh/ruff/)**: Enforces modern type annotations only (`list[str]`, `X | None`, `collections.abc` imports) via its pyupgrade rules `UP006`, `UP007`, `UP035` and `UP045`
 
 ### Pre-commit Workflow
 
@@ -107,20 +108,21 @@ the workflow fails before making any changes.
 
 ### Pull Request Automation (CI)
 
-Three small workflows run on every pull request without any manual step:
+Three small workflows run on pull requests:
 
 - **PR Title Check** (`.github/workflows/pr-title-check.yaml`): fails unless the PR title follows
   Conventional Commits (`type: description` or `type(scope): description`, with the types listed
   in [CONTRIBUTING.md](CONTRIBUTING.md)). `develop` accepts squash merges only, so the title
   becomes the commit subject. Fix a failure by editing the title; the check re-runs on the edit.
 - **Request Copilot Review** (`.github/workflows/copilot-review-request.yaml`): requests a GitHub
-  Copilot code review when a PR is opened, reopened, or marked ready for review, using the
+  Copilot code review when a maintainer adds the `Request Copilot` label to a PR, using the
   `COPILOT_REVIEW_PAT` secret. The develop ruleset's own Copilot rule only fires for authors who
-  hold a license, which is why this workflow exists. Only PRs from collaborators (anyone with
-  access to the repository, checked through the collaborators API) are requested automatically,
-  since each review is a premium request billed to the PAT owner's license; bot-authored PRs are
-  skipped too. For a PR from an outside contributor, read it first and then run the workflow from
-  the Actions tab (`workflow_dispatch`) with the PR number, which bypasses the collaborator check.
+  hold a license, which is why this workflow exists. Nothing is requested automatically: each
+  review is a premium request billed to the PAT owner's license, so it is spent only when someone
+  with triage access or higher (the only people who can apply labels) decides a PR is worth it.
+  Read the PR first, then add the label; this works the same for collaborator, bot-authored, and
+  outside contributor PRs. To request another review after new commits, remove the label and add
+  it again. The label must exist in the repository (`gh label create "Request Copilot"`).
   `COPILOT_REVIEW_PAT` is a fine-grained PAT created by a licensed maintainer with resource owner
   `yaalalabs`, access to this repository, and "Pull requests: Read and write". It is separate from
   `COPILOT_REQUEST_TOKEN` (used by the docs-sync workflow) because GitHub only allows the

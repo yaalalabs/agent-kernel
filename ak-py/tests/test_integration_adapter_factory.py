@@ -2,7 +2,7 @@
 
 import sys
 import types
-from typing import Any, Dict
+from typing import Any
 
 import pytest
 
@@ -23,10 +23,10 @@ class RecordingOutboundAdapter(OutboundAdapter):
         self.delivered: list = []
         self.errors: list = []
 
-    async def deliver(self, reply: AgentReply, reply_context: Dict[str, str]) -> None:
+    async def deliver(self, reply: AgentReply, reply_context: dict[str, str]) -> None:
         self.delivered.append((str(reply), reply_context))
 
-    async def deliver_error(self, message: str, reply_context: Dict[str, str]) -> None:
+    async def deliver_error(self, message: str, reply_context: dict[str, str]) -> None:
         self.errors.append((message, reply_context))
 
 

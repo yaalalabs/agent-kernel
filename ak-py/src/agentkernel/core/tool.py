@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import contextvars
 import uuid
-from typing import TYPE_CHECKING, Any, Callable, ClassVar, List, Self
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, ClassVar, Self
 
 from .base import Agent, AgentRequest, Session
 from .config import AKConfig
@@ -45,6 +46,7 @@ class ToolContext:
         self._session: Session = session
         self._requests: list[AgentRequest] = requests
         self._token: contextvars.Token[Self | None] | None = None
+        self._framework_context: dict | None = None
 
     @property
     def id(self) -> str:
@@ -85,6 +87,25 @@ class ToolContext:
         :return: The current list of AgentRequest instances.
         """
         return self._requests
+
+    @property
+    def framework_context(self) -> dict | None:
+        """
+        Get the per-run framework context, for frameworks whose SDK gives a tool no context slot of its own.
+
+        A copy of the session's framework context that the runner writes back when the run succeeds, so a tool
+        mutates it in place. Mutating the dict read from ``session`` instead is overwritten by that write-back.
+        :return: The mutable per-run context dict, or None when the session carries no framework context.
+        """
+        return self._framework_context
+
+    @framework_context.setter
+    def framework_context(self, context: dict | None) -> None:
+        """
+        Set the per-run framework context a runner hands to tools.
+        :param context: The per-run copy of the session's framework context.
+        """
+        self._framework_context = context
 
     @classmethod
     def get(cls) -> Self:
@@ -267,7 +288,7 @@ class SystemToolFactory:
                  capability contributes anything.
         """
 
-        tools: List[SystemTool] = SystemToolFactory.get_all(agent_name)
+        tools: list[SystemTool] = SystemToolFactory.get_all(agent_name)
 
         # A capability may carry its whole prompt section on one tool and leave the
         # others' descriptions empty (the sandbox pattern) — skip the empties.

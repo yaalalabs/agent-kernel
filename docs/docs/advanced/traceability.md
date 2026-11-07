@@ -473,13 +473,14 @@ Without `LOGFIRE_TOKEN`, Logfire runs locally and does **not** ship traces (Agen
 
 ### Framework Coverage
 
-Logfire configures the global OpenTelemetry tracer provider, and each non-streaming agent run (`execution.mode: rest_sync`) is wrapped in a Logfire span carrying the `session_id`. Streaming runs (`execution.mode: stream`) are not wrapped in a session span — matching the Langfuse and OpenLLMetry runners — though deep instrumentation still emits LLM/tool spans where it is active. Deep (LLM/tool-level) instrumentation depends on the framework:
+Logfire configures the global OpenTelemetry tracer provider, and each non-streaming agent run (`execution.message_type: complete`) is wrapped in a Logfire span carrying the `session_id`. Streaming runs (`execution.message_type: delta`) are not wrapped in a session span — matching the Langfuse and OpenLLMetry runners — though deep instrumentation still emits LLM/tool spans where it is active. Deep (LLM/tool-level) instrumentation depends on the framework:
 
 | Framework | Depth under Logfire |
 |-----------|---------------------|
 | OpenAI Agents SDK | Full — native `logfire.instrument_openai_agents()` |
 | CrewAI | Full — OpenInference CrewAI + LiteLLM instrumentors |
 | Google ADK | Full — OpenInference Google ADK instrumentor |
+| Claude Agent SDK | Agent and tool spans — native `logfire.instrument_claude_agent_sdk()`; model calls run inside the Claude Code CLI |
 | Microsoft Agent Framework | Session span, plus MAF's own OpenTelemetry agent and chat spans (MAF instruments itself; Agent Kernel activates nothing extra) |
 | LangGraph | Session span only |
 | Smolagents | Session span only |
@@ -557,7 +558,7 @@ Each non-streaming agent run is wrapped in a span named `Agent Kernel <Framework
 
 The service resource defaults to `service.name=AgentKernel` and `aws.service.type=gen_ai_agent`. Values set through `OTEL_SERVICE_NAME` or `OTEL_RESOURCE_ATTRIBUTES` win.
 
-Streaming runs (`execution.mode: stream`) are not wrapped in a session span, which matches the other providers, though deep instrumentation still emits LLM and tool spans where it is active. How deep the LLM- and tool-level instrumentation goes depends on the framework:
+Streaming runs (`execution.message_type: delta`) are not wrapped in a session span, which matches the other providers, though deep instrumentation still emits LLM and tool spans where it is active. How deep the LLM- and tool-level instrumentation goes depends on the framework:
 
 | Framework | Depth under CloudWatch |
 |-----------|------------------------|
@@ -565,6 +566,7 @@ Streaming runs (`execution.mode: stream`) are not wrapped in a session span, whi
 | CrewAI | Full — OpenInference CrewAI + LiteLLM instrumentors |
 | Google ADK | Full — OpenInference Google ADK instrumentor |
 | Pydantic AI | Full — Pydantic AI instrumentation + OpenInference span processor |
+| Claude Agent SDK | Agent and tool spans — OpenInference Claude Agent SDK instrumentor; model calls run inside the Claude Code CLI |
 | Microsoft Agent Framework | Session span, plus MAF's own OpenTelemetry agent and chat spans (MAF instruments itself; Agent Kernel activates nothing extra) |
 | LangGraph | Session span only |
 | Smolagents | Session span only |

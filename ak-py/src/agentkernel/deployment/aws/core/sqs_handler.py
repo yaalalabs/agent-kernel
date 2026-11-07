@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Mapping, Optional
+from collections.abc import Mapping
+from typing import Any
 
 import boto3
 from pydantic import BaseModel, ConfigDict
@@ -42,8 +43,8 @@ class SQSHandler:
         silently sending the message without the intended FIFO ids.
         """
 
-        message_group_id: Optional[str] = None
-        message_deduplication_id: Optional[str] = None
+        message_group_id: str | None = None
+        message_deduplication_id: str | None = None
 
         model_config = ConfigDict(extra="forbid")
 
@@ -54,7 +55,7 @@ class SQSHandler:
         """
 
         prompt: str
-        agent: Optional[str] = None
+        agent: str | None = None
         session_id: str
 
         model_config = ConfigDict(extra="allow")
@@ -106,7 +107,7 @@ class SQSHandler:
         return sqs_wire.serialize_message_body(message_body)
 
     @classmethod
-    def _build_message_attribute(cls, custom_attribute: "SQSHandler.CustomAttribute") -> Dict[str, Any]:
+    def _build_message_attribute(cls, custom_attribute: "SQSHandler.CustomAttribute") -> dict[str, Any]:
         """Build a boto3-compatible SQS message attribute payload
         (delegates to the shared pipeline wire helpers)."""
         return sqs_wire.build_message_attribute(custom_attribute)
@@ -115,20 +116,20 @@ class SQSHandler:
     def _build_message_attributes(
         cls,
         message_attributes: list["SQSHandler.CustomAttribute"] | None,
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Convert a list of custom attributes into an SQS attributes map; rejects duplicate
         names (delegates to the shared pipeline wire helpers)."""
         return sqs_wire.build_message_attributes(message_attributes)
 
     @staticmethod
-    def get_message_system_attributes(raw_queue_message_record: Mapping[str, Any]) -> Dict[str, Any]:
+    def get_message_system_attributes(raw_queue_message_record: Mapping[str, Any]) -> dict[str, Any]:
         """Return the SQS system attributes from a raw SQS message record, handling both Lambda
         event records and boto3 receive_message records (delegates to the shared pipeline wire
         helpers)."""
         return sqs_wire.get_message_system_attributes(raw_queue_message_record)
 
     @staticmethod
-    def get_message_custom_attributes(raw_queue_message_record: Mapping[str, Any]) -> Dict[str, Any]:
+    def get_message_custom_attributes(raw_queue_message_record: Mapping[str, Any]) -> dict[str, Any]:
         """Return the custom SQS message attributes from a raw SQS message record, handling both
         Lambda event records and boto3 receive_message records (delegates to the shared pipeline
         wire helpers)."""
@@ -138,11 +139,11 @@ class SQSHandler:
     def build_send_message_kwargs(
         cls,
         message_body: Any,
-        message_group_id: Optional[str] = None,
-        message_deduplication_id: Optional[str] = None,
+        message_group_id: str | None = None,
+        message_deduplication_id: str | None = None,
         message_attributes: list["SQSHandler.CustomAttribute"] | None = None,
         **extra_kwargs: Any,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Assemble the keyword arguments expected by boto3 send_message
         (delegates to the shared pipeline wire helpers).
@@ -167,8 +168,8 @@ class SQSHandler:
         cls,
         queue_url: str,
         message_body: Any,
-        message_group_id: Optional[str] = None,
-        message_deduplication_id: Optional[str] = None,
+        message_group_id: str | None = None,
+        message_deduplication_id: str | None = None,
         message_attributes: list["SQSHandler.CustomAttribute"] | None = None,
         **extra_kwargs: Any,
     ):
@@ -212,10 +213,10 @@ class SQSHandler:
     @classmethod
     def _build_standard_message_attributes(
         cls,
-        request_id: Optional[str],
-        user_id: Optional[str],
-        custom_message_attributes: Optional[List["SQSHandler.CustomAttribute"]],
-    ) -> Optional[List["SQSHandler.CustomAttribute"]]:
+        request_id: str | None,
+        user_id: str | None,
+        custom_message_attributes: list["SQSHandler.CustomAttribute"] | None,
+    ) -> list["SQSHandler.CustomAttribute"] | None:
         """
         Combine the standard request_id/user_id attributes with caller-supplied ones.
 
@@ -234,7 +235,7 @@ class SQSHandler:
         return message_attributes if message_attributes else None
 
     @staticmethod
-    def _get_session_id(message_body: Any) -> Optional[str]:
+    def _get_session_id(message_body: Any) -> str | None:
         """
         Extract session_id from a message body, if present.
 
@@ -248,11 +249,11 @@ class SQSHandler:
     @classmethod
     def send_message_to_input_queue(
         cls,
-        message_body: "SQSHandler.QueueMessageBody | Dict[str, Any]",
-        attributes: "SQSHandler.SendMessageAttributes | Dict[str, Any] | None" = None,
-        request_id: Optional[str] = None,
-        user_id: Optional[str] = None,
-        custom_message_attributes: Optional[List["SQSHandler.CustomAttribute"]] = None,
+        message_body: "SQSHandler.QueueMessageBody | dict[str, Any]",
+        attributes: "SQSHandler.SendMessageAttributes | dict[str, Any] | None" = None,
+        request_id: str | None = None,
+        user_id: str | None = None,
+        custom_message_attributes: list["SQSHandler.CustomAttribute"] | None = None,
         **extra_kwargs: Any,
     ):
         """
@@ -292,10 +293,10 @@ class SQSHandler:
     def send_message_to_output_queue(
         cls,
         message_body: Any,
-        attributes: "SQSHandler.SendMessageAttributes | Dict[str, Any] | None" = None,
-        request_id: Optional[str] = None,
-        user_id: Optional[str] = None,
-        custom_message_attributes: Optional[List["SQSHandler.CustomAttribute"]] = None,
+        attributes: "SQSHandler.SendMessageAttributes | dict[str, Any] | None" = None,
+        request_id: str | None = None,
+        user_id: str | None = None,
+        custom_message_attributes: list["SQSHandler.CustomAttribute"] | None = None,
         **extra_kwargs: Any,
     ):
         """

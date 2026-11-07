@@ -43,7 +43,7 @@ sequenceDiagram
 - **Pluggable storage**: in-memory, Redis, Valkey, DynamoDB, Firestore, or Cosmos DB.
 - **Optional, pluggable authorization**: you supply an `Authoriser` that validates a Bearer token against
   *your* authentication provider; Agent Kernel never authenticates users itself.
-- **Streaming included**: with `execution.mode: stream`, the user message is recorded before the stream
+- **Streaming included**: with `execution.message_type: delta`, the user message is recorded before the stream
   starts and the assistant message is assembled from the streamed deltas on completion.
 
 :::caution Platform scope
@@ -189,14 +189,13 @@ Thread routes are **open** until you supply an `Authoriser`, a small base class 
 Bearer token against your own authentication provider and resolve the caller's `user_id`:
 
 ```python
-from typing import Optional
 from agentkernel.api import RESTAPI
 from agentkernel.auth import Authoriser
 from agentkernel.thread import AgentThreadRequestHandler
 
 
 class MyAuthoriser(Authoriser):
-    def authorise(self, token: str) -> Optional[str]:
+    def authorise(self, token: str) -> str | None:
         # Validate the token with your auth provider (JWT, introspection, API key lookup, ...)
         # Return the resolved user_id, or None to reject.
         return my_auth_provider.resolve(token)

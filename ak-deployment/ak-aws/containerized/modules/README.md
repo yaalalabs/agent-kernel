@@ -157,7 +157,9 @@ skips creating that SG. Independent of each other.
 - `AK_EXECUTION__QUEUES__OUTPUT__URL` (if queue mode enabled)
 - `AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TABLE_NAME` (if queue mode enabled, not in WebSocket mode)
 - `AK_EXECUTION__QUEUES__BATCH_SIZE` (if queue mode enabled, from root `queue_config.batch_size`)
-- `AK_EXECUTION__MODE` (`async` or `stream`, WebSocket mode only)
+- `AK_EXECUTION__MODE` (`async`, WebSocket mode only)
+- `AK_EXECUTION__MESSAGE_TYPE` (whenever root `message_type` is non-null, in every mode, so the REST
+  service and the agent runner always agree)
 - `AK_WEBSOCKET_API__CHAT_ROUTE`, `AK_WEBSOCKET_API__ENDPOINT_URL`, `AK_WEBSOCKET_API__CONNECTION_TABLE__TABLE_NAME` (WebSocket mode only)
 - `AK_SCHEDULE__PROVIDER__EVENTBRIDGE__GROUP_NAME`, `__ROLE_ARN`, `__QUEUE_ARN` (if `enable_scheduling`)
 - `AK_SCHEDULE__STORE__DYNAMODB__TABLE_NAME` (if `create_dynamodb_schedule_table`)
@@ -173,7 +175,7 @@ skips creating that SG. Independent of each other.
 
 The `rest-service` module serves **both** REST and WebSocket ingress from the same ECS
 service — it is not a separate module. `websocket_mode` is set from the root module's
-`local.is_websocket_mode` (`true` when `execution_mode` is `async` or `stream`) and adds:
+`local.is_websocket_mode` (`true` when `execution_mode` is `async`, with either `message_type`) and adds:
 
 - An internal **Network Load Balancer** (`aws_lb.nlb`) in front of the existing ALB
   (`aws_lb_target_group_attachment.nlb_to_alb`), because the WebSocket API Gateway needs a
@@ -187,7 +189,7 @@ service — it is not a separate module. `websocket_mode` is set from the root m
   `websocket_api_execution_arn` (for the `execute-api:ManageConnections` IAM policy), and
   `websocket_endpoint_url` (injected as `AK_WEBSOCKET_API__ENDPOINT_URL` for `PostToConnection`).
 
-See the root [README.md](../README.md#websocket-mode---async-async-and-stream-stream) for the
+See the root [README.md](../README.md#websocket-mode-async) for the
 full request lifecycle, IAM, and Terraform configuration.
 
 ### 3. `agent-runner/`
@@ -256,8 +258,11 @@ module uses the provided ID instead and skips creating one.
 - `AK_EXECUTION__QUEUES__BATCH_SIZE` (from root `queue_config.batch_size`)
 - `AK_SESSION__REDIS__URL` (if Redis enabled)
 - `AK_SESSION__DYNAMODB__TABLE_NAME` (if DynamoDB memory table enabled)
-- `AK_EXECUTION__MODE` (`async` or `stream`, WebSocket mode only — lets the agent runner forward
-  the `endpoint_url` custom attribute to the Output Queue so the REST/IO service can push the reply)
+- `AK_EXECUTION__MODE` (`async` or `realtime` only — in `async` it lets the agent runner forward
+  the `endpoint_url` custom attribute to the Output Queue so the REST/IO service can push the reply;
+  in `realtime` it dispatches to the realtime runner)
+- `AK_EXECUTION__MESSAGE_TYPE` (whenever root `message_type` is non-null, in every mode — `delta`
+  makes the runner emit one Output Queue message per chunk instead of one full response)
 - `AK_SCHEDULE__PROVIDER__EVENTBRIDGE__GROUP_NAME`, `__ROLE_ARN`, `__QUEUE_ARN` (if `enable_scheduling`)
 - `AK_SCHEDULE__STORE__DYNAMODB__TABLE_NAME` (if `create_dynamodb_schedule_table`)
 
@@ -329,7 +334,7 @@ module "containerized_agents" {
 
   # Queue mode for async processing
   queue_mode     = true
-  execution_mode = "rest_async"  # rest_sync | rest_async | async | stream
+  execution_mode = "rest_async"  # rest_sync | rest_async | async | realtime
 
   queue_config = {
     input_queue_visibility_timeout  = 120
@@ -394,7 +399,7 @@ module "containerized_agents" {
 | **Queue Module**    | ✅                       | ✅                      |
 | **Scaling Config**  | Built-in                 | `scaling_config` object |
 | **Load Balancer**   | API Gateway direct       | ALB + API Gateway       |
-| **WebSocket Mode**  | ✅ (`async`/`stream`)     | ✅ (`async`/`stream`)   |
+| **WebSocket Mode**  | ✅ (`async`)              | ✅ (`async`)            |
 
 ## Migration from Old Structure
 

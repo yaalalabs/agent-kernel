@@ -1,5 +1,6 @@
 import logging
-from typing import Any, Callable, Dict, Optional
+from collections.abc import Callable
+from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
@@ -13,20 +14,20 @@ class Headers(BaseModel):
 class APIGatewayRequestAuthorizerEvent(BaseModel):
     type: str
     methodArn: str
-    resource: Optional[str] = None
-    path: Optional[str] = None
-    httpMethod: Optional[str] = None
+    resource: str | None = None
+    path: str | None = None
+    httpMethod: str | None = None
     headers: Headers
-    pathParameters: Optional[Dict[str, str]] = None
-    stageVariables: Optional[Dict[str, str]] = None
+    pathParameters: dict[str, str] | None = None
+    stageVariables: dict[str, str] | None = None
 
 
 # Given the raw authorizer event, the name of the integration whose route it targets, or None.
-WebhookBypass = Callable[[Dict[str, Any]], Optional[str]]
+WebhookBypass = Callable[[dict[str, Any]], str | None]
 
 
 class APIGatewayAuthorizer:
-    def __init__(self, validator: AuthValidator, bypass: Optional[WebhookBypass] = None):
+    def __init__(self, validator: AuthValidator, bypass: WebhookBypass | None = None):
         """
         :param validator: Validates the bearer token of every request the bypass does not claim.
         :param bypass: Lets messaging-integration routes through without a token, e.g.
@@ -80,7 +81,7 @@ class APIGatewayAuthorizer:
         self._log.info(f"Authorizer return policy: {return_policy}")
         return return_policy
 
-    def _bypass_policy(self, event: dict) -> Optional[dict]:
+    def _bypass_policy(self, event: dict) -> dict | None:
         """An Allow for a request the bypass recognises, or None to take the normal path.
 
         The Allow names the exact ``methodArn`` (never a wildcard) and carries no claims. A bypass
@@ -109,7 +110,7 @@ class APIGatewayAuthorizer:
             raise ValueError("Bearer token is empty")
         return token
 
-    def _build_policy(self, principal_id: str, effect: str, method_arn: str, context: Dict[str, Any] | None = None):
+    def _build_policy(self, principal_id: str, effect: str, method_arn: str, context: dict[str, Any] | None = None):
         policy = {
             "principalId": principal_id,
             "policyDocument": {

@@ -13,7 +13,8 @@ environment without those optional extras installed — does not import their SD
 collection time.
 """
 
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 import pytest
 

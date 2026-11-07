@@ -8,7 +8,6 @@ unowned task, and 400 on an unusable amendment.
 
 import subprocess
 import sys
-from typing import Optional
 
 import pytest
 from fastapi import FastAPI
@@ -51,7 +50,7 @@ class RecordingScheduleProvider(ScheduleProvider):
 class StaticAuthoriser(Authoriser):
     """Test authoriser: token 'good-token' resolves to user 'u1', anything else is rejected."""
 
-    def authorise(self, token: str) -> Optional[str]:
+    def authorise(self, token: str) -> str | None:
         return "u1" if token == "good-token" else None
 
 
@@ -72,7 +71,7 @@ def scheduling_disabled(monkeypatch):
     monkeypatch.setattr(ScheduleManager, "get", classmethod(lambda cls: None))
 
 
-def _client(authoriser: Optional[Authoriser] = None) -> TestClient:
+def _client(authoriser: Authoriser | None = None) -> TestClient:
     app = FastAPI()
     app.include_router(ScheduleRESTRequestHandler(authoriser=authoriser).get_router())
     return TestClient(app, raise_server_exceptions=False)

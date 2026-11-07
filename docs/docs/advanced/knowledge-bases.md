@@ -10,6 +10,10 @@ This builds on top of core session and memory concepts:
 - **Session + caches** → short‑ and medium‑term conversation state.
 - **Knowledge bases** → durable, cross‑session knowledge.
 
+:::tip Not sure whether you need a knowledge base?
+See [Choosing a Memory Backend](../core-concepts/memory-backends.md) for a beginner comparison of session stores and knowledge bases, and when to use each.
+:::
+
 ## Core Abstractions
 
 ### `KnowledgeBase`
@@ -566,7 +570,7 @@ optional, and which of them you implement is fixed by the `KnowledgeCapabilities
 returning an empty result, so the declaration and the implemented set must agree.
 
 ```python
-from typing import Any, Iterable, List, Mapping
+from collections.abc import Iterable
 from agentkernel.knowledgebase import KnowledgeBase, KnowledgeCapabilities, Record
 
 
@@ -597,7 +601,7 @@ class MyBackend(KnowledgeBase):
         for record in records:
             self._client.store(record["text"], record.get("metadata", {}))
 
-    def search(self, query: str, limit: int = 3, **kwargs) -> List[Record]:
+    def search(self, query: str, limit: int = 3, **kwargs) -> list[Record]:
         # Return the most relevant records for the query
         raw = self._client.search(query, top_k=limit)
         return [{"text": r.text, "metadata": r.meta} for r in raw]
@@ -697,17 +701,39 @@ The capability model changes a few things an already-deployed agent can see. Eac
 
 ## When to Use Knowledge Bases vs. Memory
 
+Session memory and knowledge bases answer different questions. Use the table to pick the right one.
+
+| Question | Use | Where it lives |
+|---|---|---|
+| Should the previous turns influence this answer? | **Session memory** | Session store |
+| Should this data disappear when the conversation ends? | **Session memory or a cache** | Session store / in-process |
+| Must a different user or session see the same information tomorrow? | **Knowledge base** | Durable backend |
+| Is the knowledge a large document, manual, or dataset? | **Knowledge base** | Durable backend |
+| Do you need search by meaning, graph traversal, or SQL? | **Knowledge base** | Vector / graph / SQL backend |
 
 Use **session memory and caches** when:
-- Data is tied to a single conversation or short‑lived workflow.
+
+- Data is tied to a single conversation or short-lived workflow.
 - Content should influence the current LLM context only.
-- You don’t need durable, cross‑session storage.
+- You don't need durable, cross-session storage.
 
 Use **knowledge bases** when:
+
 - You need durable, reusable knowledge (docs, profiles, domain data).
 - You want multiple agents or sessions to share the same information.
 - You need specialized query capabilities (semantic search, graph queries).
 
+Choosing a knowledge base backend:
+
+- **ChromaDB** - semantic search over natural-language text and facts. The usual first choice.
+- **Neo4j** - entities and relationships, queried with Cypher.
+- **Starburst** - SQL over data that already lives in a warehouse, MongoDB, or Sheets; read-only.
+- **OKF bundle** - Markdown documents in a directory or S3, with no database to run.
+
 You can also **combine** them:
-- Fetch from a knowledge base, then cache results in the session’s volatile cache for fast reuse during a single request.
+
+- Fetch from a knowledge base in a pre-hook, then cache the result in the session's volatile cache for fast reuse during that request.
+
+For setup steps and a side-by-side comparison of every session and knowledge-base backend, see
+[Choosing a Memory Backend](../core-concepts/memory-backends.md).
 

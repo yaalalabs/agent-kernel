@@ -2,7 +2,7 @@ import itertools
 import time
 import uuid
 from collections import deque
-from typing import Any, Dict, List, Tuple
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -218,12 +218,12 @@ class _FakeSQSQueue:
 
     def __init__(self, visibility_timeout: float):
         self._visibility_timeout = visibility_timeout
-        self._groups: Dict[str, deque] = {}
-        self._in_flight: Dict[str, Tuple[dict, float, str]] = {}  # group -> (message, deadline, receipt handle)
-        self._dedup: Dict[str, float] = {}
+        self._groups: dict[str, deque] = {}
+        self._in_flight: dict[str, tuple[dict, float, str]] = {}  # group -> (message, deadline, receipt handle)
+        self._dedup: dict[str, float] = {}
         self._synthetic_group_counter = itertools.count()
 
-    def send(self, kwargs: Dict[str, Any]) -> dict:
+    def send(self, kwargs: dict[str, Any]) -> dict:
         now = time.monotonic()
         dedup_id = kwargs.get("MessageDeduplicationId")
         if dedup_id:
@@ -241,7 +241,7 @@ class _FakeSQSQueue:
         self._groups.setdefault(group_key, deque()).append(message)
         return {"MessageId": message["id"]}
 
-    def receive(self, max_messages: int, wait_seconds: float) -> List[dict]:
+    def receive(self, max_messages: int, wait_seconds: float) -> list[dict]:
         deadline = time.monotonic() + wait_seconds
         while True:
             now = time.monotonic()
@@ -291,7 +291,7 @@ class FakeSQSClient:
 
     def __init__(self, visibility_timeout: float):
         self._visibility_timeout = visibility_timeout
-        self._queues: Dict[str, _FakeSQSQueue] = {}
+        self._queues: dict[str, _FakeSQSQueue] = {}
 
     def _queue(self, url: str) -> _FakeSQSQueue:
         if url not in self._queues:

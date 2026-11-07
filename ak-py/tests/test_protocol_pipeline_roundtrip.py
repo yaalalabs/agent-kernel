@@ -10,11 +10,9 @@ import uuid
 
 import httpx
 import pytest
-from a2a.client import A2ACardResolver, ClientConfig
-from a2a.client.base_client import BaseClient
-from a2a.client.transports.rest import RestTransport
-from a2a.types import Message, Part, Role, TextPart
-from a2a.utils import get_message_text
+from a2a.client import A2ACardResolver, ClientConfig, ClientFactory
+from a2a.helpers import get_data_parts, get_message_text
+from a2a.types import Message, Part, Role, SendMessageRequest
 from fastmcp import Client
 
 from agentkernel.api.a2a.a2a import A2A
@@ -37,7 +35,10 @@ BASE_URL = "http://ak.test"
 
 
 class CountingRunner(Runner):
-    """Replies with the prompt, the thread it ran on, and the session's turn count."""
+    """Replies with the prompt, the thread it ran on, and the session's turn count.
+
+    A JSON prompt is echoed as is, so the A2UI hook has a body it can label.
+    """
 
     runs: list[tuple[str, str]] = []
 
@@ -48,6 +49,8 @@ class CountingRunner(Runner):
         thread = threading.current_thread().name
         CountingRunner.runs.append((thread, session.id))
         prompt = requests[0].prompt if isinstance(requests[0], AgentRequestText) else ""
+        if prompt.startswith(("{", "[")):
+            return AgentReplyText(response=prompt)
         return AgentReplyText(response=f"{prompt}|thread={thread}|turn={turn}")
 
     async def stream(self, agent, session, requests):  # pragma: no cover - a tagged message never streams
@@ -112,6 +115,8 @@ def _environment(monkeypatch):
     # A fast wait budget: up to 200 reads 20 ms apart.
     monkeypatch.setenv("AK_EXECUTION__RESPONSE_STORE__RETRY_COUNT", "200")
     monkeypatch.setenv("AK_EXECUTION__RESPONSE_STORE__DELAY", "0.02")
+    # The card's interface URL, which the A2A client sends to.
+    monkeypatch.setenv("AK_A2A__URL", f"{BASE_URL}/a2a")
     AKConfig._reset()
     InMemoryTransport.reset()
     InMemoryResponseStore.reset()
@@ -131,27 +136,34 @@ def _environment(monkeypatch):
     AKConfig._reset()
 
 
-def _configure(monkeypatch, mode=None, **env):
+def _configure(monkeypatch, mode=None, message_type=None, **env):
     if mode:
         monkeypatch.setenv("AK_EXECUTION__MODE", mode)
+    if message_type:
+        monkeypatch.setenv("AK_EXECUTION__MESSAGE_TYPE", message_type)
     for name, value in env.items():
         monkeypatch.setenv(name, value)
     AKConfig._reset()
 
 
-async def _a2a_send(texts: list[str], context_id: str) -> list[str]:
+async def _a2a_messages(texts: list[str], context_id: str) -> list[Message]:
     """Send each text as one A2A message:send in the same context, the way an A2A client does."""
     app = RESTAPI.build_app(handlers=[])
     agent_url = f"{BASE_URL}/a2a/{AGENT_NAME}"
     replies = []
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=BASE_URL, timeout=10) as http:
         card = await A2ACardResolver(http, base_url=agent_url).get_agent_card()
-        client = BaseClient(card, ClientConfig(streaming=False), RestTransport(http, card, url=agent_url), consumers=[], middleware=[])
+        # The factory picks the card's HTTP+JSON interface and sends the A2A-Version: 1.0 header.
+        client = ClientFactory(ClientConfig(streaming=False, httpx_client=http, supported_protocol_bindings=["HTTP+JSON"])).create(card)
         for text in texts:
-            message = Message(message_id=str(uuid.uuid4()), context_id=context_id, role=Role.user, parts=[Part(root=TextPart(text=text))])
-            async for reply in client.send_message(message):
-                replies.append(get_message_text(reply))
+            message = Message(message_id=str(uuid.uuid4()), context_id=context_id, role=Role.ROLE_USER, parts=[Part(text=text)])
+            async for item in client.send_message(SendMessageRequest(message=message)):
+                replies.append(item.message)
     return replies
+
+
+async def _a2a_send(texts: list[str], context_id: str) -> list[str]:
+    return [get_message_text(message) for message in await _a2a_messages(texts, context_id)]
 
 
 async def _mcp_call(prompts: list[str], session_id: str) -> list[str]:
@@ -165,27 +177,55 @@ async def _mcp_call(prompts: list[str], session_id: str) -> list[str]:
 
 class TestA2A:
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("mode", [None, "stream"])
-    async def test_message_send_runs_on_the_runner_and_keeps_the_session(self, monkeypatch, mode):
-        _configure(monkeypatch, mode, AK_A2A__ENABLED="true")
+    @pytest.mark.parametrize("mode, message_type", [(None, None), ("rest_sync", "delta"), ("async", "delta")])
+    async def test_message_send_runs_on_the_runner_and_keeps_the_session(self, monkeypatch, mode, message_type):
+        _configure(monkeypatch, mode, message_type, AK_A2A__ENABLED="true")
         context_id = f"a2a-{uuid.uuid4()}"
 
-        with Pump(stream=mode == "stream") as pump:
+        with Pump(stream=message_type == "delta") as pump:
             replies = await _a2a_send(["first", "second"], context_id)
 
         assert pump.errors == []
         assert replies == [f"first|thread={PUMP_THREAD}|turn=1", f"second|thread={PUMP_THREAD}|turn=2"]
         assert CountingRunner.runs == [(PUMP_THREAD, context_id), (PUMP_THREAD, context_id)]
 
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("mode, message_type", [(None, None), ("rest_sync", "delta")])
+    async def test_a_labelled_reply_arrives_through_the_queue_as_a_data_part(self, monkeypatch, mode, message_type):
+        """The A2UI hook labels the reply on the runner; the A2A caller gets a data part (#762)."""
+        _configure(monkeypatch, mode, message_type, AK_A2A__ENABLED="true", AK_A2UI__ENABLED="true")
+        # System post-hooks are built once per process; rebuild them with A2UI on, and restore after.
+        monkeypatch.setattr(Runtime, "_system_post_hooks", None)
+
+        with Pump(stream=message_type == "delta") as pump:
+            [message] = await _a2a_messages(['{"createSurface": {"surfaceId": "s1"}}'], f"a2a-{uuid.uuid4()}")
+
+        assert pump.errors == []
+        [part] = message.parts
+        assert part.media_type == "application/a2ui+json"
+        assert dict(part.metadata) == {"mimeType": "application/a2ui+json"}
+        assert get_data_parts([part]) == [[{"createSurface": {"surfaceId": "s1"}}]]
+
+    @pytest.mark.asyncio
+    async def test_the_0_3_routes_are_not_served(self, monkeypatch):
+        """D1: A2A 1.0 only; the SDK's v0.3 compatibility routes stay off."""
+        _configure(monkeypatch, AK_A2A__ENABLED="true")
+        app = RESTAPI.build_app(handlers=[])
+
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=BASE_URL) as http:
+            response = await http.post(f"/a2a/{AGENT_NAME}/v1/message:send", json={"message": {}})
+
+        assert response.status_code == 404
+
 
 class TestMCP:
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("mode", [None, "async", "stream"])
-    async def test_call_tool_runs_on_the_runner_and_keeps_the_session(self, monkeypatch, mode):
-        _configure(monkeypatch, mode, AK_MCP__ENABLED="true", AK_MCP__EXPOSE_AGENTS="true")
+    @pytest.mark.parametrize("mode, message_type", [(None, None), ("async", None), ("rest_sync", "delta"), ("async", "delta")])
+    async def test_call_tool_runs_on_the_runner_and_keeps_the_session(self, monkeypatch, mode, message_type):
+        _configure(monkeypatch, mode, message_type, AK_MCP__ENABLED="true", AK_MCP__EXPOSE_AGENTS="true")
         session_id = f"mcp-{uuid.uuid4()}"
 
-        with Pump(stream=mode == "stream") as pump:
+        with Pump(stream=message_type == "delta") as pump:
             replies = await _mcp_call(["first", "second"], session_id)
 
         assert pump.errors == []

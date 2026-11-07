@@ -5,8 +5,8 @@ import contextlib
 import copy
 import inspect
 import logging
-from collections.abc import AsyncGenerator
-from typing import Any, Callable, ClassVar, List, Mapping, Type
+from collections.abc import AsyncGenerator, Callable, Mapping
+from typing import Any, ClassVar
 
 from agents import Agent, FunctionTool, Handoff, RunContextWrapper, Runner, function_tool, handoff
 from agents.run_state import RunState
@@ -71,7 +71,7 @@ class OpenAISession:
         """
         self._items = []
 
-    async def get_items(self, limit: int | None = None) -> List[dict]:
+    async def get_items(self, limit: int | None = None) -> list[dict]:
         """
         Retrieve items stored in this session.
         :param limit: Optional limit on the number of items to retrieve.
@@ -83,7 +83,7 @@ class OpenAISession:
             return self._items[-limit:]
         return self._items
 
-    async def add_items(self, items: List[dict]) -> None:
+    async def add_items(self, items: list[dict]) -> None:
         """
         Add items to this session.
         :param items: List of items to add.
@@ -1040,7 +1040,7 @@ class OpenAIAgent(BaseAgent):
         "auto_previous_response_id": "conversation state is the OpenAISession passed as session=; the SDK rejects combining them",
     }
 
-    def __init__(self, name: str, runner: OpenAIRunner, agent: Agent, realtime_runner_cls: Type[BaseRealtimeRunner] = None):
+    def __init__(self, name: str, runner: OpenAIRunner, agent: Agent, realtime_runner_cls: type[BaseRealtimeRunner] = None):
         """
         Initializes an OpenAIAgent instance.
         :param name: Name of the agent.
@@ -1105,7 +1105,7 @@ class OpenAIModule(Module):
         self,
         agents: list[Agent],
         runner: OpenAIRunner = None,
-        realtime_runner_cls: Type[BaseRealtimeRunner] = None,
+        realtime_runner_cls: type[BaseRealtimeRunner] = None,
     ):
         """
         Initializes an OpenAIModule instance.
@@ -1123,7 +1123,7 @@ class OpenAIModule(Module):
             self.runner = OpenAIRunner()
         self.load(agents)
 
-    def _wrap(self, agent: Agent, agents: List[Agent]) -> BaseAgent:
+    def _wrap(self, agent: Agent, agents: list[Agent]) -> BaseAgent:
         """
         Wraps the provided agent in an OpenAIAgent instance.
         :param agent: Agent to wrap.

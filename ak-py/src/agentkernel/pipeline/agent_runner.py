@@ -1,6 +1,5 @@
 import json
 import logging
-from typing import List, Optional
 
 from ..core.chat_service import ChatService
 from ..core.config import AKConfig
@@ -49,7 +48,7 @@ class AgentRunner:
 
     _log = logging.getLogger("ak.pipeline.agent_runner")
 
-    def __init__(self, transport: Optional[QueueTransport] = None, chat_service: Optional[ChatService] = None):
+    def __init__(self, transport: QueueTransport | None = None, chat_service: ChatService | None = None):
         self._transport = transport or QueueTransportFactory.create()
         self._chat_service = chat_service or ChatService()
 
@@ -122,7 +121,7 @@ class AgentRunner:
         state_before = AGUIState.snapshot_state(session)
 
         chunk_count = 0
-        terminal: Optional[dict] = None
+        terminal: dict | None = None
         for chunk in handler.run_stream_sync(body.requests or [], acting_user_id=body.user_id):
             payload = json.loads(chunk.model_dump_json())
             if payload.get("done"):
@@ -186,21 +185,21 @@ class AgentRunner:
             extra_tasks=self._get_extra_tasks(),
         ).run()
 
-    def _get_extra_tasks(self) -> List[ThreadRunner.Task]:
+    def _get_extra_tasks(self) -> list[ThreadRunner.Task]:
         """Override in subclasses to run additional background tasks alongside the consumer loop."""
         return []
 
     @classmethod
     def run(cls) -> None:
-        """Two-process container entry point. Dispatches to StreamAgentRunner in STREAM mode."""
+        """Two-process container entry point. Dispatches to StreamAgentRunner for delta replies."""
         if QueueTransportFactory.resolve_type() == "in_memory":
             raise AKConfigError("the in_memory transport runs in-process: start IOHandler (single-process topology) instead of AgentRunner")
         # cls check avoids redirect loops when StreamAgentRunner.run() is reached via inheritance.
         if cls is AgentRunner:
-            mode = AKConfig.get().execution.mode
-            if mode == ExecutionMode.REALTIME:
+            execution = AKConfig.get().execution
+            if execution.mode == ExecutionMode.REALTIME:
                 return RealtimeAgentRunner.run()
-            if mode == ExecutionMode.STREAM:
+            if execution.is_delta:
                 return StreamAgentRunner.run()
         # A standalone runner container is usually PID 1: without these handlers SIGTERM never
         # arrives and pod/task stop hangs until SIGKILL instead of draining in-flight runs.
@@ -211,7 +210,7 @@ class AgentRunner:
     # -- shared plumbing --------------------------------------------------------------------
 
     @classmethod
-    def _record_thread_reply(cls, message: QueueMessage, body: BaseRunRequest, status_code: int, result, media_type: Optional[str] = None) -> None:
+    def _record_thread_reply(cls, message: QueueMessage, body: BaseRunRequest, status_code: int, result, media_type: str | None = None) -> None:
         """Append the assistant message to the conversation thread this request belongs to.
 
         The other half of the split: ``ThreadRecorder.pre_run`` ran at the edge (the thread
@@ -284,7 +283,7 @@ class AgentRunner:
             message.attributes.setdefault(ATTR_USER_ID, body.user_id)
         return request_id
 
-    def _send_to_output(self, source: QueueMessage, response_body, status_code: Optional[int] = None, dedup_suffix: Optional[str] = None) -> None:
+    def _send_to_output(self, source: QueueMessage, response_body, status_code: int | None = None, dedup_suffix: str | None = None) -> None:
         attributes = {key: value for key, value in source.attributes.items() if _is_forwarded(key)}
         if status_code is not None:
             attributes[ATTR_STATUS_CODE] = str(status_code)
@@ -304,11 +303,11 @@ class AgentRunner:
 
 
 class StreamAgentRunner(AgentRunner):
-    """STREAM-mode sibling: fans out each streamed chunk as its own output message (spec #495 §8).
+    """Delta-reply sibling: fans out each streamed chunk as its own output message (spec #495 §8).
 
-    On broker transports the chunks are pushed over WebSocket, so the USER_ID attribute (the
-    WS-entered marker, spec #495 §2) is required; the in_memory transport also serves
-    REST-entered chunks from the local response store over SSE, where no user is needed.
+    Under ``async + delta`` on a broker transport the chunks are pushed over WebSocket, so the
+    USER_ID attribute (the WS-entered marker, spec #495 §2) is required. Under ``rest_sync + delta``
+    the chunks go to the response store and are served over SSE, where no user is needed.
 
     Integration and ``protocol`` traffic takes the single-reply path instead: a messaging platform
     has no streaming consumer, and an A2A or MCP caller waits for one whole reply in the response
@@ -324,8 +323,8 @@ class StreamAgentRunner(AgentRunner):
         body = BaseRunRequest.model_validate(json.loads(message.body))
 
         request_id = self._resolve_request_metadata(message, body)
-        if not message.attributes.get(ATTR_USER_ID) and QueueTransportFactory.resolve_type() != "in_memory":
-            raise ValueError("user_id is required in queue message attributes for STREAM mode over a broker transport")
+        if not message.attributes.get(ATTR_USER_ID) and AKConfig.get().execution.is_websocket and QueueTransportFactory.resolve_type() != "in_memory":
+            raise ValueError("user_id is required in queue message attributes for async + delta over a broker transport")
 
         self._log.info(f"[STREAM AGENT START] request_id={request_id} (receive_count={message.receive_count})")
 
@@ -378,7 +377,7 @@ class RealtimeAgentRunner(AgentRunner):
 
     _log = logging.getLogger("ak.pipeline.realtime_agent_runner")
 
-    def _get_extra_tasks(self) -> List[ThreadRunner.Task]:
+    def _get_extra_tasks(self) -> list[ThreadRunner.Task]:
         pool = RealtimeConnectionPool.initialize()
         return [pool.get_task()]
 

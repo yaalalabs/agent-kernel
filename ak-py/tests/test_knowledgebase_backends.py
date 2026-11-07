@@ -10,7 +10,7 @@ The faked SDK clients and the manager fixtures over them live in ``conftest.py``
 ``test_knowledgebase_contract``.
 """
 
-from typing import Mapping
+from collections.abc import Mapping
 
 import pytest
 
