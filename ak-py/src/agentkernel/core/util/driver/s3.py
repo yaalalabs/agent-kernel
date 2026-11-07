@@ -1,6 +1,6 @@
 """Shared S3 connection driver."""
 
-from typing import Any, Optional
+from typing import Any
 
 import boto3
 from botocore.exceptions import ClientError
@@ -25,7 +25,7 @@ class S3Driver(BaseDriver):
     therefore surfaces on first use rather than at construction.
     """
 
-    def __init__(self, bucket: str, region: Optional[str] = None, client: Optional[Any] = None):
+    def __init__(self, bucket: str, region: str | None = None, client: Any | None = None):
         """
         Initialize the driver. Constructor arguments are trusted; config reading and
         validation happen in the stores.
@@ -165,7 +165,7 @@ class S3Driver(BaseDriver):
         :return: A list of raw object keys.
         """
         keys: list[str] = []
-        token: Optional[str] = None
+        token: str | None = None
         try:
             while True:
                 kwargs: dict[str, Any] = {"Bucket": self._bucket, "Prefix": prefix}

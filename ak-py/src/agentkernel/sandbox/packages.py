@@ -11,7 +11,8 @@ package text reaches any log.
 import re
 import shlex
 from abc import ABC, abstractmethod
-from typing import Any, ClassVar, Mapping, Optional
+from collections.abc import Mapping
+from typing import Any, ClassVar
 
 from ..core.util.factory import resolve_dotted
 from .errors import SandboxCapabilityError, SandboxConfigError
@@ -45,7 +46,7 @@ class _PatternPackageSpecRule(PackageSpecRule):
                 raise ValueError(f"package {index}: {reason}")
 
     @abstractmethod
-    def _explicit_rejection(self, entry: str) -> Optional[str]:
+    def _explicit_rejection(self, entry: str) -> str | None:
         """The rule an entry breaks before the grammar is checked, or None."""
 
 
@@ -73,7 +74,7 @@ class PythonPackageSpecRule(_PatternPackageSpecRule):
         ".tar.lzma",
     )
 
-    def _explicit_rejection(self, entry: str) -> Optional[str]:
+    def _explicit_rejection(self, entry: str) -> str | None:
         if entry.startswith("git+"):
             return "VCS specs (git+) are not allowed"
         if "/" in entry:
@@ -93,7 +94,7 @@ class NodePackageSpecRule(_PatternPackageSpecRule):
     # npm-package-arg treats a bare entry with any of these suffixes as a local file.
     _TARBALL_SUFFIXES: ClassVar[tuple[str, ...]] = (".tgz", ".tar.gz", ".tar")
 
-    def _explicit_rejection(self, entry: str) -> Optional[str]:
+    def _explicit_rejection(self, entry: str) -> str | None:
         if any(protocol in entry for protocol in self._PROTOCOLS):
             return "protocol specs (github:, git+, file:, link:, npm:) are not allowed"
         if entry.lower().endswith(self._TARBALL_SUFFIXES):
@@ -202,7 +203,7 @@ class PackageInstaller:
                 raise ValueError(f"package {index}: {reason}")
 
     @staticmethod
-    def _baseline_rejection(entry: Any) -> Optional[str]:
+    def _baseline_rejection(entry: Any) -> str | None:
         """The baseline rule an entry breaks, or None."""
         if not isinstance(entry, str):
             return "must be a string"

@@ -9,8 +9,9 @@ message — plus the one typed error the factories raise.
 """
 
 import importlib
+from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import Iterator, TypeVar
+from typing import TypeVar
 
 T = TypeVar("T")
 

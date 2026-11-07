@@ -6,7 +6,6 @@ store, with TTL-based expiration and key-prefix isolation.
 """
 
 import json
-from typing import Optional
 
 from ...util.driver.redis import RedisDriver
 from .base import AttachmentStore
@@ -58,7 +57,7 @@ class RedisAttachmentStore(AttachmentStore):
 
         return attachment_id
 
-    def get(self, attachment_id: str) -> Optional[dict]:
+    def get(self, attachment_id: str) -> dict | None:
         raw = self._driver.get(self._key(attachment_id))
         if raw:
             return json.loads(raw)

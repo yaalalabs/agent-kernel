@@ -13,9 +13,10 @@ from __future__ import annotations
 import logging
 import math
 from abc import ABC, abstractmethod
+from collections.abc import Callable, Iterable
 from datetime import datetime, timedelta, timezone
 from enum import Enum
-from typing import Any, Callable, ClassVar, Iterable, Optional
+from typing import Any, ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -57,13 +58,13 @@ class TraceQuery(BaseModel):
     # a misspelled filter must fail, not silently widen the query
     model_config = ConfigDict(extra="forbid")
 
-    start: Optional[datetime] = Field(default=None, description="Inclusive lower bound on span start time; defaults to end - last")
-    end: Optional[datetime] = Field(default=None, description="Exclusive upper bound on span start time; defaults to now")
+    start: datetime | None = Field(default=None, description="Inclusive lower bound on span start time; defaults to end - last")
+    end: datetime | None = Field(default=None, description="Exclusive upper bound on span start time; defaults to now")
     last: timedelta = Field(default=timedelta(hours=1), description="Look-back window used when start is not given")
-    kinds: Optional[list[SpanKind]] = Field(default=None, description="Only return spans of these kinds; None returns all")
-    session_id: Optional[str] = Field(default=None, description="Only return spans belonging to this AK session")
-    trace_ids: Optional[list[str]] = Field(default=None, description="Only return spans of these traces")
-    name: Optional[str] = Field(default=None, description="Only return spans with exactly this name")
+    kinds: list[SpanKind] | None = Field(default=None, description="Only return spans of these kinds; None returns all")
+    session_id: str | None = Field(default=None, description="Only return spans belonging to this AK session")
+    trace_ids: list[str] | None = Field(default=None, description="Only return spans of these traces")
+    name: str | None = Field(default=None, description="Only return spans with exactly this name")
     limit: int = Field(default=1000, gt=0, description="Maximum number of spans to return; when more match, the most recent ones are kept")
 
     @field_validator("kinds", "session_id", "trace_ids", "name")
@@ -112,13 +113,13 @@ class SpanUsage(BaseModel):
     workflow spans) are deliberately not read.
     """
 
-    input_tokens: Optional[int] = Field(default=None, description="Prompt (input) tokens")
-    output_tokens: Optional[int] = Field(default=None, description="Completion (output) tokens")
-    total_tokens: Optional[int] = Field(default=None, description="Total tokens; input + output when the span reports no total")
-    cost: Optional[float] = Field(default=None, description="Cost in USD, as the provider or instrumentation computed it")
+    input_tokens: int | None = Field(default=None, description="Prompt (input) tokens")
+    output_tokens: int | None = Field(default=None, description="Completion (output) tokens")
+    total_tokens: int | None = Field(default=None, description="Total tokens; input + output when the span reports no total")
+    cost: float | None = Field(default=None, description="Cost in USD, as the provider or instrumentation computed it")
 
     @classmethod
-    def of(cls, input_tokens: Any = None, output_tokens: Any = None, total_tokens: Any = None, cost: Any = None) -> Optional[SpanUsage]:
+    def of(cls, input_tokens: Any = None, output_tokens: Any = None, total_tokens: Any = None, cost: Any = None) -> SpanUsage | None:
         """Builds a usage from raw values (numbers or numeric strings), or None when none is known."""
         input_tokens, output_tokens, total_tokens = cls._int(input_tokens), cls._int(output_tokens), cls._int(total_tokens)
         cost = cls._float(cost)
@@ -129,12 +130,12 @@ class SpanUsage(BaseModel):
         return cls(input_tokens=input_tokens, output_tokens=output_tokens, total_tokens=total_tokens, cost=cost)
 
     @classmethod
-    def _int(cls, value: Any) -> Optional[int]:
+    def _int(cls, value: Any) -> int | None:
         number = cls._float(value)
         return None if number is None else int(number)
 
     @staticmethod
-    def _float(value: Any) -> Optional[float]:
+    def _float(value: Any) -> float | None:
         if value is None or isinstance(value, bool):
             return None
         try:
@@ -155,16 +156,16 @@ class FetchedSpan(BaseModel):
     provider: str
     trace_id: str
     span_id: str
-    parent_span_id: Optional[str] = None
-    name: Optional[str] = None
+    parent_span_id: str | None = None
+    name: str | None = None
     kind: SpanKind = SpanKind.OTHER
     status: SpanStatus = SpanStatus.UNSET
-    start_time: Optional[datetime] = None
-    end_time: Optional[datetime] = None
-    session_id: Optional[str] = None
+    start_time: datetime | None = None
+    end_time: datetime | None = None
+    session_id: str | None = None
     input: Any = None
     output: Any = None
-    usage: Optional[SpanUsage] = None  # None when the span records no model call
+    usage: SpanUsage | None = None  # None when the span records no model call
     attributes: dict[str, Any] = Field(default_factory=dict)
     raw: dict[str, Any] = Field(default_factory=dict)
 
@@ -183,11 +184,11 @@ class FetchedTrace(BaseModel):
     """
 
     trace_id: str
-    session_id: Optional[str] = Field(default=None, description="The first session id found on the trace's spans")
+    session_id: str | None = Field(default=None, description="The first session id found on the trace's spans")
     spans: list[FetchedSpan] = Field(default_factory=list, description="The trace's spans, oldest first")
 
     @property
-    def root(self) -> Optional[FetchedSpan]:
+    def root(self) -> FetchedSpan | None:
         """The single span with no parent, or None when there is none or more than one."""
         roots = [span for span in self.spans if span.parent_span_id is None]
         return roots[0] if len(roots) == 1 else None
@@ -203,11 +204,11 @@ class FetchedTrace(BaseModel):
         return self.root.output if self.root else None
 
     @property
-    def started_at(self) -> Optional[datetime]:
+    def started_at(self) -> datetime | None:
         return self.root.start_time if self.root else None
 
     @property
-    def ended_at(self) -> Optional[datetime]:
+    def ended_at(self) -> datetime | None:
         return self.root.end_time if self.root else None
 
     @property
@@ -283,7 +284,7 @@ class OTelSpanClassifier:
     _COST_KEYS = ["operation.cost"]  # Pydantic AI's per-call cost
 
     @classmethod
-    def classify(cls, attributes: dict[str, Any], name: Optional[str] = None) -> SpanKind:
+    def classify(cls, attributes: dict[str, Any], name: str | None = None) -> SpanKind:
         if (kind := cls._OPENINFERENCE.get(str(attributes.get("openinference.span.kind", "")).upper())) is not None:
             return kind
         if (kind := cls._TRACELOOP.get(str(attributes.get("traceloop.span.kind", "")).lower())) is not None:
@@ -306,7 +307,7 @@ class OTelSpanClassifier:
         return None, None
 
     @classmethod
-    def usage(cls, attributes: dict[str, Any]) -> Optional[SpanUsage]:
+    def usage(cls, attributes: dict[str, Any]) -> SpanUsage | None:
         return SpanUsage.of(
             input_tokens=cls._first(attributes, cls._INPUT_TOKEN_KEYS),
             output_tokens=cls._first(attributes, cls._OUTPUT_TOKEN_KEYS),
@@ -319,7 +320,7 @@ class OTelSpanClassifier:
         return next((attributes[key] for key in keys if attributes.get(key) is not None), None)
 
     @classmethod
-    def session_id(cls, attributes: dict[str, Any]) -> Optional[str]:
+    def session_id(cls, attributes: dict[str, Any]) -> str | None:
         for key in cls._SESSION_KEYS:
             if attributes.get(key):
                 return str(attributes[key])
@@ -370,7 +371,7 @@ class TraceFetcher(ABC):
     def _fetch_by_cursor(
         self,
         query: TraceQuery,
-        fetch_page: Callable[[Optional[str]], tuple[list[Any], Optional[str]]],
+        fetch_page: Callable[[str | None], tuple[list[Any], str | None]],
         item_to_span: Callable[[Any], FetchedSpan],
     ) -> list[FetchedSpan]:
         """
@@ -380,7 +381,7 @@ class TraceFetcher(ABC):
         :param item_to_span: Maps one item to a span.
         """
         matched_spans: list[FetchedSpan] = []
-        cursor: Optional[str] = None
+        cursor: str | None = None
         while True:
             items, next_cursor = fetch_page(cursor)
             for item in items:
@@ -399,7 +400,7 @@ class TraceFetcher(ABC):
         query: TraceQuery,
         upper_bound: datetime,
         max_rows_per_request: int,
-        fetch_page: Callable[[int, datetime], list[tuple[Optional[datetime], FetchedSpan]]],
+        fetch_page: Callable[[int, datetime], list[tuple[datetime | None, FetchedSpan]]],
     ) -> list[FetchedSpan]:
         """
         Pages backwards in time over an API with a row cap and no cursor, keeping up to ``limit`` spans

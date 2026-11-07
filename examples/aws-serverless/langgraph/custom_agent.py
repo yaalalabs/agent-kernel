@@ -1,4 +1,5 @@
-from typing import Annotated, Any, Callable, List, Sequence, TypedDict
+from collections.abc import Callable, Sequence
+from typing import Annotated, Any, TypedDict
 
 from langchain_core.messages import BaseMessage, SystemMessage
 from langchain_core.tools import BaseTool, StructuredTool
@@ -21,7 +22,7 @@ class CustomAgent:
         description: str,
         model: ChatOpenAI,
         system_prompt: str,
-        tool_functions: List[Callable[..., Any]] = [],
+        tool_functions: list[Callable[..., Any]] = [],
         verbose: bool = False,
     ):
         self.name = name

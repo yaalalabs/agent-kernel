@@ -1,12 +1,10 @@
-from typing import Optional
-
 import jwt
 from agentkernel.auth import AuthValidator, ValidationContext, ValidationResult
 from agentkernel.aws import APIGatewayAuthorizer
 
 
 class CustomAuthTokenValidator(AuthValidator):
-    def validate(self, token: str, context: Optional[ValidationContext] = None) -> ValidationResult:
+    def validate(self, token: str, context: ValidationContext | None = None) -> ValidationResult:
         """Validate JWT token and return validation result."""
         payload = jwt.decode(token, options={"verify_signature": False})
         print("Payload", payload)

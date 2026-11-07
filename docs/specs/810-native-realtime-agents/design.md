@@ -1,209 +1,187 @@
 # #810: Native realtime agents and handoffs
 
-Use each framework's own realtime runner for live conversations. OpenAI Agents SDK or Google ADK owns agent turns, handoffs, tools, and model connections. Agent Kernel keeps only the audio, queue, session identity, and LiveKit boundary those SDKs do not provide.
+Use each framework's own realtime runner for live conversations. The OpenAI Agents SDK or Google ADK owns agent turns, handoffs, tools, and the model connection. Agent Kernel keeps the audio, queue, session identity, and LiveKit boundary those SDKs do not provide, plus six small edge additions (C1 to C6) that a realtime multi-agent meeting needs.
+
+Line references: "base" is `develop`; "now" is this branch.
 
 ## Motivation
 
-- The current `RealtimeRunner` contract makes Agent Kernel receive a `tool_call`, run the tool, and send its result back (`ak-py/src/agentkernel/core/realtime/runner.py:83`, `:125`). The pool implements that loop (`ak-py/src/agentkernel/pipeline/realtime_pool.py:228`).
-- The OpenAI adapter opens a raw Realtime API socket and builds its own tool and handoff flow (`ak-py/src/agentkernel/framework/openai/openai.py:627`, `:690`). The ADK adapter opens a raw Gemini Live socket and builds its own transfer flow (`ak-py/src/agentkernel/framework/adk/adk.py:918`, `:1159`).
-- The native frameworks already offer these jobs: [OpenAI Agents SDK realtime](https://openai.github.io/openai-agents-python/realtime/guide/) uses `RealtimeAgent`, `RealtimeRunner`, and `RealtimeSession`; [ADK live workflows](https://adk.dev/live/workflows/) use `Runner.run_live()` and one `LiveRequestQueue` for the conversation.
-- The current LiveKit gateway already shows multiple agent participants and blocks its own agents' audio and chat from returning as user input (`ak-py/src/agentkernel/integration/livekit/adapter.py:235`, `:252`, `:463`).
+- The base `RealtimeRunner` contract makes Agent Kernel run tools: a `tool_call` event, `execute_tool` and `send_tool_result` (base `core/realtime/runner.py:92`, `:119`, `:124`). The base pool runs them (base `pipeline/realtime_pool.py:131`, `:229`).
+- The base OpenAI adapter opens a raw Realtime socket and builds its own tool and handoff flow (base `framework/openai/openai.py:627` class, `:775` `_activate`, `:805` `_offered_handoffs`, `:908` `_switch_to`).
+- The base ADK adapter opens a raw Gemini Live socket and builds its own transfer flow (base `framework/adk/adk.py:918` class, `:1178` `_open_socket`, `:1236` `_handle_message`, `:1356` `_transfer`).
+- The native frameworks already do these jobs (external; not re-verified in this rewrite): [OpenAI Agents SDK realtime](https://openai.github.io/openai-agents-python/realtime/guide/) (`RealtimeAgent`, `RealtimeRunner`, `RealtimeSession`) and [ADK live workflows](https://adk.dev/live/workflows/) (`Runner.run_live()`, one `LiveRequestQueue`).
+- The base LiveKit gateway already shows one participant per agent and keeps its own agents' audio and chat out of the caller input (`integration/livekit/adapter.py`, `_own_identities`, now `:165`).
+- A realtime meeting also needs things the edge lacks: the caller's words as text, captions, observation hooks, a gateway that starts and stops while the app runs, an immediate end of the session, a custom opening line, and a back-off after a failed native session.
 
 ## Requirements
 
 ```mermaid
 flowchart LR
     H[Human in LiveKit room] --> E[LiveKit gateway]
-    E --> P[Agent Kernel realtime pool]
+    E -- audio, text, end control --> P[Realtime pool]
     P --> A[Thin framework adapter]
-    A --> S[Native realtime session: OpenAI or ADK]
+    A --> S[Native session: OpenAI or ADK]
     S --> T[Active agent and its tools]
-    T -- native handoff --> N[Next active agent and its tools]
-    S -- audio, text, speaker --> A
+    T -- native handoff --> N[Next agent and its tools]
+    S -- audio, text, transcript, speaker --> A
     A --> P
-    P --> E
+    P -- paced chunks --> E
+    E -- hooks --> U[Server code]
 ```
 
 ### One conversation, several agents
 
-- A human and several agent participants can share one LiveKit room. Agents known from the declared graph appear when the call starts; a dynamic handoff target appears when first identified. One framework conversation controls the agent turn; an agent explicitly hands off to another agent through the framework's native handoff feature.
-  - Example: the coordinator speaks, invites the billing agent, and billing uses its lookup tool before answering. Billing can hand the turn back.
-- Only the active agent receives the live caller input and speaks for that turn. A handoff carries conversation context through the native SDK; it does not replay one agent participant's room audio into another model.
-  - In ADK this is one `run_live()` call and one input queue for the LiveKit call, even though ADK opens a fresh Gemini Live API session for the agent receiving a handoff ([ADK live workflows](https://adk.dev/live/workflows/)).
-- Each active agent can use the tools declared on that native agent, subject to the SDK and model's actual support. The SDK runs tools and sends their results. Its native handoff changes the active agent. Agent Kernel does not implement a second tool or handoff engine.
+- A human and several agent participants share one LiveKit room.
+  - Agents known from the declared graph appear when the call starts; a dynamic handoff target appears when first named.
+  - One native conversation controls the turn; an agent hands off through the framework's own handoff.
+- Only the active agent receives live caller input and speaks.
+  - A handoff carries context through the native SDK; room audio of one agent is never replayed into another model.
+  - ADK: one `run_live()` call and one input queue per call.
+- Each agent uses the tools declared on its native agent. The SDK runs them. Agent Kernel has no second tool or handoff engine.
 
 ### Framework adapters
 
-- `OpenAIRealtimeRunner` wraps the Python Agents SDK's `RealtimeRunner` and `RealtimeSession`, with native `RealtimeAgent` definitions and handoffs. It maps SDK audio, text, interruption, handoff, error, and completion events into the existing framework-neutral realtime events.
-- `GoogleADKRealtimeRunner` wraps ADK's `Runner.run_live()` with one `LiveRequestQueue` per AK realtime connection. It sends caller audio and text into that queue, reads ADK events, and uses the event author to report the speaker. ADK manages transfers, tool execution, and its Live API connections.
-- ADK live workflow agents that speak declare `mode='chat'` or `mode='task'`. ADK's graph `Workflow` is a native container, not a speaking `BaseAgent`; the AK wrapper must accept that root. Do not run ADK `ParallelAgent` or `LoopAgent` on the live path; ADK does not support them there ([ADK live workflows](https://adk.dev/live/workflows/)).
-- Both adapters use public SDK APIs and preserve the application's native agent relationships. AK does not clone or rebuild the graph. Remove raw socket loops, hand-built tool responses, transfer instructions, transcript replay, manual connection switching, and SDK-level retry logic.
-- Reject a known unsupported native agent declaration before opening the SDK connection. If an SDK rejects a setting only after connection starts, close the partially opened session and report the error. OpenAI realtime examples move to native `RealtimeAgent`; ordinary OpenAI `Agent` is rejected in realtime mode.
-- Use native SDK guardrails, resumption, and voice settings where the live path supports them. AK hooks and AK guardrails do not automatically run through a native realtime session; document that behavior clearly. The current LiveKit edge has no approval decision path, so a tool that requires human approval cannot run through this integration: reject it before the call when detectable, or reject the request and end the call if it arises later. Never silently approve or skip a declared guardrail.
+- `OpenAIRealtimeRunner` (now `openai.py:629`) wraps `RealtimeSession` over native `RealtimeAgent` definitions.
+  - An ordinary OpenAI `Agent` is rejected (now `:683`, `:706`).
+  - A `FunctionTool` with `needs_approval` is rejected before opening (`_check_agents`, now `:748`).
+- `GoogleADKRealtimeRunner` (now `adk.py:922`) wraps `Runner.run_live()`.
+  - The root is an ADK `LlmAgent` or a `Workflow`; a `Workflow` root does not speak, so `initial_speaker` returns `None` (now `:981`) and the adapter reports the first speaker with the roster.
+  - `ParallelAgent`, `LoopAgent`, and workflow nodes left in `single_turn` mode are rejected before opening (`_check_graph`, now `:1011`, `:1029`).
+  - Audio at a rate other than the pool's resample rate fails the connection (`_check_output_rate`, now `:1154`).
+- Both adapters:
+  - Use public SDK APIs and do not clone or rebuild the agent graph.
+  - Take per-run settings from `Module.run_options` (base `core/module.py:101`), rejecting keys the realtime session cannot take.
+  - Report a tool that needs a human decision as a connection error (OpenAI `_refuse_approval`, now `:848`; ADK `_refuse_confirmation`, now `:1176`). ADK learns of it only at run time, not before opening.
+  - Remove raw socket loops, hand-built tool responses, transfer instructions, transcript replay, manual connection switching, and SDK-level retry logic.
 
-### Agent Kernel boundary
+### Native path boundary
 
-- Keep `RealtimeRunner` as the framework-neutral input/output and lifecycle contract, selected through the existing `realtime_runner_cls` class seam (`ak-py/src/agentkernel/core/base.py:523`, `:560`). Remove `execute_tool`, `send_tool_result`, and the `tool_call` callback. A custom runner that still emits `tool_call` gets an explicit failure.
-- Keep `RealtimeConnection` and `RealtimeConnectionPool` for AK session identity, input batching and sample-rate conversion, ordered audio delivery, pacing, queue routing, barge-in delivery, close, and eviction. Remove the pool's tool execution and reply path.
-- Keep `AgentChanged` in the ordered output stream. The first event names the first speaking agent (which may differ from a non-speaking ADK workflow root); each native handoff names the next speaker before that agent's output. The LiveKit gateway uses this event to select the speaking participant.
-- Let the SDK handle model interruption and conversation truncation. Do not tell OpenAI's playback tracker that audio was played merely because AK sent it to an output queue: downstream buffering means the listener may not have heard it. Use the tracker only if the LiveKit edge can provide a reliable playout signal; until then, document the SDK's default playback estimate and test barge-in behavior. Do not build another truncation algorithm in AK.
-- Keep the LiveKit rule that audio and chat from AK's own agent participants never become caller input. The declared team remains visible, with only the active agent unmuted. A newly discovered agent joins when it first becomes active if it was absent from the starting roster.
-- Realtime runs native agent features only: native tools, SDK handoffs and SDK guardrails. When `execution.mode` is `realtime`, the OpenAI and ADK wrappers skip automatic AK system tools and their prompt guidance. Other modes still attach them as configured. AK hooks and AK guardrails are not part of the native live path. Core does not import framework SDKs.
-- Close the native session or ADK queue on AK connection shutdown and failed startup. Framework failures reach the existing error and eviction path; the next connection does not reuse a broken native session.
+- AK pre-hooks, post-hooks, and guardrails do not run on the native path; the SDK's own do. Documented.
+- AK system tools and their prompt text are not attached when `execution.mode` is `realtime` (now `openai.py:905`, `adk.py:1243`); other modes attach them as configured.
+- Tool context on the native path differs by adapter:
+  - ADK builds an AK `ToolContext` per connection and finds it from ADK session state (now `adk.py:1058`).
+  - OpenAI sets none; a tool calling `ToolContext.get()` raises `RuntimeError` there.
+  - Neither sets `Session.current()` or `Agent.current()` (the base pool did, around each tool call).
+  - See Open questions.
+- Session `framework_context`: OpenAI loads it as the SDK `context` (now `openai.py:716`; the normal run paths at `:246`, `:410`, `:462`, `:518` also store it back) and does not write it back; ADK does not use it. See Open questions.
+- Neither adapter stores the session at the end of a conversation (as in base).
+
+### Runner contract (`RealtimeRunner`)
+
+- Removed: `execute_tool`, `send_tool_result`, and the `tool_call` callback event.
+  - A runner that still emits `tool_call`, or any other event outside the closed list, fails the connection.
+- Added: `initial_speaker(agent)` (now `core/realtime/runner.py:70`); `None` means only the native session can say who speaks first.
+- `team(agent)` (now `:56`) lists speaking agents from the public graph, without building a new graph; it must not raise.
+- Callback events (closed list): `audio_delta`, `transcript_delta`, `input_transcript`, `agent_changed`, `interrupt`, `speech_started`, `done`, `error`.
+  - `agent_changed` carries `agent`, `previous_agent` (may be `None`), and optional `agents` (the roster when a change names an agent the roster lacked).
+- `connect` rejects an unsupported agent or option with `TypeError` or `ValueError` naming the agent, before opening anything. A failed or cancelled connect closes what it opened.
+- Selection stays through the `realtime_runner_cls` seam (base `core/base.py:556`).
+
+### Pool (`RealtimeConnection`, `RealtimeConnectionPool`)
+
+- The pool keeps audio pacing, input batching and resampling, barge-in delivery, queue routing, close, and eviction. It runs no tool.
+- Output order: `input_transcript` rides the paced queue and is kept on barge-in; it neither ends a turn nor resets the pacing window (now `pipeline/realtime_pool.py:155`, `:184`, `:229`).
+- A failed connection is closed in a separate task whose reference the pool holds until it finishes (`close_in_background`, now `:325`).
+- A connect that fails or times out is cancelled, closed, and counted as a failure (`_discard_failed`).
+- `RealtimeConnection.produced_output` is set by the first audio, transcript, or turn end.
+
+### Caller transcript (C1)
+
+- New stream event `InputTranscript` (`message_id`, `content`; now `core/event.py:170`), one finished non-empty caller utterance, in spoken order with agent output.
+- Mapped from the SDK: ADK a finished `input_transcription` on a `user` event; OpenAI `input_audio_transcription_completed`.
+- No new setting. It appears when the SDK's own input transcription is on (ADK: default on, external, not re-verified; OpenAI: `input_audio_transcription` in model settings through `Module.run_options`).
+- An edge that does not use it ignores it.
+
+### Live captions and edge hooks (C2)
+
+- LiveKit gateway captions:
+  - Agent text deltas go on a text stream from the speaking agent's participant, paced with the audio; the caller's line goes out attributed to the caller.
+  - Standard LiveKit transcription conventions: topic `lk.transcription` and the `lk.transcribed_track_id`, `lk.segment_id`, `lk.transcription_final` attributes.
+  - One caption task per gateway performs queued operations in order (`_CaptionSegment` now `:26`, `_run_captions` now `:634`); delivery only enqueues. A failed segment logs once and is skipped.
+  - The turn-end chat message is kept for existing clients.
+- Three overridable hooks on `StatefulEdgeAdapter`, no-ops by default (`TranscriptLine` now `integration/adapter/base.py:260`):
+  - `on_transcript(line)` for each finished agent line (split per speaker at handoffs) and each caller line; a typed room message is a caller line with `typed=True`; an interrupted line is marked `interrupted`.
+  - `on_agent_changed(agent, previous)` in order with the lines.
+  - `on_error(message)` besides the text shown to the room.
+- Hooks never block audio: one worker thread per edge, in call order (`_EdgeHookWorker`, now `:281`); a hook that raises is logged and ignored.
+- Shutdown waits for queued hooks at most `HOOKS_CLOSE_TIMEOUT_SECONDS` (5 s) and for queued captions at most `CAPTION_DRAIN_SECONDS` (1 s).
+
+### Gateway started and stopped while the app runs (C3)
+
+- `GatewayRunner` gains `start_background(ready_timeout)`, `stop(timeout)`, and `running` (now `integration/adapter/gateway.py:67`); no new sibling class.
+  - It runs one gateway on its own thread, returns when the edge calls `_mark_ready`, and re-raises a start failure to the caller. `READY_TIMEOUT_SECONDS` is 30.
+  - Not ready in time: it stops the gateway and raises `TimeoutError`.
+  - A background gateway failure never ends the process; boot-time gateways behave as before.
+- Works for any `StatefulEdgeAdapter`, not only LiveKit.
+
+### End a session at once (C4)
+
+- An edge that stops sends an end-of-session control on the input queue for its session id (`LiveKitEdgeGateway._send_session_end`, now `:307`): an empty request with message attribute `ATTR_REALTIME_END`.
+  - `IntegrationProducer.enqueue` takes optional extra `attributes`; a key that collides with a producer attribute raises `ValueError` (now `:61`).
+  - The control goes behind frames already staged, waiting at most `SESSION_END_TIMEOUT_SECONDS` (2 s) for them.
+- The pool closes that session's native connection at once (`end_session`, now `:589`) and drops input for it for `_ENDED_SESSION_TTL_SECONDS` (60 s).
+- `StatefulEdgeRegistry.unregister(session_id, adapter=None)` removes only that adapter when given one, and records the session as ended for `ENDED_TTL_SECONDS` (60 s; `recently_ended` now `registry.py:58`).
+- The Response Handler acks and drops chunks for an edge that just ended, instead of retrying them into a permanent failure (`_edge_recently_ended`, now `pipeline/response_handler.py:186`).
+- Works across processes because it uses the existing queue.
+
+### Opening prompt (C5)
+
+- The fixed greeting becomes an overridable gateway method, `opening_prompt(participant_identity)` (now `livekit/adapter.py:361`); `None` sends nothing. Default is the previous text.
+- The conversation now opens when a participant joins the room, not when a microphone appears.
+
+### Back-off after a failed native session (C6)
+
+- After a native session fails, input for that session is dropped for `1 * 2 ** (failures - 1)` seconds, at most 30 (`_note_failure`, now `realtime_pool.py:562`).
+- A connection that produced output before it failed restarts the count at 1; ending the session clears it.
+- A connection that fails again within the window is not opened early.
 
 ### Configuration and compatibility
 
-- Reuse `execution.realtime` for pacing and input batching, the existing queue and LiveKit settings, and `Module.run_options` for supported native run settings (`ak-py/src/agentkernel/core/config.py:668`, `ak-py/src/agentkernel/core/module.py:101`). Add no parallel AK flags for SDK tools, handoffs, or reconnects.
-- Raise the `google-adk` optional dependency floor from `>=1.24.0` (`ak-py/pyproject.toml:123`) to `>=2.7.0` for the verified live fix that finds a transfer even when its tool result is not first in a batch ([ADK 2.7.0 source](https://github.com/google/adk-python/blob/v2.7.0/src/google/adk/flows/llm_flows/base_llm_flow.py), [release notes](https://github.com/google/adk-python/releases/tag/v2.7.0)). Test refused or invalid transfers at the minimum version and document what actually happens; the release notes do not guarantee that the current connection survives one.
-- Preserve the bring-your-own realtime runner class path, but document the breaking contract change. A runner that emits `tool_call` cannot use the removed pool tool path.
-- Show native configuration and limits in the examples and docs: move ADK per-agent voice from today's `generate_content_config.speech_config` to `Gemini(speech_config=...)`, or use `RunConfig.speech_config` for one session voice ([ADK configuration](https://adk.dev/live/configuration/)); [OpenAI cannot change a session's voice after audio starts](https://developers.openai.com/api/docs/guides/realtime-conversations). ADK resumption, where enabled, covers its link to Gemini, not the LiveKit client link ([ADK sessions](https://adk.dev/live/sessions/)).
-- Document a separate support list for each SDK adapter: native tools, handoffs, approvals, SDK guardrails, AK hooks/guardrails, MCP tools, and reconnect behavior. State which features AK carries through, which need an edge decision path, and which are rejected. Do not claim that SDK support alone makes a feature available in LiveKit.
-- ADK 2.9.0 also has an experimental native `LiveKitRunner` for one ADK agent participant ([ADK LiveKit runner](https://adk.dev/integrations/livekit/)). It could remove more transport code for an ADK-only deployment. The documented interface does not establish AK's queue routing or a separate LiveKit participant per speaking agent; verify those contracts before replacing the existing shared AK edge. Do not add a second LiveKit path to this change without that proof.
+- No new `AKConfig` field. Reused: `execution.realtime` (now `core/config.py:667`), the existing queue and LiveKit settings, and `Module.run_options`.
+- The new numbers are class or module constants, not config: `READY_TIMEOUT_SECONDS`, `SESSION_END_TIMEOUT_SECONDS`, `HOOKS_CLOSE_TIMEOUT_SECONDS`, `CAPTION_DRAIN_SECONDS`, `ENDED_TTL_SECONDS`, `_ENDED_SESSION_TTL_SECONDS`, `_RECONNECT_BASE_SECONDS`, `_RECONNECT_MAX_SECONDS`.
+- `google-adk` floor rises from `>=1.24.0` (base `pyproject.toml:132`) to `>=2.7.0` (now `:132`).
+  - Reason: a live fix that finds a transfer even when its tool result is not first in a batch (external; not re-verified).
+  - It applies to every ADK user, not only realtime.
+- Breaking for bring-your-own realtime runners: a runner using the old tool callback fails with an explicit error. Documented.
+- A bring-your-own edge receives a new `InputTranscript` chunk type in `deliver_chunk`; it should ignore types it does not know.
+
+### Documentation
+
+- Document a support list per adapter: native tools, handoffs, approvals, SDK guardrails, AK hooks and guardrails, MCP tools, reconnect behavior. Do not claim SDK support alone makes a feature available in LiveKit.
+- Examples move to native `RealtimeAgent` and ADK definitions; ADK per-agent voice moves to `Gemini(speech_config=...)` or `RunConfig.speech_config` (external; not re-verified).
 
 ### Verification
 
-- For OpenAI and ADK, verify a live text or audio turn can move from agent A to B and back, with each agent's own declared tool called by the native SDK and the correct `AgentChanged` order.
-- Verify audio, text, interruptions, and errors still reach the LiveKit participant for the active agent in order; agent participants' own audio and chat never feed the native session.
-- Verify SDK approval or unsupported native-agent settings produce an explicit decision or error, rather than silently running a tool or dropping the setting.
-- Verify a custom runner's `tool_call` fails explicitly; measure and document ADK behavior for a refused or invalid transfer on the minimum supported version.
-- Verify native tools on both agents still run through the SDK after a handoff.
-- Verify two AK sessions keep separate native sessions and closing one does not stop the other.
+- OpenAI and ADK: a live turn moves from agent A to B and back, each agent's own tool runs through the SDK, and `AgentChanged` arrives in order.
+- Audio, text, interruptions, and errors reach the active agent's participant in order; agent participants' own audio and chat never feed the native session.
+- An approval-needing tool, an unsupported agent, or an unsupported option gives an explicit error.
+- A custom runner's `tool_call` fails explicitly.
+- Two AK sessions keep separate native sessions; closing one does not stop the other.
+- C1: one utterance gives exactly one `InputTranscript`, before the reply that answers it.
+- C2: lines and speaker changes arrive in order with the right speaker; a hook that raises does not stop audio.
+- C3: two gateways started after boot, one stopped, the other keeps working.
+- C4: after the control, `disconnect` has run; later audio is dropped; a chunk for the ended edge is not retried.
+- C5: `None` sends no opening request; a custom prompt is sent once.
+- C6: repeated immediate failures drop input with delays 1, 2, 4 s; output before a failure restarts the count; ending the session clears it.
 
 ## Non-goals
 
-- Several voice models listening or speaking at the same time, or an automatic group discussion without explicit handoffs.
-- Feeding agent-generated LiveKit audio back into another model as if a human spoke it.
-- A separate voice for each OpenAI agent within one Realtime API session.
-- Removing AK's queue, LiveKit gateway, audio conversion, or playback coordination; the native SDK does not own those boundaries.
-- Promising identical native SDK features across OpenAI and ADK, or durable recovery of LiveKit calls after an AK process restart.
-- Rebuilding native SDK handoff, tool, guardrail, approval, or reconnection engines inside Agent Kernel.
+- Several voice models speaking at once, or automatic group discussion without explicit handoffs.
+- Feeding agent-generated room audio back into another model as if a human spoke it.
+- A separate voice per OpenAI agent inside one Realtime session.
+- Removing AK's queue, LiveKit gateway, audio conversion, or playback coordination.
+- Identical native features across OpenAI and ADK, or durable recovery of calls after an AK restart.
+- Rebuilding native handoff, tool, guardrail, approval, or reconnection engines in Agent Kernel.
 - Unchanged behavior for custom realtime runners using the old tool callback.
+- A second LiveKit path (ADK's experimental `LiveKitRunner`) in this change.
 
 ## Open questions
 
-- Can the LiveKit edge report actual playout to OpenAI's native playback tracker? A successful AK queue send is not proof that the listener heard the audio.
-
-
-## Edge additions for realtime meetings (C1 to C6)
-
-Six small, framework-neutral additions to Agent Kernel, built for a realtime multi-agent meeting use case. Each works the same for OpenAI and ADK. No new `AKConfig` fields.
-
-Each change works the same way for OpenAI and ADK. The use case picks ADK, but nothing in AK assumes it.
-
-```mermaid
-sequenceDiagram
-    participant C as Client (room)
-    participant G as LiveKit gateway
-    participant P as Realtime pool
-    participant A as Adapter: ADK or OpenAI
-    participant N as Native session
-    participant U as Use case: event log
-
-    C->>G: speaks
-    G->>P: audio (queue)
-    P->>A: append_audio
-    A->>N: audio
-    N-->>A: caller's words as text
-    A-->>P: input_transcript (C1, new)
-    P-->>G: InputTranscript chunk
-    G-->>C: caption for the client (C2)
-    G-->>U: on_transcript: client line (C2)
-    N-->>A: hands off, PM to Architect (native)
-    A-->>P: agent_changed (v1)
-    P-->>G: AgentChanged chunk
-    G-->>U: on_agent_changed (C2)
-    N-->>A: Architect's audio + text
-    A-->>P: audio_delta, transcript_delta
-    P-->>G: paced audio + text
-    G-->>C: Architect's voice + live caption (C2)
-    G-->>U: on_transcript: Architect line, at turn end (C2)
-```
-
-### C1. The caller's words as an event
-
-- Add a stream event, `InputTranscript` (`core/event.py`, next to `AgentChanged`). It carries one finished caller
-  utterance as text.
-- Add a `RealtimeRunner` callback event, `input_transcript`, to the contract's list of events.
-- Map it in both adapters from what the SDK already produces:
-  - **ADK:** an event with `author == "user"` and a finished `input_transcription`.
-  - **OpenAI:** the `input_audio_transcription_completed` model event.
-- The pool emits it **in spoken order** with the agents' output, so the transcript reads in the right order.
-- **No new AK setting.** It appears when the SDK's own input transcription is on:
-  - ADK: on by default. `RunConfig.input_audio_transcription` defaults to on
-    (`google/adk/agents/run_config.py:127`).
-  - OpenAI: set `input_audio_transcription` in the session's model settings, through `Module.run_options`.
-- An edge that does not use it (the existing examples) ignores it.
-- **Test:** for each SDK, a scripted caller utterance gives exactly one `InputTranscript` chunk, before the reply that
-  answers it.
-
-### C2. Live captions and edge hooks
-
-- **Live captions:** the LiveKit gateway publishes text as it plays.
-  - Agent text deltas go out on a LiveKit text stream from the speaking agent's participant, paced with the audio.
-  - The caller's line goes out attributed to the caller.
-  - Use LiveKit's transcription conventions, so standard LiveKit client components can show the captions
-    ([LiveKit text docs](https://docs.livekit.io/agents/build/text/)):
-    - the text stream topic `lk.transcription`;
-    - the attributes `lk.transcribed_track_id`, `lk.segment_id` and `lk.transcription_final`;
-    - the sender identity is the transcribed participant.
-- **Keep today's turn-end chat message**, so existing clients keep working.
-- **Three hooks for server code**, as overridable methods on `StatefulEdgeAdapter`. Each does nothing by default, so
-  existing edges are unchanged:
-  - `on_transcript(line)`: one `TranscriptLine` (speaker, `user` or `agent`, text, time, message id, `typed`) for each
-    finished line.
-    - The LiveKit gateway calls it once for each finished agent turn (per speaker, split at handoffs) and once for each
-      caller line.
-    - **A message the client types in the room is a caller line too**, with `typed=True`. It is staged for the model as
-      before; the hook is what lets a server read it. An agent participant's own chat is ignored, as before.
-    - An interrupted turn gives the part that was spoken, marked `interrupted`.
-  - `on_agent_changed(agent, previous)`: when the speaking agent changes, in order with the lines.
-  - `on_error(message)`: when an error chunk reaches the edge, besides today's chat text.
-- Hooks must never block the audio. Each edge runs its hooks in order on one worker thread of its own, off the
-  delivery path. A hook that raises is logged and ignored.
-- **Example:** the use case subclasses the gateway and turns each hook call into an event-log entry (A5).
-- **Test:** a scripted turn with a handoff and an error checks three things: lines and speaker changes arrive in
-  order with the right speaker, captions come from the right participant, and a hook that raises does not stop the
-  audio.
-
-### C3. Start and stop a gateway while the app runs
-
-- Extend `GatewayRunner` (no new sibling class) so it can **start in the background**. It runs the gateway on its own
-  thread and returns once the gateway has joined the room or failed.
-- Add a **stop** that ends that one gateway cleanly. It leaves the room and removes its registry entry.
-- Gateways started at boot through `IOHandler.run(gateways=...)` behave as today.
-- A background gateway still stops when the process shuts down (`ThreadRunner.shutdown_event`).
-- **Works for any `StatefulEdgeAdapter`**, not only LiveKit.
-- **Test:** start two gateways after boot, stop one, and the other keeps working. Each reply reaches only its own room.
-
-### C4. End a realtime session at once
-
-- When an edge stops (C3, or the room closing), it sends an **end-of-session control** on the input queue for its
-  session id. This uses the existing queue, not a new one.
-- The realtime pool closes that session's native connection at once, instead of waiting up to 300 s for idle eviction.
-- It works when the gateway and the pool run in different processes, because it goes through the queue.
-- **A late audio frame cannot reopen it.** The pool ignores input for an ended session for a short while.
-- **Trailing output is dropped quietly.** The Response Handler drops chunks still on their way to an edge that has just
-  ended, instead of retrying them into permanent-failure errors.
-- **Test:** after the control, the adapter's `disconnect` has run. Later audio for that session id is dropped, and a
-  chunk for the ended edge is not retried.
-
-### C5. A meeting's own first words
-
-- Turn the fixed greeting (`adapter.py:258`) into an overridable gateway method that returns the opening prompt, or
-  `None` to send nothing.
-- Its default is today's text, so existing examples behave as today.
-- **Example:** the use case returns *"Open the meeting as the PM: greet {name} and ask what they want to build."*
-- **Test:** returning `None` sends no opening request, and a custom prompt is sent once.
-
-### C6. Back off after a failed native session
-
-- **The problem:** a native session that fails right after it opens (a bad setting, a quota error) was replaced by the
-  next audio frame, about every 100 ms. Each replacement failed again, sent an error chunk to the room and hit the model
-  provider.
-- **The pool backs off per session.** After a failure, input for that session is dropped for 1 s, then 2 s, 4 s... up to
-  30 s for each further failure in a row. A new connection is not opened before that time.
-- **It resets:** a connection that produced output (audio, a transcript or a turn end) before it failed starts the count
-  again; ending the session clears it.
-- **Not config:** the delays are constants of the pool, like its other timeouts.
-- **Test:** repeated immediate failures drop input between attempts with delays of 1, 2, 4... s; a connection that
-  produced output restarts the count; ending the session clears it.
+- Should the native path give tools the AK context the normal run path gives?
+  - OpenAI sets no `ToolContext`; ADK does. Neither sets `Session.current()` or `Agent.current()`.
+  - Options: make both adapters match ADK; keep it unsupported and document it; or reject tools that need it.
+- Should `framework_context` flow in and out on the native path?
+  - OpenAI injects it and never writes back; ADK ignores it; the normal run path does both.
+- Can the LiveKit edge report real playout to OpenAI's native playback tracker? A successful queue send does not prove the listener heard the audio.
+- Should C1 to C6 ship in this PR or in their own? They came from one use case. Only C1 is implemented inside the native adapters; C2 to C6 live in the pool, gateway, registry, and LiveKit edge.
+- Should ADK reject an approval-needing tool before opening, as OpenAI does, if ADK can detect it from the declaration?

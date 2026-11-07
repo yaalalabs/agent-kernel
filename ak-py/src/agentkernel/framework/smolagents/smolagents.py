@@ -1,8 +1,8 @@
 import asyncio
 import functools
 import inspect
-from collections.abc import AsyncGenerator
-from typing import Any, Callable, ClassVar, List, Mapping
+from collections.abc import AsyncGenerator, Callable, Mapping
+from typing import Any, ClassVar
 
 from smolagents import CodeAgent, MultiStepAgent, ToolCallingAgent
 from smolagents import tool as smol_tool
@@ -340,7 +340,7 @@ class SmolagentsModule(Module):
             self.runner = SmolagentsRunner()
         self.load(agents)
 
-    def _wrap(self, agent: SmolagentsSupportedAgent, agents: List[SmolagentsSupportedAgent]) -> BaseAgent:
+    def _wrap(self, agent: SmolagentsSupportedAgent, agents: list[SmolagentsSupportedAgent]) -> BaseAgent:
         """
         Wraps the provided agent in a SmolagentsAgent instance.
 

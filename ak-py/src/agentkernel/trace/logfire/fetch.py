@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Iterable
 from datetime import datetime
 from functools import partial
-from typing import Any, Iterable, Optional
+from typing import Any
 
 from ...core.util.factory import AKConfigError
 from ..fetch import FetchedSpan, OTelSpanClassifier, SpanKind, SpanStatus, TraceFetcher, TraceQuery
@@ -36,7 +37,7 @@ class LogfireTraceFetcher(TraceFetcher):
         "OR attributes->>'openinference.span.kind' = 'AGENT' OR span_name LIKE 'Agent run:%')",
     }
 
-    def __init__(self, read_token: Optional[str], base_url: Optional[str] = None):
+    def __init__(self, read_token: str | None, base_url: str | None = None):
         """
         :param read_token: Logfire read token (``LOGFIRE_READ_TOKEN``, which the tracer resolves).
         :param base_url: Query API base URL; defaults to the region encoded in the token.
@@ -66,7 +67,7 @@ class LogfireTraceFetcher(TraceFetcher):
             from logfire.experimental.query_client import LogfireQueryClient
         return LogfireQueryClient
 
-    def _fetch_page(self, client: Any, query: TraceQuery, page_size: int, upper_bound: datetime) -> list[tuple[Optional[datetime], FetchedSpan]]:
+    def _fetch_page(self, client: Any, query: TraceQuery, page_size: int, upper_bound: datetime) -> list[tuple[datetime | None, FetchedSpan]]:
         # whether max_timestamp is inclusive is undocumented; matches() applies the exclusive end either way
         start, end = query.window()
         rows = client.query_json_rows(sql=self._sql(query, page_size, upper_bound), min_timestamp=start, max_timestamp=end, limit=page_size)["rows"]

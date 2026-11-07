@@ -5,8 +5,9 @@ import logging
 import threading
 import time
 import uuid
+from collections.abc import Mapping
 from concurrent.futures import Future
-from typing import TYPE_CHECKING, Any, ClassVar, Mapping, Optional
+from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
 from ..core.base import Agent as BaseAgent
 from ..core.base import Session
@@ -65,9 +66,9 @@ class RealtimeConnection:
         # and jitter of a store-and-forward broker.
         self._playback_lead_ms = AKConfig.get().execution.realtime.playback_lead_ms
 
-        self.request_id: Optional[str] = None
-        self.user_id: Optional[str] = None
-        self.integration: Optional[str] = None
+        self.request_id: str | None = None
+        self.user_id: str | None = None
+        self.integration: str | None = None
         self.reply_context: dict = {}
         # Set once the native session has failed or been closed. The pool evicts a closed
         # connection so the next chunk reconnects instead of writing to a dead session.
@@ -83,7 +84,7 @@ class RealtimeConnection:
         # Audio deltas in ``_audio_queue`` not yet emitted: the agent audio the user has still to
         # hear, which is what makes a user starting to speak a barge-in.
         self._queued_audio = 0
-        self._pacing_task: Optional[asyncio.Task] = None
+        self._pacing_task: asyncio.Task | None = None
         # Set by the first close(): a failed socket (``closed``) is closed later by the pool, and
         # shutdown and eviction may both reach the same connection, so the adapter is disconnected
         # once.
@@ -95,7 +96,7 @@ class RealtimeConnection:
 
         self.adapter: "BaseRealtimeRunner" = self.agent.realtime_runner_cls()
 
-    def update_delivery_context(self, request_id: Optional[str], user_id: Optional[str], integration: Optional[str], reply_context: dict) -> None:
+    def update_delivery_context(self, request_id: str | None, user_id: str | None, integration: str | None, reply_context: dict) -> None:
         """Called before pushing audio to ensure callbacks route output to the right place."""
         self.request_id = request_id
         self.user_id = user_id
@@ -389,7 +390,7 @@ class RealtimeConnectionPool:
         # Per session: consecutive native-session failures, and the time a new connection may be tried again.
         self._failures: dict[str, tuple[int, float]] = {}
         self._conn_lock = threading.Lock()
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._loop: asyncio.AbstractEventLoop | None = None
         self._loop_ready = threading.Event()
         # Set once shutdown starts: no connection is created after it, since the loop it would run
         # on is about to close.
@@ -506,10 +507,10 @@ class RealtimeConnectionPool:
         runtime: Runtime,
         session: Session,
         *,
-        request_id: Optional[str] = None,
-        user_id: Optional[str] = None,
-        integration: Optional[str] = None,
-        reply_context: Optional[dict] = None,
+        request_id: str | None = None,
+        user_id: str | None = None,
+        integration: str | None = None,
+        reply_context: dict | None = None,
     ) -> RealtimeConnection:
         """Get or create a persistent realtime connection for a session.
 
@@ -624,7 +625,7 @@ class RealtimeConnectionPool:
             asyncio.run_coroutine_threadsafe(conn.close(), self._loop)
 
     def dispatch(
-        self, body: "BaseRunRequest", request_id: str, user_id: Optional[str], attributes: Mapping[str, Any], chat_service: "ChatService"
+        self, body: "BaseRunRequest", request_id: str, user_id: str | None, attributes: Mapping[str, Any], chat_service: "ChatService"
     ) -> None:
         """Forward one realtime input message's requests to its session's model connection.
 
@@ -674,7 +675,7 @@ class RealtimeConnectionPool:
 
     @staticmethod
     def send_permanent_failure(
-        transport: QueueTransport, source_attributes: Mapping[str, Any], group_id: Optional[str], dedup_id: Optional[str], error: str
+        transport: QueueTransport, source_attributes: Mapping[str, Any], group_id: str | None, dedup_id: str | None, error: str
     ) -> None:
         """Send a terminal error chunk for a realtime input message that exhausted its retries.
 

@@ -22,7 +22,6 @@ import json
 import logging
 from contextlib import contextmanager
 from copy import deepcopy
-from typing import Any, Optional
 
 import pytest
 from fastapi import FastAPI
@@ -34,7 +33,7 @@ from agentkernel.core.base import Agent, Runner, Session
 from agentkernel.core.config import _AGUIConfig, _GuardrailConfig
 from agentkernel.core.event import MessageEnd, MessageStart, TextDelta, ToolCallStart
 from agentkernel.core.hooks import PreHook
-from agentkernel.core.model import AgentReplyText, AgentRequestText
+from agentkernel.core.model import AgentReplyText
 from agentkernel.core.runtime import Runtime
 from agentkernel.core.session.in_memory import InMemorySessionStore
 from agentkernel.core.tool import ToolContext
@@ -48,7 +47,7 @@ AUTH = {"Authorization": f"Bearer {GOOD_TOKEN}"}
 class StaticAuthoriser(Authoriser):
     """Resolves exactly one token, so 401 has a live path in every test below."""
 
-    def authorise(self, token: str) -> Optional[str]:
+    def authorise(self, token: str) -> str | None:
         return "u1" if token == GOOD_TOKEN else None
 
 

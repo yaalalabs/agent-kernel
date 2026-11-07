@@ -6,8 +6,6 @@ provider credentials live in the agent process, the documented trade-off for the
 possible setup (CLI/tests, or a deployment that accepts co-located execution).
 """
 
-from typing import Optional, Union
-
 from pydantic import BaseModel
 
 from ..model import SandboxResult, SandboxTask
@@ -16,13 +14,13 @@ from .worker import BrokerWorkerCore
 
 
 class EmbeddedBroker(ExecutionBroker):
-    def __init__(self, config: Optional[BaseModel] = None) -> None:
+    def __init__(self, config: BaseModel | None = None) -> None:
         """Create the broker with its own in-process ``BrokerWorkerCore``; ``config`` (the
         ``sandbox.broker`` block) is accepted for factory uniformity but unused."""
         self._worker = BrokerWorkerCore()
         self._completions = BoundedCompletionStore()
 
-    async def submit(self, request: ExecutionRequest, wait: Optional[float] = None) -> Union[SandboxResult, SandboxTask]:
+    async def submit(self, request: ExecutionRequest, wait: float | None = None) -> SandboxResult | SandboxTask:
         """Run the request inline to completion and return its ``SandboxResult``.
 
         ``wait`` is ignored (always synchronous, never promotes). ``run()`` raises the real
@@ -35,7 +33,7 @@ class EmbeddedBroker(ExecutionBroker):
         )
         return result
 
-    async def result(self, task_id: str) -> Optional[ExecutionCompletion]:
+    async def result(self, task_id: str) -> ExecutionCompletion | None:
         """Return the completion recorded for ``task_id`` in this process, or ``None``."""
         return self._completions.get(task_id)
 

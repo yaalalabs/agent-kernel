@@ -4,7 +4,6 @@ Abstract storage interface and builder for Conversation Thread Support.
 
 import logging
 from abc import ABC, abstractmethod
-from typing import List, Optional, Tuple
 
 from ....core.config import AKConfig
 from ....core.util.factory import AKConfigError, require_extra, resolve_dotted
@@ -56,7 +55,7 @@ class ThreadStore(ABC):
         pass
 
     @abstractmethod
-    def load_metadata(self, session_id: str) -> Optional[Thread]:
+    def load_metadata(self, session_id: str) -> Thread | None:
         """
         Load a thread's metadata by its session id, with an empty messages list.
         :param session_id: Unique identifier for the thread (same as the session id).
@@ -77,7 +76,7 @@ class ThreadStore(ABC):
         pass
 
     @abstractmethod
-    def get_messages(self, session_id: str, limit: int, offset: int = 0) -> Tuple[List[ThreadMessage], Optional[int]]:
+    def get_messages(self, session_id: str, limit: int, offset: int = 0) -> tuple[list[ThreadMessage], int | None]:
         """
         Return a page of a thread's messages in chronological (append) order.
         :param session_id: Unique identifier for the thread.
@@ -91,11 +90,11 @@ class ThreadStore(ABC):
     @abstractmethod
     def list_threads(
         self,
-        user_id: Optional[str] = None,
-        group_id: Optional[str] = None,
+        user_id: str | None = None,
+        group_id: str | None = None,
         limit: int = 50,
         offset: int = 0,
-    ) -> Tuple[List[Thread], Optional[int]]:
+    ) -> tuple[list[Thread], int | None]:
         """
         List thread metadata filtered by user_id and/or group_id, most-recently
         updated first. Returned threads carry metadata only (empty messages).

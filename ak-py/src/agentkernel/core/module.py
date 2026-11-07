@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Any, List, Self
+from typing import Any, Self
 
 from ..core.hooks import PostHook, PreHook
 from .base import Agent, RunOptionsFactory
@@ -48,7 +48,7 @@ class Module(ABC):
         return None
 
     @abstractmethod
-    def _wrap(self, agent: Any, agents: List[Any]) -> Agent:
+    def _wrap(self, agent: Any, agents: list[Any]) -> Agent:
         """
         Wraps an agent in a framework-specific wrapper.
         :param agent: The agent to wrap.

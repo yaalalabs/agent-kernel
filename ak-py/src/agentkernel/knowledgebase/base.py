@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
-from typing import Any, Iterable, List, Mapping
+from collections.abc import Iterable, Mapping
+from typing import Any
 
 from .errors import KnowledgeCapabilityError
 from .model import KnowledgeCapabilities
@@ -132,7 +133,7 @@ class KnowledgeBase(ABC):
         :return: None.
         """
 
-    def search(self, query: str, limit: int = 3, **kwargs) -> List[Record]:
+    def search(self, query: str, limit: int = 3, **kwargs) -> list[Record]:
         """
         Return the most relevant records for a natural-language query.
 
@@ -144,7 +145,7 @@ class KnowledgeBase(ABC):
         """
         raise KnowledgeCapabilityError(self.backend_name, "search")
 
-    def query(self, statement: str, limit: int = 3, **kwargs) -> List[Record]:
+    def query(self, statement: str, limit: int = 3, **kwargs) -> list[Record]:
         """
         Execute a query-language statement and return the resulting records.
 
@@ -156,7 +157,7 @@ class KnowledgeBase(ABC):
         """
         raise KnowledgeCapabilityError(self.backend_name, "query")
 
-    def fetch(self, ids: List[str], **kwargs) -> List[Record]:
+    def fetch(self, ids: list[str], **kwargs) -> list[Record]:
         """
         Return records by their backend-native identities.
 
@@ -167,7 +168,7 @@ class KnowledgeBase(ABC):
         """
         raise KnowledgeCapabilityError(self.backend_name, "fetch")
 
-    def browse(self, path: str = "", limit: int = 50, **kwargs) -> List[Record]:
+    def browse(self, path: str = "", limit: int = 50, **kwargs) -> list[Record]:
         """
         Enumerate what the backend holds under a namespace.
 
@@ -190,7 +191,7 @@ class KnowledgeBase(ABC):
         """
         raise KnowledgeCapabilityError(self.backend_name, "write")
 
-    def format_results(self, rows: List[Record]) -> str:
+    def format_results(self, rows: list[Record]) -> str:
         """
         Format backend records into a readable string for the agent.
 

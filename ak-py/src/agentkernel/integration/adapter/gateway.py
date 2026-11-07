@@ -1,6 +1,5 @@
 import logging
 import threading
-from typing import Optional
 
 from ...core.util.async_bridge import run_async_sync
 from .base import Source, StatefulEdgeAdapter
@@ -37,8 +36,8 @@ class GatewayRunner:
             )
         self._adapter = adapter
         self._stop_requested = threading.Event()
-        self._thread: Optional[threading.Thread] = None
-        self._thread_error: Optional[BaseException] = None
+        self._thread: threading.Thread | None = None
+        self._thread_error: BaseException | None = None
 
     @property
     def running(self) -> bool:
@@ -65,7 +64,7 @@ class GatewayRunner:
             if session_id:
                 StatefulEdgeRegistry.unregister(session_id, self._adapter)
 
-    def start_background(self, ready_timeout: Optional[float] = None) -> None:
+    def start_background(self, ready_timeout: float | None = None) -> None:
         """Run the gateway on a thread of its own and return once its edge is ready.
 
         Unlike a boot-time gateway (hosted by ``IOHandler`` as a task whose failure ends the process), a
@@ -99,7 +98,7 @@ class GatewayRunner:
         self.stop()
         raise TimeoutError(f"Gateway {self._adapter.name} was not ready within {timeout}s")
 
-    def stop(self, timeout: Optional[float] = None) -> None:
+    def stop(self, timeout: float | None = None) -> None:
         """Stop a background gateway and wait for its thread; safe to call twice, and before a start.
 
         :param timeout: Seconds to wait for the thread; defaults to ``GRACEFUL_STOP_TIMEOUT_SECONDS + 1``.

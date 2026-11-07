@@ -8,9 +8,9 @@ import inspect
 import json
 import logging
 import time
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable, Mapping
 from dataclasses import dataclass
-from typing import Any, Callable, ClassVar, List, Literal, Mapping
+from typing import Any, ClassVar, Literal
 from uuid import uuid4
 
 from google.adk.agents import BaseAgent, LlmAgent, LoopAgent, ParallelAgent
@@ -1308,7 +1308,7 @@ class GoogleADKModule(Module):
             self.runner = GoogleADKRunner()
         self.load(agents)
 
-    def _wrap(self, agent: BaseAgent | Workflow, agents: List[BaseAgent | Workflow]) -> AKBaseAgent:
+    def _wrap(self, agent: BaseAgent | Workflow, agents: list[BaseAgent | Workflow]) -> AKBaseAgent:
         """
         Wraps the provided agent in a GoogleADKAgent instance.
         :param agent: The agent to wrap.

@@ -1,6 +1,5 @@
 import threading
 import time
-from typing import Dict, Optional
 
 from .base import StatefulEdgeAdapter
 
@@ -17,12 +16,12 @@ class StatefulEdgeRegistry:
     ENDED_TTL_SECONDS: float = 60.0
     """How long an unregistered session counts as recently ended."""
 
-    _cache: Dict[str, StatefulEdgeAdapter] = {}
-    _ended: Dict[str, float] = {}
+    _cache: dict[str, StatefulEdgeAdapter] = {}
+    _ended: dict[str, float] = {}
     _lock = threading.Lock()
 
     @classmethod
-    def register(cls, adapter: StatefulEdgeAdapter, session_id: Optional[str] = None) -> None:
+    def register(cls, adapter: StatefulEdgeAdapter, session_id: str | None = None) -> None:
         """Register a live stateful edge adapter instance.
 
         :param adapter: The adapter instance.
@@ -36,7 +35,7 @@ class StatefulEdgeRegistry:
             cls._ended.pop(key, None)
 
     @classmethod
-    def unregister(cls, session_id: str, adapter: Optional[StatefulEdgeAdapter] = None) -> None:
+    def unregister(cls, session_id: str, adapter: StatefulEdgeAdapter | None = None) -> None:
         """Remove a live stateful edge adapter instance from the cache.
 
         Called when a stateful connection disconnects, preventing memory leaks. The session is recorded
@@ -69,7 +68,7 @@ class StatefulEdgeRegistry:
             del cls._ended[key]
 
     @classmethod
-    def get(cls, session_id: str) -> Optional[StatefulEdgeAdapter]:
+    def get(cls, session_id: str) -> StatefulEdgeAdapter | None:
         """Retrieve a live stateful edge adapter instance by session_id."""
         with cls._lock:
             return cls._cache.get(session_id)

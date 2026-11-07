@@ -1,7 +1,8 @@
 import logging
 import os
 from abc import ABC, abstractmethod
-from typing import Any, Callable, Dict, Optional, Tuple
+from collections.abc import Callable
+from typing import Any
 
 from ......core.config import AKConfig
 
@@ -44,7 +45,7 @@ class BaseLambdaRouter(ABC):
         """
         return route.strip("/")
 
-    def _get_base_paths_from_env(self) -> Tuple[Optional[str], Optional[str]]:
+    def _get_base_paths_from_env(self) -> tuple[str | None, str | None]:
         """
         Get the base path from environment variables.
 
@@ -60,7 +61,7 @@ class BaseLambdaRouter(ABC):
         return None, None
 
     @abstractmethod
-    def register(self, route: str, method: Optional[str] = None) -> Callable[[Callable], Callable]:
+    def register(self, route: str, method: str | None = None) -> Callable[[Callable], Callable]:
         """
         Register a handler for a given route.
 
@@ -71,7 +72,7 @@ class BaseLambdaRouter(ABC):
         pass
 
     @abstractmethod
-    def dispatch(self, event: Dict[str, Any], context: Any) -> Optional[Dict[str, Any]]:
+    def dispatch(self, event: dict[str, Any], context: Any) -> dict[str, Any] | None:
         """
         Dispatch incoming event to the appropriate registered handler.
 
