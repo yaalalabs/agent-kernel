@@ -33,6 +33,7 @@ Build the [design](design.md) using the component contracts and limits in [spec.
   1. Remove the pool tool task (spec: **Realtime pool**). Fail on `tool_call` and unknown callbacks; remove the temporary old callback documentation left during adapter migration.
   2. Keep paced output and interruption queue clearing. Do not add a queue-delivery hook for OpenAI's playback tracker; actual LiveKit playout is not acknowledged by this boundary.
   3. Make failed connection startup close native resources and avoid removing a newer registry entry. Keep per-session isolation and existing send/eviction bounds.
+  3a. Set `ToolContext`, `Session.current()` and `Agent.current()` once in `RealtimeConnection.connect()` around `adapter.connect()`, so the SDK's tasks inherit them (spec: **Realtime pool**); attach AK system tools in realtime mode as in every other mode; reject an ADK `FunctionTool` that requires confirmation before opening (spec: **ADK adapter**, step 6).
   4. Handle a non-speaking ADK `Workflow` root: publish the first actual speaking author and declared team before its output. Verify LiveKit still filters its own participants and mutes the previous speaker before the next one's audio.
 - **Verify:** `cd ak-py && uv run pytest tests/test_realtime_pool.py tests/test_livekit_gateway.py`. A fake BYO runner emitting `tool_call` must produce one terminal error chunk and no tool execution.
 
@@ -60,7 +61,7 @@ Build the [design](design.md) using the component contracts and limits in [spec.
 - **Verify:** Run the example imports or startup validation without opening billable live calls, inspect the changed docs for old claims with scoped `rg`, and rerun `make lint-check-all`. Confirm the final diff contains only the intended source, tests, examples, and current docs/skills.
 
 
-## Edge additions for realtime meetings (C1 to C6)
+## Edge additions for realtime calls (C1 to C6)
 
 ### Iteration 1: The caller's words as an event (C1)
 
@@ -89,29 +90,26 @@ Build the [design](design.md) using the component contracts and limits in [spec.
 
   The new tests check one `InputTranscript` per scripted utterance, before the reply that answers it, for each SDK.
 
-### Iteration 2: Live captions, edge hooks, opening prompt (C2, C5)
+### Iteration 2: Live captions, opening prompt (C2, C5)
 
-- **Goal:** The room gets live captions for every speaker. Server code gets one `TranscriptLine` per finished line,
-  plus each speaker change and error. The opening prompt can be changed.
+- **Goal:** The room gets live captions for every speaker, a stalled caption write cannot stop the ones after it, and
+  the opening prompt can be changed. A caller who joins muted is greeted.
 - **Files:**
-  - `ak-py/src/agentkernel/integration/adapter/base.py`: the `TranscriptLine` model, and three no-op hooks on
-    `StatefulEdgeAdapter`: `on_transcript(line)`, `on_agent_changed(agent, previous)` and `on_error(message)`.
-  - `ak-py/src/agentkernel/integration/livekit/adapter.py`: captions, line assembly, and the opening-prompt method
-    that replaces the fixed text at `:258`.
-  - Exports in `ak-py/src/agentkernel/integration/adapter/__init__.py` (lazy, as the package does today).
+  - `ak-py/src/agentkernel/integration/livekit/adapter.py`: captions, the caption write bound, the caller identity taken
+    when a caption is queued, the opening-prompt method that replaces the fixed text, and `_on_participant_connected`
+    (spec §2).
 - **Steps:**
-  1. Add the hook worker and the three hooks on `StatefulEdgeAdapter` (spec §2.1). Use LiveKit's caption names from
-     spec §2.3, through `local_participant.stream_text(...)` / `send_text(...)`, which exist in `livekit` 1.1.20.
-     Check against a real LiveKit server that `sender_identity` for the caller's caption is accepted.
+  1. Use LiveKit's caption names from spec §2.2, through `local_participant.stream_text(...)` / `send_text(...)`, which
+     exist in `livekit` 1.1.20. Check against a real LiveKit server that `sender_identity` for the caller's caption is
+     accepted.
   2. Stream agent text deltas from the speaking participant as they are paced. Send the caller's line attributed to the
-     caller.
-  3. Build lines: split agent text at `AgentChanged`, close the line at `done`, and mark an interrupted turn
-     `interrupted`.
-  4. Call the hooks in order: `on_agent_changed` at each `AgentChanged`, `on_transcript` for each finished line, and
-     `on_error` for each error chunk (today's chat text stays). Run the hooks off the playback path, and log and
-     ignore any that raise.
-  5. Keep the turn-end `lk-chat` message as it is.
-  6. Add the opening-prompt method. Its default returns today's text, and `None` sends nothing.
+     caller, with the identity it was heard from.
+  3. Perform captions on one task per gateway, each write bounded by `CAPTION_WRITE_TIMEOUT_SECONDS`.
+  4. Keep the turn-end `lk-chat` message as it is.
+  5. Add the opening-prompt method. Its default returns today's text without "microphone", and `None` sends nothing.
+     Open the conversation when a participant joins the room, and greet a caller already in the room when the gateway
+     joins (LiveKit raises `participant_connected` only for later joins).
+  6. Bind the first participant to the starting agent only; an agent a later change names first joins as its own.
 - **Verify:**
 
   ```bash
@@ -119,16 +117,15 @@ Build the [design](design.md) using the component contracts and limits in [spec.
   ```
 
   The tests cover:
-  - a turn with a handoff: lines and speaker changes in order, the right speakers, captions from the right
-    participant;
-  - a barge-in: an `interrupted` line;
-  - an error chunk, which calls `on_error`;
-  - a hook that raises, which does not stop the audio;
-  - the opening prompt: `None`, custom, and the default.
+  - captions from the right participant, one stream per segment, one final message;
+  - a barge-in: the interrupted segment ends with what was delivered;
+  - a stalled caption write: skipped, and the captions after it still go out;
+  - a caller caption keeps the identity the line was heard from;
+  - the opening prompt: `None`, custom, and the default; a participant who joins muted is greeted.
 
 ### Iteration 3: Gateways at runtime, end a session at once (C3, C4)
 
-- **Goal:** Many meetings in one process. Each starts and stops on demand, and ending one closes its model session
+- **Goal:** Many calls in one process. Each gateway starts and stops on demand, and ending one closes its model session
   at once.
 - **Files:**
   - `ak-py/src/agentkernel/integration/adapter/base.py`: `_mark_ready` / `wait_ready` and `_enqueue_end` (spec §3.1,
@@ -146,8 +143,11 @@ Build the [design](design.md) using the component contracts and limits in [spec.
   1. Readiness on the edge, then `start_background` / `stop` on `GatewayRunner`. A background failure is re-raised to
      the caller and never ends the process.
   2. Registry: an identity-safe unregister, plus the recently-ended marks.
-  3. Producer extra attributes, then the control send in `_release`: stop staging, drain `_pending`, send the control.
-  4. Pool `end_session` and the TTL drop, then the Response Handler's quiet drop.
+  3. Producer extra attributes, then the control send in `_release`: stop staging, drain `_pending` (no control if input is
+     still unsent after `SESSION_END_TIMEOUT_SECONDS`), send the control, bounded by the same time.
+  4. Pool `end_session` and the TTL drop, keyed by the edge instance id (`edge_id` in the reply context) so a new edge for
+     the same session id is a new call, then the Response Handler's quiet drop.
+  5. A failed connect sends the edge one terminal error chunk (`fail_to_connect`), since the back-off drops its redelivery.
 - **Verify:**
 
   ```bash
@@ -159,12 +159,12 @@ Build the [design](design.md) using the component contracts and limits in [spec.
 
 ### Iteration 4: AK tests and lint
 
-- **Goal:** C1 to C5 work together through the whole path, and nothing older breaks.
+- **Goal:** The additions work together through the whole path, and nothing older breaks.
 - **Files:** the test files above, plus `ak-py/tests/test_ecs_akagentrunner_realtime.py` (the ECS realtime path must
   still pass).
 - **Steps:**
   1. Run one path with a fake native session: a caller line, a handoff, the agent's reply, then end-of-session. Check
-     the chunk order and the `TranscriptLine`s.
+     the chunk order and each agent's chat message.
   2. Check that the existing LiveKit examples still import and start validation without credentials.
 - **Verify:**
 

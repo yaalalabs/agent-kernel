@@ -1,4 +1,4 @@
-"""C1 to C5 together: a caller line, a handoff, the agent's reply and the end of the session, through the real pool and gateway.
+"""A call together: a caller line, a handoff, the agent's reply and the end of the session, through the real pool and gateway.
 
 The native session is a fake adapter that reports what a real one would; the output queue is the in-memory
 transport; the edge is the LiveKit gateway over its fakes. Nothing reaches a model or a room.
@@ -10,15 +10,15 @@ import threading
 import types
 
 import pytest
-from test_livekit_gateway import _FakeRtc, _Recorder
-from test_realtime_pool import _Adapter, _Agent, _drain_output
+from test_livekit_gateway import _FakeRtc, _gateway
+from test_realtime_pool import _Agent, _drain_output
 
 import agentkernel.integration.livekit.adapter as livekit_adapter
 from agentkernel import Session
 from agentkernel.core.model import AgentRequestText, BaseRunRequest, StreamChunk
 from agentkernel.core.runtime import Runtime
 from agentkernel.core.session.in_memory import InMemorySessionStore
-from agentkernel.pipeline.envelope import ATTR_REALTIME_END, QueueName
+from agentkernel.pipeline.envelope import ATTR_REALTIME_END
 from agentkernel.pipeline.realtime_pool import RealtimeConnection, RealtimeConnectionPool
 from agentkernel.pipeline.thread_runner import ThreadRunner
 from agentkernel.pipeline.transport.base import QueueTransportFactory
@@ -77,22 +77,20 @@ async def test_a_call_from_caller_line_to_handoff_to_end_of_session(monkeypatch)
     ]
 
     monkeypatch.setattr(livekit_adapter, "rtc", _FakeRtc)
-    gateway = _Recorder.build("coordinator", "billing")
+    gateway = _gateway("coordinator", "billing")
     gateway._loop = asyncio.get_running_loop()
     gateway._caller_identity = "client-1"
     gateway._team_lock, gateway._pending_team, gateway._connected = threading.Lock(), None, True
     for chunk in chunks:
         await gateway.deliver_chunk(chunk, {})
-    gateway._close_hooks()
 
-    assert [(call[1].speaker, call[1].role, call[1].text) for call in gateway.calls if call[0] == "line"] == [
-        ("client-1", "user", "we need online booking"),
-        ("coordinator", "agent", "Let me bring in billing."),
-        ("billing", "agent", "Billing here. Who books?"),
-    ]
-    assert [call[1:] for call in gateway.calls if call[0] == "changed"] == [("coordinator", None), ("billing", "coordinator")]
+    # Each agent's words reach the room through its own participant, and the voice ends with the agent that took over.
+    coordinator, billing = gateway._participants
+    assert coordinator.room.local_participant.chat == ["Let me bring in billing."]
+    assert billing.room.local_participant.chat == ["Billing here. Who books?"]
+    assert gateway._speaking_agent == "billing"
 
-    # The edge ends: the control closes the native session and later input for it is dropped.
+    # The edge ends: the control closes the native session at once.
     pool = RealtimeConnectionPool.initialize()
     thread = threading.Thread(target=pool.start, daemon=True)
     thread.start()
@@ -107,7 +105,6 @@ async def test_a_call_from_caller_line_to_handoff_to_end_of_session(monkeypatch)
         assert live is not None
 
         pool.dispatch(BaseRunRequest(prompt="", session_id="s2", requests=[]), "r", None, {ATTR_REALTIME_END: "true"}, chat_service)
-        pool.dispatch(BaseRunRequest(prompt="", session_id="s2", requests=[AgentRequestText(prompt="late")]), "r", None, {}, chat_service)
 
         assert live.closed
         assert pool.get_connection("s2") is None

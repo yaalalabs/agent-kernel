@@ -88,12 +88,10 @@ environment or `pyproject.toml` is needed in this directory.
 
 ## Caller transcription
 
-The gateway can show and report the caller's own words (live captions on LiveKit's `lk.transcription` text streams, and a `TranscriptLine` to the gateway's `on_transcript` hook) once the SDK's input transcription is on:
+The stream carries the caller's own finished lines (`InputTranscript` events) once the SDK's input transcription is on. The gateway does not show them; a `LiveKitEdgeGateway` subclass can, in `deliver_chunk`.
 
 - **Google ADK** (`google/*`): on by default, nothing to do.
 - **OpenAI** (`openai/*`): set `input_audio_transcription` in the session's model settings, for example `model_config={"initial_model_settings": {..., "input_audio_transcription": {"model": "gpt-4o-mini-transcribe"}}}` in `Module.run_options`. Without it no caller line is produced, and nothing fails.
-
-These examples ignore the caller's lines, so they behave as before either way. See [Following the call from server code](../../../docs/docs/integrations/livekit.md#following-the-call-from-server-code) for a gateway that logs them.
 
 ## How it works
 

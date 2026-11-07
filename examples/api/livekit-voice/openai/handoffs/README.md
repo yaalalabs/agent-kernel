@@ -62,5 +62,5 @@ You can talk over an agent at any time, including while a handoff is happening.
 
 - **One model and one voice.** `OpenAIModule.run_options()` sets both on the starting agent. The same live session serves every speaker.
 - **One LiveKit connection per agent.** Every listed agent is a participant for the whole call, so LiveKit bills connection minutes for each.
-- **Native tools only.** The SDK runs tools declared on each `RealtimeAgent`. Tools needing human approval also fail because this LiveKit edge has no approval path.
+- **Tools run in the SDK.** The SDK runs the tools declared on each `RealtimeAgent`; Agent Kernel system tools attach as in other modes when enabled. A tool needing human approval is rejected before the call opens, because a realtime session has no approval path.
 - **SDK behavior.** Handoff and guardrail details follow the installed OpenAI Agents SDK; Agent Kernel does not implement another tool or handoff engine.

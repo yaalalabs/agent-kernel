@@ -13,6 +13,7 @@ from agentkernel.core.model import AgentReplyText, AgentRequestText, BaseRunRequ
 from agentkernel.core.realtime import RealtimeRunner
 from agentkernel.core.runtime import Runtime
 from agentkernel.core.session.in_memory import InMemorySessionStore
+from agentkernel.core.tool import ToolContext
 from agentkernel.pipeline.envelope import ATTR_INTEGRATION, ATTR_REALTIME, ATTR_REALTIME_END, QueueName
 from agentkernel.pipeline.realtime_pool import RealtimeConnection, RealtimeConnectionPool
 from agentkernel.pipeline.thread_runner import ThreadRunner
@@ -157,6 +158,72 @@ class TestRealtimeConnection:
         assert conn.closed
         assert "tool_call" in json.loads(_drain_output(transport)[-1].body)["error"]
         await conn.close()
+
+
+class _ContextAdapter(_Adapter):
+    """Starts a task while connecting, as a native session does, and records what the task can see."""
+
+    seen: dict = {}
+
+    async def connect(self, session, agent, callback):
+        await super().connect(session, agent, callback)
+
+        async def tool():
+            _ContextAdapter.seen = {"tool_context": ToolContext.get(), "session": Session.current(), "agent": Agent.current()}
+
+        await asyncio.create_task(tool())
+
+
+class TestRealtimeToolContext:
+    """The framework runs the tools, so the pool sets the tools' context for the native session once (#810)."""
+
+    @pytest.mark.asyncio
+    async def test_a_task_the_adapter_starts_sees_tool_context_session_and_agent(self, monkeypatch):
+        monkeypatch.setattr(QueueTransportFactory, "create", staticmethod(lambda *a, **k: InMemoryTransport()))
+        _ContextAdapter.seen = {}
+        agent = _Agent(realtime_runner_cls=_ContextAdapter)
+        conn = RealtimeConnection("s1", agent, Runtime(InMemorySessionStore()), Session("s1"), asyncio.get_running_loop())
+
+        await conn.connect()
+
+        seen = _ContextAdapter.seen
+        assert seen["tool_context"].session is conn.session
+        assert seen["tool_context"].agent is agent
+        assert seen["session"] is conn.session
+        assert seen["agent"] is agent
+        await conn.close()
+
+    @pytest.mark.asyncio
+    async def test_the_context_is_not_left_set_on_the_connecting_task(self, monkeypatch):
+        monkeypatch.setattr(QueueTransportFactory, "create", staticmethod(lambda *a, **k: InMemoryTransport()))
+        conn = RealtimeConnection(
+            "s1", _Agent(realtime_runner_cls=_ContextAdapter), Runtime(InMemorySessionStore()), Session("s1"), asyncio.get_running_loop()
+        )
+
+        await conn.connect()
+
+        assert Session.current() is None
+        assert Agent.current() is None
+        with pytest.raises(RuntimeError):
+            ToolContext.get()
+        await conn.close()
+
+    @pytest.mark.asyncio
+    async def test_a_failed_connect_leaves_no_context_behind(self, monkeypatch):
+        class _Failing(_Adapter):
+            async def connect(self, session, agent, callback):
+                raise RuntimeError("no connection")
+
+        monkeypatch.setattr(QueueTransportFactory, "create", staticmethod(lambda *a, **k: InMemoryTransport()))
+        conn = RealtimeConnection(
+            "s1", _Agent(realtime_runner_cls=_Failing), Runtime(InMemorySessionStore()), Session("s1"), asyncio.get_running_loop()
+        )
+
+        with pytest.raises(RuntimeError, match="no connection"):
+            await conn.connect()
+
+        assert Session.current() is None
+        assert Agent.current() is None
 
 
 class TestRealtimeConnectionPool:
@@ -648,24 +715,14 @@ class TestRealtimeEndSession:
         chat_service.prepare_agent_handler.assert_not_called()
         assert pool.get_connection("s1") is None
 
-    def test_input_within_the_ttl_is_dropped(self, pool):
+    def test_input_after_the_end_opens_a_new_connection(self, pool):
+        """Ending closes the native session; it does not block the session id, so a later call can reuse it."""
         chat_service = self._chat_service()
         pool.dispatch(BaseRunRequest(prompt="", session_id="s1", requests=[]), "r1", None, {ATTR_REALTIME_END: "true"}, chat_service)
-
-        pool.dispatch(self._input(), "r2", None, {}, chat_service)
-
-        chat_service.prepare_agent_handler.assert_not_called()
-        assert pool.get_connection("s1") is None
-
-    def test_input_after_the_ttl_reconnects(self, pool):
-        chat_service = self._chat_service()
-        pool.dispatch(BaseRunRequest(prompt="", session_id="s1", requests=[]), "r1", None, {ATTR_REALTIME_END: "true"}, chat_service)
-        pool._ended["s1"] = time.time() - 61
 
         pool.dispatch(self._input(), "r2", None, {}, chat_service)
 
         assert pool.get_connection("s1") is not None
-        assert "s1" not in pool._ended
 
     def test_other_sessions_are_not_affected(self, pool):
         chat_service = self._chat_service("s2")
@@ -674,6 +731,47 @@ class TestRealtimeEndSession:
         pool.dispatch(self._input("s2"), "r2", None, {}, chat_service)
 
         assert pool.get_connection("s2") is not None
+
+
+class TestRealtimeFailedStart:
+    """A native session that cannot open is reported to the room, once, although its input is then dropped by the back-off."""
+
+    def test_a_failed_connect_sends_one_error_chunk_and_the_redelivery_is_dropped(self, monkeypatch):
+        from unittest.mock import MagicMock
+
+        transport = InMemoryTransport()
+        monkeypatch.setattr(QueueTransportFactory, "create", staticmethod(lambda *a, **k: transport))
+
+        class _Failing(_Adapter):
+            async def connect(self, session, agent, callback):
+                raise RuntimeError("invalid API key")
+
+        handler = types.SimpleNamespace(
+            service=types.SimpleNamespace(agent=_Agent(realtime_runner_cls=_Failing), runtime=Runtime(InMemorySessionStore()), session=Session("s1"))
+        )
+        chat_service = MagicMock()
+        chat_service.prepare_agent_handler.return_value = handler
+        pool = RealtimeConnectionPool.initialize()
+        thread = threading.Thread(target=pool.start, daemon=True)
+        thread.start()
+        attributes = {ATTR_INTEGRATION: "livekit", "reply_session_id": "s1"}
+        try:
+            with pytest.raises(RuntimeError, match="invalid API key"):
+                pool.dispatch(TestRealtimeEndSession._input(), "r1", None, attributes, chat_service)
+            pool.dispatch(TestRealtimeEndSession._input(), "r1", None, attributes, chat_service)  # the redelivery, in the back-off
+
+            bodies = []
+            deadline = time.time() + 3
+            while time.time() < deadline and not bodies:
+                bodies = [json.loads(m.body) for m in _drain_output(transport)]
+        finally:
+            ThreadRunner.shutdown_event.set()
+            thread.join(timeout=5)
+
+        errors = [body for body in bodies if body.get("error")]
+        assert len(errors) == 1
+        assert "invalid API key" in errors[0]["error"] and errors[0]["done"] is True
+        assert chat_service.prepare_agent_handler.call_count == 1
 
 
 class TestRealtimeReconnectBackoff:
@@ -835,12 +933,9 @@ class TestLiveKitGatewayErrorChunk:
 
         gateway = object.__new__(LiveKitEdgeGateway)
         gateway._transcript = ["half a sentence"]
-        gateway._line_parts = ["half a sentence"]
-        gateway._line_message_id = None
         gateway._caption = None
         gateway._speaking_agent = None
         gateway.agent = None
-        gateway._hooks = None
         gateway.session_id = "s1"
         gateway.name = "livekit"
         gateway._interrupted = False

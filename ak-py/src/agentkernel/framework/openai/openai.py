@@ -49,7 +49,6 @@ from ...core.model import (
     AgentRequestImage,
     AgentRequestText,
     AgentRequestVoice,
-    ExecutionMode,
     ResumeDecision,
 )
 from ...core.paused_run import PausedRun, PausedRunState
@@ -637,8 +636,8 @@ class OpenAIRealtimeRunner(BaseRealtimeRunner):
     framework-neutral events the realtime pool paces and queues: audio, transcript, turn end,
     interruption, speaker change and failure.
 
-    The wrapped agent must be a ``RealtimeAgent``. A tool that needs approval cannot run: the
-    LiveKit edge has no route for a human's decision, so one declared up front is rejected at connect
+    The wrapped agent must be a ``RealtimeAgent``. A tool that needs approval cannot run: a
+    realtime session has no route for a human's decision, so one declared up front is rejected at connect
     and one that arises later is rejected through the SDK and fails the connection. Agent Kernel
     hooks and guardrails do not run on this path; the SDK's own do.
 
@@ -720,7 +719,7 @@ class OpenAIRealtimeRunner(BaseRealtimeRunner):
             self._session = await native.run(context=context, **session_options)
             await self._session.enter()
         except (Exception, asyncio.CancelledError):
-            # The pool does not disconnect a connection whose connect failed, so what is open is closed here.
+            # Close what is open here: a failed connect must not leave a native session behind, whatever the caller does.
             await self.disconnect()
             raise
 
@@ -757,7 +756,7 @@ class OpenAIRealtimeRunner(BaseRealtimeRunner):
                 if isinstance(tool, FunctionTool) and tool.needs_approval is not False:
                     raise ValueError(
                         f"Tool '{tool.name}' of agent '{name}' needs approval, which a realtime session cannot get: "
-                        "the LiveKit edge has no route for a human's decision"
+                        "a realtime session has no route for a human's decision"
                     )
 
     async def _listen(self) -> None:
@@ -902,9 +901,8 @@ class OpenAIAgent(BaseAgent):
         """
         super().__init__(name, runner, realtime_runner_cls)
         self._agent = agent
-        if AKConfig.get().execution.mode != ExecutionMode.REALTIME:
-            self._attach_system_tools()
-            self._setup_system_prompt()
+        self._attach_system_tools()
+        self._setup_system_prompt()
 
     @property
     def agent(self) -> Agent | RealtimeAgent:

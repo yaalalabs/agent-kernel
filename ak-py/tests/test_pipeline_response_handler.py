@@ -342,16 +342,6 @@ class TestRealtimeTrailingOutput:
         handler._integration_delivery = None  # the webhook path must not be reached
         return handler
 
-    def test_a_chunk_for_a_recently_ended_edge_is_dropped_without_a_delivery_or_a_retry(self):
-        from agentkernel.integration.adapter.registry import StatefulEdgeRegistry
-
-        StatefulEdgeRegistry.reset()
-        StatefulEdgeRegistry.unregister("s1")
-
-        self._handler().process(self._message())  # does not raise: the consumer loop acks it
-
-        StatefulEdgeRegistry.reset()
-
     def test_a_chunk_for_an_edge_that_never_existed_still_raises_for_retry(self):
         from agentkernel.integration.adapter.registry import StatefulEdgeRegistry
 
@@ -359,19 +349,6 @@ class TestRealtimeTrailingOutput:
 
         with pytest.raises(ValueError, match="No active realtime edge"):
             self._handler().process(self._message())
-
-    def test_a_permanent_failure_for_a_recently_ended_edge_is_dropped_quietly(self, monkeypatch, caplog):
-        from agentkernel.integration.adapter.registry import StatefulEdgeRegistry
-
-        _use_mode(monkeypatch, ExecutionMode.REALTIME)
-        StatefulEdgeRegistry.reset()
-        StatefulEdgeRegistry.unregister("s1")
-
-        with caplog.at_level("WARNING"):
-            self._handler().on_permanent_failure(self._message())
-
-        assert "Could not find live edge" not in caplog.text
-        StatefulEdgeRegistry.reset()
 
     def test_a_live_edge_still_receives_its_chunks(self, monkeypatch):
         from agentkernel.integration.adapter.registry import StatefulEdgeRegistry

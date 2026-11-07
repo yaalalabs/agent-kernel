@@ -38,7 +38,6 @@ from agentkernel.core.model import (
     AgentRequestImage,
     AgentRequestText,
     AgentRequestVoice,
-    ExecutionMode,
     ResumeDecision,
 )
 
@@ -932,9 +931,9 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
     ``Workflow`` is a container, not a voice: it has no tools of its own and the first agent to
     speak is announced when ADK produces its first output. A speaking workflow node declares
     ``mode='chat'`` or ``mode='task'``; ``ParallelAgent`` and ``LoopAgent`` do not run live and are
-    rejected. A tool that requires confirmation cannot run: the LiveKit edge has no route for a
-    decision, and ADK's live flow refuses the call itself, so the connection is failed when ADK says
-    one was requested. Agent Kernel hooks and guardrails do not run on this path; ADK's do.
+    rejected. A tool that requires confirmation cannot run: a realtime session has no route for a
+    decision. One declared up front is rejected before connecting; ADK's live flow refuses the call
+    itself, so the connection is failed when ADK says one was requested. Agent Kernel hooks and guardrails do not run on this path; ADK's do.
 
     Gemini Live's realtime input is 16 kHz PCM16 mono and its audio output is 24 kHz, hence the two
     sample rates; the pool resamples around them. ``Module.run_options`` carries the native settings:
@@ -950,7 +949,7 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
     # GoogleADKRunner.RUNNER_CONSTRUCTOR_OPTIONS.
     LIVE_OPTIONS: ClassVar[frozenset[str]] = frozenset({"run_config"})
     # The run options that configure the ADK App the runner builds rather than the Runner or run_live().
-    APP_OPTIONS: ClassVar[frozenset[str]] = frozenset({"plugins", "context_cache_config"})
+    APP_OPTIONS: ClassVar[frozenset[str]] = frozenset({"plugins"})
 
     def __init__(self):
         super().__init__(FRAMEWORK)
@@ -1015,7 +1014,8 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
         of a workflow left in ``single_turn`` mode runs outside the live connection, so the caller
         would hear nothing from it. ADK defaults a root LlmAgent and ordinary sub-agents to chat;
         only workflow nodes need an explicit live mode. A root that is neither an agent nor a
-        workflow cannot be driven.
+        workflow cannot be driven. A tool that requires confirmation is rejected here too, as the
+        OpenAI adapter rejects one that needs approval: nothing in a live call can answer it.
         """
         if not isinstance(root, (BaseAgent, Workflow)):
             raise TypeError(f"Agent '{agent.name}' wraps {type(root).__name__}; realtime mode runs an ADK LlmAgent or Workflow")
@@ -1038,7 +1038,24 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
                             "so the caller would hear nothing from it; set mode='chat' or mode='task' (agent '" + agent.name + "')"
                         )
                     pending.append(member)
+            if isinstance(node, LlmAgent):
+                self._check_confirmations(agent, node)
             pending.extend(getattr(node, "sub_agents", None) or [])
+
+    @staticmethod
+    def _check_confirmations(agent: AKBaseAgent, node: LlmAgent) -> None:
+        """Reject a tool that asks a human to confirm it: a live call has no way to take the answer.
+
+        ADK exposes the flag only as the private ``FunctionTool._require_confirmation`` (``True``, or a
+        callable that decides per call), so a callable is treated as asking: the call could not be answered
+        if it did.
+        """
+        for tool in node.tools or []:
+            if isinstance(tool, FunctionTool) and getattr(tool, "_require_confirmation", False):
+                raise ValueError(
+                    f"Tool '{tool.name}' of agent '{node.name}' requires confirmation, which a realtime session cannot get; "
+                    f"remove require_confirmation or keep the agent off the realtime path (agent '{agent.name}')"
+                )
 
     # -- lifecycle ----------------------------------------------------------------------------
 
@@ -1054,8 +1071,12 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
         try:
             adk_session = GoogleADKRunner._session(session)
             await adk_session.create_session(app_name=APP_NAME, user_id=USER_ID, session_id=session.id)
-            # The wrapper finds this context by id from the ADK session state.
-            self._tool_context = AKToolContext(Runtime.current(), agent, session, [])
+            # The wrapper finds this context by id from the ADK session state. Under the pool it is the context the
+            # pool set for this call (its runtime, agent and session); a direct connect builds one the same way.
+            try:
+                self._tool_context = AKToolContext.get()
+            except RuntimeError:
+                self._tool_context = AKToolContext(Runtime.current(), agent, session, [])
             self._tool_context.__enter__()
             await adk_session.update_session_state(self._tool_context.id, agent.name, {"ak_tool_context": self._tool_context.id})
             plugins = app_options.pop("plugins", None)
@@ -1068,7 +1089,7 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
             # Consuming starts before any input is accepted, so ADK's first event is never missed.
             self._listen_task = asyncio.create_task(self._listen(events))
         except (Exception, asyncio.CancelledError):
-            # The pool does not disconnect a connection whose connect failed, so what is open is closed here.
+            # Close what is open here: a failed connect must not leave a native run behind, whatever the caller does.
             await self.disconnect()
             raise
 
@@ -1240,7 +1261,9 @@ class GoogleADKAgent(AKBaseAgent):
         """
         super().__init__(name, runner, realtime_runner_cls)
         self._agent = agent
-        if AKConfig.get().execution.mode != ExecutionMode.REALTIME:
+        # A Workflow only contains the speaking agents and holds no tools or instructions of its own; the agents
+        # inside it carry theirs, when the application registers them with the module.
+        if not isinstance(agent, Workflow):
             self._attach_system_tools()
             self._setup_system_prompt()
 

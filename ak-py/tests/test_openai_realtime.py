@@ -8,6 +8,7 @@ asserted is what Agent Kernel reports from them. No test here reaches the networ
 import asyncio
 import base64
 import json
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -45,6 +46,10 @@ class ScriptedModel(RealtimeModel):
     :meth:`emit`. A response is requested by a user message, or by the last tool output of the
     previous response (the SDK marks each output ``start_response``; the real transport collapses
     them into one ``response.create``, so this does too).
+
+    Like the real websocket transport, every event reaches the session from one listener task that
+    is created while connecting, not from whichever task sent the input: the context that task
+    inherits is the one the SDK's tool tasks inherit.
     """
 
     def __init__(self, *steps):
@@ -54,10 +59,21 @@ class ScriptedModel(RealtimeModel):
         self.connected = False
         self.closed = False
         self._open_calls: set[str] = set()
-        self._tasks: set[asyncio.Task] = set()
+        self._inbox: asyncio.Queue | None = None
+        self._listener: asyncio.Task | None = None
 
     async def connect(self, options):
         self.connected = True
+        self._inbox = asyncio.Queue()
+        self._listener = asyncio.create_task(self._listen())
+
+    async def _listen(self):
+        while True:
+            step = await self._inbox.get()
+            # A real model responds after the SDK has finished sending and recording the tool
+            # output. Running a scripted response in that same send call is re-entrant.
+            await asyncio.sleep(0.01)
+            await step(self)
 
     def add_listener(self, listener):
         self.listeners.append(listener)
@@ -78,17 +94,7 @@ class ScriptedModel(RealtimeModel):
     def _respond(self):
         if not self.steps:
             return
-        step = self.steps.pop(0)
-
-        async def after_send():
-            # A real model responds after the SDK has finished sending and recording the tool
-            # output. Running a scripted response in that same send call is re-entrant.
-            await asyncio.sleep(0.01)
-            await step(self)
-
-        task = asyncio.create_task(after_send())
-        self._tasks.add(task)
-        task.add_done_callback(self._tasks.discard)
+        self._inbox.put_nowait(self.steps.pop(0))
 
     async def emit(self, event):
         for listener in list(self.listeners):
@@ -96,11 +102,9 @@ class ScriptedModel(RealtimeModel):
 
     async def close(self):
         self.closed = True
-        pending = [task for task in self._tasks if task is not asyncio.current_task()]
-        for task in pending:
-            task.cancel()
-        if pending:
-            await asyncio.gather(*pending, return_exceptions=True)
+        if self._listener is not None and self._listener is not asyncio.current_task():
+            self._listener.cancel()
+            await asyncio.gather(self._listener, return_exceptions=True)
 
     def tool_outputs(self) -> dict[str, str]:
         return {e.tool_call.name: e.output for e in self.sent if isinstance(e, RealtimeModelSendToolOutput)}
@@ -188,26 +192,44 @@ async def lookup_invoice(invoice: str) -> str:
     return f"invoice {invoice}: 42.00"
 
 
+CONTEXT_SEEN: dict = {}
+
+
+@function_tool
+async def read_context() -> str:
+    """Report the Agent Kernel context this tool runs in."""
+    from agentkernel.core import Agent
+    from agentkernel.core.tool import ToolContext
+
+    try:
+        CONTEXT_SEEN.update(tool_context=ToolContext.get(), session=Session.current(), agent=Agent.current())
+    except Exception as e:  # noqa
+        CONTEXT_SEEN["error"] = repr(e)
+        raise
+    return "read"
+
+
 @function_tool
 async def note_greeting() -> str:
     """Note that the caller was greeted."""
     return "greeted"
 
 
-def test_realtime_agent_keeps_native_tools_without_loading_ak_system_tools(monkeypatch):
+def test_realtime_agent_gets_the_ak_system_tools_and_prompt_like_any_other_mode(monkeypatch):
     monkeypatch.setattr(AKConfig.get().execution, "mode", ExecutionMode.REALTIME)
 
-    def unexpected(*args):
-        raise AssertionError("AK system tools and prompt guidance must not be loaded for realtime")
+    def system_note(text: str) -> str:
+        """A system tool."""
+        return text
 
-    monkeypatch.setattr(SystemToolFactory, "get_all", unexpected)
-    monkeypatch.setattr(SystemToolFactory, "get_system_prompt_suffix", unexpected)
+    monkeypatch.setattr(SystemToolFactory, "get_all", staticmethod(lambda agent_name=None: [SimpleNamespace(name="system_note", func=system_note)]))
+    monkeypatch.setattr(SystemToolFactory, "get_system_prompt_suffix", staticmethod(lambda agent_name=None: "Use system_note."))
     native = RealtimeAgent(name="voice", instructions="Speak clearly.", tools=[note_greeting])
 
     OpenAIAgent("voice", OpenAIRunner(), native)
 
-    assert [tool.name for tool in native.tools] == ["note_greeting"]
-    assert native.instructions == "Speak clearly."
+    assert [tool.name for tool in native.tools] == ["note_greeting", "system_note"]
+    assert native.instructions == "Speak clearly.\nUse system_note."
 
 
 async def _connect(runtime, module: OpenAIModule, root_name: str, model: ScriptedModel, session_id="s1", recorder=None):
@@ -786,3 +808,48 @@ class TestThroughThePool:
         assert events[0] == "agent_changed"
         spoken = "".join(c["event"]["content"] for c in seen if c.get("event", {}).get("type") == "text_delta")
         assert spoken == "One moment.Nine is forty-two.Anything else?"
+
+    @pytest.mark.asyncio
+    async def test_a_tool_the_sdk_runs_sees_the_ak_tool_context_session_and_agent(self, runtime, monkeypatch):
+        """The SDK runs the tool on its own task; the pool set the context before the session opened, and the task inherits it."""
+        from agentkernel.pipeline.envelope import QueueName
+        from agentkernel.pipeline.realtime_pool import RealtimeConnection
+        from agentkernel.pipeline.transport.base import QueueTransportFactory
+        from agentkernel.pipeline.transport.in_memory import InMemoryTransport
+
+        async def send_inline(send, *args):
+            return send(*args)
+
+        monkeypatch.setattr("agentkernel.pipeline.realtime_pool.asyncio.to_thread", send_inline)
+        InMemoryTransport.reset()
+        CONTEXT_SEEN.clear()
+        _no_system_tools(monkeypatch)
+        voice = RealtimeAgent(name="voice", instructions="Speak.", tools=[read_context])
+        module = OpenAIModule([voice])
+        model = ScriptedModel(response("r1", calls=(("read_context", "c1", "{}"),)), response("r2", say="Done."))
+        agent = module.get_agent("voice")
+        agent.run_options.update(model=model)
+        session = Session("call-ctx")
+        conn = RealtimeConnection("call-ctx", agent, runtime, session, asyncio.get_running_loop())
+        conn.update_delivery_context("req", None, None, {})
+        await conn.connect()
+        try:
+            conn.send_text("read it")
+            deadline = asyncio.get_running_loop().time() + 5
+            consumer = QueueTransportFactory.create().create_consumer(QueueName.OUTPUT)
+            done = 0
+            chunks = []
+            while asyncio.get_running_loop().time() < deadline and done < 2:
+                for message in consumer.fetch(10, 0):
+                    chunks.append(json.loads(message.body))
+                    done += 1 if chunks[-1].get("done") else 0
+                    consumer.ack(message)
+                await asyncio.sleep(0.01)
+        finally:
+            await conn.close()
+            InMemoryTransport.reset()
+
+        assert CONTEXT_SEEN["tool_context"].session is session
+        assert CONTEXT_SEEN["tool_context"].agent is agent
+        assert CONTEXT_SEEN["session"] is session
+        assert CONTEXT_SEEN["agent"] is agent

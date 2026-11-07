@@ -1,5 +1,4 @@
 import threading
-import time
 
 from .base import StatefulEdgeAdapter
 
@@ -13,11 +12,7 @@ class StatefulEdgeRegistry:
     replies back to the same long-lived connection.
     """
 
-    ENDED_TTL_SECONDS: float = 60.0
-    """How long an unregistered session counts as recently ended."""
-
     _cache: dict[str, StatefulEdgeAdapter] = {}
-    _ended: dict[str, float] = {}
     _lock = threading.Lock()
 
     @classmethod
@@ -32,14 +27,12 @@ class StatefulEdgeRegistry:
         key = session_id if session_id else adapter.name
         with cls._lock:
             cls._cache[key] = adapter
-            cls._ended.pop(key, None)
 
     @classmethod
     def unregister(cls, session_id: str, adapter: StatefulEdgeAdapter | None = None) -> None:
         """Remove a live stateful edge adapter instance from the cache.
 
-        Called when a stateful connection disconnects, preventing memory leaks. The session is recorded
-        as recently ended (see :meth:`recently_ended`).
+        Called when a stateful connection disconnects, preventing memory leaks.
 
         :param session_id: The session id the edge was registered under.
         :param adapter: When given, the entry is removed only if it is this adapter, so a stopped edge
@@ -50,22 +43,6 @@ class StatefulEdgeRegistry:
             if adapter is not None and current is not adapter:
                 return
             cls._cache.pop(session_id, None)
-            now = time.time()
-            cls._prune_ended(now)
-            cls._ended[session_id] = now
-
-    @classmethod
-    def recently_ended(cls, session_id: str) -> bool:
-        """True for :attr:`ENDED_TTL_SECONDS` after the session's edge was unregistered."""
-        with cls._lock:
-            cls._prune_ended(time.time())
-            return session_id in cls._ended
-
-    @classmethod
-    def _prune_ended(cls, now: float) -> None:
-        """Drop expired marks; the caller holds the lock."""
-        for key in [key for key, at in cls._ended.items() if now - at >= cls.ENDED_TTL_SECONDS]:
-            del cls._ended[key]
 
     @classmethod
     def get(cls, session_id: str) -> StatefulEdgeAdapter | None:
@@ -78,4 +55,3 @@ class StatefulEdgeRegistry:
         """Drop the instance cache. For tests."""
         with cls._lock:
             cls._cache.clear()
-            cls._ended.clear()

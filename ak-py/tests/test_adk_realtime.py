@@ -21,7 +21,7 @@ from google.adk.tools.tool_confirmation import ToolConfirmation
 from google.adk.workflow import Workflow
 from google.genai import types
 
-from agentkernel.core import Session
+from agentkernel.core import Agent, Session
 from agentkernel.core.config import AKConfig
 from agentkernel.core.model import ExecutionMode
 from agentkernel.core.runtime import Runtime
@@ -37,24 +37,37 @@ def team():
     return coordinator, billing
 
 
-def test_realtime_agent_keeps_native_tools_without_loading_ak_system_tools(monkeypatch):
+def test_realtime_agent_gets_the_ak_system_tools_and_prompt_like_any_other_mode(monkeypatch):
     monkeypatch.setattr(AKConfig.get().execution, "mode", ExecutionMode.REALTIME)
-
-    def unexpected(*args):
-        raise AssertionError("AK system tools and prompt guidance must not be loaded for realtime")
 
     def native_tool(value: str) -> str:
         """Echo a value."""
         return value
 
-    monkeypatch.setattr(SystemToolFactory, "get_all", unexpected)
-    monkeypatch.setattr(SystemToolFactory, "get_system_prompt_suffix", unexpected)
+    def system_note(text: str) -> str:
+        """A system tool."""
+        return text
+
+    monkeypatch.setattr(SystemToolFactory, "get_all", staticmethod(lambda agent_name=None: [SimpleNamespace(name="system_note", func=system_note)]))
+    monkeypatch.setattr(SystemToolFactory, "get_system_prompt_suffix", staticmethod(lambda agent_name=None: "Use system_note."))
     native = LlmAgent(name="voice", model="gemini-2.5-flash", description="A voice agent.", tools=[FunctionTool(native_tool)])
 
     GoogleADKAgent("voice", GoogleADKRunner(), native)
 
-    assert [tool.name for tool in native.tools] == ["native_tool"]
-    assert native.description == "A voice agent."
+    assert [tool.name for tool in native.tools] == ["native_tool", "system_note"]
+    assert native.description == "A voice agent.\nUse system_note."
+
+
+def test_a_workflow_root_is_left_alone_by_the_system_tools(monkeypatch):
+    def system_note(text: str) -> str:
+        """A system tool."""
+        return text
+
+    monkeypatch.setattr(SystemToolFactory, "get_all", staticmethod(lambda agent_name=None: [SimpleNamespace(name="system_note", func=system_note)]))
+    monkeypatch.setattr(SystemToolFactory, "get_system_prompt_suffix", staticmethod(lambda agent_name=None: "Use system_note."))
+    workflow = Workflow(name="flow", edges=[("START", LlmAgent(name="first", model="gemini-2.5-flash", mode="chat"))])
+
+    GoogleADKAgent("flow", GoogleADKRunner(), workflow)  # a Workflow holds no tools or instructions: nothing to attach to
 
 
 class NativeRun:
@@ -119,7 +132,7 @@ async def test_one_native_run_reports_a_b_a(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_a_live_tool_resolves_its_session_through_tool_context(monkeypatch):
-    """A live tool has no Session.current(); it finds its session through ToolContext.get() instead."""
+    """Without the pool around it, a live tool still finds its session through the ToolContext the adapter keeps by id."""
     monkeypatch.setattr(SystemToolFactory, "get_all", staticmethod(lambda agent_name=None: []))
     monkeypatch.setattr(SystemToolFactory, "get_system_prompt_suffix", staticmethod(lambda agent_name=None: ""))
     monkeypatch.setattr("agentkernel.framework.adk.adk.Runner", NativeRun)
@@ -459,12 +472,21 @@ def test_app_options_are_split_out_before_the_runner_and_live_options(native):
     coordinator, billing = team()
     with Runtime(InMemorySessionStore()):
         owner = GoogleADKModule([coordinator, billing]).get_agent("coordinator")
-        cache = object()
+        plugins = [object()]
 
-        constructor, live, app = GoogleADKRealtimeRunner()._split_options(owner, {"context_cache_config": cache, "run_config": "live"})
+        constructor, live, app = GoogleADKRealtimeRunner()._split_options(owner, {"plugins": plugins, "run_config": "live"})
 
-    assert app == {"context_cache_config": cache}
+    assert app == {"plugins": plugins}
     assert live == {"run_config": "live"} and constructor == {}
+
+
+def test_an_app_option_the_adapter_does_not_pass_is_rejected_by_name(native):
+    """Only the App options the live path needs are passed; context caching is not one of them."""
+    coordinator, billing = team()
+    with Runtime(InMemorySessionStore()):
+        owner = GoogleADKModule([coordinator, billing]).get_agent("coordinator")
+        with pytest.raises(ValueError, match="context_cache_config"):
+            GoogleADKRealtimeRunner()._split_options(owner, {"context_cache_config": object()})
 
 
 # -- ADK's own transfer flow, offline: a fake Live model, no credentials -------------------------
@@ -645,3 +667,67 @@ async def test_realtime_adapter_reports_native_peer_handoff(fast_transfer, monke
             assert [connection.name for connection in OPENED] == ["coordinator", "billing", "support"]
         finally:
             await adapter.disconnect()
+
+
+def test_a_tool_that_requires_confirmation_is_rejected_before_connecting(native):
+    def pay(amount: str) -> str:
+        """Pay an amount."""
+        return amount
+
+    for confirm in (True, lambda *args: True):
+        payer = LlmAgent(name="payer", model="gemini-2.5-flash", mode="chat", tools=[FunctionTool(pay, require_confirmation=confirm)])
+        with Runtime(InMemorySessionStore()):
+            owner = GoogleADKModule([payer]).get_agent("payer")
+            with pytest.raises(ValueError, match="requires confirmation"):
+                GoogleADKRealtimeRunner()._check_graph(owner, payer)
+
+
+def test_a_tool_that_does_not_require_confirmation_is_accepted(native):
+    def lookup(key: str) -> str:
+        """Look a key up."""
+        return key
+
+    agent = LlmAgent(name="finder", model="gemini-2.5-flash", mode="chat", tools=[FunctionTool(lookup)])
+    with Runtime(InMemorySessionStore()):
+        owner = GoogleADKModule([agent]).get_agent("finder")
+        GoogleADKRealtimeRunner()._check_graph(owner, agent)
+
+
+@pytest.mark.asyncio
+async def test_a_live_tool_sees_the_session_and_agent_the_pool_set(monkeypatch):
+    """ADK runs its tools inside the run_live() generator, on the listener task the adapter starts while connecting."""
+    from agentkernel.pipeline.realtime_pool import RealtimeConnection
+    from agentkernel.pipeline.transport.base import QueueTransportFactory
+    from agentkernel.pipeline.transport.in_memory import InMemoryTransport
+
+    seen = {}
+
+    class ToolRunningRun(NativeRun):
+        async def run_live(self, **kwargs):
+            seen.update(tool_context=AKToolContext.get(), session=Session.current(), agent=Agent.current())
+            async for event in super().run_live(**kwargs):
+                yield event
+
+    monkeypatch.setattr(SystemToolFactory, "get_all", staticmethod(lambda agent_name=None: []))
+    monkeypatch.setattr(SystemToolFactory, "get_system_prompt_suffix", staticmethod(lambda agent_name=None: ""))
+    monkeypatch.setattr("agentkernel.framework.adk.adk.Runner", ToolRunningRun)
+    monkeypatch.setattr(QueueTransportFactory, "create", staticmethod(lambda *a, **k: InMemoryTransport()))
+    coordinator, billing = team()
+    with Runtime(InMemorySessionStore()) as runtime:
+        module = GoogleADKModule([coordinator, billing])
+        agent = module.get_agent("coordinator")
+        session = Session("call-pool")
+        conn = RealtimeConnection("call-pool", agent, runtime, session, asyncio.get_running_loop())
+        conn.update_delivery_context("req", None, None, {})
+        await conn.connect()
+        try:
+            for _ in range(100):
+                if seen:
+                    break
+                await asyncio.sleep(0.01)
+        finally:
+            await conn.close()
+
+    assert seen["session"] is session
+    assert seen["agent"] is agent
+    assert seen["tool_context"].session is session
