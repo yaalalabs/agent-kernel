@@ -20,3 +20,8 @@ execution:
     output:
       url: "" # injected by Terraform via AK_EXECUTION__QUEUES__OUTPUT__URL
       max_receive_count: 4
+
+secret:
+  provider:
+    type: aws_ssm
+  # prefix is injected by Terraform as AK_SECRET__PREFIX

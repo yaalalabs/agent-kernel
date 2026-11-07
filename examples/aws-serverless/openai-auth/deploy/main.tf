@@ -14,6 +14,10 @@ module "serverless_agents" {
   # Memory DB Config - use existing Redis cluster
   create_redis_cluster = false
 
+  # Secret resolution: grants ssm:GetParameter on /ak/<prefix>/* and injects AK_SECRET__PREFIX, so the app
+  # resolves OPENAI_API_KEY from /ak/<prefix>/<key lowercased> (config.yaml `secret:` block)
+  ssm_enabled = true
+
   # Request handler configuration
   request_handler = {
     function_name        = "openai-auth-agents"
@@ -23,9 +27,6 @@ module "serverless_agents" {
     package_type         = "Image"
     memory_size          = 256
     security_group_id    = var.request_handler_security_group_id
-    environment_variables = {
-      "OPENAI_API_KEY" = var.openai_api_key
-    }
   }
 
   # To override the default API version, API base path, and agent endpoint

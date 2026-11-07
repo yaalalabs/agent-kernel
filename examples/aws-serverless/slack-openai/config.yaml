@@ -10,7 +10,10 @@ session:
 # The agent that answers Slack messages.
 slack:
   agent: assistant
-  # SLACK_BOT_TOKEN and SLACK_SIGNING_SECRET come from the environment (see deploy/main.tf).
+  # Keys the Slack credentials are read from through the secret manager: the environment first,
+  # then SSM /ak/<prefix>/<key lowercased> (the `secret:` block below; see the README).
+  bot_token_key: SLACK_BOT_TOKEN
+  signing_secret_key: SLACK_SIGNING_SECRET
 
 # Webhooks on Lambda are served in the REST modes, on the sqs transport: the Slack message is
 # enqueued at the edge and the agent runs behind the Input Queue.
@@ -48,3 +51,8 @@ execution:
 #   storage_type: dynamodb
 #   dynamodb:
 #     table_name: ""   # injected via AK_MULTIMODAL__DYNAMODB__TABLE_NAME
+
+secret:
+  provider:
+    type: aws_ssm
+  # prefix is injected by Terraform as AK_SECRET__PREFIX

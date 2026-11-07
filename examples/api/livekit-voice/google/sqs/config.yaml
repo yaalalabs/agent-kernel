@@ -6,3 +6,8 @@ execution:
   realtime:
     playback_lead_ms: 250
     input_batch_ms: 50
+
+secret:
+  provider:
+    type: aws_ssm
+  # prefix is injected by Terraform as AK_SECRET__PREFIX

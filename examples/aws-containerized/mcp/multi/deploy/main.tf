@@ -14,14 +14,15 @@ module "containered_agents" {
   create_redis_cluster = true
   enable_mcp_server    = true # endpoint = /<api_base_path>/<api_version>/mcp
 
+  # Secret resolution: grants ssm:GetParameter on /ak/<prefix>/* and injects AK_SECRET__PREFIX, so the app
+  # resolves OPENAI_API_KEY from /ak/<prefix>/<key lowercased> (config.yaml `secret:` block)
+  ssm_enabled = true
+
   rest_service = {
     alb_security_group_id         = var.alb_security_group_id
     ecs_service_security_group_id = var.ecs_service_security_group_id
     package_path                  = "../dist"
     container_port                = 8000
     # Environment variables passed to container
-    environment_variables = {
-      OPENAI_API_KEY = var.openai_api_key
-    }
   }
 }

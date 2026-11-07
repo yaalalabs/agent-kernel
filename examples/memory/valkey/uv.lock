@@ -33,6 +33,9 @@ wheels = [
 ]
 
 [package.optional-dependencies]
+aws = [
+    { name = "boto3" },
+]
 openai = [
     { name = "openai-agents" },
     { name = "openai-guardrails" },
@@ -259,7 +262,7 @@ name = "aws-serverless-openai-valkey"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
-    { name = "agentkernel", extra = ["openai", "valkey"] },
+    { name = "agentkernel", extra = ["aws", "openai", "valkey"] },
     { name = "valkey" },
 ]
 
@@ -273,7 +276,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "agentkernel", extras = ["openai", "valkey"], specifier = ">=0.9.5" },
+    { name = "agentkernel", extras = ["openai", "aws", "valkey"], specifier = ">=0.9.5" },
     { name = "valkey", specifier = ">=6.0.0" },
 ]
 

@@ -8,3 +8,8 @@ session:
 execution:
   mode: async
   message_type: delta
+
+secret:
+  provider:
+    type: aws_ssm
+  # prefix is injected by Terraform as AK_SECRET__PREFIX

@@ -561,7 +561,7 @@ sandbox:
   e2b:
     template: code-interpreter-v1  # E2B template; must ship the code-interpreter Jupyter server
     # languages: [python, javascript]  # E2B kernels run_code may use; default [python]
-    # api_key_env: E2B_API_KEY  # env variable holding the API key
+    # api_key_env: E2B_API_KEY  # key holding the API key: the environment, then the configured secret provider
   broker:
     flavor: thread
 ```
@@ -586,7 +586,7 @@ sandbox:
     #   node: [node, -e]
     #   node: [node, -e]            # only if the image ships node
     # target: us                    # Daytona target/region; omitted = SDK default
-    # api_key_env: DAYTONA_API_KEY  # env variable holding the API key
+    # api_key_env: DAYTONA_API_KEY  # key holding the API key: the environment, then the configured secret provider
   broker:
     flavor: thread
 ```

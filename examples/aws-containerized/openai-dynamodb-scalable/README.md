@@ -80,8 +80,9 @@ Both modes use the same 2-image architecture (REST Service + Agent Runner) with 
 
 ## Secrets from SSM Parameter Store
 
-The deployment sets `ssm_enabled = true`, which, because this is queue mode, grants only the agent
-runner task role `ssm:GetParameter` (and nothing else) on `/ak/<prefix>/*` and injects `AK_SECRET__PREFIX`.
+The deployment sets `ssm_enabled = true`, which grants the agent runner and REST service task roles
+`ssm:GetParameter` (and nothing else) on `/ak/<prefix>/*` and injects `AK_SECRET__PREFIX` (the REST service
+needs it only for messaging-integration credentials, which this example has none of).
 `config.yaml` declares `secret.provider.type: aws_ssm`, and `app_agent_runner.py` resolves the key
 at startup (`app_rest_service.py` never calls the model, so it needs no key):
 

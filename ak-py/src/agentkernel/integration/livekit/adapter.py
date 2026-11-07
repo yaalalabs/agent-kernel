@@ -9,6 +9,7 @@ from livekit import api, rtc
 from ...core.config import AKConfig
 from ...core.model import AgentReply, AgentRequestText, StreamChunk
 from ...core.realtime import EDGE_SAMPLE_RATE
+from ...secret import SecretError, SecretManager
 from ..adapter.base import StatefulEdgeAdapter
 
 _log = logging.getLogger("ak.integration.livekit")
@@ -115,9 +116,10 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
         self._input_batch_ms = config.execution.realtime.input_batch_ms
         self._input_batch_bytes = int(EDGE_SAMPLE_RATE * 2 * (self._input_batch_ms / 1000))
 
-        # Kept to give each agent of the team a token of its own when the conversation announces it.
-        self._api_key = api_key or config.livekit.api_key
-        self._api_secret = api_secret or config.livekit.api_secret
+        # Kept to give each agent of the team a token of its own when the conversation announces it. An
+        # empty field falls back to the secret provider, keyed by the field's own AK_* name.
+        self._api_key = api_key or config.livekit.api_key or self._provider_credential("AK_LIVEKIT__API_KEY", token)
+        self._api_secret = api_secret or config.livekit.api_secret or self._provider_credential("AK_LIVEKIT__API_SECRET", token)
         # The participant that hears the human; it speaks for the starting agent.
         self._participants = [self._single_participant(token)]
         # Each agent's participant, once it is in the room.
@@ -147,11 +149,33 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
         self._transcript: list[str] = []
         self._interrupted = False
 
+    @staticmethod
+    def _provider_credential(key: str, token: str | None) -> str:
+        """``key`` from the secret provider, or "" when it has none.
+
+        With a ``token`` the credential only gives the team's other agents participants of their own,
+        so a provider failure is logged and the gateway starts on the token alone.
+
+        :raises SecretError: If the provider failed and no ``token`` was given.
+        """
+        try:
+            return SecretManager.current().get(key, default="")
+        except SecretError as e:
+            if not token:
+                raise
+            _log.warning(f"Starting on the given token without {key}: {e}")
+            return ""
+
     def _single_participant(self, token: str | None) -> _AgentParticipant:
         if token:
             return self._AgentParticipant(self.agent, None, token)
         if not (self._api_key and self._api_secret):
-            raise ValueError("Either 'token' or both 'api_key' and 'api_secret' must be provided in code or config")
+            secrets = SecretManager.current()
+            raise ValueError(
+                "Either 'token' or both 'api_key' and 'api_secret' must be provided in code or config: set "
+                f"{secrets.describe('AK_LIVEKIT__API_KEY', 'livekit.api_key')}; and "
+                f"{secrets.describe('AK_LIVEKIT__API_SECRET', 'livekit.api_secret')}"
+            )
         # The name the agent appears under in the room; cosmetic, unlike ``self.agent``.
         name = self.agent or "general"
         return self._AgentParticipant(self.agent, f"agent-{name}", self._mint_token(name))

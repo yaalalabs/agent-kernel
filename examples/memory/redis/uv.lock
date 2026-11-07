@@ -30,6 +30,9 @@ wheels = [
 ]
 
 [package.optional-dependencies]
+aws = [
+    { name = "boto3" },
+]
 openai = [
     { name = "openai-agents" },
     { name = "openai-guardrails" },
@@ -216,7 +219,7 @@ name = "aws-serverless-openai"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
-    { name = "agentkernel", extra = ["openai", "redis"] },
+    { name = "agentkernel", extra = ["aws", "openai", "redis"] },
 ]
 
 [package.dev-dependencies]
@@ -228,7 +231,7 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "agentkernel", extras = ["openai", "redis"], specifier = ">=0.9.5" }]
+requires-dist = [{ name = "agentkernel", extras = ["openai", "aws", "redis"], specifier = ">=0.9.5" }]
 
 [package.metadata.requires-dev]
 dev = [

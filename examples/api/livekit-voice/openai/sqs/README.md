@@ -28,4 +28,13 @@ Because this is designed for production AWS deployments (AWS ECS), the pipeline 
 
 
 ### Production AWS Deployment
-1. Ensure you have your `OPENAI_API_KEY`, `AK_LIVEKIT__URL`, `AK_LIVEKIT__API_KEY`, and `AK_LIVEKIT__API_SECRET` set in your environment.
+1. Store the OpenAI key and the LiveKit API key and secret in SSM Parameter Store, where `<prefix>` is `prefix` in
+   `deploy/terraform.tfvars`, and pass the LiveKit URL to Terraform:
+    ```bash
+    for pair in "openai_api_key=$OPENAI_API_KEY" "ak_livekit__api_key=$LIVEKIT_API_KEY" "ak_livekit__api_secret=$LIVEKIT_API_SECRET"; do
+      aws ssm put-parameter --name "/ak/<prefix>/${pair%%=*}" --type SecureString --value "${pair#*=}" --overwrite
+    done
+    export TF_VAR_livekit_url="wss://your-project.livekit.cloud"
+    ```
+   The deployment sets `ssm_enabled = true` and `config.yaml` selects the `aws_ssm` secret provider, so both services read
+   the secrets from SSM at startup; no secret passes through Terraform.

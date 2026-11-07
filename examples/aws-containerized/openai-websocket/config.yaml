@@ -10,3 +10,8 @@ execution:
   # (complete) the full agent reply is one CHAT_RESPONSE message; message_type: delta
   # pushes each token as a separate STREAM_CHUNK message.
   mode: async
+
+secret:
+  provider:
+    type: aws_ssm
+  # prefix is injected by Terraform as AK_SECRET__PREFIX

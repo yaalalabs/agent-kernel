@@ -7,3 +7,7 @@ library_version: "0.1.0"
 # Slack integration settings
 slack:
   agent_acknowledgement: "I'm processing your request"
+  # Keys the Slack credentials are read from through the secret manager: the environment
+  # first, then the configured secret provider (secret.provider)
+  bot_token_key: SLACK_BOT_TOKEN
+  signing_secret_key: SLACK_SIGNING_SECRET

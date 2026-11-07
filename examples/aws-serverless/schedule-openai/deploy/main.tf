@@ -64,6 +64,10 @@ module "serverless_agents" {
     },
   ]
 
+  # Secret resolution: grants ssm:GetParameter on /ak/<prefix>/* and injects AK_SECRET__PREFIX, so the app
+  # resolves OPENAI_API_KEY from /ak/<prefix>/<key lowercased> (config.yaml `secret:` block)
+  ssm_enabled = true
+
   # ---- Request handler ----
   # Chat ingress plus the custom schedule management routes.
   request_handler = {
@@ -75,9 +79,6 @@ module "serverless_agents" {
     memory_size          = 256
     timeout              = 45
     security_group_id    = var.request_handler_security_group_id
-    environment_variables = {
-      "OPENAI_API_KEY" = var.openai_api_key
-    }
   }
 
   # ---- Agent runner ----
@@ -94,9 +95,6 @@ module "serverless_agents" {
     package_type         = "Image"
     package_path         = "../dist_agent_runner"
     security_group_id    = var.agent_runner_security_group_id
-    environment_variables = {
-      "OPENAI_API_KEY" = var.openai_api_key
-    }
   }
 
   # ---- Response handler ----

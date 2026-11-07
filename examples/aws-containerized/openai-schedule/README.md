@@ -153,6 +153,15 @@ through. Omit these entries and the routes exist inside the container but 404 at
 
 ## Deploy
 
+Store the OpenAI key in SSM Parameter Store, where `<prefix>` is `prefix` in `deploy/terraform.tfvars`.
+The deployment sets `ssm_enabled = true` and `config.yaml` selects the `aws_ssm` secret provider, so the
+agent runner reads the key from SSM at startup; no secret passes through Terraform:
+
+```bash
+aws ssm put-parameter --name "/ak/<prefix>/openai_api_key" \
+    --type SecureString --value "$OPENAI_API_KEY" --overwrite
+```
+
 Set the deployment identifiers in `deploy/terraform.tfvars`, then:
 
 ```bash
@@ -161,7 +170,7 @@ cd deploy
 ./deploy.sh                # packages both images, terraform init + apply, waits for ECS stability
 ```
 
-`deploy.sh` prompts for `openai_api_key`, `vpc_id` and `private_subnet_ids` unless you add them to
+`deploy.sh` prompts for `vpc_id` and `private_subnet_ids` unless you add them to
 `terraform.tfvars` or pass them as `-var` flags.
 
 Take the `agent_invoke_url` output; everything below assumes:
