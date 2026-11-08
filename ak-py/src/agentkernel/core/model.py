@@ -2,7 +2,7 @@ import json
 import uuid
 from collections.abc import Callable
 from enum import Enum
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
@@ -465,6 +465,9 @@ class BaseRunRequest(BaseChatRequest):
     (including AgentRequestAttachmentRef entries, which files/images cannot express). Typed
     for the same reason as the scheduling fields: an extra would reach the agent as
     AgentRequestAny context.
+
+    These three fields are for internal producers only; client-facing routes parse
+    ChatRunRequest, which rejects them.
     """
 
     files: list[FileData] | None = None
@@ -473,6 +476,23 @@ class BaseRunRequest(BaseChatRequest):
     scheduled_task_id: str | None = None
     scheduled_time: str | None = None
     model_config = ConfigDict(extra="allow")
+
+
+class ChatRunRequest(BaseRunRequest):
+    """BaseRunRequest as a client sends it: rejects the fields only internal producers set.
+
+    BaseRunRequest is also the queue message format, so the check cannot live there: the
+    runner parses every queued message, including producer-built ones, through it.
+    """
+
+    INTERNAL_FIELDS: ClassVar[frozenset[str]] = frozenset({"requests", "scheduled_task_id", "scheduled_time"})
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_internal_fields(cls, data: Any) -> Any:
+        if isinstance(data, dict) and (sent := cls.INTERNAL_FIELDS & data.keys()):
+            raise ValueError(f"fields not accepted from clients: {sorted(sent)}")
+        return data
 
 
 class BaseRequest(BaseModel):
@@ -505,7 +525,7 @@ class BaseRequest(BaseModel):
                 return cls(request_id=request_id, user_id=user_id, route=route)
 
             if not isinstance(body, BaseRunRequest):
-                body = BaseRunRequest.model_validate(body)
+                body = ChatRunRequest.model_validate(body)
 
             # The envelope user_id is authoritative — propagate it into the body so
             # body-level consumers (e.g. Conversation Thread Support) can read it.

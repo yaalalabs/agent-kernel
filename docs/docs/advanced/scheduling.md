@@ -407,6 +407,8 @@ task at create/amend time and the provider substitutes the occurrence placeholde
   message attributes, and the local provider deliberately matches that, so both exercise the runners'
   body-fallback path for `request_id` and `user_id`.
 - `schedule`, `scheduled_task_id` and `scheduled_time` never reach the agent as unknown context.
+- Only a provider sets `scheduled_task_id` and `scheduled_time`: the public chat routes (REST and
+  WebSocket) reject a client request carrying either with a 422.
 
 ## Examples
 

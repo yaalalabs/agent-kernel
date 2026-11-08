@@ -23,7 +23,7 @@ from ...api.handler import AgentRESTRequestHandler, AuthorisedRESTRequestHandler
 from ...auth.authoriser import Authoriser
 from ...core import Config
 from ...core.chat_service import ChatService, RequestBuilder, ResponseBuilder
-from ...core.model import BaseChatRequest, BaseRunRequest, StreamChunk
+from ...core.model import BaseChatRequest, BaseRunRequest, ChatRunRequest, StreamChunk
 from ...core.service import AgentService
 from ...pipeline.envelope import ATTR_THREAD
 from ...pipeline.producer import RequestProducer
@@ -73,7 +73,7 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
         router.include_router(self._read_handler.get_router())
         return router
 
-    async def run(self, body: BaseRunRequest):
+    async def run(self, body: ChatRunRequest):
         if Config.get().execution.is_sse:
             try:
                 gen = await self._stream_with_recording(body)
@@ -265,7 +265,7 @@ class ThreadRequestHandler(RequestHandler):
         attributes = {} if body.schedule is not None else {ATTR_THREAD: "1"}
         return RequestProducer(self.get_transport()).enqueue(body, request_id, attributes=attributes)
 
-    async def run_chat(self, body: BaseRunRequest):
+    async def run_chat(self, body: ChatRunRequest):
         """POST /api/v1/chat: record the user message, then enqueue as the pipeline normally does.
 
         Every rejection the inherited route can raise runs before the recording: the two

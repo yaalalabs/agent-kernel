@@ -169,3 +169,52 @@ class TestPrebuiltRequestList:
         from agentkernel.core.model import BaseRunRequest
 
         assert BaseRunRequest(prompt="hi", session_id="s1").requests is None
+
+
+class TestChatRunRequest:
+    """#884: the public chat body rejects fields only internal producers set."""
+
+    @pytest.mark.parametrize(
+        "field, value", [("requests", [{"type": "text", "prompt": "x"}]), ("scheduled_task_id", "t1"), ("scheduled_time", "2026-01-01T00:00:00Z")]
+    )
+    def test_an_internal_field_is_rejected(self, field, value):
+        from agentkernel.core.model import ChatRunRequest
+
+        with pytest.raises(ValidationError, match=f"fields not accepted from clients: \\['{field}'\\]"):
+            ChatRunRequest.model_validate({"prompt": "hi", "session_id": "s1", field: value})
+
+    def test_an_ordinary_chat_body_is_accepted(self):
+        from agentkernel.core.model import ChatRunRequest
+
+        body = ChatRunRequest.model_validate({"prompt": "hi", "session_id": "s1", "resume": {"decisions": [{"id": "i1"}]}, "note": "extra"})
+
+        assert body.prompt == "hi"
+        assert body.resume is not None
+
+    def test_the_queue_format_still_accepts_them(self):
+        """BaseRunRequest is what the runner parses producer-built messages with."""
+        from agentkernel.core.model import BaseRunRequest
+
+        body = BaseRunRequest.model_validate({"session_id": "s1", "requests": [{"type": "text", "prompt": "x"}], "scheduled_task_id": "t1"})
+
+        assert body.requests is not None
+        assert body.scheduled_task_id == "t1"
+
+    def test_a_field_set_after_validation_is_kept(self):
+        """ThreadRequestHandler fills `requests` on the validated public body before enqueueing it."""
+        from agentkernel.core.model import AgentRequestText, ChatRunRequest
+
+        body = ChatRunRequest.model_validate({"prompt": "hi", "session_id": "s1"})
+        body.requests = [AgentRequestText(prompt="hi")]
+
+        assert body.requests == [AgentRequestText(prompt="hi")]
+
+    @pytest.mark.parametrize(
+        "payload", [{"body": {"prompt": "hi", "session_id": "s1", "requests": []}}, {"prompt": "hi", "session_id": "s1", "requests": []}]
+    )
+    def test_from_payload_parses_a_client_frame_as_the_public_body(self, payload):
+        """Every from_payload caller is a client-facing edge (WebSocket, Lambda)."""
+        from agentkernel.core.model import BaseRequest
+
+        with pytest.raises(ValidationError, match="fields not accepted from clients"):
+            BaseRequest.from_payload(payload)

@@ -8,7 +8,7 @@ from pydantic import ConfigDict
 from ..auth.authoriser import Authoriser
 from ..core import Config
 from ..core.chat_service import ChatService
-from ..core.model import BaseChatRequest, BaseRunRequest
+from ..core.model import BaseChatRequest, ChatRunRequest
 from ..core.runtime import Runtime
 
 
@@ -101,7 +101,7 @@ class AgentRESTRequestHandler(RESTRequestHandler):
     def list_agents(self):
         return {"agents": list(Runtime.current().agents().keys())}
 
-    async def run(self, body: BaseRunRequest):
+    async def run(self, body: ChatRunRequest):
         if Config.get().execution.is_sse:
             try:
                 gen = await self.chat_service.process_stream_chat_async(req=body, sse_format=True)

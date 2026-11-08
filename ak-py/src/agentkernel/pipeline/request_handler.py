@@ -12,7 +12,7 @@ from pydantic import BaseModel
 
 from ..api.handler import AgentRESTRequestHandler
 from ..core.config import AKConfig
-from ..core.model import BaseRunRequest, ExecutionMode, FileData, ImageData
+from ..core.model import BaseRunRequest, ChatRunRequest, ExecutionMode, FileData, ImageData
 from .envelope import ATTR_PROTOCOL
 from .producer import RequestProducer
 from .response_store.base import ResponseStore
@@ -230,7 +230,7 @@ class RestHandler(AgentRESTRequestHandler):
             return Response(content=json.dumps(body), media_type="application/json", status_code=status_code)
         return body
 
-    async def enqueue_and_wait(self, body: BaseRunRequest):
+    async def enqueue_and_wait(self, body: ChatRunRequest):
         """Enqueue request; REST_SYNC waits for the response, REST_ASYNC returns request_id immediately."""
         try:
             if not body.session_id:
@@ -369,7 +369,7 @@ class RequestHandler(RestHandler):
             router.add_api_route(self.CHAT_MULTIPART_PATH, self.run_multipart_chat, methods=["POST"])
         return router
 
-    async def run_chat(self, body: BaseRunRequest):
+    async def run_chat(self, body: ChatRunRequest):
         """POST /api/v1/chat: enqueue; SSE stream for rest_sync + delta, JSON otherwise."""
         # Direct-mode parity: same validation messages and error shape as ChatService._validate
         # (ValueError -> HTTPException(400, detail={"error": ...})).

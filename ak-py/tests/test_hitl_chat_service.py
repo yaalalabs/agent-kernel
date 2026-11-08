@@ -64,6 +64,15 @@ class TestRequestShape:
         with pytest.raises(ValueError, match="No session_id"):
             ChatService._validate(BaseChatRequest(resume=_resume()), None)
 
+    def test_a_prebuilt_list_missing_the_resume_is_rejected(self):
+        """#884: running it would drop the human's decision silently."""
+        with pytest.raises(ValueError, match="no resume decisions"):
+            ChatService._validate(BaseChatRequest(session_id="s1", resume=_resume()), [AgentRequestText(prompt="something else")])
+
+    def test_a_prebuilt_list_carrying_the_resume_validates(self):
+        requests = RequestBuilder.from_base_request_sync(BaseRunRequest(session_id="s1", resume=_resume()))
+        ChatService._validate(BaseChatRequest(session_id="s1", resume=_resume()), requests)
+
 
 class TestRequestBuilding:
     def test_decisions_become_a_resume_request(self):
