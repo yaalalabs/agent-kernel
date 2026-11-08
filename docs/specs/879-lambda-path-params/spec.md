@@ -120,7 +120,7 @@ method the pipeline `AgentRunner` uses. Requirements source: [design.md](design.
 | `LambdaHost`, `LambdaHostGuard` | `deployment/aws/serverless/core/lambda_host.py` (new) | bases lifted from `webhook_host.py` |
 | `LambdaWebhookHost`, `LambdaWebhookGuard` | `deployment/aws/serverless/core/webhook_host.py` | rebased, behaviour unchanged |
 | `LambdaThreadHost`, `LambdaThreadGuard` | `deployment/aws/serverless/core/thread_host.py` (new) | new |
-| `ThreadRequestHandler` (`validate_chat`, `prepare_for_queue`, `queue_attributes`, `read_handler`) | `integration/thread/thread_chat.py` | methods lifted out of `run_chat` / `_enqueue_request` |
+| `ThreadRequestHandler` (`_validate_chat`, `prepare_for_queue`, `_queue_attributes`, `read_handler`) | `integration/thread/thread_chat.py` | methods lifted out of `run_chat` / `_enqueue_request` |
 | `ThreadRESTRequestHandler` (`list_threads`, `get_thread`) | `integration/thread/thread_chat.py` | route closures lifted into named methods |
 | `AuthorisedRESTRequestHandler.authoriser` | `api/handler.py` | read-only property |
 | `ThreadRecorder.record_queued_reply` | `integration/thread/recorder.py` | the shared reply-recording home |
@@ -224,11 +224,11 @@ Lifted, not copied, so the host drives the exact code the pipeline route runs.
 class ThreadRequestHandler(RequestHandler):
     @property
     def read_handler(self) -> "ThreadRESTRequestHandler": ...          # the composed read handler (:249)
-    def validate_chat(self, body: BaseRunRequest) -> None: ...          # the two 400s, lifted from run_chat (:276-279)
+    def _validate_chat(self, body: BaseRunRequest) -> None: ...          # the two 400s, lifted from run_chat (:276-279)
     @staticmethod
-    def queue_attributes(body: BaseRunRequest) -> dict[str, str]: ...   # {} for a schedule block, else {ATTR_THREAD: "1"} (:265)
+    def _queue_attributes(body: BaseRunRequest) -> dict[str, str]: ...   # {} for a schedule block, else {ATTR_THREAD: "1"} (:265)
     async def prepare_for_queue(self, body: BaseRunRequest) -> dict[str, str]:
-        # validate_chat; _record_user_message unless schedule; return queue_attributes(body)
+        # _validate_chat; _record_user_message unless schedule; return _queue_attributes(body)
 
 class ThreadRESTRequestHandler(AuthorisedRESTRequestHandler):
     def list_threads(self, resolve_user: Callable[[], str | None], user_id, group_id, limit, cursor) -> dict: ...
@@ -239,8 +239,8 @@ class AuthorisedRESTRequestHandler:   # api/handler.py
     def authoriser(self) -> Authoriser | None: ...
 ```
 
-- `run_chat` becomes `validate_chat` → `_reject_unroutable` → `_record_user_message` (unless
-  `schedule`) → `super().run_chat`; `_enqueue_request` uses `queue_attributes`. Same order, same
+- `run_chat` becomes `_validate_chat` → `_reject_unroutable` → `_record_user_message` (unless
+  `schedule`) → `super().run_chat`; `_enqueue_request` uses `_queue_attributes`. Same order, same
   errors.
 - `_record_user_message` (`:285-308`) keeps its name and body: `tests/test_thread_integration.py:511`
   patches it, and `prepare_for_queue` calls it through `self`, so that patch reaches both paths.

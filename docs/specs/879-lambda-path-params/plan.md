@@ -64,7 +64,7 @@ Paths are relative to `ak-py/src/agentkernel/` unless they start with `ak-py/`, 
 - **Goal:** the pipeline thread handlers expose what a Lambda host needs; their routes behave as before.
 - **Files:** `integration/thread/thread_chat.py`, `api/handler.py`
 - **Steps:**
-  1. `ThreadRequestHandler`: `read_handler`, `validate_chat`, `queue_attributes`,
+  1. `ThreadRequestHandler`: `read_handler`, `_validate_chat`, `_queue_attributes`,
      `prepare_for_queue`; `run_chat` / `_enqueue_request` use them (spec: `ThreadRequestHandler`).
   2. `ThreadRESTRequestHandler`: lift the two closures into `list_threads` / `get_thread`.
   3. `AuthorisedRESTRequestHandler.authoriser` property.

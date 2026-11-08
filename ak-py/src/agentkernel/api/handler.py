@@ -50,6 +50,11 @@ class AuthorisedRESTRequestHandler(RESTRequestHandler):
         """
         self._authoriser = authoriser
 
+    @property
+    def authoriser(self) -> Authoriser | None:
+        """The Authoriser protecting this handler's routes, or None when they are open."""
+        return self._authoriser
+
     def _resolve_user(self, request: Request) -> str | None:
         """
         Resolve the caller's user_id via the configured Authoriser.
