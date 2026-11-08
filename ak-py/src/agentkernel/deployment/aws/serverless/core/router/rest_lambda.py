@@ -12,6 +12,18 @@ from ....core.response_store import ResponseStoreFactory
 from ....core.sqs_handler import SQSHandler
 from .common import BaseLambdaRouter
 
+# Given the parsed chat envelope, may rewrite payload.body in place; returns extra SQS attributes.
+type ChatEnqueueHook = Callable[[BaseRequest], dict[str, str]]
+
+
+class LambdaChatRejection(Exception):
+    """A hook's refusal: answered as (status_code, body), never as the generic 500."""
+
+    def __init__(self, status_code: int, body: dict[str, Any]):
+        super().__init__(f"Chat request rejected with status {status_code}")
+        self.status_code = status_code
+        self.body = body
+
 
 class DefaultEndpointsHandler:
     """Provides default endpoint routes depending on EXECUTION_MODE."""
@@ -27,6 +39,21 @@ class DefaultEndpointsHandler:
         self._config = AKConfig.get()
         self._response_store = ResponseStoreFactory.create() if self._config.execution.response_store is not None else None
         self._chat_service = ChatService()
+        self._enqueue_hook: ChatEnqueueHook | None = None
+
+    def set_enqueue_hook(self, hook: ChatEnqueueHook) -> None:
+        """
+        Plug a hook into the chat route's enqueue step (rest_sync and the rest_async submit).
+
+        :param hook: Called with the parsed request before it is enqueued; its result becomes extra SQS attributes
+        :raises AKConfigError: When no input queue is configured, since the chat route then never enqueues
+        :raises ValueError: When a hook is already set
+        """
+        if not SQSHandler.get_input_queue_url():
+            raise AKConfigError("A chat enqueue hook requires queue mode: no input queue is configured")
+        if self._enqueue_hook is not None:
+            raise ValueError("A chat enqueue hook is already set")
+        self._enqueue_hook = hook
 
     def get_default_endpoint_info(self):
         """
@@ -121,6 +148,9 @@ class DefaultEndpointsHandler:
             request_id = request.request_id
             return operation(request)  # (statusCode, body) will be handled in aklambda.py
 
+        except LambdaChatRejection as r:
+            return (r.status_code, r.body)
+
         # Log and hide unexpected failures behind a generic 500 response.
         except Exception as e:
             self._log.error(f"Request failed: {e}\n{traceback.format_exc()}")
@@ -144,11 +174,17 @@ class DefaultEndpointsHandler:
         if not session_id:
             raise ValueError("session_id is required")
 
+        # The hook may rewrite payload.body, so the body is dumped only after it runs.
+        extra = self._enqueue_hook(payload) if self._enqueue_hook else {}
         response = SQSHandler.send_message_to_input_queue(
-            message_body=request_body.model_dump(exclude_none=True),
+            message_body=payload.body.model_dump(exclude_none=True),
             attributes={"message_deduplication_id": payload.request_id},
             request_id=payload.request_id,
             user_id=payload.user_id,
+            custom_message_attributes=[
+                SQSHandler.CustomAttribute(name=k, value=v, datatype=SQSHandler.AttributeDataType.STRING) for k, v in extra.items()
+            ]
+            or None,
         )
         return response
 
@@ -327,6 +363,14 @@ class RESTLambdaRouter(BaseLambdaRouter):
         ) = self._endpoints_handler.get_default_endpoint_info()
         self._routes = self._endpoints_handler.get_routes()
         self._log.info(f"Registered REST Routes: {self._routes}")
+
+    def set_chat_enqueue_hook(self, hook: ChatEnqueueHook) -> None:
+        """
+        Plug a hook into the built-in chat route's enqueue step.
+
+        :param hook: See DefaultEndpointsHandler.set_enqueue_hook
+        """
+        self._endpoints_handler.set_enqueue_hook(hook)
 
     @staticmethod
     def _normalize_method(method: str | None) -> str:

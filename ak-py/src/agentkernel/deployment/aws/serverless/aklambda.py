@@ -6,7 +6,9 @@ from collections.abc import Callable
 from typing import Any
 
 from ....core.config import AKConfig
+from ....core.util.factory import AKConfigError
 from .core import BaseLambdaRouter, RESTLambdaRouter, WSLambdaRouter
+from .core.router.rest_lambda import ChatEnqueueHook
 
 
 class Lambda:
@@ -47,6 +49,20 @@ class Lambda:
         :return: Decorator function that registers the handler and returns it unchanged
         """
         return cls._get_router().register(route, method)
+
+    @classmethod
+    def set_chat_enqueue_hook(cls, hook: ChatEnqueueHook) -> None:
+        """
+        Plug a hook into the built-in chat route's enqueue step (queue mode, REST only).
+
+        :param hook: Called with the parsed chat request before it is enqueued; may rewrite its body
+            and returns extra SQS message attributes. Raise LambdaChatRejection to answer with a status.
+        :raises AKConfigError: In WebSocket mode, which has no REST chat route
+        """
+        router = cls._get_router()
+        if not isinstance(router, RESTLambdaRouter):
+            raise AKConfigError("A chat enqueue hook requires a REST execution mode; WebSocket mode has no REST chat route")
+        router.set_chat_enqueue_hook(hook)
 
     @staticmethod
     def _wrap_response(result: Any) -> dict[str, Any]:
