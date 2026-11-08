@@ -39,3 +39,113 @@
 - **Verify:** `grep -rn "schedules/get\|schedules/amend\|schedules/cancel" docs ak-py/src examples`
   returns nothing outside `docs/specs/` and `versioned_docs/`; confirm with
   `ak-dev-sync-docs-from-branch` / `ak-dev-sync-skills-from-branch` before merge.
+
+---
+
+# #879 (phase 2): Conversation threads as a Lambda integration — Implementation Plan
+
+Paths are relative to `ak-py/src/agentkernel/` unless they start with `ak-py/`, `ak-deployment/`,
+`examples/`, `docs/` or `.agents/`.
+
+## Iteration 1: Shared reply recording
+
+- **Goal:** one reply-recording method, used by the pipeline runners; pipeline behaviour unchanged.
+- **Files:** `integration/thread/recorder.py`, `pipeline/agent_runner.py`
+- **Steps:**
+  1. Add `ThreadRecorder.record_queued_reply` with the body of `AgentRunner._record_thread_reply`
+     (spec: Reply recording).
+  2. Reduce `AgentRunner._record_thread_reply` to the marker check, lazy import and delegate; pass
+     the response from both call sites; delete the extraction lines in `_process_run`.
+- **Verify:** `uv run pytest tests/test_thread_pipeline_recording.py tests/test_pipeline_agent_runner.py`
+  passes untouched.
+
+## Iteration 2: Thread handler seams
+
+- **Goal:** the pipeline thread handlers expose what a Lambda host needs; their routes behave as before.
+- **Files:** `integration/thread/thread_chat.py`, `api/handler.py`
+- **Steps:**
+  1. `ThreadRequestHandler`: `read_handler`, `validate_chat`, `queue_attributes`,
+     `prepare_for_queue`; `run_chat` / `_enqueue_request` use them (spec: `ThreadRequestHandler`).
+  2. `ThreadRESTRequestHandler`: lift the two closures into `list_threads` / `get_thread`.
+  3. `AuthorisedRESTRequestHandler.authoriser` property.
+- **Verify:** `uv run pytest tests/test_thread_router.py tests/test_thread_integration.py tests/test_thread_pipeline_recording.py`
+  passes untouched.
+
+## Iteration 3: Router hook
+
+- **Goal:** the Lambda chat route can carry a hook; without one nothing changes.
+- **Files:** `deployment/aws/serverless/core/router/rest_lambda.py`, `deployment/aws/serverless/aklambda.py`
+- **Steps:** `ChatEnqueueHook`, `LambdaChatRejection`, `set_enqueue_hook` /
+  `set_chat_enqueue_hook` on the three classes, the `_send_to_queue` call and the `_handle_request`
+  branch (spec: Chat route takeover).
+- **Verify:** `uv run pytest tests/test_lambda_router.py tests/test_serverless_request_handle.py tests/test_serverless_status_propagation.py`.
+
+## Iteration 4: Lambda host base
+
+- **Goal:** `LambdaWebhookHost` and its guard sit on shared bases, unchanged in behaviour.
+- **Files:** `deployment/aws/serverless/core/lambda_host.py` (new), `deployment/aws/serverless/core/webhook_host.py`
+- **Steps:** move `_loop`, `_run`, `_respond` into `LambdaHost` and the mode / transport /
+  base-path checks into `LambdaHostGuard`, with `HOST_NAME` / `SUBJECT` messages (spec: `LambdaHost`).
+- **Verify:** `uv run pytest tests/test_lambda_webhook_host.py tests/test_lambda_webhook_parity.py tests/test_lambda_event_translator.py`
+  passes untouched.
+
+## Iteration 5: `LambdaThreadHost` and reply recording on Lambda
+
+- **Goal:** threads work end to end on Lambda: chat records and marks, the runner records the
+  reply, the read routes answer.
+- **Files:** `deployment/aws/serverless/core/thread_host.py` (new), `deployment/aws/__init__.py`,
+  `deployment/aws/serverless/akagentrunner.py`
+- **Steps:**
+  1. `LambdaThreadGuard` and `LambdaThreadHost` (spec: `LambdaThreadHost`).
+  2. Lazy export plus the `TYPE_CHECKING` mirror (spec: Exports).
+  3. `ServerlessAgentRunner._record_thread_reply`, called after `_send_to_output_queue`.
+- **Verify:** a local script drives `Lambda.handler` with a chat event (SQS send patched), feeds the
+  captured message to `ServerlessAgentRunner.handle` (output send patched), then calls both read
+  routes and gets the two messages back.
+
+## Iteration 6: Terraform
+
+- **Goal:** the request-handler Lambda can write the thread table in queue mode.
+- **Files:** `ak-deployment/ak-aws/serverless/state.tf`
+- **Steps:** drop the three `queue_mode` ternaries and reword the two comments (spec: Terraform).
+- **Verify:** `terraform fmt -check` and `terraform validate` in `ak-deployment/ak-aws/serverless`;
+  `terraform plan` on an existing queue-mode stack shows only the request-handler IAM policy and env
+  var changes.
+
+## Iteration 7: Example
+
+- **Goal:** a deployable `thread-openai` example.
+- **Files:** `examples/aws-serverless/thread-openai/**` (spec: Example table),
+  `.github/integration-test-config.yaml` (an `aws-serverless` entry after `schedule-openai`, `:83`)
+- **Steps:** copy `slack-openai`, strip Slack, add `agents.py`, the request handler, `lambda_auth.py`,
+  the config, the gateway endpoints and the test.
+- **Verify:** black and `terraform fmt -check` clean; `lambda_test.py` against a deployed stack.
+
+## Iteration 8: Tests
+
+- **Goal:** every spec requirement is pinned.
+- **Files:** `ak-py/tests/test_lambda_thread_host.py` (new),
+  `ak-py/tests/test_serverless_agent_runner_thread.py` (new), `ak-py/tests/test_lambda_router.py`,
+  `ak-py/tests/test_aws_lazy_exports.py`
+- **Steps:** the cases in spec: Testing.
+- **Verify:** the spec's pytest command, then the full `uv run pytest` suite.
+
+## Iteration 9: Sync docs and skills
+
+- **Goal:** docs and skills describe threads on Lambda.
+- **Files:**
+  - `docs/docs/advanced/threads.md`: a "Threads on AWS Lambda" section (host, read routes, gateway
+    endpoints, authorizer scoping, `user_id`, both Lambdas need the `thread` block, the request
+    handler loads the agents); the deployment table near `:274` notes the queue-mode request handler
+    now gets the table.
+  - `docs/docs/deployment/aws-serverless.md`: a "Conversation threads" section beside
+    "Messaging integrations" (`:1347`), linking "Path and query parameters" (`:248`).
+  - `ak-py/src/agentkernel/skills/ak-cloud-deploy/SKILL.md`: serverless threads.
+  - `.agents/skills/ak-dev-architecture/SKILL.md`: `LambdaThreadHost` beside `LambdaWebhookHost`
+    (Messaging Integrations, Hosting); `ThreadRecorder.record_queued_reply` in the Conversation
+    Threads section and in the pipeline table's `agent_runner.py` row; `ServerlessAgentRunner` row
+    records replies; `:701` "unlike the thread wiring which is nulled in queue mode" is now wrong.
+- **No update needed (verified):** `docs/specs/*` and `docs/versioned_docs/*` (historical);
+  `ak-deployment/ak-aws/serverless` README (no thread wiring note).
+- **Verify:** `grep -rn "nulled in queue mode" .agents docs/docs ak-py/src` returns nothing; confirm
+  with `ak-dev-sync-docs-from-branch` / `ak-dev-sync-skills-from-branch` before merge.
