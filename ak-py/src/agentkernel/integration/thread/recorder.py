@@ -5,9 +5,11 @@ around a ChatService execution-core run.
 
 import json
 import logging
+from collections.abc import Mapping
 from typing import Any
 
 from ...core.model import AgentReplyAny, AgentRequest, BaseChatRequest
+from ...pipeline.envelope import ATTR_THREAD
 from .manager import ConversationThreadManager
 from .model import ThreadAttachment
 
@@ -71,6 +73,52 @@ class ThreadRecorder:
         """
         content, label = self._as_thread_message(result, media_type)
         self._manager.append_message(req.session_id, "assistant", content, media_type=label)
+
+    @classmethod
+    def record_queued_reply(cls, attributes: Mapping[str, Any], req: BaseChatRequest, status_code: int, response: Any) -> None:
+        """Append the assistant message for a request the edge already recorded. Never raises.
+
+        The other half of the split: ``pre_run`` ran at the edge, before the request was enqueued,
+        so only the reply is left, and only the agent runner has it. The ``thread`` attribute is
+        what says the edge recorded a user message for this request — without it a plain queue
+        request would grow a thread nothing asked for.
+
+        Shared by every runner that consumes such a queue (the pipeline ``AgentRunner`` and
+        ``StreamAgentRunner``, the serverless agent runner). Each calls it **after** sending the
+        reply to the output queue: recording first would duplicate the assistant message whenever
+        the send then failed and the message was redelivered; this order trades that for losing a
+        recording if the process dies in between, which is the safer direction (the caller still
+        got its answer). For the same reason a recording failure is logged and never raised: the
+        reply is already delivered, so a failing thread store must not re-run the agent.
+
+        :param attributes: The input message's attributes, carrying the ``thread`` marker.
+        :param req: The validated request body; supplies the session the thread is keyed by.
+        :param status_code: The status the run produced; a failure records nothing.
+        :param response: What the runner holds: the response body, whose ``result`` and
+            ``media_type`` are read (the label travels beside the result, and dropping it is what
+            left replayed history unlabelled, #763), or the reply itself, such as a stream's
+            accumulated text.
+        """
+        if not attributes.get(ATTR_THREAD) or status_code >= 400:
+            return
+        if isinstance(response, dict):
+            result, media_type = response.get("result"), response.get("media_type")
+        else:
+            result, media_type = response, None
+        if result in (None, ""):
+            return
+        try:
+            manager = ConversationThreadManager.get()
+            if manager is None:
+                cls._log.warning(
+                    "Input message is marked for thread recording but this process has no 'thread' "
+                    "config block: the user message was recorded at the edge and the reply is lost. "
+                    "Give the agent-runner process the same thread configuration as the API process."
+                )
+                return
+            cls(manager).post_run(req, result, media_type)
+        except Exception:
+            cls._log.exception(f"Failed to record the assistant message for session_id={req.session_id}")
 
     @staticmethod
     def _as_thread_message(result: Any, media_type: str | None = None) -> tuple[Any, str | None]:
