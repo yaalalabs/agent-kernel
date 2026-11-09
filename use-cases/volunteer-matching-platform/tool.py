@@ -78,8 +78,9 @@ def search_opportunities(
 
     Scoring is deterministic: each matching skill is worth more than each matching cause,
     and a location/remote match adds a smaller bonus on top — so a strong skill match always
-    outranks a weak one padded only by cause/location overlap. Only opportunities that match
-    at least one skill, cause, or location/remote preference are returned; an empty result
+    outranks a weak one padded only by cause/location overlap. When any skills or causes are
+    given, only opportunities overlapping at least one of them are returned (location/remote
+    fit alone is not enough); with neither given, location/remote fit decides. An empty result
     means no good match exists, which the calling agent should say plainly rather than
     presenting a weak match as if it were a good one.
 
@@ -118,6 +119,12 @@ def search_opportunities(
             score += 3
             location_matched = True
 
+        # Location/remote fit is only a tie-breaking bonus: when the user named any skills or
+        # causes, an opportunity must overlap at least one of them to count as a match.
+        # Otherwise every remote listing would "match" any profile on remote_ok alone, and the
+        # "no strong matches" path would never be reached.
+        if (normalized_skills or normalized_causes) and not (matched_skills or matched_causes):
+            continue
         if score <= 0:
             continue
 

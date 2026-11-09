@@ -47,6 +47,21 @@ def test_no_match_returns_empty_list():
     assert results == []
 
 
+def test_no_match_with_remote_ok_returns_empty_list():
+    # Regression: remote listings used to "match" any profile on remote_ok alone, so a user whose
+    # skills/causes overlap nothing still got 5 unrelated remote opportunities.
+    results = search_opportunities(
+        skills=["quantum computing"], causes=["space exploration"], location="Antarctica", remote_ok=True
+    )
+    assert results == []
+
+
+def test_remote_only_overlap_is_not_a_match():
+    results = search_opportunities(skills=["coding"], causes=[], location=None, remote_ok=True)
+    assert results
+    assert all("coding" in [s.lower() for s in r["required_skills"]] for r in results)
+
+
 def test_results_capped_at_five():
     # "no experience needed" appears on many entries — a broad query should still cap at 5.
     results = search_opportunities(skills=["no experience needed"], causes=[], location=None, remote_ok=True)
