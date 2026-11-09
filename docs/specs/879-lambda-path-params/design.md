@@ -275,6 +275,12 @@ registers its webhook. Queue mode only, `rest_sync` and `rest_async`.
 - The attachment store must be reachable by both Lambdas: the host fails at cold start with a
   multimodal store the agent runner cannot reach (`in_memory`, `session_cache`).
 
+#### Thread store
+
+- The thread store must be reachable by both Lambdas: the request handler records the user message
+  and serves the read routes, the agent runner records the reply. The host fails at cold start with
+  `thread.type: in_memory` (the default), which keeps each Lambda's threads in its own process.
+
 #### Reply recording (`ServerlessAgentRunner`)
 
 - After sending the reply to the output queue, the agent-runner Lambda records the assistant message

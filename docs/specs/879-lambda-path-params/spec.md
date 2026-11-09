@@ -303,6 +303,7 @@ Read routes:
 | 2 | `_check_deployment`: mode `rest_sync` / `rest_async`, message type `complete`, transport `sqs`, base-path env | `AKConfigError` (shared messages) |
 | 3 | `handler.read_handler.authoriser is None` | `AKConfigError`: "Lambda authorizes at the API Gateway authorizer; build ThreadRequestHandler() without an Authoriser" |
 | 4 | `multimodal.enabled` ⇒ `AttachmentStorageManager.store_is_shared()` (`core/multimodal/storage/storage_manager.py:112`) | `AKConfigError` naming `multimodal.storage_type` (the `AGUIPipelineRequestHandler` check, `integration/agui/queue_handler.py:104-110`) |
+| 5 | `thread.type` is not `in_memory` (case-insensitive; a dotted `ThreadStore` path is trusted) | `AKConfigError` naming `thread.type` and the shared backends (the `AGUIPipelineRequestHandler` `session.type` check, `integration/agui/queue_handler.py:99-103`) |
 
 Two more cold-start failures come from the pieces the host composes, not from the guard:
 
@@ -431,6 +432,7 @@ Terraform module; `LambdaWebhookHost`'s public API and messages; `ThreadRequestH
 | non-REST mode, `delta`, non-`sqs` transport, missing base-path env | guard | `AKConfigError` at cold start |
 | `ThreadRequestHandler` with an `Authoriser` | guard | `AKConfigError` at cold start |
 | unshared attachment store with multimodal on | guard | `AKConfigError` at cold start |
+| `thread.type: in_memory` | guard | `AKConfigError` at cold start |
 | no input queue URL (non-queue) | `Lambda.set_chat_enqueue_hook` | `AKConfigError` at cold start |
 | second hook | `DefaultEndpointsHandler.set_enqueue_hook` | `ValueError` at cold start |
 | missing body / `request_id` / `session_id` | `_send_to_queue`, before the hook | 500, as today |

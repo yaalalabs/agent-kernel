@@ -22,6 +22,7 @@ _LAZY_EXPORTS = {
     # serverless (Lambda)
     "APIGatewayAuthorizer": ".serverless",
     "Lambda": ".serverless",
+    "LambdaThreadHost": ".serverless.core.thread_host",
     "LambdaWebhookHost": ".serverless.core.webhook_host",
     "ResponseHandler": ".serverless",
     "ServerlessAgentRunner": ".serverless",
@@ -53,6 +54,7 @@ if TYPE_CHECKING:
         WebsocketConnectionHandler,
     )
     from .serverless.core import LambdaSQSConsumer
+    from .serverless.core.thread_host import LambdaThreadHost
     from .serverless.core.webhook_host import LambdaWebhookHost
 
 
