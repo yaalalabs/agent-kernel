@@ -148,6 +148,11 @@ Paths are relative to `ak-py/src/agentkernel/` unless they start with `ak-py/`, 
     now gets the table.
   - `docs/docs/deployment/aws-serverless.md`: a "Conversation threads" section beside
     "Messaging integrations" (`:1347`), linking "Path and query parameters" (`:248`).
+  - `docs/docs/architecture/execution-flow.md:348`: "Conversation-thread recording does not apply in
+    queue mode" is now wrong; threads work in queue mode (`ThreadRequestHandler` on the pipeline,
+    `LambdaThreadHost` on Lambda), and only there on Lambda.
+  - `docs/docs/advanced/queue-mode-guide.md:69`: the thread note names `ThreadRequestHandler` only;
+    add `LambdaThreadHost` for AWS serverless.
   - `ak-py/src/agentkernel/skills/ak-cloud-deploy/SKILL.md`: serverless threads.
   - `.agents/skills/ak-dev-architecture/SKILL.md`: `LambdaThreadHost` beside `LambdaWebhookHost`
     (Messaging Integrations, Hosting), both under `serverless/core/integration/`;
@@ -155,6 +160,6 @@ Paths are relative to `ak-py/src/agentkernel/` unless they start with `ak-py/`, 
     records replies; `:701` "unlike the thread wiring which is nulled in queue mode" is now wrong.
 - **No update needed (verified):** `docs/specs/*` and `docs/versioned_docs/*` (historical);
   `ak-deployment/ak-aws/serverless` README (no thread wiring note).
-- **Verify:** `grep -rn "nulled in queue mode" .agents docs/docs ak-py/src` returns nothing, nor does
+- **Verify:** `grep -rn "nulled in queue mode\|does not apply in queue mode" .agents docs/docs ak-py/src` returns nothing, nor does
   a grep for the hosts' old `serverless/core/` module paths; confirm
   with `ak-dev-sync-docs-from-branch` / `ak-dev-sync-skills-from-branch` before merge.
