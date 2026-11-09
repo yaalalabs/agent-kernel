@@ -206,15 +206,18 @@ class KeyValueCache(BaseModel):
     def clear(self): ...                  # application keys only; reserved keys survive
     def _set_reserved(self, key, value): ...     # core only
     def _delete_reserved(self, key): ...
-    def _clear_all(self): ...             # what Runtime's finally and Session.clear() call
+    def _clear_all(self): ...             # what Runtime's finally calls on the volatile cache
 ```
 
 - `get`, `has`, `keys`, `items` and `__contains__` are unchanged: reading a reserved key stays
   open, which is what makes `ak.paused_runs` and the published principal readable by tools.
 - `clear()` keeping reserved keys is what retires the "accepted risk" note at
   `core/paused_run.py:24-26`: an application clearing the non-volatile cache no longer discards
-  pending HITL decisions. `Runtime.run`/`stream` (`core/runtime.py:430, 537`) and
-  `Session.clear()` (`core/base.py:238-247`) switch to `_clear_all()`.
+  pending HITL decisions. `Runtime.run`/`stream` (`core/runtime.py:430, 537`) switch to
+  `_clear_all()` on the volatile cache; `Session.clear()` (`core/base.py:238-247`) calls
+  `_clear_all()` on the non-volatile cache (an explicit reset discards the conversation, pending
+  decisions included) and the application `clear()` on the volatile one, so a tool that resets
+  the session mid-run keeps the run's principal and tool filter until Runtime's `finally`.
 - `PausedRunState._write` (`core/paused_run.py:114-128`) and `clear` switch to `_set_reserved` /
   `_delete_reserved`; it is the only existing writer of a reserved key.
 
@@ -282,8 +285,8 @@ Sequence inside `async with session:` (replacing `core/runtime.py:394-430` and `
    `run` lets `PermissionError` propagate; `stream` yields one `StreamChunk(error=str(e),
    done=True)` and returns, storing nothing (the `StreamHalt` shape, `core/runtime.py:525-529`).
 4. `session._publish_run(principal, tool_filter)`; `session._record_owner(SessionOwner(
-   subject, provider, namespace))` when the principal is non-anonymous and its provider carries
-   neither the `messaging:` nor the `realtime:` prefix (Q17: shared sessions record no owner).
+   subject, provider, namespace))` when the principal is non-anonymous, a shared-channel
+   principal included (Q17 refined: its owner binds the session to the platform scope).
 5. `with agent._activate():` pre-hooks, resume validation, runner, post-hooks, store, exactly as
    today (`core/runtime.py:398-427`).
 6. `finally: session._unpublish_run(); session.get_volatile_cache()._clear_all()`.
@@ -426,8 +429,10 @@ class RequestAuthenticator:
   `principal.with_credential_ref(ref)`. `release` deletes it; `Runtime` calls it in `finally`
   for the direct path and `AgentRunner` for the queued path (section 8.4). A ref prefixed `conn:`
   is connection-scoped: the WebSocket handlers mint it at connect through `authenticate_token`
-  and delete it at disconnect, every frame's body carries it, and `release` leaves it alone
-  (design 3.1).
+  and delete it at disconnect, every frame's body carries it, and `release` leaves it alone. Its
+  TTL is the token's `exp` when present, else `inbound_ttl` renewed per frame by the handlers
+  that hold the token (pipeline and ECS gateways; the Lambda handler cannot renew); an expired
+  entry makes `CredentialBroker` raise `CredentialError` until the client reconnects (design 3.1).
 - `dependency()` returns an `async def identity_dependency(request: Request)` that sets
   `request.state.principal` and `RequestAuthenticator._current` for the request's task.
 
@@ -666,10 +671,12 @@ class AccessGate:
 - `tool_filter`: `names = agent.get_tool_names()`; `allowed = filter_tools(principal, id,
   names)`; reasons from `check_tool` for the rest; `level` from `agent_level`. One `ToolFilter`
   per run, published by `Runtime`.
-- `authorize_session`: allowed when `session.get_owner()` is `None`, either `provider` carries
-  the `messaging:` or `realtime:` prefix, or `(owner.namespace, owner.subject) ==
-  (principal.namespace, principal.subject)`; otherwise `PermissionError(f"Session '{session.id}'
-  belongs to another principal")`, for an anonymous principal as for any other non-owner.
+- `authorize_session`: allowed when `session.get_owner()` is `None`, `(owner.namespace,
+  owner.subject) == (principal.namespace, principal.subject)`, or `owner.provider.startswith(
+  Principal.SHARED_CHANNEL_PREFIXES)` and `(owner.provider, owner.namespace) == (principal.provider,
+  principal.namespace)` (Q17 refined: a shared session admits its platform scope, not one sender);
+  otherwise `PermissionError(f"Session '{session.id}' belongs to another principal")`, for an
+  anonymous principal as for any other non-owner.
 - `validate_configuration(agents)`, called from `Module.load` after registration with the loaded
   agents and from the handlers' `get_router()` with the hosted agents: an `allow`, `deny` or
   `tiers` entry naming a tool a hosted agent does not have is `AKConfigError`; a grant naming an
@@ -726,7 +733,10 @@ candidate walk; `StaticAuthorizer` subclasses it, and every later engine must.
   becomes the catalog of section 6 and takes `request`.
 - `run_multipart` (`api/handler.py:116-145`): the `user_id: Optional[str] = Form(None)` field
   (line 121) is removed; the form carries `prompt`, `agent`, `session_id`, `group_id`,
-  `thread_name`, `files`, `images`; `principal` is assigned from `request.state`.
+  `thread_name`, `files`, `images`; `principal` is assigned from `request.state`. A form still
+  carrying `user_id` is a 400 with `USER_ID_NOT_A_FIELD`: FastAPI drops an undeclared field
+  silently, so `_reject_user_id_form(request)` reads the parsed form for it (the thread and
+  pipeline multipart routes inherit the check).
 - `AuthorisedRESTRequestHandler` (`api/handler.py:39-73`): the `authoriser` constructor argument
   is removed; `_resolve_user(request) -> Principal` reads `request.state.principal` and raises
   `HTTPException(401, "Authentication required")` when it is anonymous; construction raises
@@ -914,8 +924,9 @@ candidate walk; `StaticAuthorizer` subclasses it, and every later engine must.
 - `AgentThreadRequestHandler` (`thread_chat.py:36-218`) and `ThreadRequestHandler` (`221-309`):
   `authoriser` goes; both raise `AKConfigError` at construction without an identity block (they
   compose `ThreadRESTRequestHandler`, which requires it, 8.2); `PermissionError` maps to 403 in `_run_with_recording` (138-145) and
-  `_record_user_message` (304-306) beside the `ValueError` 400; an anonymous principal on the chat
-  routes is 401 (8.2). `ThreadRESTRequestHandler` (312-384) keeps its 403 and 404 rules with the
+  `_record_user_message` (304-306) beside the `ValueError` 400; both run
+  `ChatService.reject_unprocessable` before the recorder's first write, so a `user_id` extra is a
+  400 with no thread written; an anonymous principal on the chat routes is 401 (8.2). `ThreadRESTRequestHandler` (312-384) keeps its 403 and 404 rules with the
   principal's subject in place of the resolved user (351, 368).
 
 #### 8.11 Schedules (`schedule/`)
@@ -999,7 +1010,7 @@ Shared pieces (`core/`):
 | `core/util/key_value_cache.py` | | reserved prefix | `get/has/keys/items` |
 | `core/paused_run.py` | the "accepted risk" note (24-26) | subject/provider/namespace on `PausedRun`; reserved writes | accessors' contract |
 | `core/service.py` | `acting_user_id` (162, 180) | `ensure_agent_available(name, principal)`; `principal=` | `select`, `new`, `clear`, `load`, `run` |
-| `core/chat_service.py` | `acting_user_id` (277-315); `"user_id"` in known fields (150) | `req.principal` hand-off; 403/404 mapping; `_validate` rejection; trigger skip | `_maybe_schedule`; `_reject_ambiguous`; `ResponseBuilder` |
+| `core/chat_service.py` | `acting_user_id` (277-315); `"user_id"` in known fields (150) | `req.principal` hand-off; 403/404 mapping; the `user_id` rejection in `reject_unprocessable` (the public name of `_reject_ambiguous`, which the thread and pipeline edges call before their first write); trigger skip | `_maybe_schedule`; `ResponseBuilder` |
 | `core/builder.py` | `build(name, description, skills)` | `build(descriptor)` with security schemes | `SessionStoreBuilder`, `SessionCacheBuilder` |
 | `core/__init__.py` | `ACTING_USER_CACHE_KEY` (48) | exports `Principal`, `AccessLevel`, `AgentDescriptor`, `SessionOwner`, `ToolFilter` | |
 | `api/http.py` | `add_auth_handlers`, `_auth_token_validators` (22, 208-237) | `_get_router_dependencies` always returns the identity dependency | `run` delegation rule; `build_app` mounting; `reject_unqueued_protocols` |
@@ -1237,7 +1248,8 @@ New files under `ak-py/tests/`:
 - `test_authorizer_static.py`: `AuthorizerContract` subclassed; grant normalization errors; the
   empty-grants warning; tier defaults from system tools.
 - `test_access_gate.py`: visibility rules, 403 versus 404, `tool_filter` composition, `tag:`
-  resolution, `authorize_session` (no owner, anonymous, messaging and realtime prefixes, namespace
+  resolution, `authorize_session` (no owner, anonymous refused on an owned session, a
+  shared-channel owner admitting its platform scope and refusing a REST caller, namespace
   mismatch), `validate_configuration` (unknown tool `AKConfigError`, unknown agent and tag
   warnings, `role:` without a mapper warning, the LangGraph and smolagents refusal).
 - `test_session_identity.py`: `ak.` keys refused through `set`, `delete`, `update`, `__setitem__`
@@ -1324,7 +1336,7 @@ Changed files and the exact targets that move:
   user_id is 400" cases (176-185, 182-189) become "anonymous is 401"; a non-owner appending is
   403.
 - `tests/test_api_multipart_fields.py:5-102`: `user_id` leaves `EXPECTED_FORM_FIELDS` and the
-  OpenAPI assertion.
+  OpenAPI assertion; a form carrying it is asserted a 400 with nothing captured.
 - `tests/test_serverless_request_handle.py:5-91, 147-150`: envelope `user_id` cases become
   rejection cases (`ValueError`), the SQS attribute case (134-143) stays.
 - `tests/test_ws_lambda_stream.py:8-24`: the frame drops `"user_id"`; `tests/test_akauthorizer.py`

@@ -461,7 +461,7 @@ class ChatService:
         :return: Tuple of (typed agent reply, response session id)
         :raises ValueError: If validation fails or no agent is available
         """
-        self._reject_ambiguous(req)
+        self.reject_unprocessable(req)
         scheduled = self._maybe_schedule(req)
         if scheduled is not None:
             return scheduled, req.session_id
@@ -479,7 +479,7 @@ class ChatService:
         :return: Tuple of (typed agent reply, response session id)
         :raises ValueError: If validation fails or no agent is available
         """
-        self._reject_ambiguous(req)
+        self.reject_unprocessable(req)
         scheduled = self._maybe_schedule(req)
         if scheduled is not None:
             return scheduled, req.session_id
@@ -501,7 +501,7 @@ class ChatService:
         :return: Async generator yielding raw StreamChunk objects
         :raises ValueError: If validation fails or no agent is available
         """
-        self._reject_ambiguous(req)
+        self.reject_unprocessable(req)
         scheduled = self._maybe_schedule(req)
         if scheduled is not None:
             return self._acknowledgement_stream(scheduled)
@@ -530,7 +530,7 @@ class ChatService:
         :return: Generator yielding raw StreamChunk objects
         :raises ValueError: If validation fails or no agent is available
         """
-        self._reject_ambiguous(req)
+        self.reject_unprocessable(req)
         scheduled = self._maybe_schedule(req)
         if scheduled is not None:
             return self._acknowledgement_stream_sync(scheduled)
@@ -625,12 +625,14 @@ class ChatService:
         yield StreamChunk(delta=str(ack), done=True)
 
     @staticmethod
-    def _reject_ambiguous(req: BaseChatRequest) -> None:
+    def reject_unprocessable(req: BaseChatRequest) -> None:
         """Reject a request that must not act at all, before anything acts on it.
 
         Called as the first statement of every entry point, ahead of ``_maybe_schedule`` and
         ``_record_trigger``: scheduling returns its 202 and an occurrence is recorded before
         ``_validate`` is ever reached, so a guard placed there would fire after the side effect.
+        Public because the edges that write before they call the service (the thread handlers'
+        recording, the pipeline's enqueue) run the same guard first.
 
         :param req: The chat request to check.
         :return: None

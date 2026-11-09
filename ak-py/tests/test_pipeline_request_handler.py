@@ -211,6 +211,16 @@ class TestRestAsync:
         [message] = InMemoryTransport().create_consumer(QueueName.INPUT).fetch(1, 0.5)
         assert json.loads(message.body)["resume"]["decisions"][0] == {"id": "call_1", "status": "approved"}
 
+    def test_a_user_id_in_the_body_is_refused_before_the_queue(self, monkeypatch, dummy_agent):
+        """Direct-mode parity: ChatService refuses it with a 400 before anything runs, so the edge does too."""
+        _configure(monkeypatch, mode="rest_async")
+
+        response = _client().post(CHAT, json={"prompt": "hello", "session_id": "s1", "agent": AGENT_NAME, "user_id": "u-1"})
+
+        assert response.status_code == 400
+        assert "user_id is not a request field" in response.json()["detail"]["error"]
+        assert InMemoryTransport().create_consumer(QueueName.INPUT).fetch(1, 0.1) == []
+
     def test_a_principal_sent_by_the_client_never_reaches_the_queue(self, monkeypatch, dummy_agent):
         """The principal is the surface's to assign; until the identity dependency does, the body carries none (#603)."""
         _configure(monkeypatch, mode="rest_async")
@@ -364,6 +374,15 @@ class TestMultipart:
         )
         assert response.status_code == 200
         assert response.json() == {"result": "ok:hello", "session_id": "s1"}
+
+    def test_a_user_id_form_field_is_refused_before_the_queue(self, monkeypatch, dummy_agent):
+        _configure(monkeypatch, mode="rest_async")
+
+        response = _client().post(RequestHandler.CHAT_MULTIPART_PATH, data={"prompt": "hello", "session_id": "s1", "user_id": "u-1"})
+
+        assert response.status_code == 400
+        assert "user_id is not a request field" in response.json()["detail"]["error"]
+        assert InMemoryTransport().create_consumer(QueueName.INPUT).fetch(1, 0.1) == []
 
     def test_multipart_rejects_non_image_content_type(self, monkeypatch, dummy_agent):
         _configure(monkeypatch, mode="rest_sync")

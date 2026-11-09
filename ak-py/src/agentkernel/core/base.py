@@ -253,7 +253,7 @@ class Session:
     def get_owner(self) -> SessionOwner | None:
         """
         Returns the principal this session was first used by, recorded for ownership checks.
-        :return: The SessionOwner, or None when no direct-channel principal has run here yet.
+        :return: The SessionOwner, or None when no authenticated principal has run here yet.
         """
         stored = self.get(Session.Keys.OWNER.value)
         if stored is None:
@@ -317,8 +317,10 @@ class Session:
 
     def clear(self) -> None:
         """
-        Clears all session data objects. The owner record is kept: it is identity, not
-        conversation state.
+        Clears all session data objects. Two things are kept because they are identity, not
+        conversation state: the owner record, and the run publication in the volatile cache (the
+        principal and tool filter a tool calling this mid-run still acts under; Runtime's finally
+        removes them when the run ends).
         """
         owner = self.get(Session.Keys.OWNER.value)
         self._data = {
@@ -327,7 +329,7 @@ class Session:
         }
         if owner is not None:
             self._data[Session.Keys.OWNER.value] = owner
-        self.get_volatile_cache()._clear_all()
+        self.get_volatile_cache().clear()
         self.get_non_volatile_cache()._clear_all()
 
 

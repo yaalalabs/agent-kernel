@@ -245,8 +245,9 @@ and `research/design-options.md` section 4).
   platform-asserted facts in `claims`: the Gmail adapter already fetches messages with
   `format="full"` (`integration/gmail/adapter.py:237`), so it records the
   `Authentication-Results` header there for a downstream DMARC check. The `messaging:` prefix is
-  what the ownership gate keys on (settled, Q17); no mapping to a canonical subject in this
-  change (#243 links identities on `provider`, `namespace`, `subject`).
+  what the ownership gate's platform-scope rule keys on (Q17, refined 2026-11-09); no mapping to
+  a canonical subject in this change (#243 links identities on `provider`, `namespace`,
+  `subject`).
 - AG-UI: token-derived user and no anonymous mode, as today; `_resolve_user` becomes the
   `RequestAuthenticator` over the configured provider (the `authoriser=` argument goes) and the
   run receives the `Principal` (`integration/agui/handler.py:280` passes it where it passed
@@ -257,8 +258,8 @@ and `research/design-options.md` section 4).
   provider="realtime:livekit", namespace=<the configured LiveKit API key id>)`;
   `RealtimeConnectionPool.dispatch` runs the agent check before `prepare_agent_handler`
   (`pipeline/realtime_pool.py:550`) and publishes the principal around every `execute_tool`.
-  Rooms are shared, so the `realtime:` prefix is exempt from ownership like `messaging:` (settled,
-  Q17).
+  Rooms are shared, so a `realtime:` owner admits every principal from the same provider and
+  namespace, as a `messaging:` owner does (Q17, refined 2026-11-09).
 - Resume: a HITL resume is authorized like any run (the agent check and the tool filter apply),
   and `PausedRun` gains `subject` and `provider` recorded at pause time; `Runtime._validate_resume`
   rejects a resume whose non-anonymous subject differs with `PermissionError` (403), closing the
@@ -342,8 +343,14 @@ and `research/design-options.md` section 4).
   run's `finally`. A WebSocket connection authenticates once and runs many frames, so there the
   entry is connection-scoped: the handler stores it under a ref prefixed `conn:` at connect, every
   frame's body carries that ref, `Runtime` and the runners leave a `conn:` ref alone, and the
-  handler deletes the entry at disconnect, the TTL being the backstop (the Lambda WebSocket
-  surface has no process memory between frames, which rules out re-storing per frame). In the
+  handler deletes the entry at disconnect. Its TTL is the token's `exp` when the token has one
+  (the credential is usable exactly as long as the token is; `inbound_ttl` bounds how long a
+  request-scoped credential outlives its request and does not apply); a token without `exp` gets
+  `inbound_ttl`, renewed on every frame by the handlers that still hold the token (the pipeline
+  and ECS gateways) and not renewable on Lambda, which has no process memory between frames, so
+  there such a token limits a connection to `inbound_ttl` of credential use. After expiry the
+  frames still run, and a credential-dependent tool reports `CredentialError` until the client
+  reconnects with a fresh token, the WebSocket equivalent of an expired bearer on HTTP. In the
   two-process topology the io-handler stores it and the agent-runner reads it by ref: **the token
   never rides the queue, the ref does**.
 - `CredentialStore` ABC: `put(key, value, expires_at)`, `get(key)`, `delete(key)`. Built-ins via
@@ -590,9 +597,9 @@ async def manage_ticket(ctx: ToolContext, action: str, ticket_id: str, **fields)
 | Which agents the principal may see | Catalog routes | `AccessGate.visible_agents`, narrowed by `surfaces` | Feeds REST, AG-UI, MCP `tools/list`, `/a2a/catalog` |
 | Which tools agent A offers this run | Per run, at tool-list time | `Runtime` resolves `AccessGate.tool_filter(principal, agent)` once, after `resolve_run_options` and before the framework-context load, and publishes it under `TOOL_FILTER_CACHE_KEY`; adapters apply it natively (section 7) | Visibility only; hidden tools are not a boundary |
 | May agent A invoke tool T now, for this principal | Call time | The same filter re-checked at the call through each adapter's native gate or wrapper (section 7) | A denied call returns a tool result string naming the reason (`"Tool 'apply_manifest' requires level write; the current principal has read"`), never an exception into the framework (the OKF `write_kb` behaviour, `knowledgebase/okf/tools.py:150-152`); a failure inside the gate itself denies |
-| May the principal continue session S | `Runtime.run` / `stream`, after the agent check; the thread path at `ConversationThreadManager.get_or_create_thread` | `AccessGate.authorize_session(principal, session)`: allowed when the gate is absent, the session has no owner, the owner's namespace and subject equal the principal's, or either side's `provider` carries the `messaging:` or `realtime:` prefix (settled, Q17); otherwise `PermissionError`, an anonymous caller included: an owned session was opened by an authenticated principal, and knowing its id is not a credential, whatever the agent grant says. The thread path compares the existing `Thread.user_id` with the principal before any write (`integration/thread/manager.py:109-115` checks nothing today) | Closes session continuation by anyone who knows a `session_id`; 403 at the choke point, and before a thread message is written on the thread path |
+| May the principal continue session S | `Runtime.run` / `stream`, after the agent check; the thread path at `ConversationThreadManager.get_or_create_thread` | `AccessGate.authorize_session(principal, session)`: allowed when the gate is absent, the session has no owner, the owner's namespace and subject equal the principal's, or the owner is a shared-channel principal (`messaging:` or `realtime:`) and the principal has the same `provider` and `namespace` (Q17, refined 2026-11-09: a shared session is bound to its platform scope rather than to one sender, so another member of the Slack workspace continues it and a REST caller who learned the conversation's session id cannot); otherwise `PermissionError`, an anonymous caller included: an owned session was opened by an authenticated principal, and knowing its id is not a credential, whatever the agent grant says. The thread path compares the existing `Thread.user_id` with the principal before any write (`integration/thread/manager.py:109-115` checks nothing today) | Closes session continuation by anyone who knows a `session_id`; 403 at the choke point, and before a thread message is written on the thread path |
 | May the principal resume paused run R | `Runtime._validate_resume` (`core/runtime.py:273-332`) | Compares the recorded `PausedRun.subject` with the principal; a differing non-anonymous subject is `PermissionError` | Today no check exists; the HITL design deferred approver identity |
-| Threads, schedules, sandbox principal | Existing checks | Unchanged ownership rules; any level creates a thread or a schedule, and a schedule is re-checked at fire time (settled, Q13); `AgentPrincipalResolver` reads `ToolContext.principal` so `sandbox.identity.mode: user` works with the run principal and no custom resolver | Absorbing ownership checks into the authorizer is round 2 |
+| Threads, schedules, sandbox principal | Existing checks | Unchanged ownership rules; any level creates a thread or a schedule, and a schedule is re-checked at fire time (settled, Q13); `AgentPrincipalResolver` reads `ToolContext.principal` so `sandbox.identity.mode: user` works with the run principal and no custom resolver | Absorbing ownership checks into the authorizer is round 2, as is re-keying the thread and schedule records on namespace and subject: their read, amend and cancel paths stay keyed on the subject, which is unique within the one identity provider a deployment's direct surfaces run (the fire-time match and the session owner already compare the namespace) |
 
 - HTTP mapping: `PermissionError` to 403 is added beside the `ValueError` to 400 branches in the
   `ChatService` presentation wrappers (`core/chat_service.py:690-695, 708-713`) and in every
@@ -885,10 +892,13 @@ graph TD
 - Q15 (settled 2026-11-05). Catalog entries hide tools above the caller's level (section 4).
 - Q16 (settled 2026-11-05). Static provider credentials come only through the `secret`
   capability, never as literals in YAML; the `env` default serves the dev loop.
-- Q17 (settled 2026-11-05). Messaging principals carry `provider="messaging:<platform>"` and
-  realtime principals `provider="realtime:<gateway>"`; the ownership gate skips enforcement when
-  either the owner or the current principal carries one of those prefixes, so no platform list
-  leaks into the gate.
+- Q17 (settled 2026-11-05, refined 2026-11-09). Messaging principals carry
+  `provider="messaging:<platform>"` and realtime principals `provider="realtime:<gateway>"`; a
+  shared-channel principal is recorded as the session's owner like any other, and the ownership
+  gate admits a principal with the owner's `provider` and `namespace` when the owner carries one
+  of those prefixes, so no platform list leaks into the gate. The 2026-11-05 form (no owner for
+  shared sessions, the prefix exempt on either side) let any caller with agent access continue a
+  platform conversation by its session id, which review found.
 - Q18 (settled 2026-11-05). An `agents` entry accepts `tag:<name>`, resolved through the registry
   against `AgentDescriptor.tags`; a tag no descriptor carries matches nothing and warns once at
   validation.

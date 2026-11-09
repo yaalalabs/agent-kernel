@@ -212,6 +212,17 @@ class TestEdgeRecording:
         assert manager.get_thread("s1") is None
         assert not InMemoryTransport().create_consumer(QueueName.INPUT).fetch(10, 0.1)
 
+    def test_a_user_id_is_refused_before_any_thread_write(self, monkeypatch, dummy_agent):
+        """The runner would refuse it with a stored 400; by then the user message would already be in the thread."""
+        manager = _configure(monkeypatch, mode="rest_async")
+
+        response = _client().post(CHAT, json={"prompt": "hello", "session_id": "s1", "agent": AGENT_NAME, "user_id": "u-1"})
+
+        assert response.status_code == 400
+        assert "user_id is not a request field" in response.json()["detail"]["error"]
+        assert manager.get_thread("s1") is None
+        assert not InMemoryTransport().create_consumer(QueueName.INPUT).fetch(10, 0.1)
+
     def test_an_unavailable_agent_leaves_no_phantom_thread(self, monkeypatch, dummy_agent):
         manager = _configure(monkeypatch, mode="rest_async")
 

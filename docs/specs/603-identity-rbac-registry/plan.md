@@ -136,10 +136,12 @@ iteration 18 and `credentials` lands in iteration 25, both additive).
 - **Steps:**
   1. Remove `BaseChatRequest.user_id`; `from_payload` drops the envelope propagation, raises
      `ValueError` on a `user_id` key and drops a `principal` key from a client payload (spec 2).
-  2. `ChatService._reject_ambiguous` rejects the `user_id` extra ahead of scheduling and trigger
-     recording; `known_fields` drops `user_id`; `_record_trigger` forwards `req.principal`; the
-     presentation wrappers map `PermissionError` to 403 (pulled forward from 19, so a schedule
-     block without a principal is a 403 and not a 500 in the meantime) (spec 8.1).
+  2. `ChatService.reject_unprocessable` (the public name of `_reject_ambiguous`) rejects the
+     `user_id` extra ahead of scheduling and trigger recording, and the thread and pipeline
+     edges run it before their first write or enqueue; `known_fields` drops `user_id`;
+     `_record_trigger` forwards `req.principal`; the presentation wrappers map `PermissionError`
+     to 403 (pulled forward from 19, so a schedule block without a principal is a 403 and not a
+     500 in the meantime) (spec 8.1).
   3. `ScheduledTask.principal`; `ScheduleManager.create(principal, ...)` with the anonymous
      `PermissionError`, storing the owner without the creating run's actor or credential handle;
      `create_from_request`; `_build_trigger_body` carrying `principal`;
@@ -157,8 +159,10 @@ iteration 18 and `credentials` lands in iteration 25, both additive).
      client sends is overwritten (spec 8.2, 8.3); the REST route maps `PermissionError` to 403
      on its SSE branch; the Lambda REST router maps `ValueError` to 400; the AG-UI `_events`
      loses its unused `user_id` parameter.
-  6. The six constructor sites stop passing `user_id=` (the multipart form fields go with it);
-     each gets its principal in phase B. The three queue runners' body fallback for the routing
+  6. The six constructor sites stop passing `user_id=` (the multipart form fields go with it,
+     and a form still carrying one is a 400 through `_reject_user_id_form`); each gets its
+     principal in phase B. `Runtime` records a shared-channel principal as the owner too (Q17
+     refined); `Session.clear()` keeps the run publication. The three queue runners' body fallback for the routing
      attribute reads `Principal.subject_of(body.principal)` (spec 8.3).
 - **Verify:** `grep -rn "\.user_id\|\"user_id\"" ak-py/src/agentkernel` shows only
   `InboundRequest.user_id`, `Thread.user_id`, `ScheduledTask.user_id`, the WebSocket routing

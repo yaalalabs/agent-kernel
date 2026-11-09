@@ -99,6 +99,10 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
         files: list[UploadFile] | None = File(None),
         images: list[UploadFile] | None = File(None),
     ):
+        try:
+            await self._reject_user_id_form(request)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
         req = AgentRESTRequestHandler.BaseMultimodalRunRequest(
             prompt=prompt,
             agent=agent,
@@ -206,9 +210,13 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
         """Validate the request envelope before any thread write.
 
         :param req: The chat request to validate
-        :raises ValueError: If session_id is missing, or the request carries neither a prompt nor
-            a resume block
+        :raises ValueError: If the service would refuse the request outright (a ``user_id`` extra,
+            a schedule beside a resume), session_id is missing, or the request carries neither a
+            prompt nor a resume block
         """
+        # The service's own first guard, run here first: a 400 raised after the recorder has
+        # written would leave a thread holding a user message no reply ever answers.
+        ChatService.reject_unprocessable(req)
         if not req.session_id:
             raise ValueError("No session_id is provided in the request")
         if not req.prompt and req.resume is None:
@@ -288,6 +296,7 @@ class ThreadRequestHandler(RequestHandler):
             raise HTTPException(status_code=400, detail={"error": "No session_id is provided in the request"})
         if not body.prompt and body.resume is None:
             raise HTTPException(status_code=400, detail={"error": "No prompt provided in the request", "session_id": body.session_id})
+        self._reject_unprocessable(body)
         self._reject_unroutable(body)
         if body.schedule is None:
             await self._record_user_message(body)

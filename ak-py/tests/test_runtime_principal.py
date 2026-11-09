@@ -3,7 +3,7 @@ Runtime's identity publication (spec `docs/specs/603-identity-rbac-registry/`, i
 
 Every run has a principal, anonymous when the surface established none, and Runtime is the one
 place that publishes it: into the session for the duration of the run, with the agent as its
-actor, and as the session's owner the first time a direct-channel principal runs. A resume is
+actor, and as the session's owner the first time a non-anonymous principal runs. A resume is
 checked against the principal that paused. The access gate's cases (levels, tool filters, session
 ownership enforcement) arrive with the gate in a later iteration; here the tool filter is always
 absent.
@@ -204,10 +204,12 @@ class TestOwner:
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("provider", ["messaging:slack", "realtime:livekit"])
-    async def test_a_shared_channel_records_no_owner(self, runtime, agent, provider):
+    async def test_a_shared_channel_principal_is_recorded_as_the_owner(self, runtime, agent, provider):
+        """The owner of a shared-channel session binds it to its platform scope: the gate admits any
+        principal from the same provider and namespace, and nobody who merely learned the id."""
         session = runtime.sessions().new("s1")
         await _run(runtime, agent, session, principal=Principal(subject="U1", provider=provider, namespace="T1"))
-        assert session.get_owner() is None
+        assert session.get_owner() == SessionOwner(subject="U1", provider=provider, namespace="T1")
 
     @pytest.mark.asyncio
     async def test_the_first_owner_is_kept(self, runtime, agent):

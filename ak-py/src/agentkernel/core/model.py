@@ -417,7 +417,9 @@ class Principal(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     # Provider prefixes of the edge adapters whose sessions are the platform's own conversations,
-    # shared by everyone in them: such a principal never becomes a session's owner.
+    # shared by everyone in them: the owner such a principal records binds the session to its
+    # platform scope, and the ownership gate admits any principal from the same provider and
+    # namespace rather than that one sender.
     SHARED_CHANNEL_PREFIXES: ClassVar[tuple[str, ...]] = ("messaging:", "realtime:")
 
     # The stable identifier the provider resolved: an OIDC ``sub``, a static-provider subject, a
@@ -471,7 +473,7 @@ class Principal(BaseModel):
 
     @property
     def is_shared_channel(self) -> bool:
-        """Whether the principal arrived through a messaging or realtime edge, whose sessions record no owner."""
+        """Whether the principal arrived through a messaging or realtime edge, whose sessions any principal of the same platform scope may continue."""
         return self.provider.startswith(self.SHARED_CHANNEL_PREFIXES)
 
     @classmethod

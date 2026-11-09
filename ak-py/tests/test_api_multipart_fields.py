@@ -101,14 +101,16 @@ def test_multipart_optional_fields_default_to_none(captured_requests):
     assert (req.group_id, req.thread_name) == (None, None)
 
 
-def test_multipart_has_no_user_id_field(captured_requests):
-    """A ``user_id`` form field is not part of the endpoint: FastAPI drops it and nothing reads it."""
+def test_a_user_id_form_field_is_refused(captured_requests):
+    """``user_id`` is not a form field either: FastAPI would drop an undeclared field silently, so the
+    route reads the raw form and refuses it with the same 400 a JSON body gets."""
     client, captured = captured_requests
 
     response = client.post(AgentRESTRequestHandler.CHAT_MULTIPART_PATH, data={"prompt": "hello", "user_id": "u-1"})
 
-    assert response.status_code == 200
-    assert "user_id" not in captured[0].model_dump()
+    assert response.status_code == 400
+    assert response.json()["detail"] == "user_id is not a request field; the acting user comes from the credential"
+    assert captured == []
 
 
 class TestPrincipalComesFromTheSurface:

@@ -129,6 +129,21 @@ class TestSessionPublication:
         assert session.get_non_volatile_cache().get("ak.principal") is None
         assert "ak.principal" not in dict(session.get_all(volatile=False))
 
+    def test_a_run_publication_survives_session_clear(self):
+        """A tool that resets the conversation mid-run must not strip the run of its identity: the
+        publication is run state, cleared by Runtime's finally, not conversation state."""
+        session = Session("s1")
+        session._publish_run(_principal(), ToolFilter(level=AccessLevel.WRITE, allowed=["search"]))
+        session.get_volatile_cache().set("app-key", 1)
+        session.set("openai", {"messages": []})
+
+        session.clear()
+
+        assert session.get_principal() == _principal()
+        assert session.get_tool_filter() is not None and session.get_tool_filter().level is AccessLevel.WRITE
+        assert session.get_volatile_cache().get("app-key") is None
+        assert session.get("openai") is None
+
     def test_an_application_cannot_forge_or_remove_the_principal(self):
         session = Session("s1")
         session._publish_run(_principal(), None)

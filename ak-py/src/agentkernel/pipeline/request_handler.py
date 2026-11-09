@@ -11,6 +11,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from ..api.handler import AgentRESTRequestHandler
+from ..core.chat_service import ChatService
 from ..core.config import AKConfig
 from ..core.model import BaseRunRequest, ExecutionMode, FileData, ImageData
 from .envelope import ATTR_PROTOCOL
@@ -240,6 +241,11 @@ class RestHandler(AgentRESTRequestHandler):
                 raise HTTPException(status_code=400, detail="session_id is required")
             if not body.prompt and body.resume is None:
                 raise HTTPException(status_code=400, detail="prompt is required")
+            try:
+                # What the runner's ChatService would refuse on arrival is refused here, before the queue.
+                ChatService.reject_unprocessable(body)
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
 
             # Unique request_id, distinct from session_id.
             request_id = str(uuid.uuid4())
@@ -382,11 +388,27 @@ class RequestHandler(RestHandler):
             raise HTTPException(status_code=400, detail={"error": "No session_id is provided in the request"})
         if not body.prompt and body.resume is None:
             raise HTTPException(status_code=400, detail={"error": "No prompt provided in the request", "session_id": body.session_id})
-
+        self._reject_unprocessable(body)
         self._reject_unroutable(body)
         if self._config.execution.is_sse:
             return await self._run_chat_stream(body)
         return await self.enqueue_and_wait(body, request)
+
+    @staticmethod
+    def _reject_unprocessable(body: BaseRunRequest) -> None:
+        """Run the service's first guard at the edge, in the direct-mode error shape.
+
+        A request the runner's ChatService would refuse on arrival (a ``user_id`` extra, a schedule
+        beside a resume) is refused before it is recorded or enqueued, so the refusal costs no
+        queue trip and leaves no thread write behind.
+
+        :param body: The chat request.
+        :raises HTTPException: 400 with the service's message.
+        """
+        try:
+            ChatService.reject_unprocessable(body)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail={"error": str(e), "session_id": body.session_id})
 
     def _reject_unroutable(self, body: BaseRunRequest) -> None:
         """Reject a request this topology cannot answer on this route, before anything is written.
@@ -492,6 +514,7 @@ class RequestHandler(RestHandler):
     ):
         """POST /api/v1/chat-multipart: uploads become base64 FileData/ImageData and flow as JSON."""
         try:
+            await self._reject_user_id_form(request)
             file_data = [
                 FileData(file_data=await self._read_upload(upload), name=upload.filename or "unknown", mime_type=upload.content_type)
                 for upload in files or []

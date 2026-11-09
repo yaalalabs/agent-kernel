@@ -8,7 +8,7 @@ from pydantic import ConfigDict
 from ..auth.authoriser import Authoriser
 from ..core import Config
 from ..core.chat_service import ChatService
-from ..core.model import BaseChatRequest, BaseRunRequest
+from ..core.model import USER_ID_NOT_A_FIELD, BaseChatRequest, BaseRunRequest
 from ..core.runtime import Runtime
 
 
@@ -118,6 +118,20 @@ class AgentRESTRequestHandler(RESTRequestHandler):
                 raise HTTPException(status_code=500, detail=f"Streaming failed: {str(e)}")
         return await self.chat_service.process_async_chat_request(req=body)
 
+    @staticmethod
+    async def _reject_user_id_form(request: Request) -> None:
+        """Refuse a multipart form carrying ``user_id``, as a JSON body carrying it is refused.
+
+        FastAPI drops a form field the route does not declare, so without reading the raw form a
+        client sending the old field would get a 200 and silently act as nobody. The form is
+        already parsed and cached on the request, so this costs no second read.
+
+        :param request: The incoming request.
+        :raises ValueError: If the form carries ``user_id``.
+        """
+        if "user_id" in await request.form():
+            raise ValueError(USER_ID_NOT_A_FIELD)
+
     async def run_multipart(
         self,
         request: Request,
@@ -129,6 +143,10 @@ class AgentRESTRequestHandler(RESTRequestHandler):
         files: list[UploadFile] | None = File(None),
         images: list[UploadFile] | None = File(None),
     ):
+        try:
+            await self._reject_user_id_form(request)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
         req = AgentRESTRequestHandler.BaseMultimodalRunRequest(
             prompt=prompt,
             agent=agent,

@@ -313,6 +313,32 @@ class TestEndToEnd:
         assert "authenticated principal" in resp.json()["detail"]["error"]
         assert client.get("/api/v1/threads/s-forged").status_code == 404
 
+    def test_a_user_id_in_the_body_is_refused_before_any_thread_write(self, thread_enabled, registered_agent):
+        """The refusal has to run before the recorder: a 400 after it would leave an unanswered user turn."""
+        app = FastAPI()
+        app.include_router(_AuthenticatedThreadHandler().get_router())
+        client = TestClient(app)
+
+        resp = client.post("/api/v1/chat", json={"prompt": "hello", "session_id": "s-uid", "agent": registered_agent.name, "user_id": "u-1"})
+
+        assert resp.status_code == 400
+        assert "user_id is not a request field" in resp.json()["detail"]["error"]
+        assert client.get("/api/v1/threads/s-uid").status_code == 404
+
+    def test_a_user_id_form_field_is_refused_before_any_thread_write(self, thread_enabled, registered_agent):
+        """FastAPI drops a form field the route does not declare; the route reads the raw form so the refusal still fires."""
+        app = FastAPI()
+        app.include_router(_AuthenticatedThreadHandler().get_router())
+        client = TestClient(app)
+
+        resp = client.post(
+            "/api/v1/chat-multipart", data={"prompt": "hello", "session_id": "s-uid-form", "agent": registered_agent.name, "user_id": "u-1"}
+        )
+
+        assert resp.status_code == 400
+        assert "user_id is not a request field" in resp.json()["detail"]
+        assert client.get("/api/v1/threads/s-uid-form").status_code == 404
+
     def test_chat_records_and_reads_back_through_the_api(self, thread_enabled, registered_agent):
         handler = _AuthenticatedThreadHandler()
         app = FastAPI()

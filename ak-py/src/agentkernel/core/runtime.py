@@ -356,7 +356,10 @@ class Runtime:
         actor = Principal(kind="agent", subject=agent.name, provider=AGENT_PRINCIPAL_PROVIDER)
         principal = (principal or Principal.anonymous()).with_actor(actor)
         session._publish_run(principal, None)
-        if not principal.is_anonymous and not principal.is_shared_channel:
+        if not principal.is_anonymous:
+            # A shared-channel principal is recorded too: its owner binds the session to the
+            # platform scope (the gate admits any principal from the same provider and namespace),
+            # so a caller who learned a Slack conversation's session id cannot continue it.
             session._record_owner(SessionOwner(subject=principal.subject, provider=principal.provider, namespace=principal.namespace))
         return principal
 
@@ -418,7 +421,7 @@ class Runtime:
                         AgentRequestAny is handled only by pre-hooks, not by the agent itself
         :param principal: The principal the surface authenticated, or None for an anonymous run. Published through
                         Session.get_principal() for the duration of the run, with the agent as its actor, and recorded
-                        as the session's owner the first time a direct-channel principal runs here.
+                        as the session's owner the first time an authenticated principal runs here.
         :return: The result of the agent's execution.
         :raises PermissionError: If a resume answers a run paused by another principal.
         """
