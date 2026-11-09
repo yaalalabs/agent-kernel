@@ -185,9 +185,9 @@ def test_llm_model_is_lazily_created_and_cached(monkeypatch, evaluator):
     created = []
 
     class _FakeLiteLLMModel:
-        def __init__(self, model_name):
+        def __init__(self, model_name, **kwargs):
             self.model_name = model_name
-            created.append(model_name)
+            created.append((model_name, kwargs))
 
     monkeypatch.setattr(ak_deepeval_module, "LiteLLMModel", _FakeLiteLLMModel)
     assert created == []  # never constructed by __init__
@@ -196,4 +196,4 @@ def test_llm_model_is_lazily_created_and_cached(monkeypatch, evaluator):
     evaluator.evaluate_by_llm(case)
     evaluator.evaluate_by_llm(case)
 
-    assert created == ["openai/gpt-4o-mini"]  # constructed once, then cached
+    assert created == [("openai/gpt-6-luna", {"generation_kwargs": {"extra_body": {"reasoning_effort": "none"}}})]  # constructed once, then cached

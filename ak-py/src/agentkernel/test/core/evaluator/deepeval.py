@@ -36,7 +36,9 @@ class DeepevalAKEvaluator(AKEvaluator):
     def _llm_model(self) -> LiteLLMModel:
         if self._model is None:
             llm = self._config.llm
-            self._model = LiteLLMModel(f"{llm.provider}/{llm.model}")
+            # DeepEval sends temperature and requests logprobs for GEval.
+            params = {"extra_body": {"reasoning_effort": "none"}} if llm.provider == "openai" and llm.model == "gpt-6-luna" else {}
+            self._model = LiteLLMModel(f"{llm.provider}/{llm.model}", generation_kwargs=params)
         return self._model
 
     def evaluate_by_score(self, case: AKEvaluationCase) -> AKEvaluationResult:

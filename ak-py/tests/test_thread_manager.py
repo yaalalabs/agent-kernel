@@ -292,7 +292,10 @@ class TestLLMThreadNaming:
         assert thread.name == "Paris Trip Planning"
         assert thread.name_locked is False
         completion.assert_called_once()
-        assert completion.call_args.kwargs["model"] == "gpt-4o-mini"
+        assert completion.call_args.kwargs["model"] == "gpt-6-luna"
+        assert completion.call_args.kwargs["extra_body"]["reasoning_effort"] == "none"
+        assert completion.call_args.kwargs["max_completion_tokens"] == 50
+        assert "max_tokens" not in completion.call_args.kwargs
 
     def test_llm_naming_model_config_honored(self, thread_enabled_llm):
         AKConfig.get().thread.naming.model = "gpt-4o"
@@ -366,7 +369,7 @@ class TestLLMThreadNaming:
 
     def test_naming_config_defaults(self):
         config = _ThreadNamingConfig()
-        assert config.model == "gpt-4o-mini"
+        assert config.model == "gpt-6-luna"
         assert config.max_length == 80
 
     def test_missing_litellm_warns_at_construction(self, caplog):

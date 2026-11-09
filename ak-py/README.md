@@ -527,7 +527,7 @@ mode additionally require `multimodal.enabled: true` with a shared attachment st
 - **Naming Model**
   - **Field**: `thread.naming.model`
   - **Type**: string
-  - **Default**: `gpt-4o-mini`
+  - **Default**: `gpt-6-luna`
   - **Description**: LiteLLM model used to generate thread names (requires the `thread` extra — `uv add "agentkernel[thread]"` — and an API key in the environment; falls back to a truncated prompt prefix otherwise)
   - **Environment Variable**: `AK_THREAD__NAMING__MODEL`
 
@@ -1338,7 +1338,7 @@ Configure test comparison modes for automated testing. Test configuration is sep
 
 - **Llm Model**
   - **Field**: `llm.model`
-  - **Default**: `gpt-4o-mini`
+  - **Default**: `gpt-6-luna`
   - **Description**: LLM model for llm evaluation
   - **Environment Variable**: `AK_TEST__LLM__MODEL`
 
@@ -1395,7 +1395,7 @@ Configure input and output guardrails to validate agent requests and responses f
 
   - **Model**
     - **Field**: `guardrail.input.model`
-    - **Default**: `gpt-4o-mini`
+    - **Default**: `gpt-6-luna`
     - **Description**: LLM model to use for guardrail validation (OpenAI only)
     - **Environment Variable**: `AK_GUARDRAIL__INPUT__MODEL`
 
@@ -1433,7 +1433,7 @@ Configure input and output guardrails to validate agent requests and responses f
 
   - **Model**
     - **Field**: `guardrail.output.model`
-    - **Default**: `gpt-4o-mini`
+    - **Default**: `gpt-6-luna`
     - **Description**: LLM model to use for guardrail validation (OpenAI only)
     - **Environment Variable**: `AK_GUARDRAIL__OUTPUT__MODEL`
 

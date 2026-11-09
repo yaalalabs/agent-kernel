@@ -8,6 +8,7 @@ import os
 os.environ.setdefault("OPIK_TRACK_DISABLE", "True")
 
 from opik.evaluation.metrics import GEval, LevenshteinRatio
+from opik.evaluation.models import LiteLLMChatModel
 
 from agentkernel.test.config import AKTestConfig
 
@@ -35,12 +36,17 @@ _DEFAULT_EVALUATION_CRITERIA = (
 class OpikAKEvaluator(AKEvaluator):
     def __init__(self, config: AKTestConfig) -> None:
         super().__init__(config)
-        self._model: str | None = None  # lazy: score mode never needs it
+        self._model: str | LiteLLMChatModel | None = None  # lazy: score mode never needs it
 
-    def _llm_model(self) -> str:
+    def _llm_model(self) -> str | LiteLLMChatModel:
         if self._model is None:
             llm = self._config.llm
-            self._model = f"{llm.provider}/{llm.model}"
+            model = f"{llm.provider}/{llm.model}"
+            # Opik sends temperature/logprobs; extra_body bypasses stale LiteLLM model metadata.
+            if model == "openai/gpt-6-luna":
+                self._model = LiteLLMChatModel(model_name=model, track=False, temperature=0.0, extra_body={"reasoning_effort": "none"})
+            else:
+                self._model = model
         return self._model
 
     def evaluate_by_score(self, case: AKEvaluationCase) -> AKEvaluationResult:

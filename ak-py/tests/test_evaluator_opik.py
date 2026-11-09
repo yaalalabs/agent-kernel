@@ -135,7 +135,8 @@ def test_evaluate_by_llm_success(evaluator):
     (fake,) = _FakeGEval.instances
     assert fake.kwargs["evaluation_criteria"] == _DEFAULT_EVALUATION_CRITERIA
     assert fake.kwargs["track"] is False
-    assert fake.kwargs["model"] == "openai/gpt-4o-mini"
+    assert fake.kwargs["model"].model_name == "openai/gpt-6-luna"
+    assert fake.kwargs["model"]._completion_kwargs["extra_body"]["reasoning_effort"] == "none"
     # Regression: the judge must see the question and expected output packed into `output`, since
     # opik's GEval.score() takes only that one string.
     assert "capital of France?" in fake.output
@@ -180,5 +181,5 @@ def test_llm_model_is_lazily_created_and_cached(evaluator):
     evaluator.evaluate_by_llm(case)
     evaluator.evaluate_by_llm(case)
 
-    assert evaluator._model == "openai/gpt-4o-mini"
-    assert [f.kwargs["model"] for f in _FakeGEval.instances] == ["openai/gpt-4o-mini", "openai/gpt-4o-mini"]
+    assert evaluator._model.model_name == "openai/gpt-6-luna"
+    assert all(f.kwargs["model"] is evaluator._model for f in _FakeGEval.instances)

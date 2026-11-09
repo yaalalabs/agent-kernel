@@ -619,7 +619,7 @@ export AK_TEST__MODE=fallback  # Options: 'score', 'llm', 'fallback' (default: '
 export AK_TEST__EVALUATOR=deepeval  # default: 'deepeval'
 
 # Llm configuration (for LLM-based evaluation)
-export AK_TEST__LLM__MODEL=gpt-4o-mini  # LLM model (default: gpt-4o-mini)
+export AK_TEST__LLM__MODEL=gpt-6-luna  # LLM model (default: gpt-6-luna)
 export AK_TEST__LLM__PROVIDER=openai  # LLM provider (default: openai)
 export AK_TEST__LLM__EMBEDDING_MODEL=text-embedding-3-small  # Embedding model (default: text-embedding-3-small)
 ```
@@ -709,7 +709,7 @@ export AK_GUARDRAIL__INPUT__TYPE=openai  # Options: 'openai', 'bedrock', 'walled
 export AK_GUARDRAIL__INPUT__PII=true  # WalledAI only (default: true)
 
 # OpenAI-specific input guardrail configuration
-export AK_GUARDRAIL__INPUT__MODEL=gpt-4o-mini  # LLM model for validation (default: gpt-4o-mini)
+export AK_GUARDRAIL__INPUT__MODEL=gpt-6-luna  # LLM model for validation (default: gpt-6-luna)
 export AK_GUARDRAIL__INPUT__CONFIG_PATH=/path/to/guardrails_input.json  # Path to guardrail config file
 
 # Bedrock-specific input guardrail configuration
@@ -725,7 +725,7 @@ export AK_GUARDRAIL__OUTPUT__TYPE=openai  # Options: 'openai', 'bedrock', 'walle
 export AK_GUARDRAIL__OUTPUT__PII=true  # WalledAI only (default: true)
 
 # OpenAI-specific output guardrail configuration
-export AK_GUARDRAIL__OUTPUT__MODEL=gpt-4o-mini  # LLM model for validation (default: gpt-4o-mini)
+export AK_GUARDRAIL__OUTPUT__MODEL=gpt-6-luna  # LLM model for validation (default: gpt-6-luna)
 export AK_GUARDRAIL__OUTPUT__CONFIG_PATH=/path/to/guardrails_output.json  # Path to guardrail config file
 
 # Bedrock-specific output guardrail configuration
@@ -817,7 +817,7 @@ Create `test-config.yaml` in the directory you run your tests from:
 mode: fallback  # Test comparison mode: score, llm, or fallback (default: fallback)
 evaluator: deepeval  # Built-in evaluator short name, or a dotted path to your own AKEvaluator subclass (default: deepeval)
 llm:
-  model: gpt-4o-mini  # LLM model for llm evaluation (default: gpt-4o-mini)
+  model: gpt-6-luna  # LLM model for llm evaluation (default: gpt-6-luna)
   provider: openai  # LLM provider for llm evaluation (default: openai)
   embedding_model: text-embedding-3-small  # Embedding model, unconsumed by any built-in v1 metric (default: text-embedding-3-small)
 ```
@@ -853,7 +853,7 @@ export AK_TEST__MODE=fallback  # Options: 'score', 'llm', 'fallback' (default: '
 export AK_TEST__EVALUATOR=deepeval  # Built-in short name, or a dotted path (default: 'deepeval')
 
 # Llm configuration (for LLM-based evaluation)
-export AK_TEST__LLM__MODEL=gpt-4o-mini  # LLM model (default: gpt-4o-mini)
+export AK_TEST__LLM__MODEL=gpt-6-luna  # LLM model (default: gpt-6-luna)
 export AK_TEST__LLM__PROVIDER=openai  # LLM provider (default: openai)
 export AK_TEST__LLM__EMBEDDING_MODEL=text-embedding-3-small  # Embedding model (default: text-embedding-3-small)
 ```

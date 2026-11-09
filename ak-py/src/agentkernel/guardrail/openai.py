@@ -95,15 +95,17 @@ class OpenAIInputGuardrail(BaseGuardrailUtil, BaseOpenAIGuardrail, InputGuardrai
             if not input_text:
                 return requests
 
+            model = AKConfig.get().guardrail.input.model
             # Validate input using guardrails
             try:
                 # Check input against configured guardrails
                 # Run the synchronous guardrails client in executor to avoid blocking event loop
                 await asyncio.to_thread(
                     self._guardrails_client.chat.completions.create,
-                    model=AKConfig.get().guardrail.input.model,
+                    model=model,
                     messages=[{"role": "user", "content": input_text}],
-                    max_tokens=1,  # We only need to check, not generate
+                    # We only need to check, not spend the one-token budget on reasoning.
+                    **({"max_completion_tokens": 1, "reasoning_effort": "none"} if model == "gpt-6-luna" else {"max_tokens": 1}),
                 )
                 # If we get here, no guardrail was triggered
                 log.debug("Input passed guardrail validation")
@@ -177,18 +179,20 @@ class OpenAIOutputGuardrail(BaseGuardrailUtil, BaseOpenAIGuardrail, OutputGuardr
             if not output_text:
                 return agent_reply
 
+            model = AKConfig.get().guardrail.output.model
             # Validate output using guardrails
             try:
                 # Check output against configured guardrails
                 # Run the synchronous guardrails client in executor to avoid blocking event loop
                 await asyncio.to_thread(
                     self._guardrails_client.chat.completions.create,
-                    model=AKConfig.get().guardrail.output.model,  # Model for guardrail checks
+                    model=model,
                     messages=[
                         {"role": "user", "content": agent_reply.prompt if hasattr(agent_reply, "prompt") else ""},
                         {"role": "assistant", "content": output_text},
                     ],
-                    max_tokens=1,  # We only need to check, not generate
+                    # We only need to check, not spend the one-token budget on reasoning.
+                    **({"max_completion_tokens": 1, "reasoning_effort": "none"} if model == "gpt-6-luna" else {"max_tokens": 1}),
                 )
                 # If we get here, no guardrail was triggered
                 log.debug("Output passed guardrail validation")

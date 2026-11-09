@@ -66,6 +66,7 @@ class MultimodalPreHook(PreHook):
 
             config = AKConfig.get()
             model_name = config.multimodal.description_model
+            # Keep the short description budget available for output rather than reasoning.
 
             if mime_type.startswith("image/"):
                 # Use Vision model for images via LiteLLM
@@ -84,7 +85,11 @@ class MultimodalPreHook(PreHook):
                             ],
                         }
                     ],
-                    max_tokens=50,
+                    **(
+                        {"max_completion_tokens": 50, "extra_body": {"reasoning_effort": "none"}}
+                        if model_name in ("gpt-6-luna", "openai/gpt-6-luna")
+                        else {"max_tokens": 50}
+                    ),
                 )
                 description = response.choices[0].message.content.strip()
                 self._log.debug(f"Generated attachment description: {description}")
@@ -108,7 +113,11 @@ class MultimodalPreHook(PreHook):
                             ],
                         }
                     ],
-                    max_tokens=50,
+                    **(
+                        {"max_completion_tokens": 50, "extra_body": {"reasoning_effort": "none"}}
+                        if model_name in ("gpt-6-luna", "openai/gpt-6-luna")
+                        else {"max_tokens": 50}
+                    ),
                 )
                 return resp.choices[0].message.content.strip()
 
