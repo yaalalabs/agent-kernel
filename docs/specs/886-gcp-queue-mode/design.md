@@ -29,9 +29,10 @@ Code references are at `develop` @ `25cce1e4`.
   - `AgentRunner.run()` is the runner container's entry point, and it serves no HTTP (`pipeline/agent_runner.py:193-208`).
   - `CloudRun.run()` reaches neither of them. With explicit handlers on a broker transport, `RESTAPI.run()` serves the direct handler (`api/http.py:108-114`).
   - The GCP examples bypass `CloudRun` entirely (`examples/gcp-containerized/openai/app.py:56`, `examples/gcp-serverless/openai/app.py:47`).
-- **Consumer threads starve between requests.**
-  - Neither Cloud Run service sets `cpu_idle` (`cloud_run.tf:122-127`, `cloud_function.tf:122-127`), so CPU is allocated only while a request is in flight (research §10).
-  - That covers the response-handler thread on the edge, too.
+- **CPU allocation is left to a provider default.**
+  - Both Cloud Run services set `resources` but not `cpu_idle` (`cloud_run.tf:122-127`, `cloud_function.tf:122-127`).
+  - The provider documents that, once `resources` is set, `cpu_idle` must be set to `true` explicitly to get request-only CPU. So today's services probably already keep CPU allocated, and G5 is unconfirmed (research §10).
+  - The edge's response-handler thread must never depend on that default.
 - **Pub/Sub provides less than the pipeline contract needs** (research §1–§3):
   - its delivery count is approximate;
   - it does not deduplicate on publish;
@@ -137,7 +138,8 @@ flowchart LR
   - adds the routes registered with `register()`, then always calls `IOHandler.run(handlers=handlers)`;
   - on `in_memory` with no arguments, behaves exactly like today (the same single-process pipeline);
   - on a broker transport, starts the edge: the REST API plus the response handler;
-  - has no `auth_validator`: REST auth stays on `GCPAuthorizer`, and WebSocket is a non-goal.
+  - has no `auth_validator`: REST auth stays on `GCPAuthorizer`, and WebSocket is a non-goal;
+  - refuses `async` and `realtime` on a broker transport with `AKConfigError`, because Cloud Run instances are not individually addressable. _Added in spec review; needs re-review._
 - The agent runner's entry point is the existing `agentkernel.pipeline.AgentRunner.run()`. No GCP subclass, because a worker pool needs no port.
 
 ### Terraform (`ak-deployment/ak-gcp/{serverless,containerized}`)
@@ -165,7 +167,7 @@ flowchart LR
 - **IAM**, least privilege on the named resources:
   - the edge publishes to the input topic and subscribes to the output subscription;
   - the runner subscribes to the input subscription and publishes to the output topic;
-  - both publish to the dead-letter topics;
+  - each tier publishes to the dead-letter topic of the queue it consumes;
   - the Pub/Sub service agent gets the dead-letter permissions.
 - **Environment** injected into both tiers:
   - `AK_EXECUTION__QUEUES__PUBSUB__*`;
@@ -173,9 +175,13 @@ flowchart LR
   - `AK_EXECUTION__RESPONSE_STORE__REDIS__URL`;
   - `AK_EXECUTION__MODE` and `AK_EXECUTION__MESSAGE_TYPE`;
   - the existing session and thread variables.
-- **`check` blocks** that fail at `terraform plan`:
+- **Cross-variable `validation`s** that fail at `terraform plan` (a `check` block only warns; _changed in spec review_):
   - `queue_mode` needs `create_redis_cluster`;
-  - `queue_mode` rejects `execution_mode` `async` and `realtime`.
+  - `execution_mode` rejects `async` and `realtime`;
+  - in queue mode the runner needs its own image or `command`, or it would run the edge's `CMD`.
+- **API Gateway in queue mode** (_added in spec review_):
+  - drops the multipart route, which the pipeline serves only on `in_memory` (`pipeline/request_handler.py:366-369`);
+  - adds `GET <base>/chat` for `rest_async` polling. The gateway's path builder must first hold several methods on one path (`api_gateway.tf:8-16`).
 - **Supported modes:** `rest_sync` (`complete`, and `delta` over SSE, since the Redis store streams chunks) and `rest_async`.
 
 ### Tests
@@ -216,7 +222,7 @@ flowchart LR
 
 - **WebSocket (`async`) and `realtime` modes on GCP queue mode** (G7).
   - Replies are pushed to a gateway pod by its IP (`pipeline/ws/push.py:52-63`), and Firestore has no connection store (`core/session/firestore.py:114-123`).
-  - Terraform rejects these modes at plan, and `IOHandler` already refuses them at startup (`pipeline/io_handler.py:88-96`).
+  - Terraform rejects these modes at plan, and `CloudRun.run()` refuses them at startup. `IOHandler` alone catches only `async` on a session backend without a shared connection store (`pipeline/io_handler.py:88-96`).
 - **A GCP Secret Manager provider** (G9). Cloud Run secret environment variables work in the meantime.
 - **A Firestore response store.** It cannot stream chunks, so SSE would not work.
 - **Push subscriptions.**
