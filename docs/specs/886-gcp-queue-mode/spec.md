@@ -852,10 +852,8 @@ and `agentkernel.core.config.AKConfig.get` (a real `_ExecutionConfig`, per the t
 - The runner's environment never references the request subscription (no dependency cycle).
 - Per module: the `pubsub` input subscription pushes to the endpoint with a 600 s deadline while the
   output one stays pull at 10 s; the `agent-runner` service is internal-only with a 3600 s timeout.
-- These run as `terraform test` plan-only checks with mock providers (8 per root, 1 per module),
-  committed under each directory's `tests/`. The `terraform-tests` job in
-  `.github/workflows/test-reusable.yaml` runs them on every PR, on a copy whose `ak-common` sources
-  point at `../common/modules` (no cloud credentials needed).
+- These are checked by hand with `terraform plan` before merge. No committed Terraform tests: the
+  repo has none, and this change does not add the first.
 
 ### End to end
 

@@ -97,7 +97,7 @@ re-reviewed.
   6. The push path in Python: `PubSubPushReceiver` (§1.9) and `CloudRunAgentRunner` (§6), with
      their unit tests and the live push test on the emulator.
   7. Add the APIs to `run.md` and document the new variables in the root READMEs.
-- **Verify:** `terraform validate` in both roots; the plan-time `terraform test` checks from
+- **Verify:** `terraform validate` in both roots; the `terraform plan` checks from
   Testing → Terraform; `uv run pytest tests/test_pipeline_pubsub_transport.py tests/test_gcp_cloudrun.py`
   and the live push test; a queue-mode apply in the CI project followed by one chat request (done
   in iteration 7).
