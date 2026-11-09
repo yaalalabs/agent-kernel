@@ -295,6 +295,17 @@ class TestCreation:
         # Nothing was registered: validation runs before any write.
         assert provider.created == []
 
+    def test_the_stored_owner_carries_neither_actor_nor_credential_ref(self, manager, store):
+        """The actor is the creating run's agent and the credential handle dies with that run; the owner is the user alone."""
+        acting = _principal("u9").with_actor(Principal(kind="agent", subject="planner", provider="agentkernel")).with_credential_ref("cred-1")
+
+        task = _create(manager, principal=acting)
+
+        assert task.principal["subject"] == "u9"
+        assert task.principal["actor"] is None
+        assert task.principal["credential_ref"] is None
+        assert json.loads(manager._build_trigger_body(store.get(task.task_id)))["principal"]["actor"] is None
+
     @pytest.mark.parametrize("principal", [None, Principal.anonymous()])
     def test_creation_by_an_anonymous_principal_is_refused(self, manager, provider, principal):
         with pytest.raises(PermissionError, match="requires an authenticated principal"):
@@ -472,6 +483,19 @@ class TestAmendment:
         with pytest.raises(KeyError, match="not found"):
             manager.update("missing", {"prompt": "whatever"})
 
+    def test_a_task_created_before_principal_ownership_cannot_be_amended(self, manager, store, provider):
+        """An amendment re-freezes the trigger body; with no stored principal that body would run anonymous and
+        unrecorded, so the task is recreated, not amended. Cancelling it stays possible."""
+        task = _create(manager)
+        store.update(store.get(task.task_id).model_copy(update={"principal": None}))
+
+        with pytest.raises(ValueError, match="predates principal ownership"):
+            manager.update(task.task_id, {"prompt": "send the daily report"})
+
+        assert store.get(task.task_id).prompt == "send the weekly report"
+        assert provider.updated == []
+        assert manager.cancel(task.task_id).status is ScheduleStatus.CANCELLED
+
     def test_amendment_enforces_ownership(self, manager):
         task = _create(manager, principal=_principal("u1"))
 
@@ -569,6 +593,14 @@ class TestTriggerRecording:
         recorded = store.get(task.task_id)
         assert recorded.trigger_count == 0
         assert recorded.status is ScheduleStatus.ACTIVE
+
+    def test_recording_by_the_same_subject_from_another_namespace_is_ignored(self, manager, store):
+        """A subject is unique only within its namespace: the frozen owner is matched on both."""
+        task = _create(manager, spec=ScheduleSpec(at=FUTURE_AT))
+
+        manager.record_trigger(task.task_id, Principal(subject="u1", provider="oidc", namespace="https://other.example"), request_id="r1")
+
+        assert store.get(task.task_id).trigger_count == 0
 
     @pytest.mark.parametrize("principal", [None, Principal.anonymous()])
     def test_recording_without_an_identity_is_ignored(self, manager, store, principal):

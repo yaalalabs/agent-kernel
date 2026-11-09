@@ -151,10 +151,14 @@ class ScheduleManager:
         OccurrenceCalculator.validate(spec)
 
         now = utc_now_iso()
+        # The owner is the user alone: the actor is the agent of the run that created the task, and
+        # the credential handle dies with that run, so neither belongs in a record every occurrence
+        # of the task is going to run as.
+        owner = principal.model_copy(update={"actor": None, "credential_ref": None})
         task = ScheduledTask(
             task_id=str(uuid.uuid4()),
             user_id=user_id,
-            principal=principal.model_dump(mode="json"),
+            principal=owner.model_dump(mode="json"),
             prompt=prompt,
             agent=agent,
             session_id=session_id,
@@ -215,10 +219,16 @@ class ScheduleManager:
         :return: The amended task.
         :raises KeyError: If the task does not exist.
         :raises PermissionError: If user_id is provided and does not own the task.
-        :raises ValueError: If the task is closed, or the amendment is unusable.
+        :raises ValueError: If the task is closed, predates principal ownership, or the amendment
+            is unusable.
         :raises ScheduleError: If the provider rejected the amendment.
         """
         previous = self._require_amendable_task(task_id, user_id)
+        if previous.principal is None:
+            # An amendment re-freezes the trigger body. With no stored owner that body would carry
+            # no principal, and its occurrences would run anonymous and go unrecorded, so a task
+            # from before principal ownership is cancelled and created again, never amended.
+            raise ValueError(f"Scheduled task {task_id} predates principal ownership and cannot be amended; cancel it and create it again")
         unknown_fields = set(amendment) - _AMENDABLE_FIELDS
         if unknown_fields:
             raise ValueError(f"Cannot amend {sorted(unknown_fields)} of a scheduled task; amendable fields are {sorted(_AMENDABLE_FIELDS)}")
@@ -311,15 +321,21 @@ class ScheduleManager:
 
         Stricter than :meth:`_check_ownership`: an absent or anonymous principal is a mismatch
         rather than an unauthenticated caller to wave through, since running anonymous would
-        reopen the hole.
+        reopen the hole. A subject is unique only within its namespace, so the frozen owner is
+        matched on namespace and subject together; only a task from before the owner's principal
+        was stored falls back to the subject alone.
 
         :param task: The task the run claims to be an occurrence of.
         :param principal: The principal the run acts as.
         :return: True when the occurrence may be recorded.
         """
         subject = Principal.subject_of(principal)
-        if subject is not None and task.user_id == subject:
-            return True
+        if subject is not None and principal is not None:
+            if task.principal is not None:
+                if (task.principal.get("namespace"), task.principal.get("subject")) == (principal.namespace, subject):
+                    return True
+            elif task.user_id == subject:
+                return True
         self._log.warning(f"Ignoring trigger for scheduled task {task.task_id}: subject {subject} does not own it")
         return False
 

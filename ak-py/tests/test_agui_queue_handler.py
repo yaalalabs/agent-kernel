@@ -411,7 +411,7 @@ def _edge_handler(monkeypatch, requests=None, store=None):
     agent = type("_Agent", (), {"name": "planner"})()
 
     async def _resolved(agent_name, request):
-        return "u1", agent, _RunInputStub(), list(requests or [])
+        return agent, _RunInputStub(), list(requests or [])
 
     monkeypatch.setattr(handler, "_resolve_run_inputs", _resolved)
     monkeypatch.setattr(handler, "_warn_if_unreadable", lambda *a, **k: None)

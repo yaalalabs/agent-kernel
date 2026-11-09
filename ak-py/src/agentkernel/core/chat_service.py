@@ -626,16 +626,19 @@ class ChatService:
 
     @staticmethod
     def _reject_ambiguous(req: BaseChatRequest) -> None:
-        """Reject a request whose blocks contradict each other, before anything acts on it.
+        """Reject a request that must not act at all, before anything acts on it.
 
-        Called as the first statement of every entry point, ahead of ``_maybe_schedule``: scheduling
-        returns its 202 before ``_validate`` is ever reached, so a guard placed there would never
-        fire on a scheduled request.
+        Called as the first statement of every entry point, ahead of ``_maybe_schedule`` and
+        ``_record_trigger``: scheduling returns its 202 and an occurrence is recorded before
+        ``_validate`` is ever reached, so a guard placed there would fire after the side effect.
 
         :param req: The chat request to check.
         :return: None
-        :raises ValueError: If the request carries both a schedule and a resume block.
+        :raises ValueError: If the body carries a ``user_id`` (the acting user comes from the
+            credential, never from the client), or both a schedule and a resume block.
         """
+        if "user_id" in (req.model_extra or {}):
+            raise ValueError(USER_ID_NOT_A_FIELD)
         if req.schedule is not None and req.resume is not None:
             raise ValueError("A request cannot carry both 'schedule' and 'resume': a decision deferred to a later occurrence is no longer a decision")
 
@@ -692,6 +695,10 @@ class ChatService:
         except ValueError as ve:
             self._log.error(f"ValueError processing request: {ve}")
             return ResponseBuilder.build_response(400, req.session_id, self.rest_api_mode, error=ve)
+        except PermissionError as pe:
+            # Scheduling by an anonymous principal, and from the access gate onwards every refusal.
+            self._log.warning(f"Refused request: {pe}")
+            return ResponseBuilder.build_response(403, req.session_id, self.rest_api_mode, error=pe)
         except Exception as e:
             self._log.error(f"Error processing request: {e}")
             return ResponseBuilder.build_response(500, req.session_id, self.rest_api_mode, error=e)
@@ -710,6 +717,9 @@ class ChatService:
         except ValueError as ve:
             self._log.error(f"ValueError processing request: {ve}")
             return ResponseBuilder.build_response(400, req.session_id, self.rest_api_mode, error=ve)
+        except PermissionError as pe:
+            self._log.warning(f"Refused request: {pe}")
+            return ResponseBuilder.build_response(403, req.session_id, self.rest_api_mode, error=pe)
         except Exception as e:
             self._log.error(f"Error processing request: {e}")
             return ResponseBuilder.build_response(500, req.session_id, self.rest_api_mode, error=e)
@@ -784,10 +794,8 @@ class ChatService:
                          optional but the list must be non-empty
         :return: None
         :raises ValueError: If session_id is missing, prompt is missing on the built path,
-                            a prebuilt request list is empty, or the body carries a user_id
+                            or a prebuilt request list is empty
         """
-        if "user_id" in (req.model_extra or {}):
-            raise ValueError(USER_ID_NOT_A_FIELD)
         if not req.session_id:
             raise ValueError("No session_id is provided in the request")
         if requests is None:

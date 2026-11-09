@@ -176,7 +176,7 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
 
         return router
 
-    async def _resolve_run_inputs(self, agent_name: str, request: Request) -> tuple[str | None, Agent, Any, list]:
+    async def _resolve_run_inputs(self, agent_name: str, request: Request) -> tuple[Agent, Any, list]:
         """Everything that can still be reported as an HTTP status, before any state is written.
 
         Shared verbatim with the queue-mode handler (spec #710 §7) so the two execution models
@@ -185,10 +185,13 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
 
         :param agent_name: Agent to run.
         :param request: Incoming request carrying the RunAgentInput body.
-        :return: The resolved user, agent, parsed run input, and mapped requests.
-        :raises HTTPException: 400 for an unparsable or unusable body, 404/400 from agent resolution.
+        :return: The agent, parsed run input, and mapped requests.
+        :raises HTTPException: 401 from the configured authoriser, 400 for an unparsable or
+            unusable body, 404/400 from agent resolution.
         """
-        user_id = self._resolve_user(request)
+        # Kept for its 401: the resolved user is not forwarded until the identity provider puts a
+        # principal on the run (plan iteration 7).
+        self._resolve_user(request)
         agent = self._resolve_agent(agent_name)
 
         try:
@@ -199,7 +202,7 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
             raise HTTPException(status_code=400, detail="Request body must be a RunAgentInput object")
 
         run_input = AGUIRunInput.parse(body)
-        return user_id, agent, run_input, AGUIRunInput.to_requests(run_input)
+        return agent, run_input, AGUIRunInput.to_requests(run_input)
 
     async def _run(self, agent_name: str, request: Request) -> StreamingResponse:
         """Validate a run request and hand back the event stream.
@@ -218,7 +221,7 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
         """
         from ag_ui.encoder import EventEncoder
 
-        user_id, agent, run_input, requests = await self._resolve_run_inputs(agent_name, request)
+        agent, run_input, requests = await self._resolve_run_inputs(agent_name, request)
 
         handler = self._chat_service.prepare_agent_handler(run_input.thread_id, agent_name)
         session = handler.service.session if handler.service is not None else None
@@ -233,7 +236,7 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
 
         state_before = AGUIState.snapshot_state(session)
         encoder = EventEncoder(accept=request.headers.get("accept"))  # type: ignore[arg-type]
-        stream = self._events(encoder, handler, requests, run_input, state_before, user_id)
+        stream = self._events(encoder, handler, requests, run_input, state_before)
         return StreamingResponse(stream, media_type=encoder.get_content_type())
 
     async def _events(
@@ -243,7 +246,6 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
         requests: list,
         run_input: Any,
         state_before: dict | None,
-        user_id: str | None,
     ) -> AsyncGenerator[str, None]:
         """Yield the run's encoded AG-UI events.
 
@@ -260,7 +262,6 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
         :param requests: The mapped AgentRequest list to run.
         :param run_input: The parsed RunAgentInput, for thread and run ids.
         :param state_before: Deep copy of the AG-UI state taken before the run.
-        :param user_id: Resolved caller, forwarded as the run's acting user.
         :return: An async generator of encoded SSE payloads.
         """
         from ag_ui.core import RunErrorEvent, RunFinishedEvent, RunStartedEvent, StateSnapshotEvent
@@ -279,7 +280,7 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
         error: str | None = None
         try:
             # The principal reaches this surface with the identity provider; until then the run is
-            # anonymous and the resolved user is not forwarded.
+            # anonymous.
             async for chunk in handler.run_stream_async(requests):
                 if chunk.error:
                     error = chunk.error

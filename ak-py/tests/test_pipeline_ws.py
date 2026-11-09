@@ -412,6 +412,18 @@ class TestWebSocketChat:
         assert "user_id is not a request field" in reply["message"]
         assert transport.create_consumer(QueueName.INPUT).fetch(1, 0.1) == []
 
+    def test_a_frame_carrying_a_principal_is_enqueued_without_it(self, monkeypatch):
+        """The connection's credential establishes the principal (iteration 7); a frame cannot name one (#603)."""
+        app, _, transport, _ = _ws_app(monkeypatch)
+        client = TestClient(app)
+        forged = {"subject": "mallory", "provider": "oidc", "namespace": "https://issuer.example"}
+        with client.websocket_connect(f"{WS_PATH}?token=good") as websocket:
+            websocket.send_json({"route": "chat", "body": {"prompt": "hi", "session_id": "s1", "principal": forged}})
+            assert websocket.receive_json()["type"] == "CHAT_QUEUED"
+
+        [message] = transport.create_consumer(QueueName.INPUT).fetch(1, 1.0)
+        assert "principal" not in json.loads(message.body)
+
     def test_configured_chat_route_is_honored(self, monkeypatch):
         app, _, _, _ = _ws_app(monkeypatch, chat_route="converse")
         client = TestClient(app)

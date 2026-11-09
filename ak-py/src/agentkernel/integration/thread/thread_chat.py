@@ -73,7 +73,9 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
         router.include_router(self._read_handler.get_router())
         return router
 
-    async def run(self, body: BaseRunRequest):
+    async def run(self, body: BaseRunRequest, request: Request):
+        # As on the plain REST route: the surface assigns the principal, a client value is overwritten.
+        body.principal = getattr(request.state, "principal", None)
         if Config.get().execution.is_sse:
             try:
                 gen = await self._stream_with_recording(body)
@@ -88,6 +90,7 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
 
     async def run_multipart(
         self,
+        request: Request,
         prompt: str = Form(...),
         agent: str | None = Form(None),
         session_id: str | None = Form(None),
@@ -104,6 +107,7 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
             thread_name=thread_name,
             files=files,
             images=images,
+            principal=getattr(request.state, "principal", None),
         )
         if Config.get().execution.is_sse:
             try:
@@ -270,7 +274,7 @@ class ThreadRequestHandler(RequestHandler):
         attributes = {} if body.schedule is not None else {ATTR_THREAD: "1"}
         return RequestProducer(self.get_transport()).enqueue(body, request_id, attributes=attributes)
 
-    async def run_chat(self, body: BaseRunRequest):
+    async def run_chat(self, body: BaseRunRequest, request: Request):
         """POST /api/v1/chat: record the user message, then enqueue as the pipeline normally does.
 
         Every rejection the inherited route can raise runs before the recording: the two
@@ -278,6 +282,8 @@ class ThreadRequestHandler(RequestHandler):
         A 400 raised after ``_record_user_message`` would leave a thread holding a user message
         no reply ever answers.
         """
+        # Before the recorder reads it: the surface assigns the principal, a client value is overwritten.
+        body.principal = getattr(request.state, "principal", None)
         if not body.session_id:
             raise HTTPException(status_code=400, detail={"error": "No session_id is provided in the request"})
         if not body.prompt and body.resume is None:
@@ -285,7 +291,7 @@ class ThreadRequestHandler(RequestHandler):
         self._reject_unroutable(body)
         if body.schedule is None:
             await self._record_user_message(body)
-        return await super().run_chat(body)
+        return await super().run_chat(body, request)
 
     async def _record_user_message(self, body: BaseRunRequest) -> None:
         """Do the pre-run thread work at the edge and rewrite the body for the queue.

@@ -211,6 +211,17 @@ class TestRestAsync:
         [message] = InMemoryTransport().create_consumer(QueueName.INPUT).fetch(1, 0.5)
         assert json.loads(message.body)["resume"]["decisions"][0] == {"id": "call_1", "status": "approved"}
 
+    def test_a_principal_sent_by_the_client_never_reaches_the_queue(self, monkeypatch, dummy_agent):
+        """The principal is the surface's to assign; until the identity dependency does, the body carries none (#603)."""
+        _configure(monkeypatch, mode="rest_async")
+        forged = {"subject": "mallory", "provider": "oidc", "namespace": "https://issuer.example"}
+
+        accepted = _client().post(CHAT, json={"prompt": "hello", "session_id": "s1", "agent": AGENT_NAME, "principal": forged})
+
+        assert accepted.status_code == 200
+        [message] = InMemoryTransport().create_consumer(QueueName.INPUT).fetch(1, 0.5)
+        assert "principal" not in json.loads(message.body)
+
 
 class TestStreamSSE:
     def test_stream_yields_sse_chunks(self, monkeypatch, dummy_agent, workers):

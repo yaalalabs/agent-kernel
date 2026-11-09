@@ -424,7 +424,10 @@ class RequestAuthenticator:
   `credential_ref = uuid4().hex`, stores the raw credential under it with TTL
   `min(exp - now, inbound_ttl)` (`exp` read from `claims`, else `inbound_ttl`), and returns
   `principal.with_credential_ref(ref)`. `release` deletes it; `Runtime` calls it in `finally`
-  for the direct path and `AgentRunner` for the queued path (section 8.4).
+  for the direct path and `AgentRunner` for the queued path (section 8.4). A ref prefixed `conn:`
+  is connection-scoped: the WebSocket handlers mint it at connect through `authenticate_token`
+  and delete it at disconnect, every frame's body carries it, and `release` leaves it alone
+  (design 3.1).
 - `dependency()` returns an `async def identity_dependency(request: Request)` that sets
   `request.state.principal` and `RequestAuthenticator._current` for the request's task.
 
@@ -608,7 +611,9 @@ class Authorizer(ABC):
 - `SubjectMatcher.matches(form: str, principal) -> bool`: `*` always; `authenticated` when not
   anonymous (messaging senders included, design 5); `provider:<name>` when `principal.provider ==
   name`, or when `name` ends with `:` and `principal.provider.startswith(name)`; `user:<subject>`
-  on `principal.subject`; `group:<name>` on `groups`; `role:<name>` on `roles`.
+  on `principal.subject` unless `principal.is_shared_channel` (design 5: an edge sender's subject
+  is a platform id, never matched by a user grant); `group:<name>` on `groups`; `role:<name>` on
+  `roles`.
 - Agent entries: an id, `*`, or `tag:<name>` resolved at evaluation time against
   `descriptor_lookup()` (every descriptor whose `tags` contains the name; none matches nothing).
 - `agent_level`: the maximum `level` over grants where any subject matches and any agent entry
@@ -661,10 +666,10 @@ class AccessGate:
 - `tool_filter`: `names = agent.get_tool_names()`; `allowed = filter_tools(principal, id,
   names)`; reasons from `check_tool` for the rest; `level` from `agent_level`. One `ToolFilter`
   per run, published by `Runtime`.
-- `authorize_session`: allowed when `session.get_owner()` is `None`, the principal is anonymous,
-  either `provider` carries the `messaging:` or `realtime:` prefix, or `(owner.namespace,
-  owner.subject) == (principal.namespace, principal.subject)`; otherwise
-  `PermissionError(f"Session '{session.id}' belongs to another principal")`.
+- `authorize_session`: allowed when `session.get_owner()` is `None`, either `provider` carries
+  the `messaging:` or `realtime:` prefix, or `(owner.namespace, owner.subject) ==
+  (principal.namespace, principal.subject)`; otherwise `PermissionError(f"Session '{session.id}'
+  belongs to another principal")`, for an anonymous principal as for any other non-owner.
 - `validate_configuration(agents)`, called from `Module.load` after registration with the loaded
   agents and from the handlers' `get_router()` with the hosted agents: an `allow`, `deny` or
   `tiers` entry naming a tool a hosted agent does not have is `AKConfigError`; a grant naming an
@@ -766,7 +771,8 @@ candidate walk; `StaticAuthorizer` subclasses it, and every later engine must.
   `body.principal.subject` on the body-fallback path (283-284) when the principal is
   non-anonymous. `StreamAgentRunner`'s `USER_ID` requirement (327-328) is unchanged. After the
   chat-service call every runner calls `RequestAuthenticator.from_config().release(body.principal)`
-  in a `finally` when `credential_ref` is set (the queued-path deletion of the inbound entry).
+  in a `finally` when `credential_ref` is set (the queued-path deletion of the inbound entry;
+  `release` skips a connection-scoped `conn:` ref, section 4).
 - `RequestProducer` (`pipeline/producer.py:24-50`) is unchanged: the principal is part of the body
   it serializes with `exclude_none=True`.
 
@@ -847,8 +853,9 @@ candidate walk; `StaticAuthorizer` subclasses it, and every later engine must.
 
 - `A2ARESTRequestHandler.get_agent_routers()` (`api/a2a/handler.py:49-63`): `create_rest_routes(
   request_handler, context_builder=AKCallContextBuilder())` (`a2a/server/routes/rest_routes.py:30-35`),
-  where `AKCallContextBuilder(ServerCallContextBuilder)` (`a2a/server/routes/common.py:41-52`)
-  returns `ServerCallContext(state={"principal": request.state.principal})`. The executor
+  where `AKCallContextBuilder(ServerCallContextBuilder)` (`a2a/server/routes/common.py:91-97`;
+  `DefaultServerCallContextBuilder` follows at 99) returns
+  `ServerCallContext(state={"principal": request.state.principal})`. The executor
   (`api/a2a/a2a.py:68-90`) reads `context.call_context.state["principal"]`, falling back to
   `RequestAuthenticator.current()` and then to anonymous, and sets it on the body (line 76).
 - `_build()` (129-146): the `a2a.agents` line (137) is deleted; cards are built for every
@@ -915,16 +922,19 @@ candidate walk; `StaticAuthorizer` subclasses it, and every later engine must.
 
 - `ScheduleManager.create(principal: Principal, prompt, spec, agent, session_id)`
   (`schedule/manager.py:113-168`): `user_id = principal.subject`; an anonymous principal is
-  `PermissionError("scheduling requires an authenticated principal")`; the task stores
-  `principal=principal.model_dump(mode="json")`. `create_from_request` (95-111) passes
-  `req.principal or Principal.anonymous()`.
+  `PermissionError("scheduling requires an authenticated principal")`; the task stores the owner
+  without the creating run's actor chain or credential handle,
+  `principal=principal.model_copy(update={"actor": None, "credential_ref": None}).model_dump(mode="json")`.
+  `create_from_request` (95-111) passes `req.principal or Principal.anonymous()`.
 - `_build_trigger_body` (469-490): `"user_id"` is replaced by `"principal": task.principal`
   (`None` only on a task created before the change, whose frozen body also still carries
-  `user_id` and is therefore refused at fire time; such tasks are recreated, not migrated).
+  `user_id` and is therefore refused at fire time; such tasks are recreated, not migrated, and
+  `update` refuses them with `ValueError` before re-freezing the body, while `cancel` is allowed).
 - `record_trigger(task_id, principal, request_id, occurred_at, error=None)` (267-294) and
-  `_owns_occurrence` (296-316) compare `task.user_id` with `principal.subject` (an anonymous
-  principal is a mismatch); `error` is recorded on the occurrence by the store's `record_trigger`
-  (a new optional column `last_error`).
+  `_owns_occurrence` (296-316) compare the stored `task.principal`'s namespace and subject with
+  the principal's (an anonymous principal is a mismatch; a task without a stored principal falls
+  back to `task.user_id` against the subject); `error` is recorded on the occurrence by the
+  store's `record_trigger` (a new optional column `last_error`).
 - `get_task`, `list_tasks`, `update`, `cancel` keep their `user_id` parameter; the handler
   (`schedule/handler.py:90-140`) passes `principal.subject`.
 - `schedule/tools.py`: `ScheduleToolUtil.acting_user()` (72-81) returns
@@ -964,6 +974,7 @@ Shared pieces (`core/`):
 | LangGraph (1.2.11, prebuilt 1.1.0) | over `agent.agent.nodes.values()` (`langgraph/pregel/main.py:705`), each `node.bound` that is a `ToolNode`, its `tools_by_name` keys (`langgraph/prebuilt/tool_node.py:789`) | none (compiled graph) | `LangGraphToolBuilder.bind` (1114-1155) wraps `func`/`coroutine` before `StructuredTool.from_function` and sets `metadata={"ak_gated": True}` on the tool; the wrapper checks `ToolGate.current(ToolContext.get().session)` and returns the reason string instead of calling the function | every `tools_by_name` entry whose `metadata` lacks `ak_gated` |
 | smolagents (1.26.0) | `list(agent.agent.tools)` (a dict since `_setup_tools`, `smolagents/agents.py:389-393`) | none | at wrap time, for every value in `agent.agent.tools`: `tool.forward = ak_wrap(tool.forward)` (`Tool.__call__` calls `self.forward`, `smolagents/tools.py:231-249`; the AK wrapper marks itself with `__ak_gated__ = True`); the wrapper returns the reason string when denied | every `agent.agent.tools` value whose `forward` lacks `__ak_gated__` at validation time (a tool added after wrap) |
 | MAF (1.20.0) | names over `agent.agent.default_options.get("tools", [])` (786-798) | none | per run: `kwargs = self._native_kwargs(options, session=..., middleware=[AKToolGateMiddleware(), *options.get("middleware", [])])` (`agent_framework/_agents.py:2014-2026`); `process(context, call_next)` sets `context.result = reason` and returns without `call_next()` for a denied `context.function.name` (`_middleware.py:910-997`) | `[]` (hosted and provider-executed tools are documented) |
+| Claude Agent SDK (`framework/claude/claude.py`) | `[t.name for t in agent.agent.tools]` (the `get_a2a_card` source, 1061): the tools the in-process `ak` MCP server serves as `mcp__ak__<name>` | per run, in `_native_options` (454-515): a denied tool is left out of the `allowed_tools` list the runner builds (509) and added to `disallowed_tools`, so the SDK never offers it | the `PreToolUse` matcher the HITL gate installs (512) returns `{"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": reason}` for a denied `mcp__ak__` tool, ahead of the approval branch (`_decision_hook`, 407-451) | `[]` (Claude Code's built-in tools and other `mcp_servers` are neither listed nor gated; documented) |
 | Realtime (`core/realtime/runner.py:124`, both OpenAI and ADK realtime runners) | the agent's `get_tool_names` | none (declared at connect) | `RealtimeConnection._execute_tool_and_reply` (8.4) before `adapter.execute_tool` | n/a |
 
 - Composition rule everywhere: AK's check runs first; a user-set hook, callback, middleware,
@@ -1240,9 +1251,9 @@ New files under `ak-py/tests/`:
   eighth failure mode with the record kept; realtime tool execution publishing through
   `_execute_tool_and_reply`.
 - `test_tool_gates_<adapter>.py` for `openai`, `pydanticai`, `adk`, `crewai`, `langgraph`,
-  `smolagents`, `maf` and `realtime`: with a filter published, a denied tool is hidden where the
-  framework allows (OpenAI `get_all_tools`, Pydantic AI `prepare_tools`, LangGraph and smolagents
-  not hidden, MAF not hidden, ADK not hidden), a denied call returns the reason string without
+  `smolagents`, `maf`, `claude` and `realtime`: with a filter published, a denied tool is hidden
+  where the framework allows (OpenAI `get_all_tools`, Pydantic AI `prepare_tools`, Claude
+  `disallowed_tools`, LangGraph and smolagents not hidden, MAF not hidden, ADK not hidden), a denied call returns the reason string without
   raising into the framework, an allowed call runs, the composition with a user-set hook or
   middleware preserves the user's, and the no-authorization path's native call is
   keyword-for-keyword unchanged (asserted on the mocked native call as the `test_*_runner.py`

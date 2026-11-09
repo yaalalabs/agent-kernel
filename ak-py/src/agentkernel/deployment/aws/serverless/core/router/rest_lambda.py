@@ -121,6 +121,11 @@ class DefaultEndpointsHandler:
             request_id = request.request_id
             return operation(request)  # (statusCode, body) will be handled in aklambda.py
 
+        # A request the parser or the operation refuses is the caller's error, answered with its reason.
+        except ValueError as e:
+            self._log.warning(f"Rejected request: {e}")
+            return (400, self._build_failure_body(request_id, message=str(e)))
+
         # Log and hide unexpected failures behind a generic 500 response.
         except Exception as e:
             self._log.error(f"Request failed: {e}\n{traceback.format_exc()}")

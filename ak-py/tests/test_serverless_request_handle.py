@@ -63,6 +63,22 @@ def test_base_request_from_flat_run_payload_generates_body():
     assert request.body.agent == "openai"
 
 
+class TestPrincipalIsNotReadFromThePayload:
+    """The surface assigns the principal after it parses the payload; a value in the payload is dropped (#603)."""
+
+    FORGED = {"subject": "mallory", "provider": "oidc", "namespace": "https://issuer.example"}
+
+    def test_a_principal_in_the_body_is_dropped(self):
+        request = BaseRequest.from_payload(
+            {"request_id": "request-1", "body": {"prompt": "hello", "session_id": "session-1", "principal": self.FORGED}}
+        )
+        assert request.body is not None and request.body.principal is None
+
+    def test_a_principal_on_a_flat_payload_is_dropped(self):
+        request = BaseRequest.from_payload({"prompt": "hello", "session_id": "session-1", "principal": self.FORGED})
+        assert request.body is not None and request.body.principal is None
+
+
 class TestUserIdIsNotARequestField:
     """The acting user comes from the credential the surface authenticated, never from the payload (#603)."""
 

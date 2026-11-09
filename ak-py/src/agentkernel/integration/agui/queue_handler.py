@@ -123,7 +123,7 @@ class AGUIPipelineRequestHandler(AGUIRequestHandler):
         """
         from ag_ui.encoder import EventEncoder
 
-        user_id, agent, run_input, requests = await self._resolve_run_inputs(agent_name, request)
+        agent, run_input, requests = await self._resolve_run_inputs(agent_name, request)
         envelope = AGUIRunEnvelope.build(run_input)
         envelope.reject_if_oversized()
         self._warn_if_unreadable(agent, run_input)

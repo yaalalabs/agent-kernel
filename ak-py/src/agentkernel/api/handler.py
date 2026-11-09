@@ -101,19 +101,26 @@ class AgentRESTRequestHandler(RESTRequestHandler):
     def list_agents(self):
         return {"agents": list(Runtime.current().agents().keys())}
 
-    async def run(self, body: BaseRunRequest):
+    async def run(self, body: BaseRunRequest, request: Request):
+        # The surface decides who is calling: a principal the client put in the body is overwritten,
+        # never read. Nothing sets request.state.principal until the identity dependency lands, so
+        # every run is anonymous in the meantime.
+        body.principal = getattr(request.state, "principal", None)
         if Config.get().execution.is_sse:
             try:
                 gen = await self.chat_service.process_stream_chat_async(req=body, sse_format=True)
                 return StreamingResponse(gen, media_type="text/event-stream")
             except ValueError as e:
                 raise HTTPException(status_code=400, detail=str(e))
+            except PermissionError as e:
+                raise HTTPException(status_code=403, detail=str(e))
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Streaming failed: {str(e)}")
         return await self.chat_service.process_async_chat_request(req=body)
 
     async def run_multipart(
         self,
+        request: Request,
         prompt: str = Form(...),
         agent: str | None = Form(None),
         session_id: str | None = Form(None),
@@ -130,6 +137,7 @@ class AgentRESTRequestHandler(RESTRequestHandler):
             thread_name=thread_name,
             files=files,
             images=images,
+            principal=getattr(request.state, "principal", None),
         )
         if Config.get().execution.is_sse:
             try:
@@ -137,6 +145,8 @@ class AgentRESTRequestHandler(RESTRequestHandler):
                 return StreamingResponse(gen, media_type="text/event-stream")
             except ValueError as e:
                 raise HTTPException(status_code=400, detail=str(e))
+            except PermissionError as e:
+                raise HTTPException(status_code=403, detail=str(e))
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Streaming failed: {str(e)}")
         return await self.chat_service.process_async_chat_request(req=req)

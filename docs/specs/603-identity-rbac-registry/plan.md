@@ -44,7 +44,8 @@ iteration 18 and `credentials` lands in iteration 25, both additive).
 - Four transient states are deliberate and called out where they occur: iteration 1 adds types
   nothing reads yet; `BaseChatRequest.user_id` survives beside `principal` through iteration 2
   and leaves in 3; from iteration 2 every run is anonymous until its surface sets a principal in
-  iterations 6 to 11 (threads and schedules refuse anonymous callers in that window); the
+  iterations 6 to 11 (threads and schedules answer 403 to every caller in that window, and a
+  principal a client puts in a body is overwritten by the surface); the
   example suites that send `user_id` are red from iteration 3, and those importing
   `agentkernel.auth` from iteration 11, until iteration 12 migrates them. The branch-green
   criterion is the `ak-py` suite, which does not run the examples.
@@ -124,27 +125,39 @@ iteration 18 and `credentials` lands in iteration 25, both additive).
   threads and schedules key on `req.principal`.
 - **Files:** `core/model.py`, `core/chat_service.py`, `schedule/model.py`, `schedule/manager.py`,
   `schedule/tools.py`, `integration/thread/recorder.py`, `integration/thread/thread_chat.py`
-  (its own multipart form field and the 403 mapping), the three queue runners whose routing
+  (its own multipart form field, the 403 mapping and the chat routes), the chat routes in
+  `api/handler.py` and `pipeline/request_handler.py`, the three queue runners whose routing
   attribute falls back to the body (`pipeline/agent_runner.py`,
-  `deployment/aws/{containerized,serverless}/akagentrunner.py`), and the six constructor sites
-  that pass `user_id=` today: `api/handler.py:130`, `pipeline/request_handler.py:508`,
-  `thread_chat.py:98`, `integration/adapter/producer.py:79`,
+  `deployment/aws/{containerized,serverless}/akagentrunner.py`), `integration/agui/handler.py`,
+  and the six constructor sites that pass `user_id=` today: `api/handler.py:130`,
+  `pipeline/request_handler.py:508`, `thread_chat.py:98`, `integration/adapter/producer.py:79`,
   `integration/agui/queue_handler.py:143`, `deployment/aws/serverless/core/router/rest_lambda.py:151`.
   (`pipeline/realtime_pool.py:545` is the dispatch parameter, not a body field; it moves in 9.)
 - **Steps:**
-  1. Remove `BaseChatRequest.user_id`; `from_payload` drops the envelope propagation and raises
-     `ValueError` on a `user_id` key (spec 2).
-  2. `ChatService._validate` rejects the `user_id` extra; `known_fields` drops `user_id`;
-     `_record_trigger` forwards `req.principal` (spec 8.1).
+  1. Remove `BaseChatRequest.user_id`; `from_payload` drops the envelope propagation, raises
+     `ValueError` on a `user_id` key and drops a `principal` key from a client payload (spec 2).
+  2. `ChatService._reject_ambiguous` rejects the `user_id` extra ahead of scheduling and trigger
+     recording; `known_fields` drops `user_id`; `_record_trigger` forwards `req.principal`; the
+     presentation wrappers map `PermissionError` to 403 (pulled forward from 19, so a schedule
+     block without a principal is a 403 and not a 500 in the meantime) (spec 8.1).
   3. `ScheduledTask.principal`; `ScheduleManager.create(principal, ...)` with the anonymous
-     `PermissionError`, `create_from_request`, `_build_trigger_body` carrying `principal`,
-     `record_trigger(task_id, principal, ...)` and `_owns_occurrence` comparing the subject; the
+     `PermissionError`, storing the owner without the creating run's actor or credential handle;
+     `create_from_request`; `_build_trigger_body` carrying `principal`;
+     `record_trigger(task_id, principal, ...)` and `_owns_occurrence` comparing the frozen owner's
+     namespace and subject; `update` refusing a task created before principal ownership; the
      `create_schedule` tool passes the principal object (spec 8.11). The `error=` keyword and the
      store's `last_error` come with the fire-time skip in iteration 19.
   4. `ThreadRecorder.pre_run` reads `req.principal` and raises `PermissionError` when it is
      missing or anonymous; the thread handlers map it to 403 (pulled forward from 10, so an
      anonymous thread request is a 403 and not a 500 in the meantime) (spec 8.10).
-  5. The six constructor sites stop passing `user_id=` (the multipart form fields go with it);
+  5. The chat routes that bind a client body (`AgentRESTRequestHandler.run`, pipeline
+     `RequestHandler.run_chat` and `RestHandler.enqueue_and_wait`, the thread handlers' overrides,
+     and the multipart routes for symmetry) take `request: Request` and assign `body.principal`
+     from `request.state` (`None` until the identity dependency of 6 sets it), so a principal a
+     client sends is overwritten (spec 8.2, 8.3); the REST route maps `PermissionError` to 403
+     on its SSE branch; the Lambda REST router maps `ValueError` to 400; the AG-UI `_events`
+     loses its unused `user_id` parameter.
+  6. The six constructor sites stop passing `user_id=` (the multipart form fields go with it);
      each gets its principal in phase B. The three queue runners' body fallback for the routing
      attribute reads `Principal.subject_of(body.principal)` (spec 8.3).
 - **Verify:** `grep -rn "\.user_id\|\"user_id\"" ak-py/src/agentkernel` shows only
@@ -154,11 +167,14 @@ iteration 18 and `credentials` lands in iteration 25, both additive).
   `test_serverless_request_handle` (`from_payload` refusals), `test_api_multipart_fields`,
   `test_chat_service_schedule`, `test_schedule_manager`, `test_schedule_tools`,
   `test_schedule_router`, `test_schedule_model`, `test_thread_integration` and
-  `test_thread_pipeline_recording` (a test-side handler subclass assigns the principal the way
-  the identity dependency will in 6), `test_integration_producer`, `test_agui_queue_handler`,
-  the three `*_agent_runner_schedule` suites, `test_ws_lambda_stream`,
-  `test_serverless_status_propagation`, `test_pipeline_ws` (a frame carrying `user_id` is a
-  `FAILED` frame).
+  `test_thread_pipeline_recording` (a test-side handler subclass sets `request.state.principal`
+  the way the identity dependency will in 6; a principal in the body is a 403 like an anonymous
+  request), `test_pipeline_request_handler` and `test_api_multipart_fields` (a client-sent
+  principal never reaches the queue or the service), `test_integration_producer`,
+  `test_agui_queue_handler`, the three `*_agent_runner_schedule` suites, `test_ws_lambda_stream`,
+  `test_serverless_status_propagation` (a `user_id` body is a 400 on the Lambda REST router),
+  `test_pipeline_ws` (a frame carrying `user_id` is a `FAILED` frame; one carrying `principal` is
+  enqueued without it).
 
 ## Phase B: Providers and surfaces (iterations 4 to 12)
 
@@ -214,11 +230,13 @@ iteration 18 and `credentials` lands in iteration 25, both additive).
      `dependency()`, the `current()` contextvar, `release()` (a no-op until iteration 25)
      (spec 4).
   2. `RESTAPI._get_router_dependencies` returns the identity dependency; `add_auth_handlers`
-     and `_auth_token_validators` go; `AgentRESTRequestHandler.run`/`run_multipart` assign
-     `body.principal` (spec 8.2). `AuthorisedRESTRequestHandler` changes in 10 together with
-     the thread and schedule routers that subclass it.
-  3. Pipeline `RequestHandler.run_chat`, `RestHandler.enqueue_and_wait` and `RestHandler.request`
-     assign the principal; the precheck slot before `_enqueue_request` is filled in 19 (spec 8.3).
+     and `_auth_token_validators` go; the `request.state.principal` read that
+     `AgentRESTRequestHandler.run`/`run_multipart` have carried since 3 now finds the dependency's
+     principal (spec 8.2). `AuthorisedRESTRequestHandler` changes in 10 together with the thread
+     and schedule routers that subclass it.
+  3. Likewise pipeline `RequestHandler.run_chat` and `RestHandler.enqueue_and_wait`;
+     `RestHandler.request` requires the caller's principal; the precheck slot before
+     `_enqueue_request` is filled in 19 (spec 8.3).
 - **Verify:** the authenticator cases in `test_identity_providers` (bearer parsing, anonymous
   rules, 401 details, contextvar); changed `test_api_http` (dependency assertions replace the
   validator ones), `test_api_multipart_fields`, `test_pipeline_request_handler`.
@@ -369,13 +387,13 @@ iteration 18 and `credentials` lands in iteration 25, both additive).
 
 - **Goal:** each adapter reports its tool names and its card is built from the descriptor with
   the provider's security scheme.
-- **Files:** the seven `framework/<name>/<name>.py`, `api/a2a/a2a.py`.
+- **Files:** the eight `framework/<name>/<name>.py`, `api/a2a/a2a.py`.
 - **Steps:**
   1. `get_tool_names()` per adapter from the spec 9 table (the LangGraph `ToolNode` walk
      replaces the `node_data.tools` read that always produced empty skills) (spec 9).
   2. `A2ACardBuilder.build(descriptor)` with security schemes from `security_scheme()`;
      `get_a2a_card` goes through it (spec 6, design refinement 5).
-- **Verify:** the descriptor cases in the seven `test_tool_<adapter>` suites; the card
+- **Verify:** the descriptor cases in the eight `test_tool_<adapter>` suites; the card
   assertions in `test_api_a2a_surface` and `test_api_a2a_auth`.
 
 ### Iteration 15: Registry config and store backends
@@ -459,7 +477,8 @@ iteration 18 and `credentials` lands in iteration 25, both additive).
 - **Files:** `core/chat_service.py`, `pipeline/request_handler.py`, `api/handler.py`,
   `schedule/manager.py`, `schedule/store/*`.
 - **Steps:**
-  1. `ChatService` maps `PermissionError` to 403 and `LookupError` to 404 (spec 8.1).
+  1. `ChatService` maps `LookupError` to 404 (the `PermissionError` to 403 branch landed in 3)
+     (spec 8.1).
   2. The scheduled-trigger skip: `record_trigger(..., error=)`, the store's `last_error`, the
      403 reply and the warning (spec 8.1, 8.11).
   3. The pipeline precheck before `_enqueue_request` and in `RestHandler.request` (spec 8.3).
@@ -489,12 +508,12 @@ Each adapter gate is one file plus one `tests/test_tool_gates_<adapter>.py`, gro
 mechanism. Every suite asserts the native call keyword-for-keyword unchanged with no
 `authorization` block.
 
-### Iteration 21: `ToolGate`, OpenAI, Pydantic AI and MAF
+### Iteration 21: `ToolGate`, OpenAI, Pydantic AI, MAF and Claude
 
-- **Goal:** the three adapters with a per-run hook hide denied tools at list time and refuse
+- **Goal:** the four adapters with a per-run hook hide denied tools at list time and refuse
   them at call time.
 - **Files:** `core/tool.py` (`ToolGate`), `framework/openai/openai.py`,
-  `framework/pydanticai/pydanticai.py`, `framework/maf/maf.py`.
+  `framework/pydanticai/pydanticai.py`, `framework/maf/maf.py`, `framework/claude/claude.py`.
 - **Steps:**
   1. `ToolGate.current(session)` and `deny_result(name, filter)` (spec 9).
   2. OpenAI: `is_enabled` as an AND with the AK check and the `ak_tool_gate` input guardrail at
@@ -503,8 +522,11 @@ mechanism. Every suite asserts the native call keyword-for-keyword unchanged wit
      (spec 9, design refinement 2).
   4. MAF: `AKToolGateMiddleware` first in the per-run middleware list inside
      `_prepare_session` (spec 9).
+  5. Claude: in `_native_options`, a denied `mcp__ak__<name>` leaves `allowed_tools` for
+     `disallowed_tools`, and the HITL `PreToolUse` hook answers `deny` with the reason ahead of
+     its approval branch (spec 9).
 - **Verify:** `test_tool_gates_openai.py`, `test_tool_gates_pydanticai.py`,
-  `test_tool_gates_maf.py`.
+  `test_tool_gates_maf.py`, `test_tool_gates_claude.py`.
 
 ### Iteration 22: ADK and CrewAI
 

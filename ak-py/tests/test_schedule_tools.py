@@ -318,6 +318,19 @@ class TestActingUser:
         assert stored.session_id == "s1"
 
     @pytest.mark.asyncio
+    async def test_the_stored_owner_is_the_user_without_the_acting_agent(self, manager, acting_session):
+        """Runtime publishes the principal with the agent as actor; the task keeps the user alone."""
+        acting = _principal("u1").with_actor(Principal(kind="agent", subject="planner", provider="agentkernel")).with_credential_ref("cred-1")
+        acting_session._publish_run(acting, None)
+
+        result = json.loads(await create_schedule("send the weekly report", cron="0 9 * * 1"))
+
+        stored = manager.get_task(result["task_id"])
+        assert stored.principal["subject"] == "u1"
+        assert stored.principal["actor"] is None
+        assert stored.principal["credential_ref"] is None
+
+    @pytest.mark.asyncio
     async def test_reads_and_mutations_cannot_reach_another_users_schedule(self, manager, acting_session):
         theirs = _create(manager, principal=_principal("u2"))
 

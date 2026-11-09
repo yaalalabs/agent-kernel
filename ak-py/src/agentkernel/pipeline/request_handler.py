@@ -6,7 +6,7 @@ import uuid
 from collections.abc import AsyncGenerator
 from typing import Any
 
-from fastapi import APIRouter, File, Form, HTTPException, Response, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -230,8 +230,11 @@ class RestHandler(AgentRESTRequestHandler):
             return Response(content=json.dumps(body), media_type="application/json", status_code=status_code)
         return body
 
-    async def enqueue_and_wait(self, body: BaseRunRequest):
+    async def enqueue_and_wait(self, body: BaseRunRequest, request: Request):
         """Enqueue request; REST_SYNC waits for the response, REST_ASYNC returns request_id immediately."""
+        # The surface decides who is calling: a principal the client put in the body is overwritten,
+        # never read. Nothing sets request.state.principal until the identity dependency lands.
+        body.principal = getattr(request.state, "principal", None)
         try:
             if not body.session_id:
                 raise HTTPException(status_code=400, detail="session_id is required")
@@ -369,8 +372,10 @@ class RequestHandler(RestHandler):
             router.add_api_route(self.CHAT_MULTIPART_PATH, self.run_multipart_chat, methods=["POST"])
         return router
 
-    async def run_chat(self, body: BaseRunRequest):
+    async def run_chat(self, body: BaseRunRequest, request: Request):
         """POST /api/v1/chat: enqueue; SSE stream for rest_sync + delta, JSON otherwise."""
+        # The surface assigns the principal; a client value is overwritten (see enqueue_and_wait).
+        body.principal = getattr(request.state, "principal", None)
         # Direct-mode parity: same validation messages and error shape as ChatService._validate
         # (ValueError -> HTTPException(400, detail={"error": ...})).
         if not body.session_id:
@@ -381,7 +386,7 @@ class RequestHandler(RestHandler):
         self._reject_unroutable(body)
         if self._config.execution.is_sse:
             return await self._run_chat_stream(body)
-        return await self.enqueue_and_wait(body)
+        return await self.enqueue_and_wait(body, request)
 
     def _reject_unroutable(self, body: BaseRunRequest) -> None:
         """Reject a request this topology cannot answer on this route, before anything is written.
@@ -476,6 +481,7 @@ class RequestHandler(RestHandler):
 
     async def run_multipart_chat(
         self,
+        request: Request,
         prompt: str = Form(...),
         agent: str | None = Form(None),
         session_id: str | None = Form(None),
@@ -500,7 +506,7 @@ class RequestHandler(RestHandler):
         except ValueError as e:
             raise HTTPException(status_code=400, detail={"error": str(e), "session_id": session_id})
 
-        request = BaseRunRequest(
+        body = BaseRunRequest(
             prompt=prompt,
             agent=agent,
             session_id=session_id,
@@ -509,7 +515,7 @@ class RequestHandler(RestHandler):
             files=file_data or None,
             images=image_data or None,
         )
-        return await self.run_chat(request)
+        return await self.run_chat(body, request)
 
     async def _read_upload(self, upload: UploadFile) -> str:
         content = await upload.read()

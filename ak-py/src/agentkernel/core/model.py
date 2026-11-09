@@ -740,7 +740,9 @@ class BaseRequest(BaseModel):
         Wraps a client payload in the envelope.
 
         :param payload: An envelope, a bare run request, or a dict in either shape.
-        :return: The envelope, with the body validated when the payload carries one.
+        :return: The envelope, with the body validated when the payload carries one. A ``principal``
+            key in a dict payload is dropped: the surface assigns the principal after it has
+            parsed the payload, so a client cannot name one.
         :raises ValueError: If the envelope or the body carries a ``user_id`` key: the acting user
             is established by the surface from the credential, never taken from the client.
         :raises TypeError: If the payload is of another type.
@@ -762,9 +764,9 @@ class BaseRequest(BaseModel):
                 if isinstance(body, dict):
                     if "user_id" in body:
                         raise ValueError(USER_ID_NOT_A_FIELD)
-                    body = {key: value for key, value in body.items() if key not in {"request_id", "route"}}
+                    body = {key: value for key, value in body.items() if key not in {"request_id", "route", "principal"}}
             else:
-                body = {key: value for key, value in payload.items() if key not in {"request_id", "route", "body"}}
+                body = {key: value for key, value in payload.items() if key not in {"request_id", "route", "body", "principal"}}
 
             if not body:
                 return cls(request_id=request_id, route=route)

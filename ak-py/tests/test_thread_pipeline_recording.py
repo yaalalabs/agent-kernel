@@ -11,7 +11,7 @@ import threading
 from unittest.mock import MagicMock
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 
 from agentkernel.core.base import Agent, Runner
@@ -127,9 +127,9 @@ class _AuthenticatedThreadRequestHandler(ThreadRequestHandler):
     """Stands in for the identity dependency the pipeline route gains with the identity provider: the
     surface, never the client, assigns the principal the thread is keyed on."""
 
-    async def run_chat(self, body: BaseRunRequest):
-        body.principal = PRINCIPAL
-        return await super().run_chat(body)
+    async def run_chat(self, body: BaseRunRequest, request: Request):
+        request.state.principal = PRINCIPAL
+        return await super().run_chat(body, request)
 
 
 def _client(handler: ThreadRequestHandler | None = None) -> TestClient:
@@ -198,6 +198,17 @@ class TestEdgeRecording:
 
         assert response.status_code == 403
         assert "authenticated principal" in response.json()["detail"]["error"]
+        assert manager.get_thread("s1") is None
+        assert not InMemoryTransport().create_consumer(QueueName.INPUT).fetch(10, 0.1)
+
+    def test_a_principal_sent_by_the_client_is_rejected_like_an_anonymous_one(self, monkeypatch, dummy_agent):
+        """The route overwrites whatever principal the body carries before the recorder reads it (#603)."""
+        manager = _configure(monkeypatch, mode="rest_async")
+        payload = {"prompt": "hello", "session_id": "s1", "agent": AGENT_NAME, "principal": PRINCIPAL.model_dump(mode="json")}
+
+        response = _client(ThreadRequestHandler()).post(CHAT, json=payload)
+
+        assert response.status_code == 403
         assert manager.get_thread("s1") is None
         assert not InMemoryTransport().create_consumer(QueueName.INPUT).fetch(10, 0.1)
 

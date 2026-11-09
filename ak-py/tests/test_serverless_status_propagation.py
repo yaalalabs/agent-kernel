@@ -164,6 +164,41 @@ class TestRestSurfaceReplaysTheStatus:
         assert response_body["status"] == "ACCEPTED"
 
 
+class TestRestSurfaceRefusesAUserId:
+    """``from_payload`` raises ValueError for a ``user_id``; the router answers the advertised 400 (#603)."""
+
+    @pytest.fixture
+    def handler(self):
+        config = MagicMock()
+        config.execution = _ExecutionConfig(mode=ExecutionMode.REST_SYNC)
+        with patch(f"{ROUTER_MODULE}.AKConfig.get", return_value=config), patch(f"{ROUTER_MODULE}.ChatService"):
+            yield DefaultEndpointsHandler()
+
+    def test_a_user_id_in_the_body_is_a_400_with_the_reason(self, handler):
+        event = {"body": json.dumps({"prompt": "hi", "session_id": "s1", "user_id": "u1"})}
+
+        status, body = handler._handle_request(event, lambda request: pytest.fail("the operation must not run"))
+
+        assert status == 400
+        assert body["error"] == "user_id is not a request field; the acting user comes from the credential"
+
+    def test_an_unreadable_body_is_a_400_too(self, handler):
+        """A JSON decoding error is a ValueError: the caller sent something unparsable, which is their 400."""
+        status, body = handler._handle_request({"body": "not json"}, lambda request: pytest.fail("the operation must not run"))
+
+        assert status == 400
+        assert body["error"].startswith("Expecting value")
+
+    def test_an_unexpected_failure_still_hides_behind_a_500(self, handler):
+        def _operation(request):
+            raise RuntimeError("the store is down")
+
+        status, body = handler._handle_request({"body": json.dumps({"prompt": "hi", "session_id": "s1"})}, _operation)
+
+        assert status == 500
+        assert body["error"] == "An unexpected error occurred"
+
+
 class TestResponseStoreRecordPolling:
     def test_get_record_with_retry_polls_until_a_record_lands(self):
         from agentkernel.pipeline.response_store.in_memory import InMemoryResponseStore

@@ -43,9 +43,10 @@ class ScheduledTask(BaseModel):
 
     task_id: str : AK-minted identifier, also the name the provider registers under
     user_id: str : owning user, the subject of ``principal``; every mutation is checked against it
-    principal: dict[str, Any] | None : the owner's principal as JSON primitives, frozen at creation and
-        delivered on every occurrence so the run acts as the owner; None on a task created before
-        the field existed, whose occurrences then run anonymous
+    principal: dict[str, Any] | None : the owner's principal as JSON primitives (without the creating
+        run's actor or credential handle), frozen at creation and delivered on every occurrence so
+        the run acts as the owner; None on a task created before the field existed, whose frozen
+        body still carries ``user_id`` and is refused at fire time, and which cannot be amended
     prompt: str : the prompt each occurrence runs
     agent: str | None : the agent each occurrence runs on, or None for the default
     session_id: str : originating session (``session_mode`` reuse) or the base for

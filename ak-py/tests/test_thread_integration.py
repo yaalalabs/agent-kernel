@@ -3,7 +3,7 @@ import decimal
 from unittest.mock import MagicMock
 
 import pytest
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
@@ -287,12 +287,32 @@ class _AuthenticatedThreadHandler(AgentThreadRequestHandler):
     """Stands in for the identity dependency the REST surface gains with the identity provider: the
     surface, never the client, assigns the principal the thread is keyed on."""
 
-    async def run(self, body: BaseRunRequest):
-        body.principal = ALICE
-        return await super().run(body)
+    async def run(self, body: BaseRunRequest, request: Request):
+        request.state.principal = ALICE
+        return await super().run(body, request)
+
+
+def _request() -> Request:
+    """A bare request for calling a route method directly: no identity dependency has set anything on its state."""
+    return Request({"type": "http", "headers": [], "state": {}})
 
 
 class TestEndToEnd:
+    def test_a_principal_sent_by_the_client_is_not_honoured(self, thread_enabled, registered_agent):
+        """Without the identity dependency the surface establishes nobody, whatever the body claims (#603)."""
+        app = FastAPI()
+        app.include_router(AgentThreadRequestHandler().get_router())
+        client = TestClient(app)
+
+        resp = client.post(
+            "/api/v1/chat",
+            json={"prompt": "hello", "session_id": "s-forged", "agent": registered_agent.name, "principal": ALICE.model_dump(mode="json")},
+        )
+
+        assert resp.status_code == 403
+        assert "authenticated principal" in resp.json()["detail"]["error"]
+        assert client.get("/api/v1/threads/s-forged").status_code == 404
+
     def test_chat_records_and_reads_back_through_the_api(self, thread_enabled, registered_agent):
         handler = _AuthenticatedThreadHandler()
         app = FastAPI()
@@ -531,7 +551,7 @@ class TestThreadPauseAndResume:
             patch.object(ThreadRequestHandler, "_record_user_message", AsyncMock()),
             patch.object(RequestHandler, "run_chat", AsyncMock(return_value={"accepted": True})),
         ):
-            assert await handler.run_chat(req) == {"accepted": True}
+            assert await handler.run_chat(req, _request()) == {"accepted": True}
 
     @pytest.mark.asyncio
     async def test_the_queue_route_still_rejects_a_request_carrying_neither(self, thread_enabled, registered_agent):
@@ -540,7 +560,7 @@ class TestThreadPauseAndResume:
         handler = ThreadRequestHandler()
 
         with pytest.raises(HTTPException) as exc:
-            await handler.run_chat(BaseRunRequest(session_id="s1", principal=U1, agent=registered_agent.name, prompt=""))
+            await handler.run_chat(BaseRunRequest(session_id="s1", principal=U1, agent=registered_agent.name, prompt=""), _request())
 
         assert exc.value.status_code == 400
         assert "No prompt provided" in exc.value.detail["error"]

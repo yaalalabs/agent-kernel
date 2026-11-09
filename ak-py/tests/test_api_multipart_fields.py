@@ -111,6 +111,45 @@ def test_multipart_has_no_user_id_field(captured_requests):
     assert "user_id" not in captured[0].model_dump()
 
 
+class TestPrincipalComesFromTheSurface:
+    """The surface assigns ``principal`` after authentication; a value in the client body is overwritten, never read (#603)."""
+
+    FORGED = {"subject": "mallory", "provider": "oidc", "namespace": "https://issuer.example"}
+
+    def test_a_principal_in_the_json_body_is_overwritten(self, captured_requests):
+        client, captured = captured_requests
+
+        response = client.post(AgentRESTRequestHandler.CHAT_PATH, json={"prompt": "hello", "session_id": "s-1", "principal": self.FORGED})
+
+        assert response.status_code == 200
+        assert captured[0].principal is None
+
+    def test_the_sse_path_overwrites_it_too(self):
+        with _mounted(ExecutionMode.REST_SYNC, "delta") as (client, captured):
+            client.post(AgentRESTRequestHandler.CHAT_PATH, json={"prompt": "hello", "session_id": "s-1", "principal": self.FORGED})
+
+        assert captured[0].principal is None
+
+    def test_a_refusal_on_the_sse_path_is_a_403(self):
+        """Scheduling without a principal raises PermissionError before the stream opens; the route maps it as the thread routes do."""
+        config = Mock()
+        config.api.max_file_size = 10_000_000
+        config.execution = _ExecutionConfig(mode=ExecutionMode.REST_SYNC, message_type="delta")
+        chat_service = Mock()
+        chat_service.process_stream_chat_async = AsyncMock(side_effect=PermissionError("scheduling requires an authenticated principal"))
+
+        with (
+            patch("agentkernel.api.handler.Config.get", return_value=config),
+            patch("agentkernel.api.handler.ChatService", return_value=chat_service),
+        ):
+            app = FastAPI()
+            app.include_router(AgentRESTRequestHandler().get_router())
+            response = TestClient(app).post(AgentRESTRequestHandler.CHAT_PATH, json={"prompt": "hello", "session_id": "s-1"})
+
+        assert response.status_code == 403
+        assert response.json()["detail"] == "scheduling requires an authenticated principal"
+
+
 class TestReplyMessageType:
     """The direct REST handler streams SSE only for rest_sync + delta (#641)."""
 

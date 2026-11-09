@@ -56,9 +56,11 @@ and `research/design-options.md` section 4).
   (`integration/thread/thread_chat.py:209-218`) only ever see the local dict. Nothing shares
   descriptors across processes.
 - Tool sets are fixed per agent at load time (`core/base.py:698-708`, `core/tool.py:166-176`) with
-  no per-run or per-user filtering, and AK installs no native tool hook in any of its seven
-  adapters (a grep across `framework/` and `core/` for `before_tool_callback`, `before_tool_call`,
-  `RunHooks`, `tool_input_guardrail` and `middleware=` finds no installation); the only call-time
+  no per-run or per-user filtering, and only one of AK's eight adapters installs a native tool
+  hook: the Claude Agent SDK adapter's `PreToolUse` hook (`framework/claude/claude.py:407-451`),
+  which gates approval-required tools for human-in-the-loop and decides nothing about access (a
+  grep across `framework/` and `core/` for `before_tool_callback`, `before_tool_call`, `RunHooks`,
+  `tool_input_guardrail` and `middleware=` finds no other installation); the only call-time
   checks live inside individual tools (`knowledgebase/okf/tools.py:150`, `schedule/tools.py:72-81`).
   The one AK-owned tool invocation point is realtime mode (`core/realtime/runner.py:124`), reached
   from a `ToolContext` built with no acting user (`pipeline/realtime_pool.py:239`).
@@ -337,8 +339,13 @@ and `research/design-options.md` section 4).
 - `Principal.credential_ref` is minted by `RequestAuthenticator` when identity is configured: an
   opaque random id under which the surface stores the inbound credential in the `CredentialStore`
   with TTL `min(token exp, identity.credentials.inbound_ttl)`. `Runtime` deletes the entry in the
-  run's `finally`. In the two-process topology the io-handler stores it and the agent-runner
-  reads it by ref: **the token never rides the queue, the ref does**.
+  run's `finally`. A WebSocket connection authenticates once and runs many frames, so there the
+  entry is connection-scoped: the handler stores it under a ref prefixed `conn:` at connect, every
+  frame's body carries that ref, `Runtime` and the runners leave a `conn:` ref alone, and the
+  handler deletes the entry at disconnect, the TTL being the backstop (the Lambda WebSocket
+  surface has no process memory between frames, which rules out re-storing per frame). In the
+  two-process topology the io-handler stores it and the agent-runner reads it by ref: **the token
+  never rides the queue, the ref does**.
 - `CredentialStore` ABC: `put(key, value, expires_at)`, `get(key)`, `delete(key)`. Built-ins via
   `CredentialStoreFactory` (`identity.credentials.store.type`): `in_memory` (default,
   single-process), `redis`, `valkey`, `dynamodb` over the shared drivers reusing
@@ -456,8 +463,11 @@ and `research/design-options.md` section 4).
     From address), `provider:<name>` (the principal's provider by exact name, or by prefix when
     the name ends in a colon, so `provider:messaging:` is every messaging sender and
     `provider:oidc` is token-verified callers only), `user:<subject>` (matches the subject of a
-    principal of any kind, so a client-credentials service principal is granted the same way),
-    `group:<name>`, `role:<name>`; an agent entry is an agent id, `*`, or `tag:<name>`, resolved through the
+    principal of any kind that an identity provider authenticated, so a client-credentials service
+    principal is granted the same way; it never matches a `messaging:` or `realtime:` principal,
+    whose subject is a platform id the platform may not have verified and that could collide with
+    a configured subject, so an edge sender is granted through `provider:messaging:<platform>`,
+    `authenticated` or `*`), `group:<name>`, `role:<name>`; an agent entry is an agent id, `*`, or `tag:<name>`, resolved through the
     registry against `AgentDescriptor.tags` (settled, Q18), so `StaticAuthorizer` is constructed
     with the registry; a tag no descriptor carries matches nothing.
   - `agent_level` is the highest level over every matching (subject, agent) pair across all
@@ -580,7 +590,7 @@ async def manage_ticket(ctx: ToolContext, action: str, ticket_id: str, **fields)
 | Which agents the principal may see | Catalog routes | `AccessGate.visible_agents`, narrowed by `surfaces` | Feeds REST, AG-UI, MCP `tools/list`, `/a2a/catalog` |
 | Which tools agent A offers this run | Per run, at tool-list time | `Runtime` resolves `AccessGate.tool_filter(principal, agent)` once, after `resolve_run_options` and before the framework-context load, and publishes it under `TOOL_FILTER_CACHE_KEY`; adapters apply it natively (section 7) | Visibility only; hidden tools are not a boundary |
 | May agent A invoke tool T now, for this principal | Call time | The same filter re-checked at the call through each adapter's native gate or wrapper (section 7) | A denied call returns a tool result string naming the reason (`"Tool 'apply_manifest' requires level write; the current principal has read"`), never an exception into the framework (the OKF `write_kb` behaviour, `knowledgebase/okf/tools.py:150-152`); a failure inside the gate itself denies |
-| May the principal continue session S | `Runtime.run` / `stream`, after the agent check; the thread path at `ConversationThreadManager.get_or_create_thread` | `AccessGate.authorize_session(principal, session)`: allowed when the gate is absent, the session has no owner, the principal is anonymous (the agent check already decided), the owner's namespace and subject equal the principal's, or either side's `provider` carries the `messaging:` or `realtime:` prefix (settled, Q17); otherwise `PermissionError`. The thread path compares the existing `Thread.user_id` with the principal before any write (`integration/thread/manager.py:109-115` checks nothing today) | Closes session continuation by anyone who knows a `session_id`; 403 at the choke point, and before a thread message is written on the thread path |
+| May the principal continue session S | `Runtime.run` / `stream`, after the agent check; the thread path at `ConversationThreadManager.get_or_create_thread` | `AccessGate.authorize_session(principal, session)`: allowed when the gate is absent, the session has no owner, the owner's namespace and subject equal the principal's, or either side's `provider` carries the `messaging:` or `realtime:` prefix (settled, Q17); otherwise `PermissionError`, an anonymous caller included: an owned session was opened by an authenticated principal, and knowing its id is not a credential, whatever the agent grant says. The thread path compares the existing `Thread.user_id` with the principal before any write (`integration/thread/manager.py:109-115` checks nothing today) | Closes session continuation by anyone who knows a `session_id`; 403 at the choke point, and before a thread message is written on the thread path |
 | May the principal resume paused run R | `Runtime._validate_resume` (`core/runtime.py:273-332`) | Compares the recorded `PausedRun.subject` with the principal; a differing non-anonymous subject is `PermissionError` | Today no check exists; the HITL design deferred approver identity |
 | Threads, schedules, sandbox principal | Existing checks | Unchanged ownership rules; any level creates a thread or a schedule, and a schedule is re-checked at fire time (settled, Q13); `AgentPrincipalResolver` reads `ToolContext.principal` so `sandbox.identity.mode: user` works with the run principal and no custom resolver | Absorbing ownership checks into the authorizer is round 2 |
 
@@ -591,7 +601,13 @@ async def manage_ticket(ctx: ToolContext, action: str, ticket_id: str, **fields)
 - Scheduled occurrences carry the owner's frozen `Principal` in the trigger body where
   `docs/specs/629-scheduled-tasks` put `user_id` (the task record's owner stays the subject), so
   the runner re-checks the level at fire time; a task whose owner has since lost access is
-  skipped with one warning and recorded as a trigger with an error, never run.
+  skipped with one warning and recorded as a trigger with an error, never run. The frozen
+  principal is the owner alone, without the creating run's `actor` or `credential_ref`, and a
+  trigger is matched to its task on the frozen principal's namespace and subject, not the subject
+  alone. Its `groups` and `roles` are those of creation time: an unattended run has no token to
+  re-resolve them, so a membership the provider later revokes is not seen until the task is
+  recreated; operators revoke through the grants, which are evaluated at fire time, or by
+  cancelling the task (documented limitation).
 
 ### 7. Framework adapter tool gates
 
@@ -611,6 +627,7 @@ async def manage_ticket(ctx: ToolContext, action: str, ticket_id: str, **fields)
 | CrewAI (1.15.18 in the lock) | none | one process-wide `before_tool_call` hook (available since 1.9.1) returning `False`; CrewAI's own "blocked by hook" message reaches the agent | tools not routed through the executor |
 | LangGraph | none (compiled graph) | wrapper around the `StructuredTool` callables produced by `LangGraphToolBuilder.bind` | tools bound natively by the application: with `authorization` configured, an agent on this runner that has them fails `AccessGate.validate_configuration` with `AKConfigError` (settled, Q12) |
 | smolagents | none | `Tool.forward` wrapped on every tool in `agent.tools` at wrap time, native ones included | tools added to `agent.tools` after wrap time: refused at startup with `authorization` configured, as for LangGraph (settled, Q12; spec refinement 4) |
+| Claude Agent SDK (`framework/claude/`, #833) | per run: a denied `mcp__ak__<name>` is left out of the `allowed_tools` the runner builds and added to `disallowed_tools` on the run's `ClaudeAgentOptions`, so the SDK never offers it | the per-run `PreToolUse` matcher the HITL gate already installs (`framework/claude/claude.py:512`) answers `permissionDecision: "deny"` with the reason in `permissionDecisionReason`; AK's check runs ahead of the approval branch, so a denied tool never pauses | Claude Code's built-in tools and tools from other `mcp_servers`: `get_tool_names` lists only the tools the in-process `ak` server serves, and the gate leaves the rest to the SDK's own permission settings |
 
 - Every adapter resolves nothing itself: it reads `TOOL_FILTER_CACHE_KEY` from the session's
   volatile cache (set by `Runtime`), so with no `authorization` block the filter is absent and the
@@ -762,9 +779,11 @@ registry:
   key on first authenticated use, scheduled-task trigger bodies gain `principal`, and the registry
   store is new. Scheduled tasks and threads that exist before the change are not migrated in the
   system: a task's trigger body was frozen at the provider with `user_id` and is refused at fire
-  time, and a thread stays keyed on the `user_id` it was created with. Operators recreate the tasks
-  and migrate or discard the threads outside the system (decided 2026-11-09; it does not gate the
-  phase A merge).
+  time, `ScheduleManager.update` refuses to amend such a task (an amendment would re-freeze its
+  body with no owner, and the occurrences would run anonymous and unrecorded) while cancelling it
+  stays possible, and a thread stays keyed on the `user_id` it was created with. Operators
+  recreate the tasks and migrate or discard the threads outside the system (decided 2026-11-09; it
+  does not gate the phase A merge).
 
 ### 11. Testing
 
@@ -773,7 +792,7 @@ registry:
   `AuthorizerContract`; `tests/test_agent_registry_*.py` per backend over fakes of the shared
   drivers; `tests/test_access_gate.py` (visibility rules, 403 versus 404, tool filter, `tag:`
   resolution, the native-tool refusal for LangGraph and smolagents);
-  `tests/test_tool_gates_<adapter>.py` for the seven adapters and the realtime entry point (denied tool hidden where supported,
+  `tests/test_tool_gates_<adapter>.py` for the eight adapters and the realtime entry point (denied tool hidden where supported,
   denied call returns the reason string, no-authorization path keyword-for-keyword unchanged);
   `tests/test_session_identity.py` (`ak.` keys refused from application code, `get_principal`,
   `get_owner` and `ToolContext.access_level` read-only, `access_level` `None` without
