@@ -24,6 +24,7 @@ def _fake_config(mode=ExecutionMode.REST_SYNC, message_type=None):
             connection_table=SimpleNamespace(table_name="ak-connections", ttl=3600),
         ),
         execution=_ExecutionConfig(mode=mode, message_type=message_type),
+        identity=None,
     )
 
 

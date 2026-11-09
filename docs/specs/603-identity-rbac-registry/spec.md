@@ -349,8 +349,9 @@ or `None` when the block is absent; `reset()` for tests. Branches on `identity.p
   Symmetric algorithms (`HS*`) are refused at construction with `AKConfigError`. Every
   `jwt.PyJWTError` becomes `AuthenticationError(str(exc))`. `required_claims` entries missing from
   the payload are an `AuthenticationError`.
-- Claim paths are dotted and resolved by `ClaimPath.read(payload, path)` (a static helper on the
-  provider): `subject` (default `sub`, missing is an `AuthenticationError`), `groups` (default
+- Claim paths are dotted and resolved by `ClaimPath.read(payload, path)` (a static helper in
+  `provider/base.py`, shared with the role mapper's `pass_through`): `subject` (default `sub`,
+  missing is an `AuthenticationError`), `groups` (default
   `groups`, missing yields `[]`, a string yields a one-element list). `namespace` is the validated
   `iss`. Every other claim lands in `Principal.claims` verbatim; `roles` is never written.
 - Subclasses change defaults and one check each:
@@ -366,12 +367,16 @@ or `None` when the block is absent; `reset()` for tests. Branches on `identity.p
 - `security_scheme()` returns `("openIdConnect", {"url": f"{issuer}/.well-known/openid-configuration"})`.
 
 **`StaticIdentityProvider`** (`provider/static.py`): constructed with `principals: dict[str,
-dict]` (credential key to principal fields). At construction every key is resolved through
-`SecretManager.current().get(key)` (`secret/manager.py:60-76`); a `SecretNotFoundError` is an
-`AKConfigError` naming the key. `authenticate` compares the credential against every resolved
-value with `hmac.compare_digest` (constant time over all entries) and returns
-`Principal(subject, groups, roles, claims, provider="static", namespace="static")`; no match is
-an `AuthenticationError`. Documented as the dev, test and CLI provider.
+dict]` (credential key to principal fields) and an optional `secrets: SecretManager` (tests pass
+one; the factory's `from_config(config)` leaves it to `SecretManager.current()`). At construction
+every key is resolved through `SecretManager.get(key)` (`secret/manager.py:60-76`); a
+`SecretNotFoundError` or a malformed key is an `AKConfigError` naming the key, and two principals
+resolving to the same credential value are refused. `authenticate` compares the credential
+against every resolved value with `hmac.compare_digest` (constant time over all entries) and
+returns `Principal(subject, kind, groups, roles, claims, provider="static", namespace="static")`;
+no match is an `AuthenticationError`. The static block's `roles` are the one case of a provider
+issuing roles itself, since it is Agent Kernel's own dev provider; a configured role mapper
+replaces them like any provider's. Documented as the dev, test and CLI provider.
 
 **`RoleMapper`** (`provider/roles.py`):
 

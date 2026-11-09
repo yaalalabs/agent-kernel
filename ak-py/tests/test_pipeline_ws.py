@@ -68,6 +68,7 @@ def _use_config(
     class _Cfg:
         websocket_api = _WebSocketAPI
         api = _Api
+        identity = None
 
         execution = _ExecutionConfig(mode=mode, message_type=message_type, queues=_QueuesConfig(type=transport_type))
 
