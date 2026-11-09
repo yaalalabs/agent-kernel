@@ -59,5 +59,5 @@ A multi-agent solution that connects individuals with suitable volunteer opportu
 
 ## Deployment
 
-- Optional / stretch goal — not required for a working submission.
+- Optional / stretch goal — not required for a working local solution.
 - If pursued, follow the deployment folder structure used by the Agent Kernel AWS serverless examples (a single `lambda.py` entry point, packaging commands in `deploy/deploy.sh`), and keep the underlying agent and tool logic shared between local and deployed execution.

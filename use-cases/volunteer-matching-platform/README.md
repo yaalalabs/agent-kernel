@@ -49,7 +49,7 @@ Try a full conversation: give it your skills, availability, causes, and location
 uv run pytest
 ```
 
-- `tool_test.py`: unit tests for `search_opportunities`'s ranking logic — no agent, session, or LLM call involved, always runs (8/8 passing).
+- `tool_test.py`: unit tests for `search_opportunities`'s ranking logic — no agent, session, or LLM call involved, always runs, including regression tests that an unrelated profile gets no matches rather than padded remote listings.
 - `demo_test.py`: a live CLI smoke test (skipped automatically if `GOOGLE_API_KEY`/`GEMINI_API_KEY` isn't set) — checks `profile_agent` returns a real, non-empty, error-free reply.
 
 Note: the first call to `save_user_profile`/`load_user_profile` on a machine downloads a small (~80 MB) local embedding model for the memory store — one-time, needs internet, no API key involved.
@@ -76,19 +76,14 @@ Note: the first call to `save_user_profile`/`load_user_profile` on a machine dow
 - **Slack was attempted and dropped in favor of Telegram.** The code (not currently wired into `app.py`) was correct and independently verified — route live, correctly rejected unsigned requests, OAuth scopes and event subscriptions confirmed correctly configured and reinstalled in the Slack admin UI, the App Home messages tab enabled, and the public tunnel confirmed genuinely reachable from the outside across two different providers (Pinggy, then ngrok with a stable domain). Despite all of that, a real message event never once reached the server — only Slack's one-time URL-verification handshake did, consistently, across both tunnels and a fully reinstalled app. That asymmetry points to something on Slack's account/workspace side outside what the app-configuration screens expose. Rather than keep chasing it, the same effort went into Telegram instead, which worked cleanly on the first real attempt — no OAuth, no reinstalls, no scopes, just a bot token and a webhook URL.
 - **Memory identity is per-channel.** The web frontend and Telegram each track identity independently (a persisted browser id vs. the Telegram chat id) — the same person on both isn't recognized as one account. See `SPEC.md`'s Memory/Knowledge section for why.
 - **CLI memory doesn't persist across separate `demo.py` runs** — each run gets a fresh session id. It works fine within one run, and works across visits on the web frontend (which deliberately persists its id).
-- Cloud deployment was treated as out of scope — a solid local run plus the web frontend satisfies the rubric without it.
+- **Pinned to `agentkernel` 0.8.x.** `pyproject.toml` requires `>=0.8.1,<0.9`. The agents, tools, and memory also run on 0.9.x, but 0.9 replaced `AgentTelegramRequestHandler` with the new `TelegramInboundAdapter`/`IOHandler` integration API, so `app.py` and `telegram_handler.py` need porting before the pin can be lifted.
+- Cloud deployment is out of scope for this use case — it runs locally (CLI, REST API + web frontend, Telegram).
 
 ## Status
 
-- [x] Phase 1 — `SPEC.md`
-- [x] Phase 2 — scaffold
-- [x] Phase 3a — agents (`profile_agent` → `matching_agent` via delegation-via-tool)
-- [x] Phase 3b — dataset (36 opportunities) + `search_opportunities` (8/8 unit tests passing)
-- [x] Phase 3c — memory (`save_user_profile`/`load_user_profile` via `ChromaManager`)
-- [x] Phase 3d — web frontend — **confirmed working with a real conversation and a real Gemini key**
-- [x] Phase 3e — Slack — attempted, thoroughly investigated, dropped in favor of Telegram (see Known Limitations)
-- [x] Phase 3g — Telegram — **confirmed fully working with a real bot and a real conversation, including formatted replies**: `Selected agent: profile_agent` → profile captured in one message → `Delegating to matching_agent with profile_summary='Skills: coding, teaching. Availability: weekends. Causes: education. Location: Colombo.'` → a full ranked-match reply with real bold/italic formatting, all over real Telegram servers
-- [x] Phase 3f — test harness
-- [x] Phase 5 — fresh-clone acceptance test: cloned the branch into a throwaway directory, followed only this README from scratch — `build.sh`, `pytest` (8 passed, 1 correctly skipped without a key), and `app.py` all worked exactly as documented, including a real conversation reaching Gemini
-- [x] Phase 6a — `AGENTS.md` added
-- [ ] Phase 6b — demo video, final submission
+Working end to end, verified with a real Gemini key:
+
+- **Web frontend:** full conversation — profile captured, handed off to `matching_agent`, ranked matches with reasons returned; returning users are recognized after a reload.
+- **Telegram:** verified with a real bot over real Telegram servers — `Selected agent: profile_agent` → profile captured in one message → `Delegating to matching_agent with profile_summary='Skills: coding, teaching. Availability: weekends. Causes: education. Location: Colombo.'` → a ranked-match reply with real bold/italic formatting.
+- **Fresh clone:** following only this README from scratch — `build.sh`, `uv run pytest`, and `app.py` all work as documented.
+- **Tests:** `uv run pytest` passes (`demo_test.py` is skipped without a Gemini key).
