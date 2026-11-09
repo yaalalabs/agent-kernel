@@ -760,8 +760,11 @@ registry:
   with the capability scopes of Q8.
 - Stored data: session, thread and schedule records keep their layout; sessions gain the `owner`
   key on first authenticated use, scheduled-task trigger bodies gain `principal`, and the registry
-  store is new. Scheduled tasks created before the change have no `principal` snapshot and are
-  not migrated; they fire as the anonymous principal.
+  store is new. Scheduled tasks and threads that exist before the change are not migrated in the
+  system: a task's trigger body was frozen at the provider with `user_id` and is refused at fire
+  time, and a thread stays keyed on the `user_id` it was created with. Operators recreate the tasks
+  and migrate or discard the threads outside the system (decided 2026-11-09; it does not gate the
+  phase A merge).
 
 ### 11. Testing
 

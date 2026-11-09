@@ -919,7 +919,8 @@ candidate walk; `StaticAuthorizer` subclasses it, and every later engine must.
   `principal=principal.model_dump(mode="json")`. `create_from_request` (95-111) passes
   `req.principal or Principal.anonymous()`.
 - `_build_trigger_body` (469-490): `"user_id"` is replaced by `"principal": task.principal`
-  (`None` for tasks created before the change, which then fire anonymous).
+  (`None` only on a task created before the change, whose frozen body also still carries
+  `user_id` and is therefore refused at fire time; such tasks are recreated, not migrated).
 - `record_trigger(task_id, principal, request_id, occurred_at, error=None)` (267-294) and
   `_owns_occurrence` (296-316) compare `task.user_id` with `principal.subject` (an anonymous
   principal is a mismatch); `error` is recorded on the occurrence by the store's `record_trigger`

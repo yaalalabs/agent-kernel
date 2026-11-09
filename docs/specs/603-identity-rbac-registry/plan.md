@@ -590,7 +590,8 @@ mechanism. Every suite asserts the native call keyword-for-keyword unchanged wit
   `README.md`; the `ak-deployment` READMEs and chart comments listed there.
 - **Steps:**
   1. Run `ak-dev-sync-docs-from-branch` over the branch; write the new advanced page from spec
-     sections 2 to 8 and the design's worked example.
+     sections 2 to 8 and the design's worked example, including the operator note that scheduled
+     tasks and threads from before the change are recreated or migrated outside the system.
   2. Confirm the Terraform resources need no change (the connections table keeps its `user_id`
      hash key; the authorizer Lambda keeps its `handler_path` contract).
 - **Verify:** `grep -rn "AuthValidator\|Authoriser\|acting_user_id\|mcp.agents\|a2a.agents\|
