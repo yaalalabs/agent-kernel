@@ -12,6 +12,10 @@ services:
     command: ["gcloud", "beta", "emulators", "pubsub", "start", "--project=ak-local", "--host-port=0.0.0.0:8085"]
     ports:
       - "8085:8085"
+    # Lets the emulator push to a receiver on the host (the live push test). Docker Desktop resolves
+    # host.docker.internal by itself; Linux (CI) needs this mapping.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     healthcheck:
       # The emulator answers "Ok" on its root path once it accepts requests; CI waits on this.
       test: ["CMD-SHELL", "curl -sf http://localhost:8085 || exit 1"]

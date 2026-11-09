@@ -81,29 +81,32 @@ re-reviewed.
 
 ## Iteration 6: Terraform queue mode
 
-- **Goal:** `queue_mode = true` deploys the edge, a worker-pool runner, the Pub/Sub objects and
-  IAM; CREMA is available behind `scaling_config.enabled`.
+- **Goal:** queue mode (the default) deploys the edge, a private agent-runner service that Pub/Sub
+  pushes requests to, the Pub/Sub objects and IAM. _Reworked 2026-11-09: push replaced the worker pool
+  and CREMA first built here (spec §7 item 9)._
 - **Files:** `ak-deployment/ak-gcp/common/modules/pubsub/{main,variables,outputs}.tf` + `README.md`,
   `ak-deployment/ak-gcp/common/modules/agent-runner/{main,variables,outputs}.tf` + `README.md`;
   in both roots: `queue_mode.tf` (new), `variables.tf`, `state.tf`, `cloud_run.tf` /
   `cloud_function.tf`, `outputs.tf`, `README.md`; `containerized/run.md`, `common/run.md`.
 - **Steps:**
   1. Module `pubsub` (§5.2).
-  2. Module `agent-runner` without CREMA (§5.3).
+  2. Module `agent-runner`: the runner service, its identity and the push identity (§5.3).
   3. Root variables and their validations (§5.4).
   4. `queue_mode.tf`: modules, runner image, edge IAM, `local.queue_env`, `cpu_idle` (§5.5).
   5. Queue-mode gateway routes (§5.5).
-  6. CREMA resources in `agent-runner` (§5.3). Confirm whether CREMA honours
-     `minReplicaCount`/`maxReplicaCount`; if not, apply the fallback in §5.3.
+  6. The push path in Python: `PubSubPushReceiver` (§1.9) and `CloudRunAgentRunner` (§6), with
+     their unit tests and the live push test on the emulator.
   7. Add the APIs to `run.md` and document the new variables in the root READMEs.
-- **Verify:** `terraform validate` in both roots; the three failing plans from Testing → Terraform;
-  a `queue_mode = true` apply in the CI project followed by one chat request (done in iteration 7).
+- **Verify:** `terraform validate` in both roots; the plan-time `terraform test` checks from
+  Testing → Terraform; `uv run pytest tests/test_pipeline_pubsub_transport.py tests/test_gcp_cloudrun.py`
+  and the live push test; a queue-mode apply in the CI project followed by one chat request (done
+  in iteration 7).
 
 ## Iteration 7: GCP queue-mode example and weekly test
 
 - **Goal:** a deployed two-tier GCP app answers chat over Pub/Sub, and the weekly run keeps proving it.
 - **Files:** `examples/gcp-serverless/openai-queue-mode/` (`app.py` with `main()` → `CloudRun.run()`
-  and `runner()` → `AgentRunner.run()`, `config.yaml`, `pyproject.toml`, `build.sh`, `README.md`,
+  and `runner()` → `CloudRunAgentRunner.run()`, `config.yaml`, `pyproject.toml`, `build.sh`, `README.md`,
   `serverless_test.py`, `deploy/{Dockerfile,deploy.sh,main.tf,outputs.tf,providers.tf,terraform.tfvars,variables.tf}`),
   `.github/integration-test-config.yaml`.
 - **Steps:**
@@ -112,7 +115,7 @@ re-reviewed.
   2. `config.yaml` declares `execution.queues.type: pubsub`, `execution.response_store.type: redis`,
      `session.type: redis`.
   3. Add the weekly `gcp-serverless` entry; enable `pubsub.googleapis.com` in the CI project.
-- **Verify:** `python .github/scripts/run_single_test.py --type gcp-serverless --path examples/gcp-serverless/openai-queue-mode --action deploy`, then `--action test`, then `--action destroy`. Once, by hand: `scaling_config.enabled = true` and watch CREMA log `Recommended instances`.
+- **Verify:** `python .github/scripts/run_single_test.py --type gcp-serverless --path examples/gcp-serverless/openai-queue-mode --action deploy`, then `--action test`, then `--action destroy`. Check that the runner scaled to zero after the run, and that a reply still arrives after it has.
 
 ## Iteration 8: Tests
 

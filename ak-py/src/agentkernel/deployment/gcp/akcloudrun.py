@@ -88,7 +88,7 @@ class CloudRun:
         :raises AKConfigError: For ``async`` (WebSocket) or ``realtime`` mode on a broker
             transport, before anything starts.
         """
-        cls._reject_undeliverable_modes()
+        cls.reject_undeliverable_modes()
 
         from ...api.http import RESTAPI
         from ...pipeline.io_handler import IOHandler
@@ -99,7 +99,7 @@ class CloudRun:
         IOHandler.run(handlers=handlers)
 
     @classmethod
-    def _reject_undeliverable_modes(cls) -> None:
+    def reject_undeliverable_modes(cls) -> None:
         """Refuse the modes whose replies Cloud Run cannot deliver across instances.
 
         In ``async`` and ``realtime`` modes a reply is pushed to the instance that holds the

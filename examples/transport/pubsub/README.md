@@ -62,9 +62,10 @@ line and setting `project_id` in `config.yaml`.
 | `python app.py io` | `IOHandler.run()` | Serves `/api/v1/chat`, publishes to `agent-input`, pulls `agent-output`, writes replies to the response store |
 | `python app.py runner` | `AgentRunner.run()` | Pulls `agent-input`, runs the agent, publishes the reply to `agent-output` |
 
-Scale the runner by starting more of them: Pub/Sub has no partition ceiling. On Cloud Run, the
-`io` side is what `CloudRun.run()` starts, and the runner is a worker pool running
-`AgentRunner.run()` (see the ak-gcp modules' `queue_mode`).
+Scale the runner by starting more of them: Pub/Sub has no partition ceiling. Locally the runner
+pulls requests. On Cloud Run the `io` side is what `CloudRun.run()` starts, and the runner is a
+second service that Pub/Sub pushes each request to, started by `CloudRunAgentRunner.run()` (see the
+ak-gcp modules' `queue_mode`).
 
 ## The tester
 

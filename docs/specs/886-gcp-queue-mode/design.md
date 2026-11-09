@@ -3,7 +3,7 @@
 This splits a GCP deployment into two tiers:
 
 - **Edge:** a Cloud Run service that enqueues requests and serves replies.
-- **Agent runner:** a Cloud Run worker pool that runs the agents.
+- **Agent runner:** a private Cloud Run service that Pub/Sub pushes each request to, and that runs the agents.
 
 The tiers are connected by a new built-in `pubsub` queue transport and a Memorystore Redis response store. This is the same IO / runner split that AWS (#374) and the Helm chart (#495) already have. The design idea is to reuse everything the pipeline already provides and add only what GCP lacks:
 
@@ -53,12 +53,11 @@ flowchart LR
     C["Client"] --> GW["API Gateway"]
     GW --> E["Edge: Cloud Run service<br/>CloudRun.run() → IOHandler<br/>REST + response handler"]
     E -- "publish" --> IT[("input topic")]
-    IT --> R["Agent runner: Cloud Run worker pool<br/>AgentRunner.run()"]
+    IT -- "push" --> R["Agent runner: Cloud Run service<br/>CloudRunAgentRunner.run()"]
     R -- "publish" --> OT[("output topic")]
-    OT --> E
+    OT -- "pull" --> E
     E <--> RS[("Memorystore Redis<br/>response store + bookkeeping")]
     R <--> RS
-    CR["CREMA (optional)"] -. "input backlog → instance count" .-> R
 ```
 
 ### Pub/Sub transport (`pipeline/transport/pubsub.py`)
@@ -140,33 +139,37 @@ flowchart LR
   - on a broker transport, starts the edge: the REST API plus the response handler;
   - has no `auth_validator`: REST auth stays on `GCPAuthorizer`, and WebSocket is a non-goal;
   - refuses `async` and `realtime` on a broker transport with `AKConfigError`, because Cloud Run instances are not individually addressable. _Added in spec review; needs re-review._
-- The agent runner's entry point is the existing `agentkernel.pipeline.AgentRunner.run()`. No GCP subclass, because a worker pool needs no port.
+- **`CloudRunAgentRunner.run()`** (`deployment/gcp/akagentrunner.py`) is the runner's entry point. _Changed during implementation, 2026-11-09: push instead of a worker pool._
+  - It serves `POST /pubsub/push`: Pub/Sub pushes each request there, and the response status acknowledges it (2xx) or asks for redelivery.
+  - Each push runs one message exactly as `AgentRunner` runs a pulled one: the same processing, receive counting, permanent-failure path and dead-letter copy, through a `PubSubPushReceiver` the transport creates.
+  - **Accepted trade-off:** Pub/Sub waits at most 600 seconds for a push answer. A run that takes longer is redelivered while it is still going, and runs a second time. Agent runs are not capped: the service's request timeout is Cloud Run's maximum (60 minutes).
+  - Locally (and off GCP), `AgentRunner.run()` still pulls the same queue.
 
 ### Terraform (`ak-deployment/ak-gcp/{serverless,containerized}`)
 
-- **Switch.** A `queue_mode` boolean, default `false`, named as on AWS (`ak-aws/containerized/variables.tf:256`). With `false`, today's single-service plan is unchanged.
+- **Switch.** A `queue_mode` boolean, named as on AWS (`ak-aws/containerized/variables.tf:256`), **default `true`** (_changed during implementation, 2026-11-09: queue mode is the default direction; AWS defaults to `false`_).
+  - Queue mode creates Memorystore itself, as the response store, so the default plan needs no other flag.
+  - `queue_mode = false` keeps today's single-service plan unchanged.
+  - Breaking for existing users of the GCP modules: on upgrade they get queue mode unless they set `queue_mode = false`.
 - **Shared modules.** The queue-mode resources live in shared modules under `ak-gcp/common/modules/`, as AWS splits `modules/queues` and `modules/agent-runner`:
   - `pubsub`:
     - input and output topics, each with a dead-letter topic;
-    - subscriptions with ordering enabled;
+    - subscriptions with ordering enabled: the input one pushes to the agent runner (ack deadline 600 s, the maximum, signed with an OIDC token), the output one is pulled by the edge;
     - a dead-letter policy with `max_delivery_attempts = clamp(max_receive_count + 1, 5, 100)`. This is the server backstop one delivery past the loop's limit, as on NATS (`pipeline/transport/base.py:187-192`);
     - a retry policy.
-  - `agent-runner`:
-    - a `google_cloud_run_v2_worker_pool` (provider ≥ 6.37.0) running `AgentRunner.run()`;
+  - `agent-runner` (_Changed during implementation, 2026-11-09: push instead of a worker pool._):
+    - a private `google_cloud_run_v2_service` (internal ingress; Pub/Sub push from the same project counts as internal) running `CloudRunAgentRunner.run()`, with a 3600 s request timeout;
     - the same image as the edge with its own command, or its own image;
-    - its own service account;
-    - VPC access to Memorystore (connector or Direct VPC egress: the spec confirms which one worker pools support, research §13).
-- **Variables.** An `agent_runner` object (`cpu`, `memory`, instance counts, `image_uri` / `package_path`, `command`, `environment_variables`), plus `queue_config`, `execution_mode` and `message_type`, all mirroring AWS.
+    - its own service account, and a push identity that alone may invoke it;
+    - VPC access to Memorystore through the root's connector.
+- **Variables.** An `agent_runner` object (`cpu`, `memory`, `min_instance_count`, `max_instance_count`, `concurrency`, `image_uri` / `package_path`, `command`, `environment_variables`), plus `queue_config`, `execution_mode` and `message_type`, all mirroring AWS.
 - **Edge in queue mode.** The same service, plus:
   - `cpu_idle = false`, so the response-handler thread is never starved;
   - publish rights on the input topic and subscribe rights on the output subscription.
-- **Scaling.** The runner supports both:
-  - a fixed instance count, the default;
-  - CREMA backlog scaling, opt-in: the `gcp-pubsub` scaler on the input subscription, with min, max and a target backlog per instance (research §11).
-  - Why opt-in: CREMA has no stated launch stage, its metrics arrive 2+ minutes late, and it is another always-on service. AWS ECS also defaults backlog scaling to off (`ak-aws/containerized/variables.tf:407`).
+- **Scaling.** Cloud Run scales the runner on push requests, between `min_instance_count` (0 by default: scale to zero) and `max_instance_count`, each instance running up to `concurrency` agent runs. No autoscaler of our own (CREMA is no longer needed).
 - **IAM**, least privilege on the named resources:
   - the edge publishes to the input topic and subscribes to the output subscription;
-  - the runner subscribes to the input subscription and publishes to the output topic;
+  - the runner publishes to the output topic; the push identity alone may invoke it, and the Pub/Sub service agent may mint that identity's tokens;
   - each tier publishes to the dead-letter topic of the queue it consumes;
   - the Pub/Sub service agent gets the dead-letter permissions.
 - **Environment** injected into both tiers:
@@ -176,7 +179,6 @@ flowchart LR
   - `AK_EXECUTION__MODE` and `AK_EXECUTION__MESSAGE_TYPE`;
   - the existing session and thread variables.
 - **Cross-variable `validation`s** that fail at `terraform plan` (a `check` block only warns; _changed in spec review_):
-  - `queue_mode` needs `create_redis_cluster`;
   - `execution_mode` rejects `async` and `realtime`;
   - in queue mode the runner needs its own image or `command`, or it would run the edge's `CMD`.
 - **API Gateway in queue mode** (_added in spec review_):
@@ -205,7 +207,7 @@ flowchart LR
 
 - **`examples/transport/pubsub/`:** a two-process app (`IOHandler.run()` / `AgentRunner.run()`), an emulator compose stack with a healthcheck, `app_test.py`, and a `.github/test-config.yaml` entry (the `ak-dev-new-queue-transport` checklist).
 - **`examples/gcp-serverless/openai-queue-mode/`:**
-  - `CloudRun.run()` for the edge and `AgentRunner.run()` for the runner;
+  - `CloudRun.run()` for the edge and `CloudRunAgentRunner.run()` for the runner;
   - a deploy using `queue_mode = true`;
   - a weekly entry in `.github/integration-test-config.yaml`.
   - Why serverless: it scales to zero, so the weekly run proves queued work survives the case that loses it today. Its checks must allow for cold starts.
@@ -225,9 +227,9 @@ flowchart LR
   - Terraform rejects these modes at plan, and `CloudRun.run()` refuses them at startup. `IOHandler` alone catches only `async` on a session backend without a shared connection store (`pipeline/io_handler.py:88-96`).
 - **A GCP Secret Manager provider** (G9). Cloud Run secret environment variables work in the meantime.
 - **A Firestore response store.** It cannot stream chunks, so SSE would not work.
-- **Push subscriptions.**
-  - The push request timeout equals the ack deadline (≤ 600 s), exactly-once is unsupported, and push backoff can't be disabled (research §6).
-  - Push would also need a second consumer host next to `ConsumerLoop`.
+- **A worker-pool runner** (the first version of this design). _Changed during implementation, 2026-11-09: push instead of a worker pool._
+  - Push was chosen for the runner instead: it scales to zero with no autoscaler and is a plain Cloud Run service.
+  - Its costs are accepted: the 600 s push answer limit (longer runs run twice), no exactly-once, push backoff that can't be disabled (research §6), and a second consumer host next to `ConsumerLoop` (`CloudRunAgentRunner`).
 - **Exactly-once delivery subscriptions.** They don't remove publish-side duplicates, and they add latency (research §3).
 - **The gaps every broker transport shares** (G10): no multipart route off `in_memory` (`pipeline/request_handler.py:366-369`), and resume-only requests (#862).
 - **Removing direct mode.** This change is a prerequisite for it, not the removal itself.

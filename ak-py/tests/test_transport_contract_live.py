@@ -28,6 +28,8 @@ from agentkernel.pipeline.testing import QueueTransportContract
 NATS_URL = os.getenv("AK_TEST_NATS_URL")
 KAFKA_BOOTSTRAP = os.getenv("AK_TEST_KAFKA_BOOTSTRAP")
 PUBSUB_EMULATOR_HOST = os.getenv("AK_TEST_PUBSUB_EMULATOR_HOST")
+# How the emulator container reaches a receiver on this machine (the compose file maps it on Linux).
+PUBSUB_PUSH_HOST = os.getenv("AK_TEST_PUBSUB_PUSH_HOST", "host.docker.internal")
 
 # The contract's fixed group ids (s0/s1/s2) must spread over partitions for the parallel-delivery
 # and batch assertions, and both partitioners are deterministic, so the counts are chosen from the
@@ -152,6 +154,114 @@ class TestPubSubTransportContractLive(QueueTransportContract):
 
         assert again.message_id == first.message_id
         assert again.receive_count == 2
+
+
+@pytest.mark.skipif(not PUBSUB_EMULATOR_HOST, reason="AK_TEST_PUBSUB_EMULATOR_HOST not set: the live broker contract runs in integration CI")
+class TestPubSubPushLive:
+    """The push path against the emulator: real push requests (base64 data, ordering key, attributes)
+    reach CloudRunAgentRunner's route, and its status codes acknowledge or redeliver them."""
+
+    @pytest.fixture(autouse=True)
+    def _emulator(self, monkeypatch):
+        from agentkernel.pipeline.transport.pubsub import PubSubTransport
+
+        monkeypatch.setenv("PUBSUB_EMULATOR_HOST", PUBSUB_EMULATOR_HOST)
+        PubSubTransport.reset()
+        yield
+        PubSubTransport.reset()
+
+    @pytest.fixture
+    def pushed(self):
+        """A transport, a running receiver app, and a push subscription on the input topic pointing at it."""
+        import socket
+        import threading
+
+        import uvicorn
+        from google.cloud import pubsub_v1
+
+        from agentkernel.deployment.gcp import CloudRunAgentRunner
+        from agentkernel.pipeline.envelope import QueueName
+        from agentkernel.pipeline.transport.bookkeeping import InMemoryBookkeepingStore
+        from agentkernel.pipeline.transport.pubsub import PubSubTransport
+
+        unique = uuid.uuid4().hex[:8]
+        transport = PubSubTransport(
+            project_id="ak-contract",
+            input_topic=f"push-{unique}-in",
+            input_subscription=f"push-{unique}-in",
+            output_topic=f"push-{unique}-out",
+            output_subscription=f"push-{unique}-out",
+            auto_provision=True,
+            bookkeeping=InMemoryBookkeepingStore(),
+        )
+        transport._ensure_topic(QueueName.INPUT)  # topic and dead-letter topic
+
+        state = {"processed": [], "failures": {}, "failed_permanently": []}
+
+        def process(message):
+            state["processed"].append(message)
+            remaining = state["failures"].get(message.body, 0)
+            if remaining:
+                state["failures"][message.body] = remaining - 1
+                raise RuntimeError("fail this delivery")
+
+        receiver = transport.create_push_receiver(
+            QueueName.INPUT, process=process, on_permanent_failure=state["failed_permanently"].append, max_receive_count=3
+        )
+        with socket.socket() as probe:
+            probe.bind(("0.0.0.0", 0))
+            port = probe.getsockname()[1]
+        server = uvicorn.Server(uvicorn.Config(CloudRunAgentRunner.build_app(receiver), host="0.0.0.0", port=port, log_level="warning"))
+        thread = threading.Thread(target=server.run, daemon=True)
+        thread.start()
+        deadline = time.monotonic() + 10
+        while not server.started and time.monotonic() < deadline:
+            time.sleep(0.05)
+
+        with pubsub_v1.SubscriberClient() as admin:
+            admin.create_subscription(
+                request={
+                    "name": f"projects/ak-contract/subscriptions/push-{unique}-push",
+                    "topic": f"projects/ak-contract/topics/push-{unique}-in",
+                    "enable_message_ordering": True,
+                    "ack_deadline_seconds": 10,
+                    "push_config": {"push_endpoint": f"http://{PUBSUB_PUSH_HOST}:{port}{CloudRunAgentRunner.PUSH_PATH}"},
+                }
+            )
+        try:
+            yield transport, state
+        finally:
+            server.should_exit = True
+            thread.join(timeout=10)
+
+    @staticmethod
+    def _wait_for(condition, timeout: float = 30.0) -> None:
+        deadline = time.monotonic() + timeout
+        while not condition() and time.monotonic() < deadline:
+            time.sleep(0.1)
+
+    def test_pushed_messages_arrive_in_order_with_their_envelope(self, pushed):
+        from agentkernel.pipeline.envelope import QueueMessage, QueueName
+
+        transport, state = pushed
+        for i in range(3):
+            transport.send(QueueName.INPUT, QueueMessage(body=f"m{i}", group_id="s1", attributes={"request_id": f"r{i}"}))
+
+        self._wait_for(lambda: len(state["processed"]) >= 3)
+        assert [m.body for m in state["processed"]] == ["m0", "m1", "m2"], "one outstanding message per ordering key, in order"
+        assert [m.attributes for m in state["processed"]] == [{"request_id": f"r{i}"} for i in range(3)]
+        assert {m.group_id for m in state["processed"]} == {"s1"} and all(m.receive_count == 1 for m in state["processed"])
+
+    def test_a_nack_is_redelivered_with_an_exact_receive_count(self, pushed):
+        from agentkernel.pipeline.envelope import QueueMessage, QueueName
+
+        transport, state = pushed
+        state["failures"]["flaky"] = 1
+        transport.send(QueueName.INPUT, QueueMessage(body="flaky", group_id="s2"))
+
+        self._wait_for(lambda: len(state["processed"]) >= 2)
+        assert [(m.body, m.receive_count) for m in state["processed"]] == [("flaky", 1), ("flaky", 2)]
+        assert state["processed"][0].message_id == state["processed"][1].message_id
 
 
 def _create_topics(topics, timeout: float = 30.0) -> None:

@@ -157,7 +157,7 @@ variable "private_subnet_cidr" {
 # Storage backends
 variable "create_redis_cluster" {
   type        = bool
-  description = "Create a Memorystore Redis instance for agent memory"
+  description = "Create a Memorystore Redis instance for agent memory. Queue mode always creates it, as its response store"
   default     = false
 }
 
@@ -288,4 +288,81 @@ variable "authorizer" {
     audiences = list(string) # Expected JWT audience values
   })
   default = null
+}
+
+# -- Queue mode ------------------------------------------------------------------------------------
+
+variable "queue_mode" {
+  type        = bool
+  description = "Split the deployment into an edge service (REST + response handler) and an agent-runner service that Pub/Sub pushes each request to, with a Memorystore response store (created automatically). The default. The app's config.yaml declares execution.queues.type: pubsub and execution.response_store.type: redis, and the runner needs agent_runner.command or its own image. Set false for the single-service deployment, where the agents run inside the service"
+  default     = true
+}
+
+variable "execution_mode" {
+  type        = string
+  description = "Invocation mode in queue mode (AK_EXECUTION__MODE): rest_sync (wait for the reply) or rest_async (submit, then poll GET on the chat endpoint)"
+  default     = "rest_sync"
+
+  validation {
+    condition     = contains(["rest_sync", "rest_async"], var.execution_mode)
+    error_message = "execution_mode must be rest_sync or rest_async: async (WebSocket) and realtime replies are pushed to one instance, and Cloud Run instances are not individually addressable."
+  }
+}
+
+variable "message_type" {
+  type        = string
+  description = "Reply delivery in queue mode (AK_EXECUTION__MESSAGE_TYPE): complete, or delta for SSE under rest_sync. null leaves the app's own setting"
+  default     = null
+
+  validation {
+    condition     = var.message_type == null ? true : contains(["complete", "delta"], var.message_type)
+    error_message = "message_type must be complete or delta."
+  }
+}
+
+variable "queue_config" {
+  type = object({
+    input_queue_max_receive_count  = optional(number, 3)
+    output_queue_max_receive_count = optional(number, 3)
+    batch_size                     = optional(number, 1)
+  })
+  description = "Queue tuning in queue mode. A max_receive_count counts deliveries: the app permanently fails a message on that delivery, and the Pub/Sub dead-letter policy is the backstop. batch_size is messages per pull"
+  default     = {}
+
+  validation {
+    condition     = var.queue_config.input_queue_max_receive_count >= 1 && var.queue_config.output_queue_max_receive_count >= 1
+    error_message = "queue_config max_receive_count values must be at least 1."
+  }
+
+  validation {
+    condition     = var.queue_config.batch_size >= 1 && var.queue_config.batch_size <= 1000
+    error_message = "queue_config.batch_size must be between 1 and 1000 (Pub/Sub's pull maximum)."
+  }
+}
+
+variable "agent_runner" {
+  type = object({
+    cpu                   = optional(string, "1")
+    memory                = optional(string, "512Mi")
+    min_instance_count    = optional(number, 0)
+    max_instance_count    = optional(number, 10)
+    concurrency           = optional(number, 5)
+    package_path          = optional(string)
+    image_uri             = optional(string)
+    command               = optional(list(string))
+    args                  = optional(list(string))
+    environment_variables = optional(map(string), {})
+  })
+  description = "The agent-runner service in queue mode: Pub/Sub pushes each request to it, and Cloud Run scales it on those pushes between min_instance_count (0 scales to zero) and max_instance_count, each instance running up to concurrency agent runs. Its image is built from package_path, else image_uri, else the edge's image, which then needs its own command (e.g. [\"python\", \"-c\", \"from app import runner; runner()\"], where runner() calls CloudRunAgentRunner.run())"
+  default     = {}
+
+  validation {
+    condition     = !var.queue_mode || var.agent_runner.package_path != null || var.agent_runner.image_uri != null || var.agent_runner.command != null
+    error_message = "In queue mode the agent runner needs its own image (agent_runner.package_path or image_uri) or a command: on the edge's image without one it would run the edge's CMD and serve REST instead of the push route."
+  }
+
+  validation {
+    condition     = var.agent_runner.min_instance_count >= 0 && var.agent_runner.min_instance_count <= var.agent_runner.max_instance_count && var.agent_runner.concurrency >= 1
+    error_message = "agent_runner needs 0 <= min_instance_count <= max_instance_count and concurrency >= 1."
+  }
 }

@@ -12,11 +12,14 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi import APIRouter
+from fastapi.testclient import TestClient
 
 from agentkernel.core.config import _ExecutionConfig, _QueuesConfig
 from agentkernel.core.model import ExecutionMode
 from agentkernel.core.util.factory import AKConfigError
-from agentkernel.deployment.gcp import CloudRun
+from agentkernel.deployment.gcp import CloudRun, CloudRunAgentRunner
+from agentkernel.pipeline.agent_runner import AgentRunner, StreamAgentRunner
+from agentkernel.pipeline.envelope import QueueName
 
 
 @pytest.fixture
@@ -108,3 +111,83 @@ def test_importing_the_gcp_package_does_not_load_the_pipeline():
     probe = "import sys, agentkernel.gcp; print('agentkernel.pipeline.io_handler' in sys.modules)"
     result = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True, check=True)
     assert result.stdout.strip().splitlines()[-1] == "False"
+
+
+class TestCloudRunAgentRunner:
+    """The runner side on Cloud Run: a service that Pub/Sub pushes each request to (spec #886 §6)."""
+
+    class _Receiver:
+        def __init__(self, status=204, error=None):
+            self.bodies, self._status, self._error = [], status, error
+
+        def handle(self, body):
+            self.bodies.append(body)
+            if self._error:
+                raise self._error
+            return self._status
+
+    @pytest.mark.parametrize("status", [204, 500, 400])
+    def test_the_push_route_answers_with_the_receivers_status(self, status):
+        receiver = self._Receiver(status)
+        client = TestClient(CloudRunAgentRunner.build_app(receiver))
+
+        response = client.post("/pubsub/push", json={"subscription": "s", "message": {"messageId": "m1"}})
+
+        assert response.status_code == status
+        assert receiver.bodies == [{"subscription": "s", "message": {"messageId": "m1"}}]
+
+    def test_a_receiver_error_is_answered_with_a_nack(self):
+        client = TestClient(CloudRunAgentRunner.build_app(self._Receiver(error=ConnectionError("bookkeeping down"))))
+        assert client.post("/pubsub/push", json={}).status_code == 500, "a nack, so Pub/Sub redelivers"
+
+    def test_the_health_route_serves_the_startup_probe(self):
+        assert TestClient(CloudRunAgentRunner.build_app(self._Receiver())).get("/health").json() == {"status": "ok"}
+
+    @staticmethod
+    def _configure_runner(monkeypatch, transport: str, mode=None, message_type=None):
+        config = SimpleNamespace(
+            execution=_ExecutionConfig(
+                mode=mode, message_type=message_type, queues=_QueuesConfig(type=transport, pubsub={}, input={"max_receive_count": 4})
+            ),
+            api=SimpleNamespace(host="127.0.0.1", port=8123),
+        )
+        monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: config))
+
+    @pytest.fixture
+    def served(self, monkeypatch):
+        """Capture the push receiver the runner builds and the server it would start."""
+        captured: dict = {}
+
+        class FakeTransport:
+            def create_push_receiver(self, queue, process, on_permanent_failure, max_receive_count):
+                captured.update(queue=queue, process=process, on_permanent_failure=on_permanent_failure, max_receive_count=max_receive_count)
+                return TestCloudRunAgentRunner._Receiver()
+
+        monkeypatch.setattr("agentkernel.pipeline.transport.base.QueueTransportFactory.create", classmethod(lambda cls, **kw: FakeTransport()))
+        monkeypatch.setattr("uvicorn.run", lambda **kwargs: captured.update(server=kwargs))
+        return captured
+
+    @pytest.mark.parametrize("message_type, runner_class", [(None, AgentRunner), ("delta", StreamAgentRunner)], ids=["complete", "delta-sse"])
+    def test_run_serves_the_input_queue_with_the_runner_the_mode_needs(self, monkeypatch, served, message_type, runner_class):
+        self._configure_runner(monkeypatch, "pubsub", ExecutionMode.REST_SYNC, message_type)
+
+        CloudRunAgentRunner.run()
+
+        assert served["queue"] == QueueName.INPUT
+        assert served["max_receive_count"] == 4
+        assert type(served["process"].__self__) is runner_class
+        assert served["on_permanent_failure"].__self__ is served["process"].__self__
+        assert (served["server"]["host"], served["server"]["port"]) == ("127.0.0.1", 8123)
+
+    def test_run_refuses_a_transport_that_does_not_push(self, monkeypatch, served):
+        self._configure_runner(monkeypatch, "in_memory")
+        with pytest.raises(AKConfigError, match="set it to pubsub"):
+            CloudRunAgentRunner.run()
+        assert served == {}
+
+    @pytest.mark.parametrize("mode", [ExecutionMode.ASYNC, ExecutionMode.REALTIME])
+    def test_run_refuses_socket_modes(self, monkeypatch, served, mode):
+        self._configure_runner(monkeypatch, "pubsub", mode)
+        with pytest.raises(AKConfigError, match="not individually addressable"):
+            CloudRunAgentRunner.run()
+        assert served == {}

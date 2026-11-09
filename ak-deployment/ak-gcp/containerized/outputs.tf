@@ -32,3 +32,18 @@ output "authorizer_status" {
   description = "Status message indicating whether the JWT authorizer is configured"
   value       = local.authorizer_status_message
 }
+
+output "input_topic" {
+  description = "Pub/Sub topic carrying chat requests (queue mode only)"
+  value       = var.queue_mode ? module.pubsub[0].topics["input"] : null
+}
+
+output "output_topic" {
+  description = "Pub/Sub topic carrying agent replies (queue mode only)"
+  value       = var.queue_mode ? module.pubsub[0].topics["output"] : null
+}
+
+output "agent_runner_service" {
+  description = "Name of the agent-runner Cloud Run service (queue mode only)"
+  value       = var.queue_mode ? module.agent_runner[0].service_name : null
+}

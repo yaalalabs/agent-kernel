@@ -25,6 +25,7 @@ gcloud services enable compute.googleapis.com
 gcloud services enable artifactregistry.googleapis.com
 gcloud services enable redis.googleapis.com
 gcloud services enable firestore.googleapis.com
+gcloud services enable pubsub.googleapis.com            # queue_mode
 gcloud services enable vpcaccess.googleapis.com
 ```
 

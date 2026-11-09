@@ -21,6 +21,8 @@ The whole envelope travels in the message data, because Pub/Sub caps attributes 
 message and 1024 bytes per value, while the ``reply_`` context alone may be 8192 bytes.
 """
 
+import base64
+import binascii
 import json
 import logging
 import math
@@ -57,14 +59,18 @@ DEFAULT_MAX_DELIVERY_ATTEMPTS = 5
 MIN_PULL_TIMEOUT_SECONDS = 0.05
 # Attribute added to a message copied to a dead-letter topic.
 ERROR_ATTRIBUTE = "ak-error"
+# The error attribute of a message that is not an Agent Kernel envelope.
+QUARANTINE_REASON = "not an Agent Kernel envelope"
 
 
 class PubSubEnvelopeCodec:
     """Encodes a :class:`QueueMessage` to Pub/Sub message data and attributes, and back.
 
-    The data is the JSON object ``{"body", "attributes", "dedup_id"}``; ``group_id`` travels as the
-    ordering key. The only Pub/Sub attribute is a version marker, which lets a future encoding be
-    detected and lets operators filter Agent Kernel traffic.
+    The data is the JSON object ``{"body", "attributes", "dedup_id", "group_id"}``. ``group_id`` also
+    travels as the ordering key, which is what orders delivery; the copy in the data keeps the
+    envelope whole where the ordering key does not arrive (the emulator's push requests omit it).
+    The only Pub/Sub attribute is a version marker, which lets a future encoding be detected and
+    lets operators filter Agent Kernel traffic.
     """
 
     ENVELOPE_ATTRIBUTE = "ak-envelope"
@@ -76,7 +82,7 @@ class PubSubEnvelopeCodec:
         :param message: The envelope to send.
         :return: The Pub/Sub message data and attributes.
         """
-        payload = {"body": message.body, "attributes": dict(message.attributes), "dedup_id": message.dedup_id}
+        payload = {"body": message.body, "attributes": dict(message.attributes), "dedup_id": message.dedup_id, "group_id": message.group_id}
         data = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode()
         return data, {cls.ENVELOPE_ATTRIBUTE: cls.ENVELOPE_VERSION}
 
@@ -100,17 +106,20 @@ class PubSubEnvelopeCodec:
         if not isinstance(payload, dict):
             raise ValueError("message data is not a JSON object")
         body, envelope_attributes, dedup_id = payload.get("body"), payload.get("attributes"), payload.get("dedup_id")
+        group_id = payload.get("group_id")
         if not isinstance(body, str):
             raise ValueError("envelope body is not a string")
         if not isinstance(envelope_attributes, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in envelope_attributes.items()):
             raise ValueError("envelope attributes are not a string map")
         if dedup_id is not None and not isinstance(dedup_id, str):
             raise ValueError("envelope dedup_id is not a string")
+        if group_id is not None and not isinstance(group_id, str):
+            raise ValueError("envelope group_id is not a string")
 
         return QueueMessage(
             body=body,
             attributes=envelope_attributes,
-            group_id=ordering_key or None,
+            group_id=ordering_key or group_id or None,
             dedup_id=dedup_id,
             message_id=message_id,
         )
@@ -224,6 +233,85 @@ class _LeaseKeeper:
             self.tick()
 
 
+class _DeliveryLedger:
+    """Decides whether a delivery on one subscription runs, and with what ``receive_count``.
+
+    Shared by the pull consumer and the push receiver. Pub/Sub's delivery count is approximate and
+    it redelivers acknowledged messages (an ordering-key cascade, or an ack lost in transit), so
+    exact counts, deduplication on ``dedup_id`` and the memory of acknowledged messages live in the
+    bookkeeping store, keyed by the full subscription path.
+    """
+
+    def __init__(self, bookkeeping: BookkeepingStore, subscription: str):
+        """
+        :param bookkeeping: Receive counts, dedup claims and acked-message memory.
+        :param subscription: Full subscription path; scopes every key.
+        """
+        self._bookkeeping = bookkeeping
+        self._subscription = subscription
+
+    def admit(self, message_id: str, dedup_id: str | None) -> int | None:
+        """Count this delivery and return its ``receive_count``, or None if it must not run.
+
+        None means the message already ran (it was acknowledged within the dedup window) or another
+        message with the same ``dedup_id`` claimed it first: the caller acknowledges it without
+        running it. Bookkeeping errors propagate, so the delivery is retried later.
+        """
+        key = self._key(message_id)
+        if self._bookkeeping.was_acked(key):
+            _log.info(f"Dropped redelivery of acknowledged message {message_id} on {self._subscription}")
+            return None
+        # Scoped to the subscription, like Kafka scopes it to the topic: a reply carries its
+        # request's dedup id, so a global key would drop every reply.
+        if dedup_id and not self._bookkeeping.claim_dedup(f"{self._subscription}:{dedup_id}", owner=message_id):
+            _log.info(f"Dropped duplicate message {message_id} (dedup_id={dedup_id})")
+            return None
+        return self._bookkeeping.incr_attempts(key)
+
+    def remember_ack(self, message_id: str) -> None:
+        """Remember that the message was acknowledged. Logs failures instead of raising."""
+        try:
+            self._bookkeeping.mark_acked(self._key(message_id))
+        except Exception:
+            _log.exception(f"Failed to remember the acknowledgement of message {message_id} on {self._subscription}")
+
+    def forget_attempts(self, message_id: str) -> None:
+        """Drop the message's attempt count (it reached a terminal state). Logs failures instead of raising."""
+        try:
+            self._bookkeeping.clear_attempts(self._key(message_id))
+        except Exception:
+            _log.exception(f"Failed to clear the attempt count of message {message_id} on {self._subscription}")
+
+    def _key(self, message_id: str) -> str:
+        return f"{self._subscription}:{message_id}"
+
+
+class _DeadLetterCopier:
+    """Copies a message's original data and attributes to a dead-letter topic, with the reason."""
+
+    def __init__(self, publisher: Any, dlq_topic: str, request_timeout: float):
+        """
+        :param publisher: The transport's shared ``PublisherClient``.
+        :param dlq_topic: Full path of the dead-letter topic.
+        :param request_timeout: How long to wait for Pub/Sub to confirm the copy.
+        """
+        self._publisher = publisher
+        self.dlq_topic = dlq_topic
+        self._request_timeout = request_timeout
+
+    def copy(self, message_id: str, data: bytes, attributes: Mapping[str, str], reason: str) -> bool:
+        """Publish the copy, with ``reason`` in the error attribute. Logs and returns False on failure."""
+        try:
+            self._publisher.publish(self.dlq_topic, data, **{**attributes, ERROR_ATTRIBUTE: reason}).result(timeout=self._request_timeout)
+            return True
+        except Exception:
+            _log.exception(
+                f"Failed to copy message {message_id} to dead-letter topic {self.dlq_topic}: the original is acknowledged, "
+                "so this copy is lost. Check that the dead-letter topic exists and this service may publish to it."
+            )
+            return False
+
+
 class PubSubTransportConsumer(TransportConsumer):
     """Consumer over one Pub/Sub subscription. One instance (and one ``SubscriberClient``) per
     consumer thread, as the transport contract requires.
@@ -254,9 +342,8 @@ class PubSubTransportConsumer(TransportConsumer):
         """
         self._subscriber = subscriber
         self._subscription = subscription
-        self._dlq_topic = dlq_topic
-        self._publisher = publisher
-        self._bookkeeping = bookkeeping
+        self._ledger = _DeliveryLedger(bookkeeping, subscription)
+        self._dead_letters = _DeadLetterCopier(publisher, dlq_topic, request_timeout)
         self._ack_wait = ack_wait
         self._request_timeout = request_timeout
         # Pulled but not yet served, per ordering key; keyless messages sit under "".
@@ -286,10 +373,7 @@ class PubSubTransportConsumer(TransportConsumer):
         finally:
             if item.ordering_key and self._in_flight.get(item.ordering_key) is item:
                 del self._in_flight[item.ordering_key]
-            try:
-                self._bookkeeping.clear_attempts(self._bookkeeping_key(item.message_id))
-            except Exception:
-                _log.exception(f"Failed to clear the attempt count of message {item.message_id} on {self._subscription}")
+            self._ledger.forget_attempts(item.message_id)
 
     def nack(self, message: QueueMessage) -> None:
         """Return the message, and every held message of its ordering key, for redelivery.
@@ -318,9 +402,9 @@ class PubSubTransportConsumer(TransportConsumer):
         already answered the caller, and a message left unacknowledged would loop forever.
         """
         item: _Received = message.native
-        attributes = {**item.attributes, ERROR_ATTRIBUTE: f"exceeded max_receive_count after {message.receive_count} deliveries"}
-        if self._copy_to_dead_letter_topic(item, attributes):
-            _log.warning(f"Routed message {item.message_id} to dead-letter topic {self._dlq_topic}")
+        reason = f"exceeded max_receive_count after {message.receive_count} deliveries"
+        if self._dead_letters.copy(item.message_id, item.data, item.attributes, reason):
+            _log.warning(f"Routed message {item.message_id} to dead-letter topic {self._dead_letters.dlq_topic}")
         self.ack(message)
 
     def close(self) -> None:
@@ -427,23 +511,10 @@ class PubSubTransportConsumer(TransportConsumer):
             self._quarantine(item)
             return None
 
-        bookkeeping_key = self._bookkeeping_key(item.message_id)
-        if self._bookkeeping.was_acked(bookkeeping_key):
-            # A cascade redelivery (an earlier message of the key was redelivered), or an ack that
-            # was lost in transit: the message already ran.
-            _log.info(f"Dropped redelivery of acknowledged message {item.message_id} on {self._subscription}")
-            self._acknowledge(item)
+        receive_count = self._ledger.admit(item.message_id, item.envelope.dedup_id)
+        if receive_count is None:
+            self._acknowledge(item)  # already ran, or a duplicate
             return None
-
-        dedup_id = item.envelope.dedup_id
-        # Scoped to the subscription, like Kafka scopes it to the topic: a reply carries its
-        # request's dedup id, so a global key would drop every reply.
-        if dedup_id and not self._bookkeeping.claim_dedup(f"{self._subscription}:{dedup_id}", owner=item.message_id):
-            _log.info(f"Dropped duplicate message {item.message_id} (dedup_id={dedup_id})")
-            self._acknowledge(item)
-            return None
-
-        receive_count = self._bookkeeping.incr_attempts(bookkeeping_key)
         if item.ordering_key:
             self._in_flight[item.ordering_key] = item
         return item.envelope.model_copy(update={"receive_count": receive_count, "native": item})
@@ -453,10 +524,7 @@ class PubSubTransportConsumer(TransportConsumer):
 
         The memory is written first: if the ack is lost, the redelivery is recognised and dropped.
         """
-        try:
-            self._bookkeeping.mark_acked(self._bookkeeping_key(item.message_id))
-        except Exception:
-            _log.exception(f"Failed to remember the acknowledgement of message {item.message_id} on {self._subscription}")
+        self._ledger.remember_ack(item.message_id)
         try:
             self._subscriber.acknowledge(request={"subscription": self._subscription, "ack_ids": [item.ack_id]}, timeout=self._request_timeout)
         except Exception:
@@ -468,21 +536,9 @@ class PubSubTransportConsumer(TransportConsumer):
 
     def _quarantine(self, item: _Received) -> None:
         """Copy a message that is not an Agent Kernel envelope to the dead-letter topic and ack it."""
-        _log.error(f"Message {item.message_id} on {self._subscription} is not an Agent Kernel envelope; copying it to {self._dlq_topic}")
-        self._copy_to_dead_letter_topic(item, {**item.attributes, ERROR_ATTRIBUTE: "not an Agent Kernel envelope"})
+        _log.error(f"Message {item.message_id} on {self._subscription} is not an Agent Kernel envelope; copying it to {self._dead_letters.dlq_topic}")
+        self._dead_letters.copy(item.message_id, item.data, item.attributes, QUARANTINE_REASON)
         self._acknowledge(item)
-
-    def _copy_to_dead_letter_topic(self, item: _Received, attributes: dict[str, str]) -> bool:
-        """Publish the original data to the dead-letter topic. Logs and returns False on failure."""
-        try:
-            self._publisher.publish(self._dlq_topic, item.data, **attributes).result(timeout=self._request_timeout)
-            return True
-        except Exception:
-            _log.exception(
-                f"Failed to copy message {item.message_id} to dead-letter topic {self._dlq_topic}: the original is acknowledged, "
-                "so this copy is lost. Check that the dead-letter topic exists and this service may publish to it."
-            )
-            return False
 
     def _modify_ack_deadline(self, ack_ids: list[str], seconds: int) -> None:
         self._subscriber.modify_ack_deadline(
@@ -490,9 +546,110 @@ class PubSubTransportConsumer(TransportConsumer):
             timeout=self._request_timeout,
         )
 
-    def _bookkeeping_key(self, message_id: str) -> str:
-        """Identity of one message in the bookkeeping store: the full subscription path plus its id."""
-        return f"{self._subscription}:{message_id}"
+
+class PubSubPushReceiver:
+    """Runs one Pub/Sub push delivery with the consumer loop's semantics (spec #886 §1.9).
+
+    With a push subscription, Pub/Sub sends each message to an HTTP endpoint and reads the response
+    status as the acknowledgement, so there is nothing to fetch, lease or hold: Pub/Sub itself keeps
+    one message outstanding per ordering key. What carries over from the pull consumer is the
+    delivery bookkeeping (:class:`_DeliveryLedger`) and the permanent-failure path, so a request
+    runs the same whether it was pulled or pushed.
+
+    Pub/Sub waits at most the subscription's ack deadline (600 seconds at most) for the response.
+    A run that takes longer is redelivered while it is still going, and so runs a second time: the
+    accepted cost of push (spec #886 §7).
+    """
+
+    ACK = 204
+    NACK = 500
+    BAD_REQUEST = 400
+
+    def __init__(
+        self,
+        process: Callable[[QueueMessage], None],
+        on_permanent_failure: Callable[[QueueMessage], None],
+        max_receive_count: int,
+        bookkeeping: BookkeepingStore,
+        dead_letters: _DeadLetterCopier,
+    ):
+        """
+        :param process: Runs one message; raising requests redelivery (the ``ConsumerLoop`` contract).
+        :param on_permanent_failure: Runs when a message exceeds ``max_receive_count``.
+        :param max_receive_count: Deliveries after which a message is permanently failed.
+        :param bookkeeping: Receive counts, dedup claims and acked-message memory.
+        :param dead_letters: Copies permanently failed and foreign messages to the dead-letter topic.
+        """
+        self._process = process
+        self._on_permanent_failure = on_permanent_failure
+        self._max_receive_count = max_receive_count
+        self._bookkeeping = bookkeeping
+        self._dead_letters = dead_letters
+
+    def handle(self, body: Mapping[str, Any]) -> int:
+        """Handle one push request body and return the HTTP status to answer with.
+
+        :param body: The push request's JSON body (``message`` and ``subscription``).
+        :return: ``ACK`` to acknowledge, ``NACK`` for redelivery, ``BAD_REQUEST`` for a body that is
+            not a Pub/Sub push delivery.
+        """
+        delivery = self._parse(body)
+        if delivery is None:
+            return self.BAD_REQUEST
+        subscription, message_id, ordering_key, data, attributes = delivery
+        ledger = _DeliveryLedger(self._bookkeeping, subscription)
+
+        try:
+            envelope = PubSubEnvelopeCodec.decode(data, attributes, ordering_key, message_id)
+        except ValueError:
+            _log.error(f"Message {message_id} on {subscription} is not an Agent Kernel envelope; copying it to {self._dead_letters.dlq_topic}")
+            self._dead_letters.copy(message_id, data, attributes, QUARANTINE_REASON)
+            ledger.remember_ack(message_id)
+            return self.ACK
+
+        receive_count = ledger.admit(message_id, envelope.dedup_id)
+        if receive_count is None:
+            ledger.remember_ack(message_id)
+            return self.ACK
+        message = envelope.model_copy(update={"receive_count": receive_count})
+
+        try:
+            if receive_count > self._max_receive_count:
+                _log.warning(f"Message {message_id} exceeded max_receive_count ({receive_count} > {self._max_receive_count})")
+                self._on_permanent_failure(message)
+                reason = f"exceeded max_receive_count after {receive_count} deliveries"
+                if self._dead_letters.copy(message_id, data, attributes, reason):
+                    _log.warning(f"Routed message {message_id} to dead-letter topic {self._dead_letters.dlq_topic}")
+            else:
+                self._process(message)
+        except Exception:
+            _log.exception(f"Failed to process message {message_id} on {subscription}: answering with a nack for redelivery")
+            return self.NACK
+
+        ledger.remember_ack(message_id)
+        ledger.forget_attempts(message_id)
+        return self.ACK
+
+    @staticmethod
+    def _parse(body: Mapping[str, Any]) -> tuple[str, str, str, bytes, dict[str, str]] | None:
+        """The delivery's subscription, message id, ordering key, data and attributes, or None if malformed."""
+        message = body.get("message") if isinstance(body, Mapping) else None
+        subscription = body.get("subscription") if isinstance(body, Mapping) else None
+        if not isinstance(message, Mapping) or not isinstance(subscription, str) or not subscription:
+            _log.warning("Rejected a push request that is not a Pub/Sub delivery (no message or subscription)")
+            return None
+        message_id = message.get("messageId") or message.get("message_id")
+        attributes = message.get("attributes") or {}
+        if not isinstance(message_id, str) or not message_id or not isinstance(attributes, Mapping):
+            _log.warning(f"Rejected a push request on {subscription} without a message id or with malformed attributes")
+            return None
+        try:
+            data = base64.b64decode(message.get("data") or "", validate=True)
+        except (binascii.Error, TypeError, ValueError):
+            _log.warning(f"Rejected push delivery {message_id} on {subscription}: its data is not base64")
+            return None
+        ordering_key = message.get("orderingKey") or message.get("ordering_key") or ""
+        return subscription, message_id, str(ordering_key), data, {str(k): str(v) for k, v in attributes.items()}
 
 
 class PubSubTransport(QueueTransport):
@@ -594,6 +751,26 @@ class PubSubTransport(QueueTransport):
             bookkeeping=self._get_bookkeeping(),
             ack_wait=self._ack_wait,
             request_timeout=self._request_timeout,
+        )
+
+    def create_push_receiver(
+        self,
+        queue: QueueName,
+        process: Callable[[QueueMessage], None],
+        on_permanent_failure: Callable[[QueueMessage], None],
+        max_receive_count: int,
+    ) -> PubSubPushReceiver:
+        """A receiver for ``queue``'s push deliveries, the push counterpart of :meth:`create_consumer`.
+
+        Nothing is verified or provisioned: the push subscription calls this service, so Terraform
+        (or whoever created it) already wired the queue to it.
+        """
+        return PubSubPushReceiver(
+            process=process,
+            on_permanent_failure=on_permanent_failure,
+            max_receive_count=max_receive_count,
+            bookkeeping=self._get_bookkeeping(),
+            dead_letters=_DeadLetterCopier(self._get_publisher(), self._dlq_topic_path(queue), self._request_timeout),
         )
 
     # -- provisioning ------------------------------------------------------------------------

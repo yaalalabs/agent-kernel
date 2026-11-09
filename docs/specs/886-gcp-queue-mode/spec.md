@@ -37,7 +37,10 @@ it inside `require_extra("pubsub", ...)`, so nothing else loads the SDK.
 | `PubSubEnvelopeCodec` | Encodes a `QueueMessage` to Pub/Sub `data` + attributes, and back. Stateless; static methods |
 | `_LeaseKeeper` | One daemon thread per consumer. Extends the ack deadline of every leased message until `ack_wait` |
 | `PubSubTransportConsumer(TransportConsumer)` | One per consumer thread. Pull, hold, serve one message per ordering key, ack/nack/dead-letter |
-| `PubSubTransport(QueueTransport)` | Process-wide send side, consumer factory, provisioning (create or verify) |
+| `_DeliveryLedger` | Per subscription: decides whether a delivery runs and with what `receive_count` (acked memory, dedup claim, attempt count). Shared by the pull consumer and the push receiver |
+| `_DeadLetterCopier` | Copies a message's original data and attributes, plus `ak-error`, to a dead-letter topic. Shared likewise |
+| `PubSubPushReceiver` | Runs one push delivery with the consumer loop's semantics ([§1.9](#19-push-receiver-pubsubpushreceiver)) |
+| `PubSubTransport(QueueTransport)` | Process-wide send side, consumer and push-receiver factories, provisioning (create or verify) |
 
 ```python
 class PubSubEnvelopeCodec:
@@ -117,9 +120,9 @@ Module-level functions: none. Every helper is a method of the class that uses it
 
 #### 1.4 Wire format (`PubSubEnvelopeCodec`)
 
-- `data` is the UTF-8 JSON object `{"body": <str>, "attributes": {<str>: <str>}, "dedup_id": <str|null>}`.
+- `data` is the UTF-8 JSON object `{"body": <str>, "attributes": {<str>: <str>}, "dedup_id": <str|null>, "group_id": <str|null>}`.
 - Pub/Sub `attributes` hold only `{"ak-envelope": "1"}`.
-- `group_id` travels as the Pub/Sub `ordering_key` (`""` when `None`), and decodes back to `None` when empty.
+- `group_id` travels as the Pub/Sub `ordering_key` (`""` when `None`), which is what orders delivery, and also in the data. Decoding prefers the ordering key and falls back to the data's copy: the emulator's push requests omit the ordering key (found by the live push test), and the permanent-failure reply and its `session_id` come from `group_id`.
 - `message_id` is Pub/Sub's own `message_id`. `receive_count` is set by the consumer, not the codec.
 - Why the whole envelope goes in `data`:
   - Pub/Sub caps attributes at 100 per message and 1024 bytes per value (research §8). The
@@ -272,6 +275,40 @@ only after success, one lock per object.
   - `AlreadyExists` is success; no retry policy is set (Pub/Sub's immediate default).
 - `check_consumer_capacity` keeps the base no-op (`transport/base.py:30-39`).
 
+#### 1.9 Push receiver (`PubSubPushReceiver`)
+
+_Added during implementation (2026-11-09), when the runner moved from a worker pool to push ([§7](#7-design-amendments-for-re-review) item 9)._
+
+```python
+class PubSubPushReceiver:
+    ACK, NACK, BAD_REQUEST = 204, 500, 400
+    def __init__(self, process, on_permanent_failure, max_receive_count: int,
+                 bookkeeping: BookkeepingStore, dead_letters: _DeadLetterCopier): ...
+    def handle(self, body: Mapping[str, Any]) -> int: ...   # the HTTP status to answer with
+
+# on PubSubTransport, the push counterpart of create_consumer (verifies and provisions nothing):
+def create_push_receiver(self, queue, process, on_permanent_failure, max_receive_count) -> PubSubPushReceiver: ...
+```
+
+`handle(body)`, for one push request (`{"message": {"data": <base64>, "attributes", "messageId", "orderingKey"}, "subscription"}`):
+
+1. A body without a message, subscription or message id, or with data that is not base64 → `400`.
+2. Not an Agent Kernel envelope → copy to the dead-letter topic, remember the ack, `204`.
+3. `_DeliveryLedger.admit` (keyed by the push's own `subscription`) returns None (already acked, or a
+   duplicate `dedup_id`) → remember the ack, `204`.
+4. `receive_count > max_receive_count` → `on_permanent_failure`, copy to the dead-letter topic,
+   remember the ack, clear the count, `204`. Otherwise `process(message)` → remember the ack, clear
+   the count, `204`.
+5. `process` or the hook raises → `500` (a nack: Pub/Sub redelivers after its backoff). Bookkeeping
+   errors propagate; the HTTP host answers them with `500` too.
+
+- There is no fetch, lease or held batch: with push, Pub/Sub itself keeps one message outstanding
+  per ordering key, and the response is the acknowledgement.
+- `receive_count` still comes from the bookkeeping store, never from the push's `deliveryAttempt`.
+- **Accepted trade-off:** Pub/Sub waits at most the subscription's ack deadline (600 s, the maximum)
+  for the answer. A longer run is redelivered while it is still going. The redelivery is not yet
+  marked acked, so it runs again: two runs, two replies. Nothing caps the run itself.
+
 ### 2. Delivery bookkeeping (`pipeline/transport/bookkeeping.py`)
 
 #### 2.1 Resolution order
@@ -390,10 +427,10 @@ Facts below are from `ak-deployment/ak-gcp` at `25cce1e4`. "Both roots" means `s
 ```
 ak-gcp/common/modules/
 ├── pubsub/          # new: topics, dead-letter topics, subscriptions, Pub/Sub service-agent IAM
-└── agent-runner/    # new: runner service account + IAM, google_cloud_run_v2_worker_pool, optional CREMA
+└── agent-runner/    # new: runner + push service accounts and IAM, the private push-driven runner service
 ak-gcp/{serverless,containerized}/
 ├── queue_mode.tf    # new: module "pubsub", module "agent_runner", runner image build, edge IAM, queue env
-├── variables.tf     # + queue_mode, execution_mode, message_type, queue_config, agent_runner, scaling_config
+├── variables.tf     # + queue_mode, execution_mode, message_type, queue_config, agent_runner
 ├── state.tf         # session/thread env extracted to a local; gateway default map gains queue-mode routes
 ├── cloud_run.tf / cloud_function.tf  # + queue env, + cpu_idle in queue mode
 ├── api_gateway.tf   # path builder groups methods by path
@@ -412,12 +449,13 @@ ak-gcp/{serverless,containerized}/
 #### 5.2 Module `pubsub`
 
 Inputs: `project_id`, `prefix`, `input_queue_max_receive_count`, `output_queue_max_receive_count`,
-`dlq_suffix` (default `"-dlq"`), `labels`.
+`input_push_endpoint`, `input_push_service_account_email`, `dlq_suffix` (default `"-dlq"`), `labels`.
 
 | Resource | Settings |
 |---|---|
 | `google_pubsub_topic` × 4 | `${prefix}-agent-input`, `${prefix}-agent-output`, and each name + `dlq_suffix` |
-| `google_pubsub_subscription` input, output | Same name as its topic. `enable_message_ordering = true`; `ack_deadline_seconds = 10` (the transport's `SUBSCRIPTION_ACK_DEADLINE_SECONDS`); `dead_letter_policy { dead_letter_topic = <dlq topic>, max_delivery_attempts = min(max(n, 5), 100) }`; `retry_policy { minimum_backoff = "2s", maximum_backoff = "60s" }`; `expiration_policy { ttl = "" }` |
+| `google_pubsub_subscription.input` (push) | Same name as its topic. `push_config { push_endpoint = input_push_endpoint, oidc_token { service_account_email } }`; `ack_deadline_seconds = 600` (Pub/Sub's maximum: how long a push waits for its answer); ordering, dead-letter, retry and expiration as below |
+| `google_pubsub_subscription.output` (pull) | Same name as its topic. `enable_message_ordering = true`; `ack_deadline_seconds = 10` (the transport's `SUBSCRIPTION_ACK_DEADLINE_SECONDS`); `dead_letter_policy { dead_letter_topic = <dlq topic>, max_delivery_attempts = min(max(n, 5), 100) }`; `retry_policy { minimum_backoff = "2s", maximum_backoff = "60s" }`; `expiration_policy { ttl = "" }` |
 | `google_pubsub_subscription` on each dead-letter topic | Same name as the dead-letter topic; `expiration_policy { ttl = "" }`. Pub/Sub drops messages published to a topic with no subscription |
 | `google_pubsub_topic_iam_member` | Pub/Sub service agent `service-<project number>@gcp-sa-pubsub.iam.gserviceaccount.com` gets `roles/pubsub.publisher` on both dead-letter topics |
 | `google_pubsub_subscription_iam_member` | The same agent gets `roles/pubsub.subscriber` on both main subscriptions (required for dead-letter forwarding) |
@@ -431,68 +469,49 @@ Inputs: `project_id`, `prefix`, `input_queue_max_receive_count`, `output_queue_m
   `max(1, n - 1)`, so its permanent-failure hook runs on delivery `n`; Pub/Sub's backstop is `n`,
   one past the loop's limit (design), clamped to Pub/Sub's 5–100 range (research §2). This is
   exactly AWS's split (`ak-aws/containerized/modules/agent-runner/main.tf:11`).
-- Outputs: the four names, `dlq_suffix`, and the topic and subscription ids for IAM.
+- Two subscription resources, not one `for_each`: the input subscription depends on the runner's
+  URL, and a reference to one `for_each` instance depends on all of them, which would make the
+  runner's environment (it reads the output subscription) depend on itself.
+- Outputs: `topics`, `dead_letter_topics` (maps by queue), `input_subscription`,
+  `output_subscription`, `dlq_suffix`.
 
 #### 5.3 Module `agent-runner`
 
-Inputs: `project_id`, `region`, `prefix`, `image_url`, `command`, `args`, `cpu`, `memory`,
-`instance_count`, `environment_variables` (map), `vpc_connector_id`, the `pubsub` module's outputs,
-`grant_firestore` (bool), `scaling` (the `scaling_config` object), `labels`.
+_Rewritten during implementation (2026-11-09): a push-driven Cloud Run service replaces the worker
+pool and CREMA ([§7](#7-design-amendments-for-re-review) item 9)._
 
-- **Service account** `${substr(prefix, 0, 26)}-rnr`, with `roles/logging.logWriter`, and
-  `roles/datastore.user` when `grant_firestore` (the edge's grants, `cloud_run.tf:9-21`).
-- **Pub/Sub IAM** on named resources only:
-  - `roles/pubsub.subscriber` and `roles/pubsub.viewer` on the input subscription;
-  - `roles/pubsub.publisher` and `roles/pubsub.viewer` on the output topic;
-  - `roles/pubsub.publisher` and `roles/pubsub.viewer` on the input dead-letter topic.
-  - `viewer` is for the transport's verify calls ([§1.8](#18-provisioning)).
-- **`google_cloud_run_v2_worker_pool.runner`** (GA since provider 6.37.0, research §11):
-  - `name = "${prefix}-runner"`, `launch_stage = "GA"`, `deletion_protection = false` (its default
-    is `true`, unlike the services');
-  - `scaling { manual_instance_count = instance_count }`, and
-    `lifecycle { ignore_changes = [scaling[0].manual_instance_count] }` because CREMA changes it.
-    AWS does the same with `desired_count` (`ak-aws/containerized/modules/agent-runner/main.tf:387`). Consequence,
-    as on AWS: after creation, `instance_count` changes need a manual update or CREMA;
-  - `template.vpc_access { connector = vpc_connector_id, egress = "PRIVATE_RANGES_ONLY" }`: the
-    root's existing connector, so it reaches Memorystore the way the edge does
-    (`cloud_run.tf:106-109`). The worker-pool schema has `vpc_access.connector`, and
-    `gcloud run worker-pools deploy` has `--vpc-connector`. Direct VPC egress is not used: with a
-    user-supplied `network_id`, `private_subnet_id` may be null (`variables.tf:133-137`);
-  - one container: `image = image_url`, `command`, `args`,
-    `resources { limits = { cpu, memory } }`, `env` from `environment_variables`. No ports and no
-    probes: a worker pool has no endpoint.
-- **CREMA** (when `scaling.enabled`), from the Pub/Sub tutorial
-  (`docs.cloud.google.com/run/docs/tutorials/autoscale-workerpools-pubsub`):
-  - its own service account with `roles/parametermanager.parameterViewer`,
-    `roles/monitoring.viewer` and `roles/monitoring.metricWriter` on the project;
-    `roles/run.developer` on the worker pool (`google_cloud_run_v2_worker_pool_iam_member`);
-    `roles/iam.serviceAccountUser` on the runner's service account only (the tutorial grants it
-    project-wide); `roles/pubsub.viewer` on the input subscription;
-  - `google_parameter_manager_parameter` (`format = "YAML"`, global) and a
-    `google_parameter_manager_parameter_version` whose `parameter_data` is a `yamlencode`d
-    `CremaConfig`: `pollingInterval: 30`, a `podIdentity`/`gcp` trigger authentication, one scaled
-    object targeting `projects/<p>/locations/<r>/workerpools/<name>` with a `gcp-pubsub` trigger
-    (`subscriptionName`, `mode: SubscriptionSize`, `value: <backlog_target>`), and
-    `minReplicaCount`/`maxReplicaCount` from `scaling`;
-  - a `google_cloud_run_v2_service` running
-    `us-central1-docker.pkg.dev/cloud-run-oss-images/crema-v1/autoscaler:1.0` with
-    `CREMA_CONFIG = <parameter version name>`, `OUTPUT_SCALER_METRICS = "True"`,
-    `resources { cpu_idle = false }`, `scaling { min_instance_count = 1 }`, and no invoker binding.
-  - **To confirm at implementation:** the tutorial's config has no `minReplicaCount`/
-    `maxReplicaCount`. They are KEDA `ScaledObject` fields; if CREMA ignores them, `min_count` and
-    `max_count` are dropped from `scaling_config` and the design's scaling point is amended.
-- Outputs: `worker_pool_name`, `service_account_email`.
+Inputs: `project_id`, `region`, `prefix`, `image_url`, `command`, `args`, `cpu`, `memory`,
+`min_instance_count` (0), `max_instance_count` (10), `concurrency` (5), `container_port` (8000),
+`environment_variables` (map), `vpc_connector_id`, `pubsub` (`topics`, `dead_letter_topics`),
+`grant_firestore` (bool), `labels`.
+
+- **Runner identity** `${substr(prefix, 0, 26)}-rnr`: `roles/logging.logWriter`, `roles/datastore.user`
+  when `grant_firestore`, and `roles/pubsub.publisher` + `roles/pubsub.viewer` on the output topic
+  and the input dead-letter topic. It pulls nothing, so it has no subscription rights.
+- **Push identity** `${substr(prefix, 0, 26)}-psh`: the only member with `roles/run.invoker` on the
+  service. The Pub/Sub service agent gets `roles/iam.serviceAccountTokenCreator` on it (needed on
+  projects created before April 2021).
+- **`google_cloud_run_v2_service.runner`** `${prefix}-runner`:
+  - `ingress = "INGRESS_TRAFFIC_INTERNAL_ONLY"`: Pub/Sub push from the same project counts as
+    internal (Cloud Run ingress docs), so nothing else reaches it;
+  - `template.timeout = "3600s"`, Cloud Run's maximum, so an agent run is never cut off (the user's
+    call: no 10-minute cap);
+  - `max_instance_request_concurrency = concurrency`; `scaling { min_instance_count, max_instance_count }`;
+  - `vpc_access` through the root's connector (`PRIVATE_RANGES_ONLY`), like the edge;
+  - one container: the image, `command`, `args`, `ports { container_port }`, `resources` with
+    `cpu_idle = true` (work happens only inside requests), a `/health` startup probe, and `env`.
+- Outputs: `service_name`, `push_endpoint` (`<uri>/pubsub/push`, `CloudRunAgentRunner.PUSH_PATH`),
+  `push_service_account_email`, `service_account_email`.
 
 #### 5.4 Root variables (both roots)
 
 | Variable | Type / default | Validation |
 |---|---|---|
-| `queue_mode` | `bool`, `false` | `!var.queue_mode \|\| var.create_redis_cluster`: "queue mode needs Memorystore for the response store" |
+| `queue_mode` | `bool`, **`true`** | none. Queue mode creates Memorystore itself (`local.create_redis = var.create_redis_cluster \|\| var.queue_mode`), so it needs no `create_redis_cluster` |
 | `execution_mode` | `string`, `"rest_sync"` | One of `rest_sync`, `rest_async`: `async` and `realtime` are non-goals on GCP |
 | `message_type` | `string`, `null` | `complete` or `delta` when set |
 | `queue_config` | `object({ input_queue_max_receive_count = optional(number, D), output_queue_max_receive_count = optional(number, D), batch_size = optional(number, 1) })` | counts ≥ 1, `batch_size` 1–1000 (Pub/Sub's pull maximum) |
-| `agent_runner` | `object({ cpu = optional(string, "1"), memory = optional(string, "512Mi"), instance_count = optional(number, 1), package_path = optional(string), image_uri = optional(string), command = optional(list(string)), args = optional(list(string)), environment_variables = optional(map(string), {}) })`, `{}` | `cpu` one of `1, 2, 4, 6, 8` (the worker-pool values); when `queue_mode`, at least one of `package_path`, `image_uri`, `command` |
-| `scaling_config` | `object({ enabled = optional(bool, false), min_count = optional(number, 0), max_count = optional(number, 10), backlog_target = optional(number, 10) })`, `{}` | `!enabled \|\| var.queue_mode`; `min_count <= max_count` |
+| `agent_runner` | `object({ cpu = optional(string, "1"), memory = optional(string, "512Mi"), min_instance_count = optional(number, 0), max_instance_count = optional(number, 10), concurrency = optional(number, 5), package_path = optional(string), image_uri = optional(string), command = optional(list(string)), args = optional(list(string)), environment_variables = optional(map(string), {}) })`, `{}` | when `queue_mode`, at least one of `package_path`, `image_uri`, `command`; `0 <= min_instance_count <= max_instance_count`, `concurrency >= 1` |
 
 - `D` mirrors AWS per flavor, field names included: `5` in containerized
   (`ak-aws/containerized/variables.tf:340,347`), `3` in serverless (`ak-aws/serverless/variables.tf:467,477`).
@@ -503,7 +522,7 @@ Inputs: `project_id`, `region`, `prefix`, `image_url`, `command`, `args`, `cpu`,
 - The `agent_runner` command rule exists because, without its own image or command, the runner
   would run the edge image's `CMD` and serve REST instead of consuming the queue.
 - Names follow AWS where AWS has the concept (`queue_mode`, `execution_mode`, `message_type`,
-  `queue_config`, `agent_runner`, `scaling_config`); `instance_count` replaces ECS's
+  `queue_config`, `agent_runner`); `min_instance_count`/`max_instance_count` replace ECS's
   `desired_count`, and `cpu`/`memory` are strings, as on the GCP services (`variables.tf:69-79`).
 
 #### 5.5 Root wiring (`queue_mode.tf`, both roots)
@@ -522,7 +541,7 @@ Inputs: `project_id`, `region`, `prefix`, `image_url`, `command`, `args`, `cpu`,
   | Variable | Value |
   |---|---|
   | `AK_EXECUTION__QUEUES__PUBSUB__PROJECT_ID` | `var.project_id` |
-  | `AK_EXECUTION__QUEUES__PUBSUB__{INPUT,OUTPUT}_{TOPIC,SUBSCRIPTION}` | the `pubsub` module's names |
+  | `AK_EXECUTION__QUEUES__PUBSUB__{INPUT,OUTPUT}_TOPIC`, `__OUTPUT_SUBSCRIPTION` | the `pubsub` module's names. Not the input subscription: nothing pulls it, and it depends on the runner's URL |
   | `AK_EXECUTION__QUEUES__PUBSUB__DLQ_SUFFIX` | the module's `dlq_suffix` |
   | `AK_EXECUTION__QUEUES__{INPUT,OUTPUT}__MAX_RECEIVE_COUNT` | `max(1, n - 1)` ([§5.2](#52-module-pubsub)) |
   | `AK_EXECUTION__QUEUES__BATCH_SIZE` | `queue_config.batch_size` |
@@ -562,10 +581,10 @@ Inputs: `project_id`, `region`, `prefix`, `image_url`, `command`, `args`, `cpu`,
 - **Providers.** `google` and `google-beta` floors rise from `>= 6.8.0` to `>= 6.37.0` in both
   roots' `main.tf`, `common/versions.tf` and the new modules. The examples' `providers.tf` keep
   `>= 6.8.0`; CI runs `terraform init -upgrade` (`.github/scripts/run_single_test.py:640`).
-- **APIs.** `pubsub.googleapis.com` (and `parametermanager.googleapis.com` for CREMA) are added to
+- **APIs.** `pubsub.googleapis.com` is added to
   the manual enablement lists in `containerized/run.md:21-25` and `common/run.md:24-28`. ak-gcp
   enables no API through Terraform today, and this change keeps that.
-- **Outputs.** `input_topic`, `output_topic`, `agent_runner_worker_pool` (null outside queue mode).
+- **Outputs.** `input_topic`, `output_topic`, `agent_runner_service` (null outside queue mode).
 
 ### 6. Cloud Run entry point (`deployment/gcp/akcloudrun.py`)
 
@@ -575,8 +594,8 @@ def run(cls, handlers: list[RESTRequestHandler] | None = None) -> None:
     """Start the pipeline's IO process on Cloud Run.
 
     On in_memory this is today's single-process topology. On a broker transport it is the edge:
-    the REST API plus the response handler; the agent runner is its own worker pool running
-    AgentRunner.run().
+    the REST API plus the response handler; the agent runner is its own service running
+    CloudRunAgentRunner.run().
     """
 ```
 
@@ -595,7 +614,19 @@ def run(cls, handlers: list[RESTRequestHandler] | None = None) -> None:
   light.
 - No `auth_validator` (design): REST auth stays on `GCPAuthorizer.register()`, which reaches every
   route of the app `IOHandler` serves (`deployment/gcp/akauthorizer.py:20-29`, `api/http.py:207-236`).
-- The runner tier needs no GCP class: its entry point is `agentkernel.pipeline.AgentRunner.run()`.
+- `reject_undeliverable_modes()` is a public classmethod, so `CloudRunAgentRunner` applies the same check.
+
+**`CloudRunAgentRunner`** (`deployment/gcp/akagentrunner.py`, exported from `agentkernel.gcp`), the runner's entry point:
+
+1. Refuse a transport other than `pubsub` (`AKConfigError` naming `AgentRunner.run()` for pull), and
+   the socket modes through `CloudRun.reject_undeliverable_modes()`, before anything starts.
+2. Build the transport, then `StreamAgentRunner` when `execution.is_delta`, else `AgentRunner`: the
+   choice `AgentRunner.run()` makes (realtime is refused in step 1).
+3. `transport.create_push_receiver(QueueName.INPUT, runner.process, runner.on_permanent_failure,
+   execution.queues.input.max_receive_count)`.
+4. `uvicorn.run(build_app(receiver), host=api.host, port=api.port)`. `build_app` serves `GET /health`
+   (the startup probe) and `POST /pubsub/push` (`PUSH_PATH`), a plain function, so FastAPI runs each
+   delivery on its thread pool; an exception from the receiver is answered with `500`.
 
 ### Consumer changes
 
@@ -641,13 +672,21 @@ def run(cls, handlers: list[RESTRequestHandler] | None = None) -> None:
 3. **`CloudRun.run()` refuses `async` and `realtime` on a broker transport** (amendment item 1).
    Today such a deployment starts and fails per message.
 4. **`BookkeepingStore` gains two abstract methods.** Internal API only (no BYO branch).
+5. **The GCP Terraform modules default to queue mode** (`queue_mode = true`, a decision taken during
+   implementation). Breaking for existing module users: an upgraded deployment gets Pub/Sub, an
+   agent-runner service and Memorystore, and its app must declare `execution.queues.type: pubsub` and
+   set `agent_runner.command` (or its own image), unless it sets `queue_mode = false`, which keeps
+   today's single-service plan.
+6. **On Cloud Run the agent runner is pushed to, not pulling** (item 9). An agent run longer than
+   600 s is redelivered while it is still going and runs a second time, producing a second reply.
+   Accepted by the user; agent runs themselves are not capped.
 
 **Non-changes:**
 
 - `QueueMessage`, `QueueTransport`, `TransportConsumer` and `ConsumerLoop` signatures.
 - Bookkeeping key layout for Kafka (`ak:qattempts:`, `ak:qdedup:` and their TTLs).
 - `CloudRun.register()`, `GCPAuthorizer`, and the public exports of `agentkernel.gcp`.
-- Single-instance GCP Terraform plans with `queue_mode = false`.
+- Single-instance GCP Terraform plans with `queue_mode = false` (now an explicit opt-out).
 - Data written before the change: no persisted layout changes, so it reads back identically.
 
 ### 7. Design amendments for re-review
@@ -681,6 +720,17 @@ def run(cls, handlers: list[RESTRequestHandler] | None = None) -> None:
    ([§5.4](#54-root-variables-both-roots)).
 8. **Dead-letter IAM is per consumer:** each tier publishes only to the dead-letter topic of the
    queue it consumes. The design says "both publish to the dead-letter topics".
+9. **Push replaces the worker pool for the agent runner** (decided 2026-11-09, after plan iteration 6
+   first shipped a worker pool). `design.md` is updated.
+   - Why: a plain Cloud Run service scales to zero on push traffic with no autoscaler (CREMA is
+     removed), and there is no always-on worker pool.
+   - Accepted costs (research §6): Pub/Sub waits at most 600 s for a push answer, so a longer run is
+     redelivered and runs twice; no exactly-once; push backoff cannot be disabled. The runner's
+     request timeout stays at Cloud Run's 60-minute maximum: runs are not capped at 10 minutes.
+   - New code: `PubSubPushReceiver` ([§1.9](#19-push-receiver-pubsubpushreceiver)) and
+     `CloudRunAgentRunner` ([§6](#6-cloud-run-entry-point-deploymentgcpakcloudrunpy)), sharing
+     `_DeliveryLedger` and `_DeadLetterCopier` with the pull consumer.
+   - The edge still pulls replies, so item 3 now concerns only the reply queue.
 
 ## Error handling
 
@@ -739,6 +789,7 @@ A fake broker behind the real client interface, the Kafka/NATS pattern
 | `TestProvisioning` | Verify: missing topic, subscription or dead-letter topic → `AKConfigError` naming it; ordering off → `AKConfigError`. Create: ordering, ack deadline 10, dead-letter policy with the factory's attempts, a dead-letter subscription; `AlreadyExists` accepted; once per process |
 | `TestProject` | `project_id` wins; else `google.auth.default()` (patched); neither → `AKConfigError` |
 | `TestFactory` | Config → constructor arguments; `max_delivery_attempts` clamped to 5–100; missing block → `AKConfigError` naming `execution.queues.pubsub`; an explicit sandbox-style block flows through; missing extra → the `require_extra` message (patch `builtins.__import__` for `agentkernel.pipeline.transport.pubsub`) |
+| `TestPushReceiver` | A push runs once and is acknowledged, and its redelivery is not run again; a failed run is a `500` with exact counts (ignoring `deliveryAttempt`); permanent failure runs the hook, copies to the dead-letter topic and acks; a raising hook is a `500`; a duplicate `dedup_id` and a foreign message are acknowledged without running; malformed bodies are `400`; an unreachable bookkeeping store propagates; keys are scoped to the push's subscription |
 | `TestPubSubTransportContract(QueueTransportContract)` | The full contract with **no** opt-outs; `force_redelivery` advances the fake clock past every deadline |
 
 ### Changed: `tests/test_pipeline_bookkeeping.py`
@@ -764,6 +815,10 @@ and `agentkernel.core.config.AKConfig.get` (a real `_ExecutionConfig`, per the t
 - `in_memory` + `async` reaches `IOHandler.run` (its own validator check applies);
 - importing `agentkernel.gcp` does not load `agentkernel.pipeline.io_handler` (the `sys.modules`
   pattern of `tests/test_aws_lazy_exports.py`).
+- `CloudRunAgentRunner`: the push route answers with the receiver's status, a receiver error is a
+  `500`, `/health` serves the probe; `run()` builds the receiver for the input queue with the
+  configured `max_receive_count`, uses `StreamAgentRunner` for `delta`, and refuses a non-`pubsub`
+  transport and the socket modes before anything starts.
 
 ### Changed elsewhere
 
@@ -776,7 +831,11 @@ and `agentkernel.core.config.AKConfig.get` (a real `_ExecutionConfig`, per the t
   - project `ak-contract`, names `ct-<uuid8>-in/out`, `auto_provision=True`, an injected
     `InMemoryBookkeepingStore`, `ack_wait = 3.0`, `fetch_wait = 10.0`;
   - plus `test_message_id_is_stable_across_redelivery`, which confirms research §9 (bookkeeping is
-    keyed by it).
+    keyed by it);
+  - and `TestPubSubPushLive`: the receiver app runs on the host, an emulator push subscription
+    points at it (`AK_TEST_PUBSUB_PUSH_HOST`, default `host.docker.internal`, which the compose
+    file maps on Linux), and real pushes arrive in order with their envelope, and a nack comes back
+    with the same message id and `receive_count` 2.
 - `.github/workflows/test-reusable.yaml` `transport-integration-tests` (`:160-211`): start the
   emulator with `docker compose -f examples/transport/pubsub/docker-compose.yaml up -d --wait pubsub`,
   set `AK_TEST_PUBSUB_EMULATOR_HOST: localhost:8085`, and add its `down -v`.
@@ -787,8 +846,13 @@ and `agentkernel.core.config.AKConfig.get` (a real `_ExecutionConfig`, per the t
 - `queue_mode = false`: `terraform plan` for `examples/gcp-serverless/openai` and
   `examples/gcp-containerized/openai` against an existing deployment shows **no changes**
   (the env refactor, the `cpu_idle = null` path and the API Gateway builder are all no-ops).
-- `queue_mode = true` with `execution_mode = "async"`, or without `create_redis_cluster`, or with no
-  runner image or command → `terraform plan` fails with the validation message.
+- Queue mode with `execution_mode = "async"`, with no runner image or command, or with
+  `min_instance_count > max_instance_count` → `terraform plan` fails with the validation message.
+- With nothing set, the plan is queue mode and creates Memorystore without `create_redis_cluster`.
+- The runner's environment never references the request subscription (no dependency cycle).
+- Per module: the `pubsub` input subscription pushes to the endpoint with a 600 s deadline while the
+  output one stays pull at 10 s; the `agent-runner` service is internal-only with a 3600 s timeout.
+- These run as `terraform test` plan-only checks with mock providers (8 per root, 1 per module).
 
 ### End to end
 

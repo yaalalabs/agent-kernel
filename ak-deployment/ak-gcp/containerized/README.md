@@ -269,6 +269,59 @@ module "production_app" {
 }
 ```
 
+### Queue Mode (Pub/Sub + Agent-Runner Service)
+
+Queue mode is the default (`queue_mode = true`). It splits the deployment in two: this service becomes the **edge** (REST API plus
+the response handler, started by `CloudRun.run()`), and a private Cloud Run **agent-runner service**
+runs the agents (`agentkernel.gcp.CloudRunAgentRunner.run()`): Pub/Sub pushes each request to it, and
+it publishes the reply, which the edge pulls. Replies are handed back through the Memorystore
+response store. The agent tier scales on its own (down to zero) and queued work survives instances
+scaling in.
+
+Pub/Sub waits at most 600 seconds for a push to be answered. An agent run that takes longer is
+redelivered while it is still going and runs a second time; the runner's own request timeout is
+Cloud Run's maximum (60 minutes), so a long run is never cut off.
+
+```hcl
+module "queued_agents" {
+  source = "yaalalabs/ak-containerized/google"
+
+  project_id   = "my-gcp-project"
+  region       = "us-central1"
+  prefix       = "myapp-prod-api"
+  package_path = "${path.module}/dist"
+
+  # queue_mode = true is the default; Memorystore is created as the response store
+  execution_mode = "rest_sync" # or rest_async (POST, then poll GET on the chat endpoint)
+
+  agent_runner = {
+    # Same image as the edge, its own entry point: runner() calls CloudRunAgentRunner.run()
+    command            = ["python", "-c", "from app import runner; runner()"]
+    min_instance_count = 0  # scale to zero between requests
+    max_instance_count = 10
+    concurrency        = 5  # agent runs per instance
+  }
+}
+```
+
+The application declares the transport and the store in its `config.yaml`; Terraform injects only
+the coordinates (`AK_EXECUTION__QUEUES__PUBSUB__*`, `AK_EXECUTION__RESPONSE_STORE__REDIS__URL`):
+
+```yaml
+execution:
+  queues:
+    type: pubsub
+  response_store:
+    type: redis
+```
+
+`async` (WebSocket) and `realtime` modes are not supported: their replies are pushed to one
+instance, and Cloud Run instances are not individually addressable. Enable the
+`pubsub.googleapis.com` API first.
+
+Set `queue_mode = false` for the single-service deployment, where the agents run inside the
+service and nothing here (Pub/Sub, the agent-runner service, the automatic Memorystore) is created.
+
 ## 📥 Inputs
 
 ### Core Configuration
@@ -336,7 +389,7 @@ gateway_endpoints = [
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
-| `create_redis_cluster` | Create Memorystore Redis instance for agent memory | `bool` | `false` | no |
+| `create_redis_cluster` | Create Memorystore Redis instance for agent memory. Queue mode always creates it, as its response store | `bool` | `false` | no |
 | `create_firestore_database` | Create Firestore database for agent session storage | `bool` | `false` | no |
 | `create_firestore_thread_collection` | Wire the Firestore-backed conversation thread store. Requires `create_firestore_database` — it reuses that database and writes to its own collection (created implicitly), provisioning no new resource. Injects the `AK_THREAD__FIRESTORE__*` connection vars. Thread support is enabled by the application declaring `thread.type: firestore` in `config.yaml` — setting this flag alone leaves threads on the in-memory backend. Note that enabling threads makes `user_id` required on every chat request. | `bool` | `false` | no |
 
@@ -395,6 +448,16 @@ When `authorizer` is set, API Gateway validates JWT tokens in every request befo
 |------|-------------|------|---------|:--------:|
 | `log_retention_days` | Log retention in days for Cloud Logging. If set, updates project default log bucket retention | `number` | `null` | no |
 
+### Queue Mode Configuration
+
+| Name | Description | Type | Default | Required |
+|------|-------------|------|---------|:--------:|
+| `queue_mode` | Split into an edge service and an agent-runner service that Pub/Sub pushes requests to, creating Memorystore as the response store. `false` deploys the single service | `bool` | `true` | no |
+| `execution_mode` | `rest_sync` or `rest_async` (adds `GET` on the chat endpoint for polling). Injected as `AK_EXECUTION__MODE` | `string` | `"rest_sync"` | no |
+| `message_type` | `complete`, or `delta` for SSE under `rest_sync`. Injected as `AK_EXECUTION__MESSAGE_TYPE` when set | `string` | `null` | no |
+| `queue_config` | `input_queue_max_receive_count` / `output_queue_max_receive_count` (deliveries before a message is permanently failed and copied to its dead-letter topic) and `batch_size` (messages per pull) | `object` | `{ 5, 5, 1 }` | no |
+| `agent_runner` | Agent-runner service: `cpu`, `memory`, `min_instance_count` (0 scales to zero), `max_instance_count`, `concurrency` (agent runs per instance), `package_path` / `image_uri` (else the edge's image), `command`, `args`, `environment_variables`. Needs its own image or a `command` | `object` | `{}` | no |
+
 ## 📤 Outputs
 
 | Name | Description | Example |
@@ -406,6 +469,9 @@ When `authorizer` is set, API Gateway validates JWT tokens in every request befo
 | `api_gateway_id` | API Gateway ID | `myapp-prod-api-12345678-api` |
 | `agent_invoke_url` | Full agent invocation URL via API Gateway | `https://myapp-prod-api-12345678-gw-abc123.uc.gateway.dev/api/v1/chat` |
 | `authorizer_status` | JWT authorizer configuration status | `"JWT Authorizer configured (issuer: ...)"` or `"No authorizer configured — endpoints are publicly accessible"` |
+| `input_topic` | Pub/Sub topic carrying chat requests (queue mode only) | `myapp-prod-api-agent-input` |
+| `output_topic` | Pub/Sub topic carrying agent replies (queue mode only) | `myapp-prod-api-agent-output` |
+| `agent_runner_service` | Agent-runner Cloud Run service name (queue mode only) | `myapp-prod-api-runner` |
 
 ## ✨ Features
 

@@ -7,6 +7,7 @@ included), and topics that drop messages with no subscription. The transport cod
 over it, as the Kafka and NATS suites run over theirs.
 """
 
+import base64
 import itertools
 import logging
 import sys
@@ -388,6 +389,11 @@ class TestEnvelopeCodec:
         _, attributes = PubSubEnvelopeCodec.encode(_msg(attributes={"request_id": "r1"}))
         assert attributes == {"ak-envelope": "1"}
 
+    def test_the_group_survives_a_delivery_without_an_ordering_key(self):
+        """The emulator's push requests carry no ordering key: the data's own copy keeps the session id."""
+        data, attributes = PubSubEnvelopeCodec.encode(_msg(group_id="s1"))
+        assert PubSubEnvelopeCodec.decode(data, attributes, "", "m1").group_id == "s1"
+
     def test_an_empty_ordering_key_decodes_to_no_group(self):
         data, attributes = PubSubEnvelopeCodec.encode(_msg())
         assert PubSubEnvelopeCodec.decode(data, attributes, "", "m1").group_id is None
@@ -401,9 +407,10 @@ class TestEnvelopeCodec:
             (b'{"body": 1, "attributes": {}}', {"ak-envelope": "1"}),
             (b'{"body": "{}", "attributes": {"k": 1}}', {"ak-envelope": "1"}),
             (b'{"body": "{}", "attributes": {}, "dedup_id": 5}', {"ak-envelope": "1"}),
+            (b'{"body": "{}", "attributes": {}, "group_id": 5}', {"ak-envelope": "1"}),
             (b"\xff", {"ak-envelope": "1"}),
         ],
-        ids=["no-marker", "not-json", "not-object", "body-not-str", "attribute-not-str", "dedup-not-str", "not-utf8"],
+        ids=["no-marker", "not-json", "not-object", "body-not-str", "attribute-not-str", "dedup-not-str", "group-not-str", "not-utf8"],
     )
     def test_a_foreign_message_raises_value_error(self, data, attributes):
         with pytest.raises(ValueError):
@@ -948,6 +955,128 @@ class TestFailures:
 
         assert (message.body, message.receive_count) == ("m1", 1)
         assert len(provisioned.pull_calls) == pulls, "served from what was held, not pulled again"
+
+
+def _push_body(message: QueueMessage, message_id: str = "m1", subscription: str | None = None, **extra) -> dict:
+    """A push request body exactly as Pub/Sub sends it: base64 data, the envelope marker, the ordering key."""
+    data, attributes = PubSubEnvelopeCodec.encode(message)
+    return {
+        "subscription": subscription or _sub("in"),
+        "message": {
+            "data": base64.b64encode(data).decode(),
+            "attributes": attributes,
+            "messageId": message_id,
+            "orderingKey": message.group_id or "",
+            "publishTime": "2026-11-09T00:00:00Z",
+        },
+        **extra,
+    }
+
+
+class TestPushReceiver:
+    """The push path (spec #886 §1.9): the same bookkeeping and failure path as the pull consumer."""
+
+    @pytest.fixture
+    def runs(self):
+        return {"processed": [], "failed_permanently": [], "fail": False}
+
+    def _receiver(self, runs, max_receive_count: int = 2, **transport_overrides):
+        def process(message):
+            runs["processed"].append(message)
+            if runs["fail"]:
+                raise RuntimeError("agent failed")
+
+        return _transport(**transport_overrides).create_push_receiver(
+            QueueName.INPUT, process=process, on_permanent_failure=runs["failed_permanently"].append, max_receive_count=max_receive_count
+        )
+
+    def test_a_delivery_runs_once_and_is_acknowledged(self, provisioned, runs):
+        receiver = self._receiver(runs)
+        body = _push_body(_msg(body='{"p": 1}', group_id="s1", attributes={"request_id": "r1"}))
+
+        assert receiver.handle(body) == 204
+        [message] = runs["processed"]
+        assert (message.body, message.group_id, message.attributes, message.receive_count) == ('{"p": 1}', "s1", {"request_id": "r1"}, 1)
+        assert message.message_id == "m1"
+
+        assert receiver.handle(body) == 204, "a redelivery of an acknowledged message (ack deadline passed mid-run, or a cascade)"
+        assert len(runs["processed"]) == 1, "it does not run again"
+
+    def test_a_failed_run_is_nacked_and_counted_exactly(self, provisioned, runs):
+        receiver = self._receiver(runs, max_receive_count=5)
+        runs["fail"] = True
+        body = _push_body(_msg(group_id="s1"), deliveryAttempt=9)
+
+        assert [receiver.handle(body) for _ in range(3)] == [500, 500, 500]
+        assert [message.receive_count for message in runs["processed"]] == [1, 2, 3], "Pub/Sub's deliveryAttempt is not trusted"
+
+    def test_permanent_failure_runs_the_hook_copies_to_the_dead_letter_topic_and_acks(self, provisioned, runs):
+        receiver = self._receiver(runs, max_receive_count=2)
+        runs["fail"] = True
+        body = _push_body(_msg(body="poison", group_id="s1"))
+
+        assert [receiver.handle(body) for _ in range(3)] == [500, 500, 204]
+
+        assert len(runs["processed"]) == 2, "the third delivery does not run the agent"
+        [failed] = runs["failed_permanently"]
+        assert failed.receive_count == 3
+        [(_, copy)] = [entry for entry in provisioned.published if entry[0] == _topic("in-dlq")]
+        assert copy.attributes[ERROR_ATTRIBUTE] == "exceeded max_receive_count after 3 deliveries"
+        assert PubSubEnvelopeCodec.decode(copy.data, copy.attributes, "", "x").body == "poison"
+
+    def test_a_raising_permanent_failure_hook_is_nacked(self, provisioned, runs):
+        def broken_hook(message):
+            raise RuntimeError("could not answer the caller")
+
+        receiver = _transport().create_push_receiver(QueueName.INPUT, process=lambda m: None, on_permanent_failure=broken_hook, max_receive_count=0)
+        assert receiver.handle(_push_body(_msg())) == 500, "the ConsumerLoop contract: a raising hook leaves the message for redelivery"
+
+    def test_a_duplicate_dedup_id_is_acknowledged_without_running(self, provisioned, runs):
+        receiver = self._receiver(runs)
+        assert receiver.handle(_push_body(_msg(body="first", group_id="s1", dedup_id="d1"), message_id="m1")) == 204
+        assert receiver.handle(_push_body(_msg(body="again", group_id="s2", dedup_id="d1"), message_id="m2")) == 204
+        assert [message.body for message in runs["processed"]] == ["first"]
+
+    def test_a_foreign_message_is_copied_to_the_dead_letter_topic_and_acknowledged(self, provisioned, runs):
+        receiver = self._receiver(runs)
+        body = {
+            "subscription": _sub("in"),
+            "message": {"data": base64.b64encode(b"not an envelope").decode(), "attributes": {"k": "v"}, "messageId": "m9"},
+        }
+
+        assert receiver.handle(body) == 204
+        assert runs["processed"] == []
+        [(_, copy)] = [entry for entry in provisioned.published if entry[0] == _topic("in-dlq")]
+        assert (copy.data, copy.attributes) == (b"not an envelope", {"k": "v", ERROR_ATTRIBUTE: "not an Agent Kernel envelope"})
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            {},
+            {"subscription": _sub("in")},
+            {"message": {"messageId": "m1", "data": ""}},
+            {"subscription": _sub("in"), "message": {"data": ""}},
+            {"subscription": _sub("in"), "message": {"messageId": "m1", "data": "%%% not base64"}},
+            {"subscription": _sub("in"), "message": {"messageId": "m1", "data": "", "attributes": ["not", "a", "map"]}},
+        ],
+        ids=["empty", "no-message", "no-subscription", "no-message-id", "bad-base64", "bad-attributes"],
+    )
+    def test_a_request_that_is_not_a_push_delivery_is_rejected(self, provisioned, runs, body):
+        assert self._receiver(runs).handle(body) == 400
+        assert runs["processed"] == []
+
+    def test_an_unreachable_bookkeeping_store_propagates_for_a_nack(self, provisioned, runs):
+        receiver = self._receiver(runs, bookkeeping=FailingBookkeeping("incr_attempts"))
+        with pytest.raises(ConnectionError):
+            receiver.handle(_push_body(_msg()))
+        assert runs["processed"] == []
+
+    def test_bookkeeping_is_keyed_by_the_delivering_subscription(self, provisioned, runs):
+        """A reply carries its request's dedup id, so the claims must not cross subscriptions."""
+        receiver = self._receiver(runs)
+        receiver.handle(_push_body(_msg(body="request", dedup_id="d1"), message_id="m1", subscription=_sub("in")))
+        receiver.handle(_push_body(_msg(body="reply", dedup_id="d1"), message_id="m2", subscription=_sub("out")))
+        assert [message.body for message in runs["processed"]] == ["request", "reply"]
 
 
 class TestPubSubTransportContract(QueueTransportContract):

@@ -9,9 +9,12 @@ module "containerized_agents" {
 
   providers = { google = google, google-beta = google-beta, docker = docker }
   # Basic Cloud Run configuration
-  project_id           = var.project_id
-  prefix               = var.prefix
-  package_path         = "../dist"
+  project_id   = var.project_id
+  prefix       = var.prefix
+  package_path = "../dist"
+  # This example runs its agents inside the one Cloud Run service (RESTAPI.run in app.py).
+  # Queue mode, the modules' default, needs a queue-mode app: see the openai-queue-mode example.
+  queue_mode           = false
   region               = var.region
   product_display_name = "AK OpenAI Containerized Example"
   container_port       = 8000

@@ -124,6 +124,9 @@ resource "google_cloud_run_v2_service" "service" {
           cpu    = var.cpu
           memory = var.memory
         }
+        # Queue mode: the response handler thread pulls replies between requests, so its CPU must
+        # stay allocated. null leaves the attribute unset outside queue mode.
+        cpu_idle = var.queue_mode ? false : null
       }
 
       startup_probe {
@@ -154,6 +157,7 @@ resource "google_cloud_run_v2_service" "service" {
             AGENT_ENDPOINT = var.agent_endpoint
           },
           local.session_env,
+          local.queue_env,
         )
         content {
           name  = env.key
@@ -167,7 +171,10 @@ resource "google_cloud_run_v2_service" "service" {
 
   depends_on = [
     google_project_iam_member.function_logging,
-    module.docker_image
+    module.docker_image,
+    # Queue mode: the edge verifies its topics and subscription at startup.
+    google_pubsub_topic_iam_member.edge_publish,
+    google_pubsub_subscription_iam_member.edge_output,
   ]
 }
 
