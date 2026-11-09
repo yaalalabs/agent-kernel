@@ -42,3 +42,8 @@ def test_the_a2a_extra_pins_one_exact_sdk_version():
 def test_the_a2a_extra_ships_the_server_it_is_served_by():
     """a2a-sdk 1.x's http-server extra dropped fastapi, which 0.3's brought; RESTAPI serves A2A (#762)."""
     assert {"fastapi", "uvicorn"} <= _requirement_names("a2a")
+
+
+def test_the_pubsub_extra_ships_the_pubsub_client():
+    """#886: the pubsub transport imports google-cloud-pubsub, and nothing else installs it."""
+    assert "google-cloud-pubsub" in _requirement_names("pubsub")

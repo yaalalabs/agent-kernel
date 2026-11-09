@@ -90,7 +90,7 @@ class TransportConsumer(ABC):
 class QueueTransportFactory:
     """Resolves a queues config block to a transport (#541 house pattern).
 
-    All four built-ins are available: ``in_memory``, ``sqs``, ``kafka`` and ``nats``. Any other
+    All five built-ins are available: ``in_memory``, ``sqs``, ``kafka``, ``nats`` and ``pubsub``. Any other
     value is treated as a dotted path to a :class:`QueueTransport` subclass (bring-your-own),
     which must also implement ``create_consumer``.
 
@@ -100,7 +100,7 @@ class QueueTransportFactory:
     completions), which resolves and validates identically.
     """
 
-    _BUILTIN_TYPES = ("in_memory", "sqs", "kafka", "nats")
+    _BUILTIN_TYPES = ("in_memory", "sqs", "kafka", "nats", "pubsub")
 
     @staticmethod
     def resolve_type(queues_config: Any | None = None) -> str:
@@ -191,6 +191,32 @@ class QueueTransportFactory:
                     QueueName.OUTPUT: queues.output.max_receive_count + 1,
                 },
                 config_path=config_path,
+            )
+        if transport_type == "pubsub":
+            with require_extra("pubsub", f"{config_path}.type: pubsub"):
+                from .pubsub import PubSubTransport
+
+            pubsub_config = getattr(queues, "pubsub", None) if queues is not None else None
+            if pubsub_config is None:
+                raise AKConfigError(f"the pubsub transport requires a {config_path}.pubsub configuration block")
+            return PubSubTransport(
+                project_id=pubsub_config.project_id,
+                input_topic=pubsub_config.input_topic,
+                input_subscription=pubsub_config.input_subscription,
+                output_topic=pubsub_config.output_topic,
+                output_subscription=pubsub_config.output_subscription,
+                dlq_suffix=pubsub_config.dlq_suffix,
+                ack_wait=pubsub_config.ack_wait,
+                request_timeout=pubsub_config.request_timeout,
+                auto_provision=pubsub_config.auto_provision,
+                # The server's dead-letter backstop sits one delivery past the loop's own limit, so
+                # the component's permanent-failure hook runs first; Pub/Sub accepts 5 to 100.
+                max_delivery_attempts={
+                    QueueName.INPUT: min(max(queues.input.max_receive_count + 1, 5), 100),
+                    QueueName.OUTPUT: min(max(queues.output.max_receive_count + 1, 5), 100),
+                },
+                config_path=config_path,
+                feature=f"{config_path}.type: pubsub",
             )
         if transport_type in cls._BUILTIN_TYPES:
             # Reachable only if a name is added to _BUILTIN_TYPES before its branch above: a clear

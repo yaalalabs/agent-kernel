@@ -91,6 +91,8 @@ Module constants (each with a one-line comment in code):
 | `LEASE_EXTENSION_SECONDS` | `60` | Deadline set per renewal. Six times the refresh interval, so five missed renewals still keep the lease |
 | `LEASE_REFRESH_SECONDS` | `10` | How often `_LeaseKeeper` renews |
 | `SUBSCRIPTION_ACK_DEADLINE_SECONDS` | `10` | The subscription's own deadline (Pub/Sub's minimum, research §4). It only covers the moment between a pull response and the first renewal, and a message lost to a cancelled pull ([§1.5](#15-receive-side)) |
+| `DEFAULT_MAX_DELIVERY_ATTEMPTS` | `5` | Pub/Sub's own default, used by `auto_provision` when the factory gives none |
+| `MIN_PULL_TIMEOUT_SECONDS` | `0.05` | Floor on a pull's client deadline: a zero gRPC deadline fails before it is sent |
 | `ERROR_ATTRIBUTE` | `"ak-error"` | Added to a dead-letter copy (Kafka's `ERROR_HEADER`, `kafka.py:46`) |
 
 Module-level functions: none. Every helper is a method of the class that uses it.
@@ -366,7 +368,8 @@ if transport_type == "pubsub":
 ```
 
 - `PubSubTransport.__init__` therefore also takes `feature: str`, forwarded to
-  `BookkeepingStoreFactory.create(feature=...)` when no store is injected.
+  `BookkeepingStoreFactory.create(feature=...)` when no store is injected. The store is built on
+  the first `create_consumer`, not in `__init__`: the send side never needs one.
 - The sandbox broker's `queues_config` seam needs no change: an explicit block flows through the
   same branch (`base.py:122-131`).
 - `pyproject.toml`: a new `pubsub = ["google-cloud-pubsub>=2.43.0"]` extra next to `kafka` and

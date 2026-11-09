@@ -407,6 +407,49 @@ def test_queues_transport_yaml_and_env(tmp_path, monkeypatch):
     assert AKConfig.get().execution.queues.type == "kafka"
 
 
+def test_pubsub_block_absent_by_default(monkeypatch):
+    monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+    assert AKConfig.get().execution.queues.pubsub is None
+
+
+def test_pubsub_block_defaults_and_yaml(tmp_path, monkeypatch):
+    yaml_text = "execution:\n" "  queues:\n" "    type: pubsub\n" "    pubsub:\n" "      project_id: my-project\n" "      auto_provision: true\n"
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text(yaml_text)
+    monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", str(cfg_path))
+
+    pubsub = AKConfig.get().execution.queues.pubsub
+
+    assert AKConfig.get().execution.queues.type == "pubsub"
+    assert (pubsub.project_id, pubsub.auto_provision) == ("my-project", True)
+    assert (pubsub.input_topic, pubsub.input_subscription) == ("agent-input", "agent-input")
+    assert (pubsub.output_topic, pubsub.output_subscription) == ("agent-output", "agent-output")
+    assert (pubsub.dlq_suffix, pubsub.ack_wait, pubsub.request_timeout) == ("-dlq", 300.0, 10.0)
+
+
+def test_pubsub_block_from_env_beside_a_declared_type(tmp_path, monkeypatch):
+    """Terraform injects only coordinates; the application's config.yaml declares the type (#886)."""
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text("execution:\n  queues:\n    type: pubsub\n")
+    monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", str(cfg_path))
+    monkeypatch.setenv("AK_EXECUTION__QUEUES__PUBSUB__PROJECT_ID", "env-project")
+    monkeypatch.setenv("AK_EXECUTION__QUEUES__PUBSUB__INPUT_TOPIC", "prod-agent-input")
+    monkeypatch.setenv("AK_EXECUTION__QUEUES__PUBSUB__DLQ_SUFFIX", "-dead")
+
+    pubsub = AKConfig.get().execution.queues.pubsub
+
+    assert (pubsub.project_id, pubsub.input_topic, pubsub.dlq_suffix) == ("env-project", "prod-agent-input", "-dead")
+
+
+def test_injected_pubsub_coordinates_without_a_declared_type_fail_at_load(monkeypatch):
+    """A deployment cannot pick the transport for the application: the type stays mandatory."""
+    monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+    monkeypatch.setenv("AK_EXECUTION__QUEUES__PUBSUB__INPUT_TOPIC", "prod-agent-input")
+
+    with pytest.raises(ValidationError, match="execution.queues.type"):
+        AKConfig.get()
+
+
 def test_response_store_accepts_in_memory_type(tmp_path, monkeypatch):
     yaml_text = "execution:\n" "  response_store:\n" "    type: in_memory\n"
     cfg_path = tmp_path / "config.yaml"

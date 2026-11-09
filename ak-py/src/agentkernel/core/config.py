@@ -624,10 +624,46 @@ class _NatsQueueConfig(BaseModel):
     )
 
 
+class _PubSubQueueConfig(BaseModel):
+    project_id: str | None = Field(
+        default=None,
+        description="GCP project that owns the topics and subscriptions. Unset uses the project of Application Default Credentials",
+    )
+    input_topic: str = Field(default="agent-input", description="Topic carrying chat requests")
+    input_subscription: str = Field(
+        default="agent-input",
+        description="Subscription the agent runner pulls chat requests from. Must have message ordering enabled",
+    )
+    output_topic: str = Field(default="agent-output", description="Topic carrying agent replies")
+    output_subscription: str = Field(
+        default="agent-output",
+        description="Subscription the response handler pulls replies from. Must have message ordering enabled",
+    )
+    dlq_suffix: str = Field(
+        default="-dlq",
+        description="Suffix appended to a topic name for its dead-letter topic, where permanently failed messages are copied",
+    )
+    ack_wait: float = Field(
+        default=300.0,
+        description=(
+            "Seconds a fetched message stays leased before Pub/Sub redelivers it. Must exceed your longest agent turn: "
+            "a turn that outlives it is redelivered and executed a second time."
+        ),
+    )
+    request_timeout: float = Field(default=10.0, description="Seconds to wait for a Pub/Sub call (publish, ack, admin) to complete")
+    auto_provision: bool = Field(
+        default=False,
+        description=(
+            "Create the topics, dead-letter topics and subscriptions at startup if missing. For the emulator and dev only; "
+            "leave false in production, where Terraform owns them and a missing object should fail loudly."
+        ),
+    )
+
+
 class _QueuesConfig(BaseModel):
     type: str = Field(
         description=(
-            "Queue transport: in_memory | sqs | kafka | nats, or a dotted path to a QueueTransport "
+            "Queue transport: in_memory | sqs | kafka | nats | pubsub, or a dotted path to a QueueTransport "
             "subclass. Mandatory whenever this block is declared: the transport decides the "
             "deployment topology, so it is declared by the application rather than inferred from "
             "whichever queue coordinates a deployment happens to inject. Omitting the whole block "
@@ -639,6 +675,7 @@ class _QueuesConfig(BaseModel):
     in_memory: _InMemoryQueueConfig | None = Field(default=None, description="in_memory transport settings")
     kafka: _KafkaQueueConfig | None = Field(default=None, description="kafka transport settings")
     nats: _NatsQueueConfig | None = Field(default=None, description="nats transport settings")
+    pubsub: _PubSubQueueConfig | None = Field(default=None, description="pubsub (Google Cloud Pub/Sub) transport settings")
     batch_size: int | None = Field(
         default=None,
         description=(
