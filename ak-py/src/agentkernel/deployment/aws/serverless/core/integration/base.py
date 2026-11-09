@@ -5,19 +5,25 @@ from typing import Any, ClassVar
 
 from starlette.requests import Request
 
-from .....api.handler import RESTRequestHandler
-from .....core.config import AKConfig
-from .....core.model import ExecutionMode, ReplyMessageType
-from .....core.util.factory import AKConfigError
-from .....pipeline.transport.base import QueueTransportFactory
+from ......api.handler import RESTRequestHandler
+from ......core.config import AKConfig
+from ......core.model import ExecutionMode, ReplyMessageType
+from ......core.util.factory import AKConfigError
+from ......pipeline.transport.base import QueueTransportFactory
 from .event_translator import LambdaEventTranslator
 
 
 class LambdaHost:
     """Base for the hosts that serve a RESTRequestHandler's endpoints from Lambda routes.
 
-    Translates the API Gateway event to a Starlette request, awaits the endpoint on a per-class
-    event loop, and translates the answer (or the exception) back to a proxy response.
+    For every host it translates the API Gateway event to a Starlette request, runs the endpoint
+    on the host class's own event loop, and translates the answer, or the exception, back to a
+    proxy response. A failure therefore never reaches ``Lambda.handler``'s generic 500: an
+    ``HTTPException`` keeps its status and anything else answers like FastAPI would.
+
+    To add a host: subclass ``LambdaHost`` with the ``(event, context)`` methods the application
+    registers, add a ``LambdaHostGuard`` subclass with the feature's cold-start checks and run it
+    in the constructor, and add a lazy export in ``deployment/aws/__init__.py``.
     """
 
     # One per host class per execution environment, reused across warm invocations, like
@@ -51,7 +57,16 @@ class LambdaHost:
 
 
 class LambdaHostGuard:
-    """The deployment checks every LambdaHost runs at cold start: fail at import, not on the first request."""
+    """The deployment checks every LambdaHost runs at cold start.
+
+    ``_check_deployment`` requires a REST execution mode with complete replies, the ``sqs`` queue
+    transport when the handler needs the pipeline, and the base-path environment variables the
+    router matches routes with. A subclass sets the class variables that name the host in its
+    errors and adds the feature's own checks.
+
+    The checks run when the host is built at module scope, during the Lambda's init, so a broken
+    deployment fails loudly at cold start instead of failing requests later.
+    """
 
     HOST_NAME: ClassVar[str]
     SUBJECT: ClassVar[str]

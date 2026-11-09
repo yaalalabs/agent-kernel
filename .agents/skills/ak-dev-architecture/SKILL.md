@@ -594,11 +594,11 @@ Platform --poll-----> PollerRunner ---------------> (same adapter surface) -----
   thread path, which supplies its own two error messages.
 - **Hosting**: `WebhookRESTRequestHandler(adapter)` mounts the adapter's routes and sets
   `requires_pipeline = True`; its read-only `adapter` property exposes the hosted adapter. On AWS
-  Lambda the same handler is served by `deployment/aws/serverless/core/webhook_host.py::LambdaWebhookHost`
+  Lambda the same handler is served by `deployment/aws/serverless/core/integration/webhook.py::LambdaWebhookHost`
   (#760): the application builds `LambdaWebhookHost(handler)` at module scope and registers its
   `(event, context)` endpoints with `Lambda.register` on the existing `RESTLambdaRouter` — `handle` on
   `POST webhook_path`, `challenge` on `GET challenge_path`. The host drives the handler on one event
-  loop per execution environment, while `core/event_translator.py::LambdaEventTranslator` turns the
+  loop per execution environment, while `integration/event_translator.py::LambdaEventTranslator` turns the
   API Gateway v1 event into a real Starlette `Request` and the result or `HTTPException` back into the
   proxy response FastAPI would send. Both modules import FastAPI, so `agentkernel.aws` exports
   `LambdaWebhookHost` lazily and `Lambda` never imports them. The host's constructor runs

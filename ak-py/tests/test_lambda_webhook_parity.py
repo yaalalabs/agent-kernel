@@ -25,7 +25,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from agentkernel.core.config import AKConfig
-from agentkernel.deployment.aws.serverless.core.webhook_host import LambdaWebhookHost
+from agentkernel.deployment.aws.serverless.core.integration.webhook import LambdaWebhookHost
 from agentkernel.integration.adapter.base import InboundAdapter, OutboundAdapter
 from agentkernel.integration.adapter.factory import IntegrationAdapterFactory
 from agentkernel.integration.adapter.producer import IntegrationProducer

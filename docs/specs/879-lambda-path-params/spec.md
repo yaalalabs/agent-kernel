@@ -117,9 +117,11 @@ method the pipeline `AgentRunner` uses. Requirements source: [design.md](design.
 |---|---|---|
 | `ChatEnqueueHook`, `LambdaChatRejection` | `deployment/aws/serverless/core/router/rest_lambda.py` | type alias, exception |
 | `DefaultEndpointsHandler.set_enqueue_hook`, `RESTLambdaRouter.set_chat_enqueue_hook`, `Lambda.set_chat_enqueue_hook` | `rest_lambda.py`, `aklambda.py` | new methods |
-| `LambdaHost`, `LambdaHostGuard` | `deployment/aws/serverless/core/lambda_host.py` (new) | bases lifted from `webhook_host.py` |
-| `LambdaWebhookHost`, `LambdaWebhookGuard` | `deployment/aws/serverless/core/webhook_host.py` | rebased, behaviour unchanged |
-| `LambdaThreadHost`, `LambdaThreadGuard` | `deployment/aws/serverless/core/thread_host.py` (new) | new |
+| `integration` package | `deployment/aws/serverless/core/integration/__init__.py` (new) | package docstring, imports nothing |
+| `LambdaHost`, `LambdaHostGuard` | `deployment/aws/serverless/core/integration/base.py` (new) | bases lifted from `webhook_host.py` |
+| `LambdaEventTranslator` | `deployment/aws/serverless/core/integration/event_translator.py` | moved from `serverless/core/`, unchanged |
+| `LambdaWebhookHost`, `LambdaWebhookGuard` | `deployment/aws/serverless/core/integration/webhook.py` | moved from `webhook_host.py` beside `router/`, rebased, behaviour unchanged |
+| `LambdaThreadHost`, `LambdaThreadGuard` | `deployment/aws/serverless/core/integration/thread.py` (new) | new |
 | `ThreadRequestHandler` (`_validate_chat`, `prepare_for_queue`, `_queue_attributes`, `read_handler`) | `integration/thread/thread_chat.py` | methods lifted out of `run_chat` / `_enqueue_request` |
 | `ThreadRESTRequestHandler` (`list_threads`, `get_thread`) | `integration/thread/thread_chat.py` | route closures lifted into named methods |
 | `AuthorisedRESTRequestHandler.authoriser` | `api/handler.py` | read-only property |
@@ -183,11 +185,33 @@ Rules:
 `ChatEnqueueHook` is a type alias, the precedent being `WebhookBypass` in
 `deployment/aws/serverless/akauthorizer.py:26`: one caller, nothing to select between, so no ABC.
 
-### `LambdaHost` and `LambdaHostGuard` (new `core/lambda_host.py`)
+### The `integration/` package
+
+The Lambda hosts get their own package beside `router/`, mirroring `agentkernel/integration/`
+(webhooks from `integration/adapter`, threads from `integration/thread`):
+
+| Module | Holds | Origin |
+|---|---|---|
+| `__init__.py` | the package docstring only | new |
+| `base.py` | `LambdaHost`, `LambdaHostGuard` | new, lifted from `webhook_host.py` |
+| `event_translator.py` | `LambdaEventTranslator` | moved from beside `router/` |
+| `webhook.py` | `LambdaWebhookHost`, `LambdaWebhookGuard` | `webhook_host.py` beside `router/`, moved and rebased |
+| `thread.py` | `LambdaThreadHost`, `LambdaThreadGuard` | new |
+
+- Moved, not copied: class names, public signatures and error messages stay; the old modules are
+  deleted with no re-export shims (users import from `agentkernel.aws`). Relative imports gain one
+  package level.
+- Every module imports FastAPI and Starlette, so `__init__.py` imports nothing and
+  `serverless/core/__init__.py` does not import the package (see Exports).
+- The package docstring explains, without the specs, what a host is (an object that runs a
+  FastAPI-style handler inside the request-handler Lambda, not a server), why it is needed, how an
+  app builds and registers one, and that hosts never run in the agent runner.
+
+### `LambdaHost` and `LambdaHostGuard` (new `core/integration/base.py`)
 
 Lifted from `webhook_host.py` so both hosts share one copy (the "classes, not scripts" rule for
-shared logic). No FastAPI import of its own beyond what `event_translator.py` already needs; reached
-only through the lazy exports.
+shared logic). Line references in this section are into `develop`'s `webhook_host.py`. Imports
+Starlette like the rest of the package, so it is reached only through the lazy exports.
 
 ```python
 class LambdaHost:
@@ -213,6 +237,13 @@ class LambdaHostGuard:
   `tests/test_lambda_webhook_host.py:160-167` and `:273-283` use.
 - Message text is built from `HOST_NAME` and `SUBJECT`, so `LambdaWebhookGuard`'s messages stay
   byte-identical (`tests/test_lambda_webhook_host.py:297`, `:310`, `:319` match on them).
+
+- `LambdaHost`'s docstring says what the base does for every host (event to request, the endpoint
+  on the class's own loop, answer or exception back, so a failure never reaches `Lambda.handler`'s
+  generic 500) and how to add a host: subclass `LambdaHost`, add a `LambdaHostGuard` subclass with
+  its cold-start checks, add a lazy export.
+- `LambdaHostGuard`'s docstring names the shared checks and why they run at cold start: a broken
+  deployment fails the Lambda's init loudly instead of failing requests later.
 
 `LambdaWebhookHost(LambdaHost)` and `LambdaWebhookGuard(LambdaHostGuard)` keep their public
 signatures, check order (type, mode, transport, base-path env, verification settings) and behaviour.
@@ -253,7 +284,7 @@ class AuthorisedRESTRequestHandler:   # api/handler.py
   resolver can raise, exactly as today. The closures in `get_router()` pass
   `lambda: self._resolve_user(request)`; the Lambda host passes the gateway principal.
 
-### `LambdaThreadHost` and `LambdaThreadGuard` (new `core/thread_host.py`)
+### `LambdaThreadHost` and `LambdaThreadGuard` (new `core/integration/thread.py`)
 
 ```python
 class LambdaThreadHost(LambdaHost):
@@ -342,11 +373,11 @@ class ThreadRecorder:
 
 ### Exports
 
-- `deployment/aws/__init__.py`: `"LambdaThreadHost": ".serverless.core.thread_host"` in
-  `_LAZY_EXPORTS`, plus the `TYPE_CHECKING` mirror. `from agentkernel.aws import Lambda` stays
-  FastAPI-free.
-- `deployment/aws/serverless/core/__init__.py` does not import `thread_host`, `webhook_host` or
-  `lambda_host`.
+- `deployment/aws/__init__.py`: `"LambdaThreadHost": ".serverless.core.integration.thread"` in
+  `_LAZY_EXPORTS`, and `LambdaWebhookHost` repointed to `".serverless.core.integration.webhook"`,
+  plus the `TYPE_CHECKING` mirror. `from agentkernel.aws import Lambda` stays FastAPI-free.
+- `deployment/aws/serverless/core/integration/__init__.py` imports nothing, and
+  `deployment/aws/serverless/core/__init__.py` does not import the `integration` package.
 
 ### Consumer changes
 
@@ -354,7 +385,7 @@ class ThreadRecorder:
 |---|---|
 | `DefaultEndpointsHandler` | hook slot, `_send_to_queue` call, `_handle_request` rejection branch |
 | `RESTLambdaRouter`, `Lambda` | `set_chat_enqueue_hook` delegates |
-| `LambdaWebhookHost` / `LambdaWebhookGuard` | rebased on `LambdaHost` / `LambdaHostGuard`; no behaviour change |
+| `LambdaWebhookHost` / `LambdaWebhookGuard` | moved to `integration/webhook.py`, rebased on `LambdaHost` / `LambdaHostGuard`; no behaviour change |
 | `ThreadRequestHandler` | `run_chat` / `_enqueue_request` call the lifted methods; new `prepare_for_queue`; `_record_user_message` unchanged |
 | `ThreadRESTRequestHandler` | closures delegate to `list_threads` / `get_thread` |
 | `AgentRunner`, `StreamAgentRunner` | wrapper delegates to `ThreadRecorder.record_queued_reply` |
@@ -476,9 +507,12 @@ Existing files:
   `LambdaChatRejection` → its status, second hook → `ValueError`, non-queue → `AKConfigError`,
   WebSocket mode → `AKConfigError`). Existing tests unchanged.
 - `tests/test_aws_lazy_exports.py`: picks `LambdaThreadHost` up through `__all__`; add an assertion
-  that touching `Lambda` does not import `thread_host`.
-- Must pass untouched: `test_lambda_webhook_host.py`, `test_lambda_webhook_parity.py`,
-  `test_lambda_event_translator.py`, `test_thread_pipeline_recording.py`, `test_thread_router.py`,
+  that touching `Lambda` does not import `integration.thread`.
+- Import paths only (the move into `integration/`), test logic unchanged:
+  `test_lambda_webhook_host.py`, `test_lambda_webhook_parity.py`, `test_lambda_event_translator.py`,
+  `test_serverless_integration_delivery.py`, and the webhook module names in
+  `test_aws_lazy_exports.py`. The file names keep `webhook_host` / `event_translator`.
+- Must pass untouched: `test_thread_pipeline_recording.py`, `test_thread_router.py`,
   `test_thread_integration.py`, `test_pipeline_agent_runner.py`,
   `test_serverless_status_propagation.py`, `test_serverless_request_handle.py`.
 
@@ -487,6 +521,7 @@ Run:
 ```bash
 cd ak-py && uv run pytest tests/test_lambda_thread_host.py tests/test_serverless_agent_runner_thread.py \
   tests/test_lambda_router.py tests/test_lambda_webhook_host.py tests/test_lambda_webhook_parity.py \
+  tests/test_lambda_event_translator.py tests/test_serverless_integration_delivery.py \
   tests/test_aws_lazy_exports.py tests/test_thread_pipeline_recording.py tests/test_thread_router.py \
   tests/test_pipeline_agent_runner.py tests/test_serverless_status_propagation.py
 ```

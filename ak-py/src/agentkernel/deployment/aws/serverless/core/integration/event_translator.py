@@ -13,13 +13,13 @@ from starlette.responses import PlainTextResponse, Response
 
 
 class LambdaEventTranslator:
-    """API Gateway REST (v1) proxy events <-> Starlette, for the Lambda webhook host (#760).
+    """API Gateway REST (v1) proxy events <-> Starlette, for the Lambda hosts (#760).
 
-    It builds the real ``starlette.requests.Request`` every webhook adapter reads, and turns what
+    It builds the real ``starlette.requests.Request`` every hosted endpoint reads, and turns what
     the handler produced back into the proxy response FastAPI would have sent. It holds no state.
 
-    FastAPI and Starlette are imported at module scope, so ``deployment.aws.serverless.core`` never
-    imports this module: only ``LambdaWebhookHost`` reaches it, through ``agentkernel.aws``'s lazy export.
+    FastAPI and Starlette are imported at module scope, so only the hosts in this package import
+    this module, and they are reached through ``agentkernel.aws``'s lazy exports.
     """
 
     _log = logging.getLogger("ak.aws.lambda.webhook")

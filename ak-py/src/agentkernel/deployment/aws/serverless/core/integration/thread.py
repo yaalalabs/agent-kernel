@@ -4,15 +4,15 @@ from typing import Any
 from fastapi import HTTPException
 from starlette.requests import Request
 
-from .....core.config import AKConfig
-from .....core.model import BaseRequest
-from .....core.multimodal.storage import AttachmentStorageManager
-from .....core.util.factory import AKConfigError
-from .....integration.thread.thread_chat import ThreadRequestHandler
-from ..aklambda import Lambda
+from ......core.config import AKConfig
+from ......core.model import BaseRequest
+from ......core.multimodal.storage import AttachmentStorageManager
+from ......core.util.factory import AKConfigError
+from ......integration.thread.thread_chat import ThreadRequestHandler
+from ...aklambda import Lambda
 from .event_translator import LambdaEventTranslator
-from .lambda_host import LambdaHost, LambdaHostGuard
-from .router.rest_lambda import LambdaChatRejection
+from .base import LambdaHost, LambdaHostGuard
+from ..router.rest_lambda import LambdaChatRejection
 
 
 class LambdaThreadHost(LambdaHost):

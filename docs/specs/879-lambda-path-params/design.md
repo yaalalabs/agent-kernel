@@ -184,7 +184,7 @@ registers its webhook. Queue mode only, `rest_sync` and `rest_async`.
     marker (`ak-py/src/agentkernel/pipeline/agent_runner.py:79-82`, `:213-256`).
 - Lambda hosts integrations through `LambdaWebhookHost`, in queue mode only.
   - It wraps the pipeline's own handler and copies none of it
-    (`ak-py/src/agentkernel/deployment/aws/serverless/core/webhook_host.py:16-32`).
+    (`webhook_host.py:16-32` in `ak-py/src/agentkernel/deployment/aws/serverless/core/` on `develop`).
   - It accepts `rest_sync` and `rest_async` only (`webhook_host.py:93`).
   - The app wires it with `@Lambda.register` functions that delegate to the host
     (`examples/aws-serverless/slack-openai/lambda_request_handler.py`).
@@ -317,8 +317,11 @@ registers its webhook. Queue mode only, `rest_sync` and `rest_async`.
 
 - The thread handler, the recorder and the existing Lambda hosting pieces (`LambdaEventTranslator`,
   the `LambdaWebhookGuard` checks) are shared with the other surfaces, not copied.
+- The Lambda hosts live in `deployment/aws/serverless/core/integration/`, mirroring
+  `agentkernel/integration/`: one shared host base, `LambdaEventTranslator`, `LambdaWebhookHost`
+  and `LambdaThreadHost`. The webhook host and the translator move there from `serverless/core/`.
 - `LambdaThreadHost` is exported lazily from `agentkernel.aws`, like `LambdaWebhookHost`
-  (`ak-py/src/agentkernel/deployment/aws/__init__.py:25`), so `from agentkernel.aws import Lambda`
+  (`ak-py/src/agentkernel/deployment/aws/__init__.py:25` on `develop`), so `from agentkernel.aws import Lambda`
   stays FastAPI-free.
 
 #### Configuration and Terraform
@@ -342,7 +345,8 @@ registers its webhook. Queue mode only, `rest_sync` and `rest_async`.
   `schedule` requests, the unchanged chat contract and poll route, attachments, reply recording,
   the read routes and their authorization, and every cold-start failure.
 - The existing pipeline `AgentRunner`, `ThreadRequestHandler`, `ThreadRESTRequestHandler`,
-  `LambdaWebhookHost` and Lambda router tests pass unchanged.
+  `LambdaWebhookHost` and Lambda router tests pass unchanged; the webhook host and translator
+  tests change only their import paths, for the move into `serverless/core/integration/`.
 
 #### Docs and skills
 

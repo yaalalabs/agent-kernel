@@ -80,20 +80,28 @@ Paths are relative to `ak-py/src/agentkernel/` unless they start with `ak-py/`, 
   branch (spec: Chat route takeover).
 - **Verify:** `uv run pytest tests/test_lambda_router.py tests/test_serverless_request_handle.py tests/test_serverless_status_propagation.py`.
 
-## Iteration 4: Lambda host base
+## Iteration 4: Lambda host package and base
 
-- **Goal:** `LambdaWebhookHost` and its guard sit on shared bases, unchanged in behaviour.
-- **Files:** `deployment/aws/serverless/core/lambda_host.py` (new), `deployment/aws/serverless/core/webhook_host.py`
-- **Steps:** move `_loop`, `_run`, `_respond` into `LambdaHost` and the mode / transport /
-  base-path checks into `LambdaHostGuard`, with `HOST_NAME` / `SUBJECT` messages (spec: `LambdaHost`).
-- **Verify:** `uv run pytest tests/test_lambda_webhook_host.py tests/test_lambda_webhook_parity.py tests/test_lambda_event_translator.py`
-  passes untouched.
+- **Goal:** the Lambda hosts have their own `integration/` package, and `LambdaWebhookHost` and its
+  guard sit on shared bases, unchanged in behaviour.
+- **Files:** `deployment/aws/serverless/core/integration/` (new: `__init__.py`, `base.py`,
+  `event_translator.py`, `webhook.py`), `deployment/aws/__init__.py`; import paths in
+  `test_lambda_webhook_host.py`, `test_lambda_webhook_parity.py`, `test_lambda_event_translator.py`,
+  `test_serverless_integration_delivery.py`, `test_aws_lazy_exports.py`
+- **Steps:**
+  1. Create the package with its docstring-only `__init__.py`; move `event_translator.py` and
+     `webhook_host.py` (as `webhook.py`) from `serverless/core/` into it, no shims; repoint the
+     lazy export and the tests' import paths (spec: The `integration/` package).
+  2. Move `_loop`, `_run`, `_respond` into `LambdaHost` and the mode / transport / base-path checks
+     into `LambdaHostGuard` in `base.py`, with `HOST_NAME` / `SUBJECT` messages (spec: `LambdaHost`).
+- **Verify:** `uv run pytest tests/test_lambda_webhook_host.py tests/test_lambda_webhook_parity.py tests/test_lambda_event_translator.py tests/test_serverless_integration_delivery.py tests/test_aws_lazy_exports.py`
+  passes with only the import paths changed.
 
 ## Iteration 5: `LambdaThreadHost` and reply recording on Lambda
 
 - **Goal:** threads work end to end on Lambda: chat records and marks, the runner records the
   reply, the read routes answer.
-- **Files:** `deployment/aws/serverless/core/thread_host.py` (new), `deployment/aws/__init__.py`,
+- **Files:** `deployment/aws/serverless/core/integration/thread.py` (new), `deployment/aws/__init__.py`,
   `deployment/aws/serverless/akagentrunner.py`
 - **Steps:**
   1. `LambdaThreadGuard` and `LambdaThreadHost` (spec: `LambdaThreadHost`).
@@ -142,10 +150,11 @@ Paths are relative to `ak-py/src/agentkernel/` unless they start with `ak-py/`, 
     "Messaging integrations" (`:1347`), linking "Path and query parameters" (`:248`).
   - `ak-py/src/agentkernel/skills/ak-cloud-deploy/SKILL.md`: serverless threads.
   - `.agents/skills/ak-dev-architecture/SKILL.md`: `LambdaThreadHost` beside `LambdaWebhookHost`
-    (Messaging Integrations, Hosting); `ThreadRecorder.record_queued_reply` in the Conversation
-    Threads section and in the pipeline table's `agent_runner.py` row; `ServerlessAgentRunner` row
+    (Messaging Integrations, Hosting), both under `serverless/core/integration/`;
+    `ThreadRecorder.record_queued_reply` in the Conversation Threads section and in the pipeline table's `agent_runner.py` row; `ServerlessAgentRunner` row
     records replies; `:701` "unlike the thread wiring which is nulled in queue mode" is now wrong.
 - **No update needed (verified):** `docs/specs/*` and `docs/versioned_docs/*` (historical);
   `ak-deployment/ak-aws/serverless` README (no thread wiring note).
-- **Verify:** `grep -rn "nulled in queue mode" .agents docs/docs ak-py/src` returns nothing; confirm
+- **Verify:** `grep -rn "nulled in queue mode" .agents docs/docs ak-py/src` returns nothing, nor does
+  a grep for the hosts' old `serverless/core/` module paths; confirm
   with `ak-dev-sync-docs-from-branch` / `ak-dev-sync-skills-from-branch` before merge.
