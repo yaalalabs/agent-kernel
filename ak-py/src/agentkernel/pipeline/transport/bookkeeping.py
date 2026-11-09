@@ -2,10 +2,14 @@
 
 Kafka's classic consumer model has no ``ApproximateReceiveCount`` and no publish-time
 deduplication, so the transport rebuilds both: a per-record attempt counter and a dedup claim.
-Both need to survive a pod restart for the guarantees to hold (an in-process counter resets, so
-a message that *crashes* the worker would retry forever), which is why the backing store follows
-the session storage configuration (design decision Q5): a deployment that already runs
-Redis/Valkey for sessions gets durable bookkeeping for free.
+Pub/Sub (#886) also needs a memory of acknowledged records, because it redelivers acked messages
+when an earlier message with the same ordering key is redelivered.
+
+All of it needs to survive a pod restart for the guarantees to hold (an in-process counter
+resets, so a message that *crashes* the worker would retry forever). The backing store therefore
+follows Redis/Valkey configuration the deployment already has: the session store first (design
+decision Q5), then the response store (#886), so a deployment that runs either on Redis/Valkey
+gets durable bookkeeping for free.
 """
 
 import logging
@@ -25,6 +29,7 @@ DEFAULT_DEDUP_TTL_SECONDS = 300
 
 ATTEMPTS_KEY_PREFIX = "ak:qattempts:"
 DEDUP_KEY_PREFIX = "ak:qdedup:"
+ACKED_KEY_PREFIX = "ak:qacked:"
 
 
 class BookkeepingStore(ABC):
@@ -51,6 +56,20 @@ class BookkeepingStore(ABC):
         """
         raise NotImplementedError
 
+    @abstractmethod
+    def mark_acked(self, key: str) -> None:
+        """Remember that ``key``'s record was acknowledged, for the dedup window."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def was_acked(self, key: str) -> bool:
+        """Whether ``key``'s record was acknowledged within the dedup window.
+
+        A transport that redelivers acknowledged records (Pub/Sub's ordering-key cascade, or an
+        acknowledgement lost in transit) checks this before running a record again.
+        """
+        raise NotImplementedError
+
 
 class InMemoryBookkeepingStore(BookkeepingStore):
     """Process-local bookkeeping: correct while the process lives, lost on restart."""
@@ -60,6 +79,7 @@ class InMemoryBookkeepingStore(BookkeepingStore):
         self._lock = threading.Lock()
         self._attempts: dict[str, int] = {}
         self._dedup: dict[str, tuple[str, float]] = {}  # dedup_id -> (owner, expiry)
+        self._acked: dict[str, float] = {}  # key -> expiry
 
     def incr_attempts(self, key: str) -> int:
         with self._lock:
@@ -81,17 +101,35 @@ class InMemoryBookkeepingStore(BookkeepingStore):
                 return True
             return existing[0] == owner
 
+    def mark_acked(self, key: str) -> None:
+        with self._lock:
+            self._acked[key] = time.monotonic() + self._dedup_ttl
+
+    def was_acked(self, key: str) -> bool:
+        now = time.monotonic()
+        with self._lock:
+            for expired in [k for k, expiry in self._acked.items() if expiry <= now]:
+                del self._acked[expired]
+            return key in self._acked
+
 
 class RedisLikeBookkeepingStore(BookkeepingStore):
     """Bookkeeping over a shared Redis/Valkey driver: survives pod restarts."""
 
-    def __init__(self, attempts_driver, dedup_driver):
+    # Key prefix used for acked-record memory when no dedicated driver is given.
+    _SHARED_ACKED_PREFIX = "acked:"
+
+    def __init__(self, attempts_driver, dedup_driver, acked_driver=None):
         """
         :param attempts_driver: Driver for attempt counters (its TTL bounds a counter's life).
         :param dedup_driver: Driver for dedup claims (its TTL is the dedup window).
+        :param acked_driver: Driver for acknowledged-record memory (its TTL is how long an ack is
+            remembered). When omitted, the dedup driver holds it under an ``acked:`` key prefix,
+            which shares the dedup window.
         """
         self._attempts = attempts_driver
         self._dedup = dedup_driver
+        self._acked = acked_driver
 
     def incr_attempts(self, key: str) -> int:
         return self._attempts.incr(self._attempts.key(key))
@@ -114,14 +152,34 @@ class RedisLikeBookkeepingStore(BookkeepingStore):
             return bool(self._dedup.set(full_key, owner, nx=True))
         return existing == owner
 
+    def mark_acked(self, key: str) -> None:
+        driver, full_key = self._acked_key(key)
+        driver.set(full_key, "1")
+
+    def was_acked(self, key: str) -> bool:
+        driver, full_key = self._acked_key(key)
+        return driver.get(full_key) is not None
+
+    def _acked_key(self, key: str) -> tuple:
+        """The driver holding acked-record memory, and ``key``'s full key on it."""
+        if self._acked is not None:
+            return self._acked, self._acked.key(key)
+        return self._dedup, self._dedup.key(f"{self._SHARED_ACKED_PREFIX}{key}")
+
 
 class BookkeepingStoreFactory:
-    """Builds the :class:`BookkeepingStore` from the session storage configuration (Q5).
+    """Builds the :class:`BookkeepingStore` from Redis/Valkey configuration the deployment already has.
 
-    Redis/Valkey session backends give durable bookkeeping using the same connection settings;
-    every other session type (including the default ``in_memory``) falls back to process-local
-    bookkeeping with a one-time warning, since the alternative would be forcing an unrelated
-    infrastructure dependency on a deployment that has not asked for one.
+    Resolution order:
+
+    1. ``session.type`` ``redis`` or ``valkey`` with its block set (design decision Q5);
+    2. ``execution.response_store.type`` ``redis`` or ``valkey`` with its block set (#886): queue
+       mode on GCP always has a Redis response store while sessions usually live on Firestore;
+    3. process-local bookkeeping with a one-time warning, since the alternative would be forcing
+       an unrelated infrastructure dependency on a deployment that has not asked for one.
+
+    Durable stores use the matching block's connection URL with the bookkeeping key prefixes, so
+    they never collide with the session or response keys in the same database.
     """
 
     _fallback_warned = False
@@ -132,37 +190,62 @@ class BookkeepingStoreFactory:
 
         :param feature: Config path quoted in the missing-extra error, for the operator.
         """
-        session_config = AKConfig.get().session
-        session_type = session_config.type if session_config is not None else None
+        config = AKConfig.get()
+        session_config = config.session
+        execution_config = getattr(config, "execution", None)
+        response_store_config = getattr(execution_config, "response_store", None) if execution_config is not None else None
 
-        if session_type == "redis" and getattr(session_config, "redis", None) is not None:
-            with require_extra("redis", feature):
-                from ...core.util.driver.redis import RedisDriver
-
-            return cls._redis_like(RedisDriver, session_config.redis.url)
-
-        if session_type == "valkey" and getattr(session_config, "valkey", None) is not None:
-            with require_extra("valkey", feature):
-                from ...core.util.driver.valkey import ValkeyDriver
-
-            return cls._redis_like(ValkeyDriver, session_config.valkey.url)
+        for block in (session_config, response_store_config):
+            store = cls._durable_store(block, feature)
+            if store is not None:
+                return store
 
         if not cls._fallback_warned:
             cls._fallback_warned = True
+            session_type = session_config.type if session_config is not None else None
+            response_store_type = response_store_config.type if response_store_config is not None else None
             _log.warning(
-                f"Queue retry bookkeeping is process-local: session.type '{session_type}' has no shared key store. "
-                "Delivery counts and deduplication reset when a worker restarts, so a message that crashes its worker "
-                "can exceed max_receive_count without being permanently failed. Configure session.type redis or valkey "
-                "for bookkeeping that survives restarts."
+                f"Queue retry bookkeeping is process-local: neither session.type '{session_type}' nor "
+                f"execution.response_store.type '{response_store_type}' is a shared key store. Delivery counts and "
+                "deduplication reset when a worker restarts, so a message that crashes its worker can exceed "
+                "max_receive_count without being permanently failed. Configure session.type or "
+                "execution.response_store.type redis or valkey for bookkeeping that survives restarts."
             )
         return InMemoryBookkeepingStore()
 
+    @classmethod
+    def _durable_store(cls, block, feature: str) -> RedisLikeBookkeepingStore | None:
+        """A durable store over ``block``'s Redis/Valkey connection, or None if it has none.
+
+        :param block: A session or response-store config block (``type`` plus per-backend
+            sub-blocks), or None.
+        :param feature: Config path quoted in the missing-extra error.
+        """
+        backend = block.type if block is not None else None
+
+        if backend == "redis" and getattr(block, "redis", None) is not None:
+            with require_extra("redis", feature):
+                from ...core.util.driver.redis import RedisDriver
+
+            return cls._redis_like(RedisDriver, block.redis.url)
+
+        if backend == "valkey" and getattr(block, "valkey", None) is not None:
+            with require_extra("valkey", feature):
+                from ...core.util.driver.valkey import ValkeyDriver
+
+            return cls._redis_like(ValkeyDriver, block.valkey.url)
+
+        return None
+
     @staticmethod
     def _redis_like(driver_class, url: str) -> RedisLikeBookkeepingStore:
-        """Build two drivers off one connection URL: separate prefixes and TTLs per concern."""
+        """Build one driver per concern off one connection URL: separate prefixes and TTLs."""
         return RedisLikeBookkeepingStore(
             attempts_driver=driver_class(url=url, prefix=ATTEMPTS_KEY_PREFIX, ttl=DEFAULT_ATTEMPTS_TTL_SECONDS, decode_responses=True),
             dedup_driver=driver_class(url=url, prefix=DEDUP_KEY_PREFIX, ttl=DEFAULT_DEDUP_TTL_SECONDS, decode_responses=True),
+            # An ack is remembered for the dedup window: a redelivery of an acked record arrives
+            # within one lease extension plus the subscription's maximum retry backoff (spec #886 §2.2).
+            acked_driver=driver_class(url=url, prefix=ACKED_KEY_PREFIX, ttl=DEFAULT_DEDUP_TTL_SECONDS, decode_responses=True),
         )
 
 
