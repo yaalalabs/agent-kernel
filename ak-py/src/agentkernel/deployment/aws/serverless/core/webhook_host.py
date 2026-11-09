@@ -1,19 +1,12 @@
-import asyncio
-import os
-from collections.abc import Awaitable, Callable, Coroutine, Mapping
-from typing import Any, ClassVar
+from typing import Any
 
-from starlette.requests import Request
-
-from .....core.config import AKConfig
-from .....core.model import ExecutionMode, ReplyMessageType
 from .....core.util.factory import AKConfigError
 from .....integration.adapter.webhook import WebhookRESTRequestHandler
-from .....pipeline.transport.base import QueueTransportFactory
 from .event_translator import LambdaEventTranslator
+from .lambda_host import LambdaHost, LambdaHostGuard
 
 
-class LambdaWebhookHost:
+class LambdaWebhookHost(LambdaHost):
     """Serves one WebhookRESTRequestHandler from routes the application registers (#760).
 
     Build it at module scope and register its endpoints with ``Lambda.register``::
@@ -31,11 +24,6 @@ class LambdaWebhookHost:
     lazily: ``from agentkernel.aws import Lambda`` stays fastapi-free.
     """
 
-    # One per execution environment, shared by every host and reused across warm
-    # invocations, like uvicorn's single loop on the other surfaces. Never made the thread's
-    # current loop, so run_async_sync elsewhere in the process sees what it saw before.
-    _loop: ClassVar[asyncio.AbstractEventLoop | None] = None
-
     def __init__(self, handler: WebhookRESTRequestHandler, translator: LambdaEventTranslator | None = None):
         """Check the deployment can serve the handler, so a broken one fails its Lambda init loudly
         instead of dropping deliveries later.
@@ -46,7 +34,7 @@ class LambdaWebhookHost:
         :raises AKConfigError: See LambdaWebhookGuard.
         """
         self._handler = LambdaWebhookGuard().check(handler)
-        self._translator = translator or LambdaEventTranslator()
+        super().__init__(translator)
 
     def handle(self, event: dict[str, Any], context: Any) -> dict[str, Any]:
         """Serve one platform delivery (the router's ``(event, context)`` contract).
@@ -66,32 +54,13 @@ class LambdaWebhookHost:
         """
         return self._run(self._respond(self._handler.challenge, event))
 
-    async def _respond(self, endpoint: Callable[[Request], Awaitable[Any]], event: Mapping[str, Any]) -> dict[str, Any]:
-        """Translate the event, call the endpoint, and translate its answer or its exception.
 
-        Every failure becomes a proxy response: an unhandled exception would reach
-        ``Lambda.handler``'s catch-all, which answers 500 with the exception text.
-        """
-        request = None
-        try:
-            request = self._translator.to_request(event)
-            return await self._translator.to_proxy_response(request, await endpoint(request))
-        except Exception as exc:  # HTTPException included: its status is the answer
-            return await self._translator.error_to_proxy_response(exc, request)
-
-    @classmethod
-    def _run(cls, coro: Coroutine) -> Any:
-        """Drive a coroutine on the execution environment's loop, replacing a closed one."""
-        if cls._loop is None or cls._loop.is_closed():
-            cls._loop = asyncio.new_event_loop()
-        return cls._loop.run_until_complete(coro)
-
-
-class LambdaWebhookGuard:
+class LambdaWebhookGuard(LambdaHostGuard):
     """The cold-start checks LambdaWebhookHost runs (#760): fail at import, not on the first delivery."""
 
-    REST_MODES = (ExecutionMode.REST_SYNC, ExecutionMode.REST_ASYNC)
-    BASE_PATH_ENV = ("API_BASE_PATH", "API_VERSION", "AGENT_ENDPOINT")
+    HOST_NAME = "LambdaWebhookHost"
+    SUBJECT = "webhooks"
+    COMPLETE_ONLY_REASON = "Platform adapters deliver whole messages"
 
     def check(self, handler: Any) -> WebhookRESTRequestHandler:
         """Run every check, in this order; return the handler, typed.
@@ -102,9 +71,7 @@ class LambdaWebhookGuard:
         :raises AKConfigError: Mode, transport, base-path environment or verification settings.
         """
         webhook_handler = self._check_type(handler)
-        self._check_mode()
-        self._check_transport(webhook_handler)
-        self._check_base_path_env()
+        self._check_deployment(webhook_handler)
         self._check_verification_settings(webhook_handler)
         return webhook_handler
 
@@ -113,41 +80,6 @@ class LambdaWebhookGuard:
         if not isinstance(handler, WebhookRESTRequestHandler):
             raise TypeError(f"LambdaWebhookHost serves WebhookRESTRequestHandler only; got {type(handler).__name__}")
         return handler
-
-    def _check_mode(self) -> None:
-        execution = AKConfig.get().execution
-        mode = execution.mode
-        if mode not in self.REST_MODES:
-            raise AKConfigError(
-                f"LambdaWebhookHost serves webhooks in execution.mode rest_sync or rest_async only; got {mode.value if mode else 'unset'}. "
-                "Lambda routes the other modes' events to WSLambdaRouter"
-            )
-        message_type = execution.resolved_message_type
-        if message_type != ReplyMessageType.COMPLETE:
-            raise AKConfigError(
-                f"LambdaWebhookHost serves webhooks with execution.message_type complete only; got {message_type.value}. "
-                "Platform adapters deliver whole messages"
-            )
-
-    @staticmethod
-    def _check_transport(handler: WebhookRESTRequestHandler) -> None:
-        if not handler.requires_pipeline:
-            return
-        transport_type = QueueTransportFactory.resolve_type()
-        if transport_type != "sqs":
-            raise AKConfigError(
-                f"LambdaWebhookHost needs the sqs queue transport, but execution.queues resolves to '{transport_type}': "
-                "the serverless agent runner consumes the input queue through an SQS event source mapping. "
-                "Set queue_mode = true in the ak-serverless Terraform module and execution.queues.type: sqs in config.yaml"
-            )
-
-    def _check_base_path_env(self) -> None:
-        missing = [name for name in self.BASE_PATH_ENV if not os.getenv(name)]
-        if missing:
-            raise AKConfigError(
-                f"LambdaWebhookHost needs {', '.join(missing)} in the environment: without them the router sends every "
-                "webhook to the chat handler. The ak-serverless Terraform module sets them on the request-handler Lambda"
-            )
 
     @staticmethod
     def _check_verification_settings(handler: WebhookRESTRequestHandler) -> None:

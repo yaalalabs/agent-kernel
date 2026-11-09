@@ -200,6 +200,7 @@ class LambdaHost:
 class LambdaHostGuard:
     HOST_NAME: ClassVar[str]        # "LambdaWebhookHost" / "LambdaThreadHost", used in messages
     SUBJECT: ClassVar[str]          # "webhooks" / "threads", used in messages
+    COMPLETE_ONLY_REASON: ClassVar[str]  # host-specific tail of the message_type error
     REST_MODES = (ExecutionMode.REST_SYNC, ExecutionMode.REST_ASYNC)
     BASE_PATH_ENV = ("API_BASE_PATH", "API_VERSION", "AGENT_ENDPOINT")
     def _check_deployment(self, handler: RESTRequestHandler) -> None:
