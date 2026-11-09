@@ -795,6 +795,14 @@ class TestProvisioning:
         }
         assert dead_letter == {"name": _sub("in-dlq"), "topic": _topic("in-dlq")}
 
+    def test_auto_provision_on_the_send_side_keeps_a_message_sent_before_any_consumer(self, broker, consumers):
+        """Pub/Sub drops messages published to a topic with no subscription, so the first send
+        provisions the subscription too (found by the live contract on the emulator)."""
+        transport = _transport(auto_provision=True)
+        transport.send(QueueName.INPUT, _msg(body="early", group_id="s1"))
+
+        assert _bodies(_consumer(consumers, transport).fetch(10, 1.0)) == ["early"]
+
     def test_auto_provision_accepts_existing_objects(self, provisioned, consumers):
         transport = _transport(auto_provision=True)
         _consumer(consumers, transport)

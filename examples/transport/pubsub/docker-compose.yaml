@@ -1,0 +1,31 @@
+# Local stack for the Pub/Sub queue-mode example: Google's Pub/Sub emulator and one Valkey for the
+# response store, sessions and the transport's delivery bookkeeping.
+#
+# The emulator supports ordering keys, dead-letter topics and pull, which is everything the
+# transport uses. It has no IAM and keeps messages in memory, so this is not a production
+# topology: on GCP the topics come from the ak-gcp pubsub Terraform module.
+
+services:
+  pubsub:
+    image: gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators
+    container_name: ak-pubsub
+    command: ["gcloud", "beta", "emulators", "pubsub", "start", "--project=ak-local", "--host-port=0.0.0.0:8085"]
+    ports:
+      - "8085:8085"
+    healthcheck:
+      # The emulator answers "Ok" on its root path once it accepts requests; CI waits on this.
+      test: ["CMD-SHELL", "curl -sf http://localhost:8085 || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+
+  valkey:
+    image: valkey/valkey:8-alpine
+    container_name: ak-valkey
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10

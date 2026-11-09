@@ -599,11 +599,16 @@ class PubSubTransport(QueueTransport):
     # -- provisioning ------------------------------------------------------------------------
 
     def _ensure_topic(self, queue: QueueName) -> None:
-        """Create or verify the queue topic, once per process."""
-        topic = self._topic_path(self._topics[queue])
+        """Make sure a send to ``queue`` is delivered, once per process.
+
+        Verifying needs only the topic. Provisioning creates the whole queue (subscription and
+        dead-letter topic included), because Pub/Sub drops a message published to a topic that has
+        no subscription yet: a request sent before the first consumer started would vanish.
+        """
         if self._auto_provision:
-            self._ensure_once(f"topic:{topic}", lambda: self._create_topic(topic))
+            self._ensure_subscription(queue)
         else:
+            topic = self._topic_path(self._topics[queue])
             self._ensure_once(f"topic:{topic}", lambda: self._verify_topic(topic))
 
     def _ensure_subscription(self, queue: QueueName) -> None:

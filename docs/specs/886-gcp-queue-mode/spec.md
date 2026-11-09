@@ -247,7 +247,10 @@ measures it ([Testing](#testing)); see [§7](#7-design-amendments-for-re-review)
 Follows the NATS rule (`nats.py:330-415`): create or verify once per process per object, recorded
 only after success, one lock per object.
 
-- **Send side** verifies or creates the queue topic on first `send`.
+- **Send side**, on first `send`: verifies the queue topic, or with `auto_provision` creates the
+  whole queue (topic, dead-letter topic, subscriptions). Creating only the topic loses messages:
+  Pub/Sub drops a message published to a topic with no subscription yet, so a request sent before
+  the first consumer started would vanish. Found by the live contract (`test_queues_are_isolated`).
 - **Receive side** verifies or creates, in `create_consumer`: the subscription and its dead-letter
   topic. It never publishes to the queue topic, so it does not check it (and needs no rights on it).
 - **Verify** (`auto_provision: false`, the default):
@@ -659,6 +662,10 @@ def run(cls, handlers: list[RESTRequestHandler] | None = None) -> None:
    subscription deadline as mitigation. If the live run shows stalls are frequent, the fallback is
    a streaming pull per consumer, which the client library leases and orders itself. That would be
    a design change, not an implementation detail.
+   - **Measured on the emulator** (plan iteration 3, `pubsub_tester.py latency`, 150 messages at
+     random gaps to two idle consumers): 150/150 delivered, median 35 ms, maximum 70 ms, no stall.
+     The emulator may not lose messages to cancelled pulls the way the service can, so the
+     iteration 7 deployment repeats the check against real Pub/Sub.
 4. **Terraform guards are cross-variable `validation`s, not `check` blocks** ([§5.4](#54-root-variables-both-roots)).
    The design says `check` blocks "fail at `terraform plan`"; a failing `check` only warns.
 5. **The `cpu_idle` motivation is probably wrong.** The provider documents `cpu_idle` as "True by
