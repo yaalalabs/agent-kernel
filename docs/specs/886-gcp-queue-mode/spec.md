@@ -852,14 +852,18 @@ and `agentkernel.core.config.AKConfig.get` (a real `_ExecutionConfig`, per the t
 - The runner's environment never references the request subscription (no dependency cycle).
 - Per module: the `pubsub` input subscription pushes to the endpoint with a 600 s deadline while the
   output one stays pull at 10 s; the `agent-runner` service is internal-only with a 3600 s timeout.
-- These run as `terraform test` plan-only checks with mock providers (8 per root, 1 per module).
+- These run as `terraform test` plan-only checks with mock providers (8 per root, 1 per module),
+  committed under each directory's `tests/`. The `terraform-tests` job in
+  `.github/workflows/test-reusable.yaml` runs them on every PR, on a copy whose `ak-common` sources
+  point at `../common/modules` (no cloud credentials needed).
 
 ### End to end
 
 - `examples/transport/pubsub/` (the `ak-dev-new-queue-transport` checklist): two processes on the
   emulator, `app_test.py` covering `rest_sync`, a multi-turn session, and a poison message reaching
   the dead-letter subscription. Registered in `.github/test-config.yaml` (`type: containerized`).
-- `examples/gcp-serverless/openai-queue-mode/`: weekly entry in
+- `examples/gcp-serverless/openai-queue-mode/` (its `app.py` was also run locally as edge and
+  runner against the emulator, with a real push subscription to the runner): weekly entry in
   `.github/integration-test-config.yaml` (`type: gcp-serverless`). Its test tolerates cold starts
   (the retry pattern of `examples/gcp-serverless/openai/serverless_test.py:30-41`) and runs a
   multi-turn `rest_sync` conversation. The CI project needs `pubsub.googleapis.com` enabled.

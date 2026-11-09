@@ -448,6 +448,14 @@ class TestSend:
         transport.send(QueueName.INPUT, _msg(group_id="s1"))  # the key is usable again
         assert len(provisioned.published) == 1
 
+    def test_an_unconfirmed_publish_raises_rather_than_dropping_silently(self, provisioned):
+        """send() waits for Pub/Sub's confirmation; a timeout surfaces as a failed request."""
+        provisioned.fail_publishes.append(TimeoutError("publish not confirmed within request_timeout"))
+
+        with pytest.raises(TimeoutError):
+            _transport().send(QueueName.INPUT, _msg(group_id="s1"))
+        assert provisioned.published == []
+
     def test_the_publisher_orders_and_does_not_batch(self, provisioned):
         _transport().send(QueueName.INPUT, _msg())
         publisher = FakePublisherClient.instances[-1]

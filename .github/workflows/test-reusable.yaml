@@ -157,6 +157,41 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: ./build.sh && uv run pytest -s
 
+  terraform-tests:
+    # Plan-only `terraform test` checks of the GCP modules (#886 queue mode), with mock providers:
+    # no cloud credentials. The roots reference ak-common modules by registry address, so the job
+    # runs a copy whose ak-common sources point at the checkout's common/modules, the same rewrite
+    # scripts/deploy/inject_dependencies.py applies to examples in the integration runs.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -e {0}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.checkout_ref }}
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.14.3
+          terraform_wrapper: false
+
+      - name: Run GCP module tests
+        env:
+          TF_PLUGIN_CACHE_DIR: ${{ runner.temp }}/tf-plugin-cache
+        run: |
+          mkdir -p "$TF_PLUGIN_CACHE_DIR"
+          work="$RUNNER_TEMP/ak-gcp"
+          cp -R ak-deployment/ak-gcp "$work"
+          sed -i -E 's#"yaalalabs/ak-common/google//modules/([a-z-]+)"#"../common/modules/\1"#' "$work"/containerized/*.tf "$work"/serverless/*.tf
+          for dir in common/modules/pubsub common/modules/agent-runner containerized serverless; do
+            echo "::group::terraform test ($dir)"
+            (cd "$work/$dir" && terraform init -backend=false -input=false && terraform test)
+            echo "::endgroup::"
+          done
+
   transport-integration-tests:
     # The QueueTransportContract against REAL brokers (spec #495 Testing): the unit suite runs
     # the same contract against in-memory fakes; this job points it at live NATS and Kafka
