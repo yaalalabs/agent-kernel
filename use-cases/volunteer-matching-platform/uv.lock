@@ -4563,7 +4563,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "agentkernel", extras = ["cli", "pydanticai", "api", "chromadb", "telegram"], specifier = ">=0.8.1" },
+    { name = "agentkernel", extras = ["cli", "pydanticai", "api", "chromadb", "telegram"], specifier = ">=0.8.1,<0.9" },
     { name = "pydantic-ai-slim", extras = ["google"], specifier = ">=2.13.0" },
     { name = "pyreadline3", marker = "sys_platform == 'win32'", specifier = ">=3.5.0" },
     { name = "python-multipart", specifier = ">=0.0.9" },
@@ -4571,7 +4571,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "agentkernel", extras = ["test"], specifier = ">=0.8.1" },
+    { name = "agentkernel", extras = ["test"], specifier = ">=0.8.1,<0.9" },
     { name = "black", specifier = ">=23.0.0" },
     { name = "isort", specifier = ">=5.0.0" },
     { name = "mypy", specifier = ">=1.0.0" },
