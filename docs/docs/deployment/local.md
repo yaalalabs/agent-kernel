@@ -84,7 +84,7 @@ graph LR
 You get the production queue semantics locally: per-session FIFO ordering with parallel
 sessions, bounded retry with a permanent-failure error path, and request deduplication: with
 zero backing services, and the same wire responses as before. The same app moves to a durable
-broker (SQS on AWS; Kafka/NATS on-prem or Kubernetes via the
+broker (SQS on AWS; Pub/Sub on GCP; Kafka/NATS on-prem or Kubernetes via the
 [Helm chart](./onprem-kubernetes)) purely by configuration. See the
 [Queue Mode Guide](../advanced/queue-mode-guide#running-queue-mode-locally-in_memory) for the
 config knobs and

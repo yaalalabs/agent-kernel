@@ -314,7 +314,7 @@ export default function SandboxFlowDiagram({
                 </div>
                 {detailed ? (
                   <p className={styles.nodeSub}>
-                    sqs · kafka · nats · in_memory · bounded wait, then
+                    sqs · kafka · nats · pubsub · in_memory · bounded wait, then
                     check_sandbox_task
                   </p>
                 ) : null}

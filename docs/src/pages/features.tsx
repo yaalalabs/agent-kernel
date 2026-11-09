@@ -864,7 +864,7 @@ function CoreFeatures() {
         "Agents run code, shell commands, file operations, and permitted package installs in isolated sandboxes. The Execution Broker routes every execution to a pluggable, policy-governed provider, in-process or over a queue to a separate worker fleet.",
       highlights: [
         "local_subprocess, docker, kubernetes, e2b, daytona, ec2_ssm",
-        "Queue broker over SQS, Kafka, or NATS for long-running executions",
+        "Queue broker over SQS, Kafka, NATS, or Pub/Sub for long-running executions",
         "Session-persistent workspaces",
         "Fail-closed network, filesystem, CPU, and memory policies; per-profile language and package-install permissions; configurable language runtimes on Docker and Kubernetes",
         "Agent or end-user identity",
@@ -884,7 +884,7 @@ function CoreFeatures() {
         "GCP Cloud Run (Serverless)",
         "GCP Cloud Run (Containerized)",
         "On-Prem Kubernetes (Helm chart: bare metal, EKS, air-gapped)",
-        "Queue-backed scaling: ingress and agent execution scale independently",
+        "Queue-backed scaling: ingress and agent execution scale independently (SQS on AWS, Pub/Sub on GCP)",
       ],
       link: "/docs/deployment/overview",
     },

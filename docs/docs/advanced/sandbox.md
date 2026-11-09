@@ -701,7 +701,7 @@ The **broker** decouples the agent from execution. It is chosen with `sandbox.br
 |---|---|---|
 | `thread` (default) | A dedicated daemon thread + event loop in the agent process. | CLI and REST deployments. |
 | `embedded` | Inline in the caller's event loop (always synchronous). | Simple/co-located execution and tests. |
-| `queue` | A separate worker fleet (`QueueBrokerWorker`), decoupled by any queue transport (`in_memory`, `sqs`, `kafka`, `nats`). | Executions longer than the agent runtime allows, cluster-side worker tiers, Lambda/ECS agents with a remote worker. |
+| `queue` | A separate worker fleet (`QueueBrokerWorker`), decoupled by any queue transport (`in_memory`, `sqs`, `kafka`, `nats`, `pubsub`). | Executions longer than the agent runtime allows, cluster-side worker tiers, Lambda/ECS agents with a remote worker. |
 
 `wait_timeout` (default `60` s) bounds how long a synchronous call waits before the execution is
 **promoted** to a background task (thread flavor): `run_code`/`run_command` then return

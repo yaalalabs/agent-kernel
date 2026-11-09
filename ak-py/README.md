@@ -323,7 +323,21 @@ if __name__ == "__main__":
     main()
 ```
 
-`CloudRun` is the GCP equivalent of `Lambda` (AWS) and `AzureFunctions` (Azure). It wraps `RESTAPI` and starts a FastAPI/uvicorn server. Custom routes are registered with `@CloudRun.register(path, method)`. Use `CloudRun.run()` instead of `RESTAPI.run()` when deploying to GCP.
+`CloudRun` is the GCP equivalent of `Lambda` (AWS) and `AzureFunctions` (Azure). It starts the queue pipeline's IO process (a FastAPI/uvicorn server): on the default `in_memory` transport the whole pipeline in one instance, and in queue mode the edge (REST API plus response handler). Custom routes are registered with `@CloudRun.register(path, method)`. Use `CloudRun.run()` instead of `RESTAPI.run()` when deploying to GCP.
+
+**Queue mode on GCP** (the Terraform modules' default) splits the deployment into two Cloud Run services from one image, connected by Google Cloud Pub/Sub (`pip install agentkernel[pubsub]`): the edge (`CloudRun.run()`) and a private agent-runner service that Pub/Sub pushes each request to (`CloudRunAgentRunner.run()`):
+
+```python
+from agentkernel.gcp import CloudRun, CloudRunAgentRunner
+
+def main() -> None:      # the edge (the image's CMD)
+    CloudRun.run()
+
+def runner() -> None:    # the agent runner (Terraform's agent_runner.command)
+    CloudRunAgentRunner.run()
+```
+
+with `execution.queues.type: pubsub` and `execution.response_store.type: redis` in `config.yaml`. Pub/Sub waits at most 600 seconds for a push answer, so an agent run that takes longer is redelivered and runs a second time; the runner itself is not capped. See [`examples/gcp-serverless/openai-queue-mode`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/gcp-serverless/openai-queue-mode).
 
 For full Terraform deployment configuration, see [`ak-deployment/ak-gcp/`](https://github.com/yaalalabs/agent-kernel/tree/develop/ak-deployment/ak-gcp) or the [GCP deployment docs](https://github.com/yaalalabs/agent-kernel/tree/develop/docs/docs/deployment/gcp-serverless.md).
 
@@ -765,7 +779,7 @@ Configure queue-backed and serverless execution behavior.
 
   - **Transport Type**
     - **Field**: `execution.queues.type`
-    - **Options**: `in_memory`, `sqs`, `kafka`, `nats`, or a dotted path to a `QueueTransport` subclass
+    - **Options**: `in_memory`, `sqs`, `kafka`, `nats`, `pubsub`, or a dotted path to a `QueueTransport` subclass
     - **Default**: none — **mandatory whenever an `execution.queues` block is declared**
     - **Description**: Queue transport used by the pipeline, and the only thing that selects it: queue coordinates are injected per component by a deployment, so they are never used to infer the transport. Declaring the block without a `type` is a configuration error. Omitting the block entirely leaves `in_memory` — a zero-dependency, in-process transport for local development and single-process deployments.
     - **Environment Variable**: `AK_EXECUTION__QUEUES__TYPE`
@@ -938,6 +952,42 @@ Configure queue-backed and serverless execution behavior.
     - **Default**: `false`
     - **Description**: Create the streams and per-partition consumers at startup if missing. Convenient for local and dev clusters; leave false in production, where the objects are managed declaratively (NACK CRs) and a missing object should fail loudly instead of being created with defaults
     - **Environment Variable**: `AK_EXECUTION__QUEUES__NATS__AUTO_PROVISION`
+
+  - **Pub/Sub Project**
+    - **Field**: `execution.queues.pubsub.project_id`
+    - **Default**: `None` (the project of Application Default Credentials)
+    - **Description**: GCP project that owns the topics and subscriptions (`pubsub` transport, `pubsub` extra)
+    - **Environment Variable**: `AK_EXECUTION__QUEUES__PUBSUB__PROJECT_ID`
+
+  - **Pub/Sub Topics and Subscriptions**
+    - **Fields**: `execution.queues.pubsub.input_topic`, `input_subscription`, `output_topic`, `output_subscription`
+    - **Default**: `agent-input`, `agent-input`, `agent-output`, `agent-output`
+    - **Description**: The request and reply queues. Subscriptions must have message ordering enabled (a session's turns share an ordering key). The GCP Terraform modules inject these
+    - **Environment Variable**: `AK_EXECUTION__QUEUES__PUBSUB__INPUT_TOPIC` (and the other three)
+
+  - **Pub/Sub Dead-Letter Suffix**
+    - **Field**: `execution.queues.pubsub.dlq_suffix`
+    - **Default**: `-dlq`
+    - **Description**: Suffix appended to a topic name for its dead-letter topic, where permanently failed messages are copied
+    - **Environment Variable**: `AK_EXECUTION__QUEUES__PUBSUB__DLQ_SUFFIX`
+
+  - **Pub/Sub Ack Wait**
+    - **Field**: `execution.queues.pubsub.ack_wait`
+    - **Default**: `300.0`
+    - **Description**: Seconds a pulled message stays leased before Pub/Sub redelivers it. Must exceed your longest agent turn
+    - **Environment Variable**: `AK_EXECUTION__QUEUES__PUBSUB__ACK_WAIT`
+
+  - **Pub/Sub Request Timeout**
+    - **Field**: `execution.queues.pubsub.request_timeout`
+    - **Default**: `10.0`
+    - **Description**: Seconds to wait for a Pub/Sub call (publish, ack, admin) to complete
+    - **Environment Variable**: `AK_EXECUTION__QUEUES__PUBSUB__REQUEST_TIMEOUT`
+
+  - **Pub/Sub Auto Provision**
+    - **Field**: `execution.queues.pubsub.auto_provision`
+    - **Default**: `false`
+    - **Description**: Create the topics, dead-letter topics and subscriptions at startup if missing. For the emulator and dev only; leave false in production, where Terraform owns them and a missing object fails startup
+    - **Environment Variable**: `AK_EXECUTION__QUEUES__PUBSUB__AUTO_PROVISION`
 
   - **Queue Batch Size**
     - **Field**: `execution.queues.batch_size`

@@ -8,7 +8,8 @@ description: >
   queue-based scalable processing, custom API Gateway authorizers, EventBridge Scheduler for scheduled tasks, and SSM
   Parameter Store secret resolution (`ssm_enabled`).
   GCP supports Cloud Run serverless (scale-to-zero)
-  and containerized (always-on) with Redis or Firestore session backends. Kubernetes runs
+  and containerized (always-on) with Redis or Firestore session backends, in queue mode by default
+  (an edge service and a push-driven agent-runner service over Pub/Sub). Kubernetes runs
   the queue pipeline over NATS JetStream, Kafka, or SQS with KEDA autoscaling, an
   optional WebSocket gateway tier, and Kubernetes Secrets mounted for secret resolution
   (`secretStore`).
@@ -72,13 +73,13 @@ published chart, as in the Kubernetes section below, not a repository checkout.
 All modules are provider-agnostic: they declare `required_providers` but do not configure them internally. Configure each provider (`aws`/`docker`, `azurerm`, or `google`/`google-beta`/`docker`) in the root module and pass it explicitly via the module's `providers = { ... }` argument, as shown in the examples below. Azure's containerized module builds and pushes its image via a nested submodule with its own internal `docker` provider, so no `docker` provider needs to be configured or passed by the caller there.
 
 AWS-only features in this skill:
-- `execution_mode` / `message_type` (Terraform inputs; `execution.message_type` itself is plain Agent Kernel config)
-- `queue_mode`
-- `authorizer`
+- `authorizer` (the AWS Lambda authorizer; GCP's modules take a JWT `authorizer` object instead)
+
+`queue_mode`, `execution_mode` and `message_type` exist on AWS and GCP. On GCP `queue_mode` defaults to `true`, and `execution_mode` accepts only `rest_sync` and `rest_async`.
 
 Azure examples use the provider module's standard top-level inputs (`function_name`, `package_path`, `container_port`, `publisher_email`) rather than AWS serverless execution modes.
 
-GCP modules use Cloud Run for both serverless (scale-to-zero, `min_instance_count=0`) and containerized (always-on, `min_instance_count≥1`) modes. Both use `agentkernel.gcp.CloudRun` as the entry point.
+GCP modules use Cloud Run for both serverless (scale-to-zero, `min_instance_count=0`) and containerized (always-on, `min_instance_count≥1`) modes. Both use `agentkernel.gcp.CloudRun` as the entry point. Both default to queue mode, which also needs `agentkernel.gcp.CloudRunAgentRunner` as the agent runner's entry point (see [GCP Queue Mode](#gcp-queue-mode-pubsub)); `queue_mode = false` deploys the single service.
 
 ### Step 4: Align App Dependencies and Session Config
 
@@ -1337,6 +1338,62 @@ module "containerized_agent" {
 ```
 
 **Key difference from GCP Serverless:** `min_instance_count = 1` keeps at least one instance running at all times, eliminating cold starts.
+
+## GCP Queue Mode (Pub/Sub)
+
+The default for both GCP modules (`queue_mode = true`). One image runs as two Cloud Run services connected by
+Pub/Sub, with Memorystore (created automatically) handing replies back:
+
+- the **edge** (the image's `CMD`, `CloudRun.run()`): chat API, publishes requests, returns replies;
+- the **agent runner** (`agent_runner.command`, `CloudRunAgentRunner.run()`): a private service Pub/Sub pushes each
+  request to. It scales on those pushes, down to zero.
+
+```python
+from agentkernel.gcp import CloudRun, CloudRunAgentRunner
+from agentkernel.openai import OpenAIModule
+
+OpenAIModule([...])
+
+def main() -> None:
+    CloudRun.run()
+
+def runner() -> None:
+    CloudRunAgentRunner.run()
+```
+
+`config.yaml` declares the transport and stores (Terraform injects only coordinates):
+
+```yaml
+execution:
+  queues:
+    type: pubsub
+  response_store:
+    type: redis
+session:
+  type: redis
+```
+
+```hcl
+module "agents" {
+  source  = "yaalalabs/ak-serverless/google" # or ak-containerized
+  # ... project_id, region, prefix, package_path, providers
+  execution_mode   = "rest_sync"             # or rest_async
+  timeout          = 120                     # cover cold starts of both services
+  backend_deadline = 110
+  agent_runner = {
+    command            = ["python", "-c", "from app import runner; runner()"] # required with the edge's image
+    min_instance_count = 0
+    max_instance_count = 10
+    concurrency        = 5
+  }
+}
+```
+
+- Extras: `agentkernel[openai,api,redis,pubsub]`.
+- Enable `pubsub.googleapis.com`.
+- `async` (WebSocket) and `realtime` are refused at plan and at startup: Cloud Run instances are not individually addressable.
+- Pub/Sub waits at most 600 seconds for a push answer: an agent run that takes longer is redelivered and runs a second time. The runner's own timeout is 60 minutes.
+- Working example: `examples/gcp-serverless/openai-queue-mode`.
 
 ## On-Prem / Kubernetes (Helm Chart)
 

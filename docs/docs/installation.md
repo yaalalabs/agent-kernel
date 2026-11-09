@@ -125,6 +125,12 @@ For deploying to GCP (Cloud Run, includes Firestore session support):
 pip install agentkernel[gcp]
 ```
 
+For queue mode on GCP (the Google Cloud Pub/Sub queue transport):
+
+```bash
+pip install agentkernel[pubsub]
+```
+
 For multiple clouds:
 
 ```bash

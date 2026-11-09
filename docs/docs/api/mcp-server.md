@@ -44,9 +44,10 @@ back from the response store. The tool's `session_id` argument is the Agent Kern
 |---|---|
 | `RESTAPI.run()` with no `execution.queues` block (the laptop default) | ✅ one process, in-memory queue |
 | `IOHandler.run(handlers=[...])`, any transport | ✅ through the queue |
-| `RESTAPI.run(handlers=[...])`, `RESTAPI.run()` on SQS/Kafka/NATS, `AWSRestAPI`, `AWSWebsocketAPI`, `ECSIOHandler` | ❌ refuses to start (`AKConfigError`): these start no agent runner |
+| `CloudRun.run()` on GCP, any transport | ✅ through the queue (it starts `IOHandler`) |
+| `RESTAPI.run(handlers=[...])`, `RESTAPI.run()` on SQS/Kafka/NATS/Pub/Sub, `AWSRestAPI`, `AWSWebsocketAPI`, `ECSIOHandler` | ❌ refuses to start (`AKConfigError`): these start no agent runner |
 
-- **Split deployments** (SQS, Kafka or NATS, with the agent runner in its own process): import the
+- **Split deployments** (SQS, Kafka, NATS or Pub/Sub, with the agent runner in its own process): import the
   same agent modules in the IO process as in the runner, because agent tools are built from the IO
   process's registry. Without them the IO process logs a warning and lists no agent tools. The
   response store must be shared (`redis`, `valkey` or `dynamodb`) in every execution mode. With more

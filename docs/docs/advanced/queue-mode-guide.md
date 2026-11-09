@@ -13,8 +13,9 @@ Request Handler → Input Queue → Agent Runner → Output Queue → Response H
 
 with the queue transport and the process topology selected by configuration. This guide covers
 the pipeline itself, [running it locally](#running-queue-mode-locally-in_memory) with the default
-`in_memory` transport, and the AWS deployments: Lambda (serverless) and ECS (containerized):
-where the queues are durable SQS FIFO queues.
+`in_memory` transport, the AWS deployments: Lambda (serverless) and ECS (containerized), where the
+queues are durable SQS FIFO queues, and [Google Cloud](#running-queue-mode-on-google-cloud-pubsub),
+where they are Pub/Sub topics.
 
 ---
 
@@ -51,6 +52,7 @@ declared by the application rather than inferred from the queue URLs a deploymen
 | `sqs` | ✅ | Two-process topology on AWS; also the transport behind the Lambda and ECS deployment adapters below |
 | `kafka` | ✅ (`pip install agentkernel[kafka]`) | Kubernetes / on-prem two-process topology |
 | `nats` (recommended on-prem) | ✅ (`pip install agentkernel[nats]`) | Kubernetes / on-prem two-process topology |
+| `pubsub` | ✅ (`pip install agentkernel[pubsub]`) | Google Cloud: the edge pulls replies; on Cloud Run the agent runner is pushed to |
 
 Delivery sub-modes (`execution.mode` + `execution.message_type`):
 
@@ -304,6 +306,72 @@ Three things to know:
   and per-partition consumers at startup. In production, leave it off so a missing stream or consumer
   fails loudly at startup, naming the object, instead of being silently created with defaults
   alongside your NACK CRs.
+
+---
+
+## Running Queue Mode on Google Cloud Pub/Sub
+
+The broker for queue mode on GCP: serverless, nothing to run, and it scales to zero. Install the extra
+(`pip install agentkernel[pubsub]`) and configure it:
+
+```yaml
+execution:
+  mode: rest_sync
+  queues:
+    type: pubsub
+    pubsub:
+      project_id: my-project     # unset uses the Application Default Credentials project
+      input_topic: agent-input
+      input_subscription: agent-input
+      output_topic: agent-output
+      output_subscription: agent-output
+      dlq_suffix: "-dlq"         # failed messages are copied to agent-input-dlq / agent-output-dlq
+      ack_wait: 300              # lease ceiling for pulled messages: exceed your longest turn
+      auto_provision: false      # true for the emulator and dev; Terraform owns them in production
+  response_store:                # required: the two processes must share it
+    type: redis
+    redis:
+      url: "redis://redis:6379"
+```
+
+The client libraries read `PUBSUB_EMULATOR_HOST` themselves, so the local
+[Pub/Sub emulator](https://cloud.google.com/pubsub/docs/emulator) needs no extra setting.
+
+**Process layout.** Locally (and off GCP) it is the same as the other broker transports:
+`IOHandler.run()` in one process, `AgentRunner.run()` in the other, both pulling. On Cloud Run the
+[GCP modules](../deployment/gcp-serverless#queue-mode) deploy queue mode by default: the edge runs
+`CloudRun.run()` and pulls replies, and the agent runner is a second, private service that Pub/Sub
+**pushes** each request to, started with `CloudRunAgentRunner.run()`. Cloud Run scales it on those
+pushes, down to zero. Pub/Sub waits at most 600 seconds for a push to be answered, so an agent run
+that takes longer is redelivered while it is still going and runs a second time; the runner's own
+request timeout is 60 minutes, so the run itself is never cut off.
+
+A runnable two-process version on the emulator, with a harness that peeks at subscriptions and
+measures delivery latency, is in
+[`examples/transport/pubsub`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/transport/pubsub);
+the Cloud Run deployment is
+[`examples/gcp-serverless/openai-queue-mode`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/gcp-serverless/openai-queue-mode).
+
+Pub/Sub provides less than the pipeline's contract, so the transport fills the gaps:
+
+- **Per-session order** comes from ordering keys (the session id), with ordering enabled on the
+  subscriptions. A pull can return several messages of one session; the consumer holds them and
+  serves one at a time. Push keeps one outstanding per session by itself.
+- **Exact delivery counts and deduplication** live in a key store, as on Kafka, because Pub/Sub's
+  delivery count is approximate and it does not deduplicate on publish. The store is the Redis or
+  Valkey session store, or else the Redis or Valkey response store (on GCP, sessions usually live in
+  Firestore), or else process-local memory with a warning.
+- **Acknowledged messages can come back:** when an earlier message of a session is redelivered,
+  Pub/Sub redelivers every later one too. The transport remembers acknowledged messages and
+  acknowledges such copies again without running them.
+- **Envelope in the message data.** Pub/Sub caps attributes at 100 per message and 1024 bytes each,
+  so the whole envelope travels in the data, with one marker attribute (`ak-envelope`).
+- **Permanent failure dead-letters.** After the pipeline's permanent-failure hook has answered the
+  caller, the message is copied to its dead-letter topic with the reason in `ak-error`, then
+  acknowledged. The subscription's dead-letter policy is the server-side backstop.
+- **`auto_provision` is off by default.** Locally, turn it on: the first send or consumer creates the
+  topics, dead-letter topics and ordered subscriptions. In production a missing object fails startup,
+  naming it.
 
 ---
 
@@ -805,6 +873,7 @@ this automatically. See the [AWS Containerized deployment docs](../deployment/aw
 | `sqs` | ✅ | Two-process topology on AWS, wire-compatible with the Lambda/ECS adapters below |
 | `kafka` | ✅ | confluent-kafka client, per-session ordering by record key, DLQ topics, Strimzi-provisioned clusters. Needs the `kafka` extra and an `execution.queues.kafka` block; see the notes below |
 | `nats` (recommended on-prem) | ✅ | JetStream work-queue streams, partitioned per-session ordering, server-side delivery counts and dedup. Needs the `nats` extra and an `execution.queues.nats` block |
+| `pubsub` | ✅ | Google Cloud Pub/Sub: ordering keys for per-session order, delivery counts and dedup in a key store, dead-letter topics, pull consumer plus a push receiver for Cloud Run. Needs the `pubsub` extra and an `execution.queues.pubsub` block; see [Running Queue Mode on Google Cloud Pub/Sub](#running-queue-mode-on-google-cloud-pubsub) |
 | WebSocket delivery (`async`, `complete` or `delta`) | ✅ | Gateway tier (`WebSocketGateway.run(auth_validator=...)`; co-hosted by `IOHandler` on `in_memory`) + session-backed shared connection store; see [WebSocket Delivery on the Pipeline](#websocket-delivery-on-the-pipeline-async) |
 | Kubernetes Helm chart (baremetal + EKS) | ✅ | Two-Deployment topology (io-handler + agent-runner, optional ws-gateway), KEDA queue-depth autoscaling, NACK/Strimzi-provisioned brokers; see [On-Prem / Kubernetes](../deployment/onprem-kubernetes) |
 

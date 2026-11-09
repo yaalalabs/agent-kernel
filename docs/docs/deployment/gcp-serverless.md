@@ -7,7 +7,7 @@ sidebar_position: 6
 Deploy Agent Kernel agents as serverless containers on **GCP Cloud Run** with scale-to-zero capability. Uses the [`yaalalabs/ak-serverless/google`](https://registry.terraform.io/modules/yaalalabs/ak-serverless/google) Terraform module.
 
 :::note Supported execution modes
-Cloud Run runs Agent Kernel's built-in REST server, so it supports synchronous JSON REST **and SSE event streaming** (`execution.mode: rest_sync` with `execution.message_type: delta`) with streaming-capable frameworks (OpenAI Agents SDK, LangGraph, Google ADK, Pydantic AI, Microsoft Agent Framework, Claude Agent SDK). Queue-based execution and WebSocket delivery are currently AWS-only; see the [Deployment Overview](./overview#execution-modes).
+Cloud Run runs Agent Kernel's built-in REST server, so it supports synchronous JSON REST **and SSE event streaming** (`execution.mode: rest_sync` with `execution.message_type: delta`) with streaming-capable frameworks (OpenAI Agents SDK, LangGraph, Google ADK, Pydantic AI, Microsoft Agent Framework, Claude Agent SDK). [Queue mode](#queue-mode) (Pub/Sub, the module default) supports `rest_sync` (with SSE) and `rest_async`; WebSocket (`async`) and `realtime` delivery are AWS-only; see the [Deployment Overview](./overview#execution-modes).
 :::
 
 ## Overview
@@ -19,6 +19,8 @@ Cloud Run runs Agent Kernel's built-in REST server, so it supports synchronous J
 | Container Registry | Artifact Registry |
 | Session Store (Redis) | Memorystore Redis |
 | Session Store (Firestore) | Firestore (Native Mode) |
+| Queue (queue mode) | Pub/Sub topics with dead-letter topics |
+| Agent runner (queue mode) | Cloud Run service, pushed to by Pub/Sub |
 | Networking | VPC + VPC Access Connector + Cloud NAT |
 | Observability | Cloud Logging (built-in) |
 
@@ -209,6 +211,76 @@ session:
 
 Enable a Firestore TTL policy on the collection pointing to the `expiry_time` field for automatic document expiry.
 
+## Queue Mode
+
+Queue mode is the module's default (`queue_mode = true`). The deployment becomes two Cloud Run services
+built from one image, connected by Pub/Sub:
+
+```
+client → API Gateway → edge service ──publish──▶ agent-input ──push──▶ agent-runner service (private)
+                            ▲                                                   │
+                            └──── pull ◀── agent-output ◀──────── publish ──────┘
+                      replies are handed back through Memorystore (Redis)
+```
+
+- **Edge** (`CloudRun.run()`): serves the chat API, publishes each request, and answers with the reply.
+- **Agent runner** (`CloudRunAgentRunner.run()`): Pub/Sub pushes each request to it; it runs the agents
+  and publishes the reply. It is internal-only, and only Pub/Sub's push identity may call it. Cloud Run
+  scales it on those pushes, down to zero.
+- A session's requests run one at a time, in order: the session id is the Pub/Sub ordering key.
+- Failed messages are retried and then copied to a dead-letter topic (`<topic>-dlq`).
+- Memorystore is created automatically as the reply store.
+- **Trade-off:** Pub/Sub waits at most 600 seconds for the runner to answer a push. An agent run that takes
+  longer is redelivered while it is still going and runs a second time. The runner's own request timeout is
+  60 minutes, so a long run is never cut off.
+
+The application provides both entry points:
+
+```python
+from agentkernel.gcp import CloudRun, CloudRunAgentRunner
+from agentkernel.openai import OpenAIModule
+
+OpenAIModule([...])
+
+def main() -> None:      # the edge: the image's CMD
+    CloudRun.run()
+
+def runner() -> None:    # the agent runner: agent_runner.command
+    CloudRunAgentRunner.run()
+```
+
+Its `config.yaml` declares the transport and the stores. Terraform injects only the coordinates (project,
+topics, subscription, Redis URL):
+
+```yaml
+execution:
+  queues:
+    type: pubsub
+  response_store:
+    type: redis
+session:
+  type: redis
+```
+
+```hcl
+module "agents" {
+  source = "yaalalabs/ak-serverless/google"
+  # ...
+  execution_mode = "rest_sync" # or rest_async: POST, then poll GET on the chat endpoint
+
+  agent_runner = {
+    command            = ["python", "-c", "from app import runner; runner()"]
+    min_instance_count = 0
+    max_instance_count = 10
+    concurrency        = 5 # agent runs per instance
+  }
+}
+```
+
+Enable the `pubsub.googleapis.com` API first. Set `queue_mode = false` for the single-service deployment,
+where each instance runs the whole pipeline in one process. See the
+[Queue Mode Guide](../advanced/queue-mode-guide#running-queue-mode-on-google-cloud-pubsub) for the transport itself.
+
 ## Deployment
 
 ```bash
@@ -230,7 +302,11 @@ terraform apply
 | `region` | ✅ | - | GCP region (e.g. `us-central1`) |
 | `prefix` | ✅ | - | Prefix applied to every resource name (e.g. `myapp-dev-chat`) |
 | `package_path` | ✅ | - | Path to Docker build context |
-| `create_redis_cluster` | ❌ | `false` | Create Memorystore Redis |
+| `create_redis_cluster` | ❌ | `false` | Create Memorystore Redis (queue mode always creates it) |
+| `queue_mode` | ❌ | `true` | Edge service + agent-runner service over Pub/Sub; creates Memorystore. `false` deploys the single service |
+| `execution_mode` | ❌ | `"rest_sync"` | Queue mode: `rest_sync` or `rest_async` |
+| `agent_runner` | ❌ | `{}` | Queue mode: the runner's `command` (or `package_path` / `image_uri`), `cpu`, `memory`, `min_instance_count`, `max_instance_count`, `concurrency` |
+| `queue_config` | ❌ | `{}` | Queue mode: `input_queue_max_receive_count` / `output_queue_max_receive_count` (deliveries before dead-lettering, default 3), `batch_size` |
 | `create_firestore_db` | ❌ | `false` | Create Firestore database |
 | `enable_jwt_auth` | ❌ | `false` | Enable JWT auth on API Gateway |
 | `min_instance_count` | ❌ | `0` | Min Cloud Run instances (0 = scale-to-zero) |
@@ -242,6 +318,8 @@ terraform apply
 |--------|-------------|
 | `agent_invoke_url` | Full URL to the API Gateway endpoint |
 | `service_url` | Cloud Run service URL (direct, pre-gateway) |
+| `input_topic` | Pub/Sub topic carrying chat requests (queue mode) |
+| `agent_runner_service` | The agent-runner Cloud Run service (queue mode) |
 
 ## Examples
 
@@ -250,6 +328,7 @@ See working examples in the repository:
 - [`examples/gcp-serverless/openai`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/gcp-serverless/openai): Basic deployment with Redis
 - [`examples/gcp-serverless/openai-auth`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/gcp-serverless/openai-auth): With JWT authentication
 - [`examples/gcp-serverless/openai-firestore`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/gcp-serverless/openai-firestore): With Firestore sessions
+- [`examples/gcp-serverless/openai-queue-mode`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/gcp-serverless/openai-queue-mode): Queue mode, edge + push-driven agent runner over Pub/Sub
 
 ## Teardown
 

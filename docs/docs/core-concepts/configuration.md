@@ -83,7 +83,7 @@ execution:
   mode: rest_sync  # Execution mode: rest_sync, rest_async, async (WebSocket), or realtime. Unset runs as rest_sync
   message_type: complete  # Reply delivery: complete (one whole reply) or delta (one message per chunk). Unset: delta for realtime, complete otherwise
   queues:
-    type: sqs  # Queue transport: in_memory | sqs | kafka | nats, or a dotted path to a QueueTransport subclass. Mandatory whenever this block is declared
+    type: sqs  # Queue transport: in_memory | sqs | kafka | nats | pubsub, or a dotted path to a QueueTransport subclass. Mandatory whenever this block is declared
     input:
       url: "https://sqs.us-east-1.amazonaws.com/123456789012/agent-input"  # Input SQS queue URL
       max_receive_count: 3  # Maximum number of times a message can be received from input queue before being treated as permanently failed
@@ -92,6 +92,16 @@ execution:
       url: "https://sqs.us-east-1.amazonaws.com/123456789012/agent-output"  # Output SQS queue URL
       max_receive_count: 3  # Maximum number of times a message can be received from output queue before being treated as permanently failed
       no_of_consumers: 2  # Containerized deployments only - consumer threads polling the output queue (default: 2, ignored by serverless)
+    # pubsub:  # Google Cloud Pub/Sub (type: pubsub, `pubsub` extra). The GCP modules inject these as AK_EXECUTION__QUEUES__PUBSUB__*
+    #   project_id: my-project  # Unset uses the Application Default Credentials project
+    #   input_topic: agent-input  # Topic carrying chat requests
+    #   input_subscription: agent-input  # Subscription the agent runner pulls (ordering enabled)
+    #   output_topic: agent-output  # Topic carrying agent replies
+    #   output_subscription: agent-output  # Subscription the response handler pulls (ordering enabled)
+    #   dlq_suffix: "-dlq"  # Dead-letter topic suffix: permanently failed messages are copied there
+    #   ack_wait: 300  # Seconds a pulled message stays leased before redelivery: exceed your longest turn
+    #   request_timeout: 10  # Seconds to wait for a Pub/Sub call
+    #   auto_provision: false  # Create missing topics/subscriptions at startup (emulator and dev only)
   response_store:
     type: redis  # Response store type: redis, valkey, or dynamodb (required for rest_sync and rest_async modes)
     retry_count: 5  # Number of retry attempts for response store reads
@@ -937,7 +947,7 @@ execution:
   mode: "rest_sync"             # Execution mode: 'rest_sync', 'rest_async', 'async', or 'realtime'
   message_type: "complete"      # Reply delivery: 'complete' or 'delta' (unset: delta for realtime, complete otherwise)
   queues:                       # Queue transport + coordinates for queue-based execution
-    type: "sqs"                 # in_memory | sqs | kafka | nats, or a dotted path to a QueueTransport subclass - mandatory whenever this block is declared
+    type: "sqs"                 # in_memory | sqs | kafka | nats | pubsub, or a dotted path to a QueueTransport subclass - mandatory whenever this block is declared
     input:
       url: "https://sqs.us-east-1.amazonaws.com/123456789012/agent-input"  # Input SQS queue URL
       max_receive_count: 3      # Max receive count before message is treated as failed

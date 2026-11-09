@@ -229,6 +229,7 @@ graph TB
         MEM["in_memory<br/>(default, in-process)"]
         SQS["sqs<br/>(AWS, via the deployment adapters)"]
         KN["kafka · nats<br/>(on-prem / Kubernetes)"]
+        PS["pubsub<br/>(GCP Cloud Run)"]
     end
 
     subgraph DELIV["Pluggable: reply delivery: execution.mode + message_type"]
@@ -257,7 +258,7 @@ What the abstraction fixes, and what it leaves open:
   the failure contract: a message that exhausts `max_receive_count` triggers a permanent-failure
   error reply, so the caller never hangs.
 - **Pluggable**: the queue transport (`in_memory` default; `sqs` on AWS via the deployment
-  adapters; `kafka`/`nats` for on-prem / Kubernetes), the response store backend, and the reply
+  adapters; `pubsub` on GCP Cloud Run; `kafka`/`nats` for on-prem / Kubernetes), the response store backend, and the reply
   delivery path per `execution.mode` and `execution.message_type`.
 - **Shared machinery**: the Agent Runner and Response Handler are both driven by `ConsumerLoop`
  : one implementation of batch fetch, receive-count checking, and the

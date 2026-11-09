@@ -158,6 +158,7 @@ GCP Cloud Run serverless deployment examples (scale-to-zero):
 - **`openai/`** - OpenAI agents on Cloud Run with Redis sessions
 - **`openai-auth/`** - OpenAI agents with JWT authentication via API Gateway
 - **`openai-firestore/`** - OpenAI agents with Firestore session storage
+- **`openai-queue-mode/`** - Queue mode: an edge service and a push-driven agent-runner service over Pub/Sub, both scaling to zero
 
 ### 📁 GCP Containerized Examples (`/examples/gcp-containerized`)
 

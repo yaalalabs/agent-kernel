@@ -341,7 +341,7 @@ unless you set a TTL explicitly.
 
 | Combination | Rejected because |
 | --- | --- |
-| `local` provider + a broker transport (`sqs`/`kafka`/`nats`) | The heap of armed occurrences is reachable only from its own process, so the management routes would amend timers a different process owns — a cancellation would report success while the timer kept firing. |
+| `local` provider + a broker transport (`sqs`/`kafka`/`nats`/`pubsub`) | The heap of armed occurrences is reachable only from its own process, so the management routes would amend timers a different process owns — a cancellation would report success while the timer kept firing. |
 | `local` provider + a shared store | Same split: the records and the timers must live together. |
 | `in_memory` store + a broker transport | The records themselves would be split across the runner and IO-handler processes. |
 | `eventbridge` provider + a non-`sqs` transport | Delivery is baked into the schedule registration as an SQS target. |

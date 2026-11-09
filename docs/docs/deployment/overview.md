@@ -27,8 +27,8 @@ graph TB
     end
 
     subgraph GCP["GCP"]
-        I[Cloud Run Serverless<br/>REST · SSE Streaming · scale-to-zero]
-        J[Cloud Run Containerized<br/>REST · SSE Streaming · always-on]
+        I[Cloud Run Serverless<br/>REST · SSE Streaming · Pub/Sub queue · scale-to-zero]
+        J[Cloud Run Containerized<br/>REST · SSE Streaming · Pub/Sub queue · always-on]
     end
 
     subgraph K8S["On-Prem / Kubernetes"]
@@ -55,17 +55,17 @@ graph TB
 
 ## Execution Modes
 
-Independently of *where* you deploy, `execution.mode` selects *how* requests are processed and replies delivered, and `execution.message_type` (`AK_EXECUTION__MESSAGE_TYPE`) selects whether a reply arrives whole (`complete`) or as one message per chunk (`delta`). Chat execution always runs on the [queue pipeline](../architecture/overview#the-queue-execution-pipeline): in-process with the default `in_memory` transport on every server flavor, over durable SQS queues on AWS Lambda/ECS, or over Kafka/NATS on-prem or Kubernetes via the [Helm chart](./onprem-kubernetes). WebSocket delivery runs on API Gateway on AWS and on the pipeline's own [WebSocket gateway tier](../advanced/queue-mode-guide#websocket-delivery-on-the-pipeline-async) everywhere else.
+Independently of *where* you deploy, `execution.mode` selects *how* requests are processed and replies delivered, and `execution.message_type` (`AK_EXECUTION__MESSAGE_TYPE`) selects whether a reply arrives whole (`complete`) or as one message per chunk (`delta`). Chat execution always runs on the [queue pipeline](../architecture/overview#the-queue-execution-pipeline): in-process with the default `in_memory` transport on every server flavor, over durable SQS queues on AWS Lambda/ECS, over Pub/Sub on GCP Cloud Run, or over Kafka/NATS on-prem or Kubernetes via the [Helm chart](./onprem-kubernetes). WebSocket delivery runs on API Gateway on AWS and on the pipeline's own [WebSocket gateway tier](../advanced/queue-mode-guide#websocket-delivery-on-the-pipeline-async) everywhere else.
 
 | Mode | Message type | Transport | How the client gets the reply | Queues | Response store | Supported on |
 |------|--------------|-----------|-------------------------------|--------|----------------|--------------|
-| `rest_sync` (also when `mode` is unset) | `complete` (default) | HTTP | JSON on the same connection (server awaits the store internally) | `in_memory` / SQS FIFO / Kafka / NATS | In-memory / DynamoDB / Redis / Valkey | All server flavors (in-process); AWS Lambda, AWS ECS (SQS); Kubernetes (Kafka/NATS/SQS) |
+| `rest_sync` (also when `mode` is unset) | `complete` (default) | HTTP | JSON on the same connection (server awaits the store internally) | `in_memory` / SQS FIFO / Kafka / NATS / Pub/Sub | In-memory / DynamoDB / Redis / Valkey | All server flavors (in-process); AWS Lambda, AWS ECS (SQS); GCP Cloud Run (Pub/Sub); Kubernetes (Kafka/NATS/SQS) |
 | `rest_sync` (also when `mode` is unset) | `delta` | SSE | One `StreamChunk` per stream event as they are generated, ending with the done chunk | Any transport | Must stream chunks: `in_memory` (one process), `redis` or `valkey` (any transport) | REST API surfaces; not AWS Lambda or the ECS IO container |
-| `rest_async` | `complete` only | HTTP | `202 ACCEPTED` + `request_id`, client polls | `in_memory` / SQS FIFO / Kafka / NATS | In-memory / DynamoDB / Redis / Valkey | All server flavors (in-process); AWS Lambda, AWS ECS (SQS); Kubernetes (Kafka/NATS/SQS) |
+| `rest_async` | `complete` only | HTTP | `202 ACCEPTED` + `request_id`, client polls | `in_memory` / SQS FIFO / Kafka / NATS / Pub/Sub | In-memory / DynamoDB / Redis / Valkey | All server flavors (in-process); AWS Lambda, AWS ECS (SQS); GCP Cloud Run (Pub/Sub); Kubernetes (Kafka/NATS/SQS) |
 | `async` | `complete` (default) | WebSocket | Single `CHAT_RESPONSE` push when the agent finishes | Any transport | Not used | AWS Lambda, AWS ECS (API Gateway); Kubernetes and self-hosted (the pipeline's gateway tier) |
 | `async` | `delta` | WebSocket | One `STREAM_CHUNK` per stream event, ending with `done: true` | Any transport | Not used | AWS Lambda, AWS ECS (API Gateway); Kubernetes and self-hosted (the pipeline's gateway tier) |
 
-`rest_async` with `delta` is rejected when the configuration loads. `execution.mode: stream` was removed: for SSE over REST use `rest_sync` with `message_type: delta`; for chunks over WebSocket use `async` with `message_type: delta`. SSE on a broker transport (SQS, Kafka, NATS) needs a shared response store that can stream chunks: `redis` or `valkey` (DynamoDB cannot).
+`rest_async` with `delta` is rejected when the configuration loads. `execution.mode: stream` was removed: for SSE over REST use `rest_sync` with `message_type: delta`; for chunks over WebSocket use `async` with `message_type: delta`. SSE on a broker transport (SQS, Kafka, NATS, Pub/Sub) needs a shared response store that can stream chunks: `redis` or `valkey` (DynamoDB cannot).
 
 Surfaces mounted with explicit handlers (the thread handler, messaging integrations, custom handlers) execute inline rather than through the pipeline.
 
@@ -82,7 +82,7 @@ AWS ECS supports `execution_mode = "async"` with `message_type = "delta"` for We
 | AWS ECS Fargate | ✅ | - | ✅ (`async`, `complete` or `delta`) | ✅ SQS |
 | Azure Functions | ✅ | - | - | - (per-invocation, inline) |
 | Azure Container Apps | ✅ | ✅ | - | ✅ in-process (`in_memory`) |
-| GCP Cloud Run (both flavors) | ✅ | ✅ | - | ✅ in-process (`in_memory`) |
+| GCP Cloud Run (both flavors) | ✅ | ✅ | - | ✅ Pub/Sub (the default; `queue_mode = false` runs it in-process) |
 | Kubernetes (Helm chart) | ✅ | - | ✅ (`async`, `complete` or `delta`, ws-gateway tier) | ✅ NATS / Kafka / SQS |
 
 :::info
@@ -111,7 +111,7 @@ GCP "serverless" and "containerized" are both Cloud Run: the difference is `min_
 
 ## Scalable Queue Topologies
 
-Queue mode decouples request ingestion from agent execution. The same five-component pipeline runs everywhere: in-process on any server flavor (the `in_memory` default), split across compute over SQS FIFO queues on AWS, or over Kafka/NATS JetStream on-prem or Kubernetes via the [Helm chart](./onprem-kubernetes) (baremetal + EKS flavors).
+Queue mode decouples request ingestion from agent execution. The same five-component pipeline runs everywhere: in-process on any server flavor (the `in_memory` default), split across compute over SQS FIFO queues on AWS or Pub/Sub on GCP Cloud Run, or over Kafka/NATS JetStream on-prem or Kubernetes via the [Helm chart](./onprem-kubernetes) (baremetal + EKS flavors).
 
 ```mermaid
 graph LR
@@ -231,6 +231,7 @@ terraform init && terraform apply
 ```
 
 - Cloud Run (scale-to-zero) + API Gateway
+- Queue mode by default: an edge service and a push-driven agent-runner service over Pub/Sub
 - SSE streaming supported, pay per request
 
 [Learn more →](./gcp-serverless)
@@ -244,6 +245,7 @@ terraform init && terraform apply
 ```
 
 - Cloud Run (always-on, `min_instance_count ≥ 1`) + API Gateway
+- Queue mode by default: an edge service and a push-driven agent-runner service over Pub/Sub
 - SSE streaming supported, no cold starts
 
 [Learn more →](./gcp-containerized)
@@ -270,7 +272,7 @@ helm install ak oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.9.5 -f v
 - **High traffic / long-running agents on AWS** → **AWS ECS in queue mode**: consistent performance, backlog-based auto-scaling
 - **Real-time UX on AWS** → **WebSocket mode** (`async`): `message_type: complete` for push delivery, `delta` for token streaming: both on Lambda or ECS
 - **Variable traffic on Azure** → **Azure Functions**; **high traffic** → **Azure Container Apps** (KEDA scaling, SSE streaming)
-- **Variable traffic on GCP** → **Cloud Run scale-to-zero**; **high traffic** → **Cloud Run always-on**
+- **Variable traffic on GCP** → **Cloud Run scale-to-zero**; **high traffic** → **Cloud Run always-on**: both run queue mode over Pub/Sub by default, with the agents in their own push-driven service
 - **On-prem, existing Kubernetes, or cloud-portable** → **the Helm chart**: NATS-backed queue mode with KEDA autoscaling; Kafka where the organization standardizes on it
 - **AI integration** → **MCP/A2A**: protocol-based integration
 

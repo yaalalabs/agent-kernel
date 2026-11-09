@@ -8,6 +8,8 @@ slug: /
 **The Operating System for Scalable & Compliant Enterprise AI Agents.**
 
 :::tip What's New
+☁️ **Queue mode on GCP** - Cloud Run deployments now run the queue pipeline by default: an edge service and a push-driven agent-runner service connected by Google Cloud Pub/Sub, both scaling to zero, with Memorystore for replies. [Learn more →](./deployment/gcp-serverless.md#queue-mode)
+
 🧠 **Claude Agent SDK** - Run agents built on Anthropic's Claude Code harness (built-in file, shell and web tools, subagents, hooks) in Agent Kernel, with conversations that continue on any replica. [Learn more →](./frameworks/claude-agent-sdk.md)
 
 🔎 **Fetch spans back for evaluation** - Read agent, LLM and tool spans back from Langfuse, Logfire, OpenLLMetry or CloudWatch with one provider-neutral `Trace.fetch_spans()` or `Trace.fetch_traces()` filter, including each model call's tokens and cost, to grade production traffic. [Learn more →](./advanced/traceability.md#fetching-spans-back)

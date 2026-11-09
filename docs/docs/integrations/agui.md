@@ -72,7 +72,7 @@ IOHandler.run(handlers=[AGUIPipelineRequestHandler(authoriser=MyAuthoriser())])
 It needs a response store that can carry a chunk stream — everywhere, not only on a broker — and on
 a broker transport a session store and an attachment store the agent runner can read:
 
-| Setting | Local (`in_memory` transport) | On a broker (sqs, kafka, nats) |
+| Setting | Local (`in_memory` transport) | On a broker (sqs, kafka, nats, pubsub) |
 |---|---|---|
 | `execution.response_store.type` | `in_memory`, `redis` or `valkey` — `dynamodb` has no blocking read | `redis` or `valkey` |
 | `session.type` | anything, or unset | `redis`, `valkey`, `dynamodb`, `cosmosdb` or `firestore` |

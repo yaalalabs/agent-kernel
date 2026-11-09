@@ -326,6 +326,26 @@
       ]
     },
     {
+      "id": "deploy-gcp-queue-mode",
+      "name": "GCP Cloud Run queue mode over Pub/Sub",
+      "input": "Deploy my agent to GCP Cloud Run so the agents scale separately from the API, using a queue",
+      "expected_outputs": [
+        "CloudRun.run()",
+        "CloudRunAgentRunner.run()",
+        "agent_runner",
+        "command",
+        "type: pubsub",
+        "type: redis",
+        "pubsub.googleapis.com"
+      ],
+      "must_not_contain": [
+        "Lambda.handler",
+        "azurerm",
+        "google_cloud_run_v2_worker_pool"
+      ],
+      "description": "GCP queue mode is the modules' default: the edge runs CloudRun.run(), the agent runner is a push-driven Cloud Run service started by CloudRunAgentRunner.run() through agent_runner.command"
+    },
+    {
       "id": "deploy-session-firestore",
       "name": "GCP deployment with Firestore sessions",
       "input": "Deploy to GCP Cloud Run with Firestore session persistence",
