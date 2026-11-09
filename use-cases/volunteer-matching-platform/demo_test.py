@@ -1,11 +1,10 @@
 """
 Smoke test for the CLI entrypoint (demo.py).
 
-profile_agent/matching_agent are still placeholders (Phase 3a-3c, Member 1), so this
-deliberately does not assert on exact wording — that would break the moment real
-instructions land. It only checks that a message gets a real, non-empty reply with no
-provider error embedded in it, so it keeps guarding against wiring regressions (broken
-imports, broken agent registration, a bad model string) both now and after Phase 3a-3c.
+LLM replies from profile_agent/matching_agent vary from run to run, so this deliberately
+does not assert on exact wording. It only checks that a message gets a real, non-empty
+reply with no provider error embedded in it, guarding against wiring regressions (broken
+imports, broken agent registration, a bad model string).
 
 Requires GOOGLE_API_KEY or GEMINI_API_KEY (skipped otherwise, per ak-dev-testing-conventions'
 pattern for external-credential-gated tests).
