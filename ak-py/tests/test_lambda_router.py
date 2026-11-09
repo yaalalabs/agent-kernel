@@ -1,10 +1,12 @@
+import json
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from agentkernel.core.config import _ExecutionConfig, _ResponseStoreConfig
 from agentkernel.core.util.factory import AKConfigError
-from agentkernel.deployment.aws.serverless.core.router import RESTLambdaRouter
+from agentkernel.deployment.aws.serverless.core.router import RESTLambdaRouter, WSLambdaRouter
+from agentkernel.deployment.aws.serverless.core.router.rest_lambda import LambdaChatRejection
 
 DEFAULT_METHOD = "POST"  # must be same as _default_agent_registered_method in LambdaRouter
 
@@ -196,3 +198,90 @@ def test_rest_sync_delta_is_refused_at_router_init(monkeypatch, input_queue_url)
 @pytest.mark.parametrize("input_queue_url", [None, "https://sqs.us-east-1.amazonaws.com/123/input"])
 def test_rest_sync_complete_builds_the_router(monkeypatch, input_queue_url):
     _router_with_execution(monkeypatch, input_queue_url, mode="rest_sync", message_type="complete")
+
+
+QUEUE_URL = "https://sqs.us-east-1.amazonaws.com/123/input"
+ROUTER_MODULE = "agentkernel.deployment.aws.serverless.core.router.rest_lambda"
+
+
+def _submit(router, monkeypatch):
+    """POST a chat through the rest_async submit route; return the response and the SQS send mock."""
+    send = MagicMock(return_value={"MessageId": "m1"})
+    monkeypatch.setattr(f"{ROUTER_MODULE}.SQSHandler.send_message_to_input_queue", send)
+    event = {
+        "body": json.dumps(
+            {
+                "request_id": "r1",
+                "user_id": "u1",
+                "prompt": "hi",
+                "session_id": "s1",
+                "images": [{"image_data": "eA==", "name": "a.png", "mime_type": "image/png"}],
+            }
+        )
+    }
+    return router._routes["default_chat_path"]["POST"](event, None), send
+
+
+def test_a_chat_enqueue_hook_adds_attributes_and_rewrites_the_body_before_it_is_dumped(monkeypatch):
+    router = _router_with_execution(monkeypatch, QUEUE_URL, mode="rest_async")
+
+    def hook(payload):
+        payload.body.images = None
+        payload.body.prompt = "rewritten"
+        return {"thread": "1"}
+
+    router.set_chat_enqueue_hook(hook)
+    response, send = _submit(router, monkeypatch)
+
+    assert response[0] == 200
+    kwargs = send.call_args.kwargs
+    assert {a.name: a.value for a in kwargs["custom_message_attributes"]} == {"thread": "1"}
+    assert kwargs["message_body"]["prompt"] == "rewritten"
+    assert "images" not in kwargs["message_body"]
+
+
+def test_without_a_hook_the_send_carries_no_custom_attributes(monkeypatch):
+    router = _router_with_execution(monkeypatch, QUEUE_URL, mode="rest_async")
+
+    _, send = _submit(router, monkeypatch)
+
+    assert send.call_args.kwargs["custom_message_attributes"] is None
+
+
+def test_a_chat_rejection_answers_with_its_status_and_sends_nothing(monkeypatch):
+    router = _router_with_execution(monkeypatch, QUEUE_URL, mode="rest_async")
+
+    def hook(payload):
+        raise LambdaChatRejection(400, {"error": "nope", "session_id": "s1"})
+
+    router.set_chat_enqueue_hook(hook)
+    response, send = _submit(router, monkeypatch)
+
+    assert response == (400, {"error": "nope", "session_id": "s1"})
+    send.assert_not_called()
+
+
+def test_a_second_chat_enqueue_hook_is_rejected(monkeypatch):
+    router = _router_with_execution(monkeypatch, QUEUE_URL, mode="rest_async")
+    router.set_chat_enqueue_hook(lambda p: {})
+
+    with pytest.raises(ValueError, match="already set"):
+        router.set_chat_enqueue_hook(lambda p: {})
+
+
+def test_a_chat_enqueue_hook_requires_queue_mode(monkeypatch):
+    router = _router_with_execution(monkeypatch, None, mode="rest_sync")
+
+    with pytest.raises(AKConfigError, match="requires queue mode"):
+        router.set_chat_enqueue_hook(lambda p: {})
+
+
+def test_a_chat_enqueue_hook_is_refused_in_websocket_mode(monkeypatch):
+    from agentkernel.deployment.aws.serverless.aklambda import Lambda
+
+    monkeypatch.setattr(Lambda, "_router", WSLambdaRouter.__new__(WSLambdaRouter))  # a real WebSocket router type, no init
+    try:
+        with pytest.raises(AKConfigError, match="WebSocket mode"):
+            Lambda.set_chat_enqueue_hook(lambda p: {})
+    finally:
+        Lambda._router = None

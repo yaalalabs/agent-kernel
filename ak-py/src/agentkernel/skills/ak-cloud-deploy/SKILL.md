@@ -211,11 +211,13 @@ If the Terraform module creates the backing store (for example `create_redis_clu
 
 ### Deploying Conversation Thread Storage
 
-Conversation threads (`ak-add-capabilities`) deploy the same way sessions do: the app mounts
-`AgentThreadRequestHandler` (which is what enables the feature; the self-hosted REST API is the only
-surface that records threads — queue-mode runners and the other deployment adapters do not) and
-declares `thread.type` in `config.yaml`, and Terraform provisions the backend, injecting only the
-connection detail. Terraform never sets `AK_THREAD__TYPE` itself.
+Conversation threads (`ak-add-capabilities`) deploy the same way sessions do: the app mounts the
+thread handler (which is what enables the feature) and declares `thread.type` in `config.yaml`, and
+Terraform provisions the backend, injecting only the connection detail. Terraform never sets
+`AK_THREAD__TYPE` itself. The handler depends on the surface: `AgentThreadRequestHandler` on the
+self-hosted REST API, `ThreadRequestHandler` in a queue-mode pipeline
+(`IOHandler.run(request_handler=ThreadRequestHandler())`), and `LambdaThreadHost` on AWS serverless
+(below). Other deployment adapters do not record threads.
 
 - **AWS (serverless + containerized)**: `create_dynamodb_thread_table = true` provisions a DynamoDB
   table (partition `session_id`, sort `sk`, TTL on `expiry_time`) and injects
@@ -227,6 +229,17 @@ connection detail. Terraform never sets `AK_THREAD__TYPE` itself.
 - **Redis / Valkey**: no dedicated Terraform flag — reuse whatever `create_redis_cluster` /
   `create_valkey_cluster` already provisions and declare `thread: {type: redis}` (or `valkey`) with
   the cluster URL in `config.yaml`.
+
+**AWS serverless** records threads in queue mode only (`queue_mode = true`, `execution.queues.type: sqs`,
+`rest_sync` / `rest_async` with `message_type: complete`). In the request-handler Lambda, build
+`threads = LambdaThreadHost(ThreadRequestHandler())` at module scope (from `agentkernel.aws` and
+`agentkernel.thread`), import the agent module there too, and register `GET /threads` →
+`threads.list_threads` and `GET /threads/{session_id}` → `threads.get_thread` with `Lambda.register`.
+The host takes over the chat route's enqueue (chat then requires `user_id`); the agent-runner Lambda
+records the reply. Add both routes to `gateway_endpoints`; the API Gateway authorizer's `principalId`
+scopes them, so pass no `Authoriser`. `create_dynamodb_thread_table = true` wires the table into both
+Lambdas; both need the same `thread` block, and `thread.type: in_memory` is refused at cold start. See
+`examples/aws-serverless/thread-openai`.
 
 Setting the Terraform flag *without* declaring `thread.type` in `config.yaml` silently leaves
 threads on the non-durable in-memory backend (any `AK_THREAD__*` var materialises `AKConfig.thread`,

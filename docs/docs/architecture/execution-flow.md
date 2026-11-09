@@ -345,7 +345,7 @@ sequenceDiagram
 ```
 
 - `rest_sync` holds the HTTP connection and polls the response store server-side; `rest_async` returns a `request_id` immediately for the client to poll.
-- Conversation-thread recording does not apply in queue mode; threads are a feature of the thread handler on the self-hosted REST API (see [Conversation Threads](../advanced/threads)).
+- Conversation-thread recording works in queue mode: `ThreadRequestHandler` on the pipeline, `LambdaThreadHost` on AWS Lambda (and only in queue mode there). The user message is recorded before the request is enqueued and the agent runner records the reply (see [Conversation Threads](../advanced/threads)).
 - FIFO queues use `MessageGroupId = session_id` (per-session ordering) and deduplication IDs; failed messages are retried after the visibility timeout, and dead-letter queues catch messages exceeding `max_receive_count`.
 - See the [Queue Mode Guide](../advanced/queue-mode-guide) for retry/DLQ details and ECS threading internals.
 

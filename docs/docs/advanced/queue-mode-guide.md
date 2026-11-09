@@ -71,7 +71,8 @@ which replaces the pipeline's chat route: `IOHandler.run(request_handler=ThreadR
 Recording is split across the queue — the user message is recorded before the request is enqueued
 and the Agent Runner appends the reply — so both processes need the same `thread` configuration.
 `AgentThreadRequestHandler` remains the direct-execution handler and does not belong in a pipeline
-topology.
+topology. On AWS serverless, `LambdaThreadHost` hosts the same `ThreadRequestHandler` on the
+request-handler Lambda (see [Threads on AWS Lambda](./threads#threads-on-aws-lambda)).
 :::
 
 :::note

@@ -1344,6 +1344,37 @@ For the full example see [examples/aws-serverless/openai](https://github.com/yaa
 and for the application side (resolution order, caching, rotation) see the
 [Secret Resolution guide](../advanced/secrets.md).
 
+## Conversation threads
+
+[Conversation threads](../advanced/threads.md) run on Lambda in queue mode (`queue_mode = true`, REST
+modes, `message_type: complete`). Wrap `ThreadRequestHandler` in a `LambdaThreadHost` at module scope in
+the request-handler Lambda and register `GET /threads` and `GET /threads/{session_id}` (a path parameter,
+see [Path and query parameters](#path-and-query-parameters)) to its `list_threads` and `get_thread`.
+Creating the host takes over the chat route's enqueue step: it records the user message and marks the
+request, and the agent-runner Lambda records the reply.
+
+```python
+from agentkernel.aws import Lambda, LambdaThreadHost
+from agentkernel.thread import ThreadRequestHandler
+
+import agent  # noqa: F401  (the chat route checks the agent exists before recording)
+
+threads = LambdaThreadHost(ThreadRequestHandler())
+Lambda.register("/threads", method="GET")(threads.list_threads)
+Lambda.register("/threads/{session_id}", method="GET")(threads.get_thread)
+
+handler = Lambda.handler
+```
+
+- Add both routes to `gateway_endpoints`; the API Gateway authorizer's `principalId` scopes them to the
+  caller.
+- Set `create_dynamodb_thread_table = true`: the table is wired into both Lambdas. Give both Lambdas the
+  same `thread` block, with a shared store (`in_memory` is refused at cold start).
+
+See [Threads on AWS Lambda](../advanced/threads.md#threads-on-aws-lambda) for the rules and
+[`examples/aws-serverless/thread-openai`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/thread-openai)
+for a deployable stack.
+
 ## Messaging integrations
 
 Slack, Teams, WhatsApp, Messenger, Instagram and Telegram run on Lambda in the REST modes

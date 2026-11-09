@@ -275,6 +275,8 @@ declares *which* backend, Terraform provisions it and supplies *where* it lives:
 | GCP serverless + containerized | `create_firestore_thread_collection` | Nothing new — reuses the database from `create_firestore_database`; the collection is created on first write | `AK_THREAD__FIRESTORE__COLLECTION_NAME`, `__PROJECT_ID`, `__DATABASE_ID` |
 
 You do not need to set the table or collection name yourself — Terraform generates it and passes it in.
+On AWS serverless with `queue_mode = true`, `create_dynamodb_thread_table` wires the table into both the
+request-handler and the agent-runner Lambdas (see [Threads on AWS Lambda](#threads-on-aws-lambda)).
 
 :::warning Setting the flag without declaring `thread.type` runs threads in-memory
 `AKConfig.thread` is absent until something populates it, and any `AK_THREAD__*` variable is enough to
@@ -292,6 +294,60 @@ Redis and Valkey have no Terraform flag — they reuse whatever cluster `create_
 `create_valkey_cluster` already provisions. Declare `thread: {type: redis}` (or `valkey`) with the
 cluster URL in `config.yaml`, or pass `AK_THREAD__REDIS__URL` through the generic
 `environment_variables` passthrough.
+
+## Threads on AWS Lambda
+
+On AWS serverless, threads run in queue mode (`queue_mode = true`, `execution.queues.type: sqs`,
+`execution.mode` `rest_sync` or `rest_async` with `message_type: complete`). Wrap the same
+`ThreadRequestHandler` the pipeline uses in a `LambdaThreadHost`, at module scope in the
+request-handler Lambda, and register its two read routes:
+
+```python
+from agentkernel.aws import Lambda, LambdaThreadHost
+from agentkernel.thread import ThreadRequestHandler
+
+import agent  # noqa: F401  (the chat route checks the agent exists before recording)
+
+threads = LambdaThreadHost(ThreadRequestHandler())
+
+
+@Lambda.register("/threads", method="GET")
+def list_threads(event, context):
+    return threads.list_threads(event, context)
+
+
+@Lambda.register("/threads/{session_id}", method="GET")
+def get_thread(event, context):
+    return threads.get_thread(event, context)
+
+
+handler = Lambda.handler
+```
+
+- **Creating the host enables threads.** It hooks the built-in chat route: each chat request must carry a
+  `user_id`, the user message is recorded and the request is marked before it is enqueued, and the
+  agent-runner Lambda records the reply after sending it. Requests are rejected with 400 (missing
+  `user_id` or prompt, unknown agent, attachments the multimodal config refuses) before anything is
+  written. A request with a `schedule` block records nothing.
+- **The request handler loads the agents.** Import your agent module in the request-handler Lambda too:
+  the chat route checks the agent exists before it records anything.
+- **Both Lambdas need the `thread` block**, and a shared store: `thread.type: in_memory` is refused at
+  cold start, because the two Lambdas would each see their own copy. With multimodal on, the attachment
+  store must be shared too (`redis` or `dynamodb`).
+- **Expose the read routes on API Gateway** through the ak-serverless module's `gateway_endpoints`
+  (`threads` GET and `threads/{session_id}` GET). The router matches the `{session_id}` template, see
+  [Path and query parameters](../deployment/aws-serverless.md#path-and-query-parameters).
+- **Authorization happens at the API Gateway authorizer**, not through an `Authoriser`: build
+  `ThreadRequestHandler()` without one (passing one is refused at cold start). When an authorizer
+  approved the request, its `principalId` scopes the read routes: listings are forced to that user and
+  another user's thread returns 403. Without an authorizer, the read routes are open.
+- **Thread naming runs in the request-handler Lambda**, so it needs `litellm` and the model's key there;
+  otherwise the name falls back to the prompt prefix.
+- A non-integer `limit` on the read routes answers 400 (FastAPI answers 422).
+
+Set `create_dynamodb_thread_table = true` and declare `thread: {type: dynamodb}` in `config.yaml`; see
+[`examples/aws-serverless/thread-openai`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/thread-openai)
+for the full deployment.
 
 ## Attachments in Thread Mode
 
@@ -321,3 +377,4 @@ thread:
 
 - [`examples/api/thread-openai`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/thread-openai): text-only threads with a demo `Authoriser`
 - [`examples/api/multimodal/thread-openai`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/multimodal/thread-openai): threads with image/file attachments
+- [`examples/aws-serverless/thread-openai`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/thread-openai): threads on AWS Lambda in queue mode, scoped by the API Gateway authorizer
