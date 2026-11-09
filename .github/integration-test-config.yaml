@@ -117,6 +117,11 @@ weekly:
     - type: gcp-serverless
       path: examples/gcp-serverless/openai-auth
       deploy_dir: deploy
+    # Queue mode (#886): edge + push-driven agent runner over Pub/Sub. Serverless on purpose: both
+    # services scale to zero, the case where single-instance queued work used to be lost.
+    - type: gcp-serverless
+      path: examples/gcp-serverless/openai-queue-mode
+      deploy_dir: deploy
 
     # GCP Containerized
     - type: gcp-containerized
