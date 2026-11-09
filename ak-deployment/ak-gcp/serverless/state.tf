@@ -15,6 +15,28 @@ locals {
   redis_url         = var.create_redis_cluster ? module.redis[0].full_redis_url : null
   firestore_db_name = var.create_firestore_database ? module.firestore[0].database_name : null
 
+  # Session and thread connection settings, injected into every tier that runs agents (the
+  # service, and the agent runner in queue mode). Terraform injects only coordinates: the app's
+  # config.yaml declares session.type, except that the Firestore database implies it.
+  session_env = merge(
+    local.redis_url != null ? {
+      AK_SESSION__REDIS__URL = local.redis_url
+    } : {},
+    local.firestore_db_name != null ? {
+      AK_SESSION__TYPE                       = "firestore"
+      AK_SESSION__FIRESTORE__COLLECTION_NAME = module.firestore[0].collection_name
+      AK_SESSION__FIRESTORE__PROJECT_ID      = var.project_id
+      AK_SESSION__FIRESTORE__DATABASE_ID     = module.firestore[0].database_name
+    } : {},
+    # Collection name is literal, not module.firestore[0].collection_name — that
+    # output is the session collection; threads need their own.
+    (local.firestore_db_name != null && var.create_firestore_thread_collection) ? {
+      AK_THREAD__FIRESTORE__COLLECTION_NAME = "ak-agent-threads"
+      AK_THREAD__FIRESTORE__PROJECT_ID      = var.project_id
+      AK_THREAD__FIRESTORE__DATABASE_ID     = module.firestore[0].database_name
+    } : {},
+  )
+
   # Unique deployment identifier (8 hex chars)
   deployment_id = random_id.deployment.hex
 

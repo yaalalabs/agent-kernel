@@ -4,10 +4,12 @@
 locals {
   service_url = google_cloud_run_v2_service.service.uri
 
-  # Flatten the endpoint map into a shape suitable for the path builders below
+  # Flatten the endpoint map into a shape suitable for the path builders below. Entries stay keyed
+  # by method and path, as gateway_endpoints_map is: several methods may share a path (GET and POST
+  # on the chat path in rest_async queue mode), so openapi_paths_block groups them per path.
   openapi_paths_flat = {
     for key, ep in local.gateway_endpoints_map :
-    ep.path => {
+    key => {
       method         = lower(ep.method) == "any" ? "x-google-allow" : lower(ep.method)
       is_any         = lower(ep.method) == "any"
       overwrite_path = ep.overwrite_path
@@ -35,27 +37,33 @@ locals {
 
   # CORS pre-flight OPTIONS operation — forwarded to Cloud Run for header injection
   # Helper closure-like locals used in each method builder below
+  # One per path, routed through the path's first non-ANY endpoint (map iteration is in key order,
+  # so the choice is stable).
+  _non_any_endpoints_by_path = {
+    for key, ep in local.openapi_paths_flat :
+    ep.path => ep...
+    if !ep.is_any
+  }
   _options_op = {
-    for path, ep in local.openapi_paths_flat :
+    for path, eps in local._non_any_endpoints_by_path :
     path => {
-      summary     = "CORS pre-flight for ${ep.path}"
-      operationId = "options-${replace(trim(ep.path, "/"), "/", "-")}"
+      summary     = "CORS pre-flight for ${eps[0].path}"
+      operationId = "options-${replace(trim(eps[0].path, "/"), "/", "-")}"
       responses   = { "200" = { description = "CORS pre-flight" } }
       "x-google-backend" = {
-        address          = "${local.service_url}${ep.overwrite_path}"
+        address          = "${local.service_url}${eps[0].overwrite_path}"
         path_translation = "CONSTANT_ADDRESS"
         deadline         = var.backend_deadline
       }
     }
-    if !ep.is_any
   }
 
   # Build path entries in separate typed for-loops to satisfy Terraform's type checker.
   # Merging different object shapes in a single ternary fails; splitting by method avoids it.
 
   _any_paths = {
-    for path, ep in local.openapi_paths_flat :
-    path => {
+    for key, ep in local.openapi_paths_flat :
+    ep.path => {
       "x-google-allow" = "all"
       "x-google-backend" = {
         address          = local.service_url
@@ -65,9 +73,9 @@ locals {
       # Expose GET so the gateway registers the path; x-google-allow = "all"
       # makes every HTTP verb accepted (OPTIONS included — no separate CORS entry needed).
       get = {
-        summary          = "Route to ${ep.path}"
-        operationId      = "get-${replace(trim(ep.path, "/"), "/", "-")}"
-        responses        = { "200" = { description = "Success" } }
+        summary     = "Route to ${ep.path}"
+        operationId = "get-${replace(trim(ep.path, "/"), "/", "-")}"
+        responses   = { "200" = { description = "Success" } }
         "x-google-backend" = {
           address          = local.service_url
           path_translation = "APPEND_PATH_TO_ADDRESS"
@@ -79,69 +87,59 @@ locals {
   }
 
   _get_paths = {
-    for path, ep in local.openapi_paths_flat :
-    path => merge(
-      {
-        get = merge({ summary = "Route to ${ep.path}", operationId = "get-${replace(trim(ep.path, "/"), "/", "-")}", responses = { "200" = { description = "Success" } }, "x-google-backend" = { address = "${local.service_url}${ep.overwrite_path}", path_translation = "CONSTANT_ADDRESS", deadline = var.backend_deadline } }, local._quota_ext)
-      },
-      var.enable_cors ? { options = local._options_op[ep.path] } : {}
-    )
+    for key, ep in local.openapi_paths_flat :
+    ep.path => {
+      get = merge({ summary = "Route to ${ep.path}", operationId = "get-${replace(trim(ep.path, "/"), "/", "-")}", responses = { "200" = { description = "Success" } }, "x-google-backend" = { address = "${local.service_url}${ep.overwrite_path}", path_translation = "CONSTANT_ADDRESS", deadline = var.backend_deadline } }, local._quota_ext)
+    }
     if !ep.is_any && ep.method == "get"
   }
 
   _post_paths = {
-    for path, ep in local.openapi_paths_flat :
-    path => merge(
-      {
-        post = merge({ summary = "Route to ${ep.path}", operationId = "post-${replace(trim(ep.path, "/"), "/", "-")}", responses = { "200" = { description = "Success" } }, "x-google-backend" = { address = "${local.service_url}${ep.overwrite_path}", path_translation = "CONSTANT_ADDRESS", deadline = var.backend_deadline } }, local._quota_ext)
-      },
-      var.enable_cors ? { options = local._options_op[ep.path] } : {}
-    )
+    for key, ep in local.openapi_paths_flat :
+    ep.path => {
+      post = merge({ summary = "Route to ${ep.path}", operationId = "post-${replace(trim(ep.path, "/"), "/", "-")}", responses = { "200" = { description = "Success" } }, "x-google-backend" = { address = "${local.service_url}${ep.overwrite_path}", path_translation = "CONSTANT_ADDRESS", deadline = var.backend_deadline } }, local._quota_ext)
+    }
     if !ep.is_any && ep.method == "post"
   }
 
   _put_paths = {
-    for path, ep in local.openapi_paths_flat :
-    path => merge(
-      {
-        put = merge({ summary = "Route to ${ep.path}", operationId = "put-${replace(trim(ep.path, "/"), "/", "-")}", responses = { "200" = { description = "Success" } }, "x-google-backend" = { address = "${local.service_url}${ep.overwrite_path}", path_translation = "CONSTANT_ADDRESS", deadline = var.backend_deadline } }, local._quota_ext)
-      },
-      var.enable_cors ? { options = local._options_op[ep.path] } : {}
-    )
+    for key, ep in local.openapi_paths_flat :
+    ep.path => {
+      put = merge({ summary = "Route to ${ep.path}", operationId = "put-${replace(trim(ep.path, "/"), "/", "-")}", responses = { "200" = { description = "Success" } }, "x-google-backend" = { address = "${local.service_url}${ep.overwrite_path}", path_translation = "CONSTANT_ADDRESS", deadline = var.backend_deadline } }, local._quota_ext)
+    }
     if !ep.is_any && ep.method == "put"
   }
 
   _delete_paths = {
-    for path, ep in local.openapi_paths_flat :
-    path => merge(
-      {
-        delete = merge({ summary = "Route to ${ep.path}", operationId = "delete-${replace(trim(ep.path, "/"), "/", "-")}", responses = { "200" = { description = "Success" } }, "x-google-backend" = { address = "${local.service_url}${ep.overwrite_path}", path_translation = "CONSTANT_ADDRESS", deadline = var.backend_deadline } }, local._quota_ext)
-      },
-      var.enable_cors ? { options = local._options_op[ep.path] } : {}
-    )
+    for key, ep in local.openapi_paths_flat :
+    ep.path => {
+      delete = merge({ summary = "Route to ${ep.path}", operationId = "delete-${replace(trim(ep.path, "/"), "/", "-")}", responses = { "200" = { description = "Success" } }, "x-google-backend" = { address = "${local.service_url}${ep.overwrite_path}", path_translation = "CONSTANT_ADDRESS", deadline = var.backend_deadline } }, local._quota_ext)
+    }
     if !ep.is_any && ep.method == "delete"
   }
 
   _patch_paths = {
-    for path, ep in local.openapi_paths_flat :
-    path => merge(
-      {
-        patch = merge({ summary = "Route to ${ep.path}", operationId = "patch-${replace(trim(ep.path, "/"), "/", "-")}", responses = { "200" = { description = "Success" } }, "x-google-backend" = { address = "${local.service_url}${ep.overwrite_path}", path_translation = "CONSTANT_ADDRESS", deadline = var.backend_deadline } }, local._quota_ext)
-      },
-      var.enable_cors ? { options = local._options_op[ep.path] } : {}
-    )
+    for key, ep in local.openapi_paths_flat :
+    ep.path => {
+      patch = merge({ summary = "Route to ${ep.path}", operationId = "patch-${replace(trim(ep.path, "/"), "/", "-")}", responses = { "200" = { description = "Success" } }, "x-google-backend" = { address = "${local.service_url}${ep.overwrite_path}", path_translation = "CONSTANT_ADDRESS", deadline = var.backend_deadline } }, local._quota_ext)
+    }
     if !ep.is_any && ep.method == "patch"
   }
 
-  # Merge all per-method maps into the final paths block
-  openapi_paths_block = merge(
-    local._any_paths,
-    local._get_paths,
-    local._post_paths,
-    local._put_paths,
-    local._delete_paths,
-    local._patch_paths,
-  )
+  # One path object per path: every method served on it, plus its CORS pre-flight. try() rather
+  # than lookup(): the per-method objects have different shapes, which lookup's default cannot take.
+  openapi_paths_block = {
+    for path in distinct([for ep in values(local.openapi_paths_flat) : ep.path]) :
+    path => merge(
+      try(local._any_paths[path], {}),
+      try(local._get_paths[path], {}),
+      try(local._post_paths[path], {}),
+      try(local._put_paths[path], {}),
+      try(local._delete_paths[path], {}),
+      try(local._patch_paths[path], {}),
+      var.enable_cors && contains(keys(local._options_op), path) ? { options = local._options_op[path] } : {},
+    )
+  }
 
   # Base OpenAPI 2.0 spec
   openapi_base = {

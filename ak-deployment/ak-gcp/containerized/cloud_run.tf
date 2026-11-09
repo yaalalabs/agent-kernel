@@ -154,22 +154,7 @@ resource "google_cloud_run_v2_service" "service" {
             API_VERSION    = var.api_version
             AGENT_ENDPOINT = var.agent_endpoint
           },
-          local.redis_url != null ? {
-            AK_SESSION__REDIS__URL = local.redis_url
-          } : {},
-          local.firestore_db_name != null ? {
-            AK_SESSION__TYPE                       = "firestore"
-            AK_SESSION__FIRESTORE__COLLECTION_NAME = module.firestore[0].collection_name
-            AK_SESSION__FIRESTORE__PROJECT_ID      = var.project_id
-            AK_SESSION__FIRESTORE__DATABASE_ID     = module.firestore[0].database_name
-          } : {},
-          # Collection name is literal, not module.firestore[0].collection_name — that
-          # output is the session collection; threads need their own.
-          (local.firestore_db_name != null && var.create_firestore_thread_collection) ? {
-            AK_THREAD__FIRESTORE__COLLECTION_NAME = "ak-agent-threads"
-            AK_THREAD__FIRESTORE__PROJECT_ID      = var.project_id
-            AK_THREAD__FIRESTORE__DATABASE_ID     = module.firestore[0].database_name
-          } : {}
+          local.session_env,
         )
         content {
           name  = env.key
