@@ -297,9 +297,10 @@ class ScheduleManager:
         """Check that a run claiming to be a task's occurrence is entitled to say so.
 
         The trigger metadata (``scheduled_task_id``) rides on the ordinary chat request that
-        providers deliver, and the chat request is a client-bindable model — so any caller can name
-        any task id. A genuine trigger always matches, because the manager froze ``user_id`` into
-        the body from the task's own owner; a forged one names a task it does not own, and would
+        providers deliver. The public chat routes reject it (``ChatRunRequest``), but a custom route
+        parsing ``BaseRunRequest`` still accepts it, so a caller there can name any task id. A genuine
+        trigger always matches, because the manager froze ``user_id`` into the body from the task's
+        own owner; a forged one names a task it does not own, and would
         otherwise inflate another user's occurrence counters and complete their one-time task out
         from under them (after which no amendment or cancellation is accepted).
 

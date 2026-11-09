@@ -588,8 +588,8 @@ class ChatService:
                 self._log.warning(f"Trigger of scheduled task {task_id} arrived while scheduling is not configured")
                 return
             # The acting user is passed so the manager can reject a request that named someone
-            # else's task: this metadata arrives on a client-bindable chat request, not a channel
-            # only a provider can reach.
+            # else's task: the public chat routes reject this metadata, but a custom route that
+            # parses BaseRunRequest can still carry it, so it is not a channel only a provider can reach.
             manager.record_trigger(
                 task_id,
                 req.user_id,

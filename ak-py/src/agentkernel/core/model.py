@@ -466,8 +466,8 @@ class BaseRunRequest(BaseChatRequest):
     for the same reason as the scheduling fields: an extra would reach the agent as
     AgentRequestAny context.
 
-    These three fields are for internal producers only; client-facing routes parse
-    ChatRunRequest, which rejects them.
+    requests, scheduled_task_id and scheduled_time are for internal producers only;
+    client-facing routes parse ChatRunRequest, which rejects them.
     """
 
     files: list[FileData] | None = None
@@ -482,10 +482,18 @@ class ChatRunRequest(BaseRunRequest):
     """BaseRunRequest as a client sends it: rejects the fields only internal producers set.
 
     BaseRunRequest is also the queue message format, so the check cannot live there: the
-    runner parses every queued message, including producer-built ones, through it.
+    runner parses every queued message, including producer-built ones, through it. The
+    fields are also dropped from its JSON schema, so the API docs do not advertise them.
     """
 
     INTERNAL_FIELDS: ClassVar[frozenset[str]] = frozenset({"requests", "scheduled_task_id", "scheduled_time"})
+
+    @staticmethod
+    def _hide_internal_fields(schema: dict[str, Any]) -> None:
+        for field in ChatRunRequest.INTERNAL_FIELDS:
+            schema.get("properties", {}).pop(field, None)
+
+    model_config = ConfigDict(extra="allow", json_schema_extra=_hide_internal_fields)
 
     @model_validator(mode="before")
     @classmethod
