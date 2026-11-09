@@ -407,13 +407,13 @@ Copied from `examples/aws-serverless/slack-openai`, minus Slack:
 
 | File | Content |
 |---|---|
-| `agents.py` | the OpenAI agent, imported by both Lambdas (the request handler needs it for the agent precheck) |
-| `lambda_request_handler.py` | the design's snippet plus `import agents` |
+| `agent.py` | the OpenAI agent, imported by both Lambdas (the request handler needs it for the agent precheck); not `agents.py`, which would shadow the OpenAI Agents SDK's `agents` package |
+| `lambda_request_handler.py` | the design's snippet plus `import agent` |
 | `lambda_agent_runner.py`, `lambda_response_handler.py` | as in `slack-openai` |
-| `lambda_auth.py` | demo `AuthValidator` whose subject is the user named by the token, so the read routes show principal scoping |
+| `lambda_auth.py` | demo `AuthValidator` whose subject is the user named by the token, so the read routes show principal scoping; it also applies a route rule from `ValidationContext.path` / `http_method` (a `guest` user may chat but not read threads) |
 | `config.yaml` | `execution.mode: rest_sync`, `execution.queues.type: sqs`, `thread.type: dynamodb`, `session.type: dynamodb` |
 | `deploy/main.tf` (+ `variables.tf`, `outputs.tf`, `providers.tf`, `terraform.tfvars`, `deploy.sh`, `Dockerfile.agent_runner`) | `queue_mode = true`, `create_dynamodb_thread_table = true`, `gateway_endpoints` with `threads` GET and `threads/{session_id}` GET |
-| `lambda_test.py` | chat twice with `user_id`, then `GET /threads?user_id=` and `GET /threads/{session_id}`: two user and two assistant messages in order; a chat without `user_id` → 400 |
+| `lambda_test.py` | chat twice with `user_id`, then `GET /threads?user_id=` and `GET /threads/{session_id}`: two user and two assistant messages in order; another user → 403; `guest` chats but gets 403 on both read routes; a chat without `user_id` → 400 |
 | `build.sh`, `pyproject.toml`, `README.md` | as in `slack-openai`, adapted |
 
 ### Config changes

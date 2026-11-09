@@ -125,7 +125,7 @@ Paths are relative to `ak-py/src/agentkernel/` unless they start with `ak-py/`, 
 - **Goal:** a deployable `thread-openai` example.
 - **Files:** `examples/aws-serverless/thread-openai/**` (spec: Example table),
   `.github/integration-test-config.yaml` (an `aws-serverless` entry after `schedule-openai`, `:83`)
-- **Steps:** copy `slack-openai`, strip Slack, add `agents.py`, the request handler, `lambda_auth.py`,
+- **Steps:** copy `slack-openai`, strip Slack, add `agent.py`, the request handler, `lambda_auth.py`,
   the config, the gateway endpoints and the test.
 - **Verify:** black and `terraform fmt -check` clean; `lambda_test.py` against a deployed stack.
 

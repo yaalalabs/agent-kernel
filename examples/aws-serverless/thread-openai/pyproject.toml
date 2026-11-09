@@ -1,0 +1,53 @@
+[project]
+name = "aws-serverless-thread-openai"
+version = "0.1.0"
+description = "Demo of Conversation Thread Support served by Agent Kernel on AWS Lambda: the chat route records the thread, the read routes serve it"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []
+
+[project.optional-dependencies]
+# Per-Lambda dependency sets. deploy.sh installs each package with `uv export --extra <name>`.
+#
+# The request handler loads the agent (the chat route checks it exists before recording), serves
+# the read routes through FastAPI's types, and names threads with LiteLLM, so it carries `openai`,
+# `api` and `thread`. The agent runner records the reply through the thread package, which imports
+# FastAPI, so it carries `api` too. The response handler and the authorizer need nothing but `aws`.
+request_handler = [
+    "agentkernel[aws,api,thread,openai]>=0.9.5",
+]
+response_handler = [
+    "agentkernel[aws]>=0.9.5",
+]
+agent_runner = [
+    "agentkernel[aws,api,openai]>=0.9.5",
+]
+authorizer = [
+    "agentkernel[aws]>=0.9.5",
+]
+
+[dependency-groups]
+dev = [
+    "agentkernel[test]>=0.9.5",
+    "black==26.5.1",
+    "isort>=5.0.0",
+    "mypy>=1.0.0",
+]
+
+[tool.uv]
+package = false
+
+[tool.isort]
+profile = "black"
+line_length = 120
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+
+[tool.black]
+line-length = 120
+target-version = ["py312"]
