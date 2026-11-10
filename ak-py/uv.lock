@@ -107,6 +107,8 @@ api = [
     { name = "uvicorn" },
 ]
 auth = [
+    { name = "cryptography" },
+    { name = "httpx" },
     { name = "pyjwt" },
 ]
 aws = [
@@ -303,6 +305,7 @@ requires-dist = [
     { name = "confluent-kafka", marker = "extra == 'kafka'", specifier = ">=2.15.0" },
     { name = "crewai", marker = "extra == 'crewai'", specifier = ">=1.15.0" },
     { name = "croniter", marker = "extra == 'cron'", specifier = ">=3.0" },
+    { name = "cryptography", marker = "extra == 'auth'", specifier = ">=42.0" },
     { name = "daytona", marker = "extra == 'daytona'", specifier = ">=0.198.0,<0.199" },
     { name = "deepeval", marker = "extra == 'test'", specifier = ">=4.1.4" },
     { name = "deprecated", specifier = ">=1.2.18" },
@@ -325,6 +328,7 @@ requires-dist = [
     { name = "google-cloud-firestore", marker = "extra == 'gcp'", specifier = ">=2.19.0" },
     { name = "gunicorn", marker = "extra == 'api'", specifier = ">=23.0.0" },
     { name = "httpx", marker = "extra == 'api'", specifier = ">=0.27.0" },
+    { name = "httpx", marker = "extra == 'auth'", specifier = ">=0.27.0" },
     { name = "httpx", marker = "extra == 'instagram'", specifier = ">=0.27.0" },
     { name = "httpx", marker = "extra == 'logfire'", specifier = ">=0.27.0" },
     { name = "httpx", marker = "extra == 'messenger'", specifier = ">=0.27.0" },

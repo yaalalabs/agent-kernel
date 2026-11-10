@@ -337,24 +337,31 @@ or `None` when the block is absent; `reset()` for tests. Branches on `identity.p
 (`issuer`, `audience`, `jwks_uri`, `algorithms`, `leeway`, `required_claims`, `subject_claim`,
 `groups_claim`):
 
-- `JWKSCache` (same module): wraps `jwt.PyJWKClient` (PyJWT 2.13.0, the `auth` extra,
-  `ak-py/pyproject.toml:24-26`) with `cache_keys=True`; `signing_key(token)` runs
-  `get_signing_key_from_jwt` in `asyncio.to_thread`; a `PyJWKClientError` for an unknown `kid`
-  triggers one forced refresh (a new `PyJWKClient`), rate-limited to one refresh per 30 s
-  (`refresh_cooldown`), then re-raises as `AuthenticationError`. Discovery (`GET
-  <issuer>/.well-known/openid-configuration`) runs once lazily through `httpx` in a thread and
-  caches `jwks_uri`; `jwks_uri` in config skips discovery.
+- `JWKSCache` (same module): fetches discovery (`GET <issuer>/.well-known/openid-configuration`,
+  once, lazily, caching `jwks_uri`; `jwks_uri` in config skips it) and the JWK set itself through
+  one `httpx.AsyncClient` (an injectable transport, so tests serve both from a `MockTransport`),
+  and selects the key by `kid` from `jwt.PyJWKSet.from_dict` (PyJWT 2.13.0, the `auth` extra,
+  `ak-py/pyproject.toml:24-28`); `signing_key(kid)` is the one entry point. An unknown `kid`
+  triggers one forced refresh, rate-limited to one per 30 s (`refresh_cooldown`, counted between
+  forced refreshes, not from the initial load), then `AuthenticationError`; a fetch that fails
+  leaves the previous key set in place and is an `AuthenticationError` too. Design refinement 6:
+  `PyJWKClient` was dropped because its `urllib` fetch blocks and cannot be pointed at a test
+  transport.
 - `authenticate`: `jwt.decode(token, key, algorithms=self._algorithms, audience=self._audience,
   issuer=self._issuer, leeway=self._leeway, options={"require": ["exp", "iss", "aud", ...]})`.
   Symmetric algorithms (`HS*`) are refused at construction with `AKConfigError`. Every
   `jwt.PyJWTError` becomes `AuthenticationError(str(exc))`. `required_claims` entries missing from
   the payload are an `AuthenticationError`.
-- Claim paths are dotted and resolved by `ClaimPath.read(payload, path)` (a static helper in
-  `provider/base.py`, shared with the role mapper's `pass_through`): `subject` (default `sub`,
-  missing is an `AuthenticationError`), `groups` (default
+- Claim paths are resolved by `ClaimPath.read(payload, path)` (a static helper in
+  `provider/base.py`, shared with the role mapper's `pass_through`): the whole path is tried as
+  one claim name first, then split on dots and walked, so Auth0's namespaced custom claims
+  (`https://acme.com/roles`) and Keycloak's nested `realm_access.roles` both resolve: `subject`
+  (default `sub`, missing is an `AuthenticationError`), `groups` (default
   `groups`, missing yields `[]`, a string yields a one-element list). `namespace` is the validated
   `iss`. Every other claim lands in `Principal.claims` verbatim; `roles` is never written.
-- Subclasses change defaults and one check each:
+- Subclasses change defaults and one check each; a subclass default for a claim path applies only
+  when the block left that path unset (`model_fields_set`), so `claims.groups: groups` on a Cognito
+  block is honoured and an untouched block gets `cognito:groups`:
   - `CognitoIdentityProvider`: issuer `https://cognito-idp.{region}.amazonaws.com/{user_pool_id}`,
     groups claim `cognito:groups`, requires `token_use == <configured, default "access">`, and
     for access tokens checks `client_id` against `audience` instead of `aud`.
@@ -365,6 +372,12 @@ or `None` when the block is absent; `reset()` for tests. Branches on `identity.p
     `project_id`, `jwks_uri` fixed to Google's `securetoken@system.gserviceaccount.com` JWK set,
     groups claim `roles` (Q14).
 - `security_scheme()` returns `("openIdConnect", {"url": f"{issuer}/.well-known/openid-configuration"})`.
+- The configured `issuer` is compared verbatim and with the trailing slash added or removed (an
+  Auth0 issuer is `https://<tenant>.<region>.auth0.com/` and its `iss` carries the slash);
+  `namespace` is the token's `iss` as issued. Auth0 is therefore an `oidc` configuration, not a
+  provider of its own: `issuer` the tenant or custom domain, `audience` the API identifier,
+  `claims.groups` the namespaced claim an Action sets, with `permissions` and `org_id` arriving in
+  `claims` for the role mapper and the tools.
 
 **`StaticIdentityProvider`** (`provider/static.py`): constructed with `principals: dict[str,
 dict]` (credential key to principal fields) and an optional `secrets: SecretManager` (tests pass
@@ -1408,6 +1421,14 @@ orders them in its final iteration and the sync skills verify them before merge.
   capability), drops `user_id` from bodies, READMEs and tests, and moves surface lists to
   `registry.agents.<id>.surfaces`. `examples/sandbox/identity` keeps its custom resolver and
   gains a note that the default resolver now covers it.
+- **Supported providers, wherever they are listed**: the docs site, the READMEs, the user skills
+  and the examples name Auth0 as a supported identity provider served by the `oidc` type (decided
+  2026-11-10), with its configuration spelled out rather than implied: `issuer:
+  https://<tenant>.<region>.auth0.com/` (or the custom domain, trailing slash included),
+  `audience: <API identifier>`, `claims.groups: https://<namespace>/roles` for the roles an Action
+  sets, and `permissions` and `org_id` reaching the role mapper and tools through `claims`. The
+  list reads: any OIDC issuer (Auth0, Keycloak, Okta as named configurations), Cognito, Entra ID,
+  Firebase, static.
 - **Deployment READMEs**: `ak-deployment/ak-k8s/README.md:90-92, 189` and the chart comments
   (`deployment-io.yaml:7`, `values.yaml:193`); `ak-aws/serverless/README.md:14, 396-425, 480-506,
   792-892, 1110+` and `modules/ws-connection-handler/README.md:10`;
@@ -1441,3 +1462,10 @@ Mechanism changes found while detailing, each inside a settled decision and mirr
 5. **A2A principal hand-off.** A `ServerCallContextBuilder` carries `request.state.principal`
    into the executor's `call_context.state`, the SDK's own seam, rather than the `ServerCallContext.user`
    the design ruled out.
+6. **JWKS fetching without `PyJWKClient`.** `JWKSCache` fetches discovery and the JWK set through
+   one `httpx.AsyncClient` with an injectable transport and selects the key from
+   `jwt.PyJWKSet`, instead of wrapping `PyJWKClient`: its `urllib` fetch blocks the event loop
+   (the spec had it in a thread) and cannot be pointed at a test transport, so the contract suite
+   could not serve a local key set. The design's rules hold unchanged: discovery once, one forced
+   refresh per unknown `kid` with a 30 s cooldown, no blocking fetch, a failed fetch keeps the
+   previous keys.

@@ -216,8 +216,10 @@ iteration 18 and `credentials` lands in iteration 25, both additive).
      imports in the factory branches (spec Config changes).
   2. `JWKSCache` over `PyJWKClient` in `asyncio.to_thread`, one refresh on an unknown `kid` with
      a 30 s cooldown, discovery through httpx (spec 4).
-  3. `OIDCIdentityProvider` (namespace = `iss`, claim paths) and the Cognito, Entra and Firebase
-     subclasses (Firebase groups claim path defaults to `roles`) (spec 4).
+  3. `OIDCIdentityProvider` (namespace = `iss`, claim paths read as one claim name first and then
+     dotted, a trailing slash on the issuer tolerated either way, so Auth0 is an `oidc`
+     configuration) and the Cognito, Entra and Firebase subclasses (Firebase groups claim path
+     defaults to `roles`) (spec 4).
   4. The four factory branches.
 - **Verify:** `IdentityProviderContract` subclasses for the four providers over RSA and EC keys
   and a local JWKS on `httpx.MockTransport`; discovery cached; unknown `kid` refreshed once;
@@ -364,6 +366,11 @@ iteration 18 and `credentials` lands in iteration 25, both additive).
      `user_id`; the `auth`-based examples (`crewai-auth`, `openai-auth`, the WebSocket
      connection handlers, `slack-openai`) on the provider.
   3. `examples/sandbox/identity` keeps its resolver and gains the note.
+  4. Auth0 appears as a supported provider (decided 2026-11-10): one of the `auth`-based
+     examples carries an Auth0 configuration in its README beside the static one, as an
+     `identity.provider` block of `type: oidc` with the tenant issuer (trailing slash included),
+     the API identifier as `audience` and the namespaced roles claim as `claims.groups`, with the
+     token acquired through the tenant's `/oauth/token` endpoint in its `app_test.py` notes.
 - **Verify:** `examples/api/agui`, `examples/api/thread-openai`,
   `examples/api/multimodal/thread-openai`, `examples/api/schedule-openai`,
   `examples/api/a2ui-openai` and `examples/aws-containerized/openai-websocket` `app_test.py`
@@ -617,7 +624,11 @@ mechanism. Every suite asserts the native call keyword-for-keyword unchanged wit
 - **Steps:**
   1. Run `ak-dev-sync-docs-from-branch` over the branch; write the new advanced page from spec
      sections 2 to 8 and the design's worked example, including the operator note that scheduled
-     tasks and threads from before the change are recreated or migrated outside the system.
+     tasks and threads from before the change are recreated or migrated outside the system. Its
+     supported-providers table lists Auth0 as a supported provider served by the `oidc` type,
+     with the configuration block spelled out (tenant issuer, API identifier audience, namespaced
+     roles claim), beside Cognito, Entra, Firebase, the static provider and any other OIDC issuer
+     (decided 2026-11-10); `configuration.md` says the same where it lists the provider types.
   2. Confirm the Terraform resources need no change (the connections table keeps its `user_id`
      hash key; the authorizer Lambda keeps its `handler_path` contract).
 - **Verify:** `grep -rn "AuthValidator\|Authoriser\|acting_user_id\|mcp.agents\|a2a.agents\|
@@ -639,6 +650,10 @@ mechanism. Every suite asserts the native call keyword-for-keyword unchanged wit
      spec sections 4 and 7 and their contract suites.
   2. Verify no update is needed for `ak-dev-write-spec`, `ak-dev-review-pr`, the other
      `ak-dev-new-*` skills, `ak-build`, `ak-init` and `ak-test`.
+  3. Wherever `ak-add-capabilities` and `ak-cloud-deploy` list the identity providers, Auth0 is
+     named as a supported provider with its `oidc` block (decided 2026-11-10), and the
+     `ak-dev-new-identity-provider` skill says a new OIDC issuer is a configuration before it is a
+     subclass.
 - **Verify:** the iteration 27 grep extended to `.agents/skills` and
   `ak-py/src/agentkernel/skills` returns nothing new; the `ak-dev-testing-conventions` table
   names every file the spec's Testing section adds, changes or deletes.

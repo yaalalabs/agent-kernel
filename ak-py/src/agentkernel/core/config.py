@@ -1203,8 +1203,14 @@ class _SecretConfig(BaseModel):
 class _ClaimPathsConfig(BaseModel):
     """Where the OIDC-family providers read the subject and the groups in a validated token."""
 
-    subject: str = Field(default="sub", description="Dotted claim path of the subject; a token without it is refused")
-    groups: str = Field(default="groups", description="Dotted claim path of the group list; a missing claim yields no groups")
+    subject: str = Field(
+        default="sub", description="Claim path of the subject (a claim name, or dotted segments into a nested claim); a token without it is refused"
+    )
+    groups: str = Field(
+        default="groups",
+        description="Claim path of the group list: a claim name, dotted segments into a nested claim (realm_access.roles), or a "
+        "namespaced name containing dots such as Auth0's https://acme.com/roles, tried whole first; a missing claim yields no groups",
+    )
 
 
 class _CognitoProviderConfig(BaseModel):
@@ -1286,7 +1292,10 @@ class _RoleMapperConfig(BaseModel):
     """How roles are derived from what the provider asserted; absent means no roles."""
 
     type: str = Field(default="mapping", description="Role mapper: mapping, or a dotted path to a RoleMapper subclass")
-    pass_through: str | None = Field(default=None, description="Dotted claim path whose string or list value becomes roles as it is")
+    pass_through: str | None = Field(
+        default=None,
+        description="Claim path (a claim name, a namespaced name with dots, or dotted segments) whose string or list value becomes roles as it is",
+    )
     mapping: dict[str, list[str]] = Field(default_factory=dict, description="Group name or claim value -> the Agent Kernel roles it grants")
 
 

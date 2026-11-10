@@ -23,6 +23,8 @@ dependencies = [
 [project.optional-dependencies]
 auth = [
     "PyJWT>=2.13.0",
+    "cryptography>=42.0",
+    "httpx>=0.27.0",
 ]
 langfuse = [
     "langfuse>=4.2.0",

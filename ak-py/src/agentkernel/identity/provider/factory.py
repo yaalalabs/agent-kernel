@@ -5,15 +5,13 @@ from threading import RLock
 from typing import TYPE_CHECKING, ClassVar
 
 from ...core.config import AKConfig
-from ...core.util.factory import AKConfigError, resolve_dotted
+from ...core.util.factory import AKConfigError, require_extra, resolve_dotted
 from .base import IdentityProvider
 
 if TYPE_CHECKING:
     from ...core.config import _IdentityConfig
 
 _BUILTIN_PROVIDERS = ["oidc", "cognito", "entra", "firebase", "static"]
-# Named in the config today, shipped with the OIDC provider family (plan iteration 5).
-_PENDING_PROVIDERS = ("oidc", "cognito", "entra", "firebase")
 
 
 class IdentityProviderFactory:
@@ -36,8 +34,26 @@ class IdentityProviderFactory:
         IdentityProviderFactory._log.info(f"Building '{provider_type}' identity provider")
         key = provider_type.lower()
         provider: IdentityProvider
-        if key in _PENDING_PROVIDERS:
-            raise AKConfigError(f"identity.provider.type: {key} arrives with the OIDC provider family; use static or a dotted path until then")
+        if key == "oidc":
+            with require_extra("auth", "identity.provider.type: oidc"):
+                from .oidc import OIDCIdentityProvider
+
+            provider = OIDCIdentityProvider.from_config(identity_config.provider)
+        elif key == "cognito":
+            with require_extra("auth", "identity.provider.type: cognito"):
+                from .cognito import CognitoIdentityProvider
+
+            provider = CognitoIdentityProvider.from_config(identity_config.provider)
+        elif key == "entra":
+            with require_extra("auth", "identity.provider.type: entra"):
+                from .entra import EntraIdentityProvider
+
+            provider = EntraIdentityProvider.from_config(identity_config.provider)
+        elif key == "firebase":
+            with require_extra("auth", "identity.provider.type: firebase"):
+                from .firebase import FirebaseIdentityProvider
+
+            provider = FirebaseIdentityProvider.from_config(identity_config.provider)
         elif key == "static":
             from .static import StaticIdentityProvider
 

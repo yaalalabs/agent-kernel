@@ -28,10 +28,16 @@ class ClaimPath:
     def read(payload: Mapping[str, Any], path: str) -> Any:
         """Return the value at ``path`` in ``payload``, or None when any segment is missing.
 
+        The whole path is tried as one claim name first: Auth0 namespaces its custom claims as
+        URLs (``https://acme.com/roles``), which contain dots but are single keys. Only when no
+        such key exists is the path split on dots and walked.
+
         :param payload: The claims (a validated token payload, or ``Principal.claims``).
-        :param path: Dotted segments, e.g. ``realm_access.roles``.
+        :param path: A claim name, or dotted segments such as ``realm_access.roles``.
         :return: The value, or None when the path does not resolve to one.
         """
+        if path in payload:
+            return payload[path]
         current: Any = payload
         for segment in path.split("."):
             if not isinstance(current, Mapping) or segment not in current:

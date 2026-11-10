@@ -288,8 +288,11 @@ and `research/design-options.md` section 4).
   - Validates signature (algorithms allow-list, default `["RS256", "ES256"]`; symmetric algorithms
     refused), `iss` equals the configured issuer, `aud` contains the configured audience
     (required), `exp` and `nbf` with `leeway` (default 30 s), and every `required_claims` entry.
-  - Claim paths (dotted, configurable): `subject` default `sub`, `groups` default `groups`; a
-    missing groups claim yields an empty list, a missing subject claim is an `AuthenticationError`.
+  - Claim paths (configurable; a claim name, a namespaced name containing dots such as Auth0's
+    `https://acme.com/roles`, tried whole first, or dotted segments into a nested claim):
+    `subject` default `sub`, `groups` default `groups`; a missing groups claim yields an empty
+    list, a missing subject claim is an `AuthenticationError`. Auth0 is served by this provider
+    (issuer with its trailing slash, the API identifier as audience), not by one of its own.
     Every other validated claim lands in `claims` for the mapper and for tools; providers never
     write `roles`. `namespace` is the validated `iss`, so the three direct surfaces yield one
     identity per issuer and subject.

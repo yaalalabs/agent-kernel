@@ -18,6 +18,11 @@ _LAZY_EXPORTS = {
     "RequestContext": ".provider.base",
     "IdentityProviderFactory": ".provider.factory",
     "StaticIdentityProvider": ".provider.static",
+    "OIDCIdentityProvider": ".provider.oidc",
+    "JWKSCache": ".provider.oidc",
+    "CognitoIdentityProvider": ".provider.cognito",
+    "EntraIdentityProvider": ".provider.entra",
+    "FirebaseIdentityProvider": ".provider.firebase",
     "RoleMapper": ".provider.roles",
     "MappingRoleMapper": ".provider.roles",
     "MappedIdentityProvider": ".provider.roles",
@@ -30,7 +35,11 @@ __all__ = sorted(_LAZY_EXPORTS)
 if TYPE_CHECKING:
     from .errors import AuthenticationError
     from .provider.base import IdentityProvider, RequestContext
+    from .provider.cognito import CognitoIdentityProvider
+    from .provider.entra import EntraIdentityProvider
     from .provider.factory import IdentityProviderFactory
+    from .provider.firebase import FirebaseIdentityProvider
+    from .provider.oidc import JWKSCache, OIDCIdentityProvider
     from .provider.roles import MappedIdentityProvider, MappingRoleMapper, RoleMapper, RoleMapperFactory
     from .provider.static import StaticIdentityProvider
 

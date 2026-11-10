@@ -167,6 +167,13 @@ class TestClaimPath:
         payload = {"sub": "alice", "realm_access": {"roles": ["a", "b"]}}
         assert ClaimPath.read(payload, path) == expected
 
+    def test_a_claim_name_containing_dots_is_one_key_first(self):
+        """Auth0 namespaces its custom claims as URLs; such a name is tried whole before it is split."""
+        payload = {"https://acme.com/roles": ["admin"], "a.b": 1, "a": {"b": 2}}
+        assert ClaimPath.read(payload, "https://acme.com/roles") == ["admin"]
+        assert ClaimPath.read(payload, "a.b") == 1
+        assert ClaimPath.read({"a": {"b": 2}}, "a.b") == 2
+
 
 class TestMappingRoleMapperContract(RoleMapperContract):
     @pytest.fixture
@@ -189,6 +196,12 @@ class TestMappingRoleMapperContract(RoleMapperContract):
             (_principal(claims={"finance": True, "nested": {"department": "finance"}}), []),
             (_principal(), []),
         ]
+
+
+class TestNamespacedClaimPassThrough:
+    def test_a_url_shaped_claim_name_passes_through(self):
+        mapper = MappingRoleMapper(mapping={}, pass_through="https://acme.com/roles")
+        assert mapper.map(_principal(claims={"https://acme.com/roles": ["admin", "reader"]})) == ["admin", "reader"]
 
 
 class TestRoleMapperFactory:
@@ -255,19 +268,6 @@ class TestIdentityProviderFactory:
         identity = _IdentityConfig(provider=_IdentityProviderConfig(type="test_identity_providers.EchoProvider"))
         provider = IdentityProviderFactory.create(identity)
         assert isinstance(provider, EchoProvider) and provider.config is identity.provider
-
-    @pytest.mark.parametrize("name", ["oidc", "cognito", "entra", "firebase"])
-    def test_the_oidc_family_is_named_but_not_shipped_yet(self, name):
-        """The config accepts the four names; the factory says plainly that their classes arrive with the next iteration."""
-        extra = {"oidc": {"issuer": "https://issuer.example", "audience": "ak"}}.get(name, {})
-        blocks = {
-            "cognito": {"cognito": {"region": "eu-west-1", "user_pool_id": "p"}},
-            "entra": {"entra": {"tenant_id": "t"}},
-            "firebase": {"firebase": {"project_id": "p"}},
-        }
-        identity = _IdentityConfig(provider=_IdentityProviderConfig(type=name, **extra, **blocks.get(name, {})))
-        with pytest.raises(AKConfigError, match=f"identity.provider.type: {name}"):
-            IdentityProviderFactory.create(identity)
 
     def test_an_unknown_short_name_is_a_configuration_error(self):
         with pytest.raises(AKConfigError, match="unknown identity provider type 'ldap'"):
