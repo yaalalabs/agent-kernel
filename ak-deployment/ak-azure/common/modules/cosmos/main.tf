@@ -81,10 +81,9 @@ resource "azurerm_private_dns_zone" "cosmos_table" {
 }
 
 resource "azurerm_private_dns_zone_virtual_network_link" "cosmos_dns_link" {
-  name                  = "cosmos-dns-link"
-  resource_group_name   = data.azurerm_resource_group.current_group.name
-  private_dns_zone_name = azurerm_private_dns_zone.cosmos_table.name
-  virtual_network_id    = data.azurerm_virtual_network.vnet.id
+  name                = "cosmos-dns-link"
+  private_dns_zone_id = azurerm_private_dns_zone.cosmos_table.id
+  virtual_network_id  = data.azurerm_virtual_network.vnet.id
 }
 
 resource "azurerm_private_endpoint" "cosmos_table" {

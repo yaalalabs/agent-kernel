@@ -18,9 +18,9 @@ Perfect for containerized workloads requiring automated image management with Az
 
 | Name | Version |
 |------|---------|
-| Terraform | >= 1.9.5 |
+| Terraform | >= 1.9.5, <= 1.16.7 |
 | Docker Provider | 3.6.2 |
-| AzureRM Provider | >=4.57.0 |
+| AzureRM Provider | 5.11.0 |
 | Docker | Latest |
 
 ## 🚀 Usage

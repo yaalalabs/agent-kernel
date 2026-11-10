@@ -48,6 +48,16 @@ The module is provider-agnostic — it does not configure the `azurerm` provider
 provider "azurerm" {
   features {}
   resource_provider_registrations = "none"
+  # azurerm 5.x registers nothing by default; already-registered providers are skipped
+  resource_providers_to_register = [
+    "Microsoft.ApiManagement",
+    "Microsoft.Cache",
+    "Microsoft.DocumentDB",
+    "Microsoft.Insights",
+    "Microsoft.Network",
+    "Microsoft.Storage",
+    "Microsoft.Web",
+  ]
 }
 
 module "FlexFunction" {

@@ -9,7 +9,8 @@ locals {
   storage_account_name = substr(replace("${var.prefix}src${local.subscription_hash}", "/[^a-z0-9]/", ""), 0, 24)
   container_name       = "sources"
 
-  key_vault_uri = var.blob_kms_key_id != null ? regex("(https://[^/]+)", var.blob_kms_key_id)[0] : null
+  # Drop the version segment so the key auto-rotates, as key_vault_uri + key_name did in 4.x
+  key_vault_key_id = var.blob_kms_key_id != null ? join("/", slice(split("/", var.blob_kms_key_id), 0, 5)) : null
 }
 
 resource "azurerm_storage_account" "source_storage" {
@@ -63,6 +64,5 @@ resource "azurerm_storage_container" "source_storage_container" {
 resource "azurerm_storage_account_customer_managed_key" "source_storage_cmk" {
   count              = var.is_production && var.blob_kms_key_id != null ? 1 : 0
   storage_account_id = azurerm_storage_account.source_storage.id
-  key_vault_uri      = local.key_vault_uri
-  key_name           = split("/", var.blob_kms_key_id)[4]
+  key_vault_key_id   = local.key_vault_key_id
 }

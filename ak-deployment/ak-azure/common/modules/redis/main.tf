@@ -102,11 +102,10 @@ resource "azurerm_private_dns_zone" "redis" {
 
 # Link DNS Zone to VNet
 resource "azurerm_private_dns_zone_virtual_network_link" "redis" {
-  name                  = "${var.prefix}-redis-dns-link"
-  resource_group_name   = data.azurerm_resource_group.current_group.name
-  private_dns_zone_name = azurerm_private_dns_zone.redis.name
-  virtual_network_id    = data.azurerm_virtual_network.vnet.id
-  tags                  = var.tags
+  name                = "${var.prefix}-redis-dns-link"
+  private_dns_zone_id = azurerm_private_dns_zone.redis.id
+  virtual_network_id  = data.azurerm_virtual_network.vnet.id
+  tags                = var.tags
   lifecycle {
     ignore_changes = [
       virtual_network_id
