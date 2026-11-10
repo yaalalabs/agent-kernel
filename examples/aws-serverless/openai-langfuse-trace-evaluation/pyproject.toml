@@ -12,7 +12,7 @@ dependencies = []
 # evaluator, so it declares opik itself. Only the agent runner needs the OpenAI Agents SDK.
 request_handler = [
     "agentkernel[aws,redis,langfuse]>=0.9.5",
-    "opik>=1.9.0",  # the first release with the agent judges (AgentTaskCompletionJudge, AgentToolCorrectnessJudge)
+    "opik>=1.9.0,<3.0.0",  # the first release with the agent judges (AgentTaskCompletionJudge, AgentToolCorrectnessJudge)
 ]
 agent_runner = [
     "agentkernel[aws,openai,redis,langfuse]>=0.9.5",
@@ -24,9 +24,9 @@ response_handler = [
 [dependency-groups]
 dev = [
     "agentkernel[test]>=0.9.5",
-    "httpx>=0.27.0",
-    "black==26.5.1",
-    "isort>=5.0.0",
+    "httpx>=0.27.0,<0.29.0",
+    "black==26.10.1",
+    "isort>=5.0.0,<10.0.0",
 ]
 
 [tool.uv]
