@@ -18,7 +18,8 @@ module "containerized_agents" {
     package_path   = "../dist"
     container_port = 8000
     environment_variables = {
-      OPENAI_API_KEY = var.openai_api_key
+      OPENAI_API_KEY  = var.openai_api_key
+      DEMO_AUTH_TOKEN = var.demo_auth_token
     }
   }
 

@@ -22,15 +22,17 @@ scalability of queue mode for lower latency and a single container to operate. S
   registered in `app.py`)
 - WebSocket API Gateway (`$connect` / `$disconnect` / `chat` / `status` / `echo` / `$default`
   routes), proxied to the ECS service via VPC Link + ALB
-- DynamoDB table mapping `user_id` <-> `connection_id` (managed by the Terraform module)
+- DynamoDB connections table: one row per connection, keyed by the principal's subject (`user_id`) with the
+  principal stored beside it (managed by the Terraform module)
 - DynamoDB table for agent memory (session store)
 
 ## How it works
 
-1. A client opens a WebSocket connection with an auth token in the query string:
-   `wss://<endpoint>/<stage>?token=<jwt>`.
-2. API Gateway routes `$connect` to the container, which calls `CustomAuthValidator.validate()`
-   (see `app.py`). A non-2xx response rejects the connection.
+1. A client opens a WebSocket connection with its credential in the query string:
+   `wss://<endpoint>/<stage>?token=<credential>`.
+2. API Gateway routes `$connect` to the container, which authenticates the token through the
+   identity provider in `config.yaml` and stores the resulting principal against the connection.
+   A non-2xx response rejects the connection.
 3. The client sends a JSON frame on the `chat` route (see below). The container runs the agent
    inline via `ChatService` and pushes a `CHAT_RESPONSE` message back over the same connection.
 4. On close, API Gateway routes `$disconnect` to the container, which removes the connection
@@ -66,16 +68,16 @@ Receive:
 
 Beyond the built-in `chat` route, `app.py` registers two custom routes with the
 `@AWSWebsocketAPI.register(...)` decorator — route name only (the method is always POST and the
-path is always `/ws/<route>`). The decorated function receives a plain `dict` — `{"message": ...,
-"user_id": ...}` — not the connection id or push endpoint, and returns a `dict`, which the framework
-broadcasts to the client:
+path is always `/ws/<route>`). The decorated function receives a plain `dict`, `{"message": ...,
+"principal": ...}` (the frame's body and the connection's `Principal`), not the connection id or push
+endpoint, and returns a `dict`, which the framework broadcasts to the client:
 
 ```python
 from agentkernel.aws import AWSWebsocketAPI
 
 @AWSWebsocketAPI.register("status")
 async def status(ctx: dict) -> dict:
-    return {"status": "OK", "user_id": ctx["user_id"]}
+    return {"status": "OK", "subject": ctx["principal"].subject}
 ```
 
 The routes are also declared in Terraform via `ws_routes` (`deploy/main.tf`), which must agree with
@@ -97,7 +99,7 @@ Receive (pushed back over the connection as a `SYSTEM_RESPONSE`):
 {
   "type": "SYSTEM_RESPONSE",
   "status": "OK",
-  "user_id": "user-1"
+  "subject": "demo-user"
 }
 ```
 
@@ -105,8 +107,8 @@ Receive (pushed back over the connection as a `SYSTEM_RESPONSE`):
 
 `status` ignores the frame's payload. The second custom route, `echo`, reads it — `ctx["message"]`
 is the frame's raw JSON body, exactly as the client sent it: no `BaseRequest`/`BaseRunRequest` schema
-is imposed on custom routes, so `echo` simply returns `ctx` unchanged, broadcasting the whole context
-(`message` and `user_id`) back to the client as-is:
+is imposed on custom routes, so `echo` simply hands the context back, the frame's body as it arrived
+and the connection's principal as JSON:
 
 ```python
 @AWSWebsocketAPI.register("echo")
@@ -135,7 +137,7 @@ Receive:
     "route": "echo",
     "body": { "prompt": "hello there", "locale": "en-US" }
   },
-  "user_id": "user-1"
+  "principal": { "subject": "demo-user", "kind": "user", "provider": "static", "namespace": "static", "groups": [], "roles": [], "claims": {} }
 }
 ```
 
@@ -150,13 +152,22 @@ broadcast to the client, and a 500 is returned.
 
 ## Auth
 
-`app.py` defines a demo `CustomAuthValidator` that decodes an **unsigned** JWT and accepts it when
-`userId` is one of `user-1`/`user-2` and the matching `email` is `test1@test.com`/`test2@test.com`.
-`userId` is required — it's how the container maps a connection to a user so replies can be routed
-back to the right client.
+The `$connect` handshake authenticates the `?token=` query parameter through the identity provider
+named by the `identity` block in `config.yaml`, and the connection is keyed by the principal's
+subject, which is how replies are routed back to the right client. The block here selects the
+`static` provider with one credential mapped to the principal `demo-user`. The credential's value is
+not in the file: the key `DEMO_AUTH_TOKEN` names a secret the secret capability resolves at startup,
+and Terraform passes it to the container as an environment variable from `var.demo_auth_token`.
+Connect with that value:
 
-**Warning:** signature verification is disabled for demo purposes only. Use real JWT verification
-(or your own `AuthValidator`) in production.
+```
+wss://<endpoint>/<stage>?token=<the demo_auth_token value>
+```
+
+A missing or refused token closes the connection before it opens. To validate real tokens, swap the
+provider for `oidc` (Auth0, Keycloak, Okta or any other OIDC issuer), `cognito`, `entra` or
+`firebase`; [`examples/aws-serverless/openai-auth`](../../aws-serverless/openai-auth/README.md)
+shows an Auth0 block. No code changes: the handshake is the framework's.
 
 ## Execution mode
 
@@ -178,6 +189,7 @@ independently of ingress.
 1. Configure environment variables:
     ```bash
     export TF_VAR_openai_api_key=<OPENAI_API_KEY>
+    export TF_VAR_demo_auth_token=<any secret string: the token clients connect with>
     export TF_VAR_vpc_id=<VPC_ID>
     export TF_VAR_private_subnet_ids='["subnet-xxx","subnet-yyy"]'
     ```
@@ -194,7 +206,7 @@ independently of ingress.
     Terraform-managed ECR repository automatically — no manual ECR setup or push is needed.
 
 4. Note the `websocket_api_endpoint_url` and `websocket_api_stage_name` outputs, then connect to
-   `wss://<websocket_api_endpoint_url>/<websocket_api_stage_name>?token=<jwt>` with a WebSocket
+   `wss://<websocket_api_endpoint_url>/<websocket_api_stage_name>?token=<credential>` with a WebSocket
    client of your choice and send frames per the wire protocol above.
 
 ## Cleanup

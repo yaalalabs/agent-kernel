@@ -3,7 +3,6 @@ from pathlib import Path
 
 from agentkernel.agui import AGUIPipelineRequestHandler, AGUIState
 from agentkernel.api import RESTAPI
-from agentkernel.auth import Authoriser
 from agentkernel.core import Session
 from agentkernel.openai import OpenAIModule, OpenAIToolBuilder
 from agentkernel.pipeline import IOHandler
@@ -56,20 +55,6 @@ planner_agent = Agent(
 )
 
 
-class DemoAuthoriser(Authoriser):
-    """Maps a static demo token to a user id. AG-UI has no anonymous mode."""
-
-    _TOKENS = {"demo-token": "demo-user"}
-
-    def authorise(self, token: str) -> str | None:
-        """Resolve a bearer token to a user id.
-
-        :param token: Bearer token from the Authorization header.
-        :return: The acting user id, or None to reject the request.
-        """
-        return self._TOKENS.get(token)
-
-
 OpenAIModule([planner_agent])
 
 DIST = Path(__file__).parent / "frontend" / "dist"
@@ -114,8 +99,11 @@ def runner() -> None:
     On the default in_memory transport that is still one process — the API, the response handler
     and the agent runner are threads — so this stays a single command with nothing to install.
     Point config at a broker and the agent runner moves out; see README "Two ways to run it".
+
+    AG-UI has no anonymous mode: the handler refuses to build without the `identity` block in
+    config.yaml, whose provider turns the bearer token into the run's principal.
     """
-    IOHandler.run(handlers=[AGUIPipelineRequestHandler(authoriser=DemoAuthoriser())])
+    IOHandler.run(handlers=[AGUIPipelineRequestHandler()])
 
 
 if __name__ == "__main__":

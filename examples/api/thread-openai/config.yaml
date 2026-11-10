@@ -1,2 +1,18 @@
 thread:
   type: in_memory # other supported backends: redis | valkey | dynamodb | firestore | cosmosdb
+
+# Who may call. The static provider is the development and test provider: each entry maps one
+# credential to one principal. The credential VALUES are not written here. Each key names a secret
+# the secret capability resolves when the app starts (an environment variable by default), so
+# export ALICE_TOKEN and BOB_TOKEN before `python app.py` and send that value as the bearer token.
+# Swap `static` for `oidc` (Auth0, Keycloak, Okta or any other OIDC issuer), `cognito`, `entra`
+# or `firebase` to validate real tokens; examples/aws-serverless/openai-auth shows an Auth0 block.
+identity:
+  provider:
+    type: static
+    static:
+      principals:
+        ALICE_TOKEN:
+          subject: alice
+        BOB_TOKEN:
+          subject: bob

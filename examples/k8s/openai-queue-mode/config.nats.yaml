@@ -65,3 +65,17 @@ logging:
 secret:
   provider:
     type: kubernetes
+
+# Who may call. Every tier loads this file, and the io handler (REST) and the WebSocket gateway build
+# the identity provider at startup, so its credential must resolve in those pods: the chart injects
+# DEMO_AUTH_TOKEN from the demo-credentials Secret as an environment variable (extraEnv in
+# ak-values.yaml), which the secret capability reads before the mounted files. The static provider
+# maps that one credential to the `demo-user` principal; REST requests may also carry it as a
+# bearer token, and the WebSocket handshake must (`?token=`).
+identity:
+  provider:
+    type: static
+    static:
+      principals:
+        DEMO_AUTH_TOKEN:
+          subject: demo-user

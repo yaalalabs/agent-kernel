@@ -10,7 +10,7 @@ sessions and responses. A Kafka variant is one values switch away.
 app_agents.py           the agents, shared by the io and runner images
 app_io_handler.py       OpenAIModule(agents) + IOHandler.run()    the io image's entry point
 app_agent_runner.py     OpenAIModule(agents) + AgentRunner.run()  the runner image's entry point
-app_ws_gateway.py       WebSocketGateway.run(validator)           the gateway image's entry point
+app_ws_gateway.py       WebSocketGateway.run()                    the gateway image's entry point
 ws_client.py            demo client for the WebSocket walkthrough (runs on your machine)
 protocol_client.py      demo A2A + MCP client (runs on your machine, and in CI's kind smoke)
 config.nats.yaml        baked in as config.yaml by package.sh (default)
@@ -54,11 +54,16 @@ k3d cluster create ak
 k3d image import -c ak ak-example-io-handler:dev ak-example-agent-runner:dev
 ```
 
-Give the pods the OpenAI key as a Secret, then install the chart release with the dev flavor
-(`ak-values.yaml` layers the example images and the Secret mount on top of it):
+Give the pods the OpenAI key and the demo credential as Secrets, then install the chart release with
+the dev flavor (`ak-values.yaml` layers the example images, the Secret mount and the credential's
+environment variable on top of it). `DEMO_AUTH_TOKEN` is the one credential the `identity` block in
+`config.*.yaml` accepts: REST requests may carry it as a bearer token, and the WebSocket walkthrough
+below must. Keep it exported, the client reads it:
 
 ```bash
 kubectl create secret generic openai-credentials --from-literal=OPENAI_API_KEY="$OPENAI_API_KEY"
+export DEMO_AUTH_TOKEN="$(openssl rand -hex 16)"
+kubectl create secret generic demo-credentials --from-literal=DEMO_AUTH_TOKEN="$DEMO_AUTH_TOKEN"
 
 deploy/deploy.sh            # or deploy/deploy.sh local to install this checkout's chart
 kubectl rollout status deployment/ak-agent-kernel-io deployment/ak-agent-kernel-agent-runner
@@ -198,6 +203,10 @@ chart's `secretStore` in `ak-values.yaml` mounts each listed Secret read-only at
   `secret.cache_ttl`.
 - **Upgrading from the `extraEnv` version of this example:** create `openai-credentials` as above; the old `openai`
   Secret is no longer referenced.
+- **The demo credential is the exception.** `DEMO_AUTH_TOKEN`, the credential of the `identity` block, is read by
+  the io handler and the WebSocket gateway at startup, and neither of those tiers has the `secretStore` mount, so
+  `ak-values.yaml` injects it as an environment variable from the `demo-credentials` Secret (`extraEnv`). The
+  environment wins, so the same key resolves the same way on every tier.
 - **Published flow.** `deploy/deploy.sh` without `local` works only once a release publishes a chart and an
   `agentkernel` version that carry the Kubernetes provider and `secretStore`; `deploy/deploy.sh local` uses this
   checkout for both.
@@ -229,8 +238,9 @@ not API.
 
 The REST modes above need no gateway tier. For token streaming, the third image
 (`ak-example-ws-gateway`, from `app_ws_gateway.py`) runs the WebSocket gateway: it
-authenticates each handshake with a demo JWT validator (users `user-1`/`user-2`, signature
-verification off, demo only), enqueues chat frames straight to the transport, and receives
+authenticates each handshake's `?token=` through the identity provider in `config.*.yaml` (the
+`static` provider, whose one credential is the `DEMO_AUTH_TOKEN` you created above, mapped to the
+principal `demo-user`), enqueues chat frames straight to the transport, and receives
 each reply chunk from the Response Handler on its authenticated `/internal/push` endpoint.
 The connection table rides the session store, which values-dev already puts on Valkey.
 
@@ -251,7 +261,7 @@ kubectl rollout status deployment/ak-agent-kernel-ws-gateway
 ```
 
 Then connect and stream (the client lives in this directory; `./build.sh` installed its
-dependencies):
+dependencies, and it sends the `DEMO_AUTH_TOKEN` you exported as the handshake's token):
 
 ```bash
 kubectl port-forward service/ak-agent-kernel-ws-gateway 18001:8000 &

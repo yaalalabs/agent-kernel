@@ -843,12 +843,12 @@ candidate walk; `StaticAuthorizer` subclasses it, and every later engine must.
   (`pipeline/realtime_pool.py:520-558`): the connection stores `body.principal` on every input
   (`RealtimeConnection.principal`, None when the input named nobody); on first connect
   `chat_service.prepare_agent_handler` (line 550) runs the agent check through
-  `ensure_agent_available(body.agent, body.principal)` once the gate exists (iterations 17 to
-  20). `_execute_tool_and_reply` (`228-252`) wraps `adapter.execute_tool` in
+  `ensure_agent_available(body.agent, body.principal)` once the gate exists (iterations 18 to
+  21). `_execute_tool_and_reply` (`228-252`) wraps `adapter.execute_tool` in
   `Runtime._publish(agent, session, principal)` / `session._unpublish_run()`, so the tool sees
   the participant with the agent as actor and the session's owner is recorded as on a turn; the
   tool filter (`gate.tool_filter(principal, agent)`, `ToolFilter.allows(name)` returning the
-  reason string as the tool result when denied) joins the same wrap in iteration 23. Amended in
+  reason string as the tool result when denied) joins the same wrap in iteration 24. Amended in
   iteration 9: the `user_id` parameter stays. It is the `ATTR_USER_ID` WebSocket routing marker
   the output is stamped with (`_emit`, `258-259`), not an identity, so replacing it would break
   the WebSocket edge's delivery; the principal rides beside it, and the callers
@@ -965,7 +965,9 @@ candidate walk; `StaticAuthorizer` subclasses it, and every later engine must.
   so the direct, streaming and queued chat routes all run as the connection's principal.
 - `APIGatewayAuthorizer(bypass=None)` (`deployment/aws/serverless/akauthorizer.py`): the `validator`
   argument is removed, and construction raises `AKConfigError("APIGatewayAuthorizer requires an
-  identity block: ...")` without a provider. `handle` authenticates `request.headers.Authorization`
+  identity block: ...")` without a provider. `RequestAuthenticator` imports FastAPI inside
+  `dependency()` only, so the authorizer and the WebSocket connection handler keep their packages
+  free of it (`test_aws_lazy_exports`, found at the phase B suite run, 2026-11-10). `handle` authenticates `request.headers.Authorization`
   through `authenticate_bearer` (under `run_async_sync`) with a `RequestContext` of the path, the
   method and the `Headers` dump, and returns the Allow policy with `principalId=principal.subject` and
   `context={"principal": principal.model_dump_json()}` (API Gateway context values must be strings).
@@ -974,10 +976,13 @@ candidate walk; `StaticAuthorizer` subclasses it, and every later engine must.
   <token>`: the former `_extract_token`, which accepted a bare token, is gone), or any other
   exception. The bypass is unchanged and answers before the provider is consulted.
 - The REST Lambda router (`deployment/aws/serverless/core/router/rest_lambda.py`):
-  `DefaultEndpointsHandler._parse_body` assigns `_principal_from_event(event)` to the body it parsed,
+  `DefaultEndpointsHandler._parse_body` assigns `principal_from_event(event)` to the body it parsed,
   rebuilding the principal from `event["requestContext"]["authorizer"]["principal"]` when present,
   else anonymous, so both `process_chat_request` and `_send_to_queue` receive it; a `principal` the
-  client put in the body was dropped by `from_payload`.
+  client put in the body was dropped by `from_payload`. `principal_from_event` is public, and
+  `Lambda.principal(event)` (`deployment/aws/serverless/aklambda.py`) wraps it for the custom
+  `Lambda.register` routes, which receive the raw event (decided 2026-11-10, for the
+  `aws-serverless/schedule-openai` example's management routes).
 - `GCPAuthorizer` (`deployment/gcp/akauthorizer.py`) is deleted: `RESTAPI` installs the identity
   dependency itself. `AzureFunctions.handler` (`deployment/azure/akfunction.py`) runs
   `RequestAuthenticator.from_config().authenticate_bearer(req.headers.get("Authorization"),
@@ -1373,7 +1378,7 @@ New files under `ak-py/tests/`:
   body, `record_trigger` ownership by namespace and subject) landed in `test_schedule_manager.py`
   in iteration 3 and the tools reading `Session.get_principal()` in `test_schedule_tools.py`; a
   pre-change task body (no principal) firing anonymous and the fire-time level re-check skipping
-  with `last_error` join this file in iteration 19.
+  with `last_error` join this file in iteration 20.
 - `test_deployment_identity.py`: `APIGatewayAuthorizer` policy context carrying the serialized
   principal and the REST router rebuilding it (a client-sent `principal` replaced, the direct chat
   and queued bodies carrying it); the ECS and Lambda `$connect` handlers keyed by subject, refusing
@@ -1382,7 +1387,8 @@ New files under `ak-py/tests/`:
   carrying it; `AzureFunctions.handler` 401 before the body is read, anonymous without a header; the
   AWS connection store writing and rebuilding the `principal` attribute (`None` for a legacy row);
   the removed `agentkernel.auth` module, `set_auth_handler`, `set_auth_validator`,
-  `add_auth_handlers` and `GCPAuthorizer` names, and the validator-free entry-point signatures. The
+  `add_auth_handlers` and `GCPAuthorizer` names, the validator-free entry-point signatures, and
+  `Lambda.principal` rebuilding the authorizer context (anonymous without one). The
   provider is the `static_identity` fixture in `tests/conftest.py` (a recording `static` provider
   installed on `IdentityProviderFactory.get`, so the deployment modules' `SimpleNamespace` config
   stubs need no `identity` or `secret` block; the construction-from-config path is pinned in
@@ -1512,6 +1518,37 @@ orders them in its final iteration and the sync skills verify them before merge.
   capability), drops `user_id` from bodies, READMEs and tests, and moves surface lists to
   `registry.agents.<id>.surfaces`. `examples/sandbox/identity` keeps its custom resolver and
   gains a note that the default resolver now covers it.
+  - As implemented (iteration 12, 2026-11-10): the credential keys follow one convention, resolved
+    through the secret capability's environment layer: `ALICE_TOKEN`/`BOB_TOKEN` for the two-user
+    API demos, `DEMO_TOKEN` for the single-user API demos, `DEMO_AUTH_TOKEN` for every AWS and k8s
+    example (a sensitive `demo_auth_token` Terraform variable passed to the one process that builds
+    the provider: the ECS REST service, the Lambda authorizer or WebSocket connection handler; on
+    k8s a `demo-credentials` Secret injected through the chart's `extraEnv`, because the
+    `secretStore` mount reaches only the agent-executing tier while the io handler and the gateway
+    build the provider). The API example tests start `app.py` with those values in its environment.
+    `aws-serverless/schedule-openai` gains an authorizer Lambda (`lambda_auth.py`, an `authorizer`
+    dependency set, the `dist_auth` package), since a task belongs to an authenticated caller, and
+    its custom routes read the owner with `Lambda.principal(event)`. The ECS WebSocket custom routes
+    receive `{"message", "principal"}` and `echo` returns the principal as a JSON dump. The GCP
+    `openai-auth` examples authenticate Google identity tokens at the API Gateway and import nothing
+    from the removed package, so they are unchanged; `examples/cli/adk-run-options` keeps ADK's own
+    `user_id` run option. `aws-containerized/openai-websocket` has no `app_test.py`; its handshake
+    is covered by `test_deployment_identity`.
+  - Identity examples (plan iteration 13, planned 2026-11-10, not yet implemented): one example per
+    supported provider and per identity feature of phases A and B. `examples/api/identity/oidc-keycloak`
+    runs the `oidc` provider against a Keycloak container (realm import, `claims.groups:
+    realm_access.roles`, a `mapping` role mapper) with `config.auth0.yaml` and `config.okta.yaml`
+    as documented alternates; `examples/api/identity/custom-provider` is a dotted-path
+    `IdentityProvider` over signed API keys yielding `kind: service` principals;
+    `examples/api/identity/principal-in-tools` reads `ToolContext.principal` (with `actor`),
+    `session.get_principal()` in a hook and `session.get_owner()`; `examples/cli/openai-identity`
+    shows `--token` / `AK_CLI_TOKEN`; `examples/api/identity/protocols` sends bearer tokens over
+    MCP and A2A; `examples/sandbox/identity-provider` runs `identity.mode: user` on the default
+    resolver with no custom code; `aws-serverless/openai-cognito`, `azure-serverless/openai-entra`
+    and `gcp-containerized/openai-firebase` run the three cloud providers in their deployments;
+    `azure-serverless/openai` moves to the static block and the two GCP `openai-auth` examples gain
+    an `oidc` block for Google as the issuer. The local suites join the e2e tier, the cloud suites
+    the weekly tier.
 - **Supported providers, wherever they are listed**: the docs site, the READMEs, the user skills
   and the examples name Auth0 as a supported identity provider served by the `oidc` type (decided
   2026-11-10), with its configuration spelled out rather than implied: `issuer:

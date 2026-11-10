@@ -27,9 +27,10 @@ Slack --POST /api/v1/slack/events--> API Gateway --> Authorizer (bypass: method 
 - **Request-handler Lambda**: the chat route plus `POST /api/v1/slack/events`, registered with
   `@Lambda.register("/slack/events", method="POST")` on a function that calls
   `LambdaWebhookHost(WebhookRESTRequestHandler(SlackInboundAdapter())).handle`.
-- **Authorizer Lambda**: bearer-token auth for the chat route, with
-  `bypass=WebhookRouteMatcher.for_integrations("slack")` for the webhook. Slack sends no bearer
-  token; the adapter's signature check is the real authentication.
+- **Authorizer Lambda**: bearer-token auth for the chat route through the identity provider in
+  `config.yaml` (the `static` provider, whose one credential is the `demo_auth_token` Terraform
+  variable), with `bypass=WebhookRouteMatcher.for_integrations("slack")` for the webhook. Slack sends
+  no bearer token; the adapter's signature check is the real authentication.
 - **Agent-runner Lambda**: runs the agent. It keeps the message's return address (`integration`
   plus the `reply_*` context) on the reply.
 - **Response-handler Lambda**: delivers the reply to Slack through the Slack outbound adapter.
@@ -40,7 +41,7 @@ The three must agree, and a mismatch fails quietly from Agent Kernel's side:
 
 | Where | What | Symptom when it is missing |
 |---|---|---|
-| `lambda_auth.py` | `WebhookRouteMatcher.for_integrations("slack")` | Slack gets 403: with no `Authorization` header the authorizer logs `Event validation failed` and denies without calling the validator |
+| `lambda_auth.py` | `WebhookRouteMatcher.for_integrations("slack")` | Slack gets 403: with no `Authorization` header the authorizer logs `Event validation failed` and denies without consulting the identity provider |
 | `lambda_request_handler.py` | `@Lambda.register("/slack/events", method="POST")` calling `LambdaWebhookHost(...).handle` | Slack gets 500: the router has no route |
 | `deploy/main.tf` | `gateway_endpoints = [{ path = "/slack/events", method = "POST" }]` | API Gateway answers 403 before any Lambda runs |
 

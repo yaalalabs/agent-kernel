@@ -1,4 +1,5 @@
 import asyncio
+import os
 import subprocess
 import sys
 import time
@@ -87,7 +88,10 @@ async def app_server():
     enough locally is therefore short enough in CI for the first requests to be refused outright,
     which is why the wait polls rather than guesses.
     """
-    proc = subprocess.Popen([sys.executable, "app.py"], stdout=sys.stdout, stderr=sys.stderr)
+    # The identity block in config.yaml names the DEMO_TOKEN credential; the static provider must
+    # resolve it at startup even though these tests use the REST route without a token.
+    env = {**os.environ, "DEMO_TOKEN": "demo-token"}
+    proc = subprocess.Popen([sys.executable, "app.py"], stdout=sys.stdout, stderr=sys.stderr, env=env)
     try:
         await _wait_until_serving(proc)
         yield f"http://{HOST}:{PORT}"

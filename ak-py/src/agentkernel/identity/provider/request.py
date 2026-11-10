@@ -3,14 +3,15 @@
 import contextvars
 import logging
 from collections.abc import Callable, Coroutine
-from typing import Any, ClassVar
-
-from fastapi import HTTPException, Request
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from ...core.model import Principal
 from ..errors import AuthenticationError
 from .base import IdentityProvider, RequestContext
 from .factory import IdentityProviderFactory
+
+if TYPE_CHECKING:
+    from fastapi import Request
 
 
 class RequestAuthenticator:
@@ -31,7 +32,7 @@ class RequestAuthenticator:
         """
         :param provider: The configured provider, or None when no ``identity`` block exists.
         :param credentials: The credential store the inbound credential is retained in; None until the
-            credentials capability lands (plan iteration 24), when ``credential_ref`` minting arrives with it.
+            credentials capability lands (plan iteration 25), when ``credential_ref`` minting arrives with it.
         :param inbound_ttl: Seconds a request-scoped credential outlives its request once retention exists.
         """
         self._provider = provider
@@ -81,7 +82,7 @@ class RequestAuthenticator:
             return Principal.anonymous()
         return await self._provider.authenticate(token.strip(), context)
 
-    def dependency(self) -> Callable[[Request], Coroutine[Any, Any, Principal]]:
+    def dependency(self) -> Callable[["Request"], Coroutine[Any, Any, Principal]]:
         """The FastAPI dependency that puts the request's principal on ``request.state.principal``.
 
         Async, so it runs in the request's task and the contextvar it sets is what the endpoint
@@ -90,6 +91,9 @@ class RequestAuthenticator:
 
         :return: The dependency callable, to wrap in ``Depends``.
         """
+        # Imported here, not at module level: the Lambda authorizer and WebSocket connection handler
+        # authenticate through this class too, and their packages carry no FastAPI.
+        from fastapi import HTTPException, Request
 
         async def identity_dependency(request: Request) -> Principal:
             context = RequestContext(path=request.url.path, http_method=request.method, headers=dict(request.headers))

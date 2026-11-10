@@ -95,13 +95,15 @@ class DefaultEndpointsHandler:
         body_dict = json.loads(body) if isinstance(body, str) else (body or {})
         request = BaseRequest.from_payload(body_dict)
         if request.body is not None:
-            request.body.principal = self._principal_from_event(event)
+            request.body.principal = self.principal_from_event(event)
         return request
 
     @staticmethod
-    def _principal_from_event(event: dict[str, Any]) -> Principal:
+    def principal_from_event(event: dict[str, Any]) -> Principal:
         """
         Rebuild the principal the authorizer established for this request.
+
+        ``_parse_body`` assigns it to the chat body; ``Lambda.principal`` exposes it to custom routes.
 
         :param event: API Gateway event
         :return: The principal from ``requestContext.authorizer.principal``, or the anonymous principal when absent

@@ -29,6 +29,7 @@ from agentkernel.deployment.aws.containerized.core.api.websocket_api import (
 from agentkernel.deployment.aws.containerized.ecs_io_handler import ECSIOHandler
 from agentkernel.deployment.aws.core.websocket_service import AWSWebSocketHandler, WebSocketConnectionStore
 from agentkernel.deployment.aws.serverless.akauthorizer import APIGatewayAuthorizer
+from agentkernel.deployment.aws.serverless.aklambda import Lambda
 from agentkernel.deployment.aws.serverless.akwsconnectionhandler import WebsocketConnectionHandler
 from agentkernel.deployment.aws.serverless.core.router.rest_lambda import DefaultEndpointsHandler
 from agentkernel.deployment.aws.serverless.core.router.ws_lambda import ConnectionRoutesHandler, SystemRoutesHandler, WSLambdaRouter
@@ -140,6 +141,19 @@ class TestAuthorizerToRESTRouter:
             handler._send_to_queue(request)
 
         assert send.call_args.kwargs["message_body"]["principal"]["subject"] == "alice"
+
+
+class TestLambdaPrincipalAccessor:
+    """A ``Lambda.register`` route receives the raw event; ``Lambda.principal`` reads the caller out of it."""
+
+    def test_the_authorizer_context_rebuilds_the_principal(self, static_identity):
+        policy = APIGatewayAuthorizer().handle(_authorizer_event("Bearer alice-secret"))
+
+        assert Lambda.principal({"requestContext": {"authorizer": policy["context"]}}) == ALICE
+
+    @pytest.mark.parametrize("event", [{"httpMethod": "GET"}, {"requestContext": {}}, {"requestContext": {"authorizer": {}}}])
+    def test_an_event_without_an_authorizer_principal_is_anonymous(self, event):
+        assert Lambda.principal(event).is_anonymous
 
 
 def _ecs_request(connection_id: str | None = "c1", token: str | None = None, body: dict | None = None) -> MagicMock:

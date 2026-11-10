@@ -34,7 +34,8 @@ and `app_agent_runner.py` are identical apart from the custom echo route (`opena
   `endpoint_url` forwarded — as a separate message to the Output Queue. Scales on SQS backlog per
   task, independently of the REST/IO service.
 - **SQS Queues**: FIFO input and output queues
-- **DynamoDB**: session memory table + WebSocket `user_id` <-> `connection_id` connections table
+- **DynamoDB**: session memory table + WebSocket connections table (one row per connection, keyed by the
+  principal's subject with the principal stored beside it)
 - **WebSocket API Gateway + ALB**: routes `$connect` / `$disconnect` / `chat` / `$default` to the
   REST/IO service via VPC Link
 
@@ -59,7 +60,7 @@ Client --(wss, ?token=...)--> WS API Gateway --> REST/IO service ($connect / enq
 
 ## WebSocket wire protocol
 
-Connect with `wss://<endpoint>/<stage>?token=<jwt>`, then send:
+Connect with `wss://<endpoint>/<stage>?token=<credential>`, then send:
 
 ```json
 {
@@ -94,12 +95,22 @@ there is no partial `error` + separate `done` chunk.
 
 ## Auth
 
-`app_rest_service.py` defines the same demo `CustomAuthValidator` as `openai-websocket`: it
-decodes an **unsigned** JWT and accepts it when `userId` is one of `user-1`/`user-2` and the
-matching `email` is `test1@test.com`/`test2@test.com`.
+The `$connect` handshake authenticates the `?token=` query parameter through the identity provider
+named by the `identity` block in `config.yaml`, and the connection is keyed by the principal's
+subject, which is how replies are routed back to the right client. The block here selects the
+`static` provider with one credential mapped to the principal `demo-user`. The credential's value is
+not in the file: the key `DEMO_AUTH_TOKEN` names a secret the secret capability resolves at startup,
+and Terraform passes it to the container as an environment variable from `var.demo_auth_token`.
+Connect with that value:
 
-**Warning:** signature verification is disabled for demo purposes only. Use real JWT verification
-(or your own `AuthValidator`) in production.
+```
+wss://<endpoint>/<stage>?token=<the demo_auth_token value>
+```
+
+A missing or refused token closes the connection before it opens. To validate real tokens, swap the
+provider for `oidc` (Auth0, Keycloak, Okta or any other OIDC issuer), `cognito`, `entra` or
+`firebase`; [`examples/aws-serverless/openai-auth`](../../aws-serverless/openai-auth/README.md)
+shows an Auth0 block. No code changes: the handshake is the framework's.
 
 ## Execution mode
 
@@ -129,6 +140,7 @@ details on tuning `backlog_target` and cooldowns.
 1. Configure environment variables:
     ```bash
     export TF_VAR_openai_api_key=<OPENAI_API_KEY>
+    export TF_VAR_demo_auth_token=<any secret string: the token clients connect with>
     export TF_VAR_vpc_id=<VPC_ID>
     export TF_VAR_private_subnet_ids='["subnet-xxx","subnet-yyy"]'
     ```
@@ -144,7 +156,7 @@ details on tuning `backlog_target` and cooldowns.
     `dist-agent-runner/` (`app_agent_runner.py`) — then runs `terraform apply`.
 
 4. Note the `websocket_api_endpoint_url` and `websocket_api_stage_name` outputs, then connect to
-   `wss://<websocket_api_endpoint_url>/<websocket_api_stage_name>?token=<jwt>` with a WebSocket
+   `wss://<websocket_api_endpoint_url>/<websocket_api_stage_name>?token=<credential>` with a WebSocket
    client of your choice and send frames per the wire protocol above.
 
 ## Cleanup
