@@ -32,7 +32,7 @@ class RequestAuthenticator:
         """
         :param provider: The configured provider, or None when no ``identity`` block exists.
         :param credentials: The credential store the inbound credential is retained in; None until the
-            credentials capability lands (plan iteration 25), when ``credential_ref`` minting arrives with it.
+            credentials capability lands (plan iteration 24), when ``credential_ref`` minting arrives with it.
         :param inbound_ttl: Seconds a request-scoped credential outlives its request once retention exists.
         """
         self._provider = provider

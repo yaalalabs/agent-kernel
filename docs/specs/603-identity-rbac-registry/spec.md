@@ -843,12 +843,12 @@ candidate walk; `StaticAuthorizer` subclasses it, and every later engine must.
   (`pipeline/realtime_pool.py:520-558`): the connection stores `body.principal` on every input
   (`RealtimeConnection.principal`, None when the input named nobody); on first connect
   `chat_service.prepare_agent_handler` (line 550) runs the agent check through
-  `ensure_agent_available(body.agent, body.principal)` once the gate exists (iterations 18 to
-  21). `_execute_tool_and_reply` (`228-252`) wraps `adapter.execute_tool` in
+  `ensure_agent_available(body.agent, body.principal)` once the gate exists (iterations 17 to
+  20). `_execute_tool_and_reply` (`228-252`) wraps `adapter.execute_tool` in
   `Runtime._publish(agent, session, principal)` / `session._unpublish_run()`, so the tool sees
   the participant with the agent as actor and the session's owner is recorded as on a turn; the
   tool filter (`gate.tool_filter(principal, agent)`, `ToolFilter.allows(name)` returning the
-  reason string as the tool result when denied) joins the same wrap in iteration 24. Amended in
+  reason string as the tool result when denied) joins the same wrap in iteration 23. Amended in
   iteration 9: the `user_id` parameter stays. It is the `ATTR_USER_ID` WebSocket routing marker
   the output is stamped with (`_emit`, `258-259`), not an identity, so replacing it would break
   the WebSocket edge's delivery; the principal rides beside it, and the callers
@@ -1378,7 +1378,7 @@ New files under `ak-py/tests/`:
   body, `record_trigger` ownership by namespace and subject) landed in `test_schedule_manager.py`
   in iteration 3 and the tools reading `Session.get_principal()` in `test_schedule_tools.py`; a
   pre-change task body (no principal) firing anonymous and the fire-time level re-check skipping
-  with `last_error` join this file in iteration 20.
+  with `last_error` join this file in iteration 19.
 - `test_deployment_identity.py`: `APIGatewayAuthorizer` policy context carrying the serialized
   principal and the REST router rebuilding it (a client-sent `principal` replaced, the direct chat
   and queued bodies carrying it); the ECS and Lambda `$connect` handlers keyed by subject, refusing
@@ -1481,7 +1481,8 @@ before enqueue on a store-backed registry with no local agents), gets dedicated 
 ## Documentation, skills and examples
 
 Surfaces the implementation invalidates, from a sweep of the tree at `d9d0d18bc`; `plan.md`
-orders them in its final iteration and the sync skills verify them before merge.
+orders them in its docs and skills iterations (27 and 28) and the sync skills verify them before
+merge.
 
 - **Docs site (`docs/docs/`)**: new `advanced/identity-and-access.md`; `api/rest-api.md`
   (the Authentication section 474-499 and the `user_id` context claim 192-207, already
@@ -1534,7 +1535,8 @@ orders them in its final iteration and the sync skills verify them before merge.
     from the removed package, so they are unchanged; `examples/cli/adk-run-options` keeps ADK's own
     `user_id` run option. `aws-containerized/openai-websocket` has no `app_test.py`; its handshake
     is covered by `test_deployment_identity`.
-  - Identity examples (plan iteration 13, planned 2026-11-10, not yet implemented): one example per
+  - Identity examples (plan iteration 29, the last; planned 2026-11-10 and deferred to after the
+    docs and skills iterations, not yet implemented): one example per
     supported provider and per identity feature of phases A and B. `examples/api/identity/oidc-keycloak`
     runs the `oidc` provider against a Keycloak container (realm import, `claims.groups:
     realm_access.roles`, a `mapping` role mapper) with `config.auth0.yaml` and `config.okta.yaml`
@@ -1548,7 +1550,9 @@ orders them in its final iteration and the sync skills verify them before merge.
     and `gcp-containerized/openai-firebase` run the three cloud providers in their deployments;
     `azure-serverless/openai` moves to the static block and the two GCP `openai-auth` examples gain
     an `oidc` block for Google as the issuer. The local suites join the e2e tier, the cloud suites
-    the weekly tier.
+    the weekly tier. Landing after the docs and skills iterations, it adds the new examples to the
+    examples list and the supported-providers table of `advanced/identity-and-access.md` and to the
+    user skills that list them.
 - **Supported providers, wherever they are listed**: the docs site, the READMEs, the user skills
   and the examples name Auth0 as a supported identity provider served by the `oidc` type (decided
   2026-11-10), with its configuration spelled out rather than implied: `issuer:
