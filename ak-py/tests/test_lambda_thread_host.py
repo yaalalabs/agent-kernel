@@ -5,11 +5,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from agentkernel.core.base import Agent, Runner
 from agentkernel.core.config import AKConfig, _ThreadStoreConfig
-from agentkernel.core.model import AgentReplyText, ScheduleSpec
+from agentkernel.core.model import ScheduleSpec
 from agentkernel.core.multimodal.storage import AttachmentStorageManager
-from agentkernel.core.runtime import Runtime
 from agentkernel.core.util.factory import AKConfigError
 from agentkernel.deployment.aws.core.sqs_handler import SQSHandler
 from agentkernel.deployment.aws.serverless.aklambda import Lambda
@@ -32,31 +30,6 @@ IN_MEMORY_STORE_PATH = "agentkernel.integration.thread.store.in_memory.InMemoryT
 class EchoNaming(ThreadNamingStrategy):
     def generate_name(self, prompt: str) -> str:
         return (prompt or "").strip()
-
-
-class DummyRunner(Runner):
-    async def run(self, agent, session, requests):  # pragma: no cover - the agent runs in the other Lambda
-        return AgentReplyText(response="ok")
-
-    async def stream(self, agent, session, requests):  # pragma: no cover - the agent runs in the other Lambda
-        yield None
-
-
-class DummyAgent(Agent):
-    def __init__(self):
-        super().__init__(AGENT_NAME, DummyRunner("DummyRunner"))
-
-    def get_description(self) -> str:
-        return "Lambda thread test agent"
-
-    def get_a2a_card(self):
-        return None
-
-    def override_system_prompt(self, prompt):
-        pass
-
-    def attach_tool(self, tool):
-        pass
 
 
 def _reset_loops():
@@ -102,11 +75,8 @@ def _environment(monkeypatch):
     monkeypatch.setenv("AK_EXECUTION__RESPONSE_STORE__TYPE", "dynamodb")
     for key, value in BASE_PATH_ENV.items():
         monkeypatch.setenv(key, value)
-    agent = DummyAgent()
-    Runtime.current().register(agent)
     _configure(monkeypatch)
     yield
-    Runtime.current().deregister(agent)
     _reset_globals()
 
 
@@ -198,10 +168,9 @@ class TestChat:
         [
             ({"user_id": None}, "user_id"),
             ({"prompt": ""}, "No prompt provided"),
-            ({"agent": "nope"}, "No agent available"),
             ({"images": [{"image_data": "aGVsbG8=", "name": "a.png", "mime_type": "image/png"}]}, "multimodal"),
         ],
-        ids=["no-user-id", "no-prompt", "unknown-agent", "attachments-multimodal-off"],
+        ids=["no-user-id", "no-prompt", "attachments-multimodal-off"],
     )
     def test_a_rejection_answers_400_and_writes_and_sends_nothing(self, store, send, body, error):
         _host()

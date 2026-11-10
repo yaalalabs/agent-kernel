@@ -28,8 +28,8 @@ Client --GET /api/v1/threads[/{session_id}]--> API Gateway --> Authorizer --> Re
 ```
 
 - **Request-handler Lambda**: `LambdaThreadHost(ThreadRequestHandler())` takes over the built-in
-  chat route; `@Lambda.register` functions delegate the two read routes to it. It imports
-  `agent.py`, because the chat route checks the agent exists before it writes a thread.
+  chat route; `@Lambda.register` functions delegate the two read routes to it. It does not
+  import `agent.py`: in queue mode the agents live in the agent-runner Lambda only.
 - **Authorizer Lambda**: a demo validator whose subject is the user the token names
   (`alice-token` → `alice`, `bob-token` → `bob`, `guest-token` → `guest`). See below.
 - **Agent-runner Lambda**: runs the agent and records the reply of every marked request.
@@ -66,7 +66,7 @@ The chat route needs no declaration: Terraform always creates it, and the host t
 
 - `user_id` is required on every chat request: without it the chat route answers 400 and records
   nothing.
-- A missing prompt or an unknown agent is answered 400 by the chat route, before anything is written.
+- A missing prompt is answered 400 by the chat route, before anything is written.
 - `GET /threads` lists the caller's threads (a `user_id` query parameter is overridden by the
   authorized user); `group_id`, `limit` and `cursor` page it.
 - `GET /threads/{session_id}` returns the thread with a page of its messages; another user's thread

@@ -306,8 +306,6 @@ request-handler Lambda, and register its two read routes:
 from agentkernel.aws import Lambda, LambdaThreadHost
 from agentkernel.thread import ThreadRequestHandler
 
-import agent  # noqa: F401  (the chat route checks the agent exists before recording)
-
 threads = LambdaThreadHost(ThreadRequestHandler())
 
 
@@ -327,10 +325,10 @@ handler = Lambda.handler
 - **Creating the host enables threads.** It hooks the built-in chat route: each chat request must carry a
   `user_id`, the user message is recorded and the request is marked before it is enqueued, and the
   agent-runner Lambda records the reply after sending it. Requests are rejected with 400 (missing
-  `user_id` or prompt, unknown agent, attachments the multimodal config refuses) before anything is
+  `user_id` or prompt, attachments the multimodal config refuses) before anything is
   written. A request with a `schedule` block records nothing.
-- **The request handler loads the agents.** Import your agent module in the request-handler Lambda too:
-  the chat route checks the agent exists before it records anything.
+- **The request handler holds no agents.** Do not import your agent module there: in queue mode it has no
+  session store, and the agents run in the agent-runner Lambda only.
 - **Both Lambdas need the `thread` block**, and a shared store: `thread.type: in_memory` is refused at
   cold start, because the two Lambdas would each see their own copy. With multimodal on, the attachment
   store must be shared too (`redis` or `dynamodb`).

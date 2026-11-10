@@ -51,8 +51,7 @@ module "serverless_agents" {
     result_ttl_in_seconds = 0
   }
 
-  # An image, not a zip: the request handler imports the agents (the chat route checks the agent
-  # exists before it writes a thread), and the OpenAI Agents SDK does not fit in a Lambda zip.
+  # An image, not a zip: the thread extra (LiteLLM, for thread naming) does not fit in a Lambda zip.
   request_handler = {
     function_name        = "rqh-func"
     function_description = "Chat ingress with thread recording, and the thread read routes"

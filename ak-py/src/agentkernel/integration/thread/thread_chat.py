@@ -313,12 +313,12 @@ class ThreadRequestHandler(RequestHandler):
         once `requests` is set.
 
         :param body: The chat request, mutated in place into its queue-ready form.
-        :raises HTTPException: 400 when the agent is unavailable, `user_id` is missing, or the
-            attachment configuration rejects the request — all of them before any thread write,
-            so an unanswerable request leaves no phantom thread behind.
+        :raises HTTPException: 400 when `user_id` is missing, or the attachment configuration
+            rejects the request — all of them before any thread write.
         """
         try:
-            AgentService.ensure_agent_available(body.agent)
+            # Off: the queue-mode request handler holds no agents (registering them builds a session store it must not have).
+            # AgentService.ensure_agent_available(body.agent)
             requests = await RequestBuilder.from_base_request_async(body)
             requests, _ = self._recorder.pre_run(body, requests)
         except ValueError as e:

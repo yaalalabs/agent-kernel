@@ -13,8 +13,6 @@ store, and a ThreadRequestHandler without an Authoriser (the API Gateway authori
 from agentkernel.aws import Lambda, LambdaThreadHost
 from agentkernel.thread import ThreadRequestHandler
 
-import agent  # noqa: F401  (the chat route checks the agent exists before recording)
-
 threads = LambdaThreadHost(ThreadRequestHandler())
 
 

@@ -1357,8 +1357,6 @@ request, and the agent-runner Lambda records the reply.
 from agentkernel.aws import Lambda, LambdaThreadHost
 from agentkernel.thread import ThreadRequestHandler
 
-import agent  # noqa: F401  (the chat route checks the agent exists before recording)
-
 threads = LambdaThreadHost(ThreadRequestHandler())
 Lambda.register("/threads", method="GET")(threads.list_threads)
 Lambda.register("/threads/{session_id}", method="GET")(threads.get_thread)
