@@ -77,7 +77,7 @@ class TestMCPHttpApp:
             mock_config_class.get.return_value = _config(True)
             MCP.get_http_app()
 
-        mock_fastmcp_class.assert_called_once_with(MCP_NAME)
+        mock_fastmcp_class.assert_called_once_with(MCP_NAME, auth=None)
         instance = mock_fastmcp_class.return_value
         instance.http_app.assert_called_once_with(path="/", stateless_http=True)
 
@@ -93,7 +93,7 @@ class TestMCPHttpApp:
             MCP.get_http_app()
             MCP.get_http_app()
 
-        mock_fastmcp_class.assert_called_once_with(MCP_NAME)
+        mock_fastmcp_class.assert_called_once_with(MCP_NAME, auth=None)
         assert fastmcp.http_app.call_count == 2
         assert fastmcp.http_app.call_args_list[-1].kwargs == {"path": "/", "stateless_http": True}
 

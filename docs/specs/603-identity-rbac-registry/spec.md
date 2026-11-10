@@ -874,10 +874,13 @@ candidate walk; `StaticAuthorizer` subclasses it, and every later engine must.
   reads the principal off the context's access token and returns `AccessGate.visible(principal,
   descriptor) and descriptor.exposed_on("mcp")`; FastMCP hides tools whose check fails from
   `tools/list` and refuses their calls. The `mcp.agents` allow-list (140) is deleted.
-- `Executor.execute` (58-106): `token = get_access_token()`
-  (`fastmcp/server/dependencies.py:467`); `principal = token.principal if isinstance(token,
-  AKAccessToken) else Principal.anonymous()`; `body = BaseRunRequest(prompt, agent, session_id,
-  principal=principal)`; a `PermissionError`/`LookupError` from `RestHandler.request`'s precheck
+- `Executor.execute` (58-106): `principal = AKAccessToken.principal_of(get_access_token())`
+  (`fastmcp/server/dependencies.py:467`): the verifier stores the principal under the
+  `ak.principal` claim as well as on its `principal` field, because FastMCP 3.4.7 rebuilds the
+  verifier's token as its own `AccessToken` before a tool sees it, keeping only the SDK fields
+  (`claims` survive, the subclass and even `subject` do not; design refinement 7); `principal_of`
+  reads the field in process, the claim over HTTP, and is anonymous otherwise. `body =
+  BaseRunRequest(prompt, agent, session_id, principal=principal)`; a `PermissionError`/`LookupError` from `RestHandler.request`'s precheck
   becomes `ToolError("Agent not available")`.
 
 #### 8.7 A2A (`api/a2a/`)
@@ -1472,3 +1475,9 @@ Mechanism changes found while detailing, each inside a settled decision and mirr
    could not serve a local key set. The design's rules hold unchanged: discovery once, one forced
    refresh per unknown `kid` with a 30 s cooldown, no blocking fetch, a failed fetch keeps the
    previous keys.
+7. **The MCP principal rides a claim.** FastMCP 3.4.7 copies the verifier's access token into
+   its own `AccessToken` (SDK fields only) before `get_access_token()` returns it to a tool, so
+   the spec's `isinstance(token, AKAccessToken)` check never holds over HTTP. The verifier puts
+   the principal under the `ak.principal` claim beside its `principal` field, and
+   `AKAccessToken.principal_of` reads whichever it is handed; the design's rule (the executor
+   runs as the authenticated caller, anonymous otherwise) holds unchanged.

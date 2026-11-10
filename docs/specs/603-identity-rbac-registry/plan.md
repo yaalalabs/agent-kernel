@@ -273,7 +273,8 @@ iteration 18 and `credentials` lands in iteration 25, both additive).
 ### Iteration 8: MCP and A2A
 
 - **Goal:** both protocol surfaces authenticate and put the principal on the executor's body.
-- **Files:** `api/mcp/akmcp.py`, `api/a2a/a2a.py`, `api/a2a/handler.py`.
+- **Files:** `api/mcp/akmcp.py`, `api/mcp/auth.py` (new: `AKAccessToken`, `AKTokenVerifier`,
+  `AKMCPAuthProvider`), `api/a2a/a2a.py`, `api/a2a/handler.py` (`AKCallContextBuilder`).
 - **Steps:**
   1. MCP: `AKTokenVerifier`, `AKAccessToken` (`principal`), `AKMCPAuthProvider.from_config`
      (`RemoteAuthProvider` for OIDC), `auth=` on `FastMCP`, the principal from
