@@ -48,25 +48,28 @@ def _chat(prompt: str, session_id: str, user_id: str | None = "alice", token: st
     payload = {"prompt": prompt, "session_id": session_id, "request_id": str(uuid.uuid4()), "agent": "assistant"}
     if user_id is not None:
         payload["user_id"] = user_id
-    return _send("POST", ENDPOINT, token, json=payload)
+    # One attempt, never retried: a retry re-records the user message in the thread.
+    return httpx.request("POST", ENDPOINT, headers=_headers(token), json=payload, timeout=60.0)
+
+
+def _wait_for_messages(session_id: str, count: int) -> None:
+    """Poll the thread until it holds `count` messages: the agent runner records each reply."""
+    for _ in range(30):
+        thread = _send("GET", f"{_threads_url()}/{session_id}", ALICE_TOKEN)
+        if thread.status_code == 200 and len(thread.json()["messages"]) >= count:
+            return
+        time.sleep(2)
 
 
 @pytest.fixture(scope="module")
 def alice_thread() -> str:
     """Two chat turns by alice; returns the thread's session id once both replies are recorded."""
     session_id = f"thread-smoke-{uuid.uuid4()}"
-    for prompt in ("What is the capital of France?", "And of Italy?"):
-        response = _chat(prompt, session_id)
-        assert response.status_code == 200, response.text
-        assert response.json()["result"]
-
-    # The agent runner records the reply right after sending it, so the last one can trail the chat
-    # response by a moment.
-    for _ in range(10):
-        thread = _send("GET", f"{_threads_url()}/{session_id}", ALICE_TOKEN)
-        if thread.status_code == 200 and len(thread.json()["messages"]) == 4:
-            break
-        time.sleep(2)
+    for turn, prompt in enumerate(("What is the capital of France?", "And of Italy?"), start=1):
+        # The chat response is not checked: a cold start can outlast API Gateway's 29s limit (504)
+        # while the run completes behind it. The thread is what this fixture builds.
+        _chat(prompt, session_id)
+        _wait_for_messages(session_id, 2 * turn)
     return session_id
 
 
