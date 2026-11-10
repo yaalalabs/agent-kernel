@@ -43,8 +43,8 @@ class CloudRunAgentRunner:
     def run(cls) -> None:
         """Serve push deliveries on ``api.host``:``api.port`` until the process is stopped.
 
-        :raises AKConfigError: If the transport is not ``pubsub``, or for ``async`` or ``realtime``
-            mode, before anything starts.
+        :raises AKConfigError: If the transport is not ``pubsub``, for ``async`` or ``realtime``
+            mode, or for ``in_memory`` sessions, before anything starts.
         """
         import uvicorn
 
@@ -64,6 +64,11 @@ class CloudRunAgentRunner:
         CloudRun.reject_undeliverable_modes()
 
         config = AKConfig.get()
+        if config.session.type == "in_memory":
+            raise AKConfigError(
+                "CloudRunAgentRunner needs a shared session store: Cloud Run runs several runner instances and scales to "
+                "zero, so in_memory sessions would split across instances and be lost. Set session.type (redis, valkey or firestore)"
+            )
         transport = QueueTransportFactory.create()
         # The same choice AgentRunner.run() makes; realtime is refused above.
         runner = StreamAgentRunner(transport=transport) if config.execution.is_delta else AgentRunner(transport=transport)

@@ -7,7 +7,7 @@ sidebar_position: 6
 Deploy Agent Kernel agents as serverless containers on **GCP Cloud Run** with scale-to-zero capability. Uses the [`yaalalabs/ak-serverless/google`](https://registry.terraform.io/modules/yaalalabs/ak-serverless/google) Terraform module.
 
 :::note Supported execution modes
-Cloud Run runs Agent Kernel's built-in REST server, so it supports synchronous JSON REST **and SSE event streaming** (`execution.mode: rest_sync` with `execution.message_type: delta`) with streaming-capable frameworks (OpenAI Agents SDK, LangGraph, Google ADK, Pydantic AI, Microsoft Agent Framework, Claude Agent SDK). [Queue mode](#queue-mode) (Pub/Sub, the module default) supports `rest_sync` (with SSE) and `rest_async`; WebSocket (`async`) and `realtime` delivery are AWS-only; see the [Deployment Overview](./overview#execution-modes).
+Cloud Run runs Agent Kernel's built-in REST server, so it supports synchronous JSON REST **and SSE event streaming** (`execution.mode: rest_sync` with `execution.message_type: delta`) with streaming-capable frameworks (OpenAI Agents SDK, LangGraph, Google ADK, Pydantic AI, Microsoft Agent Framework, Claude Agent SDK). [Queue mode](#queue-mode) (Pub/Sub, the module default) supports `rest_sync` (with SSE) and `rest_async`; WebSocket (`async`) and `realtime` delivery are AWS-only; see the [Deployment Overview](./overview#execution-modes). SSE through API Gateway needs a gateway created with streaming enabled, which Terraform can't do yet, so events may not arrive live.
 :::
 
 ## Overview

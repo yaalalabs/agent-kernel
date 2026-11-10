@@ -70,6 +70,7 @@ flowchart LR
     - `group_id` becomes the Pub/Sub ordering key, and the subscriptions have message ordering enabled.
     - When a pull returns several messages for one key, the consumer serves them one at a time and holds the rest until the one being served is acked.
     - A message with no `group_id` is published without a key.
+    - Pub/Sub keeps a key's order only for messages published in one region (research §1). Both tiers deploy in the module's single `region`, so they publish in one region. A multi-region edge is not supported.
   - **Exact `receive_count`:**
     - Counted by the bookkeeping store, keyed by subscription + Pub/Sub message ID, as the Kafka transport does.
     - `delivery_attempt` is not used, because it is approximate and can reset (research §2).
@@ -123,7 +124,7 @@ flowchart LR
 
   - The emulator is selected by the client library's own `PUBSUB_EMULATOR_HOST` environment variable, so it needs no field.
 - **Who declares what:**
-  - The application's `config.yaml` declares `execution.queues.type: pubsub`.
+  - The application's `config.yaml` declares `execution.queues.type: pubsub`, `execution.response_store.type: redis` and `session.type`. Without a response store type, `IOHandler` refuses the broker transport at startup.
   - Terraform injects only coordinates and never sets `type`, as on AWS.
   - An injected `AK_EXECUTION__QUEUES__*` variable with no declared `type` fails at config load.
 - `QueueTransportFactory`:
@@ -143,6 +144,7 @@ flowchart LR
   - It serves `POST /pubsub/push`: Pub/Sub pushes each request there, and the response status acknowledges it (2xx) or asks for redelivery.
   - Each push runs one message exactly as `AgentRunner` runs a pulled one: the same processing, receive counting, permanent-failure path and dead-letter copy, through a `PubSubPushReceiver` the transport creates.
   - **Accepted trade-off:** Pub/Sub waits at most 600 seconds for a push answer. A run that takes longer is redelivered while it is still going, and runs a second time. Agent runs are not capped: the service's request timeout is Cloud Run's maximum (60 minutes).
+  - It refuses `session.type: in_memory` with `AKConfigError`: runner instances scale out and to zero, so sessions must be shared (Redis, Valkey or Firestore). _Added in PR review._
   - Locally (and off GCP), `AgentRunner.run()` still pulls the same queue.
 
 ### Terraform (`ak-deployment/ak-gcp/{serverless,containerized}`)
@@ -185,6 +187,7 @@ flowchart LR
   - drops the multipart route, which the pipeline serves only on `in_memory` (`pipeline/request_handler.py:366-369`);
   - adds `GET <base>/chat` for `rest_async` polling. The gateway's path builder must first hold several methods on one path (`api_gateway.tf:8-16`).
 - **Supported modes:** `rest_sync` (`complete`, and `delta` over SSE, since the Redis store streams chunks) and `rest_async`.
+  - **SSE caveat** (_added in PR review_): API Gateway streams only when streaming is enabled at gateway creation, and Terraform can't enable it yet (Preview). So through the Terraform-built gateway, SSE events are not guaranteed to arrive live. This applies to today's single-service plan too. A streaming-capable gateway is a follow-up.
 
 ### Tests
 

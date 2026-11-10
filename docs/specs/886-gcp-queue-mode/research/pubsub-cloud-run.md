@@ -30,6 +30,7 @@ use the new host.
    - Push allows one outstanding message per key.
    - "Redeliveries of a message trigger redelivery of all subsequent messages for that key, even acknowledged ones." This covers ack-deadline expiry. Nack also causes redelivery, so the same cascade is inferred to apply.
    - Order may not be preserved for messages sent to a dead-letter topic.
+   - Order holds only for messages published in the same region. Publishers in different regions can deliver a key's messages out of order.
    - https://docs.cloud.google.com/pubsub/docs/ordering. Verified.
 2. **`delivery_attempt`.**
    - "calculated at best effort and is approximate": 1 + nacks + ack-deadline expiries, and it "may also reset to zero".

@@ -144,12 +144,13 @@ class TestCloudRunAgentRunner:
         assert TestClient(CloudRunAgentRunner.build_app(self._Receiver())).get("/health").json() == {"status": "ok"}
 
     @staticmethod
-    def _configure_runner(monkeypatch, transport: str, mode=None, message_type=None):
+    def _configure_runner(monkeypatch, transport: str, mode=None, message_type=None, session_type="redis"):
         config = SimpleNamespace(
             execution=_ExecutionConfig(
                 mode=mode, message_type=message_type, queues=_QueuesConfig(type=transport, pubsub={}, input={"max_receive_count": 4})
             ),
             api=SimpleNamespace(host="127.0.0.1", port=8123),
+            session=SimpleNamespace(type=session_type),
         )
         monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: config))
 
@@ -189,5 +190,11 @@ class TestCloudRunAgentRunner:
     def test_run_refuses_socket_modes(self, monkeypatch, served, mode):
         self._configure_runner(monkeypatch, "pubsub", mode)
         with pytest.raises(AKConfigError, match="not individually addressable"):
+            CloudRunAgentRunner.run()
+        assert served == {}
+
+    def test_run_refuses_in_memory_sessions(self, monkeypatch, served):
+        self._configure_runner(monkeypatch, "pubsub", session_type="in_memory")
+        with pytest.raises(AKConfigError, match="shared session store"):
             CloudRunAgentRunner.run()
         assert served == {}
