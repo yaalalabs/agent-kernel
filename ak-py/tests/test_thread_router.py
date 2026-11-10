@@ -9,6 +9,7 @@ import pytest
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
+from agentkernel.api.handler import AuthorisedRESTRequestHandler
 from agentkernel.core.config import AKConfig, _ThreadStoreConfig
 from agentkernel.core.model import Principal
 from agentkernel.core.util.factory import AKConfigError
@@ -77,6 +78,10 @@ class TestConstruction:
 
         with pytest.raises(AKConfigError, match="ThreadRESTRequestHandler requires an identity block"):
             ThreadRESTRequestHandler()
+
+    def test_is_an_authorised_handler(self):
+        """The identity requirement and ``_resolve_user`` come from the shared base, not a copy of it."""
+        assert issubclass(ThreadRESTRequestHandler, AuthorisedRESTRequestHandler)
 
 
 class TestAuthentication:

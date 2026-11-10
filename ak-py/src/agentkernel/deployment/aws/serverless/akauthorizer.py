@@ -4,7 +4,11 @@ from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
-from ....auth.handler import AuthValidator, ValidationContext, ValidationResult
+from ....core.util.async_bridge import run_async_sync
+from ....core.util.factory import AKConfigError
+from ....identity.errors import AuthenticationError
+from ....identity.provider.base import RequestContext
+from ....identity.provider.request import RequestAuthenticator
 
 
 class Headers(BaseModel):
@@ -27,16 +31,26 @@ WebhookBypass = Callable[[dict[str, Any]], str | None]
 
 
 class APIGatewayAuthorizer:
-    def __init__(self, validator: AuthValidator, bypass: WebhookBypass | None = None):
+    """The API Gateway Lambda authorizer: authenticates the bearer header through the configured identity provider.
+
+    An accepted credential yields an Allow policy whose ``principalId`` is the principal's subject and
+    whose context carries the whole principal as JSON (API Gateway context values must be strings), for
+    the request-handler Lambda to rebuild onto the request. Anything else is a Deny.
+    """
+
+    def __init__(self, bypass: WebhookBypass | None = None):
         """
-        :param validator: Validates the bearer token of every request the bypass does not claim.
         :param bypass: Lets messaging-integration routes through without a token, e.g.
             ``WebhookRouteMatcher.for_integrations("slack")``. Platforms send no bearer token; the
             adapter's own signature check in the request-handler Lambda authenticates them. It only
             gets a say with authorizer caching off (``result_ttl_in_seconds = 0``): with a TTL, API
             Gateway answers a header-less request with 401 before calling this Lambda.
+        :raises AKConfigError: If no identity provider is configured: an authorizer nobody can
+            authenticate to would deny every request.
         """
-        self._validator = validator
+        self._authenticator = RequestAuthenticator.from_config()
+        if self._authenticator.provider is None:
+            raise AKConfigError("APIGatewayAuthorizer requires an identity block: it authenticates every request the bypass does not claim")
         self._bypass = bypass
         self._log = logging.getLogger("ak.deployment.aws.akauthorizer")
 
@@ -50,31 +64,32 @@ class APIGatewayAuthorizer:
 
         try:
             request: APIGatewayRequestAuthorizerEvent = self._build_request(event)
-            token = self._extract_token(request)
-            result: ValidationResult = self._validator.validate(
-                token=token,
-                context=ValidationContext(
-                    path=request.path,
-                    http_method=request.httpMethod,
-                    headers=request.headers.model_dump(),
-                ),
+            principal = run_async_sync(
+                self._authenticator.authenticate_bearer(
+                    request.headers.Authorization,
+                    RequestContext(path=request.path, http_method=request.httpMethod, headers=request.headers.model_dump()),
+                )
             )
-            return_policy = self._build_policy(
-                principal_id=result.subject,
-                effect="Allow" if result.is_valid else "Deny",
-                method_arn=request.methodArn,
-                context=result.claims,
-            )
+            if principal.is_anonymous:
+                # Unreachable with the provider the constructor demanded; denied rather than allowed as "anonymous".
+                return_policy = self._build_deny_policy(request.methodArn)
+            else:
+                return_policy = self._build_policy(
+                    principal_id=principal.subject,
+                    effect="Allow",
+                    method_arn=request.methodArn,
+                    context={"principal": principal.model_dump_json()},
+                )
         except ValidationError as e:
             # Missing or malformed headers/Authorization
             self._log.info(f"Event validation failed: {e}")
             return_policy = self._build_deny_policy(event.get("methodArn", "*"))
-        except ValueError as e:
-            # Token extraction failed
-            self._log.info(f"Token extraction failed: {e}")
+        except AuthenticationError as e:
+            # A refused credential, or a header that is not "Bearer <token>": the reason stays in the log.
+            self._log.info(f"Refused credential: {e}")
             return_policy = self._build_deny_policy(event.get("methodArn", "*"))
         except Exception as e:
-            # Catch-all for unexpected errors during validation
+            # Catch-all for unexpected errors during authentication
             self._log.info(f"Unexpected error in authorizer: {e}", exc_info=True)
             return_policy = self._build_deny_policy(event.get("methodArn", "*"))
 
@@ -84,8 +99,8 @@ class APIGatewayAuthorizer:
     def _bypass_policy(self, event: dict) -> dict | None:
         """An Allow for a request the bypass recognises, or None to take the normal path.
 
-        The Allow names the exact ``methodArn`` (never a wildcard) and carries no claims. A bypass
-        that raises is logged and falls through to the validator, which fails closed for a request
+        The Allow names the exact ``methodArn`` (never a wildcard) and carries no principal. A bypass
+        that raises is logged and falls through to the provider, which fails closed for a request
         with no token.
         """
         if self._bypass is None or not event.get("methodArn"):
@@ -102,13 +117,6 @@ class APIGatewayAuthorizer:
 
     def _build_request(self, event: dict) -> APIGatewayRequestAuthorizerEvent:
         return APIGatewayRequestAuthorizerEvent.model_validate(event)
-
-    def _extract_token(self, request: APIGatewayRequestAuthorizerEvent) -> str:
-        auth_token = request.headers.Authorization
-        token = auth_token.replace("Bearer ", "").strip()
-        if not token:
-            raise ValueError("Bearer token is empty")
-        return token
 
     def _build_policy(self, principal_id: str, effect: str, method_arn: str, context: dict[str, Any] | None = None):
         policy = {

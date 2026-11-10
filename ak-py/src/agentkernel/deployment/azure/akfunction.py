@@ -6,12 +6,17 @@ import azure.functions as func
 
 from ...core.chat_service import ChatService
 from ...core.model import BaseRunRequest
+from ...core.util.async_bridge import run_async_sync
+from ...identity.errors import AuthenticationError
+from ...identity.provider.base import RequestContext
+from ...identity.provider.request import RequestAuthenticator
 
 
 class AzureFunctions:
     """
     AzureFunctions class provides an Azure Functions interface for interacting with agents.
-    Includes a handler method for Azure Function integration.
+    Includes a handler method for Azure Function integration. The request's bearer token is
+    authenticated through the configured identity provider before the body is read.
     """
 
     _log = logging.getLogger("ak.azure.functions")
@@ -27,8 +32,23 @@ class AzureFunctions:
     def handler(cls, req: func.HttpRequest) -> func.HttpResponse:
         """
         Azure Functions HTTP handler to process incoming requests.
+
+        The ``Authorization`` header is authenticated first: a refused or malformed credential is a
+        401 before the body is parsed, and the resulting principal (anonymous without a header or an
+        ``identity`` block) is assigned to the request, replacing anything the client put there.
         """
         cls._log.info("Agent Kernel Agent Azure Function Handler started")
+
+        try:
+            principal = run_async_sync(
+                RequestAuthenticator.from_config().authenticate_bearer(
+                    req.headers.get("Authorization"),
+                    RequestContext(path=req.url, http_method=req.method, headers=dict(req.headers)),
+                )
+            )
+        except AuthenticationError as exc:
+            cls._log.info(f"Refused credential on {req.method} {req.url}: {exc}")
+            return cls._json_response({"error": exc.public_detail, "session_id": None}, 401)
 
         try:
             # Parse request body
@@ -45,38 +65,21 @@ class AzureFunctions:
                 body = BaseRunRequest.model_validate(body)
             else:
                 raise ValueError("Invalid request, request body cannot be empty or null")
+            body.principal = principal
 
             # Process chat request using common service
             status_code, res_body = cls._get_chat_service().process_chat_request(body)
-
-            return func.HttpResponse(
-                body=json.dumps(res_body),
-                status_code=status_code,
-                mimetype="application/json",
-            )
+            return cls._json_response(res_body, status_code)
 
         except ValueError as ve:
             cls._log.error(f"ValueError processing request: {ve}\n{traceback.format_exc()}")
-            return func.HttpResponse(
-                body=json.dumps(
-                    {
-                        "error": str(ve),
-                        "session_id": None,
-                    }
-                ),
-                status_code=400,
-                mimetype="application/json",
-            )
+            return cls._json_response({"error": str(ve), "session_id": None}, 400)
 
         except Exception as e:
             cls._log.error(f"Error processing request: {e}\n{traceback.format_exc()}")
-            return func.HttpResponse(
-                body=json.dumps(
-                    {
-                        "error": str(e),
-                        "session_id": None,
-                    }
-                ),
-                status_code=500,
-                mimetype="application/json",
-            )
+            return cls._json_response({"error": str(e), "session_id": None}, 500)
+
+    @staticmethod
+    def _json_response(body: dict, status_code: int) -> func.HttpResponse:
+        """Build the JSON response every outcome of ``handler`` is answered with."""
+        return func.HttpResponse(body=json.dumps(body), status_code=status_code, mimetype="application/json")

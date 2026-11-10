@@ -353,32 +353,44 @@ iteration 18 and `credentials` lands in iteration 25, both additive).
 
 - **Goal:** the ECS, Lambda, GCP and Azure entry points authenticate through the configured
   provider; the last importers of the auth package have moved and the package is deleted.
-- **Files:** `deployment/aws/containerized/ecs_io_handler.py`,
+- **Files:** `api/http.py`, `deployment/aws/containerized/ecs_io_handler.py`,
   `deployment/aws/containerized/core/api/websocket_api.py`,
   `deployment/aws/core/websocket_service.py`,
   `deployment/aws/serverless/core/router/ws_lambda.py`,
   `deployment/aws/serverless/core/router/rest_lambda.py`,
   `deployment/aws/serverless/akauthorizer.py`, `deployment/aws/serverless/akwsconnectionhandler.py`,
-  `deployment/gcp/akauthorizer.py` (delete), `deployment/azure/akfunction.py`, `auth/` (delete),
-  `auth.py` (delete).
+  `deployment/gcp/akauthorizer.py` (delete), `deployment/gcp/__init__.py`,
+  `deployment/azure/akfunction.py`, `auth/` (delete), `auth.py` (delete); `tests/conftest.py` gains
+  the shared `static_identity` fixture.
 - **Steps:**
   1. ECS: `ECSIOHandler.run(handlers=None)`; `set_auth_handler` and `_ws_auth_validator` go;
+     `ECSWebSocketSystemRequestHandler()` raises `AKConfigError` without an identity block and
      `$connect` authenticates through `authenticate_token`; the AWS `WebSocketConnectionStore`
-     gains the `principal` attribute and `get_principal`; `_handle_chat` sets `body.principal`
-     from it (spec 8.9).
-  2. Lambda: `ConnectionRoutesHandler` and `WebsocketConnectionHandler` the same way;
-     `APIGatewayAuthorizer(bypass=None)` returns `principalId` and the `principal` context
-     string; the REST router rebuilds the principal from the authorizer context (spec 8.9).
-  3. `GCPAuthorizer` deleted; `AzureFunctions.handler` runs `authenticate_bearer` and answers
-     401 (spec 8.9).
+     gains the `principal` attribute and `get_principal`, `AWSWebSocketHandler.on_connect` takes
+     the principal; `build_route_context` resolves the stored principal, `_handle_chat` sets
+     `body.principal` from it and custom routes receive `{"message", "principal"}` (spec 8.9).
+  2. Lambda: `ConnectionRoutesHandler()` and `WebsocketConnectionHandler` the same way, the sync
+     handlers bridging `authenticate_token` with `run_async_sync`; `_parse_event_to_wsmessage`
+     resolves the stored principal onto the body for every chat route;
+     `APIGatewayAuthorizer(bypass=None)` requires the identity block, returns `principalId` and the
+     `principal` context string, and denies a header without the `Bearer` scheme; the REST router's
+     `_parse_body` rebuilds the principal from the authorizer context (spec 8.9).
+  3. `GCPAuthorizer` deleted; `AzureFunctions.handler` runs `authenticate_bearer` before reading
+     the body and answers 401 on `AuthenticationError` (spec 8.9).
   4. Delete the `auth` package and the `auth.py` shadow module, and with them
      `RESTAPI.add_auth_handlers` and `_auth_token_validators` (kept since 6 for the adapters
-     above).
-- **Verify:** new `tests/test_deployment_identity.py`; changed `test_ecs_*`,
-  `test_ws_lambda_stream`, `test_akauthorizer`, `test_authorizer_webhook_bypass`; deleted
-  `test_auth_handler.py` and `test_authoriser_shared.py`;
+     above); `_get_router_dependencies` returns the identity dependency alone.
+- **Verify:** new `tests/test_deployment_identity.py`; changed `test_ecs_io_handler`,
+  `test_ecs_websocket_routes`, `test_ws_lambda_stream`, `test_akauthorizer`,
+  `test_authorizer_webhook_bypass`, `test_api_http` (the legacy validator cases become the
+  identity-dependency-alone case; the `IOHandler.run` stubs drop `auth_validator`),
+  `test_thread_router` (the hierarchy assertion from the deleted suite); deleted
+  `test_auth_handler.py` and `test_authoriser_shared.py`; re-run `test_lambda_router`,
+  `test_serverless_status_propagation`, `test_serverless_integration_delivery`,
+  `test_identity_providers`, `test_pipeline_ws` and `test_pipeline_io_handler`;
   `python -c "import agentkernel.auth"` fails with `ModuleNotFoundError`;
-  `grep -rn "AuthValidator\|Authoriser\b" ak-py/src` returns nothing.
+  `grep -rn "AuthValidator\|Authoriser\b" ak-py/src --include="*.py"` returns nothing (the bundled
+  `ak-cloud-deploy` skill still shows an `AuthValidator` snippet until iteration 28 rewrites it).
 
 ### Iteration 12: Examples
 

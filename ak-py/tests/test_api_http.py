@@ -8,7 +8,6 @@ from test_secret_manager import _DictSecretProvider
 
 from agentkernel.api.handler import RESTRequestHandler
 from agentkernel.api.http import RESTAPI
-from agentkernel.auth.handler import AuthValidator, ValidationResult
 from agentkernel.core.config import _IdentityConfig, _IdentityProviderConfig, _StaticPrincipalConfig, _StaticProviderConfig
 from agentkernel.core.util.factory import AKConfigError
 from agentkernel.identity import IdentityProviderFactory
@@ -29,13 +28,6 @@ class TestRESTAPI:
         config.a2a.enabled = False
         config.mcp.enabled = False
         return config
-
-    @pytest.fixture
-    def mock_auth_validator(self):
-        """Mock AuthValidator for testing."""
-        validator = Mock(spec=AuthValidator)
-        validator.validate.return_value = ValidationResult(is_valid=True, subject="test_user", claims={"user_id": "test_user"})
-        return validator
 
     @pytest.fixture
     def sample_router(self):
@@ -186,112 +178,13 @@ class TestRESTAPI:
             response = client.get("/custom")
             assert response.status_code == 200
 
-    def test_add_auth_handlers_with_validators(self, mock_auth_validator):
-        """Test add_auth_handlers with auth validators."""
-        RESTAPI._auth_token_validators.clear()
-
-        validators = [mock_auth_validator]
-        RESTAPI.add_auth_handlers(validators)
-
-        assert len(RESTAPI._auth_token_validators) == 1
-
-    def test_add_auth_handlers_empty_list(self):
-        """Test add_auth_handlers with empty validator list."""
-        RESTAPI._auth_token_validators.clear()
-
-        RESTAPI.add_auth_handlers([])
-
-        assert len(RESTAPI._auth_token_validators) == 0
-
-    def test_add_auth_handlers_multiple_validators(self, mock_auth_validator):
-        """Test add_auth_handlers with multiple validators."""
-        RESTAPI._auth_token_validators.clear()
-
-        validator2 = Mock(spec=AuthValidator)
-        validator2.validate.return_value = ValidationResult(is_valid=True)
-
-        validators = [mock_auth_validator, validator2]
-        RESTAPI.add_auth_handlers(validators)
-
-        assert len(RESTAPI._auth_token_validators) == 2
-
-
-class TestRESTAPIAuthentication:
-    """Tests for RESTAPI authentication functionality."""
-
-    @pytest.fixture
-    def mock_auth_validator(self):
-        """Mock AuthValidator for authentication testing."""
-        validator = Mock(spec=AuthValidator)
-        return validator
-
-    @pytest.fixture
-    def sample_app(self):
-        """Create a sample FastAPI app for testing authentication."""
-        app = FastAPI()
-
-        @app.get("/protected")
-        def protected_endpoint():
-            return {"message": "protected data"}
-
-        @app.get("/public")
-        def public_endpoint():
-            return {"message": "public data"}
-
-        return app
-
-    def test_auth_function_creation(self, mock_auth_validator):
-        """Test that auth function is created correctly."""
-        RESTAPI._auth_token_validators.clear()
-
-        RESTAPI.add_auth_handlers([mock_auth_validator])
-
-        assert len(RESTAPI._auth_token_validators) == 1
-        # Just verify that validators were added, not the specific type
-
-    def test_token_validation_with_whitespace(self, mock_auth_validator):
-        """Test token validation with extra whitespace."""
-        # Set up the mock validator to capture the actual token
-        captured_token = None
-
-        def capture_token(token, context=None):
-            nonlocal captured_token
-            captured_token = token
-            return ValidationResult(is_valid=True, subject="test_user")
-
-        mock_auth_validator.validate.side_effect = capture_token
-
-        RESTAPI._auth_token_validators.clear()
-        RESTAPI.add_auth_handlers([mock_auth_validator])
-
-        # Get the auth function that was created
-        auth_dependency = RESTAPI._auth_token_validators[0]
-        auth_function = auth_dependency.dependency
-
-        # Create a mock request with whitespace in token
-        mock_request = Mock()
-        mock_request.url = "http://localhost:8000/protected"
-        mock_request.method = "GET"
-        mock_request.headers = {"authorization": "Bearer   token_with_spaces   "}
-
-        # Call the auth function directly
-        result = auth_function(mock_request)
-
-        # Verify the token was properly stripped before validation
-        assert captured_token == "token_with_spaces"
-        assert captured_token != "Bearer   token_with_spaces   "
-
-        # Verify the validation result
-        assert result.is_valid is True
-        assert result.subject == "test_user"
-
 
 class TestRESTAPIIntegration:
     """Integration tests for RESTAPI functionality."""
 
     @patch("agentkernel.api.http.AKConfig")
-    def test_full_app_creation_with_auth(self, mock_config_class):
-        """Test full app creation with authentication."""
+    def test_full_app_creation(self, mock_config_class):
+        """Test full app creation."""
         mock_config = Mock()
         mock_config.api.host = "localhost"
         mock_config.api.port = 8000
@@ -300,24 +193,11 @@ class TestRESTAPIIntegration:
         mock_config.mcp.enabled = False
         mock_config_class.get.return_value = mock_config
 
-        # Create a mock validator
-        validator = Mock(spec=AuthValidator)
-        validator.validate.return_value = ValidationResult(is_valid=True)
+        app = RESTAPI._create_app([])
 
-        # Add auth handlers
-        RESTAPI._auth_token_validators.clear()
-        RESTAPI.add_auth_handlers([validator])
-
-        # Create app
-        routers = []
-        app = RESTAPI._create_app(routers)
-
-        # Test that app was created successfully
         assert isinstance(app, FastAPI)
         route_paths = [route.path for route in app.routes if hasattr(route, "path")]
         assert "/health" in route_paths
-        assert len(RESTAPI._auth_token_validators) == 1
-        assert RESTAPI._auth_token_validators[0].dependency is not None
 
     @patch("agentkernel.api.http.AKConfig")  # Mock AKConfig to avoid loading real configuration files
     @patch("agentkernel.api.http.uvicorn.run")
@@ -339,7 +219,6 @@ class TestRESTAPIIntegration:
 
         # Add custom router
         RESTAPI._custom_routers.clear()
-        RESTAPI._auth_token_validators.clear()
         RESTAPI.add(custom_router)
 
         # Run the RESTAPI (this won't start server due to mock).
@@ -486,7 +365,7 @@ class TestPipelineDelegation:
 
         called = {}
         monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "in_memory"))
-        monkeypatch.setattr(IOHandler, "run", classmethod(lambda cls, auth_validator=None: called.setdefault("delegated", True)))
+        monkeypatch.setattr(IOHandler, "run", classmethod(lambda cls: called.setdefault("delegated", True)))
 
         with patch("agentkernel.api.http.uvicorn.run") as mock_uvicorn:
             RESTAPI.run()
@@ -499,7 +378,7 @@ class TestPipelineDelegation:
         from agentkernel.pipeline.transport.base import QueueTransportFactory
 
         monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "in_memory"))
-        monkeypatch.setattr(IOHandler, "run", classmethod(lambda cls, auth_validator=None: pytest.fail("must not delegate")))
+        monkeypatch.setattr(IOHandler, "run", classmethod(lambda cls: pytest.fail("must not delegate")))
 
         handler = Mock()
         handler.get_router.return_value = APIRouter()
@@ -512,7 +391,7 @@ class TestPipelineDelegation:
         from agentkernel.pipeline.transport.base import QueueTransportFactory
 
         monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "in_memory"))
-        monkeypatch.setattr(IOHandler, "run", classmethod(lambda cls, auth_validator=None: pytest.fail("must not delegate")))
+        monkeypatch.setattr(IOHandler, "run", classmethod(lambda cls: pytest.fail("must not delegate")))
 
         handler = Mock()
         handler.get_router.return_value = APIRouter()
@@ -531,7 +410,7 @@ class TestPipelineDelegation:
         from agentkernel.pipeline.transport.base import QueueTransportFactory
 
         monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "sqs"))
-        monkeypatch.setattr(IOHandler, "run", classmethod(lambda cls, auth_validator=None: pytest.fail("must not delegate")))
+        monkeypatch.setattr(IOHandler, "run", classmethod(lambda cls: pytest.fail("must not delegate")))
 
         handler = Mock()
         handler.get_router.return_value = APIRouter()
@@ -690,7 +569,7 @@ class TestUnqueuedProtocolRefusal:
 
         called = {}
         monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "in_memory"))
-        monkeypatch.setattr(IOHandler, "run", classmethod(lambda cls, auth_validator=None: called.setdefault("delegated", True)))
+        monkeypatch.setattr(IOHandler, "run", classmethod(lambda cls: called.setdefault("delegated", True)))
 
         with patch("agentkernel.api.http.AKConfig") as config_class, patch("agentkernel.api.http.uvicorn.run") as mock_uvicorn:
             config_class.get.return_value = self._config(a2a=True, mcp=True, expose_agents=True)
@@ -783,14 +662,9 @@ class TestIdentityDependency:
     def test_health_stays_outside(self, mounted, static_identity):
         assert mounted().get("/health", headers={"Authorization": "Bearer mallory"}).status_code == 200
 
-    def test_legacy_validators_still_run_beside_it_until_the_auth_package_goes(self, mounted):
-        validator = Mock(spec=AuthValidator)
-        validator.validate.return_value = ValidationResult(is_valid=False, error_msg="legacy says no")
-        RESTAPI._auth_token_validators.clear()
-        RESTAPI.add_auth_handlers([validator])
-        try:
-            response = mounted().get("/api/v1/whoami", headers={"Authorization": "Bearer x"})
-            assert (response.status_code, response.json()["detail"]) == (401, "legacy says no")
-            assert len(RESTAPI._get_router_dependencies()) == 2
-        finally:
-            RESTAPI._auth_token_validators.clear()
+    def test_the_router_dependency_list_is_the_identity_dependency_alone(self, mounted, static_identity):
+        """Nothing runs ahead of the identity dependency since ``agentkernel.auth`` went (plan iteration 11)."""
+        dependencies = RESTAPI._get_router_dependencies()
+
+        assert len(dependencies) == 1
+        assert dependencies[0].dependency.__name__ == "identity_dependency"

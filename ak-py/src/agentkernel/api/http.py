@@ -1,11 +1,10 @@
 import logging
 
 import uvicorn
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
+from fastapi import APIRouter, Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 
-from ..auth import AuthValidator, ValidationContext
 from ..core.config import AKConfig
 from ..identity.provider.request import RequestAuthenticator
 from .handler import AgentRESTRequestHandler, RESTRequestHandler
@@ -19,7 +18,6 @@ class RESTAPI:
 
     _log = logging.getLogger("ak.api.http")
     _custom_routers = []
-    _auth_token_validators = []
 
     @classmethod
     def get_default_handlers(cls) -> list[RESTRequestHandler]:
@@ -31,16 +29,14 @@ class RESTAPI:
 
     @classmethod
     def _get_router_dependencies(cls):
-        """The dependencies every included router runs: the legacy validators, then the identity dependency.
+        """The dependency every included router runs: the identity dependency.
 
-        The identity dependency is always there: it puts the request's principal on
-        ``request.state.principal``, the anonymous principal when no ``identity`` block is
-        configured, so every handler reads the principal the same way. The validators registered
-        through ``add_auth_handlers`` keep running ahead of it until ``agentkernel.auth`` is removed.
+        It puts the request's principal on ``request.state.principal``, the anonymous principal
+        when no ``identity`` block is configured, so every handler reads the principal the same way.
 
         :return: The dependency list.
         """
-        return [*cls._auth_token_validators, Depends(RequestAuthenticator.from_config().dependency())]
+        return [Depends(RequestAuthenticator.from_config().dependency())]
 
     @classmethod
     def _create_app(cls, routers, lifespan=None) -> FastAPI:
@@ -210,39 +206,3 @@ class RESTAPI:
         for router in cls._custom_routers:
             app.include_router(router, prefix=AKConfig.get().api.custom_router_prefix, dependencies=cls._get_router_dependencies())
         return app
-
-    @classmethod
-    def add_auth_handlers(cls, auth_validators: list[AuthValidator]):
-        """Add authentication validators to the REST API.
-
-        Superseded by the ``identity`` block, which authenticates through the configured provider
-        and needs no code; kept until ``agentkernel.auth`` is removed with the deployment adapters
-        that still call it.
-
-        :param auth_validators: List of auth validators to add for token validation
-        """
-
-        def get_auth_function(token_validator: AuthValidator):
-            def verify_token(request: Request):
-                """Verify authentication token for incoming requests.
-                :param request: FastAPI Request object
-                :return: ValidationResult if token is valid
-                :raises: HTTPException if authentication fails
-                """
-                request_url = str(request.url)
-                cls._log.debug(f"Validating token for request: {request.method} {request_url}")
-                auth_token = request.headers.get("authorization")
-                if auth_token is None:
-                    raise HTTPException(status_code=401, detail="Missing authorization header")
-                auth_token = auth_token.replace("Bearer ", "").strip()
-                result = token_validator.validate(
-                    token=auth_token, context=ValidationContext(path=request_url, http_method=request.method, headers=dict(request.headers))
-                )
-                if not result.is_valid:
-                    raise HTTPException(status_code=401, detail=result.error_msg or "Unauthorized")
-                return result
-
-            return verify_token
-
-        for token_validator in auth_validators:
-            cls._auth_token_validators.append(Depends(get_auth_function(token_validator)))

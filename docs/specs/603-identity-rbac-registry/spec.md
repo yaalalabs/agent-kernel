@@ -922,34 +922,70 @@ candidate walk; `StaticAuthorizer` subclasses it, and every later engine must.
 
 #### 8.9 Deployment adapters
 
-- `ECSIOHandler.run(handlers=None)` (`deployment/aws/containerized/ecs_io_handler.py:32-84`):
-  `auth_validator` is removed; the WebSocket branch (64-73) requires an identity block
-  (`AKConfigError`); `AWSRestAPI.add_auth_handlers` (78-79) is gone with the method.
+- `ECSIOHandler.run(handlers=None)` (`deployment/aws/containerized/ecs_io_handler.py`):
+  `auth_validator` is removed; the WebSocket branch raises `AKConfigError` when
+  `IdentityProviderFactory.get()` is `None`, before any thread starts; the REST branch binds nothing,
+  since every REST route already carries the identity dependency. `AWSRestAPI.add_auth_handlers` is
+  gone with the method (section 8.2).
 - `AWSWebsocketAPI.set_auth_handler` and `_ws_auth_validator`
-  (`deployment/aws/containerized/core/api/websocket_api.py:443, 489-507`) are deleted;
-  `ECSWebSocketSystemRequestHandler.__init__()` takes no validator and `_handle_connect`
-  (131-154) authenticates through `RequestAuthenticator.authenticate_token`, keying the connection
-  store by `principal.subject`; the `userId` read (146-148) is deleted.
-  `ECSWebSocketRequestHandler.build_route_context` (303-333) keeps resolving the subject from the
-  connection store (320) and `_handle_chat` (404-425) sets `body.principal` from the connection store: the AWS
-  `WebSocketConnectionStore` (`deployment/aws/core/websocket_service.py:31-50`) gains a `principal`
-  attribute (the principal as JSON, written at `$connect`) and `get_principal(connection_id)`, so
-  later frames carry the full principal, groups included; custom routes receive
-  `{"message", "principal"}` (271).
-- `LambdaWSHandler.ConnectionRoutesHandler` (`deployment/aws/serverless/core/router/ws_lambda.py:135-216`)
-  and `WebsocketConnectionHandler.set_auth_validator` (`deployment/aws/serverless/akwsconnectionhandler.py`):
-  the same change; the `userId` read (204-208) is deleted.
-- `APIGatewayAuthorizer(bypass=None)` (`deployment/aws/serverless/akauthorizer.py:29-81`): the
-  `validator` argument is removed; `handle` authenticates through the configured provider and
-  returns the policy with `principalId=principal.subject` and `context={"principal":
-  principal.model_dump_json()}` (API Gateway context values must be strings, 126-128). The REST
-  Lambda router (`deployment/aws/serverless/core/router/rest_lambda.py`) rebuilds the principal
-  from `event["requestContext"]["authorizer"]["principal"]` when present, else anonymous, and
-  assigns it to the body before `process_chat_request` (287) and `_send_to_queue` (150).
+  (`deployment/aws/containerized/core/api/websocket_api.py`) are deleted.
+  `ECSWebSocketSystemRequestHandler.__init__()` takes no validator: it builds
+  `RequestAuthenticator.from_config()` and raises `AKConfigError("the ECS WebSocket routes require an
+  identity block: ...")` when that has no provider, the `PipelineWebSocketHandler` rule of 8.3, so
+  `AWSWebsocketAPI.get_default_handlers()` fails the same way (replacing the former `ValueError`;
+  decided 2026-11-10). `_handle_connect` authenticates through
+  `authenticate_token(token, RequestContext(path=CONNECT_PATH))`: a missing token is 401
+  "Authentication token is required", a refused one 401 "Authentication failed" with the provider's
+  reason logged, and the connection is stored through `AWSWebSocketHandler.on_connect(connection_id,
+  principal)`; the `userId` read is deleted. `ECSWebSocketRequestHandler.build_route_context`
+  resolves the connection's principal with one `get_principal` query (`WSRouteContext.principal`;
+  `user_id` becomes a property returning its subject; a row without a principal is 401 "No principal
+  found for connection_id"), and `_handle_chat` sets `body.principal = ctx.principal` ahead of the
+  queue, direct and streaming paths. Custom routes receive `{"message", "principal"}` carrying the
+  `Principal` object, the shape the pipeline's `_handle_custom` passes (8.3), not a model dump.
+- The AWS `WebSocketConnectionStore` (`deployment/aws/core/websocket_service.py`):
+  `add_connection(user_id, connection_id, principal=None)` writes the principal as JSON under the
+  `principal` attribute when given (the `LocalConnectionRegistry` precedent for extending the ABC's
+  `add_connection` with optional arguments); `get_principal(connection_id)` rebuilds it from the GSI
+  row and returns `None` for an unknown connection or a row written before principals;
+  `get_user_id` and `get_principal` share one `_get_connection` query. `AWSWebSocketHandler` gains
+  `get_principal` beside `get_user_id`, and its `on_connect(connection_id, principal)` overrides the
+  base hook's `(connection_id, user_id)` signature, keying the store by `principal.subject`: the AWS
+  store is the one that keeps the whole principal.
+- `LambdaWSHandler.ConnectionRoutesHandler.__init__()`
+  (`deployment/aws/serverless/core/router/ws_lambda.py`) takes no validator and raises the same
+  `AKConfigError` without a provider; `_handle_connect` runs the async `authenticate_token` through
+  `run_async_sync` (`core/util/async_bridge.py`: the Lambda handler is synchronous) and answers the
+  same 401s; the `userId` read is deleted. `WSLambdaRouter(connection_routes=False,
+  system_routes=True)` loses `auth_validator` and its `ValueError`;
+  `WebsocketConnectionHandler.set_auth_validator` is deleted and `_get_router` builds the router from
+  configuration alone. `_parse_event_to_wsmessage` resolves `get_principal(connection_id)` (a
+  `ValueError` "No principal found for connection_id" otherwise, answered as today's 500), assigns it
+  to `request.body.principal`, and `WSMessageInfo` gains `principal` beside `user_id` (its subject),
+  so the direct, streaming and queued chat routes all run as the connection's principal.
+- `APIGatewayAuthorizer(bypass=None)` (`deployment/aws/serverless/akauthorizer.py`): the `validator`
+  argument is removed, and construction raises `AKConfigError("APIGatewayAuthorizer requires an
+  identity block: ...")` without a provider. `handle` authenticates `request.headers.Authorization`
+  through `authenticate_bearer` (under `run_async_sync`) with a `RequestContext` of the path, the
+  method and the `Headers` dump, and returns the Allow policy with `principalId=principal.subject` and
+  `context={"principal": principal.model_dump_json()}` (API Gateway context values must be strings).
+  Every failure is a Deny with `principalId` "unauthorized": a `ValidationError` (missing header or
+  `methodArn`), an `AuthenticationError` (a refused credential, or a header that is not `Bearer
+  <token>`: the former `_extract_token`, which accepted a bare token, is gone), or any other
+  exception. The bypass is unchanged and answers before the provider is consulted.
+- The REST Lambda router (`deployment/aws/serverless/core/router/rest_lambda.py`):
+  `DefaultEndpointsHandler._parse_body` assigns `_principal_from_event(event)` to the body it parsed,
+  rebuilding the principal from `event["requestContext"]["authorizer"]["principal"]` when present,
+  else anonymous, so both `process_chat_request` and `_send_to_queue` receive it; a `principal` the
+  client put in the body was dropped by `from_payload`.
 - `GCPAuthorizer` (`deployment/gcp/akauthorizer.py`) is deleted: `RESTAPI` installs the identity
-  dependency itself. `AzureFunctions.handler` (`deployment/azure/akfunction.py:27-50`) runs
-  `RequestAuthenticator.authenticate_bearer(req.headers.get("Authorization"), ...)` and answers
-  401 on `HTTPException`, then assigns the principal to the body.
+  dependency itself. `AzureFunctions.handler` (`deployment/azure/akfunction.py`) runs
+  `RequestAuthenticator.from_config().authenticate_bearer(req.headers.get("Authorization"),
+  RequestContext(path=req.url, http_method=req.method, headers=dict(req.headers)))` under
+  `run_async_sync` before it reads the body, answers 401 `{"error": <public detail>, "session_id":
+  null}` on `AuthenticationError` (the identity error `authenticate_bearer` raises; the
+  `HTTPException` the design named belongs to the FastAPI dependency), then assigns the principal to
+  the body; without a header or an `identity` block the request runs anonymously.
 
 #### 8.10 Threads (`integration/thread/`)
 
@@ -1339,9 +1375,18 @@ New files under `ak-py/tests/`:
   pre-change task body (no principal) firing anonymous and the fire-time level re-check skipping
   with `last_error` join this file in iteration 19.
 - `test_deployment_identity.py`: `APIGatewayAuthorizer` policy context carrying the serialized
-  principal and the REST router rebuilding it; the ECS and Lambda `$connect` handlers keyed by
-  subject and refusing an invalid token; `AzureFunctions.handler` 401; the removed
-  `set_auth_handler` and `GCPAuthorizer` names raising `ImportError`/`AttributeError`.
+  principal and the REST router rebuilding it (a client-sent `principal` replaced, the direct chat
+  and queued bodies carrying it); the ECS and Lambda `$connect` handlers keyed by subject, refusing
+  an invalid or missing token and a build without an identity block; ECS and Lambda frames resolving
+  the stored principal (401 or `ValueError` without one), the queued, direct and custom routes
+  carrying it; `AzureFunctions.handler` 401 before the body is read, anonymous without a header; the
+  AWS connection store writing and rebuilding the `principal` attribute (`None` for a legacy row);
+  the removed `agentkernel.auth` module, `set_auth_handler`, `set_auth_validator`,
+  `add_auth_handlers` and `GCPAuthorizer` names, and the validator-free entry-point signatures. The
+  provider is the `static_identity` fixture in `tests/conftest.py` (a recording `static` provider
+  installed on `IdentityProviderFactory.get`, so the deployment modules' `SimpleNamespace` config
+  stubs need no `identity` or `secret` block; the construction-from-config path is pinned in
+  `test_identity_providers`).
 
 Changed files and the exact targets that move:
 
@@ -1361,8 +1406,10 @@ Changed files and the exact targets that move:
 - `tests/test_ecs_io_handler.py:23-64`: `add_auth_handlers` assertions deleted; the "requires
   auth_validator" cases become "requires an identity block".
 - `tests/test_ecs_websocket_routes.py:30-42, 298-339`: `_FakeValidator` and the
-  `set_auth_handler` calls become a static provider in the `AKConfig.get` stub (37); custom route
-  ctx is `{"message", "principal"}` (192-204).
+  `set_auth_handler` calls become the `static_identity` conftest fixture; `WSRouteContext` is built
+  with `principal`, `build_route_context` stubs `get_principal`, `get_default_handlers` without an
+  identity block is an `AKConfigError` case, and the custom route ctx is `{"message", "principal"}`
+  (192-204).
 - `tests/test_agui_handler.py:48-52, 137-154, 208-294, 594` and `tests/test_agui_resume.py:38-40,
   112`, `tests/test_agui_queue_handler.py:67-69, 90, 116, 413-414, 568`: `StaticAuthoriser` /
   `_Auth` become a static provider in the config stubs; `agui.agents` cases (208-211, 274-294)
@@ -1396,9 +1443,12 @@ Changed files and the exact targets that move:
   OpenAPI assertion; a form carrying it is asserted a 400 with nothing captured.
 - `tests/test_serverless_request_handle.py:5-91, 147-150`: envelope `user_id` cases become
   rejection cases (`ValueError`), the SQS attribute case (134-143) stays.
-- `tests/test_ws_lambda_stream.py:8-24`: the frame drops `"user_id"`; `tests/test_akauthorizer.py`
-  and `tests/test_authorizer_webhook_bypass.py:38-41`: the mocked validator becomes a static
-  provider in config; policy context assertions (165, 181, 252-303) check `context["principal"]`.
+- `tests/test_ws_lambda_stream.py:8-24`: the frame drops `"user_id"` and the handlers stub
+  `get_principal` in place of `get_user_id`; `tests/test_akauthorizer.py` and
+  `tests/test_authorizer_webhook_bypass.py:38-41`: the mocked validator becomes the `static_identity`
+  conftest fixture; policy context assertions (165, 181, 252-303) check `context["principal"]`, the
+  bypass cases assert on the provider's recorded calls instead of a mock validator, and the
+  `_extract_token` cases go with the method (a bare token is now a Deny).
 - `tests/test_serverless_agent_runner_schedule.py:33-59`, `tests/test_ecs_agent_runner_schedule.py:32-76`,
   `tests/test_pipeline_agent_runner_schedule.py:59-112`: the trigger body carries `principal`;
   the attribute derived from it on the fallback path.
@@ -1413,8 +1463,10 @@ Changed files and the exact targets that move:
   config stubs gain the three `None` blocks; `A2ACardBuilder.build(descriptor)` call shape; the
   enqueued body carries an anonymous principal.
 - Deleted: `tests/test_auth_handler.py`, `tests/test_authoriser_shared.py` (both pin the removed
-  package); their surviving assertions (bearer parsing, 401 variants, the adapter identity) live
-  in `test_identity_providers.py`.
+  package); their surviving assertions (bearer parsing, 401 variants) live in
+  `test_identity_providers.py`, the thread handler's membership of the `AuthorisedRESTRequestHandler`
+  hierarchy moves to `test_thread_router.TestConstruction`, and the `AuthValidatorAuthoriser`
+  adapter has nothing left to pin.
 
 Run: `cd ak-py && uv run pytest`. The riskiest consumer, `pipeline/request_handler.py` (precheck
 before enqueue on a store-backed registry with no local agents), gets dedicated cases in

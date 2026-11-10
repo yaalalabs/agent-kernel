@@ -6,10 +6,14 @@ from typing import Any, Optional
 
 from pydantic import BaseModel
 
-from ......auth.handler import AuthValidator
 from ......core.chat_service import ChatService
 from ......core.config import AKConfig
-from ......core.model import BaseRequest, StreamChunk
+from ......core.model import BaseRequest, Principal, StreamChunk
+from ......core.util.async_bridge import run_async_sync
+from ......core.util.factory import AKConfigError
+from ......identity.errors import AuthenticationError
+from ......identity.provider.base import RequestContext
+from ......identity.provider.request import RequestAuthenticator
 from ....core.sqs_handler import SQSHandler
 from ....core.websocket_service import AWSWebSocketHandler, WebSocketConnectionStore
 from .common import BaseLambdaRouter
@@ -19,10 +23,11 @@ class LambdaWSHandler(AWSWebSocketHandler):
     """Base class for Lambda WebSocket route handlers; adds Lambda API Gateway event parsing to AWSWebSocketHandler."""
 
     class WSMessageInfo(BaseModel):
-        """WebSocket message information."""
+        """WebSocket message information: the frame's request and the connection's principal (``user_id`` is its subject)."""
 
         user_id: str
         request: BaseRequest
+        principal: Principal
 
     def __init__(self):
         """Initialize the Lambda WebSocket handler from configuration."""
@@ -69,16 +74,21 @@ class LambdaWSHandler(AWSWebSocketHandler):
         """
         Parse WebSocket event to WSMessageInfo object.
 
+        The connection's principal, stored at ``$connect``, becomes the request body's: ``from_payload``
+        dropped anything the frame named.
+
         :param event: WebSocket event dictionary
-        :return: WSMessageInfo object with user_id and request
-        :raises ValueError: If connection_id is missing or user_id cannot be found
+        :return: WSMessageInfo object with the principal, its subject as user_id, and the request
+        :raises ValueError: If connection_id is missing or no principal is stored for it
         """
         request = self._parse_body(event)
         connection_id = self._extract_connection_id(event)
-        user_id = self.get_user_id(connection_id)
-        if not user_id:
-            raise ValueError(f"No user_id found for connection_id: {connection_id}")
-        return self.WSMessageInfo(user_id=user_id, request=request)
+        principal = self.get_principal(connection_id)
+        if principal is None:
+            raise ValueError(f"No principal found for connection_id: {connection_id}")
+        if request.body is not None:
+            request.body.principal = principal
+        return self.WSMessageInfo(user_id=principal.subject, request=request, principal=principal)
 
     def _handle_msg_and_brdcst(
         self,
@@ -136,25 +146,23 @@ class LambdaWSHandler(AWSWebSocketHandler):
 class ConnectionRoutesHandler(LambdaWSHandler):
     """Handles WebSocket connection lifecycle routes ($connect, $disconnect).
 
-    This handler is responsible for managing WebSocket connections and requires
-    authentication tokens before allowing connections.
-
-    Authentication is mandatory for WebSocket connections. The auth_validator
-    must be provided and will validate JWT tokens. user_id is extracted from the
-    JWT token's user_id claim after signature verification. The JWT token should
-    include a user_id claim containing the user's identifier (email, username,
-    or any other identifier).
+    Authentication is mandatory: ``$connect`` validates the ``token`` query parameter through the
+    configured identity provider and keys the connection by the principal's subject, storing the
+    whole principal for the frames that follow.
     """
 
     _log = logging.getLogger("ak.aws.serverless.connection_routes")
 
-    def __init__(self, auth_validator: AuthValidator):
-        """Initialize connection routes handler.
+    def __init__(self):
+        """Build the handler over the configured identity provider.
 
-        :param auth_validator: Required auth validator for $connect route
+        :raises AKConfigError: If no identity provider is configured: the connection is keyed by the
+            authenticated subject, so a handshake nobody can authenticate cannot be served.
         """
         super().__init__()
-        self.auth_validator = auth_validator
+        self._authenticator = RequestAuthenticator.from_config()
+        if self._authenticator.provider is None:
+            raise AKConfigError("the WebSocket connection routes require an identity block: the connection is keyed by the authenticated subject")
 
     def _extract_auth_token(self, event: dict[str, Any]) -> str | None:
         """
@@ -184,8 +192,8 @@ class ConnectionRoutesHandler(LambdaWSHandler):
         """
         Handle WebSocket $connect route with mandatory authentication.
 
-        user_id is extracted from the JWT token's user_id claim after validation.
-        The JWT token structure should include a user_id claim containing email, username, or any identifier.
+        The token is validated by the configured identity provider; the provider's reason for a
+        refusal goes to the log and the client sees a generic 401, as on HTTP.
 
         :param event: WebSocket connect event
         :param context: Lambda context object
@@ -198,19 +206,18 @@ class ConnectionRoutesHandler(LambdaWSHandler):
             if not token:
                 return 401, self._build_lambda_response(msg="Authentication token is required", success=False)
 
-            validation_result = self.auth_validator.validate(token)
-            if not validation_result.is_valid:
-                return 401, self._build_lambda_response(msg=validation_result.error_msg or "Authentication failed", success=False)
+            try:
+                principal = run_async_sync(self._authenticator.authenticate_token(token, RequestContext(path=self.CONNECT_ROUTE)))
+            except AuthenticationError as exc:
+                self._log.info(f"Refused WebSocket credential: {exc}")
+                return 401, self._build_lambda_response(msg="Authentication failed", success=False)
+            if principal.is_anonymous:
+                # Unreachable with the provider the constructor demanded; refused rather than keyed on "anonymous".
+                return 401, self._build_lambda_response(msg="Authentication failed", success=False)
 
-            user_id = None
-            if validation_result.claims:
-                user_id = validation_result.claims.get("userId")
-            if not user_id:
-                return 401, self._build_lambda_response(msg="'userId' claim is required in JWT token", success=False)
+            self.on_connect(connection_id=connection_id, principal=principal)
 
-            self.on_connect(connection_id=connection_id, user_id=user_id)
-
-            return 200, self._build_lambda_response(user_id=user_id, msg="WebSocket connection established", success=True)
+            return 200, self._build_lambda_response(user_id=principal.subject, msg="WebSocket connection established", success=True)
 
         except Exception as e:
             self._log.error(f"WebSocket $connect failed: {e}\n{traceback.format_exc()}")
@@ -427,13 +434,12 @@ class WSLambdaRouter(BaseLambdaRouter):
     - If no handler match is found, the router raises ValueError.
     """
 
-    def __init__(self, connection_routes: bool = False, system_routes: bool = True, auth_validator: AuthValidator | None = None):
+    def __init__(self, connection_routes: bool = False, system_routes: bool = True):
         """Initialize WebSocket Lambda router.
 
-        :param connection_routes: Include $connect and $disconnect routes (requires auth_validator)
+        :param connection_routes: Include $connect and $disconnect routes, which authenticate through the configured identity provider
         :param system_routes: Include $default and /chat routes
-        :param auth_validator: Required auth validator for $connect route when connection_routes is True
-        :raises ValueError: If connection_routes is True but auth_validator is not provided
+        :raises AKConfigError: If connection_routes is True and no identity provider is configured
         """
         super().__init__()
         self._log.info("Initializing WebSocket routes")
@@ -443,10 +449,8 @@ class WSLambdaRouter(BaseLambdaRouter):
         self._websocket_routes: dict[str, Callable[[dict[str, Any], Any], Any]] = {}
 
         if connection_routes:
-            if not auth_validator:
-                raise ValueError("auth_validator is required when connection_routes is True")
             self._log.info("Initializing connection routes handler")
-            self._websocket_routes.update(ConnectionRoutesHandler(auth_validator=auth_validator).get_routes())
+            self._websocket_routes.update(ConnectionRoutesHandler().get_routes())
 
         if system_routes:
             self._log.info("Initializing system routes handler")
