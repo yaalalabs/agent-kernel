@@ -1,81 +1,76 @@
 #!/bin/bash
-set -eo pipefail # exit if any command in this script fails
+set -e # exit if any command in this script fails
 
-# The response handler and authorizer deploy as local zips; the request handler and agent runner
-# deploy as container images because both load the agent, and the OpenAI Agents SDK does not fit
-# inside Lambda's 250 MB unzipped zip limit. Terraform builds and pushes those images from
-# ../dist_request_handler and ../dist_agent_runner, so Docker must be running.
-#
-# Pass `local` as the first argument to install agentkernel from ../../../ak-py/dist instead of PyPI.
-LAMBDA_TARGET=(--python-platform x86_64-manylinux_2_34 --python-version 3.12 --only-binary :all:)
-
-install_lambda_dependencies() {
-	local extra="$1" target="$2" local_extras="$3"
-	uv export --extra "$extra" --no-hashes --no-dev >requirements.txt
-	if [[ ${LOCAL_BUILD-} != "local" ]]; then
-		uv pip install -r requirements.txt --target="$target" "${LAMBDA_TARGET[@]}"
-	else
-		uv pip install --force-reinstall --target="$target" --find-links ../../../ak-py/dist "agentkernel[$local_extras]" --no-cache-dir "${LAMBDA_TARGET[@]}"
-	fi
+# Create request handler lambda deployment package (an image: it loads the agent)
+echo "Creating request handler deployment package..."
+create_request_handler_deployment_package() {
+    pushd ../
+    rm -rf dist_request_handler
+    mkdir -p dist_request_handler/data
+    uv export --extra request_handler --no-hashes --no-dev > requirements.txt
+    if [[ ${1-} != "local" ]]; then
+      uv pip install -r requirements.txt --target=dist_request_handler/data
+    else
+      uv pip install --target=dist_request_handler/data --find-links ../../../ak-py/dist --upgrade-package agentkernel --reinstall-package agentkernel agentkernel[aws,api,thread,openai]
+    fi
+    cp -r lambda_request_handler.py agent.py config.yaml dist_request_handler/data
+    popd || exit 1
+    cp Dockerfile.request_handler ../dist_request_handler/Dockerfile
 }
 
-# $1 = the pyproject extra, $2 = the entrypoint files, $3 = the dist directory name,
-# $4 = the extras to force-reinstall from the local ak-py dist.
-create_zip_deployment_package() {
-	local extra="$1" entrypoint="$2" dist="$3" local_extras="$4"
-	echo "Creating $dist deployment package (zip mode, extra: $extra)..."
-	pushd ../
-	rm -rf "$dist" "$dist.zip"
-	mkdir -p "$dist"
-	install_lambda_dependencies "$extra" "$dist" "$local_extras"
-	# shellcheck disable=SC2086 # $entrypoint may name several files
-	cp -r $entrypoint config.yaml "$dist/"
-	cd "$dist" && zip -rq "../$dist.zip" .
-	popd || exit 1
+# Create agent runner lambda deployment package
+echo "Creating agent runner deployment package..."
+create_agent_runner_deployment_package() {
+    pushd ../
+    rm -rf dist_agent_runner
+    mkdir -p dist_agent_runner/data
+    uv export --extra agent_runner --no-hashes --no-dev > requirements.txt
+    if [[ ${1-} != "local" ]]; then
+      uv pip install -r requirements.txt --target=dist_agent_runner/data
+    else
+      uv pip install --target=dist_agent_runner/data --find-links ../../../ak-py/dist --upgrade-package agentkernel --reinstall-package agentkernel agentkernel[aws,api,openai]
+    fi
+    cp -r lambda_agent_runner.py agent.py config.yaml dist_agent_runner/data
+    popd || exit 1
+    cp Dockerfile.agent_runner ../dist_agent_runner/Dockerfile
 }
 
-# $1 = the pyproject extra, $2 = the entrypoint files, $3 = the dist directory name,
-# $4 = the extras to force-reinstall from the local ak-py dist.
-# The dependencies and the entrypoint go into data/, which Dockerfile.<extra> copies to /var/task.
-create_image_deployment_package() {
-	local extra="$1" entrypoint="$2" dist="$3" local_extras="$4"
-	echo "Creating $dist deployment package (image mode, extra: $extra)..."
-	pushd ../
-	rm -rf "$dist"
-	mkdir -p "$dist/data"
-	install_lambda_dependencies "$extra" "$dist/data" "$local_extras"
-	# shellcheck disable=SC2086 # $entrypoint may name several files
-	cp -r $entrypoint config.yaml "$dist/data"
-	popd || exit 1
-	cp "Dockerfile.$extra" "../$dist/Dockerfile"
+echo "Creating response handler deployment package..."
+create_response_handler_deployment_package() {
+    pushd ../
+    rm -rf dist_response_handler dist_response_handler.zip
+    mkdir -p dist_response_handler
+    uv export --extra response_handler --no-hashes --no-dev > requirements.txt
+    if [[ ${1-} != "local" ]]; then
+      uv pip install -r requirements.txt --target=dist_response_handler
+    else
+      uv pip install --target=dist_response_handler --find-links ../../../ak-py/dist --upgrade-package agentkernel --reinstall-package agentkernel agentkernel[aws]
+    fi
+    cp -r lambda_response_handler.py config.yaml dist_response_handler/
+    cd dist_response_handler && zip -r ../dist_response_handler.zip .
+    popd || exit 1
 }
 
-report_zip_size() {
-	# Lambda's hard limit for a zip-deployed function is 250 MB unzipped.
-	local dist="$1"
-	local unzipped
-	unzipped=$(du -sm "../$dist" | cut -f1)
-	echo "  $dist: $(du -h "../$dist.zip" | cut -f1) zipped, ${unzipped} MB unzipped"
-	if ((unzipped > 250)); then
-		echo "  WARNING: $dist exceeds Lambda's 250 MB unzipped limit. Move dependencies into a Lambda" >&2
-		echo "           layer or switch this function to package_type = \"Image\" like the agent runner." >&2
-	fi
+echo "Creating auth deployment package..."
+create_auth_deployment_package() {
+    pushd ../
+    rm -rf dist_auth dist_auth.zip
+    mkdir -p dist_auth
+    uv export --extra authorizer --no-hashes --no-dev > requirements.txt
+    if [[ ${1-} != "local" ]]; then
+      uv pip install -r requirements.txt --target=dist_auth
+    else
+      uv pip install --target=dist_auth --find-links ../../../ak-py/dist --upgrade-package agentkernel --reinstall-package agentkernel agentkernel[aws]
+    fi
+    cp -r lambda_auth.py config.yaml dist_auth/
+    cd dist_auth && zip -r ../dist_auth.zip .
+    popd || exit 1
 }
 
-LOCAL_BUILD=${1-}
-
-create_image_deployment_package request_handler "lambda_request_handler.py agent.py" dist_request_handler "aws,api,thread,openai"
-create_image_deployment_package agent_runner "lambda_agent_runner.py agent.py" dist_agent_runner "aws,api,openai"
-create_zip_deployment_package response_handler lambda_response_handler.py dist_response_handler "aws"
-create_zip_deployment_package authorizer lambda_auth.py dist_auth "aws"
-
-echo "Package sizes:"
-report_zip_size dist_response_handler
-report_zip_size dist_auth
-echo "  dist_request_handler: $(du -sh ../dist_request_handler | cut -f1) image build context"
-echo "  dist_agent_runner: $(du -sh ../dist_agent_runner | cut -f1) image build context"
-
-rm -f ../requirements.txt
+create_request_handler_deployment_package $1
+create_agent_runner_deployment_package $1
+create_response_handler_deployment_package $1
+create_auth_deployment_package $1
 
 terraform init
 terraform apply
