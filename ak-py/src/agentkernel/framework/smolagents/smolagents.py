@@ -1,17 +1,29 @@
 import asyncio
 import functools
 import inspect
+import json
 from collections.abc import AsyncGenerator, Callable, Mapping
 from typing import Any, ClassVar
+from uuid import uuid4
 
-from smolagents import CodeAgent, MultiStepAgent, ToolCallingAgent
+from smolagents import (
+    ActionStep,
+    ChatMessageStreamDelta,
+    CodeAgent,
+    FinalAnswerStep,
+    MultiStepAgent,
+    PlanningStep,
+    ToolCall,
+    ToolCallingAgent,
+    ToolOutput,
+)
 from smolagents import tool as smol_tool
 
 from ...core import Agent as BaseAgent
 from ...core import Module, Runner, Runtime, Session, ToolBuilder, ToolContext
 from ...core.builder import A2ACardBuilder
 from ...core.config import AKConfig
-from ...core.event import StreamEvent
+from ...core.event import MessageEnd, MessageStart, StreamEvent, TextDelta, ToolCallArgs, ToolCallEnd, ToolCallResult, ToolCallStart
 from ...core.model import (
     AgentReply,
     AgentReplyAny,
@@ -61,6 +73,212 @@ class SmolagentsSession:
         self._items.clear()
 
 
+class _SmolagentsStreamMapper:
+    """
+    Translates one smolagents run generator into Agent Kernel stream events.
+
+    Deltas carry prose and partial tool calls; complete `ToolCall` / `ToolOutput` objects follow
+    them and close the calls. When the model has no `generate_stream`, smolagents yields whole
+    `ActionStep` / `PlanningStep` objects instead, so their text and calls are emitted as a fallback.
+    State is per-run; a `Runner` instance is shared across sessions.
+    """
+
+    def __init__(self):
+        """
+        Initializes a per-run mapper.
+        """
+        self._message_id: str | None = None
+        self._step_text = ""
+        self._last_step_text = ""
+        self._text_emitted_this_step = False
+        self._index_ids: dict[int, str] = {}
+        self._open_calls: dict[str, str] = {}
+        self._seen_calls: set[str] = set()
+        self._aliases: dict[str, str] = {}
+        self._pending_no_id: list[str] = []
+
+    def events(self, item: Any) -> list[StreamEvent]:
+        """
+        Maps one smolagents stream item onto zero or more AK events.
+        :param item: An item yielded by `run(..., stream=True)`.
+        :return: The AK events this item produces.
+        """
+        if isinstance(item, ChatMessageStreamDelta):
+            return self._delta(item)
+        if isinstance(item, ToolCall):
+            return self._tool_call(item)
+        if isinstance(item, ToolOutput):
+            return self._tool_output(item)
+        if isinstance(item, (ActionStep, PlanningStep)):
+            return self._close_step(item)
+        if isinstance(item, FinalAnswerStep):
+            return self._final_answer(item)
+        return []
+
+    def close(self) -> list[StreamEvent]:
+        """
+        Closes every boundary the stream left open.
+        :return: The closing events.
+        """
+        events = self._close_calls()
+        events.extend(self._close_message())
+        return events
+
+    def _delta(self, item: ChatMessageStreamDelta) -> list[StreamEvent]:
+        events: list[StreamEvent] = []
+        if item.content:
+            events.extend(self._close_calls())
+            events.extend(self._open_message())
+            self._text_emitted_this_step = True
+            self._step_text += item.content
+            events.append(TextDelta(message_id=self._message_id, content=item.content))
+        for delta in item.tool_calls or []:
+            events.extend(self._tool_delta(delta))
+        return events
+
+    def _tool_delta(self, delta: Any) -> list[StreamEvent]:
+        events = self._close_message()
+        index = getattr(delta, "index", None)
+        index = 0 if index is None else index
+        function = getattr(delta, "function", None)
+        name = getattr(function, "name", None) if function is not None else None
+        call_id = getattr(delta, "id", None) or self._index_ids.get(index)
+        if call_id is None:
+            call_id = uuid4().hex
+        self._index_ids[index] = call_id
+        if call_id not in self._open_calls:
+            self._open_calls[call_id] = name or ""
+            self._seen_calls.add(call_id)
+            events.append(ToolCallStart(tool_call_id=call_id, name=name or ""))
+        arguments = getattr(function, "arguments", None) if function is not None else None
+        if arguments:
+            events.append(ToolCallArgs(tool_call_id=call_id, delta=arguments))
+        return events
+
+    def _tool_call(self, item: ToolCall) -> list[StreamEvent]:
+        events = self._close_message()
+        actual_id = item.id or ""
+        if actual_id and actual_id in self._open_calls:
+            self._open_calls.pop(actual_id, None)
+            self._seen_calls.add(actual_id)
+            events.append(ToolCallEnd(tool_call_id=actual_id))
+            return events
+        if actual_id and actual_id in self._seen_calls:
+            return events
+        # A complete ToolCall follows the deltas for the same call. When the deltas carried no id (or a
+        # different one), close the call that was already announced rather than announcing a duplicate.
+        target = self._match_open(item.name)
+        if target is not None:
+            self._open_calls.pop(target, None)
+            self._seen_calls.add(target)
+            if actual_id:
+                self._aliases[actual_id] = target
+                self._seen_calls.add(actual_id)
+            else:
+                self._pending_no_id.append(target)
+            events.append(ToolCallEnd(tool_call_id=target))
+            return events
+        call_id = actual_id or uuid4().hex
+        events.append(ToolCallStart(tool_call_id=call_id, name=item.name or ""))
+        if item.arguments is not None:
+            events.append(ToolCallArgs(tool_call_id=call_id, delta=self._arguments_text(item.arguments)))
+        self._seen_calls.add(call_id)
+        events.append(ToolCallEnd(tool_call_id=call_id))
+        return events
+
+    def _tool_output(self, item: ToolOutput) -> list[StreamEvent]:
+        actual_id = item.id or getattr(item.tool_call, "id", None) or ""
+        if not actual_id and self._pending_no_id:
+            call_id = self._pending_no_id.pop(0)
+        else:
+            call_id = self._aliases.pop(actual_id, actual_id)
+            if not call_id:
+                call_id = self._match_open(getattr(item.tool_call, "name", None)) or uuid4().hex
+        events: list[StreamEvent] = []
+        if call_id in self._open_calls:
+            self._open_calls.pop(call_id, None)
+            events.append(ToolCallEnd(tool_call_id=call_id))
+        events.append(ToolCallResult(tool_call_id=call_id, content=self._text(item.output)))
+        return events
+
+    def _match_open(self, name: str | None) -> str | None:
+        matches = [call_id for call_id, call_name in self._open_calls.items() if call_name == (name or "")]
+        if not matches and len(self._open_calls) == 1:
+            matches = list(self._open_calls)
+        return matches[0] if matches else None
+
+    def _close_step(self, item: ActionStep | PlanningStep) -> list[StreamEvent]:
+        events = self._close_calls()
+        events.extend(self._close_message())
+        if not self._text_emitted_this_step:
+            text = item.model_output if isinstance(item, ActionStep) else item.plan
+            if isinstance(text, str) and text.strip():
+                message_id = uuid4().hex
+                events.extend(
+                    [MessageStart(message_id=message_id), TextDelta(message_id=message_id, content=text), MessageEnd(message_id=message_id)]
+                )
+                self._step_text = text
+        for tool_call in getattr(item, "tool_calls", None) or []:
+            if getattr(tool_call, "id", None) not in self._seen_calls:
+                events.extend(self._tool_call(tool_call))
+        self._last_step_text = self._step_text.strip()
+        self._step_text = ""
+        self._index_ids.clear()
+        self._text_emitted_this_step = False
+        return events
+
+    def _final_answer(self, item: FinalAnswerStep) -> list[StreamEvent]:
+        events = self._close_calls()
+        events.extend(self._close_message())
+        text = self._text(item.output)
+        last_text = self._last_step_text or self._step_text.strip()
+        if text and text != last_text:
+            message_id = uuid4().hex
+            events.extend([MessageStart(message_id=message_id), TextDelta(message_id=message_id, content=text), MessageEnd(message_id=message_id)])
+        return events
+
+    def _open_message(self) -> list[StreamEvent]:
+        if self._message_id is not None:
+            return []
+        self._message_id = uuid4().hex
+        return [MessageStart(message_id=self._message_id)]
+
+    def _close_message(self) -> list[StreamEvent]:
+        if self._message_id is None:
+            return []
+        message_id, self._message_id = self._message_id, None
+        return [MessageEnd(message_id=message_id)]
+
+    def _close_calls(self) -> list[StreamEvent]:
+        if not self._open_calls:
+            return []
+        events = [ToolCallEnd(tool_call_id=call_id) for call_id in self._open_calls]
+        self._open_calls.clear()
+        return events
+
+    @staticmethod
+    def _arguments_text(value: Any) -> str:
+        if isinstance(value, str):
+            return value
+        try:
+            return json.dumps(value, default=str)
+        except Exception:
+            return str(value)
+
+    @staticmethod
+    def _text(value: Any) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, str):
+            return value
+        if isinstance(value, (dict, list)):
+            try:
+                return json.dumps(value, default=str)
+            except Exception:
+                return str(value)
+        return str(value)
+
+
 class SmolagentsRunner(Runner):
     """
     SmolagentsRunner class provides a runner for smolagents based agents.
@@ -71,6 +289,40 @@ class SmolagentsRunner(Runner):
         Initializes a SmolagentsRunner instance.
         """
         super().__init__(FRAMEWORK)
+
+    @staticmethod
+    def _prompt(requests: list[AgentRequest]) -> tuple[str, AgentReplyText | None]:
+        """
+        Builds the text prompt from the request list.
+        :param requests: The requests to the agent.
+        :return: The prompt and, when the requests cannot be served, the reply to return instead.
+        """
+        prompt = ""
+        for req in requests:
+            if isinstance(req, AgentRequestAny):
+                continue
+            if isinstance(req, AgentRequestText):
+                prompt = prompt + "\n" + req.prompt if prompt else req.prompt
+            else:
+                return prompt, AgentReplyText(
+                    response="Sorry. Smolagents runner is unable to handle content other than text at the moment",
+                    prompt=prompt,
+                )
+        if not prompt.strip():
+            return prompt, AgentReplyText(response="Sorry. No valid text prompt found in the requests")
+        return prompt, None
+
+    @staticmethod
+    def _next_or_end(iterator: Any) -> tuple[Any, bool]:
+        """
+        Pulls the next item without letting a `StopIteration` cross into an asyncio Future.
+        :param iterator: The synchronous smolagents run generator.
+        :return: The next item and False, or None and True when the generator is exhausted.
+        """
+        try:
+            return next(iterator), False
+        except StopIteration:
+            return None, True
 
     @staticmethod
     def _session(session: Session) -> SmolagentsSession | None:
@@ -133,23 +385,13 @@ class SmolagentsRunner(Runner):
         :param requests: The list of incoming requests.
         :return: The result of the agent execution.
         """
-        prompt = ""
         context: ToolContext | None = None
+        prompt = ""
         try:
             context = ToolContext(Runtime.current(), agent, session, requests).set()
-            for req in requests:
-                if isinstance(req, AgentRequestAny):
-                    continue
-                if isinstance(req, AgentRequestText):
-                    prompt = prompt + "\n" + req.prompt if prompt else req.prompt
-                else:
-                    return AgentReplyText(
-                        response="Sorry. Smolagents runner is unable to handle content other than text at the moment",
-                        prompt=prompt,
-                    )
-
-            if not prompt.strip():
-                return AgentReplyText(response="Sorry. No valid text prompt found in the requests")
+            prompt, invalid = self._prompt(requests)
+            if invalid is not None:
+                return invalid
 
             # Resolved once per run: the static options with a declared factory's result merged over them.
             options = await agent.resolve_run_options(session, requests)
@@ -190,20 +432,85 @@ class SmolagentsRunner(Runner):
             if context is not None:
                 context.reset()
 
-    @property
-    def supports_streaming(self) -> bool:
-        """
-        :return: False — this adapter does not implement streaming, so stream() always raises.
-        """
-        return False
-
     async def stream(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[StreamEvent, None]:
         """
-        smolagents does not support SSE streaming.
-        :raises NotImplementedError: Always raised — use rest_sync mode instead.
+        Streams the smolagents agent response as Agent Kernel stream events.
+
+        smolagents exposes a synchronous generator (`run(..., stream=True)`), so each item is pulled
+        on a worker thread to keep the event loop responsive. With `stream_outputs` enabled the
+        generator yields prose and tool-call deltas; the complete `ToolCall` / `ToolOutput` objects
+        that follow are what close a call and carry its result. Models without `generate_stream`
+        still yield whole steps, which the mapper emits as text and calls.
+
+        :param agent: The smolagents-backed agent wrapper to run.
+        :param session: The session to use for memory hydration and sync.
+        :param requests: The list of incoming requests.
+        :return: An async generator yielding StreamEvent objects.
         """
-        raise NotImplementedError("smolagents does not support SSE streaming. Use rest_sync mode.")
-        yield  # make this an async generator to satisfy the type contract
+        context: ToolContext | None = None
+        generator: Any = None
+        previous_stream_outputs: Any = None
+        try:
+            context = ToolContext(Runtime.current(), agent, session, requests).set()
+            prompt, invalid = self._prompt(requests)
+            if invalid is not None:
+                message_id = uuid4().hex
+                yield MessageStart(message_id=message_id)
+                yield TextDelta(message_id=message_id, content=invalid.response)
+                yield MessageEnd(message_id=message_id)
+                return
+
+            # Resolved once per run: the static options with a declared factory's result merged over them.
+            options = await agent.resolve_run_options(session, requests)
+
+            # Rehydrate framework memory from the AgentKernel session before execution.
+            self._hydrate_memory(agent, session)
+
+            # Injected as smolagents additional_args, only when a context is present.
+            incoming = self._load_framework_context(session)
+            # Resolved run options (max_steps, ...) first; reset, stream and additional_args are AK-owned and written last.
+            run_kwargs: dict[str, Any] = self._native_kwargs(options, reset=False, stream=True)
+            if incoming is not None:
+                run_kwargs["additional_args"] = incoming
+            else:
+                run_kwargs.pop("additional_args", None)  # AK owns the key in both branches; the no-context call shape is unchanged
+
+            # Ask smolagents to emit token/tool deltas in addition to the completed steps.
+            previous_stream_outputs = getattr(agent.agent, "stream_outputs", False)
+            agent.agent.stream_outputs = True
+
+            generator = agent.agent.run(prompt, **run_kwargs)
+            mapper = _SmolagentsStreamMapper()
+            while True:
+                item, done = await asyncio.to_thread(self._next_or_end, generator)
+                if done:
+                    break
+                for event in mapper.events(item):
+                    yield event
+            for event in mapper.close():
+                yield event
+
+            # Persist updated framework memory back to the AgentKernel session, only after a normal drain.
+            self._sync_memory(agent, session)
+
+            # Only the keys the caller seeded: agent.state also holds framework-internal entries with no prefix
+            # to filter on, so a brand-new key a tool adds is not round-tripped.
+            produced: dict[str, Any] | None = None
+            if incoming is not None and hasattr(agent.agent, "state") and isinstance(agent.agent.state, dict):
+                produced = {k: agent.agent.state[k] for k in incoming if k in agent.agent.state}
+            self._store_framework_context(session, incoming, produced)
+        finally:
+            close = getattr(generator, "close", None) if generator is not None else None
+            if close is not None:
+                try:
+                    close()
+                except Exception as e:
+                    # A generator already unwound by an exception can refuse to close; the run is over either way.
+                    logging.getLogger("ak.smolagents.runner").debug(f"smolagents stream generator was already closed: {e}")
+            if previous_stream_outputs is not None:
+                agent.agent.stream_outputs = previous_stream_outputs
+            if context is not None:
+                context.reset()
 
 
 class SmolagentsAgent(BaseAgent):

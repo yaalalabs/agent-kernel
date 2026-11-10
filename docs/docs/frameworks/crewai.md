@@ -113,9 +113,11 @@ To change the schema after the module is loaded, set it on the wrapped agent ins
 
 With `output_pydantic`, the `CrewOutput.pydantic` result is converted via `model_dump()`; with `output_json`, `CrewOutput.json_dict` is used directly. Plain-text crews continue to return `AgentReplyText` from `CrewOutput.raw`. `str(reply)` on an `AgentReplyAny` returns the JSON-serialized content, so text-based consumers work unchanged. See [Reply Types](../core-concepts/runner#structured-replies) for how structured replies are surfaced, and [Execution Hooks](../integrations/hooks#structured-replies-in-hooks) for how hooks receive them.
 
-:::info Streaming limitation
-Structured output applies to non-streaming execution only. Agent Kernel's CrewAI adapter does not
-implement `Runner.stream()` yet (CrewAI itself supports streaming).
+:::info Streaming and structured output
+Agent Kernel's CrewAI adapter implements `Runner.stream()`, but structured output still applies
+to non-streaming execution only. A streaming client receives text and tool-call events and reconstructs
+the final answer from them rather than receiving an `AgentReplyAny`. CrewAI's streaming API does not
+expose tool results, so the adapter emits tool call start/arguments/end but no `ToolCallResult`.
 :::
 
 ## Per-run context/state
@@ -126,8 +128,8 @@ CrewAI **does not support** per-run caller context/state. Its `kickoff(inputs=..
 
 The `Crew(...)` constructor's own arguments (`step_callback`, `task_callback`, `max_rpm`, `planning`,
 ...) are declared per agent with [`Module.run_options`](../core-concepts/runner.md#native-run-options).
-Agent Kernel builds one `Crew` per run and writes the keys it owns (`agents`, `tasks`, `memory`)
-last; `verbose=False` is a default you may override. CrewAI agents are registered by `role`, so that
+Agent Kernel builds one `Crew` per run and writes the keys it owns (`agents`, `tasks`, `memory`,
+`stream`) last; `verbose=False` is a default you may override. CrewAI agents are registered by `role`, so that
 is what resolves the agent:
 
 ```python
@@ -138,7 +140,7 @@ CrewAIModule([agent]).run_options(
 )
 ```
 
-Reserved (raise `ValueError` at declaration): `agents`, `tasks`, `memory`. Task-level options stay on
+Reserved (raise `ValueError` at declaration): `agents`, `tasks`, `memory`, `stream`. Task-level options stay on
 the module constructor (`output_pydantic`, `output_json`).
 
 ## Human in the loop
@@ -161,6 +163,6 @@ The framework's own human-in-the-loop facility does not intersect what Agent Ker
 
 ## Example
 
-See [examples/cli/crewai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/crewai) for complete examples.
+See [examples/cli/crewai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/crewai) for complete examples, and [examples/api/crewai-streaming](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/crewai-streaming) for token streaming over SSE.
 
 For per-agent native run options, see [examples/cli/crewai-run-options](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/crewai-run-options) (a `Crew` `step_callback` and `max_rpm`, with a deterministic `Run stats:` line on every reply).

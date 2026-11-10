@@ -201,7 +201,7 @@ must therefore test for the key rather than assume every non-terminal frame has 
 
 - If a pre-hook halts (e.g., an input guardrail trips), the stream yields a single `StreamChunk` with `error` set and `done: true`.
 - `delta` is populated only when `event` is a `TextDelta`; every other event type (message/step boundaries, tool calls, reasoning) carries `event` alone, with no `delta` key in the wire frame.
-- **Framework support**: OpenAI Agents SDK, LangGraph, and Google ADK stream natively. CrewAI and Smolagents declare `supports_streaming = False` and raise `NotImplementedError` with `message_type: delta`.
+- **Framework support**: all built-in adapters stream natively as AK `StreamEvent`s.
 - With `execution.mode: async` and `message_type: delta` (on AWS serverless and AWS ECS containerized), the same `StreamChunk`s are delivered as WebSocket `STREAM_CHUNK` messages instead of SSE; see below.
 - `execution.mode: stream` was removed: use `rest_sync` with `message_type: delta` for SSE, or `async` with `message_type: delta` for WebSocket chunks.
 

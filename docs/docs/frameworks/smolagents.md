@@ -113,9 +113,13 @@ SmolagentsModule([agent])
 
 Pydantic results are converted via `model_dump()`, and `str(reply)` returns the JSON-serialized content, so text-based consumers work unchanged. See [Reply Types](../core-concepts/runner#structured-replies) for how structured replies are surfaced, and [Execution Hooks](../integrations/hooks#structured-replies-in-hooks) for how hooks receive them.
 
-:::info Streaming limitation
-Structured output applies to non-streaming execution only. Agent Kernel's Smolagents adapter does not
-implement `Runner.stream()` yet (smolagents itself supports streaming).
+:::info Streaming and structured output
+Agent Kernel's Smolagents adapter implements `Runner.stream()`, but structured output still applies
+to non-streaming execution only. A streaming client receives text and tool-call events and reconstructs
+the final answer from them rather than receiving an `AgentReplyAny`.
+
+Token-level deltas need a model that implements `generate_stream`. Without it, smolagents yields whole
+steps, so the adapter emits each step's text and tool calls at once rather than token by token.
 :::
 
 ## Per-run context/state
@@ -159,9 +163,10 @@ The framework's own human-in-the-loop facility does not intersect what Agent Ker
 - ✅ Session management via Agent Kernel runtime
 - ✅ Framework-agnostic tool binding
 - ✅ Structured output (dict / Pydantic `final_answer` → `AgentReplyAny`)
+- ✅ Token streaming
 
 ## Example
 
-See [examples/cli/smolagents](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/smolagents) for complete examples.
+See [examples/cli/smolagents](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/smolagents) for complete examples, and [examples/api/smolagents-streaming](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/smolagents-streaming) for token streaming over SSE.
 
 For per-agent native run options, see [examples/cli/smolagents-run-options](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/smolagents-run-options) (`max_steps`, with progress via the native `step_callbacks` constructor argument and a deterministic `Run stats:` line on every reply).

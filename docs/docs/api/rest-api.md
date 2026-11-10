@@ -449,7 +449,7 @@ data: {"done": true, "session_id": "user-123"}
 
 ```
 
-`event` carries the full typed stream event the runner emitted — a discriminated union of message boundaries (`message_start`/`message_end`), text (`text_delta`), tool calls (`tool_call_start`/`tool_call_args`/`tool_call_end`/`tool_call_result`), steps (`step_start`/`step_end`), and reasoning (`reasoning_start`/`reasoning_delta`/`reasoning_end`). `delta` is populated **only** when `event.type` is `text_delta`, and always equals `event.content`; every other frame omits `delta` entirely, so accumulate the full response by concatenating `delta` where present rather than by frame position. The final chunk has `"done": true` and carries neither `delta` nor `event`. If an unrecoverable error occurs mid-stream, the final chunk contains `"error"` instead.
+`event` carries the full typed stream event the runner emitted — a discriminated union of message boundaries (`message_start`/`message_end`), text (`text_delta`), tool calls (`tool_call_start`/`tool_call_args`/`tool_call_end`/`tool_call_result`), steps (`step_start`/`step_end`), and reasoning (`reasoning_start`/`reasoning_delta`/`reasoning_end`). `delta` is populated **only** when `event.type` is `text_delta`, and always equals `event.content`; every other frame omits `delta` entirely, so accumulate the full response by concatenating `delta` where present rather than by frame position. Streamed text can include intermediate messages (for example, text an agent emits between tool calls), so concatenating every `delta` may not yield only the final answer; use `message_start`/`message_end` to separate messages, or use complete mode when you need just the final reply. The final chunk has `"done": true` and carries neither `delta` nor `event`. If an unrecoverable error occurs mid-stream, the final chunk contains `"error"` instead.
 
 **Client example (Python):**
 
@@ -466,7 +466,7 @@ with httpx.stream("POST", "http://localhost:8000/api/v1/chat", json={
             print(line.removeprefix("data:").strip())
 ```
 
-**Framework support:** OpenAI Agents SDK, Google ADK, LangGraph, Pydantic AI, Microsoft Agent Framework, and the Claude Agent SDK support token streaming. CrewAI and smolagents declare `supports_streaming = False` and raise `NotImplementedError` when `execution.message_type: delta` is used; keep `message_type: complete` (the default) for those frameworks instead.
+**Framework support:** all built-in adapters — OpenAI Agents SDK, CrewAI, LangGraph, Google ADK, Smolagents, Pydantic AI, Microsoft Agent Framework, and the Claude Agent SDK — support token streaming.
 
 For WebSocket-based streaming on AWS Lambda (serverless), see the [AWS Serverless deployment guide](/docs/deployment/aws-serverless#websocket-configuration) and the [streaming-openai example](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/streaming-openai).
 

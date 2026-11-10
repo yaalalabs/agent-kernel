@@ -608,8 +608,8 @@ a2a:
 
 #### AG-UI Server
 
-Stream any streaming-capable agent (OpenAI Agents SDK, LangGraph, Google ADK, Pydantic AI, Microsoft Agent Framework,
-Claude Agent SDK — not CrewAI or Smolagents) to a frontend over the [AG-UI protocol](https://github.com/ag-ui-protocol/ag-ui):
+Stream any streaming-capable agent (all built-in adapters support it) to a frontend over the
+[AG-UI protocol](https://github.com/ag-ui-protocol/ag-ui):
 text, tool calls, reasoning, and an optional shared JSON state, all as one typed event stream.
 
 1. Update `pyproject.toml`:
@@ -799,7 +799,7 @@ module.run_options(agent, options_for, max_turns=25, hooks=ProgressHooks())
 | Google ADK | the per-run `App` (`plugins`), the per-run `Runner(...)` constructor (services) and `run_async` (`run_config`; copied with `streaming_mode=SSE` on a streamed run, `message_type: delta`) | `RunConfig(max_llm_calls=...)` | `plugins=[BasePlugin()]` | `agent`, `app`, `app_name`, `node`, `session_service`, `auto_create_session`, `user_id`, `session_id`, `new_message`, `state_delta`, `invocation_id`, `yield_user_message` |
 | Pydantic AI | `agent.run` / `run_stream_events` (`event_stream_handler` is dropped on a streamed run, `message_type: delta`, with one warning) | `UsageLimits(request_limit=...)` | `event_stream_handler` | `user_prompt`, `message_history`, `deps` |
 | Microsoft Agent Framework | `agent.run` (including `stream=True`); model settings nest inside `options` | native function-invocation configuration on the client | native middleware on the agent or client | `messages`, `session`, `stream` |
-| CrewAI | the per-run `Crew(...)` constructor (`verbose=False` is an overridable default; agents resolve by `role`; `max_rpm` is a forwarded rate limit) | `max_iter` on the native `Agent` (needs nothing from Agent Kernel) | `step_callback` / `task_callback` | `agents`, `tasks`, `memory` |
+| CrewAI | the per-run `Crew(...)` constructor (`verbose=False` is an overridable default; agents resolve by `role`; `max_rpm` is a forwarded rate limit; `stream` is set by the runner) | `max_iter` on the native `Agent` (needs nothing from Agent Kernel) | `step_callback` / `task_callback` | `agents`, `tasks`, `memory`, `stream` |
 | smolagents | `agent.run` | `max_steps` | `step_callbacks` on the agent constructor (needs nothing from Agent Kernel) | `task`, `reset`, `additional_args`, `stream`, `return_full_result` |
 | Claude Agent SDK | the run's `ClaudeAgentOptions` (any field; a name that is not a field is rejected) | `max_turns` (and `max_budget_usd`) | native `hooks` | `resume`, `session_id`, `continue_conversation`, `fork_session`, `resume_session_at`, `resume_drops_turn`, `session_store`, `session_store_flush`, `enable_file_checkpointing`, `include_partial_messages`, and the `ak` entry of `mcp_servers` |
 
