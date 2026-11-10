@@ -1,0 +1,15 @@
+# Agent Kernel local development configuration.
+session:
+  type: in_memory
+  cache:
+    size: 256
+
+logging:
+  ak:
+    level: INFO
+
+# `agent` is left unset (defaults to "") so Telegram messages route to the first agent
+# registered in agent.py — profile_agent — same entry point as the web frontend.
+# AK_TELEGRAM__BOT_TOKEN is read via AKConfig's env var convention, not set here —
+# see README.md for where to get it. Slack was attempted and dropped; see README.md's
+# Known Limitations and AGENTS.md for what was tried.

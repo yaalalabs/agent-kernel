@@ -1,0 +1,417 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Volunteer Matching Platform</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0b0d10;
+    --bg-glow: radial-gradient(60% 50% at 50% -10%, rgba(45, 212, 191, 0.16), transparent 70%);
+    --panel: #14171c;
+    --panel-2: #1b1f26;
+    --border: rgba(255, 255, 255, 0.08);
+    --text: #e7e9ec;
+    --muted: #8b93a1;
+    --accent: #2dd4bf;
+    --accent-2: #22c55e;
+    --accent-fg: #06231d;
+    --error: #f87171;
+    --error-bg: rgba(248, 113, 113, 0.1);
+    --error-border: rgba(248, 113, 113, 0.3);
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg) var(--bg-glow);
+    background-attachment: fixed;
+    color: var(--text);
+    font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+    display: flex;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 32px 16px;
+  }
+  .app {
+    width: 100%;
+    max-width: 680px;
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 64px);
+  }
+  header {
+    padding: 4px 4px 20px;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .brand-icon {
+    width: 44px;
+    height: 44px;
+    flex-shrink: 0;
+    border-radius: 13px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    box-shadow: 0 6px 18px rgba(45, 212, 191, 0.25);
+  }
+  header h1 {
+    font-size: 1.2rem;
+    font-weight: 650;
+    margin: 0 0 2px;
+    letter-spacing: -0.01em;
+  }
+  header p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.85rem;
+  }
+  #chat {
+    flex: 1;
+    background: linear-gradient(180deg, var(--panel), var(--panel) 60%, var(--panel-2));
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 20px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  }
+  #chat::-webkit-scrollbar { width: 8px; }
+  #chat::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.12); border-radius: 8px; }
+  #chat::-webkit-scrollbar-track { background: transparent; }
+
+  .row {
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+    max-width: 88%;
+    animation: rise 0.22s ease-out;
+  }
+  .row.user { align-self: flex-end; flex-direction: row-reverse; }
+  .row.agent { align-self: flex-start; }
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .avatar {
+    width: 28px;
+    height: 28px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+  }
+  .row.user .avatar {
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    color: var(--accent-fg);
+    border: none;
+  }
+
+  .msg {
+    padding: 11px 15px;
+    border-radius: 16px;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    font-size: 0.93rem;
+    word-wrap: break-word;
+  }
+  .row.user .msg {
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    color: var(--accent-fg);
+    font-weight: 500;
+    border-bottom-right-radius: 5px;
+  }
+  .row.agent .msg {
+    background: var(--panel-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-bottom-left-radius: 5px;
+  }
+  .row.agent .msg.error {
+    background: var(--error-bg);
+    color: var(--error);
+    border-color: var(--error-border);
+  }
+  .msg.rendered { white-space: normal; }
+  .msg p { margin: 0 0 8px; }
+  .msg p:last-child { margin-bottom: 0; }
+  .msg ul, .msg ol { margin: 4px 0 8px; padding-left: 20px; }
+  .msg li { margin-bottom: 4px; }
+  .msg li:last-child { margin-bottom: 0; }
+  .msg strong { font-weight: 700; }
+  .msg code {
+    background: rgba(255, 255, 255, 0.08);
+    padding: 1px 5px;
+    border-radius: 5px;
+    font-size: 0.87em;
+    font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  }
+
+  .typing {
+    display: inline-flex;
+    gap: 4px;
+    padding: 4px 2px;
+  }
+  .typing span {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--muted);
+    animation: bounce 1.1s infinite ease-in-out;
+  }
+  .typing span:nth-child(2) { animation-delay: 0.15s; }
+  .typing span:nth-child(3) { animation-delay: 0.3s; }
+  @keyframes bounce {
+    0%, 60%, 100% { transform: translateY(0); opacity: 0.5; }
+    30% { transform: translateY(-4px); opacity: 1; }
+  }
+
+  form {
+    display: flex;
+    gap: 10px;
+    margin-top: 14px;
+  }
+  input[type="text"] {
+    flex: 1;
+    padding: 13px 18px;
+    border-radius: 14px;
+    border: 1px solid var(--border);
+    font-size: 0.93rem;
+    background: var(--panel-2);
+    color: var(--text);
+    outline: none;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  input[type="text"]::placeholder { color: var(--muted); }
+  input[type="text"]:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(45, 212, 191, 0.15);
+  }
+  button {
+    width: 46px;
+    height: 46px;
+    flex-shrink: 0;
+    border: none;
+    border-radius: 14px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    color: var(--accent-fg);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.1s, opacity 0.15s;
+  }
+  button:hover:not(:disabled) { transform: translateY(-1px); }
+  button:active:not(:disabled) { transform: translateY(0); }
+  button:disabled { opacity: 0.4; cursor: default; }
+  button svg { width: 18px; height: 18px; }
+
+  footer {
+    margin-top: 12px;
+    color: var(--muted);
+    font-size: 0.72rem;
+    text-align: center;
+    letter-spacing: 0.01em;
+  }
+</style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <div class="brand">
+        <div class="brand-icon">🤝</div>
+        <div>
+          <h1>Volunteer Match</h1>
+          <p>Tell it your skills, availability, and causes you care about.</p>
+        </div>
+      </div>
+    </header>
+    <div id="chat"></div>
+    <form id="composer">
+      <input id="prompt" type="text" placeholder="Type a message…" autocomplete="off" autofocus />
+      <button id="send" type="submit" aria-label="Send">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="22" y1="2" x2="11" y2="13"></line>
+          <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+        </svg>
+      </button>
+    </form>
+    <footer id="identity"></footer>
+  </div>
+
+<script>
+  // Point this at wherever app.py's RESTAPI.run() is listening.
+  const API_BASE = "http://localhost:8000";
+  const CHAT_ENDPOINT = API_BASE + "/api/v1/chat";
+
+  // Stable per-browser id, persisted across visits. The installed Agent Kernel version
+  // (0.8.1) doesn't propagate a request's user_id down to tools, so the memory feature
+  // (save_user_profile/load_user_profile) actually keys off the Agent Kernel session_id
+  // instead — see tool.py's _current_user_id() for the full explanation. That means this
+  // id must be REUSED across page loads, not regenerated each time, for "remembered across
+  // visits" to work here. Sent as both session_id and user_id for good measure.
+  function getOrCreatePersistedId() {
+    const key = "vmp_persisted_id";
+    let id = localStorage.getItem(key);
+    if (!id) {
+      id = crypto.randomUUID();
+      localStorage.setItem(key, id);
+    }
+    return id;
+  }
+
+  const sessionId = getOrCreatePersistedId();
+  const userId = sessionId;
+
+  document.getElementById("identity").textContent =
+    "Your ID: " + userId.slice(0, 8) + "…  (persists across visits — reload the page to test returning-user memory)";
+
+  const chatEl = document.getElementById("chat");
+  const formEl = document.getElementById("composer");
+  const inputEl = document.getElementById("prompt");
+  const sendBtn = document.getElementById("send");
+
+  function addRow(cls, avatarText, innerBuilder) {
+    const row = document.createElement("div");
+    row.className = "row " + cls;
+
+    const avatar = document.createElement("div");
+    avatar.className = "avatar";
+    avatar.textContent = avatarText;
+
+    const bubble = document.createElement("div");
+    bubble.className = "msg " + cls;
+    innerBuilder(bubble);
+
+    row.appendChild(avatar);
+    row.appendChild(bubble);
+    chatEl.appendChild(row);
+    chatEl.scrollTop = chatEl.scrollHeight;
+    return { row, bubble };
+  }
+
+  // Minimal, dependency-free markdown for agent replies: **bold**, *italic*/_italic_,
+  // `code`, "- "/"* " bullet lists, "1. " numbered lists, blank-line paragraph breaks.
+  // Escapes HTML first so the agent's own text can never inject markup.
+  function escapeHtml(str) {
+    return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  function renderInline(s) {
+    return s
+      .replace(/`([^`]+)`/g, "<code>$1</code>")
+      .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+      .replace(/(^|[^*\w])\*([^*]+)\*(?!\*)/g, "$1<em>$2</em>")
+      .replace(/(^|[^_\w])_([^_]+)_(?!_)/g, "$1<em>$2</em>");
+  }
+
+  function renderMarkdown(text) {
+    const lines = escapeHtml(text).split("\n");
+    let html = "";
+    let listType = null;
+
+    function closeList() {
+      if (listType) {
+        html += listType === "ul" ? "</ul>" : "</ol>";
+        listType = null;
+      }
+    }
+
+    for (const raw of lines) {
+      const line = raw.trim();
+      const bullet = line.match(/^[-*]\s+(.*)/);
+      const numbered = line.match(/^\d+\.\s+(.*)/);
+
+      if (bullet) {
+        if (listType !== "ul") { closeList(); html += "<ul>"; listType = "ul"; }
+        html += "<li>" + renderInline(bullet[1]) + "</li>";
+      } else if (numbered) {
+        if (listType !== "ol") { closeList(); html += "<ol>"; listType = "ol"; }
+        html += "<li>" + renderInline(numbered[1]) + "</li>";
+      } else {
+        closeList();
+        if (line) html += "<p>" + renderInline(line) + "</p>";
+      }
+    }
+    closeList();
+    return html;
+  }
+
+  function addMessage(text, cls) {
+    return addRow(cls === "user" ? "user" : "agent", cls === "user" ? "🧑" : "🤖", (bubble) => {
+      if (cls === "error") {
+        bubble.classList.add("error");
+        bubble.textContent = text;
+      } else if (cls === "agent") {
+        bubble.classList.add("rendered");
+        bubble.innerHTML = renderMarkdown(text);
+      } else {
+        bubble.textContent = text;
+      }
+    }).row;
+  }
+
+  function addTyping() {
+    return addRow("agent", "🤖", (bubble) => {
+      bubble.innerHTML = '<span class="typing"><span></span><span></span><span></span></span>';
+    }).row;
+  }
+
+  async function sendMessage(prompt) {
+    addMessage(prompt, "user");
+    const pending = addTyping();
+    inputEl.value = "";
+    inputEl.disabled = true;
+    sendBtn.disabled = true;
+
+    try {
+      const res = await fetch(CHAT_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt, session_id: sessionId, user_id: userId }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      pending.remove();
+
+      if (!res.ok) {
+        const detail = (data && (data.detail || data.error)) || res.statusText;
+        addMessage("Error: " + JSON.stringify(detail), "error");
+        return;
+      }
+
+      addMessage(data.result ?? "(empty response)", "agent");
+    } catch (err) {
+      pending.remove();
+      addMessage(
+        "Could not reach the agent at " + API_BASE + ". Is `uv run python app.py` running? (" + err.message + ")",
+        "error"
+      );
+    } finally {
+      inputEl.disabled = false;
+      sendBtn.disabled = false;
+      inputEl.focus();
+    }
+  }
+
+  formEl.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const text = inputEl.value.trim();
+    if (text) sendMessage(text);
+  });
+</script>
+</body>
+</html>

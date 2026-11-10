@@ -1,0 +1,39 @@
+[project]
+name = "volunteer-matching-platform"
+version = "0.1.0"
+description = "Agent Kernel multi-agent solution matching volunteers to opportunities based on skills and interests"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "agentkernel[cli,pydanticai,api,chromadb,telegram]>=0.8.1,<0.9",
+    # agentkernel[pydanticai] installs the provider-agnostic pydantic-ai-slim core only —
+    # this project uses Google Gemini (free tier via Google AI Studio, no card required).
+    "pydantic-ai-slim[google]>=2.13.0",
+    # agentkernel[api]'s /api/v1/chat-multipart route needs this to even register (FastAPI's
+    # Form()/File() params fail at router build time without it); it was only present before
+    # as an indirect dependency of the openai extra, so it must be listed explicitly here.
+    "python-multipart>=0.0.9",
+    # agentkernel.cli hard-imports the POSIX-only `readline` module; this shim
+    # provides it on Windows so `demo.py` doesn't crash on import there.
+    "pyreadline3>=3.5.0 ; sys_platform == 'win32'",
+]
+
+[dependency-groups]
+dev = [
+    "agentkernel[test]>=0.8.1,<0.9",
+    "black>=23.0.0",
+    "isort>=5.0.0",
+    "mypy>=1.0.0",
+    "pytest>=8.0.0",
+]
+
+[tool.uv]
+package = false
+
+[tool.isort]
+profile = "black"
+line_length = 120
+
+[tool.black]
+line-length = 120
+target-version = ["py312"]
