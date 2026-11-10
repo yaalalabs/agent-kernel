@@ -153,7 +153,7 @@ Azure Functions serverless deployment examples:
 
 ### 📁 GCP Serverless Examples (`/examples/gcp-serverless`)
 
-GCP Cloud Run serverless deployment examples (scale-to-zero):
+GCP Cloud Run serverless deployment examples (scale-to-zero). All run in queue mode: an edge service and an agent-runner service over Pub/Sub.
 
 - **`openai/`** - OpenAI agents on Cloud Run with Redis sessions
 - **`openai-auth/`** - OpenAI agents with JWT authentication via API Gateway
@@ -162,7 +162,7 @@ GCP Cloud Run serverless deployment examples (scale-to-zero):
 
 ### 📁 GCP Containerized Examples (`/examples/gcp-containerized`)
 
-GCP Cloud Run containerized deployment examples (always-on):
+GCP Cloud Run containerized deployment examples (always-on). Both run in queue mode: an edge service and an agent-runner service over Pub/Sub.
 
 - **`openai/`** - OpenAI agents on Cloud Run with Redis sessions
 - **`openai-auth/`** - OpenAI agents with JWT authentication via API Gateway

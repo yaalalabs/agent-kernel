@@ -6,7 +6,9 @@ This package contains a demo of Agent Kernel running agents built with OpenAI Ag
 
 This demo deploys the following GCP resources:
 
-- **Cloud Run Service** - Serverless container platform running the Agent Kernel implementation with scale-to-zero capability
+- **Cloud Run Service (edge)** - Serverless container platform running the Agent Kernel implementation with scale-to-zero capability
+- **Agent Runner (Cloud Run)** - A second, private service from the same image. Pub/Sub pushes each request to it; it runs the agents and publishes the reply
+- **Pub/Sub** - Request and reply topics, plus dead-letter topics for messages that keep failing
 - **API Gateway** - OpenAPI-based routing with versioned endpoints and JWT authorization support
 - **Artifact Registry** - Private container registry for storing the Docker image
 - **Memorystore Redis** - In-memory data store for agent memory and session storage
@@ -30,12 +32,35 @@ The application also exposes custom endpoints:
 
 **JWT Authentication**: This example demonstrates JWT authorization at the API Gateway level. All requests to the API Gateway must include a valid JWT token in the `Authorization` header.
 
+## Queue Mode
+
+This example runs in queue mode, the Terraform module's default. One image runs as two Cloud Run
+services, connected by Pub/Sub:
+
+```
+client → API Gateway → edge (Cloud Run) ──publish──▶ agent-input ──push──▶ agent runner (Cloud Run, private)
+                           ▲                                                      │
+                           └──── pull ◀── agent-output ◀────── publish ───────────┘
+                     replies are handed back through Memorystore (Redis)
+```
+
+- **Edge** (`main()` in `app.py`, `CloudRun.run()`): serves the API, publishes each chat request, and
+  answers with the reply once it arrives.
+- **Agent runner** (`runner()` in `app.py`, `CloudRunAgentRunner.run()`): Pub/Sub pushes each request to
+  it; it runs the agents and publishes the reply. Terraform starts it with `agent_runner.command` in
+  `deploy/main.tf`.
+- `config.yaml` declares the Pub/Sub transport and the Redis reply store. Terraform injects the topic
+  names and the Redis URL.
+- Pub/Sub waits at most 600 seconds for the runner to answer. A longer agent run is delivered again and
+  runs a second time.
+
 ## Prerequisites
 
 - GCP CLI (gcloud) configured with appropriate credentials and project access
 - Terraform (`1.9.5` or higher) installed
 - Docker installed (for local image building)
 - An existing GCP project with appropriate permissions
+- The Pub/Sub API (`pubsub.googleapis.com`) enabled in that project
 - OpenAI API key with sufficient credits
 
 ## Configuration
@@ -240,7 +265,7 @@ The Cloud Run service is configured with:
 - **Scaling**: `min_instance_count = 0` for true serverless behavior (scales to zero when idle)
 - **CPU**: 1 vCPU (configurable)
 - **Memory**: 512Mi (configurable)
-- **Timeout**: 30 seconds (configurable)
+- **Timeout**: 120 seconds, with a 110 second API Gateway deadline (configurable)
 - **Port**: 8000
 - **Authentication**: Unauthenticated invocation blocked (API Gateway only)
 

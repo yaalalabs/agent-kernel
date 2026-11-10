@@ -20,8 +20,7 @@ client → API Gateway → edge (Cloud Run)  ──publish──▶ agent-input 
   is redelivered while it is still going and runs a second time. The runner's own timeout is 60
   minutes, so a long run is never cut off.
 
-Compare `../openai`, the same agents as one Cloud Run service (`queue_mode = false`), where each
-instance runs everything in one process.
+`../openai` runs the same setup and adds custom endpoints beside the chat route.
 
 ## Prerequisites
 

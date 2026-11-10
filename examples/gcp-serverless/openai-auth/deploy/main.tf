@@ -4,12 +4,9 @@ module "serverless_agents" {
 
   providers = { google = google, google-beta = google-beta, docker = docker }
   # Basic Cloud Run configuration
-  project_id   = var.project_id
-  prefix       = var.prefix
-  package_path = "../dist"
-  # This example runs its agents inside the one Cloud Run service (RESTAPI.run in app.py).
-  # Queue mode, the modules' default, needs a queue-mode app: see the openai-queue-mode example.
-  queue_mode           = false
+  project_id           = var.project_id
+  prefix               = var.prefix
+  package_path         = "../dist"
   memory               = "512Mi"
   timeout              = 120
   backend_deadline     = 110
@@ -31,6 +28,12 @@ module "serverless_agents" {
       overwrite_path = "/app_info"
     }
   ]
+
+  # Queue mode (the module's default): this service is the edge, and Pub/Sub pushes each request
+  # to a second, private agent-runner service built from the same image.
+  agent_runner = {
+    command = ["python", "-c", "from app import runner; runner()"]
+  }
 
   # Environment variables passed to Cloud Run
   environment_variables = {

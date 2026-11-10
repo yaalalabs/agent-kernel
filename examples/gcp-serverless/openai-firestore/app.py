@@ -1,4 +1,5 @@
 from agentkernel.api import RESTAPI
+from agentkernel.gcp import CloudRun, CloudRunAgentRunner
 from agentkernel.openai import OpenAIModule
 from agents import Agent
 from fastapi import APIRouter
@@ -39,4 +40,10 @@ OpenAIModule([triage_agent, math_agent, history_agent])
 
 
 def main() -> None:
-    RESTAPI.run()
+    """The edge: takes chat requests, publishes them to Pub/Sub, and answers with the reply."""
+    CloudRun.run()
+
+
+def runner() -> None:
+    """The agent runner: serves the requests Pub/Sub pushes and publishes each reply."""
+    CloudRunAgentRunner.run()
