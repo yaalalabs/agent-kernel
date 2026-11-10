@@ -7,6 +7,7 @@ from fastapi.openapi.utils import get_openapi
 
 from ..auth import AuthValidator, ValidationContext
 from ..core.config import AKConfig
+from ..identity.provider.request import RequestAuthenticator
 from .handler import AgentRESTRequestHandler, RESTRequestHandler
 
 
@@ -30,10 +31,16 @@ class RESTAPI:
 
     @classmethod
     def _get_router_dependencies(cls):
-        """Get dependencies to apply to APIRouters.
-        :return: List of dependencies or None if no auth validators are configured
+        """The dependencies every included router runs: the legacy validators, then the identity dependency.
+
+        The identity dependency is always there: it puts the request's principal on
+        ``request.state.principal``, the anonymous principal when no ``identity`` block is
+        configured, so every handler reads the principal the same way. The validators registered
+        through ``add_auth_handlers`` keep running ahead of it until ``agentkernel.auth`` is removed.
+
+        :return: The dependency list.
         """
-        return cls._auth_token_validators if cls._auth_token_validators else None
+        return [*cls._auth_token_validators, Depends(RequestAuthenticator.from_config().dependency())]
 
     @classmethod
     def _create_app(cls, routers, lifespan=None) -> FastAPI:
@@ -207,6 +214,11 @@ class RESTAPI:
     @classmethod
     def add_auth_handlers(cls, auth_validators: list[AuthValidator]):
         """Add authentication validators to the REST API.
+
+        Superseded by the ``identity`` block, which authenticates through the configured provider
+        and needs no code; kept until ``agentkernel.auth`` is removed with the deployment adapters
+        that still call it.
+
         :param auth_validators: List of auth validators to add for token validation
         """
 

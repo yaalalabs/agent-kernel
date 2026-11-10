@@ -740,10 +740,12 @@ candidate walk; `StaticAuthorizer` subclasses it, and every later engine must.
 
 #### 8.2 REST (`api/http.py`, `api/handler.py`)
 
-- `RESTAPI.add_auth_handlers` (`api/http.py:208-237`) and `_auth_token_validators` (line 22) are
-  deleted. `_get_router_dependencies()` (lines 32-37) returns
-  `[Depends(RequestAuthenticator.from_config().dependency())]` always: with no `identity` block the
-  dependency sets `Principal.anonymous()` and costs one attribute write. The A2A routers keep
+- `_get_router_dependencies()` (`api/http.py:32-37`) always ends with
+  `Depends(RequestAuthenticator.from_config().dependency())`: with no `identity` block the
+  dependency sets `Principal.anonymous()` and costs one attribute write. `RESTAPI.add_auth_handlers`
+  (`api/http.py:208-237`) and `_auth_token_validators` (line 22) stay, running ahead of it, until
+  iteration 11 removes them with `agentkernel.auth` and the deployment adapters that still call
+  them (`ecs_io_handler.py:78`, `gcp/akauthorizer.py:29`). The A2A routers keep
   going through `include_router(..., dependencies=...)` (line 65), so the principal is on
   `request.state` for them; `/health` and `/openapi.json` stay outside (lines 60-73).
 - `AgentRESTRequestHandler.run(body, request: Request)` (`api/handler.py:105-114`): sets

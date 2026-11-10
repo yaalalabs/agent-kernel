@@ -102,9 +102,9 @@ class AgentRESTRequestHandler(RESTRequestHandler):
         return {"agents": list(Runtime.current().agents().keys())}
 
     async def run(self, body: BaseRunRequest, request: Request):
-        # The surface decides who is calling: a principal the client put in the body is overwritten,
-        # never read. Nothing sets request.state.principal until the identity dependency lands, so
-        # every run is anonymous in the meantime.
+        # The surface decides who is calling: a principal the client put in the body is overwritten
+        # with the one the identity dependency RESTAPI installs put on the request (the anonymous
+        # principal without an identity block). The default covers a router mounted on a bare app.
         body.principal = getattr(request.state, "principal", None)
         if Config.get().execution.is_sse:
             try:

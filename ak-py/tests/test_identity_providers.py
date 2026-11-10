@@ -9,12 +9,14 @@ later iterations with their own cases, run through the same contract suites.
 """
 
 import pytest
+from fastapi import Depends, FastAPI, Request
+from fastapi.testclient import TestClient
 from test_secret_manager import _DictSecretProvider
 
 from agentkernel.core.config import _IdentityConfig, _IdentityProviderConfig, _RoleMapperConfig, _StaticPrincipalConfig, _StaticProviderConfig
 from agentkernel.core.model import Principal
 from agentkernel.core.util.factory import AKConfigError
-from agentkernel.identity import AuthenticationError, IdentityProvider, IdentityProviderFactory, RequestContext, RoleMapper
+from agentkernel.identity import AuthenticationError, IdentityProvider, IdentityProviderFactory, RequestAuthenticator, RequestContext, RoleMapper
 from agentkernel.identity.provider.base import ClaimPath
 from agentkernel.identity.provider.roles import MappedIdentityProvider, MappingRoleMapper, RoleMapperFactory
 from agentkernel.identity.provider.static import StaticIdentityProvider
@@ -301,3 +303,135 @@ class TestExports:
         assert "IdentityProviderContract" not in identity.__all__
         with pytest.raises(AttributeError):
             identity.NotAThing
+
+
+class RecordingProvider(IdentityProvider):
+    """Accepts one credential and records what it was asked, so the authenticator's hand-off can be checked."""
+
+    name = "recording"
+
+    def __init__(self):
+        self.calls: list[tuple[str, RequestContext | None]] = []
+
+    async def authenticate(self, credential: str, context: RequestContext | None = None) -> Principal:
+        self.calls.append((credential, context))
+        if credential == "alice-secret":
+            return Principal(subject="alice", provider=self.name, namespace="recording", groups=["ops"])
+        raise AuthenticationError("not alice")
+
+
+def _app(authenticator: RequestAuthenticator) -> TestClient:
+    """A route behind the identity dependency that reports what it sees on the request and in the contextvar."""
+    app = FastAPI()
+
+    async def whoami(request: Request):
+        principal = request.state.principal
+        current = RequestAuthenticator.current()
+        return {"state": principal.subject, "current": current.subject if current else None, "anonymous": principal.is_anonymous}
+
+    app.add_api_route("/whoami", whoami, methods=["GET"], dependencies=[Depends(authenticator.dependency())])
+    return TestClient(app)
+
+
+class TestRequestAuthenticator:
+    @pytest.fixture
+    def provider(self):
+        return RecordingProvider()
+
+    @pytest.fixture
+    def authenticator(self, provider):
+        return RequestAuthenticator(provider)
+
+    @pytest.fixture
+    def context(self):
+        return RequestContext(path="/api/v1/chat", http_method="POST", headers={})
+
+    @pytest.mark.asyncio
+    async def test_bearer_parsing_is_case_insensitive_and_strips_the_token(self, authenticator, provider, context):
+        principal = await authenticator.authenticate_bearer("bearer   alice-secret  ", context)
+        assert principal.subject == "alice"
+        assert provider.calls == [("alice-secret", context)]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("header", ["Basic YWxpY2U=", "Bearer", "Bearer   ", "alice-secret"])
+    async def test_a_malformed_header_is_refused_with_its_own_public_detail(self, authenticator, provider, context, header):
+        with pytest.raises(AuthenticationError) as exc:
+            await authenticator.authenticate_bearer(header, context)
+        assert exc.value.public_detail == "Invalid authorization header"
+        assert provider.calls == []
+
+    @pytest.mark.asyncio
+    async def test_no_header_is_the_anonymous_principal_with_or_without_a_provider(self, authenticator, context):
+        assert (await authenticator.authenticate_bearer(None, context)).is_anonymous
+        assert (await RequestAuthenticator(None).authenticate_bearer(None, context)).is_anonymous
+
+    @pytest.mark.asyncio
+    async def test_a_header_without_a_provider_is_ignored(self, context):
+        """No identity block: the chat and catalog routes stay open, whatever a client sends."""
+        assert (await RequestAuthenticator(None).authenticate_bearer("Bearer anything", context)).is_anonymous
+
+    @pytest.mark.asyncio
+    async def test_a_rejected_credential_keeps_the_generic_public_detail(self, authenticator, context):
+        with pytest.raises(AuthenticationError) as exc:
+            await authenticator.authenticate_bearer("Bearer mallory", context)
+        assert str(exc.value) == "not alice"
+        assert exc.value.public_detail == "Unauthorized"
+
+    @pytest.mark.asyncio
+    async def test_authenticate_token_takes_a_bare_token(self, authenticator, context):
+        assert (await authenticator.authenticate_token("alice-secret", context)).subject == "alice"
+        assert (await authenticator.authenticate_token(None, context)).is_anonymous
+        with pytest.raises(AuthenticationError):
+            await authenticator.authenticate_token("mallory", context)
+
+    def test_the_dependency_puts_the_principal_on_the_request_and_in_the_contextvar(self, authenticator):
+        client = _app(authenticator)
+
+        assert client.get("/whoami", headers={"Authorization": "Bearer alice-secret"}).json() == {
+            "state": "alice",
+            "current": "alice",
+            "anonymous": False,
+        }
+        assert client.get("/whoami").json() == {"state": "anonymous", "current": "anonymous", "anonymous": True}
+
+    def test_the_dependency_answers_401_and_logs_the_reason_with_the_path(self, authenticator, caplog):
+        client = _app(authenticator)
+
+        with caplog.at_level("INFO", logger="ak.identity.provider.request"):
+            rejected = client.get("/whoami", headers={"Authorization": "Bearer mallory"})
+            malformed = client.get("/whoami", headers={"Authorization": "Basic abc"})
+
+        assert (rejected.status_code, rejected.json()["detail"]) == (401, "Unauthorized")
+        assert (malformed.status_code, malformed.json()["detail"]) == (401, "Invalid authorization header")
+        reasons = [record.getMessage() for record in caplog.records if record.name == "ak.identity.provider.request"]
+        assert any("not alice" in message and "/whoami" in message for message in reasons)
+
+    def test_the_dependency_hands_the_provider_the_request_context(self, authenticator, provider):
+        _app(authenticator).get("/whoami?x=1", headers={"Authorization": "Bearer alice-secret"})
+        credential, context = provider.calls[0]
+        assert (credential, context.path, context.http_method) == ("alice-secret", "/whoami", "GET")
+        assert context.headers["authorization"] == "Bearer alice-secret"
+
+    def test_current_is_none_outside_a_request(self):
+        assert RequestAuthenticator.current() is None
+
+    @pytest.mark.asyncio
+    async def test_release_is_a_no_op_until_credentials_land(self, authenticator):
+        await authenticator.release(Principal(subject="alice", provider="recording", namespace="recording"))
+
+    @pytest.mark.asyncio
+    async def test_from_config_without_an_identity_block_authenticates_nobody(self, monkeypatch, context):
+        class _Cfg:
+            identity = None
+
+        monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _Cfg))
+        assert (await RequestAuthenticator.from_config().authenticate_bearer("Bearer alice-secret", context)).is_anonymous
+
+    @pytest.mark.asyncio
+    async def test_from_config_uses_the_configured_provider(self, monkeypatch, current_secrets, context):
+        class _Cfg:
+            identity = _static_identity()
+
+        monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _Cfg))
+        principal = await RequestAuthenticator.from_config().authenticate_bearer("Bearer alice-secret", context)
+        assert (principal.subject, principal.provider) == ("alice", "static")

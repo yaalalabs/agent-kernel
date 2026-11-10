@@ -221,6 +221,36 @@ class TestRestAsync:
         assert "user_id is not a request field" in response.json()["detail"]["error"]
         assert InMemoryTransport().create_consumer(QueueName.INPUT).fetch(1, 0.1) == []
 
+    def test_the_authenticated_principal_rides_the_queue(self, monkeypatch, dummy_agent, tmp_path):
+        """Mounted through RESTAPI, the route reads the principal the identity dependency established (#603)."""
+        from agentkernel.api.http import RESTAPI
+        from agentkernel.identity import IdentityProviderFactory
+        from agentkernel.secret import SecretManager
+
+        cfg_path = tmp_path / "config.yaml"
+        cfg_path.write_text(
+            "identity:\n  provider:\n    type: static\n    static:\n      principals:\n        ALICE_TOKEN:\n          subject: alice\n          groups: [ops]\n"
+        )
+        _configure(monkeypatch, mode="rest_async")
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", str(cfg_path))
+        monkeypatch.setenv("ALICE_TOKEN", "alice-secret")
+        AKConfig._reset()
+        SecretManager.reset()
+        IdentityProviderFactory.reset()
+        try:
+            client = TestClient(RESTAPI.build_app([RequestHandler()]))
+            accepted = client.post(
+                CHAT, json={"prompt": "hello", "session_id": "s1", "agent": AGENT_NAME}, headers={"Authorization": "Bearer alice-secret"}
+            )
+            assert accepted.status_code == 200
+            [message] = InMemoryTransport().create_consumer(QueueName.INPUT).fetch(1, 0.5)
+            principal = json.loads(message.body)["principal"]
+            assert (principal["subject"], principal["provider"], principal["groups"]) == ("alice", "static", ["ops"])
+            assert client.post(CHAT, json={"prompt": "hello", "session_id": "s1"}, headers={"Authorization": "Bearer mallory"}).status_code == 401
+        finally:
+            IdentityProviderFactory.reset()
+            SecretManager.reset()
+
     def test_a_principal_sent_by_the_client_never_reaches_the_queue(self, monkeypatch, dummy_agent):
         """The principal is the surface's to assign; until the identity dependency does, the body carries none (#603)."""
         _configure(monkeypatch, mode="rest_async")

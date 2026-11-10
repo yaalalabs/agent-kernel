@@ -17,6 +17,7 @@ _LAZY_EXPORTS = {
     "IdentityProvider": ".provider.base",
     "RequestContext": ".provider.base",
     "IdentityProviderFactory": ".provider.factory",
+    "RequestAuthenticator": ".provider.request",
     "StaticIdentityProvider": ".provider.static",
     "OIDCIdentityProvider": ".provider.oidc",
     "JWKSCache": ".provider.oidc",
@@ -40,6 +41,7 @@ if TYPE_CHECKING:
     from .provider.factory import IdentityProviderFactory
     from .provider.firebase import FirebaseIdentityProvider
     from .provider.oidc import JWKSCache, OIDCIdentityProvider
+    from .provider.request import RequestAuthenticator
     from .provider.roles import MappedIdentityProvider, MappingRoleMapper, RoleMapper, RoleMapperFactory
     from .provider.static import StaticIdentityProvider
 

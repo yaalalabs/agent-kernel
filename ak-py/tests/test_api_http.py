@@ -1,15 +1,19 @@
 from unittest.mock import Mock, patch
 
 import pytest
-from fastapi import APIRouter, FastAPI
+from fastapi import APIRouter, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.testclient import TestClient
+from test_secret_manager import _DictSecretProvider
 
 from agentkernel.api.handler import RESTRequestHandler
 from agentkernel.api.http import RESTAPI
 from agentkernel.auth.handler import AuthValidator, ValidationResult
+from agentkernel.core.config import _IdentityConfig, _IdentityProviderConfig, _StaticPrincipalConfig, _StaticProviderConfig
 from agentkernel.core.util.factory import AKConfigError
+from agentkernel.identity import IdentityProviderFactory
 from agentkernel.pipeline.transport.base import QueueTransportFactory
+from agentkernel.secret import SecretManager
 
 
 class TestRESTAPI:
@@ -694,3 +698,99 @@ class TestUnqueuedProtocolRefusal:
 
         assert called == {"delegated": True}
         mock_uvicorn.assert_not_called()
+
+
+class _WhoAmIHandler(RESTRequestHandler):
+    """A handler whose one route reports the principal the identity dependency put on the request."""
+
+    def get_router(self) -> APIRouter:
+        router = APIRouter()
+
+        async def whoami(request: Request):
+            principal = request.state.principal
+            return {"subject": principal.subject, "provider": principal.provider}
+
+        router.add_api_route("/api/v1/whoami", whoami, methods=["GET"])
+        return router
+
+
+class TestIdentityDependency:
+    """RESTAPI installs the identity dependency on every router it includes (#603): with no identity
+    block it sets the anonymous principal, with one it authenticates the bearer token."""
+
+    @pytest.fixture
+    def config(self):
+        class _Cfg:
+            class api:
+                host = "localhost"
+                port = 8000
+                custom_router_prefix = "/custom"
+
+            class a2a:
+                enabled = False
+
+            class mcp:
+                enabled = False
+
+            identity = None
+
+        return _Cfg
+
+    @pytest.fixture
+    def mounted(self, monkeypatch, config):
+        """Patch both config references and build the app around the probe handler."""
+        monkeypatch.setattr("agentkernel.api.http.AKConfig.get", classmethod(lambda cls: config))
+        monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: config))
+        IdentityProviderFactory.reset()
+        yield lambda: TestClient(RESTAPI.build_app([_WhoAmIHandler()]))
+        IdentityProviderFactory.reset()
+
+    @pytest.fixture
+    def static_identity(self, monkeypatch, config):
+        monkeypatch.delenv("ALICE_TOKEN", raising=False)
+        secrets = _DictSecretProvider()
+        secrets.seed("ALICE_TOKEN", "alice-secret")
+        monkeypatch.setattr(SecretManager, "current", classmethod(lambda cls: SecretManager(provider=secrets, cache_ttl=0)))
+        principals = {"ALICE_TOKEN": _StaticPrincipalConfig(subject="alice", groups=["ops"])}
+        config.identity = _IdentityConfig(provider=_IdentityProviderConfig(type="static", static=_StaticProviderConfig(principals=principals)))
+
+    def test_the_dependency_is_installed_even_without_an_identity_block(self, mounted):
+        client = mounted()
+        assert client.get("/api/v1/whoami").json() == {"subject": "anonymous", "provider": "anonymous"}
+        assert client.get("/api/v1/whoami", headers={"Authorization": "Bearer anything"}).json()["provider"] == "anonymous"
+
+    def test_a_bearer_token_authenticates_through_the_configured_provider(self, mounted, static_identity):
+        client = mounted()
+        assert client.get("/api/v1/whoami", headers={"Authorization": "Bearer alice-secret"}).json() == {"subject": "alice", "provider": "static"}
+        assert client.get("/api/v1/whoami").json()["provider"] == "anonymous"
+        assert client.get("/api/v1/whoami", headers={"Authorization": "Bearer mallory"}).status_code == 401
+
+    def test_custom_routers_get_the_dependency_too(self, mounted, static_identity):
+        router = APIRouter()
+
+        async def mine(request: Request):
+            return {"subject": request.state.principal.subject}
+
+        router.add_api_route("/mine", mine, methods=["GET"])
+        RESTAPI._custom_routers.clear()
+        RESTAPI.add(router)
+        try:
+            client = mounted()
+            assert client.get("/custom/mine", headers={"Authorization": "Bearer alice-secret"}).json() == {"subject": "alice"}
+        finally:
+            RESTAPI._custom_routers.clear()
+
+    def test_health_stays_outside(self, mounted, static_identity):
+        assert mounted().get("/health", headers={"Authorization": "Bearer mallory"}).status_code == 200
+
+    def test_legacy_validators_still_run_beside_it_until_the_auth_package_goes(self, mounted):
+        validator = Mock(spec=AuthValidator)
+        validator.validate.return_value = ValidationResult(is_valid=False, error_msg="legacy says no")
+        RESTAPI._auth_token_validators.clear()
+        RESTAPI.add_auth_handlers([validator])
+        try:
+            response = mounted().get("/api/v1/whoami", headers={"Authorization": "Bearer x"})
+            assert (response.status_code, response.json()["detail"]) == (401, "legacy says no")
+            assert len(RESTAPI._get_router_dependencies()) == 2
+        finally:
+            RESTAPI._auth_token_validators.clear()

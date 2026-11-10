@@ -235,8 +235,10 @@ iteration 18 and `credentials` lands in iteration 25, both additive).
   1. `RequestAuthenticator`: `from_config`, `authenticate_bearer`, `authenticate_token`,
      `dependency()`, the `current()` contextvar, `release()` (a no-op until iteration 25)
      (spec 4).
-  2. `RESTAPI._get_router_dependencies` returns the identity dependency; `add_auth_handlers`
-     and `_auth_token_validators` go; the `request.state.principal` read that
+  2. `RESTAPI._get_router_dependencies` appends the identity dependency after the legacy
+     validators; `add_auth_handlers` and `_auth_token_validators` stay until 11, which removes
+     them with `agentkernel.auth` and their last callers (`ecs_io_handler.py:78`,
+     `gcp/akauthorizer.py:29`); the `request.state.principal` read that
      `AgentRESTRequestHandler.run`/`run_multipart` have carried since 3 now finds the dependency's
      principal (spec 8.2). `AuthorisedRESTRequestHandler` changes in 10 together with the thread
      and schedule routers that subclass it.
@@ -347,7 +349,9 @@ iteration 18 and `credentials` lands in iteration 25, both additive).
      string; the REST router rebuilds the principal from the authorizer context (spec 8.9).
   3. `GCPAuthorizer` deleted; `AzureFunctions.handler` runs `authenticate_bearer` and answers
      401 (spec 8.9).
-  4. Delete the `auth` package and the `auth.py` shadow module.
+  4. Delete the `auth` package and the `auth.py` shadow module, and with them
+     `RESTAPI.add_auth_handlers` and `_auth_token_validators` (kept since 6 for the adapters
+     above).
 - **Verify:** new `tests/test_deployment_identity.py`; changed `test_ecs_*`,
   `test_ws_lambda_stream`, `test_akauthorizer`, `test_authorizer_webhook_bypass`; deleted
   `test_auth_handler.py` and `test_authoriser_shared.py`;
