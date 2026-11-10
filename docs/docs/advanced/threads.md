@@ -141,7 +141,7 @@ about once at startup with the install hint, and every failed naming call logs a
 thread:
   type: in_memory
   naming:
-    model: gpt-4o-mini  # LiteLLM model used to generate thread names
+    model: gpt-6-luna  # LiteLLM model used to generate thread names
     max_length: 80      # max auto-generated name length
 ```
 

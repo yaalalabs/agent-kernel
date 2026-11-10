@@ -175,6 +175,7 @@ def test_evaluate_by_llm_wraps_score_exception(evaluator):
 
 
 def test_llm_model_is_lazily_created_and_cached(evaluator):
+    """Repeated LLM evaluations must reuse the same configured judge instance."""
     assert evaluator._model is None  # never built by __init__
 
     case = AKEvaluationCase(user_input="q", actual="a", expected="e")

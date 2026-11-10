@@ -131,7 +131,7 @@ multimodal:
 thread:
   type: in_memory  # in_memory | redis | valkey | dynamodb | firestore | cosmosdb
   naming:
-    model: gpt-4o-mini  # LLM used to auto-name threads (requires the thread extra)
+    model: gpt-6-luna  # LLM used to auto-name threads (requires the thread extra)
     max_length: 80
   redis:
     url: "redis://localhost:6379"
@@ -293,7 +293,7 @@ guardrail:
     type: openai  # Guardrail provider: openai, bedrock, or walledai
     pii: true  # Enable PII redaction/unmasking (WalledAI only)
     # OpenAI-specific fields:
-    model: gpt-4o-mini  # LLM model for guardrail validation (OpenAI only)
+    model: gpt-6-luna  # LLM model for guardrail validation (OpenAI only)
     config_path: ""  # Path to guardrail configuration JSON file (OpenAI only)
     # Bedrock-specific fields:
     id: ""  # AWS Bedrock guardrail ID (Bedrock only)
@@ -303,7 +303,7 @@ guardrail:
     type: openai  # Guardrail provider: openai, bedrock, or walledai
     pii: true  # Enable PII redaction/unmasking (WalledAI only)
     # OpenAI-specific fields:
-    model: gpt-4o-mini  # LLM model for guardrail validation (OpenAI only)
+    model: gpt-6-luna  # LLM model for guardrail validation (OpenAI only)
     config_path: ""  # Path to guardrail configuration JSON file (OpenAI only)
     # Bedrock-specific fields:
     id: ""  # AWS Bedrock guardrail ID (Bedrock only)
@@ -461,13 +461,13 @@ Alternatively, use `config.json`:
     "input": {
       "enabled": false,
       "type": "openai",
-      "model": "gpt-4o-mini",
+      "model": "gpt-6-luna",
       "config_path": ""
     },
     "output": {
       "enabled": false,
       "type": "openai",
-      "model": "gpt-4o-mini",
+      "model": "gpt-6-luna",
       "config_path": ""
     }
   },
@@ -985,13 +985,13 @@ guardrail:
     enabled: false              # Enable input guardrails
     type: "openai"              # Guardrail provider: 'openai', 'bedrock', or 'walledai'
     pii: true           # Enable PII redaction/unmasking (WalledAI only)
-    model: "gpt-4o-mini"        # LLM model for guardrail validation
+    model: "gpt-6-luna"        # LLM model for guardrail validation
     config_path: ""             # Path to guardrail configuration JSON file
   output:                       # Output guardrail configuration
     enabled: false              # Enable output guardrails
     type: "openai"              # Guardrail provider: 'openai', 'bedrock', or 'walledai'
     pii: true           # Enable PII redaction/unmasking (WalledAI only)
-    model: "gpt-4o-mini"        # LLM model for guardrail validation
+    model: "gpt-6-luna"        # LLM model for guardrail validation
     config_path: ""             # Path to guardrail configuration JSON file
 
 # Execution configuration (for AWS serverless and containerized deployments)

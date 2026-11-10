@@ -34,6 +34,7 @@ class DeepevalAKEvaluator(AKEvaluator):
         self._model: LiteLLMModel | None = None  # lazy: score mode never needs it
 
     def _llm_model(self) -> LiteLLMModel:
+        """Lazily cache the judge with Luna reasoning disabled for GEval logprobs."""
         if self._model is None:
             llm = self._config.llm
             # DeepEval sends temperature and requests logprobs for GEval.

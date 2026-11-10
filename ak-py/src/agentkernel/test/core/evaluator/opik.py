@@ -39,6 +39,7 @@ class OpikAKEvaluator(AKEvaluator):
         self._model: str | LiteLLMChatModel | None = None  # lazy: score mode never needs it
 
     def _llm_model(self) -> str | LiteLLMChatModel:
+        """Lazily cache the judge, keeping Luna compatible with temperature and logprobs."""
         if self._model is None:
             llm = self._config.llm
             model = f"{llm.provider}/{llm.model}"

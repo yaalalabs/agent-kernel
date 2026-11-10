@@ -1485,12 +1485,12 @@ guardrail:
   input:
     enabled: true
     type: openai
-    model: gpt-4o-mini
+    model: gpt-6-luna
     config_path: /path/to/guardrails_input.json
   output:
     enabled: true
     type: openai
-    model: gpt-4o-mini
+    model: gpt-6-luna
     config_path: /path/to/guardrails_output.json
 ```
 
@@ -1736,11 +1736,11 @@ export AK_TEST__LLM__EMBEDDING_MODEL=text-embedding-3-small
 # Guardrails configuration
 export AK_GUARDRAIL__INPUT__ENABLED=false
 export AK_GUARDRAIL__INPUT__TYPE=openai
-export AK_GUARDRAIL__INPUT__MODEL=gpt-4o-mini
+export AK_GUARDRAIL__INPUT__MODEL=gpt-6-luna
 export AK_GUARDRAIL__INPUT__CONFIG_PATH=/path/to/guardrails_input.json
 export AK_GUARDRAIL__OUTPUT__ENABLED=false
 export AK_GUARDRAIL__OUTPUT__TYPE=openai
-export AK_GUARDRAIL__OUTPUT__MODEL=gpt-4o-mini
+export AK_GUARDRAIL__OUTPUT__MODEL=gpt-6-luna
 export AK_GUARDRAIL__OUTPUT__CONFIG_PATH=/path/to/guardrails_output.json
 # Walled AI guardrails
 export WALLED_API_KEY=your-walledai-api-key
@@ -1878,13 +1878,13 @@ guardrail:
     enabled: false
     type: openai
     pii: true
-    model: gpt-4o-mini
+    model: gpt-6-luna
     config_path: /path/to/guardrails_input.json
   output:
     enabled: false
     type: openai
     pii: true
-    model: gpt-4o-mini
+    model: gpt-6-luna
     config_path: /path/to/guardrails_output.json
   # For Walled AI, set type: walledai, WALLED_API_KEY,
   # and optionally use input/output pii (default: true) to enable/disable PII masking.
@@ -1949,13 +1949,13 @@ gmail:
     "input": {
       "enabled": false,
       "type": "openai",
-      "model": "gpt-4o-mini",
+      "model": "gpt-6-luna",
       "config_path": "/path/to/guardrails_input.json"
     },
     "output": {
       "enabled": false,
       "type": "openai",
-      "model": "gpt-4o-mini",
+      "model": "gpt-6-luna",
       "config_path": "/path/to/guardrails_output.json"
     }
   },
