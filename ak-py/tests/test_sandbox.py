@@ -30,7 +30,7 @@ from agentkernel.core.config import (
     _SandboxPolicyConfig,
     _SandboxProfileConfig,
 )
-from agentkernel.core.model import AgentReplyText, AgentRequestAny, AgentRequestText
+from agentkernel.core.model import AgentReplyText, AgentRequestAny, AgentRequestText, Principal
 from agentkernel.core.runtime import Runtime
 from agentkernel.core.session.in_memory import InMemorySessionStore
 from agentkernel.core.tool import SystemToolFactory
@@ -568,6 +568,49 @@ async def test_principal_resolver_tolerates_no_agent():
     principal = await AgentPrincipalResolver().resolve(Session("s1"), None)
     assert principal.mode == "agent"
     assert principal.subject == "agent"
+
+
+def _run_session(principal: Principal) -> Session:
+    """A session mid-run, carrying the principal Runtime publishes for the run's duration."""
+    session = Session("s1")
+    session._publish_run(principal, None)
+    return session
+
+
+@pytest.mark.asyncio
+async def test_principal_resolver_runs_an_authenticated_run_as_the_user():
+    """The default resolver reads the run principal (#603): a profile with identity.mode user needs no custom resolver."""
+
+    class _StubAgent:
+        name = "stub-agent"
+
+    session = _run_session(Principal(subject="alice", provider="oidc", namespace="https://issuer.example", groups=["ops", "dev"]))
+
+    principal = await AgentPrincipalResolver().resolve(session, _StubAgent())
+
+    assert principal.mode == "user"
+    assert principal.subject == "alice"
+    assert principal.groups == ["ops", "dev"]
+    assert principal.credentials == {}
+
+
+@pytest.mark.asyncio
+async def test_principal_resolver_keeps_agent_mode_for_an_anonymous_run():
+    class _StubAgent:
+        name = "stub-agent"
+
+    principal = await AgentPrincipalResolver().resolve(_run_session(Principal.anonymous()), _StubAgent())
+
+    assert (principal.mode, principal.subject) == ("agent", "stub-agent")
+
+
+@pytest.mark.asyncio
+async def test_principal_resolver_user_mode_needs_no_agent_in_context():
+    session = _run_session(Principal(subject="alice", provider="static", namespace="static"))
+
+    principal = await AgentPrincipalResolver().resolve(session, None)
+
+    assert (principal.mode, principal.subject) == ("user", "alice")
 
 
 # --------------------------------------------------------------------------- #

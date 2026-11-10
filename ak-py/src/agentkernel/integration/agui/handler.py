@@ -15,8 +15,6 @@ from ...core.event import RunPaused
 from ...core.model import Principal
 from ...core.runtime import Runtime
 from ...core.service import AgentService
-from ...core.util.factory import AKConfigError
-from ...identity.provider.factory import IdentityProviderFactory
 from .mapping import AGUIMapper
 from .run_input import AGUIRunInput
 from .state import AGUIState
@@ -28,9 +26,10 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
     def __init__(self):
         """
         :raises ValueError: If the `agui` extra is missing, or `agui.default_agent` is not in `agui.agents`.
-        :raises AKConfigError: If no identity provider is configured. The AG-UI routes run agents on
-            a caller's behalf, so they are never served anonymously; with nobody able to
-            authenticate, mounting them is a configuration error rather than an open surface.
+        :raises AKConfigError: If no identity provider is configured (the ``AuthorisedRESTRequestHandler``
+            rule). The AG-UI routes run agents on a caller's behalf, so they are never served
+            anonymously; with nobody able to authenticate, mounting them is a configuration error
+            rather than an open surface.
         """
         try:
             import ag_ui.core  # noqa: F401
@@ -39,9 +38,6 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
                 "AG-UI support requires the 'ag-ui-protocol' package, which ships in Agent Kernel's "
                 "'agui' extra. Install it with: pip install \"agentkernel[agui]\""
             ) from e
-
-        if IdentityProviderFactory.get() is None:
-            raise AKConfigError(f"{type(self).__name__} requires an identity block: it serves authenticated callers only")
 
         super().__init__()
         self._log = logging.getLogger("ak.integration.agui")
@@ -53,24 +49,6 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
                 f"agui.default_agent is '{config.default_agent}', which agui.agents does not expose. "
                 f"Add it to agui.agents, or remove the default_agent setting."
             )
-
-    @staticmethod
-    def _resolve_principal(request: Request) -> Principal:
-        """The principal the identity dependency put on the request; anonymous is a 401 here.
-
-        The AG-UI routes run agents on a caller's behalf, so a request nothing authenticated is
-        refused. This reading of ``request.state.principal`` folds into
-        ``AuthorisedRESTRequestHandler`` when the thread and schedule routers move to the
-        provider (plan iteration 10).
-
-        :param request: The incoming request.
-        :return: The authenticated principal.
-        :raises HTTPException: 401 when the request carries no authenticated principal.
-        """
-        principal = getattr(request.state, "principal", None)
-        if principal is None or principal.is_anonymous:
-            raise HTTPException(status_code=401, detail="Authentication required")
-        return principal
 
     @staticmethod
     def _is_exposed(agent_name: str) -> bool:
@@ -162,7 +140,7 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
             :param request: Incoming request, for authorisation.
             :return: {"agents": [name, ...]}.
             """
-            self._resolve_principal(request)
+            self._resolve_user(request)
             agents = Runtime.current().agents()
             return {"agents": [name for name, agent in agents.items() if agent.runner.supports_streaming and self._is_exposed(name)]}
 
@@ -203,7 +181,7 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
         :raises HTTPException: 401 for a request nothing authenticated, 400 for an unparsable or
             unusable body, 404/400 from agent resolution.
         """
-        principal = self._resolve_principal(request)
+        principal = self._resolve_user(request)
         agent = self._resolve_agent(agent_name)
 
         try:

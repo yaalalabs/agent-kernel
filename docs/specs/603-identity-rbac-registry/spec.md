@@ -965,8 +965,13 @@ candidate walk; `StaticAuthorizer` subclasses it, and every later engine must.
   compose `ThreadRESTRequestHandler`, which requires it, 8.2); `PermissionError` maps to 403 in `_run_with_recording` (138-145) and
   `_record_user_message` (304-306) beside the `ValueError` 400; both run
   `ChatService.reject_unprocessable` before the recorder's first write, so a `user_id` extra is a
-  400 with no thread written; an anonymous principal on the chat routes is 401 (8.2). `ThreadRESTRequestHandler` (312-384) keeps its 403 and 404 rules with the
-  principal's subject in place of the resolved user (351, 368).
+  400 with no thread written; an anonymous principal on the chat routes is 401 (8.2): the chat
+  routes assign `body.principal` from the composed read handler's `_resolve_user(request)`, so
+  the 401 fires before any validation or write (iteration 10). `ThreadRESTRequestHandler`
+  (312-384) keeps its 403 and 404 rules with the principal's subject in place of the resolved
+  user (351, 368); the listing route's `user_id` query parameter (365) is removed, since every
+  listing is the caller's own and a parameter that is always overridden would only mislead
+  (`group_id` stays; iteration 10).
 
 #### 8.11 Schedules (`schedule/`)
 
@@ -986,7 +991,8 @@ candidate walk; `StaticAuthorizer` subclasses it, and every later engine must.
   back to `task.user_id` against the subject); `error` is recorded on the occurrence by the
   store's `record_trigger` (a new optional column `last_error`).
 - `get_task`, `list_tasks`, `update`, `cancel` keep their `user_id` parameter; the handler
-  (`schedule/handler.py:90-140`) passes `principal.subject`.
+  (`schedule/handler.py:90-140`) passes `principal.subject`, and its listing route drops the
+  `user_id` query parameter (93) for the reason 8.10 gives for the thread listing (iteration 10).
 - `schedule/tools.py`: `ScheduleToolUtil.acting_user()` (72-81) returns
   `Session.get_principal().subject` for a non-anonymous principal, else `None`; `_NO_IDENTITY`
   (28) reads `{"error": "scheduling requires an authenticated principal"}`; `create_schedule`
@@ -1323,10 +1329,15 @@ New files under `ak-py/tests/`:
 - `test_principal_messaging.py`: `IntegrationProducer.enqueue` building the `messaging:` and
   `realtime:` principals with namespace and claims; Gmail's `authentication_results` claim; the
   LiveKit edge passing the participant identity; anonymous when the adapter has no sender.
-- `test_schedule_principal.py`: `create` requiring a principal, the frozen `principal` in the
-  trigger body, a pre-change task body (no principal) firing anonymous, the fire-time level
-  re-check skipping with `last_error`, `record_trigger` ownership by subject, the tools reading
-  `Session.get_principal()`.
+- `test_schedule_principal.py`: ownership over the real REST wiring, `RESTAPI.build_app` with a
+  `static` provider resolving two principals: a task created from a chat request is readable,
+  amendable and cancellable by its owner alone, the listing is the caller's own, every route
+  answers an anonymous caller 401 and a refused credential the dependency's 401. The
+  manager-level cases (`create` requiring a principal, the frozen `principal` in the trigger
+  body, `record_trigger` ownership by namespace and subject) landed in `test_schedule_manager.py`
+  in iteration 3 and the tools reading `Session.get_principal()` in `test_schedule_tools.py`; a
+  pre-change task body (no principal) firing anonymous and the fire-time level re-check skipping
+  with `last_error` join this file in iteration 19.
 - `test_deployment_identity.py`: `APIGatewayAuthorizer` policy context carrying the serialized
   principal and the REST router rebuilding it; the ECS and Lambda `$connect` handlers keyed by
   subject and refusing an invalid token; `AzureFunctions.handler` 401; the removed
@@ -1358,8 +1369,12 @@ Changed files and the exact targets that move:
   become `registry.agents.<id>.surfaces` cases; the acting-user test (241-252) reads
   `ToolContext.get().principal.subject`; `_FakeHandler.run_stream_sync(requests, principal=None)`.
 - `tests/test_thread_router.py:37-47, 145-186` and `tests/test_schedule_router.py:51-78,
-  252-313`: `StaticAuthoriser` becomes a static provider; the 401 variants keep their texts
-  except that an absent header on these routes is `"Authentication required"`.
+  252-313`: `StaticAuthoriser` becomes a fake `IdentityProvider` behind
+  `RequestAuthenticator(provider).dependency()` on the test app, the identity dependency as
+  `RESTAPI` mounts it (the real `static` provider runs in `test_schedule_principal.py`); the 401
+  variants keep their texts except that an absent header on these routes is
+  `"Authentication required"`; construction without a provider is `AKConfigError`; a `user_id`
+  query cannot widen a listing.
 - `tests/test_schedule_tools.py:112-127, 295-326`: the `acting_session` fixture publishes a
   `Principal` through `Session._publish_run`; the no-identity error text changes.
 - `tests/test_chat_service_core.py:41-45, 182, 208, 290-379`: fakes take `principal=None`;
@@ -1373,7 +1388,10 @@ Changed files and the exact targets that move:
 - `tests/test_thread_integration.py:108-143, 169-310` and
   `tests/test_thread_pipeline_recording.py:135-256`: bodies carry `principal`; the "missing
   user_id is 400" cases (176-185, 182-189) become "anonymous is 401"; a non-owner appending is
-  403.
+  403 and leaves the thread untouched. The HTTP cases mount the handler behind the identity
+  dependency with a bearer token per test user, replacing the iteration 3 test-side handler
+  subclasses that set `request.state.principal`; `tests/test_thread_manager.py` gains the
+  foreign-thread `PermissionError` of `get_or_create_thread`.
 - `tests/test_api_multipart_fields.py:5-102`: `user_id` leaves `EXPECTED_FORM_FIELDS` and the
   OpenAPI assertion; a form carrying it is asserted a 400 with nothing captured.
 - `tests/test_serverless_request_handle.py:5-91, 147-150`: envelope `user_id` cases become

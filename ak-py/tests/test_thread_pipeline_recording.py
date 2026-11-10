@@ -11,15 +11,16 @@ import threading
 from unittest.mock import MagicMock
 
 import pytest
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
 from agentkernel.core.base import Agent, Runner
 from agentkernel.core.config import AKConfig, _ThreadStoreConfig
 from agentkernel.core.event import MessageEnd, MessageStart, TextDelta
-from agentkernel.core.model import AgentReplyText, AgentRequestText, BaseRunRequest, Principal, ScheduleSpec
+from agentkernel.core.model import AgentReplyText, AgentRequestText, Principal, ScheduleSpec
 from agentkernel.core.runtime import Runtime
 from agentkernel.core.util.factory import AKConfigError
+from agentkernel.identity import AuthenticationError, IdentityProvider, IdentityProviderFactory, RequestAuthenticator
 from agentkernel.integration.thread import AgentThreadRequestHandler, ConversationThreadManager, ThreadNamingStrategy, ThreadRequestHandler
 from agentkernel.integration.thread.store.in_memory import InMemoryThreadStore
 from agentkernel.pipeline.agent_runner import AgentRunner, StreamAgentRunner
@@ -121,21 +122,35 @@ def _enable_threads():
 
 
 PRINCIPAL = Principal(subject="u1", provider="static", namespace="static")
+OTHER = Principal(subject="u2", provider="static", namespace="static")
+TOKENS = {"u1-token": PRINCIPAL, "u2-token": OTHER}
 
 
-class _AuthenticatedThreadRequestHandler(ThreadRequestHandler):
-    """Stands in for the identity dependency the pipeline route gains with the identity provider: the
-    surface, never the client, assigns the principal the thread is keyed on."""
+class _Provider(IdentityProvider):
+    """One token per test user: the surface, never the client, establishes the principal a thread is keyed on."""
 
-    async def run_chat(self, body: BaseRunRequest, request: Request):
-        request.state.principal = PRINCIPAL
-        return await super().run_chat(body, request)
+    name = "static"
+
+    async def authenticate(self, credential, context=None):
+        principal = TOKENS.get(credential)
+        if principal is None:
+            raise AuthenticationError("unknown token")
+        return principal
 
 
-def _client(handler: ThreadRequestHandler | None = None) -> TestClient:
+@pytest.fixture(autouse=True)
+def identity(monkeypatch):
+    """Stand the configured identity provider in: the thread handlers require one at construction."""
+    provider = _Provider()
+    monkeypatch.setattr(IdentityProviderFactory, "get", classmethod(lambda cls: provider))
+    return provider
+
+
+def _client(handler: ThreadRequestHandler | None = None, token: str | None = "u1-token") -> TestClient:
+    """The handler's routes behind the identity dependency, as ``RESTAPI`` mounts them; the client sends ``token`` on every request."""
     app = FastAPI()
-    app.include_router((handler or _AuthenticatedThreadRequestHandler()).get_router())
-    return TestClient(app)
+    app.include_router((handler or ThreadRequestHandler()).get_router(), dependencies=[Depends(RequestAuthenticator(_Provider()).dependency())])
+    return TestClient(app, headers={"Authorization": f"Bearer {token}"} if token else {})
 
 
 def _enqueued(transport=None) -> QueueMessage:
@@ -191,13 +206,21 @@ class TestEdgeRecording:
         assert body.get("images") is None
         assert [req["type"] for req in body["requests"]] == ["text", "attachment_ref"]
 
+    def test_construction_fails_without_an_identity_block(self, monkeypatch):
+        """Threads are keyed on the caller, so with nobody able to authenticate the handler is a configuration error (#603)."""
+        _configure(monkeypatch, mode="rest_async")
+        monkeypatch.setattr(IdentityProviderFactory, "get", classmethod(lambda cls: None))
+
+        with pytest.raises(AKConfigError, match="requires an identity block"):
+            ThreadRequestHandler()
+
     def test_an_anonymous_request_is_rejected_before_any_thread_write(self, monkeypatch, dummy_agent):
         manager = _configure(monkeypatch, mode="rest_async")
 
-        response = _client(ThreadRequestHandler()).post(CHAT, json={"prompt": "hello", "session_id": "s1", "agent": AGENT_NAME})
+        response = _client(token=None).post(CHAT, json={"prompt": "hello", "session_id": "s1", "agent": AGENT_NAME})
 
-        assert response.status_code == 403
-        assert "authenticated principal" in response.json()["detail"]["error"]
+        assert response.status_code == 401
+        assert response.json()["detail"] == "Authentication required"
         assert manager.get_thread("s1") is None
         assert not InMemoryTransport().create_consumer(QueueName.INPUT).fetch(10, 0.1)
 
@@ -206,10 +229,23 @@ class TestEdgeRecording:
         manager = _configure(monkeypatch, mode="rest_async")
         payload = {"prompt": "hello", "session_id": "s1", "agent": AGENT_NAME, "principal": PRINCIPAL.model_dump(mode="json")}
 
-        response = _client(ThreadRequestHandler()).post(CHAT, json=payload)
+        response = _client(token=None).post(CHAT, json=payload)
+
+        assert response.status_code == 401
+        assert manager.get_thread("s1") is None
+        assert not InMemoryTransport().create_consumer(QueueName.INPUT).fetch(10, 0.1)
+
+    def test_another_users_thread_is_refused_before_any_write(self, monkeypatch, dummy_agent):
+        """A thread is one caller's conversation: a second principal neither appends to it nor enqueues under it (#603)."""
+        manager = _configure(monkeypatch, mode="rest_async")
+        manager.get_or_create_thread(session_id="s1", user_id="u2", first_prompt="theirs")
+        manager.append_message("s1", "user", "theirs")
+
+        response = _client().post(CHAT, json=_chat())
 
         assert response.status_code == 403
-        assert manager.get_thread("s1") is None
+        assert "Thread s1 is not owned by user u1" in response.json()["detail"]["error"]
+        assert [m.content for m in manager.get_messages("s1").messages] == ["theirs"]
         assert not InMemoryTransport().create_consumer(QueueName.INPUT).fetch(10, 0.1)
 
     def test_a_user_id_is_refused_before_any_thread_write(self, monkeypatch, dummy_agent):

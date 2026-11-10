@@ -26,13 +26,20 @@ class PrincipalResolver(ABC):
 
 
 class AgentPrincipalResolver(PrincipalResolver):
-    """Default resolver: the agent's own identity.
+    """Default resolver: the run's principal when the surface authenticated one, else the agent's own identity.
 
-    ``subject`` is the agent name (or ``"agent"`` when no agent is in context) and credentials
-    are empty — executions run under whatever identity the provider's own configuration carries
-    (API key, ServiceAccount, IAM role).
+    A run ``Runtime`` published for an authenticated caller (spec #603, section 8.12) resolves to
+    a ``user``-mode principal carrying that caller's subject and groups, so a profile with
+    ``identity.mode: user`` works with no custom resolver. An anonymous run, or a sandbox operation
+    driven outside a run, resolves to ``agent`` mode: ``subject`` is the agent name (or ``"agent"``
+    when no agent is in context). Credentials are empty either way: executions run under
+    whatever identity the provider's own configuration carries (API key, ServiceAccount, IAM role),
+    and a resolver that maps the caller onto provider credentials is the application's to supply.
     """
 
     async def resolve(self, session: Session, agent: Agent | None) -> SandboxPrincipal:
-        """Return an agent-mode principal named after the current agent (or ``"agent"``)."""
+        """Return the user-mode principal of an authenticated run, else the agent-mode principal."""
+        principal = session.get_principal()
+        if principal is not None and not principal.is_anonymous:
+            return SandboxPrincipal(mode="user", subject=principal.subject, groups=list(principal.groups))
         return SandboxPrincipal(mode="agent", subject=agent.name if agent is not None else "agent")

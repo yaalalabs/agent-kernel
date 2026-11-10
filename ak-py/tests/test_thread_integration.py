@@ -3,7 +3,7 @@ import decimal
 from unittest.mock import MagicMock
 
 import pytest
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
@@ -12,6 +12,8 @@ from agentkernel.core.base import Agent, Runner
 from agentkernel.core.config import AKConfig, _ThreadStoreConfig
 from agentkernel.core.model import AgentReplyAny, AgentReplyText, AgentRequestText, BaseRunRequest, Principal, ScheduleSpec, StreamChunk
 from agentkernel.core.runtime import Runtime
+from agentkernel.core.util.factory import AKConfigError
+from agentkernel.identity import AuthenticationError, IdentityProvider, IdentityProviderFactory, RequestAuthenticator
 from agentkernel.integration.thread import (
     AgentThreadRequestHandler,
     ConversationThreadManager,
@@ -31,6 +33,37 @@ def _principal(subject: str) -> Principal:
 
 U1 = _principal("u1")
 ALICE = _principal("alice")
+BOB = _principal("bob")
+TOKENS = {"alice-token": ALICE, "bob-token": BOB}
+AUTH = {"Authorization": "Bearer alice-token"}
+BOB_AUTH = {"Authorization": "Bearer bob-token"}
+
+
+class _Provider(IdentityProvider):
+    """One token per test user: the surface, never the client, establishes the principal a thread is keyed on."""
+
+    name = "static"
+
+    async def authenticate(self, credential, context=None):
+        principal = TOKENS.get(credential)
+        if principal is None:
+            raise AuthenticationError("unknown token")
+        return principal
+
+
+@pytest.fixture(autouse=True)
+def identity(monkeypatch):
+    """Stand the configured identity provider in: the thread handlers require one at construction."""
+    provider = _Provider()
+    monkeypatch.setattr(IdentityProviderFactory, "get", classmethod(lambda cls: provider))
+    return provider
+
+
+def _client(handler: AgentThreadRequestHandler) -> TestClient:
+    """The handler's routes behind the identity dependency, as ``RESTAPI`` mounts them."""
+    app = FastAPI()
+    app.include_router(handler.get_router(), dependencies=[Depends(RequestAuthenticator(_Provider()).dependency())])
+    return TestClient(app)
 
 
 class EchoNaming(ThreadNamingStrategy):
@@ -165,6 +198,13 @@ class TestAgentThreadRequestHandler:
         with pytest.raises(ValueError, match="thread"):
             AgentThreadRequestHandler()
 
+    def test_construction_fails_without_an_identity_block(self, thread_enabled, monkeypatch):
+        """Threads are keyed on the caller, so with nobody able to authenticate the handler is a configuration error (#603)."""
+        monkeypatch.setattr(IdentityProviderFactory, "get", classmethod(lambda cls: None))
+
+        with pytest.raises(AKConfigError, match="requires an identity block"):
+            AgentThreadRequestHandler()
+
     def test_router_serves_chat_and_read_routes(self, thread_enabled):
         handler = AgentThreadRequestHandler()
         app = FastAPI()
@@ -184,16 +224,19 @@ class TestAgentThreadRequestHandler:
         assert [(m.role, m.content) for m in messages] == [("user", "hi there"), ("assistant", "agent says hi")]
 
     @pytest.mark.asyncio
-    async def test_an_anonymous_request_maps_to_403(self, thread_enabled, registered_agent):
+    async def test_another_users_thread_is_refused_with_403_and_left_untouched(self, thread_enabled, registered_agent):
+        """A thread is one caller's conversation: a second principal neither appends to it nor runs the agent in it (#603)."""
+        thread_enabled.get_or_create_thread("s1", "bob", first_prompt="bob's chat")
         handler = AgentThreadRequestHandler()
         handler.chat_service = FakeChatService()
 
         with pytest.raises(HTTPException) as exc:
-            await handler._run_with_recording(BaseRunRequest(prompt="hi", session_id="s1", agent=registered_agent.name))
+            await handler._run_with_recording(BaseRunRequest(prompt="hi", session_id="s1", principal=U1, agent=registered_agent.name))
 
         assert exc.value.status_code == 403
-        assert "authenticated principal" in exc.value.detail["error"]
-        assert thread_enabled.get_thread("s1") is None
+        assert "Thread s1 is not owned by user u1" in exc.value.detail["error"]
+        assert thread_enabled.get_messages("s1").messages == []
+        assert handler.chat_service.calls == []
 
     @pytest.mark.asyncio
     async def test_no_agent_precheck_leaves_no_phantom_thread(self, thread_enabled):
@@ -283,84 +326,91 @@ class TestAgentThreadRequestHandler:
         assert [(m.role,) for m in messages] == [("user",)]
 
 
-class _AuthenticatedThreadHandler(AgentThreadRequestHandler):
-    """Stands in for the identity dependency the REST surface gains with the identity provider: the
-    surface, never the client, assigns the principal the thread is keyed on."""
-
-    async def run(self, body: BaseRunRequest, request: Request):
-        request.state.principal = ALICE
-        return await super().run(body, request)
-
-
-def _request() -> Request:
-    """A bare request for calling a route method directly: no identity dependency has set anything on its state."""
-    return Request({"type": "http", "headers": [], "state": {}})
+def _request(principal: Principal | None = U1) -> Request:
+    """A request for calling a route method directly, carrying what the identity dependency puts on its state."""
+    return Request({"type": "http", "headers": [], "state": {"principal": principal}})
 
 
 class TestEndToEnd:
+    def test_an_anonymous_chat_is_401_before_any_thread_write(self, thread_enabled, registered_agent):
+        """The chat route refuses a request nothing authenticated before the recorder runs (#603)."""
+        client = _client(AgentThreadRequestHandler())
+
+        resp = client.post("/api/v1/chat", json={"prompt": "hello", "session_id": "s-anon", "agent": registered_agent.name})
+
+        assert resp.status_code == 401
+        assert resp.json()["detail"] == "Authentication required"
+        assert client.get("/api/v1/threads/s-anon", headers=AUTH).status_code == 404
+
     def test_a_principal_sent_by_the_client_is_not_honoured(self, thread_enabled, registered_agent):
-        """Without the identity dependency the surface establishes nobody, whatever the body claims (#603)."""
-        app = FastAPI()
-        app.include_router(AgentThreadRequestHandler().get_router())
-        client = TestClient(app)
+        """The surface establishes the caller, whatever the body claims (#603)."""
+        client = _client(AgentThreadRequestHandler())
 
         resp = client.post(
             "/api/v1/chat",
             json={"prompt": "hello", "session_id": "s-forged", "agent": registered_agent.name, "principal": ALICE.model_dump(mode="json")},
         )
 
-        assert resp.status_code == 403
-        assert "authenticated principal" in resp.json()["detail"]["error"]
-        assert client.get("/api/v1/threads/s-forged").status_code == 404
+        assert resp.status_code == 401
+        assert client.get("/api/v1/threads/s-forged", headers=AUTH).status_code == 404
 
     def test_a_user_id_in_the_body_is_refused_before_any_thread_write(self, thread_enabled, registered_agent):
         """The refusal has to run before the recorder: a 400 after it would leave an unanswered user turn."""
-        app = FastAPI()
-        app.include_router(_AuthenticatedThreadHandler().get_router())
-        client = TestClient(app)
+        client = _client(AgentThreadRequestHandler())
 
-        resp = client.post("/api/v1/chat", json={"prompt": "hello", "session_id": "s-uid", "agent": registered_agent.name, "user_id": "u-1"})
+        resp = client.post(
+            "/api/v1/chat", json={"prompt": "hello", "session_id": "s-uid", "agent": registered_agent.name, "user_id": "u-1"}, headers=AUTH
+        )
 
         assert resp.status_code == 400
         assert "user_id is not a request field" in resp.json()["detail"]["error"]
-        assert client.get("/api/v1/threads/s-uid").status_code == 404
+        assert client.get("/api/v1/threads/s-uid", headers=AUTH).status_code == 404
 
     def test_a_user_id_form_field_is_refused_before_any_thread_write(self, thread_enabled, registered_agent):
         """FastAPI drops a form field the route does not declare; the route reads the raw form so the refusal still fires."""
-        app = FastAPI()
-        app.include_router(_AuthenticatedThreadHandler().get_router())
-        client = TestClient(app)
+        client = _client(AgentThreadRequestHandler())
 
         resp = client.post(
-            "/api/v1/chat-multipart", data={"prompt": "hello", "session_id": "s-uid-form", "agent": registered_agent.name, "user_id": "u-1"}
+            "/api/v1/chat-multipart",
+            data={"prompt": "hello", "session_id": "s-uid-form", "agent": registered_agent.name, "user_id": "u-1"},
+            headers=AUTH,
         )
 
         assert resp.status_code == 400
         assert "user_id is not a request field" in resp.json()["detail"]
-        assert client.get("/api/v1/threads/s-uid-form").status_code == 404
+        assert client.get("/api/v1/threads/s-uid-form", headers=AUTH).status_code == 404
 
     def test_chat_records_and_reads_back_through_the_api(self, thread_enabled, registered_agent):
-        handler = _AuthenticatedThreadHandler()
-        app = FastAPI()
-        app.include_router(handler.get_router())
-        client = TestClient(app)
+        client = _client(AgentThreadRequestHandler())
 
-        resp = client.post(
-            "/api/v1/chat",
-            json={"prompt": "hello", "session_id": "s-e2e", "agent": registered_agent.name},
-        )
+        resp = client.post("/api/v1/chat", json={"prompt": "hello", "session_id": "s-e2e", "agent": registered_agent.name}, headers=AUTH)
         assert resp.status_code == 200
         assert resp.json() == {"result": "ok:hello", "session_id": "s-e2e"}
 
-        read = client.get("/api/v1/threads/s-e2e")
+        read = client.get("/api/v1/threads/s-e2e", headers=AUTH)
         assert read.status_code == 200
         body = read.json()
         assert body["user_id"] == "alice"
         assert [(m["role"], m["content"]) for m in body["messages"]] == [("user", "hello"), ("assistant", "ok:hello")]
 
-        listing = client.get("/api/v1/threads", params={"user_id": "alice"})
+        listing = client.get("/api/v1/threads", headers=AUTH)
         assert listing.status_code == 200
         assert [t["session_id"] for t in listing.json()["threads"]] == ["s-e2e"]
+
+    def test_another_user_cannot_continue_or_read_the_thread(self, thread_enabled, registered_agent):
+        """Ownership holds on the chat route as on the read routes: a thread is one caller's conversation (#603)."""
+        client = _client(AgentThreadRequestHandler())
+        chat = {"session_id": "s-own", "agent": registered_agent.name}
+        assert client.post("/api/v1/chat", json={**chat, "prompt": "hello"}, headers=AUTH).status_code == 200
+
+        resp = client.post("/api/v1/chat", json={**chat, "prompt": "let me in"}, headers=BOB_AUTH)
+
+        assert resp.status_code == 403
+        assert "Thread s-own is not owned by user bob" in resp.json()["detail"]["error"]
+        assert client.get("/api/v1/threads/s-own", headers=BOB_AUTH).status_code == 403
+        assert client.get("/api/v1/threads", headers=BOB_AUTH).json()["threads"] == []
+        messages = client.get("/api/v1/threads/s-own", headers=AUTH).json()["messages"]
+        assert [(m["role"], m["content"]) for m in messages] == [("user", "hello"), ("assistant", "ok:hello")]
 
     def test_a_labelled_reply_replays_as_an_object_with_its_label(self, thread_enabled, registered_agent):
         """The whole point of #763: what rendered live must render again on reload.
@@ -368,18 +418,16 @@ class TestEndToEnd:
         Both messages go into one thread deliberately — the unlabelled one is the guarantee that an
         application which never opted into A2UI reads exactly what it read before.
         """
-        handler = _AuthenticatedThreadHandler()
+        handler = AgentThreadRequestHandler()
         handler.chat_service = FakeChatService(reply=AgentReplyAny(content={"version": "v1.0"}, media_type=MEDIA_TYPE))
-        app = FastAPI()
-        app.include_router(handler.get_router())
-        client = TestClient(app)
+        client = _client(handler)
         chat = {"session_id": "s-label", "agent": registered_agent.name}
 
-        assert client.post("/api/v1/chat", json={**chat, "prompt": "show me the form"}).status_code == 200
+        assert client.post("/api/v1/chat", json={**chat, "prompt": "show me the form"}, headers=AUTH).status_code == 200
         handler.chat_service = FakeChatService(reply=AgentReplyText(response="plain words"))
-        assert client.post("/api/v1/chat", json={**chat, "prompt": "and in words"}).status_code == 200
+        assert client.post("/api/v1/chat", json={**chat, "prompt": "and in words"}, headers=AUTH).status_code == 200
 
-        messages = client.get("/api/v1/threads/s-label").json()["messages"]
+        messages = client.get("/api/v1/threads/s-label", headers=AUTH).json()["messages"]
         labelled, unlabelled = messages[1], messages[3]
 
         assert labelled["content"] == {"version": "v1.0"}

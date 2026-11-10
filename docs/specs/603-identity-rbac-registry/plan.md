@@ -46,9 +46,10 @@ iteration 18 and `credentials` lands in iteration 25, both additive).
   and leaves in 3; from iteration 2 every run is anonymous until its surface sets a principal in
   iterations 6 to 11 (threads and schedules answer 403 to every caller in that window, and a
   principal a client puts in a body is overwritten by the surface); the
-  example suites that send `user_id` are red from iteration 3, and those importing
-  `agentkernel.auth` from iteration 11, until iteration 12 migrates them. The branch-green
-  criterion is the `ak-py` suite, which does not run the examples.
+  example suites that send `user_id` are red from iteration 3, the thread, a2ui and schedule
+  examples from iteration 10 (their handlers take no `authoriser` and require an identity
+  block), and those importing `agentkernel.auth` from iteration 11, until iteration 12 migrates
+  them. The branch-green criterion is the `ak-py` suite, which does not run the examples.
 - Test stubs: the `FakeCfg` objects in `tests/test_module.py:80-84`, `tests/test_runtime.py:79-155`,
   `tests/test_agui_handler.py:122-134`, `tests/test_pipeline_ws.py:54-74`,
   `tests/test_schedule_tools.py:92` and `tests/test_ecs_websocket_routes.py:19-27` gain
@@ -320,25 +321,33 @@ iteration 18 and `credentials` lands in iteration 25, both additive).
 
 - **Goal:** the thread and schedule routes authenticate through the principal and enforce
   ownership on it; the default sandbox resolver reads the run principal.
-- **Files:** `api/handler.py`, `integration/thread/manager.py`,
+- **Files:** `api/handler.py`, `integration/agui/handler.py`, `integration/thread/manager.py`,
   `integration/thread/thread_chat.py`, `schedule/handler.py`, `sandbox/principal.py`.
 - **Steps:**
   1. `AuthorisedRESTRequestHandler` loses `authoriser`, requires the identity block and
      resolves `_resolve_user -> Principal` (absorbing `AGUIRequestHandler._resolve_principal`
-     from 7); `ThreadRESTRequestHandler` and `ScheduleRESTRequestHandler` follow, keeping their
-     403 and 404 rules on the principal's subject (spec 8.2, 8.10, 8.11).
+     from 7, whose own identity check and method are deleted); `ThreadRESTRequestHandler` and
+     `ScheduleRESTRequestHandler` follow, keeping their 403 and 404 rules on the principal's
+     subject; both listing routes drop their `user_id` query parameter, since every listing is
+     the caller's own (spec 8.2, 8.10, 8.11).
   2. `ConversationThreadManager.get_or_create_thread` raises `PermissionError` on a foreign
      thread (spec 8.10).
   3. `AgentThreadRequestHandler` and `ThreadRequestHandler` lose `authoriser`, require the
-     identity block and map an anonymous principal to 401 (the 403 mapping landed in 3) (spec 8.10).
+     identity block and map an anonymous principal to 401: their chat routes assign
+     `body.principal` from the composed read handler's `_resolve_user`, ahead of
+     `reject_unprocessable` and the recorder (the 403 mapping landed in 3 and now covers the
+     foreign-thread refusal) (spec 8.10).
   4. The schedule handler passes `principal.subject` to `get_task`, `list_tasks`, `update`,
      `cancel` (spec 8.11).
   5. `AgentPrincipalResolver.resolve` returns the user-mode principal for a non-anonymous run
      (spec 8.12).
 - **Verify:** changed `test_thread_pipeline_recording`, `test_thread_integration`,
-  `test_thread_router`, `test_schedule_router`, the three `*_agent_runner_schedule` suites; new
-  `tests/test_schedule_principal.py` (ownership; the fire-time skip is added in 19); the sandbox
-  resolver cases.
+  `test_thread_router`, `test_schedule_router` (a fake provider behind the identity dependency
+  on the test app, bearer tokens per test user), `test_thread_manager` (the foreign-thread
+  refusal), the sandbox resolver cases in `test_sandbox`, the three `*_agent_runner_schedule`
+  suites and the AG-UI suites (unchanged, re-run for the `_resolve_principal` fold); new
+  `tests/test_schedule_principal.py` (ownership over `RESTAPI.build_app` with the real `static`
+  provider; the fire-time skip is added in 19).
 
 ### Iteration 11: Deployment adapters; delete `agentkernel.auth`
 
