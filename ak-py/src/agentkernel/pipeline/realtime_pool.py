@@ -12,7 +12,7 @@ from ..core.base import Agent as BaseAgent
 from ..core.base import Session
 from ..core.config import AKConfig
 from ..core.event import AgentChanged, AudioDelta, Interrupt, TextDelta
-from ..core.model import StreamChunk
+from ..core.model import Principal, StreamChunk
 from ..core.realtime import EDGE_SAMPLE_RATE, PCM16Resampler
 from ..core.realtime import RealtimeRunner as BaseRealtimeRunner
 from ..core.runtime import Runtime
@@ -60,6 +60,9 @@ class RealtimeConnection:
         self.user_id: str | None = None
         self.integration: str | None = None
         self.reply_context: dict = {}
+        # The principal of the last input dispatched here: the tool calls the model makes in reply
+        # run as it (spec #603, section 8.4). None runs them anonymous.
+        self.principal: Principal | None = None
         # Set once the model socket has failed or been closed. The pool evicts a closed
         # connection so the next chunk reconnects instead of writing to a dead socket.
         self.closed = False
@@ -241,10 +244,15 @@ class RealtimeConnection:
         try:
             # Enter the same execution scopes a unary run does, so a tool that reads
             # Session.current()/Agent.current(), the volatile cache, or holds the session lock
-            # sees them exactly as it would on the normal path.
+            # sees them exactly as it would on the normal path. No Runtime.run surrounds a realtime
+            # tool call, so the identity Runtime would publish for a turn is published here.
             async with self.session:
                 with self.agent._activate():
-                    result_str = await self.adapter.execute_tool(name, arguments, ctx, call_id)
+                    self.runtime._publish(self.agent, self.session, self.principal)
+                    try:
+                        result_str = await self.adapter.execute_tool(name, arguments, ctx, call_id)
+                    finally:
+                        self.session._unpublish_run()
         except Exception as e:
             _log.exception(f"Tool execution {name} failed")
             result_str = f"Error: {e}"
@@ -530,9 +538,10 @@ class RealtimeConnectionPool:
         then, not per audio chunk); its delivery context is refreshed so the output routes back to
         the edge that sent this input; and each voice or text request is sent to the model.
 
-        :param body: The input message's run request.
+        :param body: The input message's run request; its principal becomes the connection's.
         :param request_id: The resolved request id, stamped on the output.
-        :param user_id: The input's user id, if any.
+        :param user_id: The input's user id attribute, if any: the WebSocket routing marker the
+            output is stamped with, not an identity (that is ``body.principal``).
         :param attributes: The input message's attributes, carrying the integration return address.
         :param chat_service: Resolves the agent and session when the connection is created.
         """
@@ -552,6 +561,7 @@ class RealtimeConnectionPool:
             conn = self.get_or_create(body.session_id, handler.service.agent, handler.service.runtime, handler.service.session, **delivery)
 
         conn.update_delivery_context(**delivery)
+        conn.principal = body.principal
         for request in body.requests:
             if getattr(request, "type", None) == "voice":
                 conn.append_audio(request.audio_data)

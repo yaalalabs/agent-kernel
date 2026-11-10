@@ -294,18 +294,27 @@ iteration 18 and `credentials` lands in iteration 25, both additive).
   `integration/livekit/adapter.py`, `integration/adapter/base.py` (`StatefulEdgeAdapter._enqueue`),
   `pipeline/realtime_pool.py`.
 - **Steps:**
-  1. `IntegrationProducer.enqueue` builds the principal from the adapter's `Source` prefix, or
-     anonymous when the delivery has no sender (spec 8.4, design refinement 3).
-  2. Each adapter fills `namespace` (Slack team id, Teams tenant, Gmail inbox, WhatsApp
-     `phone_number_id`, Messenger and Instagram page id, Telegram bot id); Gmail records the
-     `Authentication-Results` claim (spec 8.4).
-  3. LiveKit passes the participant identity and the API key id as namespace (spec 8.4).
-  4. `RealtimeConnectionPool.dispatch` takes `body.principal` and the connection stores it;
-     `_execute_tool_and_reply` publishes it around `execute_tool` (the tool check comes in 23)
-     (spec 8.4).
+  1. `IntegrationProducer.enqueue(adapter_name, request, source=Source.WEBHOOK)` builds the
+     principal from the source's prefix, or anonymous when the delivery has no sender (spec 8.4,
+     design refinement 3). The producer cannot see the adapter, so the stateful edge passes
+     `self.source`; the webhook host and the poller keep the default.
+  2. Each adapter fills `namespace` (Slack the event's `team`, else `auth_test`'s `team_id`;
+     Teams tenant; Gmail the inbox address from the account profile, resolved once, since no
+     config field names it; WhatsApp `phone_number_id`; Messenger and Instagram the delivery's
+     `recipient.id`; Telegram the bot id, the token's prefix before the colon); Gmail records the
+     `Authentication-Results` claim (spec 8.4). The contract suite gains
+     `test_parse_names_the_platform_scope`.
+  3. LiveKit passes the participant identity and the API key id as namespace (spec 8.4):
+     `_stage_request(request, participant_identity=None)`, `_process_incoming_audio(track,
+     participant_identity=None)`, `StatefulEdgeAdapter._enqueue(request, user_id=None,
+     namespace=None)`.
+  4. `RealtimeConnectionPool.dispatch` stores `body.principal` on the connection on every input;
+     `_execute_tool_and_reply` publishes it through `Runtime._publish` around `execute_tool` and
+     unpublishes in a `finally` (the tool check comes in 23) (spec 8.4). The `user_id` parameter
+     stays: it is the WebSocket routing marker the output is stamped with, not an identity.
 - **Verify:** new `tests/test_principal_messaging.py`; changed `test_integration_producer`, the
   per-platform adapter suites (namespace), `test_integration_adapter_contract`, the realtime
-  pool tests.
+  pool tests, `test_livekit_gateway`.
 
 ### Iteration 10: Threads, schedules and the sandbox resolver
 

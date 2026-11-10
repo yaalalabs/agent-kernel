@@ -811,34 +811,49 @@ candidate walk; `StaticAuthorizer` subclasses it, and every later engine must.
 
 - `InboundRequest` (`integration/adapter/base.py:51-67`): `user_id` stays (the platform sender
   id) and gains `namespace: Optional[str] = None` and `claims: dict[str, Any] = {}`.
-- `IntegrationProducer.enqueue(adapter_name, request)` (`integration/adapter/producer.py:61-91`)
-  builds the body with `principal=Principal(subject=request.user_id, provider=f"{prefix}{
-  adapter_name}", namespace=request.namespace, claims=request.claims)` when `request.user_id` is
-  set, where `prefix` is `"realtime:"` for `Source.REALTIME` adapters and `"messaging:"`
-  otherwise (`base.py:43-48`), and `principal=None` (anonymous) when it is not. `ATTR_USER_ID`
-  stays unstamped (docstring 64-66). This keeps `AgentRunner` platform-agnostic (design
-  refinement 3).
-- Per adapter, the namespace: Slack `team_id` from the event payload; Teams
-  `resolve_tenant(activity)` (`integration/teams/adapter.py:109`); Gmail the configured inbox
-  address; WhatsApp `phone_number_id` (`integration/whatsapp/adapter.py:29`); Messenger and
-  Instagram the page id of the delivery; Telegram the bot id. Gmail additionally records
+- `IntegrationProducer.enqueue(adapter_name, request, source=Source.WEBHOOK)`
+  (`integration/adapter/producer.py:61-91`) builds the body with `principal=Principal(subject=
+  request.user_id, provider=f"{prefix}{adapter_name}", namespace=request.namespace,
+  claims=request.claims)` when `request.user_id` is set, where `prefix` is `"realtime:"` for
+  `Source.REALTIME` and `"messaging:"` otherwise (`base.py:43-48`), and `principal=None`
+  (anonymous) when it is not. `ATTR_USER_ID` stays unstamped (docstring 64-66). This keeps
+  `AgentRunner` platform-agnostic (design refinement 3). Amended in iteration 9: the producer does
+  not know which adapter is calling it (the webhook host and the poller hand it a name and a
+  request), so the source arrives as a keyword argument; both hosts keep the default, which
+  covers `WEBHOOK` and `POLLER` alike, and the stateful edge passes `self.source` from
+  `_drain_requests`.
+- Per adapter, the namespace: Slack the event's `team`, else the workspace the bot authenticated
+  to (`auth_test()["team_id"]`, cached beside the bot user id); Teams `resolve_tenant(activity)`
+  (`integration/teams/adapter.py:109`); Gmail the inbox address; WhatsApp `phone_number_id`
+  (`integration/whatsapp/adapter.py:29`, exposed as a `_WhatsAppClient.phone_number_id`
+  property); Messenger and Instagram the delivery's `recipient.id` (the page or business
+  account); Telegram the bot id, the part of the token before the colon
+  (`_TelegramClient.bot_id`, None for a token without one). Gmail additionally records
   `claims={"authentication_results": <header value>}` from the `format="full"` fetch
-  (`integration/gmail/adapter.py:237-238`), present or absent as the message carries it.
+  (`integration/gmail/adapter.py:237-238`), present or absent as the message carries it. Amended
+  in iteration 9: no `gmail` config field names the inbox address, and adding one would be a knob
+  the API already answers, so the adapter resolves it once from the account profile
+  (`users().getProfile(userId="me")["emailAddress"]`) when the first message is parsed.
 - LiveKit (`integration/livekit/adapter.py`): `_stage_request(request, participant_identity)`
   and `StatefulEdgeAdapter._enqueue(request, user_id, namespace)` (`base.py:300-314`) set
   `InboundRequest(user_id=participant.identity, namespace=self._api_key)`; the greeting
   (`:249-250`), chat (`:268`) and audio (`:289-299`) paths pass the participant they already read
   (`:238-243, :255`). The API key id is the LiveKit namespace (Q20).
-- `RealtimeConnectionPool.dispatch(body, request_id, attributes, chat_service)`
-  (`pipeline/realtime_pool.py:520-558`): `user_id` is replaced by `body.principal`; on first
-  connect `chat_service.prepare_agent_handler` (line 550) now runs the agent check through
-  `ensure_agent_available(body.agent, body.principal)`, and the connection stores the principal.
-  `_execute_tool_and_reply` (`228-252`) wraps `adapter.execute_tool` in
-  `session._publish_run(principal, gate.tool_filter(principal, agent) if gate else None)` /
-  `_unpublish_run()`, and before the adapter call checks `ToolFilter.allows(name)`, returning the
-  reason string as the tool result when denied (the one place AK owns the call). The caller
-  `RealtimeAgentRunner._process_run` (`pipeline/agent_runner.py:391`) and the ECS runner
-  (`deployment/aws/containerized/akagentrunner.py:329-331`) stop passing the attribute.
+- `RealtimeConnectionPool.dispatch(body, request_id, user_id, attributes, chat_service)`
+  (`pipeline/realtime_pool.py:520-558`): the connection stores `body.principal` on every input
+  (`RealtimeConnection.principal`, None when the input named nobody); on first connect
+  `chat_service.prepare_agent_handler` (line 550) runs the agent check through
+  `ensure_agent_available(body.agent, body.principal)` once the gate exists (iterations 17 to
+  20). `_execute_tool_and_reply` (`228-252`) wraps `adapter.execute_tool` in
+  `Runtime._publish(agent, session, principal)` / `session._unpublish_run()`, so the tool sees
+  the participant with the agent as actor and the session's owner is recorded as on a turn; the
+  tool filter (`gate.tool_filter(principal, agent)`, `ToolFilter.allows(name)` returning the
+  reason string as the tool result when denied) joins the same wrap in iteration 23. Amended in
+  iteration 9: the `user_id` parameter stays. It is the `ATTR_USER_ID` WebSocket routing marker
+  the output is stamped with (`_emit`, `258-259`), not an identity, so replacing it would break
+  the WebSocket edge's delivery; the principal rides beside it, and the callers
+  (`pipeline/agent_runner.py:391`, `deployment/aws/containerized/akagentrunner.py:329-331`) keep
+  passing the attribute.
 
 #### 8.5 AG-UI (`integration/agui/`)
 

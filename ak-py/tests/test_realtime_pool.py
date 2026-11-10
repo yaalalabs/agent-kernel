@@ -8,7 +8,7 @@ import pytest
 from agentkernel import Agent, Runner, Session
 from agentkernel.core.config import _ExecutionConfig, _InputQueueConfig, _OutputQueueConfig, _QueuesConfig, _RealtimeConfig
 from agentkernel.core.event import TextDelta
-from agentkernel.core.model import AgentReplyText, ExecutionMode, StreamChunk
+from agentkernel.core.model import AgentReplyText, AgentRequestText, BaseRunRequest, ExecutionMode, Principal, StreamChunk
 from agentkernel.core.realtime import RealtimeRunner
 from agentkernel.core.runtime import Runtime
 from agentkernel.core.session.in_memory import InMemorySessionStore
@@ -52,6 +52,7 @@ class _Adapter(RealtimeRunner):
         self.texts: list[str] = []
         self.executed: list[tuple[str, str]] = []
         self.tool_results: list[tuple[str, str]] = []
+        self.principals: list[Principal | None] = []
         self.tool_return = "tool-ok"
         self.callback = None
 
@@ -67,6 +68,8 @@ class _Adapter(RealtimeRunner):
 
     async def execute_tool(self, name, arguments, context, call_id):
         self.executed.append((name, arguments, call_id))
+        # What a tool reading the run's identity sees while it runs.
+        self.principals.append(context.session.get_principal())
         return self.tool_return
 
     async def send_tool_result(self, call_id, result):
@@ -165,6 +168,52 @@ class TestRealtimeConnection:
 
         assert conn.adapter.executed == [("get_weather", '{"location": "Paris"}', "call-1")]
         assert conn.adapter.tool_results == [("call-1", "42")]
+
+    @pytest.mark.asyncio
+    async def test_a_tool_runs_as_the_connections_principal(self, monkeypatch):
+        """The realtime path has no Runtime.run around a tool call, so the connection publishes the
+        participant's principal for the call the way Runtime does for a turn (spec #603, 8.4)."""
+        transport = InMemoryTransport()
+        monkeypatch.setattr(QueueTransportFactory, "create", staticmethod(lambda *a, **k: transport))
+        conn = _connection(loop=asyncio.get_running_loop())
+        conn.principal = Principal(subject="human", provider="realtime:livekit", namespace="lk-key")
+
+        await conn._execute_tool_and_reply("call-1", "get_weather", "{}")
+
+        [published] = conn.adapter.principals
+        assert (published.subject, published.provider, published.namespace) == ("human", "realtime:livekit", "lk-key")
+        assert (published.actor.kind, published.actor.subject) == ("agent", "general")
+        assert conn.session.get_principal() is None, "the identity is unpublished once the call ends"
+        assert (conn.session.get_owner().subject, conn.session.get_owner().provider) == ("human", "realtime:livekit")
+
+    @pytest.mark.asyncio
+    async def test_a_tool_runs_anonymous_when_the_input_named_nobody(self, monkeypatch):
+        transport = InMemoryTransport()
+        monkeypatch.setattr(QueueTransportFactory, "create", staticmethod(lambda *a, **k: transport))
+        conn = _connection(loop=asyncio.get_running_loop())
+
+        await conn._execute_tool_and_reply("call-1", "get_weather", "{}")
+
+        [published] = conn.adapter.principals
+        assert published.is_anonymous
+        assert published.actor.subject == "general"
+        assert conn.session.get_owner() is None
+
+    @pytest.mark.asyncio
+    async def test_a_failing_tool_still_unpublishes_the_identity(self, monkeypatch):
+        transport = InMemoryTransport()
+        monkeypatch.setattr(QueueTransportFactory, "create", staticmethod(lambda *a, **k: transport))
+        conn = _connection(loop=asyncio.get_running_loop())
+
+        async def boom(name, arguments, context, call_id):
+            raise RuntimeError("tool broke")
+
+        conn.adapter.execute_tool = boom
+
+        await conn._execute_tool_and_reply("call-1", "get_weather", "{}")
+
+        assert conn.session.get_principal() is None
+        assert conn.adapter.tool_results == [("call-1", "Error: tool broke")]
 
 
 class TestRealtimeConnectionPool:
@@ -650,6 +699,50 @@ class TestRealtimeAgentChanged:
         assert message.attributes[ATTR_INTEGRATION] == "livekit"
         assert message.attributes["request_id"] == "r1"
         assert message.attributes["reply_session_id"] == "s1"
+
+
+class TestDispatchPrincipal:
+    class _Conn:
+        """Stands in for a live connection: records what dispatch hands it."""
+
+        def __init__(self):
+            self.principal = "untouched"
+            self.delivery = None
+            self.texts = []
+
+        def update_delivery_context(self, **delivery):
+            self.delivery = delivery
+
+        def append_audio(self, audio):
+            pass
+
+        def send_text(self, text):
+            self.texts.append(text)
+
+    def _dispatch(self, monkeypatch, principal):
+        from unittest.mock import MagicMock
+
+        pool = RealtimeConnectionPool.initialize()
+        conn = self._Conn()
+        monkeypatch.setattr(pool, "get_connection", lambda session_id: conn)
+        body = BaseRunRequest(prompt="", session_id="s1", requests=[AgentRequestText(prompt="hi")], principal=principal)
+        pool.dispatch(body, "r1", "human", {"integration": "livekit"}, MagicMock())
+        return conn
+
+    def test_the_inputs_principal_is_the_connections_until_the_next_input(self, monkeypatch):
+        principal = Principal(subject="human", provider="realtime:livekit", namespace="lk-key")
+
+        conn = self._dispatch(monkeypatch, principal)
+
+        assert conn.principal == principal
+        assert conn.texts == ["hi"]
+        # user_id stays the WebSocket routing marker; the principal rides beside it (#603).
+        assert conn.delivery["user_id"] == "human"
+
+    def test_an_input_naming_nobody_clears_the_connections_principal(self, monkeypatch):
+        conn = self._dispatch(monkeypatch, None)
+
+        assert conn.principal is None
 
 
 class TestOpenAIBargeIn:

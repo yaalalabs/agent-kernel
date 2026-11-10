@@ -38,7 +38,11 @@ def _encode(text: str) -> str:
     return base64.urlsafe_b64encode(text.encode()).decode()
 
 
-def _message(message_id=MESSAGE_ID, body="Hello agent", subject="Greetings", thread_id=THREAD_ID, parts=None):
+INBOX = "agent-inbox@example.com"
+AUTHENTICATION_RESULTS = "mx.google.com; spf=pass smtp.mailfrom=example.com; dkim=pass header.i=@example.com; dmarc=pass"
+
+
+def _message(message_id=MESSAGE_ID, body="Hello agent", subject="Greetings", thread_id=THREAD_ID, parts=None, authentication_results=None):
     payload = {
         "headers": [
             {"name": "From", "value": SENDER},
@@ -48,6 +52,8 @@ def _message(message_id=MESSAGE_ID, body="Hello agent", subject="Greetings", thr
         ],
         "body": {"data": _encode(body)},
     }
+    if authentication_results is not None:
+        payload["headers"].append({"name": "Authentication-Results", "value": authentication_results})
     if parts is not None:
         payload["parts"] = parts
         payload.pop("body")
@@ -63,6 +69,7 @@ def _service(messages=None, listed=None, thread=None):
     users.messages.return_value.get.side_effect = lambda userId, id, format: MagicMock(execute=lambda: messages[id])
     users.threads.return_value.get.return_value.execute.return_value = thread or {"messages": []}
     users.messages.return_value.send.return_value.execute.return_value = {"id": "sent-1"}
+    users.getProfile.return_value.execute.return_value = {"emailAddress": INBOX}
     return client
 
 
@@ -87,6 +94,7 @@ def _inbound(client=None, agent="helper", allowed_senders=None, subject_keywords
     adapter._agent = agent
     adapter.poll_interval = 30
     adapter._label_filter = "INBOX"
+    adapter._inbox = None
     adapter._service = _gmail_service(client if client is not None else _service())
     adapter._allowed_senders = allowed_senders
     adapter._subject_keywords = subject_keywords
@@ -149,8 +157,29 @@ class TestParse:
         # The Gmail thread is the conversation.
         assert request.session_id == THREAD_ID
         assert request.user_id == SENDER
+        assert request.namespace == INBOX, "the inbox the poller reads is the scope a From address is seen under (#603)"
+        assert request.claims == {}
         assert request.request_id == MESSAGE_ID
         assert isinstance(request.requests[0], AgentRequestText)
+
+    @pytest.mark.asyncio
+    async def test_the_authentication_results_header_is_kept_as_a_claim(self):
+        """A From address is unverified by itself; the header Google adds is what a downstream DMARC check reads."""
+        client = _service(messages={MESSAGE_ID: _message(authentication_results=AUTHENTICATION_RESULTS)})
+
+        [request] = (await _inbound(client).parse(MESSAGE_ID)).requests
+
+        assert request.claims == {"authentication_results": AUTHENTICATION_RESULTS}
+
+    @pytest.mark.asyncio
+    async def test_the_inbox_address_is_resolved_once(self):
+        client = _service()
+        adapter = _inbound(client)
+
+        await adapter.parse(MESSAGE_ID)
+        await adapter.parse(MESSAGE_ID)
+
+        assert client.users.return_value.getProfile.call_count == 1
 
     @pytest.mark.asyncio
     async def test_the_reply_context_carries_everything_the_send_needs(self):

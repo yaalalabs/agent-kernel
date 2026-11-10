@@ -2,13 +2,13 @@ import logging
 from typing import Any
 
 from ...core.config import AKConfig
-from ...core.model import BaseRunRequest
+from ...core.model import BaseRunRequest, Principal
 from ...core.multimodal.storage import AttachmentStorageManager
 from ...core.util.factory import AKConfigError
 from ...pipeline.envelope import ATTR_INTEGRATION, REPLY_CONTEXT_PREFIX
 from ...pipeline.producer import RequestProducer
 from ...pipeline.transport.base import QueueTransport, QueueTransportFactory
-from .base import InboundRequest
+from .base import InboundRequest, Source
 
 
 class IntegrationProducer:
@@ -58,16 +58,21 @@ class IntegrationProducer:
             "single-process in_memory transport"
         )
 
-    def enqueue(self, adapter_name: str, request: InboundRequest) -> dict[str, Any]:
+    def enqueue(self, adapter_name: str, request: InboundRequest, source: Source = Source.WEBHOOK) -> dict[str, Any]:
         """Enqueue one parsed platform message.
 
-        The sender is deliberately not stamped as the ``user_id`` message attribute: that attribute
-        is the WebSocket-entered marker the runner and Response Handler branch on, and integration
-        traffic is neither. The sender reaches the body as its principal once the edge builds one.
+        The sender travels as the body's principal (spec #603, section 8.4): the platform asserted
+        who sent the message, so the edge is the one place that knows it, and the runner reads a
+        principal the same way it reads one a REST surface authenticated. A delivery with no
+        sender runs anonymous. The sender is deliberately not stamped as the ``user_id`` message
+        attribute: that attribute is the WebSocket-entered marker the runner and Response Handler
+        branch on, and integration traffic is neither.
 
-        :param adapter_name: The inbound adapter's ``name``; becomes the routing attribute and
-            namespaces the dedup key.
+        :param adapter_name: The inbound adapter's ``name``; becomes the routing attribute,
+            namespaces the dedup key and names the principal's provider.
         :param request: The normalized request to send.
+        :param source: The adapter's ``Source``; a realtime edge's principal is ``realtime:<name>``,
+            every other one ``messaging:<name>``.
         :return: The transport's send response.
         :raises ValueError: If the serialized reply context exceeds the budget.
         """
@@ -78,6 +83,7 @@ class IntegrationProducer:
             session_id=request.session_id,
             group_id=request.group_id,
             requests=request.requests,
+            principal=self._principal(adapter_name, request, source),
         )
         result = self._producer.enqueue(
             body,
@@ -88,6 +94,19 @@ class IntegrationProducer:
         )
         self._log.info(f"[ENQUEUED] integration={adapter_name}, session_id={request.session_id}, request_id={request.request_id}")
         return result
+
+    @staticmethod
+    def _principal(adapter_name: str, request: InboundRequest, source: Source) -> Principal | None:
+        """The sender as a shared-channel principal, or None when the platform named nobody.
+
+        The namespace is the platform scope the sender id is unique within (a Slack workspace, an
+        Entra tenant, a Meta page), which the adapter resolved; without it two installations'
+        sender ids could collide.
+        """
+        if not request.user_id:
+            return None
+        prefix = "realtime:" if source is Source.REALTIME else "messaging:"
+        return Principal(subject=request.user_id, provider=f"{prefix}{adapter_name}", namespace=request.namespace, claims=dict(request.claims))
 
     @classmethod
     def _reply_attributes(cls, adapter_name: str, reply_context: dict[str, str]) -> dict[str, str]:

@@ -43,6 +43,12 @@ class _TelegramClient:
     def webhook_secret(self) -> str:
         return self._webhook_secret
 
+    @property
+    def bot_id(self) -> str | None:
+        """The bot's id, the part of its token before the colon: the scope a Telegram user id is seen under (#603)."""
+        bot_id, separator, _ = self._bot_token.partition(":")
+        return bot_id if separator else None
+
     async def send_message(self, chat_id: str, chunks: list[str]) -> None:
         """Send each chunk as its own message, in order."""
         async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
@@ -211,6 +217,7 @@ class TelegramInboundAdapter(InboundAdapter):
             prompt=text,
             agent=self._agent,
             user_id=sender_id,
+            namespace=self._client.bot_id,
             reply_context={"chat_id": session_id},
         )
 
