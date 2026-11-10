@@ -14,11 +14,11 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-from agentkernel.auth.handler import AuthValidator, ValidationResult
 from agentkernel.core.config import _ExecutionConfig, _QueuesConfig
-from agentkernel.core.model import ExecutionMode
+from agentkernel.core.model import ExecutionMode, Principal
 from agentkernel.core.session.in_memory import InMemoryWSConnectionStore
 from agentkernel.core.util.factory import AKConfigError
+from agentkernel.identity import AuthenticationError, IdentityProvider, RequestAuthenticator
 from agentkernel.pipeline.agent_runner import AgentRunner, StreamAgentRunner
 from agentkernel.pipeline.envelope import ATTR_REQUEST_ID, ATTR_USER_ID, QueueName
 from agentkernel.pipeline.response_handler import ResponseHandler
@@ -51,7 +51,15 @@ def _reset_state():
 
 
 def _use_config(
-    monkeypatch, mode=None, chat_route=None, push_auth_token=None, push_port=None, api_port=8000, transport_type="in_memory", message_type=None
+    monkeypatch,
+    mode=None,
+    chat_route=None,
+    push_auth_token=None,
+    push_port=None,
+    api_port=8000,
+    transport_type="in_memory",
+    message_type=None,
+    identity=None,
 ):
     class _WebSocketAPI:
         pass
@@ -68,9 +76,10 @@ def _use_config(
     class _Cfg:
         websocket_api = _WebSocketAPI
         api = _Api
-        identity = None
 
         execution = _ExecutionConfig(mode=mode, message_type=message_type, queues=_QueuesConfig(type=transport_type))
+
+    _Cfg.identity = identity
 
     monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _Cfg))
     return _Cfg
@@ -81,13 +90,19 @@ def _store() -> InMemoryWSConnectionStore:
     return InMemoryWSConnectionStore()
 
 
-class _Validator(AuthValidator):
-    def validate(self, token, context=None):
-        if token == "good":
-            return ValidationResult(is_valid=True, claims={"userId": "user-1"})
-        if token == "no-user":
-            return ValidationResult(is_valid=True, claims={})
-        return ValidationResult(is_valid=False, error_msg="bad token")
+class _Provider(IdentityProvider):
+    """Accepts one token; the connection is keyed by the subject it yields."""
+
+    name = "test"
+
+    async def authenticate(self, credential, context=None):
+        if credential == "good":
+            return Principal(subject="user-1", provider=self.name, namespace="test", groups=["ops"])
+        raise AuthenticationError("bad token")
+
+
+def _authenticator() -> RequestAuthenticator:
+    return RequestAuthenticator(_Provider())
 
 
 class _FakeSocket:
@@ -329,7 +344,7 @@ def _ws_app(monkeypatch, mode=None, chat_route=None, message_type=None):
     registry = LocalConnectionRegistry()
     transport = InMemoryTransport()
     store = _store()
-    handler = PipelineWebSocketHandler(auth_validator=_Validator(), registry=registry, transport=transport, connection_store=store)
+    handler = PipelineWebSocketHandler(authenticator=_authenticator(), registry=registry, transport=transport, connection_store=store)
     app = FastAPI()
     app.include_router(handler.get_router())
     return app, registry, transport, store
@@ -340,8 +355,8 @@ class TestWebSocketAuthentication:
         "query,reason",
         [
             ("", "Authentication token is required"),
-            ("?token=bad", "bad token"),
-            ("?token=no-user", "'userId' claim is required in token"),
+            # The provider's reason ("bad token") stays in the log; the client sees the generic close reason.
+            ("?token=bad", "Authentication failed"),
         ],
     )
     def test_handshake_rejections_close_with_policy_violation(self, monkeypatch, query, reason):
@@ -353,9 +368,11 @@ class TestWebSocketAuthentication:
         assert exc_info.value.code == 1008
         assert exc_info.value.reason == reason
 
-    def test_validator_is_mandatory(self):
-        with pytest.raises(ValueError, match="auth_validator is required"):
-            PipelineWebSocketHandler(auth_validator=None)
+    def test_an_identity_block_is_mandatory(self, monkeypatch):
+        """The connection is keyed by the authenticated subject, so a route nobody can authenticate to is a configuration error."""
+        _use_config(monkeypatch)
+        with pytest.raises(AKConfigError, match="identity block"):
+            PipelineWebSocketHandler()
 
     def test_connection_registers_and_deregisters_in_registry_and_store(self, monkeypatch):
         app, registry, _, store = _ws_app(monkeypatch)
@@ -383,7 +400,7 @@ class TestWebSocketChat:
         assert ack["type"] == "CHAT_QUEUED"
         assert ack["status"] == "SUCCESS"
         assert ack["request_id"] == "r-1"
-        assert ack["user_id"] == "user-1"
+        assert ack["subject"] == "user-1" and "user_id" not in ack
 
         [message] = transport.create_consumer(QueueName.INPUT).fetch(1, 1.0)
         # No return address on the message: USER_ID doubles as the WS-entered marker, and the
@@ -391,7 +408,10 @@ class TestWebSocketChat:
         assert message.attributes == {ATTR_REQUEST_ID: "r-1", ATTR_USER_ID: "user-1"}
         assert message.group_id == "s1"
         assert message.dedup_id == "r-1"
-        assert json.loads(message.body) == {"prompt": "hi", "session_id": "s1"}
+        body = json.loads(message.body)
+        # The connection's principal rides the body: the runner publishes it for the run (#603).
+        assert (body["prompt"], body["session_id"]) == ("hi", "s1")
+        assert (body["principal"]["subject"], body["principal"]["provider"], body["principal"]["groups"]) == ("user-1", "test", ["ops"])
 
     def test_route_omitted_defaults_to_chat(self, monkeypatch):
         app, _, transport, _ = _ws_app(monkeypatch)
@@ -413,8 +433,8 @@ class TestWebSocketChat:
         assert "user_id is not a request field" in reply["message"]
         assert transport.create_consumer(QueueName.INPUT).fetch(1, 0.1) == []
 
-    def test_a_frame_carrying_a_principal_is_enqueued_without_it(self, monkeypatch):
-        """The connection's credential establishes the principal (iteration 7); a frame cannot name one (#603)."""
+    def test_a_frame_carrying_a_principal_is_overwritten_with_the_connections(self, monkeypatch):
+        """The connection's credential establishes the principal; a frame cannot name one (#603)."""
         app, _, transport, _ = _ws_app(monkeypatch)
         client = TestClient(app)
         forged = {"subject": "mallory", "provider": "oidc", "namespace": "https://issuer.example"}
@@ -423,7 +443,7 @@ class TestWebSocketChat:
             assert websocket.receive_json()["type"] == "CHAT_QUEUED"
 
         [message] = transport.create_consumer(QueueName.INPUT).fetch(1, 1.0)
-        assert "principal" not in json.loads(message.body)
+        assert json.loads(message.body)["principal"]["subject"] == "user-1"
 
     def test_configured_chat_route_is_honored(self, monkeypatch):
         app, _, _, _ = _ws_app(monkeypatch, chat_route="converse")
@@ -476,7 +496,8 @@ class TestCustomRoutes:
     def test_sync_route_result_is_sent_as_system_response(self, monkeypatch):
         @PipelineWebSocketHandler.register("status")
         def status_route(msg):
-            return {"status": "SUCCESS", "echo": msg["message"]["value"], "user": msg["user_id"]}
+            assert "user_id" not in msg
+            return {"status": "SUCCESS", "echo": msg["message"]["value"], "user": msg["principal"].subject}
 
         app, _, _, _ = _ws_app(monkeypatch)
         client = TestClient(app)
@@ -544,50 +565,50 @@ class TestCustomRoutes:
 
 
 class TestWebSocketGateway:
-    def test_validator_is_mandatory(self, monkeypatch):
-        _use_config(monkeypatch, mode=ExecutionMode.ASYNC)
-        with pytest.raises(ValueError, match="auth_validator is required"):
-            WebSocketGateway.run(auth_validator=None)
+    def test_an_identity_block_is_mandatory(self, monkeypatch):
+        config = _use_config(monkeypatch, mode=ExecutionMode.ASYNC, push_auth_token="s3cret")
+        with pytest.raises(AKConfigError, match="identity block"):
+            WebSocketGateway._validate("nats", config)
 
     def test_in_memory_transport_is_rejected(self, monkeypatch):
         """The standalone gateway is broker-only (an in_memory queue cannot reach a separate
         gateway process); the error points at the co-hosted single-process topology."""
-        config = _use_config(monkeypatch, mode=ExecutionMode.ASYNC, push_auth_token="s3cret")
+        config = _use_config(monkeypatch, mode=ExecutionMode.ASYNC, push_auth_token="s3cret", identity=True)
         with pytest.raises(AKConfigError, match="in_memory.*IOHandler"):
-            WebSocketGateway._validate(_Validator(), "in_memory", config)
+            WebSocketGateway._validate("in_memory", config)
 
     def test_rest_modes_are_rejected(self, monkeypatch):
-        config = _use_config(monkeypatch, mode=ExecutionMode.REST_SYNC, push_auth_token="s3cret")
+        config = _use_config(monkeypatch, mode=ExecutionMode.REST_SYNC, push_auth_token="s3cret", identity=True)
         with pytest.raises(AKConfigError, match="serves execution.mode async"):
-            WebSocketGateway._validate(_Validator(), "nats", config)
+            WebSocketGateway._validate("nats", config)
 
     def test_missing_push_token_is_rejected(self, monkeypatch):
-        config = _use_config(monkeypatch, mode=ExecutionMode.ASYNC)
+        config = _use_config(monkeypatch, mode=ExecutionMode.ASYNC, identity=True)
         with pytest.raises(AKConfigError, match="push_auth_token"):
-            WebSocketGateway._validate(_Validator(), "nats", config)
+            WebSocketGateway._validate("nats", config)
 
     def test_valid_config_passes_validation(self, monkeypatch):
-        WebSocketGateway._validate(_Validator(), "nats", _use_config(monkeypatch, mode=ExecutionMode.ASYNC, push_auth_token="s3cret"))
+        WebSocketGateway._validate("nats", _use_config(monkeypatch, mode=ExecutionMode.ASYNC, push_auth_token="s3cret", identity=True))
         WebSocketGateway._validate(
-            _Validator(), "nats", _use_config(monkeypatch, mode=ExecutionMode.ASYNC, message_type="delta", push_auth_token="s3cret")
+            "nats", _use_config(monkeypatch, mode=ExecutionMode.ASYNC, message_type="delta", push_auth_token="s3cret", identity=True)
         )
 
     def test_push_port_differing_from_api_port_is_rejected(self, monkeypatch):
         """The built-in gateway serves /ws and /internal/push on one server bound to api.port:
         a different advertised push port would record endpoints nothing answers, so it fails
         fast (push_port exists for custom gateways with their own separate push listener)."""
-        config = _use_config(monkeypatch, mode=ExecutionMode.ASYNC, push_auth_token="s3cret", push_port=9001, api_port=8000)
+        config = _use_config(monkeypatch, mode=ExecutionMode.ASYNC, push_auth_token="s3cret", push_port=9001, api_port=8000, identity=True)
         with pytest.raises(AKConfigError, match="push_port"):
-            WebSocketGateway._validate(_Validator(), "nats", config)
+            WebSocketGateway._validate("nats", config)
 
     def test_push_port_matching_api_port_passes(self, monkeypatch):
-        config = _use_config(monkeypatch, mode=ExecutionMode.ASYNC, push_auth_token="s3cret", push_port=8000, api_port=8000)
-        WebSocketGateway._validate(_Validator(), "nats", config)
+        config = _use_config(monkeypatch, mode=ExecutionMode.ASYNC, push_auth_token="s3cret", push_port=8000, api_port=8000, identity=True)
+        WebSocketGateway._validate("nats", config)
 
     def test_app_serves_health_ws_and_push(self, monkeypatch):
         _use_config(monkeypatch, mode=ExecutionMode.ASYNC, push_auth_token="s3cret")
         app = WebSocketGateway._build_app(
-            PipelineWebSocketHandler(auth_validator=_Validator(), registry=LocalConnectionRegistry(), connection_store=_store()),
+            PipelineWebSocketHandler(authenticator=_authenticator(), registry=LocalConnectionRegistry(), connection_store=_store()),
             PushEndpointHandler(registry=LocalConnectionRegistry()),
         )
         client = TestClient(app)
@@ -675,7 +696,7 @@ class TestEndToEndAcrossGatewayPods:
     def _gateway(self, monkeypatch, pod_ip, store, transport):
         monkeypatch.setenv("AK_POD_IP", pod_ip)
         registry = LocalConnectionRegistry()
-        handler = PipelineWebSocketHandler(auth_validator=_Validator(), registry=registry, transport=transport, connection_store=store)
+        handler = PipelineWebSocketHandler(authenticator=_authenticator(), registry=registry, transport=transport, connection_store=store)
         app = FastAPI()
         app.include_router(handler.get_router())
         app.include_router(PushEndpointHandler(registry=registry).get_router())

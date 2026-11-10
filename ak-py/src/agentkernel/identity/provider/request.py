@@ -38,6 +38,11 @@ class RequestAuthenticator:
         self._credentials = credentials
         self._inbound_ttl = inbound_ttl
 
+    @property
+    def provider(self) -> IdentityProvider | None:
+        """The configured provider, or None when no ``identity`` block exists (every request is anonymous)."""
+        return self._provider
+
     @classmethod
     def from_config(cls) -> "RequestAuthenticator":
         """Build the authenticator over the configured provider, or over none when the ``identity`` block is absent.

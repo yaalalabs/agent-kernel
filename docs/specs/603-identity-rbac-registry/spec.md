@@ -773,9 +773,10 @@ candidate walk; `StaticAuthorizer` subclasses it, and every later engine must.
   `run_multipart_chat` (`476-513`) drops the `user_id` form field (line 481, 507).
 - `RestHandler.request(body, protocol)` (`163-189`) requires `body.principal` to be set by the
   caller (the MCP and A2A executors) and runs the same precheck before enqueueing.
-- `PipelineWebSocketHandler` (`pipeline/ws/handler.py:41-270`): `__init__` loses `auth_validator`
-  and raises `AKConfigError("the WebSocket route requires an identity block: the connection is
-  keyed by the authenticated subject")` when no provider is configured. `_authenticate`
+- `PipelineWebSocketHandler` (`pipeline/ws/handler.py:41-270`): `__init__` loses `auth_validator`,
+  takes an optional `authenticator: RequestAuthenticator` (tests inject one; `from_config()` when
+  omitted) and raises `AKConfigError("the WebSocket route requires an identity block: the
+  connection is keyed by the authenticated subject")` when that authenticator has no provider. `_authenticate`
   (`175-189`) becomes `principal = await authenticator.authenticate_token(token, RequestContext(
   path=WS_PATH))`; a missing token or an `AuthenticationError` closes with 1008 ("Authentication
   token is required" / "Authentication failed"); an anonymous result (no provider) cannot occur

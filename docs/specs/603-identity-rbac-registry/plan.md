@@ -262,7 +262,10 @@ iteration 18 and `credentials` lands in iteration 25, both additive).
      acks with `subject` (spec 8.3).
   2. `WebSocketGateway.run()` takes no arguments; `IOHandler.run()` loses `auth_validator`;
      both require the identity block with the spec's `AKConfigError` messages (spec 8.3).
-  3. AG-UI handlers lose `authoriser`/`auth_validator` and carry the principal (spec 8.5).
+  3. AG-UI handlers lose `authoriser`/`auth_validator`, require the identity block at
+     construction and carry the principal; until 10 moves `AuthorisedRESTRequestHandler` to the
+     provider, `AGUIRequestHandler._resolve_principal(request)` reads the dependency's
+     `request.state.principal` and answers 401 for the anonymous principal (spec 8.5).
   4. CLI `--token` / `AK_CLI_TOKEN` (spec 8.8).
 - **Verify:** changed `test_pipeline_ws`, `test_pipeline_io_handler`, `test_agui_handler`,
   `test_agui_queue_handler`, `test_agui_resume`; new `tests/test_cli_token.py`.
@@ -311,9 +314,9 @@ iteration 18 and `credentials` lands in iteration 25, both additive).
   `integration/thread/thread_chat.py`, `schedule/handler.py`, `sandbox/principal.py`.
 - **Steps:**
   1. `AuthorisedRESTRequestHandler` loses `authoriser`, requires the identity block and
-     resolves `_resolve_user -> Principal`; `ThreadRESTRequestHandler` and
-     `ScheduleRESTRequestHandler` follow, keeping their 403 and 404 rules on the principal's
-     subject (spec 8.2, 8.10, 8.11).
+     resolves `_resolve_user -> Principal` (absorbing `AGUIRequestHandler._resolve_principal`
+     from 7); `ThreadRESTRequestHandler` and `ScheduleRESTRequestHandler` follow, keeping their
+     403 and 404 rules on the principal's subject (spec 8.2, 8.10, 8.11).
   2. `ConversationThreadManager.get_or_create_thread` raises `PermissionError` on a foreign
      thread (spec 8.10).
   3. `AgentThreadRequestHandler` and `ThreadRequestHandler` lose `authoriser`, require the

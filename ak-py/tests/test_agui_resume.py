@@ -16,17 +16,17 @@ import json
 from contextlib import contextmanager
 
 import pytest
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
-from agentkernel.auth import Authoriser
 from agentkernel.core.base import Agent, Runner
 from agentkernel.core.config import _AGUIConfig
 from agentkernel.core.event import PausedInterruption, RunPaused, TextDelta
-from agentkernel.core.model import AgentReplyText, AgentResumeRequestAny
+from agentkernel.core.model import AgentReplyText, AgentResumeRequestAny, Principal
 from agentkernel.core.paused_run import PausedRunState
 from agentkernel.core.runtime import Runtime
 from agentkernel.core.session.in_memory import InMemorySessionStore
+from agentkernel.identity import AuthenticationError, IdentityProvider, IdentityProviderFactory, RequestAuthenticator
 from agentkernel.integration.agui import AGUIRequestHandler
 from agentkernel.integration.agui.run_input import AGUIRunInput
 
@@ -34,9 +34,13 @@ GOOD_TOKEN = "good-token"
 AUTH = {"Authorization": f"Bearer {GOOD_TOKEN}"}
 
 
-class StaticAuthoriser(Authoriser):
-    def authorise(self, token: str) -> str | None:
-        return "u1" if token == GOOD_TOKEN else None
+class _TestProvider(IdentityProvider):
+    name = "test"
+
+    async def authenticate(self, credential, context=None):
+        if credential == GOOD_TOKEN:
+            return Principal(subject="u1", provider=self.name, namespace="test")
+        raise AuthenticationError("nope")
 
 
 class PausingRunner(Runner):
@@ -105,10 +109,12 @@ def serving(monkeypatch, agents, agui_cfg=None):
     runtime = Runtime(InMemorySessionStore())
     for agent in agents:
         runtime.register(agent)
+    provider = _TestProvider()
+    monkeypatch.setattr(IdentityProviderFactory, "get", classmethod(lambda cls: provider))
     try:
         with runtime:
             app = FastAPI()
-            app.include_router(AGUIRequestHandler(authoriser=StaticAuthoriser()).get_router())
+            app.include_router(AGUIRequestHandler().get_router(), dependencies=[Depends(RequestAuthenticator(provider).dependency())])
             yield TestClient(app), runtime
     finally:
         Runtime._system_pre_hooks = None
