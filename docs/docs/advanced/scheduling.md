@@ -408,9 +408,9 @@ task at create/amend time and the provider substitutes the occurrence placeholde
   body-fallback path for `request_id` and `user_id`.
 - `schedule`, `scheduled_task_id` and `scheduled_time` never reach the agent as unknown context.
 - Only a provider sets `scheduled_task_id` and `scheduled_time`: every public chat route rejects a
-  client request carrying either — a 422 on the FastAPI chat routes (direct, queue pipeline and ECS
-  REST), an invalid-request message on the pipeline WebSocket, and the generic error response on the
-  AWS Lambda routers and the ECS WebSocket API.
+  client request carrying a value for either — a 422 on the FastAPI chat routes (direct, queue pipeline
+  and ECS REST), a 400 on Azure Functions, an invalid-request message on the pipeline WebSocket, and the
+  generic error response on the AWS Lambda routers and the ECS WebSocket API.
 
 ## Examples
 

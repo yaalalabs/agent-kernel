@@ -5,7 +5,7 @@ import traceback
 import azure.functions as func
 
 from ...core.chat_service import ChatService
-from ...core.model import BaseRunRequest
+from ...core.model import ChatRunRequest
 
 
 class AzureFunctions:
@@ -40,9 +40,9 @@ class AzureFunctions:
                 raise ValueError("Invalid JSON in request body")
 
             if isinstance(body, dict) and body.get("body") is not None:
-                body = BaseRunRequest.model_validate(body["body"])
+                body = ChatRunRequest.model_validate(body["body"])
             elif isinstance(body, dict) and body:
-                body = BaseRunRequest.model_validate(body)
+                body = ChatRunRequest.model_validate(body)
             else:
                 raise ValueError("Invalid request, request body cannot be empty or null")
 

@@ -479,11 +479,13 @@ class BaseRunRequest(BaseChatRequest):
 
 
 class ChatRunRequest(BaseRunRequest):
-    """BaseRunRequest as a client sends it: rejects the fields only internal producers set.
+    """BaseRunRequest as a client sends it: rejects a value for the fields only internal producers set.
 
     BaseRunRequest is also the queue message format, so the check cannot live there: the
     runner parses every queued message, including producer-built ones, through it. The
     fields are also dropped from its JSON schema, so the API docs do not advertise them.
+    A null value is accepted, since it means "not set" and a client generated from an
+    older schema may send one for every optional field.
     """
 
     INTERNAL_FIELDS: ClassVar[frozenset[str]] = frozenset({"requests", "scheduled_task_id", "scheduled_time"})
@@ -498,7 +500,7 @@ class ChatRunRequest(BaseRunRequest):
     @model_validator(mode="before")
     @classmethod
     def _reject_internal_fields(cls, data: Any) -> Any:
-        if isinstance(data, dict) and (sent := cls.INTERNAL_FIELDS & data.keys()):
+        if isinstance(data, dict) and (sent := {key for key in cls.INTERNAL_FIELDS & data.keys() if data[key] is not None}):
             raise ValueError(f"fields not accepted from clients: {sorted(sent)}")
         return data
 

@@ -183,6 +183,21 @@ class TestChatRunRequest:
         with pytest.raises(ValidationError, match=f"fields not accepted from clients: \\['{field}'\\]"):
             ChatRunRequest.model_validate({"prompt": "hi", "session_id": "s1", field: value})
 
+    @pytest.mark.parametrize("field", ["requests", "scheduled_task_id", "scheduled_time"])
+    def test_a_null_internal_field_is_accepted(self, field):
+        """A generated client may send every optional field as null; null means "not set"."""
+        from agentkernel.core.model import ChatRunRequest
+
+        body = ChatRunRequest.model_validate({"prompt": "hi", "session_id": "s1", field: None})
+
+        assert getattr(body, field) is None
+
+    def test_only_the_fields_with_a_value_are_named(self):
+        from agentkernel.core.model import ChatRunRequest
+
+        with pytest.raises(ValidationError, match=r"fields not accepted from clients: \['scheduled_task_id'\]"):
+            ChatRunRequest.model_validate({"prompt": "hi", "session_id": "s1", "requests": None, "scheduled_task_id": "t1"})
+
     def test_an_ordinary_chat_body_is_accepted(self):
         from agentkernel.core.model import ChatRunRequest
 

@@ -75,3 +75,14 @@ def test_the_chat_route_schema_does_not_advertise_them(name):
 
     assert "prompt" in properties
     assert not ChatRunRequest.INTERNAL_FIELDS & properties.keys()
+
+
+@pytest.mark.parametrize("name", HANDLERS)
+def test_a_null_internal_field_reaches_the_route_unrejected(name):
+    """Null means "not set": the body passes the model and gets the route's own answer (no prompt here)."""
+    body = {"session_id": "s1", "user_id": "u1", **dict.fromkeys(ChatRunRequest.INTERNAL_FIELDS)}
+
+    response = TestClient(_app(name)).post(AgentRESTRequestHandler.CHAT_PATH, json=body)
+
+    assert response.status_code == 400
+    assert "prompt" in response.text.lower()
