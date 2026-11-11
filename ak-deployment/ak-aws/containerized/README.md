@@ -535,17 +535,16 @@ the app as `x-ws-*` request headers.
 
 Used for external persistent WebRTC/WebSocket integrations like the LiveKit Voice Gateway.
 Unlike `async`, this mode **does not create an AWS API Gateway WebSocket**.
-Instead, the ingress service serves the realtime provider's lifecycle webhook (LiveKit's room
-events) and holds one connection per live room, started and ended by those webhooks.
+Instead, the ingress service acts as a background worker running an infinite loop to maintain
+a connection to the external realtime provider (e.g., LiveKit Cloud).
 
 It runs in either queue mode:
 
 - **`queue_mode = false`**: one container. The ingress service runs the app's
-  `IOHandler.run(handlers=[EdgeLifecycleRESTRequestHandler(LiveKitLifecycleAdapter())])` on the
-  `in_memory` transport, so the gateways, the agent runner and the response handler share one
-  process. No SQS queues or agent-runner service are created.
-- **`queue_mode = true`**: the ingress service serves the webhook and hosts the gateways and the
-  response handler, and the agent-runner service holds the model sockets, with SQS between them.
+  `IOHandler.run(gateways=[...])` on the `in_memory` transport, so the gateway, the agent runner
+  and the response handler share one process. No SQS queues or agent-runner service are created.
+- **`queue_mode = true`**: the ingress service hosts the gateway and the response handler, and the
+  agent-runner service holds the model sockets, with SQS between them.
 
 Either way, run a single replica of each service (`desired_count = 1`, and
 `scaling_config.enabled = false` in queue mode): the gateway owns its rooms and the runner's

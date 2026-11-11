@@ -167,19 +167,6 @@ class AgentChanged(StreamEventBase):
     agents: list[str] | None = None
 
 
-class InputTranscript(StreamEventBase):
-    """
-    One finished caller utterance in a realtime conversation, in spoken order with the output.
-
-    message_id: str : The framework's item id, or a generated one
-    content: str : The finished text; never empty
-    """
-
-    type: Literal["input_transcript"] = "input_transcript"
-    message_id: str
-    content: str
-
-
 class PausedInterruption(BaseModel):
     """
     One thing a human must decide before a paused run can continue.
@@ -264,7 +251,6 @@ type StreamEvent = Annotated[
     | AudioDelta
     | Interrupt
     | AgentChanged
-    | InputTranscript
     | RunPaused
     | DataMessage,
     Field(discriminator="type"),

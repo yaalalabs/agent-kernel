@@ -1046,10 +1046,6 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
             await self._refuse_confirmation(event)
             return True
         if event.author == "user":
-            # ADK authors the caller's transcription as "user": partial pieces, then one finished aggregate.
-            transcription = event.input_transcription
-            if transcription is not None and transcription.finished and (transcription.text or "").strip():
-                await self._callback("input_transcript", {"text": transcription.text.strip(), "message_id": event.id})
             return False
         if event.interrupted:
             await self._callback("interrupt", {})
@@ -1059,7 +1055,7 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
             await self._speaker_changed(event.author)
             await self._callback("transcript_delta", {"delta": output.text, "message_id": event.id})
 
-        for part in (event.content.parts if event.content and event.content.parts else []):
+        for part in event.content.parts if event.content and event.content.parts else []:
             blob = part.inline_data
             if blob is not None and blob.data and (blob.mime_type or "").startswith("audio/"):
                 await self._speaker_changed(event.author)

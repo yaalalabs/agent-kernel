@@ -1,5 +1,2 @@
 execution:
   mode: "realtime"
-
-livekit:
-  agent: "planner"  # the agent that answers the call first

@@ -1,8 +1,8 @@
 import logging
 
 from agentkernel.framework.openai import OpenAIModule, OpenAIToolBuilder
-from agentkernel.integration.adapter import EdgeLifecycleRESTRequestHandler
-from agentkernel.integration.livekit import LiveKitLifecycleAdapter
+from agentkernel.integration.adapter import GatewayRunner
+from agentkernel.integration.livekit import LiveKitEdgeGateway
 from agentkernel.pipeline import IOHandler
 from agents.realtime import RealtimeAgent
 
@@ -77,6 +77,8 @@ OpenAIModule([supervisor]).run_options(
     supervisor, model_config={"initial_model_settings": {"model_name": MODEL, "voice": "alloy"}}
 )
 
+gateway = LiveKitEdgeGateway(session_id="room_01", agent_name="supervisor")
+
 
 if __name__ == "__main__":
-    IOHandler.run(handlers=[EdgeLifecycleRESTRequestHandler(LiveKitLifecycleAdapter())])
+    IOHandler.run(gateways=[GatewayRunner(gateway)])

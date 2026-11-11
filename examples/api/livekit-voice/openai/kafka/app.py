@@ -16,8 +16,8 @@ from agentkernel.framework.openai import (
     OpenAIModule,
     OpenAIToolBuilder,
 )
-from agentkernel.integration.adapter import EdgeLifecycleRESTRequestHandler
-from agentkernel.integration.livekit import LiveKitLifecycleAdapter
+from agentkernel.integration.adapter import GatewayRunner
+from agentkernel.integration.livekit import LiveKitEdgeGateway
 from agentkernel.pipeline import AgentRunner, IOHandler
 from agents.realtime import RealtimeAgent
 
@@ -41,9 +41,11 @@ OpenAIModule([general_agent]).run_options(
     general_agent, model_config={"initial_model_settings": {"model_name": "gpt-realtime", "voice": "alloy"}}
 )
 
+gateway = LiveKitEdgeGateway(session_id="room_01")
+
 
 def run_io() -> None:
-    IOHandler.run(handlers=[EdgeLifecycleRESTRequestHandler(LiveKitLifecycleAdapter())])
+    IOHandler.run(gateways=[GatewayRunner(gateway)])
 
 
 ENTRYPOINTS = {"io": run_io, "runner": AgentRunner.run}

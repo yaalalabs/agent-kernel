@@ -1,8 +1,8 @@
 import logging
 
 from agentkernel.framework.adk import GoogleADKModule, GoogleADKToolBuilder
-from agentkernel.integration.adapter import EdgeLifecycleRESTRequestHandler
-from agentkernel.integration.livekit import LiveKitLifecycleAdapter
+from agentkernel.integration.adapter import GatewayRunner
+from agentkernel.integration.livekit import LiveKitEdgeGateway
 from agentkernel.pipeline import IOHandler
 from google.adk.agents import Agent as GoogleAgent
 from google.adk.models import Gemini
@@ -82,6 +82,8 @@ booking_flow = Workflow(
 
 GoogleADKModule([booking_flow])
 
+gateway = LiveKitEdgeGateway(session_id="room_01", agent_name="booking_flow")
+
 
 if __name__ == "__main__":
-    IOHandler.run(handlers=[EdgeLifecycleRESTRequestHandler(LiveKitLifecycleAdapter())])
+    IOHandler.run(gateways=[GatewayRunner(gateway)])
