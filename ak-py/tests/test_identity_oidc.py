@@ -511,4 +511,4 @@ class TestFactoryBranches:
         }
         with pytest.raises(ImportError, match=f"identity.provider.type: {name} requires the 'auth' extra") as exc:
             IdentityProviderFactory.create(_IdentityConfig(provider=_IdentityProviderConfig(type=name, **blocks[name])))
-        assert 'pip install "agentkernel[auth]"' in str(exc.value)
+        assert 'uv add "agentkernel[auth]"' in str(exc.value)

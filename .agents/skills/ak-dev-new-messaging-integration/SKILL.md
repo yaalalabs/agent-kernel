@@ -256,7 +256,7 @@ In `ak-py/pyproject.toml`:
 ]
 ```
 
-The factory imports the built-in inside `require_extra("<platform>", ...)`, so a missing SDK reports `pip install "agentkernel[<platform>]"` rather than a bare `ModuleNotFoundError`.
+The factory imports the built-in inside `require_extra("<platform>", ...)`, so a missing SDK reports `uv add "agentkernel[<platform>]"` rather than a bare `ModuleNotFoundError`.
 
 ### 10. Polling Platforms
 

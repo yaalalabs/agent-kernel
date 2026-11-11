@@ -306,10 +306,20 @@ class DefaultEndpointsHandler:
         :return: API Gateway formatted response with statusCode and body
         """
 
+        # A body the parser refuses (a ``user_id``, unreadable JSON) is the caller's error, answered
+        # with its reason as on the queued routes; only failures past parsing hide behind the 500.
         try:
             request = self._parse_body(event)
             if request.body is None:
                 raise ValueError("body is required")
+        except ValueError as e:
+            self._log.warning(f"Rejected request: {e}")
+            return {
+                "statusCode": 400,
+                "body": json.dumps({"error": str(e), "session_id": None}),
+            }
+
+        try:
             status_code, res_body = self._chat_service.process_chat_request(request.body)
 
             return {

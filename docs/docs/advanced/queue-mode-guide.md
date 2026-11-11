@@ -49,8 +49,8 @@ declared by the application rather than inferred from the queue URLs a deploymen
 |-----------|--------|--------------------------|
 | `in_memory` | ✅ the default when no `queues` block is declared | All five components as threads in one process (local, single-container) |
 | `sqs` | ✅ | Two-process topology on AWS; also the transport behind the Lambda and ECS deployment adapters below |
-| `kafka` | ✅ (`pip install agentkernel[kafka]`) | Kubernetes / on-prem two-process topology |
-| `nats` (recommended on-prem) | ✅ (`pip install agentkernel[nats]`) | Kubernetes / on-prem two-process topology |
+| `kafka` | ✅ (`uv add "agentkernel[kafka]"`) | Kubernetes / on-prem two-process topology |
+| `nats` (recommended on-prem) | ✅ (`uv add "agentkernel[nats]"`) | Kubernetes / on-prem two-process topology |
 
 Delivery sub-modes (`execution.mode` + `execution.message_type`):
 
@@ -182,7 +182,7 @@ store it, whatever `execution.mode` is, because these callers wait for one whole
 
 ## Running Queue Mode on Kafka
 
-Install the extra (`pip install agentkernel[kafka]`) and configure the broker; topics are
+Install the extra (`uv add "agentkernel[kafka]"`) and configure the broker; topics are
 pre-provisioned by your cluster tooling (Strimzi CRs or the chart), never created by the app:
 
 ```yaml
@@ -250,7 +250,7 @@ dedicated topics for the pipeline, keep retention short (24-72 hours is plenty),
 ## Running Queue Mode on NATS JetStream
 
 The recommended on-prem broker: one static Go binary, an official Helm chart, and NACK CRDs for
-declarative streams. Install the extra (`pip install agentkernel[nats]`) and configure it:
+declarative streams. Install the extra (`uv add "agentkernel[nats]"`) and configure it:
 
 ```yaml
 execution:

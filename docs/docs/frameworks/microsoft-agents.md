@@ -13,7 +13,7 @@ MAF is the unified successor to AutoGen and Semantic Kernel, providing a modern,
 Install Agent Kernel with the `maf` extra, plus the MAF package for your model provider. The `maf` extra installs only the provider-neutral MAF core (`agent-framework-core`):
 
 ```bash
-pip install "agentkernel[maf]" agent-framework-openai
+uv add "agentkernel[maf]" agent-framework-openai
 ```
 
 `agent-framework-openai` covers OpenAI, Azure OpenAI, and any OpenAI-compatible endpoint. For other providers, see [Model providers](#model-providers).
@@ -117,7 +117,7 @@ client = OpenAIChatCompletionClient(model="llama3.1", base_url="http://localhost
 For a native provider integration, install that provider's MAF package and import its client from the matching `agent_framework` namespace:
 
 ```bash
-pip install agent-framework-anthropic   # also: agent-framework-gemini, -bedrock, -mistral, -ollama, -foundry
+uv add agent-framework-anthropic   # also: agent-framework-gemini, -bedrock, -mistral, -ollama, -foundry
 ```
 
 ```python

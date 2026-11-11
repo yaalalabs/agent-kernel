@@ -26,9 +26,10 @@ export async function runAgent(
   emit: (line: Line) => void,
   patch: (id: string, text: string) => void,
 ): Promise<boolean> {
+  const runId = uuid();
   const body: RunAgentInput = {
     threadId: args.threadId,
-    runId: uuid(),
+    runId,
     state: null,
     messages: args.messages,
     tools: [],
@@ -74,8 +75,9 @@ export async function runAgent(
         // of the run, not an error and not something that happened during it.
         if (event.outcome?.type === "interrupt") {
           // The agent is carried on the line because a pause is answered by whoever asked, which is
-          // not necessarily whoever is selected by the time a human gets to it.
-          for (const interrupt of event.outcome.interrupts) emit({ kind: "pause", id: uuid(), interrupt, agent: args.agent });
+          // not necessarily whoever is selected by the time a human gets to it. `runId` groups the
+          // interrupts of this one outcome, which is the one record a single resume may address.
+          for (const interrupt of event.outcome.interrupts) emit({ kind: "pause", id: uuid(), runId, interrupt, agent: args.agent });
         } else if (text) {
           args.messages.push({ id: uuid(), role: "assistant", content: text });
         }

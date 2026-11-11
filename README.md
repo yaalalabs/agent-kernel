@@ -55,7 +55,9 @@ Most agent frameworks help you build a *prototype*. **Agent Kernel is the platfo
 **Requirements:** Python 3.12 – 3.13.x
 
 ```bash
-pip install agentkernel
+uv init --python 3.12 my-agent
+cd my-agent
+uv add agentkernel
 ```
 
 Build a multi-agent system that runs on OpenAI Agents SDK today and LangGraph tomorrow — same code:
@@ -268,7 +270,7 @@ Agent Kernel is proud to be:
 - 📖 **Documentation:** [kernel.yaala.ai/docs](https://kernel.yaala.ai/docs)
 - 💬 **Discord:** [Join the community](https://discord.gg/snrPzb46uu)
 - 🐛 **Issues:** [GitHub Issues](https://github.com/yaalalabs/agent-kernel/issues)
-- 📦 **PyPI:** [`pip install agentkernel`](https://pypi.org/project/agentkernel/)
+- 📦 **PyPI:** [`uv add agentkernel`](https://pypi.org/project/agentkernel/)
 - ☁️ **Terraform Registry:** [Official modules](https://registry.terraform.io/modules/yaalalabs)
 - 🛠 **Developer Guide:** [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md)
 - 🤖 **Contributing with AI agents:** [AGENTS.md](AGENTS.md)

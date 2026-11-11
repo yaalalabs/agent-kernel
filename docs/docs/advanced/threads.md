@@ -132,7 +132,7 @@ get a generic title ("New conversation") instead of becoming the name. The call 
 inline on the session's first chat request (~0.5–2s), never on later messages.
 
 Naming never fails thread creation: if `litellm` is not installed (it is an optional dependency; install
-it with the `thread` extra, `pip install "agentkernel[thread]"`), no API key is present, or the model call
+it with the `thread` extra, `uv add "agentkernel[thread]"`), no API key is present, or the model call
 errors, the name falls back to a truncated prompt prefix: the first `max_length` characters, trimmed at a
 word boundary and suffixed with an ellipsis. The fallback is never silent: a missing `litellm` is warned
 about once at startup with the install hint, and every failed naming call logs a warning.
@@ -179,6 +179,21 @@ curl -H "Authorization: Bearer $ALICE_TOKEN" "http://localhost:8000/api/v1/threa
 Both endpoints are the caller's own: no query parameter widens a listing, and reading a thread another
 principal owns is a 403. Both paginate: pass `limit` (default 50, max 200) and the opaque `cursor` returned as `next_cursor`
 in the previous page (`null` on the last page).
+
+### Message Content
+
+A message's `content` is normally the text of the turn, and carries no other key. A message whose
+content is structured stores the object itself with a sibling `media_type` naming its format: a reply
+the agent labelled (see [A2UI](a2ui.md)), a [paused run](human-in-the-loop.md), or the decision
+answering it. The pause is an `assistant` message holding
+`run_id`, `agent` and `interruptions`; the decision is a `user` message holding the `resume` block that
+was sent, with the prompt beside it when the turn carried both.
+
+The two fields always agree: `media_type` present means `content` is an object or an array, absent
+means it is text. A labelled reply may be either; a pause and a decision are always objects. A human's
+decision is a `user` message because a person sent it, so the `user`/`assistant` roles are unchanged —
+a client tells the two structured kinds apart by `role`, or by the keys they carry:
+`content.interruptions` for a pause, `content.resume.decisions` for a decision.
 
 ## Renaming Threads
 

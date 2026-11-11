@@ -199,6 +199,57 @@ class TestRestSurfaceRefusesAUserId:
         assert body["error"] == "An unexpected error occurred"
 
 
+class TestDirectChatRouteRefusesAUserId:
+    """Without an input queue the router serves ``_handle_agent_chat``, which parses on its own path:
+    a body the parser refuses is the caller's 400 there too, while a failure inside the chat service
+    stays a generic 500 (#603)."""
+
+    @pytest.fixture
+    def handler(self):
+        config = MagicMock()
+        config.execution = _ExecutionConfig(mode=ExecutionMode.REST_SYNC)
+        with patch(f"{ROUTER_MODULE}.AKConfig.get", return_value=config), patch(f"{ROUTER_MODULE}.ChatService"):
+            yield DefaultEndpointsHandler()
+
+    def test_the_route_without_an_input_queue_is_the_direct_handler(self, handler):
+        with patch(f"{ROUTER_MODULE}.SQSHandler.get_input_queue_url", return_value=None):
+            routes = handler.get_routes()
+
+        assert list(routes.values())[0]["POST"] == handler._handle_agent_chat
+
+    def test_a_user_id_in_the_body_is_a_400_with_the_reason(self, handler):
+        response = handler._handle_agent_chat({"body": json.dumps({"prompt": "hi", "session_id": "s1", "user_id": "u1"})}, None)
+
+        assert response["statusCode"] == 400
+        assert json.loads(response["body"]) == {
+            "error": "user_id is not a request field; the acting user comes from the credential",
+            "session_id": None,
+        }
+        handler._chat_service.process_chat_request.assert_not_called()
+
+    def test_an_unreadable_body_is_a_400_too(self, handler):
+        response = handler._handle_agent_chat({"body": "not json"}, None)
+
+        assert response["statusCode"] == 400
+        assert json.loads(response["body"])["error"].startswith("Expecting value")
+
+    def test_a_valid_request_answers_with_the_chat_services_status(self, handler):
+        handler._chat_service.process_chat_request.return_value = (202, {"result": "queued", "session_id": "s1"})
+
+        response = handler._handle_agent_chat({"body": json.dumps({"prompt": "hi", "session_id": "s1"})}, None)
+
+        assert (response["statusCode"], json.loads(response["body"])) == (202, {"result": "queued", "session_id": "s1"})
+
+    def test_a_value_error_inside_the_chat_service_still_hides_behind_a_500(self, handler):
+        """Only the parser's refusals are the caller's; the service's own failures keep their generic body."""
+        handler._chat_service.process_chat_request.side_effect = ValueError("an internal invariant broke")
+
+        response = handler._handle_agent_chat({"body": json.dumps({"prompt": "hi", "session_id": "s1"})}, None)
+
+        assert response["statusCode"] == 500
+        assert json.loads(response["body"]) == {"error": "Error processing request", "session_id": None}
+
+
 class TestResponseStoreRecordPolling:
     def test_get_record_with_retry_polls_until_a_record_lands(self):
         from agentkernel.pipeline.response_store.in_memory import InMemoryResponseStore

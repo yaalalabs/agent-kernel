@@ -66,6 +66,30 @@ only and locks it against automatic naming):
 The same requests with `Bearer bob-token` are refused with 403: bob does not own alice's thread. Without a
 token every thread route answers 401.
 
+## A pause in the history
+
+`send_summary_email` is bound with `needs_approval=True`, so the agent stops before calling it and the
+request answers `202` with `status: "PAUSED"`:
+
+    curl -X POST http://localhost:8000/api/v1/chat \
+      -H "Authorization: Bearer alice-token" \
+      -H "Content-Type: application/json" \
+      -d '{"prompt": "Email a summary to anne@example.com", "session_id": "ses-2"}'
+
+Answer it with the interruption id from that reply. This turn carries no prompt, because the decision
+*is* the turn:
+
+    curl -X POST http://localhost:8000/api/v1/chat \
+      -H "Authorization: Bearer alice-token" \
+      -H "Content-Type: application/json" \
+      -d '{"session_id": "ses-2", "agent": "assistant",
+           "resume": {"decisions": [{"id": "<interruption id>", "status": "approved"}]}}'
+
+Read the thread back and the exchange is all there: the question the agent asked and the decision that
+answered it are messages of their own, each carrying its payload as an object with a `media_type`:
+
+    curl http://localhost:8000/api/v1/threads/ses-2 -H "Authorization: Bearer alice-token"
+
 To run tests (the suite starts `app.py` with the two tokens above):
 
     uv run pytest -s
