@@ -29,7 +29,7 @@ resource "azurerm_network_security_rule" "allow_redis_from_function" {
   direction                   = "Inbound"
   access                      = "Allow"
   protocol                    = "Tcp"
-  source_address_prefix       = data.azurerm_subnet.function_subnet.address_prefix
+  source_address_prefixes     = data.azurerm_subnet.function_subnet.address_prefixes
   source_port_range           = "*"
   destination_address_prefix  = "*"
   destination_port_range      = "*"
