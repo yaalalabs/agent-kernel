@@ -354,8 +354,10 @@ multimodal:
   storage_type: in_memory        # in_memory | redis | dynamodb | session_cache
   max_attachments: 20
   description_max_length: 200
-  description_model: gpt-4o      # LiteLLM model for brief descriptions (PreHook)
-  analysis_model: gpt-4o         # LiteLLM model for detailed analysis (tool)
+  description_model: gpt-6-luna  # LiteLLM model for brief descriptions (PreHook)
+  analysis_model: gpt-6-luna     # LiteLLM model for detailed analysis (tool)
+  description_model_params: {reasoning_effort: none, drop_params: true}  # extra LiteLLM params per call (default)
+  analysis_model_params: {reasoning_effort: none, drop_params: true}
   redis:
     url: "redis://localhost:6379"
     ttl: 604800
@@ -421,7 +423,8 @@ threads (their platforms own the history), and neither do scheduled occurrences.
 thread:
   type: in_memory    # in_memory | redis | valkey | dynamodb | firestore | cosmosdb
   naming:
-    model: gpt-4o-mini
+    model: gpt-6-luna
+    model_params: {reasoning_effort: none, drop_params: true}  # extra LiteLLM params; setting it replaces the default
     max_length: 80
   redis:
     url: "redis://localhost:6379"

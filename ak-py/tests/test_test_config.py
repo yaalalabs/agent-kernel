@@ -17,9 +17,10 @@ def test_defaults_no_file(capsys, monkeypatch):
     cfg = AKTestConfig.get()
     assert cfg.mode == "fallback"
     assert cfg.evaluator == "deepeval"
-    assert cfg.llm.model == "gpt-4o-mini"
+    assert cfg.llm.model == "gpt-6-luna"
     assert cfg.llm.provider == "openai"
     assert cfg.llm.embedding_model == "text-embedding-3-small"
+    assert cfg.llm.model_params == {"reasoning_effort": "none", "drop_params": True}
 
     # A missing test-config.yaml is the normal case: no warning is printed
     assert "Could not open yaml settings file" not in capsys.readouterr().out
@@ -119,4 +120,4 @@ def test_legacy_judge_key_in_yaml_is_silently_ignored(tmp_path, monkeypatch):
 
     cfg = AKTestConfig.get()
     assert cfg.mode == "fallback"
-    assert cfg.llm.model == "gpt-4o-mini"
+    assert cfg.llm.model == "gpt-6-luna"

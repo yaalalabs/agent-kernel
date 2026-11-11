@@ -53,8 +53,9 @@ For llm mode, configure the llm model:
 ```yaml
 mode: llm
 llm:
-  model: gpt-4o-mini
+  model: gpt-6-luna
   provider: openai
+  model_params: {reasoning_effort: none, drop_params: true}  # extra LiteLLM judge params (default); setting it replaces the default
 ```
 
 **Evaluator backend:** `evaluator` selects the scoring backend used by both `score` and `llm`

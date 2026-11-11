@@ -1,15 +1,24 @@
 from threading import RLock
-from typing import ClassVar, Optional
+from typing import Any, ClassVar, Optional
 
 from pydantic import BaseModel, Field
 from pydantic_settings import SettingsConfigDict
 
+from agentkernel.core.config import _no_reasoning_params
 from agentkernel.core.util.config_yaml_util import YamlBaseSettingsModified
 
 
 class _LlmConfig(BaseModel):
-    model: str = Field(default="gpt-4o-mini", description="LLM Model name")
+    model: str = Field(default="gpt-6-luna", description="LLM Model name")
     provider: str = Field(default="openai", description="LLM Provider name")
+    model_params: dict[str, Any] = Field(
+        default_factory=_no_reasoning_params,
+        description=(
+            "Extra LiteLLM completion params for the DeepEval and Opik judges (e.g. reasoning_effort); replaces the default, "
+            "which turns reasoning off (reasoning models only accept GEval's temperature/logprobs with it off) and lets "
+            "LiteLLM drop params the model doesn't support"
+        ),
+    )
     embedding_model: str = Field(default="text-embedding-3-small", description="Embedding Model name")
 
 

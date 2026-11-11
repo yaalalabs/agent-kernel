@@ -149,3 +149,24 @@ class TestGuards(_AnalyzeCall):
 
         assert result == "No attachments found for the given IDs in this session"
         completion.assert_not_called()
+
+
+class TestModelCall(_AnalyzeCall):
+    def test_analysis_call_turns_reasoning_off(self, tool_session):
+        att_id = self.save(tool_session, "cat.png", "image/png", url=REMOTE_IMAGE)
+
+        with patch("litellm.completion", return_value=_llm_response("analysis")) as completion:
+            analyze_attachments([att_id], "describe these")
+
+        assert completion.call_args.kwargs["reasoning_effort"] == "none"
+        assert completion.call_args.kwargs["drop_params"] is True
+
+    def test_analysis_call_uses_configured_params(self, tool_session, monkeypatch):
+        monkeypatch.setattr(AKConfig.get().multimodal, "analysis_model_params", {"reasoning_effort": "high"})
+        att_id = self.save(tool_session, "cat.png", "image/png", url=REMOTE_IMAGE)
+
+        with patch("litellm.completion", return_value=_llm_response("analysis")) as completion:
+            analyze_attachments([att_id], "describe these")
+
+        assert completion.call_args.kwargs["reasoning_effort"] == "high"
+        assert "drop_params" not in completion.call_args.kwargs

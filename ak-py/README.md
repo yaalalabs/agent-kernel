@@ -478,9 +478,16 @@ mode additionally require `multimodal.enabled: true` with a shared attachment st
 - **Naming Model**
   - **Field**: `thread.naming.model`
   - **Type**: string
-  - **Default**: `gpt-4o-mini`
+  - **Default**: `gpt-6-luna`
   - **Description**: LiteLLM model used to generate thread names (requires the `thread` extra — `uv add "agentkernel[thread]"` — and an API key in the environment; falls back to a truncated prompt prefix otherwise)
   - **Environment Variable**: `AK_THREAD__NAMING__MODEL`
+
+- **Naming Model Params**
+  - **Field**: `thread.naming.model_params`
+  - **Type**: object
+  - **Default**: `{"reasoning_effort": "none", "drop_params": true}`
+  - **Description**: Extra LiteLLM completion params for the naming call (e.g. `reasoning_effort`, `temperature`). A value you set replaces the default, which turns reasoning off and lets LiteLLM drop params the model doesn't support
+  - **Environment Variable**: `AK_THREAD__NAMING__MODEL_PARAMS` (JSON)
 
 - **Auto-name Max Length**
   - **Field**: `thread.naming.max_length`
@@ -1282,7 +1289,7 @@ Configure test comparison modes for automated testing. Test configuration is sep
 
 - **Llm Model**
   - **Field**: `llm.model`
-  - **Default**: `gpt-4o-mini`
+  - **Default**: `gpt-6-luna`
   - **Description**: LLM model for llm evaluation
   - **Environment Variable**: `AK_TEST__LLM__MODEL`
 
@@ -1291,6 +1298,12 @@ Configure test comparison modes for automated testing. Test configuration is sep
   - **Default**: `openai`
   - **Description**: LLM provider for llm evaluation
   - **Environment Variable**: `AK_TEST__LLM__PROVIDER`
+
+- **Llm Model Params**
+  - **Field**: `llm.model_params`
+  - **Default**: `{"reasoning_effort": "none", "drop_params": true}`
+  - **Description**: Extra LiteLLM completion params for the DeepEval and Opik judges. A value you set replaces the default, which turns reasoning off (reasoning models only accept GEval's `temperature`/`logprobs` with it off) and lets LiteLLM drop params the model doesn't support
+  - **Environment Variable**: `AK_TEST__LLM__MODEL_PARAMS` (JSON)
 
 - **Llm Embedding Model**
   - **Field**: `llm.embedding_model`
@@ -1308,7 +1321,7 @@ Configure test comparison modes for automated testing. Test configuration is sep
 mode: fallback
 evaluator: deepeval
 llm:
-  model: gpt-4o-mini
+  model: gpt-6-luna
   provider: openai
   embedding_model: text-embedding-3-small
 ```
@@ -1339,7 +1352,7 @@ Configure input and output guardrails to validate agent requests and responses f
 
   - **Model**
     - **Field**: `guardrail.input.model`
-    - **Default**: `gpt-4o-mini`
+    - **Default**: `gpt-6-luna`
     - **Description**: LLM model to use for guardrail validation (OpenAI only)
     - **Environment Variable**: `AK_GUARDRAIL__INPUT__MODEL`
 
@@ -1377,7 +1390,7 @@ Configure input and output guardrails to validate agent requests and responses f
 
   - **Model**
     - **Field**: `guardrail.output.model`
-    - **Default**: `gpt-4o-mini`
+    - **Default**: `gpt-6-luna`
     - **Description**: LLM model to use for guardrail validation (OpenAI only)
     - **Environment Variable**: `AK_GUARDRAIL__OUTPUT__MODEL`
 
@@ -1429,12 +1442,12 @@ guardrail:
   input:
     enabled: true
     type: openai
-    model: gpt-4o-mini
+    model: gpt-6-luna
     config_path: /path/to/guardrails_input.json
   output:
     enabled: true
     type: openai
-    model: gpt-4o-mini
+    model: gpt-6-luna
     config_path: /path/to/guardrails_output.json
 ```
 
@@ -1673,17 +1686,17 @@ export AK_TRACE__TYPE=langfuse  # or openllmetry, logfire, cloudwatch
 # Test harness (loaded from the separate test-config.yaml — see Test Configuration)
 export AK_TEST__MODE=fallback  # Options: score, llm, fallback
 export AK_TEST__EVALUATOR=deepeval  # Built-in short name (deepeval, opik or jev), or a dotted path to your own AKEvaluator subclass
-export AK_TEST__LLM__MODEL=gpt-4o-mini
+export AK_TEST__LLM__MODEL=gpt-6-luna
 export AK_TEST__LLM__PROVIDER=openai
 export AK_TEST__LLM__EMBEDDING_MODEL=text-embedding-3-small
 # Guardrails configuration
 export AK_GUARDRAIL__INPUT__ENABLED=false
 export AK_GUARDRAIL__INPUT__TYPE=openai
-export AK_GUARDRAIL__INPUT__MODEL=gpt-4o-mini
+export AK_GUARDRAIL__INPUT__MODEL=gpt-6-luna
 export AK_GUARDRAIL__INPUT__CONFIG_PATH=/path/to/guardrails_input.json
 export AK_GUARDRAIL__OUTPUT__ENABLED=false
 export AK_GUARDRAIL__OUTPUT__TYPE=openai
-export AK_GUARDRAIL__OUTPUT__MODEL=gpt-4o-mini
+export AK_GUARDRAIL__OUTPUT__MODEL=gpt-6-luna
 export AK_GUARDRAIL__OUTPUT__CONFIG_PATH=/path/to/guardrails_output.json
 # Walled AI guardrails
 export WALLED_API_KEY=your-walledai-api-key
@@ -1821,13 +1834,13 @@ guardrail:
     enabled: false
     type: openai
     pii: true
-    model: gpt-4o-mini
+    model: gpt-6-luna
     config_path: /path/to/guardrails_input.json
   output:
     enabled: false
     type: openai
     pii: true
-    model: gpt-4o-mini
+    model: gpt-6-luna
     config_path: /path/to/guardrails_output.json
   # For Walled AI, set type: walledai, WALLED_API_KEY,
   # and optionally use input/output pii (default: true) to enable/disable PII masking.
@@ -1892,13 +1905,13 @@ gmail:
     "input": {
       "enabled": false,
       "type": "openai",
-      "model": "gpt-4o-mini",
+      "model": "gpt-6-luna",
       "config_path": "/path/to/guardrails_input.json"
     },
     "output": {
       "enabled": false,
       "type": "openai",
-      "model": "gpt-4o-mini",
+      "model": "gpt-6-luna",
       "config_path": "/path/to/guardrails_output.json"
     }
   },
@@ -1952,7 +1965,7 @@ The `evaluator` field accepts three built-in short names — `deepeval` (default
 mode: fallback
 evaluator: deepeval
 llm:
-  model: gpt-4o-mini
+  model: gpt-6-luna
   provider: openai
   embedding_model: text-embedding-3-small
 ```
@@ -1970,7 +1983,7 @@ export AK_TEST_CONFIG_PATH_OVERRIDE=/path/to/test-config.yaml
 ```bash
 export AK_TEST__MODE=fallback  # Options: score, llm, fallback
 export AK_TEST__EVALUATOR=deepeval
-export AK_TEST__LLM__MODEL=gpt-4o-mini
+export AK_TEST__LLM__MODEL=gpt-6-luna
 export AK_TEST__LLM__PROVIDER=openai
 export AK_TEST__LLM__EMBEDDING_MODEL=text-embedding-3-small
 ```

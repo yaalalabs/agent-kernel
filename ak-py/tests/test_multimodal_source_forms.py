@@ -13,7 +13,7 @@ attachment at all. `test_*_is_retained_*` are the guards for that.
 """
 
 import asyncio
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -299,3 +299,21 @@ class TestMixedAndEdgeCases:
         assert result == requests
         describe.assert_not_awaited()
         assert _stored() == []
+
+
+class TestDescriptionModelCall:
+    """The brief-description call turns reasoning off so the 50-token budget goes to the answer."""
+
+    @pytest.mark.parametrize("mime_type", ["image/png", "application/pdf"])
+    def test_description_call_turns_reasoning_off(self, mime_type):
+        response = MagicMock()
+        response.choices[0].message.content = " a cat "
+        with patch("litellm.acompletion", new=AsyncMock(return_value=response)) as completion:
+            description = asyncio.run(MultimodalPreHook()._describe_attachment_briefly("aGVsbG8=", mime_type))
+
+        assert description == "a cat"
+        kwargs = completion.call_args.kwargs
+        assert kwargs["model"] == AKConfig.get().multimodal.description_model
+        assert kwargs["max_tokens"] == 50
+        assert kwargs["reasoning_effort"] == "none"
+        assert kwargs["drop_params"] is True

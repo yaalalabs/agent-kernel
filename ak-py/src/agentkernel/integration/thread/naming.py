@@ -117,10 +117,11 @@ class ThreadNamingStrategy:
         """
         import litellm  # optional dependency — imported lazily so naming degrades to the fallback without it
 
+        naming = AKConfig.get().thread.naming
         response = litellm.completion(
-            model=AKConfig.get().thread.naming.model,
+            model=naming.model,
             messages=[{"role": "user", "content": instruction}],
-            max_tokens=50,
+            **{"max_tokens": 50, **naming.model_params},
         )
         return response.choices[0].message.content or ""
 

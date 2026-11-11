@@ -36,7 +36,7 @@ class DeepevalAKEvaluator(AKEvaluator):
     def _llm_model(self) -> LiteLLMModel:
         if self._model is None:
             llm = self._config.llm
-            self._model = LiteLLMModel(f"{llm.provider}/{llm.model}")
+            self._model = LiteLLMModel(f"{llm.provider}/{llm.model}", generation_kwargs=dict(llm.model_params))
         return self._model
 
     def evaluate_by_score(self, case: AKEvaluationCase) -> AKEvaluationResult:

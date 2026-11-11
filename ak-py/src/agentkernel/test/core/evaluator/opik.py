@@ -8,6 +8,7 @@ import os
 os.environ.setdefault("OPIK_TRACK_DISABLE", "True")
 
 from opik.evaluation.metrics import GEval, LevenshteinRatio
+from opik.evaluation.models import OpikBaseModel, models_factory
 
 from agentkernel.test.config import AKTestConfig
 
@@ -35,12 +36,14 @@ _DEFAULT_EVALUATION_CRITERIA = (
 class OpikAKEvaluator(AKEvaluator):
     def __init__(self, config: AKTestConfig) -> None:
         super().__init__(config)
-        self._model: str | None = None  # lazy: score mode never needs it
+        self._model: OpikBaseModel | None = None  # lazy: score mode never needs it
 
-    def _llm_model(self) -> str:
+    def _llm_model(self) -> OpikBaseModel:
         if self._model is None:
             llm = self._config.llm
-            self._model = f"{llm.provider}/{llm.model}"
+            # Built here rather than by GEval so llm.model_params (incl. drop_params) reach LiteLLM: opik's own
+            # reasoning_effort filter misses non-reasoning "openai/..." models. temperature=0.0 is GEval's default.
+            self._model = models_factory.get(model_name=f"{llm.provider}/{llm.model}", track=False, **{"temperature": 0.0, **llm.model_params})
         return self._model
 
     def evaluate_by_score(self, case: AKEvaluationCase) -> AKEvaluationResult:

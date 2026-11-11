@@ -114,8 +114,11 @@ multimodal:
   storage_type: in_memory  # in_memory | redis | dynamodb | session_cache
   max_attachments: 20
   description_max_length: 200
-  description_model: gpt-4o  # Vision LLM for brief attachment descriptions
-  analysis_model: gpt-4o  # Vision LLM for the analyze_attachments tool
+  description_model: gpt-6-luna  # Vision LLM for brief attachment descriptions
+  analysis_model: gpt-6-luna  # Vision LLM for the analyze_attachments tool
+  # Extra LiteLLM params per call; setting one replaces this default (reasoning off, unsupported params dropped)
+  description_model_params: {reasoning_effort: none, drop_params: true}
+  analysis_model_params: {reasoning_effort: none, drop_params: true}
   redis:
     url: "redis://localhost:6379"
     ttl: 604800
@@ -129,7 +132,8 @@ multimodal:
 thread:
   type: in_memory  # in_memory | redis | valkey | dynamodb | firestore | cosmosdb
   naming:
-    model: gpt-4o-mini  # LLM used to auto-name threads (requires the thread extra)
+    model: gpt-6-luna  # LLM used to auto-name threads (requires the thread extra)
+    model_params: {reasoning_effort: none, drop_params: true}  # Extra LiteLLM params; setting it replaces this default
     max_length: 80
   redis:
     url: "redis://localhost:6379"
@@ -250,7 +254,7 @@ guardrail:
     type: openai  # Guardrail provider: openai, bedrock, or walledai
     pii: true  # Enable PII redaction/unmasking (WalledAI only)
     # OpenAI-specific fields:
-    model: gpt-4o-mini  # LLM model for guardrail validation (OpenAI only)
+    model: gpt-6-luna  # LLM model for guardrail validation (OpenAI only)
     config_path: ""  # Path to guardrail configuration JSON file (OpenAI only)
     # Bedrock-specific fields:
     id: ""  # AWS Bedrock guardrail ID (Bedrock only)
@@ -260,7 +264,7 @@ guardrail:
     type: openai  # Guardrail provider: openai, bedrock, or walledai
     pii: true  # Enable PII redaction/unmasking (WalledAI only)
     # OpenAI-specific fields:
-    model: gpt-4o-mini  # LLM model for guardrail validation (OpenAI only)
+    model: gpt-6-luna  # LLM model for guardrail validation (OpenAI only)
     config_path: ""  # Path to guardrail configuration JSON file (OpenAI only)
     # Bedrock-specific fields:
     id: ""  # AWS Bedrock guardrail ID (Bedrock only)
@@ -417,13 +421,13 @@ Alternatively, use `config.json`:
     "input": {
       "enabled": false,
       "type": "openai",
-      "model": "gpt-4o-mini",
+      "model": "gpt-6-luna",
       "config_path": ""
     },
     "output": {
       "enabled": false,
       "type": "openai",
-      "model": "gpt-4o-mini",
+      "model": "gpt-6-luna",
       "config_path": ""
     }
   },
@@ -559,8 +563,9 @@ export AK_TEST__MODE=fallback  # Options: 'score', 'llm', 'fallback' (default: '
 export AK_TEST__EVALUATOR=deepeval  # default: 'deepeval'
 
 # Llm configuration (for LLM-based evaluation)
-export AK_TEST__LLM__MODEL=gpt-4o-mini  # LLM model (default: gpt-4o-mini)
+export AK_TEST__LLM__MODEL=gpt-6-luna  # LLM model (default: gpt-6-luna)
 export AK_TEST__LLM__PROVIDER=openai  # LLM provider (default: openai)
+export AK_TEST__LLM__MODEL_PARAMS='{"reasoning_effort": "none", "drop_params": true}'  # Extra LiteLLM judge params, JSON (this is the default)
 export AK_TEST__LLM__EMBEDDING_MODEL=text-embedding-3-small  # Embedding model (default: text-embedding-3-small)
 ```
 
@@ -649,7 +654,7 @@ export AK_GUARDRAIL__INPUT__TYPE=openai  # Options: 'openai', 'bedrock', 'walled
 export AK_GUARDRAIL__INPUT__PII=true  # WalledAI only (default: true)
 
 # OpenAI-specific input guardrail configuration
-export AK_GUARDRAIL__INPUT__MODEL=gpt-4o-mini  # LLM model for validation (default: gpt-4o-mini)
+export AK_GUARDRAIL__INPUT__MODEL=gpt-6-luna  # LLM model for validation (default: gpt-6-luna)
 export AK_GUARDRAIL__INPUT__CONFIG_PATH=/path/to/guardrails_input.json  # Path to guardrail config file
 
 # Bedrock-specific input guardrail configuration
@@ -665,7 +670,7 @@ export AK_GUARDRAIL__OUTPUT__TYPE=openai  # Options: 'openai', 'bedrock', 'walle
 export AK_GUARDRAIL__OUTPUT__PII=true  # WalledAI only (default: true)
 
 # OpenAI-specific output guardrail configuration
-export AK_GUARDRAIL__OUTPUT__MODEL=gpt-4o-mini  # LLM model for validation (default: gpt-4o-mini)
+export AK_GUARDRAIL__OUTPUT__MODEL=gpt-6-luna  # LLM model for validation (default: gpt-6-luna)
 export AK_GUARDRAIL__OUTPUT__CONFIG_PATH=/path/to/guardrails_output.json  # Path to guardrail config file
 
 # Bedrock-specific output guardrail configuration
@@ -757,8 +762,9 @@ Create `test-config.yaml` in the directory you run your tests from:
 mode: fallback  # Test comparison mode: score, llm, or fallback (default: fallback)
 evaluator: deepeval  # Built-in evaluator short name, or a dotted path to your own AKEvaluator subclass (default: deepeval)
 llm:
-  model: gpt-4o-mini  # LLM model for llm evaluation (default: gpt-4o-mini)
+  model: gpt-6-luna  # LLM model for llm evaluation (default: gpt-6-luna)
   provider: openai  # LLM provider for llm evaluation (default: openai)
+  model_params: {reasoning_effort: none, drop_params: true}  # Extra LiteLLM params for the DeepEval/Opik judges; setting it replaces this default
   embedding_model: text-embedding-3-small  # Embedding model, unconsumed by any built-in v1 metric (default: text-embedding-3-small)
 ```
 
@@ -793,8 +799,9 @@ export AK_TEST__MODE=fallback  # Options: 'score', 'llm', 'fallback' (default: '
 export AK_TEST__EVALUATOR=deepeval  # Built-in short name, or a dotted path (default: 'deepeval')
 
 # Llm configuration (for LLM-based evaluation)
-export AK_TEST__LLM__MODEL=gpt-4o-mini  # LLM model (default: gpt-4o-mini)
+export AK_TEST__LLM__MODEL=gpt-6-luna  # LLM model (default: gpt-6-luna)
 export AK_TEST__LLM__PROVIDER=openai  # LLM provider (default: openai)
+export AK_TEST__LLM__MODEL_PARAMS='{"reasoning_effort": "none", "drop_params": true}'  # Extra LiteLLM judge params, JSON (this is the default)
 export AK_TEST__LLM__EMBEDDING_MODEL=text-embedding-3-small  # Embedding model (default: text-embedding-3-small)
 ```
 
@@ -923,13 +930,13 @@ guardrail:
     enabled: false              # Enable input guardrails
     type: "openai"              # Guardrail provider: 'openai', 'bedrock', or 'walledai'
     pii: true           # Enable PII redaction/unmasking (WalledAI only)
-    model: "gpt-4o-mini"        # LLM model for guardrail validation
+    model: "gpt-6-luna"        # LLM model for guardrail validation
     config_path: ""             # Path to guardrail configuration JSON file
   output:                       # Output guardrail configuration
     enabled: false              # Enable output guardrails
     type: "openai"              # Guardrail provider: 'openai', 'bedrock', or 'walledai'
     pii: true           # Enable PII redaction/unmasking (WalledAI only)
-    model: "gpt-4o-mini"        # LLM model for guardrail validation
+    model: "gpt-6-luna"        # LLM model for guardrail validation
     config_path: ""             # Path to guardrail configuration JSON file
 
 # Execution configuration (for AWS serverless and containerized deployments)

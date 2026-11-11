@@ -53,7 +53,7 @@
         "name": "Jailbreak",
         "config": {
           "confidence_threshold": 0.7,
-          "model": "gpt-4.1-mini",
+          "model": "gpt-6-luna",
           "include_reasoning": false
         }
       },
@@ -61,7 +61,7 @@
         "name": "Off Topic Prompts",
         "config": {
           "confidence_threshold": 0.7,
-          "model": "gpt-4.1-mini",
+          "model": "gpt-6-luna",
           "system_prompt_details": "You are a helpful assistant who can answer cricket related questions. Keep responses focused on the user's questions and avoid going off-topic.",
           "include_reasoning": false
         }
@@ -70,7 +70,7 @@
         "name": "Custom Prompt Check",
         "config": {
           "confidence_threshold": 0.7,
-          "model": "gpt-4.1-mini",
+          "model": "gpt-6-luna",
           "system_prompt_details": "You are a general knowledge assistant. You can answer cricket related questions. Raise the guardrail if questions aren’t focused on general knowledge questions.",
           "include_reasoning": false
         }

@@ -1,3 +1,4 @@
+import asyncio
 from unittest.mock import Mock, patch
 
 import pytest
@@ -268,3 +269,28 @@ class TestBaseGuardrailUtil:
         """Image replies must have their caption text scanned, not silently skipped."""
         reply = AgentReplyImage(response="a caption", image_data="base64data", name="pic.png")
         assert BaseGuardrailUtil._extract_text_from_reply(reply) == "a caption"
+
+
+class TestOpenAIGuardrailCall:
+    """The check-only completion caps the token budget with max_completion_tokens, which every current OpenAI
+    chat model accepts and which also bounds reasoning tokens on reasoning models."""
+
+    def test_input_check_caps_with_max_completion_tokens(self, mock_session, mock_agent, sample_requests):
+        guardrail = OpenAIInputGuardrail()
+        guardrail._guardrails_client = Mock()
+
+        assert asyncio.run(guardrail.on_run(mock_session, mock_agent, sample_requests)) == sample_requests
+        kwargs = guardrail._guardrails_client.chat.completions.create.call_args.kwargs
+        assert kwargs["model"] == AKConfig.get().guardrail.input.model
+        assert kwargs["max_completion_tokens"] == 1
+        assert "max_tokens" not in kwargs
+
+    def test_output_check_caps_with_max_completion_tokens(self, mock_session, mock_agent, sample_requests, sample_reply):
+        guardrail = OpenAIOutputGuardrail()
+        guardrail._guardrails_client = Mock()
+
+        assert asyncio.run(guardrail.on_run(mock_session, sample_requests, mock_agent, sample_reply)) is sample_reply
+        kwargs = guardrail._guardrails_client.chat.completions.create.call_args.kwargs
+        assert kwargs["model"] == AKConfig.get().guardrail.output.model
+        assert kwargs["max_completion_tokens"] == 1
+        assert "max_tokens" not in kwargs

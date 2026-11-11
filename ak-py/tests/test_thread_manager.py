@@ -283,13 +283,24 @@ class TestLLMThreadNaming:
         assert thread.name == "Paris Trip Planning"
         assert thread.name_locked is False
         completion.assert_called_once()
-        assert completion.call_args.kwargs["model"] == "gpt-4o-mini"
+        assert completion.call_args.kwargs["model"] == "gpt-6-luna"
+        assert completion.call_args.kwargs["reasoning_effort"] == "none"
+        assert completion.call_args.kwargs["drop_params"] is True
 
     def test_llm_naming_model_config_honored(self, thread_enabled_llm):
         AKConfig.get().thread.naming.model = "gpt-4o"
         with patch("litellm.completion", return_value=_llm_response("Title")) as completion:
             thread_enabled_llm.get_or_create_thread("s1", "u1", first_prompt="Hello there")
         assert completion.call_args.kwargs["model"] == "gpt-4o"
+
+    def test_llm_naming_model_params_replace_defaults_and_override_max_tokens(self, thread_enabled_llm):
+        AKConfig.get().thread.naming.model_params = {"reasoning_effort": "low", "max_tokens": 200}
+        with patch("litellm.completion", return_value=_llm_response("Title")) as completion:
+            thread_enabled_llm.get_or_create_thread("s1", "u1", first_prompt="Hello there")
+        kwargs = completion.call_args.kwargs
+        assert kwargs["reasoning_effort"] == "low"
+        assert kwargs["max_tokens"] == 200
+        assert "drop_params" not in kwargs  # configured params replace the default rather than merging with it
 
     def test_llm_name_surrounding_quotes_stripped(self, thread_enabled_llm):
         with patch("litellm.completion", return_value=_llm_response('  "Paris Trip"  ')):
@@ -357,7 +368,8 @@ class TestLLMThreadNaming:
 
     def test_naming_config_defaults(self):
         config = _ThreadNamingConfig()
-        assert config.model == "gpt-4o-mini"
+        assert config.model == "gpt-6-luna"
+        assert config.model_params == {"reasoning_effort": "none", "drop_params": True}
         assert config.max_length == 80
 
     def test_missing_litellm_warns_at_construction(self, caplog):

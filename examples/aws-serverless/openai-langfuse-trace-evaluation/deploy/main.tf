@@ -41,7 +41,7 @@ module "serverless_agents" {
       LANGFUSE_SECRET_KEY    = var.langfuse_secret_key
       LANGFUSE_BASE_URL      = var.langfuse_base_url
       AK_TEST__LLM__PROVIDER = "openai"
-      AK_TEST__LLM__MODEL    = "gpt-4.1-mini"
+      AK_TEST__LLM__MODEL    = "gpt-6-luna"
       OPIK_TRACK_DISABLE     = "true"
       RESULTS_TABLE          = aws_dynamodb_table.results.name
     }

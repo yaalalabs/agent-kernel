@@ -32,6 +32,11 @@ sequenceDiagram
 - **No raw binary in session history**: Images/files are stored externally; only text descriptions enter the conversation. This prevents session bloat.
 - **Pluggable storage**: Choose between in-memory, Redis, or DynamoDB depending on your deployment.
 - **Automatic description**: A vision-capable LLM generates brief descriptions of each attachment.
+- **Reasoning off by default**: The description and `analyze_attachments` calls send the extra LiteLLM params in
+  `multimodal.description_model_params` / `multimodal.analysis_model_params`, which default to
+  `{reasoning_effort: none, drop_params: true}`. LiteLLM maps `reasoning_effort` to each provider's setting (for example,
+  Gemini's thinking budget) and drops it for models that don't support it. Set your own params for a model that can't
+  turn reasoning off (e.g. `reasoning_effort: low` for Gemini 2.5 Pro); they replace the default.
 - **System tool for recall**: The agent can call `analyze_attachments` to retrieve previously stored images/files.
 
 ## Supported Attachment Source Forms

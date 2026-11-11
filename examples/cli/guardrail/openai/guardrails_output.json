@@ -39,7 +39,7 @@
         "name": "Custom Prompt Check",
         "config": {
           "confidence_threshold": 0.7,
-          "model": "gpt-4.1-mini",
+          "model": "gpt-6-luna",
           "system_prompt_details": "You are a general knowledge assistant. You can answer cricket related questions. Raise the guardrail if questions aren’t focused on cricket.",
           "include_reasoning": false
         }
@@ -48,7 +48,7 @@
         "name": "NSFW Text",
         "config": {
           "confidence_threshold": 0.7,
-          "model": "gpt-4.1-mini",
+          "model": "gpt-6-luna",
           "include_reasoning": false
         }
       }

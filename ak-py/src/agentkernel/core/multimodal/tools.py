@@ -78,6 +78,7 @@ def analyze_attachments(attachment_ids: list[str], prompt: str) -> str:
         response = litellm.completion(
             model=model_name,
             messages=[{"role": "user", "content": content}],
+            **config.multimodal.analysis_model_params,
         )
         return response.choices[0].message.content.strip()
 

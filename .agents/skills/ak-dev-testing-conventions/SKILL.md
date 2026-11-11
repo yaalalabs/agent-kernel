@@ -429,8 +429,9 @@ Configured via `test-config.yaml` — a separate, un-nested file resolved from t
 mode: score    # score | llm | fallback (default: fallback)
 evaluator: deepeval   # built-in short name ('deepeval', 'opik' or 'jev'), or a dotted path to your own AKEvaluator subclass
 llm:
-  model: gpt-4o-mini
+  model: gpt-6-luna
   provider: openai
+  model_params: {reasoning_effort: none, drop_params: true}  # extra LiteLLM judge params (default)
 ```
 
 - **score**: Deterministic, offline scoring via the configured `AKEvaluator`'s `evaluate_by_score` — the built-in `DeepevalAKEvaluator` uses `Scorer.quasi_exact_match_score` (normalised whole-string equality, no LLM call); the built-in `OpikAKEvaluator` uses Opik's `LevenshteinRatio` instead (graded fuzzy-similarity, not exact-match); the built-in `JevAKEvaluator` has no score mode (`AKMetricNotSupported`), so `evaluator: jev` needs `mode: llm`

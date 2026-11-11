@@ -84,7 +84,7 @@ class MultimodalPreHook(PreHook):
                             ],
                         }
                     ],
-                    max_tokens=50,
+                    **{"max_tokens": 50, **config.multimodal.description_model_params},
                 )
                 description = response.choices[0].message.content.strip()
                 self._log.debug(f"Generated attachment description: {description}")
@@ -108,7 +108,7 @@ class MultimodalPreHook(PreHook):
                             ],
                         }
                     ],
-                    max_tokens=50,
+                    **{"max_tokens": 50, **config.multimodal.description_model_params},
                 )
                 return resp.choices[0].message.content.strip()
 

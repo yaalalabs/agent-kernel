@@ -135,7 +135,7 @@ def test_evaluate_by_llm_success(evaluator):
     (fake,) = _FakeGEval.instances
     assert fake.kwargs["evaluation_criteria"] == _DEFAULT_EVALUATION_CRITERIA
     assert fake.kwargs["track"] is False
-    assert fake.kwargs["model"] == "openai/gpt-4o-mini"
+    assert fake.kwargs["model"].model_name == "openai/gpt-6-luna"
     # Regression: the judge must see the question and expected output packed into `output`, since
     # opik's GEval.score() takes only that one string.
     assert "capital of France?" in fake.output
@@ -173,12 +173,22 @@ def test_evaluate_by_llm_wraps_score_exception(evaluator):
     assert exc_info.value.__cause__ is boom
 
 
-def test_llm_model_is_lazily_created_and_cached(evaluator):
+def test_llm_model_is_lazily_created_and_cached(monkeypatch, evaluator):
+    import agentkernel.test.core.evaluator.opik as ak_opik_module
+
+    created = []
+
+    def _fake_get(**kwargs):
+        created.append(kwargs)
+        return object()
+
+    monkeypatch.setattr(ak_opik_module.models_factory, "get", _fake_get)
     assert evaluator._model is None  # never built by __init__
 
     case = AKEvaluationCase(user_input="q", actual="a", expected="e")
     evaluator.evaluate_by_llm(case)
     evaluator.evaluate_by_llm(case)
 
-    assert evaluator._model == "openai/gpt-4o-mini"
-    assert [f.kwargs["model"] for f in _FakeGEval.instances] == ["openai/gpt-4o-mini", "openai/gpt-4o-mini"]
+    # Built once with reasoning off (GEval's temperature/logprobs need it) and drop_params for models that can't take it.
+    assert created == [{"model_name": "openai/gpt-6-luna", "track": False, "temperature": 0.0, "reasoning_effort": "none", "drop_params": True}]
+    assert all(f.kwargs["model"] is evaluator._model for f in _FakeGEval.instances)

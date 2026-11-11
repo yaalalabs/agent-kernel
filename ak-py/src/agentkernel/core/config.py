@@ -273,6 +273,11 @@ class _MultimodalStorageDynamoDBConfig(_DynamoDBConfig):
     ttl: int = Field(default=604800, description="Attachment TTL in seconds (0 disables)")
 
 
+def _no_reasoning_params() -> dict[str, Any]:
+    """Default extra LiteLLM params for Agent Kernel's own short LLM calls: reasoning off, dropped where unsupported."""
+    return {"reasoning_effort": "none", "drop_params": True}
+
+
 class _MultimodalConfig(BaseModel):
     """Configuration for multimodal attachment memory."""
 
@@ -291,15 +296,29 @@ class _MultimodalConfig(BaseModel):
     max_attachments: int = Field(default=20, description="Maximum number of attachments to keep per session")
     description_max_length: int = Field(default=200, description="Maximum length of attachment description text")
     description_model: str = Field(
-        default="gpt-4o",
+        default="gpt-6-luna",
         description="LiteLLM model used to generate brief descriptions when an attachment is first received (called by the pre-hook)",
     )
     analysis_model: str = Field(
-        default="gpt-4o",
+        default="gpt-6-luna",
         description=(
             "LiteLLM model used by the analyze_attachments tool when the agent requests a full analysis of an attachment; "
             "a remote image is handed to it as a fetchable image URL, so the model must be able to fetch that address, "
             "while other remote attachment types are only named by their address"
+        ),
+    )
+    description_model_params: dict[str, Any] = Field(
+        default_factory=_no_reasoning_params,
+        description=(
+            "Extra LiteLLM completion params for the description call (e.g. reasoning_effort, temperature); "
+            "replaces the default, which turns reasoning off and lets LiteLLM drop params the model doesn't support"
+        ),
+    )
+    analysis_model_params: dict[str, Any] = Field(
+        default_factory=_no_reasoning_params,
+        description=(
+            "Extra LiteLLM completion params for the analyze_attachments call (e.g. reasoning_effort, temperature); "
+            "replaces the default, which turns reasoning off and lets LiteLLM drop params the model doesn't support"
         ),
     )
     redis: _MultimodalStorageRedisConfig | None = None
@@ -338,7 +357,14 @@ class _ThreadCosmosDBConfig(BaseModel):
 
 
 class _ThreadNamingConfig(BaseModel):
-    model: str = Field(default="gpt-4o-mini", description="LiteLLM model used to generate thread names")
+    model: str = Field(default="gpt-6-luna", description="LiteLLM model used to generate thread names")
+    model_params: dict[str, Any] = Field(
+        default_factory=_no_reasoning_params,
+        description=(
+            "Extra LiteLLM completion params for the naming call (e.g. reasoning_effort, temperature); "
+            "replaces the default, which turns reasoning off and lets LiteLLM drop params the model doesn't support"
+        ),
+    )
     max_length: int = Field(default=80, description="Maximum length of an auto-generated thread name")
 
 
@@ -480,7 +506,7 @@ class _GuardrailParamConfig(BaseModel):
     )
     pii: bool = Field(default=True, description="Enable PII redaction/unmasking (WalledAI only)")
     config_path: str | None = Field(default=None, description="Path to guardrail configuration file (OpenAI only)")
-    model: str | None = Field(default="gpt-4o-mini", description="LLM model name to use for guardrail (OpenAI only)")
+    model: str | None = Field(default="gpt-6-luna", description="LLM model name to use for guardrail (OpenAI only)")
     id: str | None = Field(default=None, description="AWS Bedrock guardrail ID (Bedrock only)")
     version: str | None = Field(default="DRAFT", description="AWS Bedrock guardrail version (Bedrock only)")
 
