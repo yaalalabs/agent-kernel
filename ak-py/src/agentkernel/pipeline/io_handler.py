@@ -16,7 +16,6 @@ from .thread_runner import ThreadRunner
 from .transport.base import QueueTransportFactory
 
 if TYPE_CHECKING:  # pragma: no cover: typing only, so pipeline keeps importing core and api only
-    from ..integration.adapter.gateway import GatewayRunner
     from ..integration.adapter.poller import PollerRunner
 
 
@@ -43,7 +42,6 @@ class IOHandler:
         auth_validator: AuthValidator | None = None,
         handlers: list[RESTRequestHandler] | None = None,
         pollers: list["PollerRunner"] | None = None,
-        gateways: list["GatewayRunner"] | None = None,
         request_handler: RequestHandler | None = None,
     ) -> None:
         """Boot the pipeline topology this configuration implies and serve until shutdown.
@@ -61,10 +59,6 @@ class IOHandler:
             threads on the ``in_memory`` transport only. On a broker transport they are their own
             containers (``PollerRunner.run(adapter)``), so poller count never tracks the replica
             count of this request-bound tier; passing them there logs a warning and starts none.
-        :param gateways: Optional stateful edge gateways (``GatewayRunner``), co-hosted as peer
-            threads. Unlike a poller, a gateway must run in this process: it registers itself as
-            the platform's outbound adapter when it starts, so replies route back to its live
-            connection.
         :param request_handler: Replaces the pipeline's own ``RequestHandler`` on the chat route
             — it does not join it, because both own ``POST /api/v1/chat`` and FastAPI would serve
             whichever registered first, silently. This is the seam a capability that has to act on
@@ -167,15 +161,6 @@ class IOHandler:
             cls._log.warning(
                 f"pollers ignored: they are co-hosted here only on the in_memory transport "
                 f"(transport={transport_type}); on broker transports start PollerRunner.run(adapter) as its own container"
-            )
-
-        for gateway in gateways or []:
-            tasks.append(
-                ThreadRunner.Task(
-                    execution_function=lambda g=gateway: g.start(),
-                    thread_name=f"gateway-{gateway.adapter.name}",
-                    stop_all_on_failure=True,
-                )
             )
 
         ThreadRunner.run(tasks=tasks, max_workers=len(tasks))

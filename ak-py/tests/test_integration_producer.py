@@ -156,9 +156,9 @@ class TestAttachmentStorageTopology:
         IntegrationProducer(InMemoryTransport())
 
 
-def test_extra_attributes_are_merged_after_the_integration_and_reply_attributes():
+def test_an_end_of_session_request_is_stamped_beside_the_integration_and_reply_attributes():
     transport = InMemoryTransport()
-    IntegrationProducer(transport).enqueue("livekit", _request(requests=[]), {"realtime_end": "true"})
+    IntegrationProducer(transport).enqueue("livekit", _request(requests=[], end_session=True))
     [message] = transport.create_consumer(QueueName.INPUT).fetch(1, 1.0)
 
     assert message.attributes["realtime_end"] == "true"
@@ -166,7 +166,9 @@ def test_extra_attributes_are_merged_after_the_integration_and_reply_attributes(
     assert message.attributes["reply_channel"] == "C9"
 
 
-@pytest.mark.parametrize("key", [ATTR_INTEGRATION, "reply_channel"])
-def test_an_extra_attribute_that_collides_raises(key):
-    with pytest.raises(ValueError, match="collides"):
-        IntegrationProducer(InMemoryTransport()).enqueue("slack", _request(), {key: "x"})
+def test_an_ordinary_request_carries_no_end_of_session_attribute():
+    transport = InMemoryTransport()
+    IntegrationProducer(transport).enqueue("slack", _request())
+    [message] = transport.create_consumer(QueueName.INPUT).fetch(1, 1.0)
+
+    assert "realtime_end" not in message.attributes

@@ -52,7 +52,7 @@ python app.py io
 
 ## Testing it Live
 
-Once all three terminals are running, open your LiveKit Sandbox dashboard or custom frontend. Connect to `room_01`. 
+Once all three terminals are running, open your LiveKit Sandbox dashboard or custom frontend. Point LiveKit's webhook at the server (see the parent README), then join a room, for example `call_01`. Each room is its own call. 
 When you speak, Terminal 3 grabs the audio, passes it to Terminal 2 via Kafka, OpenAI processes the speech, and the AI's voice is instantly streamed back to your headset!
 
 ## Clean Up

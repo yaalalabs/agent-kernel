@@ -929,9 +929,9 @@ class TestRealtimeFailureHandling:
 class TestLiveKitGatewayErrorChunk:
     @pytest.mark.asyncio
     async def test_error_chunk_is_surfaced_and_clears_partial_transcript(self):
-        from agentkernel.integration.livekit.adapter import LiveKitEdgeGateway
+        from agentkernel.integration.livekit.adapter import LiveKitEdgeAdapter
 
-        gateway = object.__new__(LiveKitEdgeGateway)
+        gateway = object.__new__(LiveKitEdgeAdapter)
         gateway._transcript = ["half a sentence"]
         gateway._caption = None
         gateway._speaking_agent = None

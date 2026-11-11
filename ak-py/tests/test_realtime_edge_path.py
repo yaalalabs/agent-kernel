@@ -10,7 +10,7 @@ import threading
 import types
 
 import pytest
-from test_livekit_gateway import _FakeRtc, _gateway
+from test_livekit_edge_adapter import _FakeRtc, _gateway
 from test_realtime_pool import _Agent, _drain_output
 
 import agentkernel.integration.livekit.adapter as livekit_adapter

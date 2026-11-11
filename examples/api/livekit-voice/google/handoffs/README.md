@@ -45,7 +45,7 @@ export AK_LIVEKIT__API_SECRET="..."
 uv run server.py
 ```
 
-Connect to `room_01` in your LiveKit Sandbox dashboard and speak.
+Point LiveKit's webhook at the server (see the parent README), then join a room, for example `call_01`, in your LiveKit Sandbox dashboard and speak. Each room is its own call.
 
 ### 3. Try a conversation
 

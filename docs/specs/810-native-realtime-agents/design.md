@@ -89,7 +89,7 @@ flowchart LR
 - A connect that fails or times out is cancelled, closed, and counted as a failure (`_discard_failed`).
 - `RealtimeConnection.produced_output` is set by the first audio, transcript, or turn end.
 
-The sections below keep the labels C1, C4, C5 and C6 used in the code and the architecture skill. Live captions (C2) and runtime gateway hosting (C3) are not part of Agent Kernel: room hosting and captions belong to the application.
+The sections below keep the labels C1 and C4 to C7 used in the code and the architecture skill. Live captions (C2) are not part of Agent Kernel: captions belong to the application. C3 (an API for application code to start a gateway in the background and wait until it is ready) is not part of Agent Kernel. C7 is a different thing: gateways started and ended by the platform's own signed lifecycle webhooks, hosted by AK the way it hosts a messaging webhook. The application still decides which rooms get one (`should_start`).
 
 ### Caller transcript (C1)
 
@@ -100,12 +100,12 @@ The sections below keep the labels C1, C4, C5 and C6 used in the code and the ar
 
 ### End a session at once (C4)
 
-- An edge that stops sends an end-of-session control on the input queue for its session id: an empty request (`StatefulEdgeAdapter._enqueue_end`) with message attribute `ATTR_REALTIME_END` (`LiveKitEdgeGateway._send_session_end`, called from `_release`).
-  - `IntegrationProducer.enqueue` takes optional extra `attributes`; a key that collides with a producer attribute raises `ValueError`.
+- An edge that stops sends an end-of-session control on the input queue for its session id: an empty request (`StatefulEdgeAdapter._enqueue()` with no message) with message attribute `ATTR_REALTIME_END` (`LiveKitEdgeAdapter._send_session_end`, called from `_release`).
+  - `InboundRequest.end_session: bool = False`; `IntegrationProducer.enqueue` stamps it as `ATTR_REALTIME_END`, as it stamps `reply_context`, so no edge names a queue attribute and the producer's signature is unchanged.
   - The control goes behind frames already staged, waiting at most `SESSION_END_TIMEOUT_SECONDS` (2 s) for them. If staged input is still unsent after that, the control is not sent: it would pass that input, and the pool would drop it as late. The session then ends by idle eviction.
   - The broker call is bounded by the same time, so a stopping gateway never waits on a broker that does not answer.
 - The pool closes that session's native connection at once (`RealtimeConnectionPool.end_session`) and clears its back-off count; later input for the session id opens a new connection.
-- `StatefulEdgeRegistry.unregister(session_id, adapter=None)` removes only that adapter when given one, so a stopped edge cannot remove a newer one registered under the same id (`GatewayRunner.start()` passes its own adapter).
+- `StatefulEdgeRegistry.unregister(session_id, adapter=None)` removes only that adapter when given one, so a stopped edge cannot remove a newer one registered under the same id (`_EdgeRunner.start()` passes its own adapter).
 - Works across processes because it uses the existing queue.
 
 ### Opening prompt and join (C5)
@@ -121,10 +121,23 @@ The sections below keep the labels C1, C4, C5 and C6 used in the code and the ar
 - A connection that fails again within the window is not opened early.
 - A connect that fails sends the edge one terminal error chunk naming the failure. The back-off drops the redelivered input, so that input never reaches its permanent-failure path; without the chunk a room whose session cannot open (a bad key, an agent or option the adapter rejects) would hear nothing.
 
+### One room per call (C7)
+
+- Today a gateway serves one room named at start-up, so every caller shares one session. Other AK integrations give each conversation its own session; LiveKit should too.
+- Split like a messaging integration: the platform translates, a generic host runs it.
+  - `EdgeLifecycleAdapter` (`integration/adapter/base.py`), translation only: `parse(raw) -> EdgeLifecycleEvent | None` (`session_id` + `start: bool`; it also verifies, raising `HTTPException` to reject), `create_edge(session_id)`, and the hook `should_start(session_id)` (default every session). The per-process counterpart of `StatefulEdgeAdapter`, which serves one connection; two classes per platform, as messaging has `InboundAdapter` and `OutboundAdapter`.
+  - `EdgeLifecycleRESTRequestHandler` (`integration/adapter/lifecycle.py`), the generic host and sibling of `WebhookRESTRequestHandler`: a `RESTRequestHandler` (`requires_pipeline`) mounted with `IOHandler.run(handlers=[EdgeLifecycleRESTRequestHandler(adapter)])`, so its gateways run in the process that hosts the Response Handler. A start runs one `_EdgeRunner` per session on a thread of its own (a repeated start is ignored); an end stops it. `_EdgeRunner`, its per-edge half, lives in the same module.
+  - Process shutdown: no new edge starts. Each live edge already sees `ThreadRunner.shutdown_event` and stops; the process does not wait for it, so a session whose end control was not sent closes by idle eviction. No hook on `RESTRequestHandler`, no change to `IOHandler`.
+  - `LiveKitLifecycleAdapter` (`integration/livekit/adapter.py`): LiveKit's signed `room_started`/`room_finished` webhooks, verified with the SDK's `WebhookReceiver` over the existing `livekit.api_key`/`api_secret`. No new config. The room name is the session id.
+- `_EdgeRunner.stop()` (generic, `integration/adapter/lifecycle.py`): ends one edge from any thread; the loop watches it beside `ThreadRunner.shutdown_event`. A gateway stopped before it starts never starts its adapter (a room that opens and closes at once).
+- `LiveKitEdgeAdapter`: on LiveKit's `participant_disconnected`, when no caller is left, the gateway stops and so sends the end-of-session control (C4). Unconditional: with several IOHandler replicas `room_finished` may reach a process that never hosted the room, so the gateway must end its own call.
+- `EdgeLifecycleRESTRequestHandler` is the only host. `IOHandler.run(gateways=...)`, `gateway.py` and the public `GatewayRunner` export are removed (nothing is released): a fixed room named at start-up was the one integration where the app built the per-conversation object itself, which no other integration does. The per-edge runner stays as the private `_EdgeRunner` in `lifecycle.py`, one module per host like `webhook.py` and `poller.py`. Local runs need a webhook tunnel, as Slack does.
+- Limits kept: one IOHandler process and one Agent Runner replica; a room no caller joins keeps its agent until LiveKit closes the room. A shared room (meeting) remains one conversation: the native models take one audio stream with no speaker labels, so AK adds none.
+
 ### Configuration and compatibility
 
 - No new `AKConfig` field. Reused: `execution.realtime`, the existing queue and LiveKit settings, and `Module.run_options`.
-- The new numbers are class or module constants, not config: `LiveKitEdgeGateway.SESSION_END_TIMEOUT_SECONDS`, `_RECONNECT_BASE_SECONDS`, `_RECONNECT_MAX_SECONDS`.
+- The new numbers are class or module constants, not config: `LiveKitEdgeAdapter.SESSION_END_TIMEOUT_SECONDS`, `_RECONNECT_BASE_SECONDS`, `_RECONNECT_MAX_SECONDS`.
 - `google-adk` floor rises from `>=1.24.0` (base `pyproject.toml:132`) to `>=2.7.0`.
   - Reason: a live fix that finds a transfer even when its tool result is not first in a batch (external; not re-verified).
   - It applies to every ADK user, not only realtime, and `adk.py` imports `google.adk.workflow.Workflow` at module level, which ADK 1.x lacks: a breaking change to call out in the release notes.
@@ -151,6 +164,7 @@ The sections below keep the labels C1, C4, C5 and C6 used in the code and the ar
 - C4: after the control, `disconnect` has run and a later input for the session id opens a new connection; the control is not sent past unsent staged input, and a broker that does not answer cannot hold up the stop; a stopped edge does not unregister a newer one.
 - C5: `None` sends no opening request; a custom prompt is sent once; a caller who joins muted is greeted, and so is one already in the room.
 - C6: repeated immediate failures drop input with delays 1, 2, 4 s; output before a failure restarts the count; ending the session clears it; a failed connect sends one error chunk.
+- C7: a signed `room_started` starts one gateway (a resent webhook starts no second), `room_finished` stops it, a bad signature is a 401; the last caller leaving ends the session; a gateway stopped before it starts never joins; at shutdown no new edge starts and the process waits for the live ones.
 - A handoff to an agent the starting roster lacked does not bind it to the first participant.
 
 ## Non-goals

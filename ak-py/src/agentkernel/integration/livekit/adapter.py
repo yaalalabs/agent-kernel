@@ -4,14 +4,14 @@ import json
 import logging
 import threading
 import uuid
+from typing import Any
 
 from livekit import api, rtc
 
 from ...core.config import AKConfig
 from ...core.model import AgentReply, AgentRequestText, AgentRequestVoice, StreamChunk
 from ...core.realtime import EDGE_SAMPLE_RATE
-from ...pipeline.envelope import ATTR_REALTIME_END
-from ..adapter.base import StatefulEdgeAdapter
+from ..adapter.base import EdgeLifecycleAdapter, EdgeLifecycleEvent, StatefulEdgeAdapter
 
 _log = logging.getLogger("ak.integration.livekit")
 
@@ -20,8 +20,8 @@ INTEGRATION_NAME = "livekit"
 _MAX_PENDING_REQUESTS = 64
 
 
-class LiveKitEdgeGateway(StatefulEdgeAdapter):
-    """Bridges a LiveKit WebRTC room with the Agent Kernel queue, hosted by ``GatewayRunner``.
+class LiveKitEdgeAdapter(StatefulEdgeAdapter):
+    """Bridges a LiveKit WebRTC room with the Agent Kernel queue; ``LiveKitLifecycleAdapter`` builds one per room.
 
     Pushes the caller's audio and chat text to the input queue and plays the agent's streamed audio
     and transcript back to the room. Each agent of the team joins as its own participant; the one
@@ -107,7 +107,7 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
         self._api_secret = api_secret or config.livekit.api_secret
         # The first participant hears the caller and speaks for the starting agent.
         self._participants = [self._single_participant(token)]
-        self._by_agent: dict[str, LiveKitEdgeGateway._AgentParticipant] = {}
+        self._by_agent: dict[str, LiveKitEdgeAdapter._AgentParticipant] = {}
         # Known before a participant joins, so its track is never taken for the caller's.
         self._own_identities = {participant.identity for participant in self._participants if participant.identity}
         self._active = self._participants[0]
@@ -119,6 +119,8 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
         self._background_tasks: set[asyncio.Task] = set()
 
         self._loop: asyncio.AbstractEventLoop | None = None
+        # Created by start(), on the gateway's own event loop.
+        self._stop_event: asyncio.Event | None = None
         self._connected = False
         # The team announcement arrives on the Response Handler thread, while start() may still be joining.
         self._team_lock = threading.Lock()
@@ -146,7 +148,7 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
     async def start(self) -> None:
         """Join the room and bridge audio until the pipeline shuts down.
 
-        On a failed join the participants leave before the error is raised: ``GatewayRunner`` does not call :meth:`stop` then.
+        On a failed join the participants leave before the error is raised: the edge runner does not call :meth:`stop` then.
         """
         _log.info(f"Connecting to LiveKit room at {self.room_url}")
 
@@ -190,6 +192,7 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
         room.on("disconnected", self._on_disconnected)
         if listen:
             room.on("participant_connected", self._on_participant_connected)
+            room.on("participant_disconnected", self._on_participant_disconnected)
             room.on("track_subscribed", self._on_track_subscribed)
             room.on("data_received", self._handle_chat_message)
         return room
@@ -201,11 +204,11 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
 
     async def stop(self) -> None:
         """Gracefully disconnect and release resources."""
-        _log.info("LiveKitEdgeGateway shutting down: disconnecting from room")
+        _log.info("LiveKitEdgeAdapter shutting down: disconnecting from room")
         await self._release()
-        if hasattr(self, "_stop_event"):
+        if self._stop_event is not None:
             self._stop_event.set()
-        _log.info("LiveKitEdgeGateway disconnected successfully")
+        _log.info("LiveKitEdgeAdapter disconnected successfully")
 
     async def _release(self) -> None:
         """Send the end-of-session control, stop the background work, and take every participant out of the room."""
@@ -242,7 +245,7 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
                 return
         try:
             await asyncio.wait_for(
-                asyncio.to_thread(self._producer.enqueue, self.name, self._enqueue_end(), {ATTR_REALTIME_END: "true"}),
+                asyncio.to_thread(self._producer.enqueue, self.name, self._enqueue()),
                 timeout=self.SESSION_END_TIMEOUT_SECONDS,
             )
         except asyncio.TimeoutError:
@@ -257,6 +260,19 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
         if participant.identity in self._own_identities:
             return
         self._in_background(self._greet(participant.identity))
+
+    def _on_participant_disconnected(self, participant: "rtc.RemoteParticipant") -> None:
+        """A participant left; the last caller leaving stops the gateway, which ends the session.
+
+        The gateway ends its own call rather than waiting for ``room_finished``: with several IOHandler replicas that webhook
+        can reach a process that never hosted this room.
+        """
+        if participant.identity in self._own_identities or self._stop_event is None:
+            return
+        # LiveKit removes the participant from the room before raising this event.
+        if not self._callers_in(self._participants[0].room):
+            _log.info(f"The last caller left room {self.session_id}; ending the session")
+            self._stop_event.set()
 
     def _callers_in(self, room: "rtc.Room | None") -> list[str]:
         """The identities of the callers already in ``room``."""
@@ -596,3 +612,55 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
             return
         future = asyncio.run_coroutine_threadsafe(coro, self._loop)
         await asyncio.wrap_future(future)
+
+
+class LiveKitLifecycleAdapter(EdgeLifecycleAdapter):
+    """LiveKit's room webhooks as edge lifecycle events, so every room gets its own gateway and session.
+
+    ``room_started`` starts a :class:`LiveKitEdgeAdapter` for the room (the room name is the session id); the gateway
+    ends its session when the last caller leaves, and ``room_finished`` stops it if it is still running. Webhooks are verified with
+    LiveKit's own ``WebhookReceiver`` over the API key and secret that sign them. Override :meth:`should_start` to
+    choose the rooms, or :meth:`create_edge` to build the gateway. Hosted by ``EdgeLifecycleRESTRequestHandler``.
+    """
+
+    name = "livekit"
+    webhook_path = "/livekit/webhook"
+
+    def __init__(self, api_key: str | None = None, api_secret: str | None = None):
+        """
+        :param api_key: The LiveKit API key that signs the webhooks; defaults to ``livekit.api_key``.
+        :param api_secret: The LiveKit API secret; defaults to ``livekit.api_secret``.
+        :raises ValueError: If the key or secret is missing.
+        """
+        config = AKConfig.get().livekit
+        key, secret = api_key or config.api_key, api_secret or config.api_secret
+        if not (key and secret):
+            raise ValueError("LiveKitLifecycleAdapter needs the LiveKit API key and secret (AK_LIVEKIT__API_KEY, AK_LIVEKIT__API_SECRET)")
+        self._api_key, self._api_secret = key, secret
+        self._receiver = api.WebhookReceiver(api.TokenVerifier(key, secret))
+
+    async def parse(self, raw: Any) -> EdgeLifecycleEvent | None:
+        """Verify one LiveKit webhook (the SDK checks the signature while parsing) and map its room event.
+
+        :raises HTTPException: 401 when the signature does not verify.
+        """
+        from fastapi import HTTPException
+
+        body = (await raw.body()).decode("utf-8")
+        try:
+            event = self._receiver.receive(body, raw.headers.get("Authorization", ""))
+        except Exception as e:
+            _log.warning(f"Rejected a LiveKit webhook: {e}")
+            raise HTTPException(status_code=401, detail="Invalid LiveKit webhook signature")
+        room = event.room.name if event.HasField("room") else ""
+        if not room:
+            return None
+        if event.event == "room_started":
+            return EdgeLifecycleEvent(room, start=True)
+        if event.event == "room_finished":
+            return EdgeLifecycleEvent(room, start=False)
+        return None
+
+    def create_edge(self, session_id: str) -> LiveKitEdgeAdapter:
+        """A gateway for the room, signed with the same keys."""
+        return LiveKitEdgeAdapter(session_id=session_id, api_key=self._api_key, api_secret=self._api_secret)

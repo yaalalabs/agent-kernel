@@ -133,16 +133,16 @@ Use SDK fakes or public mock sessions for unit tests; reserve credentialed smoke
 | `ak-py/tests/test_realtime_pool.py` | Update `_Adapter` to the reduced ABC; replace `TestFrameworkToolExecution` with `tool_call`/unknown-event terminal failure; verify output ordering, resampling, pacing, interrupted queued audio removal, startup cleanup, two-session isolation, and no changes to batching/eviction. Patch `QueueTransportFactory.create` / the fake adapter, not an SDK socket. |
 | `ak-py/tests/test_openai_runner.py` or a focused `test_openai_realtime.py` | Patch the native `RealtimeRunner` and `RealtimeSession` objects imported by `agentkernel.framework.openai.openai`. Test native A → B → A handoff with each agent's own tool executed by the fake SDK, `AgentChanged` before each speaker's content, text/audio/interrupt/done/error mapping, the SDK's default interruption estimate, unsupported ordinary `Agent`, approval refusal, guardrail interruption, MCP pass-through/error, and close. Assert no direct raw socket/tool-result calls or false tracker updates from queue delivery. |
 | `ak-py/tests/test_adk_runner.py` or a focused `test_adk_realtime.py` | Patch native `Runner.run_live` and `LiveRequestQueue` at `agentkernel.framework.adk.adk`. Test one queue for A → B → A, native tool events without pool execution, author-to-speaker mapping, audio/text input, `RunConfig` and voice, a workflow node left in `single_turn`, confirmation failure, failed startup cleanup, and per-session separation. Run refused transfer against `google-adk==2.7.0` in an optional SDK integration test. |
-| `ak-py/tests/test_livekit_gateway.py` | Verify starting roster, native speaker changes, mute order and edge audio/text attribution; own agent participant audio/chat stay excluded. Cover an ADK workflow root with no initial speaker, whose first speaking author is announced with the roster. |
+| `ak-py/tests/test_livekit_edge_adapter.py` | Verify starting roster, native speaker changes, mute order and edge audio/text attribution; own agent participant audio/chat stay excluded. Cover an ADK workflow root with no initial speaker, whose first speaking author is announced with the roster. |
 | `ak-py/tests/test_ecs_akagentrunner_realtime.py` | Keep queue consumer routing tests; verify the pool still creates one connection per session and reports a native startup failure without acking it as success. |
 | Tool context | `test_realtime_pool.py`: a task the adapter starts while connecting sees the tool context, session and agent, and none is left set after `connect()`, failed or not. `test_openai_realtime.py`: a tool run by the real SDK session sees them (its `ScriptedModel` emits events from a listener task created while connecting, as the real transport does). `test_adk_realtime.py`: a tool run inside `run_live()` sees them; AK system tools are attached to a realtime agent, and to the speaking nodes of a `Workflow` rather than its root. |
 
-Run focused tests from `ak-py/` with `uv run pytest tests/test_realtime_pool.py tests/test_openai_runner.py tests/test_adk_runner.py tests/test_livekit_gateway.py tests/test_ecs_akagentrunner_realtime.py`; run `make lint-check-all` from the repo root before implementation is considered complete. Credentialed live-call tests require API keys and are a separate verification gate, not a reason to skip the deterministic tests. Record the installed SDK versions used for the SDK integration checks.
+Run focused tests from `ak-py/` with `uv run pytest tests/test_realtime_pool.py tests/test_openai_runner.py tests/test_adk_runner.py tests/test_livekit_edge_adapter.py tests/test_ecs_akagentrunner_realtime.py`; run `make lint-check-all` from the repo root before implementation is considered complete. Credentialed live-call tests require API keys and are a separate verification gate, not a reason to skip the deterministic tests. Record the installed SDK versions used for the SDK integration checks.
 
 
-## Edge additions for realtime calls (C1, C4 to C6)
+## Edge additions for realtime calls (C1, C4 to C7)
 
-The full detail of the additions (the caller's words as an event, ending a session at once, the opening prompt, reconnect back-off). Live captions (C2) and starting and stopping gateways at runtime (C3) are not part of Agent Kernel: room hosting and captions are the application's. The C numbers are kept so they match the code and the architecture skill. Observing a call from server code and sending text into it are not part of this change (see design.md, Non-goals).
+The full detail of the additions (the caller's words as an event, ending a session at once, the opening prompt, reconnect back-off). Live captions (C2) are not part of Agent Kernel: captions are the application's. C3 (an API for application code to start a gateway in the background and wait until it is ready) is not part of Agent Kernel. C7 is a different thing: gateways started and ended by the platform's own signed lifecycle webhooks, hosted by AK the way it hosts a messaging webhook. The application still decides which rooms get one (`should_start`). The C numbers are kept so they match the code and the architecture skill. Observing a call from server code and sending text into it are not part of this change (see design.md, Non-goals).
 
 ### 1. The caller's words as an event (C1)
 
@@ -251,9 +251,9 @@ def opening_prompt(self, participant_identity: str) -> Optional[str]:
 
 - `pipeline/envelope.py` gets `ATTR_REALTIME_END = "realtime_end"`. Its presence on an **input** message means *the
   edge for this session has ended*.
-- `IntegrationProducer.enqueue(adapter_name, request, attributes: Optional[Dict[str, str]] = None)`
-  (`integration/adapter/producer.py`) merges `attributes` after the integration and reply attributes. A key that
-  collides with one of those raises `ValueError`.
+- `InboundRequest.end_session: bool = False` (`integration/adapter/base.py`): the end-of-session control. `IntegrationProducer.enqueue`
+  (`integration/adapter/producer.py`) stamps `ATTR_REALTIME_END: "true"` when it is set, beside the integration and reply
+  attributes; its signature is unchanged and no edge imports `pipeline.envelope`.
 - The body is an ordinary `BaseRunRequest` with the session id, the agent and `requests=[]`
   (`core/model.py::BaseRunRequest` allows an empty list). The group id is the session id, so on every transport the control
   arrives after that session's earlier input.
@@ -268,13 +268,13 @@ def opening_prompt(self, participant_identity: str) -> Optional[str]:
    that, **do not send the control**: it would pass that input, and the pool would end the session and drop the input as
    late. Log a WARNING; the connection then ends by idle eviction, as it does today.
 3. Send the control with
-   `await asyncio.wait_for(asyncio.to_thread(self._producer.enqueue, self.name, self._enqueue_end(), {ATTR_REALTIME_END: "true"}), timeout=SESSION_END_TIMEOUT_SECONDS)`.
+   `await asyncio.wait_for(asyncio.to_thread(self._producer.enqueue, self.name, self._enqueue(), {ATTR_REALTIME_END: "true"}), timeout=SESSION_END_TIMEOUT_SECONDS)`.
    The same bound applies, so a broker that does not answer cannot hold up a stopping gateway (the thread finishes on its own).
 4. A failure or timeout here is logged at WARNING. The connection then ends by idle eviction, as it does today.
 
 The rest of `_release` is unchanged.
 
-`_enqueue_end()` is a new `StatefulEdgeAdapter` helper, the twin of `_enqueue`, with `requests=[]`.
+`StatefulEdgeAdapter._enqueue(request=None)` builds it: with no message the request carries `requests=[]`.
 Any edge can use it.
 
 #### 3.3 Receiving it (`pipeline/realtime_pool.py`)
@@ -286,7 +286,7 @@ Any edge can use it.
   2. Schedules `conn.close()` on the pool loop and waits for it up to `_SEND_TIMEOUT_SECONDS`.
   3. Logs `Realtime session {id} ended by its edge` at INFO.
 - The session id is not blocked afterwards: later input for it opens a new connection.
-- `StatefulEdgeRegistry.unregister(session_id, adapter=None)` removes the entry only when it is `adapter`, if one is given. `GatewayRunner.start()` passes its own adapter in its `finally`, so a stopped gateway cannot remove a newer one registered under the same id; an app that hosts rooms at runtime can call `start()` on a thread of its own.
+- `StatefulEdgeRegistry.unregister(session_id, adapter=None)` removes the entry only when it is `adapter`, if one is given. `_EdgeRunner.start()` passes its own adapter in its `finally`, so a stopped gateway cannot remove a newer one registered under the same id; an app that hosts rooms at runtime can call `start()` on a thread of its own.
 - The ECS realtime runner already passes the message's custom attributes to `dispatch`
   (`deployment/aws/containerized/akagentrunner.py`), so it needs no change.
 
@@ -313,30 +313,83 @@ frame, about every 100 ms, and each replacement failed again, sent an error chun
 - **Idle eviction is not a failure.** The idle sweep marks a connection closed and removes it in one critical section,
   so `get_connection` never sees an idle connection still registered and closed.
 
-### 4. Consumer changes (AK)
+### 4. One room per call (C7)
+
+#### 4.1 `_EdgeRunner.stop()` (`integration/adapter/lifecycle.py`)
+
+- `GatewayRunner` becomes `_EdgeRunner`, private, moved from `gateway.py` (deleted) into `lifecycle.py` beside its one caller; removed from
+  `integration/adapter/__init__.py`'s exports, and `IOHandler.run` loses its `gateways=` parameter and thread loop. `EdgeLifecycleRESTRequestHandler` is the only host; every example mounts it.
+- A per-instance `threading.Event`, set by `stop()`; `_run_until_shutdown` loops while neither it nor
+  `ThreadRunner.shutdown_event` is set, then runs the same graceful stop (adapter `stop()`, bounded by
+  `GRACEFUL_STOP_TIMEOUT_SECONDS`). `start()` then unregisters the adapter as before.
+- A stop requested before the loop begins (or a shutdown already under way) returns at once, without calling the
+  adapter's `start()`: an adapter cannot stop what it has not begun, so it would otherwise join and hang until the
+  forced cancel.
+
+#### 4.2 Ending when callers leave (`integration/livekit/adapter.py`)
+
+- The listening room also handles `participant_disconnected`. LiveKit removes the participant from
+  `remote_participants` before raising it, so `_callers_in(room)` is the callers still there. When the
+  leaver is not one of the gateway's own identities and no caller is left, `_stop_event` is set: `start()` returns
+  through `_release`, which sends the end-of-session control (3.2).
+
+#### 4.3 The lifecycle contract (`integration/adapter/base.py`)
+
+- `EdgeLifecycleEvent` (dataclass: `session_id`, `start: bool`).
+- `EdgeLifecycleAdapter(ABC)`, translation only: `name`, `webhook_path`; abstract `parse(raw) -> EdgeLifecycleEvent | None`
+  (verifies and maps one delivery; `None` = starts or ends nothing; raises `HTTPException` to reject) and
+  `create_edge(session_id) -> StatefulEdgeAdapter`; `should_start(session_id)` (default `True`). No `verify` or
+  `success_response`: no platform needs them, and the host answers `{"status": "ok"}`.
+
+#### 4.4 `EdgeLifecycleRESTRequestHandler` (`integration/adapter/lifecycle.py`)
+
+- The generic host, the sibling of `WebhookRESTRequestHandler`, in its own module so `gateway.py` stays FastAPI-free.
+  `RESTRequestHandler`, `requires_pipeline = True`; refuses an adapter with no `webhook_path`.
+- `handle`: `parse`; a start with `should_start` true → `_start`; an end → `_stop`; `None` → logged at DEBUG.
+  Answers `{"status": "ok"}`.
+- `_start`: under a lock, a session already in `_runners` is left alone (a platform may resend a webhook); otherwise
+  `_EdgeRunner(adapter.create_edge(session_id))` starts on a thread of its own, kept with the runner in `_runners`.
+  The thread removes its own entry when `start()` returns, only if the entry is still that runner. Once
+  `ThreadRunner.shutdown_event` is set, no new edge starts.
+- `_stop`: `runner.stop()` for the session, if any.
+- No shutdown wait: each live edge's `_EdgeRunner` already watches `ThreadRunner.shutdown_event` and stops, and the process does not wait for it. A session whose end control was not sent closes by idle eviction (300 s). `RESTRequestHandler` and `IOHandler` are unchanged.
+
+#### 4.5 `LiveKitLifecycleAdapter` (`integration/livekit/adapter.py`)
+
+- `name = "livekit"`, `webhook_path = "/livekit/webhook"`. `__init__(api_key=None, api_secret=None)`: both default to
+  `livekit.api_key`/`api_secret`; missing either raises `ValueError` naming `AK_LIVEKIT__API_KEY`/`AK_LIVEKIT__API_SECRET`.
+- `parse`: `api.WebhookReceiver(api.TokenVerifier(key, secret)).receive(body, Authorization)`, so the SDK checks the
+  signature while parsing (as Slack's does); any failure is a 401 (`HTTPException` imported in the method, so the
+  `livekit` extra needs no FastAPI). `room_started` → `start=True`, `room_finished` → `start=False`, anything else or no room → `None`.
+- `create_edge(room)`: `LiveKitEdgeAdapter(session_id=room, api_key=key, api_secret=secret)`,
+  so keys passed in code reach the gateway too.
+
+### 5. Consumer changes (AK)
 
 - **`pipeline/realtime_pool.py`:** sections 1.3 and 3.3, 3.4. The `TextDelta`/`AudioDelta` paths are verified unchanged.
 - **`framework/adk/adk.py`, `framework/openai/openai.py`:** sections 1.4 and 1.5. Speaker, audio and turn mapping
   are unchanged.
-- **`integration/livekit/adapter.py`:** section 2 and 3.2.
-- **`integration/adapter/{base,gateway,registry,producer}.py`:** `_enqueue_end`, the producer `attributes` (3.1) and the
-  identity-safe `unregister` (3.3); `gateway.py` passes its adapter to `unregister`.
-- **`pipeline/response_handler.py`, `pipeline/agent_runner.py`, ECS `akagentrunner.py`, `pipeline/io_handler.py`:** no change. Verified: both
+- **`integration/livekit/adapter.py`:** sections 2, 3.2, 4.2 and 4.5.
+- **`integration/adapter/base.py`, new `integration/adapter/lifecycle.py`, `integration/adapter/__init__.py`:** 4.3, 4.4 and their lazy exports.
+- **`integration/adapter/{base,lifecycle,registry,producer}.py`:** `_enqueue()` with no message (`end_session=True`), the producer stamping it (3.1) and the
+  identity-safe `unregister` (3.3); `_EdgeRunner` passes its adapter to `unregister` and gains `stop()` (4.1).
+- **`pipeline/io_handler.py`:** drops the `gateways=` parameter and thread loop (4.1); `api/handler.py` is unchanged.
+- **`pipeline/response_handler.py`, `pipeline/agent_runner.py`, ECS `akagentrunner.py`:** no change. Verified: both
   realtime runners hand the attributes to `dispatch`, and IOHandler starts `RealtimeAgentRunner` without boot
   gateways in REALTIME mode.
 - **`integration/agui/mapping.py`:** no change. `to_agui` returns `None` for an event type with no AG-UI equivalent,
   so `InputTranscript` is dropped there, as `AgentChanged` already is.
 
-### 5. Config changes
+### 6. Config changes
 
 **No `AKConfig` changes.** These are class or module constants, each overridable by subclassing or patching:
 
 | Constant | Owner | Value | Why it is not config |
 |---|---|---|---|
-| `SESSION_END_TIMEOUT_SECONDS` | `LiveKitEdgeGateway` | 2.0 | Sits beside `PLAYOUT_WAIT_SECONDS` |
+| `SESSION_END_TIMEOUT_SECONDS` | `LiveKitEdgeAdapter` | 2.0 | Sits beside `PLAYOUT_WAIT_SECONDS` |
 | `_RECONNECT_BASE_SECONDS`, `_RECONNECT_MAX_SECONDS` | `realtime_pool` module | 1.0, 30.0 | The back-off after a failed native session (3.4); a safety window, not user behaviour |
 
-### 6. Behavioural changes (AK)
+### 7. Behavioural changes (AK)
 
 1. **ADK realtime sessions now emit `InputTranscript` chunks with no change to app code**, because ADK transcribes the
    caller by default (1.4). That is one more output message per caller utterance. *Intentional: it is the feature.*
@@ -354,6 +407,7 @@ frame, about every 100 ms, and each replacement failed again, sent an error chun
    error to the room and hit the model provider.*
 7. **The conversation opens when a participant joins the room**, not when a microphone appears (2). *Intentional: a caller who joins muted is greeted.*
 8. **Realtime does not use `framework_context`** in either adapter. *Not a change from base; stated in the contract.*
+9. **A LiveKit room can get its own gateway and session at runtime** (4.4, 4.5), only when the app mounts `EdgeLifecycleRESTRequestHandler(LiveKitLifecycleAdapter())`. *Intentional: opt-in, nothing changes for a fixed room.*
 
 **Non-changes:**
 - The `RealtimeRunner` abstract methods.

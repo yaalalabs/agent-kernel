@@ -27,7 +27,7 @@ if TYPE_CHECKING:  # typing only; producer.py imports this module
     from .producer import IntegrationProducer
 
 ATTACHMENTS_DISABLED_ERROR = (
-    "Attachments from messaging integrations require multimodal support — " "set multimodal.enabled: true in config.yaml to accept images and files"
+    "Attachments from messaging integrations require multimodal support — set multimodal.enabled: true in config.yaml to accept images and files"
 )
 # in_memory is deliberately not offered here: it is process-local too, and on every transport but
 # in_memory the runner that resolves the attachment is a different process. The mount-time check in
@@ -65,6 +65,8 @@ class InboundRequest(BaseModel):
     user_id: str | None = None
     group_id: str | None = None
     reply_context: dict[str, str] = Field(default_factory=dict)
+    end_session: bool = False
+    """A stateful edge's end-of-session control: ``requests`` is empty and the realtime session closes at once."""
 
 
 @dataclass
@@ -254,7 +256,7 @@ class OutboundAdapter(ABC):
 class StatefulEdgeAdapter(ABC):
     """A bidirectional edge that owns a long-lived platform connection (a LiveKit room, a voice call).
 
-    Hosted by GatewayRunner, which registers it so the Response Handler routes replies back to the same connection.
+    Run by ``EdgeLifecycleRESTRequestHandler`` (its private ``_EdgeRunner``), which registers it so the Response Handler routes replies back to the same connection.
     """
 
     name: str = ""
@@ -275,7 +277,7 @@ class StatefulEdgeAdapter(ABC):
 
     @abstractmethod
     async def stop(self) -> None:
-        """Disconnect and release resources; must make start() return. Called by GatewayRunner at shutdown."""
+        """Disconnect and release resources; must make start() return. Called by the edge runner at shutdown."""
 
     # ── Inbound: Platform -> Agent Kernel ──
 
@@ -286,24 +288,18 @@ class StatefulEdgeAdapter(ABC):
 
         self._producer = IntegrationProducer()
 
-    def _enqueue(self, request: AgentRequestUnion) -> InboundRequest:
-        """Build the inbound request for one platform message, for :meth:`IntegrationProducer.enqueue`."""
-        return InboundRequest(
-            session_id=self.session_id,
-            request_id=str(uuid.uuid4()),
-            requests=[request],
-            agent=self.agent,
-            reply_context={"session_id": self.session_id},
-        )
+    def _enqueue(self, request: AgentRequestUnion | None = None) -> InboundRequest:
+        """Build the inbound request for one platform message, for :meth:`IntegrationProducer.enqueue`.
 
-    def _enqueue_end(self) -> InboundRequest:
-        """Build the empty request that carries the end-of-session control."""
+        :param request: The message; ``None`` builds the empty request that carries the end-of-session control.
+        """
         return InboundRequest(
             session_id=self.session_id,
             request_id=str(uuid.uuid4()),
-            requests=[],
+            requests=[request] if request is not None else [],
             agent=self.agent,
             reply_context={"session_id": self.session_id},
+            end_session=request is None,
         )
 
     def _enqueue_audio(self, raw_bytes: bytes) -> AgentRequestVoice:
@@ -324,3 +320,33 @@ class StatefulEdgeAdapter(ABC):
     @abstractmethod
     async def deliver_error(self, message: str, reply_context: dict[str, str]) -> None:
         """Surface a failure so the user is never left silent."""
+
+
+@dataclass
+class EdgeLifecycleEvent:
+    """A platform event that starts (``start=True``) or ends the edge for a live connection."""
+
+    session_id: str
+    start: bool
+
+
+class EdgeLifecycleAdapter(ABC):
+    """Translates a platform's lifecycle webhooks into edges, one per live connection; hosted by ``EdgeLifecycleRESTRequestHandler``.
+
+    The per-process counterpart of :class:`StatefulEdgeAdapter`, which serves one connection.
+    """
+
+    name: str = ""
+    webhook_path: str = ""
+
+    @abstractmethod
+    async def parse(self, raw: Any) -> EdgeLifecycleEvent | None:
+        """Verify and map one delivery (a FastAPI ``Request``); ``None`` starts or ends nothing. Raise ``HTTPException`` to reject it."""
+
+    @abstractmethod
+    def create_edge(self, session_id: str) -> StatefulEdgeAdapter:
+        """Build the edge that serves one session."""
+
+    def should_start(self, session_id: str) -> bool:
+        """Whether a started connection gets an edge; every one by default."""
+        return True

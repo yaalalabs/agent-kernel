@@ -11,13 +11,14 @@ import json
 import logging
 import threading
 import types
+from types import SimpleNamespace
 
 import pytest
 
 import agentkernel.integration.livekit.adapter as livekit_adapter
 from agentkernel.core.event import AgentChanged, AudioDelta, InputTranscript, Interrupt, TextDelta
 from agentkernel.core.model import AgentRequestText, AgentRequestVoice, StreamChunk
-from agentkernel.integration.livekit.adapter import LiveKitEdgeGateway
+from agentkernel.integration.livekit.adapter import LiveKitEdgeAdapter
 
 
 class _FakeRtc:
@@ -30,8 +31,8 @@ class _Producer:
     def __init__(self):
         self.calls = []
 
-    def enqueue(self, adapter_name, request, attributes=None):
-        self.calls.append({"adapter_name": adapter_name, "request": request, "attributes": attributes})
+    def enqueue(self, adapter_name, request):
+        self.calls.append({"adapter_name": adapter_name, "request": request})
 
 
 class _AudioSource:
@@ -103,7 +104,7 @@ class _Room:
 
 
 def _participant(agent=None, identity="agent-general", muted=False):
-    participant = LiveKitEdgeGateway._AgentParticipant(agent, identity, "token")
+    participant = LiveKitEdgeAdapter._AgentParticipant(agent, identity, "token")
     participant.room = _Room(identity)
     participant.audio_source = _AudioSource()
     participant.track = _Track()
@@ -112,10 +113,10 @@ def _participant(agent=None, identity="agent-general", muted=False):
     return participant
 
 
-def _gateway(*agents) -> LiveKitEdgeGateway:
+def _gateway(*agents) -> LiveKitEdgeAdapter:
     """Build a gateway without the constructor's config/token work: one participant per agent named,
     or a single participant speaking for every agent."""
-    gateway = object.__new__(LiveKitEdgeGateway)
+    gateway = object.__new__(LiveKitEdgeAdapter)
     gateway.session_id = "s1"
     gateway.room_url = "wss://lk"
     gateway.agent = "general"
@@ -124,6 +125,7 @@ def _gateway(*agents) -> LiveKitEdgeGateway:
     gateway._pending = None
     gateway._sender_task = None
     gateway._loop = None
+    gateway._stop_event = None
     # As in a room: the first participant is heard, every other one is muted.
     gateway._participants = [_participant(agent, f"agent-{agent}", muted=index > 0) for index, agent in enumerate(agents)] or [_participant()]
     gateway._by_agent = {participant.agent: participant for participant in gateway._participants if participant.agent}
@@ -198,7 +200,7 @@ class TestToken:
     def test_generated_token_names_the_agent_participant(self, monkeypatch, agent_name, identity):
         _config(monkeypatch)
 
-        gateway = LiveKitEdgeGateway(agent_name=agent_name, session_id="room-1")
+        gateway = LiveKitEdgeAdapter(agent_name=agent_name, session_id="room-1")
 
         claims = self._claims(gateway.token)
         assert claims["sub"] == identity
@@ -207,7 +209,7 @@ class TestToken:
 
     def test_an_announced_agent_gets_a_token_of_its_own(self, monkeypatch):
         _config(monkeypatch)
-        gateway = LiveKitEdgeGateway(agent_name="supervisor", session_id="room-1")
+        gateway = LiveKitEdgeAdapter(agent_name="supervisor", session_id="room-1")
 
         claims = self._claims(gateway._mint_token("billing"))
 
@@ -445,8 +447,8 @@ class TestMultiAgentRoom:
         _config(monkeypatch)
         rtc = _room_rtc(**rtc_options)
         monkeypatch.setattr(livekit_adapter, "rtc", rtc)
-        monkeypatch.setattr(LiveKitEdgeGateway, "_init_producer", lambda self: None)
-        return LiveKitEdgeGateway(agent_name="supervisor", session_id="room-1"), rtc.rooms
+        monkeypatch.setattr(LiveKitEdgeAdapter, "_init_producer", lambda self: None)
+        return LiveKitEdgeAdapter(agent_name="supervisor", session_id="room-1"), rtc.rooms
 
     @staticmethod
     async def _started(gateway):
@@ -475,7 +477,7 @@ class TestMultiAgentRoom:
             [room] = rooms
             assert room.local_participant.identity == "agent-supervisor"
             assert room.options.auto_subscribe is True
-            assert sorted(room.handlers) == ["data_received", "disconnected", "participant_connected", "track_subscribed"]
+            assert sorted(room.handlers) == ["data_received", "disconnected", "participant_connected", "participant_disconnected", "track_subscribed"]
             assert len(room.local_participant.tracks) == 1
         finally:
             await gateway.stop()
@@ -493,7 +495,7 @@ class TestMultiAgentRoom:
             assert [room.local_participant.identity for room in rooms] == ["agent-supervisor", "agent-billing", "agent-tech_support"]
             assert [room.options.auto_subscribe for room in rooms] == [True, False, False]
             assert [sorted(room.handlers) for room in rooms] == [
-                ["data_received", "disconnected", "participant_connected", "track_subscribed"],
+                ["data_received", "disconnected", "participant_connected", "participant_disconnected", "track_subscribed"],
                 ["disconnected"],
                 ["disconnected"],
             ]
@@ -793,7 +795,7 @@ class TestMultiAgentOutbound:
 
     @pytest.mark.asyncio
     async def test_a_change_does_not_wait_long_for_audio_that_will_not_play_out(self, monkeypatch, caplog):
-        monkeypatch.setattr(LiveKitEdgeGateway, "PLAYOUT_WAIT_SECONDS", 0.05)
+        monkeypatch.setattr(LiveKitEdgeAdapter, "PLAYOUT_WAIT_SECONDS", 0.05)
         gateway = _gateway("supervisor", "billing")
         gateway._loop = asyncio.get_running_loop()
 
@@ -811,7 +813,7 @@ class TestMultiAgentOutbound:
     @pytest.mark.asyncio
     async def test_an_attribute_update_livekit_never_confirms_holds_up_no_audio(self, monkeypatch, caplog):
         monkeypatch.setattr(livekit_adapter, "rtc", _FakeRtc)
-        monkeypatch.setattr(LiveKitEdgeGateway, "ATTRIBUTE_TIMEOUT_SECONDS", 0.05)
+        monkeypatch.setattr(LiveKitEdgeAdapter, "ATTRIBUTE_TIMEOUT_SECONDS", 0.05)
         gateway = _gateway("supervisor", "billing")
         gateway._loop = asyncio.get_running_loop()
 
@@ -999,7 +1001,7 @@ class TestSessionEnd:
 
         prompts = [[request.prompt for request in call["request"].requests] for call in producer.calls]
         assert prompts == [["last words"], ["more"], []]
-        assert [call["attributes"] for call in producer.calls] == [None, None, {"realtime_end": "true"}]
+        assert [call["request"].end_session for call in producer.calls] == [False, False, True]
         assert producer.calls[-1]["request"].session_id == "s1"
 
     @pytest.mark.asyncio
@@ -1044,7 +1046,7 @@ class TestSessionEnd:
 
     @pytest.mark.asyncio
     async def test_a_broker_that_does_not_answer_cannot_hold_up_release(self, monkeypatch, caplog):
-        monkeypatch.setattr(LiveKitEdgeGateway, "SESSION_END_TIMEOUT_SECONDS", 0.1)
+        monkeypatch.setattr(LiveKitEdgeAdapter, "SESSION_END_TIMEOUT_SECONDS", 0.1)
         gateway = _gateway("coordinator")
         gateway._connected = True
         release = threading.Event()
@@ -1067,7 +1069,7 @@ class TestSessionEnd:
     @pytest.mark.asyncio
     async def test_the_control_is_not_sent_when_staged_input_is_still_unsent(self, monkeypatch, caplog):
         """Sent anyway it would pass the staged frames: the pool would end the session and drop them as late input."""
-        monkeypatch.setattr(LiveKitEdgeGateway, "SESSION_END_TIMEOUT_SECONDS", 0.1)
+        monkeypatch.setattr(LiveKitEdgeAdapter, "SESSION_END_TIMEOUT_SECONDS", 0.1)
         gateway = _gateway("coordinator")
         gateway._connected = True
         gateway._loop = asyncio.get_running_loop()
@@ -1075,9 +1077,9 @@ class TestSessionEnd:
         release = threading.Event()
 
         class _Slow(_Producer):
-            def enqueue(self, adapter_name, request, attributes=None):
+            def enqueue(self, adapter_name, request):
                 release.wait(5)
-                super().enqueue(adapter_name, request, attributes)
+                super().enqueue(adapter_name, request)
 
         producer = _Slow()
         gateway._producer = producer
@@ -1092,13 +1094,13 @@ class TestSessionEnd:
             await asyncio.sleep(0.05)
 
         assert "not sending the end-of-session control" in caplog.text
-        assert [call["attributes"] for call in producer.calls] == [None]  # the staged frame only, no control
+        assert [call["request"].end_session for call in producer.calls] == [False]  # the staged frame only, no control
 
     @pytest.mark.asyncio
     async def test_start_greets_a_caller_already_in_the_room(self, monkeypatch):
         """LiveKit raises participant_connected only for later joins; a caller who was there first is greeted from start()."""
         _config(monkeypatch)
-        gateway = LiveKitEdgeGateway(session_id="room-r")
+        gateway = LiveKitEdgeAdapter(session_id="room-r")
 
         class _Room2(_Room):
             async def connect(self, url, token, options):
@@ -1136,7 +1138,7 @@ class TestSessionEnd:
     @pytest.mark.asyncio
     async def test_start_marks_the_edge_ready_once_connected(self, monkeypatch):
         _config(monkeypatch)
-        gateway = LiveKitEdgeGateway(session_id="room-r")
+        gateway = LiveKitEdgeAdapter(session_id="room-r")
 
         class _Room2(_Room):
             async def connect(self, url, token, options):
@@ -1161,3 +1163,23 @@ class TestSessionEnd:
         assert gateway._connected
         await gateway.stop()
         await asyncio.wait_for(task, 5)
+
+
+class TestCallersLeaving:
+    """The last caller leaving ends the gateway, through LiveKit's participant_disconnected."""
+
+    @staticmethod
+    def _left(gateway, still_here):
+        gateway._stop_event = asyncio.Event()
+        gateway._participants[0].room.remote_participants = {identity: SimpleNamespace(identity=identity) for identity in still_here}
+        gateway._on_participant_disconnected(SimpleNamespace(identity="caller-1"))
+        return gateway._stop_event.is_set()
+
+    def test_the_last_caller_leaving_stops_the_gateway(self):
+        assert self._left(_gateway(), still_here=[]) is True
+
+    def test_a_caller_still_in_the_room_keeps_it_going(self):
+        assert self._left(_gateway(), still_here=["caller-2"]) is False
+
+    def test_the_gateways_own_agents_do_not_count_as_callers(self):
+        assert self._left(_gateway(), still_here=["agent-general"]) is True

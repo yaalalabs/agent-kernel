@@ -1,2 +1,5 @@
 execution:
   mode: "realtime"
+
+livekit:
+  agent: "supervisor"  # the agent that answers the call first
