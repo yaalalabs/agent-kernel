@@ -182,9 +182,12 @@ pins every dependency with.
   `ak-cloud-deploy` (*Deploying the Identity Provider*), with their `evals/evals.json` when an
   expected output names the providers.
 - Landing page inventories: the **Identity & Access** card's `tags` and `description` under the
-  Guard tab in `docs/src/components/FeatureExplorer/data.tsx`, and a marquee tile when the provider
-  is a third-party service (`IntegrationsMarquee/data.tsx`). Logo sourcing and the build check are
-  in `ak-dev-sync-docs-from-branch`.
+  Guard tab in `docs/src/components/FeatureExplorer/data.tsx`; a marquee tile when the provider is
+  a third-party service, in the **Observability, safety & testing** row of
+  `IntegrationsMarquee/data.tsx` with role `Identity` and `href: IDENTITY` (an issuer you only
+  documented as an `oidc` configuration gets a tile too, its `title` saying so, as Auth0, Okta and
+  Keycloak have); and the highlights of the **Identity & Access** card in `docs/src/pages/features.tsx`.
+  Logo sourcing and the build check are in `ak-dev-sync-docs-from-branch`.
 
 ## Gotchas
 
