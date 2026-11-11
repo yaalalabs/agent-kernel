@@ -1049,6 +1049,7 @@ thread:
    - `GET /api/v1/threads` and `GET /api/v1/threads/{session_id}` are served by the same handler for reading thread history (open by default, or protected by a pluggable `Authoriser`)
    - Threads are auto-named by an LLM call deriving a concise title from the first prompt (falls back to a truncated prompt prefix without `litellm`/an API key)
    - Sending `thread_name` on any chat request sets/renames the thread and locks it against automatic naming
+   - Structured messages carry a sibling `media_type` next to `content`; with Human in the Loop, a pause (`assistant`, `content.interruptions`) and its decision (`user`, `content.resume.decisions`) are recorded as `application/json` messages
 
 **For LLM-based thread naming**, add the `thread` extra:
 ```toml
@@ -1405,6 +1406,8 @@ object on an approval, since it becomes the call's `override_args`; ADK refuses 
 and cannot tell `cancelled` from `denied` there. Point the user at the
 [Human in the Loop](https://kernel.yaala.ai/docs/advanced/human-in-the-loop) page for the full table
 before they design the question.
+
+With conversation threads enabled, the pause and the decision are recorded as thread messages (`media_type` `application/json`), so reopening a thread shows what was asked and decided.
 
 #### Sandbox
 
