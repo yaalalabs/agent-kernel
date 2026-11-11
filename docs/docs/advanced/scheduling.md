@@ -81,7 +81,7 @@ An app that mounts nothing still defers and still gets the agent tools — it ju
 Cron parsing needs the `cron` extra:
 
 ```bash
-pip install "agentkernel[cron]"
+uv add "agentkernel[cron]"
 ```
 
 ## Chat Request Fields

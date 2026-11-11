@@ -134,7 +134,7 @@
       "input": "I get ModuleNotFoundError for agents package",
       "expected_outputs": [
         "agentkernel[openai]",
-        "pip install",
+        "uv add",
         "extras"
       ]
     },

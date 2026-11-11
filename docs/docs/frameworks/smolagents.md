@@ -9,7 +9,7 @@ Integrate Hugging Face Smolagents with Agent Kernel.
 ## Installation
 
 ```bash
-pip install agentkernel[smolagents]
+uv add "agentkernel[smolagents]"
 ```
 
 ## Basic Usage

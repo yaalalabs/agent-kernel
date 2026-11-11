@@ -1102,7 +1102,7 @@ export LANGFUSE_HOST=https://cloud.langfuse.com
 Install the langfuse extra:
 
 ```bash
-pip install agentkernel[langfuse]
+uv add "agentkernel[langfuse]"
 ```
 
 **OpenLLMetry (Traceloop):**
@@ -1121,7 +1121,7 @@ export TRACELOOP_BASE_URL=https://api.traceloop.com
 Install the openllmetry extra:
 
 ```bash
-pip install agentkernel[openllmetry]
+uv add "agentkernel[openllmetry]"
 ```
 
 **Pydantic Logfire:**
@@ -1138,7 +1138,7 @@ export LOGFIRE_TOKEN=your-write-token
 Install the logfire extra:
 
 ```bash
-pip install agentkernel[logfire]
+uv add "agentkernel[logfire]"
 ```
 
 **AWS CloudWatch:**
@@ -1159,7 +1159,7 @@ export AWS_REGION=us-east-1
 Install the cloudwatch extra:
 
 ```bash
-pip install agentkernel[cloudwatch]
+uv add "agentkernel[cloudwatch]"
 ```
 
 CloudWatch Transaction Search must be enabled in the account, and the agent's role needs `AWSXrayWriteOnlyAccess`. See [Traceability](../advanced/traceability.md#getting-started-with-aws-cloudwatch).
