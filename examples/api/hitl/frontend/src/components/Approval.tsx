@@ -21,16 +21,19 @@ export function Approval({
   lineId,
   interrupt,
   settled,
+  staged,
   busy,
   onDecide,
 }: {
   lineId: string;
   interrupt: Interrupt;
   settled?: string;
+  /** This card's answer, held until every question in the same pause has one. */
+  staged?: string;
   /** A run is in flight. The in-flight latch in App already drops a second decision; this is what
    *  tells the human why, instead of letting a click look accepted and do nothing. */
   busy?: boolean;
-  onDecide: (lineId: string, interruptId: string, verdict: Verdict, settled: string) => void;
+  onDecide: (lineId: string, verdict: Verdict, settled: string) => void;
 }) {
   const [text, setText] = useState("");
   const metadata = (interrupt.metadata ?? {}) as { tool_name?: string; arguments?: string; payload?: Question };
@@ -44,7 +47,7 @@ export function Approval({
     /* not JSON: show it as sent */
   }
 
-  const decide = (verdict: Verdict, note: string) => onDecide(lineId, interrupt.id, verdict, note);
+  const decide = (verdict: Verdict, note: string) => onDecide(lineId, verdict, note);
 
   return (
     <div className="approval">
@@ -75,7 +78,7 @@ export function Approval({
             value={text}
             onChange={(event) => setText(event.target.value)}
             onKeyDown={(event) => event.key === "Enter" && decide({ status: "resolved", payload: text }, `Answered: ${text || "(nothing)"}`)}
-            placeholder="Type your answer, or leave blank"
+            placeholder="Write a sentence, or leave blank"
           />
           <button className="ok" disabled={busy} onClick={() => decide({ status: "resolved", payload: text }, `Answered: ${text || "(nothing)"}`)}>
             Send
@@ -92,6 +95,7 @@ export function Approval({
           <button disabled={busy} onClick={() => decide({ status: "cancelled" }, "Cancelled — nobody decided, and the model is told so.")}>Cancel</button>
         </div>
       )}
+      {!settled && staged && <div className="staged">{staged} — waiting for the other answer</div>}
     </div>
   );
 }
