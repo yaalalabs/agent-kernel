@@ -28,14 +28,14 @@ graph LR
 
 - Azure CLI configured
 - Azure subscription with appropriate permissions
-- Agent Kernel with Azure extras: `pip install agentkernel[azure]`
+- Agent Kernel with Azure extras: `uv add "agentkernel[azure]"`
 
 ## Deployment
 
 ### 1. Install Dependencies
 
 ```bash
-pip install agentkernel[azure,openai]
+uv add "agentkernel[azure,openai]"
 ```
 
 ### 2. Configure

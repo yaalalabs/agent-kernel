@@ -9,7 +9,7 @@ Integrate Google's Agent Development Kit with Agent Kernel.
 ## Installation
 
 ```bash
-pip install agentkernel[adk]
+uv add "agentkernel[adk]"
 ```
 
 The `adk` extra requires `google-adk` 2.7.0 or later.

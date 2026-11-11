@@ -534,7 +534,7 @@ Additional providers (`bedrock_agentcore`) are planned in later iterations.
 ### `docker` setup
 
 ```bash
-pip install "agentkernel[sandbox-docker]"
+uv add "agentkernel[sandbox-docker]"
 ```
 
 ```yaml
@@ -550,7 +550,7 @@ sandbox:
 ### `e2b` setup
 
 ```bash
-pip install "agentkernel[e2b]"
+uv add "agentkernel[e2b]"
 export E2B_API_KEY=e2b_...
 ```
 
@@ -569,7 +569,7 @@ sandbox:
 ### `daytona` setup
 
 ```bash
-pip install "agentkernel[daytona]"
+uv add "agentkernel[daytona]"
 export DAYTONA_API_KEY=dtn_...
 ```
 
@@ -610,7 +610,7 @@ profiles:
       network_policy: false           # true only when the cluster CNI enforces NetworkPolicy
 ```
 
-Install with `pip install "agentkernel[kubernetes]"`.
+Install with `uv add "agentkernel[kubernetes]"`.
 
 **RBAC is the boundary, never command parsing.** What sandboxed code may do against the
 cluster is decided by the ServiceAccount assigned to sandbox pods and enforced by the API
@@ -628,7 +628,7 @@ NetworkPolicy: the provider cannot detect that, so it is an operator assertion.
 ### `ec2_ssm` setup
 
 ```bash
-pip install "agentkernel[aws]"
+uv add "agentkernel[aws]"
 ```
 
 ```yaml
