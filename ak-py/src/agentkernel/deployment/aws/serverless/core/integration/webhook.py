@@ -2,8 +2,8 @@ from typing import Any
 
 from ......core.util.factory import AKConfigError
 from ......integration.adapter.webhook import WebhookRESTRequestHandler
-from .event_translator import LambdaEventTranslator
 from .base import LambdaHost, LambdaHostGuard
+from .event_translator import LambdaEventTranslator
 
 
 class LambdaWebhookHost(LambdaHost):

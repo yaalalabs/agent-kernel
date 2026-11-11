@@ -10,9 +10,9 @@ from ......core.multimodal.storage import AttachmentStorageManager
 from ......core.util.factory import AKConfigError
 from ......integration.thread.thread_chat import ThreadRequestHandler
 from ...aklambda import Lambda
-from .event_translator import LambdaEventTranslator
-from .base import LambdaHost, LambdaHostGuard
 from ..router.rest_lambda import LambdaChatRejection
+from .base import LambdaHost, LambdaHostGuard
+from .event_translator import LambdaEventTranslator
 
 
 class LambdaThreadHost(LambdaHost):
