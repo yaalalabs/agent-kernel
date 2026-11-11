@@ -98,7 +98,7 @@ function WhatsNewBanner() {
 /* ─── Hero ──────────────────────────────────────────────────────────────── */
 
 function Hero() {
-  const installCommands = ["pip install agentkernel", "ak skill install"];
+  const installCommands = ["uv tool install agentkernel", "ak skill install"];
   const leftRef = useRef(null);
   const titleRef = useRef(null);
   const subtitleRef = useRef(null);

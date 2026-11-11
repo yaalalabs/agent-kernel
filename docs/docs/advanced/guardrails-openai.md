@@ -19,7 +19,7 @@ OpenAI Guardrails support:
 Install the `openai-guardrails` package:
 
 ```bash
-pip install agentkernel[openai]
+uv add "agentkernel[openai]"
 ```
 
 ## Configuration
@@ -493,7 +493,7 @@ guardrail:
 Run your agent and test with various inputs:
 
 ```bash
-python demo.py
+uv run python demo.py
 ```
 
 ### Test Input Guardrails
@@ -539,7 +539,7 @@ WARNING: openai-guardrails package not installed. Guardrails will be disabled.
 
 **Solution:** Install the package:
 ```bash
-pip install openai-guardrails
+uv add openai-guardrails
 ```
 
 ### Runtime Errors
