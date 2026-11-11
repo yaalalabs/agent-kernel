@@ -179,6 +179,11 @@ iteration 18 and `credentials` lands in iteration 25, both additive).
   `test_serverless_status_propagation` (a `user_id` body is a 400 on the Lambda REST router),
   `test_pipeline_ws` (a frame carrying `user_id` is a `FAILED` frame; one carrying `principal` is
   enqueued without it).
+  PR #918 review follow-up (2026-11-11): the Lambda REST router's direct route
+  (`_handle_agent_chat`, served when no input queue is configured) parsed on its own path and
+  answered a refused `user_id` with the generic 500; it now answers the parser's `ValueError` with
+  400 and the reason, as the queued routes do, while a failure inside the chat service keeps the
+  500 (`test_serverless_status_propagation`, `TestDirectChatRouteRefusesAUserId`).
 
 ## Phase B: Providers and surfaces (iterations 4 to 12)
 
