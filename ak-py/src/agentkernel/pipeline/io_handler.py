@@ -27,8 +27,8 @@ class IOHandler:
 
     - ``in_memory``: single-process: all five pipeline components in one process (this is what
       a plain ``RESTAPI.run()`` boots on a laptop), co-hosting the WebSocket gateway handlers
-      in async mode when a validator is passed, since a separate gateway process cannot share
-      an in-process queue.
+      in async mode, which needs an ``identity`` block for the handshake, since a separate
+      gateway process cannot share an in-process queue.
     - broker transports: this process serves the plain-REST API and delivers responses;
       ``AgentRunner.run()`` and, in WS modes, ``WebSocketGateway.run()`` are their own
       containers.

@@ -80,6 +80,18 @@ Custom tools are your application's own code: they run in the web-server process
 queue. An MCP server with `expose_agents: false` serves only these tools, so it runs no agent and
 starts on any entry point.
 
+## Authentication
+
+With an `identity` block configured, the MCP server requires a bearer token on every call: FastMCP
+reads the `Authorization` header, the configured identity provider verifies the token, and a call
+without a token, or with one the provider refuses, is a 401 before any tool runs. The principal rides
+the queued request, so an agent tool call reaches the agent, its hooks and its tools as the caller
+(`ToolContext.get().principal`). Without an `identity` block the server stays open and every call runs
+as the anonymous principal. A client passes the credential as a bearer token, for example
+`fastmcp.Client(url, auth="<credential>")`. The providers (`static`, `oidc` for Auth0, Keycloak, Okta
+or any OpenID Connect issuer, `cognito`, `entra`, `firebase`) are described in
+[Identity and access](../advanced/identity-and-access.md).
+
 ## Configuration
 
 ```yaml
@@ -103,7 +115,7 @@ result = mcp_client.call_tool(
 
 ## Structured replies
 
-A tool returns the agent's reply as text, unless that reply carries a format label — set by the
+A tool returns the agent's reply as text, unless that reply carries a format label: set by the
 [A2UI capability](../advanced/a2ui.md) or by an application post-hook. A labelled reply arrives as
 `structuredContent`, with the format in MCP's own `_meta` slot:
 
@@ -115,7 +127,7 @@ A tool returns the agent's reply as text, unless that reply carries a format lab
 ```
 
 fastmcp emits a text block alongside it, so a client reading only text blocks keeps working. Every
-unlabelled reply — text, image, or structured-but-unlabelled — returns exactly the string it always
+unlabelled reply, text, image, or structured-but-unlabelled, returns exactly the string it always
 did.
 
 A payload that is a JSON **array** rather than an object is the one case that changes shape. MCP

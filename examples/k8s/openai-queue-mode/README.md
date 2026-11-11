@@ -12,7 +12,7 @@ app_io_handler.py       OpenAIModule(agents) + IOHandler.run()    the io image's
 app_agent_runner.py     OpenAIModule(agents) + AgentRunner.run()  the runner image's entry point
 app_ws_gateway.py       WebSocketGateway.run()                    the gateway image's entry point
 ws_client.py            demo client for the WebSocket walkthrough (runs on your machine)
-protocol_client.py      demo A2A + MCP client (runs on your machine, and in CI's kind smoke)
+protocol_client.py      demo A2A + MCP client, sends DEMO_AUTH_TOKEN as the bearer token (runs on your machine, and in CI's kind smoke)
 config.nats.yaml        baked in as config.yaml by package.sh (default)
 config.kafka.yaml       the Kafka variant
 deploy/Dockerfile.*     one image per component, python:3.12-slim + staged dependencies
@@ -171,14 +171,17 @@ the waiting caller reads it. Two consequences:
 replicas, and a stateful MCP session would be pinned to one of them. A2A answers `message:send`
 only: the cards declare `streaming: false`, so `message:stream` is refused.
 
-With the port-forward from the walkthrough running:
+With the port-forward from the walkthrough running, and `DEMO_AUTH_TOKEN` still exported (the
+client sends it as the bearer token on both calls; MCP refuses a call without one once an
+`identity` block is configured, A2A would run it anonymous):
 
 ```bash
 uv run python protocol_client.py http://localhost:8000
 ```
 
 It prints both replies and exits non-zero when either is empty or an error. CI's kind smoke runs
-it right after the chat request.
+it right after the chat request, with the same credential it created the `demo-credentials`
+Secret from.
 
 ## Secrets
 

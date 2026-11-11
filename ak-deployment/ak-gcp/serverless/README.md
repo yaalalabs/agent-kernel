@@ -6,7 +6,7 @@ A comprehensive Terraform module for deploying serverless applications on GCP us
 
 This module provides a complete serverless deployment solution on GCP:
 
-- ⚡ **Cloud Run**: Serverless containers with scale-to-zero (min_instance_count=0) — no idle cost, cold starts on first request
+- ⚡ **Cloud Run**: Serverless containers with scale-to-zero (min_instance_count=0): no idle cost, cold starts on first request
 - 🌐 **API Gateway**: OpenAPI-based routing with versioned endpoints and JWT authorization support
 - 🔄 **Flexible Deployment**: Automatic Docker image build and push to Artifact Registry
 - 🔒 **VPC Integration**: VPC Connector for private networking with Redis and Firestore
@@ -385,7 +385,7 @@ gateway_endpoints = [
 |------|-------------|------|---------|:--------:|
 | `create_redis_cluster` | Create Memorystore Redis instance for agent memory | `bool` | `false` | no |
 | `create_firestore_database` | Create Firestore database for agent session storage | `bool` | `false` | no |
-| `create_firestore_thread_collection` | Wire the Firestore-backed conversation thread store. Requires `create_firestore_database` — it reuses that database and writes to its own collection (created implicitly), provisioning no new resource. Injects the `AK_THREAD__FIRESTORE__*` connection vars. Thread support is enabled by the application declaring `thread.type: firestore` in `config.yaml` — setting this flag alone leaves threads on the in-memory backend. Note that enabling threads makes `user_id` required on every chat request. | `bool` | `false` | no |
+| `create_firestore_thread_collection` | Wire the Firestore-backed conversation thread store. Requires `create_firestore_database`; it reuses that database and writes to its own collection (created implicitly), provisioning no new resource. Injects the `AK_THREAD__FIRESTORE__*` connection vars. Thread support is enabled by the application declaring `thread.type: firestore` in `config.yaml`; setting this flag alone leaves threads on the in-memory backend. Note that enabling threads requires an authenticated caller: an `identity` block in `config.yaml` and a bearer token on every chat request. | `bool` | `false` | no |
 
 **Redis Environment Variables (Auto-injected when enabled)**:
 - `AK_SESSION__REDIS__URL`: Complete Redis connection URL with authentication
@@ -451,14 +451,14 @@ When `authorizer` is set, API Gateway validates JWT tokens in every request befo
 | `gateway_url` | API Gateway base URL | `myapp-prod-api-12345678-gw-abc123.uc.gateway.dev` |
 | `api_gateway_id` | API Gateway ID | `myapp-prod-api-12345678-api` |
 | `agent_invoke_url` | Full agent invocation URL via API Gateway | `https://myapp-prod-api-12345678-gw-abc123.uc.gateway.dev/api/v1/chat` |
-| `authorizer_status` | JWT authorizer configuration status | `"JWT Authorizer configured (issuer: ...)"` or `"No authorizer configured — endpoints are publicly accessible"` |
+| `authorizer_status` | JWT authorizer configuration status | `"JWT Authorizer configured (issuer: ...)"` or `"No authorizer configured: endpoints are publicly accessible"` |
 
 ## ✨ Features
 
 ### ⚡ Cloud Run Serverless
 
 **True Scale-to-Zero**:
-- **min_instance_count = 0**: No idle cost — pay only when requests are processed
+- **min_instance_count = 0**: No idle cost; pay only when requests are processed
 - **Cold Starts**: First request after idle period experiences startup latency (~1-3 seconds)
 - **Always-On Option**: Set `min_instance_count >= 1` to keep instances warm and eliminate cold starts
 

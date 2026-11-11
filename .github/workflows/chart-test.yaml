@@ -146,6 +146,11 @@ jobs:
       fail-fast: false
       matrix:
         flavor: [dev, baremetal, eks]
+    env:
+      # The one credential the example's identity block accepts: the io handler reads it from the
+      # demo-credentials Secret at startup and the chat and protocol requests below send it as
+      # the bearer token. A throwaway value: the kind cluster lives for this job only.
+      DEMO_AUTH_TOKEN: kind-smoke-demo-token
     defaults:
       run:
         shell: bash -e {0}
@@ -194,9 +199,12 @@ jobs:
       - name: Install chart
         run: |
           # `openai` feeds the baremetal/eks extraEnv path; `openai-credentials` is the file the
-          # dev flavor's secretStore mounts (the example's ak-values.yaml).
+          # dev flavor's secretStore mounts (the example's ak-values.yaml). `demo-credentials` is the
+          # identity block's credential: the example's ak-values.yaml injects it through extraEnv,
+          # and the production-posture flavors get the same extraEnv entry below.
           kubectl create secret generic openai --from-literal=api-key="${{ secrets.OPENAI_API_KEY }}"
           kubectl create secret generic openai-credentials --from-literal=OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}"
+          kubectl create secret generic demo-credentials --from-literal=DEMO_AUTH_TOKEN="$DEMO_AUTH_TOKEN"
           if [[ "${{ matrix.flavor }}" == "dev" ]]; then
             # The example's own install script in local mode (this checkout's chart plus the
             # example overlay), exactly what its README documents, sized for a CI node by the
@@ -215,6 +223,9 @@ jobs:
               --set 'extraEnv[0].name=OPENAI_API_KEY' \
               --set 'extraEnv[0].valueFrom.secretKeyRef.name=openai' \
               --set 'extraEnv[0].valueFrom.secretKeyRef.key=api-key' \
+              --set 'extraEnv[1].name=DEMO_AUTH_TOKEN' \
+              --set 'extraEnv[1].valueFrom.secretKeyRef.name=demo-credentials' \
+              --set 'extraEnv[1].valueFrom.secretKeyRef.key=DEMO_AUTH_TOKEN' \
               --wait --timeout 600s
           fi
 
@@ -225,6 +236,7 @@ jobs:
           sleep 3
           RESPONSE=$(curl -sf -m 120 -X POST http://localhost:18000/api/v1/chat \
             -H 'Content-Type: application/json' \
+            -H "Authorization: Bearer $DEMO_AUTH_TOKEN" \
             -d '{"prompt": "What is 17 * 23? Answer with the number only.", "session_id": "ci-smoke-1", "agent": "triage"}')
           echo "Response: $RESPONSE"
           RESULT=$(echo "$RESPONSE" | jq -r '.result')
@@ -240,6 +252,7 @@ jobs:
           trap "kill %1" EXIT
           sleep 3
           # --no-sync keeps the local wheel that "Build example images" installed in this venv.
+          # The client sends DEMO_AUTH_TOKEN (job env) as the bearer token on both protocols.
           uv run --no-sync python protocol_client.py http://localhost:18000
 
       - name: Diagnostics on failure

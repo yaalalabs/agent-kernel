@@ -73,7 +73,7 @@ dependencies = [
 
 ### Providers
 
-The module is provider-agnostic — it does not configure the `google`/`google-beta`/`docker` providers itself, so your root `main.tf` must configure them and pass them into the module explicitly:
+The module is provider-agnostic: it does not configure the `google`/`google-beta`/`docker` providers itself, so your root `main.tf` must configure them and pass them into the module explicitly:
 
 ```hcl
 provider "google" {
@@ -181,6 +181,15 @@ module "serverless_agent" {
 }
 ```
 
+`enable_jwt_auth` makes API Gateway verify Google-issued identity tokens for `jwt_audiences` before
+Cloud Run sees the request; the application itself runs every request as the anonymous principal.
+To make the caller visible to agents, tools and hooks as a `Principal`, add an `identity` block to
+`config.yaml`: the `oidc` provider with Google as the issuer (`issuer: https://accounts.google.com`,
+`jwks_uri: https://www.googleapis.com/oauth2/v3/certs`, `audience` set to the gateway audience), or
+any other supported provider (Auth0, Keycloak, Okta or another OIDC issuer through `oidc`, Cognito,
+Entra ID, Firebase, `static`). The `oidc` provider needs the `auth` extra in the image. See
+[Identity and Access](../advanced/identity-and-access.md).
+
 ## Session Configuration
 
 ### Redis Sessions
@@ -248,7 +257,7 @@ terraform apply
 See working examples in the repository:
 
 - [`examples/gcp-serverless/openai`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/gcp-serverless/openai): Basic deployment with Redis
-- [`examples/gcp-serverless/openai-auth`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/gcp-serverless/openai-auth): With JWT authentication
+- [`examples/gcp-serverless/openai-auth`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/gcp-serverless/openai-auth): With JWT authentication at the API Gateway
 - [`examples/gcp-serverless/openai-firestore`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/gcp-serverless/openai-firestore): With Firestore sessions
 
 ## Teardown

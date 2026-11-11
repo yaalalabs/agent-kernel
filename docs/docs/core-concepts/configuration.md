@@ -125,7 +125,8 @@ multimodal:
     ttl: 604800
 
 # Conversation threads (optional - feature is enabled by the presence of this block;
-# requires user_id on every chat request. See /docs/advanced/threads)
+# the thread routes serve authenticated callers only, so an identity block is needed too.
+# See /docs/advanced/threads)
 thread:
   type: in_memory  # in_memory | redis | valkey | dynamodb | firestore | cosmosdb
   naming:
@@ -192,6 +193,45 @@ secret:
     kubernetes:
       mount_path: /var/run/secrets/agentkernel  # Directory the Kubernetes Secrets are mounted under; read only by the kubernetes provider
   cache_ttl: 300  # Seconds a provider hit is served from the process cache; 0 disables caching
+
+# Identity (optional - without this block every request is the anonymous principal and an
+# Authorization header is ignored; with it, a credential that is present must validate. The thread,
+# schedule and AG-UI handlers refuse to construct without it. See /docs/advanced/identity-and-access)
+identity:
+  provider:
+    type: static  # static | oidc | cognito | entra | firebase, or a dotted path to an IdentityProvider subclass
+    # oidc serves any OpenID Connect issuer; Auth0, Keycloak and Okta are configurations of it. oidc, cognito,
+    # entra and firebase need the auth extra (agentkernel[auth]); static needs nothing extra.
+    issuer: "https://<tenant>.<region>.auth0.com/"  # required by oidc (Auth0 issues it with the trailing slash); derived by cognito, entra and firebase
+    audience: "<api-identifier>"  # required by oidc: the audience a token must carry
+    jwks_uri: null  # discovered from the issuer when omitted
+    algorithms: [RS256, ES256]  # allowed signing algorithms; symmetric ones are refused
+    leeway: 30  # seconds of clock skew tolerated on exp and nbf
+    required_claims: []  # claims a token must carry beyond the standard set
+    claims:
+      subject: sub  # claim path of the subject; dotted segments reach into a nested claim
+      groups: groups  # claim path of the group list, e.g. realm_access.roles (Keycloak) or https://<namespace>/roles (Auth0)
+    cognito:  # required when type is cognito
+      region: eu-west-1
+      user_pool_id: eu-west-1_XXXXXXXXX
+      token_use: access  # access | id
+    entra:  # required when type is entra
+      tenant_id: "<tenant-id>"
+    firebase:  # required when type is firebase
+      project_id: "<project-id>"
+    static:  # required when type is static: credential secret key -> principal
+      principals:
+        ALICE_TOKEN:  # names a secret resolved through the secret capability (the environment wins); the value is never in the file
+          subject: alice
+          kind: user  # user | agent | service
+          groups: [ops]
+          roles: []  # roles the provider issues directly; a role_mapper replaces them
+          claims: {}
+  role_mapper:  # optional - derives Principal.roles from the provider's facts; absent means no roles
+    type: mapping  # mapping, or a dotted path to a RoleMapper subclass
+    pass_through: null  # a claim path whose string or list value becomes roles as it is
+    mapping:  # group name or claim value -> the roles it grants
+      ops: [admin]
 
 # Messaging platform integrations
 slack:
@@ -547,6 +587,21 @@ export AK_SECRET__PREFIX=myproduct-dev-agents  # Deployment scope; required by a
 export AK_SECRET__CACHE_TTL=300  # Seconds a provider hit is cached; 0 disables caching (default: 300)
 ```
 
+### Identity
+
+See [Identity and access](../advanced/identity-and-access.md) for the providers and what each surface does with the principal.
+
+```bash
+export AK_IDENTITY__PROVIDER__TYPE=oidc  # Options: 'static', 'oidc', 'cognito', 'entra', 'firebase', or a dotted path to an IdentityProvider subclass
+export AK_IDENTITY__PROVIDER__ISSUER=https://<tenant>.<region>.auth0.com/  # oidc only: the issuer URL (Auth0 issues it with the trailing slash)
+export AK_IDENTITY__PROVIDER__AUDIENCE=<api-identifier>  # oidc only: the audience a token must carry
+export AK_IDENTITY__PROVIDER__CLAIMS__GROUPS=https://<namespace>/roles  # claim path of the group list (default: groups)
+export AK_IDENTITY__PROVIDER__COGNITO__REGION=eu-west-1  # cognito only
+export AK_IDENTITY__PROVIDER__COGNITO__USER_POOL_ID=eu-west-1_XXXXXXXXX  # cognito only
+export AK_IDENTITY__PROVIDER__ENTRA__TENANT_ID=<tenant-id>  # entra only
+export AK_IDENTITY__PROVIDER__FIREBASE__PROJECT_ID=<project-id>  # firebase only
+```
+
 ### Test Configuration {#test-configuration-env-vars}
 
 These variables configure the test harness (`AKTestConfig`), which is separate from the application configuration; see the [Test Configuration](#test-configuration) section below for the `test-config.yaml` file and full details. `AK_TEST__MODE` accepts the renamed `score`/`llm`/`fallback` values, and `AK_TEST__JUDGE__*` was renamed to `AK_TEST__LLM__*`:
@@ -771,7 +826,7 @@ If `test-config.yaml` is missing, defaults apply silently (no warning is printed
 - `llm` - LLM-as-judge evaluation via the configured evaluator (DeepEval and Opik use a `GEval` metric; JEV asks one yes/no Noul question) for semantic similarity
 - `fallback` - Tries score first, falls back to llm if score fails
 
-**Evaluator backend:** `evaluator` selects the pluggable scoring backend used by both `score` and `llm` modes. Built-in values are `deepeval` (the default, requires the `test` extra), `opik` (requires the `opik` extra) and `jev` (requires the `jev` extra); any other value is treated as a dotted path to your own `AKEvaluator` subclass (`agentkernel.test.AKEvaluator`) — see [Bring your own evaluator](../testing/cli-testing.md#bring-your-own-evaluator). Opik's `GEval` judge runs entirely locally against the LLM configured under `llm:` below — it does not require an Opik Cloud account, API key, or self-hosted server (AK disables its trace logging by default). `jev` is a hosted judge ([TypeSafe JEV](https://docs.typesafe.ai)) that works only with `mode: llm` (`score` and `fallback` raise `AKMetricNotSupported`); it reads `TYPESAFE_API_KEY` from the environment, ignores the `llm:` block, and sends the user input, expected output and actual output to `api.typesafe.ai`.
+**Evaluator backend:** `evaluator` selects the pluggable scoring backend used by both `score` and `llm` modes. Built-in values are `deepeval` (the default, requires the `test` extra), `opik` (requires the `opik` extra) and `jev` (requires the `jev` extra); any other value is treated as a dotted path to your own `AKEvaluator` subclass (`agentkernel.test.AKEvaluator`), see [Bring your own evaluator](../testing/cli-testing.md#bring-your-own-evaluator). Opik's `GEval` judge runs entirely locally against the LLM configured under `llm:` below, it does not require an Opik Cloud account, API key, or self-hosted server (AK disables its trace logging by default). `jev` is a hosted judge ([TypeSafe JEV](https://docs.typesafe.ai)) that works only with `mode: llm` (`score` and `fallback` raise `AKMetricNotSupported`); it reads `TYPESAFE_API_KEY` from the environment, ignores the `llm:` block, and sends the user input, expected output and actual output to `api.typesafe.ai`.
 
 ### Custom Test Configuration File Path
 
@@ -801,7 +856,7 @@ export AK_TEST__LLM__EMBEDDING_MODEL=text-embedding-3-small  # Embedding model (
 :::warning Migration note
 Earlier versions read test configuration from a `test:` section in the application's `config.yaml`. That section is now ignored; move its contents (un-nested, without the `test:` key) to a sibling `test-config.yaml`.
 
-A later release renamed the comparison modes (`fuzzy`→`score`, `judge`→`llm`) and the `judge:`/`AK_TEST__JUDGE__*` block to `llm:`/`AK_TEST__LLM__*`. Setting `mode: fuzzy` or `mode: judge` (or `AK_TEST__MODE=fuzzy`/`judge`) now raises a configuration error naming the new spelling. A leftover `judge:` key in `test-config.yaml` or `AK_TEST__JUDGE__*` environment variable, however, is silently ignored rather than raising — it is treated as an unknown field, and `llm` keeps its own default instead of reading from it, so rename it to `llm:`/`AK_TEST__LLM__*` to have it take effect. It also added the `evaluator` key (default `deepeval`) and moved thresholds from a 0-100 scale to `[0.0, 1.0]`.
+A later release renamed the comparison modes (`fuzzy`→`score`, `judge`→`llm`) and the `judge:`/`AK_TEST__JUDGE__*` block to `llm:`/`AK_TEST__LLM__*`. Setting `mode: fuzzy` or `mode: judge` (or `AK_TEST__MODE=fuzzy`/`judge`) now raises a configuration error naming the new spelling. A leftover `judge:` key in `test-config.yaml` or `AK_TEST__JUDGE__*` environment variable, however, is silently ignored rather than raising: it is treated as an unknown field, and `llm` keeps its own default instead of reading from it, so rename it to `llm:`/`AK_TEST__LLM__*` to have it take effect. It also added the `evaluator` key (default `deepeval`) and moved thresholds from a 0-100 scale to `[0.0, 1.0]`.
 :::
 
 For how the test harness uses these settings, see [Testing](../testing/overview.md).
@@ -838,7 +893,7 @@ session:
     database_id: "(default)"    # Firestore database ID (optional)
     ttl: 604800                 # Session TTL in seconds (7 days, 0 to disable)
   cache:                        # Optional process-local session cache; omit this whole block to disable
-    size: 256                   # Number of sessions to cache (size: 0 raises an error — omit `cache` instead)
+    size: 256                   # Number of sessions to cache (size: 0 raises an error, omit `cache` instead)
 
 # API server configuration
 api:
@@ -1131,7 +1186,7 @@ pip install agentkernel[openllmetry]
 export AK_TRACE__ENABLED=true
 export AK_TRACE__TYPE=logfire
 
-# Logfire credentials (optional — without a token, Logfire runs locally and does not ship traces)
+# Logfire credentials (optional: without a token, Logfire runs locally and does not ship traces)
 export LOGFIRE_TOKEN=your-write-token
 ```
 

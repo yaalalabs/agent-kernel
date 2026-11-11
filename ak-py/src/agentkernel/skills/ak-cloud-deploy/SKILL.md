@@ -5,7 +5,7 @@ description: >
   Kubernetes cluster (on-prem, baremetal, EKS) using the official Helm chart.
   Supports serverless and containerized modes for all three clouds. AWS supports
   execution modes (rest_sync, rest_async, async) with a reply message_type (complete, delta),
-  queue-based scalable processing, custom API Gateway authorizers, EventBridge Scheduler for scheduled tasks, and SSM
+  queue-based scalable processing, an API Gateway authorizer driven by the identity provider, EventBridge Scheduler for scheduled tasks, and SSM
   Parameter Store secret resolution (`ssm_enabled`).
   GCP supports Cloud Run serverless (scale-to-zero)
   and containerized (always-on) with Redis or Firestore session backends. Kubernetes runs
@@ -49,7 +49,7 @@ If missing, suggest `ak-init` first.
 - WebSocket token streaming (`async` with `message_type = "delta"`, works with or without queue mode, same as `async` above) — AWS serverless or AWS containerized/ECS; also available via SSE (`POST /api/v1/chat` with `execution.mode: rest_sync` and `execution.message_type: delta`, no Terraform changes required) wherever the built-in FastAPI REST server runs: local/self-hosted, AWS ECS single-container (non-queue) REST, Azure Container Apps, GCP Cloud Run — not on AWS Lambda or ECS queue mode (both refuse `rest_sync` + `delta` at startup; use `async` + `delta` there) or Azure Functions. The old `stream` mode was removed: `execution_mode = "stream"` fails at `terraform plan` and `execution.mode: stream` fails at config load
 4. Scalability (AWS serverless only): standard or queue/scalable mode?
 5. Session store: Redis, Valkey (AWS only), DynamoDB (AWS), Cosmos DB (Azure), Firestore (GCP)?
-6. Security: custom authorizer required (AWS serverless only)?
+6. Security: which identity provider authenticates callers (the `identity` block in `config.yaml`: `static`, `oidc` for Auth0, Keycloak, Okta or any OIDC issuer, `cognito`, `entra`, `firebase`, or your own), and on AWS serverless, is the API Gateway `authorizer` wanted (see Deploying the Identity Provider)?
 7. Resource naming: a single `prefix` applied to every resource name (e.g. `myapp-dev-chat`).
 
 ### Step 3: Choose the Correct Terraform Module
@@ -289,7 +289,8 @@ from agentkernel.aws import ECSIOHandler
 from agentkernel.schedule import ScheduleRESTRequestHandler
 
 if __name__ == "__main__":
-    # add authoriser=... to scope listings to the caller; without one the routes are open
+    # the identity block in config.yaml authenticates every route; the management routes
+    # refuse anonymous callers (401) and serve the caller's own tasks
     ECSIOHandler.run(handlers=[ScheduleRESTRequestHandler()])
 ```
 
@@ -341,6 +342,68 @@ startup with an `AKConfigError` on the missing prefix; with a prefix but no IAM 
 `SecretError` (AccessDenied). Setting `ssm_enabled` without declaring the provider leaves resolution on
 the `env` provider. See `examples/aws-serverless/openai` and
 `examples/aws-containerized/openai-dynamodb-scalable`.
+
+### Deploying the Identity Provider
+
+Who may call a deployment is configuration, not code: the `identity` block in `config.yaml` names the
+provider, and the process that authenticates builds it at startup. Every surface then carries the
+caller as a `Principal` (tools read `ToolContext.get().principal`, hooks `session.get_principal()`).
+
+```yaml
+identity:
+  provider:
+    type: static                 # static | oidc | cognito | entra | firebase | my_pkg.auth.MyProvider
+    static:
+      principals:
+        DEMO_AUTH_TOKEN:         # names a secret (environment first), never the credential value
+          subject: demo-user
+```
+
+Supported providers: `static` (credentials named as secret keys, resolved through the secret
+capability; no extra needed), `oidc` for any OpenID Connect issuer (Auth0, Keycloak, Okta), `cognito`
+(`region`, `user_pool_id`), `entra` (`tenant_id`), `firebase` (`project_id`), or a dotted path to your
+own `IdentityProvider`. The JWT providers need the `auth` extra (`agentkernel[auth]`: PyJWT,
+cryptography, httpx) in the package that authenticates. Auth0 is an `oidc` block:
+
+```yaml
+identity:
+  provider:
+    type: oidc
+    issuer: https://<tenant>.<region>.auth0.com/   # or the custom domain; trailing slash as Auth0 issues it
+    audience: <the API identifier of your Auth0 API>
+    claims:
+      groups: https://<your namespace>/roles       # the namespaced claim an Auth0 Action sets; omit if none
+```
+
+Where the block must be, per target (only that process needs the credential's environment variable;
+the `static` provider fails at startup when its key resolves to nothing):
+
+- **AWS serverless, REST**: the API Gateway `authorizer` Lambda. `lambda_auth.py` is one line
+  (`handler = APIGatewayAuthorizer().handle`), packaged with `config.yaml` and the `auth` extra when
+  the provider needs it; pass the credential as a sensitive Terraform variable in the block's
+  `environment_variables`. An accepted token yields an Allow policy whose context carries the
+  principal; the request-handler Lambda puts it on the request, and a custom route reads it with
+  `Lambda.principal(event)`. See section E.
+- **AWS serverless, WebSocket**: the `ws_connection_handler` Lambda (`handler =
+  WebsocketConnectionHandler.handler`) validates `$connect`'s `?token=` and stores the principal for
+  the frames that follow. See section C.
+- **AWS ECS**: the `rest_service` container; REST routes authenticate bearer tokens, and WebSocket
+  mode validates `?token=` on `$connect` (it refuses to start without the block).
+- **Azure Functions**: `AzureFunctions.handler` authenticates the bearer token before parsing the
+  request (401 JSON on a refused one); the credential is an app setting.
+- **GCP Cloud Run**: the examples validate Google identity tokens at the API Gateway; an `oidc` block
+  (`issuer: https://accounts.google.com`, `jwks_uri: https://www.googleapis.com/oauth2/v3/certs`, the
+  gateway's audience) makes that caller visible to the app as a principal.
+- **Kubernetes**: the io handler and the WebSocket gateway build the provider, and neither tier has
+  the `secretStore` mount, so deliver the credential as an environment variable from a Secret through
+  `extraEnv` (see the Kubernetes section).
+
+The Terraform modules are unchanged: the `authorizer` block keeps its `handler_path` contract and the
+WebSocket connections table its `user_id` hash key. Clients send `Authorization: Bearer <credential>`
+on REST, AG-UI, MCP and A2A, `?token=<credential>` on WebSocket handshakes, and `--token` (or
+`AK_CLI_TOKEN`) on the CLI. Full examples: `examples/aws-serverless/openai-auth` (static block plus an
+Auth0 block in its README), `examples/aws-serverless/websocket-openai`,
+`examples/aws-containerized/openai-websocket`, `examples/k8s/openai-queue-mode`.
 
 ## AWS Serverless (Lambda + API Gateway)
 
@@ -632,34 +695,36 @@ module "serverless_agents" {
 }
 ```
 
-**WebSocket `lambda_ws_connection_handler.py`** — implement `AuthValidator` to validate the bearer token on `$connect`:
+**WebSocket `lambda_ws_connection_handler.py`**: one line. `$connect` authenticates the `?token=` query
+parameter through the identity provider in the package's `config.yaml` and keys the connection by the
+principal's subject; a missing or refused token closes the connection before it opens:
 
 ```python
-import jwt
-import os
-from agentkernel.auth import AuthValidator, ValidationResult
 from agentkernel.aws import WebsocketConnectionHandler
 
+handler = WebsocketConnectionHandler.handler
+```
 
-class MyAuthValidator(AuthValidator):
-    def validate(self, token: str) -> ValidationResult:
-        try:
-            payload = jwt.decode(
-                token,
-                os.environ["JWT_SECRET"],
-                algorithms=["HS256"],
-                issuer=os.environ["JWT_ISSUER"],
-                audience=os.environ["JWT_AUDIENCE"],
-            )
-            user_id = payload.get("userId", "")
-            if user_id:
-                return ValidationResult(is_valid=True, claims={"userId": user_id})
-            return ValidationResult(is_valid=False, error_msg="userId claim missing")
-        except Exception as e:
-            return ValidationResult(is_valid=False, error_msg=str(e))
+The identity block goes in the `config.yaml` packaged with this Lambda, and the credential of a
+`static` provider reaches it as an environment variable from a sensitive Terraform variable:
 
+```yaml
+identity:
+  provider:
+    type: static                 # or oidc / cognito / entra / firebase, see Deploying the Identity Provider
+    static:
+      principals:
+        DEMO_AUTH_TOKEN:
+          subject: demo-user
+```
 
-handler = WebsocketConnectionHandler.set_auth_validator(MyAuthValidator()).handler
+```hcl
+  ws_connection_handler = {
+    # ...
+    environment_variables = {
+      DEMO_AUTH_TOKEN = var.demo_auth_token   # sensitive variable; not needed with the JWT providers
+    }
+  }
 ```
 
 **WebSocket `lambda_request_handler.py`** — routes are registered by **route name** (no leading slash, no HTTP method) because the WebSocket API uses `$request.body.route` for dispatch:
@@ -697,7 +762,7 @@ session:
     prefix: "ak:myapp:"
 ```
 
-- Authentication is **mandatory** for WebSocket mode. `AuthValidator.validate()` must return `claims["userId"]`; connections without a valid token are rejected at `$connect`.
+- Authentication is **mandatory** for WebSocket mode: `$connect` validates `?token=<credential>` through the `identity` block in the connection handler's `config.yaml`; the handler refuses to build without the block, and a connection without an accepted token never opens.
 - The `authorizer` Terraform block is not supported in WebSocket mode — leave it unset.
 - Only `LocalZip` is supported for `ws_connection_handler.package_path`.
 - `ws_routes` custom routes must have a matching `@Lambda.register("route_name")` entry. `ws_chat_route` is the built-in AI chat route — it is handled internally by the framework and does **not** need a `@Lambda.register` entry.
@@ -706,7 +771,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws,redis,auth]>=0.9.5"
+  "agentkernel[openai,api,aws,redis]>=0.9.5"   # add the auth extra for oidc, cognito, entra or firebase
 ]
 ```
 
@@ -777,9 +842,17 @@ execution:
 
 `POST /api/v1/chat` and `/api/v1/chat-multipart` then return `text/event-stream` responses instead of JSON — no queue or WebSocket infrastructure is required for this mode. Under any other pair, including `async`, the direct REST handler returns JSON. With the queue pipeline (`IOHandler`), SSE works on the `in_memory` transport, and on a broker (SQS, Kafka, NATS) with a `redis` or `valkey` response store, the shared stores that can stream chunks; with `dynamodb` (or any store that cannot stream chunks) on a broker, `IOHandler` fails at startup. Not available on AWS Lambda (refused at REST router init), ECS queue mode (refused at `ECSIOHandler` startup) or Azure Functions — use `async` + `delta` over WebSocket on AWS.
 
-### E) API Gateway Custom Authorizer (AWS)
+### E) API Gateway Authorizer (AWS)
 
-If the user needs token verification, include `authorizer` block:
+If the user needs token verification on REST routes, include the `authorizer` block. The authorizer
+Lambda is one line, with the identity provider coming from the `config.yaml` packaged beside it:
+
+```python
+# lambda_auth.py
+from agentkernel.aws import APIGatewayAuthorizer
+
+handler = APIGatewayAuthorizer().handle
+```
 
 ```hcl
 authorizer = {
@@ -790,10 +863,24 @@ authorizer = {
   package_type          = "LocalZip"
   result_ttl_in_seconds = 0
   environment_variables = {
-    SOME_OTHER_KEY = "Some Other Value"
+    DEMO_AUTH_TOKEN = var.demo_auth_token   # the static provider's credential; not needed with the JWT providers
   }
 }
 ```
+
+- Package `dist_auth.zip` with `agentkernel[api,aws]` (add `auth` for `oidc`, `cognito`, `entra` or
+  `firebase`), `lambda_auth.py` and the `config.yaml` carrying the `identity` block; the other Lambdas
+  load the same file without needing the credential.
+- An accepted token yields an Allow policy whose `principalId` is the subject and whose context
+  carries the principal; anything else is a Deny, with the provider's reason in the authorizer's logs
+  only. The request-handler Lambda puts the principal on the chat request; a `Lambda.register` route
+  reads it with `Lambda.principal(event)` (the anonymous principal when the API has no authorizer).
+- Declare `demo_auth_token` as a `sensitive = true` variable. With an `oidc`, `cognito`, `entra` or
+  `firebase` block no variable is needed; clients send the issuer's access token.
+
+Full example: `examples/aws-serverless/openai-auth` (the `static` block, and the Auth0 `oidc` block
+in its README); `examples/aws-serverless/schedule-openai` adds the authorizer in front of the
+schedule management routes.
 
 ### F) Messaging Integrations (Slack, Teams, WhatsApp, Messenger, Instagram, Telegram)
 
@@ -853,7 +940,7 @@ response_handler = {
   from agentkernel.aws import APIGatewayAuthorizer
   from agentkernel.integration.adapter import WebhookRouteMatcher
 
-  handler = APIGatewayAuthorizer(validator=MyValidator(), bypass=WebhookRouteMatcher.for_integrations("slack")).handle
+  handler = APIGatewayAuthorizer(bypass=WebhookRouteMatcher.for_integrations("slack")).handle
   ```
 
   ```hcl
@@ -925,9 +1012,10 @@ if __name__ == "__main__":
     runner()
 ```
 
-Pass `auth_validator=MyAuthValidator()` to secure the REST routes: `ECSIOHandler.run` binds it
-onto every REST route via `AWSRestAPI.add_auth_handlers` (the same Bearer-token mechanism as
-`RESTAPI.add_auth_handlers` in Basic Mode); omit it to leave the REST routes unauthenticated.
+Every REST route carries the identity dependency: add an `identity` block to the image's
+`config.yaml` (and a `static` provider's credential to `rest_service.environment_variables`, e.g.
+`DEMO_AUTH_TOKEN = var.demo_auth_token`) and bearer tokens are authenticated on every route;
+without the block every request runs as the anonymous principal.
 
 **`app_agent_runner.py`** (Agent Runner container entrypoint):
 
@@ -1058,29 +1146,26 @@ the agent runner whenever `message_type` is set, so the two containers always ag
 
 ```python
 from agentkernel.aws import AWSWebsocketAPI
-from agentkernel.auth import AuthValidator, ValidationContext, ValidationResult
 from agentkernel.openai import OpenAIModule
 
 OpenAIModule([...])
 
-class CustomAuthValidator(AuthValidator):
-    def validate(self, token: str, context: ValidationContext | None = None) -> ValidationResult:
-        # userId claim is mandatory — it's how a connection maps to a user for reply routing
-        ...
-        return ValidationResult(is_valid=True, claims={"userId": "userId-claim-value"})
-
+# Custom routes receive the frame's raw body and the connection's principal: the identity the
+# $connect handshake authenticated through the identity provider in config.yaml.
 @AWSWebsocketAPI.register("status")  # bare route name, no leading slash, no HTTP verb
 async def status(ctx: dict) -> dict:
-    # ctx = {"message": <raw JSON body dict>, "user_id": ...} — no BaseRequest schema imposed
-    return {"status": "OK", "user_id": ctx["user_id"]}  # dict return -> broadcast as SYSTEM_RESPONSE; None -> no broadcast
+    # ctx = {"message": <raw JSON body dict>, "principal": <Principal>}; no BaseRequest schema imposed
+    return {"status": "OK", "subject": ctx["principal"].subject}  # dict return -> broadcast as SYSTEM_RESPONSE; None -> no broadcast
 
 if __name__ == "__main__":
-    # Direct mode calls AWSWebsocketAPI directly — NOT ECSIOHandler, which always starts a
+    # Direct mode calls AWSWebsocketAPI directly, NOT ECSIOHandler, which always starts a
     # second thread polling an output queue that doesn't exist in direct (non-queue) mode.
-    AWSWebsocketAPI.set_auth_handler(auth_validator=CustomAuthValidator()).run()
+    # The $connect handshake validates its ?token= through the identity block in config.yaml;
+    # without that block the WebSocket API refuses to start.
+    AWSWebsocketAPI.run()
 ```
 
-Queue mode is different: it splits into `app_rest_service.py` (`ECSIOHandler.run(auth_validator=...)`
+Queue mode is different: it splits into `app_rest_service.py` (`ECSIOHandler.run()`
 — correct here, since `ECSIOHandler` also starts the output-queue consumer thread — custom routes
 registered here, no agent definitions) and `app_agent_runner.py` (`ECSAgentRunner.run`,
 `OpenAIModule([...])` here only) — identical shape to section B.
@@ -1103,7 +1188,8 @@ module "containerized_agents" {
     package_path   = "../dist"
     container_port = 8000
     environment_variables = {
-      OPENAI_API_KEY = var.openai_api_key
+      OPENAI_API_KEY  = var.openai_api_key
+      DEMO_AUTH_TOKEN = var.demo_auth_token   # the static identity provider's credential (sensitive variable)
     }
   }
 
@@ -1120,8 +1206,9 @@ module "containerized_agents" {
 ```
 
 **Key rules:**
-- Auth is **mandatory**: `AuthValidator.validate()` must resolve a `userId` claim, or the framework
-  raises at `$connect` construction time. There is no API Gateway authorizer for WebSocket mode.
+- Auth is **mandatory**: the `identity` block in `config.yaml` is what `$connect` validates `?token=`
+  against, and `AWSWebsocketAPI` refuses to start without it. There is no API Gateway authorizer
+  for WebSocket mode.
 - Every custom route needs both a Python `@AWSWebsocketAPI.register("name")` decorator **and** a
   matching Terraform `ws_routes = [{ route = "name" }]` entry — Python cannot create the API
   Gateway route/integration, so both sides must declare it. `ws_chat_route` is Terraform-only —
@@ -1382,7 +1469,7 @@ if __name__ == "__main__":
 from agentkernel.pipeline import WebSocketGateway
 
 def main():
-    WebSocketGateway.run(auth_validator=YourAuthValidator())  # claims must include 'userId'
+    WebSocketGateway.run()  # each /ws handshake's ?token= is validated through the identity block
 
 if __name__ == "__main__":
     main()
@@ -1436,9 +1523,16 @@ flavor values files ship inside the chart, so no repository checkout is needed.
   `sqs`, `kafka`, and `nats` all valid.
 - WebSocket mode: `--set execution.mode=async --set wsGateway.enabled=true` (add
   `--set execution.messageType=delta` for one `STREAM_CHUNK` per chunk) plus a
-  `wsGateway.auth.token`; the gateway needs a shared session store for its connection table. The
-  chart validates neither value: `execution.mode=stream` still renders, but the pods fail at config
-  load.
+  `wsGateway.auth.token` (the shared secret for Response Handler pushes, not a user credential);
+  the gateway needs a shared session store for its connection table. The chart validates neither
+  value: `execution.mode=stream` still renders, but the pods fail at config load.
+- Caller identity: the image's `config.yaml` carries the `identity` block; the io handler and the
+  gateway build the provider, and neither has the `secretStore` mount, so a `static` provider's
+  credential travels as an environment variable from a Secret (`kubectl create secret generic
+  demo-credentials --from-literal=DEMO_AUTH_TOKEN=...`, then `--set 'extraEnv[1].name=DEMO_AUTH_TOKEN'
+  --set 'extraEnv[1].valueFrom.secretKeyRef.name=demo-credentials' --set
+  'extraEnv[1].valueFrom.secretKeyRef.key=DEMO_AUTH_TOKEN'`). REST clients send it as a bearer token
+  and WebSocket clients as `?token=`; see `examples/k8s/openai-queue-mode`.
 - Autoscaling: `keda.enabled=true` scales the agent-runner on queue depth (KEDA prerequisite).
 
 **Verify:**
@@ -1462,6 +1556,7 @@ For AWS async/scalable deployments, build and package separately:
 - **agent runner** — `LocalZip`, `S3Zip`, or `Image` (typically `Image` for heavier dependencies)
 - **response handler** — `LocalZip`, `S3Zip`, or `Image`
 - **ws-connection-handler** — `LocalZip` only (WebSocket mode; no `package_type` field, only `package_path`)
+- **authorizer**: `LocalZip`, packaged with `config.yaml` (its `identity` block) and the `auth` extra when the provider is `oidc`, `cognito`, `entra` or `firebase`
 
 Azure serverless uses a single zip `package_path` for the Functions deployment.
 Azure containerized uses `package_path` as the Docker build context for Container Apps.
@@ -1478,6 +1573,7 @@ Each Lambda package must include a `config.yaml`. Most runtime values (`executio
 | `session.type` | agent-runner | `redis`, `valkey`, or `dynamodb` — not injected |
 | `session.redis.prefix` | agent-runner (Redis sessions) | key namespace prefix |
 | `session.valkey.prefix` | agent-runner (Valkey sessions) | key namespace prefix |
+| `identity.provider` | authorizer, ws-connection-handler (serverless); rest service (ECS); io handler and ws gateway (Kubernetes); the Functions app (Azure) | the identity provider; a `static` provider's keys name environment variables of that process |
 
 ### Timeouts and visibility
 

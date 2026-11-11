@@ -1534,7 +1534,9 @@ merge.
     `openai-auth` examples authenticate Google identity tokens at the API Gateway and import nothing
     from the removed package, so they are unchanged; `examples/cli/adk-run-options` keeps ADK's own
     `user_id` run option. `aws-containerized/openai-websocket` has no `app_test.py`; its handshake
-    is covered by `test_deployment_identity`.
+    is covered by `test_deployment_identity`. The k8s example's `protocol_client.py` sends
+    `DEMO_AUTH_TOKEN` as the bearer token on both protocols, and the chart's kind smoke creates the
+    `demo-credentials` Secret and passes the credential to every flavor (2026-11-10 follow-up).
   - Identity examples (plan iteration 29, the last; planned 2026-11-10 and deferred to after the
     docs and skills iterations, not yet implemented): one example per
     supported provider and per identity feature of phases A and B. `examples/api/identity/oidc-keycloak`

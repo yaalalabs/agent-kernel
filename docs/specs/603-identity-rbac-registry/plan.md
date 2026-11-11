@@ -435,6 +435,16 @@ iteration 18 and `credentials` lands in iteration 25, both additive).
   `task["user_id"]`) and the 400 notes in the tests and READMEs, ADK's native run option in
   `examples/cli/adk-run-options`, and the connections-table key note in the ECS WebSocket READMEs.
   The full `ak-py` suite and `make lint-check-all` ran green here on 2026-11-10 (phase B end).
+  Follow-up before the phase B PR (2026-11-10): the chart kind smoke
+  (`.github/workflows/chart-test.yaml`) creates the `demo-credentials` Secret, adds the
+  `DEMO_AUTH_TOKEN` `extraEnv` entry on the production-posture flavors and sends the credential
+  on its chat request, and `examples/k8s/openai-queue-mode/protocol_client.py` sends it as the
+  bearer token on A2A and MCP (MCP answers 401 to a token-less call once an identity block
+  exists; the smoke installed the example's `ak-values.yaml` without the Secret and called MCP
+  without a token). `ak-py/pyproject.toml` and `uv.lock` were rebuilt from develop's pinned
+  versions (#919) plus the `auth` extra's `cryptography` and `httpx` with bounds, so the merge
+  with develop resolves by taking the branch's two files; the suite and lint are green on those
+  pins (black 26.10.1).
 
 ## Phase C: Agent entity and registry (iterations 13 to 16)
 

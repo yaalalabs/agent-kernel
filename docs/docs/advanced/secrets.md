@@ -36,6 +36,13 @@ set_default_openai_key(SecretManager.current().get("OPENAI_API_KEY"))
 2. **Cache** — a value the provider returned within the last `cache_ttl` seconds.
 3. **Provider** — the configured backend. A hit is cached; a miss returns `None` to the manager.
 
+:::note Identity credentials
+The `static` identity provider resolves its credentials here too: each key under
+`identity.provider.static.principals` is a secret key, resolved through this order when the provider is
+built (so an environment variable wins), and a key with no value fails startup. Credential values
+therefore never live in `config.yaml`; see [Identity and Access](./identity-and-access.md).
+:::
+
 ## Configuration
 
 ```yaml
@@ -244,6 +251,9 @@ Overwrite the parameter with `aws ssm put-parameter ... --overwrite`.
 
 - [`examples/cli/openai-secret`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/openai-secret)
   — the `env` provider locally, with a required model key and an optional tool key.
+- [`examples/api/thread-openai`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/thread-openai):
+  two identity credentials (`ALICE_TOKEN`, `BOB_TOKEN`) for the `static` identity provider, read from the
+  environment.
 - [`examples/k8s/openai-queue-mode`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/k8s/openai-queue-mode)
   — the OpenAI key read from a mounted Kubernetes Secret by the agent runner.
 - [`examples/aws-serverless/openai`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/openai)
