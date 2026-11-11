@@ -613,6 +613,74 @@ async def test_principal_resolver_user_mode_needs_no_agent_in_context():
     assert (principal.mode, principal.subject) == ("user", "alice")
 
 
+@pytest.mark.asyncio
+async def test_principal_resolver_tolerates_no_session():
+    """A sandbox operation driven programmatically, outside any session, resolves to agent mode."""
+    principal = await AgentPrincipalResolver().resolve(None, None)
+
+    assert (principal.mode, principal.subject) == ("agent", "agent")
+
+
+def _spy_on_created_principals(monkeypatch) -> list[SandboxPrincipal]:
+    """Record the principal every FakeSandboxProvider.create receives."""
+    seen: list[SandboxPrincipal] = []
+    original = FakeSandboxProvider.create
+
+    async def create(self, *, principal, policy):
+        seen.append(principal)
+        return await original(self, principal=principal, policy=policy)
+
+    monkeypatch.setattr(FakeSandboxProvider, "create", create)
+    return seen
+
+
+ALICE = Principal(subject="alice", provider="oidc", namespace="https://issuer.example", groups=["ops"])
+
+
+@pytest.mark.asyncio
+async def test_an_agent_mode_profile_runs_an_authenticated_caller_as_the_agent(monkeypatch):
+    """The default resolver's user principal reaches a provider only when the profile asks for user
+    identity: an agent-mode profile keeps the worker's own credentials (an ec2_ssm profile would
+    otherwise demand a role, a kubernetes one impersonate the caller)."""
+    seen = _spy_on_created_principals(monkeypatch)
+    _install_sandbox_cfg(monkeypatch, _sandbox_cfg())
+    mgr = ExecutionManager.get()
+    session = InMemorySessionStore().new("ak-1")
+    session._publish_run(ALICE, None)
+    async with session:
+        await mgr.execute(code="print(1)")
+
+    assert [(p.mode, p.subject, p.groups) for p in seen] == [("agent", "agent", [])]
+
+
+@pytest.mark.asyncio
+async def test_a_user_mode_profile_runs_an_authenticated_caller_as_the_user(monkeypatch):
+    seen = _spy_on_created_principals(monkeypatch)
+    user_caps = FakeSandboxProvider.capabilities.model_copy(update={"principal_user": True})
+    monkeypatch.setattr(FakeSandboxProvider, "capabilities", user_caps)
+    profile = _SandboxProfileConfig(type=FAKE_DOTTED, identity=_SandboxIdentityConfig(mode="user"))
+    _install_sandbox_cfg(monkeypatch, _sandbox_cfg(profiles={"default": profile}))
+    mgr = ExecutionManager.get()
+    session = InMemorySessionStore().new("ak-1")
+    session._publish_run(ALICE, None)
+    async with session:
+        await mgr.execute(code="print(1)")
+
+    assert [(p.mode, p.subject, p.groups) for p in seen] == [("user", "alice", ["ops"])]
+
+
+@pytest.mark.asyncio
+async def test_a_programmatic_operation_outside_a_session_runs_as_the_agent(monkeypatch):
+    seen = _spy_on_created_principals(monkeypatch)
+    profile = _SandboxProfileConfig(type=FAKE_DOTTED, scope="per_call")
+    _install_sandbox_cfg(monkeypatch, _sandbox_cfg(profiles={"default": profile}))
+
+    result = await ExecutionManager.get().execute(code="print(1)")
+
+    assert result.exit_code == 0
+    assert [(p.mode, p.subject) for p in seen] == [("agent", "agent")]
+
+
 # --------------------------------------------------------------------------- #
 # Factory resolution matrix (factory.py)
 # --------------------------------------------------------------------------- #

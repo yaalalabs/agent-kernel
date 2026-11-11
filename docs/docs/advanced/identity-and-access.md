@@ -98,7 +98,8 @@ The provider reads `<issuer>/.well-known/openid-configuration` once to find the 
 rate-limited so a flood of bad tokens cannot turn into a flood of fetches. A token must carry `exp`,
 `iss` and `aud`; `aud` must contain the configured `audience`. The principal's `subject` is the
 `claims.subject` path (`sub` by default), its `namespace` is the issuer, its `groups` the
-`claims.groups` path, and every other claim arrives in `claims` for the role mapper and the tools.
+`claims.groups` path, and every claim but the subject arrives in `claims` for the role mapper and the
+tools, the groups claim included, so `role_mapper.pass_through` can lift it as it is.
 
 **Auth0** is served by this provider. Use the tenant's issuer (or the custom domain) with the trailing
 slash as Auth0 issues it, the API identifier as the audience, and the namespaced claim an Auth0 Action
@@ -327,7 +328,7 @@ request overwrites it.
 | MCP | `Authorization: Bearer`, enforced by FastMCP | `401` once an `identity` block exists; open and anonymous without one | `401` |
 | A2A | `Authorization: Bearer` | Runs anonymous | `401` |
 | CLI | `--token <credential>` or `AK_CLI_TOKEN` | Runs anonymous | Exits with `Authentication failed` |
-| Messaging integrations | The platform's own verification | A `messaging:<platform>` principal: the platform user id as subject, the workspace or tenant as namespace, platform facts in claims | n/a |
+| Messaging integrations | The platform's own verification; the webhook routes skip the identity dependency, so a platform token in `Authorization` (Teams) reaches it | A `messaging:<platform>` principal: the platform user id as subject, the workspace or tenant as namespace, platform facts in claims | n/a |
 | LiveKit realtime | The gateway's own verification | A `realtime:<gateway>` principal | n/a |
 
 Two consequences for request bodies: `user_id` is not a request field any more (a body carrying it is a
@@ -338,8 +339,9 @@ and task objects still report their owner in a `user_id` field. The thread and s
 `AGUIRequestHandler` take no arguments and refuse to construct without an `identity` block, as do the
 WebSocket modes.
 
-The sandbox's default principal resolver reads the run principal, so `sandbox.identity.mode: user`
-runs code as the authenticated caller with no custom resolver; see the [sandbox guide](./sandbox.md).
+The sandbox's default principal resolver reads the run principal, so a profile with `identity.mode: user`
+runs code as the authenticated caller with no custom resolver. A profile left on `agent` mode keeps
+running as the agent whoever calls; see the [sandbox guide](./sandbox.md).
 
 ## Deployments
 
@@ -366,9 +368,10 @@ credential of a static provider reaches that process as an environment variable 
   gateway build the provider, so a static credential reaches them through the chart's `extraEnv` from
   a Secret; the `secretStore` mount reaches only the agent-executing tier.
 - **GCP** ([guides](../deployment/gcp-serverless.md)): the examples authenticate Google identity
-  tokens at the API Gateway. An `oidc` block with `issuer: https://accounts.google.com`,
-  `jwks_uri: https://www.googleapis.com/oauth2/v3/certs` and the gateway's audience makes the same
-  caller visible to the application as a principal.
+  tokens at the API Gateway, and the application runs as the anonymous principal. The gateway calls
+  Cloud Run with its own token in `Authorization` and forwards the caller's header as
+  `X-Forwarded-Authorization`, which the built-in providers do not read. A provider of your own can,
+  since `context.headers` carries it; the guides say when the forwarded headers can be trusted.
 
 ## Migrating from `agentkernel.auth`
 

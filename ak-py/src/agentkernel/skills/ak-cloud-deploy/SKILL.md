@@ -391,9 +391,11 @@ the `static` provider fails at startup when its key resolves to nothing):
   mode validates `?token=` on `$connect` (it refuses to start without the block).
 - **Azure Functions**: `AzureFunctions.handler` authenticates the bearer token before parsing the
   request (401 JSON on a refused one); the credential is an app setting.
-- **GCP Cloud Run**: the examples validate Google identity tokens at the API Gateway; an `oidc` block
-  (`issuer: https://accounts.google.com`, `jwks_uri: https://www.googleapis.com/oauth2/v3/certs`, the
-  gateway's audience) makes that caller visible to the app as a principal.
+- **GCP Cloud Run**: the examples validate Google identity tokens at the API Gateway, and the app runs
+  as the anonymous principal. The gateway replaces `Authorization` with its own backend token and
+  forwards the caller's as `X-Forwarded-Authorization`, which the built-in providers do not read, so
+  recovering the caller takes a dotted-path provider that verifies that header from `context.headers`.
+  Trust the unsigned `X-Apigateway-Api-Userinfo` only with `allow_unauthenticated_invocation = false`.
 - **Kubernetes**: the io handler and the WebSocket gateway build the provider, and neither tier has
   the `secretStore` mount, so deliver the credential as an environment variable from a Secret through
   `extraEnv` (see the Kubernetes section).

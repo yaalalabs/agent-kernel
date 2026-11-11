@@ -160,11 +160,18 @@ module "containerized_agent" {
 
 `enable_jwt_auth` makes API Gateway verify Google-issued identity tokens for `jwt_audiences` before
 Cloud Run sees the request; the application itself runs every request as the anonymous principal.
-To make the caller visible to agents, tools and hooks as a `Principal`, add an `identity` block to
-`config.yaml`: the `oidc` provider with Google as the issuer (`issuer: https://accounts.google.com`,
-`jwks_uri: https://www.googleapis.com/oauth2/v3/certs`, `audience` set to the gateway audience), or
-any other supported provider (Auth0, Keycloak, Okta or another OIDC issuer through `oidc`, Cognito,
-Entra ID, Firebase, `static`). The `oidc` provider needs the `auth` extra in the image. See
+
+A built-in `identity` block does not recover that caller behind the gateway. API Gateway calls Cloud
+Run with its own Google-signed token in `Authorization`, copies the caller's original header to
+`X-Forwarded-Authorization`, and sends the claims it verified in `X-Apigateway-Api-Userinfo`. The
+built-in providers read only `Authorization`, so they see the gateway's token, not the caller's. To
+make the caller visible to agents, tools and hooks as a `Principal`,
+[bring an identity provider of your own](../advanced/identity-and-access.md#bring-your-own-provider):
+its `authenticate` receives every request header in `context.headers`, so it can verify the caller's
+token from `X-Forwarded-Authorization` against the issuer and audience the gateway checks.
+`X-Apigateway-Api-Userinfo` carries no signature, so read it only with
+`allow_unauthenticated_invocation = false`, which leaves the gateway as the one caller Cloud Run
+accepts; with the default public Cloud Run URL a client can send that header directly. See
 [Identity and Access](../advanced/identity-and-access.md).
 
 ## Session Configuration

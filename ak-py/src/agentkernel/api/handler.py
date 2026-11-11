@@ -15,6 +15,10 @@ from ..identity.provider.factory import IdentityProviderFactory
 
 class RESTRequestHandler(ABC):
     requires_pipeline: bool = False
+    # True for a handler whose routes verify their own callers, such as a messaging platform's signed
+    # webhook: RESTAPI mounts its router without the identity dependency, so a platform credential in
+    # ``Authorization`` (a Teams Bot Framework token) reaches the handler's check instead of a 401.
+    authenticates_itself: bool = False
 
     @abstractmethod
     def get_router(self) -> APIRouter:

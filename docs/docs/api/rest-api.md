@@ -475,7 +475,7 @@ For WebSocket-based streaming on AWS Lambda (serverless), see the [AWS Serverles
 
 ## Authentication
 
-Authentication is configuration, not code. An `identity` block names the identity provider, and the dependency `RESTAPI` installs on every router turns each request's `Authorization: Bearer <credential>` header into the caller's `Principal` before any route runs. The agent, its hooks and its tools then read who is calling through `session.get_principal()` and `ToolContext.get().principal`.
+Authentication is configuration, not code. An `identity` block names the identity provider, and the dependency `RESTAPI` installs on every router turns each request's `Authorization: Bearer <credential>` header into the caller's `Principal` before any route runs. A messaging webhook's routes are the exception: the platform's own signature or token is their check, so they are mounted without it. The agent, its hooks and its tools then read who is calling through `session.get_principal()` and `ToolContext.get().principal`.
 
 ```yaml
 identity:
@@ -502,7 +502,7 @@ identity:
 
 ### What the routes do with the principal
 
-- **No `identity` block**: every request is the anonymous principal and an `Authorization` header is ignored.
+- **No `identity` block**: every request is the anonymous principal and an `Authorization` header is ignored, a malformed or non-bearer one included.
 - **With a block**: a request without a credential is anonymous; a credential that is present must validate, or the response is a 401 (`Unauthorized`, or `Invalid authorization header` for a malformed header). The provider's reason goes to the logs only.
 - The chat and streaming routes accept an anonymous caller, and the agent runs as the anonymous principal. The thread, schedule and AG-UI routes serve authenticated callers only: their handlers refuse to construct without an `identity` block, and an anonymous request to them is a `401 Authentication required`.
 - A body or envelope carrying `user_id` is a 400: the acting user comes from the credential, never from the client.

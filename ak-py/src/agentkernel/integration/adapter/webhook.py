@@ -25,6 +25,9 @@ class WebhookRESTRequestHandler(RESTRequestHandler):
     """
 
     requires_pipeline = True
+    # The adapter's ``verify`` is the delivery's one check, as behind the Lambda authorizer's
+    # integration bypass; the sender's principal comes from the platform, not the request (#603).
+    authenticates_itself = True
 
     _log = logging.getLogger("ak.integration.webhook")
 

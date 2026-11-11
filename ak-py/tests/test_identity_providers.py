@@ -366,9 +366,11 @@ class TestRequestAuthenticator:
         assert (await RequestAuthenticator(None).authenticate_bearer(None, context)).is_anonymous
 
     @pytest.mark.asyncio
-    async def test_a_header_without_a_provider_is_ignored(self, context):
-        """No identity block: the chat and catalog routes stay open, whatever a client sends."""
-        assert (await RequestAuthenticator(None).authenticate_bearer("Bearer anything", context)).is_anonymous
+    @pytest.mark.parametrize("header", ["Bearer anything", "Basic YWxpY2U=", "Bearer", "alice-secret"])
+    async def test_a_header_without_a_provider_is_ignored(self, context, header):
+        """No identity block: the chat and catalog routes stay open, whatever a client sends, a
+        malformed or non-bearer header (a proxy's Basic credential) included."""
+        assert (await RequestAuthenticator(None).authenticate_bearer(header, context)).is_anonymous
 
     @pytest.mark.asyncio
     async def test_a_rejected_credential_keeps_the_generic_public_detail(self, authenticator, context):

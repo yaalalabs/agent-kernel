@@ -27,6 +27,7 @@ from agentkernel.identity.provider.cognito import CognitoIdentityProvider
 from agentkernel.identity.provider.entra import EntraIdentityProvider
 from agentkernel.identity.provider.firebase import FirebaseIdentityProvider
 from agentkernel.identity.provider.oidc import JWKSCache, OIDCIdentityProvider
+from agentkernel.identity.provider.roles import MappedIdentityProvider, MappingRoleMapper
 from agentkernel.identity.provider.testing import IdentityProviderContract
 
 ISSUER = "https://issuer.example"
@@ -124,7 +125,8 @@ class _OIDCFamilyContract(IdentityProviderContract):
         return token, expected
 
     def claim_keys_removed(self) -> tuple[str, ...]:
-        return ("sub", "groups")
+        """The subject claim alone: the groups claim stays in ``claims`` beside its projection, for a role mapper's ``pass_through``."""
+        return ("sub",)
 
     @pytest.fixture
     def invalid_credentials(self, keys, key):
@@ -270,7 +272,7 @@ class TestOIDCProvider:
 
         assert (principal.subject, principal.namespace, principal.groups) == ("auth0|64f1c2", issuer, ["admin"])
         assert principal.claims["permissions"] == ["read:reports"] and principal.claims["org_id"] == "org_123"
-        assert "https://acme.com/roles" not in principal.claims
+        assert principal.claims["https://acme.com/roles"] == ["admin"]
 
     def test_the_security_scheme_is_openid_connect_with_the_discovery_url(self, server):
         assert _oidc(server).security_scheme() == ("openIdConnect", {"url": DISCOVERY})
@@ -309,7 +311,7 @@ class TestCognitoProviderContract(_OIDCFamilyContract):
         return {"subject": "alice", "namespace": COGNITO_ISSUER, "groups": ["ops", "dev"]}
 
     def claim_keys_removed(self) -> tuple[str, ...]:
-        return ("sub", "cognito:groups")
+        return ("sub",)
 
     @pytest.fixture
     def provider(self, keys):
@@ -376,7 +378,7 @@ class TestEntraProviderContract(_OIDCFamilyContract):
         return {"subject": "oid-alice", "namespace": ENTRA_ISSUER, "groups": ["ops", "dev"]}
 
     def claim_keys_removed(self) -> tuple[str, ...]:
-        return ("oid", "groups")
+        return ("oid",)
 
     @pytest.fixture
     def provider(self, keys):
@@ -433,7 +435,7 @@ class TestFirebaseProviderContract(_OIDCFamilyContract):
         return {"subject": "alice", "namespace": FIREBASE_ISSUER, "groups": ["ops", "dev"]}
 
     def claim_keys_removed(self) -> tuple[str, ...]:
-        return ("sub", "roles")
+        return ("sub",)
 
     @pytest.fixture
     def provider(self, keys):
@@ -460,6 +462,18 @@ class TestFirebaseProvider:
         )
         assert provider.security_scheme() == ("openIdConnect", {"url": f"{FIREBASE_ISSUER}/.well-known/openid-configuration"})
         assert provider.jwks.jwks_uri == FIREBASE_JWKS
+
+    @pytest.mark.asyncio
+    async def test_the_roles_custom_claim_reaches_a_pass_through_mapper(self, keys):
+        """``roles`` is both the default groups path and a custom claim the mapper may lift as it is."""
+        server = JWKSServer(keys, issuer=FIREBASE_ISSUER, jwks_uri=FIREBASE_JWKS)
+        firebase = FirebaseIdentityProvider(project_id=PROJECT, jwks=JWKSCache(FIREBASE_ISSUER, jwks_uri=FIREBASE_JWKS, transport=server.transport))
+        provider = MappedIdentityProvider(firebase, MappingRoleMapper({}, pass_through="roles"))
+
+        principal = await provider.authenticate(keys.token({"iss": FIREBASE_ISSUER, "aud": PROJECT, "roles": ["editor", "billing"]}))
+
+        assert (principal.groups, principal.roles) == (["editor", "billing"], ["editor", "billing"])
+        assert principal.claims["roles"] == ["editor", "billing"]
 
     @pytest.mark.asyncio
     async def test_a_boolean_custom_claim_stays_in_claims_for_a_mapper(self, keys):

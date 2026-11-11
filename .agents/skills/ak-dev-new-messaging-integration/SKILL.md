@@ -132,7 +132,7 @@ Rules the adapter must hold to:
 
 1. **Never execute.** No `ChatService`, `AgentService` or `Runtime` import. The only side effects allowed are platform API calls and attachment storage.
 2. **Read only your own config block**, `AKConfig.get().<platform>`.
-3. **`verify` before `parse`, `parse` before enqueue.** `verify` is concrete and a no-op on the base: override it only when verification is separable from parsing. (Slack and Teams verify inside their SDK's dispatch, so theirs stays the default.)
+3. **`verify` before `parse`, `parse` before enqueue.** `verify` is concrete and a no-op on the base: override it only when verification is separable from parsing. (Slack and Teams verify inside their SDK's dispatch, so theirs stays the default.) Your check is the delivery's only one: `WebhookRESTRequestHandler` declares `authenticates_itself`, so `RESTAPI` mounts the webhook routes without the identity dependency (a platform token in `Authorization`, as Teams sends, would otherwise meet the app's identity provider), and on Lambda the authorizer's `WebhookRouteMatcher` bypass does the same.
 4. **`request_id` is the platform's message id** wherever one exists; that is what makes a webhook retry deduplicate instead of running the agent twice. Synthesize a stable one only when the platform gives you none (Slack: `f"slack:{channel}:{ts}"`).
 5. **An ignored delivery returns an empty request list**, never an exception.
 6. **Override `missing_verification_settings()`** when `verify` skips its check for an unset secret

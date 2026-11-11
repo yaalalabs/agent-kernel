@@ -358,7 +358,10 @@ or `None` when the block is absent; `reset()` for tests. Branches on `identity.p
   (`https://acme.com/roles`) and Keycloak's nested `realm_access.roles` both resolve: `subject`
   (default `sub`, missing is an `AuthenticationError`), `groups` (default
   `groups`, missing yields `[]`, a string yields a one-element list). `namespace` is the validated
-  `iss`. Every other claim lands in `Principal.claims` verbatim; `roles` is never written.
+  `iss`. Every claim but the subject lands in `Principal.claims` verbatim, the groups claim
+  included beside its `groups` projection; `roles` is never written. (PR #937 review follow-up,
+  2026-11-11: the groups claim was dropped from `claims`, so a `pass_through` on a top-level groups
+  claim, Firebase's default `roles` among them, silently found nothing.)
 - Subclasses change defaults and one check each; a subclass default for a claim path applies only
   when the block left that path unset (`model_fields_set`), so `claims.groups: groups` on a Cognito
   block is honoured and an untouched block gets `cognito:groups`:
@@ -437,7 +440,9 @@ class RequestAuthenticator:
   stripped (the `api/handler.py:66-67` form, not the case-sensitive `replace` at `api/http.py:226`).
 - No header and no provider: `Principal.anonymous()`. No header with a provider: anonymous too;
   the handlers that refuse anonymous callers say so themselves (section 8). A present header with
-  no provider is ignored (anonymous).
+  no provider is ignored (anonymous) without being parsed, so a malformed or non-bearer one is
+  ignored too (PR #937 review follow-up, 2026-11-11: the scheme was checked first, which answered
+  `Authorization: Basic ...` with a 401 on a deployment with no identity block).
 - A present but invalid credential: `AuthenticationError` is caught and re-raised as
   `HTTPException(401, detail="Unauthorized")`; the reason is logged at INFO with the path. A
   malformed scheme is `401 "Invalid authorization header"`.
@@ -763,6 +768,13 @@ candidate walk; `StaticAuthorizer` subclasses it, and every later engine must.
   `AKConfigError(f"{type(self).__name__} requires an identity block: it serves authenticated
   callers only")` when `IdentityProviderFactory.get()` is `None`. Threads, schedules and AG-UI
   inherit both.
+- `RESTRequestHandler.authenticates_itself: bool = False` (PR #937 review follow-up,
+  2026-11-11): `build_app` mounts the router of a handler that sets it without the identity
+  dependency. `WebhookRESTRequestHandler` sets it: Teams sends its Bot Framework token in
+  `Authorization`, which an application's provider refuses with a 401 before the adapter could
+  verify it. The adapter's `verify` is then the delivery's one check, as behind the Lambda
+  authorizer's `WebhookRouteMatcher` bypass, and the sender's principal still comes from the
+  platform (section 8.4).
 
 #### 8.3 Pipeline request handler and WebSocket (`pipeline/`)
 
@@ -1046,6 +1058,11 @@ candidate walk; `StaticAuthorizer` subclasses it, and every later engine must.
   subject=principal.subject, groups=principal.groups, credentials={})`, else the agent-mode
   principal as today. A profile with `identity.mode: user` therefore works with no custom
   resolver (`sandbox/broker/worker.py:148-162` enforces the mode unchanged).
+- PR #937 review follow-up (2026-11-11): `ExecutionManager._resolve_principal(profile_cfg)` holds
+  the resolved principal to the profile, replacing a `user` principal under an `agent`-mode profile
+  with the agent's own (`ec2_ssm` demanded `role_arn` and `kubernetes` impersonated the caller for
+  every authenticated run otherwise), and the default resolver takes `session=None` for an
+  operation driven outside any session (`PrincipalResolver.resolve` is typed `Session | None`).
 
 ### 9. Framework adapter tool gates
 
@@ -1253,7 +1270,8 @@ Each is intentional; the justification is design section 10 unless stated.
 14. `A2ACardBuilder` emits the descriptor version and, with identity configured, security
     schemes; ADK agents now have a card.
 15. The schedule tools act for `Session.get_principal()`; the reason string changes.
-16. The sandbox default resolver returns a user-mode principal for an authenticated run.
+16. The sandbox default resolver returns a user-mode principal for an authenticated run; the
+    manager hands it to the provider only under a `user`-mode profile.
 17. `mcp.agents`, `a2a.agents`, `agui.agents` fail at startup when present.
 18. The three OpenAI realtime-only reads of `is_enabled` and the guardrail fields
     (`framework/openai/openai.py:836-850`) now see AK-set values: a realtime session offers only

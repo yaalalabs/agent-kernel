@@ -445,6 +445,15 @@ iteration 18 and `credentials` lands in iteration 25, both additive).
   versions (#919) plus the `auth` extra's `cryptography` and `httpx` with bounds, so the merge
   with develop resolves by taking the branch's two files; the suite and lint are green on those
   pins (black 26.10.1).
+  PR #937 review follow-up (2026-11-11), each fix recorded in the spec section it changes: a
+  header with no provider is ignored unparsed (spec section 4); `WebhookRESTRequestHandler`
+  declares `authenticates_itself` and its routes skip the identity dependency (8.2); the OIDC
+  family keeps the groups claim in `claims` (4); the sandbox manager holds a resolved principal to
+  the profile's mode and the default resolver tolerates no session (8.12); the weekly integration
+  workflow generates a per-run `TF_VAR_demo_auth_token` and `AK_TEST_TOKEN` for the three
+  examples that declare the token; `examples/k8s/openai-queue-mode/ws_client.py` percent-encodes
+  the token; and the GCP guides say the gateway replaces `Authorization` and forwards the caller's
+  header as `X-Forwarded-Authorization`, which only a provider of the application's own reads.
 
 ## Phase C: Agent entity and registry (iterations 13 to 16)
 

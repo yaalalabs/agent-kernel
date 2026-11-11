@@ -17,11 +17,14 @@ class PrincipalResolver(ABC):
     """Maps the current session + agent to the identity an execution runs under.
 
     ``agent`` may be ``None`` when a sandbox operation is driven programmatically rather than
-    from within a running agent (no tool context); resolvers must tolerate that.
+    from within a running agent (no tool context), and ``session`` may be ``None`` when it is
+    driven outside any session; resolvers must tolerate both. The manager hands a ``user``-mode
+    principal to the provider only for a profile with ``identity.mode: user``; under an
+    ``agent``-mode profile it substitutes the agent's own.
     """
 
     @abstractmethod
-    async def resolve(self, session: Session, agent: Agent | None) -> SandboxPrincipal:
+    async def resolve(self, session: Session | None, agent: Agent | None) -> SandboxPrincipal:
         """Return the ``SandboxPrincipal`` for this session/agent."""
 
 
@@ -30,16 +33,17 @@ class AgentPrincipalResolver(PrincipalResolver):
 
     A run ``Runtime`` published for an authenticated caller (spec #603, section 8.12) resolves to
     a ``user``-mode principal carrying that caller's subject and groups, so a profile with
-    ``identity.mode: user`` works with no custom resolver. An anonymous run, or a sandbox operation
-    driven outside a run, resolves to ``agent`` mode: ``subject`` is the agent name (or ``"agent"``
+    ``identity.mode: user`` works with no custom resolver (an ``agent``-mode profile still runs as
+    the agent: the manager holds the principal to the profile's mode). An anonymous run, or a sandbox
+    operation driven outside a run or a session, resolves to ``agent`` mode: ``subject`` is the agent name (or ``"agent"``
     when no agent is in context). Credentials are empty either way: executions run under
     whatever identity the provider's own configuration carries (API key, ServiceAccount, IAM role),
     and a resolver that maps the caller onto provider credentials is the application's to supply.
     """
 
-    async def resolve(self, session: Session, agent: Agent | None) -> SandboxPrincipal:
+    async def resolve(self, session: Session | None, agent: Agent | None) -> SandboxPrincipal:
         """Return the user-mode principal of an authenticated run, else the agent-mode principal."""
-        principal = session.get_principal()
+        principal = session.get_principal() if session is not None else None
         if principal is not None and not principal.is_anonymous:
             return SandboxPrincipal(mode="user", subject=principal.subject, groups=list(principal.groups))
         return SandboxPrincipal(mode="agent", subject=agent.name if agent is not None else "agent")

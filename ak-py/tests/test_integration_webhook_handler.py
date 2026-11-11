@@ -4,13 +4,17 @@ import json
 from typing import Any
 
 import pytest
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import APIRouter, FastAPI, HTTPException, Request
 from fastapi.testclient import TestClient
 
+from agentkernel.api.handler import RESTRequestHandler
 from agentkernel.api.http import RESTAPI
 from agentkernel.core.config import AKConfig
 from agentkernel.core.model import AgentReply, AgentRequestText
 from agentkernel.core.util.factory import AKConfigError
+from agentkernel.identity.errors import AuthenticationError
+from agentkernel.identity.provider.base import IdentityProvider
+from agentkernel.identity.provider.request import RequestAuthenticator
 from agentkernel.integration.adapter.base import InboundAdapter, InboundParseResult, InboundRequest, OutboundAdapter, Source
 from agentkernel.integration.adapter.factory import IntegrationAdapterFactory
 from agentkernel.integration.adapter.producer import IntegrationProducer
@@ -199,3 +203,61 @@ class TestPipelineRequirement:
         message = str(excinfo.value)
         assert "WebhookRESTRequestHandler" in message
         assert "IOHandler.run" in message
+
+
+class _RefusingProvider(IdentityProvider):
+    """Refuses every credential, as a static or an unrelated OIDC provider refuses a platform's token."""
+
+    name = "refusing"
+
+    async def authenticate(self, credential, context=None):
+        raise AuthenticationError(f"not one of ours: {credential}")
+
+
+class _PlatformTokenAdapter(FakeInboundAdapter):
+    """Verifies its platform's own bearer token, the way the Teams adapter verifies a Bot Framework token."""
+
+    async def verify(self, raw: Request) -> None:
+        if raw.headers.get("authorization") != "Bearer platform-token":
+            raise HTTPException(status_code=403, detail="Invalid platform token")
+
+
+class _ProbeHandler(RESTRequestHandler):
+    def get_router(self) -> APIRouter:
+        router = APIRouter()
+
+        async def probe(request: Request):
+            return {"provider": request.state.principal.provider}
+
+        router.add_api_route("/api/v1/probe", probe, methods=["GET"])
+        return router
+
+
+class TestIdentityExemption:
+    """A platform verifies its own deliveries, and one (Teams) carries a platform token in
+    ``Authorization``: the identity dependency must not refuse it before the adapter's check runs (#603)."""
+
+    @pytest.fixture
+    def app(self, monkeypatch):
+        monkeypatch.setattr(RequestAuthenticator, "from_config", classmethod(lambda cls: RequestAuthenticator(_RefusingProvider())))
+        transport = InMemoryTransport()
+        handler = WebhookRESTRequestHandler(_PlatformTokenAdapter(), producer=IntegrationProducer(transport))
+        return TestClient(RESTAPI.build_app([handler, _ProbeHandler()])), transport
+
+    def test_the_handler_declares_that_it_authenticates_its_callers(self):
+        assert WebhookRESTRequestHandler(FakeInboundAdapter()).authenticates_itself is True
+
+    def test_a_platform_token_reaches_the_adapters_own_verification(self, app):
+        client, transport = app
+        assert client.post("/fake/webhook", json={}, headers={"Authorization": "Bearer platform-token"}).status_code == 200
+        assert len(_drain(transport)) == 1
+
+    def test_the_adapter_still_refuses_a_forged_delivery(self, app):
+        client, transport = app
+        assert client.post("/fake/webhook", json={}, headers={"Authorization": "Bearer forged"}).status_code == 403
+        assert _drain(transport) == []
+
+    def test_other_routes_in_the_same_app_keep_the_identity_dependency(self, app):
+        client, _ = app
+        assert client.get("/api/v1/probe", headers={"Authorization": "Bearer platform-token"}).status_code == 401
+        assert client.get("/api/v1/probe").json() == {"provider": "anonymous"}

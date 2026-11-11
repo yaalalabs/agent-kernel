@@ -1519,7 +1519,7 @@ the agent's instructions about *what* to do; the sandbox usage is injected.
 
 For per-user identity (running sandboxed code under the invoking user's identity), set a profile's
 `identity.mode: user`: the default resolver reads the principal the identity provider established
-for the run (see Identity), and `principal_resolver` (a dotted path) replaces it when the sandbox
+for the run (see Identity; a profile left on `agent` mode keeps running as the agent), and `principal_resolver` (a dotted path) replaces it when the sandbox
 identity must be derived differently; see the
 [Sandbox guide](https://kernel.yaala.ai/docs/advanced/sandbox) and the
 `examples/sandbox/identity` example.

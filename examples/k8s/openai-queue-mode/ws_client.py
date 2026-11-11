@@ -13,6 +13,7 @@ import asyncio
 import json
 import os
 import sys
+from urllib.parse import quote
 
 import websockets
 
@@ -28,7 +29,8 @@ async def main() -> None:
     url = sys.argv[1] if len(sys.argv) > 1 else "ws://localhost:18001/ws"
     prompt = sys.argv[2] if len(sys.argv) > 2 else "Who is Napoleon? One sentence."
 
-    async with websockets.connect(f"{url}?token={demo_token()}") as websocket:
+    # Percent-encoded: a credential holding "+", "&" or "#" would otherwise change or truncate the query.
+    async with websockets.connect(f"{url}?token={quote(demo_token(), safe='')}") as websocket:
         await websocket.send(
             json.dumps({"route": "chat", "prompt": prompt, "session_id": "ws-demo-1", "agent": "triage"})
         )

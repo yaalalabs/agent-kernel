@@ -58,11 +58,13 @@ class RequestAuthenticator:
 
         :param header: The header value, or None when the request carries none.
         :param context: Where the credential was presented.
-        :return: The provider's principal, or the anonymous principal when there is no header or no provider.
+        :return: The provider's principal, or the anonymous principal when there is no header or no
+            provider. Without a provider the header is not parsed at all, so a malformed or non-bearer
+            one (a proxy's Basic credential) is ignored like any other.
         :raises AuthenticationError: If the header is not ``Bearer <token>`` (``public_detail``
             ``Invalid authorization header``) or the provider refuses the token (``Unauthorized``).
         """
-        if header is None:
+        if header is None or self._provider is None:
             return Principal.anonymous()
         scheme, _, token = header.partition(" ")
         token = token.strip()

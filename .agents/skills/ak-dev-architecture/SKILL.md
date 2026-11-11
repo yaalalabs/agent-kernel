@@ -829,7 +829,8 @@ deleted).
   the signature, `iss`, `aud` (`_verifies_audience`), `exp`/`nbf` within `leeway`,
   `required_claims` and the subject claim, then reads the principal through the claim paths
   (`claims.subject`, `claims.groups`; a string group is one group, a missing claim none) with
-  `namespace` the validated issuer. Symmetric algorithms (`HS*`) are refused at construction.
+  `namespace` the validated issuer; every claim but the subject stays in `claims`, the groups claim
+  included, so `role_mapper.pass_through` can lift it. Symmetric algorithms (`HS*`) are refused at construction.
   `JWKSCache` fetches discovery (`<issuer>/.well-known/openid-configuration`, skipped when
   `jwks_uri` is given) and the key set through one `httpx.AsyncClient` with an injectable
   transport (nothing blocks the loop; tests hand in `httpx.MockTransport`), refreshes once on an
@@ -849,12 +850,15 @@ deleted).
 - **`RequestAuthenticator`** (`request.py`): the one place a surface turns a credential into the
   request's principal, so header parsing, the anonymous rules and the 401 details exist once.
   `from_config()` builds it over `IdentityProviderFactory.get()`. `authenticate_bearer(header,
-  context)`: no header is `Principal.anonymous()`; a header that is not `Bearer <token>` raises
-  `AuthenticationError` with public detail `Invalid authorization header`; otherwise
+  context)`: no header, or no provider, is `Principal.anonymous()` without parsing the header; a
+  header that is not `Bearer <token>` raises `AuthenticationError` with public detail
+  `Invalid authorization header`; otherwise
   `authenticate_token(token, context)`, which is anonymous when there is no provider or no token
   and the provider's answer otherwise. `dependency()` is the FastAPI dependency
   `RESTAPI.build_app` puts on every router (`_get_router_dependencies`, `api/http.py`; `/health`
-  stays outside): it sets `request.state.principal` and a request-scoped contextvar read back by
+  stays outside, and so does the router of a handler declaring `authenticates_itself`, which
+  `WebhookRESTRequestHandler` does because a platform token such as Teams' arrives in
+  `Authorization` and the adapter's `verify` is the delivery's check): it sets `request.state.principal` and a request-scoped contextvar read back by
   `current()` (the A2A executor's fallback), and answers an `AuthenticationError` as 401 with the
   public detail only, logging the reason with the path. FastAPI is imported inside
   `dependency()`: the Lambda authorizer and the WebSocket connection handler authenticate through
@@ -884,7 +888,7 @@ deleted).
   and the principal rides every prompt; a refused token exits, a token without an `identity`
   block is ignored with a warning. Messaging and realtime principals are built at the edge by
   `IntegrationProducer` (see Messaging Integrations); the sandbox's default
-  `AgentPrincipalResolver` runs an authenticated run as the user (see Sandbox).
+  `AgentPrincipalResolver` runs an authenticated run as the user under a `user`-mode profile (see Sandbox).
 - **Deployment adapters** (`deployment/`): `APIGatewayAuthorizer(bypass=None).handle` (AWS
   Lambda, `serverless/akauthorizer.py`) authenticates the bearer header and answers an Allow
   policy whose `principalId` is the subject and whose `context.principal` is the principal as
@@ -1081,7 +1085,10 @@ inert when disabled. To add a provider, use the `ak-dev-new-sandbox-provider` sk
   `SandboxPrincipal`: the default `AgentPrincipalResolver` resolves an authenticated run
   (`session.get_principal()`) to `user` mode with the caller's subject and groups and an anonymous
   run to `agent` mode, so a profile with `identity.mode: user` needs no custom resolver;
-  `principal_resolver` (dotted path) overrides it. `testing.py` ships
+  `principal_resolver` (dotted path) overrides it. `ExecutionManager._resolve_principal` holds
+  whatever a resolver returns to the profile: a `user` principal under an `agent`-mode profile
+  becomes the agent's own, so `ec2_ssm` keeps its default chain and `kubernetes` never
+  impersonates the caller; a sessionless operation passes `session=None` to the resolver. `testing.py` ships
   `FakeSandboxProvider` and the reusable `SandboxProviderContract`.
 
 ## Queue Execution Pipeline (`ak-py/src/agentkernel/pipeline/`)

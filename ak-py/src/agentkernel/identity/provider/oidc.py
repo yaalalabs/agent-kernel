@@ -130,8 +130,9 @@ class OIDCIdentityProvider(IdentityProvider):
     The signature is checked against the issuer's cached JWK set, then ``iss``, ``aud``, ``exp``
     and ``nbf`` (with ``leeway``) and every ``required_claims`` entry. The subject and the groups
     are read through dotted claim paths; the namespace is the validated ``iss``, so one issuer and
-    subject is one identity on every direct surface. Every other claim is kept in ``claims`` for
-    the role mapper and the tools; ``roles`` is never written here.
+    subject is one identity on every direct surface. Every claim but the subject is kept in
+    ``claims`` for the role mapper and the tools, the groups claim included beside its ``groups``
+    projection, so a mapper's ``pass_through`` can lift it; ``roles`` is never written here.
     """
 
     name = "oidc"
@@ -235,7 +236,7 @@ class OIDCIdentityProvider(IdentityProvider):
         subject = ClaimPath.read(payload, self._subject_claim)
         if not isinstance(subject, str) or not subject:
             raise AuthenticationError(f"subject claim '{self._subject_claim}' is missing")
-        claims = {name: value for name, value in payload.items() if name not in (self._subject_claim, self._groups_claim)}
+        claims = {name: value for name, value in payload.items() if name != self._subject_claim}
         return Principal(subject=subject, provider=self.name, namespace=payload["iss"], groups=self._groups(payload), claims=claims)
 
     def _verifies_audience(self) -> bool:

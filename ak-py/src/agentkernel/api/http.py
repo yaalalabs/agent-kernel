@@ -33,6 +33,7 @@ class RESTAPI:
 
         It puts the request's principal on ``request.state.principal``, the anonymous principal
         when no ``identity`` block is configured, so every handler reads the principal the same way.
+        A handler that declares ``authenticates_itself`` (a messaging webhook) is mounted without it.
 
         :return: The dependency list.
         """
@@ -185,9 +186,10 @@ class RESTAPI:
             handlers = cls.get_default_handlers()
 
         routers = []
+        self_authenticating = []
         for handler in handlers:
             if handler is not None:
-                routers.append(handler.get_router())
+                (self_authenticating if getattr(handler, "authenticates_itself", False) is True else routers).append(handler.get_router())
 
         if AKConfig.get().a2a.enabled:
             from .a2a.handler import A2ARESTRequestHandler
@@ -202,6 +204,9 @@ class RESTAPI:
             app.mount("/mcp", mcp_app)
         else:
             app = cls._create_app(routers=routers)
+        # Routes that verify their own callers (a platform's signed webhook) skip the identity dependency.
+        for router in self_authenticating:
+            app.include_router(router)
         # Add custom routers
         for router in cls._custom_routers:
             app.include_router(router, prefix=AKConfig.get().api.custom_router_prefix, dependencies=cls._get_router_dependencies())

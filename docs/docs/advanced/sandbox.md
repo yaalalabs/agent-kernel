@@ -468,7 +468,9 @@ settings drive this:
   surface do so; see [Identity and Access](./identity-and-access.md)), as a `user`-mode principal
   carrying the caller's subject and groups, else the agent's own identity. So `identity.mode: user`
   works with no custom resolver; supply one to map the caller onto provider credentials (a role ARN,
-  an impersonation user), which the default deliberately leaves to the application.
+  an impersonation user), which the default deliberately leaves to the application. A user-mode
+  principal reaches the provider only under a `user`-mode profile: an `agent`-mode profile runs as
+  the agent whoever calls, and an operation driven outside any session resolves to the agent too.
 
 ```yaml
 sandbox:
