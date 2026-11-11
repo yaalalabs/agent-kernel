@@ -169,13 +169,9 @@ class AgentChanged(StreamEventBase):
 
 class InputTranscript(StreamEventBase):
     """
-    One finished utterance of the caller in a realtime conversation, as text.
+    One finished caller utterance in a realtime conversation, in spoken order with the output.
 
-    Ordered with the output around it, so a transcript built from the stream reads in spoken order.
-    Reported only when the framework's own input transcription is on; an edge that does not show a
-    transcript ignores it.
-
-    message_id: str : The framework's item/event id, or a generated id when it has none
+    message_id: str : The framework's item id, or a generated one
     content: str : The finished text; never empty
     """
 

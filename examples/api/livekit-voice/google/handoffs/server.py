@@ -11,8 +11,6 @@ from google.genai import types
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s.%(msecs)03d %(levelname)s %(name)s: %(message)s", datefmt="%H:%M:%S"
 )
-# One line per 100 ms of microphone audio at INFO; warnings and errors still show.
-logging.getLogger("ak.integration.producer").setLevel(logging.WARNING)
 
 
 class _HideResumptionHandles(logging.Filter):

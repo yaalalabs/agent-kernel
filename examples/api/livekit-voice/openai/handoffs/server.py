@@ -4,22 +4,10 @@ from agentkernel.framework.openai import OpenAIModule, OpenAIToolBuilder
 from agentkernel.integration.adapter import GatewayRunner
 from agentkernel.integration.livekit import LiveKitEdgeGateway
 from agentkernel.pipeline import IOHandler
-from agents.realtime import RealtimeAgent as OpenAIAgent
+from agents.realtime import RealtimeAgent
 
 logging.basicConfig(level=logging.INFO)
-# One line per 100 ms of microphone audio at INFO; warnings and errors still show.
-logging.getLogger("ak.integration.producer").setLevel(logging.WARNING)
 
-
-class _HideResumptionHandles(logging.Filter):
-    """ADK logs a new Gemini session-resumption handle every few seconds; the line says nothing you act on."""
-
-    def filter(self, record: logging.LogRecord) -> bool:
-        return "Update session resumption handle" not in record.getMessage()
-
-
-for _handler in logging.getLogger().handlers:
-    _handler.addFilter(_HideResumptionHandles())
 _log = logging.getLogger(__name__)
 
 MODEL = "gpt-realtime"
@@ -45,7 +33,7 @@ def book_technician(account_id: str, day: str) -> str:
     return f"A technician is booked for account {account_id} on {day}, between 8am and 12pm. The reference is TEC-4821."
 
 
-supervisor = OpenAIAgent(
+supervisor = RealtimeAgent(
     name="supervisor",
     handoff_description="Greets callers, answers general questions and routes them to the right team.",
     instructions=(
@@ -57,7 +45,7 @@ supervisor = OpenAIAgent(
     ),
 )
 
-billing = OpenAIAgent(
+billing = RealtimeAgent(
     name="billing",
     handoff_description="Invoices, charges, payments and refunds.",
     instructions=(
@@ -70,7 +58,7 @@ billing = OpenAIAgent(
     handoffs=[supervisor],
 )
 
-tech_support = OpenAIAgent(
+tech_support = RealtimeAgent(
     name="tech_support",
     handoff_description="Internet connection problems, outages and technician visits.",
     instructions=(

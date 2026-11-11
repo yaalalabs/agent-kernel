@@ -6,15 +6,9 @@ from .registry import StatefulEdgeRegistry
 
 
 class GatewayRunner:
-    """Hosts a stateful :class:`StatefulEdgeAdapter` (spec #524 §7).
+    """Hosts a :class:`StatefulEdgeAdapter`, the sibling of ``WebhookRESTRequestHandler`` and ``PollerRunner`` (spec #524 §7).
 
-    The bidirectional sibling of :class:`WebhookRESTRequestHandler` and ``PollerRunner``: a
-    gateway owns a long-lived platform connection, feeds the input queue with what it reads, and
-    delivers replies back through that same connection. ``start()`` runs the adapter's own loop
-    on an already-constructed instance.
-
-    A gateway must run in the same process as the Response Handler: it registers itself as the
-    platform's outbound adapter as it starts, so replies route back to its live connection.
+    Must run in the same process as the Response Handler, which routes replies to the registered adapter.
     """
 
     _log = logging.getLogger("ak.integration.gateway_runner")
@@ -39,12 +33,7 @@ class GatewayRunner:
         return self._adapter
 
     def start(self) -> None:
-        """Register the outbound adapter, then run the gateway's blocking loop.
-
-        The registration is what lets the Response Handler resolve this live connection by the
-        adapter's ``session_id``. It happens here rather than in the adapter's constructor so the side
-        effect is tied to being hosted, not to merely existing.
-        """
+        """Register the adapter by its ``session_id``, then run the gateway's blocking loop."""
         session_id = getattr(self._adapter, "session_id", None)
         StatefulEdgeRegistry.register(self._adapter, session_id=session_id)
         try:

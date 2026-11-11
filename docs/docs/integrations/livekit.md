@@ -58,14 +58,14 @@ execution:
 ```
 
 ```python
-from agents.realtime import RealtimeAgent as OpenAIAgent
+from agents.realtime import RealtimeAgent
 
 from agentkernel.framework.openai import OpenAIModule
 from agentkernel.integration.adapter import GatewayRunner
 from agentkernel.integration.livekit import LiveKitEdgeGateway
 from agentkernel.pipeline import IOHandler
 
-agent = OpenAIAgent(
+agent = RealtimeAgent(
     name="voice_assistant",
     instructions="You are a helpful voice assistant.",
 )
@@ -125,7 +125,7 @@ latency at the start of each response.
 
 ### Tools and framework context
 
-Declare realtime tools on the native `RealtimeAgent` or ADK `LlmAgent`. The SDK calls them and returns their results. Inside a tool, `ToolContext.get()`, `Session.current()` and `Agent.current()` work as they do in other execution modes: the pool sets them once when the call opens, and the SDK's own tasks inherit them. The session lock is not held while a tool runs, because a call is one long-lived session. Agent Kernel system tools (multimodal, sandbox, schedule, knowledge base) and their prompt guidance are attached as in other modes. For an ADK `Workflow` root, which holds no tools of its own, they attach to the agents inside it that you register with the module. OpenAI's native run context can be set through the AK session `framework_context`.
+Declare realtime tools on the native `RealtimeAgent` or ADK `LlmAgent`. The SDK calls them and returns their results. Inside a tool, `ToolContext.get()`, `Session.current()` and `Agent.current()` work as they do in other execution modes: the pool sets them once when the call opens, and the SDK's own tasks inherit them. The session lock is not held while a tool runs, because a call is one long-lived session. Agent Kernel system tools (multimodal, sandbox, schedule, knowledge base) and their prompt guidance are attached as in other modes. An ADK `Workflow` root holds no tools of its own, so they attach to its speaking agents, each looked up by its own name for the `agents` allow-lists. A realtime session does not carry the AK session's `framework_context`: the native session lives for the whole call, and the AK session is not written back when it ends.
 
 ## The opening prompt
 
@@ -147,16 +147,16 @@ One call can move between several agents. Declare native live agents and registe
 - **Google ADK**: `LlmAgent(sub_agents=[...])`. ADK's own rules decide who can transfer to whom: an agent to its sub-agents, and back to its parent or across to its peers unless `disallow_transfer_to_parent` / `disallow_transfer_to_peers` is set.
 
 ```python
-from agents.realtime import RealtimeAgent as OpenAIAgent
+from agents.realtime import RealtimeAgent
 
 from agentkernel.framework.openai import OpenAIModule
 from agentkernel.integration.adapter import GatewayRunner
 from agentkernel.integration.livekit import LiveKitEdgeGateway
 from agentkernel.pipeline import IOHandler
 
-supervisor = OpenAIAgent(name="supervisor", instructions="Route the caller to billing or tech support.")
-billing = OpenAIAgent(name="billing", instructions="Answer billing questions.", handoffs=[supervisor])
-tech_support = OpenAIAgent(name="tech_support", instructions="Fix connection problems.", handoffs=[supervisor])
+supervisor = RealtimeAgent(name="supervisor", instructions="Route the caller to billing or tech support.")
+billing = RealtimeAgent(name="billing", instructions="Answer billing questions.", handoffs=[supervisor])
+tech_support = RealtimeAgent(name="tech_support", instructions="Fix connection problems.", handoffs=[supervisor])
 supervisor.handoffs = [billing, tech_support]
 
 OpenAIModule([supervisor]).run_options(supervisor, model_config={"initial_model_settings": {"model_name": "gpt-realtime", "voice": "alloy"}})
@@ -184,7 +184,7 @@ Each agent participant needs a token of its own, so the gateway needs `AK_LIVEKI
 | | OpenAI Agents SDK | Google ADK |
 |---|---|---|
 | Live session | One native `RealtimeSession` for the call | One native `Runner.run_live()` and `LiveRequestQueue` for the call |
-| Handoff | `RealtimeAgent.handoffs` | ADK agent transfers and live workflows |
+| Handoff | `RealtimeAgent.handoffs` | ADK agent transfers (`sub_agents`) and live `Workflow` steps |
 | Tools | Native tools on each `RealtimeAgent` | Native tools and toolsets on each `LlmAgent` |
 | Voice | One session voice through `model_config` | Per-agent `Gemini(speech_config=...)` or session `RunConfig.speech_config` |
 
@@ -192,12 +192,12 @@ For how handoffs flow through the pipeline, see [Realtime Voice Internals](../ar
 
 ## Example Projects
 
-Complete working examples (with In-Memory, Kafka, NATS, and AWS SQS architectures) are available in the **examples/api/livekit-voice** directory. The `openai/handoffs` variant shows multi-agent handoffs with an internet support line (supervisor, billing and tech support). The `google/handoffs` variant shows two agents passing the turn back and forth with ADK transfers (a planner and a budget controller) before reporting to the caller.
+Complete working examples (with In-Memory, Kafka, NATS, and AWS SQS architectures) are available in the **examples/api/livekit-voice** directory. The `openai/handoffs` variant shows multi-agent handoffs with an internet support line (supervisor, billing and tech support). The `google/handoffs` variant shows two agents passing the turn back and forth with ADK transfers (a planner and a budget controller) before reporting to the caller. The `google/workflow` variant shows a fixed order of steps (intake, scheduler, confirmer) written as an ADK `Workflow`.
 
 ## Limitations
 
 - **AK hooks and guardrails** do not automatically run on native realtime turns. Use native SDK live features where supported.
-- **Human approval** has no decision path in this LiveKit edge. Approval-requiring OpenAI tools and ADK confirmation requests fail clearly.
+- **Human approval** has no decision path in this LiveKit edge. Approval-requiring OpenAI tools and ADK confirmation requests fail the connection clearly.
 - **No session lock around tools.** The SDK runs the tools; AK sets the tool context when the call opens but does not hold the session lock while a tool runs.
 - **One room per gateway**: each `LiveKitEdgeGateway` joins one room, and the room uses one AK session. Many gateways can run in one process, one per room.
 - **Connection lifetime**: a failed or expired native session is closed. A later input can start a fresh session; AK does not replay the old transcript.

@@ -181,6 +181,10 @@ own `run_id`.
 
 See [Human in the Loop](../advanced/human-in-the-loop.md).
 
+## Realtime voice
+
+With `execution.mode: realtime`, the entry agent is an `agents.realtime.RealtimeAgent`. The SDK's own `RealtimeSession` runs the tools and the `handoffs`; Agent Kernel carries the audio. `Module.run_options(agent, model_config={...})` sets the model and voice. A tool that needs approval is rejected, and AK hooks and guardrails do not run on this path. See [LiveKit Voice](../integrations/livekit.md).
+
 ## Features
 
 - ✅ Function calling

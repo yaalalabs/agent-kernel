@@ -27,7 +27,7 @@ The gateway never sends an agent participant's own audio or chat back to the mod
 
 ## Runner contract
 
-`RealtimeRunner` is the shared input and output contract. An adapter accepts caller audio with `append_audio()` and text with `send_text()`. Its callback reports `audio_delta`, `transcript_delta`, `input_transcript`, `agent_changed`, `interrupt`, `speech_started`, `done`, or `error`. The pool paces these events in order, so the next speaker is announced before their first output. An ADK workflow container does not speak; its first speaking node is announced when ADK identifies it.
+`RealtimeRunner` is the shared input and output contract. An adapter accepts caller audio with `append_audio()` and text with `send_text()`. Its callback reports `audio_delta`, `transcript_delta`, `input_transcript`, `agent_changed`, `interrupt`, `speech_started`, `done`, or `error`. The pool paces these events in order, so the next speaker is announced before their first output. The pool announces the root agent as the first speaker (`initial_speaker`); an adapter whose root does not speak, such as an ADK `Workflow`, returns `None` and reports the first speaking node itself in its `agent_changed` event, with the roster.
 
 ### The caller's words
 
@@ -45,11 +45,13 @@ The pool's output queue can hold audio before LiveKit plays it. Sending audio to
 ## Native adapters
 
 - **OpenAI:** the entry agent is an `agents.realtime.RealtimeAgent`. One SDK `RealtimeRunner` and `RealtimeSession` serve the call. `RealtimeAgent.handoffs` select the next agent. `Module.run_options(agent, model_config=...)` sets the session model and voice.
-- **Google ADK:** one `Runner.run_live()` and one `LiveRequestQueue` serve the call. `Event.author` identifies the speaker. ADK handles transfers and any Gemini connection changes. Speaking agents in a live workflow use `mode='chat'` or `mode='task'`; ADK does not run `ParallelAgent` or `LoopAgent` in live mode. Use `Gemini(speech_config=...)` for a speaking agent's voice, or `RunConfig.speech_config` for a session voice.
+- **Google ADK:** one `Runner.run_live()` and one `LiveRequestQueue` serve the call. `Event.author` identifies the speaker. ADK handles transfers and any Gemini connection changes. Speaking agents in a live workflow must set `mode='chat'` or `mode='task'`; ADK raises nothing for a node without one, and the caller hears nothing from it; ADK does not run `ParallelAgent` or `LoopAgent` in live mode; they fail inside ADK. Use `Gemini(speech_config=...)` for a speaking agent's voice, or `RunConfig.speech_config` for a session voice.
 
-The SDK runs the tools; the pool does not. Before the native session starts, the pool sets `ToolContext`, `Session.current()` and `Agent.current()` once for the call, and the SDK's own tasks inherit them, so a tool sees them as it does on the unary path. The session lock is not held, since a call is one long-lived session. AK system tools (multimodal, sandbox, schedule, knowledge base) and their prompt guidance are attached as in every other execution mode; an ADK `Workflow` root holds no tools, so they attach to the agents inside it that the application registers.
+The SDK runs the tools; the pool does not. Before the native session starts, the pool sets `ToolContext`, `Session.current()` and `Agent.current()` once for the call, and the SDK's own tasks inherit them, so a tool sees them as it does on the unary path. The session lock is not held, since a call is one long-lived session. AK system tools (multimodal, sandbox, schedule, knowledge base) and their prompt guidance are attached as in every other execution mode; an ADK `Workflow` root holds no tools, so they attach to its speaking agents, looked up by their own names for the `agents` allow-lists.
 
-AK pre/post hooks and AK guardrails do not automatically run during native live turns. Use the SDK's own live hooks and guardrails where supported. A tool needing human approval or confirmation cannot continue through this LiveKit edge because the room has no decision path; both adapters reject it before the call opens (an OpenAI tool with `needs_approval`, an ADK `FunctionTool` with `require_confirmation`) rather than approving it.
+A realtime session neither injects nor stores the AK session's `framework_context`, and the AK session is not saved when a call ends.
+
+AK pre/post hooks and AK guardrails do not automatically run during native live turns. Use the SDK's own live hooks and guardrails where supported. A tool needing human approval or confirmation cannot continue through this LiveKit edge because the room has no decision path; both adapters fail the connection when one is requested (an OpenAI tool with `needs_approval`, an ADK `FunctionTool` with `require_confirmation`) rather than approving it.
 
 ## Connection lifetime
 

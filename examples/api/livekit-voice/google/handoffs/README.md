@@ -61,7 +61,7 @@ The agents are told to stop after three turns each. This is an instruction in th
 
 - **One LiveKit connection per agent.** Every listed agent is a participant for the whole call, so LiveKit bills connection minutes for each.
 - **Native live workflows.** Speaking workflow nodes use `mode='chat'` or `mode='task'`. ADK live mode does not support `ParallelAgent` or `LoopAgent`.
-- **Tools run in ADK.** ADK runs the tools declared on each `LlmAgent`; Agent Kernel system tools attach to registered agents as in other modes when enabled. A tool that requires confirmation is rejected before the call opens, because a realtime session has no decision path.
+- **Tools run in ADK.** ADK runs the tools declared on each `LlmAgent`; Agent Kernel system tools attach to the agents you register, as in other modes, when enabled. A tool that requires confirmation fails the connection, because a realtime session has no decision path.
 - **One agent speaks at a time.** The conversation between the agents is a series of transfers. They do not listen to each other in parallel, and each one sees the earlier turns through ADK's session history.
 - **No enforced turn limit.** Keep a debate short through the prompts, as this example does.
 - **Transfers and recovery.** ADK owns Gemini connection changes. Agent Kernel does not replay a transcript. On `google-adk` 2.7 or later, a transfer refused by a `before_tool_callback` keeps the call open.

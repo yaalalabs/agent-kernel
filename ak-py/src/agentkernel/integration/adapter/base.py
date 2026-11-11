@@ -252,23 +252,16 @@ class OutboundAdapter(ABC):
 
 
 class StatefulEdgeAdapter(ABC):
-    """A stateful, bidirectional edge that owns a long-lived platform connection.
+    """A bidirectional edge that owns a long-lived platform connection (a LiveKit room, a voice call).
 
-    Unlike the stateless InboundAdapter/OutboundAdapter pair (designed for one-shot webhook
-    deliveries), a StatefulEdgeAdapter owns a persistent connection to a platform — a LiveKit
-    WebRTC room, a Twilio voice call, a WhatsApp call session — because only it can read the
-    live input *and* play the live output.
-
-    Hosted by GatewayRunner, which registers it so the ResponseHandler can route replies back
-    to the same live connection.
+    Hosted by GatewayRunner, which registers it so the Response Handler routes replies back to the same connection.
     """
 
     name: str = ""
     source: Source = Source.REALTIME
     ERROR_MESSAGE: str = "Sorry, there was an error processing your request."
     session_id: str = ""
-    # Agent this edge's session is bound to; None selects the runner's default agent. A realtime
-    # session binds its agent once, when its connection is created from the first request.
+    # The agent this edge's session is bound to; None selects the runner's default agent.
     agent: str | None = None
 
     def __init__(self):
@@ -282,11 +275,7 @@ class StatefulEdgeAdapter(ABC):
 
     @abstractmethod
     async def stop(self) -> None:
-        """Gracefully disconnect and release resources.
-
-        Called by GatewayRunner when the process is shutting down.
-        Must cause start() to return cleanly.
-        """
+        """Disconnect and release resources; must make start() return. Called by GatewayRunner at shutdown."""
 
     # ── Inbound: Platform -> Agent Kernel ──
 
@@ -298,13 +287,7 @@ class StatefulEdgeAdapter(ABC):
         self._producer = IntegrationProducer()
 
     def _enqueue(self, request: AgentRequestUnion) -> InboundRequest:
-        """Build the normalized inbound request for one platform message.
-
-        The caller hands it to :meth:`IntegrationProducer.enqueue`, which stamps the integration
-        and reply-context attributes, so every integration shares one producer.
-
-        :return: The request, carrying this edge's session and (if set) its configured agent.
-        """
+        """Build the inbound request for one platform message, for :meth:`IntegrationProducer.enqueue`."""
         return InboundRequest(
             session_id=self.session_id,
             request_id=str(uuid.uuid4()),
@@ -314,7 +297,7 @@ class StatefulEdgeAdapter(ABC):
         )
 
     def _enqueue_end(self) -> InboundRequest:
-        """Build the empty request that carries the end-of-session control: the twin of :meth:`_enqueue`."""
+        """Build the empty request that carries the end-of-session control."""
         return InboundRequest(
             session_id=self.session_id,
             request_id=str(uuid.uuid4()),

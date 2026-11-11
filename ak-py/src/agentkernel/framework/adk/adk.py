@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from typing import Any, ClassVar, Literal
 from uuid import uuid4
 
-from google.adk.agents import BaseAgent, LlmAgent, LoopAgent, ParallelAgent
+from google.adk.agents import BaseAgent, LlmAgent
 from google.adk.agents.live_request_queue import LiveRequestQueue
 from google.adk.agents.run_config import RunConfig, StreamingMode
 from google.adk.apps import App
@@ -361,6 +361,21 @@ class GoogleADKRunner(BaseRunner):
 
         return prompt, parts
 
+    @classmethod
+    def _native_runner(cls, agent: Any, adk_session: GoogleADKSession, ctor_options: Mapping[str, Any], **app_options: Any) -> Runner:
+        """
+        Builds the ADK ``App`` and ``Runner`` for a unary or realtime run.
+        :param agent: The agent whose native agent is the App's root.
+        :param adk_session: The ADK session whose service the Runner uses.
+        :param ctor_options: The Runner constructor run options.
+        :param app_options: Extra ``App`` settings (resumability for unary runs).
+        """
+        options = dict(ctor_options)
+        # ADK refuses plugins on the Runner when an App is given, so they go to the App.
+        plugins = options.pop("plugins", None)
+        app = App(name=APP_NAME, root_agent=agent.agent, **app_options, **({"plugins": plugins} if plugins is not None else {}))
+        return Runner(**cls._native_kwargs(options, app=app, app_name=APP_NAME, session_service=adk_session.session_service))
+
     async def _setup_session_context(
         self,
         agent: Any,
@@ -392,19 +407,8 @@ class GoogleADKRunner(BaseRunner):
         state["ak_tool_context"] = ctx.id
         await adk_session.update_session_state(ctx.id, agent.name, state)
 
-        # Resolved constructor options (plugins, services) first; the keys AK owns are written last.
         ctor_options, _ = self._split_run_options(options or {})
-        # `plugins` belongs to the App, not the Runner: ADK refuses both at once ("When app is provided,
-        # plugins should not be provided and should be provided in the app instead"), and this adapter
-        # always provides an App because resumability lives there.
-        plugins = ctor_options.pop("plugins", None)
-        app = App(
-            name=app_name,
-            root_agent=agent.agent,
-            resumability_config=ResumabilityConfig(is_resumable=True),
-            **({"plugins": plugins} if plugins is not None else {}),
-        )
-        runner = Runner(**self._native_kwargs(ctor_options, app=app, app_name=app_name, session_service=adk_session.session_service))
+        runner = self._native_runner(agent, adk_session, ctor_options, resumability_config=ResumabilityConfig(is_resumable=True))
         return user_id, runner, ctx, adk_session
 
     def _text_reply(self, agent: Any, text: str, prompt: str = "") -> AgentReply:
@@ -919,37 +923,18 @@ class GoogleADKRunner(BaseRunner):
 
 
 class GoogleADKRealtimeRunner(BaseRealtimeRunner):
-    """Runs a live conversation on ADK's own ``Runner.run_live()``, behind the realtime pool.
+    """
+    GoogleADKRealtimeRunner runs a live conversation on ADK's own ``Runner.run_live()``.
 
-    One ``LiveRequestQueue`` and one ``run_live()`` call per connection, for the whole conversation.
-    ADK owns everything inside it: its Live API connections (it opens a fresh one for an agent that
-    receives a transfer), which agent is speaking, its tools and their results, transfers and
-    workflows. This class sends caller audio and text into the queue and maps the events ADK yields
-    onto the framework-neutral events the pool paces and queues; ``Event.author`` names the speaker.
-
-    The root is an ``LlmAgent`` (with ``sub_agents`` for transfers) or an ADK ``Workflow``. A
-    ``Workflow`` is a container, not a voice: it has no tools of its own and the first agent to
-    speak is announced when ADK produces its first output. A speaking workflow node declares
-    ``mode='chat'`` or ``mode='task'``; ``ParallelAgent`` and ``LoopAgent`` do not run live and are
-    rejected. A tool that requires confirmation cannot run: a realtime session has no route for a
-    decision. One declared up front is rejected before connecting; ADK's live flow refuses the call
-    itself, so the connection is failed when ADK says one was requested. Agent Kernel hooks and guardrails do not run on this path; ADK's do.
-
-    Gemini Live's realtime input is 16 kHz PCM16 mono and its audio output is 24 kHz, hence the two
-    sample rates; the pool resamples around them. ``Module.run_options`` carries the native settings:
-    ``run_config`` reaches ``run_live()`` (``RunConfig.speech_config`` is the one session voice;
-    per-agent voice is ``Gemini(speech_config=...)`` on the agent's model), and the ``Runner``
-    constructor options (``plugins``, services) reach the ``Runner`` and ``App``.
+    ADK owns the conversation: its tools, transfers and workflows. The root is an ``LlmAgent`` or a ``Workflow``.
+    Run options: ``run_config`` reaches ``run_live()``; the Runner constructor options reach the ``Runner``/``App``.
+    Agent Kernel hooks and guardrails do not run on this path.
     """
 
     input_sample_rate = 16000
     output_sample_rate = 24000
 
-    # The one run_live setting an agent's run_options may name; the Runner constructor options are
-    # GoogleADKRunner.RUNNER_CONSTRUCTOR_OPTIONS.
     LIVE_OPTIONS: ClassVar[frozenset[str]] = frozenset({"run_config"})
-    # The run options that configure the ADK App the runner builds rather than the Runner or run_live().
-    APP_OPTIONS: ClassVar[frozenset[str]] = frozenset({"plugins"})
 
     def __init__(self):
         super().__init__(FRAMEWORK)
@@ -958,44 +943,26 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
         self._runner: Runner | None = None
         self._queue: LiveRequestQueue | None = None
         self._listen_task: asyncio.Task | None = None
-        # True once disconnect() runs; the listener suppresses its error callback then so a normal
-        # shutdown does not surface as a failure.
         self._closing = False
-        # The agent whose turn it is, or None before the first speaker of a root that does not
-        # speak, and every agent announced so far.
         self._speaker: str | None = None
         self._roster: list[str] = []
-        # Entered for the whole connection, so an Agent Kernel tool the SDK runs finds its context.
         self._tool_context: AKToolContext | None = None
 
-    # -- the agent graph ----------------------------------------------------------------------
+    def initial_speaker(self, agent: AKBaseAgent) -> str | None:
+        """The root agent, or ``None`` for a ``Workflow``, which does not speak; ADK's events name its first node."""
+        return None if isinstance(agent.agent, Workflow) else agent.name
 
     def team(self, agent: AKBaseAgent) -> list[str]:
-        """Every speaking agent the root's public graph names, the root first when it speaks."""
-        root = getattr(agent, "agent", None)
-        if root is None:
-            return [agent.name]
-        return [member.name for member in self._speaking(root)]
-
-    def initial_speaker(self, agent: AKBaseAgent) -> str | None:
-        """The root's own name when it is an agent; ``None`` for a workflow, which only contains the speakers."""
-        return agent.name if isinstance(getattr(agent, "agent", None), LlmAgent) else None
+        """Every speaking agent under the root, the root first when it speaks."""
+        return [member.name for member in self._speaking(agent.agent)]
 
     @classmethod
     def _speaking(cls, root: Any) -> list[LlmAgent]:
-        """Every ``LlmAgent`` that can speak under ``root``, ``root`` first when it is one, nearest first.
-
-        The agents are those of a workflow's nodes and every agent's ``sub_agents``, from ADK's public
-        fields. An agent in ``single_turn`` mode is called, not spoken to, so it is not listed.
-        """
+        """Every ``LlmAgent`` under ``root`` (workflow nodes and ``sub_agents``), nearest first; ``single_turn`` agents excluded."""
         found: list[LlmAgent] = []
-        seen: set[int] = set()
         pending = [root] if isinstance(root, LlmAgent) else cls._workflow_nodes(root)
         while pending:
             node = pending.pop(0)
-            if id(node) in seen:
-                continue
-            seen.add(id(node))
             if isinstance(node, LlmAgent) and node.mode != "single_turn":
                 found.append(node)
             pending.extend(getattr(node, "sub_agents", None) or [])
@@ -1003,119 +970,54 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
 
     @staticmethod
     def _workflow_nodes(root: Any) -> list[Any]:
-        """The nodes of a workflow root, from its public graph; none for any other root."""
+        """The nodes of a workflow root; none for any other root."""
         graph = getattr(root, "graph", None)
         return list(getattr(graph, "nodes", None) or [])
 
-    def _check_graph(self, agent: AKBaseAgent, root: Any) -> None:
-        """Reject, before anything opens, a graph ADK cannot run live, naming the agent.
-
-        ``ParallelAgent`` and ``LoopAgent`` raise ``NotImplementedError`` under ``run_live()``. A node
-        of a workflow left in ``single_turn`` mode runs outside the live connection, so the caller
-        would hear nothing from it. ADK defaults a root LlmAgent and ordinary sub-agents to chat;
-        only workflow nodes need an explicit live mode. A root that is neither an agent nor a
-        workflow cannot be driven. A tool that requires confirmation is rejected here too, as the
-        OpenAI adapter rejects one that needs approval: nothing in a live call can answer it.
-        """
-        if not isinstance(root, (BaseAgent, Workflow)):
-            raise TypeError(f"Agent '{agent.name}' wraps {type(root).__name__}; realtime mode runs an ADK LlmAgent or Workflow")
-        pending = [root]
-        seen: set[int] = set()
-        while pending:
-            node = pending.pop(0)
-            if id(node) in seen:
-                continue
-            seen.add(id(node))
-            if isinstance(node, (ParallelAgent, LoopAgent)):
-                raise ValueError(
-                    f"'{node.name}' is a {type(node).__name__}, which ADK does not run live; keep it off the realtime path (agent '{agent.name}')"
-                )
-            if isinstance(node, Workflow):
-                for member in self._workflow_nodes(node):
-                    if isinstance(member, LlmAgent) and member.mode in (None, "single_turn"):
-                        raise ValueError(
-                            f"Node '{member.name}' of workflow '{node.name}' has mode {member.mode!r}, which runs outside the live connection "
-                            "so the caller would hear nothing from it; set mode='chat' or mode='task' (agent '" + agent.name + "')"
-                        )
-                    pending.append(member)
-            if isinstance(node, LlmAgent):
-                self._check_confirmations(agent, node)
-            pending.extend(getattr(node, "sub_agents", None) or [])
-
-    @staticmethod
-    def _check_confirmations(agent: AKBaseAgent, node: LlmAgent) -> None:
-        """Reject a tool that asks a human to confirm it: a live call has no way to take the answer.
-
-        ADK exposes the flag only as the private ``FunctionTool._require_confirmation`` (``True``, or a
-        callable that decides per call), so a callable is treated as asking: the call could not be answered
-        if it did.
-        """
-        for tool in node.tools or []:
-            if isinstance(tool, FunctionTool) and getattr(tool, "_require_confirmation", False):
-                raise ValueError(
-                    f"Tool '{tool.name}' of agent '{node.name}' requires confirmation, which a realtime session cannot get; "
-                    f"remove require_confirmation or keep the agent off the realtime path (agent '{agent.name}')"
-                )
-
-    # -- lifecycle ----------------------------------------------------------------------------
-
     async def connect(self, session: Session, agent: AKBaseAgent, callback: Callable) -> None:
-        root = getattr(agent, "agent", None)
-        self._check_graph(agent, root)
         self._callback = callback
         self._speaker = self.initial_speaker(agent)
         self._roster = self.team(agent)
         options = await agent.resolve_run_options(session, [])
-        constructor_options, live_options, app_options = self._split_options(agent, options)
+        constructor_options, live_options = self._split_options(agent, options)
 
         try:
             adk_session = GoogleADKRunner._session(session)
             await adk_session.create_session(app_name=APP_NAME, user_id=USER_ID, session_id=session.id)
-            # The wrapper finds this context by id from the ADK session state. Under the pool it is the context the
-            # pool set for this call (its runtime, agent and session); a direct connect builds one the same way.
+            # The tool wrapper finds this context by id in the ADK session state.
             try:
                 self._tool_context = AKToolContext.get()
             except RuntimeError:
                 self._tool_context = AKToolContext(Runtime.current(), agent, session, [])
             self._tool_context.__enter__()
             await adk_session.update_session_state(self._tool_context.id, agent.name, {"ak_tool_context": self._tool_context.id})
-            plugins = app_options.pop("plugins", None)
-            app = App(name=APP_NAME, root_agent=root, **app_options, **({"plugins": plugins} if plugins is not None else {}))
-            self._runner = Runner(
-                **GoogleADKRunner._native_kwargs(constructor_options, app=app, app_name=APP_NAME, session_service=adk_session.session_service)
-            )
+            self._runner = GoogleADKRunner._native_runner(agent, adk_session, constructor_options)
             self._queue = LiveRequestQueue()
             events = self._runner.run_live(user_id=USER_ID, session_id=session.id, live_request_queue=self._queue, **live_options)
-            # Consuming starts before any input is accepted, so ADK's first event is never missed.
             self._listen_task = asyncio.create_task(self._listen(events))
         except (Exception, asyncio.CancelledError):
-            # Close what is open here: a failed connect must not leave a native run behind, whatever the caller does.
             await self.disconnect()
             raise
 
-    def _split_options(self, agent: AKBaseAgent, options: Mapping[str, Any]) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
-        """The agent's run options, split between the ``Runner`` constructor, ``run_live()`` and the ``App``.
-
-        :raises ValueError: Naming the agent and every key that is neither, with the reason when the adapter owns it.
+    def _split_options(self, agent: AKBaseAgent, options: Mapping[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
         """
-        remaining = dict(options)
-        app_options = {key: remaining.pop(key) for key in self.APP_OPTIONS if key in remaining}
-        constructor_options, other = GoogleADKRunner._split_run_options(remaining)
+        Splits the agent's run options between the ``Runner`` constructor and ``run_live()``.
+        :raises ValueError: Naming every key that is neither.
+        """
+        constructor_options, other = GoogleADKRunner._split_run_options(options)
         rejected = sorted(key for key in other if key not in self.LIVE_OPTIONS)
         if rejected:
             reasons = {**GoogleADKAgent.RESERVED_RUN_OPTIONS}
             details = "; ".join(f"'{key}'" + (f": {reasons[key]}" if key in reasons else ": not a setting of ADK's run_live()") for key in rejected)
-            accepted = ", ".join(sorted(GoogleADKRunner.RUNNER_CONSTRUCTOR_OPTIONS | self.APP_OPTIONS | self.LIVE_OPTIONS))
+            accepted = ", ".join(sorted(GoogleADKRunner.RUNNER_CONSTRUCTOR_OPTIONS | self.LIVE_OPTIONS))
             raise ValueError(
                 f"Run option(s) cannot apply to a realtime session of agent '{agent.name}': {details}. A realtime session takes: {accepted}"
             )
-        return dict(constructor_options), dict(other), app_options
+        return dict(constructor_options), dict(other)
 
     async def _listen(self, events: AsyncGenerator[Event, None]) -> None:
-        """Report ADK's events to the pool, in order. The pool paces audio and emits chunks."""
+        """Reports ADK's events to the pool, in order."""
         try:
-            # run_live() is an async generator: closed here when listening stops (a cancel included),
-            # not left half-run for the loop's shutdown to close twice.
             async with contextlib.aclosing(events) as stream:
                 async for event in stream:
                     if await self._handle_event(event):
@@ -1128,11 +1030,14 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
                 await self._callback("error", {"message": f"ADK live run failed: {e}"})
             return
         if not self._closing:
-            # A clean end is the live run closing under us, not a turn finishing: the connection is over.
+            # A clean end of run_live() means the native session closed, not that a turn finished.
             await self._callback("error", {"message": "ADK live run ended"})
 
     async def _handle_event(self, event: Event) -> bool:
-        """Map one ADK event onto the pool's events; ``True`` ends the listening (the connection failed)."""
+        """
+        Maps one ADK event onto the pool's events.
+        :return: True when the connection failed and listening must stop.
+        """
         if event.error_code or event.error_message:
             detail = ": ".join(value for value in (event.error_code, event.error_message) if value)
             await self._callback("error", {"message": f"ADK live run failed: {detail}"})
@@ -1141,7 +1046,7 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
             await self._refuse_confirmation(event)
             return True
         if event.author == "user":
-            # ADK labels the caller's transcribed speech with the user author: partial pieces, then one finished aggregate.
+            # ADK authors the caller's transcription as "user": partial pieces, then one finished aggregate.
             transcription = event.input_transcription
             if transcription is not None and transcription.finished and (transcription.text or "").strip():
                 await self._callback("input_transcript", {"text": transcription.text.strip(), "message_id": event.id})
@@ -1151,7 +1056,6 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
 
         output = event.output_transcription
         if output is not None and output.text and not output.finished and event.partial:
-            # ADK follows the partial deltas with one aggregate marked finished; only the deltas are reported.
             await self._speaker_changed(event.author)
             await self._callback("transcript_delta", {"delta": output.text, "message_id": event.id})
 
@@ -1159,48 +1063,30 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
             blob = part.inline_data
             if blob is not None and blob.data and (blob.mime_type or "").startswith("audio/"):
                 await self._speaker_changed(event.author)
-                self._check_output_rate(blob.mime_type)
                 await self._callback("audio_delta", {"delta": base64.b64encode(blob.data).decode("utf-8"), "message_id": event.id})
             elif part.text and not part.thought and output is None:
                 await self._speaker_changed(event.author)
                 await self._callback("transcript_delta", {"delta": part.text, "message_id": event.id})
 
         if event.actions and event.actions.transfer_to_agent:
-            # The agent's turn ends with the transfer; the next agent's turn follows on its own connection.
             await self._callback("done", {"status": "transferred"})
         elif event.turn_complete:
             await self._callback("done", {"status": "completed"})
         return False
 
-    def _check_output_rate(self, mime_type: str) -> None:
-        """Fail on audio that is not at the rate the pool resamples from, instead of playing it at the wrong speed."""
-        rate = next((p.split("=", 1)[1] for p in mime_type.split(";")[1:] if p.strip().startswith("rate=")), None)
-        if rate is not None and int(rate) != self.output_sample_rate:
-            raise RuntimeError(f"ADK produced audio at {rate} Hz; the realtime adapter expects {self.output_sample_rate} Hz ({mime_type})")
-
     async def _speaker_changed(self, agent: str) -> None:
-        """Report a change of speaker once, when ADK's output names an agent other than the current one.
-
-        The first speaker of a workflow root carries the whole roster; later, an agent the roster did
-        not hold is added to it and the roster rides on that change.
-        """
+        """Reports a change of speaker once, with the roster when the agent is new to it."""
         if agent == self._speaker:
             return
         data: dict[str, Any] = {"agent": agent, "previous_agent": self._speaker}
-        if self._speaker is None or agent not in self._roster:
-            if agent not in self._roster:
-                self._roster.append(agent)
+        if agent not in self._roster:
+            self._roster.append(agent)
             data["agents"] = list(self._roster)
         self._speaker = agent
         await self._callback("agent_changed", data)
 
     async def _refuse_confirmation(self, event: Event) -> None:
-        """Fail the connection for a tool that asked for a human's confirmation.
-
-        There is no decision route on this edge and ADK's live flow refuses such a call itself, so
-        nothing is approved or resumed: the connection ends with a message naming the tool, instead
-        of the model being told "needs confirmation" with nobody able to answer.
-        """
+        """Fails the connection for a tool that needs a human's confirmation: a realtime session has no decision route."""
         names = sorted({response.name for response in event.get_function_responses() if response.name}) or ["a tool"]
         await self._callback(
             "error", {"message": f"Tool(s) {', '.join(names)} of agent '{event.author}' require confirmation, which a realtime session cannot get"}
@@ -1261,11 +1147,26 @@ class GoogleADKAgent(AKBaseAgent):
         """
         super().__init__(name, runner, realtime_runner_cls)
         self._agent = agent
-        # A Workflow only contains the speaking agents and holds no tools or instructions of its own; the agents
-        # inside it carry theirs, when the application registers them with the module.
-        if not isinstance(agent, Workflow):
+        if isinstance(agent, Workflow):
+            self._attach_workflow_system_tools(agent)
+        else:
             self._attach_system_tools()
             self._setup_system_prompt()
+
+    def _attach_workflow_system_tools(self, workflow: Workflow) -> None:
+        """
+        Attaches the system tools and prompt to each speaking agent in a ``Workflow``, by that agent's own name.
+        :param workflow: The workflow root, which holds no tools itself.
+        """
+        from ...core.tool import SystemToolFactory
+
+        for node in GoogleADKRealtimeRunner._speaking(workflow):
+            tools = SystemToolFactory.get_all(node.name)
+            if tools:
+                self._append_tools(node, GoogleADKToolBuilder.bind([tool.func for tool in tools]))
+            suffix = SystemToolFactory.get_system_prompt_suffix(node.name)
+            if suffix and node.description and suffix not in node.description:
+                node.description += "\n" + suffix
 
     @property
     def agent(self) -> BaseAgent | Workflow:

@@ -12,6 +12,8 @@ Integrate Google's Agent Development Kit with Agent Kernel.
 pip install agentkernel[adk]
 ```
 
+The `adk` extra requires `google-adk` 2.7.0 or later.
+
 ## Basic Usage
 
 ```python
@@ -209,6 +211,10 @@ Streaming pauses and resumes correctly at `google-adk` 2.8.0, verified against a
 
 See [Human in the Loop](../advanced/human-in-the-loop.md).
 
+## Realtime voice
+
+With `execution.mode: realtime`, an ADK agent runs a live Gemini conversation through ADK's own `Runner.run_live()`. The root is an `LlmAgent` with `sub_agents` (ADK's transfers) or a `Workflow`. ADK runs the tools and the transfers; Agent Kernel carries the audio. A speaking `Workflow` node must set `mode="chat"` or `mode="task"`. `Module.run_options` takes `run_config` and the `Runner` options (`plugins`, services). AK hooks and guardrails do not run on this path. See [LiveKit Voice](../integrations/livekit.md) and [Realtime Voice Internals](../architecture/realtime-internals.md).
+
 ## Features
 
 - ✅ Gemini models
@@ -217,6 +223,7 @@ See [Human in the Loop](../advanced/human-in-the-loop.md).
 - ✅ Multi-agent coordination
 - ✅ Framework-agnostic tool binding
 - ✅ Structured output (`output_schema` → `AgentReplyAny`)
+- ✅ Realtime voice (`Runner.run_live()`, transfers and `Workflow` steps)
 
 ## Example
 

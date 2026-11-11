@@ -2,7 +2,7 @@ import logging
 from typing import Any
 
 from ...core.config import AKConfig
-from ...core.model import BaseRunRequest
+from ...core.model import AgentRequestVoice, BaseRunRequest
 from ...core.multimodal.storage import AttachmentStorageManager
 from ...core.util.factory import AKConfigError
 from ...pipeline.envelope import ATTR_INTEGRATION, REPLY_CONTEXT_PREFIX
@@ -68,11 +68,9 @@ class IntegrationProducer:
         :param adapter_name: The inbound adapter's ``name``; becomes the routing attribute and
             namespaces the dedup key.
         :param request: The normalized request to send.
-        :param attributes: Extra message attributes, merged after the integration and reply attributes
-            (a realtime edge's end-of-session control rides here).
+        :param attributes: Extra message attributes, such as a realtime edge's end-of-session control.
         :return: The transport's send response.
-        :raises ValueError: If the serialized reply context exceeds the budget, or an extra attribute
-            collides with the integration or a reply attribute.
+        :raises ValueError: If the reply context exceeds the budget, or an extra attribute collides with one set here.
         """
         merged = {ATTR_INTEGRATION: adapter_name, **self._reply_attributes(adapter_name, request.reply_context)}
         for key, value in (attributes or {}).items():
@@ -95,7 +93,9 @@ class IntegrationProducer:
             group_id=request.session_id,
             dedup_id=f"{adapter_name}:{request.request_id}",
         )
-        self._log.info(f"[ENQUEUED] integration={adapter_name}, session_id={request.session_id}, request_id={request.request_id}")
+        # A voice edge enqueues a frame every ~100 ms, so those are logged at debug.
+        level = logging.DEBUG if any(isinstance(item, AgentRequestVoice) for item in request.requests) else logging.INFO
+        self._log.log(level, f"[ENQUEUED] integration={adapter_name}, session_id={request.session_id}, request_id={request.request_id}")
         return result
 
     @classmethod

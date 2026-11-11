@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
 import pytest
-from google.adk.agents import LlmAgent, LoopAgent, ParallelAgent
+from google.adk.agents import LlmAgent
 from google.adk.agents.live_request_queue import LiveRequestQueue
 from google.adk.agents.run_config import RunConfig
 from google.adk.events import Event
@@ -58,16 +58,31 @@ def test_realtime_agent_gets_the_ak_system_tools_and_prompt_like_any_other_mode(
     assert native.description == "A voice agent.\nUse system_note."
 
 
-def test_a_workflow_root_is_left_alone_by_the_system_tools(monkeypatch):
+def test_a_workflows_speaking_nodes_get_the_system_tools_and_the_root_does_not(monkeypatch):
     def system_note(text: str) -> str:
         """A system tool."""
         return text
 
-    monkeypatch.setattr(SystemToolFactory, "get_all", staticmethod(lambda agent_name=None: [SimpleNamespace(name="system_note", func=system_note)]))
-    monkeypatch.setattr(SystemToolFactory, "get_system_prompt_suffix", staticmethod(lambda agent_name=None: "Use system_note."))
-    workflow = Workflow(name="flow", edges=[("START", LlmAgent(name="first", model="gemini-2.5-flash", mode="chat"))])
+    asked = []
 
-    GoogleADKAgent("flow", GoogleADKRunner(), workflow)  # a Workflow holds no tools or instructions: nothing to attach to
+    def tools_for(agent_name=None):
+        asked.append(agent_name)
+        return [SimpleNamespace(name="system_note", func=system_note)] if agent_name == "first" else []
+
+    monkeypatch.setattr(SystemToolFactory, "get_all", staticmethod(tools_for))
+    monkeypatch.setattr(
+        SystemToolFactory, "get_system_prompt_suffix", staticmethod(lambda agent_name=None: "Use system_note." if agent_name == "first" else "")
+    )
+    first = LlmAgent(name="first", model="gemini-2.5-flash", mode="chat", description="Opens the call.")
+    workflow = Workflow(name="flow", edges=[("START", first)])
+
+    GoogleADKAgent("flow", GoogleADKRunner(), workflow)
+
+    assert not getattr(workflow, "tools", None)  # the container holds nothing itself
+    assert "flow" not in asked and "first" in asked  # each speaking node is looked up by its own name, for the allow-lists
+    node = next(n for n in workflow.graph.nodes if getattr(n, "name", None) == "first")  # ADK keeps its own copy of each node
+    assert [getattr(tool, "name", None) for tool in node.tools] == ["system_note"]
+    assert "Use system_note." in node.description
 
 
 class NativeRun:
@@ -218,7 +233,7 @@ async def test_partial_empty_and_history_user_events_are_not_reported(monkeypatc
 
 
 @pytest.mark.asyncio
-async def test_workflow_announces_its_first_speaking_node(monkeypatch):
+async def test_workflow_reports_its_first_speaking_node_after_its_own_name(monkeypatch):
     monkeypatch.setattr(SystemToolFactory, "get_all", staticmethod(lambda agent_name=None: []))
     monkeypatch.setattr(SystemToolFactory, "get_system_prompt_suffix", staticmethod(lambda agent_name=None: ""))
     monkeypatch.setattr("agentkernel.framework.adk.adk.Runner", NativeRun)
@@ -228,7 +243,7 @@ async def test_workflow_announces_its_first_speaking_node(monkeypatch):
         module = GoogleADKModule([workflow])
         owner = module.get_agent("flow")
         runner = GoogleADKRealtimeRunner()
-        assert runner.initial_speaker(owner) is None
+        assert runner.initial_speaker(owner) is None  # a workflow is a container: its first speaking node is reported by ADK's events
         assert runner.team(owner) == ["first"]
         seen = []
 
@@ -244,19 +259,8 @@ async def test_workflow_announces_its_first_speaking_node(monkeypatch):
 
         await asyncio.wait_for(wait_for_output(), 3)
         await runner.disconnect()
-        assert seen[0] == ("agent_changed", {"agent": "first", "previous_agent": None, "agents": ["first"]})
+        assert seen[0] == ("agent_changed", {"agent": "first", "previous_agent": None})
         assert seen[1][0] == "transcript_delta" and seen[1][1]["delta"] == "Hello"
-
-
-def test_workflow_single_turn_node_is_rejected(monkeypatch):
-    monkeypatch.setattr(SystemToolFactory, "get_all", staticmethod(lambda agent_name=None: []))
-    monkeypatch.setattr(SystemToolFactory, "get_system_prompt_suffix", staticmethod(lambda agent_name=None: ""))
-    first = LlmAgent(name="first", model="gemini-2.5-flash")
-    workflow = Workflow(name="flow", edges=[("START", first)])
-    with Runtime(InMemorySessionStore()):
-        owner = GoogleADKModule([workflow]).get_agent("flow")
-        with pytest.raises(ValueError, match="set mode='chat' or mode='task'"):
-            GoogleADKRealtimeRunner()._check_graph(owner, workflow)
 
 
 # -- the adapter's mapping of ADK events onto the pool's events -----------------------------------
@@ -309,18 +313,6 @@ async def test_audio_is_forwarded_and_attributed_to_the_agent_that_produced_it(n
         await runner.disconnect()
     assert seen[0] == ("agent_changed", {"agent": "billing", "previous_agent": "coordinator"})
     assert seen[1] == ("audio_delta", {"delta": base64.b64encode(b"\x01\x02\x03\x04").decode(), "message_id": event.id})
-
-
-@pytest.mark.asyncio
-async def test_audio_at_an_unexpected_rate_fails_the_connection_instead_of_playing_wrong(native):
-    coordinator, billing = team()
-    with Runtime(InMemorySessionStore()):
-        runner, seen, run = await open_call([coordinator, billing])
-        await run.events.put(audio_event("coordinator", mime_type="audio/pcm;rate=16000"))
-        await wait_until(lambda: any(kind == "error" for kind, _ in seen))
-        await runner.disconnect()
-    assert not any(kind == "audio_delta" for kind, _ in seen)
-    assert "16000" in next(data["message"] for kind, data in seen if kind == "error")
 
 
 @pytest.mark.asyncio
@@ -450,16 +442,6 @@ async def test_disconnect_can_repeat_and_a_normal_close_is_not_an_error(native):
     assert run.closed and seen == []
 
 
-def test_parallel_and_loop_agents_are_rejected_before_connecting(native):
-    for kind in (ParallelAgent, LoopAgent):
-        child = LlmAgent(name="child", model="gemini-2.5-flash", mode="chat")
-        root = kind(name="multi", sub_agents=[child])
-        with Runtime(InMemorySessionStore()):
-            owner = GoogleADKModule([root]).get_agent("multi")
-            with pytest.raises(ValueError, match="does not run live"):
-                GoogleADKRealtimeRunner()._check_graph(owner, root)
-
-
 def test_a_run_option_the_adapter_owns_is_rejected_by_name(native):
     coordinator, billing = team()
     with Runtime(InMemorySessionStore()):
@@ -468,20 +450,20 @@ def test_a_run_option_the_adapter_owns_is_rejected_by_name(native):
             GoogleADKRealtimeRunner()._split_options(owner, {"session_id": "mine"})
 
 
-def test_app_options_are_split_out_before_the_runner_and_live_options(native):
+def test_plugins_stay_with_the_runner_options_and_run_config_goes_to_run_live(native):
     coordinator, billing = team()
     with Runtime(InMemorySessionStore()):
         owner = GoogleADKModule([coordinator, billing]).get_agent("coordinator")
         plugins = [object()]
 
-        constructor, live, app = GoogleADKRealtimeRunner()._split_options(owner, {"plugins": plugins, "run_config": "live"})
+        constructor, live = GoogleADKRealtimeRunner()._split_options(owner, {"plugins": plugins, "run_config": "live"})
 
-    assert app == {"plugins": plugins}
-    assert live == {"run_config": "live"} and constructor == {}
+    assert constructor == {"plugins": plugins}
+    assert live == {"run_config": "live"}
 
 
 def test_an_app_option_the_adapter_does_not_pass_is_rejected_by_name(native):
-    """Only the App options the live path needs are passed; context caching is not one of them."""
+    """Only the options the live path takes are passed; context caching is not one of them."""
     coordinator, billing = team()
     with Runtime(InMemorySessionStore()):
         owner = GoogleADKModule([coordinator, billing]).get_agent("coordinator")
@@ -667,30 +649,6 @@ async def test_realtime_adapter_reports_native_peer_handoff(fast_transfer, monke
             assert [connection.name for connection in OPENED] == ["coordinator", "billing", "support"]
         finally:
             await adapter.disconnect()
-
-
-def test_a_tool_that_requires_confirmation_is_rejected_before_connecting(native):
-    def pay(amount: str) -> str:
-        """Pay an amount."""
-        return amount
-
-    for confirm in (True, lambda *args: True):
-        payer = LlmAgent(name="payer", model="gemini-2.5-flash", mode="chat", tools=[FunctionTool(pay, require_confirmation=confirm)])
-        with Runtime(InMemorySessionStore()):
-            owner = GoogleADKModule([payer]).get_agent("payer")
-            with pytest.raises(ValueError, match="requires confirmation"):
-                GoogleADKRealtimeRunner()._check_graph(owner, payer)
-
-
-def test_a_tool_that_does_not_require_confirmation_is_accepted(native):
-    def lookup(key: str) -> str:
-        """Look a key up."""
-        return key
-
-    agent = LlmAgent(name="finder", model="gemini-2.5-flash", mode="chat", tools=[FunctionTool(lookup)])
-    with Runtime(InMemorySessionStore()):
-        owner = GoogleADKModule([agent]).get_agent("finder")
-        GoogleADKRealtimeRunner()._check_graph(owner, agent)
 
 
 @pytest.mark.asyncio

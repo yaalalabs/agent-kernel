@@ -627,32 +627,18 @@ class OpenAIRunner(BaseRunner):
 
 class OpenAIRealtimeRunner(BaseRealtimeRunner):
     """
-    OpenAIRealtimeRunner implements RealtimeRunner on the OpenAI Agents SDK's own realtime runner.
+    OpenAIRealtimeRunner runs a live conversation on the OpenAI Agents SDK's own ``RealtimeRunner``.
 
-    One native ``RealtimeRunner`` and ``RealtimeSession`` per connection. The SDK owns the
-    conversation: the model connection, which agent is speaking, its tools and their results,
-    handoffs (``RealtimeAgent.handoffs``, ``realtime_handoff``), guardrails, and interruption. This class only
-    feeds caller audio and text to the session, and maps what the session reports onto the
-    framework-neutral events the realtime pool paces and queues: audio, transcript, turn end,
-    interruption, speaker change and failure.
-
-    The wrapped agent must be a ``RealtimeAgent``. A tool that needs approval cannot run: a
-    realtime session has no route for a human's decision, so one declared up front is rejected at connect
-    and one that arises later is rejected through the SDK and fails the connection. Agent Kernel
-    hooks and guardrails do not run on this path; the SDK's own do.
-
-    ``Module.run_options`` carries the native settings, and nothing else: ``model`` and ``config``
-    reach ``RealtimeRunner(...)`` and ``model_config`` reaches ``RealtimeRunner.run(...)``, where the
-    model name, the one session voice and the audio settings live. ``context`` is reserved: it is the
-    session's framework context.
+    The wrapped agent must be a ``RealtimeAgent``; the SDK owns its tools, handoffs and guardrails.
+    Run options: ``model`` and ``config`` reach ``RealtimeRunner(...)``, ``model_config`` reaches ``run(...)``.
+    Agent Kernel hooks and guardrails do not run on this path.
     """
 
-    # Native settings an agent's run_options may name, by the call that takes them.
     RUNNER_OPTIONS: ClassVar[frozenset[str]] = frozenset({"model", "config"})
     SESSION_OPTIONS: ClassVar[frozenset[str]] = frozenset({"model_config"})
     RESERVED_OPTIONS: ClassVar[Mapping[str, str]] = {
         "starting_agent": "the native agent is the one the OpenAIAgent wraps",
-        "context": "populated from the session's framework_context",
+        "context": "a realtime session does not carry the session's framework_context",
     }
 
     def __init__(self):
@@ -660,24 +646,13 @@ class OpenAIRealtimeRunner(BaseRealtimeRunner):
         self._session: RealtimeSession | None = None
         self._callback: Callable | None = None
         self._listen_task: asyncio.Task | None = None
-        # True once disconnect() runs; the listener suppresses its error callback then so a normal
-        # shutdown does not surface as a failure.
         self._closing = False
-        # True from a turn's start until its end: while it is set, the user starting to speak cuts
-        # off a response the model is still generating.
         self._response_in_flight = False
-        # The agent whose turn it is, and every agent announced so far.
         self._speaker: str | None = None
         self._roster: list[str] = []
 
     def team(self, agent: BaseAgent) -> list[str]:
-        """Every agent the native graph names publicly, the starting agent first.
-
-        A ``RealtimeAgent`` in ``handoffs`` is followed; a ``realtime_handoff(...)`` names its target
-        through its public ``agent_name`` and its agents beyond that are not reached, since the SDK
-        keeps the target object private. An agent that cannot be listed early is announced in the
-        change that first names it.
-        """
+        """Every agent reachable through ``handoffs``, the starting agent first."""
         root = getattr(agent, "agent", None)
         if not isinstance(root, RealtimeAgent):
             return [agent.name]
@@ -685,9 +660,9 @@ class OpenAIRealtimeRunner(BaseRealtimeRunner):
 
     @staticmethod
     def _reachable(root: RealtimeAgent) -> list[tuple[str, RealtimeAgent | None]]:
-        """Every agent ``root``'s public ``handoffs`` name, ``root`` first, nearest first.
-
-        Each is the agent's name and, when the graph holds the agent itself, the agent.
+        """
+        Every agent ``root``'s ``handoffs`` name, nearest first.
+        :return: (name, agent) pairs; the agent is None for a ``realtime_handoff``, whose target the SDK keeps private.
         """
         reached: list[tuple[str, RealtimeAgent | None]] = [(root.name, root)]
         seen = {root.name}
@@ -712,23 +687,21 @@ class OpenAIRealtimeRunner(BaseRealtimeRunner):
         self._roster = self.team(agent)
         runner_options, session_options = await self._options(agent, session)
         self._check_agents(root)
-        context = self._load_framework_context(session)
 
         try:
             native = RealtimeRunner(root, **runner_options)
-            self._session = await native.run(context=context, **session_options)
+            self._session = await native.run(**session_options)
             await self._session.enter()
         except (Exception, asyncio.CancelledError):
-            # Close what is open here: a failed connect must not leave a native session behind, whatever the caller does.
             await self.disconnect()
             raise
 
         self._listen_task = asyncio.create_task(self._listen())
 
     async def _options(self, agent: BaseAgent, session: Session) -> tuple[dict[str, Any], dict[str, Any]]:
-        """The agent's run options, resolved once for this connection and split by the native call that takes them.
-
-        :raises ValueError: Naming the agent and every key the realtime session cannot take.
+        """
+        Resolves the agent's run options and splits them between ``RealtimeRunner(...)`` and ``run(...)``.
+        :raises ValueError: Naming every key a realtime session cannot take.
         """
         options = await agent.resolve_run_options(session, [])
         rejected = {key: self.RESERVED_OPTIONS.get(key, "not a setting of the SDK's realtime runner") for key in options}
@@ -745,9 +718,9 @@ class OpenAIRealtimeRunner(BaseRealtimeRunner):
         )
 
     def _check_agents(self, root: RealtimeAgent) -> None:
-        """Reject, before anything opens, what the realtime path cannot run, naming the agent and the tool.
-
-        A tool that needs approval has no decision route on this edge.
+        """
+        Rejects tools that need approval before anything opens: a realtime session has no decision route.
+        :raises ValueError: Naming the agent and the tool.
         """
         for name, native in self._reachable(root):
             if native is None:
@@ -760,10 +733,8 @@ class OpenAIRealtimeRunner(BaseRealtimeRunner):
                     )
 
     async def _listen(self) -> None:
-        """Report the session's events to the pool, in order. The pool paces audio and emits chunks."""
+        """Reports the session's events to the pool, in order."""
         try:
-            # The session's event stream is an async generator: closed here when listening stops (a
-            # cancel included), not left half-run for the loop's shutdown to close twice.
             async with contextlib.aclosing(aiter(self._session)) as events:
                 async for event in events:
                     await self._handle_event(event)
@@ -775,11 +746,11 @@ class OpenAIRealtimeRunner(BaseRealtimeRunner):
                 await self._callback("error", {"message": f"OpenAI realtime session error: {e}"})
             return
         if not self._closing:
-            # A clean end is the session closing under us, not a turn finishing: the connection is over.
+            # A clean end of the event stream means the native session closed, not that a turn finished.
             await self._callback("error", {"message": "OpenAI realtime session ended"})
 
     async def _handle_event(self, event: Any) -> None:
-        """Map one SDK session event onto the pool's events."""
+        """Maps one SDK session event onto the pool's events."""
         kind = event.type
         if kind == "audio":
             await self._callback("audio_delta", {"delta": base64.b64encode(event.audio.data).decode("utf-8"), "message_id": event.item_id})
@@ -797,8 +768,7 @@ class OpenAIRealtimeRunner(BaseRealtimeRunner):
         elif kind == "tool_approval_required":
             await self._refuse_approval(event)
         elif kind == "error":
-            # A server error event the session survives (a cancel racing a finished response, a tool
-            # the model named that does not exist); a session that cannot continue raises instead.
+            # An error the session survives; one it cannot survive raises in _listen instead.
             _log.warning(f"OpenAI realtime error: {event.error}")
 
     async def _handle_model_event(self, data: Any) -> None:
@@ -816,12 +786,7 @@ class OpenAIRealtimeRunner(BaseRealtimeRunner):
             await self._callback("done", {"status": "completed"})
 
     async def _speaker_changed(self, agent: str, previous: str | None = None) -> None:
-        """Report a change of speaker once, when the native session names an agent other than the current one.
-
-        The SDK reports a handoff, then the new agent's turn start: the second names the agent already
-        announced and is not repeated. An agent the roster did not hold is added to it, and the roster
-        rides on this change.
-        """
+        """Reports a change of speaker once (the SDK names it on both handoff and agent_start), with the roster when the agent is new."""
         if agent == self._speaker:
             return
         data: dict[str, Any] = {"agent": agent, "previous_agent": previous or self._speaker}
@@ -832,12 +797,7 @@ class OpenAIRealtimeRunner(BaseRealtimeRunner):
         await self._callback("agent_changed", data)
 
     async def _interrupted(self) -> None:
-        """Report that unheard output must stop: a barge-in while the model responds, or the user speaking over audio the pool still holds.
-
-        The SDK reports both as one event, and the pool tells them apart: an ``interrupt`` always
-        cuts the turn, while ``speech_started`` only does while audio is still queued. Told apart here
-        by whether a response is in flight, which a further interruption of the same response then is not.
-        """
+        """Reports ``interrupt`` while a response is in flight, else ``speech_started``: the SDK sends one event for both."""
         if self._response_in_flight:
             self._response_in_flight = False
             await self._callback("interrupt", {})
@@ -845,12 +805,7 @@ class OpenAIRealtimeRunner(BaseRealtimeRunner):
             await self._callback("speech_started", {})
 
     async def _refuse_approval(self, event: Any) -> None:
-        """Refuse a tool call that needs a human's decision, and fail the connection.
-
-        There is no decision route on this edge, so the call is never approved: the SDK is told it
-        was rejected (the model is not left waiting) and the connection ends with a message naming
-        the tool, instead of the call silently doing nothing.
-        """
+        """Rejects a tool call that needs approval, so the model is not left waiting, and fails the connection."""
         name = getattr(event.tool, "name", "?")
         try:
             await self._session.reject_tool_call(event.call_id)

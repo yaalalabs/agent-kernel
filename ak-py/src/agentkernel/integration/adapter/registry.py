@@ -4,13 +4,7 @@ from .base import StatefulEdgeAdapter
 
 
 class StatefulEdgeRegistry:
-    """A runtime registry for active, stateful edge connections (spec #524).
-
-    Unlike the IntegrationAdapterFactory which constructs stateless webhook adapters on demand,
-    stateful edges (like LiveKit or Twilio) are constructed and managed by a GatewayRunner.
-    The runner registers the live connection here so that the Response Handler can route
-    replies back to the same long-lived connection.
-    """
+    """Live stateful edges by session id, so the Response Handler routes replies back to the same connection (spec #524)."""
 
     _cache: dict[str, StatefulEdgeAdapter] = {}
     _lock = threading.Lock()
@@ -22,21 +16,16 @@ class StatefulEdgeRegistry:
         :param adapter: The adapter instance.
         :param session_id: Optional session id to register a unique stateful connection.
         """
-        # We index by session_id if provided; otherwise fallback to the integration name.
-        # In a real deployed environment, session_id is always present for stateful connections.
         key = session_id if session_id else adapter.name
         with cls._lock:
             cls._cache[key] = adapter
 
     @classmethod
     def unregister(cls, session_id: str, adapter: StatefulEdgeAdapter | None = None) -> None:
-        """Remove a live stateful edge adapter instance from the cache.
-
-        Called when a stateful connection disconnects, preventing memory leaks.
+        """Remove a live stateful edge adapter instance.
 
         :param session_id: The session id the edge was registered under.
-        :param adapter: When given, the entry is removed only if it is this adapter, so a stopped edge
-            cannot remove a newer one registered under the same id.
+        :param adapter: When given, removed only if it is still this adapter, so a stopped edge cannot remove a newer one.
         """
         with cls._lock:
             current = cls._cache.get(session_id)
