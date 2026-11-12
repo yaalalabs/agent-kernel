@@ -47,17 +47,6 @@ The module is provider-agnostic — it does not configure the `azurerm` provider
 provider "azurerm" {
   features {}
   resource_provider_registrations = "none"
-  # azurerm 5.x registers nothing by default; already-registered providers are skipped
-  resource_providers_to_register = [
-    "Microsoft.ApiManagement",
-    "Microsoft.App",
-    "Microsoft.Cache",
-    "Microsoft.ContainerRegistry",
-    "Microsoft.DocumentDB",
-    "Microsoft.Insights",
-    "Microsoft.Network",
-    "Microsoft.OperationalInsights",
-  ]
 }
 
 module "container_app" {

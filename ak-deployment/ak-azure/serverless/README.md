@@ -59,21 +59,10 @@ three-segment `product-env-module` form the other cloud modules can afford.
 
 This module is provider-agnostic: it declares `azurerm` in `required_providers` but does **not** configure it internally. Configure the provider in your root module and pass it explicitly via the `providers` argument. This is what lets you use `count`, `for_each`, or `depends_on` on the module block, and lets a minimal/standalone config destroy the resources it created.
 
-azurerm 5.x no longer registers Azure resource providers by default, so register the ones this module needs explicitly. Registration is skipped for providers your subscription already has, so it needs no extra permissions in that case.
-
 ```hcl
 provider "azurerm" {
   features {}
   resource_provider_registrations = "none"
-  resource_providers_to_register = [
-    "Microsoft.ApiManagement",
-    "Microsoft.Cache",
-    "Microsoft.DocumentDB",
-    "Microsoft.Insights",
-    "Microsoft.Network",
-    "Microsoft.Storage",
-    "Microsoft.Web",
-  ]
 }
 
 module "python_api" {

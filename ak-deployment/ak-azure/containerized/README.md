@@ -43,22 +43,10 @@ This module is provider-agnostic: it declares `azurerm` in `required_providers` 
 
 The container image is built and pushed to its own Azure Container Registry entirely internally (the nested ACR submodule configures its own `docker` provider against the registry it creates), so no `docker` provider needs to be configured or passed in by the caller.
 
-azurerm 5.x no longer registers Azure resource providers by default, so register the ones this module needs explicitly. Registration is skipped for providers your subscription already has, so it needs no extra permissions in that case.
-
 ```hcl
 provider "azurerm" {
   features {}
   resource_provider_registrations = "none"
-  resource_providers_to_register = [
-    "Microsoft.ApiManagement",
-    "Microsoft.App",
-    "Microsoft.Cache",
-    "Microsoft.ContainerRegistry",
-    "Microsoft.DocumentDB",
-    "Microsoft.Insights",
-    "Microsoft.Network",
-    "Microsoft.OperationalInsights",
-  ]
 }
 
 module "container_app" {

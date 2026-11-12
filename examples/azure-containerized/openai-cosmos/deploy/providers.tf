@@ -3,16 +3,6 @@ provider "azurerm" {
     persist_id_on_create_before_polling_for_completion = true
   }
   resource_provider_registrations = "none"
-  resource_providers_to_register = [
-    "Microsoft.ApiManagement",
-    "Microsoft.App",
-    "Microsoft.Cache",
-    "Microsoft.ContainerRegistry",
-    "Microsoft.DocumentDB",
-    "Microsoft.Insights",
-    "Microsoft.Network",
-    "Microsoft.OperationalInsights",
-  ]
 }
 
 terraform {
