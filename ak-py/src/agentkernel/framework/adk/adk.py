@@ -1046,6 +1046,10 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
             await self._refuse_confirmation(event)
             return True
         if event.author == "user":
+            # ADK authors the caller's transcription as "user": partial pieces, then one finished aggregate.
+            transcription = event.input_transcription
+            if transcription is not None and transcription.finished and (transcription.text or "").strip():
+                await self._callback("input_transcript", {"text": transcription.text.strip(), "message_id": event.id})
             return False
         if event.interrupted:
             await self._callback("interrupt", {})

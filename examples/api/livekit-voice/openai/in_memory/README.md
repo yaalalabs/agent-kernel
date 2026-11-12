@@ -25,4 +25,4 @@ Because this is an in-memory setup, you only need one terminal window!
 python server.py
 ```
 
-That's it! Connect to `room_01` in your LiveKit Sandbox dashboard and speak. The `IOHandler` will automatically spin up the `AgentRunner` in the background to seamlessly process the audio chunks.
+That's it! Point LiveKit's webhook at the server (see the parent README), then join a room, for example `call_01`, in your LiveKit Sandbox dashboard and speak. Each room is its own call. The `IOHandler` will automatically spin up the `AgentRunner` in the background to seamlessly process the audio chunks.

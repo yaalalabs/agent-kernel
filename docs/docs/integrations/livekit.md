@@ -1,12 +1,12 @@
 # LiveKit Voice Integration
 
-LiveKit is a realtime voice integration for OpenAI Agents SDK and Google ADK agents. The `LiveKitEdgeGateway` joins a LiveKit room, sends the user's audio and chat text to the agent, and plays the model's streamed audio and transcript back to the room through Agent Kernel's realtime execution pipeline.
+LiveKit is a realtime voice integration for OpenAI Agents SDK and Google ADK agents. The `LiveKitEdgeAdapter` joins a LiveKit room, sends the user's audio and chat text to the agent, and plays the model's streamed audio and transcript back to the room through Agent Kernel's realtime execution pipeline.
 
 ## Overview
 
 The gateway runs in `realtime` execution mode. It works on every queue transport:
 
-- **`in_memory` (single process)**: the gateway, the Agent Runner and the Response Handler run in one process. This is the simplest setup and the recommended first run.
+- **`in_memory` (single process)**: the gateways, the Agent Runner and the Response Handler run in one process. This is the simplest setup and the recommended first run.
 - **A broker (`kafka`, `nats`, `sqs`)**: the gateway (IOHandler process) and the Agent Runner run as two processes that share the queues.
 
 Only OpenAI Agents SDK and Google ADK agents can run in realtime mode. They are the only adapters with a realtime runner (`OpenAIRealtimeRunner`, `GoogleADKRealtimeRunner`). Use a native `RealtimeAgent` for OpenAI, or a live ADK `LlmAgent` for Gemini.
@@ -14,7 +14,7 @@ Only OpenAI Agents SDK and Google ADK agents can run in realtime mode. They are 
 ## How It Works
 
 1. A user joins the LiveKit room and starts speaking.
-2. The `LiveKitEdgeGateway` batches the microphone audio (see `input_batch_ms`) and puts it on the input queue. Chat text from the room's data channel goes the same way.
+2. The `LiveKitEdgeAdapter` batches the microphone audio (see `input_batch_ms`) and puts it on the input queue. Chat text from the room's data channel goes the same way.
 3. The Agent Runner hands each chunk to the `RealtimeConnectionPool`, which keeps one native SDK live session per AK session.
 4. The model's audio and transcript are paced at playback speed and put on the output queue.
 5. The Response Handler passes each chunk to the gateway, which plays the audio into the room and publishes the transcript as a chat message when the turn ends.
@@ -25,6 +25,7 @@ For the architecture behind these steps, including multi-agent handoffs, see [Re
 
 - **Realtime voice**: two-way streaming audio between the room and the model.
 - **Barge-in**: when the user talks over the model, the model's response is cancelled and the gateway clears the audio it has buffered.
+- **Caller transcript**: each finished line of the caller reaches the gateway as an `InputTranscript` event. The gateway does not show it; a `LiveKitEdgeAdapter` subclass can, in `deliver_chunk`.
 - **Tools**: the tools declared on the native agent run through the OpenAI Agents SDK or Google ADK, with the Agent Kernel context and system tools available as in other modes.
 - **Multi-agent handoffs**: a supervisor hands the call to a specialist and back with the framework's own handoffs, and every agent appears in the room as its own participant. See [Multi-agent handoffs](#multi-agent-handoffs).
 
@@ -46,9 +47,7 @@ export AK_LIVEKIT__API_SECRET="your_api_secret"
 
 ## Implementation
 
-The gateway is hosted with `GatewayRunner` and passed to `IOHandler.run(gateways=...)`. One gateway serves one room, and its `session_id` is the room name.
-
-### Single process (`in_memory`)
+Like every Agent Kernel integration, each conversation gets its own session. For LiveKit, a conversation is a room: Agent Kernel starts a gateway for each room from LiveKit's own room webhooks, as it hosts a Slack webhook, and the room name is the AK session id. It runs in `realtime` mode on every queue transport.
 
 ```yaml
 # config.yaml
@@ -56,12 +55,20 @@ execution:
   mode: realtime
 ```
 
+### Hosting the gateways
+
+Mount `EdgeLifecycleRESTRequestHandler` with `LiveKitLifecycleAdapter`. It is the same shape as a messaging integration: `LiveKitLifecycleAdapter` only translates LiveKit's own signed room webhooks, and `EdgeLifecycleRESTRequestHandler` hosts it, as `WebhookRESTRequestHandler` hosts the Slack adapter. Agent Kernel hosts the gateways; you choose which rooms get one.
+
+- `room_started` starts a gateway for the room. The room name is the session id.
+- When the last caller leaves, that gateway ends the session at once and leaves the room.
+- `room_finished` stops the room's gateway if it is still running.
+
 ```python
 from agents.realtime import RealtimeAgent
 
 from agentkernel.framework.openai import OpenAIModule
-from agentkernel.integration.adapter import GatewayRunner
-from agentkernel.integration.livekit import LiveKitEdgeGateway
+from agentkernel.integration.adapter import EdgeLifecycleRESTRequestHandler
+from agentkernel.integration.livekit import LiveKitLifecycleAdapter
 from agentkernel.pipeline import IOHandler
 
 agent = RealtimeAgent(
@@ -70,22 +77,29 @@ agent = RealtimeAgent(
 )
 OpenAIModule([agent]).run_options(agent, model_config={"initial_model_settings": {"model_name": "gpt-realtime", "voice": "alloy"}})
 
+
+class CallRooms(LiveKitLifecycleAdapter):
+    def should_start(self, session_id: str) -> bool:
+        return session_id.startswith("call_")
+
+
 if __name__ == "__main__":
-    IOHandler.run(gateways=[GatewayRunner(LiveKitEdgeGateway(session_id="room_01"))])
+    IOHandler.run(handlers=[EdgeLifecycleRESTRequestHandler(CallRooms())])
 ```
+
+In LiveKit Cloud, add a webhook (**Settings → Webhooks**) that calls `https://<your-host>/livekit/webhook`. On a laptop, expose the port with a tunnel (for example ngrok) first. LiveKit signs the webhook with your API key; `LiveKitLifecycleAdapter` checks the signature with `AK_LIVEKIT__API_KEY` and `AK_LIVEKIT__API_SECRET` (or the keys you pass it) and answers 401 to anything else. There is no new configuration. Override `should_start(session_id)` to choose the rooms (every room by default), and `create_edge(session_id)` to build the gateway yourself. Webhook retries are safe: a room that already has a gateway is left alone. When the process shuts down, it starts no new gateway and the live calls are closed with it.
 
 ### Two processes (broker transport)
 
-With `execution.queues.type` set to `kafka`, `nats` or `sqs`, start the same module in two roles:
-the IOHandler with the gateway, and the Agent Runner.
+With `execution.queues.type` set to `kafka`, `nats` or `sqs`, start the same module in two roles: the IOHandler, which serves the webhook and hosts the gateways, and the Agent Runner.
 
 ```python
-from agentkernel.integration.adapter import GatewayRunner
-from agentkernel.integration.livekit import LiveKitEdgeGateway
+from agentkernel.integration.adapter import EdgeLifecycleRESTRequestHandler
+from agentkernel.integration.livekit import LiveKitLifecycleAdapter
 from agentkernel.pipeline import AgentRunner, IOHandler
 
-# Process 1: the gateway and the Response Handler
-IOHandler.run(gateways=[GatewayRunner(LiveKitEdgeGateway(session_id="room_01"))])
+# Process 1: the gateways and the Response Handler
+IOHandler.run(handlers=[EdgeLifecycleRESTRequestHandler(LiveKitLifecycleAdapter())])
 
 # Process 2: the Agent Runner, which holds native live sessions
 AgentRunner.run()
@@ -126,6 +140,18 @@ latency at the start of each response.
 
 Declare realtime tools on the native `RealtimeAgent` or ADK `LlmAgent`. The SDK calls them and returns their results. Inside a tool, `ToolContext.get()`, `Session.current()` and `Agent.current()` work as they do in other execution modes: the pool sets them once when the call opens, and the SDK's own tasks inherit them. The session lock is not held while a tool runs, because a call is one long-lived session. Agent Kernel system tools (multimodal, sandbox, schedule, knowledge base) and their prompt guidance are attached as in other modes. An ADK `Workflow` root holds no tools of its own, so they attach to its speaking agents, each looked up by its own name for the `agents` allow-lists. A realtime session does not carry the AK session's `framework_context`: the native session lives for the whole call, and the AK session is not written back when it ends.
 
+## The opening prompt
+
+When a caller joins the room, whether or not their microphone is published yet, the gateway asks the conversation to say a short hello. A caller who was already in the room when the gateway joined is greeted too. Override `opening_prompt(participant_identity)` to open with words of your own, or return `None` to send nothing. It is called once for every caller that joins, a rejoin after a page reload included, so keep track of whether you already opened.
+
+```python
+class SupportGateway(LiveKitEdgeAdapter):
+    def opening_prompt(self, participant_identity: str) -> str | None:
+        return f"Greet {participant_identity} by name and ask how you can help today."
+```
+
+When a gateway stops or loses its room it sends an end-of-session control, so the native session closes at once.
+
 ## Multi-agent handoffs
 
 One call can move between several agents. Declare native live agents and register the entry agent:
@@ -137,8 +163,8 @@ One call can move between several agents. Declare native live agents and registe
 from agents.realtime import RealtimeAgent
 
 from agentkernel.framework.openai import OpenAIModule
-from agentkernel.integration.adapter import GatewayRunner
-from agentkernel.integration.livekit import LiveKitEdgeGateway
+from agentkernel.integration.adapter import EdgeLifecycleRESTRequestHandler
+from agentkernel.integration.livekit import LiveKitLifecycleAdapter
 from agentkernel.pipeline import IOHandler
 
 supervisor = RealtimeAgent(name="supervisor", instructions="Route the caller to billing or tech support.")
@@ -149,10 +175,10 @@ supervisor.handoffs = [billing, tech_support]
 OpenAIModule([supervisor]).run_options(supervisor, model_config={"initial_model_settings": {"model_name": "gpt-realtime", "voice": "alloy"}})
 
 if __name__ == "__main__":
-    IOHandler.run(gateways=[GatewayRunner(LiveKitEdgeGateway(session_id="room_01", agent_name="supervisor"))])
+    IOHandler.run(handlers=[EdgeLifecycleRESTRequestHandler(LiveKitLifecycleAdapter())])
 ```
 
-The conversation, and the context the caller has given, carries over to the agent that takes the call.
+With `livekit.agent: supervisor` in `config.yaml`, the supervisor answers every call (the same field Slack has as `slack.agent`). The conversation, and the context the caller has given, carries over to the agent that takes the call.
 
 ### What the caller sees in the room
 
@@ -179,14 +205,15 @@ For how handoffs flow through the pipeline, see [Realtime Voice Internals](../ar
 
 ## Example Projects
 
-Complete working examples (with In-Memory, Kafka, NATS, and AWS SQS architectures) are available in the **examples/api/livekit-voice** directory. The `openai/handoffs` variant shows multi-agent handoffs with an internet support line (supervisor, billing and tech support). The `google/handoffs` variant shows two agents passing the turn back and forth with ADK transfers (a planner and a budget controller) before reporting to the caller. The `google/workflow` variant shows a fixed order of steps (intake, scheduler, confirmer) written as an ADK `Workflow`.
+Complete working examples (with In-Memory, Kafka, NATS, and AWS SQS architectures) are available in the **examples/api/livekit-voice** directory. The `openai/handoffs` variant shows multi-agent handoffs with an internet support line (supervisor, billing and tech support). The `google/handoffs` variant shows two agents passing the turn back and forth with ADK transfers (a planner and a budget controller) before reporting to the caller. The `google/workflow` variant shows a fixed order of steps (intake, scheduler, confirmer) written as an ADK `Workflow`. Every variant hosts the gateways with `EdgeLifecycleRESTRequestHandler` and `LiveKitLifecycleAdapter`, one room per call.
 
 ## Limitations
 
 - **AK hooks and guardrails** do not automatically run on native realtime turns. Use native SDK live features where supported.
 - **Human approval** has no decision path in this LiveKit edge. Approval-requiring OpenAI tools and ADK confirmation requests fail the connection clearly.
 - **No session lock around tools.** The SDK runs the tools; AK sets the tool context when the call opens but does not hold the session lock while a tool runs.
-- **One room per gateway**: each `LiveKitEdgeGateway` joins one room, and the room uses one AK session. Many gateways can run in one process, one per room.
+- **One room per gateway**: each `LiveKitEdgeAdapter` joins one room, and the room uses one AK session. Everyone in the room shares that conversation: the model hears one audio stream and cannot tell speakers apart. Give each caller their own room for a private call.
+- **A webhook is required**: LiveKit must reach the IOHandler process. On a laptop, expose it with a tunnel, as for Slack.
 - **Connection lifetime**: a failed or expired native session is closed. A later input can start a fresh session; AK does not replay the old transcript.
 - **One LiveKit connection per agent**: with handoffs, every listed agent is a participant, and LiveKit bills connection minutes for each.
 - **Single replicas**: one Agent Runner replica and one IOHandler process, as described above.

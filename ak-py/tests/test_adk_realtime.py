@@ -178,6 +178,60 @@ async def test_a_live_tool_resolves_its_session_through_tool_context(monkeypatch
             AKToolContext.fetch(ak_tool_context.id)
 
 
+async def _run_user_events(monkeypatch, events):
+    """Connect a runner over a scripted native run, feed it ``events`` and return what it reported."""
+    monkeypatch.setattr(SystemToolFactory, "get_all", staticmethod(lambda agent_name=None: []))
+    monkeypatch.setattr(SystemToolFactory, "get_system_prompt_suffix", staticmethod(lambda agent_name=None: ""))
+    monkeypatch.setattr("agentkernel.framework.adk.adk.Runner", NativeRun)
+    coordinator, billing = team()
+    with Runtime(InMemorySessionStore()):
+        module = GoogleADKModule([coordinator, billing])
+        runner = GoogleADKRealtimeRunner()
+        seen = []
+
+        async def collect(kind, data):
+            seen.append((kind, data))
+
+        await runner.connect(Session("call-t"), module.get_agent("coordinator"), collect)
+        for event in events:
+            await NativeRun.latest.events.put(event)
+        # A marker turn after them: once it is reported, every earlier event has been handled.
+        await NativeRun.latest.events.put(
+            Event(author="coordinator", invocation_id="i", content=types.Content(parts=[types.Part(text="x")]), turn_complete=True)
+        )
+        for _ in range(300):
+            if any(kind == "done" for kind, _ in seen):
+                break
+            await asyncio.sleep(0.01)
+        await runner.disconnect()
+        return seen
+
+
+def _heard(text, finished, partial=False, event_id="u-1"):
+    return Event(
+        id=event_id,
+        author="user",
+        invocation_id="i",
+        partial=partial,
+        input_transcription=types.Transcription(text=text, finished=finished),
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_finished_caller_transcription_is_reported_once(monkeypatch):
+    seen = await _run_user_events(monkeypatch, [_heard("we ", False, partial=True), _heard("we have 2000 patients ", True)])
+
+    assert [data for kind, data in seen if kind == "input_transcript"] == [{"text": "we have 2000 patients", "message_id": "u-1"}]
+
+
+@pytest.mark.asyncio
+async def test_partial_empty_and_history_user_events_are_not_reported(monkeypatch):
+    replayed = Event(author="user", invocation_id="i", content=types.Content(parts=[types.Part(text="earlier words")]))
+    seen = await _run_user_events(monkeypatch, [_heard("par", False, partial=True), _heard("   ", True), replayed])
+
+    assert [kind for kind, _ in seen if kind == "input_transcript"] == []
+
+
 @pytest.mark.asyncio
 async def test_workflow_reports_its_first_speaking_node_after_its_own_name(monkeypatch):
     monkeypatch.setattr(SystemToolFactory, "get_all", staticmethod(lambda agent_name=None: []))
