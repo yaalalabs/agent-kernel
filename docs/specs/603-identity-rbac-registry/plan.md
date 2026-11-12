@@ -323,6 +323,9 @@ iteration 18 and `credentials` lands in iteration 25, both additive).
      `_execute_tool_and_reply` publishes it through `Runtime._publish` around `execute_tool` and
      unpublishes in a `finally` (the tool check comes in 23) (spec 8.4). The `user_id` parameter
      stays: it is the WebSocket routing marker the output is stamped with, not an identity.
+     Amended at the develop merge of #845 (2026-11-12): the native session runs the tools, so
+     `dispatch` calls `RealtimeConnection.publish_principal`, which publishes on the session ahead
+     of the input and `close()` unpublishes (spec 8.4).
 - **Verify:** new `tests/test_principal_messaging.py`; changed `test_integration_producer`, the
   per-platform adapter suites (namespace), `test_integration_adapter_contract`, the realtime
   pool tests, `test_livekit_gateway`.
@@ -696,8 +699,9 @@ mechanism. Every suite asserts the native call keyword-for-keyword unchanged wit
      `ungated_tool_names` over unmarked `tools_by_name` entries (spec 9).
   2. smolagents: `forward` wrapped at wrap time with `__ak_gated__`; `ungated_tool_names` over
      unmarked tools (spec 9, design refinement 4).
-  3. `_execute_tool_and_reply` checks `ToolFilter.allows(name)` before `adapter.execute_tool`
-     (spec 8.4, 9).
+  3. The realtime tool check: `_execute_tool_and_reply` is gone since #845 (the native session runs
+     its own tools), so `ToolFilter.allows(name)` is checked inside each framework's native
+     realtime session, the OpenAI and ADK realtime runners' own tool seams (spec 8.4, 9).
 - **Verify:** `test_tool_gates_langgraph.py`, `test_tool_gates_smolagents.py`, the realtime
   gate cases; the Q12 refusal cases in `test_access_gate`; `test_cross_surface_parity`
   unchanged.

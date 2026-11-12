@@ -910,7 +910,15 @@ candidate walk; `StaticAuthorizer` subclasses it, and every later engine must.
   `Runtime._publish(agent, session, principal)` / `session._unpublish_run()`, so the tool sees
   the participant with the agent as actor and the session's owner is recorded as on a turn; the
   tool filter (`gate.tool_filter(principal, agent)`, `ToolFilter.allows(name)` returning the
-  reason string as the tool result when denied) joins the same wrap in iteration 23. Amended in
+  reason string as the tool result when denied) joins the same wrap in iteration 23. Amended at
+  the develop merge of #845 (native realtime agents, spec #810, 2026-11-12): the pool no longer
+  runs tools, the framework's native session does, so `_execute_tool_and_reply` is gone.
+  `dispatch` calls `RealtimeConnection.publish_principal(body.principal)`, which publishes the
+  input's principal on the session through `Runtime._publish` on the connection's loop, ahead of
+  that input's audio or text (only a changed principal is republished, since every audio chunk
+  is an input); a native tool reads it through `ToolContext.principal` or
+  `session.get_principal()`, and `close()` unpublishes it. Iteration 23 therefore gates realtime
+  tools inside each framework's native session rather than in the pool. Amended in
   iteration 9: the `user_id` parameter stays. It is the `ATTR_USER_ID` WebSocket routing marker
   the output is stamped with (`_emit`, `258-259`), not an identity, so replacing it would break
   the WebSocket edge's delivery; the principal rides beside it, and the callers
@@ -1174,7 +1182,7 @@ Shared pieces (`core/`):
 | smolagents (1.26.0) | `list(agent.agent.tools)` (a dict since `_setup_tools`, `smolagents/agents.py:389-393`) | none | at wrap time, for every value in `agent.agent.tools`: `tool.forward = ak_wrap(tool.forward)` (`Tool.__call__` calls `self.forward`, `smolagents/tools.py:231-249`; the AK wrapper marks itself with `__ak_gated__ = True`); the wrapper returns the reason string when denied | every `agent.agent.tools` value whose `forward` lacks `__ak_gated__` at validation time (a tool added after wrap) |
 | MAF (1.20.0) | names over `agent.agent.default_options.get("tools", [])` (786-798) | none | per run: `kwargs = self._native_kwargs(options, session=..., middleware=[AKToolGateMiddleware(), *options.get("middleware", [])])` (`agent_framework/_agents.py:2014-2026`); `process(context, call_next)` sets `context.result = reason` and returns without `call_next()` for a denied `context.function.name` (`_middleware.py:910-997`) | `[]` (hosted and provider-executed tools are documented) |
 | Claude Agent SDK (`framework/claude/claude.py`) | `[t.name for t in agent.agent.tools]` (the `get_a2a_card` source, 1061): the tools the in-process `ak` MCP server serves as `mcp__ak__<name>` | per run, in `_native_options` (454-515): a denied tool is left out of the `allowed_tools` list the runner builds (509) and added to `disallowed_tools`, so the SDK never offers it | the `PreToolUse` matcher the HITL gate installs (512) returns `{"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": reason}` for a denied `mcp__ak__` tool, ahead of the approval branch (`_decision_hook`, 407-451) | `[]` (Claude Code's built-in tools and other `mcp_servers` are neither listed nor gated; documented) |
-| Realtime (`core/realtime/runner.py:124`, both OpenAI and ADK realtime runners) | the agent's `get_tool_names` | none (declared at connect) | `RealtimeConnection._execute_tool_and_reply` (8.4) before `adapter.execute_tool` | n/a |
+| Realtime (`core/realtime/runner.py:124`, both OpenAI and ADK realtime runners) | the agent's `get_tool_names` | none (declared at connect) | inside each framework's native session, which runs its own tools since #845 (8.4); the pool's `_execute_tool_and_reply` no longer exists | n/a |
 
 - Composition rule everywhere: AK's check runs first; a user-set hook, callback, middleware,
   capability or `is_enabled` value is preserved and runs after (OpenAI `is_enabled` is an AND of
@@ -1473,8 +1481,10 @@ New files under `ak-py/tests/`:
   messaging and realtime exemption; `PausedRunState` writes through the reserved path.
 - `test_runtime_principal.py`: `Runtime.run`/`stream` publishing and unpublishing; the gate order
   (refused before pre-hooks, nothing stored); the actor chain; the resume subject check as the
-  eighth failure mode with the record kept; realtime tool execution publishing through
-  `_execute_tool_and_reply`.
+  eighth failure mode with the record kept. Realtime publication is pinned in
+  `test_realtime_pool.py` (`TestRealtimePrincipal`, `TestDispatchPrincipal`): a native tool reads
+  the input's principal with the agent as actor, an anonymous input publishes the anonymous
+  principal, only a change republishes, and closing unpublishes.
 - `test_tool_gates_<adapter>.py` for `openai`, `pydanticai`, `adk`, `crewai`, `langgraph`,
   `smolagents`, `maf`, `claude` and `realtime`: with a filter published, a denied tool is hidden
   where the framework allows (OpenAI `get_all_tools`, Pydantic AI `prepare_tools`, Claude
