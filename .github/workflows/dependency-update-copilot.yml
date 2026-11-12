@@ -144,7 +144,6 @@ jobs:
           dep cap
           dep secure
           dep update
-          dep bounds
           for _ in 1 2; do
             count=$(dep failures) # an assignment, so set -e stops here when `failures` fails
             [ "$count" -eq 0 ] && break

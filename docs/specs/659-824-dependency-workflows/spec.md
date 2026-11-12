@@ -8,7 +8,10 @@
 agent/, examples/k8s/openai-queue-mode/, examples/sandbox/broker-nats/   # uv.lock now tracked
 ```
 
-The shared workflows (`test-reusable.yaml`, `chart-test.yaml`, `code-quality.yml`) are unchanged.
+The shared workflows (`test-reusable.yaml`, `chart-test.yaml`) are unchanged. `code-quality.yml` also runs the
+script's unit tests (`.github/scripts/tests`): it runs only on `pull_request` with a read-only token, while
+`test-reusable.yaml` also runs from privileged triggers on a `checkout_ref`, where CodeQL flags any step that runs
+the checked-out code (`actions/cache-poisoning/poisonable-step`).
 
 ## Triggers, permissions, secrets
 
@@ -43,8 +46,8 @@ The shared workflows (`test-reusable.yaml`, `chart-test.yaml`, `code-quality.yml
 | `alerts` | Reads all open Dependabot alerts. On failure: a warning and `alerts-error.json`; the run continues |
 | `cap` | Adds the next-line limit to each direct dependency without one; records the rest with a reason |
 | `secure` | Raises each alerted direct dependency to its patched version |
-| `update` | Per manifest: `LockGuard` (`uv lock --upgrade` on each version line), then `uv sync` |
-| `bounds` | Every lock that carries a package built in this repo keeps that package's direct dependencies inside the bounds its `pyproject.toml` declares (dependencies and extras; dependency groups ship in no wheel). A drifted lock is re-locked with `--upgrade-package "<package><requirement>"` for each drift. A drift the release on PyPI rules out (uv's error has the release depending on that package) is left for the next release, reported apart, and the rest re-locked without it; one still outside afterwards, or whose `uv lock` fails, is marked failed so `finalize` puts it back. `--check`: lists the drifts and exits 1, changing nothing (`make lock-bounds-check`; not a PR gate, see Bounds) |
+| `update` | Per manifest: `LockGuard` (`uv lock --upgrade` on each version line), then the bounds pull-back, then `uv sync` |
+| `bounds` | Lists every locked version outside the bounds a repo package declares and exits 1; changes nothing (`make lock-bounds-check`; not a PR gate, see Bounds). The pull-back itself runs in every lock check |
 | `failures` | Writes `failures.json` and prints the count. No `--jobs`: failing install checks. `--jobs` + `--run-id`: this run's failed CI jobs under those caller jobs, with logs |
 | `fix` | Runs Copilot with the prompt, then `hold` |
 | `evidence` | `--jobs e2e-1 --retry-jobs e2e-2`: writes `judge.json` with round 2's failed jobs that `verdict` cannot explain (no pass in round 1, no `not_dependency.jsonl` reason), each like a `failures.json` entry plus `history`: the same job (caller and matrix index ignored) in the last 30 completed `test.yaml` runs of this repository's own branches (no fork PRs: their logs are anyone's text, and their e2e jobs fail without secrets; no `deps/` branches): runs, passed, failed, and up to 3 failures with branch, date and error lines. Prints the count; a history call that fails is skipped |
@@ -72,12 +75,25 @@ The shared workflows (`test-reusable.yaml`, `chart-test.yaml`, `code-quality.yml
   `LockGuard` measures version lines from each lock's own base. A lock created or upgraded against the release
   can therefore sit outside a bound the branch wheel will require, and only an install that pairs the exported
   lock with that wheel notices (`examples/k8s/openai-queue-mode/deploy/package.sh`, the chart smoke: red on every
-  branch once #919 capped `deprecated` below the 3.0.1 that 28 locks carried, added 2026-11-12). `bounds` runs
-  after `update`. It is not a PR gate: a PR that raises a floor past what the release allows (#919 took
-  `litellm` to `>=1.95.0`, the release requires `<1.90` in its `adk` and `langgraph` extras) puts every lock that
-  resolves the release outside until the next release, and `--check` cannot tell those from a fixable drift
-  without re-locking. `develop` after #919 had 100 drifts in 48 locks; with `deprecated` dropped, 72 in 39, of
-  which a `bounds` run re-locked 52 inside and left the 20 `litellm` ones waiting for the release, none failed.
+  branch once #919 capped `deprecated` below the 3.0.1 that 28 locks carried, added 2026-11-12).
+  - Where: every lock check (`update`, and each `hold` re-check) pulls back after `LockGuard` and before `uv sync`,
+    since each re-lock resolves the release again and brings the drift back; the install check covers the result.
+  - What bounds a lock: the dependencies and the extras the lock asks for of each repo package it carries
+    (dependency groups ship in no wheel). The lock's own project is no source: examples share project names.
+  - How: one `uv lock --upgrade-package "<package><requirement>"` per drifted package. The drifted package may
+    leave its version line to reach the bound (a floor raised past it), and packages may move down with it.
+  - Outcomes, in `bounds.json` (the manifest's last check) and in the PR body: `pulled`; `release` when uv's
+    error has the release requiring the package outside the bound (`agentkernel[adk]>=0.9.5 depends on
+    litellm>=1.89.2,<1.90.dev0`; the release's requirement is read from it and must exclude the bound), which only
+    the next release fixes; `kept` when the pull-back takes another package up onto a new version line (it needs
+    its own PR, as in `update`) or any package below its security minimum, so the lock before it is put back. A
+    re-lock that fails otherwise, or leaves the package outside, fails the check at `uv lock (bounds)`.
+  - Not a PR gate: a PR that raises a floor past what the release allows (#919 took `litellm` to `>=1.95.0`, the
+    release requires `<1.90` in its `adk` and `langgraph` extras) puts every lock that resolves the release outside
+    until the next release, and the check cannot tell those from a fixable drift without re-locking.
+  - Measured: `develop` after #919 had 100 drifts in 48 locks; with `deprecated` dropped, 72 in 39. The pull-back
+    (uv 0.13.6, the open alerts) took 48 inside, left the 20 `litellm` ones for the release and kept 4 (`litellm`
+    raised to its floor takes `tiktoken` to 0.14), none failed.
 - **CI failures:** a job whose name holds a manifest folder (`e2e-1 / e2e-tests (40, api, examples/api/openai,
   deploy, 0)`) gets that manifest, the longest match. Other jobs get none; Copilot finds the folder from the log.
   Each entry: where, manifest, base commit, log, error excerpt, locked version changes, security minimums, held
@@ -98,7 +114,7 @@ The shared workflows (`test-reusable.yaml`, `chart-test.yaml`, `code-quality.yml
 | Job | Runs when | Does |
 |---|---|---|
 | `prepare` | always | `run=true` unless a scheduled run on an odd week or an update PR is open; `alerts` → artifact `alerts` |
-| `update` | `prepare` says run | `$BASE_BRANCH`: `snapshot` → alerts copied in → `cap` → `secure` → `update` → `bounds` → up to 2 × (`failures` → `fix`) → `finalize` → `npm` → `report`; the dependency-file diff as `update.patch`; the state as artifact `update` |
+| `update` | `prepare` says run | `$BASE_BRANCH`: `snapshot` → alerts copied in → `cap` → `secure` → `update` → up to 2 × (`failures` → `fix`) → `finalize` → `npm` → `report`; the dependency-file diff as `update.patch`; the state as artifact `update` |
 | `push` | the patch is not empty | checks out the base commit (40 hex, on `$BASE_BRANCH`), `apply --patch update.patch`, commits, pushes `deps/update-batch-<RUN_ID>` |
 | `e2e-1` | branch pushed | `test-reusable.yaml` (unit tests and e2e) with `checkout_ref` = the pushed commit |
 | `fix-1` | `e2e-1` failed | `failures --jobs e2e-1` → `fix` → `finalize` → `report`; the diff as `holds.patch`; the state as artifact `holds` |
@@ -137,9 +153,12 @@ ran the whole workflow (update, both rounds, PR). Results and the fixes they led
 The patch check was run on the real update of run 42020023574 (270 files, accepted) and on 15 crafted patches (git
 source, new dependency, `[build-system]`, URL requirement, new extra, changed marker, lock source or file host
 changed, `postinstall` added, npm host changed, edits outside dependency files, new file, deleted file, symlink:
-all rejected). `ruff`, `black -l 120` and `actionlint` pass. `bounds` has unit tests
-(`.github/scripts/tests/test_dependency_caps.py`, run by the `script-tests` job): a drift in a lock that carries
-`agentkernel`, a lock inside the bounds, one without `agentkernel`, a package locked at two versions, a dependency
-group bounding nobody, an extra the lock does not request, `--check`'s exit code and listing, the re-lock command
-per drifted manifest with the moves recorded, a failed or still-drifting re-lock marked for `finalize` without
-touching another manifest's result, and a drift the release rules out left waiting while the rest re-lock.
+all rejected). `ruff`, `black -l 120` and `actionlint` pass. The bounds have unit tests
+(`.github/scripts/tests/test_dependency_caps.py`, run by `code-quality.yml`): which versions are drifts (extras
+the lock asks for, dependency groups, two versions of one package, a lock without `agentkernel`, a lock's own
+project), the command's exit code and listing, one re-lock per drifted package, a drifted package crossing its
+line to reach a floor, a pull-back put back for another package's new line or a security minimum, the release
+recognised in both of uv's wordings but not when its requirement admits the bound, only the failed attempt's
+output read, `disjoint` per clause kind, a failed or still-drifting pull-back failing the check, the pull-back
+between `LockGuard` and `uv sync` (and skipped when the lock failed, keeping its log), a `hold` re-check ending
+inside the bounds with the report agreeing, and the report's three sections skipping put-back manifests.

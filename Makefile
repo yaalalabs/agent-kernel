@@ -108,10 +108,10 @@ lint-all: lint lint-examples
 
 # Lists every lock whose versions sit outside the bounds a repo package (ak-py) declares, exit 1 if any.
 # Not part of lint-check-all: until the next release a lock can be unable to meet a bound ak-py raised (an
-# example resolves agentkernel from PyPI), so the dependency workflow's `bounds` step reconciles them instead.
+# example resolves agentkernel from PyPI), so the dependency update pulls locks back on each check instead.
 lock-bounds-check:
 	@echo "Checking every uv.lock against the bounds ak-py declares..."
-	@uv run --no-project --with "packaging==$(PACKAGING_VERSION)" python .github/scripts/dependency_caps.py --root . --state /tmp/dep-state-check --check bounds
+	@uv run --no-project --with "packaging==$(PACKAGING_VERSION)" python .github/scripts/dependency_caps.py --root . --state /tmp/dep-state-check bounds
 
 lint-check-all: lint-check lint-examples-check
 	@echo "All lint checks completed!"
