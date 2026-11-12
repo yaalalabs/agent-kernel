@@ -1,4 +1,3 @@
-from collections.abc import Mapping
 from typing import Any
 
 from fastapi import HTTPException
@@ -34,6 +33,11 @@ class LambdaThreadHost(LambdaHost):
     ``ThreadRequestHandler.prepare_for_queue`` records the user message and marks the message,
     and ``ServerlessAgentRunner`` records the reply. Creating the host is what enables threads.
 
+    The caller is the principal the API Gateway authorizer put on the event (``Lambda.principal``);
+    an anonymous one answers 401. ``ThreadRequestHandler()`` requires an ``identity`` block, so the
+    request-handler Lambda needs the same identity configuration (and credential secrets) as the
+    authorizer, even though only the authorizer authenticates.
+
     This module imports FastAPI and Starlette at module scope, so ``agentkernel.aws`` exports it
     lazily: ``from agentkernel.aws import Lambda`` stays fastapi-free.
     """
@@ -59,12 +63,12 @@ class LambdaThreadHost(LambdaHost):
         :param context: The Lambda context; unused.
         :return: The proxy response, FastAPI-shaped.
         """
-        principal = self._principal(event)
 
         async def endpoint(request: Request) -> dict:
             q = request.query_params
+            resolve_user = self._resolver(request, event)
             return self._handler.read_handler.list_threads(
-                lambda: principal, user_id=q.get("user_id"), group_id=q.get("group_id"), limit=self._limit(q.get("limit")), cursor=q.get("cursor")
+                resolve_user, group_id=q.get("group_id"), limit=self._limit(q.get("limit")), cursor=q.get("cursor")
             )
 
         return self._run(self._respond(endpoint, event))
@@ -76,12 +80,12 @@ class LambdaThreadHost(LambdaHost):
         :param context: The Lambda context; unused.
         :return: The proxy response, FastAPI-shaped.
         """
-        principal = self._principal(event)
         session_id = (event.get("pathParameters") or {}).get("session_id")
 
         async def endpoint(request: Request) -> dict:
             q = request.query_params
-            return self._handler.read_handler.get_thread(lambda: principal, session_id, limit=self._limit(q.get("limit")), cursor=q.get("cursor"))
+            resolve_user = self._resolver(request, event)
+            return self._handler.read_handler.get_thread(resolve_user, session_id, limit=self._limit(q.get("limit")), cursor=q.get("cursor"))
 
         return self._run(self._respond(endpoint, event))
 
@@ -90,18 +94,18 @@ class LambdaThreadHost(LambdaHost):
 
         :param payload: The parsed chat envelope; its body is rewritten in place for the queue.
         :return: The extra SQS message attributes.
-        :raises LambdaChatRejection: A 400 the pipeline route would answer, before any thread write.
+        :raises LambdaChatRejection: The 401, 400 or 403 the pipeline route would answer, before any thread write.
         """
         try:
             return self._run(self._handler.prepare_for_queue(payload.body))
         except HTTPException as e:
-            raise LambdaChatRejection(e.status_code, e.detail)
+            raise LambdaChatRejection(e.status_code, e.detail if isinstance(e.detail, dict) else {"error": e.detail})
 
-    @staticmethod
-    def _principal(event: Mapping[str, Any]) -> str | None:
-        """The user the API Gateway authorizer approved, or None when no authorizer ran."""
-        authorizer = (event.get("requestContext") or {}).get("authorizer") or {}
-        return authorizer.get("principalId") or None
+    def _resolver(self, request: Request, event: dict[str, Any]):
+        """The read routes' caller resolver: the authorizer's principal, through the FastAPI routes' own 401 check."""
+        # Where the identity dependency would put it on the other surfaces.
+        request.state.principal = Lambda.principal(event)
+        return lambda: self._handler.read_handler._resolve_user(request)
 
     @staticmethod
     def _limit(value: str | None) -> int | None:
@@ -127,14 +131,12 @@ class LambdaThreadGuard(LambdaHostGuard):
         :param handler: What the application passed to ``LambdaThreadHost``.
         :return: The same handler.
         :raises TypeError: The handler is not a ThreadRequestHandler.
-        :raises AKConfigError: Mode, transport, base-path environment, an Authoriser, an
-            unshared attachment store, or an unshared thread store.
+        :raises AKConfigError: Mode, transport, base-path environment, an unshared attachment
+            store, or an unshared thread store.
         """
         if not isinstance(handler, ThreadRequestHandler):
             raise TypeError(f"LambdaThreadHost serves ThreadRequestHandler only; got {type(handler).__name__}")
         self._check_deployment(handler)
-        if handler.read_handler.authoriser is not None:
-            raise AKConfigError("Lambda authorizes at the API Gateway authorizer; build ThreadRequestHandler() without an Authoriser")
         if AKConfig.get().multimodal.enabled and not AttachmentStorageManager.store_is_shared():
             raise AKConfigError(
                 f"multimodal.storage_type '{AKConfig.get().multimodal.storage_type}' keeps attachments in the process "

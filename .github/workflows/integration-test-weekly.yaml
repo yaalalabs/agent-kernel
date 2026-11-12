@@ -303,17 +303,23 @@ jobs:
           sleep ${{ matrix.deploy_stagger }}
 
       # The examples whose static identity provider accepts one demo bearer token (aws-serverless
-      # openai-auth and schedule-openai, aws-containerized openai-schedule) declare a required
+      # openai-auth, schedule-openai and thread-openai, aws-containerized openai-schedule) declare a required
       # demo_auth_token, and their tests send it as AK_TEST_TOKEN. A fresh random value per run keeps a
       # publicly reachable stack from accepting a token anyone could read in this repository; the
-      # same value serves deploy, test and destroy through GITHUB_ENV. Terraform ignores the
-      # variable for every other example.
+      # same value serves deploy, test and destroy through GITHUB_ENV. thread-openai also declares
+      # bob_auth_token (sent as AK_TEST_BOB_TOKEN) for a second principal. Terraform ignores the
+      # variables for every other example.
       - name: Generate demo credential
         run: |
           token=$(openssl rand -hex 32)
           echo "::add-mask::$token"
           echo "TF_VAR_demo_auth_token=$token" >> "$GITHUB_ENV"
           echo "AK_TEST_TOKEN=$token" >> "$GITHUB_ENV"
+          # A second, independent principal for the examples that test cross-user ownership (thread-openai).
+          bob_token=$(openssl rand -hex 32)
+          echo "::add-mask::$bob_token"
+          echo "TF_VAR_bob_auth_token=$bob_token" >> "$GITHUB_ENV"
+          echo "AK_TEST_BOB_TOKEN=$bob_token" >> "$GITHUB_ENV"
 
       # No-op unless the example's config.yaml uses the aws_ssm secret provider
       - name: Seed SSM secrets - ${{ matrix.path }}

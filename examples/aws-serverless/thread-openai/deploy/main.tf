@@ -1,3 +1,11 @@
+locals {
+  # The credentials of the static identity provider in config.yaml. Not needed with an oidc block.
+  demo_credentials = {
+    "ALICE_TOKEN" = var.demo_auth_token
+    "BOB_TOKEN"   = var.bob_auth_token
+  }
+}
+
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
   version = "0.9.5"
@@ -38,17 +46,17 @@ module "serverless_agents" {
     },
   ]
 
-  # The authorizer runs on every route; its subject becomes the principalId the read routes are
-  # scoped to.
+  # The authorizer runs on every route: it validates the bearer token through the identity block
+  # in config.yaml (lambda_auth.py is one line) and hands the principal to the request handler,
+  # which records threads under it and scopes the read routes to it.
   authorizer = {
-    description   = "Demo bearer-token auth; the token names the user"
-    function_name = "gtwy-auth"
-    handler_path  = "lambda_auth.handler"
-    package_path  = "../dist_auth.zip"
-    package_type  = "LocalZip"
-    # Off: a cached policy is keyed by the token alone, so it would answer every route with the
-    # first route's decision.
+    description           = "Bearer-token auth through the identity provider in config.yaml"
+    function_name         = "gtwy-auth"
+    handler_path          = "lambda_auth.handler"
+    package_path          = "../dist_auth.zip"
+    package_type          = "LocalZip"
     result_ttl_in_seconds = 0
+    environment_variables = local.demo_credentials
   }
 
   # An image, not a zip: the thread extra (LiteLLM, for thread naming) does not fit in a Lambda zip.
@@ -61,10 +69,12 @@ module "serverless_agents" {
     memory_size          = 1024
     timeout              = 30
     security_group_id    = var.request_handler_security_group_id
-    environment_variables = {
+    # The credentials too: ThreadRequestHandler() builds the identity provider config.yaml names,
+    # and the static provider resolves them at startup, though only the authorizer authenticates.
+    environment_variables = merge(local.demo_credentials, {
       # For thread naming (LiteLLM); without it the name falls back to the prompt prefix.
       "OPENAI_API_KEY" = var.openai_api_key
-    }
+    })
   }
 
   agent_runner = {

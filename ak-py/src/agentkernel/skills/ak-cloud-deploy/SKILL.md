@@ -236,9 +236,13 @@ self-hosted REST API, `ThreadRequestHandler` in a queue-mode pipeline
 `agentkernel.thread`) — do not import the agent module there: in queue mode the agents live in the
 agent-runner Lambda only — and register `GET /threads` →
 `threads.list_threads` and `GET /threads/{session_id}` → `threads.get_thread` with `Lambda.register`.
-The host takes over the chat route's enqueue (chat then requires `user_id`); the agent-runner Lambda
-records the reply. Add both routes to `gateway_endpoints`; the API Gateway authorizer's `principalId`
-scopes them, so pass no `Authoriser`. `create_dynamodb_thread_table = true` wires the table into both
+The host takes over the chat route's enqueue (chat then requires an authenticated caller: the
+principal the API Gateway authorizer put on the event, 401 without one); the agent-runner Lambda
+records the reply. Add both routes to `gateway_endpoints`; the same principal scopes them (a listing is
+the caller's own, another caller's thread is 403). `ThreadRequestHandler()` requires an `identity`
+block, so unlike other routes the request-handler Lambda needs the identity config **and** the
+credential secrets the authorizer gets (with `static`, pass the token variables to both Lambdas).
+`create_dynamodb_thread_table = true` wires the table into both
 Lambdas; both need the same `thread` block, and `thread.type: in_memory` is refused at cold start. See
 `examples/aws-serverless/thread-openai`.
 
@@ -895,7 +899,8 @@ authorizer = {
 
 - Package `dist_auth.zip` with `agentkernel[api,aws]` (add `auth` for `oidc`, `cognito`, `entra` or
   `firebase`), `lambda_auth.py` and the `config.yaml` carrying the `identity` block; the other Lambdas
-  load the same file without needing the credential.
+  load the same file without needing the credential, except a request handler hosting threads
+  (`LambdaThreadHost`): `ThreadRequestHandler()` builds the provider, so it needs the credential too.
 - An accepted token yields an Allow policy whose `principalId` is the subject and whose context
   carries the principal; a refused, expired or malformed token gets a 401 (the authorizer raises
   `Unauthorized`), a request with no token a Deny (403), with the provider's reason in the

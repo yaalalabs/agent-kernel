@@ -528,3 +528,32 @@ cd ak-py && uv run pytest tests/test_lambda_thread_host.py tests/test_serverless
 
 `examples/aws-serverless/thread-openai/lambda_test.py` runs against a deployed stack (weekly
 matrix), like the other serverless examples.
+
+## As implemented after #603 (identity providers, merged from develop)
+
+#603 replaced `agentkernel.auth` (`Authoriser`, `AuthValidator`) and the `user_id` request field
+with the `identity` block and a `Principal` assigned by each surface. Where this spec says otherwise,
+the code follows #603:
+
+- **Caller.** `LambdaThreadHost` reads `Lambda.principal(event)` (the authorizer context's
+  `principal` JSON), not `principalId`, sets it on the translated request's `state`, and resolves it
+  through `AuthorisedRESTRequestHandler._resolve_user`: an anonymous caller is 401 on the read routes.
+  `ThreadRequestHandler.prepare_for_queue` answers 401 for an anonymous `body.principal` (the router's
+  `_parse_body` assigns it before the hook runs), and `_validate_chat` also runs `_reject_unprocessable`.
+- **No `user_id`.** Chat no longer requires one: a body carrying it is a 400 from
+  `BaseRequest.from_payload`, before the hook. `GET /threads` has no `user_id` filter; a listing is
+  the caller's own. Another caller's thread is 403 to read and to chat on.
+- **Removed.** The `AuthorisedRESTRequestHandler.authoriser` property and guard check 3 (no
+  `Authoriser`). `ThreadRESTRequestHandler.list_threads` / `get_thread` take `resolve_user:
+  Callable[[], Principal]` and no `user_id`.
+- **Identity on the request handler.** `ThreadRequestHandler()` requires an `identity` block and builds
+  its provider, so the request-handler Lambda gets the same `identity` config and credential secrets
+  as the authorizer. The example passes `ALICE_TOKEN` / `BOB_TOKEN` (`local.demo_credentials`) to both.
+- **Paused replies (HITL, #607).** `record_queued_reply(attributes, req, status_code, result,
+  media_type)` takes the reply already picked: both runners use `AgentRunner._reply_to_record`, so a
+  paused run records its pause under `HITL_MEDIA_TYPE` on the serverless runner too.
+- **Example.** `lambda_auth.py` is `APIGatewayAuthorizer().handle` over a `static` identity block; the
+  `guest` route rule is gone (authorization arrives in a later #603 phase). The tests read alice's
+  token from `AK_TEST_TOKEN` (CI's `demo_auth_token`) and bob's from `AK_TEST_BOB_TOKEN` (CI's
+  `bob_auth_token`), two independently generated values.
+- **Errors.** A missing `session_id` is now 400 (develop's `ValueError` mapping in `_handle`), not 500.

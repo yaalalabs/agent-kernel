@@ -350,11 +350,12 @@ def get_thread(event, context):
 handler = Lambda.handler
 ```
 
-- **Creating the host enables threads.** It hooks the built-in chat route: each chat request must carry a
-  `user_id`, the user message is recorded and the request is marked before it is enqueued, and the
-  agent-runner Lambda records the reply after sending it. Requests are rejected with 400 (missing
-  `user_id` or prompt, attachments the multimodal config refuses) before anything is
-  written. A request with a `schedule` block records nothing.
+- **Creating the host enables threads.** It hooks the built-in chat route: the user message is recorded
+  under the caller's principal and the request is marked before it is enqueued, and the agent-runner
+  Lambda records the reply after sending it. Requests are rejected before anything is written: 401
+  without an authenticated principal, 403 on another caller's thread, 400 for a missing prompt, a
+  `user_id` in the body, or attachments the multimodal config refuses. A request with a `schedule`
+  block records nothing.
 - **The request handler holds no agents.** Do not import your agent module there: in queue mode it has no
   session store, and the agents run in the agent-runner Lambda only.
 - **Both Lambdas need the `thread` block**, and a shared store: `thread.type: in_memory` is refused at
@@ -363,10 +364,14 @@ handler = Lambda.handler
 - **Expose the read routes on API Gateway** through the ak-serverless module's `gateway_endpoints`
   (`threads` GET and `threads/{session_id}` GET). The router matches the `{session_id}` template, see
   [Path and query parameters](../deployment/aws-serverless.md#path-and-query-parameters).
-- **Authorization happens at the API Gateway authorizer**, not through an `Authoriser`: build
-  `ThreadRequestHandler()` without one (passing one is refused at cold start). When an authorizer
-  approved the request, its `principalId` scopes the read routes: listings are forced to that user and
-  another user's thread returns 403. Without an authorizer, the read routes are open.
+- **Authentication happens at the API Gateway authorizer** (`APIGatewayAuthorizer().handle` over the
+  `identity` block). The principal it puts on the event (`Lambda.principal(event)`) owns the thread and
+  scopes the read routes: a listing is the caller's own threads and another caller's thread returns 403.
+  Without one, chat and the read routes answer 401.
+- **The request-handler Lambda needs the identity config too.** `ThreadRequestHandler()` requires an
+  `identity` block and builds its provider, so give that Lambda the same `identity` block and credential
+  secrets as the authorizer (with `static`, the token environment variables), even though only the
+  authorizer authenticates.
 - **Thread naming runs in the request-handler Lambda**, so it needs `litellm` and the model's key there;
   otherwise the name falls back to the prompt prefix.
 - A non-integer `limit` on the read routes answers 400 (FastAPI answers 422).

@@ -163,3 +163,5 @@ Paths are relative to `ak-py/src/agentkernel/` unless they start with `ak-py/`, 
 - **Verify:** `grep -rn "nulled in queue mode\|does not apply in queue mode" .agents docs/docs ak-py/src` returns nothing, nor does
   a grep for the hosts' old `serverless/core/` module paths; confirm
   with `ak-dev-sync-docs-from-branch` / `ak-dev-sync-skills-from-branch` before merge.
+
+> **After #603:** the `Authoriser` / `AuthValidator` / `user_id` / `principalId` parts of this document were superseded when develop's identity providers were merged; see "As implemented after #603" at the end of [spec.md](spec.md).

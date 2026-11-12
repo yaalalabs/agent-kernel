@@ -5,14 +5,19 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from agentkernel.core.chat_service import ResponseBuilder
 from agentkernel.core.config import AKConfig, _ThreadStoreConfig
+from agentkernel.core.event import PausedInterruption
+from agentkernel.core.model import AgentPausedReplyAny, Principal
 from agentkernel.deployment.aws.serverless.akagentrunner import ServerlessAgentRunner
 from agentkernel.integration.thread import ConversationThreadManager
+from agentkernel.integration.thread.model import HITL_MEDIA_TYPE
 from agentkernel.integration.thread.store.in_memory import InMemoryThreadStore
 from agentkernel.pipeline.envelope import ATTR_THREAD
 
 RUNNER_MODULE = "agentkernel.deployment.aws.serverless.akagentrunner"
 MEDIA_TYPE = "application/a2ui+json"
+PRINCIPAL = Principal(subject="u1", provider="static", namespace="static")
 
 
 @pytest.fixture(autouse=True)
@@ -38,7 +43,8 @@ def _record(marked: bool = True) -> dict:
     if marked:
         attributes[ATTR_THREAD] = {"stringValue": "1", "DataType": "String"}
     return {
-        "body": json.dumps({"prompt": "hello", "session_id": "s1", "user_id": "u1"}),
+        # The principal the request handler assigned at the edge rides the body (#603).
+        "body": json.dumps({"prompt": "hello", "session_id": "s1", "principal": PRINCIPAL.model_dump(mode="json")}),
         "attributes": {"MessageGroupId": "s1", "MessageDeduplicationId": "req-1"},
         "messageAttributes": attributes,
     }
@@ -65,6 +71,20 @@ def test_a_marked_record_appends_the_reply_with_its_media_type(manager):
     reply = manager.get_messages("s1").messages[-1]
     assert _roles(manager) == ["user", "assistant"]
     assert reply.media_type == MEDIA_TYPE
+
+
+def test_a_paused_run_records_the_pause_not_its_serialised_result(manager):
+    """Pipeline parity (HITL): the 202 body's `result` is the serialised pause; the thread holds the pause, labelled."""
+    paused = AgentPausedReplyAny(
+        run_id="run-1", session_id="s1", agent="assistant", interruptions=[PausedInterruption(id="i1", kind="tool_call", tool_name="send_email")]
+    )
+    body = ResponseBuilder.build_response(202, "s1", rest_api_mode=False, result=paused)[1]
+
+    _process(_record(), status_code=202, response=body)
+
+    reply = manager.get_messages("s1").messages[-1]
+    assert _roles(manager) == ["user", "assistant"]
+    assert (reply.content, reply.media_type) == (paused.content, HITL_MEDIA_TYPE)
 
 
 @pytest.mark.parametrize(

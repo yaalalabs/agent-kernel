@@ -15,6 +15,21 @@ thread:
   dynamodb:
     table_name: ""   # injected via AK_THREAD__DYNAMODB__TABLE_NAME (create_dynamodb_thread_table)
 
+# Who may call: a thread belongs to the principal whose request created it. The static provider maps
+# each credential to a principal; the values are never written here: Terraform passes them as the
+# ALICE_TOKEN and BOB_TOKEN environment variables, which the secret capability resolves at startup.
+# The authorizer authenticates with it; the request handler builds it too, because
+# ThreadRequestHandler() requires an identity block, so both Lambdas get the variables.
+identity:
+  provider:
+    type: static
+    static:
+      principals:
+        ALICE_TOKEN:
+          subject: alice
+        BOB_TOKEN:
+          subject: bob
+
 # Threads on Lambda run in queue mode, in rest_sync or rest_async, on the sqs transport.
 execution:
   mode: rest_sync

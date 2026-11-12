@@ -10,7 +10,7 @@ mounts the same thread handler on the FastAPI server.
 ## Architecture Overview
 
 ```
-Client --POST /api/v1/chat (user_id required)--> API Gateway --> Authorizer
+Client --POST /api/v1/chat (bearer token)--> API Gateway --> Authorizer
                                                      |
                                                      v
                                           Request-handler Lambda
@@ -30,28 +30,33 @@ Client --GET /api/v1/threads[/{session_id}]--> API Gateway --> Authorizer --> Re
 - **Request-handler Lambda**: `LambdaThreadHost(ThreadRequestHandler())` takes over the built-in
   chat route; `@Lambda.register` functions delegate the two read routes to it. It does not
   import `agent.py`: in queue mode the agents live in the agent-runner Lambda only.
-- **Authorizer Lambda**: a demo validator whose subject is the user the token names
-  (`alice-token` → `alice`, `bob-token` → `bob`, `guest-token` → `guest`). See below.
+- **Authorizer Lambda**: `APIGatewayAuthorizer().handle`, authenticating the bearer token through
+  the `identity` block in `config.yaml` and passing the principal on. See below.
 - **Agent-runner Lambda**: runs the agent and records the reply of every marked request.
 - **Response-handler Lambda**: writes the reply to the response store, unchanged.
 
 Both the request handler and the agent runner read the same `thread` block in `config.yaml`, which
 must name a shared store (`dynamodb` here; `in_memory` fails the request handler's cold start).
 
-## Authorizing the read routes
+## Who owns a thread
 
-There is one authorizer, the existing `APIGatewayAuthorizer`, on every route; no second authorizer
-and no Terraform change. The read routes are protected in two layers:
+The caller. One authorizer, `APIGatewayAuthorizer`, runs on every route and authenticates the bearer
+token through the identity provider the `identity` block in `config.yaml` names. Its Allow policy
+carries the principal; the request handler assigns it to the chat body, so the thread is recorded
+under that principal's subject, and `LambdaThreadHost` scopes the read routes to it: a listing is
+the caller's own threads, and another user's thread answers 403, to read or to chat on.
 
-1. **Route rules, in your `AuthValidator`.** `validate` receives the request path and method in its
-   `ValidationContext`, so it decides who may call which route. The demo lets `guest` chat but
-   denies it `GET .../threads*`; API Gateway then answers 403 before any Lambda runs.
-2. **Principal scoping, in `LambdaThreadHost`.** The validator's `subject` becomes the request's
-   `principalId`, and the read routes are limited to it: a listing is forced to that user, and
-   another user's thread answers 403.
+The block here selects the `static` provider with two principals, `alice` and `bob`. Their
+credentials are never written in `config.yaml`: Terraform passes them as the `ALICE_TOKEN` and
+`BOB_TOKEN` environment variables (from the `demo_auth_token` and `bob_auth_token` variables), which
+the secret capability resolves at startup. To validate real tokens, swap the
+provider for `oidc` (Auth0, Keycloak, Okta), `cognito`, `entra` or `firebase`, and add the `auth`
+extra to the `authorizer` and `request_handler` dependency sets in `pyproject.toml`.
 
-Build `ThreadRequestHandler()` without an `Authoriser`: on Lambda the gateway authorizes, and the
-host fails at cold start if one is passed.
+**The request handler needs the identity configuration too.** `ThreadRequestHandler()` requires an
+`identity` block and builds its provider, so the request-handler Lambda gets the same credential
+variables as the authorizer (`local.demo_credentials` in `deploy/main.tf`), even though only the
+authorizer authenticates. Without them its cold start fails with a missing-secret error.
 
 ## Declare the read routes in two places
 
@@ -64,16 +69,15 @@ The chat route needs no declaration: Terraform always creates it, and the host t
 
 ## What changes for the client
 
-- `user_id` is required on every chat request: without it the chat route answers 400 and records
-  nothing.
+- Every request carries `Authorization: Bearer <token>`; the owner comes from it. A chat body
+  naming a `user_id` answers 400 and records nothing.
 - A missing prompt is answered 400 by the chat route, before anything is written.
-- `GET /threads` lists the caller's threads (a `user_id` query parameter is overridden by the
-  authorized user); `group_id`, `limit` and `cursor` page it.
+- `GET /threads` lists the caller's threads; `group_id`, `limit` and `cursor` filter and page it.
 - `GET /threads/{session_id}` returns the thread with a page of its messages; another user's thread
   answers 403, and a non-integer `limit` answers 400.
 
-**Replace the demo authorizer** (`lambda_auth.py`) with your identity provider's token check before
-deploying anything you care about: its tokens are static strings.
+**Replace the static provider** with your identity provider before deploying anything you care
+about: its credentials are static strings.
 
 ## Build
 
@@ -84,8 +88,9 @@ deploying anything you care about: its tokens are static strings.
 
 ## Deploy
 
-Create `deploy/terraform.tfvars` values (or `TF_VAR_*` variables) for `openai_api_key`, `vpc_id` and
-`private_subnet_ids`, then:
+Create `deploy/terraform.tfvars` values (or `TF_VAR_*` variables) for `openai_api_key`,
+`demo_auth_token` and `bob_auth_token` (two different values, for example `openssl rand -hex 32`
+each), `vpc_id` and `private_subnet_ids`, then:
 
 ```bash
 cd deploy
@@ -108,10 +113,12 @@ thread is named after the start of its first prompt.
 
 ```bash
 export AK_TEST_ENDPOINT=<agent_invoke_url output>
+export AK_TEST_TOKEN=<demo_auth_token>
+export AK_TEST_BOB_TOKEN=<bob_auth_token>
 uv run pytest lambda_test.py
 ```
 
 The tests chat twice as `alice`, then read the thread back (two user and two assistant messages, in
-order) and find it in the listing; check that `bob` gets 403 on it and cannot list it, that `guest`
-can chat but gets 403 on both read routes, and the 400s for a chat without `user_id` and a
+order) and find it in the listing; check that `bob` gets 403 reading or chatting on it and cannot
+list it, that the read routes need a token, and the 400s for a chat naming a `user_id` and a
 non-integer `limit`.

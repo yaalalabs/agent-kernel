@@ -212,7 +212,6 @@ def _submit(router, monkeypatch):
         "body": json.dumps(
             {
                 "request_id": "r1",
-                "user_id": "u1",
                 "prompt": "hi",
                 "session_id": "s1",
                 "images": [{"image_data": "eA==", "name": "a.png", "mime_type": "image/png"}],

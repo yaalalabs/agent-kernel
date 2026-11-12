@@ -6,11 +6,12 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from agentkernel.core.config import AKConfig, _ThreadStoreConfig
-from agentkernel.core.model import ScheduleSpec
+from agentkernel.core.model import Principal, ScheduleSpec
 from agentkernel.core.multimodal.storage import AttachmentStorageManager
 from agentkernel.core.util.factory import AKConfigError
 from agentkernel.deployment.aws.core.sqs_handler import SQSHandler
 from agentkernel.deployment.aws.serverless.aklambda import Lambda
+from agentkernel.identity import IdentityProviderFactory
 from agentkernel.integration.adapter.factory import IntegrationAdapterFactory
 from agentkernel.integration.adapter.producer import IntegrationProducer
 from agentkernel.integration.adapter.webhook import WebhookRESTRequestHandler
@@ -68,8 +69,9 @@ def _configure(monkeypatch, mode: str = "rest_sync", thread_type: str | None = I
 
 
 @pytest.fixture(autouse=True)
-def _environment(monkeypatch):
-    """A deployment LambdaThreadHost accepts: rest_sync on sqs with an input queue and the base-path variables."""
+def _environment(monkeypatch, static_identity):
+    """A deployment LambdaThreadHost accepts: rest_sync on sqs with an input queue, the base-path variables
+    and an identity provider (ThreadRequestHandler requires one)."""
     monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
     monkeypatch.setenv("AK_EXECUTION__QUEUES__TYPE", "sqs")
     monkeypatch.setenv("AK_EXECUTION__RESPONSE_STORE__TYPE", "dynamodb")
@@ -107,13 +109,22 @@ def _register(host):
     Lambda.register("/threads/{session_id}", method="GET")(host.get_thread)
 
 
-def _chat_event(method: str = "POST", **body) -> dict:
-    payload = {"request_id": "req-1", "prompt": "hello", "session_id": "s1", "user_id": "u1", "agent": AGENT_NAME, **body}
+def _authorizer_context(subject: str | None) -> dict:
+    """The requestContext the API Gateway authorizer leaves on an allowed event: the principal as JSON."""
+    if subject is None:
+        return {}
+    principal = Principal(subject=subject, provider="static", namespace="static")
+    return {"requestContext": {"authorizer": {"principalId": subject, "principal": principal.model_dump_json()}}}
+
+
+def _chat_event(method: str = "POST", principal: str | None = "u1", **body) -> dict:
+    payload = {"request_id": "req-1", "prompt": "hello", "session_id": "s1", "agent": AGENT_NAME, **body}
     payload = {k: v for k, v in payload.items() if v is not None}
-    return {"httpMethod": method, "path": CHAT_PATH, "headers": {}, "body": json.dumps(payload), "isBase64Encoded": False}
+    event = {"httpMethod": method, "path": CHAT_PATH, "headers": {}, "body": json.dumps(payload), "isBase64Encoded": False}
+    return {**event, **_authorizer_context(principal)}
 
 
-def _read_event(path: str, query: dict | None = None, principal: str | None = None, session_id: str | None = None) -> dict:
+def _read_event(path: str, query: dict | None = None, principal: str | None = "u1", session_id: str | None = None) -> dict:
     event = {
         "httpMethod": "GET",
         "path": f"/api/v1{path}",
@@ -125,9 +136,7 @@ def _read_event(path: str, query: dict | None = None, principal: str | None = No
     }
     if session_id:
         event["pathParameters"] = {"session_id": session_id}
-    if principal:
-        event["requestContext"] = {"authorizer": {"principalId": principal}}
-    return event
+    return {**event, **_authorizer_context(principal)}
 
 
 def _sent_attributes(send) -> dict:
@@ -162,15 +171,17 @@ class TestChat:
         assert _sent_attributes(send) == {ATTR_THREAD: "1"}
         [message] = ConversationThreadManager.get().get_messages("s1").messages
         assert (message.role, message.content) == ("user", "hello")
+        assert ConversationThreadManager.get().get_thread("s1").user_id == "u1"
+        # The authorizer's principal rides the queue body to the agent runner.
+        assert send.call_args.kwargs["message_body"]["principal"]["subject"] == "u1"
 
     @pytest.mark.parametrize(
         "body,error",
         [
-            ({"user_id": None}, "user_id"),
             ({"prompt": ""}, "No prompt provided"),
             ({"images": [{"image_data": "aGVsbG8=", "name": "a.png", "mime_type": "image/png"}]}, "multimodal"),
         ],
-        ids=["no-user-id", "no-prompt", "attachments-multimodal-off"],
+        ids=["no-prompt", "attachments-multimodal-off"],
     )
     def test_a_rejection_answers_400_and_writes_and_sends_nothing(self, store, send, body, error):
         _host()
@@ -183,13 +194,44 @@ class TestChat:
         assert _thread_count() == 0
         send.assert_not_called()
 
-    def test_a_missing_session_id_is_still_the_generic_500_and_skips_the_hook(self, store, send):
+    def test_an_anonymous_chat_is_401_and_writes_and_sends_nothing(self, store, send):
+        _host()
+
+        response = Lambda.handler(_chat_event(principal=None), None)
+
+        assert response["statusCode"] == 401
+        assert _body(response)["error"] == "Authentication required"
+        assert _thread_count() == 0
+        send.assert_not_called()
+
+    def test_a_user_id_in_the_body_is_400_before_the_hook(self, store, send):
+        host = _host()
+
+        with patch.object(host._handler, "prepare_for_queue") as prepare:
+            response = Lambda.handler(_chat_event(user_id="u2"), None)
+
+        assert response["statusCode"] == 400
+        assert "user_id is not a request field" in _body(response)["error"]
+        prepare.assert_not_called()
+        send.assert_not_called()
+
+    def test_another_users_thread_is_403_and_sends_nothing(self, store, send):
+        _host()
+        _open_thread("s1", "u2")
+
+        response = Lambda.handler(_chat_event(), None)
+
+        assert response["statusCode"] == 403
+        assert len(ConversationThreadManager.get().get_messages("s1").messages) == 1
+        send.assert_not_called()
+
+    def test_a_missing_session_id_is_400_and_skips_the_hook(self, store, send):
         host = _host()
 
         with patch.object(host._handler, "prepare_for_queue") as prepare:
             response = Lambda.handler(_chat_event(session_id=None), None)
 
-        assert response["statusCode"] == 500
+        assert response["statusCode"] == 400
         prepare.assert_not_called()
         send.assert_not_called()
 
@@ -233,15 +275,17 @@ class TestReadRoutes:
         _open_thread("s1", "u1")
         _open_thread("s2", "u2")
 
-    def test_list_without_an_authorizer_is_open_and_filters_by_user_id(self):
+    @pytest.mark.parametrize("path,session_id", [("/threads", None), ("/threads/s1", "s1")])
+    def test_an_anonymous_read_is_401(self, path, session_id):
+        response = Lambda.handler(_read_event(path, principal=None, session_id=session_id), None)
+
+        assert response["statusCode"] == 401
+        assert response["multiValueHeaders"].get("www-authenticate") == ["Bearer"]
+
+    def test_list_is_the_callers_own_whatever_user_id_asks_for(self):
         response = Lambda.handler(_read_event("/threads", query={"user_id": "u2"}), None)
 
         assert response["statusCode"] == 200
-        assert [t["session_id"] for t in _body(response)["threads"]] == ["s2"]
-
-    def test_list_is_forced_to_the_authorized_user(self):
-        response = Lambda.handler(_read_event("/threads", query={"user_id": "u2"}, principal="u1"), None)
-
         assert [t["session_id"] for t in _body(response)["threads"]] == ["s1"]
 
     def test_get_reads_the_path_parameter(self):
@@ -251,7 +295,7 @@ class TestReadRoutes:
         assert [m["content"] for m in _body(response)["messages"]] == ["hi"]
 
     def test_get_of_another_users_thread_is_403(self):
-        response = Lambda.handler(_read_event("/threads/s2", session_id="s2", principal="u1"), None)
+        response = Lambda.handler(_read_event("/threads/s2", session_id="s2"), None)
 
         assert response["statusCode"] == 403
 
@@ -261,9 +305,9 @@ class TestReadRoutes:
         assert response["statusCode"] == 404
         assert "detail" in _body(response)
 
-    def test_thread_support_off_is_404(self):
+    def test_thread_support_off_is_404_before_any_401(self):
         with patch("agentkernel.integration.thread.thread_chat.ConversationThreadManager.get", return_value=None):
-            response = Lambda.handler(_read_event("/threads"), None)
+            response = Lambda.handler(_read_event("/threads", principal=None), None)
 
         assert response["statusCode"] == 404
 
@@ -311,9 +355,11 @@ class TestColdStart:
         with pytest.raises(AKConfigError, match="API_VERSION"):
             _host()
 
-    def test_an_authoriser_is_rejected(self):
-        with pytest.raises(AKConfigError, match="without an Authoriser"):
-            _host(ThreadRequestHandler(authoriser=MagicMock()))
+    def test_no_identity_block_fails_before_the_host_exists(self, monkeypatch):
+        monkeypatch.setattr(IdentityProviderFactory, "get", classmethod(lambda cls: None))
+
+        with pytest.raises(AKConfigError, match="requires an identity block"):
+            ThreadRequestHandler()
 
     def test_an_unshared_attachment_store_is_rejected_with_multimodal_on(self):
         AKConfig.get().multimodal.enabled = True

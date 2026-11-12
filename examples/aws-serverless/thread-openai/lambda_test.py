@@ -1,8 +1,8 @@
 """Tests for the deployed serverless thread example.
 
-Set AK_TEST_ENDPOINT to the module's `agent_invoke_url` output (the chat route). The thread routes
-are derived from it, since both live behind the same API Gateway stage. The demo tokens are the
-static ones in lambda_auth.py.
+Set AK_TEST_ENDPOINT to the module's `agent_invoke_url` output (the chat route) and AK_TEST_TOKEN to
+the deployed `demo_auth_token` (alice's credential) and AK_TEST_BOB_TOKEN to the `bob_auth_token`. The
+thread routes are derived from the endpoint, since both live behind the same API Gateway stage.
 """
 
 import os
@@ -13,11 +13,13 @@ import httpx
 import pytest
 
 ENDPOINT = os.getenv("AK_TEST_ENDPOINT", "").rstrip("/")
-ALICE_TOKEN = "alice-token"
-BOB_TOKEN = "bob-token"
-GUEST_TOKEN = "guest-token"  # may chat, may not read threads (lambda_auth.py)
+ALICE_TOKEN = os.getenv("AK_TEST_TOKEN", "")
+BOB_TOKEN = os.getenv("AK_TEST_BOB_TOKEN", "")
 
-pytestmark = pytest.mark.skipif(not ENDPOINT, reason="Set AK_TEST_ENDPOINT to the deployment's agent_invoke_url")
+pytestmark = pytest.mark.skipif(
+    not ENDPOINT or not ALICE_TOKEN or not BOB_TOKEN,
+    reason="Set AK_TEST_ENDPOINT to the agent_invoke_url, AK_TEST_TOKEN to the demo_auth_token and AK_TEST_BOB_TOKEN to the bob_auth_token",
+)
 
 
 def _threads_url() -> str:
@@ -44,10 +46,14 @@ def _send(method: str, url: str, token: str | None, **kwargs) -> httpx.Response:
     return response
 
 
-def _chat(prompt: str, session_id: str, user_id: str | None = "alice", token: str = ALICE_TOKEN) -> httpx.Response:
-    payload = {"prompt": prompt, "session_id": session_id, "request_id": str(uuid.uuid4()), "agent": "assistant"}
-    if user_id is not None:
-        payload["user_id"] = user_id
+def _chat(prompt: str, session_id: str, token: str = ALICE_TOKEN, **extra) -> httpx.Response:
+    payload = {
+        "prompt": prompt,
+        "session_id": session_id,
+        "request_id": str(uuid.uuid4()),
+        "agent": "assistant",
+        **extra,
+    }
     # One attempt, never retried: a retry re-records the user message in the thread.
     return httpx.request("POST", ENDPOINT, headers=_headers(token), json=payload, timeout=60.0)
 
@@ -74,8 +80,9 @@ def alice_thread() -> str:
     return session_id
 
 
-def test_chat_without_user_id_is_rejected():
-    response = _chat("hi", f"thread-smoke-{uuid.uuid4()}", user_id=None)
+def test_chat_naming_a_user_id_is_rejected():
+    # The owner comes from the credential; a client naming one is refused before anything is written.
+    response = _chat("hi", f"thread-smoke-{uuid.uuid4()}", user_id="bob")
 
     assert response.status_code == 400, response.text
     assert "user_id" in response.json()["error"]
@@ -96,7 +103,7 @@ def test_the_thread_holds_both_turns_in_order(alice_thread):
 
 
 def test_the_listing_holds_the_thread(alice_thread):
-    response = _send("GET", _threads_url(), ALICE_TOKEN, params={"user_id": "alice"})
+    response = _send("GET", _threads_url(), ALICE_TOKEN)
 
     assert response.status_code == 200, response.text
     assert alice_thread in [t["session_id"] for t in response.json()["threads"]]
@@ -105,8 +112,8 @@ def test_the_listing_holds_the_thread(alice_thread):
 def test_another_user_cannot_read_the_thread(alice_thread):
     assert _send("GET", f"{_threads_url()}/{alice_thread}", BOB_TOKEN).status_code == 403
 
-    # The listing is forced to the authorized user, whatever user_id asks for.
-    listing = _send("GET", _threads_url(), BOB_TOKEN, params={"user_id": "alice"})
+    # The listing is always the caller's own.
+    listing = _send("GET", _threads_url(), BOB_TOKEN)
     assert listing.status_code == 200, listing.text
     assert alice_thread not in [t["session_id"] for t in listing.json()["threads"]]
 
@@ -115,13 +122,9 @@ def test_the_read_routes_need_a_token():
     assert _send("GET", _threads_url(), None).status_code in (401, 403)
 
 
-def test_a_guest_may_chat_but_not_read_threads():
-    session_id = f"thread-smoke-{uuid.uuid4()}"
-    assert _chat("hi", session_id, user_id="guest", token=GUEST_TOKEN).status_code == 200
-
-    # The authorizer's route rule denies before any Lambda runs: API Gateway answers 403.
-    assert _send("GET", _threads_url(), GUEST_TOKEN).status_code == 403
-    assert _send("GET", f"{_threads_url()}/{session_id}", GUEST_TOKEN).status_code == 403
+def test_another_user_cannot_continue_the_thread(alice_thread):
+    # The thread is alice's: bob's chat on her session is refused before anything is recorded.
+    assert _chat("hi", alice_thread, token=BOB_TOKEN).status_code == 403
 
 
 def test_a_non_integer_limit_is_rejected():

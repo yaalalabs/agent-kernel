@@ -372,3 +372,5 @@ registers its webhook. Queue mode only, `rest_sync` and `rest_async`.
     no threads, so without recording the read routes would never return anything.
   - The name is `LambdaThreadHost`, not the issue's `ThreadLambdaHandler`: it follows
     `LambdaWebhookHost`, the pattern the other Lambda integrations use.
+
+> **After #603:** the `Authoriser` / `AuthValidator` / `user_id` / `principalId` parts of this document were superseded when develop's identity providers were merged; see "As implemented after #603" at the end of [spec.md](spec.md).
