@@ -1200,6 +1200,23 @@ class TestSessionEnd:
         await edge.stop()
         await asyncio.wait_for(task, 5)
 
+    def test_a_retried_start_begins_from_a_clean_state(self, monkeypatch):
+        _config(monkeypatch)
+        edge = LiveKitEdgeAdapter(session_id="room-r")
+        first = edge._participants[0]
+        edge._participants.append(edge._AgentParticipant("billing", "agent-billing", "t"))
+        edge._by_agent["billing"] = edge._participants[1]
+        edge._greeted.add("human-a")
+        edge._connected = True
+        edge._end_sent = True
+        edge._ending = True
+
+        edge._reset_run_state()
+
+        assert edge._participants == [first] and not edge._by_agent
+        assert not edge._greeted and not edge._connected and not edge._end_sent and not edge._ending
+        assert edge._active is first
+
     @pytest.mark.asyncio
     async def test_start_ends_the_edge_when_no_caller_is_in_the_room(self, monkeypatch):
         _config(monkeypatch)

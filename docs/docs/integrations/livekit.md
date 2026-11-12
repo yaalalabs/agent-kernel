@@ -55,6 +55,24 @@ execution:
   mode: realtime
 ```
 
+### Migrating from v0.9.5
+
+v0.9.5 hosted one fixed room named at start-up. That API is removed, with no alias:
+
+- `IOHandler.run(gateways=[...])` is gone: mount a handler with `handlers=[...]`.
+- `GatewayRunner` is no longer exported.
+- `LiveKitEdgeGateway` is now `LiveKitEdgeAdapter`, built for you per room.
+
+```python
+# before (v0.9.5)
+IOHandler.run(gateways=[GatewayRunner(LiveKitEdgeGateway(session_id="room_01"))])
+
+# after
+IOHandler.run(handlers=[EdgeLifecycleRESTRequestHandler(LiveKitLifecycleAdapter())])
+```
+
+Then point your LiveKit project's webhook at `/livekit/webhook` (see below). Every room now gets its own edge and session, and the first agent comes from `livekit.agent`.
+
 ### Hosting the edges
 
 Mount `EdgeLifecycleRESTRequestHandler` with `LiveKitLifecycleAdapter`. It is the same shape as a messaging integration: `LiveKitLifecycleAdapter` only translates LiveKit's own signed room webhooks, and `EdgeLifecycleRESTRequestHandler` hosts it, as `WebhookRESTRequestHandler` hosts the Slack adapter. Agent Kernel hosts the edges; you choose which rooms get one.

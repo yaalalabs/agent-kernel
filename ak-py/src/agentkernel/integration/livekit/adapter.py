@@ -31,6 +31,8 @@ class LiveKitEdgeAdapter(StatefulEdgeAdapter):
     name = INTEGRATION_NAME
     # Set on every agent participant: "true" on the one speaking, so a client UI can show who has the call.
     ACTIVE_ATTRIBUTE = "ak.active"
+    # Every agent participant's identity starts with this, which is how the lifecycle adapter tells them from callers.
+    AGENT_IDENTITY_PREFIX = "agent-"
     # On a change of speaker, how long the previous agent's queued audio may play out before the next agent is heard.
     PLAYOUT_WAIT_SECONDS: float = 2.0
     # How long LiveKit may take to confirm an ACTIVE_ATTRIBUTE update before a warning.
@@ -137,12 +139,18 @@ class LiveKitEdgeAdapter(StatefulEdgeAdapter):
         if not (self._api_key and self._api_secret):
             raise ValueError("Both 'api_key' and 'api_secret' must be provided in code or config")
         name = self.agent or "general"
-        return self._AgentParticipant(self.agent, f"agent-{name}", self._mint_token(name))
+        return self._AgentParticipant(self.agent, f"{self.AGENT_IDENTITY_PREFIX}{name}", self._mint_token(name))
 
     def _mint_token(self, name: str) -> str:
         # can_update_own_metadata lets the participant set its ACTIVE_ATTRIBUTE.
         grants = api.VideoGrants(room_join=True, room=self.session_id, can_update_own_metadata=True)
-        return api.AccessToken(self._api_key, self._api_secret).with_identity(f"agent-{name}").with_name(f"{name} Agent").with_grants(grants).to_jwt()
+        return (
+            api.AccessToken(self._api_key, self._api_secret)
+            .with_identity(f"{self.AGENT_IDENTITY_PREFIX}{name}")
+            .with_name(f"{name} Agent")
+            .with_grants(grants)
+            .to_jwt()
+        )
 
     async def start(self) -> None:
         """Join the room and bridge audio until the pipeline shuts down.
@@ -150,6 +158,7 @@ class LiveKitEdgeAdapter(StatefulEdgeAdapter):
         On a failed join the participants leave before the error is raised: the edge runner does not call :meth:`stop` then.
         """
         _log.info(f"Connecting to LiveKit room at {self.room_url}")
+        self._reset_run_state()
 
         self._stop_event = asyncio.Event()
         self._loop = asyncio.get_running_loop()
@@ -185,6 +194,26 @@ class LiveKitEdgeAdapter(StatefulEdgeAdapter):
         await self._stop_event.wait()
         # One participant's room dropping ends the edge; the others must not stay behind in the room.
         await self._release()
+
+    def _reset_run_state(self) -> None:
+        """Start from a clean state, as the edge runner retries ``start()`` on this instance after a failure.
+
+        Only the first participant is kept: the team joins again when the pool announces it.
+        """
+        self._participants = self._participants[:1]
+        self._by_agent.clear()
+        self._joining.clear()
+        self._greeted.clear()
+        self._warned_agents.clear()
+        self._active = self._participants[0]
+        self._speaking_agent = None
+        with self._team_lock:
+            # ``_pending_team`` stays: an announcement can arrive before the first ``start()`` runs.
+            self._connected = False
+        self._transcript.clear()
+        self._interrupted = False
+        self._ending = False
+        self._end_sent = False
 
     def _new_room(self, listen: bool) -> "rtc.Room":
         """A room for one participant, with its handlers registered before it connects.
@@ -539,7 +568,7 @@ class LiveKitEdgeAdapter(StatefulEdgeAdapter):
     def _join_team(self, names: list[str]) -> None:
         self._in_background(self._update_attribute(self._active))
         for name in names:
-            participant = self._AgentParticipant(name, f"agent-{name}", self._mint_token(name))
+            participant = self._AgentParticipant(name, f"{self.AGENT_IDENTITY_PREFIX}{name}", self._mint_token(name))
             self._own_identities.add(participant.identity)
             # Listed before it joins, so a release mid-join takes it out too.
             self._participants.append(participant)
@@ -678,7 +707,7 @@ class LiveKitLifecycleAdapter(EdgeLifecycleAdapter):
         if not room:
             return None
         # The edge's own agent participants also raise participant_joined; they must not start another edge.
-        if event.event == "participant_joined" and event.participant.identity.startswith("agent-"):
+        if event.event == "participant_joined" and event.participant.identity.startswith(LiveKitEdgeAdapter.AGENT_IDENTITY_PREFIX):
             return None
         if event.event in ("room_started", "participant_joined"):
             return EdgeLifecycleEvent(room, start=True)

@@ -193,12 +193,13 @@ class RealtimeConnection:
         """Send the edge one terminal error chunk, mark the connection closed and close the adapter."""
         _log.error(f"Realtime session {self.session_id} failed: {message}")
         self.closed = True
-        self.failure_reported = True
         if self._pacing_task:
             self._pacing_task.cancel()
             self._pacing_task = None
         try:
             await self._emit(StreamChunk(error=message, done=True))
+            # Only once the chunk is on the queue, so a failed send leaves the fallback in ``fail_to_connect`` available.
+            self.failure_reported = True
         finally:
             # Called from inside the adapter's listener, which cannot await its own shutdown.
             self.close_in_background(asyncio.get_running_loop())

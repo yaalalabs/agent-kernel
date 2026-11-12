@@ -946,8 +946,6 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
         self._closing = False
         self._speaker: str | None = None
         self._roster: list[str] = []
-        # Text was already reported as partials: ADK then repeats it once, merged and not partial.
-        self._text_streamed = False
         self._tool_context: AKToolContext | None = None
 
     def initial_speaker(self, agent: AKBaseAgent) -> str | None:
@@ -960,7 +958,7 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
 
     @classmethod
     def _speaking(cls, root: Any) -> list[LlmAgent]:
-        """Every ``LlmAgent`` under ``root`` (workflow nodes, nested workflows and ``sub_agents``), nearest first; ``single_turn`` agents excluded."""
+        """Every ``LlmAgent`` under ``root`` (workflow nodes and ``sub_agents``), nearest first; ``single_turn`` agents excluded."""
         found: list[LlmAgent] = []
         pending = [root] if isinstance(root, LlmAgent) else cls._workflow_nodes(root)
         while pending:
@@ -968,7 +966,6 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
             if isinstance(node, LlmAgent) and node.mode != "single_turn":
                 found.append(node)
             pending.extend(getattr(node, "sub_agents", None) or [])
-            pending.extend(cls._workflow_nodes(node))  # a nested workflow keeps its speaking agents in its own graph
         return found
 
     @staticmethod
@@ -1068,16 +1065,9 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
                 await self._speaker_changed(event.author)
                 await self._callback("audio_delta", {"delta": base64.b64encode(blob.data).decode("utf-8"), "message_id": event.id})
             elif part.text and not part.thought and output is None:
-                if event.partial:
-                    self._text_streamed = True
-                elif self._text_streamed:
-                    self._text_streamed = False
-                    continue
                 await self._speaker_changed(event.author)
                 await self._callback("transcript_delta", {"delta": part.text, "message_id": event.id})
 
-        if event.turn_complete or event.interrupted:
-            self._text_streamed = False
         if event.actions and event.actions.transfer_to_agent:
             await self._callback("done", {"status": "transferred"})
         elif event.turn_complete:
@@ -1089,11 +1079,7 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
         if agent == self._speaker:
             return
         data: dict[str, Any] = {"agent": agent, "previous_agent": self._speaker}
-        if self._speaker is None:
-            # A workflow root does not speak, so nothing announced the team yet: the first speaker comes first in it.
-            self._roster = [agent, *(name for name in self._roster if name != agent)]
-            data["agents"] = list(self._roster)
-        elif agent not in self._roster:
+        if agent not in self._roster:
             self._roster.append(agent)
             data["agents"] = list(self._roster)
         self._speaker = agent
@@ -1130,14 +1116,12 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
 
     @staticmethod
     async def _release(runner: Runner) -> None:
-        """Closes what one call owns: its plugins and its session service.
+        """Flushes the session service, the one thing a call owns.
 
-        ``Runner.close()`` would also close the toolsets of the native agent, which belongs to the application and is shared by every
-        call on it (as an MCP toolset's connections are), so ending one call would cut off a tool another call is using. The unary path
-        never closes them either.
+        ``Runner.close()`` would also close the toolsets and the plugins. Both belong to the application and are shared by every
+        call on the agent (an MCP toolset's connections, a plugin's client), so ending one call would cut off what another call is
+        using. The unary path never closes them either.
         """
-        if runner.plugin_manager:
-            await runner.plugin_manager.close()
         if runner.session_service:
             await runner.session_service.flush()
 

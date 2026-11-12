@@ -630,6 +630,21 @@ class TestRealtimePoolShutdown:
         assert not RealtimeConnection._closing
 
     @pytest.mark.asyncio
+    async def test_a_failure_whose_chunk_was_not_sent_is_not_marked_reported(self, monkeypatch):
+        monkeypatch.setattr(QueueTransportFactory, "create", staticmethod(lambda *a, **k: InMemoryTransport()))
+        conn = _connection(agent=_Agent(realtime_runner_cls=self._CountingAdapter), loop=asyncio.get_running_loop())
+
+        async def broken_emit(chunk):
+            raise RuntimeError("queue down")
+
+        conn._emit = broken_emit
+        with pytest.raises(RuntimeError):
+            await conn._fail("model failed")
+
+        assert not conn.failure_reported  # so a failed connect can still send the edge its error
+        await asyncio.gather(*RealtimeConnection._closing)
+
+    @pytest.mark.asyncio
     async def test_a_background_close_that_raises_is_logged_with_the_session(self, monkeypatch, caplog):
         class _Failing(self._CountingAdapter):
             async def disconnect(self):

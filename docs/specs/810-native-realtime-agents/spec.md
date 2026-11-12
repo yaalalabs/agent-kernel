@@ -339,7 +339,7 @@ frame, about every 100 ms, and each replacement failed again, sent an error chun
 - `EdgeLifecycleEvent` (dataclass: `session_id`, `start: bool`).
 - `EdgeLifecycleAdapter(ABC)`, translation only: `name`, `webhook_path`; abstract `parse(raw) -> EdgeLifecycleEvent | None`
   (verifies and maps one delivery; `None` = starts or ends nothing; raises `HTTPException` to reject) and
-  `create_edge(session_id) -> StatefulEdgeAdapter`; `should_start(session_id)` (default `True`). No `verify` or
+  `create_edge(session_id) -> StatefulEdgeAdapter`; `should_start(session_id)` (default `True`). `StatefulEdgeAdapter` gains `ending` (property, default `False`): the edge has begun to end but `start()` has not returned. No `verify` or
   `success_response`: no platform needs them, and the host answers `{"status": "ok"}`.
 
 #### 4.4 `EdgeLifecycleRESTRequestHandler` (`integration/adapter/lifecycle.py`)
@@ -352,7 +352,9 @@ frame, about every 100 ms, and each replacement failed again, sent an error chun
   `_EdgeRunner(adapter.create_edge(session_id))` starts on a thread of its own, kept with the runner in `_runners`.
   The thread removes its own entry when `start()` returns, only if the entry is still that runner. Once
   `ThreadRunner.shutdown_event` is set, no new edge starts.
-- `_stop`: `runner.stop()` for the session, if any.
+- A start for a session whose runner `adapter.ending` is true is recorded in `_restart`; when that runner's thread exits it starts a new edge for the session.
+- `_stop`: drops any `_restart` entry, then `runner.stop()` for the session, if any.
+- `_EdgeRunner` retries a failed `adapter.start()` up to `START_ATTEMPTS = 3` times, waiting `START_RETRY_BASE_SECONDS * 2 ** (attempt - 1)`, on the same adapter instance. `StatefulEdgeAdapter.start` documents that it must begin from a clean state (`LiveKitEdgeAdapter._reset_run_state`).
 - No shutdown wait: each live edge's `_EdgeRunner` already watches `ThreadRunner.shutdown_event` and stops, and the process does not wait for it. A session whose end control was not sent closes by idle eviction (300 s). `RESTRequestHandler` and `IOHandler` are unchanged.
 
 #### 4.5 `LiveKitLifecycleAdapter` (`integration/livekit/adapter.py`)
@@ -361,7 +363,7 @@ frame, about every 100 ms, and each replacement failed again, sent an error chun
   `livekit.api_key`/`api_secret`; missing either raises `ValueError` naming `AK_LIVEKIT__API_KEY`/`AK_LIVEKIT__API_SECRET`.
 - `parse`: `api.WebhookReceiver(api.TokenVerifier(key, secret)).receive(body, Authorization)`, so the SDK checks the
   signature while parsing (as Slack's does); any failure is a 401 (`HTTPException` imported in the method, so the
-  `livekit` extra needs no FastAPI). `room_started` → `start=True`, `room_finished` → `start=False`, anything else or no room → `None`.
+  `livekit` extra needs no FastAPI). `room_started` → `start=True`; `participant_joined` → `start=True` unless the identity starts with `LiveKitEdgeAdapter.AGENT_IDENTITY_PREFIX` (`"agent-"`, the prefix the edge gives its own participants, in `_single_participant`, `_mint_token` and `_join_team` too), then `None`; `room_finished` → `start=False`; anything else or no room → `None`.
 - `create_edge(room)`: `LiveKitEdgeAdapter(session_id=room, api_key=key, api_secret=secret)`,
   so keys passed in code reach the gateway too.
 

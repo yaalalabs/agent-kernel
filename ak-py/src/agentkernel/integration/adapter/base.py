@@ -283,7 +283,11 @@ class StatefulEdgeAdapter(ABC):
 
     @abstractmethod
     async def start(self) -> None:
-        """Connect and run the edge's loop until the process shuts down."""
+        """Connect and run the edge's loop until the process shuts down.
+
+        The edge runner calls it again on the same instance when it raises (up to ``_EdgeRunner.START_ATTEMPTS`` times), so it must
+        begin from a clean state: reset anything an earlier run left behind.
+        """
 
     @abstractmethod
     async def stop(self) -> None:
