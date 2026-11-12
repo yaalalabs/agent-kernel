@@ -2,6 +2,7 @@ import asyncio
 import base64
 import json
 import logging
+import threading
 import uuid
 
 from livekit import api, rtc
@@ -139,6 +140,10 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
 
         self._loop: asyncio.AbstractEventLoop | None = None
         self._connected = False
+        # A team announced while the first participant is still joining waits here until it is in the room.
+        # The announcement arrives on another thread than start() runs on, hence the lock.
+        self._team_lock = threading.Lock()
+        self._pending_team: Optional[tuple[str, list[str]]] = None
         # Bounded staging queue drained by one sender task, so inbound frames never spawn an
         # unbounded task per frame: a slow or unreachable broker applies backpressure here.
         self._pending: "asyncio.Queue | None" = None
@@ -183,9 +188,13 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
         except Exception:
             await self._release()
             raise
-        self._connected = True
+        with self._team_lock:
+            self._connected = True
+            pending, self._pending_team = self._pending_team, None
         _log.info("LiveKit WebRTC connection established; AI audio published.")
         self._show_speaking()
+        if pending is not None:
+            self._show_team(*pending)
 
         await self._stop_event.wait()
         # One participant's room dropping ends the gateway; the others must not stay behind in the room.
@@ -419,6 +428,13 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
                 await asyncio.wait_for(self._run_on_room(previous.audio_source.wait_for_playout()), timeout=self.PLAYOUT_WAIT_SECONDS)
             except asyncio.TimeoutError:
                 _log.warning(f"Agent '{previous.agent}' was still playing after {self.PLAYOUT_WAIT_SECONDS}s; '{speaker.agent}' speaks now")
+                # Still has audio queued past the bound: drop it rather than let it trail into the next
+                # agent's first words, the same hard cut a client barge-in gets (``_clear_playback``).
+                if self._loop is not None:
+                    try:
+                        self._loop.call_soon_threadsafe(previous.audio_source.clear_queue)
+                    except RuntimeError:
+                        pass
 
         _log.info(f"Agent participant speaking: '{previous.agent}' -> '{speaker.agent}'")
         self._set_muted(previous, True)
@@ -472,6 +488,12 @@ class LiveKitEdgeGateway(StatefulEdgeAdapter):
         :param agents: Every agent the conversation can hand off to, the starting one first.
         """
         self._by_agent.setdefault(starting, self._participants[0])
+        with self._team_lock:
+            if not self._connected:
+                # The participant that hears the human is still joining. The team joins once it is in, not
+                # alongside it: joins that overlap have timed out and dropped the room.
+                self._pending_team = (starting, agents)
+                return
         missing = [name for name in agents if name not in self._by_agent and name not in self._joining]
         if not missing or self._loop is None:
             return
