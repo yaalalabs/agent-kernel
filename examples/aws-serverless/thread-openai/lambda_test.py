@@ -1,7 +1,7 @@
 """Tests for the deployed serverless thread example.
 
 Set AK_TEST_ENDPOINT to the module's `agent_invoke_url` output (the chat route) and AK_TEST_TOKEN to
-the deployed `demo_auth_token` (alice's credential) and AK_TEST_BOB_TOKEN to the `bob_auth_token`. The
+the deployed `demo_auth_token` (alice's credential; bob's is it plus "-bob", see deploy/main.tf). The
 thread routes are derived from the endpoint, since both live behind the same API Gateway stage.
 """
 
@@ -14,11 +14,11 @@ import pytest
 
 ENDPOINT = os.getenv("AK_TEST_ENDPOINT", "").rstrip("/")
 ALICE_TOKEN = os.getenv("AK_TEST_TOKEN", "")
-BOB_TOKEN = os.getenv("AK_TEST_BOB_TOKEN", "")
+BOB_TOKEN = f"{ALICE_TOKEN}-bob"
 
 pytestmark = pytest.mark.skipif(
-    not ENDPOINT or not ALICE_TOKEN or not BOB_TOKEN,
-    reason="Set AK_TEST_ENDPOINT to the agent_invoke_url, AK_TEST_TOKEN to the demo_auth_token and AK_TEST_BOB_TOKEN to the bob_auth_token",
+    not ENDPOINT or not ALICE_TOKEN,
+    reason="Set AK_TEST_ENDPOINT to the agent_invoke_url and AK_TEST_TOKEN to the demo_auth_token",
 )
 
 

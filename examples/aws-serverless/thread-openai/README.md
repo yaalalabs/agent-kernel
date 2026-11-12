@@ -48,8 +48,8 @@ the caller's own threads, and another user's thread answers 403, to read or to c
 
 The block here selects the `static` provider with two principals, `alice` and `bob`. Their
 credentials are never written in `config.yaml`: Terraform passes them as the `ALICE_TOKEN` and
-`BOB_TOKEN` environment variables (from the `demo_auth_token` and `bob_auth_token` variables), which
-the secret capability resolves at startup. To validate real tokens, swap the
+`BOB_TOKEN` environment variables (alice's is the `demo_auth_token` variable, bob's is it plus
+`-bob`), which the secret capability resolves at startup. To validate real tokens, swap the
 provider for `oidc` (Auth0, Keycloak, Okta), `cognito`, `entra` or `firebase`, and add the `auth`
 extra to the `authorizer` and `request_handler` dependency sets in `pyproject.toml`.
 
@@ -89,8 +89,7 @@ about: its credentials are static strings.
 ## Deploy
 
 Create `deploy/terraform.tfvars` values (or `TF_VAR_*` variables) for `openai_api_key`,
-`demo_auth_token` and `bob_auth_token` (two different values, for example `openssl rand -hex 32`
-each), `vpc_id` and `private_subnet_ids`, then:
+`demo_auth_token` (for example `openssl rand -hex 32`), `vpc_id` and `private_subnet_ids`, then:
 
 ```bash
 cd deploy
@@ -114,7 +113,6 @@ thread is named after the start of its first prompt.
 ```bash
 export AK_TEST_ENDPOINT=<agent_invoke_url output>
 export AK_TEST_TOKEN=<demo_auth_token>
-export AK_TEST_BOB_TOKEN=<bob_auth_token>
 uv run pytest lambda_test.py
 ```
 

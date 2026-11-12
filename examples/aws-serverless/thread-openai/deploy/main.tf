@@ -1,8 +1,9 @@
 locals {
   # The credentials of the static identity provider in config.yaml. Not needed with an oidc block.
+  # Bob's is derived from alice's so one generated value (CI's TF_VAR_demo_auth_token) serves both.
   demo_credentials = {
     "ALICE_TOKEN" = var.demo_auth_token
-    "BOB_TOKEN"   = var.bob_auth_token
+    "BOB_TOKEN"   = "${var.demo_auth_token}-bob"
   }
 }
 

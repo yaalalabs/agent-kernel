@@ -32,13 +32,7 @@ variable "private_subnet_ids" {
 }
 
 variable "demo_auth_token" {
-  description = "Alice's bearer token for the static identity provider in config.yaml"
-  type        = string
-  sensitive   = true
-}
-
-variable "bob_auth_token" {
-  description = "Bob's bearer token for the static identity provider in config.yaml; must differ from demo_auth_token"
+  description = "Alice's bearer token for the static identity provider in config.yaml; bob's is this value plus \"-bob\""
   type        = string
   sensitive   = true
 }

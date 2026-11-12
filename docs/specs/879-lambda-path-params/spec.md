@@ -554,6 +554,5 @@ the code follows #603:
   paused run records its pause under `HITL_MEDIA_TYPE` on the serverless runner too.
 - **Example.** `lambda_auth.py` is `APIGatewayAuthorizer().handle` over a `static` identity block; the
   `guest` route rule is gone (authorization arrives in a later #603 phase). The tests read alice's
-  token from `AK_TEST_TOKEN` (CI's `demo_auth_token`) and bob's from `AK_TEST_BOB_TOKEN` (CI's
-  `bob_auth_token`), two independently generated values.
+  token from `AK_TEST_TOKEN` (CI's `demo_auth_token`); bob's is it plus `-bob`.
 - **Errors.** A missing `session_id` is now 400 (develop's `ValueError` mapping in `_handle`), not 500.
