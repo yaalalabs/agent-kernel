@@ -90,7 +90,8 @@ Live captions (C2) are not part of Agent Kernel. C3 (an API for application code
   cd ak-py && uv run pytest tests/test_stream_events.py tests/test_adk_realtime.py tests/test_openai_realtime.py tests/test_realtime_pool.py
   ```
 
-  The new tests check one `InputTranscript` per scripted utterance, before the reply that answers it, for each SDK.
+  The new tests check one `InputTranscript` per scripted utterance, in the order the framework reports it, for each SDK,
+  including a transcription that finishes after the reply.
 
 ### Iteration 2: Opening prompt and join (C5)
 
@@ -175,9 +176,9 @@ Live captions (C2) are not part of Agent Kernel. C3 (an API for application code
 - **Verify:**
 
   ```bash
-  cd ak-py && uv run pytest tests/test_realtime_pool.py tests/test_openai_realtime.py tests/test_adk_realtime.py \
+  (cd ak-py && uv run pytest tests/test_realtime_pool.py tests/test_openai_realtime.py tests/test_adk_realtime.py \
     tests/test_livekit_edge_adapter.py tests/test_integration_edge_lifecycle.py tests/test_ecs_akagentrunner_realtime.py \
-    tests/test_integration_edge_lifecycle.py tests/test_livekit_lifecycle_adapter.py
+    tests/test_livekit_lifecycle_adapter.py)
   make lint-check-all   # from the repo root
   ```
 

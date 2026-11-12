@@ -523,6 +523,28 @@ class TestRealtimeFailedConnect:
             ThreadRunner.shutdown_event.set()
             thread.join(timeout=5)
 
+    def test_an_error_reported_while_connecting_reaches_the_edge_once(self, monkeypatch):
+        transport = InMemoryTransport()
+        monkeypatch.setattr(QueueTransportFactory, "create", staticmethod(lambda *a, **k: transport))
+
+        class _ReportsError(_Adapter):
+            async def connect(self, session, agent, callback):
+                await callback("error", {"message": "invalid API key"})  # the runner reports it, then returns
+
+        pool = RealtimeConnectionPool.initialize()
+        thread = threading.Thread(target=pool.start, daemon=True)
+        thread.start()
+        try:
+            with pytest.raises(RuntimeError, match="ended during startup"):
+                pool.get_or_create("s1", _Agent(realtime_runner_cls=_ReportsError), Runtime(InMemorySessionStore()), Session("s1"))
+            errors = [json.loads(m.body).get("error") for m in _drain_output(transport) if json.loads(m.body).get("error")]
+
+            assert errors == ["invalid API key"]  # the runner's own error, not a second "could not start" after it
+            assert pool._backing_off("s1")  # still a failed start for the reconnect back-off
+        finally:
+            ThreadRunner.shutdown_event.set()
+            thread.join(timeout=5)
+
 
 class TestRealtimePoolShutdown:
     """Shutdown closes every connection once, opens none, and never leaves a caller waiting on a dead loop."""

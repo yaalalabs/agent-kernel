@@ -136,6 +136,8 @@ class EdgeLifecycleRESTRequestHandler(RESTRequestHandler):
             raise ValueError(f"{type(adapter).__name__} must declare a webhook_path for its platform's lifecycle webhooks")
         self._adapter = adapter
         self._runners: dict[str, tuple[_EdgeRunner, threading.Thread]] = {}
+        # Sessions whose start arrived while their edge was ending: a new edge starts once that one has ended.
+        self._restart: set[str] = set()
         self._lock = threading.Lock()
 
     @property
@@ -170,6 +172,8 @@ class EdgeLifecycleRESTRequestHandler(RESTRequestHandler):
                 self._log.info(f"Shutting down; not starting an edge: integration={self._adapter.name}, session_id={session_id}")
                 return
             if session_id in self._runners:
+                if self._runners[session_id][0].adapter.ending:
+                    self._restart.add(session_id)
                 return
             runner = _EdgeRunner(self._adapter.create_edge(session_id))
             thread = threading.Thread(target=self._run, args=(session_id, runner), daemon=True, name=f"{self._adapter.name}-{session_id}")
@@ -183,12 +187,21 @@ class EdgeLifecycleRESTRequestHandler(RESTRequestHandler):
         except Exception:
             self._log.exception(f"Edge failed: integration={self._adapter.name}, session_id={session_id}")
         finally:
+            restart = False
             with self._lock:
                 if self._runners.get(session_id, (None,))[0] is runner:
                     del self._runners[session_id]
+                    restart = session_id in self._restart
+                    self._restart.discard(session_id)
+            if restart:
+                self._log.info(
+                    f"A start arrived while the edge was ending; starting a new one: integration={self._adapter.name}, session_id={session_id}"
+                )
+                self._start(session_id)
 
     def _stop(self, session_id: str) -> None:
         with self._lock:
+            self._restart.discard(session_id)
             entry = self._runners.get(session_id)
         if entry is not None:
             entry[0].stop()

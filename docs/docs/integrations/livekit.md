@@ -60,7 +60,7 @@ execution:
 Mount `EdgeLifecycleRESTRequestHandler` with `LiveKitLifecycleAdapter`. It is the same shape as a messaging integration: `LiveKitLifecycleAdapter` only translates LiveKit's own signed room webhooks, and `EdgeLifecycleRESTRequestHandler` hosts it, as `WebhookRESTRequestHandler` hosts the Slack adapter. Agent Kernel hosts the edges; you choose which rooms get one.
 
 - `room_started` starts an edge for the room. The room name is the session id.
-- `participant_joined` also starts one if the edge is not running, so a caller who rejoins after it ended gets a new edge.
+- A caller's `participant_joined` also starts one if the edge is not running, so a caller who rejoins after it ended gets a new edge. A caller who rejoins while the old edge is still leaving gets a new edge as soon as it has left. The edge's own `agent-*` participants never start one.
 - When the last caller leaves, that edge ends the session at once and leaves the room.
 - `room_finished` stops the room's edge if it is still running.
 

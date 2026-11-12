@@ -408,14 +408,13 @@ frame, about every 100 ms, and each replacement failed again, sent an error chun
    error to the room and hit the model provider.*
 7. **The conversation opens when a participant joins the room**, not when a microphone appears (2). *Intentional: a caller who joins muted is greeted.*
 8. **Realtime does not use `framework_context`** in either adapter. *Not a change from base; stated in the contract.*
-9. **A LiveKit room can get its own gateway and session at runtime** (4.4, 4.5), only when the app mounts `EdgeLifecycleRESTRequestHandler(LiveKitLifecycleAdapter())`. *Intentional: opt-in, nothing changes for a fixed room.*
+9. **A LiveKit room gets its own edge and session at runtime** (4.4, 4.5), when the app mounts `EdgeLifecycleRESTRequestHandler(LiveKitLifecycleAdapter())`. *Intentional: it replaces boot-time gateway hosting. `GatewayRunner` and `IOHandler.run(gateways=...)` are removed, so an existing gateway host must migrate to this handler.*
+10. **`execute_tool()` and `send_tool_result()` are removed from the `RealtimeRunner` ABC** (the SDK runs its own tools). *Intentional: a bring-your-own realtime runner must drop them.*
 
 **Non-changes:**
-- The `RealtimeRunner` abstract methods.
 - The `StreamChunk` fields.
 - The `AgentChanged` shape.
 - The `lk-chat` publishing.
-- Boot-time gateway hosting, including its process-ending failure.
 - `AKConfig` and its YAML / `AK_*` variables.
 - Data written before the change. AK persists nothing new.
 

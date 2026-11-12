@@ -30,6 +30,9 @@ class ToolContext:
     """
 
     _context: ClassVar[contextvars.ContextVar[Self | None]] = contextvars.ContextVar("tool_context", default=None)
+    # The tokens ``set()`` made in this context, newest last. A token can only be reset in the context that made it, and one
+    # ToolContext can be set by several tool calls at once (each its own task), so the token cannot live on the instance.
+    _tokens: ClassVar[contextvars.ContextVar[tuple[tuple[Any, contextvars.Token], ...]]] = contextvars.ContextVar("tool_context_tokens", default=())
     _cache: ClassVar[dict[str, Self]] = {}
 
     def __init__(self, runtime: Runtime, agent: Agent, session: Session, requests: list[AgentRequest]):
@@ -45,7 +48,6 @@ class ToolContext:
         self._agent: Agent = agent
         self._session: Session = session
         self._requests: list[AgentRequest] = requests
-        self._token: contextvars.Token[Self | None] | None = None
         self._framework_context: dict | None = None
 
     @property
@@ -143,7 +145,8 @@ class ToolContext:
         """
         Set this ToolContext instance in the context variable.
         """
-        self._token = ToolContext._context.set(self)
+        token = ToolContext._context.set(self)
+        ToolContext._tokens.set((*ToolContext._tokens.get(), (self, token)))
 
         return self
 
@@ -151,9 +154,12 @@ class ToolContext:
         """
         Reset the context variable to the previous value before this ToolContext was set.
         """
-        if self._token is not None:
-            ToolContext._context.reset(self._token)
-            self._token = None
+        held = ToolContext._tokens.get()
+        for index in range(len(held) - 1, -1, -1):
+            if held[index][0] is self:
+                ToolContext._context.reset(held[index][1])
+                ToolContext._tokens.set(held[:index] + held[index + 1 :])
+                return
 
     def __enter__(self) -> Self:
         """

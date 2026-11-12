@@ -1242,6 +1242,15 @@ class TestCallersLeaving:
     def test_the_last_caller_leaving_stops_the_edge(self):
         assert self._left(_edge(), still_here=[]) is True
 
+    def test_an_edge_is_ending_once_its_last_caller_left(self):
+        """The host holds a caller's rejoin while the edge is ending and starts a new edge after it."""
+        edge = _edge()
+        assert not edge.ending  # not started
+        self._left(edge, still_here=["caller-2"])
+        assert not edge.ending
+        self._left(edge, still_here=[])
+        assert edge.ending
+
     def test_a_caller_still_in_the_room_keeps_it_going(self):
         assert self._left(_edge(), still_here=["caller-2"]) is False
 

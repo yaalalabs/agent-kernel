@@ -73,6 +73,8 @@ class RealtimeConnection:
         self._startup_task: asyncio.Task | None = None
         # Shutdown, eviction and failure can all close one connection; disconnect only once.
         self._disconnecting = False
+        # The edge was already sent this connection's terminal error, so a failed start must not send a second.
+        self.failure_reported = False
         self.last_activity_at: float = time.time()
 
         if not getattr(self.agent, "realtime_runner_cls", None):
@@ -191,6 +193,7 @@ class RealtimeConnection:
         """Send the edge one terminal error chunk, mark the connection closed and close the adapter."""
         _log.error(f"Realtime session {self.session_id} failed: {message}")
         self.closed = True
+        self.failure_reported = True
         if self._pacing_task:
             self._pacing_task.cancel()
             self._pacing_task = None
@@ -547,7 +550,8 @@ class RealtimeConnectionPool:
             self._note_failure(session_id, conn)
         connect.cancel()
         conn.closed = True
-        if self._loop and not self._loop.is_closed() and not self._stopping.is_set():
+        # A runner that reported an error while connecting already sent the edge its terminal error, and is closing.
+        if self._loop and not self._loop.is_closed() and not self._stopping.is_set() and not conn.failure_reported:
             asyncio.run_coroutine_threadsafe(conn.fail_to_connect(error), self._loop)
 
     def dispatch(

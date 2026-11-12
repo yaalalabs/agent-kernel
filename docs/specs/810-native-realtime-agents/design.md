@@ -160,11 +160,11 @@ The sections below keep the labels C1 and C4 to C7 used in the code and the arch
 - An unsupported option gives an explicit error before opening. An approval-needing tool (OpenAI) or a confirmation-requiring tool (ADK) fails the connection when the SDK requests it.
 - A custom runner's `tool_call` fails explicitly.
 - Two AK sessions keep separate native sessions; closing one does not stop the other.
-- C1: one utterance gives exactly one `InputTranscript`, before the reply that answers it.
+- C1: one utterance gives exactly one `InputTranscript`, in the order the framework reports it; a transcription that finishes after the reply arrives after it.
 - C4: after the control, `disconnect` has run and a later input for the session id opens a new connection; the control is not sent past unsent staged input, and a broker that does not answer cannot hold up the stop; a stopped edge does not unregister a newer one.
 - C5: `None` sends no opening request; a custom prompt is sent once; a caller who joins muted is greeted, and so is one already in the room.
 - C6: repeated immediate failures drop input with delays 1, 2, 4 s; output before a failure restarts the count; ending the session clears it; a failed connect sends one error chunk.
-- C7: a signed `room_started` starts one gateway (a resent webhook starts no second), `room_finished` stops it, a bad signature is a 401; the last caller leaving ends the session; a gateway stopped before it starts never joins; at shutdown no new edge starts and the process waits for the live ones.
+- C7: a signed `room_started` starts one edge (a resent webhook starts no second), `room_finished` stops it, a bad signature is a 401; the last caller leaving ends the session; an edge stopped before it starts never joins; at shutdown no new edge starts and each live edge is signalled to stop, without the process waiting for it (idle eviction closes a session whose end control was not sent).
 - A handoff to an agent the starting roster lacked does not bind it to the first participant.
 
 ## Non-goals

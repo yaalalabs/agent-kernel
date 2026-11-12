@@ -17,6 +17,7 @@ from google.adk.models.llm_response import LlmResponse
 from google.adk.runners import Runner as ADKRunner
 from google.adk.sessions import InMemorySessionService
 from google.adk.tools import FunctionTool
+from google.adk.tools.base_toolset import BaseToolset
 from google.adk.tools.tool_confirmation import ToolConfirmation
 from google.adk.workflow import Workflow
 from google.genai import types
@@ -58,6 +59,25 @@ def test_realtime_agent_gets_the_ak_system_tools_and_prompt_like_any_other_mode(
     assert native.description == "A voice agent.\nUse system_note."
 
 
+def test_a_nested_workflows_speaking_agents_are_found_and_get_the_system_tools(monkeypatch):
+    asked = []
+
+    def tools_for(agent_name=None):
+        asked.append(agent_name)
+        return []
+
+    monkeypatch.setattr(SystemToolFactory, "get_all", staticmethod(tools_for))
+    monkeypatch.setattr(SystemToolFactory, "get_system_prompt_suffix", staticmethod(lambda agent_name=None: ""))
+    outer_agent = LlmAgent(name="outer_agent", model="gemini-2.5-flash", mode="chat")
+    inner_agent = LlmAgent(name="inner_agent", model="gemini-2.5-flash", mode="chat")
+    inner = Workflow(name="inner", edges=[("START", inner_agent)])
+    outer = Workflow(name="outer", edges=[("START", outer_agent), (outer_agent, inner)])
+
+    assert [agent.name for agent in GoogleADKRealtimeRunner._speaking(outer)] == ["outer_agent", "inner_agent"]
+    GoogleADKAgent("outer", GoogleADKRunner(), outer)
+    assert "inner_agent" in asked  # an agent in a nested workflow is looked up by its own name too
+
+
 def test_a_workflows_speaking_nodes_get_the_system_tools_and_the_root_does_not(monkeypatch):
     def system_note(text: str) -> str:
         """A system tool."""
@@ -92,7 +112,13 @@ class NativeRun:
         self.events = asyncio.Queue()
         self.calls = []
         self.closed = False
+        self.plugin_manager = None
+        self.session_service = SimpleNamespace(flush=self._flush)
         NativeRun.latest = self
+
+    async def _flush(self):
+        # A call's release flushes the session service (it does not call Runner.close(), which would close shared toolsets).
+        self.closed = True
 
     async def run_live(self, **kwargs):
         self.calls.append(kwargs)
@@ -101,9 +127,6 @@ class NativeRun:
             if event is None:
                 return
             yield event
-
-    async def close(self):
-        self.closed = True
 
 
 @pytest.mark.asyncio
@@ -259,8 +282,36 @@ async def test_workflow_reports_its_first_speaking_node_after_its_own_name(monke
 
         await asyncio.wait_for(wait_for_output(), 3)
         await runner.disconnect()
-        assert seen[0] == ("agent_changed", {"agent": "first", "previous_agent": None})
+        assert seen[0] == ("agent_changed", {"agent": "first", "previous_agent": None, "agents": ["first"]})
         assert seen[1][0] == "transcript_delta" and seen[1][1]["delta"] == "Hello"
+
+
+@pytest.mark.asyncio
+async def test_a_workflows_first_speaker_announces_the_whole_team_with_itself_first(monkeypatch):
+    monkeypatch.setattr(SystemToolFactory, "get_all", staticmethod(lambda agent_name=None: []))
+    monkeypatch.setattr(SystemToolFactory, "get_system_prompt_suffix", staticmethod(lambda agent_name=None: ""))
+    monkeypatch.setattr("agentkernel.framework.adk.adk.Runner", NativeRun)
+    first = LlmAgent(name="first", model="gemini-2.5-flash", mode="chat")
+    second = LlmAgent(name="second", model="gemini-2.5-flash", mode="chat")
+    workflow = Workflow(name="flow", edges=[("START", first), ("START", second)])
+    with Runtime(InMemorySessionStore()):
+        owner = GoogleADKModule([workflow]).get_agent("flow")
+        runner = GoogleADKRealtimeRunner()
+        seen = []
+
+        async def collect(kind, data):
+            seen.append((kind, data))
+
+        await runner.connect(Session("call-3"), owner, collect)
+        # The workflow's second node speaks first; the roster still lists both, the speaker first (the edge gives each its own participant).
+        await NativeRun.latest.events.put(Event(author="second", invocation_id="i", content=types.Content(parts=[types.Part(text="Hi")])))
+        await wait_until(lambda: len(seen) >= 1)
+        await NativeRun.latest.events.put(Event(author="first", invocation_id="i", content=types.Content(parts=[types.Part(text="Hello")])))
+        await wait_until(lambda: len(seen) >= 4)
+        await runner.disconnect()
+    changes = [data for kind, data in seen if kind == "agent_changed"]
+    assert changes[0] == {"agent": "second", "previous_agent": None, "agents": ["second", "first"]}
+    assert changes[1] == {"agent": "first", "previous_agent": "second"}  # the team is announced once
 
 
 # -- the adapter's mapping of ADK events onto the pool's events -----------------------------------
@@ -415,6 +466,83 @@ async def test_caller_audio_and_text_reach_the_native_queue(native):
         await runner.disconnect()
     assert audio.blob.data == b"\x00\x01\x02\x03" and audio.blob.mime_type == "audio/pcm;rate=16000"
     assert text.content.role == "user" and text.content.parts[0].text == "hello"
+
+
+async def say(run, text, partial):
+    await run.events.put(model_event("coordinator", partial=partial, content=types.Content(parts=[types.Part(text=text)])))
+
+
+async def finish_turn(run, seen, turns):
+    await run.events.put(model_event("coordinator", turn_complete=True))
+    await wait_until(lambda: sum(kind == "done" for kind, _ in seen) >= turns)
+
+
+@pytest.mark.asyncio
+async def test_text_sent_as_partials_is_not_repeated_by_its_merged_copy(native):
+    coordinator, billing = team()
+    with Runtime(InMemorySessionStore()):
+        runner, seen, run = await open_call([coordinator, billing])
+        for text, partial in [("Hel", True), ("lo", True), ("Hello", False)]:  # ADK repeats partial text once, merged and not partial
+            await say(run, text, partial)
+        await finish_turn(run, seen, 1)
+        await runner.disconnect()
+    assert [data["delta"] for kind, data in seen if kind == "transcript_delta"] == ["Hel", "lo"]
+
+
+@pytest.mark.asyncio
+async def test_text_that_arrives_only_merged_is_still_reported(native):
+    coordinator, billing = team()
+    with Runtime(InMemorySessionStore()):
+        runner, seen, run = await open_call([coordinator, billing])
+        await say(run, "Hello", partial=False)
+        await finish_turn(run, seen, 1)
+        await runner.disconnect()
+    assert [data["delta"] for kind, data in seen if kind == "transcript_delta"] == ["Hello"]
+
+
+@pytest.mark.asyncio
+async def test_a_turn_that_never_got_its_merged_copy_does_not_swallow_the_next_turns_text(native):
+    coordinator, billing = team()
+    with Runtime(InMemorySessionStore()):
+        runner, seen, run = await open_call([coordinator, billing])
+        await say(run, "Hi", partial=True)  # turn 1: partials only
+        await finish_turn(run, seen, 1)
+        await say(run, "Yo", partial=False)  # turn 2: merged only
+        await finish_turn(run, seen, 2)
+        await runner.disconnect()
+    assert [data["delta"] for kind, data in seen if kind == "transcript_delta"] == ["Hi", "Yo"]
+
+
+class CountingToolset(BaseToolset):
+    """A toolset that counts its closes, standing in for an MCP toolset whose connections every call on the agent shares."""
+
+    def __init__(self):
+        super().__init__()
+        self.closed = 0
+
+    async def get_tools(self, readonly_context=None):
+        return []
+
+    async def close(self):
+        self.closed += 1
+
+
+@pytest.mark.asyncio
+async def test_ending_a_call_does_not_close_the_toolsets_every_call_on_the_agent_shares(monkeypatch):
+    monkeypatch.setattr(SystemToolFactory, "get_all", staticmethod(lambda agent_name=None: []))
+    monkeypatch.setattr(SystemToolFactory, "get_system_prompt_suffix", staticmethod(lambda agent_name=None: ""))
+    toolset = CountingToolset()
+    native_agent = LlmAgent(name="voice", model="gemini-2.5-flash", mode="chat", tools=[toolset])
+    with Runtime(InMemorySessionStore()):
+        owner = GoogleADKModule([native_agent]).get_agent("voice")
+        call_a = GoogleADKRunner._native_runner(owner, GoogleADKRunner._session(Session("call-a")), {})
+        call_b = GoogleADKRunner._native_runner(owner, GoogleADKRunner._session(Session("call-b")), {})
+
+        await GoogleADKRealtimeRunner._release(call_a)  # call A ends while call B is still using the agent
+
+        assert toolset.closed == 0
+        await call_b.close()  # what ADK's own Runner.close() does, and why a call does not use it
+        assert toolset.closed == 1
 
 
 @pytest.mark.asyncio

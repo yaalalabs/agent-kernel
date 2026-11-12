@@ -351,6 +351,8 @@ class TestEventMapping:
             await runner.disconnect()
 
         assert recorder.of("input_transcript") == [{"text": "we have 2000 patients", "message_id": "item-in-1"}]
+        # Reported in the order the framework finished it: after the reply, not moved ahead of it.
+        assert recorder.kinds().index("input_transcript") > recorder.kinds().index("transcript_delta")
 
     @pytest.mark.asyncio
     async def test_an_empty_caller_transcript_is_not_reported(self, runtime, monkeypatch):

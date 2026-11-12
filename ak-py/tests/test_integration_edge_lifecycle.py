@@ -56,7 +56,7 @@ class _Lifecycle(EdgeLifecycleAdapter):
         return EdgeLifecycleEvent(body["session"], start=body["action"] == "start") if body["action"] else None
 
     def create_edge(self, session_id):
-        return types.SimpleNamespace(session_id=session_id)
+        return types.SimpleNamespace(session_id=session_id, ending=False)
 
     def should_start(self, session_id):
         return self.starts(session_id)
@@ -134,6 +134,61 @@ def test_a_session_can_start_again_after_it_ended():
 
     assert len(_Runner.created) == 2
     _Runner.created[1].stop()
+
+
+def _wait_for(predicate):
+    for _ in range(250):
+        if predicate():
+            return True
+        threading.Event().wait(0.02)
+    return False
+
+
+def test_a_start_while_the_edge_is_ending_starts_a_new_edge_once_it_has_ended():
+    """The last caller left, so the edge is closing; the caller rejoins before it has finished."""
+    _, client = _client(_Lifecycle())
+    _send(client, "start")
+    first = _Runner.created[0]
+    assert first.started.wait(5)
+    first.adapter.ending = True
+
+    _send(client, "start")
+    assert len(_Runner.created) == 1  # not while the old edge is still in the room
+    first.stop()  # the old edge finishes
+
+    assert _wait_for(lambda: len(_Runner.created) == 2)
+    second = _Runner.created[1]
+    assert second.started.wait(5) and second.adapter.session_id == "call_1"
+    second.stop()
+
+
+def test_a_repeated_start_during_a_live_call_starts_nothing_after_it_ends():
+    handler, client = _client(_Lifecycle())
+    _send(client, "start")
+    first = _Runner.created[0]
+    assert first.started.wait(5)
+    _send(client, "start")  # e.g. room_started, then the caller's participant_joined
+
+    first.stop()
+
+    assert _wait_for(lambda: "call_1" not in handler._runners)
+    threading.Event().wait(0.1)
+    assert len(_Runner.created) == 1
+
+
+def test_an_end_drops_a_start_held_for_an_ending_edge():
+    handler, client = _client(_Lifecycle())
+    _send(client, "start")
+    first = _Runner.created[0]
+    assert first.started.wait(5)
+    first.adapter.ending = True
+    _send(client, "start")
+
+    _send(client, "end")  # the room finished: nobody to serve
+
+    assert _wait_for(lambda: "call_1" not in handler._runners)
+    threading.Event().wait(0.1)
+    assert len(_Runner.created) == 1
 
 
 def test_should_start_chooses_the_sessions():

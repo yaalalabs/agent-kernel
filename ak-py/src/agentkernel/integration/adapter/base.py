@@ -289,6 +289,14 @@ class StatefulEdgeAdapter(ABC):
     async def stop(self) -> None:
         """Disconnect and release resources; must make start() return. Called by the edge runner at shutdown."""
 
+    @property
+    def ending(self) -> bool:
+        """Whether this edge has begun to end (its connection is closing) but ``start()`` has not returned yet.
+
+        A start for the session that arrives then (a caller rejoining) is held and served by a new edge once this one has ended.
+        """
+        return False
+
     # ── Inbound: Platform -> Agent Kernel ──
 
     def _init_producer(self) -> None:

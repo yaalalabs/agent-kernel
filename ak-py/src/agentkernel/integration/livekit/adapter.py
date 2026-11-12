@@ -200,6 +200,11 @@ class LiveKitEdgeAdapter(StatefulEdgeAdapter):
             room.on("data_received", self._handle_chat_message)
         return room
 
+    @property
+    def ending(self) -> bool:
+        """Set once the edge has begun to stop: its last caller left, its room dropped, or it was told to stop."""
+        return self._stop_event is not None and self._stop_event.is_set()
+
     def _on_disconnected(self, *args, **kwargs) -> None:
         _log.info(f"LiveKit room {self.room_url} disconnected.")
         if not self._stop_event.is_set():
