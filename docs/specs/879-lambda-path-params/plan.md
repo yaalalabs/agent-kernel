@@ -144,7 +144,7 @@ Paths are relative to `ak-py/src/agentkernel/` unless they start with `ak-py/`, 
 - **Files:**
   - `docs/docs/advanced/threads.md`: a "Threads on AWS Lambda" section (host, read routes, gateway
     endpoints, authorizer scoping, `user_id`, both Lambdas need the `thread` block, the request
-    handler loads the agents); the deployment table near `:274` notes the queue-mode request handler
+    handler holds no agents); the deployment table near `:274` notes the queue-mode request handler
     now gets the table.
   - `docs/docs/deployment/aws-serverless.md`: a "Conversation threads" section beside
     "Messaging integrations" (`:1347`), linking "Path and query parameters" (`:248`).

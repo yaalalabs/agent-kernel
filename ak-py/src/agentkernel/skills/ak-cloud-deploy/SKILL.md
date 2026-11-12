@@ -233,7 +233,8 @@ self-hosted REST API, `ThreadRequestHandler` in a queue-mode pipeline
 **AWS serverless** records threads in queue mode only (`queue_mode = true`, `execution.queues.type: sqs`,
 `rest_sync` / `rest_async` with `message_type: complete`). In the request-handler Lambda, build
 `threads = LambdaThreadHost(ThreadRequestHandler())` at module scope (from `agentkernel.aws` and
-`agentkernel.thread`), import the agent module there too, and register `GET /threads` →
+`agentkernel.thread`) — do not import the agent module there: in queue mode the agents live in the
+agent-runner Lambda only — and register `GET /threads` →
 `threads.list_threads` and `GET /threads/{session_id}` → `threads.get_thread` with `Lambda.register`.
 The host takes over the chat route's enqueue (chat then requires `user_id`); the agent-runner Lambda
 records the reply. Add both routes to `gateway_endpoints`; the API Gateway authorizer's `principalId`

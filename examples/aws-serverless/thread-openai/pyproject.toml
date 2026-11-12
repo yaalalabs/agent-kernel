@@ -9,12 +9,11 @@ dependencies = []
 [project.optional-dependencies]
 # Per-Lambda dependency sets. deploy.sh installs each package with `uv export --extra <name>`.
 #
-# The request handler loads the agent (the chat route checks it exists before recording), serves
-# the read routes through FastAPI's types, and names threads with LiteLLM, so it carries `openai`,
-# `api` and `thread`. The agent runner records the reply through the thread package, which imports
+# The request handler holds no agents (they live in the agent-runner Lambda); it serves the read
+# routes through FastAPI's types and names threads with LiteLLM, so it carries `api` and `thread`. The agent runner records the reply through the thread package, which imports
 # FastAPI, so it carries `api` too. The response handler and the authorizer need nothing but `aws`.
 request_handler = [
-    "agentkernel[aws,api,thread,openai]>=0.9.5",
+    "agentkernel[aws,api,thread]>=0.9.5",
 ]
 response_handler = [
     "agentkernel[aws]>=0.9.5",

@@ -387,7 +387,7 @@ threads (their platforms own the history), and neither do scheduled occurrences.
   The recorder's bracket is split across the queue because the run is: `run_chat` validates, runs
   the inherited `_reject_unroutable` (`async` mode, either message type —
   every rejection the route can raise happens **before** the recording, so none leaves a phantom
-  thread), prechecks agent availability, builds the requests and runs `pre_run` (attachment bytes
+  thread), builds the requests (no agent precheck: in queue mode the IO process holds no agents, and the runner's ChatService checks) and runs `pre_run` (attachment bytes
   offloaded and the user message committed **before** anything is enqueued), rewrites the body (`requests` =
   the rebuilt list, `files`/`images` cleared so no attachment rides the broker twice), and stamps
   the `thread` message attribute; on the other side the runner's `_record_thread_reply` checks the

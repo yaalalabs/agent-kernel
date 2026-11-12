@@ -317,8 +317,7 @@ class ThreadRequestHandler(RequestHandler):
             rejects the request — all of them before any thread write.
         """
         try:
-            # Off: the queue-mode request handler holds no agents (registering them builds a session store it must not have).
-            # AgentService.ensure_agent_available(body.agent)
+            # No agent precheck: in queue mode the request handler holds no agents; the runner's ChatService checks.
             requests = await RequestBuilder.from_base_request_async(body)
             requests, _ = self._recorder.pre_run(body, requests)
         except ValueError as e:

@@ -94,7 +94,7 @@ class LambdaEventTranslator:
         """
         if isinstance(exc, HTTPException):
             return self._proxy_response(await http_exception_handler(request, exc))
-        self._log.error(f"Webhook request failed: {exc!r}", exc_info=exc)
+        self._log.error(f"Lambda host request failed: {exc!r}", exc_info=exc)
         return self._proxy_response(PlainTextResponse("Internal Server Error", status_code=500))
 
     @staticmethod

@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e # exit if any command in this script fails
 
-# Create request handler lambda deployment package (an image: it loads the agent)
+# Create request handler lambda deployment package
 echo "Creating request handler deployment package..."
 create_request_handler_deployment_package() {
     pushd ../
@@ -11,9 +11,9 @@ create_request_handler_deployment_package() {
     if [[ ${1-} != "local" ]]; then
       uv pip install -r requirements.txt --target=dist_request_handler/data
     else
-      uv pip install --target=dist_request_handler/data --find-links ../../../ak-py/dist --upgrade-package agentkernel --reinstall-package agentkernel agentkernel[aws,api,thread,openai]
+      uv pip install --target=dist_request_handler/data --find-links ../../../ak-py/dist --upgrade-package agentkernel --reinstall-package agentkernel agentkernel[aws,api,thread]
     fi
-    cp -r lambda_request_handler.py agent.py config.yaml dist_request_handler/data
+    cp -r lambda_request_handler.py config.yaml dist_request_handler/data
     popd || exit 1
     cp Dockerfile.request_handler ../dist_request_handler/Dockerfile
 }

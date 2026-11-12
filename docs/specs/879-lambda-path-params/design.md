@@ -244,9 +244,9 @@ registers its webhook. Queue mode only, `rest_sync` and `rest_async`.
 
 - The user never registers a chat route. The agent-runner and response-handler Lambdas need no
   code change; the agent runner needs the same `thread` block, to know which store to write to.
-- The request-handler Lambda loads the agents (imports the module that builds them), as the
-  pipeline's IO process does under `ThreadRequestHandler`: the chat route checks the agent exists
-  before it writes a thread.
+- The request-handler Lambda holds no agents (in queue mode they live in the agent-runner Lambda
+  only), and the chat route does not check the agent before it writes a thread: the agent runner's
+  ChatService does that when it runs the request.
 
 #### Supported modes
 

@@ -271,7 +271,8 @@ router looks the template up among the registered routes. So when two templates 
 precedence decides (a static segment beats a `{parameter}` at the same level). Avoid overlapping templates
 such as `/a/{x}/c` and `/a/b/{y}`: both match `/a/b/c`, and the containerized (FastAPI) target resolves
 that by registration order instead. Path parameters need API Gateway REST in front of the Lambda; a
-direct invoke or a function URL sends no `resource`, so only static routes match there.
+direct invoke sends no `resource`, so only static routes match there. Function URLs are not supported:
+their events carry `rawPath` and `requestContext.http.method`, which the router does not read.
 
 ## Lambda Environment Variables
 
@@ -1285,7 +1286,11 @@ from agentkernel.schedule import ScheduleManager
 @Lambda.register("/schedules/{task_id}", method="GET")
 def get_schedule(event, context):
     task_id = event["pathParameters"]["task_id"]
-    task = ScheduleManager.get().get_task(task_id)
+    caller = event["requestContext"]["authorizer"]["principalId"]  # the API Gateway authorizer's user
+    try:
+        task = ScheduleManager.get().get_task(task_id, user_id=caller)
+    except PermissionError as e:
+        return 403, {"error": str(e)}
     return task.model_dump(mode="json") if task else (404, {"error": f"Unknown scheduled task {task_id}"})
 ```
 

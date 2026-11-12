@@ -59,6 +59,7 @@ def _wait_for_messages(session_id: str, count: int) -> None:
         if thread.status_code == 200 and len(thread.json()["messages"]) >= count:
             return
         time.sleep(2)
+    raise AssertionError(f"thread {session_id} did not reach {count} messages within 60s")
 
 
 @pytest.fixture(scope="module")
