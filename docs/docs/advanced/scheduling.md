@@ -169,7 +169,7 @@ A task record reads back as:
   "task_id": "ae9a043b-27f7-480f-8655-5903fbfd200a",
   "user_id": "alice",
   "principal": {"subject": "alice", "kind": "user", "provider": "static", "namespace": "static",
-                "groups": [], "roles": [], "claims": {}, "actor": null},
+                "groups": [], "roles": [], "claims": {}, "actor": null, "credential_ref": null},
   "prompt": "Send the weekly report",
   "agent": null,
   "session_id": "ses-2",
@@ -185,7 +185,7 @@ A task record reads back as:
 ```
 
 `status` is one of `active`, `paused`, `completed` (a fired one-time task) or `cancelled`. `principal` is
-the owner as the identity provider established it (without the agent actor of the creating run), the
+the owner as the identity provider established it (without the agent actor or the credential handle of the creating run), the
 identity every occurrence runs as; `user_id` is its subject.
 `trigger_count`, `last_triggered_at` and `last_request_id` track occurrences — `last_request_id`
 correlates a task with the run it produced.
@@ -408,7 +408,7 @@ task at create/amend time and the provider substitutes the occurrence placeholde
 ```json
 {"prompt": "...", "agent": null,
  "principal": {"subject": "alice", "kind": "user", "provider": "static", "namespace": "static",
-               "groups": [], "roles": [], "claims": {}, "actor": null},
+               "groups": [], "roles": [], "claims": {}, "actor": null, "credential_ref": null},
  "session_id": "ses-2",
  "scheduled_task_id": "<task_id>",
  "request_id": "<per-occurrence id>",

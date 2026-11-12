@@ -193,6 +193,36 @@ class TestRejection:
             TestClient(app).post("/fake/webhook", json={})
 
 
+class _UnverifiableAdapter(FakeInboundAdapter):
+    """An adapter whose verification secret is unset, so ``verify`` lets every delivery through."""
+
+    def missing_verification_settings(self) -> list[str]:
+        return ["fake.webhook_secret"]
+
+
+class TestUnverifiedDeliveriesRunAnonymous:
+    """A sender id from a delivery nobody verified is whatever the poster wrote: it must not become a
+    named principal the schedule tools and the sandbox would act as (#603 review)."""
+
+    def test_a_verified_delivery_carries_the_sender_as_its_principal(self):
+        transport = InMemoryTransport()
+        assert _client(FakeInboundAdapter(), transport).post("/fake/webhook", json={}).status_code == 200
+        [message] = _drain(transport)
+        assert json.loads(message.body)["principal"]["subject"] == "u1"
+
+    def test_an_unverifiable_adapter_enqueues_without_a_principal(self):
+        transport = InMemoryTransport()
+        assert _client(_UnverifiableAdapter(), transport).post("/fake/webhook", json={}).status_code == 200
+        [message] = _drain(transport)
+        assert json.loads(message.body).get("principal") is None
+
+    def test_the_missing_settings_are_named_once_at_construction(self, caplog):
+        with caplog.at_level("WARNING", logger="ak.integration.webhook"):
+            WebhookRESTRequestHandler(_UnverifiableAdapter(), producer=IntegrationProducer(InMemoryTransport()))
+        [record] = [r for r in caplog.records if r.name == "ak.integration.webhook"]
+        assert "fake.webhook_secret" in record.getMessage() and "anonymous" in record.getMessage()
+
+
 class TestPipelineRequirement:
     def test_the_handler_declares_that_it_needs_the_pipeline(self):
         assert WebhookRESTRequestHandler(FakeInboundAdapter()).requires_pipeline is True

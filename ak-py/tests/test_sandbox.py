@@ -614,6 +614,21 @@ async def test_principal_resolver_user_mode_needs_no_agent_in_context():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("provider,namespace", [("messaging:gmail", "inbox@corp.com"), ("messaging:slack", "T123"), ("realtime:livekit", "APIkey")])
+async def test_principal_resolver_keeps_a_shared_channel_sender_in_agent_mode(provider, namespace):
+    """A messaging or realtime sender id is a platform id, never a user subject: a user-mode profile fails closed for it (#603 review)."""
+
+    class _StubAgent:
+        name = "stub-agent"
+
+    session = _run_session(Principal(subject="alice@corp.com", provider=provider, namespace=namespace))
+
+    principal = await AgentPrincipalResolver().resolve(session, _StubAgent())
+
+    assert (principal.mode, principal.subject) == ("agent", "stub-agent")
+
+
+@pytest.mark.asyncio
 async def test_principal_resolver_tolerates_no_session():
     """A sandbox operation driven programmatically, outside any session, resolves to agent mode."""
     principal = await AgentPrincipalResolver().resolve(None, None)

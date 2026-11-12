@@ -156,6 +156,20 @@ class TestThreadRecorder:
             recorder.pre_run(req, [AgentRequestText(prompt="hi")])
         manager.get_or_create_thread.assert_not_called()
 
+    def test_a_foreign_thread_is_refused_before_any_attachment_is_written(self):
+        """Spec 8.10: refused before any write, so another user's session_id never receives this request's bytes (#603 review)."""
+        manager = MagicMock()
+        manager.get_thread.side_effect = PermissionError("Thread s1 is not owned by user u1")
+        recorder = ThreadRecorder(manager)
+        req = BaseRunRequest(prompt="hi", session_id="s1", principal=U1)
+
+        with pytest.raises(PermissionError, match="not owned"):
+            recorder.pre_run(req, [AgentRequestText(prompt="hi")])
+
+        manager.get_thread.assert_called_once_with("s1", user_id="u1")
+        manager.store_attachments.assert_not_called()
+        manager.get_or_create_thread.assert_not_called()
+
     def test_store_attachments_rejection_fires_before_thread_creation(self):
         manager = MagicMock()
         manager.store_attachments.side_effect = ValueError("attachments need multimodal")

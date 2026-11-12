@@ -20,6 +20,7 @@ from mcp.server.auth.provider import AccessToken
 from agentkernel.api.mcp.akmcp import MCP
 from agentkernel.api.mcp.auth import PRINCIPAL_CLAIM, AKAccessToken, AKMCPAuthProvider, AKTokenVerifier
 from agentkernel.core.chat_service import ResponseBuilder
+from agentkernel.core.config import _MCPConfig
 from agentkernel.core.model import AgentReplyText, Principal
 from agentkernel.identity import AuthenticationError, IdentityProvider, IdentityProviderFactory
 from agentkernel.pipeline.request_handler import QueuedReply
@@ -95,6 +96,22 @@ class TestTokenVerifier:
         assert AKAccessToken.principal_of(None).is_anonymous
 
     @pytest.mark.asyncio
+    async def test_a_forged_principal_claim_from_the_issuer_is_overwritten(self):
+        """OIDC providers keep every non-subject claim, so a token may carry its own ``ak.principal``:
+        writing ``PRINCIPAL_CLAIM`` last is what keeps the authenticated principal (#603 review)."""
+        forged = {"subject": "admin", "provider": "static", "namespace": "static", "roles": ["admin"]}
+
+        class _Forging(_Provider):
+            async def authenticate(self, credential, context=None):
+                return ALICE.model_copy(update={"claims": {**ALICE.claims, PRINCIPAL_CLAIM: forged}})
+
+        token = await AKTokenVerifier(_Forging()).verify_token("alice-secret")
+        # FastMCP rebuilds the token from the SDK fields before a tool reads it.
+        rebuilt = AccessToken(**token.model_dump(include=set(AccessToken.model_fields)))
+
+        assert AKAccessToken.principal_of(rebuilt).subject == "alice"
+
+    @pytest.mark.asyncio
     async def test_a_refused_token_is_none_and_the_reason_is_logged(self, caplog):
         with caplog.at_level("INFO", logger="ak.api.mcp.auth"):
             assert await AKTokenVerifier(_Provider()).verify_token("nope") is None
@@ -113,12 +130,8 @@ class TestAuthProviderSelection:
     def test_an_openid_provider_is_wrapped_for_the_resource_metadata(self, monkeypatch):
         monkeypatch.setattr(IdentityProviderFactory, "get", classmethod(lambda cls: _OIDCShaped()))
 
-        class _Api:
-            host = "agents.example"
-            port = 8443
-
         class _Cfg:
-            api = _Api
+            mcp = _MCPConfig(url="https://agents.example/mcp")
 
         monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _Cfg))
 
@@ -126,8 +139,43 @@ class TestAuthProviderSelection:
 
         assert isinstance(auth, RemoteAuthProvider)
         assert [str(url) for url in auth.authorization_servers] == ["https://issuer.example/"]
-        assert str(auth.base_url).rstrip("/") == "http://agents.example:8443"
+        # The public MCP URL, not the bind address: http://0.0.0.0:8000/ named nothing a client can reach.
+        assert str(auth.base_url).rstrip("/") == "https://agents.example"
+        assert str(auth._get_resource_url("/")) == "https://agents.example/mcp/"
         assert isinstance(auth.token_verifier, AKTokenVerifier)
+
+
+class TestResourceMetadataDiscovery:
+    """The 401 names an RFC 9728 document the assembled app actually serves, for the /mcp resource (#603 review)."""
+
+    def test_the_metadata_the_401_points_at_is_served_at_the_root(self, monkeypatch):
+        from types import SimpleNamespace
+
+        from fastapi.testclient import TestClient
+
+        from agentkernel.api.http import RESTAPI
+
+        monkeypatch.setattr(IdentityProviderFactory, "get", classmethod(lambda cls: _OIDCShaped()))
+        cfg = SimpleNamespace(
+            api=SimpleNamespace(host="0.0.0.0", port=8000, custom_router_prefix="/custom"),
+            a2a=SimpleNamespace(enabled=False),
+            mcp=_MCPConfig(enabled=True, url="https://agents.example/mcp"),
+        )
+        monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: cfg))
+        monkeypatch.setattr("agentkernel.api.http.AKConfig.get", classmethod(lambda cls: cfg))
+        monkeypatch.setattr("agentkernel.api.mcp.akmcp.AKConfig.get", classmethod(lambda cls: cfg), raising=False)
+        RESTAPI._custom_routers.clear()
+
+        with TestClient(RESTAPI.build_app(handlers=[])) as client:
+            refused = client.post("/mcp/", json={"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
+            assert refused.status_code == 401
+            challenge = refused.headers["www-authenticate"]
+            assert 'resource_metadata="https://agents.example/.well-known/oauth-protected-resource/mcp/"' in challenge
+
+            metadata = client.get("/.well-known/oauth-protected-resource/mcp/")
+            assert metadata.status_code == 200
+            assert metadata.json()["resource"] == "https://agents.example/mcp/"
+            assert metadata.json()["authorization_servers"] == ["https://issuer.example/"]
 
 
 class TestServerBuild:

@@ -106,6 +106,8 @@ List the caller's schedules (most recently updated first; the listing is always 
         {
           "task_id": "ae9a043b-27f7-480f-8655-5903fbfd200a",
           "user_id": "alice",
+          "principal": {"subject": "alice", "kind": "user", "provider": "static", "namespace": "static",
+                        "groups": [], "roles": [], "claims": {}, "actor": null, "credential_ref": null},
           "prompt": "Send the weekly report",
           "agent": null,
           "session_id": "ses-2",

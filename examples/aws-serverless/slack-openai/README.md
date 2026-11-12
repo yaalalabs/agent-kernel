@@ -30,7 +30,11 @@ Slack --POST /api/v1/slack/events--> API Gateway --> Authorizer (bypass: method 
 - **Authorizer Lambda**: bearer-token auth for the chat route through the identity provider in
   `config.yaml` (the `static` provider, whose one credential is the `demo_auth_token` Terraform
   variable), with `bypass=WebhookRouteMatcher.for_integrations("slack")` for the webhook. Slack sends
-  no bearer token; the adapter's signature check is the real authentication.
+  no bearer token; the adapter's signature check is the real authentication. To validate real tokens
+  instead (Auth0, Keycloak or Okta through `oidc`, or Cognito, Entra ID, Firebase), add `auth` to the
+  `authorizer` extra in `pyproject.toml` and swap the block; `../openai-auth` shows the Auth0 block
+  and the [Identity and Access](https://kernel.yaala.ai/docs/next/advanced/identity-and-access) page
+  covers every provider.
 - **Agent-runner Lambda**: runs the agent. It keeps the message's return address (`integration`
   plus the `reply_*` context) on the reply.
 - **Response-handler Lambda**: delivers the reply to Slack through the Slack outbound adapter.

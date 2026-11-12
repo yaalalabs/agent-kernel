@@ -26,7 +26,8 @@ router = APIRouter()
 # Adding a custom route
 # Example custom route to support application-specific endpoints.
 # All custom routes are prefixed with "/custom" by default. Refer to the config documentation for more details.
-# Custom routes run the identity dependency too, so a bearer token is required here as well.
+# Custom routes run the identity dependency too: a token, if sent, must be valid (a refused one is a
+# 401); without one the route runs as the anonymous principal.
 @router.get("/version")
 def get_app_name():
     return {"name": "my_custom_app", "version": "1.0.0"}

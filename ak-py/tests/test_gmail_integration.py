@@ -163,6 +163,21 @@ class TestParse:
         assert isinstance(request.requests[0], AgentRequestText)
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("from_header", ["Alice Smith <A@X.com>", "Alice <a@x.com>", "A@X.COM"])
+    async def test_the_sender_is_the_bare_lowercased_address(self, from_header):
+        """One mailbox is one principal whatever display name or case the From header carries (#603 review)."""
+        message = _message()
+        message["payload"]["headers"] = [
+            {**header, "value": from_header} if header["name"] == "From" else header for header in message["payload"]["headers"]
+        ]
+        client = _service(messages={MESSAGE_ID: message})
+
+        [request] = (await _inbound(client).parse(MESSAGE_ID)).requests
+
+        assert request.user_id == "a@x.com"
+        assert request.reply_context["to"] == from_header  # the reply still goes to the header as written
+
+    @pytest.mark.asyncio
     async def test_the_authentication_results_header_is_kept_as_a_claim(self):
         """A From address is unverified by itself; the header Google adds is what a downstream DMARC check reads."""
         client = _service(messages={MESSAGE_ID: _message(authentication_results=AUTHENTICATION_RESULTS)})

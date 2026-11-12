@@ -107,13 +107,14 @@ Receive (pushed back over the connection as a `SYSTEM_RESPONSE`):
 
 `status` ignores the frame's payload. The second custom route, `echo`, reads it — `ctx["message"]`
 is the frame's raw JSON body, exactly as the client sent it: no `BaseRequest`/`BaseRunRequest` schema
-is imposed on custom routes, so `echo` simply hands the context back, the frame's body as it arrived
-and the connection's principal as JSON:
+is imposed on custom routes, so `echo` simply hands both back, the frame's body as it arrived and
+the connection's principal dumped to JSON:
 
 ```python
 @AWSWebsocketAPI.register("echo")
 async def echo(ctx: dict) -> dict:
-    return ctx
+    # A Principal is a model, not JSON: dump it, or the broadcast fails to serialize.
+    return {"message": ctx["message"], "principal": ctx["principal"].model_dump(mode="json", exclude_none=True)}
 ```
 
 Send:

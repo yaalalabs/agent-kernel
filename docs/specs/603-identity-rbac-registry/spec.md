@@ -13,7 +13,7 @@ Evidence is cited against `feature/603-identity-rbac-registry` at `d9d0d18bc` (a
 over the develop merge `287ec7485`; every `.py` cited is identical in both). The change ships as a
 breaking change with no compatibility window (design section 10).
 
-Five places where detailing refined the design are listed in [Design refinements](#design-refinements)
+Seven places where detailing refined the design are listed in [Design refinements](#design-refinements)
 at the end; each is a mechanism change inside a settled decision, not a new decision, and each is
 reflected in `design.md`.
 
@@ -302,9 +302,9 @@ Sequence inside `async with session:` (replacing `core/runtime.py:394-430` and `
    agent.descriptor, agent)`; the bare `Exception` at line 213 becomes `AgentRegistrationError`.
   `deregister` and `agents()` delegate; `Runtime.__init__` gains `registry: Optional[AgentRegistry]
   = None`, defaulting to `AgentRegistryFactory.build()`, and a `registry` property.
-- The realtime path (`pipeline/realtime_pool.py:228-252`) never calls `Runtime.run`; section 8.9
-  publishes the principal there through `Session._publish_run`, the one place outside `Runtime`
-  allowed to, because it is the AK-owned entry point for a tool call.
+- The realtime path (`pipeline/realtime_pool.py:228-252`) never calls `Runtime.run`; section 8.4
+  publishes the principal there through `Runtime._publish`, the one caller outside a run allowed
+  to, because it is the AK-owned entry point for a tool call.
 
 ### 4. Identity providers (`identity/provider/`)
 
@@ -340,16 +340,30 @@ or `None` when the block is absent; `reset()` for tests. Branches on `identity.p
 - `JWKSCache` (same module): fetches discovery (`GET <issuer>/.well-known/openid-configuration`,
   once, lazily, caching `jwks_uri`; `jwks_uri` in config skips it) and the JWK set itself through
   one `httpx.AsyncClient` (an injectable transport, so tests serve both from a `MockTransport`),
-  and selects the key by `kid` from `jwt.PyJWKSet.from_dict` (PyJWT 2.13.0, the `auth` extra,
+  and selects the key by `kid` from `jwt.PyJWKSet.from_dict` (PyJWT 2.15, the `auth` extra,
   `ak-py/pyproject.toml:24-28`); `signing_key(kid)` is the one entry point. An unknown `kid`
   triggers one forced refresh, rate-limited to one per 30 s (`refresh_cooldown`, counted between
   forced refreshes, not from the initial load), then `AuthenticationError`; a fetch that fails
   leaves the previous key set in place and is an `AuthenticationError` too. Design refinement 6:
   `PyJWKClient` was dropped because its `urllib` fetch blocks and cannot be pointed at a test
   transport.
+  PR #937 review follow-up (2026-11-12): the cache holds no event-loop-bound state, because one
+  provider is shared by every caller in the process and a sync host (Azure's thread-pooled
+  functions, through `run_async_sync`) runs each call on a fresh loop; the pooled `AsyncClient`
+  connection and the `asyncio.Lock` broke a refresh on a later loop (`Event loop is closed`) and
+  hung a concurrent cold start. The key set is a dict swapped whole and read without a lock, so a
+  known `kid` never waits behind a refresh; a load runs on a worker thread (`asyncio.to_thread`)
+  through a short-lived `httpx.Client` with the injectable transport, serialized by a
+  `threading.Lock` taken only on that thread (never across an `await`, which would deadlock two
+  coroutines on one loop) with a generation check, so a caller that waited does not fetch again.
+  A failed first load is not retried for `failure_cooldown` (5 s); any fetch failure, a key-set
+  body that is not an object included, is an `AuthenticationError`; a non-string `kid` is refused.
 - `authenticate`: `jwt.decode(token, key, algorithms=self._algorithms, audience=self._audience,
   issuer=self._issuer, leeway=self._leeway, options={"require": ["exp", "iss", "aud", ...]})`.
-  Symmetric algorithms (`HS*`) are refused at construction with `AKConfigError`. Every
+  Symmetric algorithms (`HS*`) are refused at construction with `AKConfigError`, and so (PR #937
+  review follow-up) are an empty list, `none` and any name `jwt.algorithms` does not know, since
+  each would build and then refuse every token; Cognito's `token_use` is `Literal["access", "id"]`
+  in config and checked by the constructor. Every
   `jwt.PyJWTError` becomes `AuthenticationError(str(exc))`. `required_claims` entries missing from
   the payload are an `AuthenticationError`.
 - Claim paths are resolved by `ClaimPath.read(payload, path)` (a static helper in
@@ -387,12 +401,16 @@ dict]` (credential key to principal fields) and an optional `secrets: SecretMana
 one; the factory's `from_config(config)` leaves it to `SecretManager.current()`). At construction
 every key is resolved through `SecretManager.get(key)` (`secret/manager.py:60-76`); a
 `SecretNotFoundError` or a malformed key is an `AKConfigError` naming the key, and two principals
-resolving to the same credential value are refused. `authenticate` compares the credential
+resolving to the same credential value are refused, as is an empty `principals` map (PR #937
+review follow-up: a typo such as `static: {principal: ...}` is dropped by the model and would
+leave a provider that 401s every caller). `authenticate` compares the credential
 against every resolved value with `hmac.compare_digest` (constant time over all entries) and
 returns `Principal(subject, kind, groups, roles, claims, provider="static", namespace="static")`;
 no match is an `AuthenticationError`. The static block's `roles` are the one case of a provider
 issuing roles itself, since it is Agent Kernel's own dev provider; a configured role mapper
-replaces them like any provider's. Documented as the dev, test and CLI provider.
+replaces them like any provider's. This is the recorded exception to the single-producer rule
+(design sections 2 and 5, amended at the PR #937 review). Documented as the dev, test and CLI
+provider.
 
 **`RoleMapper`** (`provider/roles.py`):
 
@@ -402,20 +420,28 @@ class RoleMapper(ABC):
     def map(self, principal: Principal) -> list[str]: ...
 
 class MappingRoleMapper(RoleMapper):
-    def __init__(self, mapping: dict[str, list[str]], pass_through: Optional[str]): ...
-    # roles = union over principal.groups and the flattened string/list values of claims
-    #         looked up in `mapping`, plus the values at the pass_through claim path (str or
-    #         list[str]); de-duplicated, order of first appearance
+    def __init__(self, mapping: dict[str, list[str]], pass_through: Optional[str], claims: Iterable[str] = ()): ...
+    # roles = union over principal.groups and the string/list values at the listed `claims`
+    #         paths, looked up in `mapping`, plus the values at the pass_through claim path (str
+    #         or list[str]); de-duplicated, order of first appearance
 
 class RoleMapperFactory:
     @staticmethod
     def create(role_mapper_config) -> RoleMapper: ...   # "mapping" | dotted path | AKConfigError
 ```
 
+PR #937 review follow-up (2026-11-12): `mapping` looks up the groups and, beyond them, only the
+claim paths listed in `identity.role_mapper.claims` (default empty). Every top-level string claim
+was looked up before, so a claim the user sets (a Firebase `name`, a Cognito `username`, an
+`email`) could grant a role; design section 5's "provider group or claim value" is narrowed to
+match. `_IdentityProviderConfig` and `_RoleMapperConfig` allow extra keys, which a dotted-path
+provider or mapper reads from `model_extra`.
+
 `IdentityProviderFactory.create` wraps the provider in `MappedIdentityProvider(provider, mapper)`
 when `identity.role_mapper` is present, so `authenticate` returns `principal.model_copy(
-update={"roles": mapper.map(principal)})` and `Principal.roles` has exactly one producer. Boolean
-flag claims are not mapped by the built-in mapper (Q14); a dotted-path mapper handles them.
+update={"roles": mapper.map(principal)})`: with a mapper, `Principal.roles` has exactly one
+producer, and without one only a `static` entry's own roles are set. Boolean flag claims are not
+mapped by the built-in mapper (Q14); a dotted-path mapper handles them.
 
 **`RequestAuthenticator`** (`provider/request.py`), the shared extraction over the configured
 provider, replacing the three copies of header parsing (`api/http.py:223-226`,
@@ -445,7 +471,13 @@ class RequestAuthenticator:
   `Authorization: Basic ...` with a 401 on a deployment with no identity block).
 - A present but invalid credential: `AuthenticationError` is caught and re-raised as
   `HTTPException(401, detail="Unauthorized")`; the reason is logged at INFO with the path. A
-  malformed scheme is `401 "Invalid authorization header"`.
+  malformed scheme is `401 "Invalid authorization header"`. Both 401s carry
+  `WWW-Authenticate: Bearer` (RFC 6750 section 3), as does the `AuthorisedRESTRequestHandler`
+  401 for an anonymous caller (PR #937 review follow-up, 2026-11-12).
+- The dependency takes Starlette's `HTTPConnection`, which FastAPI injects for HTTP and WebSocket
+  scopes alike (PR #937 review follow-up): typed `Request`, it raised `TypeError` on a WebSocket
+  route of a guarded router. On a WebSocket a refused credential is a `WebSocketException` with
+  close code 1008 and the public detail.
 - When `identity.credentials` is configured, a successful authentication mints
   `credential_ref = uuid4().hex`, stores the raw credential under it with TTL
   `min(exp - now, inbound_ttl)` (`exp` read from `claims`, else `inbound_ttl`), and returns
@@ -745,12 +777,11 @@ candidate walk; `StaticAuthorizer` subclasses it, and every later engine must.
 
 #### 8.2 REST (`api/http.py`, `api/handler.py`)
 
-- `_get_router_dependencies()` (`api/http.py:32-37`) always ends with
-  `Depends(RequestAuthenticator.from_config().dependency())`: with no `identity` block the
+- `_get_router_dependencies()` (`api/http.py:32-37`) returns exactly
+  `[Depends(RequestAuthenticator.from_config().dependency())]`: with no `identity` block the
   dependency sets `Principal.anonymous()` and costs one attribute write. `RESTAPI.add_auth_handlers`
-  (`api/http.py:208-237`) and `_auth_token_validators` (line 22) stay, running ahead of it, until
-  iteration 11 removes them with `agentkernel.auth` and the deployment adapters that still call
-  them (`ecs_io_handler.py:78`, `gcp/akauthorizer.py:29`). The A2A routers keep
+  and `_auth_token_validators` are removed with `agentkernel.auth` (iteration 11), together with
+  their callers in the deployment adapters (`ecs_io_handler.py:78`, `gcp/akauthorizer.py:29`). The A2A routers keep
   going through `include_router(..., dependencies=...)` (line 65), so the principal is on
   `request.state` for them; `/health` and `/openapi.json` stay outside (lines 60-73).
 - `AgentRESTRequestHandler.run(body, request: Request)` (`api/handler.py:105-114`): sets
@@ -774,7 +805,10 @@ candidate walk; `StaticAuthorizer` subclasses it, and every later engine must.
   `Authorization`, which an application's provider refuses with a 401 before the adapter could
   verify it. The adapter's `verify` is then the delivery's one check, as behind the Lambda
   authorizer's `WebhookRouteMatcher` bypass, and the sender's principal still comes from the
-  platform (section 8.4).
+  platform (section 8.4). `PipelineWebSocketHandler` (which authenticates its own `?token=`) and
+  `PushEndpointHandler` (behind the shared push token) set it too (PR #937 review follow-up,
+  2026-11-12): single-process async mode co-hosts both through `RESTAPI.build_app`, where the
+  dependency crashed every `/ws` handshake and would have gated pod-to-pod pushes.
 
 #### 8.3 Pipeline request handler and WebSocket (`pipeline/`)
 
@@ -834,6 +868,14 @@ candidate walk; `StaticAuthorizer` subclasses it, and every later engine must.
   request), so the source arrives as a keyword argument; both hosts keep the default, which
   covers `WEBHOOK` and `POLLER` alike, and the stateful edge passes `self.source` from
   `_drain_requests`.
+- An unverified delivery names nobody (PR #937 review follow-up, 2026-11-12): when the adapter's
+  `missing_verification_settings()` is non-empty (an unset `whatsapp.app_secret`,
+  `messenger.app_secret`, `instagram.app_secret` or `telegram.webhook_secret`, which makes
+  `verify` a no-op), `WebhookRESTRequestHandler` logs a WARNING at construction and enqueues each
+  delivery with `user_id=None`, so it runs anonymous. Before, the sender id a forger wrote became
+  a `messaging:` principal the schedule tools act as and the sandbox resolver read. The producer's
+  signature is unchanged, so a bring-your-own producer keeps working; `LambdaWebhookHost` still
+  refuses such an adapter outright.
 - Per adapter, the namespace: Slack the event's `team`, else the workspace the bot authenticated
   to (`auth_test()["team_id"]`, cached beside the bot user id); Teams `resolve_tenant(activity)`
   (`integration/teams/adapter.py:109`); Gmail the inbox address; WhatsApp `phone_number_id`
@@ -845,12 +887,20 @@ candidate walk; `StaticAuthorizer` subclasses it, and every later engine must.
   (`integration/gmail/adapter.py:237-238`), present or absent as the message carries it. Amended
   in iteration 9: no `gmail` config field names the inbox address, and adding one would be a knob
   the API already answers, so the adapter resolves it once from the account profile
-  (`users().getProfile(userId="me")["emailAddress"]`) when the first message is parsed.
+  (`users().getProfile(userId="me")["emailAddress"]`) when the first message is parsed. The
+  Gmail sender id is the bare address parsed from `From`, lowercased
+  (`email.utils.parseaddr(sender)[1].lower()`), so `Alice <A@X.com>` and `a@x.com` are one
+  principal; the reply still goes to the raw header (PR #937 review follow-up).
 - LiveKit (`integration/livekit/adapter.py`): `_stage_request(request, participant_identity)`
   and `StatefulEdgeAdapter._enqueue(request, user_id, namespace)` (`base.py:300-314`) set
   `InboundRequest(user_id=participant.identity, namespace=self._api_key)`; the greeting
   (`:249-250`), chat (`:268`) and audio (`:289-299`) paths pass the participant they already read
-  (`:238-243, :255`). The API key id is the LiveKit namespace (Q20).
+  (`:238-243, :255`). The API key id is the LiveKit namespace (Q20). Open (PR #937 review
+  question, 2026-11-12): a room with more than one remote participant feeds every microphone into
+  one session, and `RealtimeConnection.principal` is overwritten by whichever participant's frame
+  arrived last, so a tool called in reply to one participant can run as another and the session
+  owner is recorded from that race. Phase B keeps the behaviour; iteration 23 (tool gates), which
+  keys decisions on that principal, settles which identity a multi-participant room runs as.
 - `RealtimeConnectionPool.dispatch(body, request_id, user_id, attributes, chat_service)`
   (`pipeline/realtime_pool.py:520-558`): the connection stores `body.principal` on every input
   (`RealtimeConnection.principal`, None when the input named nobody); on first connect
@@ -887,7 +937,7 @@ candidate walk; `StaticAuthorizer` subclasses it, and every later engine must.
 #### 8.6 MCP (`api/mcp/akmcp.py`)
 
 - `_build()` (131-150): `auth = AKMCPAuthProvider.from_config()`; `FastMCP("Agent Kernel FastMCP
-  Instance", auth=auth)` (`fastmcp/server/server.py:321-329`, FastMCP 3.4.7). `AKTokenVerifier(
+  Instance", auth=auth)` (`fastmcp/server/server.py:321-329`, FastMCP 3.4.10). `AKTokenVerifier(
   fastmcp.server.auth.TokenVerifier)` (`fastmcp/server/auth/auth.py:366-412`) implements
   `verify_token(token)` by `provider.authenticate(token)` and returns `AKAccessToken(token=token,
   client_id=principal.subject, scopes=[], subject=principal.subject, claims=principal.claims,
@@ -896,6 +946,13 @@ candidate walk; `StaticAuthorizer` subclasses it, and every later engine must.
   wrapped in `RemoteAuthProvider(token_verifier=..., authorization_servers=[issuer],
   base_url=<the configured public base, api host and port>)` (`auth.py:413-470`), which publishes
   the RFC 9728 metadata. With no identity block `auth=None` and MCP stays open.
+  PR #937 review follow-up (2026-11-12): the metadata the 401 advertised could not be fetched and
+  named the wrong resource (`http://0.0.0.0:8000/` from the bind address, served only under the
+  `/mcp` mount). A new `mcp.url` field (default `http://localhost:8000/mcp`, the `a2a.url`
+  pattern) is the public endpoint: `base_url` is its origin and `resource_base_url` the URL itself,
+  so the resource is `<mcp.url>/` and the 401's `resource_metadata` is
+  `<origin>/.well-known/oauth-protected-resource/<path>/`, which `RESTAPI.build_app` serves at the
+  app root (`auth.get_well_known_routes(mcp_path="/")`), where RFC 9728 clients look it up.
 - Each agent tool is registered with `cls._fastmcp.tool(execute, name=..., description=...,
   auth=visible_check)` where `visible_check: AuthCheck` (`fastmcp/utilities/authorization.py:47`)
   reads the principal off the context's access token and returns `AccessGate.visible(principal,
@@ -903,7 +960,7 @@ candidate walk; `StaticAuthorizer` subclasses it, and every later engine must.
   `tools/list` and refuses their calls. The `mcp.agents` allow-list (140) is deleted.
 - `Executor.execute` (58-106): `principal = AKAccessToken.principal_of(get_access_token())`
   (`fastmcp/server/dependencies.py:467`): the verifier stores the principal under the
-  `ak.principal` claim as well as on its `principal` field, because FastMCP 3.4.7 rebuilds the
+  `ak.principal` claim as well as on its `principal` field, because FastMCP 3.4.10 rebuilds the
   verifier's token as its own `AccessToken` before a tool sees it, keeping only the SDK fields
   (`claims` survive, the subclass and even `subject` do not; design refinement 7); `principal_of`
   reads the field in process, the claim over HTTP, and is anonymous otherwise. `body =
@@ -914,9 +971,9 @@ candidate walk; `StaticAuthorizer` subclasses it, and every later engine must.
 
 - `A2ARESTRequestHandler.get_agent_routers()` (`api/a2a/handler.py:49-63`): `create_rest_routes(
   request_handler, context_builder=AKCallContextBuilder())` (`a2a/server/routes/rest_routes.py:30-35`),
-  where `AKCallContextBuilder(ServerCallContextBuilder)` (`a2a/server/routes/common.py:91-97`;
-  `DefaultServerCallContextBuilder` follows at 99) returns
-  `ServerCallContext(state={"principal": request.state.principal})`. The executor
+  where `AKCallContextBuilder(DefaultServerCallContextBuilder)` (`a2a/server/routes/common.py:99`)
+  calls the SDK's `build(request)`, keeping its state (headers, the auth scope), and adds
+  `state["principal"] = request.state.principal`. The executor
   (`api/a2a/a2a.py:68-90`) reads `context.call_context.state["principal"]`, falling back to
   `RequestAuthenticator.current()` and then to anonymous, and sets it on the body (line 76).
 - `_build()` (129-146): the `a2a.agents` line (137) is deleted; cards are built for every
@@ -931,6 +988,8 @@ candidate walk; `StaticAuthorizer` subclasses it, and every later engine must.
   start (an `AuthenticationError` exits with the reason); the REPL's prompt path calls
   `self._service.run_multi([AgentRequestText(prompt)], principal=self._principal)` instead of
   `run(prompt)` (`cli/cli.py:119`). `ak` (`cli/ak.py`) is unchanged: it runs no agents.
+  `CLI.main` parses `--token` with `allow_abbrev=False` (PR #937 review follow-up): the CLI shares
+  `argv` with the script that embeds it, whose own `--to x` was read as an abbreviated `--token`.
 
 #### 8.9 Deployment adapters
 
@@ -983,10 +1042,18 @@ candidate walk; `StaticAuthorizer` subclasses it, and every later engine must.
   through `authenticate_bearer` (under `run_async_sync`) with a `RequestContext` of the path, the
   method and the `Headers` dump, and returns the Allow policy with `principalId=principal.subject` and
   `context={"principal": principal.model_dump_json()}` (API Gateway context values must be strings).
-  Every failure is a Deny with `principalId` "unauthorized": a `ValidationError` (missing header or
-  `methodArn`), an `AuthenticationError` (a refused credential, or a header that is not `Bearer
-  <token>`: the former `_extract_token`, which accepted a bare token, is gone), or any other
-  exception. The bypass is unchanged and answers before the provider is consulted.
+  A `ValidationError` (missing header or `methodArn`) or any unexpected exception is a Deny with
+  `principalId` "unauthorized" (403). An `AuthenticationError` (a refused or expired credential, or
+  a header that is not `Bearer <token>`: the former `_extract_token`, which accepted a bare token,
+  is gone) raises `Exception("Unauthorized")`, which API Gateway answers with 401, the status an
+  OAuth client refreshes its token on (decided 2026-11-12 at the PR #937 review; the base answered
+  it with a Deny). The bypass is unchanged and answers before the provider is consulted.
+  PR #937 review follow-ups (2026-11-12): `_build_request` finds the header whatever its case
+  (REST v1 REQUEST events keep header names as the client sent them, and the gateway's identity
+  source matches case-insensitively, so a lowercase `authorization` reached the Lambda and was
+  denied); and the log carries the request line, the effect and the `principalId` only, never the
+  event (its bearer header), the policy context (the whole principal) or a `ValidationError`'s
+  input (only the failing field locations).
 - The REST Lambda router (`deployment/aws/serverless/core/router/rest_lambda.py`):
   `DefaultEndpointsHandler._parse_body` assigns `principal_from_event(event)` to the body it parsed,
   rebuilding the principal from `event["requestContext"]["authorizer"]["principal"]` when present,
@@ -995,21 +1062,31 @@ candidate walk; `StaticAuthorizer` subclasses it, and every later engine must.
   `Lambda.principal(event)` (`deployment/aws/serverless/aklambda.py`) wraps it for the custom
   `Lambda.register` routes, which receive the raw event (decided 2026-11-10, for the
   `aws-serverless/schedule-openai` example's management routes).
+- The WebSocket Lambda router's custom routes (`ws_lambda.py`, `WSLambdaRouter._get_ws_handler_function`)
+  get the connection's principal in `event["requestContext"]["authorizer"]["principal"]` before
+  the route runs (PR #937 review follow-up): a WebSocket event carries no authorizer context, so
+  `Lambda.principal(event)` was anonymous on every custom WebSocket route, the one surface where a
+  custom route could not read its caller.
 - `GCPAuthorizer` (`deployment/gcp/akauthorizer.py`) is deleted: `RESTAPI` installs the identity
   dependency itself. `AzureFunctions.handler` (`deployment/azure/akfunction.py`) runs
   `RequestAuthenticator.from_config().authenticate_bearer(req.headers.get("Authorization"),
-  RequestContext(path=req.url, http_method=req.method, headers=dict(req.headers)))` under
+  RequestContext(path=urlsplit(req.url).path, http_method=req.method, headers=dict(req.headers)))` under
   `run_async_sync` before it reads the body, answers 401 `{"error": <public detail>, "session_id":
   null}` on `AuthenticationError` (the identity error `authenticate_bearer` raises; the
   `HTTPException` the design named belongs to the FastAPI dependency), then assigns the principal to
-  the body; without a header or an `identity` block the request runs anonymously.
+  the body; without a header or an `identity` block the request runs anonymously. The path, not
+  the URL, is also what a refusal logs (PR #937 review follow-up): under `authLevel: function` the
+  query string can carry the function key (`?code=`).
 
 #### 8.10 Threads (`integration/thread/`)
 
 - `ThreadRecorder.pre_run` (`integration/thread/recorder.py:32-57`): the `req.user_id` check
   (47-48) becomes `principal = req.principal; if principal is None or principal.is_anonymous:
   raise PermissionError("thread support requires an authenticated principal")`, and
-  `get_or_create_thread(..., user_id=principal.subject, ...)`.
+  `get_or_create_thread(..., user_id=principal.subject, ...)`. Ownership of an existing thread is
+  checked first, `manager.get_thread(session_id, user_id=principal.subject)`, ahead of
+  `store_attachments` (PR #937 review follow-up): a multimodal request naming another user's
+  `session_id` stored its bytes under that session before the 403.
 - `ConversationThreadManager.get_or_create_thread` (`integration/thread/manager.py:85-124`): when
   the thread exists and `thread.user_id != user_id`, raise `PermissionError(f"Thread {session_id}
   is not owned by user {user_id}")` before the rename (the check `manager.py:109-115` lacks today).
@@ -1054,9 +1131,13 @@ candidate walk; `StaticAuthorizer` subclasses it, and every later engine must.
 #### 8.12 Sandbox (`sandbox/`)
 
 - `AgentPrincipalResolver.resolve` (`sandbox/principal.py:29-39`): when
-  `session.get_principal()` is non-anonymous it returns `SandboxPrincipal(mode="user",
-  subject=principal.subject, groups=principal.groups, credentials={})`, else the agent-mode
-  principal as today. A profile with `identity.mode: user` therefore works with no custom
+  `session.get_principal()` is neither anonymous nor a shared-channel principal it returns
+  `SandboxPrincipal(mode="user", subject=principal.subject, groups=principal.groups,
+  credentials={})`, else the agent-mode principal as today. A `messaging:` or `realtime:`
+  principal's subject is a platform id (Gmail's is the unverified `From` address), never a user
+  subject a provider may map onto credentials (section 6's rule that an edge sender is never
+  matched by a user grant), so a `user`-mode profile fails closed for it (PR #937 review
+  follow-up, 2026-11-12). A profile with `identity.mode: user` therefore works with no custom
   resolver (`sandbox/broker/worker.py:148-162` enforces the mode unchanged).
 - PR #937 review follow-up (2026-11-11): `ExecutionManager._resolve_principal(profile_cfg)` holds
   the resolved principal to the profile, replacing a `user` principal under an `agent`-mode profile
@@ -1231,8 +1312,9 @@ class AKConfig(...):
   firebase|static` (their provider classes), `identity.credentials.store.<backend>`
   (`CredentialStoreFactory`), `registry.agents.<id>.identity` (`AgentRegistry.register`
   overlay), and `authorization.tools[].tiers` as `dict[str, AccessLevel]` (`StaticAuthorizer`).
-- `ak-py/pyproject.toml`: the `auth` extra becomes `["PyJWT>=2.13.0", "cryptography>=42.0",
-  "httpx>=0.27.0"]`; a `casbin` extra is **not** added in this change (the branch raises).
+- `ak-py/pyproject.toml`: the `auth` extra becomes `["PyJWT>=2.15.0,<3.0.0",
+  "cryptography>=42.0,<51.0.0", "httpx>=0.27.0,<0.29.0"]` (develop's #919 pins plus the two
+  additions); a `casbin` extra is **not** added in this change (the branch raises).
 - Env-var caveat (design section 9): any `AK_IDENTITY__*` variable materializes the block; a
   materialized `identity` with the default `oidc` type and no `issuer` fails at startup with
   `AKConfigError` from the model validator, which is the intended fail-fast.
@@ -1270,8 +1352,9 @@ Each is intentional; the justification is design section 10 unless stated.
 14. `A2ACardBuilder` emits the descriptor version and, with identity configured, security
     schemes; ADK agents now have a card.
 15. The schedule tools act for `Session.get_principal()`; the reason string changes.
-16. The sandbox default resolver returns a user-mode principal for an authenticated run; the
-    manager hands it to the provider only under a `user`-mode profile.
+16. The sandbox default resolver returns a user-mode principal for an authenticated run on a
+    direct surface (never for a `messaging:` or `realtime:` principal); the manager hands it to
+    the provider only under a `user`-mode profile.
 17. `mcp.agents`, `a2a.agents`, `agui.agents` fail at startup when present.
 18. The three OpenAI realtime-only reads of `is_enabled` and the guardrail fields
     (`framework/openai/openai.py:836-850`) now see AK-set values: a realtime session offers only
@@ -1281,6 +1364,28 @@ Each is intentional; the justification is design section 10 unless stated.
     (`framework/langgraph/langgraph.py:380-401` against
     `langchain_core/runnables/graph.py:95-105`), are populated from the compiled graph's tool
     nodes through the descriptor.
+20. `APIGatewayAuthorizer` denies a bare token sent without the `Bearer` scheme; the base's
+    `_extract_token` accepted it (section 8.9).
+21. The routes of a handler that declares `authenticates_itself` are mounted without the identity
+    dependency: every `WebhookRESTRequestHandler`, and in single-process async mode the co-hosted
+    `PipelineWebSocketHandler` and `PushEndpointHandler` (section 8.2).
+22. `AzureFunctions.handler` answers a refused credential with 401; the base had no
+    authentication on that path.
+23. With no `identity` block an `Authorization` header is ignored without being parsed, so a
+    malformed or non-bearer one runs anonymous too.
+24. `AWSWebsocketAPI.get_default_handlers()` raises `AKConfigError` without an identity block,
+    where the base raised `ValueError` without a validator.
+25. The built-in role mapper looks up the groups and only the claim paths listed in
+    `role_mapper.claims`, not every string claim value (section 4).
+26. A webhook delivery the adapter cannot verify (its verification secret unset) runs anonymous
+    under `WebhookRESTRequestHandler` (section 8.4).
+27. A 401 from the identity dependency or `AuthorisedRESTRequestHandler` carries
+    `WWW-Authenticate: Bearer`; MCP's 401 points at RFC 9728 metadata for `mcp.url` that the app
+    serves at its root (section 8.6).
+28. An empty `static.principals` map, an empty or unknown `algorithms` entry (`none` included) and a
+    Cognito `token_use` other than `access` or `id` are startup errors (section 4).
+29. The API Gateway authorizer answers a refused, expired or malformed token with 401 (it raises
+    `Unauthorized`) instead of a Deny's 403; a request with no token is still a Deny (section 8.9).
 
 **Non-changes:** session, thread, schedule, attachment and response-store layouts (one optional
 `last_error` on schedule occurrences and `principal` on tasks aside); the queue envelope
@@ -1295,7 +1400,7 @@ for the two caches and the framework context; public exports other than those na
 | Failure | Where | What surfaces |
 |---|---|---|
 | Invalid, expired, wrong-audience credential | `RequestAuthenticator` | 401 `"Unauthorized"` (HTTP), 1008 `"Authentication failed"` (WS), `ToolError` (MCP via FastMCP's own 401), `AuthenticationError` logged at INFO with the reason |
-| Malformed `Authorization` header | same | 401 `"Invalid authorization header"` |
+| Malformed `Authorization` header | same | 401 `"Invalid authorization header"` when a provider is configured; without one the header is ignored unparsed and the request runs anonymous |
 | Anonymous caller on a surface that needs a user | `AuthorisedRESTRequestHandler._resolve_user` | 401 `"Authentication required"` |
 | No level on the agent | `AccessGate.authorize_agent` → `PermissionError` | 403 with the message; `StreamChunk(error, done=True)` on a stream; `ToolError("Agent not available")` on MCP; A2A `InternalError` |
 | Agent not visible | `LookupError` | 404 `"Agent '<name>' not found"` (indistinguishable from unknown) |
@@ -1498,9 +1603,9 @@ before enqueue on a store-backed registry with no local agents), gets dedicated 
 
 ## Documentation, skills and examples
 
-Surfaces the implementation invalidates, from a sweep of the tree at `d9d0d18bc`; `plan.md`
-orders them in its docs and skills iterations (27 and 28) and the sync skills verify them before
-merge.
+Surfaces the implementation invalidates, from a sweep of the tree at `d9d0d18bc`. The phase A and
+B portion landed with phase B itself (PR #937); `plan.md`'s docs and skills iterations (27 and 28)
+cover phases C to F, and the sync skills verify them before merge.
 
 - **Docs site (`docs/docs/`)**: new `advanced/identity-and-access.md`; `api/rest-api.md`
   (the Authentication section 474-499 and the `user_id` context claim 192-207, already
@@ -1569,7 +1674,8 @@ merge.
     resolver with no custom code; `aws-serverless/openai-cognito`, `azure-serverless/openai-entra`
     and `gcp-containerized/openai-firebase` run the three cloud providers in their deployments;
     `azure-serverless/openai` moves to the static block and the two GCP `openai-auth` examples gain
-    an `oidc` block for Google as the issuer. The local suites join the e2e tier, the cloud suites
+    a bring-your-own provider that verifies the caller's token from `X-Forwarded-Authorization`
+    (behind API Gateway a built-in `oidc` block sees only the gateway's own token). The local suites join the e2e tier, the cloud suites
     the weekly tier. Landing after the docs and skills iterations, it adds the new examples to the
     examples list and the supported-providers table of `advanced/identity-and-access.md` and to the
     user skills that list them.
@@ -1620,8 +1726,12 @@ Mechanism changes found while detailing, each inside a settled decision and mirr
    (the spec had it in a thread) and cannot be pointed at a test transport, so the contract suite
    could not serve a local key set. The design's rules hold unchanged: discovery once, one forced
    refresh per unknown `kid` with a 30 s cooldown, no blocking fetch, a failed fetch keeps the
-   previous keys.
-7. **The MCP principal rides a claim.** FastMCP 3.4.7 copies the verifier's access token into
+   previous keys. Amended at the PR #937 review: the cache keeps no event-loop-bound state (the
+   `AsyncClient`'s pooled connections and the `asyncio.Lock` broke a sync host that runs each call
+   on a fresh loop), so a load runs on a worker thread through a short-lived `httpx.Client` with the
+   same injectable transport, and "no blocking fetch" now means the loop never waits on one
+   (section 4).
+7. **The MCP principal rides a claim.** FastMCP 3.4.10 copies the verifier's access token into
    its own `AccessToken` (SDK fields only) before `get_access_token()` returns it to a tool, so
    the spec's `isinstance(token, AKAccessToken)` check never holds over HTTP. The verifier puts
    the principal under the `ak.principal` claim beside its `principal` field, and

@@ -92,6 +92,14 @@ as the anonymous principal. A client passes the credential as a bearer token, fo
 or any OpenID Connect issuer, `cognito`, `entra`, `firebase`) are described in
 [Identity and access](../advanced/identity-and-access.md).
 
+With an OpenID-family provider (`oidc`, `cognito`, `entra`, `firebase`) the 401 also tells an MCP
+client where to sign in: its `WWW-Authenticate` header carries
+`resource_metadata="<origin>/.well-known/oauth-protected-resource/mcp/"`, and `RESTAPI` serves that
+RFC 9728 document at the app root, naming `<mcp.url>/` as the protected resource and the issuer as its
+authorization server. `<origin>` is the scheme and host of `mcp.url`, so set `mcp.url` to the address
+clients use (behind a proxy or load balancer, the public one); the default `http://localhost:8000/mcp`
+fits a local run only. A bearer-scheme provider such as `static` publishes no metadata.
+
 ## Configuration
 
 ```yaml
@@ -99,6 +107,7 @@ mcp:
   enabled: true
   expose_agents: true
   agents: ['*']
+  url: https://agents.example.com/mcp  # Public URL of the endpoint (default: http://localhost:8000/mcp)
   stateless_http: false  # Set to true for stateless mode (no Mcp-Session-Id)
 ```
 

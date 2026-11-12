@@ -618,7 +618,7 @@ class TestIdentityConfig:
         assert _IdentityProviderConfig(type="my.module.Provider").type == "my.module.Provider"
 
     def test_a_static_block_without_principals_still_parses(self):
-        """An empty map is a provider that authenticates nobody; refusing it is the provider's call, not the model's."""
+        """An empty map parses; StaticIdentityProvider refuses it at construction (test_identity_providers)."""
         assert _IdentityProviderConfig(type="static", static=_StaticProviderConfig()).static.principals == {}
 
     def test_an_identity_env_var_materializes_the_block_and_fails_fast(self, monkeypatch):

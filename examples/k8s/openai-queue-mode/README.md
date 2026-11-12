@@ -18,7 +18,7 @@ config.kafka.yaml       the Kafka variant
 deploy/Dockerfile.*     one image per component, python:3.12-slim + staged dependencies
 deploy/package.sh       stages dependencies and builds the three images
 deploy/deploy.sh        installs the chart release: the published chart, or "local" for this checkout's chart
-ak-values.yaml          chart overlay: the example images + the OpenAI credentials Secret mount
+ak-values.yaml          chart overlay: the example images + the OpenAI credentials Secret mount + the demo credential for the io and gateway tiers
 ```
 
 The same wire behavior can be exercised without Kubernetes:
@@ -58,7 +58,10 @@ Give the pods the OpenAI key and the demo credential as Secrets, then install th
 the dev flavor (`ak-values.yaml` layers the example images, the Secret mount and the credential's
 environment variable on top of it). `DEMO_AUTH_TOKEN` is the one credential the `identity` block in
 `config.*.yaml` accepts: REST requests may carry it as a bearer token, and the WebSocket walkthrough
-below must. Keep it exported, the client reads it:
+below must. Keep it exported, the client reads it. To authenticate against a real issuer instead,
+replace the `static` block with an `oidc` one (Auth0, Keycloak and Okta are `oidc` configurations;
+Cognito, Entra ID and Firebase have their own types), which needs no Secret: see
+[Identity and Access](https://kernel.yaala.ai/docs/next/advanced/identity-and-access).
 
 ```bash
 kubectl create secret generic openai-credentials --from-literal=OPENAI_API_KEY="$OPENAI_API_KEY"
@@ -149,9 +152,24 @@ cert-manager as prerequisites) instead of the dev flavor:
 curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable=traefik --disable=servicelb" sh -
 ```
 
-The chart install is identical to the baremetal instructions in
-[ak-deployment/ak-k8s/README.md](../../../ak-deployment/ak-k8s/README.md); the dev-flavor
-walkthrough above also works on k3s unchanged (k3s ships a local-path StorageClass).
+The chart install follows [ak-deployment/ak-k8s/README.md](../../../ak-deployment/ak-k8s/README.md)
+with `-f ./chart/values-baremetal.yaml` in place of the dev flavor, plus one step that install does
+not take: this example's images need the identity block's credential, and without it the io pod
+crash-loops (the `static` provider cannot resolve `DEMO_AUTH_TOKEN` at startup). Create the Secret
+as in the k3d walkthrough and hand it to the io handler (and to `wsGateway.extraEnv` too once the
+gateway tier is on):
+
+```bash
+kubectl create secret generic demo-credentials --from-literal=DEMO_AUTH_TOKEN="$DEMO_AUTH_TOKEN"
+helm install ak ./chart -f ./chart/values-baremetal.yaml <the image and OpenAI key flags> \
+  --set 'ioHandler.extraEnv[0].name=DEMO_AUTH_TOKEN' \
+  --set 'ioHandler.extraEnv[0].valueFrom.secretKeyRef.name=demo-credentials' \
+  --set 'ioHandler.extraEnv[0].valueFrom.secretKeyRef.key=DEMO_AUTH_TOKEN'
+```
+
+`FLAVOR=baremetal deploy/deploy.sh` does the same from this directory: it layers `ak-values.yaml`,
+which carries those entries and the `openai-credentials` mount, on the baremetal flavor. The
+dev-flavor walkthrough above also works on k3s unchanged (k3s ships a local-path StorageClass).
 
 ## A2A and MCP
 
@@ -208,8 +226,9 @@ chart's `secretStore` in `ak-values.yaml` mounts each listed Secret read-only at
   Secret is no longer referenced.
 - **The demo credential is the exception.** `DEMO_AUTH_TOKEN`, the credential of the `identity` block, is read by
   the io handler and the WebSocket gateway at startup, and neither of those tiers has the `secretStore` mount, so
-  `ak-values.yaml` injects it as an environment variable from the `demo-credentials` Secret (`extraEnv`). The
-  environment wins, so the same key resolves the same way on every tier.
+  `ak-values.yaml` injects it as an environment variable from the `demo-credentials` Secret through
+  `ioHandler.extraEnv` and `wsGateway.extraEnv`. The per-tier keys keep it off the agent runner, the tier that
+  runs the LLM's tools and never builds the provider; the top-level `extraEnv` would reach every tier.
 - **Published flow.** `deploy/deploy.sh` without `local` works only once a release publishes a chart and an
   `agentkernel` version that carry the Kubernetes provider and `secretStore`; `deploy/deploy.sh local` uses this
   checkout for both.

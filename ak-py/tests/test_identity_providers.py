@@ -1,11 +1,12 @@
 """
-Identity providers (spec `docs/specs/603-identity-rbac-registry/` section 4, iteration 4).
+Identity providers (spec `docs/specs/603-identity-rbac-registry/` section 4).
 
 What is pinned here: the static provider resolves its credentials through the secret capability,
-compares every entry in constant time and yields the `static` namespace; the role mapper is the
-one producer of `Principal.roles`; and the factory selects a provider by short name or dotted path
-and wraps it with the configured mapper. The OIDC family and the request authenticator arrive in
-later iterations with their own cases, run through the same contract suites.
+compares every entry in constant time and yields the `static` namespace; a configured role mapper
+replaces whatever roles the provider set (the static provider is the one that issues its own) and
+looks up only the groups and the claim paths it lists; the factory selects a provider by short name
+or dotted path and wraps it with the configured mapper; and the request authenticator parses the
+bearer header. The OIDC family's cases are in `test_identity_oidc`, run through the same contract.
 """
 
 import pytest
@@ -97,6 +98,11 @@ class TestStaticProviderContract(IdentityProviderContract):
 
 
 class TestStaticProvider:
+    def test_a_block_with_no_principals_is_a_configuration_error(self, secrets):
+        """A typo such as ``static: {principal: ...}`` leaves the map empty: refused at startup, not with a 401 per caller."""
+        with pytest.raises(AKConfigError, match="no principals"):
+            StaticIdentityProvider(principals={}, secrets=secrets)
+
     @pytest.mark.asyncio
     async def test_every_configured_principal_authenticates_with_its_own_secret(self, secrets):
         provider = StaticIdentityProvider(principals=PRINCIPALS, secrets=secrets)
@@ -181,7 +187,9 @@ class TestMappingRoleMapperContract(RoleMapperContract):
     @pytest.fixture
     def mapper(self):
         return MappingRoleMapper(
-            mapping={"ops": ["operator", "reader"], "finance": ["fin"], "b": ["bee"], "ops2": ["reader"]}, pass_through="realm_access.roles"
+            mapping={"ops": ["operator", "reader"], "finance": ["fin"], "b": ["bee"], "ops2": ["reader"], "admin": ["admin"]},
+            pass_through="realm_access.roles",
+            claims=["department", "teams"],
         )
 
     @pytest.fixture
@@ -189,8 +197,11 @@ class TestMappingRoleMapperContract(RoleMapperContract):
         return [
             # groups looked up in the mapping, in order of first appearance, de-duplicated
             (_principal(groups=["ops", "ops2"]), ["operator", "reader"]),
-            # string and list claim values looked up in the mapping
+            # string and list values of the listed claim paths looked up in the mapping
             (_principal(claims={"department": "finance", "teams": ["a", "b"]}), ["fin", "bee"]),
+            # a claim that is not listed never maps, however its value reads: a user sets their own
+            # display name or sign-up username, so neither may grant a role (#603 review)
+            (_principal(claims={"name": "admin", "username": "ops", "email": "finance"}), []),
             # pass_through: a string and a list at the claim path become roles as they are
             (_principal(claims={"realm_access": {"roles": "admin"}}), ["admin"]),
             (_principal(claims={"realm_access": {"roles": ["x", "y", "x"]}}), ["x", "y"]),
@@ -198,6 +209,22 @@ class TestMappingRoleMapperContract(RoleMapperContract):
             (_principal(claims={"finance": True, "nested": {"department": "finance"}}), []),
             (_principal(), []),
         ]
+
+
+class TestUserControlledClaimsGrantNothing:
+    """Regression cases from the #603 phase B review: claims a user can set must not reach ``mapping``."""
+
+    def test_a_firebase_display_name_is_not_a_group(self):
+        mapper = MappingRoleMapper(mapping={"admin": ["admin"]})
+        assert mapper.map(_principal(claims={"name": "admin"})) == []
+
+    def test_a_cognito_username_is_not_a_group(self):
+        mapper = MappingRoleMapper(mapping={"ops": ["admin"]})
+        assert mapper.map(_principal(claims={"username": "ops", "token_use": "access"})) == []
+
+    def test_the_built_in_maps_a_listed_claim_from_config(self):
+        mapper = RoleMapperFactory.create(_RoleMapperConfig(mapping={"finance": ["reader"]}, claims=["department"]))
+        assert mapper.map(_principal(claims={"department": "finance", "name": "finance"})) == ["reader"]
 
 
 class TestNamespacedClaimPassThrough:
@@ -221,6 +248,11 @@ class TestRoleMapperFactory:
     def test_an_unknown_type_is_a_configuration_error(self):
         with pytest.raises(AKConfigError, match="role_mapper"):
             RoleMapperFactory.create(_RoleMapperConfig(type="ldap"))
+
+    def test_a_dotted_mapper_reads_its_own_settings_from_the_block(self):
+        """Unknown keys are kept for a bring-your-own mapper rather than dropped (#603 review)."""
+        config = _RoleMapperConfig.model_validate({"type": "test_identity_providers.EverybodyIsReader", "directory_url": "ldap://dir"})
+        assert config.model_extra == {"directory_url": "ldap://dir"}
 
 
 class TestMappedIdentityProvider:
@@ -270,6 +302,12 @@ class TestIdentityProviderFactory:
         identity = _IdentityConfig(provider=_IdentityProviderConfig(type="test_identity_providers.EchoProvider"))
         provider = IdentityProviderFactory.create(identity)
         assert isinstance(provider, EchoProvider) and provider.config is identity.provider
+
+    def test_a_dotted_provider_reads_its_own_settings_from_the_block(self):
+        """``keys_table`` is no shared field: it reaches the provider through ``model_extra`` (#603 review)."""
+        identity = _IdentityConfig.model_validate({"provider": {"type": "test_identity_providers.EchoProvider", "keys_table": "api-keys"}})
+        provider = IdentityProviderFactory.create(identity)
+        assert provider.config.model_extra == {"keys_table": "api-keys"}
 
     def test_an_unknown_short_name_is_a_configuration_error(self):
         with pytest.raises(AKConfigError, match="unknown identity provider type 'ldap'"):
@@ -405,6 +443,8 @@ class TestRequestAuthenticator:
 
         assert (rejected.status_code, rejected.json()["detail"]) == (401, "Unauthorized")
         assert (malformed.status_code, malformed.json()["detail"]) == (401, "Invalid authorization header")
+        # RFC 6750 section 3: a 401 names the scheme to retry with.
+        assert rejected.headers["www-authenticate"] == malformed.headers["www-authenticate"] == "Bearer"
         reasons = [record.getMessage() for record in caplog.records if record.name == "ak.identity.provider.request"]
         assert any("not alice" in message and "/whoami" in message for message in reasons)
 

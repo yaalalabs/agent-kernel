@@ -8,8 +8,10 @@ Authentication is configuration, not code. `lambda_auth.py` is one line, `APIGat
 the API Gateway authorizer Lambda authenticates every request's bearer token through the identity
 provider named by the `identity` block in `config.yaml`, and an accepted token yields an Allow policy
 whose context carries the principal (subject, groups, claims). The request-handler Lambda puts that
-principal on the request, so the agent, the tools and the hooks know who is calling. Anything else is a
-Deny, with the provider's reason in the authorizer's logs and nothing in the response.
+principal on the request, so the agent, the tools and the hooks know who is calling. A refused,
+expired or malformed token gets a 401 (API Gateway's answer when the authorizer raises `Unauthorized`,
+the status an OAuth client refreshes its token on); a request with no token is a Deny (403). Either way
+the provider's reason stays in the authorizer's logs and nothing is in the response.
 
 ### The static provider (default)
 
@@ -45,7 +47,7 @@ identity:
 The principal's `subject` is the token's `sub`, its `namespace` the issuer, its `groups` the claim above,
 and every other claim (`permissions`, `org_id`, ...) arrives in `claims` for the role mapper and the tools.
 No variable is needed for this block, so `demo_auth_token` can be left at any value. The authorizer
-package already carries the `auth` extra (PyJWT and cryptography), which `oidc` needs.
+package already carries the `auth` extra (PyJWT, cryptography and httpx), which `oidc` needs.
 
 Get a token to test with from the tenant's token endpoint, for example through the client-credentials
 flow of a machine-to-machine application authorised for the API:

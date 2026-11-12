@@ -471,6 +471,9 @@ settings drive this:
   an impersonation user), which the default deliberately leaves to the application. A user-mode
   principal reaches the provider only under a `user`-mode profile: an `agent`-mode profile runs as
   the agent whoever calls, and an operation driven outside any session resolves to the agent too.
+  So does a run for a messaging or realtime sender (a `messaging:` or `realtime:` principal, whose
+  subject is a platform id rather than a user a provider can map), like an anonymous run, so a
+  `user`-mode profile refuses it.
 
 ```yaml
 sandbox:

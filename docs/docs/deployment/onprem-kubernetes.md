@@ -120,9 +120,11 @@ key naming, rotation and security notes, see the
 
 The credentials of a `static` identity provider resolve the same way: each key under
 `identity.provider.static.principals` names a secret, never a value. The io-handler and ws-gateway
-tiers build the provider and never get the `secretStore` mount, so deliver their credential through
-`extraEnv` from a Secret, as [examples/k8s/openai-queue-mode](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/k8s/openai-queue-mode)
-does with its `demo-credentials` Secret and `DEMO_AUTH_TOKEN`. An `oidc`, `cognito`, `entra` or
+tiers build the provider, and the mount reaches only the agent-executing tier, so in the split
+topology deliver the credential through `extraEnv` from a Secret: the per-tier `ioHandler.extraEnv`
+and `wsGateway.extraEnv` keep it off the agent runner, as [examples/k8s/openai-queue-mode](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/k8s/openai-queue-mode)
+does with its `demo-credentials` Secret and `DEMO_AUTH_TOKEN`. In the single-process profile the
+io handler is that tier and can read the credential from its mount. An `oidc`, `cognito`, `entra` or
 `firebase` provider needs no secret, only the `auth` extra in the image; see
 [Identity and Access](../advanced/identity-and-access.md).
 

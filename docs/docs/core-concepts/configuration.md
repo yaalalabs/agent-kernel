@@ -69,6 +69,7 @@ mcp:
   expose_agents: true
   agents:
     - "*"  # Expose all agents as MCP tools
+  url: "http://localhost:8000/mcp"  # Public URL of the endpoint, named by the OAuth resource metadata (default: http://localhost:8000/mcp)
   stateless_http: false  # Run in stateless HTTP mode (default: false)
 
 # WebSocket API configuration (for AWS serverless deployments)
@@ -205,7 +206,7 @@ identity:
     issuer: "https://<tenant>.<region>.auth0.com/"  # required by oidc (Auth0 issues it with the trailing slash); derived by cognito, entra and firebase
     audience: "<api-identifier>"  # required by oidc: the audience a token must carry
     jwks_uri: null  # discovered from the issuer when omitted
-    algorithms: [RS256, ES256]  # allowed signing algorithms; symmetric ones are refused
+    algorithms: [RS256, ES256]  # allowed signing algorithms; an empty list, none, an unknown name or a symmetric one fails at startup
     leeway: 30  # seconds of clock skew tolerated on exp and nbf
     required_claims: []  # claims a token must carry beyond the standard set
     claims:
@@ -214,12 +215,12 @@ identity:
     cognito:  # required when type is cognito
       region: eu-west-1
       user_pool_id: eu-west-1_XXXXXXXXX
-      token_use: access  # access | id
+      token_use: access  # access | id; any other value is a startup error
     entra:  # required when type is entra
       tenant_id: "<tenant-id>"
     firebase:  # required when type is firebase
       project_id: "<project-id>"
-    static:  # required when type is static: credential secret key -> principal
+    static:  # required when type is static: credential secret key -> principal; at least one entry
       principals:
         ALICE_TOKEN:  # names a secret resolved through the secret capability (the environment wins); the value is never in the file
           subject: alice
@@ -227,11 +228,13 @@ identity:
           groups: [ops]
           roles: []  # roles the provider issues directly; a role_mapper replaces them
           claims: {}
-  role_mapper:  # optional - derives Principal.roles from the provider's facts; absent means no roles
-    type: mapping  # mapping, or a dotted path to a RoleMapper subclass
+  role_mapper:  # optional - derives Principal.roles from the provider's facts, replacing a static entry's roles
+    type: mapping  # mapping, or a dotted path to a RoleMapper subclass (its own settings arrive in model_extra)
     pass_through: null  # a claim path whose string or list value becomes roles as it is
-    mapping:  # group name or claim value -> the roles it grants
+    mapping:  # group name, or a value of a claim listed in claims -> the roles it grants
       ops: [admin]
+    claims: []  # claim paths whose string or list values are also looked up in mapping; only groups by default,
+                # since a user sets many of their own claims (a display name, a username, an email)
 
 # Messaging platform integrations
 slack:
@@ -367,6 +370,7 @@ Alternatively, use `config.json`:
     "enabled": true,
     "expose_agents": true,
     "agents": ["*"],
+    "url": "http://localhost:8000/mcp",
     "stateless_http": false
   },
   "websocket_api": {
@@ -572,6 +576,7 @@ export AK_A2A__TASK_STORE_TYPE=redis  # Options: 'in_memory', 'redis' (default: 
 export AK_MCP__ENABLED=true  # default: false
 export AK_MCP__EXPOSE_AGENTS=true  # Expose agents as MCP tools (default: false)
 export AK_MCP__AGENTS="agent1,agent2"  # Comma-separated list (default: ["*"])
+export AK_MCP__URL=https://agents.example.com/mcp  # Public URL of the MCP endpoint (default: http://localhost:8000/mcp)
 export AK_MCP__STATELESS_HTTP=false  # Run in stateless HTTP mode, no Mcp-Session-Id (default: false)
 # Note: MCP is always served at /mcp on the main API server. Use AK_API__PORT to change the port.
 ```
@@ -920,6 +925,8 @@ mcp:
   expose_agents: false          # Expose agents as MCP tools
   agents:                       # List of agents to expose as MCP tools
     - "*"                       # "*" exposes all agents
+  url: "http://localhost:8000/mcp"  # Public URL clients reach the endpoint at (behind a proxy, the public one). With an
+                                # OpenID-family identity provider it is the resource the RFC 9728 metadata names
   stateless_http: false         # Stateless HTTP mode: each request is independent, no Mcp-Session-Id (default: false)
 
 # Messaging platform integrations

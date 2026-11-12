@@ -368,6 +368,30 @@ class TestLambdaFrames:
         assert (sent["message_body"]["principal"]["subject"], sent["user_id"]) == ("alice", "alice")
 
 
+class TestLambdaCustomWebSocketRoutes:
+    """WebSocket events carry no authorizer context, so a ``Lambda.register`` route reads the connection's
+    principal through ``Lambda.principal(event)`` only because the router puts it there (#603 review)."""
+
+    def test_a_custom_route_reads_the_connections_principal(self, static_identity):
+        from agentkernel.deployment.aws.serverless.aklambda import Lambda
+
+        with patch(f"{WS_LAMBDA_MODULE}.WebSocketConnectionStore"):
+            router = WSLambdaRouter(system_routes=False)
+        router._base_route_handler.get_principal = MagicMock(return_value=ALICE)
+        router._base_route_handler.broadcast = MagicMock()
+        seen = []
+
+        def echo(event, context):
+            seen.append(Lambda.principal(event))
+            return {"echo": "hi"}
+
+        with patch(f"{WS_LAMBDA_MODULE}.LambdaWSHandler.construct_endpoint_url", return_value="https://example/prod"):
+            status, _ = router._get_ws_handler_function(echo)(_ws_event(body={"route": "echo"}), None)
+
+        assert status == 200
+        assert seen == [ALICE]
+
+
 def _azure_request(headers: dict | None = None, body: dict | None = None) -> func.HttpRequest:
     payload = CHAT_BODY if body is None else body
     return func.HttpRequest(method="POST", url="https://fn.example.net/api/chat", headers=headers or {}, body=json.dumps(payload).encode())
@@ -400,6 +424,22 @@ class TestAzureFunctions:
 
         assert (response.status_code, json.loads(response.get_body())["error"]) == (401, "Invalid authorization header")
         chat_service.process_chat_request.assert_not_called()
+
+    def test_the_function_key_stays_out_of_the_log_and_the_context(self, static_identity, chat_service, caplog):
+        """Under authLevel: function a caller may send ``?code=``; only the path is logged or handed to the provider."""
+        request = func.HttpRequest(
+            method="POST",
+            url="https://fn.example.net/api/chat?code=the-function-key",
+            headers={"Authorization": "Bearer mallory"},
+            body=json.dumps(CHAT_BODY).encode(),
+        )
+        with caplog.at_level("INFO"):
+            response = AzureFunctions.handler(request)
+
+        assert response.status_code == 401
+        assert "the-function-key" not in " ".join(record.getMessage() for record in caplog.records)
+        ((_, context),) = static_identity.calls
+        assert context.path == "/api/chat"
 
     def test_no_header_runs_anonymously(self, static_identity, chat_service):
         AzureFunctions.handler(_azure_request())

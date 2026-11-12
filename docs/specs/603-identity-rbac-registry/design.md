@@ -110,7 +110,9 @@ and `research/design-options.md` section 4).
     mutated by a hook or tool; a changed identity is a new object only `Runtime` can publish.
   - `groups` and `claims` are identity facts carried verbatim from the provider. `roles` is the
     deployment's policy vocabulary and has exactly one producer: a configured `RoleMapper`
-    (section 3). With no mapper it stays empty. Agent Kernel maintains no roles of its own.
+    (section 3). With no mapper it stays empty, with one exception (refined at the PR #937
+    review): a `static` entry may list roles, since that is Agent Kernel's own dev provider, and a
+    configured mapper replaces them like any provider's. Agent Kernel maintains no roles of its own.
 - `AccessLevel` (`StrEnum`, ordered, comparable): `read < write < admin`. It is the **capability
   tier a principal may drive through an agent**; any level implies the principal may chat with the
   agent. Record management is not a level (settled, Q4).
@@ -220,7 +222,10 @@ and `research/design-options.md` section 4).
     with custom token logic writes an `IdentityProvider` and names it by dotted path.
 - REST (`RESTAPI`, `AgentRESTRequestHandler`, pipeline `RequestHandler`): `RESTAPI` installs the
   identity dependency itself when `identity` is configured (replacing `add_auth_handlers`,
-  `api/http.py:223-232`); it stores the `Principal` on `request.state`, and `run`, `run_multipart`
+  `api/http.py:223-232`), on every router except those of a handler that verifies its own callers
+  (`authenticates_itself`: a messaging webhook, whose platform token may sit in `Authorization`,
+  and the co-hosted WebSocket route and push endpoint; refined at the PR #937 review); it stores
+  the `Principal` on `request.state`, and `run`, `run_multipart`
   and `run_chat` read it and pass it to `ChatService`. `ChatService.execute*` pass `principal`
   through `AgentHandler` to `AgentService.run_multi` / `stream_multi`, which forward it to
   `Runtime` (the `acting_user_id` parameters go, section 1). `APIGatewayAuthorizer` runs the
@@ -285,17 +290,18 @@ and `research/design-options.md` section 4).
   - Issuer discovery at `<issuer>/.well-known/openid-configuration` unless `jwks_uri` is given;
     JWKS cached, refreshed once on an unknown `kid`, refresh cooldown 30 s; network fetches never
     block the event loop.
-  - Validates signature (algorithms allow-list, default `["RS256", "ES256"]`; symmetric algorithms
-    refused), `iss` equals the configured issuer, `aud` contains the configured audience
+  - Validates signature (algorithms allow-list, default `["RS256", "ES256"]`; symmetric, unsigned
+    and unknown algorithms refused at startup), `iss` equals the configured issuer with a trailing
+    slash tolerated either way (Auth0 issues its issuer with one), `aud` contains the configured audience
     (required), `exp` and `nbf` with `leeway` (default 30 s), and every `required_claims` entry.
   - Claim paths (configurable; a claim name, a namespaced name containing dots such as Auth0's
     `https://acme.com/roles`, tried whole first, or dotted segments into a nested claim):
     `subject` default `sub`, `groups` default `groups`; a missing groups claim yields an empty
     list, a missing subject claim is an `AuthenticationError`. Auth0 is served by this provider
     (issuer with its trailing slash, the API identifier as audience), not by one of its own.
-    Every other validated claim lands in `claims` for the mapper and for tools; providers never
-    write `roles`. `namespace` is the validated `iss`, so the three direct surfaces yield one
-    identity per issuer and subject.
+    Every validated claim but the subject lands in `claims` for the mapper and for tools, the
+    groups claim included; the token providers never write `roles`. `namespace` is the validated
+    `iss`, so the three direct surfaces yield one identity per issuer and subject.
 - Provider subclasses that change only defaults and one check each:
   - `CognitoIdentityProvider` (`cognito`): issuer
     `https://cognito-idp.<region>.amazonaws.com/<user_pool_id>`; groups from `cognito:groups`;
@@ -318,9 +324,11 @@ and `research/design-options.md` section 4).
 - `RoleMapper` ABC (`identity/provider/roles.py`): `map(principal) -> list[str]`, applied by the
   factory wrapper after `authenticate`, so every provider's output is mapped the same way and
   `Principal.roles` has exactly one producer. Selected by `identity.role_mapper.type` through
-  `RoleMapperFactory`: the built-in `mapping` (the `mapping` dictionary from provider group or
-  claim value to AK roles, plus an optional `pass_through` claim path whose values become roles
-  as-is, for IdPs that already issue roles), else a dotted path to a `RoleMapper` subclass that
+  `RoleMapperFactory`: the built-in `mapping` (the `mapping` dictionary from provider group, or a
+  value of a claim the mapper's `claims` list names, to AK roles, plus an optional `pass_through`
+  claim path whose values become roles as-is, for IdPs that already issue roles; narrowed at the
+  PR #937 review from "any claim value", since a user sets claims such as a display name or a
+  sign-up username), else a dotted path to a `RoleMapper` subclass that
   derives roles from anything on the principal or from an external lookup. No `role_mapper` block
   means no roles; `AccessGate.validate_configuration` warns when a grant uses a `role:` subject
   and no mapper is configured. A contract test covers both built-in behaviours.
@@ -841,6 +849,16 @@ registry:
 - `ak-dev-architecture` gains an Identity and Access section; new `ak-dev-new-identity-provider`
   and `ak-dev-new-authorizer` dev skills in the `ak-dev-new-*` family; `ak-dev-write-spec` and
   `ak-dev-review-pr` need no change.
+- Wherever supported providers are listed (the docs site, the READMEs, the user skills, the
+  examples), Auth0 is named as a supported provider served by the `oidc` type, with its block
+  spelled out (decided 2026-11-10): the tenant issuer with its trailing slash, the API identifier
+  as audience, and the namespaced roles claim as `claims.groups`; Keycloak and Okta are likewise
+  `oidc` configurations.
+- One example per supported provider and per phase A and B identity feature (plan iteration 29,
+  the last): the OIDC family against a Keycloak container with Auth0 and Okta as documented
+  alternates, a bring-your-own provider, the principal in tools and hooks, the CLI token, MCP and
+  A2A with bearer tokens, the sandbox's default resolver, and Cognito, Entra ID and Firebase in
+  their deployments. The features phases C to F add are outside its scope.
 
 ## Component diagram
 

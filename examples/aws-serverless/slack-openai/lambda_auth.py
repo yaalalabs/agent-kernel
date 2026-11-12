@@ -3,7 +3,8 @@
 The chat route is authenticated through the identity provider named in config.yaml (the static
 provider here, its one credential resolved from the DEMO_AUTH_TOKEN environment variable that
 deploy/main.tf passes in; swap it for an `oidc`, `cognito`, `entra` or `firebase` block to validate
-real tokens).
+real tokens, after adding `auth` to the `authorizer` extra in pyproject.toml, since those providers
+need PyJWT, cryptography and httpx).
 
 Slack sends no bearer token: it signs the body, and the authorizer event carries no body. So the
 bypass lets `POST /<api_base_path>/<api_version>/slack/events` through by method and path alone,

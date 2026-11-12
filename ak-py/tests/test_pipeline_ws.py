@@ -389,6 +389,93 @@ class TestWebSocketAuthentication:
         assert store.get_connections("user-1") == [], "the shared mapping is cleaned on disconnect"
 
 
+class TestCoHostedThroughRESTAPI:
+    """Single-process async mode mounts ``/ws`` and the push endpoint through ``RESTAPI.build_app``,
+    whose routers get the identity dependency unless they authenticate their own callers (#603)."""
+
+    @pytest.fixture
+    def build(self, monkeypatch):
+        from types import SimpleNamespace
+
+        from agentkernel.api.http import RESTAPI
+
+        cfg = _use_config(monkeypatch, push_auth_token="s3cret")
+        cfg.a2a = SimpleNamespace(enabled=False)
+        cfg.mcp = SimpleNamespace(enabled=False)
+        cfg.api.custom_router_prefix = "/custom"
+        # The identity block the WebSocket handler requires: every router the dependency guards
+        # would see this provider, and the WebSocket route must not be one of them.
+        monkeypatch.setattr(RequestAuthenticator, "from_config", classmethod(lambda cls: _authenticator()))
+        RESTAPI._custom_routers.clear()
+        yield RESTAPI
+        RESTAPI._custom_routers.clear()
+
+    def test_the_handlers_authenticate_their_own_callers(self):
+        assert PipelineWebSocketHandler.authenticates_itself is True
+        assert PushEndpointHandler.authenticates_itself is True
+
+    def test_a_handshake_through_the_assembled_app_authenticates_its_token(self, build):
+        registry = LocalConnectionRegistry()
+        handler = PipelineWebSocketHandler(
+            authenticator=_authenticator(), registry=registry, transport=InMemoryTransport(), connection_store=_store()
+        )
+        client = TestClient(build.build_app(handlers=[handler, PushEndpointHandler(registry=registry)]))
+
+        with client.websocket_connect(f"{WS_PATH}?token=good") as websocket:
+            websocket.send_json({"route": "nope"})
+            websocket.receive_json()
+            assert len(registry.get_connections("user-1")) == 1
+
+    def test_the_push_endpoint_through_the_assembled_app_checks_only_its_shared_secret(self, build):
+        registry = LocalConnectionRegistry()
+        client = TestClient(build.build_app(handlers=[PushEndpointHandler(registry=registry)]))
+
+        response = client.post(
+            PUSH_PATH,
+            json={"connection_id": "missing", "message": {}},
+            headers={PUSH_TOKEN_HEADER: "s3cret", "Authorization": "Bearer not-an-app-credential"},
+        )
+
+        assert response.status_code == 404  # past the shared-secret check, not a 401 from the app's provider
+
+    def test_a_websocket_route_on_a_custom_router_gets_the_principal(self, build):
+        from fastapi import APIRouter, WebSocket
+
+        router = APIRouter()
+
+        async def whoami(websocket: WebSocket):
+            await websocket.accept()
+            await websocket.send_json({"subject": websocket.state.principal.subject})
+            await websocket.close()
+
+        router.add_api_websocket_route("/whoami", whoami)
+        build.add(router)
+        client = TestClient(build.build_app(handlers=[]))
+
+        with client.websocket_connect("/custom/whoami", headers={"Authorization": "Bearer good"}) as websocket:
+            assert websocket.receive_json() == {"subject": "user-1"}
+        with client.websocket_connect("/custom/whoami") as websocket:
+            assert websocket.receive_json() == {"subject": "anonymous"}
+
+    def test_a_refused_credential_on_a_custom_websocket_route_closes_with_policy_violation(self, build):
+        from fastapi import APIRouter, WebSocket
+
+        router = APIRouter()
+
+        async def whoami(websocket: WebSocket):  # pragma: no cover - never reached
+            await websocket.accept()
+
+        router.add_api_websocket_route("/whoami", whoami)
+        build.add(router)
+        client = TestClient(build.build_app(handlers=[]))
+
+        with pytest.raises(WebSocketDisconnect) as exc_info:
+            with client.websocket_connect("/custom/whoami", headers={"Authorization": "Bearer bad"}) as websocket:
+                websocket.receive_json()
+        assert exc_info.value.code == 1008
+        assert exc_info.value.reason == "Unauthorized"
+
+
 class TestWebSocketChat:
     def test_chat_frame_is_enqueued_with_the_pipeline_attributes(self, monkeypatch):
         app, _, transport, _ = _ws_app(monkeypatch)

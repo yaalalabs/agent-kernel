@@ -92,6 +92,7 @@ class TestAuthentication:
 
         assert response.status_code == 401
         assert response.json()["detail"] == "Authentication required"
+        assert response.headers["www-authenticate"] == "Bearer"
 
     def test_the_thread_read_requires_a_caller_too(self, thread_enabled):
         thread_enabled.get_or_create_thread("s1", "u1", first_prompt="a")

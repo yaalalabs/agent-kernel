@@ -33,7 +33,11 @@ is always served, AG-UI is mounted alongside it, and both run the agent on the q
 caller's behalf, so its routes take a bearer token, which the configured provider turns into the
 run's principal. The `static` provider here maps that credential to the principal `demo-user`, and
 the approval console sends `demo-token` on every run. The REST route below accepts a request without
-a token.
+a token. Note what that means for a pause: a `resume` sent without a token runs anonymous, and the
+runtime skips the owner check for an anonymous resume until the access-gate phase lands, so anyone who
+can reach the REST route can answer a pause. Keep that route off a public network until then. To
+authenticate against a real issuer (Auth0, Keycloak and Okta are `oidc` configurations), see
+[Identity and Access](https://kernel.yaala.ai/docs/next/advanced/identity-and-access).
 
 Two surfaces are mounted, and the same pause can be answered from either:
 

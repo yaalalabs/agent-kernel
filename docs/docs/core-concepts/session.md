@@ -598,7 +598,7 @@ class AuditHook(PreHook):
         return "AuditHook"
 ```
 
-`get_principal()` returns `None` outside a run. The principal carries `subject`, `kind`, `provider`, `namespace`, `groups`, `roles` and `claims`; which identity provider fills them is the `identity` block's business, see [Identity and access](../advanced/identity-and-access.md). Conversation threads and scheduled tasks use the owner to decide whose records a request may read.
+`get_principal()` returns `None` outside a run. The principal carries `subject`, `kind`, `provider`, `namespace`, `groups`, `roles` and `claims`; which identity provider fills them is the `identity` block's business, see [Identity and access](../advanced/identity-and-access.md). `get_owner()` records the first authenticated principal the session was used by; conversation threads and scheduled tasks keep their own owner (the thread's `user_id`, the task's `principal`).
 
 ## Configuration Reference
 

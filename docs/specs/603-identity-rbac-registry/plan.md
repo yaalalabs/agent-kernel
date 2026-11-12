@@ -49,8 +49,9 @@ iteration 18 and `credentials` lands in iteration 25, both additive).
   principal a client puts in a body is overwritten by the surface); the
   example suites that send `user_id` are red from iteration 3, the thread, a2ui and schedule
   examples from iteration 10 (their handlers take no `authoriser` and require an identity
-  block), and those importing `agentkernel.auth` from iteration 11, until iteration 12 migrates
-  them. The branch-green criterion is the `ak-py` suite, which does not run the examples.
+  block), the AG-UI, HITL and k8s gateway examples from iteration 7 (the AG-UI handlers and the
+  WebSocket gateway refuse to build without one), and those importing `agentkernel.auth` from
+  iteration 11, until iteration 12 migrates them. The branch-green criterion is the `ak-py` suite, which does not run the examples.
 - Test stubs: the `FakeCfg` objects in `tests/test_module.py:80-84`, `tests/test_runtime.py:79-155`,
   `tests/test_agui_handler.py:122-134`, `tests/test_pipeline_ws.py:54-74`,
   `tests/test_schedule_tools.py:92` and `tests/test_ecs_websocket_routes.py:19-27` gain
@@ -221,8 +222,11 @@ iteration 18 and `credentials` lands in iteration 25, both additive).
 - **Steps:**
   1. The `auth` extra: PyJWT, `cryptography>=42.0`, `httpx>=0.27.0`; `require_extra` around the
      imports in the factory branches (spec Config changes).
-  2. `JWKSCache` over `PyJWKClient` in `asyncio.to_thread`, one refresh on an unknown `kid` with
-     a 30 s cooldown, discovery through httpx (spec 4).
+  2. `JWKSCache` fetching discovery and the JWK set through httpx and selecting the key from
+     `PyJWKSet.from_dict` (design refinement 6, which dropped `PyJWKClient`), one refresh on an
+     unknown `kid` with a 30 s cooldown (spec 4). Since the PR #937 review the cache is
+     loop-agnostic: loads run on a worker thread through a short-lived `httpx.Client`, and a
+     failed first load waits out a 5 s failure cooldown.
   3. `OIDCIdentityProvider` (namespace = `iss`, claim paths read as one claim name first and then
      dotted, a trailing slash on the issuer tolerated either way, so Auth0 is an `oidc`
      configuration) and the Cognito, Entra and Firebase subclasses (Firebase groups claim path
@@ -398,7 +402,8 @@ iteration 18 and `credentials` lands in iteration 25, both additive).
   `RequestAuthenticator` therefore imports lazily);
   `python -c "import agentkernel.auth"` fails with `ModuleNotFoundError`;
   `grep -rn "AuthValidator\|Authoriser\b" ak-py/src --include="*.py"` returns nothing (the bundled
-  `ak-cloud-deploy` skill still shows an `AuthValidator` snippet until iteration 28 rewrites it).
+  skills name it only in their evals' `must_not_contain` entries, since the phase B docs and skills
+  pass rewrote them).
 
 ### Iteration 12: Examples
 
@@ -426,7 +431,10 @@ iteration 18 and `credentials` lands in iteration 25, both additive).
      `identity.provider` block of `type: oidc` with the tenant issuer (trailing slash included),
      the API identifier as `audience` and the namespaced roles claim as `claims.groups`, with the
      token acquired through the tenant's `/oauth/token` endpoint in its `lambda_test.py` notes;
-     every other example's README points at it.
+     every other example README that carries an `identity` block points at it or at the identity
+     page (`api/multimodal/thread-openai` through `api/thread-openai`; the `api/hitl`,
+     `aws-serverless/slack-openai` and `k8s/openai-queue-mode` pointers were added at the PR #937
+     review).
 - **Verify:** `examples/api/agui`, `examples/api/thread-openai`,
   `examples/api/multimodal/thread-openai`, `examples/api/schedule-openai` and
   `examples/api/a2ui-openai` `app_test.py` pass against a `static` provider (CI's e2e job with an
@@ -439,26 +447,68 @@ iteration 18 and `credentials` lands in iteration 25, both additive).
   API's `userId="me"`, the thread and schedule response fields (`thread["user_id"]`,
   `task["user_id"]`) and the 400 notes in the tests and READMEs, ADK's native run option in
   `examples/cli/adk-run-options`, and the connections-table key note in the ECS WebSocket READMEs.
-  The full `ak-py` suite and `make lint-check-all` ran green here on 2026-11-10 (phase B end).
-  Follow-up before the phase B PR (2026-11-10): the chart kind smoke
-  (`.github/workflows/chart-test.yaml`) creates the `demo-credentials` Secret, adds the
-  `DEMO_AUTH_TOKEN` `extraEnv` entry on the production-posture flavors and sends the credential
-  on its chat request, and `examples/k8s/openai-queue-mode/protocol_client.py` sends it as the
-  bearer token on A2A and MCP (MCP answers 401 to a token-less call once an identity block
-  exists; the smoke installed the example's `ak-values.yaml` without the Secret and called MCP
-  without a token). `ak-py/pyproject.toml` and `uv.lock` were rebuilt from develop's pinned
-  versions (#919) plus the `auth` extra's `cryptography` and `httpx` with bounds, so the merge
-  with develop resolves by taking the branch's two files; the suite and lint are green on those
-  pins (black 26.10.1).
-  PR #937 review follow-up (2026-11-11), each fix recorded in the spec section it changes: a
-  header with no provider is ignored unparsed (spec section 4); `WebhookRESTRequestHandler`
-  declares `authenticates_itself` and its routes skip the identity dependency (8.2); the OIDC
-  family keeps the groups claim in `claims` (4); the sandbox manager holds a resolved principal to
-  the profile's mode and the default resolver tolerates no session (8.12); the weekly integration
-  workflow generates a per-run `TF_VAR_demo_auth_token` and `AK_TEST_TOKEN` for the three
-  examples that declare the token; `examples/k8s/openai-queue-mode/ws_client.py` percent-encodes
-  the token; and the GCP guides say the gateway replaces `Authorization` and forwards the caller's
-  header as `X-Forwarded-Authorization`, which only a provider of the application's own reads.
+  The full `ak-py` suite and `make lint-check-all` ran green here on 2026-11-10 (iteration 12
+  end; the phase-end run after the follow-ups is restated in "Phase B as shipped" below).
+
+### Phase B as shipped
+
+What changed in phase B after iteration 12, by the iteration each change amends. Each is recorded
+in the spec section it changes; the files are the ones the iterations above list, plus those named
+here.
+
+- **Before the PR (2026-11-10).** Iteration 5: `ak-py/pyproject.toml` and `uv.lock` rebuilt from
+  develop's pinned versions (#919) plus the `auth` extra's `cryptography` and `httpx` with bounds,
+  so a merge with develop resolves by taking the branch's two files (black 26.10.1). Iteration 12:
+  the chart kind smoke (`.github/workflows/chart-test.yaml`) creates the `demo-credentials` Secret
+  and sends the credential, and `examples/k8s/openai-queue-mode/protocol_client.py` sends it as
+  the bearer token on A2A and MCP (MCP answers 401 to a token-less call once an identity block
+  exists).
+- **Copilot review (2026-11-11, c3e4970a7).** Iteration 5: the OIDC family keeps the groups claim
+  in `claims` (spec 4). Iteration 6: a header with no provider is ignored unparsed (spec 4), and
+  `RESTRequestHandler.authenticates_itself` mounts `WebhookRESTRequestHandler` without the identity
+  dependency (spec 8.2; `api/handler.py`, `api/http.py`, `integration/adapter/webhook.py`).
+  Iteration 10: the sandbox manager holds a resolved principal to the profile's mode and the
+  default resolver tolerates no session (spec 8.12; `sandbox/manager.py`). Iteration 12: the
+  weekly integration workflow (`.github/workflows/integration-test-weekly.yaml`) generates a
+  per-run `TF_VAR_demo_auth_token` and `AK_TEST_TOKEN`; `ws_client.py` percent-encodes the token;
+  the GCP guides say the gateway forwards the caller as `X-Forwarded-Authorization`.
+- **Develop merged forward (2026-11-11, 7dc749e18 into #918, 17939b6f1 here).** Develop's #827
+  thread tests ported to `principal=U1`; `test_identity_oidc` expects #904's `uv add` hint;
+  `examples/api/thread-openai`'s approval-gated tool and pause walkthrough ported to bearer tokens.
+- **Phase B review (2026-11-12).** Iteration 4: the built-in role mapper looks up the groups and
+  only the claim paths in `role_mapper.claims`; an empty `static.principals` is a startup error;
+  `_IdentityProviderConfig` and `_RoleMapperConfig` allow extra keys for a dotted-path type
+  (spec 4; `identity/provider/roles.py`, `identity/provider/static.py`, `core/config.py`).
+  Iteration 5: `JWKSCache` is loop-agnostic (worker-thread loads, lock-free key reads, a failure
+  cooldown, any fetch failure a 401); `algorithms` and Cognito's `token_use` are validated at
+  construction; Entra's overage marker concerns only the configured groups claim; the forged-token
+  cases join the family contract (spec 4, design refinement 6; `oidc.py`, `cognito.py`,
+  `entra.py`). Iteration 6: the identity dependency takes `HTTPConnection` (a WebSocket route on a
+  guarded router is served, a refused credential closes 1008) and its 401s carry
+  `WWW-Authenticate: Bearer` (spec 4, 8.2; `identity/provider/request.py`, `api/handler.py`).
+  Iteration 7: the co-hosted `PipelineWebSocketHandler` and `PushEndpointHandler` declare
+  `authenticates_itself` (spec 8.2; `pipeline/ws/handler.py`, `pipeline/ws/endpoint.py`); the CLI
+  parses `--token` with `allow_abbrev=False` (spec 8.8; `cli/cli.py`). Iteration 8: the new
+  `mcp.url` is the RFC 9728 resource, served at the app root (spec 8.6; `api/mcp/auth.py`,
+  `api/http.py`, `core/config.py`). Iteration 9: an unverifiable webhook delivery runs anonymous,
+  and the Gmail sender is the bare lowercased address (spec 8.4; `integration/adapter/webhook.py`,
+  `integration/gmail/adapter.py`). Iteration 10: a shared-channel principal stays in agent mode
+  for the sandbox, and thread ownership is checked before attachments are written (spec 8.10,
+  8.12; `sandbox/principal.py`, `integration/thread/recorder.py`). Iteration 11: the API Gateway
+  authorizer reads the header whatever its case, logs only the request line and the decision, and
+  answers a refused token with 401 by raising `Unauthorized` (decided 2026-11-12);
+  WebSocket custom routes get the connection's principal through `Lambda.principal(event)`; the
+  Azure adapter logs and passes only the URL path (spec 8.9;
+  `deployment/aws/serverless/akauthorizer.py`,
+  `deployment/aws/serverless/core/router/ws_lambda.py`, `deployment/azure/akfunction.py`).
+  Iteration 12: the `auth` dependency groups of `aws-serverless/openai-auth`, `streaming-openai`
+  and `websocket-openai` carry `httpx`, `schedule-openai`'s lock records its `authorizer` extra,
+  and the k8s example delivers the demo credential through the io and gateway tiers' own
+  `extraEnv`; the docs, READMEs and skills follow every change above.
+- **Phase-end run (2026-11-12):** after the phase B review changes the full `ak-py` suite passes
+  (6150 passed, 111 skipped), `make lint-check-all` is clean, and the docs site builds (its one
+  broken-anchor warning, `/docs/advanced/traceability#fetching-spans-back` on `/`, comes from
+  develop's #812).
 
 ## Phase C: Agent entity and registry (iterations 13 to 16)
 
@@ -689,6 +739,10 @@ mechanism. Every suite asserts the native call keyword-for-keyword unchanged wit
 
 ## Phase G: Tests, docs and skills (iterations 26 to 28)
 
+The docs and skills for phases A and B landed with phase B itself (PR #937: the identity page,
+the docs-site and README updates, the landing-page tiles, `ak-dev-new-identity-provider` and the
+user-skill updates), so iterations 27 and 28 cover what phases C to F add and re-verify the rest.
+
 ### Iteration 26: Test walk
 
 - **Goal:** the spec's Testing section is fully covered and the whole suite and lint are clean.
@@ -764,11 +818,11 @@ mechanism. Every suite asserts the native call keyword-for-keyword unchanged wit
   `examples/aws-serverless/openai-cognito/`; `examples/azure-serverless/openai-entra/`;
   `examples/gcp-containerized/openai-firebase/`; changed: `examples/azure-serverless/openai`
   (identity block, app setting, test header), `examples/gcp-containerized/openai-auth` and
-  `examples/gcp-serverless/openai-auth` (an `oidc` block for Google as the issuer),
-  `.github/test-config.yaml`, `.github/integration-test-config.yaml`, `examples/sandbox/README.md`
-  (the identity row), `docs/docs/advanced/identity-and-access.md` (the examples list and the
-  supported-providers table, written in iteration 27) and the user skills that list the identity
-  examples (iteration 28).
+  `examples/gcp-serverless/openai-auth` (a bring-your-own provider reading the forwarded caller,
+  step 7), `.github/test-config.yaml`, `.github/integration-test-config.yaml`,
+  `examples/sandbox/README.md` (the identity row), `docs/docs/advanced/identity-and-access.md`
+  (the examples list and the supported-providers table, which landed with phase B in #937) and
+  the user skills that list the identity examples (likewise landed with phase B).
 - **Steps:**
   1. **OIDC against a real issuer** (`api/identity/oidc-keycloak`): a Keycloak dev container
      (`docker-compose.yaml`, `start-dev --import-realm`) imports `keycloak/realm.json`: realm
@@ -819,7 +873,8 @@ mechanism. Every suite asserts the native call keyword-for-keyword unchanged wit
      provider; `client.py` sends the bearer token (the MCP streamable HTTP transport's headers, an
      `httpx.AsyncClient` with headers for A2A). Tests: a tool call and a message with the token
      reach the `whoami` tool as the subject; without one MCP answers 401 through FastMCP and A2A
-     401 through the identity dependency (spec 8.6, 8.7). Its config exposes the agent through
+     runs as the anonymous principal (`whoami` answers `anonymous`: the identity dependency never
+     refuses a missing header, spec 8.2 and 8.7); a refused token is 401 on both (spec 8.6, 8.7). Its config exposes the agent through
      `registry.agents.<id>.surfaces`, the shape the two existing protocol examples take in
      iteration 16, and the test asserts the card's security scheme (iteration 14).
   6. **The sandbox's default resolver** (`sandbox/identity-provider`): the `sandbox/identity`
@@ -831,26 +886,38 @@ mechanism. Every suite asserts the native call keyword-for-keyword unchanged wit
      `sandbox/identity` README point at it as the no-code path (spec 8.12).
   7. **Azure and GCP on the provider**: `azure-serverless/openai` gains the static block, a
      `DEMO_AUTH_TOKEN` app setting from a sensitive Terraform variable and the bearer header in
-     its test (the Functions handler authenticates since iteration 11); the two GCP `openai-auth`
-     examples gain an `oidc` block for Google as the issuer (`issuer:
-     https://accounts.google.com`, `jwks_uri: https://www.googleapis.com/oauth2/v3/certs`, the
-     audience the gateway's `authorizer.audiences` already names, injected as
-     `AK_IDENTITY__PROVIDER__AUDIENCE`), so the app sees the principal (`sub`, `email` in claims)
-     behind the gateway's own check; their tests request the identity token for that audience and
-     read the subject back from a `whoami` route.
+     its test (the Functions handler authenticates since iteration 11). The two GCP `openai-auth`
+     examples cannot use a built-in `oidc` block: API Gateway calls Cloud Run with its own token in
+     `Authorization` (the module's `x-google-backend` sets no `disable_auth`) and forwards the
+     caller's header as `X-Forwarded-Authorization`, while the identity dependency reads only
+     `Authorization`, so an `oidc` block would validate the gateway's token and refuse it on
+     audience (PR #937 review, 2026-11-12). Each example therefore gains a bring-your-own provider
+     (dotted path, `provider.py`) that reads `X-Forwarded-Authorization` from `context.headers` and
+     verifies it with an `OIDCIdentityProvider` for Google (`issuer: https://accounts.google.com`,
+     `jwks_uri: https://www.googleapis.com/oauth2/v3/certs`, the audience the gateway's
+     `authorizer.audiences` already names, read from the block's `model_extra`), deployed with
+     `allow_unauthenticated_invocation = false` so the gateway is the only caller Cloud Run accepts;
+     the tests request the identity token for that audience, call through the gateway and read the
+     subject back from a `whoami` route.
   8. **The cloud providers in their deployments**: `aws-serverless/openai-cognito` (the
      `openai-auth` shape, `type: cognito` with `region` and `user_pool_id` injected as
-     `AK_IDENTITY__PROVIDER__COGNITO__*`; `deploy/main.tf` adds the user pool, an app client with
+     `AK_IDENTITY__PROVIDER__COGNITO__*` and the app client id as `AK_IDENTITY__PROVIDER__AUDIENCE`,
+     which `from_config` requires; `deploy/main.tf` adds the user pool, an app client with
      `ALLOW_USER_PASSWORD_AUTH`, the group `ops`, and a test user in it; `lambda_test.py` takes
      an access token with `initiate_auth` and asserts the subject and `cognito:groups`);
-     `azure-serverless/openai-entra` (`type: entra` with `tenant_id`; Terraform `azuread_application`,
-     identifier URI, service principal and client secret; the test takes a client-credentials
+     `azure-serverless/openai-entra` (`type: entra` with `tenant_id`, and the application id as
+     `AK_IDENTITY__PROVIDER__AUDIENCE`, which `from_config` requires; Terraform
+     `azuread_application` with `api { requested_access_token_version = 2 }`, since the provider
+     accepts the v2.0 issuer only and a registration that leaves the version unset issues v1 tokens
+     (`iss https://sts.windows.net/<tid>/`), plus identifier URI, service principal and client
+     secret; the test takes a client-credentials
      token for `api://<client id>/.default` and asserts the subject and `tid`; requires the CI
      login to create app registrations, else the suite skips when its variables are unset);
      `gcp-containerized/openai-firebase` (`type: firebase` with `project_id`; Terraform enables
      Identity Platform with email/password sign-in and an API key; the test signs a user up and in
-     through the Identity Toolkit REST API and asserts the `uid` subject and `email` claim;
-     requires Identity Platform on the CI project). Each ships with a provider-specific README
+     through the Identity Toolkit REST API, calls the Cloud Run URL directly rather than through
+     API Gateway (which would move the token to `X-Forwarded-Authorization`, step 7), and asserts
+     the `uid` subject and `email` claim; requires Identity Platform on the CI project). Each ships with a provider-specific README
      section that step 10 links from the supported-providers table.
   9. **CI registration**: steps 1 to 6 join `.github/test-config.yaml` (`api` and `cli` types);
      steps 7 and 8 join the weekly tier of `.github/integration-test-config.yaml` beside their

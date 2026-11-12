@@ -37,7 +37,7 @@ def whoami() -> str:
 | **Credential** | A bearer token on HTTP (`Authorization: Bearer <token>`), `?token=<credential>` on the WebSocket handshake, `--token` or `AK_CLI_TOKEN` on the CLI. |
 | **Principal** | The subject, its namespace, groups, roles and claims, plus the agent acting on its behalf. Read it with `ToolContext.get().principal` in tools and `Session.get_principal()` in hooks. |
 | **Anonymous** | With a provider configured, a request without a credential is anonymous and a credential that does not validate is a `401`. Which routes refuse the anonymous principal is each surface's rule (below). |
-| **Roles** | Providers never issue roles. An optional `role_mapper` derives them from groups and claims. |
+| **Roles** | The token providers issue no roles; a `static` entry may list them. An optional `role_mapper` replaces them with roles derived from groups and listed claims. Nothing enforces `roles` yet: authorization arrives in a later phase. |
 | **Extra** | `oidc`, `cognito`, `entra` and `firebase` need `agentkernel[auth]` (PyJWT, cryptography, httpx). `static` needs nothing extra. |
 
 ## Configuration
@@ -64,11 +64,13 @@ identity:
           subject: alice
           kind: user                 # user | agent | service
           groups: [ops]
+          roles: []                  # roles issued directly; a role_mapper replaces them
           claims: {email: alice@example.com}
-  role_mapper:                       # optional; absent means no roles
+  role_mapper:                       # optional; absent leaves only a static entry's own roles
     type: mapping                    # mapping | a dotted path to a RoleMapper subclass
     mapping:
-      ops: [admin]                   # group name or claim value -> roles
+      ops: [admin]                   # group name, or a value of a listed claim -> roles
+    claims: []                       # claim paths whose values are looked up too; only groups by default
     pass_through: null               # a claim path whose string or list value becomes roles as it is
 ```
 
@@ -86,7 +88,7 @@ first, the way Auth0 issues custom claims), or dotted segments into a nested cla
 | --- | --- | --- | --- |
 | `oidc` | A signed JWT from any OpenID Connect issuer: signature against the issuer's JWK set, `iss`, `aud`, `exp` and `nbf` | `issuer`, `audience`; optional `jwks_uri`, `claims` | Auth0, Keycloak, Okta and any other issuer. `namespace` is the issuer. |
 | `cognito` | An Amazon Cognito user pool token | `cognito.region`, `cognito.user_pool_id`, `audience` (the app client id); `cognito.token_use` `access` (default) or `id` | Groups come from `cognito:groups`. |
-| `entra` | A Microsoft Entra ID (v2.0) token | `entra.tenant_id`, `audience` (the application id) | The subject is `oid`; the `tid` claim must match the tenant. `roles` and `wids` stay in `claims`. |
+| `entra` | A Microsoft Entra ID v2.0 token (v1 tokens are refused) | `entra.tenant_id`, `audience` (the application id) | The subject is `oid`; the `tid` claim must match the tenant. `roles` and `wids` stay in `claims`. |
 | `firebase` | A Firebase Authentication id token | `firebase.project_id` | Issuer, audience and Google's JWK set are derived from the project. Groups default to the application's `roles` custom claim. |
 | `static` | A credential from a configured map | `static.principals` | For development, tests and the CLI. The keys name secrets; see below. |
 | a dotted path | Whatever your class accepts | The whole `identity.provider` block | See bring your own provider. |
@@ -95,11 +97,15 @@ first, the way Auth0 issues custom claims), or dotted segments into a nested cla
 
 The provider reads `<issuer>/.well-known/openid-configuration` once to find the JWK set (or uses
 `jwks_uri` directly), caches the keys, and refreshes them once when a token names an unknown key,
-rate-limited so a flood of bad tokens cannot turn into a flood of fetches. A token must carry `exp`,
+rate-limited so a flood of bad tokens cannot turn into a flood of fetches. An issuer that cannot be
+reached refuses the token with a `401`, never a `500`, and a failed first load is retried only after
+a short cooldown. A token must carry `exp`,
 `iss` and `aud`; `aud` must contain the configured `audience`. The principal's `subject` is the
 `claims.subject` path (`sub` by default), its `namespace` is the issuer, its `groups` the
 `claims.groups` path, and every claim but the subject arrives in `claims` for the role mapper and the
-tools, the groups claim included, so `role_mapper.pass_through` can lift it as it is.
+tools, the groups claim included, so `role_mapper.pass_through` can lift it as it is. `algorithms` is
+checked when the provider is built: an empty list, `none`, an unknown name or a symmetric `HS*`
+algorithm is a configuration error at startup.
 
 **Auth0** is served by this provider. Use the tenant's issuer (or the custom domain) with the trailing
 slash as Auth0 issues it, the API identifier as the audience, and the namespaced claim an Auth0 Action
@@ -116,7 +122,8 @@ identity:
 ```
 
 `permissions`, `org_id` and the other Auth0 claims reach the role mapper and the tools through
-`claims`. A token to test with comes from the tenant's `/oauth/token` endpoint, for example through
+`claims`; the mapper looks a claim up only when `role_mapper.claims` lists it (`claims: [permissions]`).
+A token to test with comes from the tenant's `/oauth/token` endpoint, for example through
 the client-credentials flow of a machine-to-machine application authorised for the API.
 
 **Keycloak**: the realm is the issuer, the client id is the audience (give the client an audience
@@ -173,10 +180,18 @@ identity:
       tenant_id: <tenant id>
 ```
 
-The issuer is derived from the tenant and the token's `tid` must match it. The subject is `oid`, the
-groups claim is `groups`, and `roles` and `wids` stay in `claims` for the role mapper. A token carrying
-the groups-overage marker (more groups than fit in a token) yields no groups, with one warning per
-process: resolving them needs a Graph call this provider does not make.
+The provider accepts **v2.0 tokens only**: the issuer is derived from the tenant as
+`https://login.microsoftonline.com/<tenant>/v2.0`, and the token's `tid` must match it. Entra issues
+v2.0 access tokens for your API only when its app registration sets `requestedAccessTokenVersion: 2`
+(`api.requestedAccessTokenVersion` in the manifest; Terraform `azuread_application`:
+`api { requested_access_token_version = 2 }`). Without it the access tokens are v1, carry the issuer
+`https://sts.windows.net/<tid>/`, and are refused.
+
+The subject is `oid`, the groups claim is `groups`, and `roles` and `wids` stay in `claims`, where the
+role mapper reads them when `role_mapper.claims` lists them. A token carrying the groups-overage marker
+for the configured groups claim (more groups than fit in a token) yields no groups, with one warning
+per process: resolving them needs a Graph call this provider does not make. App roles read as groups
+(`claims.groups: roles`) are not affected by the marker.
 
 ### Firebase Authentication (`firebase`)
 
@@ -213,14 +228,16 @@ Each key names a **secret**, not a value: `ALICE_TOKEN` is resolved through the
 [secret capability](./secrets.md) when the provider is built (the process environment first, then the
 configured secret provider), so the credential a client sends lives in an environment variable, an SSM
 parameter or a mounted Kubernetes Secret, never in the file. A key with no secret is a configuration
-error at startup; two keys resolving to the same value are refused. Authentication compares the
+error at startup, and so is an empty `principals` map; two keys resolving to the same value are
+refused. An entry may list `roles` of its own; a `role_mapper` replaces them. Authentication compares the
 presented credential against every resolved value in constant time, and the principal's `namespace`
 is `static`. This is the provider the examples and the CLI run on.
 
 ### Bring your own provider
 
 Set `identity.provider.type` to a dotted path to an `IdentityProvider` subclass. The class receives
-the whole `identity.provider` block, and the configured role mapper wraps it like any built-in:
+the whole `identity.provider` block and reads settings of its own from `config.model_extra` (the block
+keeps fields it does not define), and the configured role mapper wraps it like any built-in:
 
 ```python
 from agentkernel.identity import AuthenticationError, IdentityProvider, RequestContext
@@ -231,7 +248,7 @@ class ApiKeyProvider(IdentityProvider):
     name = "api_key"   # the value of Principal.provider
 
     def __init__(self, config):          # the identity.provider block
-        self._keys = load_keys(config)
+        self._keys = load_keys(config.model_extra["keys_table"])   # a setting of this provider's own
 
     async def authenticate(self, credential: str, context: RequestContext | None = None) -> Principal:
         key = self._keys.get(credential)
@@ -247,6 +264,7 @@ class ApiKeyProvider(IdentityProvider):
 identity:
   provider:
     type: myapp.identity.ApiKeyProvider
+    keys_table: acme-api-keys
 ```
 
 A provider returns the facts it can vouch for (subject, groups, claims, the namespace the subject is
@@ -256,11 +274,16 @@ the surface knows them. `agentkernel.identity.provider.testing.IdentityProviderC
 
 ### Role mapper
 
-Providers assert groups and claims; the `role_mapper` turns them into Agent Kernel roles. The built-in
-`mapping` type looks every group name and every string claim value (list items included) up in
-`mapping` and appends the roles found, then appends the `pass_through` claim's string or list value as
-roles as it is. Boolean flags and nested claim objects are not mapped; bring a `RoleMapper` subclass by
-dotted path for those.
+Providers assert groups and claims; the `role_mapper` turns them into Agent Kernel roles, replacing
+any a `static` entry listed. The built-in `mapping` type looks every group name up in `mapping` and
+appends the roles found. A claim is looked up only when its path is listed in `claims`, and then its
+string value (or each string item of a list) is looked up the same way. Only groups are looked up by
+default because a user sets many of their own claims (a display name, a sign-up username, an email
+address): matching every claim value would let one of them grant a role, so list only claims your
+issuer controls. Last, the `pass_through` claim's string or list value is appended as roles as it is.
+Boolean flags and nested claim objects are not mapped; bring a `RoleMapper` subclass by dotted path
+for those. A dotted-path mapper receives the whole `identity.role_mapper` block, its own settings in
+`config.model_extra`.
 
 ```yaml
 identity:
@@ -273,8 +296,10 @@ identity:
   role_mapper:
     type: mapping
     mapping:
-      ops: [admin]
+      ops: [admin]                     # a realm role, read as a group
       finance: [reader]
+      report-viewer: [reader]          # a client role, a value of the listed claim
+    claims: [resource_access.<client id>.roles]   # client roles, which the realm assigns
     pass_through: https://acme.com/roles
 ```
 
@@ -289,7 +314,7 @@ identity:
 | `provider` | The provider's short name (`oidc`, `static`, ...), or `messaging:<platform>` and `realtime:<gateway>` for the integrations. |
 | `namespace` | The scope the subject is unique within: the OIDC issuer, `static`, a Slack workspace id. |
 | `groups` | The memberships the provider asserted. |
-| `roles` | What the role mapper derived; empty without one. |
+| `roles` | What the role mapper derived; without one, a `static` entry's own roles (the token providers issue none). Nothing enforces them yet. |
 | `claims` | Every other fact the provider kept, for the role mapper and the tools. |
 | `actor` | The party acting on the subject's behalf: the agent principal (`kind: agent`, `provider: agentkernel`) the runtime attaches while a run executes. |
 
@@ -299,8 +324,8 @@ tells the two apart.
 The runtime publishes the principal for the duration of a run. Tools read it with
 `ToolContext.get().principal`, hooks and any code running inside the session with
 `Session.get_principal()`, and `Session.get_owner()` returns a `SessionOwner` (`subject`, `provider`,
-`namespace`): the principal a session was first used by, which threads and scheduled tasks are
-checked against:
+`namespace`), which records the first authenticated principal a session was used by. Threads and
+scheduled tasks keep their own owner (the thread's `user_id`, the task's `principal`):
 
 ```python
 from agentkernel.core import AgentReplyText, PreHook, Session
@@ -320,15 +345,16 @@ request overwrites it.
 
 | Surface | Credential | Without a credential | Refused credential |
 | --- | --- | --- | --- |
-| REST chat and streaming (`/api/v1/chat`, `/api/v1/stream`) | `Authorization: Bearer` | Runs anonymous | `401` |
+| REST chat (`/api/v1/chat`, `/api/v1/chat-multipart`; SSE with `execution.message_type: delta`) | `Authorization: Bearer` | Runs anonymous | `401` |
 | Conversation threads (`/api/v1/threads`, the thread chat routes) | `Authorization: Bearer` | `401 Authentication required`: a thread belongs to its principal and listing is scoped to the caller | `401` |
 | Scheduled tasks (`/api/v1/schedules`, a `schedule` block on a chat request) | `Authorization: Bearer` | `401` on the management routes; a chat request with a `schedule` block is `403` (scheduling requires an authenticated principal) | `401` |
-| WebSocket gateway and AWS ECS WebSocket | `?token=<credential>` on the handshake | `401 Authentication token is required` | `401 Authentication failed` |
+| WebSocket gateway (`/ws`: the Kubernetes gateway tier, single-process async mode) | `?token=<credential>` on the handshake | The socket is accepted, then closed with code `1008` and the reason `Authentication token is required` | Closed with `1008` and `Authentication failed` |
+| AWS ECS WebSocket and the Lambda `$connect` | `?token=<credential>` on the handshake | The handshake is refused: `401 Authentication token is required` | `401 Authentication failed` |
 | AG-UI | `Authorization: Bearer` | `401`: AG-UI runs an agent on a caller's behalf | `401` |
-| MCP | `Authorization: Bearer`, enforced by FastMCP | `401` once an `identity` block exists; open and anonymous without one | `401` |
+| MCP | `Authorization: Bearer`, enforced by FastMCP | `401` once an `identity` block exists; open and anonymous without one. With an OpenID-family provider the `401` points at the RFC 9728 resource metadata for `mcp.url` ([MCP guide](../api/mcp-server.md)) | `401` |
 | A2A | `Authorization: Bearer` | Runs anonymous | `401` |
 | CLI | `--token <credential>` or `AK_CLI_TOKEN` | Runs anonymous | Exits with `Authentication failed` |
-| Messaging integrations | The platform's own verification; the webhook routes skip the identity dependency, so a platform token in `Authorization` (Teams) reaches it | A `messaging:<platform>` principal: the platform user id as subject, the workspace or tenant as namespace, platform facts in claims | n/a |
+| Messaging integrations | The platform's own verification; the webhook routes skip the identity dependency, so a platform token in `Authorization` (Teams) reaches it | A `messaging:<platform>` principal: the platform user id as subject, the workspace or tenant as namespace, platform facts in claims. A webhook whose verification secret is unset (`whatsapp.app_secret`, `messenger.app_secret`, `instagram.app_secret`, `telegram.webhook_secret`) logs a warning and runs its deliveries anonymous | n/a |
 | LiveKit realtime | The gateway's own verification | A `realtime:<gateway>` principal | n/a |
 
 Two consequences for request bodies: `user_id` is not a request field any more (a body carrying it is a
@@ -339,9 +365,16 @@ and task objects still report their owner in a `user_id` field. The thread and s
 `AGUIRequestHandler` take no arguments and refuse to construct without an `identity` block, as do the
 WebSocket modes.
 
+On the routes `RESTAPI` serves, a `401` for a refused bearer token, and the `401 Authentication required`
+of a route that needs an authenticated caller, carry `WWW-Authenticate: Bearer`. A WebSocket route of
+your own on a router `RESTAPI` mounts goes through the same identity dependency: a refused bearer
+header closes the socket with `1008` and the public reason instead.
+
 The sandbox's default principal resolver reads the run principal, so a profile with `identity.mode: user`
-runs code as the authenticated caller with no custom resolver. A profile left on `agent` mode keeps
-running as the agent whoever calls; see the [sandbox guide](./sandbox.md).
+runs code as the authenticated caller with no custom resolver. A run for a messaging or realtime sender
+(a `messaging:` or `realtime:` principal, whose subject is a platform id) resolves to agent mode like an
+anonymous one, so a `user`-mode profile refuses it. A profile left on `agent` mode keeps running as the
+agent whoever calls; see the [sandbox guide](./sandbox.md).
 
 ## Deployments
 
@@ -350,12 +383,16 @@ credential of a static provider reaches that process as an environment variable 
 
 - **AWS Lambda** ([guide](../deployment/aws-serverless.md)): the API Gateway authorizer Lambda is one
   line, `handler = APIGatewayAuthorizer().handle`; it authenticates the bearer token through the
-  provider and returns an Allow policy whose context carries the principal, or a Deny. The
+  provider and returns an Allow policy whose context carries the principal; a refused, expired or
+  malformed token raises `Unauthorized` (a 401 from API Gateway), and a request with no token is a
+  Deny (403). The
   request-handler Lambda puts that principal on the chat request; a custom route registered with
   `Lambda.register` reads it with `Lambda.principal(event)`. Webhook routes that carry their own
   verification bypass the authorizer with `APIGatewayAuthorizer(bypass=WebhookRouteMatcher.for_integrations("slack"))`.
   For WebSocket APIs the `$connect` Lambda is `handler = WebsocketConnectionHandler.handler`, which
-  authenticates `?token=` and stores the principal with the connection. The authorizer module keeps
+  authenticates `?token=` and stores the principal with the connection; a custom WebSocket route
+  registered with `Lambda.register` reads that connection's principal with `Lambda.principal(event)`
+  as well. The authorizer module keeps
   its `handler_path` contract and the connections table its `user_id` hash key: the Terraform modules
   are unchanged.
 - **AWS ECS** ([guide](../deployment/aws-containerized.md)): the REST service authenticates every
@@ -365,8 +402,9 @@ credential of a static provider reaches that process as an environment variable 
   authenticates the bearer header before parsing the request and answers a refused credential with
   `401` and `{"error": ..., "session_id": null}`.
 - **Kubernetes** ([guide](../deployment/onprem-kubernetes.md)): the io handler and the WebSocket
-  gateway build the provider, so a static credential reaches them through the chart's `extraEnv` from
-  a Secret; the `secretStore` mount reaches only the agent-executing tier.
+  gateway build the provider, so a static credential reaches them through the chart's per-tier
+  `ioHandler.extraEnv` and `wsGateway.extraEnv` from a Secret, which keeps it off the agent runner;
+  the `secretStore` mount reaches only the agent-executing tier.
 - **GCP** ([guides](../deployment/gcp-serverless.md)): the examples authenticate Google identity
   tokens at the API Gateway, and the application runs as the anonymous principal. The gateway calls
   Cloud Run with its own token in `Authorization` and forwards the caller's header as
@@ -426,6 +464,6 @@ variable, or the `demo-credentials` Secret on Kubernetes).
   and [`examples/aws-serverless/streaming-openai`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/streaming-openai)
   : the `$connect` Lambda on `WebsocketConnectionHandler.handler`.
 - [`examples/k8s/openai-queue-mode`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/k8s/openai-queue-mode)
-  : the credential delivered through a Secret and `extraEnv`, sent by the WebSocket and protocol clients.
+  : the credential delivered through a Secret and the io and gateway tiers' `extraEnv`, sent by the WebSocket and protocol clients.
 - [`examples/sandbox/identity`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/sandbox/identity)
   : sandboxed code running as the caller, with a custom resolver as the override of the default.

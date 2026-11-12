@@ -145,17 +145,17 @@ class TestHandle:
         assert isinstance(policy["context"]["principal"], str)
         assert Principal.model_validate_json(policy["context"]["principal"]) == ALICE
 
-    def test_a_refused_credential_denies_with_no_context(self, static_identity):
-        policy = APIGatewayAuthorizer().handle(_event("Bearer mallory"))
+    def test_a_refused_credential_is_a_401(self, static_identity):
+        """API Gateway answers an authorizer that raises ``Unauthorized`` with 401, which OAuth clients
+        treat as "refresh the token"; a Deny would be a 403 (#603 review, decided 2026-11-12)."""
+        with pytest.raises(Exception, match="^Unauthorized$"):
+            APIGatewayAuthorizer().handle(_event("Bearer mallory"))
 
-        assert (policy["principalId"], _statement(policy)["Effect"], _statement(policy)["Resource"]) == ("unauthorized", "Deny", METHOD_ARN)
-        assert "context" not in policy
-
-    def test_a_header_without_the_bearer_scheme_is_denied(self, static_identity):
+    def test_a_header_without_the_bearer_scheme_is_a_401(self, static_identity):
         """The shared header parsing applies here too: a bare token is not a credential the provider is asked about."""
-        policy = APIGatewayAuthorizer().handle(_event("alice-secret"))
+        with pytest.raises(Exception, match="^Unauthorized$"):
+            APIGatewayAuthorizer().handle(_event("alice-secret"))
 
-        assert _statement(policy)["Effect"] == "Deny"
         assert static_identity.calls == []
 
     def test_a_missing_authorization_header_is_denied(self, static_identity):
@@ -201,6 +201,44 @@ class TestHandle:
         policy = APIGatewayAuthorizer().handle(_event(methodArn=arn, httpMethod=method, path="/resource"))
 
         assert (_statement(policy)["Effect"], _statement(policy)["Resource"]) == ("Allow", arn)
+
+
+class TestHeaderCase:
+    """REST v1 REQUEST authorizer events keep header names as the client sent them (#603 review)."""
+
+    @pytest.mark.parametrize("name", ["authorization", "AUTHORIZATION", "AuThOrIzAtIoN"])
+    def test_the_header_is_found_whatever_its_case(self, static_identity, name):
+        event = _event(None)
+        event["headers"][name] = "Bearer alice-secret"
+        assert _statement(APIGatewayAuthorizer().handle(event))["Effect"] == "Allow"
+
+    def test_no_header_in_any_case_is_still_denied(self, static_identity):
+        assert _statement(APIGatewayAuthorizer().handle(_event(None)))["Effect"] == "Deny"
+
+
+class TestLogging:
+    """Bearer tokens and principal claims stay out of CloudWatch (#603 review)."""
+
+    def test_the_log_names_the_request_and_the_decision_only(self, static_identity, caplog):
+        with caplog.at_level("DEBUG", logger="ak.deployment.aws.akauthorizer"):
+            APIGatewayAuthorizer().handle(_event())
+            APIGatewayAuthorizer().handle(_event(None))
+            with pytest.raises(Exception, match="^Unauthorized$"):
+                APIGatewayAuthorizer().handle(_event("Bearer mallory"))
+        messages = " ".join(record.getMessage() for record in caplog.records if record.name == "ak.deployment.aws.akauthorizer")
+        assert "alice-secret" not in messages and "mallory" not in messages
+        assert '"groups"' not in messages and "policyDocument" not in messages
+        assert "POST /api/v1/chat" in messages and "Allow" in messages and "Deny" in messages and "alice" in messages
+        assert "Unauthorized for POST /api/v1/chat" in messages
+
+    def test_a_validation_failure_names_the_field_not_the_event(self, static_identity, caplog):
+        event = _event()
+        del event["type"]
+        with caplog.at_level("INFO", logger="ak.deployment.aws.akauthorizer"):
+            APIGatewayAuthorizer().handle(event)
+        messages = " ".join(record.getMessage() for record in caplog.records if record.name == "ak.deployment.aws.akauthorizer")
+        assert "Event validation failed: type" in messages
+        assert "alice-secret" not in messages
 
 
 class TestBuildPolicy:

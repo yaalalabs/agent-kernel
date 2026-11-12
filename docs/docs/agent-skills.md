@@ -87,7 +87,7 @@ Add messaging platform integrations to an existing project. Covers Slack, WhatsA
 
 ### ak-cloud-deploy
 
-Deploy your agent to AWS, Azure, GCP, or any Kubernetes cluster. Generates complete Terraform configurations for six cloud deployment modes, plus Helm-chart deployments to on-prem/baremetal/EKS Kubernetes (the `ak-deployment/ak-k8s` chart: io-handler + agent-runner Deployments over NATS/Kafka/SQS, optional WebSocket gateway tier, KEDA queue-depth autoscaling). Terraform modes: AWS Serverless (Lambda), AWS Containerized (ECS Fargate), Azure Serverless (Functions), Azure Containerized (Container Apps), GCP Serverless (Cloud Run scale-to-zero), and GCP Containerized (Cloud Run always-on). AWS serverless templates also cover `rest_sync`, `rest_async`, `async` (WebSocket), queue/scalable mode, custom API Gateway authorizers, and external artifact sources (`lambda_package_s3` for S3 ZIP, `ecr_image_uri` for pre-built ECR images). AWS containerized supports `ecr_image_uri` for pre-built ECR images alongside local Docker builds, plus a scalable SQS queue mode (`queue_mode = true`) that splits the deployment into a REST/IO ECS service (`ECSIOHandler`) and a separate Agent Runner ECS service (`ECSAgentRunner`) with `sync`/`async` execution modes and DynamoDB-backed response storage.
+Deploy your agent to AWS, Azure, GCP, or any Kubernetes cluster. Generates complete Terraform configurations for six cloud deployment modes, plus Helm-chart deployments to on-prem/baremetal/EKS Kubernetes (the `ak-deployment/ak-k8s` chart: io-handler + agent-runner Deployments over NATS/Kafka/SQS, optional WebSocket gateway tier, KEDA queue-depth autoscaling). Terraform modes: AWS Serverless (Lambda), AWS Containerized (ECS Fargate), Azure Serverless (Functions), Azure Containerized (Container Apps), GCP Serverless (Cloud Run scale-to-zero), and GCP Containerized (Cloud Run always-on). AWS serverless templates also cover `rest_sync`, `rest_async`, `async` (WebSocket), queue/scalable mode, an API Gateway authorizer (`APIGatewayAuthorizer`, one line) that authenticates through the `identity` block in `config.yaml`, and external artifact sources (`lambda_package_s3` for S3 ZIP, `ecr_image_uri` for pre-built ECR images). AWS containerized supports `ecr_image_uri` for pre-built ECR images alongside local Docker builds, plus a scalable SQS queue mode (`queue_mode = true`) that splits the deployment into a REST/IO ECS service (`ECSIOHandler`) and a separate Agent Runner ECS service (`ECSAgentRunner`) with `sync`/`async` execution modes and DynamoDB-backed response storage.
 
 **Example prompts:**
 - *"Deploy my agent to AWS Lambda"*
@@ -97,10 +97,11 @@ Deploy your agent to AWS, Azure, GCP, or any Kubernetes cluster. Generates compl
 
 ### ak-add-capabilities
 
-Add advanced capabilities: guardrails (OpenAI Moderation, AWS Bedrock, CloudWatch), tracing (Langfuse, OpenLLMetry, Logfire), session persistence (Redis, DynamoDB, Cosmos DB, Firestore), knowledge base tools (ChromaDB, Neo4j, Starburst, Open Knowledge Format bundles, and custom adapters), MCP server, A2A server, AG-UI server, custom hooks, multimodal support, conversation thread support (in-memory, Redis, Valkey, DynamoDB, Firestore, Cosmos DB), sandbox code execution (per-profile language and package-install permissions), scheduling (deferred/recurring chat execution, agent-facing scheduling tools), and human-in-the-loop (pausing a run for a person's approval or answer, and resuming from their decision).
+Add advanced capabilities: guardrails (OpenAI Moderation, AWS Bedrock, CloudWatch), tracing (Langfuse, OpenLLMetry, Logfire), session persistence (Redis, DynamoDB, Cosmos DB, Firestore), knowledge base tools (ChromaDB, Neo4j, Starburst, Open Knowledge Format bundles, and custom adapters), MCP server, A2A server, AG-UI server, custom hooks, multimodal support, conversation thread support (in-memory, Redis, Valkey, DynamoDB, Firestore, Cosmos DB), sandbox code execution (per-profile language and package-install permissions), scheduling (deferred/recurring chat execution, agent-facing scheduling tools), identity and authentication (one configured identity provider: `oidc` for Auth0, Keycloak or Okta, `cognito`, `entra`, `firebase`, `static`, or your own, plus an optional role mapper), and human-in-the-loop (pausing a run for a person's approval or answer, and resuming from their decision).
 
 **Example prompts:**
 - *"Add OpenAI guardrails to my agent"*
+- *"Add Auth0 authentication to my agent"*
 - *"Set up Redis session persistence"*
 - *"Enable Langfuse tracing"*
 
@@ -114,7 +115,7 @@ Set up testing and debug common issues. Covers test modes (score, llm, fallback)
 
 ## Developer Skills: Accelerating Contributions with AI
 
-Agent Kernel doesn't just expose its capabilities as skills for users; it also exposes its internals as skills for contributors. The `.agents/skills/` folder at the repository root contains eighteen developer skills that teach coding assistants how to work on the Agent Kernel codebase itself.
+Agent Kernel doesn't just expose its capabilities as skills for users; it also exposes its internals as skills for contributors. The `.agents/skills/` folder at the repository root contains nineteen developer skills that teach coding assistants how to work on the Agent Kernel codebase itself.
 
 When a contributor opens the repository in a coding assistant (Copilot, Claude Code, Cursor, etc.), these skills are automatically discovered. The assistant immediately understands the architecture, adapter patterns, testing conventions, and code quality standards, eliminating the onboarding curve for new contributors.
 

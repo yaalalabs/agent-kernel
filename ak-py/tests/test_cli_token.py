@@ -127,6 +127,20 @@ class TestMain:
 
         assert seen == {"token": "alice-secret"}
 
+    def test_a_host_scripts_own_argument_is_not_an_abbreviated_token(self, monkeypatch, stub_service):
+        """``--to x`` belongs to the script that embeds the CLI; with prefix matching it became the token (#603 review)."""
+        seen = {}
+
+        async def _run(self):
+            seen["token"] = self._token
+
+        monkeypatch.setattr(CLI, "run", _run)
+        monkeypatch.setattr(sys, "argv", ["demo.py", "--to", "x"])
+
+        CLI.main()
+
+        assert seen == {"token": None}
+
     def test_main_without_the_flag_leaves_the_token_to_the_environment(self, monkeypatch, stub_service):
         seen = {}
 

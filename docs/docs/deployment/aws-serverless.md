@@ -245,6 +245,11 @@ def custom_app_info_handler(event, context):
 handler = Lambda.handler
 ```
 
+A registered route receives the raw API Gateway event. It reads the caller with
+`Lambda.principal(event)`: the principal the API Gateway authorizer established (from the
+authorizer context), or the anonymous principal when the API has no authorizer or a webhook bypass
+let the request through. See [Identity and Access](../advanced/identity-and-access.md).
+
 ## Lambda Environment Variables
 
 The Lambda router automatically reads the following environment variables to correctly map incoming API paths:
@@ -298,7 +303,7 @@ from agentkernel.aws import APIGatewayAuthorizer
 handler = APIGatewayAuthorizer().handle
 ```
 
-An accepted token yields an Allow policy whose `principalId` is the principal's subject and whose context carries the whole principal as JSON; the request-handler Lambda rebuilds it onto the request, so the agent, its tools and its hooks know who is calling. A missing, malformed or refused token is a Deny, with the provider's reason in the authorizer's logs and nothing in the response.
+An accepted token yields an Allow policy whose `principalId` is the principal's subject and whose context carries the whole principal as JSON; the request-handler Lambda rebuilds it onto the request, so the agent, its tools and its hooks know who is calling. A refused, expired or malformed token gets a 401 (the authorizer raises `Unauthorized`, which API Gateway answers with 401, the status an OAuth client refreshes its token on); a request with no token, or one the authorizer cannot evaluate, is a Deny (403). The provider's reason stays in the authorizer's logs and nothing is in the response.
 
 The `identity` block decides what a valid token is. The examples ship the `static` provider, one credential mapped to a principal; the credential's value is not in the file, the key names a secret the secret capability resolves when the authorizer starts (the environment first), which Terraform passes to the authorizer Lambda from a sensitive variable:
 
@@ -489,6 +494,9 @@ def custom_app_info_handler(event, context):
 
 handler = Lambda.handler
 ```
+
+The custom routes read the caller with `Lambda.principal(event)`, the principal the API Gateway
+authorizer put in the authorizer context (anonymous without an authorizer).
 
 The AWS Lambda entrypoint accepts both of the following payload shapes.
 
@@ -934,7 +942,8 @@ from agentkernel.aws import Lambda
 
 @Lambda.register("custom_handler")
 def custom_handler(event, context):
-    return {"response": "Custom route response"}
+    principal = Lambda.principal(event)  # the connection's principal, authenticated at $connect
+    return {"response": f"Custom route response for {principal.subject}"}
 
 @Lambda.register("notifications")
 def notifications_handler(event, context):
@@ -950,6 +959,9 @@ def notifications_handler(event, context):
 ```
 
 **Note**: Custom routes must be defined in both Terraform (`ws_routes`) and registered in your Lambda handler code to function properly.
+A custom WebSocket route reads the caller with `Lambda.principal(event)`: WebSocket events carry no
+authorizer context, so the router puts there the principal the `$connect` handshake stored with the
+connection.
 
 ### Execution Modes and Response Store
 

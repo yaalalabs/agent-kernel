@@ -9,15 +9,22 @@ JWK set on `httpx.MockTransport`; the cache's refresh-once-with-cooldown rule an
 subclass's one extra check are pinned beside it.
 """
 
+import asyncio
+import base64
+import hashlib
+import hmac
+import http.server
 import json
 import sys
+import threading
 import time
 import uuid
 
 import httpx
 import jwt
 import pytest
-from cryptography.hazmat.primitives.asymmetric import ec, rsa
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import ec, padding, rsa
 from jwt.algorithms import ECAlgorithm, RSAAlgorithm
 
 from agentkernel.core.config import _CognitoProviderConfig, _EntraProviderConfig, _FirebaseProviderConfig, _IdentityConfig, _IdentityProviderConfig
@@ -80,6 +87,48 @@ class JWKSServer:
         return httpx.Response(404)
 
 
+class _KeepAliveJWKSServer:
+    """A real HTTP/1.1 server on localhost that keeps connections alive, serving discovery and a JWK set."""
+
+    def __init__(self, keys: Keys):
+        self.jwks = keys.jwks()
+        outer = self
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            protocol_version = "HTTP/1.1"
+
+            def do_GET(self):
+                if self.path == "/.well-known/openid-configuration":
+                    body = json.dumps({"issuer": outer.issuer, "jwks_uri": f"{outer.issuer}/keys"}).encode()
+                elif self.path == "/keys":
+                    body = json.dumps(outer.jwks).encode()
+                else:
+                    self.send_response(404)
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
+                    return
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *args):
+                pass
+
+        self._server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.issuer = f"http://127.0.0.1:{self._server.server_address[1]}"
+        self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+
+    def __enter__(self) -> "_KeepAliveJWKSServer":
+        self._thread.start()
+        return self
+
+    def __exit__(self, *exc) -> None:
+        self._server.shutdown()
+        self._server.server_close()
+
+
 @pytest.fixture
 def keys() -> Keys:
     return Keys()
@@ -99,6 +148,16 @@ def _oidc(server: JWKSServer, **overrides) -> OIDCIdentityProvider:
 def _tampered(token: str) -> str:
     head, payload, signature = token.split(".")
     return f"{head}.{payload}.{'A' if signature[0] != 'A' else 'B'}{signature[1:]}"
+
+
+def _b64(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
+
+
+def _forge(header: dict, payload: dict, sign) -> str:
+    """A compact JWS whose signature ``sign(signing_input)`` produces, for tokens PyJWT will not encode."""
+    signing_input = f"{_b64(json.dumps(header).encode())}.{_b64(json.dumps(payload).encode())}"
+    return f"{signing_input}.{_b64(sign(signing_input.encode()))}"
 
 
 class _OIDCFamilyContract(IdentityProviderContract):
@@ -127,6 +186,31 @@ class _OIDCFamilyContract(IdentityProviderContract):
     def claim_keys_removed(self) -> tuple[str, ...]:
         """The subject claim alone: the groups claim stays in ``claims`` beside its projection, for a role mapper's ``pass_through``."""
         return ("sub",)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "case",
+        ["hs256_with_the_rsa_public_key", "alg_none", "alg_outside_the_allow_list", "alg_disagreeing_with_the_key", "no_exp", "non_string_kid"],
+    )
+    async def test_forged_and_malformed_tokens_are_refused(self, provider, keys, key, case):
+        """Refused today by PyJWT's key-bound algorithms; pinned so an upgrade or a key-selection change cannot regress silently."""
+        payload = jwt.decode(keys.token(self.claims(), key=key), options={"verify_signature": False})
+        if case == "hs256_with_the_rsa_public_key":
+            secret = keys.rsa.public_key().public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo)
+            token = _forge({"alg": "HS256", "kid": keys.rsa_kid, "typ": "JWT"}, payload, lambda data: hmac.new(secret, data, hashlib.sha256).digest())
+        elif case == "alg_none":
+            token = _forge({"alg": "none", "kid": keys.rsa_kid, "typ": "JWT"}, payload, lambda data: b"")
+        elif case == "alg_outside_the_allow_list":
+            token = jwt.encode(payload, keys.rsa, algorithm="RS384", headers={"kid": keys.rsa_kid})
+        elif case == "alg_disagreeing_with_the_key":
+            # Signed with the EC key but naming the RSA key's kid.
+            token = jwt.encode(payload, keys.ec, algorithm="ES256", headers={"kid": keys.rsa_kid})
+        elif case == "no_exp":
+            token = keys.token({**self.claims(), "exp": None}, key=key)
+        else:  # PyJWT will not encode a non-string kid, so the RS256 signature is made by hand
+            token = _forge({"alg": "RS256", "kid": 123, "typ": "JWT"}, payload, lambda data: keys.rsa.sign(data, padding.PKCS1v15(), hashes.SHA256()))
+        with pytest.raises(AuthenticationError):
+            await provider.authenticate(token)
 
     @pytest.fixture
     def invalid_credentials(self, keys, key):
@@ -202,6 +286,109 @@ class TestOIDCProvider:
         down = JWKSCache(ISSUER, transport=httpx.MockTransport(lambda request: httpx.Response(503)))
         with pytest.raises(AuthenticationError, match="JWK set"):
             await OIDCIdentityProvider(issuer=ISSUER, audience=AUDIENCE, jwks=down).authenticate(keys.token({}))
+
+    @pytest.mark.asyncio
+    async def test_a_failed_first_load_is_throttled(self, keys):
+        """An issuer down at start is asked once per failure cooldown, however many tokens arrive."""
+        clock, calls = [1000.0], []
+
+        def refuse(request):
+            calls.append(str(request.url))
+            return httpx.Response(503)
+
+        cache = JWKSCache(ISSUER, jwks_uri=JWKS_URI, transport=httpx.MockTransport(refuse), failure_cooldown=5.0, clock=lambda: clock[0])
+        provider = OIDCIdentityProvider(issuer=ISSUER, audience=AUDIENCE, jwks=cache)
+        for _ in range(5):
+            with pytest.raises(AuthenticationError, match="JWK set"):
+                await provider.authenticate(keys.token({}))
+        assert len(calls) == 1
+
+        clock[0] += 6
+        with pytest.raises(AuthenticationError):
+            await provider.authenticate(keys.token({}))
+        assert len(calls) == 2
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("body", [[], "x", 7])
+    async def test_a_key_set_body_that_is_not_an_object_is_an_authentication_error(self, keys, body):
+        cache = JWKSCache(ISSUER, jwks_uri=JWKS_URI, transport=httpx.MockTransport(lambda request: httpx.Response(200, json=body)))
+        with pytest.raises(AuthenticationError, match="JWK set"):
+            await OIDCIdentityProvider(issuer=ISSUER, audience=AUDIENCE, jwks=cache).authenticate(keys.token({}))
+
+    @pytest.mark.asyncio
+    async def test_a_known_key_does_not_wait_behind_a_slow_refresh(self, keys, server):
+        """Selecting a cached key takes no lock, so one unknown kid against a slow key-set URL stalls only itself."""
+        release = threading.Event()
+        first = []
+
+        def handle(request):
+            if first:  # every fetch after the first load hangs until released
+                release.wait(5)
+            first.append(True)
+            return server._handle(request)
+
+        provider = _oidc(server, jwks=JWKSCache(ISSUER, jwks_uri=JWKS_URI, transport=httpx.MockTransport(handle)))
+        await provider.authenticate(keys.token({}))
+
+        # Timed from before the refresh starts: a refresh that blocks the loop stalls this test too.
+        started = time.monotonic()
+        stuck = asyncio.create_task(provider.authenticate(keys.token({}, kid="rsa-unknown")))
+        await asyncio.sleep(0.05)
+        try:
+            principal = await provider.authenticate(keys.token({}))
+            elapsed = time.monotonic() - started
+        finally:
+            release.set()
+        assert principal.subject == "alice"
+        assert elapsed < 1.0, f"the known key waited {elapsed:.1f}s behind the refresh"
+        with pytest.raises(AuthenticationError):
+            await stuck
+
+    def test_one_provider_serves_threads_that_each_run_their_own_event_loop(self, keys):
+        """Azure runs sync functions on a thread pool, where each call gets a fresh loop (#603 review)."""
+        jwks = keys.jwks()
+
+        def slow(request):
+            time.sleep(0.2)  # long enough for both cold starts to overlap
+            return httpx.Response(200, json=jwks)
+
+        provider = OIDCIdentityProvider(
+            issuer=ISSUER, audience=AUDIENCE, jwks=JWKSCache(ISSUER, jwks_uri=JWKS_URI, transport=httpx.MockTransport(slow))
+        )
+        results: list = []
+
+        def call():
+            try:
+                results.append(asyncio.run(provider.authenticate(keys.token({}))).subject)
+            except Exception as exc:  # recorded so the assertion shows what went wrong
+                results.append(exc)
+
+        threads = [threading.Thread(target=call, daemon=True) for _ in range(2)]  # daemon: a hung caller cannot hold pytest open
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=10)
+        assert not any(thread.is_alive() for thread in threads), "a cold-start caller never woke up"
+        assert results == ["alice", "alice"]
+
+    def test_a_rotated_key_is_fetched_on_a_later_event_loop(self, keys):
+        """Against a real keep-alive server: a connection pooled on a closed loop must not break the refresh."""
+        with _KeepAliveJWKSServer(keys) as live:
+            provider = OIDCIdentityProvider(issuer=live.issuer, audience=AUDIENCE)
+            assert asyncio.run(provider.authenticate(keys.token({"iss": live.issuer}))).subject == "alice"
+
+            rotated = Keys()
+            rotated.rsa_kid = "rsa-2"
+            live.jwks = {"keys": keys.jwks()["keys"] + rotated.jwks()["keys"][:1]}
+            principal = asyncio.run(provider.authenticate(rotated.token({"iss": live.issuer}, kid="rsa-2")))
+            assert principal.subject == "alice"
+            asyncio.run(provider.close())
+
+    @pytest.mark.parametrize("algorithms", [["RS265"], [], ["none"], ["RS256", "None"]])
+    def test_unusable_algorithms_are_refused_at_construction(self, server, algorithms):
+        """A misspelled, empty or unsigned list would build and then refuse every token at request time."""
+        with pytest.raises(AKConfigError, match="algorithm"):
+            _oidc(server, algorithms=algorithms)
 
     def test_symmetric_algorithms_are_refused_at_construction(self, server):
         with pytest.raises(AKConfigError, match="HS256"):
@@ -399,6 +586,18 @@ class TestEntraProviderContract(_OIDCFamilyContract):
         ]
 
 
+class TestCognitoTokenUse:
+    def test_a_misspelled_token_use_is_refused_by_the_config(self):
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            _CognitoProviderConfig(region="eu-west-1", user_pool_id="p", token_use="acess")
+
+    def test_a_misspelled_token_use_is_refused_by_the_constructor(self):
+        with pytest.raises(AKConfigError, match="token_use"):
+            CognitoIdentityProvider(region="eu-west-1", user_pool_id="p", audience=AUDIENCE, token_use="acess")
+
+
 class TestEntraProvider:
     @pytest.mark.asyncio
     async def test_a_groups_overage_yields_no_groups_and_warns_once(self, keys, caplog):
@@ -411,6 +610,16 @@ class TestEntraProvider:
             second = await provider.authenticate(keys.token(overage))
         assert first.groups == [] and second.groups == []
         assert len([record for record in caplog.records if "overage" in record.getMessage()]) == 1
+
+    @pytest.mark.asyncio
+    async def test_the_overage_marker_concerns_only_the_groups_claim(self, keys):
+        """With the groups path on app roles, a groups overage leaves the roles alone (#603 review)."""
+        server = JWKSServer(keys, issuer=ENTRA_ISSUER, jwks_uri=f"{ENTRA_ISSUER}/keys")
+        provider = EntraIdentityProvider(
+            tenant_id=TENANT, audience=AUDIENCE, groups_claim="roles", jwks=JWKSCache(ENTRA_ISSUER, transport=server.transport)
+        )
+        token = {"iss": ENTRA_ISSUER, "oid": "oid-alice", "tid": TENANT, "roles": ["Admin"], "_claim_names": {"groups": "src1"}}
+        assert (await provider.authenticate(keys.token(token))).groups == ["Admin"]
 
     def test_from_config_derives_the_issuer(self):
         provider = EntraIdentityProvider.from_config(
@@ -498,6 +707,10 @@ class TestFactoryBranches:
     )
     def test_each_family_member_is_built_by_its_short_name(self, config, cls):
         assert isinstance(IdentityProviderFactory.create(_IdentityConfig(provider=config)), cls)
+
+    def test_a_short_name_is_matched_whatever_its_case(self):
+        config = _IdentityProviderConfig(type="OIDC", issuer=ISSUER, audience=AUDIENCE)
+        assert isinstance(IdentityProviderFactory.create(_IdentityConfig(provider=config)), OIDCIdentityProvider)
 
     @pytest.mark.parametrize("name", ["oidc", "cognito", "entra", "firebase"])
     def test_the_missing_extra_is_named(self, monkeypatch, name):

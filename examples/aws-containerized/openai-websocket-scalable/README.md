@@ -86,7 +86,8 @@ from agentkernel.aws import AWSWebsocketAPI
 
 @AWSWebsocketAPI.register("echo")
 async def echo(ctx: dict) -> dict:
-    return ctx
+    # A Principal is a model, not JSON: dump it, or the broadcast fails to serialize.
+    return {"message": ctx["message"], "principal": ctx["principal"].model_dump(mode="json", exclude_none=True)}
 ```
 
 The route is also declared in Terraform via `ws_routes` (`deploy/main.tf`), which must agree with

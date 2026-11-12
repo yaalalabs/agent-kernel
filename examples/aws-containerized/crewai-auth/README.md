@@ -18,9 +18,12 @@ curl -X POST "$AGENT_INVOKE_URL" \
   -d '{"prompt": "What is 2 + 2?", "session_id": "ses-1", "agent": "math"}'
 ```
 
-A request without a token runs as the anonymous principal; a token the provider refuses is a 401
-with the generic detail `Unauthorized` (the provider's reason stays in the logs). To validate real
-tokens, swap the provider for `oidc` (Auth0, Keycloak, Okta or any other OIDC issuer), `cognito`,
+A token, if sent, must be valid: one the provider refuses is a 401 with the generic detail
+`Unauthorized` (the provider's reason stays in the logs). Without one, a request runs as the anonymous
+principal, on the chat route and on the custom `/custom/version` route alike: chat stays open to
+anonymous callers until the access gate lands, so do not rely on the token to keep callers out yet.
+See [Identity and Access](https://kernel.yaala.ai/docs/next/advanced/identity-and-access). To
+validate real tokens, swap the provider for `oidc` (Auth0, Keycloak, Okta or any other OIDC issuer), `cognito`,
 `entra` or `firebase`; [`examples/aws-serverless/openai-auth`](../../aws-serverless/openai-auth/README.md)
 spells out an Auth0 block, and the same block works here unchanged.
 
