@@ -71,7 +71,8 @@ def test_touching_lambda_loads_neither_fastapi_nor_the_webhook_host():
     assert "agentkernel.deployment.aws.serverless.aklambda" in loaded
     assert "fastapi" not in loaded
     assert "starlette" not in loaded
-    assert "agentkernel.deployment.aws.serverless.core.webhook_host" not in loaded
+    assert "agentkernel.deployment.aws.serverless.core.integration.webhook" not in loaded
+    assert "agentkernel.deployment.aws.serverless.core.integration.thread" not in loaded
 
 
 def test_the_authorizer_and_its_bypass_load_neither_fastapi_nor_a_platform_sdk():
@@ -90,4 +91,10 @@ def test_the_authorizer_and_its_bypass_load_neither_fastapi_nor_a_platform_sdk()
 def test_touching_the_webhook_host_through_aws_resolves_it():
     loaded = _isolated_import("agentkernel.aws", touch=(("agentkernel.aws", "LambdaWebhookHost"),))
 
-    assert "agentkernel.deployment.aws.serverless.core.webhook_host" in loaded
+    assert "agentkernel.deployment.aws.serverless.core.integration.webhook" in loaded
+
+
+def test_touching_the_thread_host_through_aws_resolves_it():
+    loaded = _isolated_import("agentkernel.aws", touch=(("agentkernel.aws", "LambdaThreadHost"),))
+
+    assert "agentkernel.deployment.aws.serverless.core.integration.thread" in loaded

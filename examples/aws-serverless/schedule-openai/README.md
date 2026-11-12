@@ -37,7 +37,7 @@ POST /api/v1/chat  {"schedule": {...}}       POST /api/v1/chat  (no schedule)
         |                                                                     |
         +-- polls the response store for the reply (rest_sync) ---------------+
         |
-  GET /schedules, /schedules/get, POST /schedules/amend, /schedules/cancel
+  GET /schedules, GET|PUT|DELETE /schedules/{task_id}
         (custom Lambda.register routes -> ScheduleManager, direct, no queue round trip)
 ```
 
@@ -93,18 +93,17 @@ path/method table — so it cannot be mounted. `lambda_request_handler.py` expos
 `Lambda.register` routes that call `ScheduleManager` directly, which is the same object the REST
 handler wraps.
 
-Two consequences of the router matching paths exactly:
-
-- **No `{task_id}` path parameters.** The task id travels as a query parameter or in the body.
-- **Every path must also be declared in `gateway_endpoints`** in `deploy/main.tf`, or it 404s at the
-  gateway.
+- **The routes are the containerized ones.** The task id is the `{task_id}` path parameter; the
+  handler reads it from `event["pathParameters"]`.
+- **Every path must also be declared in `gateway_endpoints`** in `deploy/main.tf`, with the same
+  `{task_id}` name, or it 404s at the gateway.
 
 | This example | Containerized / self-hosted equivalent |
 |---|---|
 | `GET /api/v1/schedules` | `GET /api/v1/schedules` |
-| `GET /api/v1/schedules/get?task_id=` | `GET /api/v1/schedules/{task_id}` |
-| `POST /api/v1/schedules/amend` (task_id in body) | `PUT /api/v1/schedules/{task_id}` |
-| `POST /api/v1/schedules/cancel` (task_id in body) | `DELETE /api/v1/schedules/{task_id}` |
+| `GET /api/v1/schedules/{task_id}` | `GET /api/v1/schedules/{task_id}` |
+| `PUT /api/v1/schedules/{task_id}` | `PUT /api/v1/schedules/{task_id}` |
+| `DELETE /api/v1/schedules/{task_id}` | `DELETE /api/v1/schedules/{task_id}` |
 
 Creation is deliberately absent from both, identically: a task is created by the `schedule` block on
 a chat request or by the agent's own `create_schedule` tool, so callers and agents share one path.
@@ -221,19 +220,17 @@ curl -X POST "$AK_TEST_ENDPOINT" \
 
 ```bash
 curl "$SCHEDULES" -H "$AUTH"                            # always the caller's own tasks
-curl "$SCHEDULES/get?task_id=<task_id>" -H "$AUTH"
+curl "$SCHEDULES/<task_id>" -H "$AUTH"
 
 # Full replacement rather than a merge: send every value, changed or not. `status` is the
 # paused/active switch: a paused schedule keeps its record but stops firing.
-curl -X POST "$SCHEDULES/amend" \
+curl -X PUT "$SCHEDULES/<task_id>" \
   -H "$AUTH" -H "Content-Type: application/json" \
-  -d '{"task_id": "<task_id>", "prompt": "Send the weekly report",
+  -d '{"prompt": "Send the weekly report",
        "cron": "0 8 * * 1", "timezone": "Asia/Colombo", "session_mode": "new", "status": "paused"}'
 
 # The record survives as the audit trail, so this returns the task with "status": "cancelled".
-curl -X POST "$SCHEDULES/cancel" \
-  -H "$AUTH" -H "Content-Type: application/json" \
-  -d '{"task_id": "<task_id>"}'
+curl -X DELETE "$SCHEDULES/<task_id>" -H "$AUTH"
 ```
 
 **Let the agent schedule the work itself.** This runs now; the agent calls `create_schedule` and

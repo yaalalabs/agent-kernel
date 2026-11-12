@@ -12,6 +12,18 @@ from ....core.response_store import ResponseStoreFactory
 from ....core.sqs_handler import SQSHandler
 from .common import BaseLambdaRouter
 
+# Given the parsed chat envelope, may rewrite payload.body in place; returns extra SQS attributes.
+type ChatEnqueueHook = Callable[[BaseRequest], dict[str, str]]
+
+
+class LambdaChatRejection(Exception):
+    """A hook's refusal: answered as (status_code, body), never as the generic 500."""
+
+    def __init__(self, status_code: int, body: dict[str, Any]):
+        super().__init__(f"Chat request rejected with status {status_code}")
+        self.status_code = status_code
+        self.body = body
+
 
 class DefaultEndpointsHandler:
     """Provides default endpoint routes depending on EXECUTION_MODE."""
@@ -27,6 +39,21 @@ class DefaultEndpointsHandler:
         self._config = AKConfig.get()
         self._response_store = ResponseStoreFactory.create() if self._config.execution.response_store is not None else None
         self._chat_service = ChatService()
+        self._enqueue_hook: ChatEnqueueHook | None = None
+
+    def set_enqueue_hook(self, hook: ChatEnqueueHook) -> None:
+        """
+        Plug a hook into the chat route's enqueue step (rest_sync and the rest_async submit).
+
+        :param hook: Called with the parsed request before it is enqueued; its result becomes extra SQS attributes
+        :raises AKConfigError: When no input queue is configured, since the chat route then never enqueues
+        :raises ValueError: When a hook is already set
+        """
+        if not SQSHandler.get_input_queue_url():
+            raise AKConfigError("A chat enqueue hook requires queue mode: no input queue is configured")
+        if self._enqueue_hook is not None:
+            raise ValueError("A chat enqueue hook is already set")
+        self._enqueue_hook = hook
 
     def get_default_endpoint_info(self):
         """
@@ -142,6 +169,9 @@ class DefaultEndpointsHandler:
             request_id = request.request_id
             return operation(request)  # (statusCode, body) will be handled in aklambda.py
 
+        except LambdaChatRejection as r:
+            return (r.status_code, r.body)
+
         # A request the parser or the operation refuses is the caller's error, answered with its reason.
         except ValueError as e:
             self._log.warning(f"Rejected request: {e}")
@@ -170,10 +200,16 @@ class DefaultEndpointsHandler:
         if not session_id:
             raise ValueError("session_id is required")
 
+        # The hook may rewrite payload.body, so the body is dumped only after it runs.
+        extra = self._enqueue_hook(payload) if self._enqueue_hook else {}
         response = SQSHandler.send_message_to_input_queue(
-            message_body=request_body.model_dump(exclude_none=True),
+            message_body=payload.body.model_dump(exclude_none=True),
             attributes={"message_deduplication_id": payload.request_id},
             request_id=payload.request_id,
+            custom_message_attributes=[
+                SQSHandler.CustomAttribute(name=k, value=v, datatype=SQSHandler.AttributeDataType.STRING) for k, v in extra.items()
+            ]
+            or None,
         )
         return response
 
@@ -341,6 +377,8 @@ class RESTLambdaRouter(BaseLambdaRouter):
     Router for AWS Lambda events coming from API Gateway REST API v1.
     - Register handlers per (method, route) for REST endpoints.
     - Route can be provided in multiple forms and will be normalized.
+    - Routes may carry path parameters ("/threads/{session_id}"): dispatch looks the route up by the
+      resource template API Gateway matched, and handlers read the values from event["pathParameters"].
     - If no handler match is found, the router raises ValueError.
     """
 
@@ -360,6 +398,14 @@ class RESTLambdaRouter(BaseLambdaRouter):
         ) = self._endpoints_handler.get_default_endpoint_info()
         self._routes = self._endpoints_handler.get_routes()
         self._log.info(f"Registered REST Routes: {self._routes}")
+
+    def set_chat_enqueue_hook(self, hook: ChatEnqueueHook) -> None:
+        """
+        Plug a hook into the built-in chat route's enqueue step.
+
+        :param hook: See DefaultEndpointsHandler.set_enqueue_hook
+        """
+        self._endpoints_handler.set_enqueue_hook(hook)
 
     @staticmethod
     def _normalize_method(method: str | None) -> str:
@@ -398,6 +444,19 @@ class RESTLambdaRouter(BaseLambdaRouter):
 
         return _decorator
 
+    def _resolve_route_path(self, event: dict[str, Any], event_path: str, base_path: str, method: str) -> str:
+        """
+        Resolve the registered route key: the resource template API Gateway matched first, then the concrete path.
+
+        :param event: API Gateway event
+        :param event_path: Concrete request path
+        :param base_path: The /<api_base_path>/<api_version> prefix to strip
+        :param method: Normalized HTTP method
+        :return: The first candidate registered for the method, else the concrete path
+        """
+        candidates = [p.removeprefix(base_path) for p in (event.get("resource"), event_path) if p]
+        return next((p for p in candidates if method in self._routes.get(p, {})), candidates[-1])
+
     def dispatch(self, event: dict[str, Any], context: Any) -> dict[str, Any] | None:
         """
         Dispatch incoming API Gateway REST event to the appropriate registered handler.
@@ -418,7 +477,7 @@ class RESTLambdaRouter(BaseLambdaRouter):
             converted_event_path = (
                 self._default_chat_path
                 if event_path == env_agent_endpoint and method in [self._default_chat_method, self._default_user_polling_method]
-                else event_path.removeprefix(env_base_path)
+                else self._resolve_route_path(event, event_path, env_base_path, method)
             )
         else:
             self._log.warning("Environment variables not provided; using default agent handler")

@@ -81,6 +81,12 @@ if __name__ == "__main__":
 An app that mounts nothing still defers and still gets the agent tools — it just serves no
 `/api/v1/schedules` routes.
 
+On AWS Lambda the request handler is not FastAPI, so `ScheduleRESTRequestHandler` cannot be mounted.
+Serve the same routes with `Lambda.register` handlers that call `ScheduleManager` directly; the task id
+arrives as the `{task_id}` path parameter (see the
+[AWS serverless guide](../deployment/aws-serverless.md#scheduling-eventbridge-scheduler) and
+`examples/aws-serverless/schedule-openai`).
+
 Cron parsing needs the `cron` extra:
 
 ```bash
@@ -436,7 +442,9 @@ task at create/amend time and the provider substitutes the occurrence placeholde
   provisioning the schedule group, execution role and schedule table.
 - [`examples/aws-serverless/schedule-openai`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/schedule-openai) —
   the AWS Lambda equivalent: request-handler, agent-runner and response-handler Lambdas with the
-  `eventbridge` provider and a DynamoDB store.
+  `eventbridge` provider and a DynamoDB store. The request handler serves the management routes on
+  the same paths (`GET /schedules`, `GET` / `PUT` / `DELETE /schedules/{task_id}`) through
+  `Lambda.register`.
 
 See the [AWS containerized](../deployment/aws-containerized.md#scheduling-eventbridge-scheduler) and
 [AWS serverless](../deployment/aws-serverless.md#scheduling-eventbridge-scheduler) deployment guides for

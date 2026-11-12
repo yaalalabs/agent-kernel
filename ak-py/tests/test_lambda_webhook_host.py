@@ -109,7 +109,7 @@ def _drain(transport: InMemoryTransport):
 
 
 def _host(handler: WebhookRESTRequestHandler):
-    from agentkernel.deployment.aws.serverless.core.webhook_host import LambdaWebhookHost
+    from agentkernel.deployment.aws.serverless.core.integration.webhook import LambdaWebhookHost
 
     return LambdaWebhookHost(handler)
 
@@ -159,7 +159,7 @@ def _environment(monkeypatch):
 
 def _reset_host_loop():
     try:
-        from agentkernel.deployment.aws.serverless.core.webhook_host import LambdaWebhookHost
+        from agentkernel.deployment.aws.serverless.core.integration.webhook import LambdaWebhookHost
     except ImportError:
         return
     if LambdaWebhookHost._loop is not None and not LambdaWebhookHost._loop.is_closed():
@@ -271,7 +271,7 @@ class TestEventLoop:
         assert outcome == {"current_loop": False}
 
     def test_a_closed_loop_is_replaced(self):
-        from agentkernel.deployment.aws.serverless.core.webhook_host import LambdaWebhookHost
+        from agentkernel.deployment.aws.serverless.core.integration.webhook import LambdaWebhookHost
 
         closed = asyncio.new_event_loop()
         closed.close()

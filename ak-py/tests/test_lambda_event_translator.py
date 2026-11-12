@@ -11,7 +11,7 @@ from starlette.exceptions import HTTPException
 from starlette.responses import Response, StreamingResponse
 
 from agentkernel.core.config import AKConfig
-from agentkernel.deployment.aws.serverless.core.event_translator import LambdaEventTranslator
+from agentkernel.deployment.aws.serverless.core.integration.event_translator import LambdaEventTranslator
 
 
 def _event(**overrides) -> dict:

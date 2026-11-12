@@ -448,7 +448,7 @@ class TestEndToEnd:
 
         from agentkernel.core.config import AKConfig
         from agentkernel.deployment.aws.serverless.aklambda import Lambda
-        from agentkernel.deployment.aws.serverless.core.webhook_host import LambdaWebhookHost
+        from agentkernel.deployment.aws.serverless.core.integration.webhook import LambdaWebhookHost
         from agentkernel.integration.adapter.webhook import WebhookRESTRequestHandler
         from agentkernel.integration.slack.adapter import SlackInboundAdapter
 

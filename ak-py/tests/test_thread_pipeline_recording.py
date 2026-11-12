@@ -166,7 +166,7 @@ def _chat(session_id="s1", prompt="hello", **extra) -> dict:
 
 
 class TestEdgeRecording:
-    def test_user_message_is_recorded_and_the_message_is_marked(self, monkeypatch, dummy_agent):
+    def test_user_message_is_recorded_and_the_message_is_marked(self, monkeypatch):
         manager = _configure(monkeypatch, mode="rest_async")
 
         response = _client().post(CHAT, json=_chat())
@@ -180,7 +180,7 @@ class TestEdgeRecording:
         assert (recorded.role, recorded.content) == ("user", "hello")
         assert manager.get_thread("s1").name == "hello"
 
-    def test_the_plain_request_handler_marks_nothing(self, monkeypatch, dummy_agent):
+    def test_the_plain_request_handler_marks_nothing(self, monkeypatch):
         _configure(monkeypatch, mode="rest_async")
         app = FastAPI()
         app.include_router(RequestHandler().get_router())
@@ -192,7 +192,7 @@ class TestEdgeRecording:
         assert ATTR_THREAD not in _enqueued().attributes
         assert ConversationThreadManager.get().get_thread("s1") is None
 
-    def test_attachments_are_offloaded_before_the_queue(self, monkeypatch, dummy_agent):
+    def test_attachments_are_offloaded_before_the_queue(self, monkeypatch):
         _configure(monkeypatch, mode="rest_async")
         AKConfig.get().multimodal.enabled = True
         AKConfig.get().multimodal.storage_type = "in_memory"
@@ -261,15 +261,7 @@ class TestEdgeRecording:
         assert manager.get_thread("s1") is None
         assert not InMemoryTransport().create_consumer(QueueName.INPUT).fetch(10, 0.1)
 
-    def test_an_unavailable_agent_leaves_no_phantom_thread(self, monkeypatch, dummy_agent):
-        manager = _configure(monkeypatch, mode="rest_async")
-
-        response = _client().post(CHAT, json=_chat(agent="nope"))
-
-        assert response.status_code == 400
-        assert manager.get_thread("s1") is None
-
-    def test_async_mode_is_rejected_before_any_thread_write(self, monkeypatch, dummy_agent):
+    def test_async_mode_is_rejected_before_any_thread_write(self, monkeypatch):
         """The route cannot answer in ASYNC mode, so it must refuse before opening the thread."""
         manager = _configure(monkeypatch, mode="async")
 
@@ -280,7 +272,7 @@ class TestEdgeRecording:
         assert manager.get_thread("s1") is None
         assert not InMemoryTransport().create_consumer(QueueName.INPUT).fetch(10, 0.1)
 
-    def test_async_delta_mode_is_rejected_before_any_thread_write(self, monkeypatch, dummy_agent):
+    def test_async_delta_mode_is_rejected_before_any_thread_write(self, monkeypatch):
         """Same for async + delta: its chunks go over WebSocket, so this route has nothing to serve."""
         manager = _configure(monkeypatch, mode="async", message_type="delta")
 
@@ -291,7 +283,7 @@ class TestEdgeRecording:
         assert manager.get_thread("s1") is None
         assert not InMemoryTransport().create_consumer(QueueName.INPUT).fetch(10, 0.1)
 
-    def test_a_deferred_request_records_nothing_and_is_unmarked(self, monkeypatch, dummy_agent):
+    def test_a_deferred_request_records_nothing_and_is_unmarked(self, monkeypatch):
         manager = _configure(monkeypatch, mode="rest_async")
 
         payload = _chat(schedule=ScheduleSpec(at="2999-01-01T00:00:00Z").model_dump(exclude_none=True))
@@ -301,7 +293,7 @@ class TestEdgeRecording:
         assert ATTR_THREAD not in _enqueued().attributes
         assert manager.get_thread("s1") is None
 
-    def test_a_resume_without_a_prompt_reaches_the_queue(self, monkeypatch, dummy_agent):
+    def test_a_resume_without_a_prompt_reaches_the_queue(self, monkeypatch):
         """Unmocked through the inherited route: both guards must let a human-in-the-loop decision through."""
         _configure(monkeypatch, mode="rest_async")
         resume = {"decisions": [{"id": "call_1", "status": "approved"}]}
@@ -313,7 +305,7 @@ class TestEdgeRecording:
         assert message.attributes[ATTR_THREAD] == "1"
         assert json.loads(message.body)["requests"] == [{"type": "resume", **resume}]
 
-    def test_missing_prompt_keeps_the_pipeline_error_shape(self, monkeypatch, dummy_agent):
+    def test_missing_prompt_keeps_the_pipeline_error_shape(self, monkeypatch):
         _configure(monkeypatch, mode="rest_async")
 
         response = _client().post(CHAT, json={"prompt": "", "session_id": "s1"})

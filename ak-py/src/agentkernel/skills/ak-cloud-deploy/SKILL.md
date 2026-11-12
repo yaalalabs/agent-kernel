@@ -211,11 +211,13 @@ If the Terraform module creates the backing store (for example `create_redis_clu
 
 ### Deploying Conversation Thread Storage
 
-Conversation threads (`ak-add-capabilities`) deploy the same way sessions do: the app mounts
-`AgentThreadRequestHandler` (which is what enables the feature; the self-hosted REST API is the only
-surface that records threads — queue-mode runners and the other deployment adapters do not) and
-declares `thread.type` in `config.yaml`, and Terraform provisions the backend, injecting only the
-connection detail. Terraform never sets `AK_THREAD__TYPE` itself.
+Conversation threads (`ak-add-capabilities`) deploy the same way sessions do: the app mounts the
+thread handler (which is what enables the feature) and declares `thread.type` in `config.yaml`, and
+Terraform provisions the backend, injecting only the connection detail. Terraform never sets
+`AK_THREAD__TYPE` itself. The handler depends on the surface: `AgentThreadRequestHandler` on the
+self-hosted REST API, `ThreadRequestHandler` in a queue-mode pipeline
+(`IOHandler.run(request_handler=ThreadRequestHandler())`), and `LambdaThreadHost` on AWS serverless
+(below). Other deployment adapters do not record threads.
 
 - **AWS (serverless + containerized)**: `create_dynamodb_thread_table = true` provisions a DynamoDB
   table (partition `session_id`, sort `sk`, TTL on `expiry_time`) and injects
@@ -227,6 +229,22 @@ connection detail. Terraform never sets `AK_THREAD__TYPE` itself.
 - **Redis / Valkey**: no dedicated Terraform flag — reuse whatever `create_redis_cluster` /
   `create_valkey_cluster` already provisions and declare `thread: {type: redis}` (or `valkey`) with
   the cluster URL in `config.yaml`.
+
+**AWS serverless** records threads in queue mode only (`queue_mode = true`, `execution.queues.type: sqs`,
+`rest_sync` / `rest_async` with `message_type: complete`). In the request-handler Lambda, build
+`threads = LambdaThreadHost(ThreadRequestHandler())` at module scope (from `agentkernel.aws` and
+`agentkernel.thread`) — do not import the agent module there: in queue mode the agents live in the
+agent-runner Lambda only — and register `GET /threads` →
+`threads.list_threads` and `GET /threads/{session_id}` → `threads.get_thread` with `Lambda.register`.
+The host takes over the chat route's enqueue (chat then requires an authenticated caller: the
+principal the API Gateway authorizer put on the event, 401 without one); the agent-runner Lambda
+records the reply. Add both routes to `gateway_endpoints`; the same principal scopes them (a listing is
+the caller's own, another caller's thread is 403). `ThreadRequestHandler()` requires an `identity`
+block, so unlike other routes the request-handler Lambda needs the identity config **and** the
+credential secrets the authorizer gets (with `static`, pass the token variables to both Lambdas).
+`create_dynamodb_thread_table = true` wires the table into both
+Lambdas; both need the same `thread` block, and `thread.type: in_memory` is refused at cold start. See
+`examples/aws-serverless/thread-openai`.
 
 Setting the Terraform flag *without* declaring `thread.type` in `config.yaml` silently leaves
 threads on the non-durable in-memory backend (any `AK_THREAD__*` var materialises `AKConfig.thread`,
@@ -296,6 +314,13 @@ if __name__ == "__main__":
 
 Remember to list the schedule paths in `gateway_endpoints` — the gateway only proxies paths it is
 told about.
+
+On **AWS serverless** the Lambda router is not FastAPI, so `ScheduleRESTRequestHandler` cannot be
+mounted. Register the same routes with `@Lambda.register("/schedules", method="GET")` and
+`@Lambda.register("/schedules/{task_id}", method="GET"|"PUT"|"DELETE")`, calling `ScheduleManager`
+directly and reading `event["pathParameters"]["task_id"]`. Declare each in `gateway_endpoints` with
+the same `{task_id}` name (`{ path = "schedules/{task_id}", method = "PUT" }`). Reference
+implementation: `examples/aws-serverless/schedule-openai/lambda_request_handler.py`.
 
 New outputs on both AWS stacks (null unless the matching flag is set): `schedule_group_name`,
 `schedule_group_arn`, `scheduler_execution_role_arn`, `schedule_table_name`, `schedule_table_arn`.
@@ -874,7 +899,8 @@ authorizer = {
 
 - Package `dist_auth.zip` with `agentkernel[api,aws]` (add `auth` for `oidc`, `cognito`, `entra` or
   `firebase`), `lambda_auth.py` and the `config.yaml` carrying the `identity` block; the other Lambdas
-  load the same file without needing the credential.
+  load the same file without needing the credential, except a request handler hosting threads
+  (`LambdaThreadHost`): `ThreadRequestHandler()` builds the provider, so it needs the credential too.
 - An accepted token yields an Allow policy whose `principalId` is the subject and whose context
   carries the principal; a refused, expired or malformed token gets a 401 (the authorizer raises
   `Unauthorized`), a request with no token a Deny (403), with the provider's reason in the

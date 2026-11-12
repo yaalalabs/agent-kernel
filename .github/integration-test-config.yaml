@@ -83,6 +83,9 @@ weekly:
       path: examples/aws-serverless/schedule-openai
       deploy_dir: deploy
     - type: aws-serverless
+      path: examples/aws-serverless/thread-openai
+      deploy_dir: deploy
+    - type: aws-serverless
       path: examples/aws-serverless/openai-langfuse-trace-evaluation
       deploy_dir: deploy
 

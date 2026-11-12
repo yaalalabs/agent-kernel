@@ -4,7 +4,7 @@ import logging
 from ....core.chat_service import ChatService
 from ....core.config import AKConfig
 from ....core.model import BaseRunRequest, Principal, StreamChunk
-from ....pipeline.envelope import ATTR_STATUS_CODE
+from ....pipeline.envelope import ATTR_STATUS_CODE, ATTR_THREAD
 from ....pipeline.integration_delivery import IntegrationDelivery
 from ..core.sqs_handler import SQSHandler
 from .core import LambdaSQSConsumer
@@ -163,6 +163,32 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
         return BaseRunRequest.model_validate(json.loads(record["body"]))
 
     @classmethod
+    def _record_thread_reply(cls, record: dict, body: BaseRunRequest, status_code: int, response) -> None:
+        """Hand a marked record's reply to ``ThreadRecorder.record_queued_reply``. Never raises.
+
+        Call it after ``_send_to_output_queue``; ``record_queued_reply`` says why, and holds every
+        rule. The thread package is imported only for a marked record, so a runner with no thread
+        traffic never pays for the thread stores (pipeline parity, ``AgentRunner._record_thread_reply``).
+
+        :param record: SQS record; its ``thread`` attribute marks a recorded exchange.
+        :param body: The parsed request body.
+        :param status_code: The status the chat service produced.
+        :param response: The response body; a paused run's is recorded as its pause, labelled.
+        """
+        attributes = SQSHandler.get_message_custom_attributes(record)
+        if not attributes.get(ATTR_THREAD):
+            return
+        try:
+            from ....integration.thread.recorder import ThreadRecorder
+            from ....pipeline.agent_runner import AgentRunner
+
+            # The pipeline runner's pick, so a paused run records the same content on both runners.
+            media_type = response.get("media_type") if isinstance(response, dict) else None
+            ThreadRecorder.record_queued_reply(attributes, body, status_code, AgentRunner._reply_to_record(response, body.session_id), media_type)
+        except Exception:
+            cls._log.exception(f"Failed to record the assistant message for session_id={body.session_id}")
+
+    @classmethod
     def process_message(cls, record: dict) -> None:
         """
         Process a single SQS record, invoke the chat service, and send the response (or an error) to the output queue.
@@ -180,6 +206,7 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
         record_attributes = cls._get_record_attributes(raw_queue_message=record, body=body)
         cls._send_to_output_queue(message_body=agent_response, record_attributes=record_attributes, status_code=status_code)
         cls._log.info(f"Sent Response message to Output Queue: '{SQSHandler.get_output_queue_url()}'")
+        cls._record_thread_reply(record, body, status_code, agent_response)
 
     @classmethod
     def on_permanent_failure(cls, record: dict) -> None:

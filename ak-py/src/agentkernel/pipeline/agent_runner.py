@@ -251,47 +251,27 @@ class AgentRunner:
 
     @classmethod
     def _record_thread_reply(cls, message: QueueMessage, body: BaseRunRequest, status_code: int, result, media_type: str | None = None) -> None:
-        """Append the assistant message to the conversation thread this request belongs to.
+        """Hand a marked message's reply to ``ThreadRecorder.record_queued_reply``. Never raises.
 
-        The other half of the split: ``ThreadRecorder.pre_run`` ran at the edge (the thread
-        handler, before the request was enqueued), so only the reply is left, and only this
-        process has it. The ``thread`` attribute is what says the edge recorded a user message
-        for this request — without it a plain queue request would grow a thread nothing asked
-        for.
+        Call it after ``_send_to_output``; ``record_queued_reply`` says why, and holds every rule.
 
-        Called **after** ``_send_to_output`` deliberately. Recording first would duplicate the
-        assistant message whenever the send then failed and the message was redelivered; this
-        order trades that for losing a recording if the process dies in between, which is the
-        safer direction (the caller still got its answer).
-
-        Imported lazily and locally for the same reason as
+        The thread package is imported only for a marked message, for the same reason as
         ``IntegrationDelivery._outbound_adapter``: threads are an ``integration`` capability, and a
-        module-scope import would make every runner process — including ones with no thread
-        block configured — pay for the thread stores.
+        module-scope import would make every runner process — including ones with no thread block
+        configured — pay for the thread stores.
 
-        :param message: The input message, carrying the ``thread`` marker.
-        :param body: The validated request body; supplies the session the thread is keyed by.
-        :param status_code: The status the run produced; a failure records nothing.
-        :param result: The agent's reply — the response body's ``result``, an object for a labelled
-            reply and text for every other.
-        :param media_type: The reply's label, which the response body carries beside ``result``
-            rather than on it. Dropping it here is what left replayed history unlabelled (#763).
+        :param message: The input message; its ``thread`` attribute marks a recorded exchange.
+        :param body: The validated request body.
+        :param status_code: The status the run produced.
+        :param result: What to record: ``_reply_to_record``'s pick, a paused reply, or a stream's text.
+        :param media_type: The reply's label, carried beside ``result`` in the response body.
         """
-        if not message.attributes.get(ATTR_THREAD) or status_code >= 400 or result in (None, ""):
+        if not message.attributes.get(ATTR_THREAD):
             return
         try:
-            from ..integration.thread.manager import ConversationThreadManager
             from ..integration.thread.recorder import ThreadRecorder
 
-            manager = ConversationThreadManager.get()
-            if manager is None:
-                cls._log.warning(
-                    "Input message is marked for thread recording but this process has no 'thread' "
-                    "config block: the user message was recorded at the edge and the reply is lost. "
-                    "Give the agent-runner process the same thread configuration as the API process."
-                )
-                return
-            ThreadRecorder(manager).post_run(body, result, media_type)
+            ThreadRecorder.record_queued_reply(message.attributes, body, status_code, result, media_type)
         except Exception:
             cls._log.exception(f"Failed to record the assistant message for session_id={body.session_id}")
 

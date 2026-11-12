@@ -1,0 +1,53 @@
+logging:
+  ak:
+    level: INFO
+
+session:
+  type: dynamodb
+  dynamodb:
+    table_name: ""   # injected by Terraform via AK_SESSION__DYNAMODB__TABLE_NAME
+
+# Selects the thread store; LambdaThreadHost in lambda_request_handler.py is what turns threads on.
+# Both the request handler and the agent runner write here, so it must be a shared store:
+# in_memory (the default) fails the request handler's cold start.
+thread:
+  type: dynamodb
+  dynamodb:
+    table_name: ""   # injected via AK_THREAD__DYNAMODB__TABLE_NAME (create_dynamodb_thread_table)
+
+# Who may call: a thread belongs to the principal whose request created it. The static provider maps
+# each credential to a principal; the values are never written here: Terraform passes them as the
+# ALICE_TOKEN and BOB_TOKEN environment variables, which the secret capability resolves at startup.
+# The authorizer authenticates with it; the request handler builds it too, because
+# ThreadRequestHandler() requires an identity block, so both Lambdas get the variables.
+identity:
+  provider:
+    type: static
+    static:
+      principals:
+        ALICE_TOKEN:
+          subject: alice
+        BOB_TOKEN:
+          subject: bob
+
+# Threads on Lambda run in queue mode, in rest_sync or rest_async, on the sqs transport.
+execution:
+  mode: rest_sync
+  queues:
+    # The transport every component of this deployment runs on. Mandatory: the queue URLs
+    # below are injected per component, so only this declaration tells each process which
+    # transport it is on.
+    type: sqs
+    input:
+      # url injected via AK_EXECUTION__QUEUES__INPUT__URL
+      max_receive_count: 3
+    output:
+      # url injected via AK_EXECUTION__QUEUES__OUTPUT__URL
+      max_receive_count: 3
+  response_store:
+    type: dynamodb
+    retry_count: 10
+    delay: 3
+    dynamodb:
+      table_name: ""   # injected via AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TABLE_NAME
+      ttl: 300

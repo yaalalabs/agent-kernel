@@ -67,15 +67,15 @@ class ScheduleTestClient:
 
     async def get_schedule(self, task_id: str) -> httpx.Response:
         async with httpx.AsyncClient(timeout=30.0) as client:
-            return await client.get(f"{self.schedules_url}/get", params={"task_id": task_id}, headers=AUTH)
+            return await client.get(f"{self.schedules_url}/{task_id}", headers=AUTH)
 
     async def amend_schedule(self, task_id: str, body: dict) -> httpx.Response:
         async with httpx.AsyncClient(timeout=30.0) as client:
-            return await client.post(f"{self.schedules_url}/amend", json={"task_id": task_id, **body}, headers=AUTH)
+            return await client.put(f"{self.schedules_url}/{task_id}", headers=AUTH, json=body)
 
     async def cancel_schedule(self, task_id: str) -> httpx.Response:
         async with httpx.AsyncClient(timeout=30.0) as client:
-            return await client.post(f"{self.schedules_url}/cancel", json={"task_id": task_id}, headers=AUTH)
+            return await client.delete(f"{self.schedules_url}/{task_id}", headers=AUTH)
 
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")

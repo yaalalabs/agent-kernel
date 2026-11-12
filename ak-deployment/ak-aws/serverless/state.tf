@@ -605,9 +605,9 @@ module "request_handler" {
   create_dynamodb_multimodal_memory_table = var.create_dynamodb_multimodal_memory_table
   dynamodb_multimodal_memory_table_arn    = local.dynamodb_multimodal_memory_table_arn
   dynamodb_multimodal_memory_table_name   = local.dynamodb_multimodal_memory_table_name
-  create_dynamodb_thread_table            = var.queue_mode ? false : var.create_dynamodb_thread_table
-  dynamodb_thread_table_arn               = var.queue_mode ? null : local.dynamodb_thread_table_arn
-  dynamodb_thread_table_name              = var.queue_mode ? null : local.dynamodb_thread_table_name
+  create_dynamodb_thread_table            = var.create_dynamodb_thread_table
+  dynamodb_thread_table_arn               = local.dynamodb_thread_table_arn
+  dynamodb_thread_table_name              = local.dynamodb_thread_table_name
   # Not nulled under queue_mode the way the thread wiring above is: an application can mount
   # ScheduleRESTRequestHandler on this Lambda to serve the management routes, and scheduling
   # requires queue_mode anyway.

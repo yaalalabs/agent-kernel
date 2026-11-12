@@ -250,6 +250,35 @@ A registered route receives the raw API Gateway event. It reads the caller with
 authorizer context), or the anonymous principal when the API has no authorizer or a webhook bypass
 let the request through. See [Identity and Access](../advanced/identity-and-access.md).
 
+### Path and query parameters
+
+A route can carry path parameters. Query parameters reach every handler as-is in `event["queryStringParameters"]`.
+
+```python
+@Lambda.register("/orders/{order_id}", method="GET")
+def get_order(event, context):
+    order_id = event["pathParameters"]["order_id"]
+    params = event.get("queryStringParameters") or {}
+    return {"order_id": order_id, "expand": params.get("expand")}
+```
+
+Declare the same template in `gateway_endpoints`, with the same parameter name:
+
+```hcl
+gateway_endpoints = [
+  { path = "orders/{order_id}", method = "GET" },
+]
+```
+
+The router does no path matching of its own. API Gateway matches the request against its resources and
+sends the matched template in `event["resource"]` and the values in `event["pathParameters"]`, and the
+router looks the template up among the registered routes. So when two templates overlap, API Gateway's
+precedence decides (a static segment beats a `{parameter}` at the same level). Avoid overlapping templates
+such as `/a/{x}/c` and `/a/b/{y}`: both match `/a/b/c`, and the containerized (FastAPI) target resolves
+that by registration order instead. Path parameters need API Gateway REST in front of the Lambda; a
+direct invoke sends no `resource`, so only static routes match there. Function URLs are not supported:
+their events carry `rawPath` and `requestContext.http.method`, which the router does not read.
+
 ## Lambda Environment Variables
 
 The Lambda router automatically reads the following environment variables to correctly map incoming API paths:
@@ -1252,6 +1281,41 @@ are unaffected: they always send an explicit `MessageDeduplicationId`, which tak
 Relevant outputs: `schedule_group_name`, `schedule_group_arn`, `scheduler_execution_role_arn`,
 `schedule_table_name`, `schedule_table_arn` (each `null` unless the matching flag is set).
 
+**Management routes.** `ScheduleRESTRequestHandler` is a FastAPI router and cannot be mounted on the
+Lambda router. Register the same routes on the request handler instead, calling `ScheduleManager`
+directly, and read the task id from the path (see [Path and query parameters](#path-and-query-parameters)):
+
+```python
+from agentkernel.aws import Lambda
+from agentkernel.schedule import ScheduleManager
+
+@Lambda.register("/schedules/{task_id}", method="GET")
+def get_schedule(event, context):
+    task_id = event["pathParameters"]["task_id"]
+    principal = Lambda.principal(event)  # the caller the API Gateway authorizer established
+    if principal.is_anonymous:
+        return 401, {"error": "Authentication required"}
+    try:
+        task = ScheduleManager.get().get_task(task_id, user_id=principal.subject)
+    except PermissionError as e:
+        return 403, {"error": str(e)}
+    return task.model_dump(mode="json") if task else (404, {"error": f"Unknown scheduled task {task_id}"})
+```
+
+```hcl
+gateway_endpoints = [
+  { path = "schedules",           method = "GET" },    # list
+  { path = "schedules/{task_id}", method = "GET" },    # read
+  { path = "schedules/{task_id}", method = "PUT" },    # amend
+  { path = "schedules/{task_id}", method = "DELETE" }, # cancel
+]
+```
+
+These are the containerized routes, path for path. They need an API Gateway authorizer: the handler
+takes the owner from `Lambda.principal(event)`; a request never names one.
+[`examples/aws-serverless/schedule-openai`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/schedule-openai)
+implements all four with ownership checks and error mapping.
+
 For the application side see the [Scheduling guide](../advanced/scheduling.md).
 
 ### Secret Resolution (SSM Parameter Store)
@@ -1292,6 +1356,37 @@ over SSM.
 For the full example see [examples/aws-serverless/openai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/openai),
 and for the application side (resolution order, caching, rotation) see the
 [Secret Resolution guide](../advanced/secrets.md).
+
+## Conversation threads
+
+[Conversation threads](../advanced/threads.md) run on Lambda in queue mode (`queue_mode = true`, REST
+modes, `message_type: complete`). Wrap `ThreadRequestHandler` in a `LambdaThreadHost` at module scope in
+the request-handler Lambda and register `GET /threads` and `GET /threads/{session_id}` (a path parameter,
+see [Path and query parameters](#path-and-query-parameters)) to its `list_threads` and `get_thread`.
+Creating the host takes over the chat route's enqueue step: it records the user message and marks the
+request, and the agent-runner Lambda records the reply.
+
+```python
+from agentkernel.aws import Lambda, LambdaThreadHost
+from agentkernel.thread import ThreadRequestHandler
+
+threads = LambdaThreadHost(ThreadRequestHandler())
+Lambda.register("/threads", method="GET")(threads.list_threads)
+Lambda.register("/threads/{session_id}", method="GET")(threads.get_thread)
+
+handler = Lambda.handler
+```
+
+- Add both routes to `gateway_endpoints`; the principal the API Gateway authorizer established scopes
+  them to the caller, and chat without one is a 401.
+- `ThreadRequestHandler()` requires an `identity` block: give the request-handler Lambda the same
+  `identity` config and credential secrets as the authorizer.
+- Set `create_dynamodb_thread_table = true`: the table is wired into both Lambdas. Give both Lambdas the
+  same `thread` block, with a shared store (`in_memory` is refused at cold start).
+
+See [Threads on AWS Lambda](../advanced/threads.md#threads-on-aws-lambda) for the rules and
+[`examples/aws-serverless/thread-openai`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/thread-openai)
+for a deployable stack.
 
 ## Messaging integrations
 
@@ -1344,7 +1439,7 @@ Lambda.register("/whatsapp/webhook", method="GET")(whatsapp.challenge)
 
 The paths are the adapters' `webhook_path` and `challenge_path`: `/slack/events`, `/teams/messages`,
 `/telegram/webhook`, and `/<platform>/webhook` for the three Meta platforms. The Lambda router strips
-`/<api_base_path>/<api_version>` and matches the rest exactly. The host turns the API Gateway event into
+`/<api_base_path>/<api_version>` and looks the rest up among the registered routes. The host turns the API Gateway event into
 the Starlette request every adapter reads, and answers with the status the platform expects: a rejected
 signature stays a 401 or 403 rather than becoming a retryable 500.
 

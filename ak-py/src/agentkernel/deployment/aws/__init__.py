@@ -22,7 +22,8 @@ _LAZY_EXPORTS = {
     # serverless (Lambda)
     "APIGatewayAuthorizer": ".serverless",
     "Lambda": ".serverless",
-    "LambdaWebhookHost": ".serverless.core.webhook_host",
+    "LambdaThreadHost": ".serverless.core.integration.thread",
+    "LambdaWebhookHost": ".serverless.core.integration.webhook",
     "ResponseHandler": ".serverless",
     "ServerlessAgentRunner": ".serverless",
     "WebsocketConnectionHandler": ".serverless",
@@ -53,7 +54,8 @@ if TYPE_CHECKING:
         WebsocketConnectionHandler,
     )
     from .serverless.core import LambdaSQSConsumer
-    from .serverless.core.webhook_host import LambdaWebhookHost
+    from .serverless.core.integration.thread import LambdaThreadHost
+    from .serverless.core.integration.webhook import LambdaWebhookHost
 
 
 def __getattr__(name: str) -> Any:
