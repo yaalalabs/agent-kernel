@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from ..core import Runner
 from ..core.config import AKConfig
+from ..core.realtime import RealtimeRunner
 from ..core.util.factory import AKConfigError, require_extra, resolve_dotted
 from .base import BaseTrace
 from .fetch import FetchedSpan, FetchedTrace, TraceQuery
@@ -134,6 +135,22 @@ class Trace(BaseTrace):
         """
         if self._instance is not None:
             return self._instance.claude()
+        return None
+
+    def openai_realtime(self) -> type[RealtimeRunner] | None:
+        """
+        Returns the configured provider's traced OpenAI realtime runner class, or None when there is none.
+        """
+        if self._instance is not None:
+            return self._instance.openai_realtime()
+        return None
+
+    def adk_realtime(self) -> type[RealtimeRunner] | None:
+        """
+        Returns the configured provider's traced ADK realtime runner class, or None when there is none.
+        """
+        if self._instance is not None:
+            return self._instance.adk_realtime()
         return None
 
     def fetch_spans(self, query: TraceQuery | None = None, **filters) -> list[FetchedSpan]:

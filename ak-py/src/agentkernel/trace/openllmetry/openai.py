@@ -1,10 +1,11 @@
 import logging
 from typing import Any
 
-from ...core import Session
+from ...core import Agent, Session
 from ...core.model import AgentReply, AgentRequest
-from ...framework.openai.openai import OpenAIRunner
-from .openllmetry import TraceloopContext
+from ...framework.openai.openai import OpenAIRealtimeRunner, OpenAIRunner
+from ..base import RealtimeCallSpan, TracedRealtimeRunner
+from .openllmetry import OpenLLMetryRealtimeCallSpan, TraceloopContext
 
 
 class OpenLLMetryOpenAIRunner(OpenAIRunner):
@@ -28,3 +29,14 @@ class OpenLLMetryOpenAIRunner(OpenAIRunner):
         with TraceloopContext(app_name="AgentKernel OpenAI", association_properties={"session_id": session.id}):
             result = await super().run(agent, session, requests)
         return result
+
+
+class OpenLLMetryOpenAIRealtimeRunner(TracedRealtimeRunner, OpenAIRealtimeRunner):
+    """
+    The OpenAI realtime runner with one OpenLLMetry span over each call, tagged with the session id as this provider's ``run()`` span is.
+    """
+
+    SPAN_NAME = "Agent Kernel OpenAI realtime"
+
+    def _start_call_span(self, session: Session, agent: Agent) -> RealtimeCallSpan:
+        return OpenLLMetryRealtimeCallSpan(self.SPAN_NAME, session.id)

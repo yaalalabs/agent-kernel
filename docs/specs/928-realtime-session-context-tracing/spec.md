@@ -116,6 +116,7 @@ class TracedRealtimeRunner(RealtimeRunner):
   3. on any exception (cancellation included): `fail(repr(error))`, `end()`, `self._call_span = None`, re-raise. The adapters close what they opened before raising (`core/realtime/runner.py:65`).
 - `_watched(callback)` returns a coroutine function that calls `self._call_span.fail(data.get("message") or "realtime session error")` for an `error` event, then awaits `callback(event_type, data)` for every event, unchanged.
 - `disconnect()`: `try: await super().disconnect() finally:` end the span once and clear it. `disconnect` may run twice (`core/realtime/runner.py:98`); the span is ended once.
+  - While `connect` is still running (`_connecting`), `disconnect` does not end the span: an adapter closes itself when its own connect fails (`framework/openai/openai.py:696`, `framework/adk/adk.py:999`), and that must not end the span before `connect` has marked it failed. The failed connect's handler fails and ends it.
 - The span therefore covers the native session, not the pool's hooks, as a `run()` span covers `runner.run` and not the post-hooks (`core/runtime.py:537-541`).
 - `BaseTrace` gets two non-abstract methods, `openai_realtime()` and `adk_realtime()`, each `-> type[RealtimeRunner] | None`, returning `None` (the `fetch_spans` precedent, `trace/base.py:71`). They return a class, because the pool builds the realtime runner with no arguments, once per call (`pipeline/realtime_pool.py:94`).
 - `Trace` (`trace/trace.py`) delegates both, returning `None` when it has no instance, like its framework methods.

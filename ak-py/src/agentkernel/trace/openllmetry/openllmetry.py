@@ -3,14 +3,19 @@ from __future__ import annotations
 import logging
 import os
 import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Any
 
+from opentelemetry import context, trace
 from traceloop.sdk import Traceloop
 
 from ...core import Runner
+from ...core.realtime import RealtimeRunner
 from ..base import BaseTrace
 from ..fetch import FetchedSpan, TraceQuery
+from ..otel import OTelRealtimeCallSpan
 
 """
 Thread-safe context variable to store association properties per request.
@@ -85,6 +90,31 @@ class TraceloopContext:
         props.update(properties)
         _association_properties.set(props)
         Traceloop.set_association_properties(props)
+
+
+class OpenLLMetryRealtimeCallSpan(OTelRealtimeCallSpan):
+    """
+    A realtime call's span, tagged through Traceloop's ``session_id`` association property as this provider's ``run()`` span is.
+    """
+
+    def __init__(self, name: str, session_id: str):
+        """
+        :param name: The span name.
+        :param session_id: The session the call belongs to.
+        """
+        super().__init__(trace.get_tracer("agentkernel.trace.openllmetry"), name, {})
+        self._session_id = session_id
+
+    @contextmanager
+    def _tagged(self) -> Iterator[None]:
+        # Traceloop attaches the association properties to the current context without handing back a token. Attaching a
+        # context first gives something to detach, so the property does not outlive the call's connect.
+        token = context.attach(context.get_current())
+        try:
+            Traceloop.set_association_properties({"session_id": self._session_id})
+            yield
+        finally:
+            context.detach(token)
 
 
 class OpenLLMetry(BaseTrace):
@@ -165,6 +195,22 @@ class OpenLLMetry(BaseTrace):
         from .claude import OpenLLMetryClaudeRunner
 
         return OpenLLMetryClaudeRunner()
+
+    def openai_realtime(self) -> type[RealtimeRunner]:
+        """
+        Returns the OpenLLMetry OpenAI realtime runner class.
+        """
+        from .openai import OpenLLMetryOpenAIRealtimeRunner
+
+        return OpenLLMetryOpenAIRealtimeRunner
+
+    def adk_realtime(self) -> type[RealtimeRunner]:
+        """
+        Returns the OpenLLMetry ADK realtime runner class.
+        """
+        from .adk import OpenLLMetryADKRealtimeRunner
+
+        return OpenLLMetryADKRealtimeRunner
 
     def fetch_spans(self, query: TraceQuery) -> list[FetchedSpan]:
         """

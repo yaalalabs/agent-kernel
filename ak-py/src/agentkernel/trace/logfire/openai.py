@@ -2,10 +2,13 @@ import logging
 from typing import Any
 
 import logfire
+from opentelemetry import trace
 
-from ...core import Session
+from ...core import Agent, Session
 from ...core.model import AgentReply, AgentRequest
-from ...framework.openai.openai import OpenAIRunner
+from ...framework.openai.openai import OpenAIRealtimeRunner, OpenAIRunner
+from ..base import RealtimeCallSpan, TracedRealtimeRunner
+from ..otel import OTelRealtimeCallSpan
 
 
 class LogfireOpenAIRunner(OpenAIRunner):
@@ -32,3 +35,14 @@ class LogfireOpenAIRunner(OpenAIRunner):
             span.set_attribute("input", result.prompt)
             span.set_attribute("output", str(result))
         return result
+
+
+class LogfireOpenAIRealtimeRunner(TracedRealtimeRunner, OpenAIRealtimeRunner):
+    """
+    The OpenAI realtime runner with one Logfire span over each call, tagged with the session id as this provider's ``run()`` span is.
+    """
+
+    SPAN_NAME = "Agent Kernel OpenAI realtime"
+
+    def _start_call_span(self, session: Session, agent: Agent) -> RealtimeCallSpan:
+        return OTelRealtimeCallSpan(trace.get_tracer("agentkernel.trace.logfire"), self.SPAN_NAME, {"session_id": session.id})
