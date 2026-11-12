@@ -116,7 +116,7 @@ Rules:
     thread. A `pre_run` 400 at this point has selected a session but not stored one — sessions are
     persisted only by `Runtime`'s `store()`, which no run reached.
 - `_events` (`handler.py:238-318`) gains an optional `chat_request: Optional[BaseChatRequest]`:
-  1. Build a `StreamedReply(run_input.thread_id)` and `add()` every chunk in the existing loop,
+  1. When `chat_request` is set, build a `StreamedReply(run_input.thread_id)` and `add()` every chunk in the existing loop,
      including the error, `RunPaused` and unmapped ones it `continue`s past (`handler.py:280-293`).
   2. The existing early returns on an exception (`:294-297`) and on an error chunk (`:299-301`) stay
      where they are, so neither path records.
@@ -148,7 +148,7 @@ Rules:
 #827 leaves `_process_agui` byte-identical to `develop` (`agent_runner.py:87-145` develop,
 #827 `:76-134`). Changes:
 
-1. Build `reply = StreamedReply(body.session_id)` and `reply.add(chunk)` for every chunk of
+1. For a message carrying `ATTR_THREAD` only, build `reply = StreamedReply(body.session_id)` and `reply.add(chunk)` for every chunk of
    `handler.run_stream_sync(...)`, before the chunk is serialised (the loop at develop `:126-133`).
 2. After the terminal chunk is sent (develop `:141-143`), call
    `self._record_thread_reply(message, body, 202 if reply.paused else 200, reply.result())`.

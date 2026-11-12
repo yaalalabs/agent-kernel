@@ -640,6 +640,13 @@ class TestThreadRecording:
             assert events(client.post("/agui/assistant", headers=AUTH, json=body())) == recording
         assert not InMemoryThreadStore._threads
 
+    def test_without_a_thread_block_no_reply_is_gathered(self, monkeypatch, thread_store):
+        gathered = []
+        monkeypatch.setattr("agentkernel.integration.agui.handler.StreamedReply", lambda *a: gathered.append(a))
+        with serving(monkeypatch, [ScriptedAgent("assistant", TEXT_SCRIPT)]) as (client, _):
+            assert types_of(client.post("/agui/assistant", headers=AUTH, json=body()))[-1] == "RUN_FINISHED"
+        assert gathered == []
+
     def test_a_halted_run_records_no_reply(self, monkeypatch, thread_store):
         agent = ScriptedAgent("assistant", TEXT_SCRIPT)
         agent.pre_hooks.append(HaltingPreHook())

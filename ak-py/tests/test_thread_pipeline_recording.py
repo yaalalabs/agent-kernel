@@ -540,6 +540,18 @@ class TestAGUIRunnerRecording:
 
         assert [m.role for m in manager.get_messages("s1").messages] == ["user"]
 
+    def test_an_unmarked_message_gathers_no_reply(self, monkeypatch):
+        gathered = MagicMock()
+        monkeypatch.setattr("agentkernel.integration.thread.recorder.StreamedReply", gathered)
+        transport = InMemoryTransport()
+        sent = MagicMock()
+        monkeypatch.setattr(transport, "send", sent)
+
+        self._runner([StreamChunk(delta="hello"), StreamChunk(done=True)], transport).process(_agui_message(marked=False))
+
+        gathered.assert_not_called()
+        assert sent.call_count == 2
+
     def test_a_runner_without_thread_config_warns_and_drops_the_reply(self, monkeypatch, caplog):
         monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
         AKConfig._reset()

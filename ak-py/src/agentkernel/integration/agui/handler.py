@@ -292,10 +292,11 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
 
         agent_name = agent.name
         error: str | None = None
-        reply = StreamedReply(run_input.thread_id)
+        reply = StreamedReply(run_input.thread_id) if chat_request is not None else None
         try:
             async for chunk in handler.run_stream_async(requests, acting_user_id=user_id):
-                reply.add(chunk)
+                if reply is not None:
+                    reply.add(chunk)
                 if chunk.error:
                     error = chunk.error
                     continue
@@ -318,7 +319,7 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
             yield encoder.encode(RunErrorEvent(message=error))
             return
 
-        if self._recorder is not None and chat_request is not None:
+        if self._recorder is not None and chat_request is not None and reply is not None:
             await asyncio.to_thread(self._recorder.post_run, chat_request, reply)
 
         # Before the terminal event, so a client resuming from the snapshot has it in hand.

@@ -96,7 +96,7 @@ export function Approval({
           <button disabled={busy} onClick={() => decide({ status: "cancelled" }, "Cancelled", "Cancelled — nobody decided, and the model is told so.")}>Cancel</button>
         </div>
       )}
-      {!settled && staged && <div className="staged">{staged} — waiting for the other answer; nothing has been sent</div>}
+      {!settled && staged && <div className="staged">{staged}{!busy && " — waiting for the other answer; nothing has been sent"}</div>}
     </div>
   );
 }
