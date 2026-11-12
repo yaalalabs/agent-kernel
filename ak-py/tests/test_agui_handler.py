@@ -24,19 +24,19 @@ from contextlib import contextmanager
 from copy import deepcopy
 
 import pytest
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
-from agentkernel.auth import Authoriser
-from agentkernel.auth.handler import AuthValidator, ValidationResult
 from agentkernel.core.base import Agent, Runner, Session
 from agentkernel.core.config import _AGUIConfig, _GuardrailConfig
 from agentkernel.core.event import MessageEnd, MessageStart, TextDelta, ToolCallStart
 from agentkernel.core.hooks import PreHook
-from agentkernel.core.model import AgentReplyText
+from agentkernel.core.model import AgentReplyText, Principal
 from agentkernel.core.runtime import Runtime
 from agentkernel.core.session.in_memory import InMemorySessionStore
 from agentkernel.core.tool import ToolContext
+from agentkernel.core.util.factory import AKConfigError
+from agentkernel.identity import AuthenticationError, IdentityProvider, IdentityProviderFactory, RequestAuthenticator
 from agentkernel.integration.agui import AGUIRequestHandler
 from agentkernel.integration.agui.state import AGUI_STATE_KEY, AGUIState
 
@@ -44,11 +44,42 @@ GOOD_TOKEN = "good-token"
 AUTH = {"Authorization": f"Bearer {GOOD_TOKEN}"}
 
 
-class StaticAuthoriser(Authoriser):
-    """Resolves exactly one token, so 401 has a live path in every test below."""
+class _TestProvider(IdentityProvider):
+    """Accepts exactly one token, so 401 has a live path in every test below."""
 
-    def authorise(self, token: str) -> str | None:
-        return "u1" if token == GOOD_TOKEN else None
+    name = "test"
+
+    async def authenticate(self, credential, context=None):
+        if credential == GOOD_TOKEN:
+            return Principal(subject="u1", provider=self.name, namespace="test", groups=["ops"])
+        raise AuthenticationError("nope")
+
+
+def _with_provider(monkeypatch, provider=None):
+    """Stand the configured identity provider in: the handler requires one at construction."""
+    monkeypatch.setattr(IdentityProviderFactory, "get", classmethod(lambda cls: provider))
+    return provider
+
+
+class PrincipalRecordingRunner(Runner):
+    """Streams one message and records the principal Runtime published for the run."""
+
+    def __init__(self):
+        super().__init__("recording")
+        self.seen = []
+
+    @property
+    def supports_streaming(self) -> bool:
+        return True
+
+    async def run(self, agent, session, requests):
+        return AgentReplyText(response="unused")
+
+    async def stream(self, agent, session, requests):
+        self.seen.append(session.get_principal())
+        yield MessageStart(message_id="m1")
+        yield TextDelta(message_id="m1", content="hi")
+        yield MessageEnd(message_id="m1")
 
 
 class ScriptedRunner(Runner):
@@ -123,6 +154,7 @@ def _install_cfg(monkeypatch, agui_cfg):
 
     class _Cfg:
         agui = agui_cfg
+        identity = None
         multimodal = None
         sandbox = None
         guardrail = _GuardrailConfig()
@@ -134,9 +166,10 @@ def _install_cfg(monkeypatch, agui_cfg):
 
 
 @contextmanager
-def serving(monkeypatch, agents, agui_cfg=None, authoriser=None, store=None):
-    """Mount the AG-UI router over a runtime holding the given agents."""
+def serving(monkeypatch, agents, agui_cfg=None, store=None):
+    """Mount the AG-UI router over a runtime holding the given agents, behind the identity dependency."""
     _install_cfg(monkeypatch, agui_cfg if agui_cfg is not None else _AGUIConfig())
+    provider = _with_provider(monkeypatch, _TestProvider())
     Runtime._system_pre_hooks = []
     Runtime._system_post_hooks = []
     runtime = Runtime(store if store is not None else InMemorySessionStore())
@@ -145,7 +178,7 @@ def serving(monkeypatch, agents, agui_cfg=None, authoriser=None, store=None):
     try:
         with runtime:
             app = FastAPI()
-            app.include_router(AGUIRequestHandler(authoriser=authoriser or StaticAuthoriser()).get_router())
+            app.include_router(AGUIRequestHandler().get_router(), dependencies=[Depends(RequestAuthenticator(provider).dependency())])
             yield TestClient(app), runtime
     finally:
         Runtime._system_pre_hooks = None
@@ -237,31 +270,34 @@ class TestAuthorization:
             response = client.post("/agui/assistant", headers={"Authorization": "Bearer nope"}, json=body())
             assert response.status_code == 401
 
+    def test_the_authenticated_principal_reaches_the_run(self, monkeypatch):
+        """What the token resolved to is what Runtime publishes for the run (#603)."""
+        runner = PrincipalRecordingRunner()
+        agent = ScriptedAgent("recorder")
+        agent._runner = runner
+        with serving(monkeypatch, [agent]) as (client, _):
+            assert client.post("/agui/recorder", headers=AUTH, json=body()).status_code == 200
+
+        [principal] = runner.seen
+        assert (principal.subject, principal.provider, principal.groups) == ("u1", "test", ["ops"])
+
 
 class TestConstructorGuards:
 
-    def test_refuses_to_build_without_an_authoriser(self, monkeypatch):
-        """The inherited _resolve_user returns None when unconfigured, which leaves routes open —
-        right for thread reads, wrong for a surface that runs agents on a caller's behalf."""
+    def test_refuses_to_build_without_an_identity_block(self, monkeypatch):
+        """A surface that runs agents on a caller's behalf is never served anonymously: with nobody
+        able to authenticate, mounting it is a configuration error, not an open route."""
         _install_cfg(monkeypatch, _AGUIConfig())
-        with pytest.raises(ValueError, match="never served anonymously"):
+        _with_provider(monkeypatch, None)
+        with pytest.raises(AKConfigError, match="requires an identity block"):
             AGUIRequestHandler()
-
-    def test_accepts_an_auth_validator_instead(self, monkeypatch):
-        class _Validator(AuthValidator):
-            def validate(self, token, context=None):
-                return ValidationResult(is_valid=token == GOOD_TOKEN, subject="u1")
-
-        _install_cfg(monkeypatch, _AGUIConfig())
-        handler = AGUIRequestHandler(auth_validator=_Validator())
-        assert handler._authoriser.authorise(GOOD_TOKEN) == "u1"
-        assert handler._authoriser.authorise("nope") is None
 
     def test_a_default_agent_the_allowlist_hides_is_a_startup_error(self, monkeypatch):
         """A startup error, not a per-request one: the route would exist but always 404."""
         _install_cfg(monkeypatch, _AGUIConfig(agents=["exposed"], default_agent="hidden"))
+        _with_provider(monkeypatch, _TestProvider())
         with pytest.raises(ValueError, match="agui.default_agent"):
-            AGUIRequestHandler(authoriser=StaticAuthoriser())
+            AGUIRequestHandler()
 
 
 class TestAgentResolution:
@@ -575,6 +611,7 @@ class TestOptionalDependency:
             return real_import(name, *args, **kwargs)
 
         _install_cfg(monkeypatch, _AGUIConfig())
+        _with_provider(monkeypatch, _TestProvider())
         monkeypatch.setattr(builtins, "__import__", _no_ag_ui)
         with pytest.raises(ValueError, match="agui"):
-            AGUIRequestHandler(authoriser=StaticAuthoriser())
+            AGUIRequestHandler()

@@ -5,15 +5,21 @@ from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import ConfigDict
 
-from ..auth.authoriser import Authoriser
 from ..core import Config
 from ..core.chat_service import ChatService
-from ..core.model import USER_ID_NOT_A_FIELD, BaseChatRequest, BaseRunRequest
+from ..core.model import USER_ID_NOT_A_FIELD, BaseChatRequest, BaseRunRequest, Principal
 from ..core.runtime import Runtime
+from ..core.util.factory import AKConfigError
+from ..identity.provider.factory import IdentityProviderFactory
+from ..identity.provider.request import BEARER_CHALLENGE
 
 
 class RESTRequestHandler(ABC):
     requires_pipeline: bool = False
+    # True for a handler whose routes verify their own callers, such as a messaging platform's signed
+    # webhook: RESTAPI mounts its router without the identity dependency, so a platform credential in
+    # ``Authorization`` (a Teams Bot Framework token) reaches the handler's check instead of a 401.
+    authenticates_itself: bool = False
 
     @abstractmethod
     def get_router(self) -> APIRouter:
@@ -37,39 +43,37 @@ class RESTRequestHandler(ABC):
 
 class AuthorisedRESTRequestHandler(RESTRequestHandler):
     """
-    Base for resource-management route handlers protected by an optional, pluggable
-    Authoriser (e.g. conversation threads, scheduled tasks). Owns the Bearer-token
-    parsing and 401 mapping; when no Authoriser is configured, _resolve_user returns
-    None and the handler's routes remain open.
+    Base for route handlers that serve authenticated callers only: the ones that run an agent on
+    a caller's behalf or manage records a caller owns (conversation threads, scheduled tasks,
+    AG-UI). The identity dependency ``RESTAPI`` installs on every router has already turned the
+    request's credential into ``request.state.principal`` (spec #603, section 8.2); this base
+    reads it back and refuses the anonymous principal, so the routes never have to parse a
+    header. Because the routes are meaningless without someone to authenticate, construction
+    requires an ``identity`` block.
     """
 
-    def __init__(self, authoriser: Authoriser | None = None):
+    def __init__(self):
         """
         Initializes an AuthorisedRESTRequestHandler instance.
-        :param authoriser: Optional user-supplied Authoriser protecting the handler's routes.
+        :raises AKConfigError: If no identity provider is configured. With nobody able to
+            authenticate, mounting the routes is a configuration error rather than an open surface.
         """
-        self._authoriser = authoriser
+        if IdentityProviderFactory.get() is None:
+            raise AKConfigError(f"{type(self).__name__} requires an identity block: it serves authenticated callers only")
 
-    def _resolve_user(self, request: Request) -> str | None:
+    @staticmethod
+    def _resolve_user(request: Request) -> Principal:
         """
-        Resolve the caller's user_id via the configured Authoriser.
+        Resolve the caller: the principal the identity dependency put on the request.
         :param request: The incoming FastAPI request.
-        :return: The resolved user_id, or None when no Authoriser is configured.
-        :raises HTTPException: 401 when a token is missing or rejected.
+        :return: The authenticated principal.
+        :raises HTTPException: 401 when the request carries no authenticated principal (no
+            credential, or a router mounted without the identity dependency).
         """
-        if self._authoriser is None:
-            return None
-        auth_header = request.headers.get("authorization")
-        if auth_header is None:
-            raise HTTPException(status_code=401, detail="Missing authorization header")
-        scheme, _, token = auth_header.partition(" ")
-        token = token.strip()
-        if scheme.lower() != "bearer" or not token:
-            raise HTTPException(status_code=401, detail="Invalid authorization header")
-        user_id = self._authoriser.authorise(token)
-        if user_id is None:
-            raise HTTPException(status_code=401, detail="Unauthorized")
-        return user_id
+        principal = getattr(request.state, "principal", None)
+        if principal is None or principal.is_anonymous:
+            raise HTTPException(status_code=401, detail="Authentication required", headers=BEARER_CHALLENGE)
+        return principal
 
 
 class AgentRESTRequestHandler(RESTRequestHandler):
@@ -102,9 +106,9 @@ class AgentRESTRequestHandler(RESTRequestHandler):
         return {"agents": list(Runtime.current().agents().keys())}
 
     async def run(self, body: BaseRunRequest, request: Request):
-        # The surface decides who is calling: a principal the client put in the body is overwritten,
-        # never read. Nothing sets request.state.principal until the identity dependency lands, so
-        # every run is anonymous in the meantime.
+        # The surface decides who is calling: a principal the client put in the body is overwritten
+        # with the one the identity dependency RESTAPI installs put on the request (the anonymous
+        # principal without an identity block). The default covers a router mounted on a bare app.
         body.principal = getattr(request.state, "principal", None)
         if Config.get().execution.is_sse:
             try:

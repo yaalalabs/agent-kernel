@@ -8,12 +8,11 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from ...api.handler import AuthorisedRESTRequestHandler
-from ...auth.authoriser import Authoriser, AuthValidatorAuthoriser
-from ...auth.handler import AuthValidator
 from ...core.base import Agent
 from ...core.chat_service import AgentHandler, ChatService
 from ...core.config import AKConfig
 from ...core.event import RunPaused
+from ...core.model import Principal
 from ...core.runtime import Runtime
 from ...core.service import AgentService
 from .mapping import AGUIMapper
@@ -24,12 +23,13 @@ from .state import AGUIState
 class AGUIRequestHandler(AuthorisedRESTRequestHandler):
     """AG-UI routes: GET /agents, POST /{agent_name}, and POST / when `agui.default_agent` is set."""
 
-    def __init__(self, authoriser: Authoriser | None = None, auth_validator: AuthValidator | None = None):
+    def __init__(self):
         """
-        :param authoriser: Authoriser for the AG-UI routes.
-        :param auth_validator: Wrapped as an Authoriser when `authoriser` is omitted.
-        :raises ValueError: If the `agui` extra is missing, no authoriser or validator is given,
-                            or `agui.default_agent` is not in `agui.agents`.
+        :raises ValueError: If the `agui` extra is missing, or `agui.default_agent` is not in `agui.agents`.
+        :raises AKConfigError: If no identity provider is configured (the ``AuthorisedRESTRequestHandler``
+            rule). The AG-UI routes run agents on a caller's behalf, so they are never served
+            anonymously; with nobody able to authenticate, mounting them is a configuration error
+            rather than an open surface.
         """
         try:
             import ag_ui.core  # noqa: F401
@@ -39,15 +39,7 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
                 "'agui' extra. Install it with: uv add \"agentkernel[agui]\""
             ) from e
 
-        if authoriser is None:
-            if auth_validator is None:
-                raise ValueError(
-                    "AGUIRequestHandler requires an Authoriser or an AuthValidator. The AG-UI routes "
-                    "run agents on a caller's behalf, so they are never served anonymously."
-                )
-            authoriser = AuthValidatorAuthoriser(auth_validator)
-
-        super().__init__(authoriser)
+        super().__init__()
         self._log = logging.getLogger("ak.integration.agui")
         self._chat_service = ChatService()
 
@@ -176,7 +168,7 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
 
         return router
 
-    async def _resolve_run_inputs(self, agent_name: str, request: Request) -> tuple[Agent, Any, list]:
+    async def _resolve_run_inputs(self, agent_name: str, request: Request) -> tuple[Principal, Agent, Any, list]:
         """Everything that can still be reported as an HTTP status, before any state is written.
 
         Shared verbatim with the queue-mode handler (spec #710 §7) so the two execution models
@@ -185,13 +177,11 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
 
         :param agent_name: Agent to run.
         :param request: Incoming request carrying the RunAgentInput body.
-        :return: The agent, parsed run input, and mapped requests.
-        :raises HTTPException: 401 from the configured authoriser, 400 for an unparsable or
+        :return: The caller's principal, the agent, the parsed run input, and the mapped requests.
+        :raises HTTPException: 401 for a request nothing authenticated, 400 for an unparsable or
             unusable body, 404/400 from agent resolution.
         """
-        # Kept for its 401: the resolved user is not forwarded until the identity provider puts a
-        # principal on the run (plan iteration 7).
-        self._resolve_user(request)
+        principal = self._resolve_user(request)
         agent = self._resolve_agent(agent_name)
 
         try:
@@ -202,7 +192,7 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
             raise HTTPException(status_code=400, detail="Request body must be a RunAgentInput object")
 
         run_input = AGUIRunInput.parse(body)
-        return agent, run_input, AGUIRunInput.to_requests(run_input)
+        return principal, agent, run_input, AGUIRunInput.to_requests(run_input)
 
     async def _run(self, agent_name: str, request: Request) -> StreamingResponse:
         """Validate a run request and hand back the event stream.
@@ -221,7 +211,7 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
         """
         from ag_ui.encoder import EventEncoder
 
-        agent, run_input, requests = await self._resolve_run_inputs(agent_name, request)
+        principal, agent, run_input, requests = await self._resolve_run_inputs(agent_name, request)
 
         handler = self._chat_service.prepare_agent_handler(run_input.thread_id, agent_name)
         session = handler.service.session if handler.service is not None else None
@@ -236,7 +226,7 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
 
         state_before = AGUIState.snapshot_state(session)
         encoder = EventEncoder(accept=request.headers.get("accept"))  # type: ignore[arg-type]
-        stream = self._events(encoder, handler, requests, run_input, state_before)
+        stream = self._events(encoder, handler, requests, run_input, state_before, principal)
         return StreamingResponse(stream, media_type=encoder.get_content_type())
 
     async def _events(
@@ -246,6 +236,7 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
         requests: list,
         run_input: Any,
         state_before: dict | None,
+        principal: Principal,
     ) -> AsyncGenerator[str, None]:
         """Yield the run's encoded AG-UI events.
 
@@ -262,6 +253,7 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
         :param requests: The mapped AgentRequest list to run.
         :param run_input: The parsed RunAgentInput, for thread and run ids.
         :param state_before: Deep copy of the AG-UI state taken before the run.
+        :param principal: The caller, published by Runtime for the run.
         :return: An async generator of encoded SSE payloads.
         """
         from ag_ui.core import RunErrorEvent, RunFinishedEvent, RunStartedEvent, StateSnapshotEvent
@@ -279,9 +271,7 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
         agent_name = agent.name
         error: str | None = None
         try:
-            # The principal reaches this surface with the identity provider; until then the run is
-            # anonymous.
-            async for chunk in handler.run_stream_async(requests):
+            async for chunk in handler.run_stream_async(requests, principal=principal):
                 if chunk.error:
                     error = chunk.error
                     continue

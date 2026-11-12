@@ -1,31 +1,36 @@
 """Minimal WebSocket client for the README's async + delta walkthrough.
 
-Connects to the gateway, authenticates with a demo JWT accepted by app_ws_gateway.py's
-validator (signature verification is off there, so any signing key works), sends one chat
-frame, and prints every frame until the reply completes: CHAT_QUEUED acknowledges the enqueue,
-then STREAM_CHUNK frames arrive (the one carrying ``done: true`` is the last) with message_type
-delta, or a single CHAT_RESPONSE frame with the default (complete).
+Connects to the gateway, authenticates with the demo credential the static identity provider in
+config.yaml accepts (the DEMO_AUTH_TOKEN value the demo-credentials Secret holds; export the same
+value here), sends one chat frame, and prints every frame until the reply completes: CHAT_QUEUED
+acknowledges the enqueue, then STREAM_CHUNK frames arrive (the one carrying ``done: true`` is the
+last) with message_type delta, or a single CHAT_RESPONSE frame with the default (complete).
 
-    uv run python ws_client.py [ws://localhost:18001/ws] [prompt]
+    DEMO_AUTH_TOKEN=... uv run python ws_client.py [ws://localhost:18001/ws] [prompt]
 """
 
 import asyncio
 import json
+import os
 import sys
+from urllib.parse import quote
 
-import jwt
 import websockets
 
 
 def demo_token() -> str:
-    return jwt.encode({"userId": "user-1", "email": "test1@test.com"}, "demo-secret", algorithm="HS256")
+    token = os.environ.get("DEMO_AUTH_TOKEN")
+    if not token:
+        sys.exit("Set DEMO_AUTH_TOKEN to the value the demo-credentials Secret holds (see the README)")
+    return token
 
 
 async def main() -> None:
     url = sys.argv[1] if len(sys.argv) > 1 else "ws://localhost:18001/ws"
     prompt = sys.argv[2] if len(sys.argv) > 2 else "Who is Napoleon? One sentence."
 
-    async with websockets.connect(f"{url}?token={demo_token()}") as websocket:
+    # Percent-encoded: a credential holding "+", "&" or "#" would otherwise change or truncate the query.
+    async with websockets.connect(f"{url}?token={quote(demo_token(), safe='')}") as websocket:
         await websocket.send(
             json.dumps({"route": "chat", "prompt": prompt, "session_id": "ws-demo-1", "agent": "triage"})
         )

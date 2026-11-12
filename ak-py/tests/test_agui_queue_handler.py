@@ -15,12 +15,12 @@ from unittest.mock import patch
 import pytest
 from fastapi import HTTPException
 
-from agentkernel.auth.authoriser import Authoriser
 from agentkernel.core.base import Session
 from agentkernel.core.config import AKConfig
 from agentkernel.core.event import MessageEnd, MessageStart, PausedInterruption, RunPaused, TextDelta
-from agentkernel.core.model import AgentRequestAttachmentRef, AgentRequestImage, ExecutionMode, ReplyMessageType, StreamChunk
+from agentkernel.core.model import AgentRequestAttachmentRef, AgentRequestImage, ExecutionMode, Principal, ReplyMessageType, StreamChunk
 from agentkernel.core.util.factory import AKConfigError
+from agentkernel.identity import IdentityProvider, IdentityProviderFactory
 from agentkernel.integration.agui.queue_handler import AGUIPipelineRequestHandler
 from agentkernel.integration.agui.run_input import AGUIRunEnvelope, AGUIRunRequest
 from agentkernel.integration.agui.state import AGUIState
@@ -64,9 +64,14 @@ class _StubRequest:
     headers: dict = {}
 
 
-class _Auth(Authoriser):
-    def authorise(self, token):
-        return "u1"
+PRINCIPAL = Principal(subject="u1", provider="test", namespace="test")
+
+
+class _Provider(IdentityProvider):
+    name = "test"
+
+    async def authenticate(self, credential, context=None):
+        return PRINCIPAL
 
 
 class _FakeService:
@@ -411,7 +416,7 @@ def _edge_handler(monkeypatch, requests=None, store=None):
     agent = type("_Agent", (), {"name": "planner"})()
 
     async def _resolved(agent_name, request):
-        return agent, _RunInputStub(), list(requests or [])
+        return PRINCIPAL, agent, _RunInputStub(), list(requests or [])
 
     monkeypatch.setattr(handler, "_resolve_run_inputs", _resolved)
     monkeypatch.setattr(handler, "_warn_if_unreadable", lambda *a, **k: None)
@@ -539,6 +544,17 @@ class TestAPauseIsTheRunsTerminalOutcome:
         assert types == ["RUN_STARTED", "TEXT_MESSAGE_CONTENT", "RUN_FINISHED"]
 
     @pytest.mark.asyncio
+    async def test_the_principal_rides_the_queued_request(self, monkeypatch):
+        """The runner publishes it for the run, as the REST route's body does (#603)."""
+        store = self._store_yielding(self._chunk(TextDelta(message_id="m1", content="hi")), {"done": True})
+        handler = _edge_handler(monkeypatch, store=store)
+
+        await _drain_events(await handler._run("planner", _StubRequest()))
+
+        [request] = handler._producer.requests
+        assert request.principal == PRINCIPAL
+
+    @pytest.mark.asyncio
     async def test_a_run_that_did_not_pause_still_finishes_without_an_outcome(self, monkeypatch):
         store = self._store_yielding(self._chunk(TextDelta(message_id="m1", content="hi")), {"done": True})
         handler = _edge_handler(monkeypatch, store=store)
@@ -564,8 +580,11 @@ class TestPreconditions:
             def resolve_type():
                 return transport
 
-        with patch.multiple("agentkernel.integration.agui.queue_handler", ResponseStoreFactory=_Factory, QueueTransportFactory=_Transport):
-            return AGUIPipelineRequestHandler(authoriser=_Auth())
+        with (
+            patch.multiple("agentkernel.integration.agui.queue_handler", ResponseStoreFactory=_Factory, QueueTransportFactory=_Transport),
+            patch.object(IdentityProviderFactory, "get", classmethod(lambda cls: _Provider())),
+        ):
+            return AGUIPipelineRequestHandler()
 
     def test_a_store_that_cannot_stream_chunks_is_refused(self):
         store = DynamoDBResponseStore.__new__(DynamoDBResponseStore)

@@ -6,7 +6,7 @@ from typing import Any
 
 from ......core.chat_service import ChatService
 from ......core.config import AKConfig
-from ......core.model import BaseRequest, ExecutionMode
+from ......core.model import BaseRequest, ExecutionMode, Principal
 from ......core.util.factory import AKConfigError
 from ....core.response_store import ResponseStoreFactory
 from ....core.sqs_handler import SQSHandler
@@ -82,14 +82,35 @@ class DefaultEndpointsHandler:
 
     def _parse_body(self, event: dict[str, Any]) -> BaseRequest:
         """
-        Parse request body from API Gateway event.
+        Parse request body from API Gateway event and assign the caller's principal to it.
+
+        The principal is the one the API Gateway authorizer serialized into the request context
+        (``requestContext.authorizer.principal``); without an authorizer context the request runs
+        anonymously. A ``principal`` the client put in the body was dropped by ``from_payload``.
 
         :param event: API Gateway event
-        :return: Parsed BaseRequest object
+        :return: Parsed BaseRequest object, its body carrying the principal
         """
         body = event.get("body")
         body_dict = json.loads(body) if isinstance(body, str) else (body or {})
-        return BaseRequest.from_payload(body_dict)
+        request = BaseRequest.from_payload(body_dict)
+        if request.body is not None:
+            request.body.principal = self.principal_from_event(event)
+        return request
+
+    @staticmethod
+    def principal_from_event(event: dict[str, Any]) -> Principal:
+        """
+        Rebuild the principal the authorizer established for this request.
+
+        ``_parse_body`` assigns it to the chat body; ``Lambda.principal`` exposes it to custom routes.
+
+        :param event: API Gateway event
+        :return: The principal from ``requestContext.authorizer.principal``, or the anonymous principal when absent
+        """
+        authorizer = (event.get("requestContext") or {}).get("authorizer") or {}
+        raw = authorizer.get("principal")
+        return Principal.model_validate_json(raw) if raw else Principal.anonymous()
 
     def _build_failure_body(self, request_id: str | None = None, status: str | None = None, message: str | None = None) -> dict[str, Any]:
         """

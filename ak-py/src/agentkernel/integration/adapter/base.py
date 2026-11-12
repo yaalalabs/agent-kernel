@@ -307,12 +307,16 @@ class StatefulEdgeAdapter(ABC):
 
         self._producer = IntegrationProducer()
 
-    def _enqueue(self, request: AgentRequestUnion) -> InboundRequest:
+    def _enqueue(self, request: AgentRequestUnion, user_id: str | None = None, namespace: str | None = None) -> InboundRequest:
         """Build the normalized inbound request for one platform message.
 
         The caller hands it to :meth:`IntegrationProducer.enqueue`, which stamps the integration
         and reply-context attributes, so every integration shares one producer.
 
+        :param request: The request the participant made.
+        :param user_id: The participant the edge asserts made it, which the producer turns into a
+            ``realtime:`` principal; None when the edge cannot name one (#603).
+        :param namespace: The scope ``user_id`` is unique within, such as the edge's API key id.
         :return: The request, carrying this edge's session and (if set) its configured agent.
         """
         return InboundRequest(
@@ -320,6 +324,8 @@ class StatefulEdgeAdapter(ABC):
             request_id=str(uuid.uuid4()),
             requests=[request],
             agent=self.agent,
+            user_id=user_id,
+            namespace=namespace,
             reply_context={"session_id": self.session_id},
         )
 

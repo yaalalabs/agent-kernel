@@ -108,14 +108,16 @@ output-queue consumer). The routes run **in the REST service**, not through the 
 the shared DynamoDB task store and call Scheduler directly, so a listing or cancellation needs no
 round trip.
 
-The routes are **open** in this example. To protect them, pass an `Authoriser` to the handler:
-
-```python
-ECSIOHandler.run(handlers=[ScheduleRESTRequestHandler(authoriser=MyAuthoriser())])
-```
-
-With one configured, listings are forced to the resolved user and touching another user's schedule
-is a 403.
+Who is calling comes from the `identity` block in `config.yaml`, which names the identity provider
+the dependency on every route authenticates the bearer token with. A task belongs to the principal
+whose request created it, so the management routes serve authenticated callers only (401 without a
+token), listings are always the caller's own, and touching another user's schedule is a 403. The
+block here selects the `static` provider with one credential mapped to the principal `demo-user`;
+the credential's value is the `demo_auth_token` Terraform variable, passed to the REST service as the
+`DEMO_AUTH_TOKEN` environment variable the secret capability resolves at startup. To validate real
+tokens, swap the provider for `oidc` (Auth0, Keycloak, Okta or any other OIDC issuer), `cognito`,
+`entra` or `firebase`; [`examples/aws-serverless/openai-auth`](../../aws-serverless/openai-auth/README.md)
+shows an Auth0 block.
 
 ## API Gateway routes must be declared
 
@@ -161,28 +163,30 @@ cd deploy
 ./deploy.sh                # packages both images, terraform init + apply, waits for ECS stability
 ```
 
-`deploy.sh` prompts for `openai_api_key`, `vpc_id` and `private_subnet_ids` unless you add them to
-`terraform.tfvars` or pass them as `-var` flags.
+`deploy.sh` prompts for `openai_api_key`, `demo_auth_token`, `vpc_id` and `private_subnet_ids` unless
+you add them to `terraform.tfvars` or pass them as `-var` flags.
 
 Take the `agent_invoke_url` output; everything below assumes:
 
 ```bash
 export AK_TEST_ENDPOINT="$(terraform output -raw agent_invoke_url)"
+export AK_TEST_TOKEN=<the demo_auth_token value>
+AUTH="Authorization: Bearer $AK_TEST_TOKEN"
 SCHEDULES="${AK_TEST_ENDPOINT%/chat}/schedules"
 ```
 
 ## Try it
 
-Every scheduling request must carry a `user_id` — it is the owner the task is stored under and the
-identity later reads and changes are checked against.
+Every scheduling request must carry the bearer token: the principal it authenticates is the owner the
+task is stored under and the identity later reads and changes are checked against.
 
 **Defer a chat to a one-time moment.** `at` is a local wall-clock timestamp read in `timezone`, and
 must be in the future:
 
 ```bash
 curl -i -X POST "$AK_TEST_ENDPOINT" \
-  -H "Content-Type: application/json" \
-  -d '{"prompt": "Send me the daily summary", "session_id": "ses-1", "user_id": "alice",
+  -H "$AUTH" -H "Content-Type: application/json" \
+  -d '{"prompt": "Send me the daily summary", "session_id": "ses-1",
        "schedule": {"at": "2035-01-31T09:00:00", "timezone": "Asia/Colombo"}}'
 ```
 
@@ -201,26 +205,26 @@ occurrence in its own fresh session:
 
 ```bash
 curl -X POST "$AK_TEST_ENDPOINT" \
-  -H "Content-Type: application/json" \
-  -d '{"prompt": "Send the weekly report", "session_id": "ses-2", "user_id": "alice",
+  -H "$AUTH" -H "Content-Type: application/json" \
+  -d '{"prompt": "Send the weekly report", "session_id": "ses-2",
        "schedule": {"cron": "0 9 * * 1", "timezone": "Asia/Colombo", "session_mode": "new"}}'
 ```
 
 **List, read, amend, cancel:**
 
 ```bash
-curl "$SCHEDULES?user_id=alice"
-curl "$SCHEDULES/<task_id>"
+curl "$SCHEDULES" -H "$AUTH"               # always the caller's own tasks
+curl "$SCHEDULES/<task_id>" -H "$AUTH"
 
-# PUT replaces the full amendable state rather than merging — send every value, changed or not.
+# PUT replaces the full amendable state rather than merging: send every value, changed or not.
 # `status` is the paused/active switch: a paused schedule keeps its record but stops firing.
 curl -X PUT "$SCHEDULES/<task_id>" \
-  -H "Content-Type: application/json" \
+  -H "$AUTH" -H "Content-Type: application/json" \
   -d '{"prompt": "Send the weekly report", "cron": "0 8 * * 1", "timezone": "Asia/Colombo",
        "session_mode": "new", "status": "paused"}'
 
 # The record survives as the audit trail, so this returns the task with "status": "cancelled".
-curl -X DELETE "$SCHEDULES/<task_id>"
+curl -X DELETE "$SCHEDULES/<task_id>" -H "$AUTH"
 ```
 
 **Let the agent schedule the work itself.** This runs now; the agent calls `create_schedule` and
@@ -228,9 +232,9 @@ replies with the task id, which then shows up in the listing:
 
 ```bash
 curl -X POST "$AK_TEST_ENDPOINT" \
-  -H "Content-Type: application/json" \
+  -H "$AUTH" -H "Content-Type: application/json" \
   -d '{"prompt": "Every weekday at 8am in Asia/Colombo, remind me to review the overnight alerts.",
-       "session_id": "ses-3", "user_id": "alice"}'
+       "session_id": "ses-3"}'
 ```
 
 The five tools (`create_schedule`, `list_schedules`, `get_schedule`, `update_schedule`,

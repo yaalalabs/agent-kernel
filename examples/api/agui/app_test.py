@@ -18,6 +18,7 @@ pytestmark = pytest.mark.asyncio(loop_scope="session")
 # being tested.
 PNG_1X1 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg=="
 
+# The credential value of the one principal in config.yaml; app.py is started with it below.
 TOKEN = "demo-token"
 AUTH = {"Authorization": f"Bearer {TOKEN}"}
 
@@ -28,6 +29,7 @@ async def base_url():
         ["python3", "app.py"],
         stdout=sys.stdout,
         stderr=sys.stderr,
+        env={**os.environ, "DEMO_TOKEN": TOKEN},
     )
     await asyncio.sleep(5)
     try:

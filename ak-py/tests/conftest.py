@@ -136,3 +136,42 @@ def starburst(monkeypatch):
         schema="sales",
         table_name="orders",
     )
+
+
+@pytest.fixture
+def static_identity(monkeypatch):
+    """The ``static`` identity provider over one seeded credential, installed as the process-wide provider (#603).
+
+    ``alice-secret`` authenticates ``alice`` (groups ``ops``); every other credential is refused with
+    ``AuthenticationError``. The provider is the real one, built over a secret manager that knows the
+    one key, and it records every ``authenticate`` call in ``calls`` so a test can assert whether a
+    credential was consulted. It is installed on ``IdentityProviderFactory.get`` rather than through
+    configuration, so a module's own ``AKConfig.get`` stub needs neither an ``identity`` nor a
+    ``secret`` block; the construction-from-config path is pinned in ``test_identity_providers``.
+    """
+    from agentkernel.identity import IdentityProviderFactory, StaticIdentityProvider
+    from agentkernel.secret import SecretManager, SecretProvider
+
+    # SecretManager reads the environment before its provider, and the example suites export this
+    # very variable, so a value left in the shell would shadow the seeded credential.
+    monkeypatch.delenv("ALICE_TOKEN", raising=False)
+
+    class _OneSecret(SecretProvider):
+        def get_secret(self, key):
+            return {"ALICE_TOKEN": "alice-secret"}.get(key)
+
+    class _RecordingStaticProvider(StaticIdentityProvider):
+        def __init__(self):
+            principals = {"ALICE_TOKEN": {"subject": "alice", "groups": ["ops"]}}
+            super().__init__(principals, secrets=SecretManager(provider=_OneSecret(), cache_ttl=0))
+            self.calls = []
+
+        async def authenticate(self, credential, context=None):
+            self.calls.append((credential, context))
+            return await super().authenticate(credential, context)
+
+    provider = _RecordingStaticProvider()
+    IdentityProviderFactory.reset()
+    monkeypatch.setattr(IdentityProviderFactory, "get", classmethod(lambda cls: provider))
+    yield provider
+    IdentityProviderFactory.reset()

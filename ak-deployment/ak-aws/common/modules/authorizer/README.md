@@ -22,12 +22,13 @@ module "authorizer" {
   prefix        = "myapp-prod"
   authorizer_info = {
     function_name         = "api-authorizer"
-    handler_path          = "authorizer.handler"
-    package_path          = "./authorizer"
+    handler_path          = "lambda_auth.handler"   # lambda_auth.py: handler = APIGatewayAuthorizer().handle
+    package_path          = "./dist_auth.zip"       # lambda_auth.py and the config.yaml carrying the identity block
     package_type          = "LocalZip"
     environment_variables = {
-      JWT_SECRET = "your-secret-key"
-      API_URL    = "https://api.example.com"
+      # The credential a static provider entry names, resolved from the environment at startup.
+      # An oidc, cognito, entra or firebase provider needs none.
+      DEMO_AUTH_TOKEN = var.demo_auth_token
     }
   }
   
@@ -47,6 +48,17 @@ module "authorizer" {
   }
 }
 ```
+
+The authorizer needs no validation code: `lambda_auth.py` is one line,
+`handler = APIGatewayAuthorizer().handle` (from `agentkernel.aws`), and the identity provider comes
+from the `identity` block in the `config.yaml` packaged beside it. A `static` provider's keys name
+secrets resolved from the environment (here `DEMO_AUTH_TOKEN`, passed as a sensitive Terraform
+variable), so no credential is written in a file; `oidc` (Auth0, Keycloak, Okta), `cognito`, `entra`
+and `firebase` validate signed tokens against the issuer's keys and need the `auth` extra in the
+package. A shared HMAC secret such as a `JWT_SECRET` is not supported: the token providers accept
+asymmetric signatures only. See
+[examples/aws-serverless/openai-auth](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/openai-auth)
+and [Identity and Access](https://kernel.yaala.ai/docs/next/advanced/identity-and-access).
 
 ## Inputs
 

@@ -171,7 +171,9 @@ class RestHandler(AgentRESTRequestHandler):
         store in every mode. A reply with an error status is returned, not raised: the caller
         checks ``is_error``.
 
-        :param body: The chat request; ``session_id`` and ``prompt`` are required.
+        :param body: The chat request; ``session_id`` and ``prompt`` are required. Its ``principal`` is the
+            caller's to establish (the executors authenticate their own protocol): this path never reads
+            one from a client and never overwrites one, so an unset principal runs anonymous.
         :param protocol: The surface's name, stamped as the ``protocol`` attribute.
         :return: The stored reply.
         :raises ValueError: If ``session_id``, ``prompt`` or ``protocol`` is empty; nothing is sent.
@@ -233,8 +235,9 @@ class RestHandler(AgentRESTRequestHandler):
 
     async def enqueue_and_wait(self, body: BaseRunRequest, request: Request):
         """Enqueue request; REST_SYNC waits for the response, REST_ASYNC returns request_id immediately."""
-        # The surface decides who is calling: a principal the client put in the body is overwritten,
-        # never read. Nothing sets request.state.principal until the identity dependency lands.
+        # The surface decides who is calling: a principal the client put in the body is overwritten
+        # with the one the identity dependency RESTAPI installs put on the request (the anonymous
+        # principal without an identity block). The default covers a router mounted on a bare app.
         body.principal = getattr(request.state, "principal", None)
         try:
             if not body.session_id:

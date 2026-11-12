@@ -4,3 +4,16 @@ multimodal:
 
 thread:
   type: in_memory # other supported backends: redis | valkey | dynamodb | firestore | cosmosdb
+
+# Who may call. The static provider maps each credential to one principal; the credential values
+# are resolved through the secret capability at startup (the environment by default), so export
+# ALICE_TOKEN and BOB_TOKEN before starting the app. See examples/api/thread-openai for the details.
+identity:
+  provider:
+    type: static
+    static:
+      principals:
+        ALICE_TOKEN:
+          subject: alice
+        BOB_TOKEN:
+          subject: bob
