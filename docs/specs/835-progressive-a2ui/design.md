@@ -2,8 +2,9 @@
 
 Agent Kernel's A2UI capability today has one delivery route: a post-hook labels a whole JSON reply
 after the run (`a2ui/hook.py:58`). This change adds a second — a `render_a2ui` system tool the agent
-calls mid-run, whose streamed arguments and result an AG-UI client turns into progressively painted
-UI. One new field, `a2ui.delivery`, chooses between them per deployment; the hook and the tool are
+calls mid-run, whose streamed arguments and result an AG-UI client turns into a surface that paints
+before the run ends and grows as repeated data streams in.
+One new field, `a2ui.delivery`, chooses between them per deployment; the hook and the tool are
 mutually exclusive, so exactly one of them owns the payload.
 
 ## Motivation
@@ -115,13 +116,45 @@ AK's half of the bottom route ends at the tool.
     `surfaceId`. It is optional because the relay or frontend can supply the catalog instead: the
     middleware resolves `defaultCatalogId`, then the frontend's catalog id, then this value, then
     A2UI's basic catalog.
-- **Returns a JSON string** `{"a2ui_operations": [{"version": "v0.9", "createSurface": {...}}]}`,
-  and `{"error": ...}` on failure — never raising into the framework. This is the sandbox/schedule
-  tool convention (`schedule/tools.py:149`, `sandbox/tools.py:391`).
+- **Returns a JSON string** carrying the three operations one surface needs — the same shape the
+  middleware emits on its own streaming path (`index.ts:882-911`, at
+  `ag-ui-protocol/ag-ui@8f6c8a4`):
+
+  ```json
+  {"a2ui_operations": [
+    {"version": "v0.9", "createSurface": {"surfaceId": "...", "catalogId": "..."}},
+    {"version": "v0.9", "updateComponents": {"surfaceId": "...", "components": []}},
+    {"version": "v0.9", "updateDataModel": {"surfaceId": "...", "path": "/", "value": {}}}
+  ]}
+  ```
+
+  - `updateDataModel` is present **only when `data` was given**; the other two always.
+  - **`createSurface` alone would be a bug, not a smaller feature.** It carries the id and the
+    catalog, never the components, so a surface created without them makes the renderer resolve a
+    root that is not there and throw — *"We deliberately do NOT emit createSurface on its own"*
+    (`index.ts:870`). This is about what drawing *one* surface needs; amending a surface already on
+    screen is still out of scope (see Decided below).
+  - `{"error": ...}` on failure — never raising into the framework. This is the sandbox/schedule
+    tool convention (`schedule/tools.py:149`, `sandbox/tools.py:391`).
 - **AK assembles the operation envelope and nothing else.** It does not validate components, resolve
   a catalog, check that the root component has id `"root"`, or read the data model. The renderer owns
   all four — the same division the labelling route already makes (*"It does not validate"*,
   `docs/docs/advanced/a2ui.md`).
+  - **The known cost: our result can override the middleware's own rejection.** The middleware
+    validates the *streamed* components and refuses to paint invalid ones (`index.ts:811`, status
+    `"retrying"`), but when nothing was painted it then parses our tool result and emits those
+    operations without validating them (`index.ts:1036-1075`). A success envelope therefore
+    reinstates components the client just rejected.
+  - **Accepted deliberately.** Validating would mean holding a component catalog, which this
+    capability ships none of on purpose. Closing the gap instead — returning something the
+    middleware cannot parse — would disable the only fallback for adapters that send tool arguments
+    whole (LangGraph, ADK, OpenAI), whose behaviour through the streaming parser is still
+    unconfirmed. A worse error message in an uncommon case is the cheaper risk than losing three
+    adapters, and the return value is a string the tool builds, so the choice is reversible without
+    touching config or the API.
+  - **What this costs the agent, stated:** it is told the render succeeded when it may not have, and
+    gets no validation errors to correct. The recovery loop that would consume that feedback lives
+    in the A2UI toolkit, which AK is not implementing.
 - **The tool's `description` carries the envelope only** — what the tool does and what its arguments
   mean. It reaches every agent's system prompt via `get_system_prompt_suffix` (`core/tool.py:278`),
   and a component catalog there would be exactly what the capability refuses to ship. The catalog
@@ -130,6 +163,17 @@ AK's half of the bottom route ends at the tool.
   middleware accepts only that. Unlike the labelling route, which reads nothing inside the payload
   and so never pinned a version, this route moves when the middleware moves. A2UI v1.0 and AK's own
   extension-URI bump are issue #931, deliberately separate.
+- **What "progressive" means mechanically, so the word is not over-read.** The middleware's strategy
+  is *"components atomic, data incremental"* (`index.ts:480-494`):
+  - `updateComponents` is computed **once**, only after the components array closes and validates.
+    A payload with a static component tree and no repeated data therefore paints in exactly **one**
+    snapshot.
+  - `updateDataModel` is the only part emitted incrementally — one snapshot per item as each entry
+    of a repeated data array closes, reusing the already-emitted template component.
+  - So there are two distinct wins and they are not the same. The surface arrives **earlier** than
+    the post-hook route in every case, because it no longer waits for the run to end. It **grows**
+    only when the payload carries a repeated data array. The tool is correct either way; the
+    example has to carry the second kind to demonstrate it (see Example).
 
 ### Wiring
 
@@ -164,6 +208,18 @@ AK's half of the bottom route ends at the tool.
   for example-side TypeScript.
 - The example's agent should run on an adapter that streams tool args (Claude or Pydantic AI), so
   the example demonstrates the progressive path rather than the degraded one.
+- **The demo payload must carry a repeated data array, not only a component tree.** A streaming
+  adapter alone does not produce a growing surface: components emit atomically in one snapshot, and
+  only the data model emits item by item (`index.ts:480-494`, and the Requirements bullet above).
+  The example's agent therefore emits its components first and then streams a repeated array — a
+  list of expenses, search results or rows — so the surface visibly fills.
+  - The adapter and the payload are both required, and neither is sufficient alone: a streaming
+    adapter with a static tree paints once, and a repeated array on a whole-args adapter arrives
+    complete.
+  - What to assert: more than one `ACTIVITY_SNAPSHOT` for the same surface, with the data array
+    longer in each, **before** the tool call ends.
+- **The example is render-only.** See Non-goals: a click on the rendered surface does not reach the
+  agent, and the example must not imply otherwise.
 
 ### Documentation
 
@@ -173,12 +229,18 @@ AK's half of the bottom route ends at the tool.
   (`:215-221`) with the tool route as the recommended path, keeping the `CustomEvent` route
   documented for applications that want it.
 - A per-adapter fidelity table from `research/adapter-tool-arg-fidelity.md`, carrying its honest
-  gaps: MAF likely but unconfirmed, CrewAI and smolagents unsupported.
+  gaps: Claude, Pydantic AI and MAF stream argument fragments (MAF confirmed against
+  `agent-framework-core` 1.20.0); LangGraph, ADK and OpenAI send them whole; CrewAI and smolagents
+  unsupported.
 
 ### Testing
 
 - `ak-py/tests/test_a2ui_tools.py` (new): the operation envelope the tool builds, the `{"error": ...}`
   path, and `SystemTool.name == func.__name__`.
+  - The envelope carries **all three** operations, in order, each at `version: "v0.9"`.
+  - `updateDataModel` is omitted when `data` is not given, and present at `path: "/"` when it is.
+  - `catalogId` is carried on `createSurface` when given and the key is absent when not, so the
+    relay's own resolution order is not pre-empted by a null.
 - Gating, in whichever file the spec picks: tool attached only under `delivery: tool`; only for
   agents `a2ui.agents` covers; not attached under the default.
 - `ak-py/tests/test_a2ui_hook.py` (305 lines, existing): the post-hook stands down under
@@ -194,6 +256,15 @@ AK's half of the bottom route ends at the tool.
 - Making OpenAI, LangGraph or ADK stream tool arguments. They send them whole by design; those
   surfaces paint in one snapshot.
 - Validating A2UI, shipping a component catalog, or resolving catalogs.
+- **Receiving user actions from a rendered surface — this route is render-only.** A click or form
+  submission does not reach the agent, and the example must not suggest it does. Follow-up #940.
+  - The middleware turns an action into an appended synthetic assistant message (a `log_a2ui_event`
+    tool call) plus a tool result (`index.ts:329-383`), but `AGUIRunInput.parse` keeps only the last
+    `role == "user"` message and discards the rest (`integration/agui/run_input.py:72,80`).
+  - A click with no typed text carries no user message at all, so the run is refused with a 400 —
+    *"carries no user message; there is no turn to run"* (`integration/agui/run_input.py:74`).
+  - `forwardedProps` does survive and is reachable through the opt-in `get_forwarded_props()` tool,
+    but that route is pull-based and the model may never call it, so it is not a delivery guarantee.
 - A2UI v1.0 — issue #931. This route stays on v0.9 while the middleware does.
 - Shipping any Node/JS code inside `ak-py`.
 
@@ -231,8 +302,13 @@ Recorded so the next reader does not re-open them:
   middleware keys entirely on `toolCallId` and builds its own snapshot `messageId`, so
   `AGUIMapper`'s fresh `uuid4().hex` is harmless (`integration/agui/mapping.py:52`); and MAF streams
   argument fragments, confirmed in `agent-framework-core` 1.20.0. Both in `research/`.
-- **`createSurface` only; `updateComponents` and `updateDataModel` are a follow-up issue.** This
-  ticket draws a surface; amending one already on screen is a separate change. The middleware's own
-  injected tool is render-only and re-creating a live `surfaceId` is an error, so amendment
-  semantics are a second unknown that would ride on this one's spike. The follow-up decides whether
-  it is a second tool, a mode on this one, or repeated calls the middleware diffs.
+- **One new surface per call; *amending* a surface already on screen is follow-up #940.** The line
+  is between the operations and what they are used for, not between the operations themselves:
+  - **In scope** — all three operations as the initial envelope for one surface. `createSurface`
+    alone does not define a root or any data, so a client receiving it cannot render anything; the
+    three together are simply what drawing one surface takes (see the tool's Requirements).
+  - **Out of scope** — issuing `updateComponents` or `updateDataModel` *against a surface the user
+    is already looking at*. The middleware's own injected tool is render-only, and re-creating a
+    live `surfaceId` is an error, so amendment semantics are a second unknown that would ride on
+    this one's confirmation. #940 decides whether it is a second tool, a mode on this one, or
+    repeated calls the middleware diffs.
