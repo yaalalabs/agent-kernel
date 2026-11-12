@@ -14,6 +14,13 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from ...core.util.payload import JSONPayload
 
+HITL_MEDIA_TYPE = "application/json"
+"""The label on a pause or a decision message: an object, not text.
+
+Not a vendor type: Agent Kernel owns no standard for pause/resume, and `role` plus the payload's
+own keys already say which kind a message is.
+"""
+
 
 def _utc_now() -> datetime.datetime:
     return datetime.datetime.now(datetime.timezone.utc)
@@ -40,8 +47,8 @@ class ThreadMessage(BaseModel):
     label over text, would reach a client as a payload it cannot branch on. A blank label counts as
     no label, which is what ``build_response`` and ``ThreadRecorder`` already mean by it.
     ``media_type`` is declared between ``content`` and ``timestamp`` because field order is key
-    order in ``model_dump_json``, and both recording paths must produce the same bytes for the
-    same reply.
+    order in ``model_dump_json``, and every recording path must produce the same bytes for the
+    same message.
     """
 
     message_id: str = Field(default_factory=lambda: str(uuid.uuid4()))

@@ -10,6 +10,14 @@ another user's resources.
 This is a full REST application, not a snippet: the request carries an auth token, the app
 authenticates it, and sandboxed code runs as the authenticated user.
 
+> **You may not need any of this.** Since the identity capability landed, an `identity` block in
+> `config.yaml` makes every surface authenticate the caller into the run's principal, and the
+> default `PrincipalResolver` runs an authenticated run as that principal (subject and groups) with
+> no custom code: a profile with `identity.mode: user` works out of the box. This example keeps its
+> own pre-hook and resolver to show the bring-your-own path, and because it maps the caller onto
+> provider credentials (a role ARN), which the default resolver deliberately leaves to the
+> application.
+
 ## The flow (all application code)
 
 1. A client calls `POST /api/v1/chat` with a prompt and an `auth_token` field.

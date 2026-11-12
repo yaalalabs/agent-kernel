@@ -3,7 +3,7 @@ import logging
 
 from ....core.chat_service import ChatService
 from ....core.config import AKConfig
-from ....core.model import BaseRunRequest, StreamChunk
+from ....core.model import BaseRunRequest, Principal, StreamChunk
 from ....pipeline.envelope import ATTR_STATUS_CODE, ATTR_THREAD
 from ....pipeline.integration_delivery import IntegrationDelivery
 from ..core.sqs_handler import SQSHandler
@@ -83,7 +83,7 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
             body = body if body is not None else cls._body_from_record(raw_queue_message)
             if body is not None:
                 request_id = request_id or getattr(body, "request_id", None)
-                user_id = user_id or body.user_id
+                user_id = user_id or Principal.subject_of(getattr(body, "principal", None))
 
         if not request_id:
             raise ValueError("request_id is required")
@@ -173,15 +173,18 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
         :param record: SQS record; its ``thread`` attribute marks a recorded exchange.
         :param body: The parsed request body.
         :param status_code: The status the chat service produced.
-        :param response: The response body.
+        :param response: The response body; a paused run's is recorded as its pause, labelled.
         """
         attributes = SQSHandler.get_message_custom_attributes(record)
         if not attributes.get(ATTR_THREAD):
             return
         try:
             from ....integration.thread.recorder import ThreadRecorder
+            from ....pipeline.agent_runner import AgentRunner
 
-            ThreadRecorder.record_queued_reply(attributes, body, status_code, response)
+            # The pipeline runner's pick, so a paused run records the same content on both runners.
+            media_type = response.get("media_type") if isinstance(response, dict) else None
+            ThreadRecorder.record_queued_reply(attributes, body, status_code, AgentRunner._reply_to_record(response, body.session_id), media_type)
         except Exception:
             cls._log.exception(f"Failed to record the assistant message for session_id={body.session_id}")
 
@@ -292,7 +295,7 @@ class ServerlessStreamAgentRunner(LambdaSQSConsumer):
             body = body if body is not None else cls._body_from_record(raw_queue_message)
             if body is not None:
                 request_id = request_id or getattr(body, "request_id", None)
-                user_id = user_id or body.user_id
+                user_id = user_id or Principal.subject_of(getattr(body, "principal", None))
 
         if not request_id:
             raise ValueError("request_id is required")

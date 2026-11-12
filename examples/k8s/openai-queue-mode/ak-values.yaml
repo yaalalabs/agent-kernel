@@ -6,9 +6,29 @@ image:
   tag: dev
   pullPolicy: Never # the images are imported into the cluster, never pulled
 
+# The identity block in config.*.yaml names the DEMO_AUTH_TOKEN credential, and only the io handler
+# and the WebSocket gateway build the identity provider, so the value goes to those two tiers alone:
+# the agent runner, the tier running LLM tools and sandboxed code, never sees it. The secretStore
+# mount below reaches only the agent-executing tier, so the token travels as an environment
+# variable of each authenticating tier instead, read from the demo-credentials Secret (see the
+# README). The wsGateway entry takes effect once the WebSocket walkthrough enables that tier.
 ioHandler:
   image:
     repository: ak-example-io-handler
+  extraEnv:
+    - name: DEMO_AUTH_TOKEN
+      valueFrom:
+        secretKeyRef:
+          name: demo-credentials
+          key: DEMO_AUTH_TOKEN
+
+wsGateway:
+  extraEnv:
+    - name: DEMO_AUTH_TOKEN
+      valueFrom:
+        secretKeyRef:
+          name: demo-credentials
+          key: DEMO_AUTH_TOKEN
 
 agentRunner:
   image:

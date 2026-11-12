@@ -4,7 +4,6 @@ from typing import Annotated, Any, TypedDict
 
 from agentkernel.agui import AGUIPipelineRequestHandler
 from agentkernel.api import RESTAPI
-from agentkernel.auth import Authoriser
 from agentkernel.langgraph import LangGraphModule
 from agentkernel.openai import OpenAIModule, OpenAIToolBuilder
 from agentkernel.pipeline import IOHandler
@@ -80,22 +79,25 @@ class RefundPlan(TypedDict):
     note: str
 
 
-def ask_preferences(state: RefundPlan) -> dict[str, Any]:
-    """Ask two questions in a row: one a choice, one free text.
+def ask_method(state: RefundPlan) -> dict[str, Any]:
+    """Ask which way the refund goes.
 
-    The second `interrupt()` is reached only once the first has an answer, so the run pauses twice
-    and the client answers one question per turn. LangGraph **re-runs this node from the top** on
-    resume — the first `interrupt()` then returns the stored answer instead of pausing again — which
-    is why anything with a side effect belongs after the questions, never before them.
+    LangGraph re-runs the node from the top on resume, returning the stored answer instead of
+    pausing again, so anything with a side effect belongs after the question.
     """
-    method = interrupt(
-        {
-            "question": "How should the refund be returned?",
-            "options": ["Original card", "Store credit", "Bank transfer"],
-        }
-    )
-    note = interrupt({"question": "Anything you want said to the customer? (free text)"})
-    return {"method": method, "note": note}
+    return {
+        "method": interrupt(
+            {
+                "question": "How should the refund be returned?",
+                "options": ["Original card", "Store credit", "Bank transfer"],
+            }
+        )
+    }
+
+
+def ask_note(state: RefundPlan) -> dict[str, Any]:
+    """Ask what to tell the customer. A sentence, because `confirm` works the answer in verbatim."""
+    return {"note": interrupt({"question": "What should we tell the customer? (a sentence, or leave blank)"})}
 
 
 def confirm(state: RefundPlan) -> dict[str, Any]:
@@ -113,28 +115,19 @@ def confirm(state: RefundPlan) -> dict[str, Any]:
     return {"messages": [reply]}
 
 
+# Both question nodes fan out from START, so they interrupt in the same superstep and the human is
+# asked both at once. Two interrupt() calls in one node would ask them one after the other.
 _graph = StateGraph(RefundPlan)
-_graph.add_node("ask_preferences", ask_preferences)
+_graph.add_node("ask_method", ask_method)
+_graph.add_node("ask_note", ask_note)
 _graph.add_node("confirm", confirm)
-_graph.add_edge(START, "ask_preferences")
-_graph.add_edge("ask_preferences", "confirm")
+_graph.add_edge(START, "ask_method")
+_graph.add_edge(START, "ask_note")
+_graph.add_edge("ask_method", "confirm")
+_graph.add_edge("ask_note", "confirm")
 _graph.add_edge("confirm", END)
 
 LangGraphModule([_graph.compile(name="planner")])
-
-
-class DemoAuthoriser(Authoriser):
-    """Maps a static demo token to a user id. AG-UI has no anonymous mode."""
-
-    _TOKENS = {"demo-token": "demo-user"}
-
-    def authorise(self, token: str) -> str | None:
-        """Resolve a bearer token to a user id.
-
-        :param token: Bearer token from the Authorization header.
-        :return: The acting user id, or None to reject the request.
-        """
-        return self._TOKENS.get(token)
 
 
 DIST = Path(__file__).parent / "frontend" / "dist"
@@ -178,6 +171,8 @@ if __name__ == "__main__":
     # IOHandler always serves the REST chat route, and `handlers=` mounts AG-UI alongside it. Both
     # surfaces run the agent on the queue pipeline against the same session, so the same pause can
     # be answered from either one:
-    #   AG-UI  POST /agui/support   — streamed, ends with an interrupt outcome
-    #   REST   POST /api/v1/chat    — answers 202 with status: "PAUSED"
-    IOHandler.run(handlers=[AGUIPipelineRequestHandler(authoriser=DemoAuthoriser())])
+    #   AG-UI  POST /agui/support   streamed, ends with an interrupt outcome
+    #   REST   POST /api/v1/chat    answers 202 with status: "PAUSED"
+    # AG-UI has no anonymous mode: the handler refuses to build without the `identity` block in
+    # config.yaml, whose provider turns the console's bearer token into the run's principal.
+    IOHandler.run(handlers=[AGUIPipelineRequestHandler()])

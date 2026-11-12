@@ -18,7 +18,7 @@ sequenceDiagram
     participant ThreadStore as Thread Store
     participant Agent
 
-    Client->>TH: POST /api/v1/chat (prompt, session_id, user_id)
+    Client->>TH: POST /api/v1/chat (prompt, session_id; bearer credential)
     TH->>ThreadStore: get_or_create_thread + append user message
     TH->>CS: execute(request, prebuilt requests)
     CS->>Agent: run
@@ -38,11 +38,16 @@ sequenceDiagram
   naming model.
 - **A thread is keyed by `session_id`**, with no separate thread id. The thread is auto-created on a session's
   first chat request; every later request with the same `session_id` appends to it.
-- **`user_id` is required** on the thread handler's chat routes; requests without it are rejected with 400.
-  Other surfaces are unaffected.
+- **Every thread belongs to the authenticated principal.** The thread handlers serve authenticated
+  callers only: they require an `identity` block in `config.yaml` (constructing one without it fails at
+  startup), a request nothing authenticated is rejected with 401, and the caller's principal becomes
+  the thread's owner. A `user_id` in a request body is rejected with 400: the acting user comes from
+  the credential, never from the client. Other surfaces are unaffected.
 - **Pluggable storage**: in-memory, Redis, Valkey, DynamoDB, Firestore, or Cosmos DB.
-- **Optional, pluggable authorization**: you supply an `Authoriser` that validates a Bearer token against
-  *your* authentication provider; Agent Kernel never authenticates users itself.
+- **Authentication is configuration, not code.** The `identity` block names the provider that
+  validates the bearer token: `static` for demos, `oidc` for Auth0, Keycloak, Okta and any other OIDC
+  issuer, `cognito`, `entra`, `firebase`, or your own `IdentityProvider`. See
+  [Identity and Access](./identity-and-access.md).
 - **Streaming included**: with `execution.message_type: delta`, the user message is recorded before the stream
   starts and the assistant message is assembled from the streamed deltas on completion.
 
@@ -83,8 +88,8 @@ reply — it is the only process holding it. Give the agent-runner process the s
 configuration as the API process; without it the reply cannot be recorded and the runner logs a
 warning naming the missing block.
 
-Then select the store backend in `config.yaml` (constructing either handler without a `thread` block
-fails fast at startup):
+Then select the store backend in `config.yaml` (constructing either handler without a `thread` block,
+or without an `identity` block, fails fast at startup):
 
 ```yaml
 thread:
@@ -100,17 +105,21 @@ column must be updated to accept an object.
 
 ## Chat Request Fields
 
+The owner is not a request field. It is the principal the `identity` block authenticated from the
+request's `Authorization: Bearer <credential>` header, fixed at creation and stored as the thread's
+`user_id` (the principal's subject); a `user_id` sent in the body is a 400.
+
 | Field | Required | Applied | Description |
 |---|---|---|---|
 | `session_id` | yes | every request | Identifies the thread |
-| `user_id` | yes (on the thread handler's chat routes) | at creation | Owning user; also enables user-scoped listing |
 | `group_id` | no | at creation only | Caller-defined group/project scope for listing |
 | `thread_name` | no | any request | Sets (at creation) or renames (afterwards) the display name and locks it against automatic naming; blank values are ignored. When absent at creation, the name comes from the naming strategy (see below) |
 
 ```bash
 curl -X POST http://localhost:8000/api/v1/chat \
   -H "Content-Type: application/json" \
-  -d '{"prompt": "What is the capital of France?", "session_id": "ses-1", "user_id": "alice", "thread_name": "Capitals quiz"}'
+  -H "Authorization: Bearer $ALICE_TOKEN" \
+  -d '{"prompt": "What is the capital of France?", "session_id": "ses-1", "thread_name": "Capitals quiz"}'
 ```
 
 ## Thread Naming
@@ -123,7 +132,7 @@ get a generic title ("New conversation") instead of becoming the name. The call 
 inline on the session's first chat request (~0.5–2s), never on later messages.
 
 Naming never fails thread creation: if `litellm` is not installed (it is an optional dependency; install
-it with the `thread` extra, `pip install "agentkernel[thread]"`), no API key is present, or the model call
+it with the `thread` extra, `uv add "agentkernel[thread]"`), no API key is present, or the model call
 errors, the name falls back to a truncated prompt prefix: the first `max_length` characters, trimmed at a
 word boundary and suffixed with an ellipsis. The fallback is never silent: a missing `litellm` is warned
 about once at startup with the install hint, and every failed naming call logs a warning.
@@ -160,15 +169,31 @@ Threads whose name was explicitly supplied (a `thread_name` on any chat request)
 The thread handler serves two read endpoints alongside the chat routes:
 
 ```bash
-# List threads (metadata only), filtered by user and/or group
-curl "http://localhost:8000/api/v1/threads?user_id=alice"
+# List the caller's threads (metadata only), optionally filtered by group
+curl -H "Authorization: Bearer $ALICE_TOKEN" "http://localhost:8000/api/v1/threads?group_id=quizzes"
 
 # Get one thread with its message history
-curl "http://localhost:8000/api/v1/threads/ses-1"
+curl -H "Authorization: Bearer $ALICE_TOKEN" "http://localhost:8000/api/v1/threads/ses-1"
 ```
 
-Both endpoints paginate: pass `limit` (default 50, max 200) and the opaque `cursor` returned as `next_cursor`
+Both endpoints are the caller's own: no query parameter widens a listing, and reading a thread another
+principal owns is a 403. Both paginate: pass `limit` (default 50, max 200) and the opaque `cursor` returned as `next_cursor`
 in the previous page (`null` on the last page).
+
+### Message Content
+
+A message's `content` is normally the text of the turn, and carries no other key. A message whose
+content is structured stores the object itself with a sibling `media_type` naming its format: a reply
+the agent labelled (see [A2UI](a2ui.md)), a [paused run](human-in-the-loop.md), or the decision
+answering it. The pause is an `assistant` message holding
+`run_id`, `agent` and `interruptions`; the decision is a `user` message holding the `resume` block that
+was sent, with the prompt beside it when the turn carried both.
+
+The two fields always agree: `media_type` present means `content` is an object or an array, absent
+means it is text. A labelled reply may be either; a pause and a decision are always objects. A human's
+decision is a `user` message because a person sent it, so the `user`/`assistant` roles are unchanged —
+a client tells the two structured kinds apart by `role`, or by the keys they carry:
+`content.interruptions` for a pause, `content.resume.decisions` for a decision.
 
 ## Renaming Threads
 
@@ -180,42 +205,45 @@ every request is cheap: the name is only written when it actually changes.
 ```bash
 curl -X POST http://localhost:8000/api/v1/chat \
   -H "Content-Type: application/json" \
-  -d '{"prompt": "And of Italy?", "session_id": "ses-1", "user_id": "alice", "thread_name": "European capitals"}'
+  -H "Authorization: Bearer $ALICE_TOKEN" \
+  -d '{"prompt": "And of Italy?", "session_id": "ses-1", "thread_name": "European capitals"}'
 ```
 
-## Authorization
+## Authentication and Ownership
 
-Thread routes are **open** until you supply an `Authoriser`, a small base class you subclass to validate the
-Bearer token against your own authentication provider and resolve the caller's `user_id`:
+The thread routes serve authenticated callers only, and authentication is configuration: the `identity`
+block in `config.yaml` names the provider that validates the `Authorization: Bearer <credential>` header
+on every request, and the principal it resolves is the caller. The handlers refuse to start without that
+block.
 
-```python
-from agentkernel.api import RESTAPI
-from agentkernel.auth import Authoriser
-from agentkernel.thread import AgentThreadRequestHandler
-
-
-class MyAuthoriser(Authoriser):
-    def authorise(self, token: str) -> str | None:
-        # Validate the token with your auth provider (JWT, introspection, API key lookup, ...)
-        # Return the resolved user_id, or None to reject.
-        return my_auth_provider.resolve(token)
-
-
-RESTAPI.run(handlers=[AgentThreadRequestHandler(authoriser=MyAuthoriser())])
-# or, in queue mode:  IOHandler.run(request_handler=ThreadRequestHandler(authoriser=MyAuthoriser()))
+```yaml
+identity:
+  provider:
+    type: static            # demos; oidc (Auth0, Keycloak, Okta, ...), cognito, entra, firebase, or a dotted path
+    static:
+      principals:
+        ALICE_TOKEN:        # a secret key, resolved through the secret capability (the environment by default)
+          subject: alice
+        BOB_TOKEN:
+          subject: bob
 ```
 
-With an `Authoriser` configured:
+The credential values never live in the file: each key names a secret the
+[secret capability](./secrets.md) resolves when the provider is built. To validate real tokens, point the
+block at your issuer instead (`type: oidc` with its issuer and audience; Auth0, Keycloak and Okta are
+OIDC issuers) or at Cognito, Entra ID or Firebase; the handlers do not change. See
+[Identity and Access](./identity-and-access.md) for every provider and the role mapper.
 
-- Requests must carry `Authorization: Bearer <token>`; missing/malformed headers and rejected tokens get 401.
-- Listings are always scoped to the authorised user.
-- Reading another user's thread returns 403. (Renaming flows through the chat request and rides its trust
-  model: whoever can chat on a `session_id` can rename its thread.)
+What the routes enforce:
 
-:::caution Open until configured
-Without an `Authoriser`, any caller who knows a `session_id` can read its thread. Deploy behind network-level
-access controls until one is configured.
-:::
+- A request without a credential gets 401 `Authentication required`; one with a credential the provider
+  refuses gets 401 `Unauthorized` (the provider's reason goes to the logs, not the response).
+- The thread is created under the principal's subject, and chatting on a `session_id` whose thread
+  another principal owns is a 403.
+- Listings are always the caller's own, and reading another principal's thread returns 403. (Renaming
+  flows through the chat request and rides its trust model: whoever can chat on a `session_id` can
+  rename its thread.)
+- A `user_id` in a request body is a 400: the acting user comes from the credential.
 
 ## Storage Backends
 
@@ -373,6 +401,6 @@ thread:
 
 ## Examples
 
-- [`examples/api/thread-openai`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/thread-openai): text-only threads with a demo `Authoriser`
+- [`examples/api/thread-openai`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/thread-openai): text-only threads on the `static` identity provider, two users with their own thread lists
 - [`examples/api/multimodal/thread-openai`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/multimodal/thread-openai): threads with image/file attachments
 - [`examples/aws-serverless/thread-openai`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/thread-openai): threads on AWS Lambda in queue mode, scoped by the API Gateway authorizer

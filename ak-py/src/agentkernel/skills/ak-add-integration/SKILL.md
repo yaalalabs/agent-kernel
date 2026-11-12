@@ -77,7 +77,13 @@ handler = Lambda.handler
   and Telegram its `webhook_secret`: `LambdaWebhookHost` refuses to start without them.
 - Behind an API Gateway authorizer, pass
   `bypass=WebhookRouteMatcher.for_integrations("<platform>")` to `APIGatewayAuthorizer` and set
-  `result_ttl_in_seconds = 0` (see the `ak-cloud-deploy` skill, AWS Serverless).
+  `result_ttl_in_seconds = 0` (see the `ak-cloud-deploy` skill, AWS Serverless). The authorizer
+  itself takes no validator: the `identity` block in the `config.yaml` packaged with it names the
+  provider that authenticates every non-webhook request.
+- Platform senders reach the agent as a `Principal` built at the edge (`provider:
+  messaging:<platform>`, the platform user id as `subject`, the workspace or tenant as `namespace`),
+  so tools reading `ToolContext.get().principal` work on every channel; no bearer token is
+  involved on webhook routes.
 - Gmail (polling) is not supported on Lambda.
 
 #### For Slack

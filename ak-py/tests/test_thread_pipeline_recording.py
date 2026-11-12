@@ -11,16 +11,19 @@ import threading
 from unittest.mock import MagicMock
 
 import pytest
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
 from agentkernel.core.base import Agent, Runner
+from agentkernel.core.chat_service import ResponseBuilder
 from agentkernel.core.config import AKConfig, _ThreadStoreConfig
 from agentkernel.core.event import MessageEnd, MessageStart, TextDelta
-from agentkernel.core.model import AgentReplyText, AgentRequestText, ScheduleSpec
+from agentkernel.core.model import AgentReplyText, AgentRequestText, Principal, ScheduleSpec
 from agentkernel.core.runtime import Runtime
 from agentkernel.core.util.factory import AKConfigError
+from agentkernel.identity import AuthenticationError, IdentityProvider, IdentityProviderFactory, RequestAuthenticator
 from agentkernel.integration.thread import AgentThreadRequestHandler, ConversationThreadManager, ThreadNamingStrategy, ThreadRequestHandler
+from agentkernel.integration.thread.model import HITL_MEDIA_TYPE
 from agentkernel.integration.thread.store.in_memory import InMemoryThreadStore
 from agentkernel.pipeline.agent_runner import AgentRunner, StreamAgentRunner
 from agentkernel.pipeline.consumer import ConsumerLoop
@@ -120,10 +123,36 @@ def _enable_threads():
     return ConversationThreadManager.get()
 
 
-def _client() -> TestClient:
+PRINCIPAL = Principal(subject="u1", provider="static", namespace="static")
+OTHER = Principal(subject="u2", provider="static", namespace="static")
+TOKENS = {"u1-token": PRINCIPAL, "u2-token": OTHER}
+
+
+class _Provider(IdentityProvider):
+    """One token per test user: the surface, never the client, establishes the principal a thread is keyed on."""
+
+    name = "static"
+
+    async def authenticate(self, credential, context=None):
+        principal = TOKENS.get(credential)
+        if principal is None:
+            raise AuthenticationError("unknown token")
+        return principal
+
+
+@pytest.fixture(autouse=True)
+def identity(monkeypatch):
+    """Stand the configured identity provider in: the thread handlers require one at construction."""
+    provider = _Provider()
+    monkeypatch.setattr(IdentityProviderFactory, "get", classmethod(lambda cls: provider))
+    return provider
+
+
+def _client(handler: ThreadRequestHandler | None = None, token: str | None = "u1-token") -> TestClient:
+    """The handler's routes behind the identity dependency, as ``RESTAPI`` mounts them; the client sends ``token`` on every request."""
     app = FastAPI()
-    app.include_router(ThreadRequestHandler().get_router())
-    return TestClient(app)
+    app.include_router((handler or ThreadRequestHandler()).get_router(), dependencies=[Depends(RequestAuthenticator(_Provider()).dependency())])
+    return TestClient(app, headers={"Authorization": f"Bearer {token}"} if token else {})
 
 
 def _enqueued(transport=None) -> QueueMessage:
@@ -132,8 +161,8 @@ def _enqueued(transport=None) -> QueueMessage:
     return message
 
 
-def _chat(session_id="s1", prompt="hello", user_id="u1", **extra) -> dict:
-    return {"prompt": prompt, "session_id": session_id, "user_id": user_id, "agent": AGENT_NAME, **extra}
+def _chat(session_id="s1", prompt="hello", **extra) -> dict:
+    return {"prompt": prompt, "session_id": session_id, "agent": AGENT_NAME, **extra}
 
 
 class TestEdgeRecording:
@@ -179,13 +208,56 @@ class TestEdgeRecording:
         assert body.get("images") is None
         assert [req["type"] for req in body["requests"]] == ["text", "attachment_ref"]
 
-    def test_missing_user_id_is_rejected_before_any_thread_write(self, monkeypatch):
+    def test_construction_fails_without_an_identity_block(self, monkeypatch):
+        """Threads are keyed on the caller, so with nobody able to authenticate the handler is a configuration error (#603)."""
+        _configure(monkeypatch, mode="rest_async")
+        monkeypatch.setattr(IdentityProviderFactory, "get", classmethod(lambda cls: None))
+
+        with pytest.raises(AKConfigError, match="requires an identity block"):
+            ThreadRequestHandler()
+
+    def test_an_anonymous_request_is_rejected_before_any_thread_write(self, monkeypatch, dummy_agent):
         manager = _configure(monkeypatch, mode="rest_async")
 
-        response = _client().post(CHAT, json={"prompt": "hello", "session_id": "s1", "agent": AGENT_NAME})
+        response = _client(token=None).post(CHAT, json={"prompt": "hello", "session_id": "s1", "agent": AGENT_NAME})
+
+        assert response.status_code == 401
+        assert response.json()["detail"] == "Authentication required"
+        assert manager.get_thread("s1") is None
+        assert not InMemoryTransport().create_consumer(QueueName.INPUT).fetch(10, 0.1)
+
+    def test_a_principal_sent_by_the_client_is_rejected_like_an_anonymous_one(self, monkeypatch, dummy_agent):
+        """The route overwrites whatever principal the body carries before the recorder reads it (#603)."""
+        manager = _configure(monkeypatch, mode="rest_async")
+        payload = {"prompt": "hello", "session_id": "s1", "agent": AGENT_NAME, "principal": PRINCIPAL.model_dump(mode="json")}
+
+        response = _client(token=None).post(CHAT, json=payload)
+
+        assert response.status_code == 401
+        assert manager.get_thread("s1") is None
+        assert not InMemoryTransport().create_consumer(QueueName.INPUT).fetch(10, 0.1)
+
+    def test_another_users_thread_is_refused_before_any_write(self, monkeypatch, dummy_agent):
+        """A thread is one caller's conversation: a second principal neither appends to it nor enqueues under it (#603)."""
+        manager = _configure(monkeypatch, mode="rest_async")
+        manager.get_or_create_thread(session_id="s1", user_id="u2", first_prompt="theirs")
+        manager.append_message("s1", "user", "theirs")
+
+        response = _client().post(CHAT, json=_chat())
+
+        assert response.status_code == 403
+        assert "Thread s1 is not owned by user u1" in response.json()["detail"]["error"]
+        assert [m.content for m in manager.get_messages("s1").messages] == ["theirs"]
+        assert not InMemoryTransport().create_consumer(QueueName.INPUT).fetch(10, 0.1)
+
+    def test_a_user_id_is_refused_before_any_thread_write(self, monkeypatch, dummy_agent):
+        """The runner would refuse it with a stored 400; by then the user message would already be in the thread."""
+        manager = _configure(monkeypatch, mode="rest_async")
+
+        response = _client().post(CHAT, json={"prompt": "hello", "session_id": "s1", "agent": AGENT_NAME, "user_id": "u-1"})
 
         assert response.status_code == 400
-        assert "user_id" in response.json()["detail"]["error"]
+        assert "user_id is not a request field" in response.json()["detail"]["error"]
         assert manager.get_thread("s1") is None
         assert not InMemoryTransport().create_consumer(QueueName.INPUT).fetch(10, 0.1)
 
@@ -226,7 +298,7 @@ class TestEdgeRecording:
         _configure(monkeypatch, mode="rest_async")
         resume = {"decisions": [{"id": "call_1", "status": "approved"}]}
 
-        response = _client().post(CHAT, json={"session_id": "s1", "user_id": "u1", "agent": AGENT_NAME, "resume": resume})
+        response = _client().post(CHAT, json={"session_id": "s1", "agent": AGENT_NAME, "resume": resume})
 
         assert response.status_code == 200
         message = _enqueued()
@@ -236,15 +308,15 @@ class TestEdgeRecording:
     def test_missing_prompt_keeps_the_pipeline_error_shape(self, monkeypatch):
         _configure(monkeypatch, mode="rest_async")
 
-        response = _client().post(CHAT, json={"prompt": "", "session_id": "s1", "user_id": "u1"})
+        response = _client().post(CHAT, json={"prompt": "", "session_id": "s1"})
 
         assert response.status_code == 400
         assert response.json()["detail"] == {"error": "No prompt provided in the request", "session_id": "s1"}
 
 
-def _marked_message(session_id="s1", user_id="u1", marked=True) -> QueueMessage:
+def _marked_message(session_id="s1", marked=True) -> QueueMessage:
     return QueueMessage(
-        body=json.dumps({"prompt": "hello", "session_id": session_id, "user_id": user_id, "agent": AGENT_NAME}),
+        body=json.dumps({"prompt": "hello", "session_id": session_id, "agent": AGENT_NAME}),
         attributes={"request_id": "r1", **({ATTR_THREAD: "1"} if marked else {})},
         group_id=session_id,
         dedup_id="d1",
@@ -306,6 +378,47 @@ class TestRunnerRecording:
         recorded = manager.get_messages("s1").messages[-1]
         assert recorded.content == content
         assert recorded.media_type == MEDIA_TYPE
+
+    def test_a_paused_body_is_recorded_as_the_pause(self, monkeypatch):
+        """The runner holds the response body, not the reply — but the body carries the pause keys."""
+        manager = _configure(monkeypatch)
+        _open_thread(manager)
+        body = {
+            "result": '{"run_id": "run-1"}',
+            "status": "PAUSED",
+            "run_id": "run-1",
+            "agent": AGENT_NAME,
+            "interruptions": [{"id": "i1", "kind": "tool_call", "tool_name": "issue_refund", "arguments": None, "message": None, "payload": None}],
+            "session_id": "s1",
+        }
+        chat_service = MagicMock()
+        chat_service.process_chat_request.return_value = (202, body)
+
+        AgentRunner(transport=InMemoryTransport(), chat_service=chat_service).process(_marked_message())
+
+        pause = manager.get_messages("s1").messages[-1]
+        assert (pause.role, pause.media_type) == ("assistant", HITL_MEDIA_TYPE)
+        assert pause.content["run_id"] == "run-1"
+        assert pause.content["interruptions"][0]["tool_name"] == "issue_refund"
+
+    def test_a_paused_body_records_the_same_bytes_as_the_direct_handler(self, monkeypatch):
+        """Same pause, two surfaces: the content comes from the reply model either way."""
+        from agentkernel.core.event import PausedInterruption
+        from agentkernel.core.model import AgentPausedReplyAny
+        from agentkernel.integration.thread.recorder import ThreadRecorder
+
+        manager = _configure(monkeypatch)
+        _open_thread(manager)
+        reply = AgentPausedReplyAny(
+            run_id="run-1", session_id="s1", agent=AGENT_NAME, interruptions=[PausedInterruption(id="i1", kind="tool_call", tool_name="issue_refund")]
+        )
+        chat_service = MagicMock()
+        chat_service.process_chat_request.return_value = (202, ResponseBuilder.build_response(202, "s1", False, result=reply)[1])
+
+        AgentRunner(transport=InMemoryTransport(), chat_service=chat_service).process(_marked_message())
+
+        queued = manager.get_messages("s1").messages[-1]
+        assert (queued.content, queued.media_type) == ThreadRecorder._as_thread_message(reply)
 
     def test_an_unmarked_message_records_nothing(self, monkeypatch):
         manager = _configure(monkeypatch)
@@ -375,6 +488,29 @@ class TestStreamRunnerRecording:
         # The chunks fan out as separate output messages, so this is the only place the reply
         # exists as one thing.
         assert [(m.role, m.content) for m in manager.get_messages("s1").messages][-1] == ("assistant", "hello")
+
+    def test_a_streamed_pause_is_recorded(self, monkeypatch):
+        manager = _configure(monkeypatch, mode="rest_sync", message_type="delta")
+        _open_thread(manager)
+        event = {"type": "run_paused", "run_id": "run-1", "agent": AGENT_NAME, "interruptions": [{"id": "i1", "kind": "input_required"}]}
+
+        self._stream_runner([{"delta": "Let me check"}, {"event": event}, {"done": True}]).process(_marked_message())
+
+        messages = manager.get_messages("s1").messages
+        assert [m.role for m in messages] == ["user", "assistant"]
+        assert messages[-1].media_type == HITL_MEDIA_TYPE
+        assert messages[-1].content["run_id"] == "run-1"
+        assert "Let me check" not in str(messages[-1].content)
+
+    def test_a_stream_that_errors_after_pausing_records_nothing(self, monkeypatch):
+        """Same rule on the queue: the pause reported by a run that then failed is not recorded."""
+        manager = _configure(monkeypatch, mode="rest_sync", message_type="delta")
+        _open_thread(manager)
+        event = {"type": "run_paused", "run_id": "run-1", "agent": AGENT_NAME, "interruptions": [{"id": "i1", "kind": "input_required"}]}
+
+        self._stream_runner([{"event": event}, {"error": "session store unavailable", "done": True}]).process(_marked_message())
+
+        assert [m.role for m in manager.get_messages("s1").messages] == ["user"]
 
     def test_a_halted_stream_records_nothing(self, monkeypatch):
         manager = _configure(monkeypatch, mode="rest_sync", message_type="delta")

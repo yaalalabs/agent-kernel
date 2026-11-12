@@ -31,7 +31,7 @@ Hosting depends on how the platform delivers events:
 | Source | Host | Entry point |
 |---|---|---|
 | `Source.WEBHOOK` (pushed) | `WebhookRESTRequestHandler` | `IOHandler.run(handlers=[WebhookRESTRequestHandler(MyInboundAdapter())])` |
-| `Source.WEBHOOK` on AWS Lambda | `WebhookRESTRequestHandler` via `LambdaWebhookHost` | `host = LambdaWebhookHost(WebhookRESTRequestHandler(MyInboundAdapter()))` at module scope in the request-handler Lambda, with `Lambda.register(<webhook_path>, method="POST")(host.handle)` (and `GET` → `host.challenge` when the adapter declares a `challenge_path`) (`rest_sync`/`rest_async`, `sqs`), with the route in `gateway_endpoints` and `APIGatewayAuthorizer(bypass=WebhookRouteMatcher(...))` behind an authorizer |
+| `Source.WEBHOOK` on AWS Lambda | `WebhookRESTRequestHandler` via `LambdaWebhookHost` | `host = LambdaWebhookHost(WebhookRESTRequestHandler(MyInboundAdapter()))` at module scope in the request-handler Lambda, with `Lambda.register(<webhook_path>, method="POST")(host.handle)` (and `GET` → `host.challenge` when the adapter declares a `challenge_path`) (`rest_sync`/`rest_async`, `sqs`), with the route in `gateway_endpoints` and `handler = APIGatewayAuthorizer(bypass=WebhookRouteMatcher.for_integrations("<platform>")).handle` as the authorizer Lambda (`examples/aws-serverless/slack-openai/lambda_auth.py`): the chat route authenticates through the identity provider in the config packaged with that Lambda, the webhook route passes by method and path alone, and the adapter's signature check is its authentication |
 | `Source.POLLER` (pulled) | `PollerRunner` | `IOHandler.run(pollers=[PollerRunner(MyInboundAdapter())])` on `in_memory`, `PollerRunner.run(adapter)` as its own container on a broker |
 
 **Adapters must be mounted inside the pipeline.** `WebhookRESTRequestHandler` sets `requires_pipeline = True`, so `RESTAPI.run([...])` refuses it with an `AKConfigError`: without a queue there would be no runner to drain what it enqueues, and the platform would get its 200 while the user never got a reply.
@@ -121,8 +121,10 @@ class <Platform>InboundAdapter(InboundAdapter):
             requests=requests,
             prompt=text,
             agent=self._agent,
-            user_id=sender,
-            reply_context={"to": sender},  # flat, string-valued delivery coordinates
+            user_id=sender,                        # the sender id: Principal.subject, provider "messaging:<platform>"
+            namespace=message.get("workspace_id"),  # the scope the sender id is unique within: Principal.namespace
+            claims={},                             # sender facts the platform vouches for: Principal.claims
+            reply_context={"to": sender},          # flat, string-valued delivery coordinates
         )
 ```
 
@@ -130,13 +132,26 @@ Rules the adapter must hold to:
 
 1. **Never execute.** No `ChatService`, `AgentService` or `Runtime` import. The only side effects allowed are platform API calls and attachment storage.
 2. **Read only your own config block**, `AKConfig.get().<platform>`.
-3. **`verify` before `parse`, `parse` before enqueue.** `verify` is concrete and a no-op on the base: override it only when verification is separable from parsing. (Slack and Teams verify inside their SDK's dispatch, so theirs stays the default.)
+3. **`verify` before `parse`, `parse` before enqueue.** `verify` is concrete and a no-op on the base: override it only when verification is separable from parsing. (Slack and Teams verify inside their SDK's dispatch, so theirs stays the default.) Your check is the delivery's only one: `WebhookRESTRequestHandler` declares `authenticates_itself`, so `RESTAPI` mounts the webhook routes without the identity dependency (a platform token in `Authorization`, as Teams sends, would otherwise meet the app's identity provider), and on Lambda the authorizer's `WebhookRouteMatcher` bypass does the same.
 4. **`request_id` is the platform's message id** wherever one exists; that is what makes a webhook retry deduplicate instead of running the agent twice. Synthesize a stable one only when the platform gives you none (Slack: `f"slack:{channel}:{ts}"`).
 5. **An ignored delivery returns an empty request list**, never an exception.
 6. **Override `missing_verification_settings()`** when `verify` skips its check for an unset secret
    (return e.g. `["<platform>.webhook_secret"]` while it is empty). `LambdaWebhookHost` refuses such an
    adapter on cold start, because behind the authorizer's integration bypass the adapter's own check is
-   the only one. An adapter that refuses to construct without its secret (Slack, Teams) needs no override.
+   the only one. `WebhookRESTRequestHandler` still serves it, but logs a WARNING at construction and
+   enqueues every delivery with no sender (`user_id` cleared), so it runs as the anonymous principal: a
+   sender id the poster chose never becomes a `messaging:` principal the schedule tools or the sandbox
+   act as. An adapter that refuses to construct without its secret (Slack, Teams) needs no override.
+7. **Name the sender and its scope** (#603). `user_id` is the platform's own id for the sender and `namespace` the
+   scope that id is unique within (a Slack team id, a Teams tenant id, a WhatsApp `phone_number_id`, a Meta page id, a
+   Telegram bot id, the Gmail inbox address): `IntegrationProducer.enqueue` turns them into the run's `Principal`
+   (`provider` `messaging:<name>`, `subject`, `namespace`, `claims`), which threads, schedules and the sandbox key
+   on, so the same sender id under two installations is two principals. Normalize the id so one sender is one
+   principal: Gmail takes the bare address from `From` and lowercases it (`Alice <A@X.com>` is `a@x.com`) while
+   the reply still goes to the header as written. Put sender facts the platform vouches for
+   in `claims` (Gmail carries `Authentication-Results`); leave it empty when the platform vouches for the sender
+   itself. A delivery naming no sender runs anonymous. `tests/test_principal_messaging.py` pins the seam and each
+   adapter suite pins its own namespace.
 
 ### 3. Implement the Outbound Adapter
 
@@ -246,7 +261,7 @@ In `ak-py/pyproject.toml`:
 ]
 ```
 
-The factory imports the built-in inside `require_extra("<platform>", ...)`, so a missing SDK reports `pip install "agentkernel[<platform>]"` rather than a bare `ModuleNotFoundError`.
+The factory imports the built-in inside `require_extra("<platform>", ...)`, so a missing SDK reports `uv add "agentkernel[<platform>]"` rather than a bare `ModuleNotFoundError`.
 
 ### 10. Polling Platforms
 

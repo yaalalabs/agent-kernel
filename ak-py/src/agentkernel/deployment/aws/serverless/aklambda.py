@@ -6,9 +6,10 @@ from collections.abc import Callable
 from typing import Any
 
 from ....core.config import AKConfig
+from ....core.model import Principal
 from ....core.util.factory import AKConfigError
 from .core import BaseLambdaRouter, RESTLambdaRouter, WSLambdaRouter
-from .core.router.rest_lambda import ChatEnqueueHook
+from .core.router.rest_lambda import ChatEnqueueHook, DefaultEndpointsHandler
 
 
 class Lambda:
@@ -37,6 +38,20 @@ class Lambda:
     @staticmethod
     def _is_websocket_mode() -> bool:
         return Lambda._get_config().execution.is_websocket
+
+    @staticmethod
+    def principal(event: dict[str, Any]) -> Principal:
+        """
+        The caller the API Gateway authorizer established for ``event``.
+
+        The framework's chat route assigns it to the request body itself; a ``Lambda.register`` route
+        receives the raw event and reads it here. The anonymous principal when the API has no
+        authorizer, or the authorizer let the request through without one (a webhook bypass).
+
+        :param event: API Gateway event dictionary
+        :return: The principal from ``requestContext.authorizer.principal``, or the anonymous principal
+        """
+        return DefaultEndpointsHandler.principal_from_event(event)
 
     @classmethod
     def register(cls, route: str, method: str | None = None) -> Callable[[Callable], Callable]:

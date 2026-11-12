@@ -32,7 +32,8 @@ create_auth_deployment_package() {
         uv pip install --no-deps --target=dist_auth --find-links ../../../ak-py/dist --upgrade-package agentkernel --reinstall-package agentkernel agentkernel[api,aws,auth]
     fi
     uv pip install --group auth --target=dist_auth
-    cp -r lambda_auth.py dist_auth/
+    # The authorizer reads the identity block from config.yaml.
+    cp -r lambda_auth.py config.yaml dist_auth/
     cd dist_auth && zip -r ../dist_auth.zip .
     popd || exit 1
 }

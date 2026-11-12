@@ -21,11 +21,12 @@ from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 
 from ...api.handler import AgentRESTRequestHandler, AuthorisedRESTRequestHandler
-from ...auth.authoriser import Authoriser
 from ...core import Config
 from ...core.chat_service import ChatService, RequestBuilder, ResponseBuilder
-from ...core.model import BaseChatRequest, BaseRunRequest, StreamChunk
+from ...core.event import RunPaused
+from ...core.model import AgentPausedReplyAny, BaseChatRequest, BaseRunRequest, Principal, StreamChunk
 from ...core.service import AgentService
+from ...identity.provider.request import BEARER_CHALLENGE
 from ...pipeline.envelope import ATTR_THREAD
 from ...pipeline.producer import RequestProducer
 from ...pipeline.request_handler import RequestHandler
@@ -49,13 +50,14 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
     - GET /api/v1/threads/{session_id}: Get a thread with message history
     """
 
-    def __init__(self, authoriser: Authoriser | None = None):
+    def __init__(self):
         """
         Initializes an AgentThreadRequestHandler instance. Fails fast when
         Conversation Thread Support is not configured.
 
-        :param authoriser: Optional user-supplied Authoriser protecting the thread read routes.
         :raises ValueError: If no 'thread' block is present in the configuration.
+        :raises AKConfigError: If no identity provider is configured: threads are keyed on the
+            caller, so the handler composes the thread read routes, which require one.
         """
         super().__init__()
         self._log = logging.getLogger("ak.integration.thread")
@@ -63,7 +65,7 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
         if manager is None:
             raise ValueError("Conversation Thread Support is not configured. Add a 'thread' block to config.yaml")
         self._recorder = ThreadRecorder(manager)
-        self._read_handler = ThreadRESTRequestHandler(authoriser=authoriser)
+        self._read_handler = ThreadRESTRequestHandler()
 
     def get_router(self) -> APIRouter:
         """
@@ -74,37 +76,48 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
         router.include_router(self._read_handler.get_router())
         return router
 
-    async def run(self, body: BaseRunRequest):
+    async def run(self, body: BaseRunRequest, request: Request):
+        # The surface assigns the principal, a client value is overwritten; unlike the plain REST
+        # route, a request nothing authenticated is refused here (401), since a thread is keyed on
+        # its caller.
+        body.principal = self._read_handler._resolve_user(request)
         if Config.get().execution.is_sse:
             try:
                 gen = await self._stream_with_recording(body)
                 return StreamingResponse(gen, media_type="text/event-stream")
             except ValueError as e:
                 raise HTTPException(status_code=400, detail=str(e))
+            except PermissionError as e:
+                raise HTTPException(status_code=403, detail=str(e))
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Streaming failed: {str(e)}")
         return await self._run_with_recording(body)
 
     async def run_multipart(
         self,
+        request: Request,
         prompt: str = Form(...),
         agent: str | None = Form(None),
         session_id: str | None = Form(None),
-        user_id: str | None = Form(None),
         group_id: str | None = Form(None),
         thread_name: str | None = Form(None),
         files: list[UploadFile] | None = File(None),
         images: list[UploadFile] | None = File(None),
     ):
+        principal = self._read_handler._resolve_user(request)
+        try:
+            await self._reject_user_id_form(request)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
         req = AgentRESTRequestHandler.BaseMultimodalRunRequest(
             prompt=prompt,
             agent=agent,
             session_id=session_id,
-            user_id=user_id,
             group_id=group_id,
             thread_name=thread_name,
             files=files,
             images=images,
+            principal=principal,
         )
         if Config.get().execution.is_sse:
             try:
@@ -112,6 +125,8 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
                 return StreamingResponse(gen, media_type="text/event-stream")
             except ValueError as e:
                 raise HTTPException(status_code=400, detail=str(e))
+            except PermissionError as e:
+                raise HTTPException(status_code=403, detail=str(e))
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Streaming failed: {str(e)}")
         return await self._run_with_recording(req)
@@ -138,6 +153,9 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
         except ValueError as ve:
             self._log.error(f"ValueError processing request: {ve}")
             return ResponseBuilder.build_response(400, req.session_id, True, error=ve)
+        except PermissionError as pe:
+            self._log.warning(f"Refused request: {pe}")
+            return ResponseBuilder.build_response(403, req.session_id, True, error=pe)
         except HTTPException:
             raise
         except Exception as e:
@@ -149,6 +167,12 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
         streams SSE frames, and appends the accumulated assistant message at stream
         end. A halted/errored stream (error chunk, no raise) or an empty one must not
         record a blank assistant message in the thread.
+
+        A run that pauses records the pause alone, not the text that streamed before it, so this
+        surface and the non-streaming one hold the same history. An errored stream records nothing
+        at all, the pause included: `ChatService.execute_stream` turns a failure raised after the
+        pause into an error chunk, and that failure is the one that never persisted the pause — so
+        recording it would leave a question in the thread that nothing can answer.
 
         :param req: The chat request
         :return: Async generator yielding SSE-formatted frames
@@ -167,15 +191,26 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
         async def _stream():
             deltas: list[str] = []
             error_seen = False
+            paused: AgentPausedReplyAny | None = None
             try:
                 async for chunk in chunks:
                     if chunk.error:
                         error_seen = True
                     if chunk.delta:
                         deltas.append(chunk.delta)
+                    if isinstance(chunk.event, RunPaused):
+                        paused = AgentPausedReplyAny(
+                            run_id=chunk.event.run_id,
+                            session_id=session_id,
+                            agent=chunk.event.agent,
+                            interruptions=chunk.event.interruptions,
+                        )
                     yield ResponseBuilder.stream_chunk(chunk, session_id, sse_format=True)
-                if not error_seen and deltas:
-                    recorder.post_run(req, "".join(deltas))
+                if not error_seen:
+                    if paused is not None:
+                        recorder.post_run(req, paused)
+                    elif deltas:
+                        recorder.post_run(req, "".join(deltas))
             except Exception as e:
                 error_chunk = StreamChunk(error=str(e), done=True)
                 yield ResponseBuilder.stream_chunk(error_chunk, session_id, sse_format=True)
@@ -198,9 +233,13 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
         """Validate the request envelope before any thread write.
 
         :param req: The chat request to validate
-        :raises ValueError: If session_id is missing, or the request carries neither a prompt nor
-            a resume block
+        :raises ValueError: If the service would refuse the request outright (a ``user_id`` extra,
+            a schedule beside a resume), session_id is missing, or the request carries neither a
+            prompt nor a resume block
         """
+        # The service's own first guard, run here first: a 400 raised after the recorder has
+        # written would leave a thread holding a user message no reply ever answers.
+        ChatService.reject_unprocessable(req)
         if not req.session_id:
             raise ValueError("No session_id is provided in the request")
         if not req.prompt and req.resume is None:
@@ -236,10 +275,11 @@ class ThreadRequestHandler(RequestHandler):
     routes (see ThreadRESTRequestHandler).
     """
 
-    def __init__(self, authoriser: Authoriser | None = None):
+    def __init__(self):
         """
-        :param authoriser: Optional user-supplied Authoriser protecting the thread read routes.
         :raises ValueError: If no 'thread' block is present in the configuration.
+        :raises AKConfigError: If no identity provider is configured: threads are keyed on the
+            caller, so the handler composes the thread read routes, which require one.
         """
         super().__init__()
         self._log = logging.getLogger("ak.integration.thread.pipeline")
@@ -247,7 +287,7 @@ class ThreadRequestHandler(RequestHandler):
         if manager is None:
             raise ValueError("Conversation Thread Support is not configured. Add a 'thread' block to config.yaml")
         self._recorder = ThreadRecorder(manager)
-        self._read_handler = ThreadRESTRequestHandler(authoriser=authoriser)
+        self._read_handler = ThreadRESTRequestHandler()
 
     @property
     def read_handler(self) -> "ThreadRESTRequestHandler":
@@ -260,48 +300,56 @@ class ThreadRequestHandler(RequestHandler):
         router.include_router(self._read_handler.get_router())
         return router
 
-    async def run_chat(self, body: BaseRunRequest):
+    async def run_chat(self, body: BaseRunRequest, request: Request):
         """POST /api/v1/chat: record the user message, then enqueue as the pipeline normally does.
 
-        Every rejection the inherited route can raise runs before the recording: the two
-        validation messages in ``_validate_chat``, and the mode/response-store checks in
-        ``_reject_unroutable``. A 400 raised after ``_record_user_message`` would leave a thread
-        holding a user message no reply ever answers.
+        Every rejection the inherited route can raise runs before the recording: the 401 for a
+        request nothing authenticated, the validation in ``_validate_chat``, and the
+        mode/response-store checks in ``_reject_unroutable``. A 400 raised after
+        ``_record_user_message`` would leave a thread holding a user message no reply ever answers.
         """
+        # Before the recorder reads it: the surface assigns the principal, a client value is
+        # overwritten, and a request nothing authenticated is refused since a thread is keyed on
+        # its caller.
+        body.principal = self._read_handler._resolve_user(request)
         self._validate_chat(body)
         self._reject_unroutable(body)
         if body.schedule is None:
             await self._record_user_message(body)
-        return await super().run_chat(body)
+        return await super().run_chat(body, request)
 
     async def prepare_for_queue(self, body: BaseRunRequest) -> dict[str, str]:
         """The chat route's edge work for a host that enqueues on its own: validate, record the
         user message unless the request was deferred, and return the queue attributes to send.
 
-        The pipeline route's ``_reject_unroutable`` is not part of it: its mode and SSE-store
-        checks are this topology's, and a host checks its own deployment at cold start.
+        The host has already assigned the caller's principal to the body. The pipeline route's
+        ``_reject_unroutable`` is not part of it: its mode and SSE-store checks are this
+        topology's, and a host checks its own deployment at cold start.
 
         :param body: The chat request, rewritten in place into its queue-ready form.
         :return: The message attributes the enqueued request must carry.
-        :raises HTTPException: 400 for every rejection, all of them before any thread write.
+        :raises HTTPException: 401 for an anonymous principal, 400 or 403 for every other
+            rejection, all of them before any thread write.
         """
+        if Principal.subject_of(body.principal) is None:
+            raise HTTPException(status_code=401, detail="Authentication required", headers=BEARER_CHALLENGE)
         self._validate_chat(body)
         if body.schedule is None:
             await self._record_user_message(body)
         return self._queue_attributes(body)
 
-    @staticmethod
-    def _validate_chat(body: BaseRunRequest) -> None:
+    def _validate_chat(self, body: BaseRunRequest) -> None:
         """Reject a request the route cannot record, before anything is written.
 
         :param body: The chat request.
-        :raises HTTPException: 400 when session_id is missing, or neither a prompt nor a resume
-            block is present.
+        :raises HTTPException: 400 when session_id is missing, neither a prompt nor a resume
+            block is present, or the runner's ChatService would refuse the request outright.
         """
         if not body.session_id:
             raise HTTPException(status_code=400, detail={"error": "No session_id is provided in the request"})
         if not body.prompt and body.resume is None:
             raise HTTPException(status_code=400, detail={"error": "No prompt provided in the request", "session_id": body.session_id})
+        self._reject_unprocessable(body)
 
     async def _record_user_message(self, body: BaseRunRequest) -> None:
         """Do the pre-run thread work at the edge and rewrite the body for the queue.
@@ -313,8 +361,9 @@ class ThreadRequestHandler(RequestHandler):
         once `requests` is set.
 
         :param body: The chat request, mutated in place into its queue-ready form.
-        :raises HTTPException: 400 when `user_id` is missing, or the attachment configuration
-            rejects the request — all of them before any thread write.
+        :raises HTTPException: 400 when the attachment configuration rejects the request, 403 when
+            another principal owns the thread, all of them before any thread write, so an
+            unanswerable request leaves no phantom thread behind.
         """
         try:
             # No agent precheck: in queue mode the request handler holds no agents; the runner's ChatService checks.
@@ -323,6 +372,9 @@ class ThreadRequestHandler(RequestHandler):
         except ValueError as e:
             self._log.error(f"Rejected before recording: {e}")
             raise HTTPException(status_code=400, detail={"error": str(e), "session_id": body.session_id})
+        except PermissionError as e:
+            self._log.warning(f"Refused before recording: {e}")
+            raise HTTPException(status_code=403, detail={"error": str(e), "session_id": body.session_id})
         body.requests = requests
         body.files = None
         body.images = None
@@ -350,22 +402,22 @@ class ThreadRESTRequestHandler(AuthorisedRESTRequestHandler):
     """
     API router that exposes endpoints to read conversation threads.
     Endpoints:
-    - GET /api/v1/threads: List threads filtered by user_id and/or group_id
+    - GET /api/v1/threads: List the caller's threads, optionally filtered by group_id
     - GET /api/v1/threads/{session_id}: Get a thread with full message history
 
     Threads are renamed via the chat request's thread_name field, not through
-    this router. When an Authoriser is supplied, every request must carry a
-    Bearer token that the Authoriser resolves to a user_id (the inherited
-    _resolve_user); listings are scoped to that user and thread reads enforce
-    ownership. Without an Authoriser, routes are open.
+    this router. Every request is authenticated by the identity dependency
+    ``RESTAPI`` installs (the inherited ``_resolve_user`` refuses the anonymous
+    principal with a 401): listings are the caller's own threads and a thread
+    read enforces ownership on the principal's subject.
     """
 
-    def __init__(self, authoriser: Authoriser | None = None):
+    def __init__(self):
         """
         Initializes a ThreadRESTRequestHandler instance.
-        :param authoriser: Optional user-supplied Authoriser protecting the thread routes.
+        :raises AKConfigError: If no identity provider is configured.
         """
-        super().__init__(authoriser)
+        super().__init__()
         self._log = logging.getLogger("ak.api.thread")
 
     def get_router(self) -> APIRouter:
@@ -377,12 +429,11 @@ class ThreadRESTRequestHandler(AuthorisedRESTRequestHandler):
         @router.get("/api/v1/threads")
         def list_threads(
             request: Request,
-            user_id: str | None = None,
             group_id: str | None = None,
             limit: int | None = None,
             cursor: str | None = None,
         ):
-            return self.list_threads(lambda: self._resolve_user(request), user_id=user_id, group_id=group_id, limit=limit, cursor=cursor)
+            return self.list_threads(lambda: self._resolve_user(request), group_id=group_id, limit=limit, cursor=cursor)
 
         @router.get("/api/v1/threads/{session_id}")
         def get_thread(session_id: str, request: Request, limit: int | None = None, cursor: str | None = None):
@@ -392,29 +443,27 @@ class ThreadRESTRequestHandler(AuthorisedRESTRequestHandler):
 
     def list_threads(
         self,
-        resolve_user: Callable[[], str | None],
-        user_id: str | None = None,
+        resolve_user: Callable[[], Principal],
         group_id: str | None = None,
         limit: int | None = None,
         cursor: str | None = None,
     ) -> dict:
         """GET /api/v1/threads, callable outside FastAPI (the Lambda host serves it too).
 
-        :param resolve_user: Returns the authorised user, or None when the route is open. Called
-            only once thread support is known to be enabled, so the 404 comes before any 401.
-        :param user_id: Owner filter; replaced by the authorised user when there is one.
+        :param resolve_user: Returns the caller's principal, raising 401 for an anonymous one.
+            Called only once thread support is known to be enabled, so the 404 comes before any 401.
         :param group_id: Group filter.
         :param limit: Page size.
         :param cursor: Cursor from a previous page.
         :return: The page of threads (without messages) and the next cursor.
-        :raises HTTPException: 404 when thread support is off, 400 for a bad cursor or limit.
+        :raises HTTPException: 404 when thread support is off, 401 for an anonymous caller, 400
+            for a bad cursor or limit.
         """
         manager = ConversationThreadManager.get()
         if manager is None:
             raise HTTPException(status_code=404, detail="Thread support is not enabled")
-        resolved_user_id = resolve_user()
-        if resolved_user_id is not None:
-            user_id = resolved_user_id  # listings are forced to the authorised user
+        # The listing is the caller's own: there is no parameter that widens it.
+        user_id = resolve_user().subject
         try:
             page = manager.list_threads(user_id=user_id, group_id=group_id, limit=limit, cursor=cursor)
         except ValueError as e:
@@ -426,28 +475,28 @@ class ThreadRESTRequestHandler(AuthorisedRESTRequestHandler):
 
     def get_thread(
         self,
-        resolve_user: Callable[[], str | None],
+        resolve_user: Callable[[], Principal],
         session_id: str,
         limit: int | None = None,
         cursor: str | None = None,
     ) -> dict:
         """GET /api/v1/threads/{session_id}, callable outside FastAPI (the Lambda host serves it too).
 
-        :param resolve_user: Returns the authorised user, or None when the route is open. Called
-            only once thread support is known to be enabled, so the 404 comes before any 401.
+        :param resolve_user: Returns the caller's principal, raising 401 for an anonymous one.
+            Called only once thread support is known to be enabled, so the 404 comes before any 401.
         :param session_id: The thread to read.
         :param limit: Message page size.
         :param cursor: Cursor from a previous message page.
         :return: The thread with one page of its messages and the next cursor.
         :raises HTTPException: 404 when thread support is off or the thread does not exist, 403
-            when another user owns it, 400 for a bad cursor or limit.
+            when another user owns it, 401 for an anonymous caller, 400 for a bad cursor or limit.
         """
         manager = ConversationThreadManager.get()
         if manager is None:
             raise HTTPException(status_code=404, detail="Thread support is not enabled")
-        resolved_user_id = resolve_user()
+        user_id = resolve_user().subject
         try:
-            thread = manager.get_thread(session_id, user_id=resolved_user_id)
+            thread = manager.get_thread(session_id, user_id=user_id)
         except PermissionError:
             raise HTTPException(status_code=403, detail="Thread is not owned by the authorised user")
         if thread is None:

@@ -9,8 +9,10 @@ Integrate Google's Agent Development Kit with Agent Kernel.
 ## Installation
 
 ```bash
-pip install agentkernel[adk]
+uv add "agentkernel[adk]"
 ```
+
+The `adk` extra requires `google-adk` 2.7.0 or later.
 
 ## Basic Usage
 
@@ -110,24 +112,24 @@ GoogleADKModule([agent])
 If the model's reply does not validate against the schema, the runner logs a warning and falls back to a plain `AgentReplyText` with the raw text. `str(reply)` on an `AgentReplyAny` returns the JSON-serialized content, so text-based consumers work unchanged. See [Reply Types](../core-concepts/runner#structured-replies) for how structured replies are surfaced, and [Execution Hooks](../integrations/hooks#structured-replies-in-hooks) for how hooks receive them.
 
 :::info Streaming limitation
-Structured output applies to non-streaming execution only. Streamed runs emit typed [`StreamEvent`](../core-concepts/runner#streaming-execution)s — `TextDelta` for assistant prose, plus `ReasoningStart`/`ReasoningDelta`/`ReasoningEnd` and `ToolCallStart`/`ToolCallArgs`/`ToolCallEnd`/`ToolCallResult` — not just plain text deltas.
+Structured output applies to non-streaming execution only. Streamed runs emit typed [`StreamEvent`](../core-concepts/runner#streaming-execution)s, `TextDelta` for assistant prose, plus `ReasoningStart`/`ReasoningDelta`/`ReasoningEnd` and `ToolCallStart`/`ToolCallArgs`/`ToolCallEnd`/`ToolCallResult`, not just plain text deltas.
 :::
 
 ## Per-run context/state
 
-Google ADK **round-trips all caller keys** of the reserved [`framework_context`](../core-concepts/session.md#framework-context--per-run-state) session key **except AK-internal ones**. It is merged into the ADK session `state` on input (the internal `ak_tool_context` key is written last, so a caller key of that name cannot displace it); on write-back the accumulated state is read back with `ak_tool_context` and ADK's `app:`/`user:`/`temp:`-prefixed keys stripped — the first two are app- and user-scoped values ADK merges in on read, the third is invocation-scoped, and none are per-session caller state. Because the rest of the state is returned whole, keys a tool **adds** during the run survive to the next turn. ADK's native state is in-memory only, so this write-back is what gives the context cross-turn durability.
+Google ADK **round-trips all caller keys** of the reserved [`framework_context`](../core-concepts/session.md#framework-context--per-run-state) session key **except AK-internal ones**. It is merged into the ADK session `state` on input (the internal `ak_tool_context` key is written last, so a caller key of that name cannot displace it); on write-back the accumulated state is read back with `ak_tool_context` and ADK's `app:`/`user:`/`temp:`-prefixed keys stripped: the first two are app- and user-scoped values ADK merges in on read, the third is invocation-scoped, and none are per-session caller state. Because the rest of the state is returned whole, keys a tool **adds** during the run survive to the next turn. ADK's native state is in-memory only, so this write-back is what gives the context cross-turn durability.
 
 Two consequences of reading the state back wholesale:
 
-- **The state is accumulate-only.** ADK keeps every key written to a session for that session's lifetime, so removing a key from `framework_context` does not remove it from ADK — it reappears on the next write-back. To clear a value on ADK, overwrite it (e.g. set it to `None` or `[]`) rather than deleting the key.
-- **Agent-written state round-trips too.** A value an agent writes itself — most commonly `LlmAgent(output_key="...")`, which stores the agent's response in the state — is indistinguishable from a key a tool wrote, so it also lands in `framework_context`. Expect the stored context on ADK to hold more than what your tools put there.
+- **The state is accumulate-only.** ADK keeps every key written to a session for that session's lifetime, so removing a key from `framework_context` does not remove it from ADK: it reappears on the next write-back. To clear a value on ADK, overwrite it (e.g. set it to `None` or `[]`) rather than deleting the key.
+- **Agent-written state round-trips too.** A value an agent writes itself, most commonly `LlmAgent(output_key="...")`, which stores the agent's response in the state, is indistinguishable from a key a tool wrote, so it also lands in `framework_context`. Expect the stored context on ADK to hold more than what your tools put there.
 
 ## Native run options
 
 Google ADK's own per-run options are declared per agent with
 [`Module.run_options`](../core-concepts/runner.md#native-run-options). Agent Kernel constructs the
 ADK `Runner` per run, so the options have three destinations: `plugins` go to the `App` (ADK refuses
-an `App` and `plugins` on the `Runner` together, and this adapter always builds an `App` — see
+an `App` and `plugins` on the `Runner` together, and this adapter always builds an `App`, see
 [Human in the Loop](#human-in-the-loop)), `memory_service`, `artifact_service`, `credential_service`
 and `plugin_close_timeout` go to the `Runner(...)` constructor, and `run_config` goes to `run_async`.
 You declare them all the same way:
@@ -191,7 +193,7 @@ A confirmation is a **verdict and nothing else**, and both limits were establish
 ADK consumes the confirmation response and writes its own for the original call, so:
 
 - **A structured answer is refused.** Approving with `{"amount": 5}` ran the tool with its original
-  arguments — the payload never reaches it. It is now rejected rather than dropped. Model the
+  arguments: the payload never reaches it. It is now rejected rather than dropped. Model the
   question as a `LongRunningFunctionTool`, whose result *is* the human's answer and takes any shape,
   or have the model propose the value in the tool's arguments for the human to approve.
 - **`cancelled` reads as `denied`.** The wording Agent Kernel sends for "nobody decided" rides in
@@ -201,13 +203,17 @@ ADK consumes the confirmation response and writes its own for the original call,
 A second pause replaces the earlier one, but only among ADK's own: a pause another framework holds
 on the same session is independent and stays answerable.
 
-**A prompt sent beside a decision is refused** — established by test, not assumption. ADK itself
+**A prompt sent beside a decision is refused**, established by test, not assumption. ADK itself
 rejects a message holding both a function response and text, because a function response resumes an
 existing invocation while text starts a new one.
 
 Streaming pauses and resumes correctly at `google-adk` 2.8.0, verified against a real run.
 
 See [Human in the Loop](../advanced/human-in-the-loop.md).
+
+## Realtime voice
+
+With `execution.mode: realtime`, an ADK agent runs a live Gemini conversation through ADK's own `Runner.run_live()`. The root is an `LlmAgent` with `sub_agents` (ADK's transfers) or a `Workflow`. ADK runs the tools and the transfers; Agent Kernel carries the audio. A speaking `Workflow` node must set `mode="chat"` or `mode="task"`. `Module.run_options` takes `run_config` and the `Runner` options (`plugins`, services). AK hooks and guardrails do not run on this path. See [LiveKit Voice](../integrations/livekit.md) and [Realtime Voice Internals](../architecture/realtime-internals.md).
 
 ## Features
 
@@ -217,6 +223,7 @@ See [Human in the Loop](../advanced/human-in-the-loop.md).
 - ✅ Multi-agent coordination
 - ✅ Framework-agnostic tool binding
 - ✅ Structured output (`output_schema` → `AgentReplyAny`)
+- ✅ Realtime voice (`Runner.run_live()`, transfers and `Workflow` steps)
 
 ## Example
 

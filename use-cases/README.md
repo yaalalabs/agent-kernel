@@ -4,12 +4,12 @@ This guide shows how to use the Agent Kernel skills pack with a coding agent to 
 
 Python version must be `3.12` - `3.13.x`.
 
-Before starting, install the `agentkernel` package first; this installs the `ak` CLI used to download the skills pack. Follow the Agent Kernel quick-start installation path for your preferred framework.
+Before starting, install the `agentkernel` package as a uv tool; this puts the `ak` CLI used to download the skills pack on your `PATH`. The agent project itself adds Agent Kernel as a dependency when it is scaffolded; follow the Agent Kernel quick-start installation path for your preferred framework.
 
-Install Agent Kernel with:
+Install the `ak` CLI with:
 
 ```bash
-pip install agentkernel
+uv tool install agentkernel
 ```
 
 ## 1. Create Or Enter The Agent Directory

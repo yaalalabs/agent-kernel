@@ -63,6 +63,16 @@ separate process only in split deployments.
   after `retry_count` reads (about 59 s without a block).
 - **Execution mode**: A2A ignores `execution.mode` and always waits for one whole reply.
 
+### Authentication
+
+The A2A routes are mounted on the REST server, so the identity dependency applies to them as to every
+other route. With an `identity` block, a `message:send` carrying `Authorization: Bearer <credential>`
+runs as the principal the identity provider resolves (the executor hands it to the queued request, so
+the agent, its hooks and its tools see the caller), a refused credential is a 401, and a request without
+one runs as the anonymous principal. Without an `identity` block every request is anonymous. The
+providers (`static`, `oidc` for Auth0, Keycloak, Okta or any OpenID Connect issuer, `cognito`, `entra`,
+`firebase`) are described in [Identity and access](../advanced/identity-and-access.md).
+
 ## Agent Capabilities
 
 Each exposed agent automatically publishes an A2A **agent card** (via the framework adapter's `get_a2a_card()`), describing its name, description, and endpoint.
