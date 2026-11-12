@@ -228,7 +228,7 @@ Complete working examples (with In-Memory, Kafka, NATS, and AWS SQS architecture
 
 ## Limitations
 
-- **AK hooks and guardrails** do not automatically run on native realtime turns. Use native SDK live features where supported.
+- **AK hooks** run on a call: typed text through `on_run`, caller audio through `on_stream_input`, and output events through `on_stream_event` (see [Realtime calls](hooks.md#realtime-hooks)). The input guardrail checks typed text only, so caller audio reaches the model unchecked unless a pre-hook turns it into text. The output guardrail does not run on a streamed reply. Use native SDK live features where supported.
 - **Human approval** has no decision path in this LiveKit edge. Approval-requiring OpenAI tools and ADK confirmation requests fail the connection clearly.
 - **No session lock around tools.** The SDK runs the tools; AK sets the tool context when the call opens but does not hold the session lock while a tool runs.
 - **One room per edge**: each `LiveKitEdgeAdapter` joins one room, and the room uses one AK session. Everyone in the room shares that conversation: the model hears one audio stream and cannot tell speakers apart. Give each caller their own room for a private call.

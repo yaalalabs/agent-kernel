@@ -101,8 +101,10 @@ def test_process_message_routes_text_and_audio_requests():
         )
     )
 
-    conn.send_text.assert_called_once_with("hello")
-    conn.append_audio.assert_called_once_with("AAA=")
+    [(text,)] = [call.args for call in conn.send_text.call_args_list]
+    [(voice,)] = [call.args for call in conn.append_audio.call_args_list]
+    assert text.prompt == "hello"
+    assert voice.audio_data == "AAA="
 
 
 def test_process_message_reuses_existing_connection_without_loading_agent():
@@ -169,7 +171,9 @@ def test_consumer_loop_starts_real_pool_processes_requests_and_closes_connection
 
     session = Session("room_01")
     # The pool activates the agent for the call, as it does a real one (Agent._activate).
-    agent = SimpleNamespace(name="general", realtime_runner_cls=_RecordingRealtimeRunner, _activate=contextlib.nullcontext)
+    agent = SimpleNamespace(
+        name="general", realtime_runner_cls=_RecordingRealtimeRunner, _activate=contextlib.nullcontext, pre_hooks=[], post_hooks=[]
+    )
     service = SimpleNamespace(agent=agent, runtime=Runtime(InMemorySessionStore()), session=session)
     chat_service = MagicMock()
     chat_service.prepare_agent_handler.return_value = SimpleNamespace(service=service)

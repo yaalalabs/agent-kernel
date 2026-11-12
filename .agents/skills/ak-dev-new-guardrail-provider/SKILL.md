@@ -32,6 +32,7 @@ Agent Kernel's guardrail system uses the hook mechanism:
 - **`BaseGuardrailUtil`** (also in `guardrail/guardrail.py`) provides shared text-extraction helpers and is mixed into concrete guardrail classes
 - **Factories** in `guardrail.py` select the appropriate provider based on `AKConfig.guardrail` configuration; unknown types raise an exception, and the no-op classes are returned only when guardrails are disabled
 - Guardrails are registered as **system hooks** in `Runtime`, meaning they apply to all agents automatically
+- Both classes implement `on_run` only, so they run where a whole message goes through `on_run`. A streamed reply (SSE, WebSocket `delta`, realtime) goes through `on_stream_event` instead, which they do not override, so the **output guardrail does not run on a streamed reply**; on a realtime call the **input guardrail checks typed text only**, never caller audio (#927). A new provider inherits both limits
 
 ## Step-by-Step
 

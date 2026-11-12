@@ -69,10 +69,12 @@ async def test_a_call_from_caller_line_to_handoff_to_end_of_session(monkeypatch)
         "input_transcript",
         "audio_delta",
         "text_delta",
+        "message_end",
         "done",
         "agent_changed",
         "audio_delta",
         "text_delta",
+        "message_end",
         "done",
     ]
 

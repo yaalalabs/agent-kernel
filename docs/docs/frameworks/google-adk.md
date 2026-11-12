@@ -213,7 +213,7 @@ See [Human in the Loop](../advanced/human-in-the-loop.md).
 
 ## Realtime voice
 
-With `execution.mode: realtime`, an ADK agent runs a live Gemini conversation through ADK's own `Runner.run_live()`. The root is an `LlmAgent` with `sub_agents` (ADK's transfers) or a `Workflow`. ADK runs the tools and the transfers; Agent Kernel carries the audio. A speaking `Workflow` node must set `mode="chat"` or `mode="task"`. `Module.run_options` takes `run_config` and the `Runner` options (`plugins`, services). AK hooks and guardrails do not run on this path. Ending a call does not close the agent's toolsets (an MCP toolset, for example): they belong to your application and are shared by every call on the agent. See [LiveKit Voice](../integrations/livekit.md) and [Realtime Voice Internals](../architecture/realtime-internals.md).
+With `execution.mode: realtime`, an ADK agent runs a live Gemini conversation through ADK's own `Runner.run_live()`. The root is an `LlmAgent` with `sub_agents` (ADK's transfers) or a `Workflow`. ADK runs the tools and the transfers; Agent Kernel carries the audio. A speaking `Workflow` node must set `mode="chat"` or `mode="task"`. `Module.run_options` takes `run_config` and the `Runner` options (`plugins`, services). AK hooks run on the call; see [Realtime calls](../integrations/hooks.md#realtime-hooks) for what they can and cannot do. Ending a call does not close the agent's toolsets (an MCP toolset, for example): they belong to your application and are shared by every call on the agent. See [LiveKit Voice](../integrations/livekit.md) and [Realtime Voice Internals](../architecture/realtime-internals.md).
 
 ## Features
 

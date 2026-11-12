@@ -31,7 +31,7 @@ from agents.realtime.model_inputs import RealtimeModelSendToolOutput, RealtimeMo
 from agentkernel.core import Session
 from agentkernel.core.builder import SessionStoreBuilder
 from agentkernel.core.config import AKConfig
-from agentkernel.core.model import ExecutionMode
+from agentkernel.core.model import AgentRequestText, ExecutionMode
 from agentkernel.core.runtime import Runtime
 from agentkernel.core.tool import SystemToolFactory
 from agentkernel.framework.openai.openai import OpenAIAgent, OpenAIModule, OpenAIRealtimeRunner, OpenAIRunner
@@ -808,7 +808,7 @@ class TestThroughThePool:
         conn.update_delivery_context("req", None, None, {})
         await conn.connect()
         try:
-            conn.send_text("billing please")  # on the pool loop: scheduled, not awaited
+            conn.send_text(AgentRequestText(prompt="billing please"))  # on the pool loop: scheduled, not awaited
             deadline = asyncio.get_running_loop().time() + 5
             consumer = QueueTransportFactory.create().create_consumer(QueueName.OUTPUT)
             seen: list[dict] = []
@@ -856,7 +856,7 @@ class TestThroughThePool:
         conn.update_delivery_context("req", None, None, {})
         await conn.connect()
         try:
-            conn.send_text("read it")
+            conn.send_text(AgentRequestText(prompt="read it"))
             deadline = asyncio.get_running_loop().time() + 5
             consumer = QueueTransportFactory.create().create_consumer(QueueName.OUTPUT)
             done = 0

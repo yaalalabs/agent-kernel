@@ -323,6 +323,37 @@ A hook that still defines `on_stream_chunk` will not raise — the method is sim
 
 **Use Cases:** redacting tool arguments and results, PII masking over assembled text, profanity filtering, hiding reasoning traces from clients, refusing a response outright, streaming analytics.
 
+### Which hook method runs in which mode {#hooks-per-mode}
+
+A hook method follows the shape of the message: a whole message goes to `on_run`, a message that arrives in pieces goes to `on_stream_event`.
+
+| Mode | Pre-hook | Post-hook |
+| --- | --- | --- |
+| `rest_sync`, `rest_async`, `async` with `message_type: complete` | `on_run`, once per turn | `on_run`, on the whole reply |
+| `rest_sync` (SSE) and `async` with `message_type: delta` | `on_run`, once per turn | `on_stream_event`, on each event. `on_run` is **not** called |
+| `realtime` | `on_run` on typed text; `on_stream_input` on each caller audio chunk | `on_stream_event`, on each output event. `on_run` is **not** called |
+
+The built-in output guardrail implements `on_run` only, so it does not run on a streamed reply in any mode.
+
+### Realtime calls {#realtime-hooks}
+
+On a realtime call the same hooks run in the process that serves the call, after the input queue and before the output queue. Agent Kernel provides the hook points; what a hook does is your code.
+
+- **Typed text** goes through `on_run` like any request, agent hooks first, then the system hooks. A hook that returns an `AgentReply` stops the message: nothing reaches the model and the edge receives one error chunk with the reply text. The call continues.
+- **Caller audio** goes through the optional `PreHook.on_stream_input`, once per chunk. The chunk is base64 PCM16 at 24 kHz. Return the chunk (or a changed one) to pass it on, `None` to drop it, or a list to emit several. A list ends the chain for that chunk; `AgentRequestVoice` items go to the model, and `AgentRequestText` items are handled as typed text. A hook that raises drops the chunk, and the first failure of a call is logged at `ERROR`.
+- **Model output** goes through `on_stream_event`, one call per event (`AudioDelta`, `TextDelta`, `InputTranscript`, `Interrupt`, `AgentChanged`), with the rules in [Streaming Hooks](#streaming-hooks-on_stream_event). `StreamHalt`, or any other exception, ends the call: the edge receives one error chunk and the next input reconnects.
+- **Turn end:** when the model's turn finishes, the hooks receive a `MessageEnd` before the final `done`, so a hook that held pieces can release them there. Its `message_id` is the last output event's id, which is not one id per turn on every framework. A call sends no `MessageStart`.
+- **`requests`** is the last text turn sent to the model, or an empty list when none was sent yet.
+- **State:** `Session.current()` and `Agent.current()` are set around every hook call. One hook instance serves every call, so keep state in `session.get_volatile_cache()`; it is cleared when the call closes. The session lock is not held, and the session is not stored.
+
+What a hook can not do:
+
+- A hook on the caller's audio sees audio, not words. The model hears the audio that passes the pre-hooks, and `InputTranscript` is the model's own transcript, which arrives after it heard the audio.
+- `TextDelta` and `AudioDelta` are separate events. Rewriting one does not change the other.
+- Audio that has already played cannot be taken back.
+- A hook runs on the playback path, so a slow hook delays the audio and every event behind it. Agent Kernel sets no time limit.
+- The input guardrail checks typed text only. Agent Kernel logs one startup warning per realtime agent when `guardrail.input.enabled` is on.
+
 ## Implementing Hooks
 
 ### Pre-Execution Hook

@@ -47,8 +47,8 @@ export const FEATURE_TABS: FeatureTab[] = [
       {
         title: "Execution Hooks",
         description:
-          "Pre- and post-hooks wrap every run: inject context, validate input, rewrite or halt replies, and filter streamed events as they are produced.",
-        tags: ["Pre-hooks", "Post-hooks", "Stream events"],
+          "Pre- and post-hooks wrap every run: inject context, validate input, rewrite or halt replies, and filter streamed events as they are produced, on voice calls too.",
+        tags: ["Pre-hooks", "Post-hooks", "Stream events", "Realtime"],
         docs: "/docs/integrations/hooks",
         example: "api/hooks",
       },

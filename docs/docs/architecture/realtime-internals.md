@@ -51,7 +51,7 @@ The SDK runs the tools; the pool does not. Before the native session starts, the
 
 A realtime session neither injects nor stores the AK session's `framework_context`, and the AK session is not saved when a call ends.
 
-AK pre/post hooks and AK guardrails do not automatically run during native live turns. Use the SDK's own live hooks and guardrails where supported. A tool needing human approval or confirmation cannot continue through this LiveKit edge because the room has no decision path; both adapters fail the connection when one is requested (an OpenAI tool with `needs_approval`, an ADK `FunctionTool` with `require_confirmation`) rather than approving it.
+AK hooks run on a call as they do in a delta mode: typed text through `PreHook.on_run`, each caller audio chunk through the optional `PreHook.on_stream_input`, and every output event through `PostHook.on_stream_event`, followed by a `MessageEnd` before each `done`. See [Realtime calls](../integrations/hooks.md#realtime-hooks). The input guardrail checks typed text only, and the output guardrail does not run on a streamed reply; use the SDK's own live guardrails where supported. A tool needing human approval or confirmation cannot continue through this LiveKit edge because the room has no decision path; both adapters fail the connection when one is requested (an OpenAI tool with `needs_approval`, an ADK `FunctionTool` with `require_confirmation`) rather than approving it.
 
 ## Connection lifetime
 
