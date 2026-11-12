@@ -578,7 +578,9 @@ Platform --poll-----> PollerRunner ---------------> (same adapter surface) -----
   (the scope that id is unique within: a Slack team id, a Teams tenant id, a WhatsApp
   `phone_number_id`, a Meta page id, a Telegram bot id, the Gmail inbox address; it becomes
   `Principal.namespace`, so the same sender id under two scopes is two principals) and `claims`
-  (platform facts about the sender, such as Gmail's `Authentication-Results`).
+  (platform facts about the sender, such as Gmail's `Authentication-Results`). Gmail's `user_id` is
+  the bare lowercased address parsed from `From` (`Alice <A@X.com>` is `a@x.com`), while the reply
+  still goes to the header as written.
 - **`OutboundAdapter`**: `deliver(reply, reply_context)`, `deliver_error(message, reply_context)`,
   `acknowledge(reply_context) -> dict` (edge-side typing/read/"thinking" feedback, whose return
   value is merged into the reply context), and a shared `split_reply` chunker driven by
@@ -602,7 +604,11 @@ Platform --poll-----> PollerRunner ---------------> (same adapter surface) -----
   `storage_type: session_cache`; a message with no attachments is never rejected. Shared with the
   thread path, which supplies its own two error messages.
 - **Hosting**: `WebhookRESTRequestHandler(adapter)` mounts the adapter's routes and sets
-  `requires_pipeline = True`; its read-only `adapter` property exposes the hosted adapter. On AWS
+  `requires_pipeline = True`; its read-only `adapter` property exposes the hosted adapter. When the
+  adapter's `missing_verification_settings()` is non-empty (say `whatsapp.app_secret` unset), it
+  logs a WARNING at construction and enqueues every delivery with `user_id` cleared, so it runs as
+  the anonymous principal: a sender id the poster chose never becomes a `messaging:` principal the
+  schedule tools or the sandbox act as. On AWS
   Lambda the same handler is served by `deployment/aws/serverless/core/webhook_host.py::LambdaWebhookHost`
   (#760): the application builds `LambdaWebhookHost(handler)` at module scope and registers its
   `(event, context)` endpoints with `Lambda.register` on the existing `RESTLambdaRouter` — `handle` on
@@ -802,8 +808,10 @@ deleted).
   `public_detail`, `Unauthorized` unless the credential's shape itself is wrong),
   `security_scheme() -> (name, settings)` (`bearer` with no settings unless a provider says
   otherwise; `openIdConnect` with the discovery URL for the OIDC family) and `async close()`.
-  Providers never write `roles` (the role mapper is the one producer) and read no configuration
-  in their methods: the factory hands every setting to the constructor. `RequestContext`
+  Providers never write `roles` (the role mapper is the one producer; `static` alone sets the
+  roles an operator listed, which a mapper replaces) and read no configuration in their methods:
+  the factory hands every setting to the constructor, which raises `AKConfigError` on an unusable
+  one. `RequestContext`
   (`path`, `http_method`, `headers`) says where the credential was presented.
   `ClaimPath.read(payload, path)` tries the whole path as one claim name first (Auth0
   namespaces custom claims as URLs, which contain dots but are single keys) and only then walks
@@ -813,15 +821,18 @@ deleted).
   `if/elif`: `oidc`, `cognito`, `entra`, `firebase` (each behind `require_extra("auth", ...)`;
   the `auth` extra is PyJWT, cryptography and httpx), `static` (no extra), else a dotted path to
   an `IdentityProvider` subclass that receives the whole `identity.provider` block
-  (`resolve_dotted`), else `AKConfigError`; with an `identity.role_mapper` block the provider is
+  (`resolve_dotted`; `_IdentityProviderConfig` is `extra="allow"`, so the class reads settings of
+  its own, such as a `keys_table`, from `config.model_extra`), else `AKConfigError`; with an
+  `identity.role_mapper` block the provider is
   wrapped in a `MappedIdentityProvider`. `get()` is the process-wide, lock-guarded instance built
   on first use, and `None` without an `identity` block: that `None` is the enabled-check every
   surface reads. `reset()` for tests.
 - **`StaticIdentityProvider`** (`static.py`): the development, test and CLI provider. Each key of
   `identity.provider.static.principals` names a secret resolved through the secret capability
   (`SecretManager`, environment layer first) at construction, so a credential value is never in
-  YAML; a missing secret, a malformed key or two keys resolving to one value is an
-  `AKConfigError` at startup. `authenticate` compares the presented credential against every
+  YAML; an empty `principals` map (a typo such as `static: {principal: ...}` leaves it empty), a
+  missing secret, a malformed key or two keys resolving to one value is an `AKConfigError` at
+  startup. `authenticate` compares the presented credential against every
   entry in constant time (`hmac.compare_digest`, no early exit) and yields the entry's principal
   in the `static` namespace.
 - **The OIDC family** (`oidc.py`, `cognito.py`, `entra.py`, `firebase.py`): one validation path.
@@ -830,23 +841,38 @@ deleted).
   `required_claims` and the subject claim, then reads the principal through the claim paths
   (`claims.subject`, `claims.groups`; a string group is one group, a missing claim none) with
   `namespace` the validated issuer; every claim but the subject stays in `claims`, the groups claim
-  included, so `role_mapper.pass_through` can lift it. Symmetric algorithms (`HS*`) are refused at construction.
+  included, so `role_mapper.pass_through` can lift it. `algorithms` is checked at construction
+  (`_check_algorithms`): an empty list, `none`, a name PyJWT does not know and any `HS*` entry are
+  `AKConfigError`.
   `JWKSCache` fetches discovery (`<issuer>/.well-known/openid-configuration`, skipped when
-  `jwks_uri` is given) and the key set through one `httpx.AsyncClient` with an injectable
-  transport (nothing blocks the loop; tests hand in `httpx.MockTransport`), refreshes once on an
-  unknown `kid` with a cooldown, and keeps the previous keys when a fetch fails. The subclasses
+  `jwks_uri` is given) and the key set, and is loop-agnostic, because one provider serves every
+  caller in the process and a sync host (Azure's thread-pooled functions) runs each call on a
+  fresh loop: a cached key is selected with no lock (the key dict is swapped whole); a load runs
+  on a worker thread (`asyncio.to_thread`) through a short-lived `httpx.Client` with an injectable
+  transport (tests hand in `httpx.MockTransport`), serialized by a `threading.Lock`, and a caller
+  that waited re-checks a load generation instead of fetching again. A failed first load is
+  retried only after `failure_cooldown` (5 s), an unknown `kid` forces at most one refresh per
+  `refresh_cooldown` (30 s), a failed refresh keeps the previous keys, and any fetch failure is an
+  `AuthenticationError` (401), never a 500. The subclasses
   derive the issuer from their sub-block and add one check each (`_check`, `_groups`): Cognito
-  (`region`, `user_pool_id`, `token_use`; an access token is checked on `client_id` instead of
-  `aud`), Entra (`tenant_id`: `tid` must match; a groups overage yields no groups with one
-  warning), Firebase (`project_id`: Google's issuer and key set). Auth0, Keycloak and Okta are
+  (`region`, `user_pool_id`, `token_use`, a `Literal["access", "id"]` in config that the
+  constructor checks too; an access token is checked on `client_id` instead of `aud`), Entra
+  (`tenant_id`: v2.0 tokens only, issuer `https://login.microsoftonline.com/<tenant>/v2.0`, `tid`
+  must match; a groups overage marker naming the configured groups claim in `_claim_names` yields
+  no groups with one warning, so `claims.groups: roles` for app roles is unaffected), Firebase
+  (`project_id`: Google's issuer and key set). Auth0, Keycloak and Okta are
   `oidc` configurations, not subclasses: a new OIDC issuer is a configuration before it is a class
   (`ak-dev-new-identity-provider`).
 - **Roles** (`roles.py`): `RoleMapper.map(principal) -> list[str]` is the one producer of
-  `Principal.roles`. `MappingRoleMapper` (`type: mapping`) maps group names and top-level string
-  claim values through `mapping` and appends a `pass_through` claim path verbatim; boolean flags
-  and nested claim objects are not mapped (bring a `RoleMapper` by dotted path, which receives
-  the whole `identity.role_mapper` block through `RoleMapperFactory`). `MappedIdentityProvider`
-  wraps any provider and replaces, never merges, the roles it set.
+  `Principal.roles`. `MappingRoleMapper` (`type: mapping`) looks up `principal.groups` in
+  `mapping`, plus the string or list values of the claim paths listed in `role_mapper.claims`
+  (default `[]`), and appends a `pass_through` claim path verbatim. Only groups by default: a user
+  sets many of their own claims (a display name, a sign-up username, an email), and matching
+  every claim value would let one of them grant a role. Boolean flags and nested claim objects are not
+  mapped (bring a `RoleMapper` by dotted path, which receives the whole `identity.role_mapper`
+  block through `RoleMapperFactory`; `_RoleMapperConfig` is `extra="allow"`, so its own settings
+  arrive in `config.model_extra`). `MappedIdentityProvider` wraps any provider and replaces, never
+  merges, the roles it set. Nothing enforces roles yet (authorization is a later phase).
 - **`RequestAuthenticator`** (`request.py`): the one place a surface turns a credential into the
   request's principal, so header parsing, the anonymous rules and the 401 details exist once.
   `from_config()` builds it over `IdentityProviderFactory.get()`. `authenticate_bearer(header,
@@ -856,18 +882,25 @@ deleted).
   `authenticate_token(token, context)`, which is anonymous when there is no provider or no token
   and the provider's answer otherwise. `dependency()` is the FastAPI dependency
   `RESTAPI.build_app` puts on every router (`_get_router_dependencies`, `api/http.py`; `/health`
-  stays outside, and so does the router of a handler declaring `authenticates_itself`, which
-  `WebhookRESTRequestHandler` does because a platform token such as Teams' arrives in
-  `Authorization` and the adapter's `verify` is the delivery's check): it sets `request.state.principal` and a request-scoped contextvar read back by
-  `current()` (the A2A executor's fallback), and answers an `AuthenticationError` as 401 with the
-  public detail only, logging the reason with the path. FastAPI is imported inside
+  stays outside, and so does the router of a handler declaring `authenticates_itself`:
+  `WebhookRESTRequestHandler`, because a platform token such as Teams' arrives in `Authorization`
+  and the adapter's `verify` is the delivery's check; `PipelineWebSocketHandler`, whose handshake
+  authenticates its own `?token=`; and `PushEndpointHandler`, which checks the shared push token, so
+  single-process async mode co-hosts `/ws` and `/internal/push` without the HTTP dependency). It
+  takes Starlette's `HTTPConnection`, so it serves WebSocket routes on a guarded router too: it sets
+  `connection.state.principal` and a request-scoped contextvar read back by `current()` (the A2A
+  executor's fallback), and answers an `AuthenticationError` with the public detail only, logging
+  the reason with the path: over HTTP a 401 carrying `WWW-Authenticate: Bearer`
+  (`BEARER_CHALLENGE`, RFC 6750 section 3), on a WebSocket a `WebSocketException` closing with 1008
+  (`WS_POLICY_VIOLATION`). FastAPI is imported inside
   `dependency()`: the Lambda authorizer and the WebSocket connection handler authenticate through
   this class too and their packages carry no FastAPI. `release()` is a no-op until the
   credentials capability.
 - **Which routes refuse the anonymous principal** is the handlers' decision, not the
   authenticator's. `AuthorisedRESTRequestHandler` (`api/handler.py`) reads
-  `request.state.principal` back in `_resolve_user` and answers 401 `Authentication required` to
-  the anonymous principal, and refuses to construct without an `identity` block (`AKConfigError`):
+  `request.state.principal` back in `_resolve_user` and answers 401 `Authentication required`
+  (with `WWW-Authenticate: Bearer`) to the anonymous principal, and refuses to construct without an
+  `identity` block (`AKConfigError`):
   it is the base of `ThreadRESTRequestHandler`, `ScheduleRESTRequestHandler` and
   `AGUIRequestHandler`, and `AgentThreadRequestHandler` and `ThreadRequestHandler` apply the same
   rule in their own `__init__`. The chat routes run an anonymous caller as the anonymous
@@ -877,30 +910,49 @@ deleted).
   `ECSWebSocketSystemRequestHandler`, the Lambda `WebsocketConnectionHandler`) authenticate the
   `?token=` query parameter through `authenticate_token`, key the connection by the principal's
   subject and keep the whole principal for the frames that follow; a WebSocket mode without an
-  `identity` block is an `AKConfigError`. MCP (`api/mcp/auth.py`): `AKMCPAuthProvider.from_config()`
+  `identity` block is an `AKConfigError`. The pipeline gateway accepts the socket and then closes it
+  with 1008 (`Authentication token is required` / `Authentication failed`); the ECS and Lambda
+  `$connect` handlers answer HTTP 401 with the same reasons. MCP (`api/mcp/auth.py`): `AKMCPAuthProvider.from_config()`
   hands FastMCP an `AKTokenVerifier` whose `AKAccessToken` carries the principal, so FastMCP's own
   HTTP layer answers 401 to a missing or refused token and the executor reads the principal off
   the access token onto the queued body; without an `identity` block `auth` is `None` and MCP
-  stays open. A2A (`api/a2a/handler.py`): the routers are included by `RESTAPI`, so the dependency
+  stays open. For a provider whose `security_scheme()` is `openIdConnect` the verifier is wrapped
+  in a `RemoteAuthProvider` built from `mcp.url` (the public MCP URL, default
+  `http://localhost:8000/mcp`, never the bind address): the 401's `resource_metadata` points at
+  `<origin>/.well-known/oauth-protected-resource/mcp/`, and `RESTAPI.build_app` mounts that RFC 9728
+  route at the app root (`auth.get_well_known_routes(mcp_path="/")`; inside the `/mcp` mount no
+  client would look it up), naming `<mcp.url>/` as the resource and the issuer as the authorization
+  server. A2A (`api/a2a/handler.py`): the routers are included by `RESTAPI`, so the dependency
   has already run; `AKCallContextBuilder` copies `request.state.principal` into the SDK call
   context's state and the executor reads it from there, then `RequestAuthenticator.current()`,
   then anonymous. The CLI (`cli/cli.py`) authenticates `--token` (or `AK_CLI_TOKEN`) once at start
   and the principal rides every prompt; a refused token exits, a token without an `identity`
   block is ignored with a warning. Messaging and realtime principals are built at the edge by
   `IntegrationProducer` (see Messaging Integrations); the sandbox's default
-  `AgentPrincipalResolver` runs an authenticated run as the user under a `user`-mode profile (see Sandbox).
+  `AgentPrincipalResolver` runs an authenticated run as the user under a `user`-mode profile, while
+  an anonymous or shared-channel (`messaging:` / `realtime:`) run stays in agent mode (see Sandbox).
 - **Deployment adapters** (`deployment/`): `APIGatewayAuthorizer(bypass=None).handle` (AWS
-  Lambda, `serverless/akauthorizer.py`) authenticates the bearer header and answers an Allow
+  Lambda, `serverless/akauthorizer.py`) finds the `Authorization` header whatever its case (REST
+  v1 events keep the client's casing), logs only the method, path, effect and `principalId` (never
+  the event, the token or the policy context; a validation failure names the field locations
+  only), authenticates the bearer header and answers an Allow
   policy whose `principalId` is the subject and whose `context.principal` is the principal as
-  JSON, else Deny; a webhook bypass (`WebhookRouteMatcher.for_integrations("slack")`) lets a
+  JSON; an `AuthenticationError` (a refused, expired or malformed token) raises
+  `Exception("Unauthorized")`, which API Gateway answers with 401 so an OAuth client refreshes,
+  and anything else it cannot evaluate (no header, a malformed event, an unexpected failure) is a
+  Deny (403); a webhook bypass (`WebhookRouteMatcher.for_integrations("slack")`) lets a
   platform route through by method and path with `principalId` `integration:<name>`; no
   `identity` block is an `AKConfigError`. The REST Lambda router rebuilds the principal onto the
   body (`DefaultEndpointsHandler.principal_from_event`) and `Lambda.principal(event)` gives a
   `Lambda.register` route the same. `WebsocketConnectionHandler.handler` is the `$connect` /
-  `$disconnect` entry point. `ECSIOHandler.run(handlers=None)` refuses WebSocket mode without an
-  `identity` block and `AWSWebsocketAPI` custom routes receive `{"message", "principal"}`.
-  `AzureFunctions.handler` authenticates the header before parsing the body (a 401 JSON body on
-  refusal). The GCP `GCPAuthorizer` is deleted: the GCP examples authenticate at the API Gateway.
+  `$disconnect` entry point; in WebSocket mode `WSLambdaRouter` injects the connection's principal
+  into `requestContext.authorizer.principal` before calling a custom `Lambda.register` route, so
+  `Lambda.principal(event)` works there too. `ECSIOHandler.run(handlers=None)` refuses WebSocket mode without an
+  `identity` block and `AWSWebsocketAPI` custom routes receive `{"message", "principal"}` (a
+  `Principal` model: a route returning it must dump it to JSON). `AzureFunctions.handler`
+  authenticates the header before parsing the body (a 401 JSON body on refusal) and passes and
+  logs only the URL path, never the query string (`?code=` carries the function key). The GCP
+  `GCPAuthorizer` is deleted: the GCP examples authenticate at the API Gateway.
   Sync handlers reach the async authenticator through `run_async_sync`
   (`core/util/async_bridge.py`).
 - **Contract suites** (`identity/provider/testing.py`, imported from test code only):
@@ -923,7 +975,7 @@ identity:                      # optional: absent means every request is anonymo
     issuer: https://<tenant>.<region>.auth0.com/   # required by oidc; derived by cognito, entra and firebase
     audience: <the API identifier of your API>     # required by oidc
     jwks_uri: null             # discovered from the issuer when omitted
-    algorithms: [RS256, ES256] # symmetric algorithms are refused
+    algorithms: [RS256, ES256] # empty, none, unknown or symmetric (HS*) is an AKConfigError
     leeway: 30                 # seconds of clock skew on exp and nbf
     required_claims: []
     claims:
@@ -939,10 +991,11 @@ identity:                      # optional: absent means every request is anonymo
           kind: user
           groups: [ops]
           claims: {}
-  role_mapper:                 # optional; absent means no roles
+  role_mapper:                 # optional; absent leaves only a static entry's own roles
     type: mapping              # or a dotted path to a RoleMapper
     pass_through: null
-    mapping: {ops: [admin]}
+    mapping: {ops: [admin]}    # group name, or a value of a listed claim -> roles
+    claims: []                 # claim paths looked up beside the groups; only groups by default
 ```
 
 Auth0, Keycloak and Okta are `oidc` blocks (the one above is an Auth0 tenant: the issuer with its
@@ -1083,8 +1136,10 @@ inert when disabled. To add a provider, use the `ak-dev-new-sandbox-provider` sk
   scoped to `sandbox.agents`); `hooks.py`'s `SandboxPreHook` ingests
   task-completion events (the third system pre-hook). `principal.py` maps the run to a
   `SandboxPrincipal`: the default `AgentPrincipalResolver` resolves an authenticated run
-  (`session.get_principal()`) to `user` mode with the caller's subject and groups and an anonymous
-  run to `agent` mode, so a profile with `identity.mode: user` needs no custom resolver;
+  (`session.get_principal()`) to `user` mode with the caller's subject and groups, and an anonymous
+  or shared-channel run (`Principal.is_shared_channel`: a `messaging:` or `realtime:` sender, whose
+  subject is a platform id) to `agent` mode, so a `user`-mode profile fails closed for messaging and
+  realtime runs and a profile with `identity.mode: user` needs no custom resolver for an authenticated caller;
   `principal_resolver` (dotted path) overrides it. `ExecutionManager._resolve_principal` holds
   whatever a resolver returns to the profile: a `user` principal under an `agent`-mode profile
   becomes the agent's own, so `ec2_ssm` keeps its default chain and `kubernetes` never

@@ -80,8 +80,13 @@ and docs.
   `public_detail`, `Unauthorized` unless you pass another one. Never return `None` for a refusal.
 - **Never write `roles`.** The configured role mapper is their one producer: when a `role_mapper`
   block exists the factory wraps the provider in `MappedIdentityProvider` (`identity/provider/roles.py`),
-  which replaces whatever roles the provider set. A provider that issues roles natively puts the
-  raw values in `claims` and lets `role_mapper.pass_through` lift them.
+  which replaces whatever roles the provider set. (The `static` provider is the one built-in that
+  sets them, from roles an operator listed in its entries; a mapper replaces those too.) A provider
+  that issues roles natively puts the raw values in `claims` and lets `role_mapper.pass_through` lift
+  them, or a deployment lists that claim path in `role_mapper.claims` so `mapping` translates its
+  values. `MappingRoleMapper` looks up only `principal.groups` by default, because a user sets many
+  of their own claims (a display name, a sign-up username, an email) and matching every claim value
+  would let one of them grant a role; keep groups in `groups`, not only in a claim.
 - **Never set `actor` or `credential_ref`.** `Runtime` attaches the actor when a run starts and the
   authenticator owns the credential handle. The contract suite asserts both stay `None`.
 - **`context` is optional and changes nothing by default.** `RequestContext` carries `path`,
@@ -93,7 +98,10 @@ and docs.
 - **No configuration reads in methods.** `from_config(cls, config: _IdentityProviderConfig)`
   turns the provider block into constructor arguments, and the constructor raises `AKConfigError`
   (`core/util/factory.py`) on unusable values, so misconfiguration fails when the provider is
-  built, not on the first request.
+  built, not on the first request. The built-ins do this: `OIDCIdentityProvider._check_algorithms`
+  refuses an empty `algorithms` list, `none`, a name PyJWT does not know and any `HS*` entry;
+  `CognitoIdentityProvider` refuses a `token_use` other than `access` or `id`; and
+  `StaticIdentityProvider` refuses an empty `principals` map.
 
 ## Step-by-Step
 
@@ -132,8 +140,11 @@ In `identity/provider/factory.py`, add an `elif key == "<name>":` branch beside 
 the import inside `require_extra("auth", "identity.provider.type: <name>")` when the provider needs
 PyJWT, cryptography or httpx, and add the name to `_BUILTIN_PROVIDERS`. The dotted-path branch
 stays last: it hands a bring-your-own provider the whole provider block
-(`resolve_dotted(provider_type, base=IdentityProvider)(identity_config.provider)`), so a custom
-provider reads its own settings from `model_extra` or ignores them.
+(`resolve_dotted(provider_type, base=IdentityProvider)(identity_config.provider)`).
+`_IdentityProviderConfig` is declared `model_config = ConfigDict(extra="allow")`, so a key the model
+does not define (say `keys_table`) survives validation and the custom provider reads it from
+`config.model_extra`, or ignores it. `_RoleMapperConfig` allows extras the same way for a dotted-path
+`RoleMapper`. A built-in never relies on extras: its settings are declared fields.
 
 Export the class through the lazy table in `identity/__init__.py` (`_LAZY_EXPORTS` and the
 `TYPE_CHECKING` imports), so `import agentkernel.identity` stays free of optional imports.
@@ -162,12 +173,17 @@ pins every dependency with.
 - **Other providers:** `ak-py/tests/test_identity_providers.py`, the way
   `TestStaticProviderContract` builds its provider on the file's `secrets` fixture (a
   `SecretManager` over a fake provider).
-- **Factory and config:** beside `TestIdentityProviderFactory` in `test_identity_providers.py`,
-  assert that the short name builds the provider (case-insensitive), that a failed import names
-  the `auth` extra (`require_extra`), that a missing sub-block is an `AKConfigError` at config
-  load, and that a `role_mapper` block wraps the provider in `MappedIdentityProvider`.
-  `IdentityProviderFactory` caches the provider process-wide: that file resets it around each test
-  with its autouse `_reset_factory` fixture, and a new test file that calls `get()` does the same.
+- **Factory and config:** for a token issuer, add it to `TestFactoryBranches` in
+  `test_identity_oidc.py`, whose cases assert that each short name builds its provider, that the
+  name matches whatever its case, and that a failed import names the `auth` extra
+  (`require_extra`). A provider outside the OIDC family goes beside `TestIdentityProviderFactory`
+  in `test_identity_providers.py`, which also holds the static, dotted-path (`model_extra`
+  included), unknown-name and `role_mapper`-wraps-in-`MappedIdentityProvider` cases. Either way,
+  add the name to `test_a_named_provider_needs_its_block` in `test_config.py` (a missing sub-block
+  is an `AKConfigError` at config load).
+  `IdentityProviderFactory` caches the provider process-wide: `test_identity_providers.py` resets it
+  around each test with its autouse `_reset_factory` fixture, and a new test file that calls `get()`
+  does the same (`create()` builds without caching).
 - **Surfaces:** nothing new. A surface test that needs an authenticated caller uses the
   `static_identity` fixture in `ak-py/tests/conftest.py` (`alice-secret` authenticates `alice`).
 
@@ -176,6 +192,8 @@ pins every dependency with.
 - `docs/docs/advanced/identity-and-access.md`: a row in the providers table and a subsection with
   the configuration block, what is validated, the extra and how to get a test token.
 - `docs/docs/core-concepts/configuration.md`: the new sub-block and the `type` value.
+- `ak-py/README.md` (its *Identity* configuration fields) and the root `README.md` (the *Identity
+  and Access* bullet), which list the providers by name.
 - `ak-dev-architecture/SKILL.md`, *Identity and Access*: the provider in the built-ins list and
   the factory mapping.
 - The bundled skills that list the providers: `ak-add-capabilities` (its *Identity* section) and
@@ -192,12 +210,20 @@ pins every dependency with.
 ## Gotchas
 
 - **Symmetric algorithms are refused.** `OIDCIdentityProvider` raises `AKConfigError` for any
-  `HS*` entry in `algorithms`: a shared-secret JWT would let anyone holding the secret mint any
-  subject. A provider for HMAC-signed credentials is not an OIDC subclass.
-- **JWKS fetching is async and injectable.** `JWKSCache` fetches discovery and the JWK set
-  through one `httpx.AsyncClient`, refreshes once on an unknown `kid` with a cooldown, and keeps
-  the previous key set when a refresh fails. Do not reach for `PyJWKClient`: its `urllib` fetch
-  blocks the event loop and cannot be pointed at a test transport.
+  `HS*` entry in `algorithms` (and for an empty list, `none` or an unknown name): a shared-secret
+  JWT would let anyone holding the secret mint any subject. A provider for HMAC-signed credentials
+  is not an OIDC subclass.
+- **JWKS fetching is loop-agnostic and injectable.** One provider serves every caller in the
+  process, and a sync host (Azure's thread-pooled functions) runs each call on a fresh event loop,
+  so nothing in `JWKSCache` is bound to a loop. A cached key is selected with no lock (the key set
+  is a dict swapped whole), so it never waits behind a refresh. A load runs on a worker thread
+  (`asyncio.to_thread`) through a short-lived `httpx.Client`, serialized by a `threading.Lock`; a
+  failed first load is retried only after `failure_cooldown` (5 s by default), an unknown `kid`
+  forces at most one refresh per `refresh_cooldown` (30 s), a failed refresh keeps the previous key
+  set, and every fetch failure is an `AuthenticationError` (a 401, never a 500). Tests inject an
+  `httpx.MockTransport` through `transport=`. Do not hold an `httpx.AsyncClient` on the cache (it
+  binds to the loop that created it) or reach for `PyJWKClient` (its `urllib` fetch cannot be
+  pointed at a test transport).
 - **Claim paths try the whole name first.** Keep `ClaimPath.read` for subject and groups instead
   of indexing the payload, or namespaced Auth0 claims and nested Keycloak claims stop working.
 - **A missing subject is a refusal**, not an anonymous principal. The anonymous principal belongs
@@ -214,6 +240,6 @@ pins every dependency with.
 - [ ] Config: shared fields reused, `_<Name>ProviderConfig` and its field on `_IdentityProviderConfig`, `_check_provider_settings` updated (`core/config.py`)
 - [ ] Factory branch behind `require_extra("auth", ...)`, name in `_BUILTIN_PROVIDERS`, lazy export in `identity/__init__.py`
 - [ ] `IdentityProviderContract` subclass plus provider-specific tests on a fake transport (`tests/test_identity_oidc.py` or `tests/test_identity_providers.py`)
-- [ ] Factory tests (`TestIdentityProviderFactory`)
-- [ ] Docs: `identity-and-access.md`, `configuration.md`, architecture skill, bundled skills and evals, landing inventories
+- [ ] Factory tests (`TestFactoryBranches` in `test_identity_oidc.py` for a token issuer, `TestIdentityProviderFactory` in `test_identity_providers.py` otherwise)
+- [ ] Docs: `identity-and-access.md`, `configuration.md`, `ak-py/README.md`, root `README.md`, architecture skill, bundled skills and evals, landing inventories
 - [ ] `cd ak-py && uv run pytest tests/test_identity_*.py` and `make lint-check-all` clean

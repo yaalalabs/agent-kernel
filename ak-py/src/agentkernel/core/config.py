@@ -2,7 +2,7 @@ import importlib.metadata
 from threading import RLock
 from typing import Any, ClassVar, Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .model import ExecutionMode, ReplyMessageType
 from .util.config_yaml_util import YamlBaseSettingsModified
@@ -148,6 +148,10 @@ class _MCPConfig(BaseModel):
     enabled: bool = Field(default=False, description="Enable MCP")
     expose_agents: bool = Field(default=False, description="Expose agents as MCP tools")
     agents: list[str] = Field(default=["*"], description="List of agent names to expose as MCP tool")
+    url: str = Field(
+        default="http://localhost:8000/mcp",
+        description="Public URL of the MCP endpoint; with an OpenID identity provider it is the protected resource the RFC 9728 metadata names",
+    )
     stateless_http: bool = Field(
         default=False,
         description="Run MCP in stateless HTTP mode. Each request is independent (no Mcp-Session-Id). "
@@ -1218,7 +1222,7 @@ class _CognitoProviderConfig(BaseModel):
 
     region: str = Field(description="AWS region of the user pool, e.g. eu-west-1")
     user_pool_id: str = Field(description="Cognito user pool id; the issuer is derived from region and pool")
-    token_use: str = Field(default="access", description="Required token_use claim: access or id")
+    token_use: Literal["access", "id"] = Field(default="access", description="Required token_use claim: access or id")
 
 
 class _EntraProviderConfig(BaseModel):
@@ -1256,6 +1260,9 @@ class _StaticProviderConfig(BaseModel):
 class _IdentityProviderConfig(BaseModel):
     """Which identity provider authenticates inbound credentials, and its settings."""
 
+    # A bring-your-own provider (a dotted-path type) reads its own settings from ``model_extra``.
+    model_config = ConfigDict(extra="allow")
+
     type: str = Field(
         default="oidc",
         description="Identity provider: oidc, cognito, entra, firebase, static, or a dotted path to an IdentityProvider subclass",
@@ -1291,12 +1298,24 @@ class _IdentityProviderConfig(BaseModel):
 class _RoleMapperConfig(BaseModel):
     """How roles are derived from what the provider asserted; absent means no roles."""
 
+    # A bring-your-own mapper (a dotted-path type) reads its own settings from ``model_extra``.
+    model_config = ConfigDict(extra="allow")
+
     type: str = Field(default="mapping", description="Role mapper: mapping, or a dotted path to a RoleMapper subclass")
     pass_through: str | None = Field(
         default=None,
         description="Claim path (a claim name, a namespaced name with dots, or dotted segments) whose string or list value becomes roles as it is",
     )
-    mapping: dict[str, list[str]] = Field(default_factory=dict, description="Group name or claim value -> the Agent Kernel roles it grants")
+    mapping: dict[str, list[str]] = Field(
+        default_factory=dict, description="Group name, or a value of a claim listed in claims, -> the Agent Kernel roles it grants"
+    )
+    claims: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Claim paths whose string or list values are looked up in mapping beside the groups. Only groups are looked up "
+            "by default, since a user sets many of their own claims (a display name, a username, an email address)"
+        ),
+    )
 
 
 class _IdentityConfig(BaseModel):

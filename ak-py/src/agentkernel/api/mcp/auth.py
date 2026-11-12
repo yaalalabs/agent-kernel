@@ -9,6 +9,7 @@ server is built with, so MCP callers are authenticated exactly as REST callers a
 
 import logging
 from typing import Any
+from urllib.parse import urlsplit
 
 from fastmcp.server.auth.auth import AuthProvider, RemoteAuthProvider, TokenVerifier
 from mcp.server.auth.provider import AccessToken
@@ -99,7 +100,8 @@ class AKMCPAuthProvider:
         :return: None without an identity block (MCP stays open); the verifier alone for a bearer
             provider; for a provider advertising an ``openIdConnect`` scheme, the verifier wrapped
             in a ``RemoteAuthProvider`` that publishes the RFC 9728 resource metadata naming the
-            issuer as the authorization server, under the API's own base URL.
+            issuer as the authorization server, for the public ``mcp.url`` resource (``RESTAPI``
+            serves that document at the app root, where the 401 points).
         """
         provider = IdentityProviderFactory.get()
         if provider is None:
@@ -109,6 +111,13 @@ class AKMCPAuthProvider:
         discovery: Any = settings.get("url") if scheme == "openIdConnect" else None
         if not isinstance(discovery, str):
             return verifier
-        api = AKConfig.get().api
         issuer = discovery.removesuffix(AKMCPAuthProvider.DISCOVERY_SUFFIX)
-        return RemoteAuthProvider(token_verifier=verifier, authorization_servers=[AnyHttpUrl(issuer)], base_url=f"http://{api.host}:{api.port}")
+        # The public URL, never the bind address: http://0.0.0.0:8000 names nothing a client reaches.
+        resource = AKConfig.get().mcp.url.rstrip("/")
+        parts = urlsplit(resource)
+        return RemoteAuthProvider(
+            token_verifier=verifier,
+            authorization_servers=[AnyHttpUrl(issuer)],
+            base_url=f"{parts.scheme}://{parts.netloc}",
+            resource_base_url=resource,
+        )

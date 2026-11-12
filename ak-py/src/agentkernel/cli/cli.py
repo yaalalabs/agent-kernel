@@ -165,8 +165,14 @@ class CLI:
 
     @classmethod
     def main(cls):
-        parser = argparse.ArgumentParser(prog="agentkernel.cli", add_help=False)
-        parser.add_argument("--token", default=None, help=f"Credential for the configured identity provider; defaults to {cls.TOKEN_ENV}")
+        # allow_abbrev=False: the CLI shares argv with the script that embeds it, whose own "--to x"
+        # would otherwise be read as an abbreviated --token.
+        parser = argparse.ArgumentParser(prog="agentkernel.cli", add_help=False, allow_abbrev=False)
+        parser.add_argument(
+            "--token",
+            default=None,
+            help=f"Credential for the configured identity provider; defaults to {cls.TOKEN_ENV}, which keeps it out of ps and shell history",
+        )
         args, _ = parser.parse_known_args()
         try:
             cli = cls(token=args.token)

@@ -35,8 +35,14 @@ class APIGatewayAuthorizer:
 
     An accepted credential yields an Allow policy whose ``principalId`` is the principal's subject and
     whose context carries the whole principal as JSON (API Gateway context values must be strings), for
-    the request-handler Lambda to rebuild onto the request. Anything else is a Deny.
+    the request-handler Lambda to rebuild onto the request. A refused, expired or malformed credential
+    raises ``Unauthorized``, which API Gateway answers with 401 (the status an OAuth client refreshes
+    its token on); an event the authorizer cannot evaluate (no header, a malformed event, an
+    unexpected failure) is a Deny, which it answers with 403.
     """
+
+    # The exact message API Gateway maps to a 401 response.
+    UNAUTHORIZED = "Unauthorized"
 
     def __init__(self, bypass: WebhookBypass | None = None):
         """
@@ -55,11 +61,13 @@ class APIGatewayAuthorizer:
         self._log = logging.getLogger("ak.deployment.aws.akauthorizer")
 
     def handle(self, event: dict, context: dict = None) -> dict:
-        self._log.info(f"Authorizer received event: {event}")
+        # The request line only: the event carries the bearer token, and an Allow's context the whole principal.
+        request_line = f"{event.get('httpMethod')} {event.get('path')}"
+        self._log.info(f"Authorizer request: {request_line}")
         # Before _build_request: its required Authorization header would Deny a webhook outright.
         policy = self._bypass_policy(event)
         if policy is not None:
-            self._log.info(f"Authorizer return policy: {policy}")
+            self._log_decision(request_line, policy)
             return policy
 
         try:
@@ -82,19 +90,30 @@ class APIGatewayAuthorizer:
                 )
         except ValidationError as e:
             # Missing or malformed headers/Authorization
-            self._log.info(f"Event validation failed: {e}")
+            # The field locations only: pydantic's message repeats the input, the bearer header included.
+            self._log.info(f"Event validation failed: {', '.join('.'.join(map(str, error['loc'])) for error in e.errors())}")
             return_policy = self._build_deny_policy(event.get("methodArn", "*"))
         except AuthenticationError as e:
-            # A refused credential, or a header that is not "Bearer <token>": the reason stays in the log.
+            # A refused, expired or malformed credential: the reason stays in the log, and the caller
+            # gets the 401 below rather than a Deny's 403, so an OAuth client refreshes its token.
             self._log.info(f"Refused credential: {e}")
-            return_policy = self._build_deny_policy(event.get("methodArn", "*"))
+            return_policy = None
         except Exception as e:
             # Catch-all for unexpected errors during authentication
             self._log.info(f"Unexpected error in authorizer: {e}", exc_info=True)
             return_policy = self._build_deny_policy(event.get("methodArn", "*"))
 
-        self._log.info(f"Authorizer return policy: {return_policy}")
+        if return_policy is None:
+            self._log.info(f"Authorizer decision: Unauthorized for {request_line}")
+            # API Gateway answers an authorizer that raises exactly "Unauthorized" with 401.
+            raise Exception(self.UNAUTHORIZED)
+        self._log_decision(request_line, return_policy)
         return return_policy
+
+    def _log_decision(self, request_line: str, policy: dict) -> None:
+        """Log the effect and principal id of a policy, never its context or the credential."""
+        effect = policy["policyDocument"]["Statement"][0]["Effect"]
+        self._log.info(f"Authorizer decision: {effect} principalId={policy['principalId']} for {request_line}")
 
     def _bypass_policy(self, event: dict) -> dict | None:
         """An Allow for a request the bypass recognises, or None to take the normal path.
@@ -116,6 +135,16 @@ class APIGatewayAuthorizer:
         return self._build_policy(principal_id=principal_id, effect="Allow", method_arn=event["methodArn"], context=None)
 
     def _build_request(self, event: dict) -> APIGatewayRequestAuthorizerEvent:
+        """Validate the event, finding the ``Authorization`` header whatever its case.
+
+        REST v1 REQUEST authorizer events keep header names as the client sent them, and HTTP/2 or
+        undici clients send ``authorization``; the gateway's identity source matches either. A
+        missing header still fails validation, which denies.
+        """
+        headers = event.get("headers")
+        if isinstance(headers, dict):
+            normalized = {("Authorization" if name.lower() == "authorization" else name): value for name, value in headers.items()}
+            event = {**event, "headers": normalized}
         return APIGatewayRequestAuthorizerEvent.model_validate(event)
 
     def _build_policy(self, principal_id: str, effect: str, method_arn: str, context: dict[str, Any] | None = None):

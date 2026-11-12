@@ -1,6 +1,7 @@
 import json
 import logging
 import traceback
+from urllib.parse import urlsplit
 
 import azure.functions as func
 
@@ -39,15 +40,17 @@ class AzureFunctions:
         """
         cls._log.info("Agent Kernel Agent Azure Function Handler started")
 
+        # The path only: the URL's query string can carry the function key (``?code=``) under authLevel: function.
+        path = urlsplit(req.url).path
         try:
             principal = run_async_sync(
                 RequestAuthenticator.from_config().authenticate_bearer(
                     req.headers.get("Authorization"),
-                    RequestContext(path=req.url, http_method=req.method, headers=dict(req.headers)),
+                    RequestContext(path=path, http_method=req.method, headers=dict(req.headers)),
                 )
             )
         except AuthenticationError as exc:
-            cls._log.info(f"Refused credential on {req.method} {req.url}: {exc}")
+            cls._log.info(f"Refused credential on {req.method} {path}: {exc}")
             return cls._json_response({"error": exc.public_detail, "session_id": None}, 401)
 
         try:

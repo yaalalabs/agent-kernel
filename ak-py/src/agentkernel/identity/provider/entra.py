@@ -77,7 +77,10 @@ class EntraIdentityProvider(OIDCIdentityProvider):
             raise AuthenticationError("the token's tid is not the configured tenant")
 
     def _groups(self, payload: dict[str, Any]) -> list[str]:
-        if "_claim_names" in payload:
+        # The overage marker names the claim Entra left out (``_claim_names: {groups: ...}``); it
+        # matters only when that claim is the configured groups path, not for app roles.
+        claim_names = payload.get("_claim_names")
+        if isinstance(claim_names, dict) and self._groups_claim in claim_names:
             if not EntraIdentityProvider._overage_warned:
                 EntraIdentityProvider._overage_warned = True
                 self._log.warning(

@@ -29,19 +29,24 @@ class RoleMapper(ABC):
 
 
 class MappingRoleMapper(RoleMapper):
-    """The built-in mapper: a dictionary from group name or claim value to roles, plus a pass-through claim path.
+    """The built-in mapper: a dictionary from group name or listed claim value to roles, plus a pass-through claim path.
 
-    Boolean flags and nested claim objects are not mapped (Q14): a deployment whose provider
-    expresses roles that way brings a ``RoleMapper`` of its own by dotted path.
+    Only the principal's ``groups`` reach ``mapping`` by default. A claim is looked up only when its
+    path is listed in ``claims``, because a user sets many of their own claims (a display name, a
+    sign-up username, an email address), and matching every claim value would let one of those
+    grant a role. Boolean flags and nested claim objects are not mapped (Q14): a deployment whose
+    provider expresses roles that way brings a ``RoleMapper`` of its own by dotted path.
     """
 
-    def __init__(self, mapping: dict[str, list[str]], pass_through: str | None = None):
+    def __init__(self, mapping: dict[str, list[str]], pass_through: str | None = None, claims: Iterable[str] = ()):
         """
         :param mapping: Group name or string claim value -> the roles it grants.
         :param pass_through: Dotted claim path whose string or list value becomes roles as it is, or None.
+        :param claims: Claim paths whose string or list values are looked up in ``mapping`` beside the groups.
         """
         self._mapping = mapping
         self._pass_through = pass_through
+        self._claims = list(claims)
 
     def map(self, principal: Principal) -> list[str]:
         roles: list[str] = []
@@ -51,11 +56,10 @@ class MappingRoleMapper(RoleMapper):
             roles.extend(self._strings(ClaimPath.read(principal.claims, self._pass_through)))
         return list(dict.fromkeys(roles))
 
-    @classmethod
-    def _claim_values(cls, claims: dict[str, Any]) -> Iterable[str]:
-        """The string values of the top-level claims, list items included; anything else is skipped."""
-        for value in claims.values():
-            yield from cls._strings(value)
+    def _claim_values(self, claims: dict[str, Any]) -> Iterable[str]:
+        """The string values at the listed claim paths, list items included; anything else is skipped."""
+        for path in self._claims:
+            yield from self._strings(ClaimPath.read(claims, path))
 
     @staticmethod
     def _strings(value: Any) -> list[str]:
@@ -83,7 +87,7 @@ class RoleMapperFactory:
         mapper_type = config.type
         RoleMapperFactory._log.info(f"Building '{mapper_type}' role mapper")
         if mapper_type.lower() == "mapping":
-            return MappingRoleMapper(dict(config.mapping), config.pass_through)
+            return MappingRoleMapper(dict(config.mapping), config.pass_through, config.claims)
         if "." not in mapper_type:
             raise AKConfigError(
                 f"unknown identity.role_mapper.type '{mapper_type}'; expected one of {_BUILTIN_ROLE_MAPPERS} or a dotted path to a RoleMapper subclass"

@@ -1,8 +1,8 @@
 """Identity for Agent Kernel: who a request acts as, and the roles that follow from it.
 
 Names resolve lazily through the PEP 562 ``__getattr__`` below, the ``agentkernel.knowledgebase``
-pattern, so that ``import agentkernel.identity`` costs one module import and pulls no optional
-SDK once the OIDC family and its JWT dependency land here.
+pattern, so that ``import agentkernel.identity`` costs one module import and pulls no optional SDK:
+the OIDC family's JWT and HTTP dependencies (the ``auth`` extra) load only when a provider needs them.
 
 The contract suites live in ``agentkernel.identity.provider.testing`` and are imported explicitly
 from test code (they depend on pytest), so they are deliberately not re-exported.

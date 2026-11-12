@@ -401,7 +401,20 @@ Supported formats: `.yaml`, `.yml`, `.json`
 The `identity` block selects the one identity provider every surface (REST, WebSocket, AG-UI, MCP, A2A,
 the CLI) authenticates through, and the role mapper that derives roles from what it asserts. Without the
 block every request runs as the anonymous principal. The thread, schedule and AG-UI handlers and the
-WebSocket modes refuse to start without it. Full reference: [Identity and Access](https://kernel.yaala.ai/docs/advanced/identity-and-access).
+WebSocket modes refuse to start without it. Full reference: [Identity and Access](https://kernel.yaala.ai/docs/next/advanced/identity-and-access).
+
+Auth0 is an `oidc` configuration: the tenant's issuer with the trailing slash, the API identifier as
+the audience, and the namespaced claim an Auth0 Action sets as the groups path:
+
+```yaml
+identity:
+  provider:
+    type: oidc
+    issuer: https://<tenant>.<region>.auth0.com/   # or the custom domain; trailing slash included, as Auth0 issues it
+    audience: <the API identifier of your Auth0 API>
+    claims:
+      groups: https://<your namespace>/roles       # the namespaced claim an Auth0 Action sets; omit if you set none
+```
 
 - **Field**: `identity.provider.type`
 - **Type**: string
@@ -415,7 +428,7 @@ WebSocket modes refuse to start without it. Full reference: [Identity and Access
 - **Environment Variable**: `AK_IDENTITY__PROVIDER__ISSUER`, `AK_IDENTITY__PROVIDER__AUDIENCE`
 
 - **Field**: `identity.provider.jwks_uri`, `identity.provider.algorithms`, `identity.provider.leeway`, `identity.provider.required_claims`
-- **Description**: The JWK set URL (discovered from the issuer when omitted), the allowed signing algorithms (default `[RS256, ES256]`; symmetric ones are refused), the clock skew in seconds (default `30`) and extra claims a token must carry.
+- **Description**: The JWK set URL (discovered from the issuer when omitted), the allowed signing algorithms (default `[RS256, ES256]`; an empty list, `none`, an unknown name or a symmetric one fails startup), the clock skew in seconds (default `30`) and extra claims a token must carry.
 
 - **Field**: `identity.provider.claims.subject`, `identity.provider.claims.groups`
 - **Type**: string (a claim name, a namespaced name such as `https://acme.com/roles`, or dotted segments such as `realm_access.roles`)
@@ -423,14 +436,14 @@ WebSocket modes refuse to start without it. Full reference: [Identity and Access
 - **Description**: Where the provider reads the subject and the group list.
 
 - **Field**: `identity.provider.cognito` (`region`, `user_pool_id`, `token_use`), `identity.provider.entra` (`tenant_id`), `identity.provider.firebase` (`project_id`)
-- **Description**: The settings of the matching built-in provider.
+- **Description**: The settings of the matching built-in provider. `token_use` is `access` (default) or `id`; any other value fails startup.
 
 - **Field**: `identity.provider.static.principals`
 - **Type**: mapping of secret key to principal (`subject`, `kind`, `groups`, `roles`, `claims`)
-- **Description**: The `static` provider's credentials. Each key names a secret resolved through the secret capability when the provider is built (the environment first), so no credential value is written in the file; a key with no secret fails startup.
+- **Description**: The `static` provider's credentials. Each key names a secret resolved through the secret capability when the provider is built (the environment first), so no credential value is written in the file; a key with no secret, or an empty map, fails startup. An entry's `roles` are issued directly; a role mapper replaces them.
 
-- **Field**: `identity.role_mapper.type`, `identity.role_mapper.mapping`, `identity.role_mapper.pass_through`
-- **Description**: Optional. `mapping` (default) maps group names and claim values to roles and appends the `pass_through` claim's value as roles; a dotted path selects a `RoleMapper` subclass. Absent means no roles.
+- **Field**: `identity.role_mapper.type`, `identity.role_mapper.mapping`, `identity.role_mapper.claims`, `identity.role_mapper.pass_through`
+- **Description**: Optional. `mapping` (default) maps group names to roles, and the string or list values of the claim paths listed in `claims` (default `[]`: groups only, since a user sets many of their own claims), then appends the `pass_through` claim's value as roles; a dotted path selects a `RoleMapper` subclass, which reads settings of its own from `model_extra`. Without a mapper only a `static` entry's own roles exist. Nothing enforces roles yet.
 
 #### Session Store
 
@@ -1088,6 +1101,12 @@ Configure the REST API server (if using the API module).
   - **Default**: `["*"]`
   - **Description**: List of agent names to expose as MCP tools
   - **Environment Variable**: `AK_MCP__AGENTS` (comma-separated)
+
+- **URL**
+  - **Field**: `mcp.url`
+  - **Default**: `http://localhost:8000/mcp`
+  - **Description**: Public URL of the MCP endpoint. With an OpenID-family identity provider the 401 points at the RFC 9728 resource metadata the app serves at `<origin>/.well-known/oauth-protected-resource/mcp/`, naming this URL as the resource; set it to the address clients use (behind a proxy, the public one)
+  - **Environment Variable**: `AK_MCP__URL`
 
 - **Stateless HTTP**
   - **Field**: `mcp.stateless_http`

@@ -15,6 +15,7 @@ import pickle
 import threading
 from collections import OrderedDict
 from email.mime.text import MIMEText
+from email.utils import parseaddr
 from typing import Any
 
 from google.auth.transport.requests import Request
@@ -281,7 +282,9 @@ class GmailInboundAdapter(PollingInboundAdapter):
                     requests=requests,
                     prompt=prompt,
                     agent=self._agent,
-                    user_id=sender,
+                    # The bare address, lowercased: "Alice <A@X.com>" and "a@x.com" are one mailbox,
+                    # so one principal. The reply still goes to the header as written.
+                    user_id=parseaddr(sender or "")[1].lower() or None,
                     # The inbox is the scope a From address is seen under (#603).
                     namespace=self._inbox_address(client),
                     claims={"authentication_results": authentication_results} if authentication_results else {},

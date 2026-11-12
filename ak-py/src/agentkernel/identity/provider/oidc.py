@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import threading
 import time
 from collections.abc import Callable, Iterable, Mapping
 from typing import TYPE_CHECKING, Any
@@ -25,8 +26,16 @@ class JWKSCache:
     Discovery (``<issuer>/.well-known/openid-configuration``) runs once unless ``jwks_uri`` is given.
     An unknown ``kid`` triggers one refresh, rate-limited to one per ``refresh_cooldown`` seconds so
     a flood of bad tokens cannot turn into a flood of fetches; a fetch that fails leaves the
-    previous key set in place (no cache poisoning). Fetches go through one ``httpx.AsyncClient``,
-    so nothing blocks the event loop and a test can hand in a ``MockTransport``.
+    previous key set in place (no cache poisoning). A first load that fails is not retried for
+    ``failure_cooldown`` seconds, so an issuer that is down at start is not asked once per request.
+
+    Nothing here is bound to an event loop, because one provider is shared by every caller in the
+    process, and a sync host (Azure's thread-pooled functions) runs each call on a fresh loop. The
+    key set is a dict swapped whole, so selecting a cached key takes no lock and never waits behind
+    a refresh. Loads run on a worker thread (``asyncio.to_thread``) through a short-lived
+    ``httpx.Client``, serialized by a ``threading.Lock`` that is only ever taken on that thread: a
+    caller that waited re-checks whether another load finished meanwhile instead of fetching again.
+    A test hands in a ``MockTransport``.
     """
 
     _log = logging.getLogger("ak.identity.provider.oidc")
@@ -36,8 +45,9 @@ class JWKSCache:
         issuer: str,
         jwks_uri: str | None = None,
         *,
-        transport: httpx.AsyncBaseTransport | None = None,
+        transport: httpx.BaseTransport | None = None,
         refresh_cooldown: float = 30.0,
+        failure_cooldown: float = 5.0,
         timeout: float = 5.0,
         clock: Callable[[], float] = time.monotonic,
     ):
@@ -46,17 +56,23 @@ class JWKSCache:
         :param jwks_uri: The JWK set URL, when known; skips discovery.
         :param transport: An httpx transport for tests; None uses the network.
         :param refresh_cooldown: Seconds between two refreshes forced by an unknown ``kid``.
+        :param failure_cooldown: Seconds a failed first load waits before the next attempt.
         :param timeout: Seconds a discovery or key-set fetch may take.
         :param clock: A monotonic clock, injectable for the cooldown tests.
         """
         self.issuer = issuer.rstrip("/")
         self.jwks_uri = jwks_uri
-        self._client = httpx.AsyncClient(transport=transport, timeout=timeout)
+        self._transport = transport
+        self._timeout = timeout
         self._refresh_cooldown = refresh_cooldown
+        self._failure_cooldown = failure_cooldown
         self._clock = clock
         self._keys: dict[str | None, PyJWK] | None = None
+        # Bumped by every successful load, so a caller that waited on the lock can tell.
+        self._generation = 0
         self._last_forced_refresh: float | None = None
-        self._lock = asyncio.Lock()
+        self._failed_at: float | None = None
+        self._load_lock = threading.Lock()
 
     @property
     def discovery_url(self) -> str:
@@ -70,57 +86,90 @@ class JWKSCache:
         :return: The key.
         :raises AuthenticationError: If the set cannot be fetched, or holds no such key after one refresh.
         """
-        async with self._lock:
-            if self._keys is None:
-                await self._load()
-            key = self._select(kid)
-            if key is None and self._may_refresh():
-                # Stamped before the fetch so a failing endpoint is not hammered inside the cooldown either.
-                self._last_forced_refresh = self._clock()
-                await self._load()
-                key = self._select(kid)
+        if kid is not None and not isinstance(kid, str):
+            raise AuthenticationError(f"the token's kid is not a string: {kid!r}")
+        key = self._select(self._keys, kid)
+        if key is None:
+            await asyncio.to_thread(self._load_if_needed, kid, self._generation)
+            key = self._select(self._keys, kid)
         if key is None:
             raise AuthenticationError(f"no signing key with kid {kid!r} in the JWK set of {self.issuer}")
         return key
 
     async def close(self) -> None:
-        """Close the HTTP client."""
-        await self._client.aclose()
+        """Nothing to release: every fetch opens and closes its own client."""
+        return None
 
-    def _select(self, kid: str | None) -> PyJWK | None:
-        keys = self._keys or {}
+    @staticmethod
+    def _select(keys: dict[str | None, PyJWK] | None, kid: str | None) -> PyJWK | None:
+        keys = keys or {}
         if kid is not None:
             return keys.get(kid)
         return next(iter(keys.values())) if len(keys) == 1 else None
 
-    def _may_refresh(self) -> bool:
-        """Whether an unknown kid may force a refresh now: the first one always, the next after the cooldown."""
-        return self._last_forced_refresh is None or self._clock() - self._last_forced_refresh >= self._refresh_cooldown
+    def _load_if_needed(self, kid: str | None, generation: int) -> None:
+        """Load the key set unless another caller already did, honouring both cooldowns. Worker thread only.
 
-    async def _load(self) -> None:
-        if self.jwks_uri is None:
-            self.jwks_uri = await self._discover()
-        data = await self._get_json(self.jwks_uri, "the JWK set")
+        :param kid: The key the caller is missing.
+        :param generation: The load generation the caller saw before it missed.
+        :raises AuthenticationError: If a first load fails, or is still inside its failure cooldown.
+        """
+        with self._load_lock:
+            if self._generation != generation:
+                return  # another caller's load finished while this one waited
+            now = self._clock()
+            if self._keys is None:
+                if self._failed_at is not None and now - self._failed_at < self._failure_cooldown:
+                    raise AuthenticationError(
+                        f"the JWK set of {self.issuer} is unavailable; the last fetch failed less than {self._failure_cooldown:g}s ago"
+                    )
+            elif self._last_forced_refresh is not None and now - self._last_forced_refresh < self._refresh_cooldown:
+                return  # an unknown kid inside the cooldown: refused without a fetch
+            else:
+                # Stamped before the fetch so a failing endpoint is not hammered inside the cooldown either.
+                self._last_forced_refresh = now
+            try:
+                keys = self._fetch_keys()
+            except AuthenticationError:
+                if self._keys is not None:
+                    self._log.warning(
+                        f"Refreshing the JWK set of {self.issuer} failed; keeping the {len(self._keys)} key(s) already loaded", exc_info=True
+                    )
+                    return
+                self._failed_at = now
+                raise
+            self._keys = keys
+            self._generation += 1
+            self._failed_at = None
+            self._log.info(f"Loaded {len(keys)} signing key(s) from {self.jwks_uri}")
+
+    def _fetch_keys(self) -> dict[str | None, PyJWK]:
+        with httpx.Client(transport=self._transport, timeout=self._timeout) as client:
+            if self.jwks_uri is None:
+                self.jwks_uri = self._discover(client)
+            data = self._get_json(client, self.jwks_uri, "the JWK set")
+        if not isinstance(data, Mapping):
+            raise AuthenticationError(f"the JWK set at {self.jwks_uri} is not a JSON object")
         try:
-            keys = PyJWKSet.from_dict(data).keys
+            keys = PyJWKSet.from_dict(dict(data)).keys
         except jwt.PyJWTError as exc:
             raise AuthenticationError(f"the JWK set at {self.jwks_uri} is unusable: {exc}") from exc
-        self._keys = {key.key_id: key for key in keys}
-        self._log.info(f"Loaded {len(self._keys)} signing key(s) from {self.jwks_uri}")
+        return {key.key_id: key for key in keys}
 
-    async def _discover(self) -> str:
-        data = await self._get_json(self.discovery_url, "the JWK set location")
+    def _discover(self, client: httpx.Client) -> str:
+        data = self._get_json(client, self.discovery_url, "the JWK set location")
         jwks_uri = data.get("jwks_uri") if isinstance(data, Mapping) else None
         if not isinstance(jwks_uri, str) or not jwks_uri:
             raise AuthenticationError(f"the JWK set location is missing from the discovery document at {self.discovery_url}")
         return jwks_uri
 
-    async def _get_json(self, url: str, what: str) -> Any:
+    @staticmethod
+    def _get_json(client: httpx.Client, url: str, what: str) -> Any:
         try:
-            response = await self._client.get(url)
+            response = client.get(url)
             response.raise_for_status()
             return response.json()
-        except (httpx.HTTPError, ValueError) as exc:
+        except Exception as exc:  # noqa: BLE001 - any fetch failure is a refused credential, never a 500
             raise AuthenticationError(f"{what} could not be fetched from {url}: {exc}") from exc
 
 
@@ -173,11 +222,7 @@ class OIDCIdentityProvider(IdentityProvider):
         self._accepted_issuers = list(dict.fromkeys([issuer, stripped, f"{stripped}/"]))
         self._audience = audience
         self._algorithms = list(algorithms) if algorithms is not None else list(self.DEFAULT_ALGORITHMS)
-        for algorithm in self._algorithms:
-            if algorithm.upper().startswith("HS"):
-                raise AKConfigError(
-                    f"identity.provider.algorithms: {algorithm} is symmetric; the OIDC provider family validates asymmetric signatures only"
-                )
+        self._check_algorithms(self._algorithms)
         self._leeway = leeway
         self._required_claims = list(required_claims)
         self._subject_claim = subject_claim
@@ -238,6 +283,27 @@ class OIDCIdentityProvider(IdentityProvider):
             raise AuthenticationError(f"subject claim '{self._subject_claim}' is missing")
         claims = {name: value for name, value in payload.items() if name != self._subject_claim}
         return Principal(subject=subject, provider=self.name, namespace=payload["iss"], groups=self._groups(payload), claims=claims)
+
+    @staticmethod
+    def _check_algorithms(algorithms: list[str]) -> None:
+        """Refuse a list that would build and then refuse every token: empty, unsigned, unknown or symmetric.
+
+        :raises AKConfigError: Naming the first unusable entry.
+        """
+        if not algorithms:
+            raise AKConfigError("identity.provider.algorithms is empty; name at least one asymmetric algorithm, e.g. RS256")
+        known = jwt.algorithms.get_default_algorithms()
+        for algorithm in algorithms:
+            if algorithm.lower() == "none":
+                raise AKConfigError("identity.provider.algorithms: none accepts unsigned tokens; name an asymmetric algorithm such as RS256")
+            if algorithm.upper().startswith("HS"):
+                raise AKConfigError(
+                    f"identity.provider.algorithms: {algorithm} is symmetric; the OIDC provider family validates asymmetric signatures only"
+                )
+            if algorithm not in known:
+                raise AKConfigError(
+                    f"identity.provider.algorithms: unknown algorithm {algorithm!r}; expected one of {sorted(name for name in known if name != 'none')}"
+                )
 
     def _verifies_audience(self) -> bool:
         """Whether ``aud`` is checked by the decoder; a subclass with another audience claim says no and checks itself."""

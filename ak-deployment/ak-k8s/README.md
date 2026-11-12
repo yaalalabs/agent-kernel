@@ -146,10 +146,12 @@ secretStore:
   a Secret change does not roll the pods. Values the app reads once at startup need a rollout restart.
 
 - **Identity credentials.** The keys of a `static` identity provider (`identity.provider.static.principals`)
-  name secrets too, never values. The io-handler and ws-gateway tiers build the provider and never
-  get this mount, so give them their credential through `extraEnv` from a Secret, as
-  [examples/k8s/openai-queue-mode](../../examples/k8s/openai-queue-mode/) does with its
-  `demo-credentials` Secret and `DEMO_AUTH_TOKEN`. An `oidc`, `cognito`, `entra` or `firebase`
+  name secrets too, never values. The io-handler and ws-gateway tiers build the provider, and the mount
+  reaches only the agent-executing tier, so in the split topology deliver the credential through
+  `extraEnv` from a Secret: the per-tier `ioHandler.extraEnv` and `wsGateway.extraEnv` keep it off the
+  agent runner, as [examples/k8s/openai-queue-mode](../../examples/k8s/openai-queue-mode/) does with its
+  `demo-credentials` Secret and `DEMO_AUTH_TOKEN`. In the single-process profile the io handler is that
+  tier and can read the credential from its mount. An `oidc`, `cognito`, `entra` or `firebase`
   provider needs no secret, only the `auth` extra in the image.
 
 The environment still wins: a set, non-empty `OPENAI_API_KEY` in the container (for example from

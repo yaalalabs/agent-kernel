@@ -11,6 +11,7 @@ from ..core.model import USER_ID_NOT_A_FIELD, BaseChatRequest, BaseRunRequest, P
 from ..core.runtime import Runtime
 from ..core.util.factory import AKConfigError
 from ..identity.provider.factory import IdentityProviderFactory
+from ..identity.provider.request import BEARER_CHALLENGE
 
 
 class RESTRequestHandler(ABC):
@@ -71,7 +72,7 @@ class AuthorisedRESTRequestHandler(RESTRequestHandler):
         """
         principal = getattr(request.state, "principal", None)
         if principal is None or principal.is_anonymous:
-            raise HTTPException(status_code=401, detail="Authentication required")
+            raise HTTPException(status_code=401, detail="Authentication required", headers=BEARER_CHALLENGE)
         return principal
 
 

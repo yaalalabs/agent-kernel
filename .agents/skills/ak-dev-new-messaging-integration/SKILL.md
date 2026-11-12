@@ -138,12 +138,17 @@ Rules the adapter must hold to:
 6. **Override `missing_verification_settings()`** when `verify` skips its check for an unset secret
    (return e.g. `["<platform>.webhook_secret"]` while it is empty). `LambdaWebhookHost` refuses such an
    adapter on cold start, because behind the authorizer's integration bypass the adapter's own check is
-   the only one. An adapter that refuses to construct without its secret (Slack, Teams) needs no override.
+   the only one. `WebhookRESTRequestHandler` still serves it, but logs a WARNING at construction and
+   enqueues every delivery with no sender (`user_id` cleared), so it runs as the anonymous principal: a
+   sender id the poster chose never becomes a `messaging:` principal the schedule tools or the sandbox
+   act as. An adapter that refuses to construct without its secret (Slack, Teams) needs no override.
 7. **Name the sender and its scope** (#603). `user_id` is the platform's own id for the sender and `namespace` the
    scope that id is unique within (a Slack team id, a Teams tenant id, a WhatsApp `phone_number_id`, a Meta page id, a
    Telegram bot id, the Gmail inbox address): `IntegrationProducer.enqueue` turns them into the run's `Principal`
    (`provider` `messaging:<name>`, `subject`, `namespace`, `claims`), which threads, schedules and the sandbox key
-   on, so the same sender id under two installations is two principals. Put sender facts the platform vouches for
+   on, so the same sender id under two installations is two principals. Normalize the id so one sender is one
+   principal: Gmail takes the bare address from `From` and lowercases it (`Alice <A@X.com>` is `a@x.com`) while
+   the reply still goes to the header as written. Put sender facts the platform vouches for
    in `claims` (Gmail carries `Authentication-Results`); leave it empty when the platform vouches for the sender
    itself. A delivery naming no sender runs anonymous. `tests/test_principal_messaging.py` pins the seam and each
    adapter suite pins its own namespace.

@@ -46,6 +46,10 @@ _WS_POLICY_VIOLATION = 1008
 class PipelineWebSocketHandler(RESTRequestHandler):
     """Mounts the ``/ws`` route: authenticated chat entry plus registered custom routes."""
 
+    # The handshake authenticates its own ``?token=``, so RESTAPI mounts the route without the
+    # HTTP identity dependency when single-process async mode co-hosts it (#603).
+    authenticates_itself = True
+
     WS_PATH = "/ws"
     # Route key selecting the chat dispatch when websocket_api.chat_route is not configured.
     DEFAULT_CHAT_ROUTE = "chat"

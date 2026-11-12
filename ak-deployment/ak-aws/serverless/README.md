@@ -1110,7 +1110,9 @@ Swap `create_redis_response_store = true` for `create_dynamodb_response_store = 
 
 ## 🔐 Custom Authorizer Configuration
 
-The module supports a Lambda-based API Gateway authorizer. The authorizer Lambda runs the framework's `APIGatewayAuthorizer` (`handler = APIGatewayAuthorizer().handle`, the whole file), which authenticates every request's bearer token through the identity provider named by the `identity` block in the `config.yaml` packaged beside it (`static`, `oidc` for Auth0, Keycloak, Okta or any OpenID Connect issuer, `cognito`, `entra`, `firebase`, or a dotted path to your own provider); an accepted token yields an Allow policy whose context carries the principal for the request handler, anything else a Deny. There is no validator code to write, and the module's contract is unchanged: `handler_path` names your entry point and `package_path` your package.
+The module supports a Lambda-based API Gateway authorizer. The authorizer Lambda runs the framework's `APIGatewayAuthorizer` (`handler = APIGatewayAuthorizer().handle`, the whole file), which authenticates every request's bearer token through the identity provider named by the `identity` block in the `config.yaml` packaged beside it (`static`, `oidc` for Auth0, Keycloak, Okta or any OpenID Connect issuer, `cognito`, `entra`, `firebase`, or a dotted path to your own provider); an accepted token yields an Allow policy whose context carries the principal for the request handler, a refused, expired or malformed token a 401 (the authorizer raises `Unauthorized`), and a request with no token a Deny (403). There is no validator code to write, and the module's contract is unchanged: `handler_path` names your entry point and `package_path` your package.
+
+Auth0 needs no provider of its own: it is an `oidc` configuration (the tenant's issuer with the trailing slash, the API identifier as the audience), with the `auth` extra in the authorizer package. See [Identity and Access](https://kernel.yaala.ai/docs/next/advanced/identity-and-access) for the block.
 
 ### Authorizer Setup
 

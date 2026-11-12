@@ -469,6 +469,14 @@ class WSLambdaRouter(BaseLambdaRouter):
             try:
                 ws_message_info = self._base_route_handler._parse_event_to_wsmessage(event)
                 user_id = ws_message_info.user_id
+                # WebSocket events carry no authorizer context: put the connection's principal where
+                # ``Lambda.principal(event)`` reads it, as the REST authorizer does for an HTTP route.
+                request_context = dict(event.get("requestContext") or {})
+                request_context["authorizer"] = {
+                    **(request_context.get("authorizer") or {}),
+                    "principal": ws_message_info.principal.model_dump_json(),
+                }
+                event = {**event, "requestContext": request_context}
                 res_msg_to_brdcst = handler_logic_func(event, context)
                 endpoint_url = LambdaWSHandler.construct_endpoint_url(event)
                 self._base_route_handler.broadcast(endpoint_url=endpoint_url, message=res_msg_to_brdcst, user_id=user_id)

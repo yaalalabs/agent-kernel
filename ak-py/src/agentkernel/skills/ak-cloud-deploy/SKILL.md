@@ -396,9 +396,10 @@ the `static` provider fails at startup when its key resolves to nothing):
   forwards the caller's as `X-Forwarded-Authorization`, which the built-in providers do not read, so
   recovering the caller takes a dotted-path provider that verifies that header from `context.headers`.
   Trust the unsigned `X-Apigateway-Api-Userinfo` only with `allow_unauthenticated_invocation = false`.
-- **Kubernetes**: the io handler and the WebSocket gateway build the provider, and neither tier has
-  the `secretStore` mount, so deliver the credential as an environment variable from a Secret through
-  `extraEnv` (see the Kubernetes section).
+- **Kubernetes**: the io handler and the WebSocket gateway build the provider, and the `secretStore`
+  mount reaches only the agent-executing tier, so in the split topology deliver the credential as an
+  environment variable from a Secret through `ioHandler.extraEnv` and `wsGateway.extraEnv`, which keep
+  it off the agent runner (see the Kubernetes section).
 
 The Terraform modules are unchanged: the `authorizer` block keeps its `handler_path` contract and the
 WebSocket connections table its `user_id` hash key. Clients send `Authorization: Bearer <credential>`
@@ -768,6 +769,7 @@ session:
 - The `authorizer` Terraform block is not supported in WebSocket mode — leave it unset.
 - Only `LocalZip` is supported for `ws_connection_handler.package_path`.
 - `ws_routes` custom routes must have a matching `@Lambda.register("route_name")` entry. `ws_chat_route` is the built-in AI chat route — it is handled internally by the framework and does **not** need a `@Lambda.register` entry.
+- A custom WebSocket route reads the caller with `Lambda.principal(event)`: the router puts the connection's principal (the one `$connect` authenticated) into the event's authorizer context before calling the route.
 
 **Required `pyproject.toml` extras for WebSocket mode**:
 
@@ -874,8 +876,9 @@ authorizer = {
   `firebase`), `lambda_auth.py` and the `config.yaml` carrying the `identity` block; the other Lambdas
   load the same file without needing the credential.
 - An accepted token yields an Allow policy whose `principalId` is the subject and whose context
-  carries the principal; anything else is a Deny, with the provider's reason in the authorizer's logs
-  only. The request-handler Lambda puts the principal on the chat request; a `Lambda.register` route
+  carries the principal; a refused, expired or malformed token gets a 401 (the authorizer raises
+  `Unauthorized`), a request with no token a Deny (403), with the provider's reason in the
+  authorizer's logs only. The request-handler Lambda puts the principal on the chat request; a `Lambda.register` route
   reads it with `Lambda.principal(event)` (the anonymous principal when the API has no authorizer).
 - Declare `demo_auth_token` as a `sensitive = true` variable. With an `oidc`, `cognito`, `entra` or
   `firebase` block no variable is needed; clients send the issuer's access token.
@@ -1529,12 +1532,15 @@ flavor values files ship inside the chart, so no repository checkout is needed.
   the gateway needs a shared session store for its connection table. The chart validates neither
   value: `execution.mode=stream` still renders, but the pods fail at config load.
 - Caller identity: the image's `config.yaml` carries the `identity` block; the io handler and the
-  gateway build the provider, and neither has the `secretStore` mount, so a `static` provider's
-  credential travels as an environment variable from a Secret (`kubectl create secret generic
-  demo-credentials --from-literal=DEMO_AUTH_TOKEN=...`, then `--set 'extraEnv[1].name=DEMO_AUTH_TOKEN'
-  --set 'extraEnv[1].valueFrom.secretKeyRef.name=demo-credentials' --set
-  'extraEnv[1].valueFrom.secretKeyRef.key=DEMO_AUTH_TOKEN'`). REST clients send it as a bearer token
-  and WebSocket clients as `?token=`; see `examples/k8s/openai-queue-mode`.
+  gateway build the provider, and the mount reaches only the agent-executing tier, so in the split
+  topology a `static` provider's credential travels as an environment variable from a Secret on those
+  two tiers (`kubectl create secret generic demo-credentials --from-literal=DEMO_AUTH_TOKEN=...`, then
+  `--set 'ioHandler.extraEnv[0].name=DEMO_AUTH_TOKEN' --set
+  'ioHandler.extraEnv[0].valueFrom.secretKeyRef.name=demo-credentials' --set
+  'ioHandler.extraEnv[0].valueFrom.secretKeyRef.key=DEMO_AUTH_TOKEN'`, and the same three under
+  `wsGateway.extraEnv[0]` when the gateway is on). The per-tier keys keep it off the agent runner, which
+  runs the LLM's tools. REST clients send it as a bearer token and WebSocket clients as `?token=`; see
+  `examples/k8s/openai-queue-mode`.
 - Autoscaling: `keda.enabled=true` scales the agent-runner on queue depth (KEDA prerequisite).
 
 **Verify:**

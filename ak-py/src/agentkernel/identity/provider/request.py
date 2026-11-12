@@ -11,7 +11,12 @@ from .base import IdentityProvider, RequestContext
 from .factory import IdentityProviderFactory
 
 if TYPE_CHECKING:
-    from fastapi import Request
+    from starlette.requests import HTTPConnection
+
+# The challenge a 401 carries so a client knows which scheme to retry with (RFC 6750 section 3).
+BEARER_CHALLENGE = {"WWW-Authenticate": "Bearer"}
+# The close code a WebSocket gets for a refused credential (policy violation).
+WS_POLICY_VIOLATION = 1008
 
 
 class RequestAuthenticator:
@@ -84,27 +89,34 @@ class RequestAuthenticator:
             return Principal.anonymous()
         return await self._provider.authenticate(token.strip(), context)
 
-    def dependency(self) -> Callable[["Request"], Coroutine[Any, Any, Principal]]:
-        """The FastAPI dependency that puts the request's principal on ``request.state.principal``.
+    def dependency(self) -> Callable[["HTTPConnection"], Coroutine[Any, Any, Principal]]:
+        """The FastAPI dependency that puts the request's principal on ``state.principal``.
 
         Async, so it runs in the request's task and the contextvar it sets is what the endpoint
-        and ``current()`` read. An ``AuthenticationError`` is logged with its reason and the path
-        and answered as a 401 carrying only the error's public detail.
+        and ``current()`` read. It takes the ``HTTPConnection`` FastAPI injects for HTTP and
+        WebSocket scopes alike, so a WebSocket route on a dependency-guarded router is served
+        rather than crashing on a missing ``Request``. An ``AuthenticationError`` is logged with
+        its reason and the path, then answered with only the error's public detail: a 401 with
+        ``WWW-Authenticate: Bearer`` (RFC 6750 section 3) over HTTP, a 1008 close on a WebSocket.
 
         :return: The dependency callable, to wrap in ``Depends``.
         """
         # Imported here, not at module level: the Lambda authorizer and WebSocket connection handler
         # authenticate through this class too, and their packages carry no FastAPI.
-        from fastapi import HTTPException, Request
+        from fastapi import HTTPException, WebSocketException
+        from starlette.requests import HTTPConnection
 
-        async def identity_dependency(request: Request) -> Principal:
-            context = RequestContext(path=request.url.path, http_method=request.method, headers=dict(request.headers))
+        async def identity_dependency(connection: HTTPConnection) -> Principal:
+            method = connection.scope.get("method")
+            context = RequestContext(path=connection.url.path, http_method=method, headers=dict(connection.headers))
             try:
-                principal = await self.authenticate_bearer(request.headers.get("authorization"), context)
+                principal = await self.authenticate_bearer(connection.headers.get("authorization"), context)
             except AuthenticationError as exc:
-                self._log.info(f"Refused credential on {request.method} {request.url.path}: {exc}")
-                raise HTTPException(status_code=401, detail=exc.public_detail) from exc
-            request.state.principal = principal
+                self._log.info(f"Refused credential on {method or 'WEBSOCKET'} {connection.url.path}: {exc}")
+                if connection.scope["type"] == "websocket":
+                    raise WebSocketException(code=WS_POLICY_VIOLATION, reason=exc.public_detail) from exc
+                raise HTTPException(status_code=401, detail=exc.public_detail, headers=BEARER_CHALLENGE) from exc
+            connection.state.principal = principal
             RequestAuthenticator._current.set(principal)
             return principal
 

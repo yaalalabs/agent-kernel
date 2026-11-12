@@ -42,12 +42,16 @@ class ThreadRecorder:
         :param req: The originating chat request
         :param requests: The built AgentRequest list (may carry attachments)
         :return: Tuple of (rebuilt request list, stored ThreadAttachment references)
-        :raises PermissionError: If the request carries no authenticated principal
+        :raises PermissionError: If the request carries no authenticated principal, or the thread
+            exists and belongs to another principal (checked before any write)
         :raises ValueError: If attachments are rejected by config
         """
         principal = req.principal
         if principal is None or principal.is_anonymous:
             raise PermissionError("thread support requires an authenticated principal")
+        # Ownership before any write: a request naming another user's session_id must not leave its
+        # attachment bytes under that session before get_or_create_thread refuses it (spec 8.10).
+        self._manager.get_thread(req.session_id, user_id=principal.subject)
         requests, attachments = self._manager.store_attachments(session_id=req.session_id, requests=requests)
         self._manager.get_or_create_thread(
             session_id=req.session_id,

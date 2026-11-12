@@ -34,8 +34,13 @@ class StaticIdentityProvider(IdentityProvider):
 
         :param principals: Credential secret key -> principal fields (subject, kind, groups, roles, claims).
         :param secrets: The secret manager to resolve the keys through; the process-wide one when omitted.
-        :raises AKConfigError: If a key is malformed or has no secret, or two principals share a credential value.
+        :raises AKConfigError: If there are no principals, a key is malformed or has no secret, or two
+            principals share a credential value.
         """
+        if not principals:
+            # A typo such as ``static: {principal: ...}`` is dropped by the model and leaves the map
+            # empty: a provider that would 401 every caller is a startup error, not a quiet one.
+            raise AKConfigError("identity.provider.static has no principals; list at least one under static.principals")
         manager = secrets if secrets is not None else SecretManager.current()
         self._entries: list[tuple[bytes, Principal]] = []
         seen: dict[bytes, str] = {}

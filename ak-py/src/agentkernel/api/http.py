@@ -202,6 +202,11 @@ class RESTAPI:
             mcp_app = MCP.get_http_app()
             app = cls._create_app(routers=routers, lifespan=mcp_app.lifespan)
             app.mount("/mcp", mcp_app)
+            # RFC 9728 resource metadata belongs at the origin's root, where the 401 points; inside the
+            # /mcp mount FastMCP would serve it under /mcp/.well-known, which no client looks up.
+            auth = MCP.get().auth
+            if auth is not None:
+                app.router.routes.extend(auth.get_well_known_routes(mcp_path="/"))
         else:
             app = cls._create_app(routers=routers)
         # Routes that verify their own callers (a platform's signed webhook) skip the identity dependency.

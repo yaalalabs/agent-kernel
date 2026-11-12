@@ -34,8 +34,9 @@ class AgentPrincipalResolver(PrincipalResolver):
     A run ``Runtime`` published for an authenticated caller (spec #603, section 8.12) resolves to
     a ``user``-mode principal carrying that caller's subject and groups, so a profile with
     ``identity.mode: user`` works with no custom resolver (an ``agent``-mode profile still runs as
-    the agent: the manager holds the principal to the profile's mode). An anonymous run, or a sandbox
-    operation driven outside a run or a session, resolves to ``agent`` mode: ``subject`` is the agent name (or ``"agent"``
+    the agent: the manager holds the principal to the profile's mode). An anonymous run, a run for a
+    shared-channel sender (``messaging:`` or ``realtime:``, whose subject is a platform id), or a
+    sandbox operation driven outside a run or a session, resolves to ``agent`` mode: ``subject`` is the agent name (or ``"agent"``
     when no agent is in context). Credentials are empty either way: executions run under
     whatever identity the provider's own configuration carries (API key, ServiceAccount, IAM role),
     and a resolver that maps the caller onto provider credentials is the application's to supply.
@@ -44,6 +45,8 @@ class AgentPrincipalResolver(PrincipalResolver):
     async def resolve(self, session: Session | None, agent: Agent | None) -> SandboxPrincipal:
         """Return the user-mode principal of an authenticated run, else the agent-mode principal."""
         principal = session.get_principal() if session is not None else None
-        if principal is not None and not principal.is_anonymous:
+        # A messaging or realtime sender id is a platform id, not a user subject a provider can map
+        # onto credentials, so a shared-channel run stays in agent mode and a user-mode profile fails closed.
+        if principal is not None and not principal.is_anonymous and not principal.is_shared_channel:
             return SandboxPrincipal(mode="user", subject=principal.subject, groups=list(principal.groups))
         return SandboxPrincipal(mode="agent", subject=agent.name if agent is not None else "agent")

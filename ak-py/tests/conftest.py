@@ -152,6 +152,10 @@ def static_identity(monkeypatch):
     from agentkernel.identity import IdentityProviderFactory, StaticIdentityProvider
     from agentkernel.secret import SecretManager, SecretProvider
 
+    # SecretManager reads the environment before its provider, and the example suites export this
+    # very variable, so a value left in the shell would shadow the seeded credential.
+    monkeypatch.delenv("ALICE_TOKEN", raising=False)
+
     class _OneSecret(SecretProvider):
         def get_secret(self, key):
             return {"ALICE_TOKEN": "alice-secret"}.get(key)

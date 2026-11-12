@@ -53,6 +53,8 @@ class CognitoIdentityProvider(OIDCIdentityProvider):
             groups_claim=groups_claim,
             jwks=jwks,
         )
+        if token_use not in ("access", "id"):
+            raise AKConfigError(f"identity.provider.cognito.token_use must be access or id, not {token_use!r}")
         self._token_use = token_use
 
     @classmethod

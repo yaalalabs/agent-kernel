@@ -5,7 +5,9 @@ description: >
   adding guardrails, tracing/observability, session persistence, knowledge bases, MCP server,
   A2A server, AG-UI server, pre/post hooks, multimodal support, conversation thread support,
   scheduled tasks (deferred and recurring chat execution), the sandbox capability
-  (isolated code execution), and secret resolution (environment first, then AWS SSM
+  (isolated code execution), identity and authentication (who may call: an identity
+  provider such as Auth0, Keycloak or Okta through oidc, Amazon Cognito, Microsoft Entra ID,
+  Firebase, static credentials or your own, plus role mapping), and secret resolution (environment first, then AWS SSM
   Parameter Store, Kubernetes Secrets mounted into the pod, or a custom provider). Session
   persistence supports Redis, DynamoDB (AWS), Cosmos DB (Azure), and Firestore (GCP).
   Conversation threads support in-memory, Redis, Valkey, DynamoDB (AWS), Firestore (GCP),
@@ -548,7 +550,7 @@ mcp:
   # agents:                       # Or list specific agents
   #   - name: general
   #   - name: math
-  url: "http://localhost:8000"    # Base URL of your server
+  url: "http://localhost:8000/mcp"  # Public URL of the MCP endpoint (behind a proxy, the public one)
 ```
 
 3. No code changes needed. The MCP server endpoint is automatically available.
@@ -567,7 +569,10 @@ mcp:
    - Tools you add yourself to `MCP.get()` are your own code and still run in the IO process.
    - With an `identity` block (see Identity), FastMCP enforces the bearer token: a call without an
      accepted token is a 401, and the tool runs as the token's principal. Without the block the
-     server stays open and every call runs anonymous.
+     server stays open and every call runs anonymous. With an OpenID-family provider (`oidc`,
+     `cognito`, `entra`, `firebase`) the 401 points MCP clients at RFC 9728 resource metadata the app
+     serves at `<origin of mcp.url>/.well-known/oauth-protected-resource/mcp/`, naming `mcp.url` as
+     the resource and the issuer as the authorization server, so set `mcp.url` to the address clients use.
 
 ---
 
@@ -1523,7 +1528,9 @@ the agent's instructions about *what* to do; the sandbox usage is injected.
 For per-user identity (running sandboxed code under the invoking user's identity), set a profile's
 `identity.mode: user`: the default resolver reads the principal the identity provider established
 for the run (see Identity; a profile left on `agent` mode keeps running as the agent), and `principal_resolver` (a dotted path) replaces it when the sandbox
-identity must be derived differently; see the
+identity must be derived differently. A run for a messaging or realtime sender (a `messaging:` or
+`realtime:` principal, whose subject is a platform id) resolves to agent mode like an anonymous run,
+so a `user`-mode profile refuses it; see the
 [Sandbox guide](https://kernel.yaala.ai/docs/advanced/sandbox) and the
 `examples/sandbox/identity` example.
 
@@ -1567,8 +1574,8 @@ identity:
 ```
 
 The credential values never go in the file: start the app with `ALICE_TOKEN=... SERVICE_KEY=...` (or
-put them in the configured secret provider); a key that resolves to nothing is an `AKConfigError`
-at startup.
+put them in the configured secret provider); a key that resolves to nothing, or an empty
+`principals` map, is an `AKConfigError` at startup.
 
 Auth0 is an `oidc` block (so are Keycloak and Okta, with their own issuer, audience and groups claim):
 
@@ -1583,7 +1590,8 @@ identity:
 ```
 
 The `oidc` provider discovers the JWK set from the issuer (`jwks_uri` overrides it), accepts `RS256`
-and `ES256` by default (symmetric algorithms are refused), tolerates `leeway` seconds of clock skew
+and `ES256` by default (an empty list, `none`, an unknown name or a symmetric algorithm fails at
+startup), tolerates `leeway` seconds of clock skew
 and reads the subject and groups from `claims.subject` / `claims.groups` (a claim name, or dotted
 segments such as `realm_access.roles`). The cloud providers derive the issuer themselves:
 
@@ -1598,8 +1606,28 @@ identity:
     # firebase: {project_id}       # type: firebase
 ```
 
-An optional `role_mapper` derives `Principal.roles` from groups or claims (`type: mapping` with
-`mapping: {ops: [admin]}` and/or `pass_through: <claim path>`; or a dotted path to a `RoleMapper`).
+Entra accepts v2.0 tokens only: set `requestedAccessTokenVersion: 2` on the app registration
+(Terraform `azuread_application`: `api { requested_access_token_version = 2 }`), or its access tokens
+carry the v1 issuer `https://sts.windows.net/<tid>/` and are refused.
+
+An optional `role_mapper` derives `Principal.roles` (`type: mapping` with `mapping: {ops: [admin]}`
+and/or `pass_through: <claim path>`; or a dotted path to a `RoleMapper`, whose own settings arrive in
+`config.model_extra`). `mapping` looks up only the principal's groups by default; list the claim paths
+whose values it should also look up in `claims: [...]` (e.g. `claims: [permissions]` for Auth0 RBAC).
+Map only claims the issuer controls: a user sets many of their own (a display name, a username, an
+email), and matching those would let one of them grant a role. Nothing enforces roles yet; read them
+in a hook or tool if you need them now.
+
+```yaml
+identity:
+  # provider: the Auth0 oidc block above
+  role_mapper:
+    type: mapping
+    mapping:
+      ops: [admin]                 # a group
+      "read:reports": [reader]     # a value of the listed claim
+    claims: [permissions]
+```
 
 **3. Read the principal where it matters:**
 
