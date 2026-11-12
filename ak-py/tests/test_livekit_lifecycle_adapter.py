@@ -19,8 +19,12 @@ KEY, SECRET = "devkey", "secret" * 8
 class _Request:
     """The two things parse reads from a FastAPI Request: the body and the Authorization header."""
 
-    def __init__(self, event: str, room: str | None = "call_1", secret: str = SECRET):
-        payload = {"event": event, **({"room": {"name": room}} if room is not None else {})}
+    def __init__(self, event: str, room: str | None = "call_1", secret: str = SECRET, identity: str | None = None):
+        payload = {
+            "event": event,
+            **({"room": {"name": room}} if room is not None else {}),
+            **({"participant": {"identity": identity}} if identity else {}),
+        }
         self._body = json.dumps(payload).encode()
         digest = base64.b64encode(hashlib.sha256(self._body).digest()).decode()
         self.headers = {"Authorization": api.AccessToken(KEY, secret).with_sha256(digest).to_jwt()}
@@ -43,6 +47,20 @@ def test_room_finished_ends_it():
 
 def test_a_caller_joining_starts_the_rooms_edge_again():
     assert _parse(_Request("participant_joined")) == livekit_adapter.EdgeLifecycleEvent("call_1", start=True)
+
+
+def test_an_agent_participant_joining_does_not_start_an_edge():
+    assert _parse(_Request("participant_joined", identity="agent-general")) is None
+
+
+def test_an_invalid_utf8_body_is_a_401():
+    request = _Request("room_started")
+    request._body = b"\xff\xfe"
+
+    with pytest.raises(HTTPException) as raised:
+        _parse(request)
+
+    assert raised.value.status_code == 401
 
 
 @pytest.mark.parametrize("event", ["participant_left", "track_published"])

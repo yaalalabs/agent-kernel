@@ -386,7 +386,7 @@ class TestWebSocketModeGuards:
         _configure(monkeypatch, mode="realtime")
         response = _client().post(CHAT, json={"prompt": "hi", "session_id": "s1"})
         assert response.status_code == 400
-        assert "realtime gateway" in response.json()["detail"]["error"]
+        assert "realtime edge" in response.json()["detail"]["error"]
 
         # Nothing was enqueued: the input queue stays empty.
         assert InMemoryTransport().create_consumer(QueueName.INPUT).fetch(1, 0.05) == []

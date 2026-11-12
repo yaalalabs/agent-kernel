@@ -655,14 +655,17 @@ class LiveKitLifecycleAdapter(EdgeLifecycleAdapter):
         """
         from fastapi import HTTPException
 
-        body = (await raw.body()).decode("utf-8")
         try:
+            body = (await raw.body()).decode("utf-8")
             event = self._receiver.receive(body, raw.headers.get("Authorization", ""))
         except Exception as e:
             _log.warning(f"Rejected a LiveKit webhook: {e}")
             raise HTTPException(status_code=401, detail="Invalid LiveKit webhook signature")
         room = event.room.name if event.HasField("room") else ""
         if not room:
+            return None
+        # The edge's own agent participants also raise participant_joined; they must not start another edge.
+        if event.event == "participant_joined" and event.participant.identity.startswith("agent-"):
             return None
         if event.event in ("room_started", "participant_joined"):
             return EdgeLifecycleEvent(room, start=True)

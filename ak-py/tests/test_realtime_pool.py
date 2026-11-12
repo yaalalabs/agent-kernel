@@ -3,6 +3,7 @@ import json
 import threading
 import time
 import types
+from concurrent.futures import CancelledError
 
 import pytest
 
@@ -230,6 +231,17 @@ class TestRealtimeCloseDuringConnect:
     """A session ended while its native session is still opening must not leave it open or pacing."""
 
     @pytest.mark.asyncio
+    async def test_a_connection_closed_before_start_does_not_open(self, monkeypatch):
+        monkeypatch.setattr(QueueTransportFactory, "create", staticmethod(lambda *a, **k: InMemoryTransport()))
+        conn = _connection(loop=asyncio.get_running_loop())
+        conn.closed = True
+
+        await conn.connect()
+
+        assert conn.adapter.connected == 0
+        assert conn._pacing_task is None
+
+    @pytest.mark.asyncio
     async def test_a_close_during_connect_disconnects_and_starts_no_pacing(self, monkeypatch):
         monkeypatch.setattr(QueueTransportFactory, "create", staticmethod(lambda *a, **k: InMemoryTransport()))
 
@@ -253,13 +265,105 @@ class TestRealtimeCloseDuringConnect:
         await conn.adapter.entered.wait()
 
         await conn.close()
-        conn.adapter.release.set()
-        await connecting
+        with pytest.raises(asyncio.CancelledError):
+            await connecting
 
         assert conn.closed
         assert conn._pacing_task is None
-        assert conn.adapter.connected == 1
-        assert conn.adapter.disconnects == 2
+        assert conn.adapter.connected == 0
+        assert conn.adapter.disconnects == 1
+
+    @pytest.mark.asyncio
+    async def test_startup_completing_after_end_disconnects_only_once(self, monkeypatch):
+        monkeypatch.setattr(QueueTransportFactory, "create", staticmethod(lambda *a, **k: InMemoryTransport()))
+
+        class _Slow(_Adapter):
+            def __init__(self):
+                super().__init__()
+                self.entered = asyncio.Event()
+                self.release = asyncio.Event()
+                self.disconnects = 0
+
+            async def connect(self, session, agent, callback):
+                self.entered.set()
+                await self.release.wait()
+
+            async def disconnect(self):
+                self.disconnects += 1
+
+        conn = _connection(agent=_Agent(realtime_runner_cls=_Slow), loop=asyncio.get_running_loop())
+        connecting = asyncio.create_task(conn.connect())
+        await conn.adapter.entered.wait()
+        conn.closed = True
+        conn.adapter.release.set()
+        await connecting
+        await conn.close()
+
+        assert conn.adapter.disconnects == 1
+        assert conn._pacing_task is None
+
+    @pytest.mark.parametrize("finish_after_cancel", [True, False])
+    def test_end_waits_for_cancelled_startup_before_disconnect(self, monkeypatch, finish_after_cancel):
+        monkeypatch.setattr(QueueTransportFactory, "create", staticmethod(lambda *a, **k: InMemoryTransport()))
+        entered = threading.Event()
+        cancelled = threading.Event()
+        disconnected = threading.Event()
+        release = asyncio.Event()
+        outcome = {}
+
+        class _Slow(_Adapter):
+            async def connect(self, session, agent, callback):
+                entered.set()
+                try:
+                    await asyncio.Event().wait()
+                except asyncio.CancelledError:
+                    cancelled.set()
+                    await release.wait()
+                    if not finish_after_cancel:
+                        raise
+                    await super().connect(session, agent, callback)
+
+            async def disconnect(self):
+                disconnected.set()
+
+        pool = RealtimeConnectionPool.initialize()
+        pool_thread = threading.Thread(target=pool.start, daemon=True)
+        pool_thread.start()
+
+        def connect():
+            try:
+                pool.get_or_create("s1", _Agent(realtime_runner_cls=_Slow), Runtime(InMemorySessionStore()), Session("s1"))
+            except Exception as e:
+                outcome["error"] = e
+
+        caller = threading.Thread(target=connect, daemon=True)
+        ender = threading.Thread(target=pool.end_session, args=("s1",), daemon=True)
+        try:
+            caller.start()
+            assert entered.wait(5)
+            conn = pool.get_connection("s1")
+            assert conn is not None
+            ender.start()
+            assert cancelled.wait(5)
+            assert not disconnected.is_set()
+            pool._loop.call_soon_threadsafe(release.set)
+            ender.join(5)
+            caller.join(5)
+            assert not ender.is_alive()
+            assert not caller.is_alive()
+            assert disconnected.is_set()
+            assert conn.closed and conn._pacing_task is None
+            assert isinstance(outcome.get("error"), RuntimeError if finish_after_cancel else CancelledError)
+            assert pool.get_connection("s1") is None
+            assert not pool._backing_off("s1")
+        finally:
+            pool._loop.call_soon_threadsafe(release.set)
+            ThreadRunner.shutdown_event.set()
+            if ender.ident:
+                ender.join(5)
+            if caller.ident:
+                caller.join(5)
+            pool_thread.join(5)
 
 
 class TestRealtimeConnectionPool:

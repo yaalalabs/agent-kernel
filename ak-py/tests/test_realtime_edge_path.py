@@ -10,7 +10,7 @@ import threading
 import types
 
 import pytest
-from test_livekit_edge_adapter import _FakeRtc, _gateway
+from test_livekit_edge_adapter import _edge, _FakeRtc
 from test_realtime_pool import _Agent, _drain_output
 
 import agentkernel.integration.livekit.adapter as livekit_adapter
@@ -77,7 +77,7 @@ async def test_a_call_from_caller_line_to_handoff_to_end_of_session(monkeypatch)
     ]
 
     monkeypatch.setattr(livekit_adapter, "rtc", _FakeRtc)
-    gateway = _gateway("coordinator", "billing")
+    gateway = _edge("coordinator", "billing")
     gateway._loop = asyncio.get_running_loop()
     gateway._caller_identity = "client-1"
     gateway._team_lock, gateway._pending_team, gateway._connected = threading.Lock(), None, True

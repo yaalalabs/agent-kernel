@@ -1,6 +1,5 @@
 import logging
 
-from agentkernel.core.config import AKConfig
 from agentkernel.framework.openai import OpenAIModule, OpenAIToolBuilder
 from agentkernel.integration.adapter import EdgeLifecycleRESTRequestHandler
 from agentkernel.integration.livekit import LiveKitLifecycleAdapter
@@ -8,7 +7,6 @@ from agentkernel.pipeline import IOHandler
 from agents.realtime import RealtimeAgent
 
 logging.basicConfig(level=logging.INFO)
-_log = logging.getLogger(__name__)
 
 
 def get_weather(location: str) -> str:

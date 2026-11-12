@@ -66,6 +66,7 @@ class RealtimeConnection:
         # Audio not yet emitted: while it is non-zero, the user starting to speak is a barge-in.
         self._queued_audio = 0
         self._pacing_task: asyncio.Task | None = None
+        self._startup_task: asyncio.Task | None = None
         # Shutdown, eviction and failure can all close one connection; disconnect only once.
         self._disconnecting = False
         self.last_activity_at: float = time.time()
@@ -84,6 +85,15 @@ class RealtimeConnection:
 
     async def connect(self) -> None:
         """Connect the adapter and start pacing; the initial speaker and team are queued ahead of any output."""
+        self._startup_task = asyncio.current_task()
+        try:
+            await self._connect()
+        finally:
+            self._startup_task = None
+
+    async def _connect(self) -> None:
+        if self.closed:
+            return
         speaker = self.adapter.initial_speaker(self.agent)
         if speaker is not None:
             await self._audio_queue.put(("agent_changed", {"agent": speaker, "agents": self.adapter.team(self.agent)}))
@@ -100,7 +110,8 @@ class RealtimeConnection:
         if self.closed:
             # end_session() may have closed this connection while the native session was still opening:
             # close what it opened now, and leave no pacing task behind for a connection nobody reads.
-            await self.adapter.disconnect()
+            if not self._disconnecting:
+                await self.close()
             return
         self._pacing_task = asyncio.create_task(self._pacing_loop())
 
@@ -296,6 +307,12 @@ class RealtimeConnection:
         if self._disconnecting:
             return
         self._disconnecting = True
+        startup = self._startup_task
+        if startup is not None and startup is not asyncio.current_task() and not startup.done():
+            startup.cancel()
+            [result] = await asyncio.gather(startup, return_exceptions=True)
+            if isinstance(result, Exception):
+                _log.error(f"Realtime session {self.session_id}: startup failed while closing: {result}")
         if self._pacing_task:
             self._pacing_task.cancel()
             self._pacing_task = None
@@ -459,6 +476,8 @@ class RealtimeConnectionPool:
         future = asyncio.run_coroutine_threadsafe(conn.connect(), self._loop)
         try:
             future.result(timeout=15)
+            if conn.closed:
+                raise RuntimeError(f"Realtime session {session_id} ended during startup")
             return conn
         except Exception as e:
             self._discard_failed(session_id, conn, future, e)
@@ -482,6 +501,8 @@ class RealtimeConnectionPool:
         with self._conn_lock:
             conn = self._connections.pop(session_id, None)
             self._failures.pop(session_id, None)
+            if conn is not None:
+                conn.closed = True
         if conn is not None and self._loop and not self._loop.is_closed() and not self._stopping.is_set():
             future = asyncio.run_coroutine_threadsafe(conn.close(), self._loop)
             try:
@@ -496,8 +517,9 @@ class RealtimeConnectionPool:
         Only this connection's entry is removed; a replacement registered meanwhile stays.
         """
         with self._conn_lock:
-            if self._connections.get(session_id) is conn:
-                del self._connections[session_id]
+            if self._connections.get(session_id) is not conn:
+                return
+            del self._connections[session_id]
             self._note_failure(session_id, conn)
         connect.cancel()
         conn.closed = True
