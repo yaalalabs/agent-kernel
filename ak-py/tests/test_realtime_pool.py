@@ -226,6 +226,42 @@ class TestRealtimeToolContext:
         assert Agent.current() is None
 
 
+class TestRealtimeCloseDuringConnect:
+    """A session ended while its native session is still opening must not leave it open or pacing."""
+
+    @pytest.mark.asyncio
+    async def test_a_close_during_connect_disconnects_and_starts_no_pacing(self, monkeypatch):
+        monkeypatch.setattr(QueueTransportFactory, "create", staticmethod(lambda *a, **k: InMemoryTransport()))
+
+        class _Slow(_Adapter):
+            def __init__(self):
+                super().__init__()
+                self.entered = asyncio.Event()
+                self.release = asyncio.Event()
+                self.disconnects = 0
+
+            async def connect(self, session, agent, callback):
+                self.entered.set()
+                await self.release.wait()
+                await super().connect(session, agent, callback)
+
+            async def disconnect(self):
+                self.disconnects += 1
+
+        conn = _connection(agent=_Agent(realtime_runner_cls=_Slow), loop=asyncio.get_running_loop())
+        connecting = asyncio.create_task(conn.connect())
+        await conn.adapter.entered.wait()
+
+        await conn.close()
+        conn.adapter.release.set()
+        await connecting
+
+        assert conn.closed
+        assert conn._pacing_task is None
+        assert conn.adapter.connected == 1
+        assert conn.adapter.disconnects == 2
+
+
 class TestRealtimeConnectionPool:
     def test_get_or_create_reuses_one_connection_per_session(self, monkeypatch):
         transport = InMemoryTransport()
@@ -652,7 +688,7 @@ class TestRealtimeAgentChanged:
 
 
 class TestRealtimeInputTranscript:
-    """The caller's finished line rides the paced queue, so it reaches the edge in spoken order."""
+    """The caller's finished line rides the paced queue, so it reaches the edge in the order the framework reported it."""
 
     @pytest.mark.asyncio
     async def test_it_is_emitted_in_order_behind_queued_audio(self, monkeypatch):
@@ -955,33 +991,33 @@ class TestRealtimeFailureHandling:
             thread.join(timeout=5)
 
 
-class TestLiveKitGatewayErrorChunk:
+class TestLiveKitEdgeErrorChunk:
     @pytest.mark.asyncio
     async def test_error_chunk_is_surfaced_and_clears_partial_transcript(self):
         from agentkernel.integration.livekit.adapter import LiveKitEdgeAdapter
 
-        gateway = object.__new__(LiveKitEdgeAdapter)
-        gateway._transcript = ["half a sentence"]
-        gateway._caption = None
-        gateway._speaking_agent = None
-        gateway.agent = None
-        gateway.session_id = "s1"
-        gateway.name = "livekit"
-        gateway._interrupted = False
-        gateway.audio_source = None
-        gateway._loop = None
-        gateway.room = None
+        edge = object.__new__(LiveKitEdgeAdapter)
+        edge._transcript = ["half a sentence"]
+        edge._caption = None
+        edge._speaking_agent = None
+        edge.agent = None
+        edge.session_id = "s1"
+        edge.name = "livekit"
+        edge._interrupted = False
+        edge.audio_source = None
+        edge._loop = None
+        edge.room = None
 
         delivered = []
 
         async def fake_deliver_error(message, reply_context):
             delivered.append(message)
 
-        gateway.deliver_error = fake_deliver_error
+        edge.deliver_error = fake_deliver_error
 
-        await gateway.deliver_chunk(StreamChunk(error="model failed", done=True), {})
+        await edge.deliver_chunk(StreamChunk(error="model failed", done=True), {})
         assert delivered == ["model failed"]
-        assert gateway._transcript == []
+        assert edge._transcript == []
 
 
 class TestRealtimePermanentFailure:

@@ -23,13 +23,13 @@ booking_flow = Workflow(
 
 Each speaking node declares `mode="task"`. A task node talks to the caller until it has what it needs, then calls ADK's own `finish_task` tool, and the next edge starts the next node. A node left without a mode runs outside the live connection, and ADK raises no error, so the caller would hear nothing from it. Always set the mode.
 
-The workflow itself is a container and does not speak. Only the workflow is registered with Agent Kernel. It uses the `in_memory` queue transport, so the LiveKit gateway and the agent runner run as threads in a single Python process.
+The workflow itself is a container and does not speak. Only the workflow is registered with Agent Kernel. It uses the `in_memory` queue transport, so the LiveKit edge and the agent runner run as threads in a single Python process.
 
 ## What you see in the room
 
 When the call starts, the room shows `agent-intake`, `agent-scheduler` and `agent-confirmer` as participants of their own. The workflow does not speak, so the room hears about each node when ADK first names it as the speaker. Only the node that has the call is heard; the others stay muted.
 
-Each agent participant needs a token of its own, so the gateway needs `AK_LIVEKIT__API_KEY` and `AK_LIVEKIT__API_SECRET`.
+Each agent participant needs a token of its own, so the edge needs `AK_LIVEKIT__API_KEY` and `AK_LIVEKIT__API_SECRET`.
 
 ## Quickstart
 

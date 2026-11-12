@@ -1,6 +1,6 @@
 """PCM16 audio helpers shared by the realtime edge and the framework adapters.
 
-The realtime edge (e.g. the LiveKit gateway) carries PCM16 mono audio at a single rate in both
+The realtime edge (e.g. the LiveKit edge) carries PCM16 mono audio at a single rate in both
 directions. A model adapter declares the rates its model wants, and the pipeline converts. Keeping
 the rate and the resampler here gives every layer one source of truth, without naming any vendor.
 """

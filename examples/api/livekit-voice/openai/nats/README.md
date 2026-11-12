@@ -46,7 +46,7 @@ export OPENAI_API_KEY="sk-..."
 python app.py runner
 ```
 
-### 3. Start the LiveKit Gateway (Terminal 3)
+### 3. Start the LiveKit Edge (Terminal 3)
 In a third terminal window, start the "Front Door". The `IOHandler` connects to LiveKit, catches user audio, and throws it onto the NATS stream.
 ```bash
 export AK_LIVEKIT__URL="wss://your-project.livekit.cloud"

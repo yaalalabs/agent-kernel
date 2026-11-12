@@ -41,7 +41,11 @@ def test_room_finished_ends_it():
     assert _parse(_Request("room_finished")) == livekit_adapter.EdgeLifecycleEvent("call_1", start=False)
 
 
-@pytest.mark.parametrize("event", ["participant_joined", "participant_left", "track_published"])
+def test_a_caller_joining_starts_the_rooms_edge_again():
+    assert _parse(_Request("participant_joined")) == livekit_adapter.EdgeLifecycleEvent("call_1", start=True)
+
+
+@pytest.mark.parametrize("event", ["participant_left", "track_published"])
 def test_other_room_events_start_or_end_nothing(event):
     assert _parse(_Request(event)) is None
 
@@ -65,7 +69,7 @@ def test_needs_the_api_key_and_secret(monkeypatch):
         LiveKitLifecycleAdapter()
 
 
-def test_the_rooms_gateway_is_built_with_the_same_keys(monkeypatch):
+def test_the_rooms_edge_is_built_with_the_same_keys(monkeypatch):
     built = {}
     monkeypatch.setattr(livekit_adapter, "LiveKitEdgeAdapter", lambda **kwargs: built.update(kwargs) or object())
 
@@ -78,8 +82,8 @@ def test_every_room_gets_an_edge_by_default():
     assert LiveKitLifecycleAdapter(api_key=KEY, api_secret=SECRET).should_start("anything") is True
 
 
-def test_the_handler_starts_a_real_gateway_for_a_signed_room_webhook(monkeypatch):
-    """The real pieces composed: EdgeLifecycleRESTRequestHandler(LiveKitLifecycleAdapter()) behind a route, a signed webhook, the gateway it builds."""
+def test_the_handler_starts_a_real_edge_for_a_signed_room_webhook(monkeypatch):
+    """The real pieces composed: EdgeLifecycleRESTRequestHandler(LiveKitLifecycleAdapter()) behind a route, a signed webhook, the edge it builds."""
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
@@ -113,6 +117,6 @@ def test_the_handler_starts_a_real_gateway_for_a_signed_room_webhook(monkeypatch
         if started:
             break
         asyncio.run(asyncio.sleep(0.02))
-    (gateway,) = started
-    assert isinstance(gateway, livekit_adapter.LiveKitEdgeAdapter)
-    assert gateway.session_id == "call_7"
+    (edge,) = started
+    assert isinstance(edge, livekit_adapter.LiveKitEdgeAdapter)
+    assert edge.session_id == "call_7"

@@ -10,7 +10,7 @@ Use each framework's own realtime runner for live conversations. The OpenAI Agen
 - The base OpenAI adapter opens a raw Realtime socket and builds its own tool and handoff flow (base `framework/openai/openai.py:627` class, `:775` `_activate`, `:805` `_offered_handoffs`, `:908` `_switch_to`).
 - The base ADK adapter opens a raw Gemini Live socket and builds its own transfer flow (base `framework/adk/adk.py:918` class, `:1178` `_open_socket`, `:1236` `_handle_message`, `:1356` `_transfer`).
 - The native frameworks already do these jobs (external; not re-verified in this rewrite): [OpenAI Agents SDK realtime](https://openai.github.io/openai-agents-python/realtime/guide/) (`RealtimeAgent`, `RealtimeRunner`, `RealtimeSession`) and [ADK live workflows](https://adk.dev/live/workflows/) (`Runner.run_live()`, one `LiveRequestQueue`).
-- The base LiveKit gateway already shows one participant per agent and keeps its own agents' audio and chat out of the caller input (`integration/livekit/adapter.py`, `_own_identities`).
+- The base LiveKit edge already shows one participant per agent and keeps its own agents' audio and chat out of the caller input (`integration/livekit/adapter.py`, `_own_identities`).
 - The base realtime path has gaps a live call meets in practice:
   - The caller's own words never reach the edge as text.
   - A session lives until the 300 s idle timeout after its room is gone (base `pipeline/realtime_pool.py:34`).
@@ -21,7 +21,7 @@ Use each framework's own realtime runner for live conversations. The OpenAI Agen
 
 ```mermaid
 flowchart LR
-    H[Human in LiveKit room] --> E[LiveKit gateway]
+    H[Human in LiveKit room] --> E[LiveKit edge]
     E -- audio, text, end control --> P[Realtime pool]
     P --> A[Thin framework adapter]
     A --> S[Native session: OpenAI or ADK]
@@ -93,10 +93,10 @@ The sections below keep the labels C1 and C4 to C7 used in the code and the arch
 
 ### Caller transcript (C1)
 
-- New stream event `InputTranscript` (`message_id`, `content`; `core/event.py`), one finished non-empty caller utterance, in spoken order with agent output.
+- New stream event `InputTranscript` (`message_id`, `content`; `core/event.py`), one finished non-empty caller utterance, reported when the framework completes it (which may follow the agent output).
 - Mapped from the SDK: ADK a finished `input_transcription` on a `user` event; OpenAI `input_audio_transcription_completed`.
 - No new setting. It appears when the SDK's own input transcription is on (ADK: default on, external, not re-verified; OpenAI: `input_audio_transcription` in model settings through `Module.run_options`).
-- An edge that does not use it ignores it. The LiveKit gateway ignores it; a subclass can show it in `deliver_chunk`.
+- An edge that does not use it ignores it. The LiveKit edge ignores it; a subclass can show it in `deliver_chunk`.
 
 ### End a session at once (C4)
 
@@ -172,7 +172,7 @@ The sections below keep the labels C1 and C4 to C7 used in the code and the arch
 - Several voice models speaking at once, or automatic group discussion without explicit handoffs.
 - Feeding agent-generated room audio back into another model as if a human spoke it.
 - A separate voice per OpenAI agent inside one Realtime session.
-- Removing AK's queue, LiveKit gateway, audio conversion, or playback coordination.
+- Removing AK's queue, LiveKit edge, audio conversion, or playback coordination.
 - Identical native features across OpenAI and ADK, or durable recovery of calls after an AK restart.
 - Rebuilding native handoff, tool, guardrail, approval, or reconnection engines in Agent Kernel.
 - Unchanged behavior for custom realtime runners using the old tool callback.

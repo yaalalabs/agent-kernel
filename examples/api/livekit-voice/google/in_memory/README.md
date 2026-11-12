@@ -2,7 +2,7 @@
 
 This example demonstrates Agent Kernel's `REALTIME` execution pipeline for voice over WebRTC using LiveKit, powered by the **Google Gemini Live API**.
 
-This is the absolute simplest way to test LiveKit voice on your local machine. Because it uses the `in_memory` queue transport, both the LiveKit Edge Gateway (the Front Door) and the Agent Runner (the Brain) run internally as threads inside a single Python process. No Docker, SQS, or Kafka required!
+This is the absolute simplest way to test LiveKit voice on your local machine. Because it uses the `in_memory` queue transport, both the LiveKit Edge (the Front Door) and the Agent Runner (the Brain) run internally as threads inside a single Python process. No Docker, SQS, or Kafka required!
 
 ## Quickstart
 

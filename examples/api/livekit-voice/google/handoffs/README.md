@@ -11,7 +11,7 @@ The scenario is a team offsite. You tell **Maya**, an enthusiastic planner, what
 
 `budget` is a `sub_agent` of `planner`, exactly as you would write it for a text run. ADK lets a sub-agent transfer back to its parent, so the two can pass the turn between them. Only the root agent, `planner`, is registered with Agent Kernel.
 
-It uses the `in_memory` queue transport, so the LiveKit gateway and the agent runner run as threads in a single Python process.
+It uses the `in_memory` queue transport, so the LiveKit edge and the agent runner run as threads in a single Python process.
 
 ## How a transfer works in realtime mode
 
@@ -19,14 +19,14 @@ Agent Kernel starts one ADK `Runner.run_live()` call with one `LiveRequestQueue`
 
 ## What you see in the room
 
-Every agent in the graph appears in the room as a participant of its own (`agent-planner`, `agent-budget`), with its own audio track. There is nothing to configure: when the call starts, the conversation tells the LiveKit gateway its whole team, and the other agent joins the room about a second later.
+Every agent in the graph appears in the room as a participant of its own (`agent-planner`, `agent-budget`), with its own audio track. There is nothing to configure: when the call starts, the conversation tells the LiveKit edge its whole team, and the other agent joins the room about a second later.
 
 - Only the agent that has the call is heard, in its own voice; the others stay connected and muted (their tiles show a muted mic). On a transfer, the previous agent finishes what it was saying and the next agent's participant takes over, so the room client's speaking indicator moves to it.
 - Each agent's words are published to the room chat from its own participant.
 - Each agent participant carries an `ak.active` attribute, `"true"` on the one that has the call, for a custom client UI to highlight.
 - Only `agent-planner`'s connection listens to you; no agent's audio or chat is ever taken as your input.
 
-Each agent participant needs a token of its own, so the gateway needs `AK_LIVEKIT__API_KEY` and `AK_LIVEKIT__API_SECRET` (not a single pre-made token). A single agent with no handoffs is one participant, as before.
+Each agent participant needs a token of its own, so the edge needs `AK_LIVEKIT__API_KEY` and `AK_LIVEKIT__API_SECRET` (not a single pre-made token). A single agent with no handoffs is one participant, as before.
 
 ## Quickstart
 

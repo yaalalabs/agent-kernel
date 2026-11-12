@@ -97,6 +97,11 @@ class RealtimeConnection:
         finally:
             Session.current_session.reset(session_token)
             tool_context.reset()
+        if self.closed:
+            # end_session() may have closed this connection while the native session was still opening:
+            # close what it opened now, and leave no pacing task behind for a connection nobody reads.
+            await self.adapter.disconnect()
+            return
         self._pacing_task = asyncio.create_task(self._pacing_loop())
 
     async def handle_framework_event(self, event_type: str, data: dict) -> None:

@@ -21,10 +21,14 @@ class _EdgeRunner:
     _log = logging.getLogger("ak.integration.edge_lifecycle")
     GRACEFUL_STOP_TIMEOUT_SECONDS: float = 10.0
     """Bound on the adapter's own teardown before it is force-cancelled."""
+    START_ATTEMPTS: int = 3
+    """How many times a failed start is retried before the edge is given up on."""
+    START_RETRY_BASE_SECONDS: float = 1.0
+    """First retry delay; doubles on each later attempt."""
 
     def __init__(self, adapter: StatefulEdgeAdapter):
         """
-        :param adapter: The gateway adapter to host.
+        :param adapter: The edge adapter to host.
         :raises ValueError: If the adapter's ``source`` is not ``Source.REALTIME``.
         """
         if adapter.source is not Source.REALTIME:
@@ -44,7 +48,7 @@ class _EdgeRunner:
         self._stop_requested.set()
 
     def start(self) -> None:
-        """Register the adapter by its ``session_id``, then run the gateway's blocking loop."""
+        """Register the adapter by its ``session_id``, then run the edge's blocking loop."""
         session_id = getattr(self._adapter, "session_id", None)
         StatefulEdgeRegistry.register(self._adapter, session_id=session_id)
         try:
@@ -59,8 +63,23 @@ class _EdgeRunner:
             self._log.info(f"Edge {self._adapter.name} stopped before it started")
             return
 
-        task = asyncio.create_task(self._adapter.start())
+        for attempt in range(1, self.START_ATTEMPTS + 1):
+            if ThreadRunner.shutdown_event.is_set() or self._stop_requested.is_set():
+                return
+            task = asyncio.create_task(self._adapter.start())
+            try:
+                await self._run_edge(task)
+                return
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                if attempt >= self.START_ATTEMPTS:
+                    raise
+                delay = self.START_RETRY_BASE_SECONDS * (2 ** (attempt - 1))
+                self._log.warning(f"Edge {self._adapter.name} failed to start (attempt {attempt}/{self.START_ATTEMPTS}); retrying in {delay}s")
+                await asyncio.sleep(delay)
 
+    async def _run_edge(self, task: asyncio.Task) -> None:
         while not (ThreadRunner.shutdown_event.is_set() or self._stop_requested.is_set()):
             if task.done():
                 task.result()  # raise if exception occurred
@@ -70,7 +89,15 @@ class _EdgeRunner:
         self._log.info(f"Edge {self._adapter.name} stopping")
 
         try:
-            await self._adapter.stop()
+            await asyncio.wait_for(self._adapter.stop(), timeout=self.GRACEFUL_STOP_TIMEOUT_SECONDS)
+        except asyncio.TimeoutError:
+            self._log.warning(f"Edge {self._adapter.name} stop() did not return within {self.GRACEFUL_STOP_TIMEOUT_SECONDS}s; cancelling")
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            return
         except Exception:
             self._log.exception(f"Error calling stop() on Edge {self._adapter.name}")
 
@@ -89,7 +116,7 @@ class EdgeLifecycleRESTRequestHandler(RESTRequestHandler):
     """Hosts an :class:`EdgeLifecycleAdapter`: one stateful edge per live connection, started and ended at runtime.
 
     The sibling of ``WebhookRESTRequestHandler``: it mounts the adapter's webhook route, and for each lifecycle event
-    runs the edge for the session on a thread of its own (:class:`_EdgeRunner`), or stops it. Gateways must run in the
+    runs the edge for the session on a thread of its own (:class:`_EdgeRunner`), or stops it. Edges must run in the
     process that hosts the Response Handler, so it is mounted inside a pipeline topology. At process shutdown it starts
     no new edges; each live edge sees the shutdown itself and stops::
 

@@ -78,7 +78,8 @@ class RealtimeRunner(Runner):
             - ``speech_started``: ``{}``, the user spoke outside a response
             - ``agent_changed``: ``{"agent": str, "previous_agent": str | None, "agents": list[str] (optional)}``,
               between the old agent's last output and the new one's first; ``agents`` when the roster grew
-            - ``input_transcript``: ``{"text": str, "message_id": str}``, one finished, non-empty caller utterance
+            - ``input_transcript``: ``{"text": str, "message_id": str}``, one finished, non-empty caller utterance, reported
+              when the framework completes it (which may be after the response that follows it)
         """
         raise NotImplementedError()
 

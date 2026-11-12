@@ -48,8 +48,8 @@ export AK_LIVEKIT__API_SECRET="your-livekit-api-secret"
 
 Every variant hosts LiveKit the way every other Agent Kernel integration hosts its platform: `EdgeLifecycleRESTRequestHandler` hosts
 `LiveKitLifecycleAdapter`, which reads LiveKit's signed room webhooks, as `WebhookRESTRequestHandler` hosts the Slack
-adapter. Each room is one call: `room_started` starts a gateway and an Agent Kernel session for it (the room name is the
-session id), and the gateway ends the session when the last caller leaves. Nothing is fixed at start-up, so two callers in
+adapter. Each room is one call: `room_started` starts an edge and an Agent Kernel session for it (the room name is the
+session id), and the edge ends the session when the last caller leaves. Nothing is fixed at start-up, so two callers in
 two rooms get two separate calls.
 
 The variants show the transports (`openai/in_memory`, `openai/kafka`, `openai/nats`, `openai/sqs`, `google/in_memory`,
@@ -78,12 +78,12 @@ two processes that share the queues, started from the variant's `app.py`:
 
 ```bash
 cd openai/kafka        # or openai/nats, openai/sqs
-python app.py io       # LiveKit edge gateway + REST API
+python app.py io       # LiveKit edge + REST API
 python app.py runner   # Agent Runner + the per-session native live sessions
 ```
 
 Run the `runner` role as a **single replica** — its per-session live connection pool is process-local — and
-one `io` process, since the gateways run in the process that serves the webhook and replies come back to it. Start
+one `io` process, since the edges run in the process that serves the webhook and replies come back to it. Start
 the broker (Kafka, NATS, or LocalStack for SQS) before either process.
 
 ## Testing
@@ -108,7 +108,7 @@ environment or `pyproject.toml` is needed in this directory.
 
 ## Caller transcription
 
-The stream carries the caller's own finished lines (`InputTranscript` events) once the SDK's input transcription is on. The gateway does not show them; a `LiveKitEdgeAdapter` subclass can, in `deliver_chunk`.
+The stream carries the caller's own finished lines (`InputTranscript` events) once the SDK's input transcription is on. The edge does not show them; a `LiveKitEdgeAdapter` subclass can, in `deliver_chunk`.
 
 - **Google ADK** (`google/*`): on by default, nothing to do.
 - **OpenAI** (`openai/*`): set `input_audio_transcription` in the session's model settings, for example `model_config={"initial_model_settings": {..., "input_audio_transcription": {"model": "gpt-4o-mini-transcribe"}}}` in `Module.run_options`. Without it no caller line is produced, and nothing fails.
@@ -119,4 +119,4 @@ The `LiveKitEdgeAdapter` owns the room connection. Incoming mic audio is batched
 PCM16 frames and enqueued as `AgentRequestVoice` requests; the OpenAI Realtime runner appends them
 to a native per-session live conversation (server VAD detects turn boundaries). The model's audio and
 transcript deltas are written back to the output queue tagged with the `livekit` integration, and
-the gateway — registered as the `livekit` outbound adapter — plays them into the room.
+the edge — registered as the `livekit` outbound adapter — plays them into the room.

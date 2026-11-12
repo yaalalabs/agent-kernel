@@ -333,6 +333,26 @@ class TestEventMapping:
         assert recorder.kinds().index("input_transcript") < recorder.kinds().index("transcript_delta")
 
     @pytest.mark.asyncio
+    async def test_a_transcript_that_finishes_after_the_reply_is_still_reported(self, runtime, monkeypatch):
+        coordinator, _ = _team()
+        _no_system_tools(monkeypatch)
+        module = OpenAIModule([coordinator])
+
+        async def late(model: ScriptedModel):
+            await response("r1", say="Noted.")(model)
+            await model.emit(RealtimeModelInputAudioTranscriptionCompletedEvent(item_id="item-in-1", transcript="  we have 2000 patients "))
+
+        model = ScriptedModel(late)
+        runner, recorder, _ = await _connect(runtime, module, "coordinator", model)
+        try:
+            await runner.send_text("hi")
+            await recorder.until("input_transcript")
+        finally:
+            await runner.disconnect()
+
+        assert recorder.of("input_transcript") == [{"text": "we have 2000 patients", "message_id": "item-in-1"}]
+
+    @pytest.mark.asyncio
     async def test_an_empty_caller_transcript_is_not_reported(self, runtime, monkeypatch):
         coordinator, _ = _team()
         _no_system_tools(monkeypatch)

@@ -152,7 +152,8 @@ The full detail of the additions (the caller's words as an event, ending a sessi
 class InputTranscript(StreamEventBase):
     """One finished utterance of the caller in a realtime conversation, as text.
 
-    Ordered with the output around it, so a transcript built from the stream reads in spoken order.
+    Reported when the framework finishes transcribing it, which may be after the response that follows
+    the utterance; a transcript built from the stream follows the framework's report order.
     Reported only when the framework's own input transcription is on; an edge that does not show a
     transcript ignores it.
     """
@@ -268,7 +269,7 @@ def opening_prompt(self, participant_identity: str) -> Optional[str]:
    that, **do not send the control**: it would pass that input, and the pool would end the session and drop the input as
    late. Log a WARNING; the connection then ends by idle eviction, as it does today.
 3. Send the control with
-   `await asyncio.wait_for(asyncio.to_thread(self._producer.enqueue, self.name, self._enqueue(), {ATTR_REALTIME_END: "true"}), timeout=SESSION_END_TIMEOUT_SECONDS)`.
+   `await asyncio.wait_for(asyncio.to_thread(self._producer.enqueue, self.name, self._enqueue()), timeout=SESSION_END_TIMEOUT_SECONDS)`.
    The same bound applies, so a broker that does not answer cannot hold up a stopping gateway (the thread finishes on its own).
 4. A failure or timeout here is logged at WARNING. The connection then ends by idle eviction, as it does today.
 
@@ -398,7 +399,7 @@ frame, about every 100 ms, and each replacement failed again, sent an error chun
    abstract, so every edge implements it. An edge that handles only the types it knows (as LiveKit
    does) ignores it with no change. One that rejects unknown types has to ignore it.
    *Intentional, and documented as a contract change for BYO edges.*
-4. **A LiveKit gateway that stops or loses its room sends an end-of-session control.** The pool closes the native
+4. **A LiveKit edge that stops or loses its room sends an end-of-session control.** The pool closes the native
    session at once, instead of after up to 300 s. *Intentional: it frees model sessions.*
 5. **`StatefulEdgeRegistry.unregister` only removes its own adapter** when given one. *Intentional: it prevents a stale
    stop from removing a newer edge.*

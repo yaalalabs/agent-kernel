@@ -29,3 +29,4 @@ Because this is designed for production AWS deployments (AWS ECS), the pipeline 
 
 ### Production AWS Deployment
 1. Ensure you have your `OPENAI_API_KEY`, `AK_LIVEKIT__URL`, `AK_LIVEKIT__API_KEY`, and `AK_LIVEKIT__API_SECRET` set in your environment.
+2. The development token endpoint (`GET /livekit/token`) stays disabled until `LIVEKIT_TOKEN_SECRET` is set in the environment or the configured secret provider, requires that secret in the `X-LiveKit-Token-Secret` header, and only mints tokens for rooms in `LIVEKIT_ALLOWED_ROOMS` (comma-separated, default `call_01`). Protect or remove it before exposing the service publicly.

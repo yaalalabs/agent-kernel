@@ -2,11 +2,11 @@
 
 Kafka is a broker transport, so the pipeline is split across two processes that share the queues:
 
-    python app.py io        # LiveKit edge gateway + REST API (Request/Response Handler)
+    python app.py io        # LiveKit edge + REST API (Request/Response Handler)
     python app.py runner    # Agent Runner + the per-session native live sessions
 
 Both read the same config.yaml. Start the broker first. Run the ``runner`` role as a **single
-replica**: its RealtimeConnectionPool is process-local, and one gateway instance must own a room.
+replica**: its RealtimeConnectionPool is process-local, and one edge instance must own a room.
 """
 
 import logging

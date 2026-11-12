@@ -260,6 +260,75 @@ def test_stop_ends_this_edge_only_and_unregisters_it():
     assert StatefulEdgeRegistry.get(adapter.session_id) is None
 
 
+def test_a_hanging_stop_is_bounded_and_the_edge_is_cancelled(monkeypatch):
+    monkeypatch.setattr(_EdgeRunner, "GRACEFUL_STOP_TIMEOUT_SECONDS", 0.05)
+    adapter = FakeStatefulEdgeAdapter()
+    running = threading.Event()
+
+    async def run_until_stopped():
+        running.set()
+        await asyncio.Event().wait()
+
+    async def hanging_stop():
+        await asyncio.Event().wait()
+
+    adapter.start = run_until_stopped
+    adapter.stop = hanging_stop
+    runner = _EdgeRunner(adapter)
+    thread = threading.Thread(target=runner.start, daemon=True)
+    thread.start()
+    assert running.wait(5)
+
+    runner.stop()
+    thread.join(5)
+
+    assert not thread.is_alive()
+    assert StatefulEdgeRegistry.get(adapter.session_id) is None
+
+
+def test_a_transient_start_failure_is_retried(monkeypatch):
+    monkeypatch.setattr(_EdgeRunner, "START_RETRY_BASE_SECONDS", 0)
+    adapter = FakeStatefulEdgeAdapter()
+    attempts = []
+    running = threading.Event()
+
+    async def flaky_start():
+        attempts.append(True)
+        if len(attempts) < 3:
+            raise RuntimeError("transient")
+        running.set()
+        await asyncio.Event().wait()
+
+    adapter.start = flaky_start
+    runner = _EdgeRunner(adapter)
+    thread = threading.Thread(target=runner.start, daemon=True)
+    thread.start()
+    assert running.wait(5)
+
+    assert len(attempts) == 3
+    runner.stop()
+    thread.join(_EdgeRunner.GRACEFUL_STOP_TIMEOUT_SECONDS + 5)
+    assert not thread.is_alive()
+
+
+def test_a_start_that_keeps_failing_is_given_up_on(monkeypatch):
+    monkeypatch.setattr(_EdgeRunner, "START_RETRY_BASE_SECONDS", 0)
+    adapter = FakeStatefulEdgeAdapter()
+    attempts = []
+
+    async def failing_start():
+        attempts.append(True)
+        raise RuntimeError("bad credentials")
+
+    adapter.start = failing_start
+
+    with pytest.raises(RuntimeError, match="bad credentials"):
+        _EdgeRunner(adapter).start()
+
+    assert len(attempts) == _EdgeRunner.START_ATTEMPTS
+    assert StatefulEdgeRegistry.get(adapter.session_id) is None
+
+
 def test_an_edge_stopped_before_it_starts_never_starts_its_adapter():
     adapter = FakeStatefulEdgeAdapter()
     started = []

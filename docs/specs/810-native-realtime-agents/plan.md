@@ -39,7 +39,7 @@ Build the [design](design.md) using the component contracts and limits in [spec.
 
 ## Iteration 4: Cross-boundary tests and live checks
 
-- **Goal:** Prove the two SDK adapters, pool, queue consumer, and LiveKit gateway work as one path; close any gap found by those tests.
+- **Goal:** Prove the two SDK adapters, pool, queue consumer, and LiveKit edge work as one path; close any gap found by those tests.
 - **Files:** `ak-py/tests/test_realtime_pool.py`, `ak-py/tests/test_openai_runner.py` / `test_openai_realtime.py`, `ak-py/tests/test_adk_runner.py` / `test_adk_realtime.py`, `ak-py/tests/test_livekit_edge_adapter.py`, `ak-py/tests/test_ecs_akagentrunner_realtime.py`, relevant tool-builder tests.
 - **Steps:**
   1. Cover A → B → A, each agent's native tool, speaker-before-audio order, text, voice, barge-in, guardrail interruption, approval/confirmation failure, MCP pass-through or explicit SDK rejection, custom-runner break, cleanup, and two-session isolation (spec: **Testing**).
@@ -67,7 +67,7 @@ Live captions (C2) are not part of Agent Kernel. C3 (an API for application code
 
 ### Iteration 1: The caller's words as an event (C1)
 
-- **Goal:** Both adapters report the caller's finished utterance, and it reaches the edge in spoken order.
+- **Goal:** Both adapters report the caller's finished utterance, and it reaches the edge in the order the framework reports it.
 - **Files:**
   - `ak-py/src/agentkernel/core/event.py`: the `InputTranscript` event, added to the `StreamEvent` union.
   - `ak-py/src/agentkernel/core/realtime/runner.py`: document the `input_transcript` callback in `connect()`.
