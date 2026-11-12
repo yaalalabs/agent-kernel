@@ -8,7 +8,7 @@ import os
 os.environ.setdefault("OPIK_TRACK_DISABLE", "True")
 
 from opik.evaluation.metrics import GEval, LevenshteinRatio
-from opik.evaluation.models import LiteLLMChatModel
+from opik.evaluation.models import OpikBaseModel, models_factory
 
 from agentkernel.test.config import AKTestConfig
 
@@ -36,18 +36,18 @@ _DEFAULT_EVALUATION_CRITERIA = (
 class OpikAKEvaluator(AKEvaluator):
     def __init__(self, config: AKTestConfig) -> None:
         super().__init__(config)
-        self._model: str | LiteLLMChatModel | None = None  # lazy: score mode never needs it
+        self._model: OpikBaseModel | None = None  # lazy: score mode never needs it
 
-    def _llm_model(self) -> str | LiteLLMChatModel:
-        """Lazily cache the judge, keeping Luna compatible with temperature and logprobs."""
+    def _llm_model(self) -> OpikBaseModel:
+        """Lazily build and cache the judge, asking for reasoning off so GEval's temperature and logprobs are accepted."""
         if self._model is None:
             llm = self._config.llm
-            model = f"{llm.provider}/{llm.model}"
-            # Opik sends temperature/logprobs; extra_body bypasses stale LiteLLM model metadata.
-            if model == "openai/gpt-6-luna":
-                self._model = LiteLLMChatModel(model_name=model, track=False, temperature=0.0, extra_body={"reasoning_effort": "none"})
-            else:
-                self._model = model
+            # Built here rather than by GEval so drop_params reaches LiteLLM: opik drops reasoning_effort itself only when
+            # LiteLLM reports it unsupported, which LiteLLM doesn't for "openai/<non-reasoning model>". temperature=0.0 is
+            # what GEval would use.
+            self._model = models_factory.get(
+                model_name=f"{llm.provider}/{llm.model}", track=False, temperature=0.0, reasoning_effort="none", drop_params=True
+            )
         return self._model
 
     def evaluate_by_score(self, case: AKEvaluationCase) -> AKEvaluationResult:

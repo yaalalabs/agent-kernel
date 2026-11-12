@@ -135,8 +135,8 @@ def test_evaluate_by_llm_success(evaluator):
     (fake,) = _FakeGEval.instances
     assert fake.kwargs["evaluation_criteria"] == _DEFAULT_EVALUATION_CRITERIA
     assert fake.kwargs["track"] is False
-    assert fake.kwargs["model"].model_name == "openai/gpt-6-luna"
-    assert fake.kwargs["model"]._completion_kwargs["extra_body"]["reasoning_effort"] == "none"
+    assert fake.kwargs["model"] is evaluator._model
+    assert evaluator._model.model_name == "openai/gpt-6-luna"
     # Regression: the judge must see the question and expected output packed into `output`, since
     # opik's GEval.score() takes only that one string.
     assert "capital of France?" in fake.output
@@ -184,3 +184,27 @@ def test_llm_model_is_lazily_created_and_cached(evaluator):
 
     assert evaluator._model.model_name == "openai/gpt-6-luna"
     assert all(f.kwargs["model"] is evaluator._model for f in _FakeGEval.instances)
+
+
+@pytest.mark.parametrize(
+    "provider, model",
+    [("openai", "gpt-6-luna"), ("openai", "gpt-4.1-mini"), ("anthropic", "claude-sonnet-4-5"), ("gemini", "gemini-2.5-flash")],
+)
+def test_llm_model_sends_the_same_reasoning_params_for_any_model(monkeypatch, provider, model):
+    """No per-model branching: every judge gets plain LiteLLM params, which LiteLLM maps or drops per provider."""
+    import agentkernel.test.core.evaluator.opik as ak_opik_module
+
+    calls = []
+
+    def _fake_get(**kwargs):
+        calls.append(kwargs)
+        return object()
+
+    monkeypatch.setattr(ak_opik_module.models_factory, "get", _fake_get)
+    config = AKTestConfig()
+    config.llm.provider = provider
+    config.llm.model = model
+
+    OpikAKEvaluator(config).evaluate_by_llm(AKEvaluationCase(user_input="q", actual="a", expected="e"))
+
+    assert calls == [{"model_name": f"{provider}/{model}", "track": False, "temperature": 0.0, "reasoning_effort": "none", "drop_params": True}]

@@ -1364,7 +1364,7 @@ Configure test comparison modes for automated testing. Test configuration is sep
 mode: fallback
 evaluator: deepeval
 llm:
-  model: gpt-4o-mini
+  model: gpt-6-luna
   provider: openai
   embedding_model: text-embedding-3-small
 ```
@@ -1730,7 +1730,7 @@ export AK_TRACE__TYPE=langfuse  # or openllmetry, logfire, cloudwatch
 # Test harness (loaded from the separate test-config.yaml — see Test Configuration)
 export AK_TEST__MODE=fallback  # Options: score, llm, fallback
 export AK_TEST__EVALUATOR=deepeval  # Built-in short name (deepeval, opik or jev), or a dotted path to your own AKEvaluator subclass
-export AK_TEST__LLM__MODEL=gpt-4o-mini
+export AK_TEST__LLM__MODEL=gpt-6-luna
 export AK_TEST__LLM__PROVIDER=openai
 export AK_TEST__LLM__EMBEDDING_MODEL=text-embedding-3-small
 # Guardrails configuration
@@ -2009,7 +2009,7 @@ The `evaluator` field accepts three built-in short names — `deepeval` (default
 mode: fallback
 evaluator: deepeval
 llm:
-  model: gpt-4o-mini
+  model: gpt-6-luna
   provider: openai
   embedding_model: text-embedding-3-small
 ```
@@ -2027,7 +2027,7 @@ export AK_TEST_CONFIG_PATH_OVERRIDE=/path/to/test-config.yaml
 ```bash
 export AK_TEST__MODE=fallback  # Options: score, llm, fallback
 export AK_TEST__EVALUATOR=deepeval
-export AK_TEST__LLM__MODEL=gpt-4o-mini
+export AK_TEST__LLM__MODEL=gpt-6-luna
 export AK_TEST__LLM__PROVIDER=openai
 export AK_TEST__LLM__EMBEDDING_MODEL=text-embedding-3-small
 ```

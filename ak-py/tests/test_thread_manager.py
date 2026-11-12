@@ -293,15 +293,19 @@ class TestLLMThreadNaming:
         assert thread.name_locked is False
         completion.assert_called_once()
         assert completion.call_args.kwargs["model"] == "gpt-6-luna"
-        assert completion.call_args.kwargs["extra_body"]["reasoning_effort"] == "none"
-        assert completion.call_args.kwargs["max_completion_tokens"] == 50
-        assert "max_tokens" not in completion.call_args.kwargs
+        assert completion.call_args.kwargs["max_tokens"] == 50
+        assert completion.call_args.kwargs["reasoning_effort"] == "none"
+        assert completion.call_args.kwargs["drop_params"] is True
 
     def test_llm_naming_model_config_honored(self, thread_enabled_llm):
-        AKConfig.get().thread.naming.model = "gpt-4o"
+        AKConfig.get().thread.naming.model = "anthropic/claude-sonnet-4-5"
         with patch("litellm.completion", return_value=_llm_response("Title")) as completion:
             thread_enabled_llm.get_or_create_thread("s1", "u1", first_prompt="Hello there")
-        assert completion.call_args.kwargs["model"] == "gpt-4o"
+        assert completion.call_args.kwargs["model"] == "anthropic/claude-sonnet-4-5"
+        # No per-model branching: any model gets the same params and LiteLLM maps or drops them per provider.
+        assert completion.call_args.kwargs["max_tokens"] == 50
+        assert completion.call_args.kwargs["reasoning_effort"] == "none"
+        assert completion.call_args.kwargs["drop_params"] is True
 
     def test_llm_name_surrounding_quotes_stripped(self, thread_enabled_llm):
         with patch("litellm.completion", return_value=_llm_response('  "Paris Trip"  ')):

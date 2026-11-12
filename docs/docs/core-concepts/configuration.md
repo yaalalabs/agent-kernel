@@ -115,8 +115,8 @@ multimodal:
   storage_type: in_memory  # in_memory | redis | dynamodb | session_cache
   max_attachments: 20
   description_max_length: 200
-  description_model: gpt-4o  # Vision LLM for brief attachment descriptions
-  analysis_model: gpt-4o  # Vision LLM for the analyze_attachments tool
+  description_model: gpt-6-luna  # Vision LLM for brief attachment descriptions
+  analysis_model: gpt-6-luna  # Vision LLM for the analyze_attachments tool
   redis:
     url: "redis://localhost:6379"
     ttl: 604800

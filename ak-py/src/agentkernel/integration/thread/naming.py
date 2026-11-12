@@ -117,16 +117,14 @@ class ThreadNamingStrategy:
         """
         import litellm  # optional dependency — imported lazily so naming degrades to the fallback without it
 
-        model = AKConfig.get().thread.naming.model
         response = litellm.completion(
-            model=model,
+            model=AKConfig.get().thread.naming.model,
             messages=[{"role": "user", "content": instruction}],
-            # Keep the short title budget available for output rather than reasoning.
-            **(
-                {"max_completion_tokens": 50, "extra_body": {"reasoning_effort": "none"}}
-                if model in ("gpt-6-luna", "openai/gpt-6-luna")
-                else {"max_tokens": 50}
-            ),
+            max_tokens=50,
+            # Keep the short budget for the title: LiteLLM turns reasoning off where the model can,
+            # and drop_params drops the setting for models that don't support it.
+            reasoning_effort="none",
+            drop_params=True,
         )
         return response.choices[0].message.content or ""
 

@@ -445,7 +445,7 @@ Configured via `test-config.yaml` — a separate, un-nested file resolved from t
 mode: score    # score | llm | fallback (default: fallback)
 evaluator: deepeval   # built-in short name ('deepeval', 'opik' or 'jev'), or a dotted path to your own AKEvaluator subclass
 llm:
-  model: gpt-4o-mini
+  model: gpt-6-luna
   provider: openai
 ```
 

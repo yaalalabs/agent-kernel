@@ -66,7 +66,6 @@ class MultimodalPreHook(PreHook):
 
             config = AKConfig.get()
             model_name = config.multimodal.description_model
-            # Keep the short description budget available for output rather than reasoning.
 
             if mime_type.startswith("image/"):
                 # Use Vision model for images via LiteLLM
@@ -85,11 +84,11 @@ class MultimodalPreHook(PreHook):
                             ],
                         }
                     ],
-                    **(
-                        {"max_completion_tokens": 50, "extra_body": {"reasoning_effort": "none"}}
-                        if model_name in ("gpt-6-luna", "openai/gpt-6-luna")
-                        else {"max_tokens": 50}
-                    ),
+                    max_tokens=50,
+                    # Keep the short budget for the description: LiteLLM turns reasoning off where the model
+                    # can, and drop_params drops the setting for models that don't support it.
+                    reasoning_effort="none",
+                    drop_params=True,
                 )
                 description = response.choices[0].message.content.strip()
                 self._log.debug(f"Generated attachment description: {description}")
@@ -113,11 +112,11 @@ class MultimodalPreHook(PreHook):
                             ],
                         }
                     ],
-                    **(
-                        {"max_completion_tokens": 50, "extra_body": {"reasoning_effort": "none"}}
-                        if model_name in ("gpt-6-luna", "openai/gpt-6-luna")
-                        else {"max_tokens": 50}
-                    ),
+                    max_tokens=50,
+                    # Keep the short budget for the description: LiteLLM turns reasoning off where the model
+                    # can, and drop_params drops the setting for models that don't support it.
+                    reasoning_effort="none",
+                    drop_params=True,
                 )
                 return resp.choices[0].message.content.strip()
 

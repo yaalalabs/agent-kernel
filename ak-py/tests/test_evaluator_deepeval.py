@@ -135,6 +135,7 @@ def test_evaluate_by_llm_success(evaluator):
     (fake,) = _FakeGEval.instances
     assert fake.kwargs["criteria"] is None
     assert fake.kwargs["evaluation_steps"] == _DEFAULT_LLM_EVALUATION_STEPS
+    assert fake.kwargs["top_logprobs"] == 5  # newer OpenAI models reject GEval's default of 20
     assert fake.test_case.input == "capital of France?"
     assert fake.test_case.actual_output == "It's Paris."
     assert fake.test_case.expected_output == "Paris"
@@ -196,4 +197,29 @@ def test_llm_model_is_lazily_created_and_cached(monkeypatch, evaluator):
     evaluator.evaluate_by_llm(case)
     evaluator.evaluate_by_llm(case)
 
-    assert created == [("openai/gpt-6-luna", {"generation_kwargs": {"extra_body": {"reasoning_effort": "none"}}})]  # constructed once, then cached
+    # constructed once, then cached
+    assert created == [("openai/gpt-6-luna", {"generation_kwargs": {"reasoning_effort": "none", "drop_params": True}})]
+
+
+@pytest.mark.parametrize(
+    "provider, model",
+    [("openai", "gpt-6-luna"), ("openai", "gpt-4.1-mini"), ("anthropic", "claude-sonnet-4-5"), ("gemini", "gemini-2.5-flash")],
+)
+def test_llm_model_sends_the_same_reasoning_params_for_any_model(monkeypatch, provider, model):
+    """No per-model branching: every judge gets plain LiteLLM params, which LiteLLM maps or drops per provider."""
+    import agentkernel.test.core.evaluator.deepeval as ak_deepeval_module
+
+    created = []
+
+    class _FakeLiteLLMModel:
+        def __init__(self, model_name, **kwargs):
+            created.append((model_name, kwargs))
+
+    monkeypatch.setattr(ak_deepeval_module, "LiteLLMModel", _FakeLiteLLMModel)
+    config = AKTestConfig()
+    config.llm.provider = provider
+    config.llm.model = model
+
+    DeepevalAKEvaluator(config).evaluate_by_llm(AKEvaluationCase(user_input="q", actual="a", expected="e"))
+
+    assert created == [(f"{provider}/{model}", {"generation_kwargs": {"reasoning_effort": "none", "drop_params": True}})]
