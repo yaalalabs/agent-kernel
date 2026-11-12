@@ -33,7 +33,17 @@ make lint-all
 ```bash
 make lint-check       # ak-py only
 make lint-check-all   # ak-py + examples
+make lock-bounds-check  # every uv.lock against the bounds ak-py/pyproject.toml declares (a report, not a gate)
 ```
+
+`lock-bounds-check` runs `.github/scripts/dependency_caps.py --check bounds`: an example resolves `agentkernel`
+from PyPI, whose metadata is the last release, so a bound added to `ak-py/pyproject.toml` is invisible to the
+example's `uv lock`, and only an install that pairs the exported lock with the branch wheel notices (the chart
+smoke, `examples/k8s/openai-queue-mode/deploy/package.sh`, for `agentkernel`'s base dependencies). A drift it
+reports is pulled back with `uv lock --upgrade-package "<package><requirement>"` in that example's folder, unless
+the release itself requires otherwise (a floor raised past what the release allows), which only the next release
+settles. It is not part of `lint-check-all` for that reason; the dependency update workflow's `bounds` step
+reconciles the locks.
 
 ### Auto-format a remote branch (CI)
 

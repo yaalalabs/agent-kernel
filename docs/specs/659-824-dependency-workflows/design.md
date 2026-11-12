@@ -48,6 +48,10 @@ flowchart TD
 
 ### Version rules
 
+- A lock that carries a package built in this repo stays inside the bounds that package declares in its own
+  `pyproject.toml` (`bounds`, added 2026-11-12): the example resolves the package from PyPI, whose metadata is the
+  last release, so a limit added here is otherwise invisible to it until an install pairs the lock with the branch
+  wheel. A drift the release itself rules out waits for the next release.
 - A **version line** is the major for `1.x` and up, and the minor for `0.x`. No package leaves its line, direct or
   indirect, except to reach a security fix. Each held-back upgrade is listed ("needs its own PR").
 - When uv moves a held package anyway (an upgraded package needs its new line), the package that pulls it is held

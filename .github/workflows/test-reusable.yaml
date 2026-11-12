@@ -125,6 +125,11 @@ jobs:
         working-directory: scripts
         run: python test_update_chart_versions.py
 
+      - name: Test dependency_caps script
+        run: |
+          pip install "packaging==26.3"
+          python -m unittest discover -s .github/scripts/tests -p "test_dependency_caps*.py"
+
   unit-tests:
     needs: [build-ak-py]
     runs-on: ubuntu-latest

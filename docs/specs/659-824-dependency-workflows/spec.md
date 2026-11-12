@@ -44,6 +44,7 @@ The shared workflows (`test-reusable.yaml`, `chart-test.yaml`, `code-quality.yml
 | `cap` | Adds the next-line limit to each direct dependency without one; records the rest with a reason |
 | `secure` | Raises each alerted direct dependency to its patched version |
 | `update` | Per manifest: `LockGuard` (`uv lock --upgrade` on each version line), then `uv sync` |
+| `bounds` | Every lock that carries a package built in this repo keeps that package's direct dependencies inside the bounds its `pyproject.toml` declares (dependencies and extras; dependency groups ship in no wheel). A drifted lock is re-locked with `--upgrade-package "<package><requirement>"` for each drift. A drift the release on PyPI rules out (uv's error has the release depending on that package) is left for the next release, reported apart, and the rest re-locked without it; one still outside afterwards, or whose `uv lock` fails, is marked failed so `finalize` puts it back. `--check`: lists the drifts and exits 1, changing nothing (`make lock-bounds-check`; not a PR gate, see Bounds) |
 | `failures` | Writes `failures.json` and prints the count. No `--jobs`: failing install checks. `--jobs` + `--run-id`: this run's failed CI jobs under those caller jobs, with logs |
 | `fix` | Runs Copilot with the prompt, then `hold` |
 | `evidence` | `--jobs e2e-1 --retry-jobs e2e-2`: writes `judge.json` with round 2's failed jobs that `verdict` cannot explain (no pass in round 1, no `not_dependency.jsonl` reason), each like a `failures.json` entry plus `history`: the same job (caller and matrix index ignored) in the last 30 completed `test.yaml` runs of this repository's own branches (no fork PRs: their logs are anyone's text, and their e2e jobs fail without secrets; no `deps/` branches): runs, passed, failed, and up to 3 failures with branch, date and error lines. Prints the count; a history call that fails is skipped |
@@ -66,6 +67,17 @@ The shared workflows (`test-reusable.yaml`, `chart-test.yaml`, `code-quality.yml
   Up to 6 rounds. Security packages are not held by this rule; a pinned one is re-locked at its pin.
 - **Sync:** `uv sync --frozen --all-extras`, leaving out all but one member of each `[tool.uv] conflicts` set (the
   one that brings pytest).
+- **Bounds:** an example resolves `agentkernel` from PyPI, whose metadata is the last release, so a limit `cap`
+  adds or a floor `secure` raises in `ak-py/pyproject.toml` is invisible to that example's `uv lock`, and
+  `LockGuard` measures version lines from each lock's own base. A lock created or upgraded against the release
+  can therefore sit outside a bound the branch wheel will require, and only an install that pairs the exported
+  lock with that wheel notices (`examples/k8s/openai-queue-mode/deploy/package.sh`, the chart smoke: red on every
+  branch once #919 capped `deprecated` below the 3.0.1 that 28 locks carried, added 2026-11-12). `bounds` runs
+  after `update`. It is not a PR gate: a PR that raises a floor past what the release allows (#919 took
+  `litellm` to `>=1.95.0`, the release requires `<1.90` in its `adk` and `langgraph` extras) puts every lock that
+  resolves the release outside until the next release, and `--check` cannot tell those from a fixable drift
+  without re-locking. `develop` after #919 had 100 drifts in 48 locks; with `deprecated` dropped, 72 in 39, of
+  which a `bounds` run re-locked 52 inside and left the 20 `litellm` ones waiting for the release, none failed.
 - **CI failures:** a job whose name holds a manifest folder (`e2e-1 / e2e-tests (40, api, examples/api/openai,
   deploy, 0)`) gets that manifest, the longest match. Other jobs get none; Copilot finds the folder from the log.
   Each entry: where, manifest, base commit, log, error excerpt, locked version changes, security minimums, held
@@ -86,7 +98,7 @@ The shared workflows (`test-reusable.yaml`, `chart-test.yaml`, `code-quality.yml
 | Job | Runs when | Does |
 |---|---|---|
 | `prepare` | always | `run=true` unless a scheduled run on an odd week or an update PR is open; `alerts` → artifact `alerts` |
-| `update` | `prepare` says run | `$BASE_BRANCH`: `snapshot` → alerts copied in → `cap` → `secure` → `update` → up to 2 × (`failures` → `fix`) → `finalize` → `npm` → `report`; the dependency-file diff as `update.patch`; the state as artifact `update` |
+| `update` | `prepare` says run | `$BASE_BRANCH`: `snapshot` → alerts copied in → `cap` → `secure` → `update` → `bounds` → up to 2 × (`failures` → `fix`) → `finalize` → `npm` → `report`; the dependency-file diff as `update.patch`; the state as artifact `update` |
 | `push` | the patch is not empty | checks out the base commit (40 hex, on `$BASE_BRANCH`), `apply --patch update.patch`, commits, pushes `deps/update-batch-<RUN_ID>` |
 | `e2e-1` | branch pushed | `test-reusable.yaml` (unit tests and e2e) with `checkout_ref` = the pushed commit |
 | `fix-1` | `e2e-1` failed | `failures --jobs e2e-1` → `fix` → `finalize` → `report`; the diff as `holds.patch`; the state as artifact `holds` |
@@ -125,4 +137,9 @@ ran the whole workflow (update, both rounds, PR). Results and the fixes they led
 The patch check was run on the real update of run 42020023574 (270 files, accepted) and on 15 crafted patches (git
 source, new dependency, `[build-system]`, URL requirement, new extra, changed marker, lock source or file host
 changed, `postinstall` added, npm host changed, edits outside dependency files, new file, deleted file, symlink:
-all rejected). `ruff`, `black -l 120` and `actionlint` pass.
+all rejected). `ruff`, `black -l 120` and `actionlint` pass. `bounds` has unit tests
+(`.github/scripts/tests/test_dependency_caps.py`, run by the `script-tests` job): a drift in a lock that carries
+`agentkernel`, a lock inside the bounds, one without `agentkernel`, a package locked at two versions, a dependency
+group bounding nobody, an extra the lock does not request, `--check`'s exit code and listing, the re-lock command
+per drifted manifest with the moves recorded, a failed or still-drifting re-lock marked for `finalize` without
+touching another manifest's result, and a drift the release rules out left waiting while the rest re-lock.

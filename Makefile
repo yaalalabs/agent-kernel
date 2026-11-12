@@ -1,4 +1,4 @@
-.PHONY: dev-setup lint lint-check lint-examples lint-examples-check lint-all lint-check-all deploy-inject deploy-revert help
+.PHONY: dev-setup lint lint-check lint-examples lint-examples-check lint-all lint-check-all lock-bounds-check deploy-inject deploy-revert help
 
 EXAMPLE_DIRS := examples
 
@@ -8,6 +8,8 @@ EXAMPLE_DIRS := examples
 # extra), which a project-env sync would fail to resolve during lint. Pin black to match
 # the version examples pin in their dev groups so formatting is identical.
 BLACK_VERSION := 26.5.1
+# The packaging version .github/scripts/dependency_caps.py runs with; the dependency workflow pins the same.
+PACKAGING_VERSION := 26.3
 
 # Ruff enforces only the pyupgrade typing rules (PEP 585/604 annotations, collections.abc imports).
 # ak-py reads them from [tool.ruff] in ak-py/pyproject.toml; examples run ruff via uvx in --isolated
@@ -35,6 +37,7 @@ help:
 	@echo "  lint-examples-check - Dry run to check code formatting and type annotations in examples"
 	@echo "  lint-all            - Formats python code in both ak-py and examples"
 	@echo "  lint-check-all      - Dry run to check code formatting in both ak-py and examples"
+	@echo "  lock-bounds-check   - Lists uv.lock versions outside the bounds ak-py declares (not part of lint-check-all)"
 	@echo "  deploy-inject       - Injects local module sources/backend.tf into deployment examples"
 	@echo "  deploy-revert       - Reverts deployment examples back to registry module sources"
 	@echo "  help                - Show this help message"
@@ -102,6 +105,13 @@ lint-examples-check:
 
 lint-all: lint lint-examples
 	@echo "All linting completed!"
+
+# Lists every lock whose versions sit outside the bounds a repo package (ak-py) declares, exit 1 if any.
+# Not part of lint-check-all: until the next release a lock can be unable to meet a bound ak-py raised (an
+# example resolves agentkernel from PyPI), so the dependency workflow's `bounds` step reconciles them instead.
+lock-bounds-check:
+	@echo "Checking every uv.lock against the bounds ak-py declares..."
+	@uv run --no-project --with "packaging==$(PACKAGING_VERSION)" python .github/scripts/dependency_caps.py --root . --state /tmp/dep-state-check --check bounds
 
 lint-check-all: lint-check lint-examples-check
 	@echo "All lint checks completed!"
