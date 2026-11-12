@@ -45,7 +45,7 @@ which resolves to `agentkernel.test.core.evaluator.opik.OpikAKEvaluator`:
   every metric it constructs), so no Opik Cloud account, API key, or self-hosted server is
   required — the only network calls this evaluator makes are the LLM judge calls themselves.
 
-Requires the `opik` extra (`pip install "agentkernel[opik]"`), already declared in this package's
+Requires the `opik` extra (`uv add "agentkernel[opik]"`), already declared in this package's
 [`pyproject.toml`](pyproject.toml).
 
 See [`agentkernel.test.core.evaluator.opik`](../../../ak-py/src/agentkernel/test/core/evaluator/opik.py)

@@ -40,7 +40,7 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
         except ImportError as e:
             raise ValueError(
                 "AG-UI support requires the 'ag-ui-protocol' package, which ships in Agent Kernel's "
-                "'agui' extra. Install it with: pip install \"agentkernel[agui]\""
+                "'agui' extra. Install it with: uv add \"agentkernel[agui]\""
             ) from e
 
         if authoriser is None:

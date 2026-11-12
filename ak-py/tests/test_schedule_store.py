@@ -649,7 +649,7 @@ class TestScheduleStoreBuilder:
         monkeypatch.setitem(sys.modules, "agentkernel.schedule.store.valkey", None)
         self._configure(monkeypatch, "valkey")
 
-        with pytest.raises(ImportError, match='pip install "agentkernel\\[valkey\\]"'):
+        with pytest.raises(ImportError, match='uv add "agentkernel\\[valkey\\]"'):
             ScheduleStoreBuilder.build()
 
     def test_the_builtin_list_names_every_shipped_backend(self):

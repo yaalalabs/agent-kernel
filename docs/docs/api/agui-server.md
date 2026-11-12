@@ -21,7 +21,7 @@ on, and the `agui` config block only parameterizes it.
 Install the extra (it ships the `ag-ui-protocol` package, not installed by default):
 
 ```bash
-pip install "agentkernel[agui]"
+uv add "agentkernel[agui]"
 ```
 
 Mount the handler explicitly — there is no config flag that turns AG-UI on by itself, because a run

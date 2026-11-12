@@ -1061,6 +1061,7 @@ thread:
    - `GET /api/v1/threads` and `GET /api/v1/threads/{session_id}` are served by the same handler for reading thread history (open by default, or protected by a pluggable `Authoriser`)
    - Threads are auto-named by an LLM call deriving a concise title from the first prompt (falls back to a truncated prompt prefix without `litellm`/an API key)
    - Sending `thread_name` on any chat request sets/renames the thread and locks it against automatic naming
+   - Structured messages carry a sibling `media_type` next to `content`; with Human in the Loop, a pause (`assistant`, `content.interruptions`) and its decision (`user`, `content.resume.decisions`) are recorded as `application/json` messages
    - AG-UI runs are recorded too, from the `thread` block alone — no thread handler mount; mount
      `ThreadRESTRequestHandler` beside the AG-UI handler for the read routes (see AG-UI Server)
 
@@ -1420,6 +1421,8 @@ and cannot tell `cancelled` from `denied` there. Point the user at the
 [Human in the Loop](https://kernel.yaala.ai/docs/advanced/human-in-the-loop) page for the full table
 before they design the question.
 
+With conversation threads enabled, the pause and the decision are recorded as thread messages (`media_type` `application/json`), so reopening a thread shows what was asked and decided.
+
 #### Sandbox
 
 **What it does:** Lets agents execute code and shell commands in an isolated, permission-bounded
@@ -1440,7 +1443,7 @@ process can wait, the `queue` broker flavor runs them on a separate worker
 **1. Install the extra (docker only):**
 
 ```bash
-pip install "agentkernel[sandbox-docker]"
+uv add "agentkernel[sandbox-docker]"
 ```
 
 **2. Add a `sandbox` block to `config.yaml`.**
@@ -1525,7 +1528,7 @@ subclass?
 **1. Install the extra (aws_ssm only):**
 
 ```bash
-pip install "agentkernel[aws]"
+uv add "agentkernel[aws]"
 ```
 
 **2. Add a `secret` block to `config.yaml`** (optional for `env`, which is the default):
