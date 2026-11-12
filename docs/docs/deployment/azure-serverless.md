@@ -42,7 +42,7 @@ uv add "agentkernel[azure,openai]"
 
 Refer to [Terraform modules](https://registry.terraform.io/modules/yaalalabs/ak-serverless/azurerm) for configuration details.
 
-The module is provider-agnostic — it does not configure the `azurerm` provider itself, so your root `main.tf` must configure it and pass it into the module explicitly:
+The module is provider-agnostic: it does not configure the `azurerm` provider itself, so your root `main.tf` must configure it and pass it into the module explicitly:
 
 ```hcl
 provider "azurerm" {
@@ -82,6 +82,8 @@ OpenAIModule([agent])
 handler = AzureFunction.handler
 ```
 
+With an `identity` block in `config.yaml`, the handler authenticates the request's `Authorization: Bearer` header through the configured identity provider before the body is read: a refused or malformed credential is a 401 (`{"error": "...", "session_id": null}`), and the resulting principal (anonymous without a header) rides the request into the agent, its tools and its hooks. Without the block every request runs as the anonymous principal and the header is ignored. The `static` provider maps credentials resolved from the Function App's settings to principals; `oidc` serves Auth0, Keycloak, Okta and any other OpenID Connect issuer; `cognito`, `entra` and `firebase` have providers of their own. See [Identity and Access](../advanced/identity-and-access.md).
+
 ## API Endpoints
 
 After deployment:
@@ -111,7 +113,7 @@ Response:
 }
 ```
 
-> The handler also accepts a flat body (no `body` envelope) — e.g. `{"agent": "assistant", "prompt": "Hello!", "session_id": "user-123"}` — validating it directly as the chat request. This is useful for probes/health checks that POST a bare JSON object; a request with neither form (empty/null body) still raises a client error.
+> The handler also accepts a flat body (no `body` envelope), e.g. `{"agent": "assistant", "prompt": "Hello!", "session_id": "user-123"}`, validating it directly as the chat request. This is useful for probes/health checks that POST a bare JSON object; a request with neither form (empty/null body) still raises a client error.
 
 ### Custom endpoints (multiple handlers)
 

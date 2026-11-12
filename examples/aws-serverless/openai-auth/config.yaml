@@ -6,3 +6,25 @@ session:
   redis:
     prefix: "ak:openai-auth:example:"
     url: "redis://ak-openai-serverless-dev-examples-redis.rhjs7r.0001.use2.cache.amazonaws.com:6379"
+
+# Who may call: the identity provider the authorizer Lambda authenticates every bearer token with.
+# The static provider maps one credential to the `demo-user` principal. The value is never written
+# here: Terraform passes it to the authorizer as the DEMO_AUTH_TOKEN environment variable
+# (var.demo_auth_token), which the secret capability resolves at startup. Only the authorizer
+# builds the provider; the other Lambdas load this file without needing the variable.
+#
+# To validate Auth0 tokens instead, replace the block with the `oidc` provider (see the README):
+#   identity:
+#     provider:
+#       type: oidc
+#       issuer: https://<tenant>.<region>.auth0.com/   # trailing slash included, as Auth0 issues it
+#       audience: <the API identifier of your Auth0 API>
+#       claims:
+#         groups: https://<your namespace>/roles       # the namespaced claim an Auth0 Action sets
+identity:
+  provider:
+    type: static
+    static:
+      principals:
+        DEMO_AUTH_TOKEN:
+          subject: demo-user

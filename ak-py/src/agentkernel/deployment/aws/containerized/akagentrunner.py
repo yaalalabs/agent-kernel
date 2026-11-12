@@ -5,7 +5,7 @@ import logging
 
 from ....core.chat_service import ChatService
 from ....core.config import AKConfig, ExecutionMode
-from ....core.model import BaseRunRequest, StreamChunk
+from ....core.model import BaseRunRequest, Principal, StreamChunk
 from ....pipeline.realtime_pool import RealtimeConnectionPool
 from ....pipeline.thread_runner import ThreadRunner
 from ....pipeline.transport.base import QueueTransportFactory
@@ -91,7 +91,7 @@ class ECSAgentRunner(ECSSQSConsumer):
             body = body if body is not None else cls._body_from_record(raw_queue_message)
             if body is not None:
                 request_id = request_id or getattr(body, "request_id", None)
-                user_id = user_id or body.user_id
+                user_id = user_id or Principal.subject_of(getattr(body, "principal", None))
 
         if not request_id:
             raise ValueError("request_id is required in SQS message attributes or body")

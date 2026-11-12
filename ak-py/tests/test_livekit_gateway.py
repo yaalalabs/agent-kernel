@@ -16,6 +16,7 @@ import pytest
 import agentkernel.integration.livekit.adapter as livekit_adapter
 from agentkernel.core.event import AgentChanged, AudioDelta, Interrupt, TextDelta
 from agentkernel.core.model import AgentRequestText, AgentRequestVoice, StreamChunk
+from agentkernel.integration.adapter.base import Source
 from agentkernel.integration.livekit.adapter import LiveKitEdgeGateway
 
 
@@ -29,8 +30,8 @@ class _Producer:
     def __init__(self):
         self.calls = []
 
-    def enqueue(self, adapter_name, request):
-        self.calls.append({"adapter_name": adapter_name, "request": request})
+    def enqueue(self, adapter_name, request, source=None):
+        self.calls.append({"adapter_name": adapter_name, "request": request, "source": source})
 
 
 class _AudioSource:
@@ -215,11 +216,12 @@ class TestInboundStaging:
     @pytest.mark.asyncio
     async def test_enqueue_stages_and_the_sender_delivers_to_the_producer(self):
         gateway = _gateway()
+        gateway._api_key = "lk-key"
         gateway._producer = _Producer()
         gateway._pending = asyncio.Queue(maxsize=4)
         sender = asyncio.create_task(gateway._drain_requests())
         try:
-            gateway._stage_request(AgentRequestText(prompt="hi"))
+            gateway._stage_request(AgentRequestText(prompt="hi"), "human")
             for _ in range(50):
                 if gateway._producer.calls:
                     break
@@ -232,6 +234,10 @@ class TestInboundStaging:
         assert call["request"].session_id == "s1"
         assert call["request"].agent == "general"
         assert call["request"].reply_context == {"session_id": "s1"}
+        # The participant LiveKit asserts is the subject, the API key id its scope, and the edge
+        # tells the producer it is a realtime source so the principal gets the realtime prefix (#603).
+        assert (call["request"].user_id, call["request"].namespace) == ("human", "lk-key")
+        assert call["source"] == Source.REALTIME
 
     def test_enqueue_carries_no_agent_when_none_is_configured(self):
         gateway = _gateway()
@@ -273,13 +279,15 @@ class TestInboundStaging:
     async def test_chat_message_parses_json_and_plain_text(self, monkeypatch):
         gateway = _gateway()
         seen = []
-        monkeypatch.setattr(gateway, "_stage_request", lambda request: seen.append(request))
+        monkeypatch.setattr(gateway, "_stage_request", lambda request, participant_identity=None: seen.append((request, participant_identity)))
 
         gateway._handle_chat_message(_packet('{"message": "hello"}'))
         gateway._handle_chat_message(_packet("plain text", topic="chat"))
         gateway._handle_chat_message(_packet("ignored", topic="some-other-topic"))
 
-        assert [request.prompt for request in seen] == ["hello", "plain text"]
+        assert [request.prompt for request, _ in seen] == ["hello", "plain text"]
+        # The packet's sender is the participant the request runs as (#603).
+        assert [identity for _, identity in seen] == ["human", "human"]
 
 
 class TestInboundAudioBatching:
@@ -290,11 +298,13 @@ class TestInboundAudioBatching:
         gateway = _gateway()
         gateway._input_batch_bytes = 0
         seen = []
-        gateway._stage_request = lambda request: seen.append(request)
+        gateway._stage_request = lambda request, participant_identity=None: seen.append((request, participant_identity))
 
-        await gateway._process_incoming_audio(object())
+        await gateway._process_incoming_audio(object(), "human")
 
-        assert [base64.b64decode(request.audio_data) for request in seen] == frames
+        assert [base64.b64decode(request.audio_data) for request, _ in seen] == frames
+        # Every frame is staged as the participant whose track it came from (#603).
+        assert {identity for _, identity in seen} == {"human"}
 
     @pytest.mark.asyncio
     async def test_batches_frames_to_the_configured_size_and_flushes_the_tail(self, monkeypatch):
@@ -303,7 +313,7 @@ class TestInboundAudioBatching:
         gateway = _gateway()
         gateway._input_batch_bytes = 6
         seen = []
-        gateway._stage_request = lambda request: seen.append(request)
+        gateway._stage_request = lambda request, participant_identity=None: seen.append(request)
 
         await gateway._process_incoming_audio(object())
 
@@ -312,7 +322,7 @@ class TestInboundAudioBatching:
     def test_enqueue_audio_base64_encodes_a_voice_request(self):
         gateway = _gateway()
         seen = []
-        gateway._stage_request = lambda request: seen.append(request)
+        gateway._stage_request = lambda request, participant_identity=None: seen.append(request)
 
         gateway._stage_request(gateway._enqueue_audio(b"\x01\x02\x03\x04"))
 
@@ -679,8 +689,8 @@ class TestMultiAgentInbound:
         async def greet(identity):
             heard.append(("greet", identity))
 
-        async def listen(track):
-            heard.append(("audio", track))
+        async def listen(track, participant_identity):
+            heard.append(("audio", track, participant_identity))
 
         gateway._greet, gateway._process_incoming_audio = greet, listen
         track = types.SimpleNamespace(kind="audio")
@@ -688,12 +698,13 @@ class TestMultiAgentInbound:
         gateway._on_track_subscribed(track, types.SimpleNamespace(set_subscribed=None), types.SimpleNamespace(identity="caller"))
         await asyncio.sleep(0)
 
-        assert heard == [("greet", "caller"), ("audio", track)]
+        # The track is listened to as the participant it belongs to (#603).
+        assert heard == [("greet", "caller"), ("audio", track, "caller")]
 
     def test_an_agent_participants_chat_is_ignored(self, monkeypatch):
         gateway = _gateway("supervisor", "billing")
         seen = []
-        monkeypatch.setattr(gateway, "_stage_request", seen.append)
+        monkeypatch.setattr(gateway, "_stage_request", lambda request, participant_identity=None: seen.append(request))
 
         gateway._handle_chat_message(
             types.SimpleNamespace(topic="lk-chat", data=b"Billing here.", participant=types.SimpleNamespace(identity="agent-billing"))

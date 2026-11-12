@@ -1,21 +1,42 @@
-from unittest.mock import Mock, patch
+"""The API Gateway Lambda authorizer on the identity provider (#603): the policy's principal and context."""
+
+from unittest.mock import Mock
 
 import pytest
 from pydantic import ValidationError
 
-from agentkernel.auth.handler import AuthValidator, ValidationResult
-from agentkernel.deployment.aws.serverless.akauthorizer import (
-    APIGatewayAuthorizer,
-    APIGatewayRequestAuthorizerEvent,
-    Headers,
-)
+from agentkernel.core.model import Principal
+from agentkernel.core.util.factory import AKConfigError
+from agentkernel.deployment.aws.serverless.akauthorizer import APIGatewayAuthorizer, APIGatewayRequestAuthorizerEvent
+from agentkernel.identity import IdentityProviderFactory, RequestContext
+
+ALICE = Principal(subject="alice", provider="static", namespace="static", groups=["ops"])
+METHOD_ARN = "arn:aws:execute-api:us-east-1:123456789012:api/test/prod/POST/api/v1/chat"
+
+
+def _event(authorization: str | None = "Bearer alice-secret", **overrides) -> dict:
+    event = {
+        "type": "REQUEST",
+        "methodArn": METHOD_ARN,
+        "resource": "/api/v1/chat",
+        "path": "/api/v1/chat",
+        "httpMethod": "POST",
+        "headers": {"Content-Type": "application/json"},
+    }
+    if authorization is not None:
+        event["headers"]["Authorization"] = authorization
+    event.update(overrides)
+    return event
+
+
+def _statement(policy: dict) -> dict:
+    return policy["policyDocument"]["Statement"][0]
 
 
 class TestAPIGatewayRequestAuthorizerEvent:
     """Tests for APIGatewayRequestAuthorizerEvent model."""
 
     def test_event_with_all_fields(self):
-        """Test event with all required and optional fields."""
         event_data = {
             "type": "REQUEST",
             "methodArn": "arn:aws:execute-api:us-east-1:123456789012:api/test/prod/GET/resource",
@@ -39,7 +60,6 @@ class TestAPIGatewayRequestAuthorizerEvent:
         assert event.stageVariables == {"stage": "prod"}
 
     def test_event_with_minimal_fields(self):
-        """Test event with only required fields."""
         event_data = {
             "type": "REQUEST",
             "methodArn": "arn:aws:execute-api:us-east-1:123456789012:api/test/prod/GET/resource",
@@ -48,8 +68,6 @@ class TestAPIGatewayRequestAuthorizerEvent:
 
         event = APIGatewayRequestAuthorizerEvent.model_validate(event_data)
 
-        assert event.type == "REQUEST"
-        assert event.methodArn == "arn:aws:execute-api:us-east-1:123456789012:api/test/prod/GET/resource"
         assert event.resource is None
         assert event.path is None
         assert event.httpMethod is None
@@ -57,473 +75,177 @@ class TestAPIGatewayRequestAuthorizerEvent:
         assert event.pathParameters is None
         assert event.stageVariables is None
 
-    def test_event_missing_required_fields(self):
-        """Test event validation fails without required fields."""
-        # Missing type
-        with pytest.raises(ValidationError) as exc_info:
-            APIGatewayRequestAuthorizerEvent.model_validate(
-                {
-                    "methodArn": "arn:aws:execute-api:us-east-1:123456789012:api/test/prod/GET/resource",
-                    "headers": {"Authorization": "Bearer token123"},
-                }
-            )
-        assert "type" in str(exc_info.value)
-
-        # Missing methodArn
-        with pytest.raises(ValidationError) as exc_info:
-            APIGatewayRequestAuthorizerEvent.model_validate({"type": "REQUEST", "headers": {"Authorization": "Bearer token123"}})
-        assert "methodArn" in str(exc_info.value)
-
-        # Missing headers
-        with pytest.raises(ValidationError) as exc_info:
-            APIGatewayRequestAuthorizerEvent.model_validate(
-                {"type": "REQUEST", "methodArn": "arn:aws:execute-api:us-east-1:123456789012:api/test/prod/GET/resource"}
-            )
-        assert "headers" in str(exc_info.value)
-
-    def test_event_with_empty_optional_fields(self):
-        """Test event with empty optional fields."""
+    @pytest.mark.parametrize("missing", ["type", "methodArn", "headers"])
+    def test_event_missing_required_fields(self, missing):
         event_data = {
             "type": "REQUEST",
             "methodArn": "arn:aws:execute-api:us-east-1:123456789012:api/test/prod/GET/resource",
             "headers": {"Authorization": "Bearer token123"},
-            "pathParameters": {},
-            "stageVariables": {},
         }
+        del event_data[missing]
 
-        event = APIGatewayRequestAuthorizerEvent.model_validate(event_data)
+        with pytest.raises(ValidationError) as exc_info:
+            APIGatewayRequestAuthorizerEvent.model_validate(event_data)
+
+        assert missing in str(exc_info.value)
+
+    def test_event_with_empty_optional_fields(self):
+        event = APIGatewayRequestAuthorizerEvent.model_validate(
+            {
+                "type": "REQUEST",
+                "methodArn": "arn:aws:execute-api:us-east-1:123456789012:api/test/prod/GET/resource",
+                "headers": {"Authorization": "Bearer token123"},
+                "pathParameters": {},
+                "stageVariables": {},
+            }
+        )
 
         assert event.pathParameters == {}
         assert event.stageVariables == {}
 
     def test_event_serialization(self):
-        """Test event model serialization."""
-        event_data = {
-            "type": "REQUEST",
-            "methodArn": "arn:aws:execute-api:us-east-1:123456789012:api/test/prod/GET/resource",
-            "headers": {"Authorization": "Bearer token123"},
-        }
+        event = APIGatewayRequestAuthorizerEvent.model_validate(
+            {
+                "type": "REQUEST",
+                "methodArn": "arn:aws:execute-api:us-east-1:123456789012:api/test/prod/GET/resource",
+                "headers": {"Authorization": "Bearer token123"},
+            }
+        )
 
-        event = APIGatewayRequestAuthorizerEvent.model_validate(event_data)
         serialized = event.model_dump()
 
         assert serialized["type"] == "REQUEST"
-        assert serialized["methodArn"] == "arn:aws:execute-api:us-east-1:123456789012:api/test/prod/GET/resource"
         assert serialized["headers"]["Authorization"] == "Bearer token123"
 
 
-class TestAPIGatewayAuthorizer:
-    """Tests for APIGatewayAuthorizer class."""
+class TestConstruction:
+    def test_requires_an_identity_block(self, monkeypatch):
+        """An authorizer nobody can authenticate to would deny every request: a configuration error at cold start."""
+        monkeypatch.setattr(IdentityProviderFactory, "get", classmethod(lambda cls: None))
 
-    @pytest.fixture
-    def mock_validator(self):
-        """Mock AuthValidator for testing."""
-        validator = Mock(
-            spec=AuthValidator
-        )  # Creates a mock object that mimics the AuthValidator interface. "spec" parameter ensures the mock only allows attributes/methods that exist on the real AuthValidator class
-        return validator
+        with pytest.raises(AKConfigError, match="APIGatewayAuthorizer requires an identity block"):
+            APIGatewayAuthorizer()
 
-    @pytest.fixture
-    def sample_authorizer(self, mock_validator):
-        """Create APIGatewayAuthorizer instance for testing."""
-        return APIGatewayAuthorizer(mock_validator)  # sample authorizer is not mocked here, only the AuthValidator is mocked
 
-    @pytest.fixture
-    def sample_api_gateway_event(self):
-        """Sample API Gateway event for testing."""
-        return {
-            "type": "REQUEST",
-            "methodArn": "arn:aws:execute-api:us-east-1:123456789012:api/test/prod/POST/api/v1/chat",
-            "resource": "/api/v1/chat",
-            "path": "/api/v1/chat",
-            "httpMethod": "POST",
-            "headers": {"Authorization": "Bearer valid_token_123", "Content-Type": "application/json"},
-            "pathParameters": None,
-            "stageVariables": None,
-        }
+class TestHandle:
+    """Every outcome is a policy: Allow carrying the principal for an accepted credential, Deny for anything else."""
 
-    @pytest.fixture
-    def sample_lambda_context(self):
-        """Sample Lambda context for testing."""
-        context = Mock()
-        context.aws_request_id = "test-request-id"
-        context.function_name = "test-function"
-        context.function_version = "$LATEST"
-        return context
+    def test_an_accepted_credential_allows_the_method_as_the_subject(self, static_identity):
+        policy = APIGatewayAuthorizer().handle(_event())
 
-    def test_authorizer_initialization(self, mock_validator):
-        """Test APIGatewayAuthorizer initialization."""
-        authorizer = APIGatewayAuthorizer(mock_validator)
-
-        assert authorizer._validator == mock_validator
-        assert authorizer._log is not None
-
-    def test_handle_valid_token(self, sample_authorizer, mock_validator, sample_api_gateway_event):
-        """Test handle() method of APIGatewayAuthorizer with valid token ouput from AuthValidator."""
-        # Setup validator to return success
-        mock_validator.validate.return_value = ValidationResult(  # adding a return value from the mock_validator.validate() function
-            is_valid=True, subject="user123", claims={"user_id": "user123", "role": "admin"}
-        )
-
-        result = sample_authorizer.handle(sample_api_gateway_event)
-
-        # Verify policy structure
-        assert result["principalId"] == "user123"
-        assert result["policyDocument"]["Version"] == "2012-10-17"
-        assert len(result["policyDocument"]["Statement"]) == 1
-
-        statement = result["policyDocument"]["Statement"][0]
-        assert statement["Action"] == "execute-api:Invoke"
-        assert statement["Effect"] == "Allow"
-        assert statement["Resource"] == sample_api_gateway_event["methodArn"]
-
-        # Verify context
-        assert result["context"]["user_id"] == "user123"
-        assert result["context"]["role"] == "admin"
-
-    def test_handle_invalid_token(self, sample_authorizer, mock_validator, sample_api_gateway_event):
-        """Test handle() method of APIGatewayAuthorizer with invalid token ouput from AuthValidator."""
-        # Setup validator to return failure
-        mock_validator.validate.return_value = ValidationResult(is_valid=False, error_msg="Invalid token signature")
-
-        result = sample_authorizer.handle(sample_api_gateway_event)
-
-        # Verify deny policy
-        assert result["principalId"] == "user"
-        statement = result["policyDocument"]["Statement"][0]
-        assert statement["Effect"] == "Deny"
-        assert statement["Resource"] == sample_api_gateway_event["methodArn"]
-
-        # No context for failed validation
-        assert "context" not in result
-
-    def test_handle_with_lambda_context(self, sample_authorizer, mock_validator, sample_api_gateway_event, sample_lambda_context):
-        """Test handle() method with Lambda context (should be ignored)."""
-        mock_validator.validate.return_value = ValidationResult(is_valid=True)
-
-        # Context should not affect the result
-        result = sample_authorizer.handle(sample_api_gateway_event, sample_lambda_context)
-
-        assert result["principalId"] == "user"  # default subject for successful validation
-        assert result["policyDocument"]["Statement"][0]["Effect"] == "Allow"
-
-    def test_build_request(self, sample_authorizer, sample_api_gateway_event):
-        """Test _build_request method."""
-        request = sample_authorizer._build_request(sample_api_gateway_event)
-
-        assert isinstance(request, APIGatewayRequestAuthorizerEvent)
-        assert request.type == sample_api_gateway_event["type"]
-        assert request.methodArn == sample_api_gateway_event["methodArn"]
-        assert request.headers.Authorization == sample_api_gateway_event["headers"]["Authorization"]
-
-    def test_extract_token_with_bearer(self, sample_authorizer):
-        """Test _extract_token method with Bearer prefix."""
-        headers = Headers(Authorization="Bearer token123")
-        request = APIGatewayRequestAuthorizerEvent(
-            type="REQUEST", methodArn="arn:aws:execute-api:us-east-1:123456789012:api/test/prod/GET/resource", headers=headers
-        )
-
-        token = sample_authorizer._extract_token(request)
-        assert token == "token123"
-
-    def test_extract_token_without_bearer(self, sample_authorizer):
-        """Test _extract_token method without Bearer prefix."""
-        headers = Headers(Authorization="token123")
-        request = APIGatewayRequestAuthorizerEvent(
-            type="REQUEST", methodArn="arn:aws:execute-api:us-east-1:123456789012:api/test/prod/GET/resource", headers=headers
-        )
-
-        token = sample_authorizer._extract_token(request)
-        assert token == "token123"
-
-    def test_extract_token_with_whitespace(self, sample_authorizer):
-        """Test _extract_token method with extra whitespace."""
-        headers = Headers(Authorization="Bearer   token123   ")
-        request = APIGatewayRequestAuthorizerEvent(
-            type="REQUEST", methodArn="arn:aws:execute-api:us-east-1:123456789012:api/test/prod/GET/resource", headers=headers
-        )
-
-        token = sample_authorizer._extract_token(request)
-        assert token == "token123"
-
-    def test_build_policy_allow_effect(self, sample_authorizer):
-        """Test _build_policy method with Allow effect."""
-        method_arn = "arn:aws:execute-api:us-east-1:123456789012:api/test/prod/GET/resource"
-        context = {"user_id": "user123", "role": "admin"}
-
-        policy = sample_authorizer._build_policy(principal_id="user123", effect="Allow", method_arn=method_arn, context=context)
-
-        assert policy["principalId"] == "user123"
+        assert policy["principalId"] == "alice"
         assert policy["policyDocument"]["Version"] == "2012-10-17"
+        assert _statement(policy) == {"Action": "execute-api:Invoke", "Effect": "Allow", "Resource": METHOD_ARN}
 
-        statement = policy["policyDocument"]["Statement"][0]
-        assert statement["Action"] == "execute-api:Invoke"
-        assert statement["Effect"] == "Allow"
-        assert statement["Resource"] == method_arn
+    def test_the_context_carries_the_principal_as_a_json_string(self, static_identity):
+        """API Gateway context values must be strings; the one value is the whole principal, groups included."""
+        policy = APIGatewayAuthorizer().handle(_event())
 
-        # Verify context values are strings
-        assert policy["context"]["user_id"] == "user123"
-        assert policy["context"]["role"] == "admin"
-
-    def test_build_policy_deny_effect(self, sample_authorizer):
-        """Test _build_policy method with Deny effect."""
-        method_arn = "arn:aws:execute-api:us-east-1:123456789012:api/test/prod/GET/resource"
-
-        policy = sample_authorizer._build_policy(principal_id="someone", effect="Deny", method_arn=method_arn, context=None)
+        assert list(policy["context"]) == ["principal"]
+        assert isinstance(policy["context"]["principal"], str)
+        assert Principal.model_validate_json(policy["context"]["principal"]) == ALICE
 
-        assert policy["principalId"] == "someone"
-        statement = policy["policyDocument"]["Statement"][0]
-        assert statement["Effect"] == "Deny"
+    def test_a_refused_credential_is_a_401(self, static_identity):
+        """API Gateway answers an authorizer that raises ``Unauthorized`` with 401, which OAuth clients
+        treat as "refresh the token"; a Deny would be a 403 (#603 review, decided 2026-11-12)."""
+        with pytest.raises(Exception, match="^Unauthorized$"):
+            APIGatewayAuthorizer().handle(_event("Bearer mallory"))
 
-        # No context for deny
-        assert "context" not in policy
+    def test_a_header_without_the_bearer_scheme_is_a_401(self, static_identity):
+        """The shared header parsing applies here too: a bare token is not a credential the provider is asked about."""
+        with pytest.raises(Exception, match="^Unauthorized$"):
+            APIGatewayAuthorizer().handle(_event("alice-secret"))
 
-    def test_build_policy_without_context(self, sample_authorizer):
-        """Test _build_policy method without context."""
-        method_arn = "arn:aws:execute-api:us-east-1:123456789012:api/test/prod/GET/resource"
-
-        policy = sample_authorizer._build_policy(principal_id="user123", effect="Allow", method_arn=method_arn, context=None)
-
-        assert policy["principalId"] == "user123"
-        assert "context" not in policy
-
-    def test_build_policy_context_type_conversion(self, sample_authorizer):
-        """Test _build_policy converts context values to strings."""
-        method_arn = "arn:aws:execute-api:us-east-1:123456789012:api/test/prod/GET/resource"
-        context = {
-            "user_id": 123,  # integer
-            "is_admin": True,  # boolean
-            "permissions": ["read", "write"],  # list
-            "metadata": {"key": "value"},  # dict
-        }
-
-        policy = sample_authorizer._build_policy(principal_id="user123", effect="Allow", method_arn=method_arn, context=context)
-
-        # All context values should be strings
-        assert policy["context"]["user_id"] == "123"
-        assert policy["context"]["is_admin"] == "True"
-        assert policy["context"]["permissions"] == "['read', 'write']"
-        assert policy["context"]["metadata"] == "{'key': 'value'}"
-
-    def test_validation_context_creation(self, sample_authorizer, mock_validator, sample_api_gateway_event):
-        """Test that ValidationContext is created correctly."""
-        mock_validator.validate.return_value = ValidationResult(is_valid=True)
-
-        sample_authorizer.handle(sample_api_gateway_event)
-
-        # Verify that validate was called once
-        mock_validator.validate.assert_called_once()
-
-        # Verify the token was passed correctly
-        call_args = mock_validator.validate.call_args
-        assert call_args is not None
-
-    def test_logging_behavior(self, sample_authorizer, mock_validator, sample_api_gateway_event):
-        """Test logging behavior in handle method."""
-        mock_validator.validate.return_value = ValidationResult(is_valid=True)
-
-        with patch.object(sample_authorizer._log, "info") as mock_log_info:
-            result = sample_authorizer.handle(sample_api_gateway_event)
-
-            # Verify logging calls
-            mock_log_info.assert_any_call(f"Authorizer received event: {sample_api_gateway_event}")
-            mock_log_info.assert_any_call(f"Authorizer return policy: {result}")
-
-    def test_validator_exception_handling(self, sample_authorizer, mock_validator, sample_api_gateway_event):
-        """Test handling of validator exceptions."""
-        # Setup validator to raise exception
-        mock_validator.validate.side_effect = Exception("Validation error")
+        assert static_identity.calls == []
 
-        result = sample_authorizer.handle(sample_api_gateway_event)
+    def test_a_missing_authorization_header_is_denied(self, static_identity):
+        policy = APIGatewayAuthorizer().handle(_event(None))
 
-        # Should return deny policy instead of raising exception
-        assert result["principalId"] == "unauthorized"
-        assert result["policyDocument"]["Statement"][0]["Effect"] == "Deny"
-        assert result["policyDocument"]["Statement"][0]["Resource"] == sample_api_gateway_event["methodArn"]
+        assert (_statement(policy)["Effect"], _statement(policy)["Resource"]) == ("Deny", METHOD_ARN)
+        assert static_identity.calls == []
 
-    def test_event_validation_error(self, sample_authorizer, mock_validator):
-        """Test handling of invalid event data."""
-        invalid_event = {
-            "type": "REQUEST",
-            # Missing required methodArn and headers
-        }
+    def test_an_event_without_a_method_arn_is_denied_everywhere(self, static_identity):
+        event = _event()
+        del event["methodArn"]
 
-        result = sample_authorizer.handle(invalid_event)
+        policy = APIGatewayAuthorizer().handle(event)
 
-        # Should return deny policy instead of raising ValidationError
-        assert result["principalId"] == "unauthorized"
-        assert result["policyDocument"]["Statement"][0]["Effect"] == "Deny"
-        assert result["policyDocument"]["Statement"][0]["Resource"] == "*"
+        assert (policy["principalId"], _statement(policy)["Effect"], _statement(policy)["Resource"]) == ("unauthorized", "Deny", "*")
 
-    def test_different_http_methods(self, sample_authorizer, mock_validator):
-        """Test authorizer with different HTTP methods."""
-        methods = ["GET", "POST", "PUT", "DELETE", "PATCH"]
-
-        for method in methods:
-            event = {
-                "type": "REQUEST",
-                "methodArn": f"arn:aws:execute-api:us-east-1:123456789012:api/test/prod/{method}/resource",
-                "headers": {"Authorization": "Bearer token123"},
-                "httpMethod": method,
-                "path": "/resource",
-            }
-
-            mock_validator.validate.return_value = ValidationResult(is_valid=True)
-
-            result = sample_authorizer.handle(event)
-
-            assert result["policyDocument"]["Statement"][0]["Effect"] == "Allow"
-            assert result["policyDocument"]["Statement"][0]["Resource"] == event["methodArn"]
-
-    def test_complex_path_parameters(self, sample_authorizer, mock_validator):
-        """Test authorizer with complex path parameters."""
-        event = {
-            "type": "REQUEST",
-            "methodArn": "arn:aws:execute-api:us-east-1:123456789012:api/test/prod/GET/users/{userId}/posts/{postId}",
-            "headers": {"Authorization": "Bearer token123"},
-            "httpMethod": "GET",
-            "path": "/users/123/posts/456",
-            "pathParameters": {"userId": "123", "postId": "456"},
-        }
-
-        mock_validator.validate.return_value = ValidationResult(is_valid=True)
-
-        result = sample_authorizer.handle(event)
-
-        assert result["policyDocument"]["Statement"][0]["Effect"] == "Allow"
-        assert result["policyDocument"]["Statement"][0]["Resource"] == event["methodArn"]
-
-        # Verify ValidationContext includes path parameters
-        call_args = mock_validator.validate.call_args
-        if len(call_args[0]) > 1:
-            context = call_args[0][1]
-            assert context.path == "/users/123/posts/456"
-            assert context.http_method == "GET"
-
-    def test_stage_variables(self, sample_authorizer, mock_validator):
-        """Test authorizer with stage variables."""
-        event = {
-            "type": "REQUEST",
-            "methodArn": "arn:aws:execute-api:us-east-1:123456789012:api/test/prod/GET/resource",
-            "headers": {"Authorization": "Bearer token123"},
-            "httpMethod": "GET",
-            "path": "/resource",
-            "stageVariables": {"stage": "prod", "version": "v1"},
-        }
-
-        mock_validator.validate.return_value = ValidationResult(is_valid=True)
-
-        result = sample_authorizer.handle(event)
-
-        assert result["policyDocument"]["Statement"][0]["Effect"] == "Allow"
-
-    def test_empty_claims_in_validation_result(self, sample_authorizer, mock_validator, sample_api_gateway_event):
-        """Test handling of empty claims in validation result."""
-        mock_validator.validate.return_value = ValidationResult(is_valid=True, subject="user123", claims=None)
-
-        result = sample_authorizer.handle(sample_api_gateway_event)
-
-        assert result["principalId"] == "user123"
-        assert result["policyDocument"]["Statement"][0]["Effect"] == "Allow"
-        assert "context" not in result
-
-    def test_empty_claims_dict_in_validation_result(self, sample_authorizer, mock_validator, sample_api_gateway_event):
-        """Test handling of empty claims dictionary in validation result."""
-        mock_validator.validate.return_value = ValidationResult(is_valid=True, subject="user123", claims={})
-
-        result = sample_authorizer.handle(sample_api_gateway_event)
-
-        assert result["principalId"] == "user123"
-        assert result["policyDocument"]["Statement"][0]["Effect"] == "Allow"
-        assert "context" not in result
-
-
-class TestAPIGatewayAuthorizerIntegration:
-    """Integration tests for APIGatewayAuthorizer."""
-
-    def test_full_authorization_flow_success(self):
-        """Test complete authorization flow with successful validation."""
-
-        # Create a real validator implementation
-        class TestValidator(AuthValidator):
-            def validate(self, token, context=None):
-                if token == "valid_token_123":
-                    return ValidationResult(is_valid=True, subject="test_user", claims={"user_id": "test_user", "permissions": ["read", "write"]})
-                else:
-                    return ValidationResult(is_valid=False, error_msg="Invalid token")
-
-        validator = TestValidator()
-        authorizer = APIGatewayAuthorizer(validator)
-
-        event = {
-            "type": "REQUEST",
-            "methodArn": "arn:aws:execute-api:us-east-1:123456789012:api/test/prod/GET/protected",
-            "headers": {"Authorization": "Bearer valid_token_123"},
-            "httpMethod": "GET",
-            "path": "/protected",
-        }
-
-        result = authorizer.handle(event)
-
-        assert result["principalId"] == "test_user"
-        assert result["policyDocument"]["Statement"][0]["Effect"] == "Allow"
-        assert result["context"]["user_id"] == "test_user"
-        assert result["context"]["permissions"] == "['read', 'write']"
-
-    def test_full_authorization_flow_failure(self):
-        """Test complete authorization flow with failed validation."""
-
-        class TestValidator(AuthValidator):
-            def validate(self, token, context=None):
-                return ValidationResult(is_valid=False, error_msg="Token expired")
-
-        validator = TestValidator()
-        authorizer = APIGatewayAuthorizer(validator)
-
-        event = {
-            "type": "REQUEST",
-            "methodArn": "arn:aws:execute-api:us-east-1:123456789012:api/test/prod/GET/protected",
-            "headers": {"Authorization": "Bearer expired_token"},
-            "httpMethod": "GET",
-            "path": "/protected",
-        }
-
-        result = authorizer.handle(event)
-
-        assert result["principalId"] == "user"
-        assert result["policyDocument"]["Statement"][0]["Effect"] == "Deny"
-        assert "context" not in result
-
-    def test_policy_format_compliance(self):
-        """Test that generated policy complies with AWS API Gateway format."""
-        validator = Mock(spec=AuthValidator)
-        validator.validate.return_value = ValidationResult(is_valid=True, subject="test_user", claims={"user_id": "test_user"})
-
-        authorizer = APIGatewayAuthorizer(validator)
-
-        event = {
-            "type": "REQUEST",
-            "methodArn": "arn:aws:execute-api:us-east-1:123456789012:api/test/prod/GET/resource",
-            "headers": {"Authorization": "Bearer token123"},
-            "httpMethod": "GET",
-            "path": "/resource",
-        }
-
-        result = authorizer.handle(event)
-
-        # Verify required AWS policy structure
-        assert "principalId" in result
-        assert "policyDocument" in result
-        assert "Version" in result["policyDocument"]
-        assert "Statement" in result["policyDocument"]
-        assert len(result["policyDocument"]["Statement"]) == 1
-
-        statement = result["policyDocument"]["Statement"][0]
-        assert "Action" in statement
-        assert "Effect" in statement
-        assert "Resource" in statement
-
-        # Verify AWS-specific values
-        assert result["policyDocument"]["Version"] == "2012-10-17"
-        assert statement["Action"] == "execute-api:Invoke"
-        assert statement["Effect"] in ["Allow", "Deny"]
+    def test_a_provider_failure_is_denied_not_raised(self, static_identity, monkeypatch):
+        async def _boom(credential, context=None):
+            raise RuntimeError("jwks unreachable")
+
+        monkeypatch.setattr(static_identity, "authenticate", _boom)
+
+        policy = APIGatewayAuthorizer().handle(_event())
+
+        assert (policy["principalId"], _statement(policy)["Effect"]) == ("unauthorized", "Deny")
+
+    def test_the_provider_sees_where_the_credential_was_presented(self, static_identity):
+        APIGatewayAuthorizer().handle(_event(path="/users/123/posts/456", httpMethod="GET"))
+
+        ((credential, context),) = static_identity.calls
+        assert credential == "alice-secret"
+        assert context == RequestContext(path="/users/123/posts/456", http_method="GET", headers={"Authorization": "Bearer alice-secret"})
+
+    def test_the_lambda_context_argument_is_ignored(self, static_identity):
+        policy = APIGatewayAuthorizer().handle(_event(), Mock())
+
+        assert policy["principalId"] == "alice"
+
+    @pytest.mark.parametrize("method", ["GET", "POST", "PUT", "DELETE", "PATCH"])
+    def test_every_method_is_allowed_on_its_own_arn(self, static_identity, method):
+        arn = f"arn:aws:execute-api:us-east-1:123456789012:api/test/prod/{method}/resource"
+
+        policy = APIGatewayAuthorizer().handle(_event(methodArn=arn, httpMethod=method, path="/resource"))
+
+        assert (_statement(policy)["Effect"], _statement(policy)["Resource"]) == ("Allow", arn)
+
+
+class TestHeaderCase:
+    """REST v1 REQUEST authorizer events keep header names as the client sent them (#603 review)."""
+
+    @pytest.mark.parametrize("name", ["authorization", "AUTHORIZATION", "AuThOrIzAtIoN"])
+    def test_the_header_is_found_whatever_its_case(self, static_identity, name):
+        event = _event(None)
+        event["headers"][name] = "Bearer alice-secret"
+        assert _statement(APIGatewayAuthorizer().handle(event))["Effect"] == "Allow"
+
+    def test_no_header_in_any_case_is_still_denied(self, static_identity):
+        assert _statement(APIGatewayAuthorizer().handle(_event(None)))["Effect"] == "Deny"
+
+
+class TestLogging:
+    """Bearer tokens and principal claims stay out of CloudWatch (#603 review)."""
+
+    def test_the_log_names_the_request_and_the_decision_only(self, static_identity, caplog):
+        with caplog.at_level("DEBUG", logger="ak.deployment.aws.akauthorizer"):
+            APIGatewayAuthorizer().handle(_event())
+            APIGatewayAuthorizer().handle(_event(None))
+            with pytest.raises(Exception, match="^Unauthorized$"):
+                APIGatewayAuthorizer().handle(_event("Bearer mallory"))
+        messages = " ".join(record.getMessage() for record in caplog.records if record.name == "ak.deployment.aws.akauthorizer")
+        assert "alice-secret" not in messages and "mallory" not in messages
+        assert '"groups"' not in messages and "policyDocument" not in messages
+        assert "POST /api/v1/chat" in messages and "Allow" in messages and "Deny" in messages and "alice" in messages
+        assert "Unauthorized for POST /api/v1/chat" in messages
+
+    def test_a_validation_failure_names_the_field_not_the_event(self, static_identity, caplog):
+        event = _event()
+        del event["type"]
+        with caplog.at_level("INFO", logger="ak.deployment.aws.akauthorizer"):
+            APIGatewayAuthorizer().handle(event)
+        messages = " ".join(record.getMessage() for record in caplog.records if record.name == "ak.deployment.aws.akauthorizer")
+        assert "Event validation failed: type" in messages
+        assert "alice-secret" not in messages
+
+
+class TestBuildPolicy:
+    def test_context_values_are_strings(self, static_identity):
+        policy = APIGatewayAuthorizer()._build_policy("alice", "Allow", METHOD_ARN, {"n": 1, "flag": True})
+
+        assert policy["context"] == {"n": "1", "flag": "True"}
+
+    def test_no_context_key_without_context(self, static_identity):
+        assert "context" not in APIGatewayAuthorizer()._build_policy("alice", "Deny", METHOD_ARN, None)

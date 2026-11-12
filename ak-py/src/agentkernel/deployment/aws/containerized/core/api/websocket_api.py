@@ -14,10 +14,13 @@ from pydantic import BaseModel
 
 from ......api.handler import RESTRequestHandler
 from ......api.http import RESTAPI
-from ......auth.handler import AuthValidator
 from ......core.chat_service import ChatService
 from ......core.config import AKConfig
-from ......core.model import BaseRequest, BaseRunRequest, StreamChunk
+from ......core.model import BaseRequest, BaseRunRequest, Principal, StreamChunk
+from ......core.util.factory import AKConfigError
+from ......identity.errors import AuthenticationError
+from ......identity.provider.base import RequestContext
+from ......identity.provider.request import RequestAuthenticator
 from ....core.sqs_handler import SQSHandler
 from ....core.websocket_service import AWSWebSocketHandler, WebSocketConnectionStore
 
@@ -26,7 +29,7 @@ class ECSWebSocketHandlerBase(RESTRequestHandler):
     """Shared plumbing for the ECS WebSocket handlers: connection store, push endpoint construction, and response envelope.
 
     Store and handler are created lazily per instance (both point at the same DynamoDB table, which is
-    stateless/safe). Abstract — ``get_router`` is left unimplemented, so it cannot be instantiated alone.
+    stateless/safe). Abstract: ``get_router`` is left unimplemented, so it cannot be instantiated alone.
     """
 
     # WS $context headers injected by api_gateway_ws.tf.
@@ -99,9 +102,11 @@ class ECSWebSocketHandlerBase(RESTRequestHandler):
 
 
 class ECSWebSocketSystemRequestHandler(ECSWebSocketHandlerBase):
-    """Framework-managed WebSocket protocol routes ($connect/$disconnect/$default); owns the ``AuthValidator`` used at $connect.
+    """Framework-managed WebSocket protocol routes ($connect/$disconnect/$default); authenticates $connect through the identity provider.
 
-    Not an extension point — ``AWSWebsocketAPI`` builds it automatically from the validator set via ``set_auth_handler``.
+    Not an extension point: ``AWSWebsocketAPI`` builds it automatically. The handshake's ``token`` query parameter
+    is validated by the configured provider and the connection is keyed by the principal's subject, with the whole
+    principal stored beside it for the frames that follow.
     """
 
     # Backend paths the WS API Gateway integration rewrites each route to.
@@ -109,17 +114,17 @@ class ECSWebSocketSystemRequestHandler(ECSWebSocketHandlerBase):
     DISCONNECT_PATH = "/ws/disconnect"
     DEFAULT_PATH = "/ws/default"
 
-    def __init__(self, auth_validator: AuthValidator):
-        """:param auth_validator: authenticates the $connect handshake; mandatory, and its claims must include a ``userId`` (keys the connection). ``None`` raises ValueError."""
+    def __init__(self):
+        """Build the handler over the configured identity provider.
+
+        :raises AKConfigError: If no identity provider is configured: the connection is keyed by the
+            authenticated subject, so a handshake nobody can authenticate cannot be served.
+        """
         super().__init__()
         self._log = logging.getLogger("ak.ecs.ws_system_handler")
-
-        if auth_validator is None:
-            raise ValueError(
-                "auth_validator is required for WebSocket mode — authentication is mandatory. "
-                "Pass an AuthValidator whose claims include a 'userId'."
-            )
-        self._auth_validator = auth_validator
+        self._authenticator = RequestAuthenticator.from_config()
+        if self._authenticator.provider is None:
+            raise AKConfigError("the ECS WebSocket routes require an identity block: the connection is keyed by the authenticated subject")
 
     def get_router(self) -> APIRouter:
         """Return an APIRouter with one POST endpoint per protocol route."""
@@ -130,7 +135,11 @@ class ECSWebSocketSystemRequestHandler(ECSWebSocketHandlerBase):
         return router
 
     async def _handle_connect(self, request: Request) -> JSONResponse:
-        """Authenticate ($connect) and store the connection. Non-2xx rejects the connection."""
+        """Authenticate ($connect) and store the connection under its principal. Non-2xx rejects the connection.
+
+        The provider's reason goes to the log; the client sees a generic refusal, as a rejected bearer
+        token gets a generic 401 on HTTP.
+        """
         try:
             connection_id = self._connection_id(request)
             if not connection_id:
@@ -140,16 +149,17 @@ class ECSWebSocketSystemRequestHandler(ECSWebSocketHandlerBase):
             if not token:
                 return self.build_error_http_response(401, "Authentication token is required")
 
-            result = self._auth_validator.validate(token)
-            if not result.is_valid:
-                return self.build_error_http_response(401, result.error_msg or "Authentication failed")
+            try:
+                principal = await self._authenticator.authenticate_token(token, RequestContext(path=self.CONNECT_PATH))
+            except AuthenticationError as exc:
+                self._log.info(f"Refused WebSocket credential: {exc}")
+                return self.build_error_http_response(401, "Authentication failed")
+            if principal.is_anonymous:
+                # Unreachable with the provider the constructor demanded; refused rather than keyed on "anonymous".
+                return self.build_error_http_response(401, "Authentication failed")
 
-            user_id = (result.claims or {}).get("userId")
-            if not user_id:
-                return self.build_error_http_response(401, "'userId' claim is required in token")
-
-            await self._offload(self.get_websocket_handler().on_connect, connection_id=connection_id, user_id=user_id)
-            return self.build_success_http_response("WebSocket connection established", user_id=user_id)
+            await self._offload(self.get_websocket_handler().on_connect, connection_id=connection_id, principal=principal)
+            return self.build_success_http_response("WebSocket connection established", user_id=principal.subject)
         except Exception as e:
             self._log.exception(f"WebSocket $connect failed: {e}")
             return self.build_error_http_response(500, "Failed to establish WebSocket connection")
@@ -188,7 +198,7 @@ class ECSWebSocketSystemRequestHandler(ECSWebSocketHandlerBase):
 class ECSWebSocketRequestHandler(ECSWebSocketHandlerBase):
     """ECS + API Gateway WebSocket application handler (async mode): the built-in chat route plus custom routes.
 
-    Framework-managed (not a subclassing extension point); the user is resolved from the connection store, not
+    Framework-managed (not a subclassing extension point); the principal is resolved from the connection store, not
     re-authenticated per frame. Chat has two paths by config: queue mode enqueues to SQS (never touches ChatService),
     direct mode runs ChatService inline and broadcasts the reply. Custom routes are registered via
     ``@AWSWebsocketAPI.register`` and must also be declared in Terraform ``ws_routes``.
@@ -197,22 +207,26 @@ class ECSWebSocketRequestHandler(ECSWebSocketHandlerBase):
     class WSRouteContext(BaseModel):
         """Everything a WebSocket route resolves from one inbound frame; used internally by the framework.
 
-        Custom routes never receive this object directly (see ``_wrap_custom_route``) — they get
-        ``model_dump(exclude={"connection_id", "endpoint_url"})`` of it instead, i.e. a plain
-        ``{"message": ..., "user_id": ...}`` dict.
+        Custom routes never receive this object directly (see ``_wrap_custom_route``): they get a plain
+        ``{"message": ..., "principal": ...}`` dict instead.
 
         :param message: The chat route gets the parsed ``BaseRequest`` (route, request_id, body); custom
             routes get the frame's raw JSON body as a ``dict`` (no schema imposed, so callers can use
             whatever body shape they want).
-        :param user_id: Authenticated user id resolved from the connection.
+        :param principal: The connection's principal, stored at ``$connect``; its subject keys the connection.
         :param connection_id: API Gateway WebSocket connection id; internal-only (needed for ``broadcast``).
         :param endpoint_url: Management API endpoint used to push replies to the client; internal-only.
         """
 
         message: Any
-        user_id: str
+        principal: Principal
         connection_id: str
         endpoint_url: str
+
+        @property
+        def user_id(self) -> str:
+            """The connection key the broadcast paths route by: the principal's subject."""
+            return self.principal.subject
 
     class WSRouteError(Exception):
         """Raised by ``build_route_context`` to short-circuit a route with a specific HTTP status."""
@@ -257,19 +271,18 @@ class ECSWebSocketRequestHandler(ECSWebSocketHandlerBase):
     def _wrap_custom_route(self, func: Callable) -> Callable:
         """Wrap a user route function into a FastAPI endpoint.
 
-        Resolves the ``WSRouteContext`` and invokes ``func(msg)`` (awaiting if awaitable) with
-        ``msg = ctx.model_dump(exclude={"connection_id", "endpoint_url"})`` — a plain
-        ``{"message": ..., "user_id": ...}`` dict; the function never sees the connection id or push
-        endpoint. A ``dict`` return is broadcast as ``SYSTEM_RESPONSE`` (``None`` broadcasts nothing),
-        and the 200 envelope is returned; a ``WSRouteError`` maps to its status, any other exception
-        logs, broadcasts an error, and returns 500.
+        Resolves the ``WSRouteContext`` and invokes ``func(msg)`` (awaiting if awaitable) with a plain
+        ``{"message": ..., "principal": ...}`` dict, the frame's body and the connection's ``Principal``;
+        the function never sees the connection id or push endpoint. A ``dict`` return is broadcast as
+        ``SYSTEM_RESPONSE`` (``None`` broadcasts nothing), and the 200 envelope is returned; a
+        ``WSRouteError`` maps to its status, any other exception logs, broadcasts an error, and returns 500.
         """
 
         async def _endpoint(request: Request) -> JSONResponse:
             ctx: ECSWebSocketRequestHandler.WSRouteContext | None = None
             try:
                 ctx = await self.build_route_context(request)
-                msg = ctx.model_dump(exclude={"connection_id", "endpoint_url"})
+                msg = {"message": ctx.message, "principal": ctx.principal}
                 result = func(msg)
                 if inspect.isawaitable(result):
                     result = await result
@@ -302,13 +315,13 @@ class ECSWebSocketRequestHandler(ECSWebSocketHandlerBase):
         return _endpoint
 
     async def build_route_context(self, request: Request, *, is_chat_request: bool = False) -> "ECSWebSocketRequestHandler.WSRouteContext":
-        """Parse the inbound frame and resolve the connection's user and push endpoint.
+        """Parse the inbound frame and resolve the connection's principal and push endpoint.
 
         :param request: The proxied WebSocket frame (FastAPI Request).
         :param is_chat_request: True for the chat route: ``message`` is parsed into a ``BaseRequest``. False
             (custom routes) leaves ``message`` as the frame's raw JSON body (``dict``), unparsed.
         :return: A fully-resolved WSRouteContext.
-        :raises WSRouteError: If the connection id, user, or push endpoint cannot be resolved.
+        :raises WSRouteError: If the connection id, principal, or push endpoint cannot be resolved.
         """
         connection_id = self._connection_id(request)
         if not connection_id:
@@ -318,9 +331,9 @@ class ECSWebSocketRequestHandler(ECSWebSocketHandlerBase):
         payload = json.loads(raw_body) if raw_body else {}
         message = BaseRequest.from_payload(payload) if is_chat_request else payload
 
-        user_id = await self._offload(self.get_websocket_handler().get_user_id, connection_id)
-        if not user_id:
-            raise self.WSRouteError(401, f"No user found for connection_id: {connection_id}")
+        principal = await self._offload(self.get_websocket_handler().get_principal, connection_id)
+        if principal is None:
+            raise self.WSRouteError(401, f"No principal found for connection_id: {connection_id}")
 
         endpoint_url = self._construct_endpoint_url(request)
         if not endpoint_url:
@@ -328,7 +341,7 @@ class ECSWebSocketRequestHandler(ECSWebSocketHandlerBase):
 
         return self.WSRouteContext(
             message=message,
-            user_id=user_id,
+            principal=principal,
             connection_id=connection_id,
             endpoint_url=endpoint_url,
         )
@@ -410,15 +423,18 @@ class ECSWebSocketRequestHandler(ECSWebSocketHandlerBase):
             if ctx.message.body is None:
                 return self.build_error_http_response(400, "body is required")
 
-            session_id = ctx.message.body.session_id
+            body = ctx.message.body
+            session_id = body.session_id
             if not session_id:
                 return self.build_error_http_response(400, "session_id is required")
 
+            # The connection's principal is the run's: `from_payload` dropped anything the frame named.
+            body.principal = ctx.principal
             if self._is_queue_mode():
-                return await self._enqueue_chat(ctx.message.body, ctx.user_id, ctx.message.request_id, session_id, ctx.endpoint_url)
+                return await self._enqueue_chat(body, ctx.user_id, ctx.message.request_id, session_id, ctx.endpoint_url)
             if self._config.execution.is_delta:
-                return await self._process_chat_direct_stream(ctx.message.body, ctx.user_id, ctx.endpoint_url)
-            return await self._process_chat_direct(ctx.message.body, ctx.user_id, ctx.endpoint_url)
+                return await self._process_chat_direct_stream(body, ctx.user_id, ctx.endpoint_url)
+            return await self._process_chat_direct(body, ctx.user_id, ctx.endpoint_url)
         except self.WSRouteError as e:
             return self.build_error_http_response(e.status_code, e.message)
         except Exception as e:
@@ -429,9 +445,10 @@ class ECSWebSocketRequestHandler(ECSWebSocketHandlerBase):
 class AWSWebsocketAPI(RESTAPI):
     """REST API for ECS containerized WebSocket deployments.
 
-    Assembles the framework-managed system handler ($connect/$disconnect/$default, built lazily from the
-    registered ``AuthValidator``) and one application handler (chat + every route registered via ``register``).
-    Authentication is mandatory: call ``set_auth_handler`` (claims must include a ``userId``) before ``run()``.
+    Assembles the framework-managed system handler ($connect/$disconnect/$default) and one application
+    handler (chat + every route registered via ``register``). Authentication is mandatory and comes from
+    configuration: ``$connect`` validates its token through the identity provider the ``identity`` block
+    names, so the block is required.
     """
 
     _RESERVED_ROUTES: ClassVar[set[str]] = {
@@ -441,7 +458,6 @@ class AWSWebsocketAPI(RESTAPI):
         ECSWebSocketRequestHandler.CHAT_PATH.rsplit("/", 1)[-1],
     }
 
-    _ws_auth_validator: AuthValidator | None = None
     _ws_custom_routes: ClassVar[dict[str, Callable]] = {}
 
     @classmethod
@@ -449,8 +465,8 @@ class AWSWebsocketAPI(RESTAPI):
         """Decorator that registers a custom WebSocket route (bare route name only).
 
         The function (sync or async) receives a ``dict`` with ``message`` (the frame's raw JSON body,
-        unparsed — no ``BaseRequest``/schema imposed, so any custom request shape works) and ``user_id``
-        (the authenticated user id). It does not receive the connection id or push endpoint. A ``dict``
+        unparsed: no ``BaseRequest``/schema imposed, so any custom request shape works) and ``principal``
+        (the connection's authenticated ``Principal``). It does not receive the connection id or push endpoint. A ``dict``
         return is broadcast to the client, ``None`` broadcasts nothing. The name is validated at
         decoration time (see ``_validate_route_name``); re-registering the same route keeps the first.
         The route must also be declared in Terraform ``ws_routes``.
@@ -476,7 +492,7 @@ class AWSWebsocketAPI(RESTAPI):
             raise ValueError("WebSocket route name must be a non-empty string.")
         if route.startswith("/"):
             raise ValueError(
-                f"WebSocket route '{route}' must be a bare route name, not a path — do not prefix "
+                f"WebSocket route '{route}' must be a bare route name, not a path: do not prefix "
                 "it with '/ws/' (the framework maps it to POST /ws/<route> automatically)."
             )
         if route in cls._RESERVED_ROUTES:
@@ -488,24 +504,12 @@ class AWSWebsocketAPI(RESTAPI):
             raise ValueError(f"Invalid WebSocket route name '{route}': only letters, digits, '_' and '-' are allowed.")
 
     @classmethod
-    def set_auth_handler(cls, auth_validator: AuthValidator) -> "type[AWSWebsocketAPI]":
-        """Register the AuthValidator used to authenticate the $connect handshake (call before ``run()``).
-
-        :param auth_validator: AuthValidator whose ValidationResult claims include a ``userId``.
-        :return: The class itself, to allow chaining with ``run()``.
-        """
-        cls._ws_auth_validator = auth_validator
-        return cls
-
-    @classmethod
     def _build_system_handler(cls) -> ECSWebSocketSystemRequestHandler:
-        """Build the framework-managed system handler from the registered validator."""
-        if cls._ws_auth_validator is None:
-            raise ValueError(
-                "WebSocket authentication is mandatory. Register a validator with "
-                "AWSWebsocketAPI.set_auth_handler(auth_validator=...) before calling run()."
-            )
-        return ECSWebSocketSystemRequestHandler(auth_validator=cls._ws_auth_validator)
+        """Build the framework-managed system handler over the configured identity provider.
+
+        :raises AKConfigError: If no identity provider is configured.
+        """
+        return ECSWebSocketSystemRequestHandler()
 
     @classmethod
     def get_default_handlers(cls) -> list[RESTRequestHandler]:

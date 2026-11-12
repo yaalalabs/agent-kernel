@@ -15,6 +15,7 @@ import pickle
 import threading
 from collections import OrderedDict
 from email.mime.text import MIMEText
+from email.utils import parseaddr
 from typing import Any
 
 from google.auth.transport.requests import Request
@@ -169,6 +170,8 @@ class GmailInboundAdapter(PollingInboundAdapter):
         self.poll_interval = config.poll_interval or 30
         self._label_filter = config.label_filter or "INBOX"
         self._service = _GmailService()
+        # The address of the inbox this poller reads, resolved from the account once it is needed.
+        self._inbox: str | None = None
 
         # Optional allow-lists, comma separated.
         sender_filter = os.environ.get("AK_GMAIL__SENDER_FILTER")
@@ -239,6 +242,8 @@ class GmailInboundAdapter(PollingInboundAdapter):
         subject = self._header(headers, "Subject")
         sender = self._header(headers, "From")
         message_id_header = self._header(headers, "Message-ID")  # for In-Reply-To/References threading
+        # What Google verified about the sender (SPF, DKIM, DMARC); a From address alone proves nothing.
+        authentication_results = self._header(headers, "Authentication-Results")
         thread_id = message.get("threadId")
 
         body = self._body(message["payload"])
@@ -277,7 +282,12 @@ class GmailInboundAdapter(PollingInboundAdapter):
                     requests=requests,
                     prompt=prompt,
                     agent=self._agent,
-                    user_id=sender,
+                    # The bare address, lowercased: "Alice <A@X.com>" and "a@x.com" are one mailbox,
+                    # so one principal. The reply still goes to the header as written.
+                    user_id=parseaddr(sender or "")[1].lower() or None,
+                    # The inbox is the scope a From address is seen under (#603).
+                    namespace=self._inbox_address(client),
+                    claims={"authentication_results": authentication_results} if authentication_results else {},
                     reply_context={
                         "to": sender or "",
                         "subject": subject or "",
@@ -333,6 +343,12 @@ class GmailInboundAdapter(PollingInboundAdapter):
         except Exception as e:
             self._log.warning(f"Error fetching thread history: {e}")
             return ""
+
+    def _inbox_address(self, client: Any) -> str | None:
+        """The address of the inbox being read, from the account's profile; resolved once."""
+        if self._inbox is None:
+            self._inbox = client.users().getProfile(userId="me").execute().get("emailAddress") or None
+        return self._inbox
 
     @staticmethod
     def _header(headers: list, name: str) -> str | None:

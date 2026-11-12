@@ -19,7 +19,8 @@ module "containerized_agents" {
     package_path = "../dist-rest-service"
     command      = ["python", "app_rest_service.py"]
     environment_variables = {
-      OPENAI_API_KEY = var.openai_api_key
+      OPENAI_API_KEY  = var.openai_api_key
+      DEMO_AUTH_TOKEN = var.demo_auth_token
     }
   }
 

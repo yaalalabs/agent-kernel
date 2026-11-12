@@ -1,9 +1,10 @@
 """The gateway's native WebSocket route (spec #495 §9).
 
 ``/ws`` is a plain FastAPI WebSocket endpoint: no API Gateway in front, so this handler owns the
-whole lifecycle itself: accept, authenticate the ``token`` query parameter, register the
-connection (the socket in the pod-local registry, the mapping with this pod's push endpoint in
-the shared connection store), and dispatch each frame: the chat route parses a
+whole lifecycle itself: accept, authenticate the ``token`` query parameter through the configured
+identity provider, register the connection under the principal's subject (the socket in the
+pod-local registry, the mapping with this pod's push endpoint in the shared connection store),
+and dispatch each frame: the chat route parses a
 :class:`BaseRequest` and enqueues it directly to the transport (the queue is the interface: no
 REST hop, no return address on the message), custom routes run user functions registered with
 the same decorator surface as ``AWSWebsocketAPI.register``.
@@ -25,10 +26,13 @@ from typing import Any, ClassVar
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from ...api.handler import RESTRequestHandler
-from ...auth.handler import AuthValidator
 from ...core.config import AKConfig
-from ...core.model import BaseRequest
+from ...core.model import BaseRequest, Principal
 from ...core.session.base import WSConnectionStore
+from ...core.util.factory import AKConfigError
+from ...identity.errors import AuthenticationError
+from ...identity.provider.base import RequestContext
+from ...identity.provider.request import RequestAuthenticator
 from ..envelope import ATTR_REQUEST_ID, ATTR_USER_ID, QueueMessage, QueueName
 from ..transport.base import QueueTransport, QueueTransportFactory
 from .base import WebSocketHandlerABC
@@ -42,6 +46,10 @@ _WS_POLICY_VIOLATION = 1008
 class PipelineWebSocketHandler(RESTRequestHandler):
     """Mounts the ``/ws`` route: authenticated chat entry plus registered custom routes."""
 
+    # The handshake authenticates its own ``?token=``, so RESTAPI mounts the route without the
+    # HTTP identity dependency when single-process async mode co-hosts it (#603).
+    authenticates_itself = True
+
     WS_PATH = "/ws"
     # Route key selecting the chat dispatch when websocket_api.chat_route is not configured.
     DEFAULT_CHAT_ROUTE = "chat"
@@ -50,19 +58,23 @@ class PipelineWebSocketHandler(RESTRequestHandler):
 
     def __init__(
         self,
-        auth_validator: AuthValidator,
         registry: LocalConnectionRegistry | None = None,
         transport: QueueTransport | None = None,
         connection_store: WSConnectionStore | None = None,
+        authenticator: RequestAuthenticator | None = None,
     ):
-        """:param auth_validator: authenticates the handshake; mandatory, and its claims must
-        include a ``userId`` (keys the connection). ``None`` raises ValueError."""
-        if auth_validator is None:
-            raise ValueError(
-                "auth_validator is required for WebSocket mode: authentication is mandatory. "
-                "Pass an AuthValidator whose claims include a 'userId'."
-            )
-        self._auth_validator = auth_validator
+        """
+        :param registry: The pod-local socket registry; the process-wide instance when omitted.
+        :param transport: The queue transport chat frames are enqueued to; built from config when omitted.
+        :param connection_store: The shared connection store; the session backend's when omitted.
+        :param authenticator: The authenticator over the configured provider; built from config when
+            omitted (tests inject one).
+        :raises AKConfigError: If no identity provider is configured: the connection is keyed by the
+            authenticated subject, so a route nobody can authenticate to cannot be served.
+        """
+        self._authenticator = authenticator if authenticator is not None else RequestAuthenticator.from_config()
+        if self._authenticator.provider is None:
+            raise AKConfigError("the WebSocket route requires an identity block: the connection is keyed by the authenticated subject")
         self._registry = registry or LocalConnectionRegistry.instance()
         self._transport = transport
         self._connection_store = connection_store
@@ -78,8 +90,9 @@ class PipelineWebSocketHandler(RESTRequestHandler):
         """Decorator registering a custom WebSocket route (same surface as ``AWSWebsocketAPI.register``).
 
         The function (sync or async) receives a dict with ``message`` (the frame's raw JSON
-        body, unparsed) and ``user_id`` (the authenticated user). A dict return is sent back to
-        the calling connection as a ``SYSTEM_RESPONSE`` frame; ``None`` sends nothing.
+        body, unparsed) and ``principal`` (the connection's authenticated ``Principal``). A dict
+        return is sent back to the calling connection as a ``SYSTEM_RESPONSE`` frame; ``None``
+        sends nothing.
         Re-registering the same route keeps the first registration.
 
         :param route: Bare route name (e.g. ``"status"``), selected by the frame's ``route`` field.
@@ -131,9 +144,11 @@ class PipelineWebSocketHandler(RESTRequestHandler):
     async def _serve(self, websocket: WebSocket) -> None:
         """One connection's whole life: authenticate, register, dispatch frames, deregister."""
         await websocket.accept()
-        user_id = await self._authenticate(websocket)
-        if user_id is None:
+        principal = await self._authenticate(websocket)
+        if principal is None:
             return
+        # The connection is keyed by the subject: the Response Handler routes replies by it.
+        user_id = principal.subject
 
         connection_id = str(uuid.uuid4())
         # The socket stays here; the shared store tells Response Handlers on any pod where to
@@ -148,7 +163,7 @@ class PipelineWebSocketHandler(RESTRequestHandler):
             self._log.info(f"Connected: user_id={user_id}, connection_id={connection_id}")
             while True:
                 raw_frame = await websocket.receive_text()
-                await self._dispatch(websocket, user_id, raw_frame)
+                await self._dispatch(websocket, principal, raw_frame)
         except WebSocketDisconnect:
             pass
         finally:
@@ -173,25 +188,31 @@ class PipelineWebSocketHandler(RESTRequestHandler):
             # The mapping's TTL reaps it if the store is briefly unreachable at disconnect.
             self._log.exception(f"Failed to deregister connection mapping: connection_id={connection_id}")
 
-    async def _authenticate(self, websocket: WebSocket) -> str | None:
-        """Validate the ``token`` query parameter; a failure closes the socket (policy violation)."""
+    async def _authenticate(self, websocket: WebSocket) -> Principal | None:
+        """Authenticate the ``token`` query parameter; a failure closes the socket (policy violation).
+
+        The provider's reason goes to the log; the client sees a generic close reason, as a
+        rejected bearer token gets a generic 401 on HTTP.
+        """
         token = websocket.query_params.get("token")
         if not token:
             await websocket.close(code=_WS_POLICY_VIOLATION, reason="Authentication token is required")
             return None
-        result = self._auth_validator.validate(token)
-        if not result.is_valid:
-            await websocket.close(code=_WS_POLICY_VIOLATION, reason=result.error_msg or "Authentication failed")
+        try:
+            principal = await self._authenticator.authenticate_token(token, RequestContext(path=self.WS_PATH))
+        except AuthenticationError as exc:
+            self._log.info(f"Refused WebSocket credential: {exc}")
+            await websocket.close(code=_WS_POLICY_VIOLATION, reason="Authentication failed")
             return None
-        user_id = (result.claims or {}).get("userId")
-        if not user_id:
-            await websocket.close(code=_WS_POLICY_VIOLATION, reason="'userId' claim is required in token")
+        if principal.is_anonymous:
+            # Unreachable with the provider the constructor demanded; closed rather than keyed on "anonymous".
+            await websocket.close(code=_WS_POLICY_VIOLATION, reason="Authentication failed")
             return None
-        return user_id
+        return principal
 
     # -- frame dispatch -----------------------------------------------------------------------
 
-    async def _dispatch(self, websocket: WebSocket, user_id: str, raw_frame: str) -> None:
+    async def _dispatch(self, websocket: WebSocket, principal: Principal, raw_frame: str) -> None:
         try:
             payload = json.loads(raw_frame)
         except json.JSONDecodeError:
@@ -207,13 +228,13 @@ class PipelineWebSocketHandler(RESTRequestHandler):
             except Exception as e:
                 await self._send_system(websocket, f"Invalid request: {e}")
                 return
-            await self._handle_chat(websocket, user_id, request)
+            await self._handle_chat(websocket, principal, request)
         elif route in self._custom_routes:
-            await self._handle_custom(websocket, user_id, route, payload)
+            await self._handle_custom(websocket, principal, route, payload)
         else:
             await self._send_system(websocket, f"Route '{route}' not found")
 
-    async def _handle_chat(self, websocket: WebSocket, user_id: str, request: BaseRequest) -> None:
+    async def _handle_chat(self, websocket: WebSocket, principal: Principal, request: BaseRequest) -> None:
         """Enqueue a chat frame; the Response Handler pushes the reply back to this pod."""
         body = request.body
         if body is None:
@@ -226,6 +247,9 @@ class PipelineWebSocketHandler(RESTRequestHandler):
             await self._send_system(websocket, "prompt is required unless the request carries a resume block")
             return
 
+        # The connection's principal is the run's: `from_payload` dropped anything the frame named.
+        body.principal = principal
+        user_id = principal.subject
         request_id = request.request_id or str(uuid.uuid4())
         # USER_ID doubles as the WS-entered marker (spec §2 invariant): the Response Handler
         # resolves delivery from the connection store, so no return address is stamped.
@@ -244,21 +268,21 @@ class PipelineWebSocketHandler(RESTRequestHandler):
             await self._send_system(websocket, "Request processing failed")
             return
 
-        self._log.info(f"[ENQUEUED] request_id={request_id}, session_id={body.session_id}, user_id={user_id}")
+        self._log.info(f"[ENQUEUED] request_id={request_id}, session_id={body.session_id}, subject={user_id}")
         await websocket.send_json(
             {
                 "status": "SUCCESS",
                 "message": "Request queued successfully",
-                "user_id": user_id,
+                "subject": user_id,
                 "request_id": request_id,
                 "type": WebSocketHandlerABC.MessageType.CHAT_QUEUED.value,
             }
         )
 
-    async def _handle_custom(self, websocket: WebSocket, user_id: str, route: str, payload: Any) -> None:
+    async def _handle_custom(self, websocket: WebSocket, principal: Principal, route: str, payload: Any) -> None:
         """Run a registered route function; a dict result goes back as a SYSTEM_RESPONSE frame."""
         try:
-            result = self._custom_routes[route]({"message": payload, "user_id": user_id})
+            result = self._custom_routes[route]({"message": payload, "principal": principal})
             if asyncio.iscoroutine(result):
                 result = await result
             if result is not None:

@@ -1,7 +1,9 @@
 """Tests for the deployed serverless scheduling example.
 
-Set AK_TEST_ENDPOINT to the module's `agent_invoke_url` output (the chat route). The management
-routes are derived from it, so both live behind the same API Gateway stage.
+Set AK_TEST_ENDPOINT to the module's `agent_invoke_url` output (the chat route) and AK_TEST_TOKEN to
+the `demo_auth_token` the stack was deployed with: every request carries it as the bearer token, and the
+principal it authenticates (`demo-user`) owns the tasks. The management routes are derived from the chat
+route, so both live behind the same API Gateway stage.
 
 These are integration tests against a real deployment: they create real EventBridge schedules and
 cancel them afterwards. Nothing here waits for an occurrence to fire — a schedule far enough in the
@@ -24,7 +26,10 @@ import pytest_asyncio
 
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
-USER_ID = "alice"
+TOKEN = os.getenv("AK_TEST_TOKEN", "")
+AUTH = {"Authorization": f"Bearer {TOKEN}"}
+# The subject of the principal the static provider maps the token to (config.yaml).
+USER_ID = "demo-user"
 # Deliberately far in the future: the assertions never wait for a firing.
 FUTURE_AT = "2035-01-31T09:00:00"
 
@@ -38,14 +43,14 @@ class ScheduleTestClient:
         self.schedules_url = self.chat_url.rsplit("/", 1)[0] + "/schedules"
 
     async def chat(self, prompt: str, session_id: str, schedule: dict | None = None) -> httpx.Response:
-        payload = {"prompt": prompt, "session_id": session_id, "user_id": USER_ID}
+        payload = {"prompt": prompt, "session_id": session_id}
         if schedule is not None:
             payload["schedule"] = schedule
         async with httpx.AsyncClient(timeout=60.0) as client:
             # Retry 5xx and timeouts: Lambda cold starts can exceed the gateway timeout.
             for attempt in range(3):
                 try:
-                    response = await client.post(self.chat_url, json=payload)
+                    response = await client.post(self.chat_url, json=payload, headers=AUTH)
                 except httpx.TimeoutException:
                     if attempt == 2:
                         raise
@@ -56,28 +61,28 @@ class ScheduleTestClient:
             return response
 
     async def list_schedules(self) -> httpx.Response:
+        # The listing is always the caller's own: no parameter names the owner.
         async with httpx.AsyncClient(timeout=30.0) as client:
-            return await client.get(self.schedules_url, params={"user_id": USER_ID})
+            return await client.get(self.schedules_url, headers=AUTH)
 
     async def get_schedule(self, task_id: str) -> httpx.Response:
         async with httpx.AsyncClient(timeout=30.0) as client:
-            return await client.get(f"{self.schedules_url}/get", params={"user_id": USER_ID, "task_id": task_id})
+            return await client.get(f"{self.schedules_url}/get", params={"task_id": task_id}, headers=AUTH)
 
     async def amend_schedule(self, task_id: str, body: dict) -> httpx.Response:
         async with httpx.AsyncClient(timeout=30.0) as client:
-            return await client.post(
-                f"{self.schedules_url}/amend", json={"task_id": task_id, "user_id": USER_ID, **body}
-            )
+            return await client.post(f"{self.schedules_url}/amend", json={"task_id": task_id, **body}, headers=AUTH)
 
     async def cancel_schedule(self, task_id: str) -> httpx.Response:
         async with httpx.AsyncClient(timeout=30.0) as client:
-            return await client.post(f"{self.schedules_url}/cancel", json={"task_id": task_id, "user_id": USER_ID})
+            return await client.post(f"{self.schedules_url}/cancel", json={"task_id": task_id}, headers=AUTH)
 
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
 async def client():
     endpoint = os.getenv("AK_TEST_ENDPOINT")
     assert endpoint, "Set AK_TEST_ENDPOINT to the deployment's agent_invoke_url"
+    assert TOKEN, "Set AK_TEST_TOKEN to the deployed demo_auth_token"
     yield ScheduleTestClient(endpoint)
 
 

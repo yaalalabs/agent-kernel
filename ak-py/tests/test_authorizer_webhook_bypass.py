@@ -4,7 +4,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from agentkernel.auth.handler import AuthValidator, ValidationResult
 from agentkernel.core.util.factory import AKConfigError
 from agentkernel.deployment.aws.serverless.akauthorizer import APIGatewayAuthorizer
 from agentkernel.integration.adapter.route_matcher import WebhookRouteMatcher
@@ -33,12 +32,6 @@ def _event(method: str = "POST", path: str = "/api/v1/slack/events", headers: di
     elif method_arn is not None:
         event["methodArn"] = method_arn
     return event
-
-
-def _validator(is_valid: bool = True) -> MagicMock:
-    validator = MagicMock(spec=AuthValidator)
-    validator.validate.return_value = ValidationResult(is_valid=is_valid, subject="user-1", claims={"role": "tester"})
-    return validator
 
 
 def _effect(policy: dict) -> str:
@@ -115,61 +108,55 @@ class TestWebhookRouteMatcher:
 
 
 class TestAuthorizerBypass:
-    def test_a_webhook_route_is_allowed_without_calling_the_validator(self, base_path):
-        validator = _validator()
+    """The bypass answers before the identity provider is asked; everything else still goes through it."""
+
+    def test_a_webhook_route_is_allowed_without_consulting_the_provider(self, base_path, static_identity):
         event = _event()
 
-        policy = APIGatewayAuthorizer(validator=validator, bypass=WebhookRouteMatcher.for_integrations("slack")).handle(event)
+        policy = APIGatewayAuthorizer(bypass=WebhookRouteMatcher.for_integrations("slack")).handle(event)
 
         assert _effect(policy) == "Allow"
         assert policy["principalId"] == "integration:slack"
         assert policy["policyDocument"]["Statement"][0]["Resource"] == event["methodArn"]
         assert "context" not in policy
-        validator.validate.assert_not_called()
+        assert static_identity.calls == []
 
-    def test_a_spoofed_platform_header_on_the_chat_route_is_denied(self, base_path):
-        validator = _validator()
+    def test_a_spoofed_platform_header_on_the_chat_route_is_denied(self, base_path, static_identity):
         event = _event(path="/api/v1/chat", headers={"X-Slack-Signature": "v0=spoofed"})
 
-        policy = APIGatewayAuthorizer(validator=validator, bypass=WebhookRouteMatcher.for_integrations("slack")).handle(event)
+        policy = APIGatewayAuthorizer(bypass=WebhookRouteMatcher.for_integrations("slack")).handle(event)
 
         assert _effect(policy) == "Deny"
-        validator.validate.assert_not_called()
+        assert static_identity.calls == []
 
-    def test_an_undeclared_method_on_a_webhook_path_goes_to_the_validator(self, base_path):
-        validator = _validator()
-        event = _event(method="GET", headers={"Authorization": "Bearer token-1"})
+    def test_an_undeclared_method_on_a_webhook_path_goes_to_the_provider(self, base_path, static_identity):
+        event = _event(method="GET", headers={"Authorization": "Bearer alice-secret"})
 
-        policy = APIGatewayAuthorizer(validator=validator, bypass=WebhookRouteMatcher.for_integrations("slack")).handle(event)
+        policy = APIGatewayAuthorizer(bypass=WebhookRouteMatcher.for_integrations("slack")).handle(event)
 
-        validator.validate.assert_called_once()
+        assert len(static_identity.calls) == 1
         assert _effect(policy) == "Allow"
-        assert policy["principalId"] == "user-1"
+        assert policy["principalId"] == "alice"
 
-    def test_a_raising_bypass_falls_through_to_the_validator(self, caplog):
+    def test_a_raising_bypass_falls_through_to_the_provider(self, caplog, static_identity):
         def _broken(event):
             raise RuntimeError("matcher bug")
 
-        validator = _validator()
-        policy = APIGatewayAuthorizer(validator=validator, bypass=_broken).handle(_event(headers={"Authorization": "Bearer token-1"}))
+        policy = APIGatewayAuthorizer(bypass=_broken).handle(_event(headers={"Authorization": "Bearer alice-secret"}))
 
-        validator.validate.assert_called_once()
-        assert policy["principalId"] == "user-1"
+        assert len(static_identity.calls) == 1
+        assert policy["principalId"] == "alice"
         assert "matcher bug" in caplog.text
 
-    def test_a_true_predicate_gets_the_generic_principal(self):
-        validator = _validator()
-
-        policy = APIGatewayAuthorizer(validator=validator, bypass=lambda event: True).handle(_event())
+    def test_a_true_predicate_gets_the_generic_principal(self, static_identity):
+        policy = APIGatewayAuthorizer(bypass=lambda event: True).handle(_event())
 
         assert _effect(policy) == "Allow"
         assert policy["principalId"] == "integration"
-        validator.validate.assert_not_called()
+        assert static_identity.calls == []
 
-    def test_an_event_without_a_method_arn_falls_through(self):
-        validator = _validator()
-
-        policy = APIGatewayAuthorizer(validator=validator, bypass=lambda event: "slack").handle(_event(method_arn=None))
+    def test_an_event_without_a_method_arn_falls_through(self, static_identity):
+        policy = APIGatewayAuthorizer(bypass=lambda event: "slack").handle(_event(method_arn=None))
 
         assert _effect(policy) == "Deny"
         assert policy["principalId"] == "unauthorized"

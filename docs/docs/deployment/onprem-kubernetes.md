@@ -81,14 +81,14 @@ the ECS Terraform deployment uses.
 
 | Deployment | Entry point |
 |---|---|
-| io-handler | `IOHandler.run()`, or `IOHandler.run(handlers=[WebhookRESTRequestHandler(...)])` to serve messaging webhooks alongside the chat route |
+| io-handler | `IOHandler.run()`, or `IOHandler.run(handlers=[WebhookRESTRequestHandler(...)])` to serve messaging webhooks alongside the chat route; REST routes authenticate through the `identity` block in your `config.yaml`, and the single-process profile's co-hosted WebSocket route needs that block |
 | agent-runner | registers your agent modules, then `AgentRunner.run()` |
-| ws-gateway | `WebSocketGateway.run(auth_validator=...)` |
+| ws-gateway | `WebSocketGateway.run()`; it authenticates each handshake's `?token=` through the identity provider named by the `identity` block in your `config.yaml` and refuses to start without one |
 
 ### The poller tier (Gmail)
 
 A *polled* integration has no webhook, so it runs as its own workload calling
-`PollerRunner.run(GmailInboundAdapter())` — at **one replica**. It serves no HTTP, so it must not
+`PollerRunner.run(GmailInboundAdapter())`, at **one replica**. It serves no HTTP, so it must not
 ride the io tier's CPU autoscaler: scaling the webhook tier for Slack load would otherwise
 multiply the poll rate for no reason, and the poller's already-handled record is per process.
 
@@ -117,6 +117,16 @@ still wins. New keys and rotated values reach the mount without a restart. For t
 key naming, rotation and security notes, see the
 [Secret Resolution guide](../advanced/secrets.md) and the
 [chart README](https://github.com/yaalalabs/agent-kernel/tree/develop/ak-deployment/ak-k8s).
+
+The credentials of a `static` identity provider resolve the same way: each key under
+`identity.provider.static.principals` names a secret, never a value. The io-handler and ws-gateway
+tiers build the provider, and the mount reaches only the agent-executing tier, so in the split
+topology deliver the credential through `extraEnv` from a Secret: the per-tier `ioHandler.extraEnv`
+and `wsGateway.extraEnv` keep it off the agent runner, as [examples/k8s/openai-queue-mode](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/k8s/openai-queue-mode)
+does with its `demo-credentials` Secret and `DEMO_AUTH_TOKEN`. In the single-process profile the
+io handler is that tier and can read the credential from its mount. An `oidc`, `cognito`, `entra` or
+`firebase` provider needs no secret, only the `auth` extra in the image; see
+[Identity and Access](../advanced/identity-and-access.md).
 
 ## Flavors
 

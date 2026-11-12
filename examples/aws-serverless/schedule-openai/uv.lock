@@ -331,6 +331,9 @@ source = { virtual = "." }
 agent-runner = [
     { name = "agentkernel", extra = ["aws", "cron", "openai"] },
 ]
+authorizer = [
+    { name = "agentkernel", extra = ["aws"] },
+]
 request-handler = [
     { name = "agentkernel", extra = ["aws", "cron"] },
 ]
@@ -348,11 +351,12 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "agentkernel", extras = ["aws"], marker = "extra == 'authorizer'", specifier = ">=0.9.5" },
     { name = "agentkernel", extras = ["aws"], marker = "extra == 'response-handler'", specifier = ">=0.9.5" },
     { name = "agentkernel", extras = ["aws", "cron"], marker = "extra == 'request-handler'", specifier = ">=0.9.5" },
     { name = "agentkernel", extras = ["aws", "openai", "cron"], marker = "extra == 'agent-runner'", specifier = ">=0.9.5" },
 ]
-provides-extras = ["request-handler", "response-handler", "agent-runner"]
+provides-extras = ["request-handler", "response-handler", "agent-runner", "authorizer"]
 
 [package.metadata.requires-dev]
 dev = [

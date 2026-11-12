@@ -20,3 +20,16 @@ execution:
     output:
       url: "" # injected by Terraform via AK_EXECUTION__QUEUES__OUTPUT__URL
       max_receive_count: 4
+
+# Who may connect. The $connect handshake validates the `?token=` query parameter through this
+# provider and keys the connection by the principal's subject; WebSocket mode refuses to start
+# without the block. The static provider maps one credential to the `demo-user` principal. The
+# value is never written here: Terraform passes it to the container as the DEMO_AUTH_TOKEN
+# environment variable (var.demo_auth_token), which the secret capability resolves at startup.
+identity:
+  provider:
+    type: static
+    static:
+      principals:
+        DEMO_AUTH_TOKEN:
+          subject: demo-user

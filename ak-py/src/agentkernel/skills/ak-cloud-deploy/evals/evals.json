@@ -92,7 +92,13 @@
         "function_name",
         "handler_path",
         "package_path",
-        "result_ttl_in_seconds"
+        "result_ttl_in_seconds",
+        "APIGatewayAuthorizer",
+        "identity:"
+      ],
+      "must_not_contain": [
+        "agentkernel.auth",
+        "AuthValidator"
       ]
     },
     {
@@ -175,9 +181,12 @@
         "ws_chat_route",
         "ws_routes",
         "AWSWebsocketAPI.register",
-        "AWSWebsocketAPI.set_auth_handler"
+        "AWSWebsocketAPI.run",
+        "identity:"
       ],
       "must_not_contain": [
+        "AuthValidator",
+        "set_auth_handler",
         "Lambda.handler",
         "azurerm",
         "execution_mode = \"stream\""

@@ -1,0 +1,479 @@
+"""
+Identity providers (spec `docs/specs/603-identity-rbac-registry/` section 4).
+
+What is pinned here: the static provider resolves its credentials through the secret capability,
+compares every entry in constant time and yields the `static` namespace; a configured role mapper
+replaces whatever roles the provider set (the static provider is the one that issues its own) and
+looks up only the groups and the claim paths it lists; the factory selects a provider by short name
+or dotted path and wraps it with the configured mapper; and the request authenticator parses the
+bearer header. The OIDC family's cases are in `test_identity_oidc`, run through the same contract.
+"""
+
+import pytest
+from fastapi import Depends, FastAPI, Request
+from fastapi.testclient import TestClient
+from test_secret_manager import _DictSecretProvider
+
+from agentkernel.core.config import _IdentityConfig, _IdentityProviderConfig, _RoleMapperConfig, _StaticPrincipalConfig, _StaticProviderConfig
+from agentkernel.core.model import Principal
+from agentkernel.core.util.factory import AKConfigError
+from agentkernel.identity import AuthenticationError, IdentityProvider, IdentityProviderFactory, RequestAuthenticator, RequestContext, RoleMapper
+from agentkernel.identity.provider.base import ClaimPath
+from agentkernel.identity.provider.roles import MappedIdentityProvider, MappingRoleMapper, RoleMapperFactory
+from agentkernel.identity.provider.static import StaticIdentityProvider
+from agentkernel.identity.provider.testing import IdentityProviderContract, RoleMapperContract
+from agentkernel.secret import SecretManager
+
+ALICE = {"subject": "alice", "groups": ["ops"], "roles": ["admin"], "claims": {"email": "alice@example.com"}}
+REPORTER = {"subject": "reporter", "kind": "service", "claims": {"team": "finance"}}
+PRINCIPALS = {"ALICE_TOKEN": ALICE, "REPORTER_TOKEN": REPORTER}
+VALUES = {"ALICE_TOKEN": "alice-secret", "REPORTER_TOKEN": "reporter-secret"}
+
+
+@pytest.fixture
+def secrets(monkeypatch) -> SecretManager:
+    """A secret manager over a seeded dict, with the environment kept out of the way."""
+    for key in VALUES:
+        monkeypatch.delenv(key, raising=False)
+    provider = _DictSecretProvider()
+    for key, value in VALUES.items():
+        provider.seed(key, value)
+    return SecretManager(provider=provider, cache_ttl=0)
+
+
+@pytest.fixture
+def current_secrets(monkeypatch, secrets):
+    """What `SecretManager.current()` hands to code that does not take an explicit manager."""
+    monkeypatch.setattr(SecretManager, "current", classmethod(lambda cls: secrets))
+    return secrets
+
+
+@pytest.fixture(autouse=True)
+def _reset_factory():
+    IdentityProviderFactory.reset()
+    yield
+    IdentityProviderFactory.reset()
+
+
+def _principal(**overrides) -> Principal:
+    fields = {"subject": "alice", "provider": "oidc", "namespace": "https://issuer.example"}
+    fields.update(overrides)
+    return Principal(**fields)
+
+
+class EchoProvider(IdentityProvider):
+    """A bring-your-own provider: the factory hands it the whole `identity.provider` block."""
+
+    name = "echo"
+
+    def __init__(self, config: _IdentityProviderConfig):
+        self.config = config
+
+    async def authenticate(self, credential: str, context: RequestContext | None = None) -> Principal:
+        return Principal(subject=credential, provider=self.name, namespace="echo")
+
+
+class EverybodyIsReader(RoleMapper):
+    """A bring-your-own mapper: receives the whole principal."""
+
+    def __init__(self, config: _RoleMapperConfig):
+        self.config = config
+
+    def map(self, principal: Principal) -> list[str]:
+        return ["reader", f"subject:{principal.subject}"]
+
+
+class TestStaticProviderContract(IdentityProviderContract):
+    @pytest.fixture
+    def provider(self, secrets):
+        return StaticIdentityProvider(principals=PRINCIPALS, secrets=secrets)
+
+    @pytest.fixture
+    def valid_credential(self):
+        return "alice-secret", {**ALICE, "namespace": "static"}
+
+    @pytest.fixture
+    def invalid_credentials(self):
+        return ["", "alice-secre", "alice-secret ", "ALICE_TOKEN", "reporter-secret-x"]
+
+
+class TestStaticProvider:
+    def test_a_block_with_no_principals_is_a_configuration_error(self, secrets):
+        """A typo such as ``static: {principal: ...}`` leaves the map empty: refused at startup, not with a 401 per caller."""
+        with pytest.raises(AKConfigError, match="no principals"):
+            StaticIdentityProvider(principals={}, secrets=secrets)
+
+    @pytest.mark.asyncio
+    async def test_every_configured_principal_authenticates_with_its_own_secret(self, secrets):
+        provider = StaticIdentityProvider(principals=PRINCIPALS, secrets=secrets)
+
+        alice = await provider.authenticate("alice-secret")
+        reporter = await provider.authenticate("reporter-secret")
+
+        assert (alice.subject, alice.kind, alice.groups, alice.roles) == ("alice", "user", ["ops"], ["admin"])
+        assert (reporter.subject, reporter.kind, reporter.claims) == ("reporter", "service", {"team": "finance"})
+        assert {alice.provider, alice.namespace, reporter.provider, reporter.namespace} == {"static"}
+
+    @pytest.mark.asyncio
+    async def test_the_credential_value_comes_from_the_secret_capability_never_from_the_block(self, secrets):
+        """The block names the secret key; the value is resolved at construction and the key itself never authenticates."""
+        provider = StaticIdentityProvider(principals={"ALICE_TOKEN": ALICE}, secrets=secrets)
+
+        assert secrets._provider.calls == ["ALICE_TOKEN"]
+        with pytest.raises(AuthenticationError):
+            await provider.authenticate("ALICE_TOKEN")
+
+    def test_a_missing_secret_is_a_configuration_error_naming_the_key(self, secrets):
+        with pytest.raises(AKConfigError, match="MISSING_TOKEN"):
+            StaticIdentityProvider(principals={"MISSING_TOKEN": ALICE}, secrets=secrets)
+
+    def test_a_malformed_secret_key_is_a_configuration_error(self, secrets):
+        with pytest.raises(AKConfigError, match="not-a-key"):
+            StaticIdentityProvider(principals={"not-a-key": ALICE}, secrets=secrets)
+
+    def test_two_principals_sharing_a_credential_are_refused(self, secrets):
+        secrets._provider.seed("TWIN_TOKEN", "alice-secret")
+        with pytest.raises(AKConfigError, match="same credential"):
+            StaticIdentityProvider(principals={"ALICE_TOKEN": ALICE, "TWIN_TOKEN": REPORTER}, secrets=secrets)
+
+    @pytest.mark.asyncio
+    async def test_every_entry_is_compared_even_after_a_match(self, secrets, monkeypatch):
+        """Constant time over all entries: a timing side channel must not reveal which entry matched."""
+        import agentkernel.identity.provider.static as static_module
+
+        compared = []
+        real = static_module.hmac.compare_digest
+        monkeypatch.setattr(static_module.hmac, "compare_digest", lambda a, b: compared.append(a) or real(a, b))
+        provider = StaticIdentityProvider(principals=PRINCIPALS, secrets=secrets)
+
+        await provider.authenticate("alice-secret")
+
+        assert len(compared) == len(PRINCIPALS)
+
+    @pytest.mark.asyncio
+    async def test_from_config_builds_the_principals_from_the_static_block(self, secrets):
+        config = _IdentityProviderConfig(
+            type="static",
+            static=_StaticProviderConfig(principals={"ALICE_TOKEN": _StaticPrincipalConfig(subject="alice", groups=["ops"])}),
+        )
+
+        provider = StaticIdentityProvider.from_config(config, secrets=secrets)
+
+        alice = await provider.authenticate("alice-secret")
+        assert (alice.subject, alice.groups, alice.roles, alice.claims, alice.kind) == ("alice", ["ops"], [], {}, "user")
+
+    def test_the_security_scheme_is_bearer(self, secrets):
+        assert StaticIdentityProvider(principals=PRINCIPALS, secrets=secrets).security_scheme() == ("bearer", {})
+
+
+class TestClaimPath:
+    @pytest.mark.parametrize(
+        "path, expected",
+        [("sub", "alice"), ("realm_access.roles", ["a", "b"]), ("realm_access.missing", None), ("sub.deeper", None), ("missing", None)],
+    )
+    def test_reads_a_dotted_path_or_none(self, path, expected):
+        payload = {"sub": "alice", "realm_access": {"roles": ["a", "b"]}}
+        assert ClaimPath.read(payload, path) == expected
+
+    def test_a_claim_name_containing_dots_is_one_key_first(self):
+        """Auth0 namespaces its custom claims as URLs; such a name is tried whole before it is split."""
+        payload = {"https://acme.com/roles": ["admin"], "a.b": 1, "a": {"b": 2}}
+        assert ClaimPath.read(payload, "https://acme.com/roles") == ["admin"]
+        assert ClaimPath.read(payload, "a.b") == 1
+        assert ClaimPath.read({"a": {"b": 2}}, "a.b") == 2
+
+
+class TestMappingRoleMapperContract(RoleMapperContract):
+    @pytest.fixture
+    def mapper(self):
+        return MappingRoleMapper(
+            mapping={"ops": ["operator", "reader"], "finance": ["fin"], "b": ["bee"], "ops2": ["reader"], "admin": ["admin"]},
+            pass_through="realm_access.roles",
+            claims=["department", "teams"],
+        )
+
+    @pytest.fixture
+    def cases(self):
+        return [
+            # groups looked up in the mapping, in order of first appearance, de-duplicated
+            (_principal(groups=["ops", "ops2"]), ["operator", "reader"]),
+            # string and list values of the listed claim paths looked up in the mapping
+            (_principal(claims={"department": "finance", "teams": ["a", "b"]}), ["fin", "bee"]),
+            # a claim that is not listed never maps, however its value reads: a user sets their own
+            # display name or sign-up username, so neither may grant a role (#603 review)
+            (_principal(claims={"name": "admin", "username": "ops", "email": "finance"}), []),
+            # pass_through: a string and a list at the claim path become roles as they are
+            (_principal(claims={"realm_access": {"roles": "admin"}}), ["admin"]),
+            (_principal(claims={"realm_access": {"roles": ["x", "y", "x"]}}), ["x", "y"]),
+            # boolean and nested claim values are not mapped by the built-in mapper (Q14)
+            (_principal(claims={"finance": True, "nested": {"department": "finance"}}), []),
+            (_principal(), []),
+        ]
+
+
+class TestUserControlledClaimsGrantNothing:
+    """Regression cases from the #603 phase B review: claims a user can set must not reach ``mapping``."""
+
+    def test_a_firebase_display_name_is_not_a_group(self):
+        mapper = MappingRoleMapper(mapping={"admin": ["admin"]})
+        assert mapper.map(_principal(claims={"name": "admin"})) == []
+
+    def test_a_cognito_username_is_not_a_group(self):
+        mapper = MappingRoleMapper(mapping={"ops": ["admin"]})
+        assert mapper.map(_principal(claims={"username": "ops", "token_use": "access"})) == []
+
+    def test_the_built_in_maps_a_listed_claim_from_config(self):
+        mapper = RoleMapperFactory.create(_RoleMapperConfig(mapping={"finance": ["reader"]}, claims=["department"]))
+        assert mapper.map(_principal(claims={"department": "finance", "name": "finance"})) == ["reader"]
+
+
+class TestNamespacedClaimPassThrough:
+    def test_a_url_shaped_claim_name_passes_through(self):
+        mapper = MappingRoleMapper(mapping={}, pass_through="https://acme.com/roles")
+        assert mapper.map(_principal(claims={"https://acme.com/roles": ["admin", "reader"]})) == ["admin", "reader"]
+
+
+class TestRoleMapperFactory:
+    def test_mapping_is_the_built_in(self):
+        mapper = RoleMapperFactory.create(_RoleMapperConfig(type="mapping", mapping={"ops": ["operator"]}, pass_through="roles"))
+        assert isinstance(mapper, MappingRoleMapper)
+        assert mapper.map(_principal(groups=["ops"], claims={"roles": ["x"]})) == ["operator", "x"]
+
+    def test_a_dotted_path_receives_the_block(self):
+        config = _RoleMapperConfig(type="test_identity_providers.EverybodyIsReader")
+        mapper = RoleMapperFactory.create(config)
+        assert isinstance(mapper, EverybodyIsReader) and mapper.config is config
+        assert mapper.map(_principal()) == ["reader", "subject:alice"]
+
+    def test_an_unknown_type_is_a_configuration_error(self):
+        with pytest.raises(AKConfigError, match="role_mapper"):
+            RoleMapperFactory.create(_RoleMapperConfig(type="ldap"))
+
+    def test_a_dotted_mapper_reads_its_own_settings_from_the_block(self):
+        """Unknown keys are kept for a bring-your-own mapper rather than dropped (#603 review)."""
+        config = _RoleMapperConfig.model_validate({"type": "test_identity_providers.EverybodyIsReader", "directory_url": "ldap://dir"})
+        assert config.model_extra == {"directory_url": "ldap://dir"}
+
+
+class TestMappedIdentityProvider:
+    @pytest.mark.asyncio
+    async def test_the_mapper_is_the_one_producer_of_roles(self, secrets):
+        """The static block's roles are replaced, not merged: `Principal.roles` has exactly one producer."""
+        inner = StaticIdentityProvider(principals=PRINCIPALS, secrets=secrets)
+        mapped = MappedIdentityProvider(inner, MappingRoleMapper(mapping={"ops": ["operator"]}))
+
+        alice = await mapped.authenticate("alice-secret")
+
+        assert alice.roles == ["operator"]
+        assert alice.groups == ["ops"] and alice.subject == "alice"
+
+    @pytest.mark.asyncio
+    async def test_everything_else_delegates(self, secrets):
+        inner = StaticIdentityProvider(principals=PRINCIPALS, secrets=secrets)
+        mapped = MappedIdentityProvider(inner, MappingRoleMapper(mapping={}))
+
+        assert mapped.name == inner.name
+        assert mapped.security_scheme() == inner.security_scheme()
+        await mapped.close()
+        with pytest.raises(AuthenticationError):
+            await mapped.authenticate("nope")
+
+
+def _static_identity(role_mapper: _RoleMapperConfig | None = None) -> _IdentityConfig:
+    principals = {key: _StaticPrincipalConfig(**fields) for key, fields in PRINCIPALS.items()}
+    return _IdentityConfig(
+        provider=_IdentityProviderConfig(type="static", static=_StaticProviderConfig(principals=principals)), role_mapper=role_mapper
+    )
+
+
+class TestIdentityProviderFactory:
+    def test_static_is_a_built_in(self, current_secrets):
+        provider = IdentityProviderFactory.create(_static_identity())
+        assert isinstance(provider, StaticIdentityProvider)
+
+    @pytest.mark.asyncio
+    async def test_a_role_mapper_block_wraps_the_provider(self, current_secrets):
+        provider = IdentityProviderFactory.create(_static_identity(_RoleMapperConfig(mapping={"ops": ["operator"]})))
+
+        assert isinstance(provider, MappedIdentityProvider)
+        assert (await provider.authenticate("alice-secret")).roles == ["operator"]
+
+    def test_a_dotted_path_receives_the_provider_block(self):
+        identity = _IdentityConfig(provider=_IdentityProviderConfig(type="test_identity_providers.EchoProvider"))
+        provider = IdentityProviderFactory.create(identity)
+        assert isinstance(provider, EchoProvider) and provider.config is identity.provider
+
+    def test_a_dotted_provider_reads_its_own_settings_from_the_block(self):
+        """``keys_table`` is no shared field: it reaches the provider through ``model_extra`` (#603 review)."""
+        identity = _IdentityConfig.model_validate({"provider": {"type": "test_identity_providers.EchoProvider", "keys_table": "api-keys"}})
+        provider = IdentityProviderFactory.create(identity)
+        assert provider.config.model_extra == {"keys_table": "api-keys"}
+
+    def test_an_unknown_short_name_is_a_configuration_error(self):
+        with pytest.raises(AKConfigError, match="unknown identity provider type 'ldap'"):
+            IdentityProviderFactory.create(_IdentityConfig(provider=_IdentityProviderConfig(type="ldap")))
+
+    def test_get_is_none_without_an_identity_block(self, monkeypatch):
+        class _Cfg:
+            identity = None
+
+        monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _Cfg))
+        assert IdentityProviderFactory.get() is None
+
+    def test_get_builds_once_and_reset_drops_it(self, monkeypatch, current_secrets):
+        class _Cfg:
+            identity = _static_identity()
+
+        monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _Cfg))
+
+        first = IdentityProviderFactory.get()
+        assert first is IdentityProviderFactory.get()
+        IdentityProviderFactory.reset()
+        assert IdentityProviderFactory.get() is not first
+
+
+class TestExports:
+    def test_the_package_exports_resolve_lazily_to_their_modules(self):
+        import agentkernel.identity as identity
+
+        assert identity.IdentityProvider is IdentityProvider
+        assert identity.AuthenticationError is AuthenticationError
+        assert "IdentityProviderContract" not in identity.__all__
+        with pytest.raises(AttributeError):
+            identity.NotAThing
+
+
+class RecordingProvider(IdentityProvider):
+    """Accepts one credential and records what it was asked, so the authenticator's hand-off can be checked."""
+
+    name = "recording"
+
+    def __init__(self):
+        self.calls: list[tuple[str, RequestContext | None]] = []
+
+    async def authenticate(self, credential: str, context: RequestContext | None = None) -> Principal:
+        self.calls.append((credential, context))
+        if credential == "alice-secret":
+            return Principal(subject="alice", provider=self.name, namespace="recording", groups=["ops"])
+        raise AuthenticationError("not alice")
+
+
+def _app(authenticator: RequestAuthenticator) -> TestClient:
+    """A route behind the identity dependency that reports what it sees on the request and in the contextvar."""
+    app = FastAPI()
+
+    async def whoami(request: Request):
+        principal = request.state.principal
+        current = RequestAuthenticator.current()
+        return {"state": principal.subject, "current": current.subject if current else None, "anonymous": principal.is_anonymous}
+
+    app.add_api_route("/whoami", whoami, methods=["GET"], dependencies=[Depends(authenticator.dependency())])
+    return TestClient(app)
+
+
+class TestRequestAuthenticator:
+    @pytest.fixture
+    def provider(self):
+        return RecordingProvider()
+
+    @pytest.fixture
+    def authenticator(self, provider):
+        return RequestAuthenticator(provider)
+
+    @pytest.fixture
+    def context(self):
+        return RequestContext(path="/api/v1/chat", http_method="POST", headers={})
+
+    @pytest.mark.asyncio
+    async def test_bearer_parsing_is_case_insensitive_and_strips_the_token(self, authenticator, provider, context):
+        principal = await authenticator.authenticate_bearer("bearer   alice-secret  ", context)
+        assert principal.subject == "alice"
+        assert provider.calls == [("alice-secret", context)]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("header", ["Basic YWxpY2U=", "Bearer", "Bearer   ", "alice-secret"])
+    async def test_a_malformed_header_is_refused_with_its_own_public_detail(self, authenticator, provider, context, header):
+        with pytest.raises(AuthenticationError) as exc:
+            await authenticator.authenticate_bearer(header, context)
+        assert exc.value.public_detail == "Invalid authorization header"
+        assert provider.calls == []
+
+    @pytest.mark.asyncio
+    async def test_no_header_is_the_anonymous_principal_with_or_without_a_provider(self, authenticator, context):
+        assert (await authenticator.authenticate_bearer(None, context)).is_anonymous
+        assert (await RequestAuthenticator(None).authenticate_bearer(None, context)).is_anonymous
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("header", ["Bearer anything", "Basic YWxpY2U=", "Bearer", "alice-secret"])
+    async def test_a_header_without_a_provider_is_ignored(self, context, header):
+        """No identity block: the chat and catalog routes stay open, whatever a client sends, a
+        malformed or non-bearer header (a proxy's Basic credential) included."""
+        assert (await RequestAuthenticator(None).authenticate_bearer(header, context)).is_anonymous
+
+    @pytest.mark.asyncio
+    async def test_a_rejected_credential_keeps_the_generic_public_detail(self, authenticator, context):
+        with pytest.raises(AuthenticationError) as exc:
+            await authenticator.authenticate_bearer("Bearer mallory", context)
+        assert str(exc.value) == "not alice"
+        assert exc.value.public_detail == "Unauthorized"
+
+    @pytest.mark.asyncio
+    async def test_authenticate_token_takes_a_bare_token(self, authenticator, context):
+        assert (await authenticator.authenticate_token("alice-secret", context)).subject == "alice"
+        assert (await authenticator.authenticate_token(None, context)).is_anonymous
+        with pytest.raises(AuthenticationError):
+            await authenticator.authenticate_token("mallory", context)
+
+    def test_the_dependency_puts_the_principal_on_the_request_and_in_the_contextvar(self, authenticator):
+        client = _app(authenticator)
+
+        assert client.get("/whoami", headers={"Authorization": "Bearer alice-secret"}).json() == {
+            "state": "alice",
+            "current": "alice",
+            "anonymous": False,
+        }
+        assert client.get("/whoami").json() == {"state": "anonymous", "current": "anonymous", "anonymous": True}
+
+    def test_the_dependency_answers_401_and_logs_the_reason_with_the_path(self, authenticator, caplog):
+        client = _app(authenticator)
+
+        with caplog.at_level("INFO", logger="ak.identity.provider.request"):
+            rejected = client.get("/whoami", headers={"Authorization": "Bearer mallory"})
+            malformed = client.get("/whoami", headers={"Authorization": "Basic abc"})
+
+        assert (rejected.status_code, rejected.json()["detail"]) == (401, "Unauthorized")
+        assert (malformed.status_code, malformed.json()["detail"]) == (401, "Invalid authorization header")
+        # RFC 6750 section 3: a 401 names the scheme to retry with.
+        assert rejected.headers["www-authenticate"] == malformed.headers["www-authenticate"] == "Bearer"
+        reasons = [record.getMessage() for record in caplog.records if record.name == "ak.identity.provider.request"]
+        assert any("not alice" in message and "/whoami" in message for message in reasons)
+
+    def test_the_dependency_hands_the_provider_the_request_context(self, authenticator, provider):
+        _app(authenticator).get("/whoami?x=1", headers={"Authorization": "Bearer alice-secret"})
+        credential, context = provider.calls[0]
+        assert (credential, context.path, context.http_method) == ("alice-secret", "/whoami", "GET")
+        assert context.headers["authorization"] == "Bearer alice-secret"
+
+    def test_current_is_none_outside_a_request(self):
+        assert RequestAuthenticator.current() is None
+
+    @pytest.mark.asyncio
+    async def test_release_is_a_no_op_until_credentials_land(self, authenticator):
+        await authenticator.release(Principal(subject="alice", provider="recording", namespace="recording"))
+
+    @pytest.mark.asyncio
+    async def test_from_config_without_an_identity_block_authenticates_nobody(self, monkeypatch, context):
+        class _Cfg:
+            identity = None
+
+        monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _Cfg))
+        assert (await RequestAuthenticator.from_config().authenticate_bearer("Bearer alice-secret", context)).is_anonymous
+
+    @pytest.mark.asyncio
+    async def test_from_config_uses_the_configured_provider(self, monkeypatch, current_secrets, context):
+        class _Cfg:
+            identity = _static_identity()
+
+        monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _Cfg))
+        principal = await RequestAuthenticator.from_config().authenticate_bearer("Bearer alice-secret", context)
+        assert (principal.subject, principal.provider) == ("alice", "static")

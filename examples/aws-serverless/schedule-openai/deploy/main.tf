@@ -64,6 +64,23 @@ module "serverless_agents" {
     },
   ]
 
+  # ---- Authorizer ----
+  # Every route needs an authenticated caller: a task belongs to the principal whose request
+  # created it. The authorizer validates the bearer token through the identity block in
+  # config.yaml (lambda_auth.py is one line) and hands the principal to the request handler.
+  authorizer = {
+    description           = "Bearer-token auth through the identity provider in config.yaml"
+    function_name         = "gtwy-auth"
+    handler_path          = "lambda_auth.handler"
+    package_path          = "../dist_auth.zip"
+    package_type          = "LocalZip"
+    result_ttl_in_seconds = 0
+    environment_variables = {
+      # The credential of the static identity provider in config.yaml. Not needed with an oidc block.
+      "DEMO_AUTH_TOKEN" = var.demo_auth_token
+    }
+  }
+
   # ---- Request handler ----
   # Chat ingress plus the custom schedule management routes.
   request_handler = {

@@ -2,8 +2,8 @@
 
 FastAPI silently discards multipart fields that are absent from the endpoint signature, so a
 field dropped from ``run_multipart`` fails invisibly: the request still succeeds, the value just
-never reaches the agent. ``user_id`` in particular is mandatory once Conversation Thread Support
-is configured, and ``group_id``/``thread_name`` feed thread auto-creation.
+never reaches the agent. ``group_id`` and ``thread_name`` feed thread auto-creation. The acting
+user is not a form field: it comes from the credential the surface authenticated (#603).
 """
 
 from contextlib import contextmanager
@@ -18,7 +18,7 @@ from agentkernel.core.config import _ExecutionConfig
 from agentkernel.core.model import ExecutionMode
 
 # Every form field the endpoint must accept and forward, beyond the file/image uploads.
-EXPECTED_FORM_FIELDS = ("prompt", "agent", "session_id", "user_id", "group_id", "thread_name")
+EXPECTED_FORM_FIELDS = ("prompt", "agent", "session_id", "group_id", "thread_name")
 
 
 @contextmanager
@@ -56,7 +56,7 @@ def captured_requests():
 
 
 def test_multipart_forwards_every_form_field(captured_requests):
-    """All six form fields must land on the request model — not just prompt/agent/session_id."""
+    """All five form fields must land on the request model, not just prompt/agent/session_id."""
     client, captured = captured_requests
 
     response = client.post(
@@ -65,7 +65,6 @@ def test_multipart_forwards_every_form_field(captured_requests):
             "prompt": "hello",
             "agent": "triage",
             "session_id": "s-1",
-            "user_id": "u-1",
             "group_id": "g-1",
             "thread_name": "my thread",
         },
@@ -75,7 +74,7 @@ def test_multipart_forwards_every_form_field(captured_requests):
     assert len(captured) == 1
     req = captured[0]
     assert (req.prompt, req.agent, req.session_id) == ("hello", "triage", "s-1")
-    assert (req.user_id, req.group_id, req.thread_name) == ("u-1", "g-1", "my thread")
+    assert (req.group_id, req.thread_name) == ("g-1", "my thread")
 
 
 @pytest.mark.parametrize("field", EXPECTED_FORM_FIELDS)
@@ -99,7 +98,58 @@ def test_multipart_optional_fields_default_to_none(captured_requests):
 
     assert response.status_code == 200
     req = captured[0]
-    assert (req.user_id, req.group_id, req.thread_name) == (None, None, None)
+    assert (req.group_id, req.thread_name) == (None, None)
+
+
+def test_a_user_id_form_field_is_refused(captured_requests):
+    """``user_id`` is not a form field either: FastAPI would drop an undeclared field silently, so the
+    route reads the raw form and refuses it with the same 400 a JSON body gets."""
+    client, captured = captured_requests
+
+    response = client.post(AgentRESTRequestHandler.CHAT_MULTIPART_PATH, data={"prompt": "hello", "user_id": "u-1"})
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "user_id is not a request field; the acting user comes from the credential"
+    assert captured == []
+
+
+class TestPrincipalComesFromTheSurface:
+    """The surface assigns ``principal`` after authentication; a value in the client body is overwritten, never read (#603)."""
+
+    FORGED = {"subject": "mallory", "provider": "oidc", "namespace": "https://issuer.example"}
+
+    def test_a_principal_in_the_json_body_is_overwritten(self, captured_requests):
+        client, captured = captured_requests
+
+        response = client.post(AgentRESTRequestHandler.CHAT_PATH, json={"prompt": "hello", "session_id": "s-1", "principal": self.FORGED})
+
+        assert response.status_code == 200
+        assert captured[0].principal is None
+
+    def test_the_sse_path_overwrites_it_too(self):
+        with _mounted(ExecutionMode.REST_SYNC, "delta") as (client, captured):
+            client.post(AgentRESTRequestHandler.CHAT_PATH, json={"prompt": "hello", "session_id": "s-1", "principal": self.FORGED})
+
+        assert captured[0].principal is None
+
+    def test_a_refusal_on_the_sse_path_is_a_403(self):
+        """Scheduling without a principal raises PermissionError before the stream opens; the route maps it as the thread routes do."""
+        config = Mock()
+        config.api.max_file_size = 10_000_000
+        config.execution = _ExecutionConfig(mode=ExecutionMode.REST_SYNC, message_type="delta")
+        chat_service = Mock()
+        chat_service.process_stream_chat_async = AsyncMock(side_effect=PermissionError("scheduling requires an authenticated principal"))
+
+        with (
+            patch("agentkernel.api.handler.Config.get", return_value=config),
+            patch("agentkernel.api.handler.ChatService", return_value=chat_service),
+        ):
+            app = FastAPI()
+            app.include_router(AgentRESTRequestHandler().get_router())
+            response = TestClient(app).post(AgentRESTRequestHandler.CHAT_PATH, json={"prompt": "hello", "session_id": "s-1"})
+
+        assert response.status_code == 403
+        assert response.json()["detail"] == "scheduling requires an authenticated principal"
 
 
 class TestReplyMessageType:

@@ -62,11 +62,14 @@ def _delivery(*events):
     return {"object": "page", "entry": [{"messaging": list(events)}]}
 
 
+PAGE = "page-1"
+
+
 def _message_event(text="hello", mid="mid.1", attachments=None):
     message = {"mid": mid, "text": text}
     if attachments:
         message["attachments"] = attachments
-    return {"sender": {"id": SENDER}, "message": message}
+    return {"sender": {"id": SENDER}, "recipient": {"id": PAGE}, "message": message}
 
 
 def _fake_request(body, headers=None, query=None):
@@ -89,6 +92,7 @@ class TestParse:
         # Messenger has no thread: the sender is the conversation.
         assert request.session_id == SENDER
         assert request.user_id == SENDER
+        assert request.namespace == PAGE, "the page is the scope a page-scoped sender id is unique within (#603)"
         assert request.request_id == "mid.1", "the platform message id dedupes a retry"
         assert request.reply_context == {"recipient_id": SENDER}
         assert isinstance(request.requests[0], AgentRequestText)
