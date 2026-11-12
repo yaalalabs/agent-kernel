@@ -1286,7 +1286,9 @@ from agentkernel.schedule import ScheduleManager
 @Lambda.register("/schedules/{task_id}", method="GET")
 def get_schedule(event, context):
     task_id = event["pathParameters"]["task_id"]
-    caller = event["requestContext"]["authorizer"]["principalId"]  # the API Gateway authorizer's user
+    caller = (event["requestContext"].get("authorizer") or {}).get("principalId")  # the API Gateway authorizer's user
+    if not caller:
+        return 401, {"error": "An API Gateway authorizer is required"}
     try:
         task = ScheduleManager.get().get_task(task_id, user_id=caller)
     except PermissionError as e:
@@ -1303,8 +1305,8 @@ gateway_endpoints = [
 ]
 ```
 
-These are the containerized routes, path for path. Without an authorizer they are open; resolve the
-owner from the caller's token rather than trusting a client-supplied `user_id`.
+These are the containerized routes, path for path. They need an API Gateway authorizer: the handler
+takes the owner from its `principalId` rather than trusting a client-supplied `user_id`.
 [`examples/aws-serverless/schedule-openai`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/schedule-openai)
 implements all four with ownership checks and error mapping.
 
