@@ -75,6 +75,7 @@ class DeepevalAKEvaluator(AKEvaluator):
             ],
             model=self._llm_model(),
             threshold=None,
+            top_logprobs=5,  # GEval's default of 20 is rejected by newer OpenAI models (max 5)
         )
         test_case = LLMTestCase(input=case.user_input, actual_output=case.actual, expected_output=case.expected)
         try:

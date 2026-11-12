@@ -135,6 +135,7 @@ def test_evaluate_by_llm_success(evaluator):
     (fake,) = _FakeGEval.instances
     assert fake.kwargs["criteria"] is None
     assert fake.kwargs["evaluation_steps"] == _DEFAULT_LLM_EVALUATION_STEPS
+    assert fake.kwargs["top_logprobs"] == 5  # newer OpenAI models reject GEval's default of 20
     assert fake.test_case.input == "capital of France?"
     assert fake.test_case.actual_output == "It's Paris."
     assert fake.test_case.expected_output == "Paris"
