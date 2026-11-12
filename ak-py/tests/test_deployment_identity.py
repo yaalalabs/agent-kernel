@@ -391,6 +391,44 @@ class TestLambdaCustomWebSocketRoutes:
         assert status == 200
         assert seen == [ALICE]
 
+    @pytest.mark.parametrize("frame", [{"route": "custom_handler", "data": "your data"}, {"route": "custom_handler"}, {"any": ["shape"]}])
+    def test_a_custom_route_frame_is_the_routes_own_payload(self, static_identity, frame):
+        """The router picks the route from ``routeKey`` and hands the route the raw event: the frame is not a
+        chat request, so ``{"route": ..., "data": ...}`` (the documented shape) must not fail chat validation."""
+        from agentkernel.deployment.aws.serverless.aklambda import Lambda
+
+        with patch(f"{WS_LAMBDA_MODULE}.WebSocketConnectionStore"):
+            router = WSLambdaRouter(system_routes=False)
+        router._base_route_handler.get_principal = MagicMock(return_value=ALICE)
+        router._base_route_handler.broadcast = MagicMock()
+        seen = []
+
+        @router.register("custom_handler")
+        def custom_handler(event, context):
+            seen.append((Lambda.principal(event), json.loads(event["body"])))
+            return {"response": "Custom route response"}
+
+        event = _ws_event(body=frame)
+        event["requestContext"]["routeKey"] = "custom_handler"
+        with patch(f"{WS_LAMBDA_MODULE}.LambdaWSHandler.construct_endpoint_url", return_value="https://example/prod"):
+            status, _ = router.dispatch(event, None)
+
+        assert status == 200
+        assert seen == [(ALICE, frame)]
+        router._base_route_handler.broadcast.assert_called_once()
+
+    def test_a_custom_route_on_a_connection_without_a_principal_is_refused(self, static_identity):
+        with patch(f"{WS_LAMBDA_MODULE}.WebSocketConnectionStore"):
+            router = WSLambdaRouter(system_routes=False)
+        router._base_route_handler.get_principal = MagicMock(return_value=None)
+        router._base_route_handler.broadcast = MagicMock()
+        handler = MagicMock(return_value={"response": "never"})
+
+        status, _ = router._get_ws_handler_function(handler)(_ws_event(body={"route": "custom_handler", "data": "x"}), None)
+
+        assert status == 500
+        handler.assert_not_called()
+
 
 def _azure_request(headers: dict | None = None, body: dict | None = None) -> func.HttpRequest:
     payload = CHAT_BODY if body is None else body

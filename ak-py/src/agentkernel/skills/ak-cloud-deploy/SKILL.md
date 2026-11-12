@@ -769,7 +769,7 @@ session:
 - The `authorizer` Terraform block is not supported in WebSocket mode — leave it unset.
 - Only `LocalZip` is supported for `ws_connection_handler.package_path`.
 - `ws_routes` custom routes must have a matching `@Lambda.register("route_name")` entry. `ws_chat_route` is the built-in AI chat route — it is handled internally by the framework and does **not** need a `@Lambda.register` entry.
-- A custom WebSocket route reads the caller with `Lambda.principal(event)`: the router puts the connection's principal (the one `$connect` authenticated) into the event's authorizer context before calling the route.
+- A custom WebSocket route reads the caller with `Lambda.principal(event)`: the router puts the connection's principal (the one `$connect` authenticated) into the event's authorizer context before calling the route. The route reads its own frame from `event["body"]` (any JSON object, never validated as a chat request).
 
 **Required `pyproject.toml` extras for WebSocket mode**:
 

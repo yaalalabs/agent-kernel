@@ -947,7 +947,9 @@ deleted).
   `Lambda.register` route the same. `WebsocketConnectionHandler.handler` is the `$connect` /
   `$disconnect` entry point; in WebSocket mode `WSLambdaRouter` injects the connection's principal
   into `requestContext.authorizer.principal` before calling a custom `Lambda.register` route, so
-  `Lambda.principal(event)` works there too. `ECSIOHandler.run(handlers=None)` refuses WebSocket mode without an
+  `Lambda.principal(event)` works there too; the wrapper resolves only that principal
+  (`LambdaWSHandler._connection_principal`) and hands the frame over unparsed, since a custom
+  frame is not a chat request (the ECS and gateway custom routes behave the same). `ECSIOHandler.run(handlers=None)` refuses WebSocket mode without an
   `identity` block and `AWSWebsocketAPI` custom routes receive `{"message", "principal"}` (a
   `Principal` model: a route returning it must dump it to JSON). `AzureFunctions.handler`
   authenticates the header before parsing the body (a 401 JSON body on refusal) and passes and

@@ -82,13 +82,23 @@ class LambdaWSHandler(AWSWebSocketHandler):
         :raises ValueError: If connection_id is missing or no principal is stored for it
         """
         request = self._parse_body(event)
+        principal = self._connection_principal(event)
+        if request.body is not None:
+            request.body.principal = principal
+        return self.WSMessageInfo(user_id=principal.subject, request=request, principal=principal)
+
+    def _connection_principal(self, event: dict[str, Any]) -> Principal:
+        """The principal stored for the event's connection at ``$connect``.
+
+        :param event: WebSocket event dictionary
+        :return: The connection's principal
+        :raises ValueError: If connection_id is missing or no principal is stored for it
+        """
         connection_id = self._extract_connection_id(event)
         principal = self.get_principal(connection_id)
         if principal is None:
             raise ValueError(f"No principal found for connection_id: {connection_id}")
-        if request.body is not None:
-            request.body.principal = principal
-        return self.WSMessageInfo(user_id=principal.subject, request=request, principal=principal)
+        return principal
 
     def _handle_msg_and_brdcst(
         self,
@@ -467,14 +477,17 @@ class WSLambdaRouter(BaseLambdaRouter):
 
         def _handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             try:
-                ws_message_info = self._base_route_handler._parse_event_to_wsmessage(event)
-                user_id = ws_message_info.user_id
+                # The frame is the route's own payload, not a chat request: the route reads ``event["body"]``
+                # itself, so only the connection's principal is resolved here (parsing the frame as a chat
+                # body refused the documented ``{"route": ..., "data": ...}`` shape with a 500).
+                principal = self._base_route_handler._connection_principal(event)
+                user_id = principal.subject
                 # WebSocket events carry no authorizer context: put the connection's principal where
                 # ``Lambda.principal(event)`` reads it, as the REST authorizer does for an HTTP route.
                 request_context = dict(event.get("requestContext") or {})
                 request_context["authorizer"] = {
                     **(request_context.get("authorizer") or {}),
-                    "principal": ws_message_info.principal.model_dump_json(),
+                    "principal": principal.model_dump_json(),
                 }
                 event = {**event, "requestContext": request_context}
                 res_msg_to_brdcst = handler_logic_func(event, context)

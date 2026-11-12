@@ -938,12 +938,15 @@ module "websocket_deployment" {
 
 **2. Register handlers in your Lambda code:**
 ```python
+import json
+
 from agentkernel.aws import Lambda
 
 @Lambda.register("custom_handler")
 def custom_handler(event, context):
     principal = Lambda.principal(event)  # the connection's principal, authenticated at $connect
-    return {"response": f"Custom route response for {principal.subject}"}
+    frame = json.loads(event.get("body") or "{}")  # the frame as the client sent it
+    return {"response": f"Custom route response for {principal.subject}: {frame.get('data')}"}
 
 @Lambda.register("notifications")
 def notifications_handler(event, context):
@@ -961,7 +964,9 @@ def notifications_handler(event, context):
 **Note**: Custom routes must be defined in both Terraform (`ws_routes`) and registered in your Lambda handler code to function properly.
 A custom WebSocket route reads the caller with `Lambda.principal(event)`: WebSocket events carry no
 authorizer context, so the router puts there the principal the `$connect` handshake stored with the
-connection.
+connection. The frame is the route's own payload, any JSON object: the router selects the route by
+API Gateway's `routeKey` and hands the raw event over without reading the frame as a chat request,
+as the ECS and Kubernetes WebSocket gateways do for their custom routes.
 
 ### Execution Modes and Response Store
 

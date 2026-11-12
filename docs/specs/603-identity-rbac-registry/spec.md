@@ -1066,7 +1066,11 @@ candidate walk; `StaticAuthorizer` subclasses it, and every later engine must.
   get the connection's principal in `event["requestContext"]["authorizer"]["principal"]` before
   the route runs (PR #937 review follow-up): a WebSocket event carries no authorizer context, so
   `Lambda.principal(event)` was anonymous on every custom WebSocket route, the one surface where a
-  custom route could not read its caller.
+  custom route could not read its caller. The wrapper resolves only the connection's principal
+  (`LambdaWSHandler._connection_principal`) and never reads the frame as a chat request, as the ECS
+  and gateway custom routes already did: since develop's #765 made `BaseRunRequest` require a
+  prompt, a resume or a requests list, the documented `{"route": ..., "data": ...}` frame failed
+  that validation and the route answered 500 (fixed 2026-11-12, after the PR #937 review).
 - `GCPAuthorizer` (`deployment/gcp/akauthorizer.py`) is deleted: `RESTAPI` installs the identity
   dependency itself. `AzureFunctions.handler` (`deployment/azure/akfunction.py`) runs
   `RequestAuthenticator.from_config().authenticate_bearer(req.headers.get("Authorization"),

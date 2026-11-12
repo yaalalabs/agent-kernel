@@ -497,7 +497,8 @@ here.
   8.12; `sandbox/principal.py`, `integration/thread/recorder.py`). Iteration 11: the API Gateway
   authorizer reads the header whatever its case, logs only the request line and the decision, and
   answers a refused token with 401 by raising `Unauthorized` (decided 2026-11-12);
-  WebSocket custom routes get the connection's principal through `Lambda.principal(event)`; the
+  WebSocket custom routes get the connection's principal through `Lambda.principal(event)` and their
+  frame unparsed (develop's #765 validation had refused `{"route": ..., "data": ...}` with a 500); the
   Azure adapter logs and passes only the URL path (spec 8.9;
   `deployment/aws/serverless/akauthorizer.py`,
   `deployment/aws/serverless/core/router/ws_lambda.py`, `deployment/azure/akfunction.py`).
