@@ -68,13 +68,16 @@ module "serverless_agents" {
     package_type         = "Image"
     package_path         = "../dist_request_handler"
     memory_size          = 1024
-    timeout              = 30
-    security_group_id    = var.request_handler_security_group_id
+    # Past API Gateway's 29s on purpose: a cold chat imports LiteLLM and names the thread before it
+    # enqueues, then waits for the reply. The client may get a 504, but the run must still finish.
+    timeout           = 90
+    security_group_id = var.request_handler_security_group_id
     # The credentials too: ThreadRequestHandler() builds the identity provider config.yaml names,
     # and the static provider resolves them at startup, though only the authorizer authenticates.
     environment_variables = merge(local.demo_credentials, {
       # For thread naming (LiteLLM); without it the name falls back to the prompt prefix.
       "OPENAI_API_KEY" = var.openai_api_key
+
     })
   }
 
